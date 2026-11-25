@@ -374,22 +374,21 @@ fn log_save_result(label: &str, result: Result<PathBuf, SaveCommandError>) {
 }
 
 #[cfg(feature = "dev-overlays")]
-pub(crate) fn quickload(state: &mut AppState) {
-    let path = match state
-        .persistence
-        .repository
-        .quickload_path_by_modified_time()
-    {
+pub(crate) fn quickload(
+    platform: &crate::app::PlatformState,
+    persistence: &mut crate::app::persistence::PersistenceState,
+) {
+    let path = match persistence.repository.quickload_path_by_modified_time() {
         Some(p) => p,
         None => {
             log::warn!(
                 "Quickload: no save files found in {}/",
-                state.persistence.repository.directory().display()
+                persistence.repository.directory().display()
             );
             return;
         }
     };
-    request_saved_game_load(state, path);
+    request_saved_game_load(platform, persistence, path);
 }
 
 pub(crate) struct PendingSavedGameLoad {
@@ -416,10 +415,14 @@ impl PendingSavedGameLoad {
 
 /// LoadOptions559D60 shows F0 before LoadGame67E440. Returning after that
 /// frame gives the browser a paint opportunity before synchronous restoration.
-pub(crate) fn request_saved_game_load(state: &mut AppState, path: PathBuf) {
-    if state.persistence.pending_load.is_none() {
-        state.persistence.pending_load = Some(PendingSavedGameLoad::new(path));
-        state.platform.window.request_redraw();
+pub(crate) fn request_saved_game_load(
+    platform: &crate::app::PlatformState,
+    persistence: &mut crate::app::persistence::PersistenceState,
+    path: PathBuf,
+) {
+    if persistence.pending_load.is_none() {
+        persistence.pending_load = Some(PendingSavedGameLoad::new(path));
+        platform.window.request_redraw();
     }
 }
 
@@ -488,8 +491,17 @@ fn restore_save_file(
     // UI559DBC->69BB40->5BF450 precedes the lower load, including failure;
     // a failed load leaves the radar to wind its clip down itself.
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-    crate::app::radar_movie::retire_for_load(state, wall_ms);
-    crate::app::chrono_screen::retire(state, wall_ms);
+    crate::app::radar_movie::retire_for_load(
+        &mut state.match_state.match_presentation,
+        &mut state.audio,
+        wall_ms,
+    );
+    crate::app::chrono_screen::retire(
+        &state.frontend.screen,
+        &mut state.match_state,
+        &mut state.audio,
+        wall_ms,
+    );
     use crate::app::persistence::{PreparedLoadError, PreparedSavedGame, SavedGamePreparationView};
     let from_menu = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu;
     let Some(mut assets) = state.process_assets.lease_for_loading() else {

@@ -34,7 +34,9 @@ impl App {
     /// The defeat cascade has finished: read what the prompt needs while the
     /// lost Simulation is still resident, retire it, then play the Lose movie.
     pub(super) fn begin_campaign_defeat(state: &mut AppState) {
-        let retry = Self::prepare_campaign_restart(state).map(Box::new);
+        let retry =
+            Self::prepare_campaign_restart(&state.match_state, &state.persistence.options_profile)
+                .map(Box::new);
         let movie = state
             .match_state
             .map_basic

@@ -1913,7 +1913,9 @@ pub(crate) fn spawn_pointer_world_point(state: &AppState) -> Option<(f32, f32)> 
         return None;
     }
     Some(crate::app::match_runtime::sim_tick::screen_point_to_world(
-        state, x, y,
+        &state.match_state.input,
+        x,
+        y,
     ))
 }
 

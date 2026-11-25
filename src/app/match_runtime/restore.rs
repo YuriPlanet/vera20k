@@ -17,7 +17,12 @@ pub(crate) fn commit_prepared_load(
     crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
-    crate::app::chrono_screen::retire(state, wall_ms);
+    crate::app::chrono_screen::retire(
+        &state.frontend.screen,
+        &mut state.match_state,
+        &mut state.audio,
+        wall_ms,
+    );
     let native_tiberium_stats = prepared.native_tiberium_stats();
     log::info!(
         "Load: rebuilt native tiberium queues ({} growth, {} spread)",
@@ -46,7 +51,10 @@ pub(crate) fn commit_prepared_load(
         &state.frontend.frontend_main_rng,
         &mut state.match_state.sim_runtime,
     );
-    crate::app::audio_runtime::bind_match_eva_context(state);
+    crate::app::audio_runtime::bind_match_eva_context(
+        &state.match_state.sim_runtime,
+        &mut state.audio,
+    );
     // All preparation has succeeded. Surface allocation and saved camera
     // conversion now use the tactical upscaler dimensions on either route.
     state.frontend.screen = crate::ui::game_screen::GameScreen::InGame;
@@ -106,8 +114,8 @@ pub(crate) fn commit_prepared_load(
         .restore_from_save(game_mode, committed.map.local_player_name());
     state.match_state.scenario_elapsed_clock = committed.elapsed_clock;
     #[cfg(feature = "telemetry-dashboard")]
-    crate::app::telemetry_capture::reset_observation(state);
-    super::scenario_pause::load_clock(state, wall_ms);
+    crate::app::telemetry_capture::reset_observation(&mut state.diag, &mut state.match_state);
+    super::scenario_pause::load_clock(&mut state.match_state.match_presentation, wall_ms);
     let pause_effects = state
         .match_state
         .sim_runtime
@@ -119,7 +127,12 @@ pub(crate) fn commit_prepared_load(
             )
         });
     // Load rearms614; reapply physical audio without a new pause acquisition.
-    super::scenario_pause::resume(state, wall_ms);
+    super::scenario_pause::resume(
+        &state.frontend.screen,
+        &mut state.match_state,
+        &mut state.audio,
+        wall_ms,
+    );
     state.match_state.sandbox_full_visibility = false;
     let runtime = state
         .match_state
@@ -199,7 +212,11 @@ pub(crate) fn commit_prepared_load(
         sfx.restore_static_sounds(committed.map.static_sounds(), catalog.sounds());
     }
 
-    crate::app::audio_runtime::bind_match_theme_context(state);
+    crate::app::audio_runtime::bind_match_theme_context(
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+    );
     let music_now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     if let Some(assets) = state.process_assets.manager() {
         state.audio.restore_saved_theme(

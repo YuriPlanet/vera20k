@@ -420,7 +420,7 @@ pub(super) fn apply_response(
             // A match keeps its relay through a lobby outage; this asks
             // again after it.
             if super::in_match(state.frontend.wol.as_ref())
-                || crate::app::loading::pump::network_loading_active(state)
+                || crate::app::loading::pump::network_loading_active(&state.frontend)
             {
                 return;
             }

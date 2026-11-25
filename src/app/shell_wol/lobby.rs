@@ -2294,7 +2294,10 @@ fn answer_resolution(state: &mut AppState, channel: WolChannel, yes: bool) {
         let profile = &mut state.persistence.options_profile;
         profile.screen_width = width;
         profile.screen_height = height;
-        crate::app::persistence::options::persist_options_profile(state);
+        crate::app::persistence::options::persist_options_profile(
+            &state.platform,
+            &state.persistence.options_profile,
+        );
     }
     if limit < options_screen(state).0 {
         join_failed_locally(state, true);

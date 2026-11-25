@@ -19,7 +19,6 @@
 //! The two add up to what one picture of one simulation frame costs, whatever
 //! the picture rate and the tick rate happened to be.
 
-use crate::app::AppState;
 use crate::app::diagnostics::thread_load::calling_thread_cpu;
 use crate::util::time::Duration;
 
@@ -154,20 +153,13 @@ pub(crate) struct FrameCostReport {
     pub(crate) lent_ticks: u32,
 }
 
-fn counting(state: &mut AppState) -> Option<&mut FrameCost> {
-    state
-        .frontend
-        .external_progress
-        .frame_cost
-        .as_mut()
-        .filter(|cost| cost.counting())
+fn counting(progress: &mut crate::app::cncnet::ExternalLaunchProgress) -> Option<&mut FrameCost> {
+    progress.frame_cost.as_mut().filter(|cost| cost.counting())
 }
 
 /// Start a span on the calling thread.
-pub(crate) fn begin(state: &AppState) -> Span {
-    let counting = state
-        .frontend
-        .external_progress
+pub(crate) fn begin(progress: &crate::app::cncnet::ExternalLaunchProgress) -> Span {
+    let counting = progress
         .frame_cost
         .as_ref()
         .is_some_and(FrameCost::counting);
@@ -175,30 +167,37 @@ pub(crate) fn begin(state: &AppState) -> Span {
 }
 
 /// A `service_match_runtime` pass ended.
-pub(crate) fn end_service(state: &mut AppState, span: Span) {
-    if let Some((cost, spent)) = counting(state).zip(span.elapsed()) {
+pub(crate) fn end_service(progress: &mut crate::app::cncnet::ExternalLaunchProgress, span: Span) {
+    if let Some((cost, spent)) = counting(progress).zip(span.elapsed()) {
         cost.service += spent;
     }
 }
 
 /// A tick run inline by the service ended.
-pub(crate) fn end_inline_tick(state: &mut AppState, span: Span) {
-    if let Some((cost, spent)) = counting(state).zip(span.elapsed()) {
+pub(crate) fn end_inline_tick(
+    progress: &mut crate::app::cncnet::ExternalLaunchProgress,
+    span: Span,
+) {
+    if let Some((cost, spent)) = counting(progress).zip(span.elapsed()) {
         cost.inline_ticks += spent;
     }
 }
 
 /// A picture was handed off.
-pub(crate) fn end_picture(state: &mut AppState, span: Span) {
-    if let Some((cost, spent)) = counting(state).zip(span.elapsed()) {
+pub(crate) fn end_picture(progress: &mut crate::app::cncnet::ExternalLaunchProgress, span: Span) {
+    if let Some((cost, spent)) = counting(progress).zip(span.elapsed()) {
         cost.pictures.push(spent);
     }
 }
 
 /// A simulation frame took `tick` on its thread: the simulation thread when
 /// `lent`.
-pub(crate) fn tick(state: &mut AppState, tick: Duration, lent: bool) {
-    if let Some(cost) = counting(state) {
+pub(crate) fn tick(
+    progress: &mut crate::app::cncnet::ExternalLaunchProgress,
+    tick: Duration,
+    lent: bool,
+) {
+    if let Some(cost) = counting(progress) {
         cost.ticks.push(tick);
         cost.lent += u32::from(lent);
     }

@@ -49,7 +49,7 @@ struct Key {
 
 impl Key {
     fn selected(
-        state: &AppState,
+        session: &crate::app::match_runtime::session::MatchSession,
         scope: SessionScope,
         generated: Option<GeneratedMapManifest>,
     ) -> Result<Self> {
@@ -57,9 +57,7 @@ impl Key {
             scope.epoch != [0; 16] && scope.revision > 0,
             "map transfer has no admitted options scope"
         );
-        let launch = state
-            .match_state
-            .session
+        let launch = session
             .network_setup()
             .ok_or_else(|| anyhow!("map transfer has no setup"))?;
         let file = launch
@@ -67,9 +65,7 @@ impl Key {
             .as_deref()
             .ok_or_else(|| anyhow!("map transfer has no selection"))?;
         crate::map::source::validate_network_map_name(file)?;
-        let metadata = state
-            .match_state
-            .session
+        let metadata = session
             .network_map_metadata()
             .ok_or_else(|| anyhow!("map transfer has no metadata"))?;
         // `Transfers::selected` checks the manifest against the selection
@@ -105,7 +101,7 @@ impl Key {
         Ok(Self {
             scope,
             identity,
-            host: state.match_state.session.host(),
+            host: session.host(),
             effective: metadata.effective_digest.clone(),
             generated,
             assets,
@@ -409,7 +405,7 @@ impl Transfers {
         scope: SessionScope,
         generated: Option<GeneratedMapManifest>,
     ) -> Result<()> {
-        let key = Key::selected(state, scope, generated)?;
+        let key = Key::selected(&state.match_state.session, scope, generated)?;
         if self.key.as_ref() == Some(&key) {
             return Ok(());
         }
@@ -644,21 +640,23 @@ impl Transfers {
                     download.bytes.len(),
                     &[],
                 )?;
-                if queue(state, endpoint, packet)? {
+                if queue(&mut state.match_state, endpoint, packet)? {
                     download.requested = true;
                 }
             }
         }
         if key.host {
-            self.pump_host(state)?;
+            self.pump_host(&mut state.match_state)?;
         }
         Ok(())
     }
 
-    fn pump_host(&mut self, state: &mut AppState) -> Result<()> {
+    fn pump_host(
+        &mut self,
+        match_state: &mut crate::app::match_runtime::state::MatchState,
+    ) -> Result<()> {
         self.peers.retain(|peer| {
-            state
-                .match_state
+            match_state
                 .session
                 .network_endpoint_source(peer.endpoint)
                 .is_some()
@@ -667,8 +665,7 @@ impl Transfers {
             return Ok(());
         }
         for _ in 0..MAX_PUMP_PACKETS {
-            if state
-                .match_state
+            if match_state
                 .lan_service
                 .as_ref()
                 .is_none_or(|service| service.pending_setup.len() >= MAX_QUEUED_ASSET_PACKETS)
@@ -696,7 +693,7 @@ impl Transfers {
                 window.next,
                 &bytes[window.next..end],
             )?;
-            if !queue(state, peer.endpoint, packet)? {
+            if !queue(match_state, peer.endpoint, packet)? {
                 break;
             }
             window.next = end;
@@ -843,9 +840,12 @@ impl Transfers {
     }
 }
 
-fn queue(state: &mut AppState, endpoint: SocketAddrV4, bytes: Vec<u8>) -> Result<bool> {
-    state
-        .match_state
+fn queue(
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    endpoint: SocketAddrV4,
+    bytes: Vec<u8>,
+) -> Result<bool> {
+    match_state
         .lan_service
         .as_mut()
         .ok_or_else(|| anyhow!("no LAN service"))?

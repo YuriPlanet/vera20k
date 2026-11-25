@@ -75,7 +75,7 @@ pub(super) fn apply_event(
             }
             let grant = decode_relay_grant(&renewed.relay, &renewed.match_id, &service.player_id)?;
             crate::app::lan_service::renew_online_relay(
-                state,
+                &mut state.match_state,
                 renewed.relay.address,
                 &grant.ticket,
                 grant.key,
@@ -123,7 +123,7 @@ pub(super) fn apply_event(
             }
             let grant = decode_watch_grant(&renewed.relay, &renewed.match_id)?;
             crate::app::lan_service::renew_online_relay(
-                state,
+                &mut state.match_state,
                 renewed.relay.address,
                 &grant.ticket,
                 grant.key,
@@ -579,7 +579,7 @@ pub(super) fn apply_event(
                 "unadmitted start"
             );
             if !pending.probes_started {
-                crate::app::lan_service::begin_online_latency_probe(state)?;
+                crate::app::lan_service::begin_online_latency_probe(&mut state.match_state)?;
                 pending.probes_started = true;
                 pending.deadline = Instant::now() + service.relay_timeout;
             }
@@ -604,7 +604,7 @@ pub(super) fn apply_event(
             );
             let grant = decode_relay_grant(&timing.relay, &timing.match_id, &service.player_id)?;
             crate::app::lan_service::renew_online_relay(
-                state,
+                &mut state.match_state,
                 timing.relay.address,
                 &grant.ticket,
                 grant.key,

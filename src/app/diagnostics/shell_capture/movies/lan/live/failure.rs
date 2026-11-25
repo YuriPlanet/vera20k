@@ -516,7 +516,7 @@ impl FailureCapture {
                     && state.frontend.shell_controller.top_id() == Some(network_failure::DIALOG),
                 "real checksum CE dialog is absent"
             );
-            let labels = network_failure::labels(state);
+            let labels = network_failure::labels(&state.match_state.sim_runtime);
             ensure!(
                 labels.0.0 == "TXT_OUT_OF_SYNC" && labels.1.0 == "TXT_STOP",
                 "another error dialog replaced the checksum modal"

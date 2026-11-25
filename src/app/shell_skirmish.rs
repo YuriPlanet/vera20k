@@ -427,7 +427,10 @@ impl App {
         }
         if shared_rules_changed || profile.skirmish_cheats != rules.skirmish_cheats {
             profile.skirmish_cheats = rules.skirmish_cheats;
-            crate::app::persistence::options::persist_options_profile(state);
+            crate::app::persistence::options::persist_options_profile(
+                &state.platform,
+                &state.persistence.options_profile,
+            );
         }
         state.platform.window.request_redraw();
     }
@@ -607,8 +610,10 @@ impl App {
         ));
         // VERA: the starred maps list under Favorites, and online rooms list
         // the online map library under its own row.
-        let favorites = crate::app::map_library::read_favorites(state);
-        let online = crate::app::map_library::listed_in_choose_map(state);
+        let favorites =
+            crate::app::map_library::read_favorites(&state.platform, &mut state.frontend);
+        let online =
+            crate::app::map_library::listed_in_choose_map(&state.frontend, &state.match_state);
         let frontend = &mut state.frontend;
         if let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() {
             if crate::app::worker::THREADS {
@@ -670,7 +675,11 @@ impl App {
             Self::remap_record_index(selected_file.as_deref(), current_record_index, &records);
         state.frontend.scenario_catalog =
             crate::app::scenario_catalog::ScenarioCatalog::from_records(records);
-        crate::app::map_library::append_online_records(state);
+        crate::app::map_library::append_online_records(
+            &state.platform,
+            &mut state.frontend,
+            &state.process_assets,
+        );
         remapped
     }
 
@@ -925,7 +934,11 @@ impl App {
                 };
                 // VERA: an Online map is downloaded first; the rest of Use
                 // Map runs once it is here (`map_library`).
-                if crate::app::map_library::prompt_download(state, selection) {
+                if crate::app::map_library::prompt_download(
+                    &state.platform,
+                    &mut state.frontend,
+                    selection,
+                ) {
                     return;
                 }
                 if Self::prompt_choose_map_eject(state, selection) {
@@ -944,7 +957,12 @@ impl App {
                     frontend.scenario_catalog.records(),
                     &layout,
                 ) {
-                    crate::app::map_library::set_favorite(state, key, starred);
+                    crate::app::map_library::set_favorite(
+                        &state.platform,
+                        &mut state.frontend,
+                        key,
+                        starred,
+                    );
                 }
                 state.platform.window.request_redraw();
                 return;
@@ -1110,12 +1128,16 @@ impl App {
                 }
                 Self::leave_choose_map_for_use(state, prompt.selection);
             }
-            Answer::Download => crate::app::map_library::start_download(state, prompt.selection),
+            Answer::Download => crate::app::map_library::start_download(
+                &state.platform,
+                &mut state.frontend,
+                prompt.selection,
+            ),
             Answer::Close => {
                 if let Some(modal) = modal {
                     modal.close_prompt();
                 }
-                crate::app::map_library::cancel_download(state);
+                crate::app::map_library::cancel_download(&mut state.frontend);
             }
             Answer::Wait => {}
         }

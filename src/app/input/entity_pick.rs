@@ -325,7 +325,7 @@ pub(crate) fn cursor_hover_object(state: &crate::app::AppState) -> Option<HoverO
     let frame = (!host.is_lent()).then(|| host.frame()).flatten();
     let owner = crate::app::input::commands::preferred_local_owner_name(state)?;
     let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        state,
+        &state.match_state.input,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );

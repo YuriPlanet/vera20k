@@ -117,11 +117,14 @@ impl Layers {
     fn of(state: &AppState) -> Self {
         let frontend = &state.frontend;
         Self {
-            house_outcome_wait: App::house_outcome_wait_pending(state),
+            house_outcome_wait: App::house_outcome_wait_pending(&state.match_state.sim_runtime),
             shell_transition: crate::app::frontend::shell_transition::blocks_shell_input(state),
             shell_error: frontend.screen == GameScreen::MainMenu
                 && frontend.main_menu_shell_error.is_some(),
-            network_failure: crate::app::match_runtime::network_failure::pending(state),
+            network_failure: crate::app::match_runtime::network_failure::pending(
+                &state.frontend.screen,
+                &state.match_state,
+            ),
             network_wait: frontend.screen == GameScreen::InGame
                 && state.match_state.network_wait.dialog_open(),
             keyboard: frontend.keyboard_dialog.is_some(),

@@ -420,7 +420,9 @@ impl App {
     /// skips. The panic hook has already written the log and `except.txt`.
     pub fn save_replay_after_panic(&mut self) {
         if let Some(state) = self.state.as_mut() {
-            crate::app::match_runtime::sim_tick::preserve_replay_after_panic(state);
+            crate::app::match_runtime::sim_tick::preserve_replay_after_panic(
+                &mut state.match_state,
+            );
         }
     }
 }

@@ -79,13 +79,14 @@ pub(crate) fn set_place_beacon_mode(state: &mut AppState, request: BeaconModeReq
         sell: gadgets.sell_mode_on,
         beacon: gadgets.place_beacon_mode_on,
     };
-    let can_place = beacons::local_house_index(state).is_some_and(|house| {
-        state
-            .match_state
-            .match_presentation
-            .beacons
-            .can_place(house)
-    });
+    let can_place =
+        beacons::local_house_index(&state.match_state.sim_runtime).is_some_and(|house| {
+            state
+                .match_state
+                .match_presentation
+                .beacons
+                .can_place(house)
+        });
     let Some(next) = place_beacon_mode_transition(
         request,
         modes,
@@ -169,7 +170,7 @@ pub(crate) fn place_at_cell(state: &mut AppState, cell: (u16, u16)) {
         .sim_runtime
         .runtime()
         .is_none_or(|runtime| runtime.simulation.local_player_defeated());
-    if !defeated && let Some(house) = beacons::local_house_index(state) {
+    if !defeated && let Some(house) = beacons::local_house_index(&state.match_state.sim_runtime) {
         let coord = cell_coord(state, cell);
         beacons::place_beacon(state, house, coord, None);
     }
@@ -192,7 +193,7 @@ pub(crate) fn select_at_cell(state: &mut AppState, cell: (u16, u16)) {
 /// `DeleteCommand 0x00731A10`'s beacon arm: with no planning node to delete,
 /// `DeleteBeacon(-1, -1)` (`0x00731A24`).
 pub(crate) fn delete_selected(state: &mut AppState) {
-    beacons::delete_beacon(state, BeaconTarget::Selected);
+    beacons::delete_beacon(&mut state.match_state, BeaconTarget::Selected);
 }
 
 #[cfg(all(test, tests_app_input_a_c))]

@@ -339,8 +339,8 @@ fn open_checking(state: &mut AppState) {
 /// ends as the one at startup does, offering a newer release at the idle
 /// main menu unless it was skipped and the lobby has not said this version
 /// is behind.
-pub(crate) fn cancel_check(state: &mut AppState) {
-    if let Phase::Checking { asked, .. } = &mut state.frontend.updater.phase {
+pub(crate) fn cancel_check(frontend: &mut crate::app::frontend::state::FrontendState) {
+    if let Phase::Checking { asked, .. } = &mut frontend.updater.phase {
         *asked = false;
     }
 }
@@ -351,9 +351,9 @@ pub(crate) fn cancel_check(state: &mut AppState) {
 /// equal ones, so the game checks as Check for Updates does: a newer release
 /// is offered at the next idle main menu, even a skipped one. A
 /// CnCNet-launched match has no main menu to ask at.
-pub(crate) fn lobby_outdated(state: &mut AppState) {
-    if !state.frontend.external_launch {
-        state.frontend.updater.lobby_outdated(|| start(false));
+pub(crate) fn lobby_outdated(frontend: &mut crate::app::frontend::state::FrontendState) {
+    if !frontend.external_launch {
+        frontend.updater.lobby_outdated(|| start(false));
     }
 }
 

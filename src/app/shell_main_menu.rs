@@ -509,7 +509,11 @@ impl App {
         Self::stop_campaign_score_anim_sound(state);
         // A won campaign mission continues in GameExit::Victory instead of
         // returning to the shell; read it before the teardown below.
-        let campaign_victory = Self::take_campaign_victory(state);
+        let campaign_victory = Self::take_campaign_victory(
+            &mut state.match_state,
+            &state.process_assets,
+            &state.persistence.options_profile,
+        );
         Self::close_finished_scenario(state);
         match campaign_victory {
             Some(victory) => Self::advance_campaign_victory(state, victory),
@@ -523,7 +527,7 @@ impl App {
     /// presentation resources.
     pub(super) fn close_finished_scenario(state: &mut AppState) {
         Self::retire_finished_scenario(state);
-        Self::persist_returned_session_toggles(state);
+        Self::persist_returned_session_toggles(&mut state.frontend, &state.match_state);
         state.frontend.score_page = None;
         state.frontend.campaign_score_page = None;
         // 0x0072D780 releases the score art.
@@ -543,9 +547,12 @@ impl App {
         }
         // The accepted match owns the socket until either exit path returns
         // it to the visit's shared transport owner, including score Continue.
-        crate::app::lan_service::return_transport(state);
+        crate::app::lan_service::return_transport(&mut state.frontend, &mut state.match_state);
         crate::app::match_runtime::sim_tick::flush_replay_log(state);
-        Self::capture_returned_multiplayer_scenario(state);
+        Self::capture_returned_multiplayer_scenario(
+            &mut state.frontend,
+            &state.match_state.sim_runtime,
+        );
         state.match_state.startup.clear();
         state.match_state.scenario_elapsed_clock.reset();
         state.match_state.input.zoom_level = 1.0;
@@ -1328,7 +1335,7 @@ impl App {
             #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
             Purpose::UpdateProgress => crate::app::updater::cancel_download(state),
             #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-            Purpose::UpdateCheck => crate::app::updater::cancel_check(state),
+            Purpose::UpdateCheck => crate::app::updater::cancel_check(&mut state.frontend),
             Purpose::ModRestart(folder) => Self::answer_mod_restart(state, folder, yes),
             Purpose::ModFiles(which) => Self::answer_mod_files(state, which, yes),
             Purpose::ModMade(dir) => Self::answer_mod_made(state, &dir, yes),
@@ -1343,7 +1350,7 @@ impl App {
     /// immediately. The updater quits the same way once its update is ready.
     pub(super) fn confirm_quit(state: &mut AppState) {
         Self::close_shell_message_box_from_controller(state);
-        Self::persist_settings_on_quit(state);
+        Self::persist_settings_on_quit(&state.platform, &state.persistence.options_profile);
         Self::start_quit_cascade(state);
     }
 

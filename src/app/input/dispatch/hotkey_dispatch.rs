@@ -146,7 +146,10 @@ pub(crate) fn handle_hotkey_pressed(
     resolution: HotkeyResolution,
     physical_code: winit::keyboard::KeyCode,
 ) {
-    if crate::app::match_runtime::network_failure::pending(state) {
+    if crate::app::match_runtime::network_failure::pending(
+        &state.frontend.screen,
+        &state.match_state,
+    ) {
         return;
     }
     handle_hotkey_pressed_inner(state, resolution, physical_code);
@@ -477,7 +480,10 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
                 .persistence
                 .options_profile
                 .superweapon_building_timers = on;
-            crate::app::persistence::options::persist_options_profile(state);
+            crate::app::persistence::options::persist_options_profile(
+                &state.platform,
+                &state.persistence.options_profile,
+            );
             log::info!(
                 "Super weapon building timers: {}",
                 if on { "shown" } else { "hidden" }
@@ -493,7 +499,10 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
             let on = *help;
             state.persistence.options_profile.convenience_help = on;
             state.match_state.sim_runtime.show_status_rows(on);
-            crate::app::persistence::options::persist_options_profile(state);
+            crate::app::persistence::options::persist_options_profile(
+                &state.platform,
+                &state.persistence.options_profile,
+            );
             log::info!("Convenience help: {}", if on { "shown" } else { "hidden" });
         }
         // A held key: `input::keyboard::in_game_key_edge` tracks it.
@@ -726,7 +735,9 @@ pub(super) fn open_pause_menu(state: &mut AppState) {
     // follows a published result). Both open the same dialog directly, so the
     // button and the Options hotkey keep working there.
     if state.match_state.multiplayer_paused()
-        || crate::app::commander_feedback::verdict_is_waiting_for_clip(state)
+        || crate::app::commander_feedback::verdict_is_waiting_for_clip(
+            &state.match_state.match_presentation,
+        )
     {
         // No future EventClass tail exists until the relay resumes. Open the
         // same local dialog directly so its shared Resume remains reachable.

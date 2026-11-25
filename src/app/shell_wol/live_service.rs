@@ -439,7 +439,7 @@ fn update_required_text(message: Option<&str>) -> String {
 /// ([`crate::app::updater::lobby_outdated`]).
 fn lobby_says_outdated(state: &mut AppState) {
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    crate::app::updater::lobby_outdated(state);
+    crate::app::updater::lobby_outdated(&mut state.frontend);
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let _ = state;
 }
@@ -729,12 +729,12 @@ pub(crate) fn relay_pass_lapsed(wol: Option<&WolVisit>, now_ms: u32) -> bool {
 /// relay departure; this observation owns no retry or membership state.
 pub(crate) fn online_cleanup_pending(state: &AppState) -> bool {
     state.frontend.online_cleanup.pending()
-        || crate::app::lan_service::online_retirement_pending(state)
+        || crate::app::lan_service::online_retirement_pending(&state.match_state)
 }
 
 pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
-    crate::app::lan_service::poll_online_retirement(state);
-    let relay_pending = crate::app::lan_service::online_retirement_pending(state);
+    crate::app::lan_service::poll_online_retirement(&mut state.match_state);
+    let relay_pending = crate::app::lan_service::online_retirement_pending(&state.match_state);
     let cleanup_deadline = state.frontend.online_cleanup.poll(Instant::now());
     for (lobby, name) in std::mem::take(&mut state.frontend.online_cleanup.deleted_accounts) {
         forget_deleted_account(
@@ -967,7 +967,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             log::warn!("Could not watch the match: {error:#}");
             fail_watch(state, &mut service, "VERA:WatchCouldNotStart");
         }
-        if crate::app::lan_service::has_online_relay_route(state) {
+        if crate::app::lan_service::has_online_relay_route(&state.match_state) {
             service.poll_renewal(crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32);
         }
         if service.spawned {
@@ -1096,7 +1096,7 @@ fn cancel_pending(state: &mut AppState, service: &mut LiveService) {
     if service.pending.take().is_some() {
         // A Ready relay may already have moved into the shared transport owner.
         // Retire either ownership location when this start is canceled.
-        crate::app::lan_service::close(state);
+        crate::app::lan_service::close(&state.frontend, &mut state.match_state);
     }
 }
 
@@ -1136,9 +1136,10 @@ type MatchReport = (Option<&'static str>, Option<Vec<String>>, Option<Instant>);
 
 fn match_report(state: &AppState) -> MatchReport {
     (
-        crate::app::App::match_result(state).map(crate::app::cncnet::ExternalMatchResult::as_str),
-        crate::app::App::match_winners(state).map(<[String]>::to_vec),
-        crate::app::App::match_result_at(state),
+        crate::app::App::match_result(&state.frontend)
+            .map(crate::app::cncnet::ExternalMatchResult::as_str),
+        crate::app::App::match_winners(&state.frontend).map(<[String]>::to_vec),
+        crate::app::App::match_result_at(&state.frontend),
     )
 }
 
@@ -1180,7 +1181,7 @@ pub(super) fn leave_visit(state: &mut AppState) {
     if let Some(visit) = frontend.wol.as_mut() {
         frontend.online_cleanup.leave(visit, Instant::now());
     }
-    crate::app::lan_service::close(state);
+    crate::app::lan_service::close(&state.frontend, &mut state.match_state);
     state.frontend.wol_account.password.clear();
 }
 
@@ -1207,7 +1208,11 @@ pub(crate) fn retire_visit_for_exit(state: &mut AppState) {
         .as_ref()
         .is_some_and(LiveService::match_unfinished)
     {
-        crate::app::App::record_match_result(state, crate::app::cncnet::ExternalMatchResult::Quit);
+        crate::app::App::record_match_result(
+            &mut state.frontend,
+            &state.match_state,
+            crate::app::cncnet::ExternalMatchResult::Quit,
+        );
         let report = match_report(state);
         if let Some(visit) = state.frontend.wol.as_mut() {
             visit.match_left_for_exit(report, Instant::now());

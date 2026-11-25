@@ -168,7 +168,7 @@ pub(crate) fn super_weapon_pointer_target_at_cursor_is_valid(
         return false;
     };
     let world = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        state,
+        &state.match_state.input,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
@@ -262,7 +262,7 @@ fn own_sellable_unit_id(state: &AppState, stable_id: u64) -> Option<u64> {
 
 pub(crate) fn sell_wall_under_cursor_is_eligible(state: &AppState) -> bool {
     let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        state,
+        &state.match_state.input,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
@@ -270,7 +270,7 @@ pub(crate) fn sell_wall_under_cursor_is_eligible(state: &AppState) -> bool {
         return false;
     }
     let (rx, ry) = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-        state,
+        &state.match_state,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
@@ -365,7 +365,7 @@ pub(crate) fn try_repair_sell_mode_click(state: &mut AppState) -> bool {
         return false;
     }
     let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        state,
+        &state.match_state.input,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
@@ -396,7 +396,7 @@ pub(crate) fn try_repair_sell_mode_click(state: &mut AppState) -> bool {
         schedule_command(state, &owner, payload);
     } else if sell && object_under_cursor.is_none() {
         let (rx, ry) = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-            state,
+            &state.match_state,
             state.match_state.input.cursor_x,
             state.match_state.input.cursor_y,
         );
@@ -573,7 +573,7 @@ pub(crate) fn launch_super_weapon_at_cursor(state: &mut AppState, section: &str)
     }
 
     let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-        state,
+        &state.match_state,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );

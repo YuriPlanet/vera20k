@@ -524,7 +524,12 @@ impl WolCapture {
             return Ok(());
         }
         ensure!(
-            crate::app::loading::pump::accept_network_loading_progress(state, 1, 100),
+            crate::app::loading::pump::accept_network_loading_progress(
+                &mut state.frontend,
+                &state.match_state.session,
+                1,
+                100
+            ),
             "controlled guest completion was refused"
         );
         self.route.push(json!({"frame": frame,

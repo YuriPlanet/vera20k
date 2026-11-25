@@ -82,7 +82,7 @@ pub(crate) fn admits(sim: &Simulation, rules: &RuleSet, stable_id: u64) -> bool 
 /// The building under the cursor that [`admits`] power mode's switch.
 pub(crate) fn building_under_cursor(state: &AppState) -> Option<u64> {
     let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        state,
+        &state.match_state.input,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );

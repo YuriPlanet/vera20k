@@ -128,18 +128,18 @@ pub(crate) fn answer(state: &mut AppState, index: Option<usize>, response: usize
 }
 
 pub(crate) fn receive(
-    state: &mut AppState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
     source: usize,
     signal: Signal,
     receipt: Option<GlobalMessage>,
 ) {
-    let from_host = crate::app::lan_service::campaign_host_source(state) == Some(source);
+    let from_host = crate::app::lan_service::campaign_host_source(match_state) == Some(source);
     let relay_retry_delta = relay_retry_delta(
-        state.match_state.session.network_return_context(),
-        state.match_state.live_network.as_ref(),
+        match_state.session.network_return_context(),
+        match_state.live_network.as_ref(),
         signal,
     );
-    state.match_state.session.receive_campaign_stage_signal(
+    match_state.session.receive_campaign_stage_signal(
         source,
         from_host,
         signal,
@@ -213,12 +213,12 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
     else {
         return;
     };
-    let peers = recipients(state, local);
+    let peers = recipients(&state.match_state, local);
     if !session.host() && peers.is_empty() {
         return;
     }
     if let Some(CampaignControlSend::Queued(batch)) =
-        crate::app::lan_service::send_campaign_control(state, &peers, signal)
+        crate::app::lan_service::send_campaign_control(&mut state.match_state, &peers, signal)
     {
         state
             .match_state
@@ -227,8 +227,11 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
     }
 }
 
-fn recipients(state: &AppState, local: usize) -> Vec<usize> {
-    let session = &state.match_state.session;
+fn recipients(
+    match_state: &crate::app::match_runtime::state::MatchState,
+    local: usize,
+) -> Vec<usize> {
+    let session = &match_state.session;
     if session.host() {
         session
             .network_connected_source_indices()
@@ -237,7 +240,7 @@ fn recipients(state: &AppState, local: usize) -> Vec<usize> {
             .filter(|&source| source != local)
             .collect()
     } else {
-        crate::app::lan_service::campaign_host_source(state)
+        crate::app::lan_service::campaign_host_source(match_state)
             .into_iter()
             .collect()
     }
@@ -245,8 +248,12 @@ fn recipients(state: &AppState, local: usize) -> Vec<usize> {
 
 fn abort(state: &mut AppState, notice: Option<&str>) {
     if let Some(local) = super::network_match::local_source(&state.match_state.session) {
-        let peers = recipients(state, local);
-        let _ = crate::app::lan_service::send_campaign_control(state, &peers, Signal::StageAbort);
+        let peers = recipients(&state.match_state, local);
+        let _ = crate::app::lan_service::send_campaign_control(
+            &mut state.match_state,
+            &peers,
+            Signal::StageAbort,
+        );
     }
     App::close_shell_message_box_from_controller(state);
     App::return_to_main_menu(state);
@@ -261,7 +268,9 @@ fn commit(state: &mut AppState, now_ms: u64) {
             .match_state
             .session
             .take_campaign_stage_receipts(now_ms);
-        if let Err(error) = crate::app::lan_service::advance_campaign_transport(state, receipts) {
+        if let Err(error) =
+            crate::app::lan_service::advance_campaign_transport(&mut state.match_state, receipts)
+        {
             log::warn!("Cannot advance LAN campaign transport: {error:#}");
             abort(state, Some("VERA:CampaignStageUnavailable"));
             return;

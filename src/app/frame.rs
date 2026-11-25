@@ -156,7 +156,7 @@ impl App {
         {
             return None;
         }
-        let (game_speed, network_fps) = sim_tick::local_pacing_inputs(state);
+        let (game_speed, network_fps) = sim_tick::local_pacing_inputs(&state.match_state);
         state
             .platform
             .frame_pacer
@@ -200,7 +200,7 @@ impl App {
         wait_for_tick: bool,
     ) -> RuntimeServiceResult {
         // A spawn test switch counts what the pass costs this thread.
-        let cost = crate::app::spawn_frame_cost::begin(state);
+        let cost = crate::app::spawn_frame_cost::begin(&state.frontend.external_progress);
         let result = Self::service_match_runtime_pass(
             state,
             event_loop,
@@ -208,7 +208,7 @@ impl App {
             catch_up_allowed,
             wait_for_tick,
         );
-        crate::app::spawn_frame_cost::end_service(state, cost);
+        crate::app::spawn_frame_cost::end_service(&mut state.frontend.external_progress, cost);
         result
     }
 
@@ -246,7 +246,7 @@ impl App {
         // A watcher catching up plays minutes of its match at once, muted,
         // with a longer budget a picture (`LocalFramePacer::permits_catch_up`).
         let watcher_catching_up = crate::app::match_runtime::watching::catching_up(
-            state,
+            &state.match_state,
             crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
         );
         let restoring = state
@@ -300,8 +300,8 @@ impl App {
                 || state.frontend.screen != GameScreen::InGame
                 || state.match_state.scenario_exit.is_some()
                 || state.match_state.scenario_outcome.is_some()
-                || Self::house_outcome_wait_pending(state)
-                || crate::app::match_runtime::network_failure::pending(state)
+                || Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
+                || crate::app::match_runtime::network_failure::pending(&state.frontend.screen, &state.match_state)
                 || !crate::app::match_runtime::frame_pacer::LocalFramePacer::permits_catch_up(
                     attempts,
                     started.elapsed(),
@@ -330,7 +330,7 @@ impl App {
                 // waiting for a refresh: run every frame already due, so an
                 // interval shorter than one refresh keeps its native rate.
                 let (game_speed, network_fps) =
-                    crate::app::match_runtime::sim_tick::local_pacing_inputs(state);
+                    crate::app::match_runtime::sim_tick::local_pacing_inputs(&state.match_state);
                 if state.platform.frame_pacer.should_admit(
                     crate::app::match_runtime::frame_pacer::wall_clock_ms(),
                     game_speed,
@@ -344,7 +344,9 @@ impl App {
             if !live.has_terminal_network_error() {
                 let frame = session.binary_frame();
                 let inputs = crate::app::match_runtime::sim_tick::online_pacing_inputs(
-                    state,
+                    &state.platform,
+                    &state.diag,
+                    &state.match_state,
                     frame,
                     crate::app::match_runtime::frame_pacer::wall_clock_ms(),
                 );
@@ -360,7 +362,11 @@ impl App {
             }
         }
         state.platform.frame_pacer.end_service();
-        crate::app::match_runtime::network_quality::observe_pass(state);
+        crate::app::match_runtime::network_quality::observe_pass(
+            &state.platform,
+            &state.frontend.screen,
+            &mut state.match_state,
+        );
         result
     }
 
@@ -389,7 +395,7 @@ impl App {
         // 0x00649827; repeated services read the same binary-frame parity.
         let input_is_active = in_game
             && (!state.focus_freeze_active()
-                || Self::house_outcome_wait_pending(state)
+                || Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
                 || network_wait_pending);
         let input_frame = input_is_active.then(|| {
             state
@@ -411,7 +417,10 @@ impl App {
             None
         };
         #[cfg(feature = "telemetry-dashboard")]
-        crate::app::telemetry_capture::synchronize_observer(state);
+        crate::app::telemetry_capture::synchronize_observer(
+            &mut state.diag,
+            &mut state.match_state,
+        );
         #[cfg(feature = "debug-tools")]
         crate::app::debug_tools::service(state);
         // HouseClass keeps simulating for SavourDelay, then blocks on the
@@ -435,14 +444,17 @@ impl App {
         crate::app::lan_service::poll(state, scenario_now_ms);
         crate::app::match_runtime::narrative_sync::service(state, scenario_now_ms);
         crate::app::match_runtime::stage_result::poll(state, scenario_now_ms);
-        Self::poll_external_launch_progress(state);
+        Self::poll_external_launch_progress(&mut state.frontend, &state.match_state);
         Self::poll_spawn_actions(state);
         // Resume receipts must release only the relay clock hold even while
         // focus or a local modal prevents another simulation transaction.
         state
             .match_state
             .sync_multiplayer_pause_clock(scenario_now_ms);
-        if crate::app::match_runtime::network_failure::pending(state) {
+        if crate::app::match_runtime::network_failure::pending(
+            &state.frontend.screen,
+            &state.match_state,
+        ) {
             // ExecuteDoList64CD0C blocks inside ShellMessageBox5D3490. Its
             // message pump still reaches Network_ServiceLoop48D080/audio,
             // while Main_Tick's terminal tests and frame tail wait for Stop.
@@ -485,14 +497,17 @@ impl App {
                 ..Default::default()
             };
         }
-        if Self::house_outcome_wait_pending(state) {
+        if Self::house_outcome_wait_pending(&state.match_state.sim_runtime) {
             // The native House wait services Network_ServiceLoop/audio before
             // continuing this same House. Keep that service live while later
             // House callbacks and MainTick's termination router remain held.
             crate::app::match_runtime::sim_tick::pump_audio_service(state, scenario_now_ms);
             main_tick_admitted = sim_tick::advance_in_game_runtime(state, scenario_now_ms, false);
-            if !Self::house_outcome_wait_pending(state)
-                && !crate::app::match_runtime::network_failure::pending(state)
+            if !Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
+                && !crate::app::match_runtime::network_failure::pending(
+                    &state.frontend.screen,
+                    &state.match_state,
+                )
             {
                 Self::consume_scenario_restart_request(state);
                 Self::consume_executed_abort_exit(state, scenario_now_ms);
@@ -598,12 +613,25 @@ impl App {
             simulation_allowed,
         );
         if main_tick_pumps_audio {
-            crate::app::match_runtime::sim_tick::service_audio_outputs(state, scenario_now_ms);
+            crate::app::match_runtime::sim_tick::service_audio_outputs(
+                &state.frontend.screen,
+                &state.match_state,
+                &mut state.audio,
+                scenario_now_ms,
+            );
         } else {
             crate::app::match_runtime::sim_tick::pump_audio_service(state, scenario_now_ms);
         }
         crate::app::radar_movie::service(state, scenario_now_ms);
-        crate::app::commander_feedback::service(state, scenario_now_ms);
+        crate::app::commander_feedback::service(
+            &state.renderer,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &state.persistence.options_profile,
+            scenario_now_ms,
+        );
 
         // Deactivated windows do not simulate when `pause_on_focus_loss` is
         // configured. gamemd parks its main tick in a sleep-and-network-only
@@ -644,8 +672,11 @@ impl App {
             }
             main_tick_admitted =
                 sim_tick::advance_in_game_runtime(state, now_ms, main_tick_pumps_audio);
-            if Self::house_outcome_wait_pending(state)
-                || crate::app::match_runtime::network_failure::pending(state)
+            if Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
+                || crate::app::match_runtime::network_failure::pending(
+                    &state.frontend.screen,
+                    &state.match_state,
+                )
             {
                 return RuntimeServiceResult {
                     main_tick_admitted,
@@ -688,8 +719,11 @@ impl App {
             || state.frontend.quit_cascade.is_some()
             || state.match_state.scenario_exit.is_some()
             || state.match_state.scenario_outcome.is_some()
-            || Self::house_outcome_wait_pending(state)
-            || crate::app::match_runtime::network_failure::pending(state)
+            || Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
+            || crate::app::match_runtime::network_failure::pending(
+                &state.frontend.screen,
+                &state.match_state,
+            )
             || state.match_state.network_wait.dialog_open()
             || state.match_state.match_diagnostics.is_replay_playback()
         {
@@ -711,7 +745,9 @@ impl App {
         let frontier = live.committed_frontier();
         if let Some((timing, recovering)) =
             crate::app::match_runtime::sim_tick::online_pacing_inputs(
-                state,
+                &state.platform,
+                &state.diag,
+                &state.match_state,
                 frame,
                 crate::app::match_runtime::frame_pacer::wall_clock_ms(),
             )
@@ -733,18 +769,23 @@ impl App {
     pub(super) fn online_start_runs_while_hidden(state: &AppState) -> bool {
         state.platform.window_hidden
             && state.match_state.live_network.is_none()
-            && crate::app::lan_service::has_online_relay_route(state)
+            && crate::app::lan_service::has_online_relay_route(&state.match_state)
     }
 
     /// Keep transport live during campaign stage voting and handoff as well
     /// as during an active match or a synchronized fullscreen cutscene.
     pub(super) fn match_runs_while_hidden(state: &AppState) -> bool {
-        crate::app::match_runtime::narrative_sync::owns_fullscreen(state)
-            || match_screen_runs_while_hidden(
-                &state.frontend.screen,
-                state.match_state.session.campaign_result().is_some(),
-                || Self::house_outcome_wait_pending(state) || !state.focus_freeze_active(),
-            )
+        crate::app::match_runtime::narrative_sync::owns_fullscreen(
+            &state.frontend,
+            &state.match_state.match_presentation,
+        ) || match_screen_runs_while_hidden(
+            &state.frontend.screen,
+            state.match_state.session.campaign_result().is_some(),
+            || {
+                Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
+                    || !state.focus_freeze_active()
+            },
+        )
     }
 
     /// The active-game shell `page` into `destination`.
@@ -888,10 +929,15 @@ impl App {
         }
         state.platform.frame_pacer.clear_render_continuation();
         if matches!(pass, FramePass::Draw) {
-            crate::app::cncnet::SpawnSlowPc::spend(crate::app::cncnet::SpawnSlowPc::of(state).draw);
+            crate::app::cncnet::SpawnSlowPc::spend(
+                crate::app::cncnet::SpawnSlowPc::of(&state.frontend).draw,
+            );
         }
         #[cfg(feature = "telemetry-dashboard")]
-        crate::app::telemetry_capture::synchronize_observer(state);
+        crate::app::telemetry_capture::synchronize_observer(
+            &mut state.diag,
+            &mut state.match_state,
+        );
         if let Some(session) = hidden_run.as_deref_mut() {
             session.drive_before_render(state)?;
         }
@@ -999,8 +1045,10 @@ impl App {
             .scenario_exit
             .as_ref()
             .is_some_and(|exit| exit.holding_banner())
-            || crate::app::commander_feedback::verdict_is_waiting_for_clip(state);
-        if Self::house_outcome_wait_pending(state)
+            || crate::app::commander_feedback::verdict_is_waiting_for_clip(
+                &state.match_state.match_presentation,
+            );
+        if Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
             || (state.frontend.screen == GameScreen::InGame
                 && state.match_state.scenario_exit.is_some()
                 && Self::local_outcome_exit_ready(state)
@@ -1026,7 +1074,9 @@ impl App {
         // Atlas growths publish before the picture is judged. Captures wait
         // for them, so their pictures never depend on worker timing.
         crate::app::match_runtime::sim_tick::publish_entity_atlas_growth(
-            state,
+            &state.renderer,
+            &mut state.match_state,
+            &state.process_assets,
             shell_capture.is_some() || hidden_run.is_some(),
         );
         // A changed picture is drawn in this same pass, so each drawn frame
@@ -1070,7 +1120,7 @@ impl App {
         }
         let draw_started = Instant::now();
         state.diag.frame_timer.sample(draw_started);
-        let picture_cost = crate::app::spawn_frame_cost::begin(state);
+        let picture_cost = crate::app::spawn_frame_cost::begin(&state.frontend.external_progress);
 
         // A finished teardown slide destroys its dialog and runs the result
         // (`0x00622720` returns into PrepareSession) before the next dialog is
@@ -1138,7 +1188,10 @@ impl App {
 
         if state.match_state.match_presentation.in_game_menu.is_open()
             || state.match_state.network_wait.dialog_open()
-            || crate::app::match_runtime::network_failure::pending(state)
+            || crate::app::match_runtime::network_failure::pending(
+                &state.frontend.screen,
+                &state.match_state,
+            )
         {
             Self::ensure_skirmish_shell_chrome(state);
         }
@@ -1327,9 +1380,10 @@ impl App {
                 ) {
                     crate::app::loading::pump::LoadingRenderResult::NativeRendered => {}
                     crate::app::loading::pump::LoadingRenderResult::GenericFallback => {
-                        let map_name_display = crate::app::loading::pump::loading_map_name(state)
-                            .unwrap_or("auto")
-                            .to_string();
+                        let map_name_display =
+                            crate::app::loading::pump::loading_map_name(&state.frontend)
+                                .unwrap_or("auto")
+                                .to_string();
                         crate::app::frontend::status_screen::render(
                             state,
                             &mut encoder,
@@ -1689,7 +1743,10 @@ impl App {
             .encode_color_vision(&mut encoder, &output.texture);
         let submission = state.renderer.gpu.hand_off_frame(encoder, output);
         let presented_at = Instant::now();
-        crate::app::spawn_frame_cost::end_picture(state, picture_cost);
+        crate::app::spawn_frame_cost::end_picture(
+            &mut state.frontend.external_progress,
+            picture_cost,
+        );
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         if screenshot_requested {
             // Browser hand-off submits/presents inline. Ask for the snapshot

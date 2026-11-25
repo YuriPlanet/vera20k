@@ -338,23 +338,25 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
 
 /// End private channels on leaving gameplay, retaining the LAN visit's same
 /// socket pair for BB. It is dropped only when that visit itself ends.
-pub(crate) fn return_transport(state: &mut AppState) {
-    if let Some(report) = crate::app::match_runtime::network_quality::close(state) {
-        crate::app::shell_wol::keep_network_report(state.frontend.wol.as_mut(), &report);
+pub(crate) fn return_transport(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) {
+    if let Some(report) =
+        crate::app::match_runtime::network_quality::close(&mut match_state.network_quality)
+    {
+        crate::app::shell_wol::keep_network_report(frontend.wol.as_mut(), &report);
     }
-    let online = state.match_state.session_mode() == SessionMode::Wol;
-    let Some(live) = state.match_state.live_network.take() else {
+    let online = match_state.session_mode() == SessionMode::Wol;
+    let Some(live) = match_state.live_network.take() else {
         return;
     };
     if live.watching()
         && let Ok(endpoint) = live.primary_addr()
     {
-        state
-            .match_state
-            .session
-            .disconnect_network_watcher(endpoint);
+        match_state.session.disconnect_network_watcher(endpoint);
     }
-    if let Some(service) = state.match_state.lan_service.as_mut() {
+    if let Some(service) = match_state.lan_service.as_mut() {
         let mut transport = live.into_transport();
         transport.connections_mut().reset();
         if online {
@@ -368,16 +370,15 @@ pub(crate) fn return_transport(state: &mut AppState) {
 }
 
 pub(super) fn send_bytes(
-    state: &mut AppState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
     bytes: &[u8],
     destination: GlobalDestination,
     reliable: bool,
 ) -> bool {
-    if let Some(live) = state.match_state.live_network.as_mut() {
+    if let Some(live) = match_state.live_network.as_mut() {
         live.send_global(bytes, reliable, destination)
     } else {
-        state
-            .match_state
+        match_state
             .lan_service
             .as_mut()
             .is_some_and(|service| service.send(bytes, destination, reliable))
@@ -385,13 +386,13 @@ pub(super) fn send_bytes(
 }
 
 pub(super) fn send_sources(
-    state: &mut AppState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
     bytes: &[u8],
     sources: impl IntoIterator<Item = usize>,
 ) {
     for source in sources {
-        if let Some(endpoint) = state.match_state.session.network_endpoint(source) {
-            send_bytes(state, bytes, direct(endpoint), true);
+        if let Some(endpoint) = match_state.session.network_endpoint(source) {
+            send_bytes(match_state, bytes, direct(endpoint), true);
         }
     }
 }

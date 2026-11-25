@@ -45,7 +45,7 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
     // The room carries the applied speed, the world's while one is installed:
     // another player's speed event in the last match changed only the world.
     // Build_Options_String reads that global, [0xA8EB60], at 0x005DBC68.
-    crate::app::loading::transitions::sync_in_game_options_speed_from_sim(state);
+    crate::app::loading::transitions::sync_in_game_options_speed_from_sim(&mut state.match_state);
     let session = &state.match_state.session;
     ensure!(session.host(), "only the host publishes full LAN options");
     let current_speed = state
@@ -100,7 +100,7 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
         body: body.clone(),
     })?;
     let admitted = queue_payload(
-        state,
+        &mut state.match_state,
         crate::net::lan_messages::extended_setup::SetupKind::Options,
         payload,
     )?;
@@ -317,19 +317,18 @@ pub(super) fn reapply_received_options(state: &mut AppState) -> Result<()> {
 }
 
 fn queue_payload(
-    state: &mut AppState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
     kind: crate::net::lan_messages::extended_setup::SetupKind,
     payload: Vec<u8>,
 ) -> Result<bool> {
-    let endpoints = super::remote_sources(state)
+    let endpoints = super::remote_sources(&match_state.session)
         .into_iter()
-        .filter_map(|source| state.match_state.session.network_endpoint(source))
+        .filter_map(|source| match_state.session.network_endpoint(source))
         .collect::<Vec<_>>();
-    let game = super::active_game_name(state).ok_or_else(|| anyhow!("no active LAN game"))?;
+    let game = super::active_game_name(match_state).ok_or_else(|| anyhow!("no active LAN game"))?;
     let mut scoped = game_name_hash(&game).to_le_bytes().to_vec();
     scoped.extend_from_slice(&payload);
-    let service = state
-        .match_state
+    let service = match_state
         .lan_service
         .as_mut()
         .ok_or_else(|| anyhow!("no LAN service"))?;
@@ -404,8 +403,10 @@ fn apply_host_room(
     Ok(())
 }
 
-pub(super) fn publish_roster(state: &mut AppState) -> Result<bool> {
-    let session = &state.match_state.session;
+pub(super) fn publish_roster(
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) -> Result<bool> {
+    let session = &match_state.session;
     ensure!(session.host(), "only the host publishes a LAN roster");
     // A VERA room's spectator rows may lie past the native eight.
     let rows = if session.network_several_observers()
@@ -420,7 +421,7 @@ pub(super) fn publish_roster(state: &mut AppState) -> Result<bool> {
     let names = projected_roster(session)?;
     let names = &names[..rows];
     queue_payload(
-        state,
+        match_state,
         crate::net::lan_messages::extended_setup::SetupKind::Roster,
         serde_json::to_vec(names)?,
     )
@@ -467,7 +468,8 @@ pub(super) fn receive_extended(
     let Some((kind, bytes)) = complete else {
         return Ok(());
     };
-    let game = super::active_game_name(state).ok_or_else(|| anyhow!("no active LAN game"))?;
+    let game =
+        super::active_game_name(&state.match_state).ok_or_else(|| anyhow!("no active LAN game"))?;
     ensure!(
         bytes.len() >= 4 && bytes[..4] == game_name_hash(&game).to_le_bytes(),
         "different LAN game"

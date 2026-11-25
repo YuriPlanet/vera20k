@@ -433,9 +433,9 @@ pub(crate) struct SpawnSlowPc {
 }
 
 impl SpawnSlowPc {
-    pub(crate) fn of(state: &AppState) -> Self {
-        let progress = &state.frontend.external_progress;
-        if !state.frontend.external_launch
+    pub(crate) fn of(frontend: &crate::app::frontend::state::FrontendState) -> Self {
+        let progress = &frontend.external_progress;
+        if !frontend.external_launch
             || progress.mode == ExternalLaunchMode::Single
             || progress.match_started.is_none()
         {
@@ -596,7 +596,7 @@ impl App {
         if let Some(reason) = state.frontend.mods.refusal() {
             anyhow::bail!("{reason}");
         }
-        Self::check_spawn_expectations(state, &request)?;
+        Self::check_spawn_expectations(&state.platform, &state.process_assets, &request)?;
         state.frontend.external_launch = true;
         state.frontend.external_progress = ExternalLaunchProgress::default();
         if let SpawnGame::Network(network) = &request.game {
@@ -701,7 +701,11 @@ impl App {
     /// `[Settings] Expected*` (docs/spawn.md): reject the launch before it
     /// starts when this build, its rules or the client map differ from what
     /// the launcher probed.
-    fn check_spawn_expectations(state: &AppState, request: &SpawnRequest) -> Result<()> {
+    fn check_spawn_expectations(
+        platform: &crate::app::PlatformState,
+        process_assets: &crate::app::process_assets::ProcessAssets,
+        request: &SpawnRequest,
+    ) -> Result<()> {
         let session = match &request.game {
             SpawnGame::Skirmish(session) => Some(&**session),
             SpawnGame::Network(network) => Some(&network.session),
@@ -712,22 +716,19 @@ impl App {
             &crate::app::shell_network_setup::agreement::version(),
             || {
                 let session = session.context("launch has no game mode")?;
-                state
-                    .process_assets
+                process_assets
                     .multiplayer_rules_digest(&session.mode.override_file)
                     .map_err(anyhow::Error::msg)
             },
             || {
                 let map = map.context("launch has no map")?;
-                let root = &state
-                    .platform
+                let root = &platform
                     .game_config
                     .as_ref()
                     .context("no asset directory")?
                     .paths
                     .ra2_dir;
-                let assets = state
-                    .process_assets
+                let assets = process_assets
                     .manager()
                     .context("retail assets are unavailable")?;
                 Ok(
@@ -742,9 +743,7 @@ impl App {
                 error.downcast_mut::<crate::app::frontend::cncnet_spawn::RulesMismatch>(),
                 session,
             ) {
-                match state
-                    .process_assets
-                    .multiplayer_rules_parts(&[session.mode.override_file.as_str()])
+                match process_assets.multiplayer_rules_parts(&[session.mode.override_file.as_str()])
                 {
                     Ok(mut parts) => {
                         mismatch.parts = parts.pop();
@@ -761,27 +760,26 @@ impl App {
 
     /// Sample the running match for the launch report (docs/spawn.md):
     /// frames, time on screen and opponent departure. External launches only.
-    pub(super) fn poll_external_launch_progress(state: &mut AppState) {
-        if !state.frontend.external_launch
-            || state.frontend.screen != crate::ui::game_screen::GameScreen::InGame
+    pub(super) fn poll_external_launch_progress(
+        frontend: &mut crate::app::frontend::state::FrontendState,
+        match_state: &crate::app::match_runtime::state::MatchState,
+    ) {
+        if !frontend.external_launch
+            || frontend.screen != crate::ui::game_screen::GameScreen::InGame
         {
             return;
         }
-        let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+        let Some(runtime) = match_state.sim_runtime.runtime() else {
             return;
         };
         let frame = runtime.simulation.session().binary_frame();
-        let left = state
-            .match_state
-            .session
-            .network_setup()
-            .is_some_and(|launch| {
-                opponents_left(
-                    launch,
-                    state.match_state.session.network_connected_source_indices(),
-                )
-            });
-        let progress = &mut state.frontend.external_progress;
+        let left = match_state.session.network_setup().is_some_and(|launch| {
+            opponents_left(
+                launch,
+                match_state.session.network_connected_source_indices(),
+            )
+        });
+        let progress = &mut frontend.external_progress;
         let now = Instant::now();
         if progress.match_started.is_none() {
             log::info!("External launch: match on screen at frame {frame}");
@@ -812,20 +810,21 @@ impl App {
     /// `ExpectedRulesDigest` refused the launch and the state that read them
     /// is gone.
     pub(crate) fn external_launch_report(
-        state: Option<&AppState>,
+        frontend: Option<&crate::app::frontend::state::FrontendState>,
+        network_quality: Option<&crate::app::match_runtime::network_quality::NetworkQualityStats>,
         failure: Option<&str>,
         rules_mismatch: Option<&crate::app::rules_parts::RulesParts>,
     ) -> ExternalLaunchReport {
         let failure = failure
-            .or_else(|| state.and_then(|state| state.frontend.external_launch_error.as_deref()));
+            .or_else(|| frontend.and_then(|frontend| frontend.external_launch_error.as_deref()));
         let mut report = ExternalLaunchReport::new(
-            state.and_then(Self::match_result),
-            state.map(|state| &state.frontend.external_progress),
+            frontend.and_then(Self::match_result),
+            frontend.map(|frontend| &frontend.external_progress),
             failure,
         );
-        report.network_quality = state.and_then(|state| state.match_state.network_quality.report());
+        report.network_quality = network_quality.and_then(|quality| quality.report());
         if let Some(parts) = rules_mismatch
-            .or_else(|| state.and_then(|state| state.frontend.external_rules_mismatch.as_ref()))
+            .or_else(|| frontend.and_then(|frontend| frontend.external_rules_mismatch.as_ref()))
         {
             report.rules_mismatch(parts.clone());
         }
@@ -838,7 +837,10 @@ impl App {
     pub fn finish_spawn_launch(&self) -> Option<i32> {
         let path = self.spawn_result_path.as_deref()?;
         let report = Self::external_launch_report(
-            self.state.as_ref(),
+            self.state.as_ref().map(|state| &state.frontend),
+            self.state
+                .as_ref()
+                .map(|state| &state.match_state.network_quality),
             self.startup_failure.as_deref(),
             self.spawn_rules_mismatch.as_ref(),
         );
@@ -862,11 +864,15 @@ impl App {
                 .external_launch_error
                 .get_or_insert_with(|| error.to_owned());
         }
-        Self::browser_match_ended(state, ExternalMatchResult::Quit);
+        Self::browser_match_ended(
+            &state.frontend,
+            &state.match_state,
+            ExternalMatchResult::Quit,
+        );
         crate::web::request_exit(state.frontend.external_launch_error.as_deref());
         crate::app::shell_wol::discard_spawned_visit(&mut state.frontend);
         if state.match_state.lan_service.is_some() {
-            crate::app::lan_service::close(state);
+            crate::app::lan_service::close(&state.frontend, &mut state.match_state);
         }
         if state.match_state.session.network_return_context().is_some() {
             state.match_state.session.leave_network();
@@ -983,8 +989,11 @@ impl App {
                 if !state.match_state.sim_runtime.is_installed()
                     || state.match_state.scenario_exit.is_some()
                     || state.match_state.scenario_outcome.is_some()
-                    || Self::house_outcome_wait_pending(state)
-                    || crate::app::match_runtime::network_failure::pending(state)
+                    || Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
+                    || crate::app::match_runtime::network_failure::pending(
+                        &state.frontend.screen,
+                        &state.match_state,
+                    )
                 {
                     return false;
                 }
@@ -1062,62 +1071,74 @@ impl App {
     }
 
     /// This `-SPAWN` launch's window is the opt-in invisible test window.
-    pub(super) fn invisible_spawn_window(state: &AppState) -> bool {
-        state.frontend.external_launch
+    pub(super) fn invisible_spawn_window(
+        platform: &crate::app::PlatformState,
+        frontend: &crate::app::frontend::state::FrontendState,
+    ) -> bool {
+        frontend.external_launch
             && Self::spawn_hidden_window_requested()
-            && state.platform.window.is_visible() == Some(false)
+            && platform.window.is_visible() == Some(false)
     }
 
     /// The local result of an external launch's or online lobby match's
     /// match, once it ended; the relay `finish` reports it, and launch hosts
     /// read it here.
-    pub(crate) fn match_result(state: &AppState) -> Option<ExternalMatchResult> {
-        state.frontend.match_result
+    pub(crate) fn match_result(
+        frontend: &crate::app::frontend::state::FrontendState,
+    ) -> Option<ExternalMatchResult> {
+        frontend.match_result
     }
 
     /// The decided network match's winners still in it, for the online
     /// lobby's `finish`.
-    pub(crate) fn match_winners(state: &AppState) -> Option<&[String]> {
-        state.frontend.match_winners.as_deref()
+    pub(crate) fn match_winners(
+        frontend: &crate::app::frontend::state::FrontendState,
+    ) -> Option<&[String]> {
+        frontend.match_winners.as_deref()
     }
 
     /// When the match's local result was decided, for the online lobby's
     /// `finish`.
-    pub(crate) fn match_result_at(state: &AppState) -> Option<Instant> {
-        state.frontend.match_result_at
+    pub(crate) fn match_result_at(
+        frontend: &crate::app::frontend::state::FrontendState,
+    ) -> Option<Instant> {
+        frontend.match_result_at
     }
 
     /// An online match starts: no earlier match's result may stand for it.
-    pub(crate) fn clear_match_result(state: &mut AppState) {
-        state.frontend.match_result = None;
-        state.frontend.match_winners = None;
-        state.frontend.match_result_at = None;
+    pub(crate) fn clear_match_result(frontend: &mut crate::app::frontend::state::FrontendState) {
+        frontend.match_result = None;
+        frontend.match_winners = None;
+        frontend.match_result_at = None;
     }
 
     /// Record the end-of-match owner's decision for an external launch or an
     /// online lobby match, as [`running_match_result`] reads it from the
     /// running match; the first decision wins.
-    pub(crate) fn record_match_result(state: &mut AppState, result: ExternalMatchResult) {
+    pub(crate) fn record_match_result(
+        frontend: &mut crate::app::frontend::state::FrontendState,
+        match_state: &crate::app::match_runtime::state::MatchState,
+        result: ExternalMatchResult,
+    ) {
         use crate::app::match_runtime::session::SessionMode;
         // A watcher has no result: the followed player's is not its own.
-        if (!state.frontend.external_launch && state.match_state.session_mode() != SessionMode::Wol)
-            || state.frontend.match_result.is_some()
-            || crate::app::match_runtime::watching::active(state)
+        if (!frontend.external_launch && match_state.session_mode() != SessionMode::Wol)
+            || frontend.match_result.is_some()
+            || crate::app::match_runtime::watching::active(match_state)
         {
             return;
         }
-        let sim = state
-            .match_state
+        let sim = match_state
             .sim_runtime
             .runtime()
             .map(|runtime| &runtime.simulation);
-        let Some((result, winners)) = running_match_result(result, &state.match_state.session, sim)
+        let Some((result, winners)) = running_match_result(result, &match_state.session, sim)
         else {
             return;
         };
-        state.frontend.match_result = Some(result);
-        state.frontend.match_winners = winners;
-        state.frontend.match_result_at = Some(Instant::now());
+        frontend.match_result = Some(result);
+        frontend.match_winners = winners;
+        frontend.match_result_at = Some(Instant::now());
     }
 
     /// An external launch that cannot reach or finish its match ends the

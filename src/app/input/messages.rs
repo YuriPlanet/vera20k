@@ -1024,8 +1024,11 @@ pub(crate) fn show_status_notices(state: &mut AppState) {
     };
     let rgb = grey_rgb(rules);
     let delay_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
-    let network =
-        crate::app::match_runtime::network_match::recovery_notice(state).map(crate::i18n::tr);
+    let network = crate::app::match_runtime::network_match::recovery_notice(
+        &state.frontend,
+        &state.match_state,
+    )
+    .map(crate::i18n::tr);
     let pause = crate::app::input::pause_menu::multiplayer_control(state)
         .and_then(|control| control.status)
         .map(crate::i18n::tr);

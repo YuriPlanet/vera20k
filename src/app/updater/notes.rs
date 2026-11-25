@@ -147,12 +147,14 @@ pub(crate) const LIST_ID: i32 = 0x1_0001;
 /// The open offer's `List` node and its notes, if built.
 pub(crate) fn node(state: &AppState) -> Option<(NodeId, &ReleaseNotes)> {
     let (notes, _, dialog) = open_list(state)?;
-    Some((list_node(state, dialog)?, notes))
+    Some((list_node(&state.frontend.shell_controller, dialog)?, notes))
 }
 
 /// The offer box's `List` node, if built.
-fn list_node(state: &AppState, dialog: DialogResourceId) -> Option<NodeId> {
-    let controller = &state.frontend.shell_controller;
+fn list_node(
+    controller: &crate::ui::shell::controller::DialogController,
+    dialog: DialogResourceId,
+) -> Option<NodeId> {
     let gui = controller.gui();
     let children = gui.tree().children(controller.root_in(dialog)?).ok()?;
     children
@@ -165,7 +167,7 @@ fn list_node(state: &AppState, dialog: DialogResourceId) -> Option<NodeId> {
 /// arrow drawn pushed.
 pub(crate) fn view(state: &AppState) -> Option<(ShellListGeometry, usize, Option<ListScrollPart>)> {
     let (notes, layout, dialog) = open_list(state)?;
-    let view = list_node(state, dialog)
+    let view = list_node(&state.frontend.shell_controller, dialog)
         .and_then(|node| state.frontend.shell_controller.gui().list_view(node));
     let top = view.map_or(0, |view| view.top);
     Some((
@@ -182,7 +184,7 @@ pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
     let (geometry, _, _) = view(state)?;
     let (notes, layout, dialog) = open_list(state)?;
     let scale = layout.scale;
-    let node = list_node(state, dialog);
+    let node = list_node(&state.frontend.shell_controller, dialog);
     // The rows' text goes into the list once, when it is built.
     let items = node.is_none().then(|| notes.items());
     let frontend = &mut state.frontend;

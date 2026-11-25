@@ -897,7 +897,7 @@ impl App {
         // An existing modal handles Escape before tactical input. World
         // Escape goes through the bindings below; Options opens B5 only if
         // selected, or as the native fallback.
-        if is_escape && Self::in_game_menu_owns_escape(state) {
+        if is_escape && Self::in_game_menu_owns_escape(&state.match_state.match_presentation) {
             return Self::route_in_game_menu_escape(state);
         }
         let unmodified = event.key_without_modifiers();
@@ -1413,7 +1413,7 @@ impl ApplicationHandler for App {
         let replay = state.match_state.match_diagnostics.is_replay_playback();
         let watching = !replay
             && state.frontend.screen == GameScreen::InGame
-            && crate::app::match_runtime::watching::active(state);
+            && crate::app::match_runtime::watching::active(&state.match_state);
         if replay || watching {
             match &event {
                 WindowEvent::CloseRequested if replay => {
@@ -1813,7 +1813,8 @@ impl ApplicationHandler for App {
                 // Fully covered on the backends that report it. Windows does
                 // not; see the `Resized` arm above. A spawn test run's
                 // deliberately invisible window keeps running as if shown.
-                let invisible_spawn = Self::invisible_spawn_window(state);
+                let invisible_spawn =
+                    Self::invisible_spawn_window(&state.platform, &state.frontend);
                 Self::set_window_hidden(state, occluded && !invisible_spawn);
             }
             WindowEvent::CursorEntered { .. } => {
@@ -2038,7 +2039,13 @@ impl ApplicationHandler for App {
             let live_polls: &[Poll] = &[
                 crate::app::map_library::poll,
                 |state| crate::app::shell_wol::login_info::poll(&mut state.frontend),
-                crate::app::map_picture::poll,
+                |state| {
+                    crate::app::map_picture::poll(
+                        &state.platform,
+                        &mut state.frontend,
+                        &state.persistence,
+                    )
+                },
                 crate::app::mods::poll,
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 crate::app::updater::poll,
@@ -2164,7 +2171,7 @@ impl ApplicationHandler for App {
             if Self::next_online_render_frame(state).is_none() {
                 state.platform.frame_pacer.clear_render_continuation();
             }
-            if Self::invisible_spawn_window(state) {
+            if Self::invisible_spawn_window(&state.platform, &state.frontend) {
                 // An invisible window receives no RedrawRequested; drive the
                 // same frame directly, as the hidden capture drivers do. It
                 // stands for a visible window, so a still picture is probed.
@@ -2282,7 +2289,7 @@ impl ApplicationHandler for App {
         if let Some(state) = self.state.as_mut() {
             crate::app::match_runtime::sim_tick::flush_replay_log(state);
             crate::app::map_picture::stop_for_exit(&mut state.frontend.map_pictures);
-            crate::app::mods::left(state);
+            crate::app::mods::left(&mut state.frontend);
         }
         log::logger().flush();
         // A lost graphics device closed the game: say so once the replay is

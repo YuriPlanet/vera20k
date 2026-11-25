@@ -138,7 +138,7 @@ pub(super) fn request_service(
             end_room(state, service);
             service.auth_attempt = service.auth_attempt.wrapping_add(1);
             service.begin_logout(Instant::now());
-            crate::app::lan_service::close(state);
+            crate::app::lan_service::close(&state.frontend, &mut state.match_state);
         }
         WolServiceRequest::Chat { line, to } => chat(state, service, line, to, false),
         WolServiceRequest::Emote { text, to } => service.command(

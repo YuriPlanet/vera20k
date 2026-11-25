@@ -1903,7 +1903,8 @@ impl SkirmishCapture {
             };
             return Ok(self.phase == Phase::Starting
                 && state.frontend.screen == GameScreen::Loading
-                && crate::app::loading::pump::next_native_loading_frame(state) == Some(next));
+                && crate::app::loading::pump::next_native_loading_frame(&state.frontend)
+                    == Some(next));
         }
         if let Some(target) = self.slide_out_tick {
             return Ok(self.phase == Phase::SlideOut

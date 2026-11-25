@@ -1204,7 +1204,7 @@ pub(crate) fn return_after_match(state: &mut AppState) {
     if dialog.wol() {
         crate::app::shell_wol::reenter_after_match(state);
     } else {
-        crate::app::lan_service::restart_lobby_visit(state);
+        crate::app::lan_service::restart_lobby_visit(&mut state.frontend, &mut state.match_state);
         App::reopen_lan_room(state);
     }
 }
@@ -1278,7 +1278,7 @@ fn leave_setup(state: &mut AppState) -> SetupDialog {
     state.frontend.skirmish_preview_texture = None;
     state.frontend.skirmish_shell_state.choose_map_modal = None;
     if !dialog.wol() {
-        crate::app::lan_service::leave_setup(state);
+        crate::app::lan_service::leave_setup(&mut state.match_state);
     }
     state.match_state.session.return_to_network_lobby();
     dialog

@@ -1227,13 +1227,12 @@ fn prepare_country_loading_prefix(
 /// Admit a peer's loading milestone into the active immutable source roster.
 /// Transport is outside this owner; controlled service input uses this same seam.
 pub(crate) fn accept_network_loading_progress(
-    state: &mut AppState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    session: &crate::app::match_runtime::session::MatchSession,
     source_index: usize,
     percent: i32,
 ) -> bool {
-    let session = &state.match_state.session;
-    state
-        .frontend
+    frontend
         .loading_session
         .as_mut()
         .and_then(|loading| loading.native.as_mut())
@@ -1263,10 +1262,11 @@ pub(crate) fn accept_network_loading_progress_row(
 }
 
 /// True only for the actual active frozen loader, never an old retained world.
-pub(crate) fn network_loading_active(state: &AppState) -> bool {
-    matches!(state.frontend.screen, GameScreen::Loading)
-        && state
-            .frontend
+pub(crate) fn network_loading_active(
+    frontend: &crate::app::frontend::state::FrontendState,
+) -> bool {
+    matches!(frontend.screen, GameScreen::Loading)
+        && frontend
             .loading_session
             .as_ref()
             .is_some_and(|loading| matches!(loading.stage.startup(), LoadingStartup::Network(_)))
@@ -1275,7 +1275,7 @@ pub(crate) fn network_loading_active(state: &AppState) -> bool {
 /// UDP Departure or a definitive HTTPS start/channel/session rejection uses the
 /// same failed-load retirement, asset return and shell reentry as loader errors.
 pub(crate) fn cancel_network_loading(state: &mut AppState, text: &str) -> bool {
-    if !network_loading_active(state) {
+    if !network_loading_active(&state.frontend) {
         return false;
     }
     // No box: the lobby line below is this cancellation's message.
@@ -1338,14 +1338,18 @@ fn service_network_loading_boundary(
     {
         super::super::shell_wol::poll(state);
     }
-    if network_loading_active(state) {
+    if network_loading_active(&state.frontend) {
         super::super::lan_service::poll(
             state,
             crate::app::match_runtime::frame_pacer::wall_clock_ms(),
         );
     }
     if !matches!(state.frontend.screen, GameScreen::Loading) {
-        clear_loading_state(state);
+        clear_loading_state(
+            &mut state.renderer,
+            &mut state.frontend,
+            &mut state.process_assets,
+        );
         return None;
     }
     if state.frontend.shell_exit.is_some() {
@@ -1424,7 +1428,12 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
         .begin_fresh_scenario_load();
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
-    crate::app::chrono_screen::retire(state, wall_ms);
+    crate::app::chrono_screen::retire(
+        &state.frontend.screen,
+        &mut state.match_state,
+        &mut state.audio,
+        wall_ms,
+    );
     // The shell writes GameMode before the loading screen (`0x0052E10F`
     // Skirmish, `0x0052E175` campaign); the session owner is live from here.
     prepare_session_for_loading(&mut state.match_state.session, request.startup());
@@ -1468,7 +1477,7 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
         native.resolve_player_colors(&rules.color_schemes, &rules.house_color_ramps);
     }
     let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-    reset_loading_presentation(state);
+    reset_loading_presentation(&mut state.renderer, &mut state.frontend);
     // A finished match keeps its presentation at the shell, and its entity
     // atlases are its largest GPU allocations (SHP pages up to the texture
     // limit). Nothing draws them once loading begins and the install replaces
@@ -1604,9 +1613,9 @@ pub(crate) struct NetworkLoadingParticipantPresentation<'a> {
 }
 
 pub(crate) fn network_loading_presentation(
-    state: &AppState,
+    frontend: &crate::app::frontend::state::FrontendState,
 ) -> Option<NetworkLoadingPresentation<'_>> {
-    let session = state.frontend.loading_session.as_ref()?;
+    let session = frontend.loading_session.as_ref()?;
     if !matches!(session.stage.startup(), LoadingStartup::Network(_)) {
         return None;
     }
@@ -1630,9 +1639,10 @@ pub(crate) fn network_loading_presentation(
     })
 }
 
-pub(crate) fn loading_map_name(state: &AppState) -> Option<&str> {
-    state
-        .frontend
+pub(crate) fn loading_map_name(
+    frontend: &crate::app::frontend::state::FrontendState,
+) -> Option<&str> {
+    frontend
         .loading_session
         .as_ref()
         .map(|session| session.stage.startup().selected_map_file())
@@ -1641,10 +1651,9 @@ pub(crate) fn loading_map_name(state: &AppState) -> Option<&str> {
 /// Immutable selected campaign for loading diagnostics; the stage retains
 /// authority over its request through preparation and terminal disposition.
 pub(crate) fn loading_campaign_startup(
-    state: &AppState,
+    frontend: &crate::app::frontend::state::FrontendState,
 ) -> Option<&crate::app::match_bootstrap::PreparedCampaignStartup> {
-    state
-        .frontend
+    frontend
         .loading_session
         .as_ref()?
         .stage
@@ -1652,8 +1661,10 @@ pub(crate) fn loading_campaign_startup(
         .campaign()
 }
 
-pub(crate) fn loading_map_source(state: &AppState) -> Option<&crate::map::source::LoadedMapSource> {
-    match &state.frontend.loading_session.as_ref()?.stage {
+pub(crate) fn loading_map_source(
+    frontend: &crate::app::frontend::state::FrontendState,
+) -> Option<&crate::map::source::LoadedMapSource> {
+    match &frontend.loading_session.as_ref()?.stage {
         LoadingStage::Prepared(prepared) => Some(prepared.initial.map_source()),
         LoadingStage::ConstructingScenario(constructing) => Some(constructing.load.map_source()),
         LoadingStage::Selected(_) => None,
@@ -1663,17 +1674,21 @@ pub(crate) fn loading_map_source(state: &AppState) -> Option<&crate::map::source
     }
 }
 
-pub(crate) fn clear_loading_state(state: &mut AppState) {
-    retire_loading_attempt(
-        &mut state.frontend.loading_session,
-        &mut state.process_assets,
-    );
-    reset_loading_presentation(state);
+pub(crate) fn clear_loading_state(
+    renderer: &mut crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &mut crate::app::process_assets::ProcessAssets,
+) {
+    retire_loading_attempt(&mut frontend.loading_session, process_assets);
+    reset_loading_presentation(renderer, frontend);
 }
 
-fn reset_loading_presentation(state: &mut AppState) {
-    state.renderer.performance_overlay.clear_simulation_rate();
-    state.frontend.loading_progress = LoadingProgressState::standard_skirmish();
+fn reset_loading_presentation(
+    renderer: &mut crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+) {
+    renderer.performance_overlay.clear_simulation_rate();
+    frontend.loading_progress = LoadingProgressState::standard_skirmish();
 }
 
 fn retire_loading_attempt(
@@ -1706,16 +1721,17 @@ fn retire_failed_loading_attempt(
     policy
 }
 
-fn is_native_loading_session(state: &AppState) -> bool {
-    state
-        .frontend
+fn is_native_loading_session(frontend: &crate::app::frontend::state::FrontendState) -> bool {
+    frontend
         .loading_session
         .as_ref()
         .is_some_and(|session| session.native.is_some())
 }
 
-fn loading_failure_policy(state: &AppState) -> LoadingFailurePolicy {
-    state.frontend.loading_session.as_ref().map_or(
+fn loading_failure_policy(
+    frontend: &crate::app::frontend::state::FrontendState,
+) -> LoadingFailurePolicy {
+    frontend.loading_session.as_ref().map_or(
         LoadingFailurePolicy::InstallGenericFallback,
         LoadingSession::failure_policy,
     )
@@ -2063,7 +2079,7 @@ fn pump_loading(state: &mut AppState, show_progress: bool) -> anyhow::Result<Loa
             // VERA adaptation: a returning process has nobody to wait for, the
             // others left their own loading long ago and report nothing more.
             if matches!(result.scenario.startup, LoadingStartup::Network(_))
-                && !crate::app::lan_service::online_restore(state)
+                && !crate::app::lan_service::online_restore(&state.match_state)
             {
                 let native = native.expect("network load retains its source progress rows");
                 let now = (crate::app::match_runtime::frame_pacer::wall_clock_ms() >> 4) as i32;
@@ -2302,20 +2318,23 @@ fn pump_presentation(
     })
 }
 
-fn ensure_job_asset_manager(state: &mut AppState) -> anyhow::Result<()> {
-    let Some(mut session) = state.frontend.loading_session.take() else {
+fn ensure_job_asset_manager(
+    platform: &crate::app::PlatformState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &mut crate::app::process_assets::ProcessAssets,
+) -> anyhow::Result<()> {
+    let Some(mut session) = frontend.loading_session.take() else {
         return Ok(());
     };
     let result = ensure_session_job_asset_manager(
-        &mut state.process_assets,
+        process_assets,
         &mut session,
-        state
-            .platform
+        platform
             .game_config
             .as_ref()
             .map(|c| c.paths.ra2_dir.clone()),
     );
-    state.frontend.loading_session = Some(session);
+    frontend.loading_session = Some(session);
     result
 }
 
@@ -2632,9 +2651,14 @@ fn prepare_loading_session(
 /// use `RandMap.img` pixels but still require regenerated header data and the
 /// accepted staged starts. The loader's raw 8 is intentionally swallowed here
 /// and visibly handed off only after the first frame has been presented.
-fn prepare_scenario_initial_before_first_frame(state: &mut AppState) -> anyhow::Result<()> {
-    let should_prepare = state
-        .frontend
+fn prepare_scenario_initial_before_first_frame(
+    platform: &crate::app::PlatformState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    sim_runtime: &mut crate::app::match_runtime::sim_host::SimHost,
+    process_assets: &mut crate::app::process_assets::ProcessAssets,
+    audio: &mut crate::app::audio_runtime::AppAudioRuntime,
+) -> anyhow::Result<()> {
+    let should_prepare = frontend
         .loading_session
         .as_ref()
         .and_then(|session| session.native.as_ref())
@@ -2643,8 +2667,7 @@ fn prepare_scenario_initial_before_first_frame(state: &mut AppState) -> anyhow::
                 .progress_cadence
                 .prepares_scenario_before_first_frame()
         })
-        && state
-            .frontend
+        && frontend
             .loading_session
             .as_ref()
             .is_some_and(|session| matches!(session.stage, LoadingStage::Selected(_)));
@@ -2652,22 +2675,19 @@ fn prepare_scenario_initial_before_first_frame(state: &mut AppState) -> anyhow::
         return Ok(());
     }
 
-    let Some(session) = state.frontend.loading_session.take() else {
+    let Some(session) = frontend.loading_session.take() else {
         return Ok(());
     };
-    state.frontend.loading_session = Some(prepare_loading_session(
-        &mut state.process_assets,
-        &mut state.audio,
-        &mut state.frontend.random_map_retention,
-        state
-            .match_state
-            .sim_runtime
+    frontend.loading_session = Some(prepare_loading_session(
+        process_assets,
+        audio,
+        &mut frontend.random_map_retention,
+        sim_runtime
             .write_sim(SimWrite::Lifecycle)
             .map(|runtime| &mut runtime.simulation),
         session,
         true,
-        state
-            .platform
+        platform
             .game_config
             .as_ref()
             .map(|c| c.paths.ra2_dir.clone()),
@@ -2882,7 +2902,7 @@ pub(crate) fn theater_ramp_changed_values(runtime_color_scheme_count: usize) -> 
 }
 
 pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Result<()> {
-    if !is_native_loading_session(state) {
+    if !is_native_loading_session(&state.frontend) {
         return Ok(());
     }
     if state
@@ -2901,7 +2921,11 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         .and_then(loading_asset_manager)
         .is_none()
     {
-        ensure_job_asset_manager(state)?;
+        ensure_job_asset_manager(
+            &state.platform,
+            &mut state.frontend,
+            &mut state.process_assets,
+        )?;
     }
     let loading_archives_ready = state
         .frontend
@@ -2917,7 +2941,13 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
             "native loading archives LOADMD.MIX and LOAD.MIX are unavailable"
         ));
     }
-    prepare_scenario_initial_before_first_frame(state)?;
+    prepare_scenario_initial_before_first_frame(
+        &state.platform,
+        &mut state.frontend,
+        &mut state.match_state.sim_runtime,
+        &mut state.process_assets,
+        &mut state.audio,
+    )?;
     if state
         .frontend
         .loading_session
@@ -3011,7 +3041,7 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         log::info!("Native campaign loading atlas ready");
         return Ok(());
     }
-    let variant = selected_loading_art_variant(state);
+    let variant = selected_loading_art_variant(&state.frontend);
     ensure_loading_composition_snapshot(state);
     // DrawLoading553311..5533C0 asks the current mode's Cooperative slot,
     // then selects by ScenarioName rather than the active progress record.
@@ -3209,7 +3239,7 @@ pub(crate) fn render_loading_screen(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> LoadingRenderResult {
-    let failure_policy = loading_failure_policy(state);
+    let failure_policy = loading_failure_policy(&state.frontend);
     match encode_loading_screen(state, encoder, destination) {
         Ok(result) => result,
         Err(err) => {
@@ -3224,7 +3254,7 @@ fn encode_loading_screen(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<LoadingRenderResult> {
-    if !is_native_loading_session(state) {
+    if !is_native_loading_session(&state.frontend) {
         return Ok(LoadingRenderResult::GenericFallback);
     }
     if state
@@ -3284,7 +3314,7 @@ pub(crate) fn after_loading_frame_presented(state: &mut AppState) -> anyhow::Res
         state.platform.window.request_redraw();
         return Ok(());
     }
-    loading_screen_presented(state);
+    loading_screen_presented(&mut state.frontend);
     advance_loading(state, true)
 }
 
@@ -3292,7 +3322,7 @@ pub(crate) fn after_loading_frame_presented(state: &mut AppState) -> anyhow::Res
 /// while the window is covered. Only a presented frame consumes its visual
 /// first-frame state, so uncovering a slow load paints it normally.
 pub(crate) fn advance_hidden_network_loading(state: &mut AppState) {
-    if !network_loading_active(state) {
+    if !network_loading_active(&state.frontend) {
         return;
     }
     if let Err(error) =
@@ -3303,7 +3333,7 @@ pub(crate) fn advance_hidden_network_loading(state: &mut AppState) {
 }
 
 fn advance_loading(state: &mut AppState, show_progress: bool) -> anyhow::Result<()> {
-    let policy = loading_failure_policy(state);
+    let policy = loading_failure_policy(&state.frontend);
     match pump_loading(state, show_progress)? {
         LoadingPump::Pending => {
             if show_progress {
@@ -3413,7 +3443,7 @@ fn fail_loading_with(
         &mut state.process_assets,
         policy,
     );
-    reset_loading_presentation(state);
+    reset_loading_presentation(&mut state.renderer, &mut state.frontend);
     if state.frontend.external_launch {
         state.frontend.external_launch_error = Some(campaign_notice.map_or_else(
             || format!("CnCNet map loading failed: {err:#}"),
@@ -3458,8 +3488,10 @@ pub(crate) enum NextLoadingFrame {
     Later,
 }
 
-pub(crate) fn next_native_loading_frame(state: &AppState) -> Option<NextLoadingFrame> {
-    let session = state.frontend.loading_session.as_ref()?;
+pub(crate) fn next_native_loading_frame(
+    frontend: &crate::app::frontend::state::FrontendState,
+) -> Option<NextLoadingFrame> {
+    let session = frontend.loading_session.as_ref()?;
     session.native.as_ref()?;
     Some(session.next_frame)
 }
@@ -3535,21 +3567,22 @@ pub(crate) fn present_game_mode_blank(state: &AppState) {
     }
 }
 
-fn loading_screen_presented(state: &mut AppState) {
-    let Some(session) = state.frontend.loading_session.as_mut() else {
-        state.frontend.loading_progress.advance_progress(3);
+fn loading_screen_presented(frontend: &mut crate::app::frontend::state::FrontendState) {
+    let Some(session) = frontend.loading_session.as_mut() else {
+        frontend.loading_progress.advance_progress(3);
         return;
     };
     session.next_frame = NextLoadingFrame::Later;
     log::debug!(target: "vera20k::loading_attempt", "frame_presented native_progress={:?}", session.native.as_ref().map(|n| n.progress.current_value()));
 }
 
-fn selected_loading_art_variant(state: &AppState) -> Option<LoadingArtVariant> {
-    if !matches!(state.frontend.screen, GameScreen::Loading) {
+fn selected_loading_art_variant(
+    frontend: &crate::app::frontend::state::FrontendState,
+) -> Option<LoadingArtVariant> {
+    if !matches!(frontend.screen, GameScreen::Loading) {
         return None;
     }
-    state
-        .frontend
+    frontend
         .loading_session
         .as_ref()
         .and_then(|session| session.native.as_ref())
