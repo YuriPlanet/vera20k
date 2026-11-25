@@ -319,7 +319,7 @@ mod tests {
             tick(&mut sim, &rules);
         }
         assert_ne!(sim.anim(anim).unwrap().runtime().current_frame, frame);
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "", 0);
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .unwrap()
@@ -408,7 +408,7 @@ mod tests {
             sim.interner.resolve(sim.anim(damaged).unwrap().type_id()),
             "MD"
         );
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "", 0);
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .unwrap()

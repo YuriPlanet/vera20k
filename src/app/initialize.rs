@@ -382,7 +382,23 @@ impl App {
             });
         let mut game_config = startup_asset_or_error(game_config, &mut main_menu_shell_error);
         if let Some(config) = &game_config {
-            crate::map::source::set_downloaded_maps_dir(config.paths.downloaded_maps_dir());
+            let maps_dir = config.paths.downloaded_maps_dir();
+            #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+            if let Err(error) = crate::map::installed::install_desktop_map(&maps_dir) {
+                log::warn!(
+                    "Could not install {} in {}: {error}",
+                    crate::map::installed::ARCTIC_MAP,
+                    maps_dir.display()
+                );
+            }
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            if crate::app::app_bundle::package_path().is_some()
+                && let Err(error) =
+                    crate::assets::ice_pack::install_editor_files(config.paths.settings_dir())
+            {
+                log::warn!("Could not copy the installed terrain files for the map editor: {error}");
+            }
+            crate::map::source::set_downloaded_maps_dir(maps_dir);
             crate::render::locomotor_visual::set_high_terrain_building_lift(
                 config.graphics.high_terrain_building_lift,
             );
@@ -421,6 +437,15 @@ impl App {
         if ares_setting != crate::util::ares_launch::AresSetting::Auto {
             log::info!("Ares setting for this start: {}", ares_setting.ini_value());
         }
+        // The Kratos setting holds for the whole launch too; the rules the
+        // manager selects carry it into every game (`RuleSet::kratos`).
+        let kratos_setting = options_profile.kratos;
+        if kratos_setting != crate::util::kratos_launch::KratosSetting::Auto {
+            log::info!(
+                "Kratos setting for this start: {}",
+                kratos_setting.ini_value()
+            );
+        }
         // Before the first CSF load below, which layers this language over it.
         crate::i18n::init(
             game_config
@@ -444,7 +469,8 @@ impl App {
             .as_ref()
             .map(|config| config.ini.clone())
             .unwrap_or_default();
-        let (resources, ares_setting) = mods.select_resources(&base_ini, ares_setting);
+        let (resources, ares_setting, kratos_setting) =
+            mods.select_resources(&base_ini, ares_setting, kratos_setting);
         // VERARULES.INI is no longer read: a file that still holds settings
         // is named once the main menu is up, in the language just chosen.
         if capture_dimensions.is_none()
@@ -664,6 +690,7 @@ impl App {
                 quickplay_allowed,
                 resources,
                 ares_setting,
+                kratos_setting,
             )
         };
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
@@ -693,6 +720,7 @@ impl App {
         quickplay_allowed: bool,
         resources: crate::util::mod_definition::ResourceConfig,
         ares_setting: crate::util::ares_launch::AresSetting,
+        kratos_setting: crate::util::kratos_launch::KratosSetting,
     ) -> Result<InitializationStep> {
         let batch_renderer: BatchRenderer = BatchRenderer::new(&gpu);
         let status_screen_fill = batch_renderer.create_texture(&gpu, &[255; 4], 1, 1);
@@ -742,7 +770,8 @@ impl App {
             )
         });
         // This is the game the launch plays (`util::ares_launch`).
-        if let Some(assets) = &startup_asset_manager {
+        if let Some(assets) = &mut startup_asset_manager {
+            assets.set_kratos_setting(kratos_setting);
             assets.open_for_play();
         }
         // Native process startup seeds Scenario before the MPModes loader. The
@@ -855,15 +884,15 @@ impl App {
             // Ordinary interactive startup runs with the frame above on
             // screen: the presented swapchain frame stays composited while this
             // thread blocks.
-            let mut process_assets =
-                crate::app::process_assets::ProcessAssets::new(
-                    startup_options.media_archive_mode,
-                    startup_audio.load_audio_indices,
-                )
-                .with_resources(resources)
-                .with_mod_name(mods.active.as_ref().map(|active| active.folder.clone()))
-                .with_personal_rules(personal_rules)
-                .with_ares_setting(ares_setting);
+            let mut process_assets = crate::app::process_assets::ProcessAssets::new(
+                startup_options.media_archive_mode,
+                startup_audio.load_audio_indices,
+            )
+            .with_resources(resources)
+            .with_mod_name(mods.active.as_ref().map(|active| active.folder.clone()))
+            .with_personal_rules(personal_rules)
+            .with_ares_setting(ares_setting)
+            .with_kratos_setting(kratos_setting);
             process_assets.csf = startup_csf;
             let (startup_rules, startup_rules_projection) = startup_asset_manager
                 .as_ref()
@@ -1153,7 +1182,7 @@ impl App {
                     power_bar_anim: crate::ui::sidebar::PowerBarAnimState::new(),
                     sidebar_gadget_state: crate::ui::sidebar::gadget_flash::SidebarGadgetState::new(
                     ),
-                    in_game_gadgets: crate::app::input::gadget_input::InGameGadgets::new(),
+                    in_game_chrome: Default::default(),
                     sidebar_projection: Default::default(),
                     active_sidebar_tab: SidebarTab::default_active_tab(),
                     sidebar_layout_spec,
@@ -1162,6 +1191,11 @@ impl App {
                     player_layout_text: Vec::new(),
                     layout_edit: None,
                     added_parts: Default::default(),
+                    stock_parts: Default::default(),
+                    added_part_huds: Default::default(),
+                    chrome_paint: Default::default(),
+                    sidebar_huds: Default::default(),
+                    minimap_hud: Default::default(),
                     added_grid_scroll: Vec::new(),
                     tooltips: startup_tooltips,
                     tooltip_epoch: Instant::now(),
@@ -1205,6 +1239,12 @@ impl App {
                     super_timer_blinks: Default::default(),
                     super_timer_next_flip_ms: None,
                     super_timer_dock: Default::default(),
+                    super_timer_frame: Default::default(),
+                    super_timer_hud: crate::app::presentation::text_hud::TextHud::named("Timers"),
+                    message_hud: crate::app::presentation::text_hud::TextHud::named("Messages"),
+                    tooltip_hud: Default::default(),
+                    layout_edit_hud: Default::default(),
+                    outcome_banner_huds: Default::default(),
                     minimap: None,
                     radar_anim: None,
                     radar_movies: Default::default(),
@@ -1272,6 +1312,7 @@ impl App {
                     sidebar_chrome: None,
                     outcome_banner_side_art: None,
                     ares_status_texts: None,
+                    status_texts: Default::default(),
                     end_game_banner: None,
                     outcome_banner_presentation: Default::default(),
                     software_cursor: startup_software_cursor,
@@ -1364,6 +1405,8 @@ impl App {
                 shell_status_line: crate::ui::shell::static_reveal::PresentedKind1Static::new(
                     crate::ui::shell::static_reveal::STATUS_LINE_KIND1,
                 ),
+                panel_statics: Default::default(),
+                loading_box: Default::default(),
                 shell_exit: None,
                 quit_cascade: None,
                 startup_splash,
@@ -1474,7 +1517,7 @@ impl App {
                 Self::sync_zoom_pass(&mut state);
                 Self::sync_present_mode(&mut state);
                 #[cfg(feature = "telemetry-dashboard")]
-                attach_dashboard(&mut state);
+                attach_dashboard(&mut state.diag);
 
                 // The developer shortcut carries an authored-map sandbox through
                 // the unverified legacy Battle loader. It has no artificial AI
@@ -1497,7 +1540,11 @@ impl App {
                     crate::app::loading::pump::begin_loading(&mut state, request);
                 }
 
-                crate::app::mods::finish_start(&mut state, external_launch);
+                crate::app::mods::finish_start(
+                    &mut state.frontend,
+                    &state.process_assets,
+                    external_launch,
+                );
                 Ok(InitializationStep::Ready(Box::new(state), Vec::new()))
             })
         })
@@ -1945,8 +1992,8 @@ mod tests {
 
 /// The credential is printed only to the local terminal, outside captured logs.
 #[cfg(feature = "telemetry-dashboard")]
-fn attach_dashboard(state: &mut crate::app::AppState) {
-    state.diag.telemetry_server = match crate::app::telemetry_server::start_from_env() {
+fn attach_dashboard(diag: &mut crate::app::diagnostics::state::DiagnosticsState) {
+    diag.telemetry_server = match crate::app::telemetry_server::start_from_env() {
         Some(Ok(server)) => {
             crate::util::logging::enable_telemetry_capture();
             #[cfg(feature = "debug-tools")]

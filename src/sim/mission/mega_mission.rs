@@ -62,6 +62,7 @@ impl MegaMission {
         target: Option<TargetKind>,
         have_attack_move_target: bool,
     ) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         Self {
             attack_move,
             destination,
@@ -199,6 +200,9 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return mission;
         };
+        // MegaDestination and MegaTarget are names the pointer-expiry index
+        // reads.
+        let _ = entity.note_names();
         let mega = &mut entity.seldom.mega_mission;
         mega.have_attack_move_target = false;
         mega.attack_move = true;
@@ -307,12 +311,9 @@ impl Simulation {
             return;
         };
         if drop_tarcom {
-            self.substrate
-                .entities
-                .get_mut(id)
-                .unwrap()
-                .attack_target
-                .set(None);
+            let entity = self.substrate.entities.get_mut(id).unwrap();
+            let note = entity.note_names();
+            entity.attack_target.set(None, note);
         }
         let found = crate::sim::world::retaliate_and_scan(
             self,
@@ -327,7 +328,8 @@ impl Simulation {
                 && let Some(entity) = self.substrate.entities.get_mut(id)
             {
                 // `0x004DF4A5`.
-                entity.attack_target.set(target);
+                let note = entity.note_names();
+                entity.attack_target.set(target, note);
             }
             return;
         }

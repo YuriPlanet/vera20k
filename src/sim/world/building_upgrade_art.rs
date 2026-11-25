@@ -8,7 +8,7 @@ impl Simulation {
     /// The retired match stops owning live Type names before the process
     /// Rules owner's pre-reset read. Full_Init then deletes the old Types.
     pub fn retire_building_upgrade_art_names(&mut self) -> Vec<(String, u8, String)> {
-        std::mem::take(&mut self.building_upgrade_art_names)
+        std::mem::take(&mut *self.building_upgrade_art_names)
             .into_entries()
             .map(|((type_id, slot), image)| {
                 (self.interner.resolve(type_id).to_owned(), slot, image)

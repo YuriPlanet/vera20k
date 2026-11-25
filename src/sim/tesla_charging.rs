@@ -87,7 +87,7 @@ impl BuildingCharge {
 
     /// Building::MoveOverpowererToBack452820. A repeat hit refreshes order
     /// without counting the same infantry twice.
-    fn refresh(&mut self, id: u64) {
+    fn refresh(&mut self, id: u64, _: crate::sim::game_entity::NameNote) {
         self.pointer_expired(id);
         self.chargers.push(id);
     }
@@ -292,11 +292,11 @@ impl crate::sim::world::ObjectSubstrate {
         }) else {
             return;
         };
-        self.entities
+        let building = self
+            .entities
             .get_mut(target)
-            .expect("the admitted building remains present")
-            .building
-            .tesla_charge
-            .refresh(source);
+            .expect("the admitted building remains present");
+        let note = building.note_names();
+        building.building.tesla_charge.refresh(source, note);
     }
 }

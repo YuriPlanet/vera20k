@@ -259,7 +259,9 @@ fn lay_spiral(
             point,
             particle_type,
             sim,
-            |sim, x, y| super::spark_world::constructor_ground_height(sim, x, y),
+            |sim, x, y| {
+                super::spark_world::constructor_ground_height(sim.resolved_terrain.as_ref(), x, y)
+            },
         )?;
 
         // 62F658..62F7AF: the drift direction is the ring vector plus three

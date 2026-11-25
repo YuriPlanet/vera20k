@@ -836,8 +836,7 @@ pub(super) fn ground_strike(
         else {
             continue;
         };
-        let name = sim.interner.resolve(debris).to_string();
-        let _ = super::spawn_super_anim(sim, rules, &name, strike);
+        let _ = super::spawn_super_anim(sim, rules, debris, strike);
     }
     bridge_changed
 }

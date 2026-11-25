@@ -202,7 +202,7 @@ fn skipped_network_dispatch_commits_without_consuming_or_retiring_dolist() {
         wait_visits: 0,
         skip: true,
     };
-    let before = sim.pending_commands.clone();
+    let before = (*sim.pending_commands).clone();
     let output = sim
         .advance_app_frame(
             &[],
@@ -215,7 +215,7 @@ fn skipped_network_dispatch_commits_without_consuming_or_retiring_dolist() {
     assert!(output.tick.frame_committed);
     assert_eq!(output.tick.executed_commands, 0);
     assert_eq!(sim.session.game_options().game_speed, 3);
-    assert_eq!(sim.pending_commands, before);
+    assert_eq!(*sim.pending_commands, before);
     assert_eq!(boundary.checksums, 1);
 }
 
@@ -240,7 +240,7 @@ fn fatal_receive_failure_suspends_before_dispatch_and_acknowledges_only_frame_ta
         }
     }
     let mut sim = world();
-    let before = sim.pending_commands.clone();
+    let before = (*sim.pending_commands).clone();
     let output = sim
         .advance_app_frame(
             &[],
@@ -252,7 +252,7 @@ fn fatal_receive_failure_suspends_before_dispatch_and_acknowledges_only_frame_ta
         .unwrap();
     assert!(!output.tick.frame_committed);
     assert!(!output.network_waiting);
-    assert_eq!(sim.pending_commands, before);
+    assert_eq!(*sim.pending_commands, before);
     assert_eq!(
         sim.pending_network_interruption(),
         Some(crate::sim::world::NetworkInterruption::QueueFull)
@@ -265,7 +265,7 @@ fn fatal_receive_failure_suspends_before_dispatch_and_acknowledges_only_frame_ta
     assert!(output.tick.frame_committed);
     assert_eq!(sim.session.binary_frame(), 1);
     assert_eq!(sim.session.game_options().game_speed, 3);
-    assert_eq!(sim.pending_commands, before);
+    assert_eq!(*sim.pending_commands, before);
     assert!(sim.pending_network_interruption().is_none());
     assert!(
         sim.resume_after_network_failure(RuleSet::empty_for_test(), &mut FrameEffects::empty())

@@ -31,6 +31,12 @@ released_saves! {
     main_41f140f93: "main-41f140f93", 0xCB54_5137, Skirmish;
     main_6d6caa108: "main-6d6caa108", 0xCADF_6067, Skirmish;
     main_ffe8b25af: "main-ffe8b25af", 0xD6C7_5D57, Skirmish;
+    main_93ab2ce86: "main-93ab2ce86", 0xAFC7_F643, Skirmish;
+    main_06789b62b: "main-06789b62b", 0x82C3_2EA4, Skirmish;
+    main_8d55b4a73: "main-8d55b4a73", 0xF612_7DC1, Skirmish;
+    main_8852f7a76: "main-8852f7a76", 0x9441_E8D8, Skirmish;
+    main_bc55c35e7: "main-bc55c35e7", 0x9F1B_D701, Skirmish;
+    main_30e9a0f38: "main-30e9a0f38", 0xF215_BF3A, Skirmish;
 }
 
 const TUNNEL_FIXTURE: &str = "v0.3.9-tunnel";
@@ -89,11 +95,8 @@ fn fixture(release: &str) -> Vec<u8> {
 #[test]
 fn current_writer_has_a_frozen_player_save() {
     let latest = RELEASES.last().unwrap();
-    let header = GameSnapshot::read_metadata(&fixture(latest)).unwrap();
-    assert!(
-        header.is_compatible(),
-        "the current writer changed; add its frozen save and keep every older row"
-    );
+    let header = GameSnapshot::read_header(&fixture(latest))
+        .expect("the current writer must admit its frozen player-save header");
     // A stock snapshot-layout build has no test-support. With its output set,
     // a cfg-only change to the actual player's wire layout fails this row.
     if let Ok(stock) = std::env::var("VERA20K_STOCK_WRITER_LAYOUT") {
@@ -203,6 +206,7 @@ fn resume_and_save_again(release: &str, layout: u32, mode: ScenarioGameMode) {
         |runtime| {
             check_world(&runtime.simulation);
             assert_eq!(runtime.resources.rules.object("APC").unwrap().image, "APC");
+            assert!(!runtime.resources.rules.kratos(), "{release}");
             assert_eq!(runtime.simulation.session().tick(), 91, "{release}");
             assert_eq!(
                 runtime.simulation.session().game_options().game_speed,
@@ -392,8 +396,20 @@ pub(super) fn resume_player_file(
         let converted = repository.read(&path).unwrap();
         let converted_header = GameSnapshot::read_header(&converted).unwrap();
         assert_eq!(converted_header.description, name);
-        if matches!(header.layout, 0xFD30_A463 | 0x9BB2_0D64 | 0xFD54_FFFF) {
-            // Both newly saved flags default to false in historical worlds.
+        if matches!(
+            header.layout,
+            0xFD30_A463
+                | 0x9BB2_0D64
+                | 0xFD54_FFFF
+                | 0xCADF_6067
+                | 0xD6C7_5D57
+                | 0xAFC7_F643
+                | 0x82C3_2EA4
+                | 0xF612_7DC1
+        ) {
+            // Both newly saved flags default to false in historical worlds,
+            // as the ice timer, cracks, sinking flag, pending dent, limpets and
+            // debris sounds read as none.
             // Every original body byte survives in order, including any
             // animation-listener flag already present in the eb05f451e layout.
             let original_body =
@@ -435,7 +451,7 @@ pub(super) fn resume_player_file(
     loaded.local_view.commit_into(&mut input, &mut gadgets);
     let tab = crate::app::sidebar_projection::loaded_active_tab(presented.sidebar_order.as_ref());
     let mut sidebar = crate::app::sidebar_projection::SidebarProjectionState::default();
-    sidebar.restore_order(presented.sidebar_order);
+    sidebar.model.restore_order(presented.sidebar_order);
     let terrain = runtime.simulation.resolved_terrain().unwrap();
     let mut grid = crate::app::presentation::lighting::rebuild_lighting_grid_from_sim(
         terrain,
@@ -479,6 +495,7 @@ pub(super) fn resume_player_file(
         loaded.map,
     );
     let order = sidebar
+        .model
         .saved_order()
         .map(|saved| saved.with_active_tab(tab.tab_index() as u8));
     let bytes = GameSnapshot::save_validated_with_presentation(

@@ -72,7 +72,28 @@ impl de::Error for Error {
 }
 
 pub fn serialize<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, Error> {
-    let mut serializer = Serializer { output: Vec::new() };
+    let mut serializer = Serializer {
+        output: Vec::new(),
+        absent_fields: &[],
+        structs: Vec::new(),
+    };
+    value.serialize(&mut serializer)?;
+    Ok(serializer.output)
+}
+
+/// Encode `value` as the writer of `layout` did: without its absent fields.
+/// Variant indices are written as they are, so a value must not hold
+/// `layout`'s absent variant. Tests use it for an old save of a current world.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn serialize_previous<T: Serialize + ?Sized>(
+    value: &T,
+    layout: &PreviousLayout,
+) -> Result<Vec<u8>, Error> {
+    let mut serializer = Serializer {
+        output: Vec::new(),
+        absent_fields: layout.absent_fields,
+        structs: Vec::new(),
+    };
     value.serialize(&mut serializer)?;
     Ok(serializer.output)
 }
@@ -101,10 +122,22 @@ pub(crate) fn deserialize_with_remainder<'de, T: serde::Deserialize<'de>>(
 
 /// Struct fields added since a particular player-save writer, and an enum
 /// variant that writer could not emit. An absent field reads as all-zero
-/// bytes: false, None, 0, an empty sequence or the first variant.
+/// bytes: false, None, 0, an empty sequence or the first variant. A struct
+/// may be named in more than one entry, one per change that added fields.
 pub(crate) struct PreviousLayout {
     pub absent_fields: &'static [(&'static str, &'static [&'static str])],
     pub absent_variant: Option<(&'static str, &'static str)>,
+}
+
+/// Whether some entry of `absent_fields` names struct `owner`'s `field`.
+fn lacks(
+    absent_fields: &[(&'static str, &'static [&'static str])],
+    owner: &str,
+    field: &str,
+) -> bool {
+    absent_fields
+        .iter()
+        .any(|&(name, fields)| name == owner && fields.contains(&field))
 }
 
 /// Read the old layout and record each missing field's wire offset and
@@ -129,6 +162,11 @@ pub(crate) fn deserialize_previous<'de, T: serde::Deserialize<'de>>(
 
 struct Serializer {
     output: Vec<u8>,
+    /// Fields [`serialize_previous`] leaves out; empty for every save.
+    absent_fields: &'static [(&'static str, &'static [&'static str])],
+    /// The structs being written, innermost last, kept only while
+    /// `absent_fields` names any.
+    structs: Vec<&'static str>,
 }
 
 impl Serializer {
@@ -140,6 +178,23 @@ impl Serializer {
 
     fn write_variant(&mut self, index: u32) {
         self.output.extend_from_slice(&index.to_le_bytes());
+    }
+
+    fn enter_struct(&mut self, name: &'static str) {
+        if !self.absent_fields.is_empty() {
+            self.structs.push(name);
+        }
+    }
+
+    fn leave_struct(&mut self) {
+        self.structs.pop();
+    }
+
+    /// Whether the innermost struct's `field` is one the old writer lacked.
+    fn absent(&self, field: &'static str) -> bool {
+        self.structs
+            .last()
+            .is_some_and(|name| lacks(self.absent_fields, name, field))
     }
 }
 
@@ -267,18 +322,20 @@ impl ser::Serializer for &mut Serializer {
         Ok(self)
     }
 
-    fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<Self, Error> {
+    fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self, Error> {
+        self.enter_struct(name);
         Ok(self)
     }
 
     fn serialize_struct_variant(
         self,
-        _name: &'static str,
+        name: &'static str,
         index: u32,
         _variant: &'static str,
         _len: usize,
     ) -> Result<Self, Error> {
         self.write_variant(index);
+        self.enter_struct(name);
         Ok(self)
     }
 
@@ -362,13 +419,17 @@ impl ser::SerializeStruct for &mut Serializer {
 
     fn serialize_field<T: Serialize + ?Sized>(
         &mut self,
-        _key: &'static str,
+        key: &'static str,
         value: &T,
     ) -> Result<(), Error> {
+        if self.absent(key) {
+            return Ok(());
+        }
         value.serialize(&mut **self)
     }
 
     fn end(self) -> Result<(), Error> {
+        self.leave_struct();
         Ok(())
     }
 }
@@ -386,6 +447,7 @@ impl ser::SerializeStructVariant for &mut Serializer {
     }
 
     fn end(self) -> Result<(), Error> {
+        self.leave_struct();
         Ok(())
     }
 }
@@ -569,15 +631,18 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de, '_> {
         visitor: V,
     ) -> Result<V::Value, Error> {
         if let Some(previous) = &self.previous
-            && let Some(&(_, missing)) = previous.layout.absent_fields.iter().find(|p| p.0 == name)
+            && previous.layout.absent_fields.iter().any(|p| p.0 == name)
         {
-            if let Some(field) = missing.iter().find(|field| !fields.contains(field)) {
+            let mut missing = previous.layout.absent_fields.iter().filter(|p| p.0 == name);
+            if let Some(field) =
+                missing.find_map(|p| p.1.iter().find(|field| !fields.contains(field)))
+            {
                 return Err(Error::Custom(format!("missing {name}.{field} in reader")));
             }
             return visitor.visit_seq(HistoricalFields {
                 de: self,
+                name,
                 fields: fields.iter(),
-                missing,
             });
         }
         self.deserialize_tuple(fields.len(), visitor)
@@ -614,8 +679,8 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de, '_> {
 /// consuming the following fields' bytes from the historical record.
 struct HistoricalFields<'a, 'de, 'layout> {
     de: &'a mut Deserializer<'de, 'layout>,
+    name: &'static str,
     fields: std::slice::Iter<'static, &'static str>,
-    missing: &'static [&'static str],
 }
 
 impl<'de> de::SeqAccess<'de> for HistoricalFields<'_, 'de, '_> {
@@ -628,10 +693,12 @@ impl<'de> de::SeqAccess<'de> for HistoricalFields<'_, 'de, '_> {
         let Some(&field) = self.fields.next() else {
             return Ok(None);
         };
-        if self.missing.contains(&field)
-            && let Some(previous) = &mut self.de.previous
+        if let Some(previous) = &mut self.de.previous
+            && lacks(previous.layout.absent_fields, self.name, field)
         {
-            const ZEROS: [u8; 16] = [0; 16];
+            // The widest absent field is a table of four three-component i32
+            // firing offsets. Each field is decoded independently.
+            const ZEROS: [u8; 48] = [0; 48];
             let mut zeros = Deserializer {
                 input: &ZEROS,
                 previous: None,

@@ -170,6 +170,9 @@ pub(super) struct WarheadAnimReadState {
     /// `DebrisTypes=` (+18C, `0x0075DAF5`): ReadString128, then each `strtok`
     /// token's non-null VoxelAnimType replaces the list.
     pub(super) debris_types: Vec<String>,
+    /// Firestorm's web keys (`WarheadWeb::read_pass`); `None` until a pass
+    /// gives them other values than the constructor's.
+    pub(super) web: Option<crate::rules::warhead_type::WarheadWeb>,
 }
 
 /// Installed Ares TechnoTypeExt ctor1003CB1D..1003CB41: empty Country
@@ -783,10 +786,19 @@ pub(crate) struct AnimTypeReferences {
     /// constructor -1): `StopSound=` read the same way, without a fallback
     /// (`0x004283C2..0x00428415`).
     pub(super) stop_sound: Option<String>,
+    /// Tiberian Sun's `BounceSound=` and `ExpireSound=`, which gamemd no
+    /// longer reads: Firestorm 2.0's AnimTypeClass::Read_INI reads them after
+    /// `StartSound=` the way StopSound= is read here (`0x00419181..
+    /// 0x00419216`, AnimType +180/+184, constructor -1). See
+    /// docs/ts-anim-sounds.md.
+    #[serde(default)]
+    pub(super) bounce_sound: Option<String>,
+    #[serde(default)]
+    pub(super) expire_sound: Option<String>,
 }
 
-// A stock-way read never sets `weapon`, so a stock game's hash folds the
-// stock references alone, as before.
+// A stock-way read never sets `weapon`, and no retail ART sets the Tiberian
+// Sun sounds, so a stock game's hash folds the stock references alone.
 impl Hash for AnimTypeReferences {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.next.hash(state);
@@ -801,6 +813,10 @@ impl Hash for AnimTypeReferences {
         self.stop_sound.hash(state);
         if self.weapon.is_some() {
             self.weapon.hash(state);
+        }
+        if self.bounce_sound.is_some() || self.expire_sound.is_some() {
+            self.bounce_sound.hash(state);
+            self.expire_sound.hash(state);
         }
     }
 }
@@ -822,6 +838,8 @@ impl AnimTypeReferences {
         config.ares_weapon = self.weapon.clone();
         config.start_sound = upper(&self.start_sound);
         config.stop_sound = upper(&self.stop_sound);
+        config.bounce_sound = upper(&self.bounce_sound);
+        config.expire_sound = upper(&self.expire_sound);
     }
 }
 

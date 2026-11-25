@@ -13,7 +13,8 @@ use std::collections::HashMap;
 
 use crate::app::AppState;
 use crate::app::presentation::super_timer_groups::{TeamKey, TeamSuperRow, grouped_super_rows};
-use crate::assets::csf_file::{CsfFile, type_ui_name};
+use crate::app::presentation::text_hud::{self, TextHud};
+use crate::assets::csf_file::type_ui_name;
 use crate::map::houses::is_allied_with;
 use crate::render::batch::SpriteInstance;
 use crate::rules::house_colors::{
@@ -228,8 +229,8 @@ pub(crate) struct TimerDock {
     expanded: bool,
     offset: usize,
     max_offset: usize,
-    toggle_rect: Option<crate::ui::gadget::GadgetRect>,
-    scroll_rows: Vec<crate::ui::gadget::GadgetRect>,
+    toggle_rect: Option<crate::ui::shell::geom::RectPx>,
+    scroll_rows: Vec<crate::ui::shell::geom::RectPx>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -248,7 +249,7 @@ impl TimerDock {
         self.scroll_rows.clear();
     }
 
-    pub(crate) fn toggle_rect(&self) -> Option<crate::ui::gadget::GadgetRect> {
+    pub(crate) fn toggle_rect(&self) -> Option<crate::ui::shell::geom::RectPx> {
         self.toggle_rect
     }
 
@@ -353,7 +354,7 @@ impl TimerDock {
         }
         if let Some(index) = rows.iter().position(|row| *row == DockRow::Toggle) {
             let y = place_line(index, view, font_height, 0, 0).1.y;
-            self.toggle_rect = Some(crate::ui::gadget::GadgetRect::new(
+            self.toggle_rect = Some(crate::ui::shell::geom::RectPx::new(
                 view[0] - RIGHT_MARGIN - 16,
                 y - 1,
                 16,
@@ -386,12 +387,6 @@ pub(crate) fn wheel(state: &mut AppState, delta: f32) -> bool {
         .wheel(x, y, delta)
 }
 
-/// The string table's text for `key` (`0x00734E60`); the key itself only
-/// without a string table (an assetless run).
-fn localized(csf: Option<&CsfFile>, key: &str) -> String {
-    csf.map_or_else(|| key.to_string(), |csf| csf.text(key).into_owned())
-}
-
 /// The colour a blinking time prints in: [`BLINK_SCHEME`], or with Phobos
 /// `ColorScheme::Array[TimerBlinkColorScheme]` (`PrintTimerOnTactical_BlinkColor`
 /// at `0x006D4CD9`). A `none` (-1) keeps the native scheme where Phobos would
@@ -407,11 +402,34 @@ fn blink_rgb(rules: &RuleSet) -> [u8; 3] {
     house_text_rgb(&rules.color_schemes, scheme)
 }
 
-/// The timer lines as UI sprites: the black boxes, drawn first, and the text.
-/// The tactical view starts at the screen's origin.
-pub(crate) fn build_super_timer_instances(
-    state: &mut AppState,
-) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+/// What the timer lines show this frame, worked out before they are drawn
+/// ([`update_super_timers`]): each shown text in drawing order, and the
+/// dock's toggle while it has one.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct TimerFrame {
+    /// A line's label, then its time: the text, where it prints and its
+    /// colour.
+    pub(crate) texts: Vec<(String, TextPlace, [u8; 3])>,
+    /// The dock's toggle and whether the dock is open.
+    pub(crate) toggle: Option<(crate::ui::shell::geom::RectPx, bool)>,
+}
+
+/// Each drawn frame's timer step, before its timers are drawn: the lines,
+/// their places and colours ([`TimerFrame`]), the dock's rows and hit areas,
+/// and each Super's blink, which steps on the wall clock. The drawing then
+/// only reads what this left ([`build_super_timer_instances`]).
+pub(crate) fn update_super_timers(state: &mut AppState) {
+    state
+        .match_state
+        .match_presentation
+        .super_timer_frame
+        .texts
+        .clear();
+    state
+        .match_state
+        .match_presentation
+        .super_timer_frame
+        .toggle = None;
     state
         .match_state
         .match_presentation
@@ -424,14 +442,15 @@ pub(crate) fn build_super_timer_instances(
     use crate::app::presentation::field_parts;
     use crate::ui::field_layout::FieldPart;
     // A layout that leaves the timers out draws none and keeps no hit area.
-    if state.frontend.screen != GameScreen::InGame || !field_parts::shows(state, FieldPart::Timers)
+    if state.frontend.screen != GameScreen::InGame
+        || !field_parts::shows(&state.match_state.match_presentation, FieldPart::Timers)
     {
-        return (Vec::new(), Vec::new());
+        return;
     }
     let (Some(runtime), Some(rules)) =
         (state.match_state.sim_runtime.presentation(), state.rules())
     else {
-        return (Vec::new(), Vec::new());
+        return;
     };
     let sim = &runtime.simulation;
     let frame = sim.session().binary_frame();
@@ -523,7 +542,7 @@ pub(crate) fn build_super_timer_instances(
         );
     }
     if lines.is_empty() {
-        return (Vec::new(), Vec::new());
+        return;
     }
 
     let csf = state.process_assets.csf.as_ref();
@@ -585,11 +604,17 @@ pub(crate) fn build_super_timer_instances(
                     sim.session().current_house(),
                     scenario
                         .filter(|(_, caption)| !caption.is_empty())
-                        .map_or_else(String::new, |(_, caption)| localized(csf, caption)),
+                        .map_or_else(String::new, |(_, caption)| {
+                            crate::i18n::label(csf, caption, caption)
+                        }),
                     None,
                 ),
                 TimerSource::Super(view) => (Some(view.owner()), super_name(view.sw_type()), None),
-                TimerSource::Blackout(house) => (Some(house), localized(csf, BLACKOUT_LABEL), None),
+                TimerSource::Blackout(house) => (
+                    Some(house),
+                    crate::i18n::label(csf, BLACKOUT_LABEL, BLACKOUT_LABEL),
+                    None,
+                ),
                 TimerSource::Team(row) => (
                     Some(row.representative),
                     format!(
@@ -607,14 +632,10 @@ pub(crate) fn build_super_timer_instances(
         })
         .collect();
     let blink_rgb = blink_rgb(rules);
-    let now_ms = crate::app::input::tooltips::now_ms(state);
+    let now_ms = crate::app::input::tooltips::now_ms(&state.diag, &state.match_state);
     // The dock stacks up from the bottom right of its box, the battlefield
     // in the original interface, and works in the box's own pixels.
     let [_, _, view_w, view_h] = field_parts::rect(state, FieldPart::Timers);
-    // Screen-space lanes add back the world camera the UI shader subtracts,
-    // and the box's corner.
-    let camera = field_parts::lane_camera(state, FieldPart::Timers);
-
     let font = &state.renderer.bit_font;
     let timer_lines: Vec<_> = lines.iter().map(|(line, _, _)| *line).collect();
     // The grouped lines are few; they replace the compact dock's paging.
@@ -634,18 +655,7 @@ pub(crate) fn build_super_timer_instances(
         }
     }
     let blinks = &mut state.match_state.match_presentation.super_timer_blinks;
-    let tint = |rgb: [u8; 3]| rgb.map(|channel| f32::from(channel) / 255.0);
-    let fill = |[x, y, w, h]: [i32; 4]| SpriteInstance {
-        position: [x as f32 + camera[0], y as f32 + camera[1]],
-        size: [w as f32, h as f32],
-        uv_origin: [0.0, 0.0],
-        uv_size: [1.0, 1.0],
-        tint: [0.0; 3],
-        alpha: 1.0,
-        ..Default::default()
-    };
-    let mut fills = Vec::with_capacity(2 * lines.len());
-    let mut texts = Vec::new();
+    let mut shown = Vec::with_capacity(2 * lines.len());
     let mut next_flip_ms: Option<u64> = None;
     for (index, (line, label, rgb)) in lines.iter().enumerate() {
         let blink = match line.source {
@@ -680,49 +690,93 @@ pub(crate) fn build_super_timer_instances(
         );
         let time_rgb = if blinking { blink_rgb } else { *rgb };
         if dock.expanded && matches!(line.source, TimerSource::Super(_)) {
-            dock.scroll_rows.push(crate::ui::gadget::GadgetRect::new(
+            dock.scroll_rows.push(crate::ui::shell::geom::RectPx::new(
                 label_at.fill[0],
                 label_at.fill[1],
                 time_at.fill[0] + time_at.fill[2] - label_at.fill[0],
                 label_at.fill[3],
             ));
         }
-        for (text, at, rgb) in [(&label, label_at, *rgb), (&time, time_at, time_rgb)] {
-            fills.push(fill(at.fill));
-            texts.extend(font.build_text(
-                text,
-                at.x as f32,
-                at.y as f32,
-                1.0,
+        shown.push((label, label_at, *rgb));
+        shown.push((time, time_at, time_rgb));
+    }
+    let toggle = dock.toggle_rect.map(|rect| (rect, dock.expanded));
+    let presentation = &mut state.match_state.match_presentation;
+    presentation.super_timer_next_flip_ms = next_flip_ms;
+    presentation.super_timer_frame.texts = shown;
+    presentation.super_timer_frame.toggle = toggle;
+}
+
+/// The timer lines as UI sprites, from what [`update_super_timers`] worked
+/// out this frame: a box and a text node of `hud` for each text, the boxes
+/// drawn first, then the text. Returns the boxes and the glyphs.
+pub(crate) fn build_super_timer_instances(
+    state: &AppState,
+    hud: &mut TextHud,
+) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+    use crate::app::presentation::field_parts;
+    use crate::ui::field_layout::FieldPart;
+    let frame = &state.match_state.match_presentation.super_timer_frame;
+    // Screen-space lanes add back the world camera the UI shader subtracts,
+    // and the box's corner.
+    let camera = if frame.texts.is_empty() {
+        [0.0; 2]
+    } else {
+        field_parts::lane_camera(state, FieldPart::Timers)
+    };
+    draw_timer_frame(frame, camera, &state.renderer.bit_font, hud)
+}
+
+/// [`build_super_timer_instances`] for a given frame and lane camera.
+fn draw_timer_frame(
+    frame: &TimerFrame,
+    camera: [f32; 2],
+    font: &crate::render::bit_font::BitFont,
+    hud: &mut TextHud,
+) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+    hud.begin();
+    if !frame.texts.is_empty() {
+        let black = text_hud::rgb([0; 3]);
+        let fill = |hud: &mut TextHud, [x, y, w, h]: [i32; 4]| {
+            hud.fill(
+                vera20k_gui::Rect::new(x, y, w, h),
+                [x as f32 + camera[0], y as f32 + camera[1]],
+                [w as f32, h as f32],
+                black,
                 0.0,
-                tint(rgb),
-                camera,
-            ));
+            );
+        };
+        for (text, at, rgb) in &frame.texts {
+            fill(hud, at.fill);
+            hud.text(
+                vera20k_gui::Rect::new(at.x, at.y, at.fill[2], at.fill[3]),
+                text,
+                [at.x as f32 + camera[0], at.y as f32 + camera[1]],
+                text_hud::rgb(*rgb),
+                None,
+            );
+        }
+        if let Some((rect, expanded)) = frame.toggle {
+            // Solid 7x4 pixel triangles, no font substitution, frame or backing box.
+            for row in 0..4 {
+                let width = if expanded { 7 - row * 2 } else { 1 + row * 2 };
+                fill(
+                    hud,
+                    [
+                        rect.x + (rect.w - width) / 2,
+                        rect.y + (rect.h - 4) / 2 + row,
+                        width,
+                        1,
+                    ],
+                );
+            }
         }
     }
-    state
-        .match_state
-        .match_presentation
-        .super_timer_next_flip_ms = next_flip_ms;
-    if let Some(rect) = dock.toggle_rect {
-        // Solid 7x4 pixel triangles, no font substitution, frame or backing box.
-        for row in 0..4 {
-            let width = if dock.expanded {
-                7 - row * 2
-            } else {
-                1 + row * 2
-            };
-            let mut triangle = fill([
-                rect.x + (rect.w - width) / 2,
-                rect.y + (rect.h - 4) / 2 + row,
-                width,
-                1,
-            ]);
-            triangle.tint = [0.0, 0.0, 0.0];
-            fills.push(triangle);
-        }
-    }
-    (fills, texts)
+    hud.finish(font);
+    (
+        hud.boxes().copied().collect(),
+        hud.glyphs().copied().collect(),
+    )
 }
 
 /// Whether a 0 s Super line's blink flips on the next timer draw
@@ -732,7 +786,9 @@ pub(crate) fn blink_due(state: &AppState) -> bool {
         .match_state
         .match_presentation
         .super_timer_next_flip_ms
-        .is_some_and(|next| crate::app::input::tooltips::now_ms(state) >= next)
+        .is_some_and(|next| {
+            crate::app::input::tooltips::now_ms(&state.diag, &state.match_state) >= next
+        })
 }
 
 #[cfg(all(test, tests_app_presentation))]

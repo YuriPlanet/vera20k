@@ -31,17 +31,17 @@ use crate::ui::shell::connection::{ConnectionPage, ConnectionRow};
 /// (UpdatePeerFrameLag652187), up to 30 ms. VERA's multi-human online
 /// matches use the relay clock. A locally paced solo match has no peer to
 /// measure, and LAN never adds this delay.
-pub(crate) fn frame_budget(state: &AppState) -> Option<u16> {
-    if let Some(fps) = state
-        .match_state
+pub(crate) fn frame_budget(
+    match_state: &crate::app::match_runtime::state::MatchState,
+) -> Option<u16> {
+    if let Some(fps) = match_state
         .live_network
         .as_ref()
         .and_then(|live| live.relay_frames_per_second())
     {
         return Some(fps);
     }
-    let timing = state
-        .match_state
+    let timing = match_state
         .sim_runtime
         .runtime()?
         .simulation
@@ -52,10 +52,12 @@ pub(crate) fn frame_budget(state: &AppState) -> Option<u16> {
 
 /// One game frame's length in milliseconds, as the pacer admits frames;
 /// `None` with no match or at unlimited speed.
-pub(crate) fn game_frame_ms(state: &AppState) -> Option<f32> {
+pub(crate) fn game_frame_ms(
+    platform: &crate::app::PlatformState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+) -> Option<f32> {
     let speed = crate::sim::game_options::clamp_game_speed(
-        state
-            .match_state
+        match_state
             .sim_runtime
             .runtime()?
             .simulation
@@ -63,10 +65,9 @@ pub(crate) fn game_frame_ms(state: &AppState) -> Option<f32> {
             .game_options()
             .game_speed,
     );
-    state
-        .platform
+    platform
         .frame_pacer
-        .budget_ms(speed, frame_budget(state))
+        .budget_ms(speed, frame_budget(match_state))
 }
 
 /// DestroyConnection's error argument (`EDX`).
@@ -313,7 +314,7 @@ pub(crate) fn post_speed_changes(state: &mut AppState) {
         let text = match change {
             MatchSpeedChange::SlowedBy(house) => {
                 state.match_state.network_quality.record_slowdown(house);
-                match house_player_name(state, house) {
+                match house_player_name(&state.match_state, house) {
                     Some(name) => {
                         crate::i18n::tr_fill("VERA:PlayerSlowingGame", &[("name", &name)])
                     }
@@ -338,7 +339,7 @@ pub(crate) fn post_pause_changes(state: &mut AppState) {
         .map(|live| live.take_pause_changes())
         .unwrap_or_default();
     for change in changes {
-        let Some(name) = house_player_name(state, change.house) else {
+        let Some(name) = house_player_name(&state.match_state, change.house) else {
             continue;
         };
         let key = if change.paused {
@@ -363,7 +364,7 @@ pub(crate) fn post_connection_changes(state: &mut AppState) {
         .map(|live| live.take_connection_changes())
         .unwrap_or_default();
     for change in changes {
-        let Some(name) = house_player_name(state, change.house) else {
+        let Some(name) = house_player_name(&state.match_state, change.house) else {
             continue;
         };
         let key = if change.responding {
@@ -380,12 +381,14 @@ pub(crate) fn post_connection_changes(state: &mut AppState) {
 /// going through, if anything: reconnecting, or catching up with the
 /// relay's frames, which a returning game does as it rejoins.
 /// `messages::show_status_notices` shows it as a message row.
-pub(crate) fn recovery_notice(state: &AppState) -> Option<&'static str> {
+pub(crate) fn recovery_notice(
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+) -> Option<&'static str> {
     use crate::app::shell_wol::relay_pass_lapsed;
     use crate::net::live_commands::NetworkRecoveryStatus;
-    let live = state.match_state.live_network.as_ref()?;
-    let frame = state
-        .match_state
+    let live = match_state.live_network.as_ref()?;
+    let frame = match_state
         .sim_runtime
         .runtime()?
         .simulation
@@ -396,7 +399,7 @@ pub(crate) fn recovery_notice(state: &AppState) -> Option<&'static str> {
         // The relay drops a lapsed pass, which only the lobby can renew: then
         // waiting cannot help. The ticket's expiry is lobby time, so the pass's
         // life is timed from its receipt, as its renewal is.
-        NetworkRecoveryStatus::Reconnecting if relay_pass_lapsed(state, now) => {
+        NetworkRecoveryStatus::Reconnecting if relay_pass_lapsed(frontend.wol.as_ref(), now) => {
             "VERA:ReconnectPassLapsed"
         }
         NetworkRecoveryStatus::Reconnecting => "VERA:Reconnecting",
@@ -406,15 +409,14 @@ pub(crate) fn recovery_notice(state: &AppState) -> Option<&'static str> {
 }
 
 /// The name of the player whose House is `house`, when it has one.
-fn house_player_name(state: &AppState, house: i8) -> Option<String> {
-    let runtime = state.match_state.sim_runtime.runtime()?;
-    house_source(
-        &state.match_state.session,
-        &runtime.simulation,
-        i32::from(house),
-    )
-    .map(|source| participant_name(&state.match_state.session, source))
-    .filter(|name| !name.is_empty())
+fn house_player_name(
+    match_state: &crate::app::match_runtime::state::MatchState,
+    house: i8,
+) -> Option<String> {
+    let runtime = match_state.sim_runtime.runtime()?;
+    house_source(&match_state.session, &runtime.simulation, i32::from(house))
+        .map(|source| participant_name(&match_state.session, source))
+        .filter(|name| !name.is_empty())
 }
 
 /// VERA: once this game reaches a pause that found it catching up, it tells
@@ -811,10 +813,14 @@ pub(crate) fn decode_kick_proposal(
     Some((voter, house_source(session, sim, target)?))
 }
 
-fn capture_live_bars(state: &mut AppState, elapsed: u32, now_millis: u32) {
+fn capture_live_bars(
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    elapsed: u32,
+    now_millis: u32,
+) {
     let (Some(live), Some(runtime)) = (
-        state.match_state.live_network.as_ref(),
-        state.match_state.sim_runtime.runtime(),
+        match_state.live_network.as_ref(),
+        match_state.sim_runtime.runtime(),
     ) else {
         return;
     };
@@ -823,14 +829,14 @@ fn capture_live_bars(state: &mut AppState, elapsed: u32, now_millis: u32) {
         .iter()
         .filter_map(|peer| {
             let source = house_source(
-                &state.match_state.session,
+                &match_state.session,
                 &runtime.simulation,
                 i32::from(peer.house_id()),
             )?;
             Some((source, peer.bar_timing(elapsed, now_millis)))
         })
         .collect();
-    if let Some(wait) = &mut state.match_state.network_wait.wait {
+    if let Some(wait) = &mut match_state.network_wait.wait {
         wait.bars = bars;
     }
 }
@@ -855,7 +861,13 @@ fn kick(state: &mut AppState, source_index: usize, error: ConnectionError) {
 
 /// The list's wrap width and visible rows at the current shell size.
 fn list_metrics(state: &AppState) -> (i32, usize) {
-    let (width, height) = crate::app::frontend::skirmish_shell_render::in_game_shell_size(state);
+    let (width, height) = crate::app::frontend::skirmish_shell_render::in_game_shell_size(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let rect = crate::ui::shell::connection::list_rect(width, height);
     let page = state.match_state.network_wait.page();
     let (count, top) = page.map_or((0, 0), |page| (page.lines.len(), page.top));
@@ -898,16 +910,15 @@ fn append_line_and_show_last(state: &mut AppState, text: &str) {
 
 /// The record with the lowest last frame (`0x00648E3C`, `0x0064B410`), from
 /// the live progress rows (`LiveCommandSession::lowest_frame_peer`).
-fn lowest_record(state: &AppState) -> Option<usize> {
-    let house = state
-        .match_state
+fn lowest_record(match_state: &crate::app::match_runtime::state::MatchState) -> Option<usize> {
+    let house = match_state
         .live_network
         .as_ref()?
         .lowest_frame_peer()?
         .house_id();
     house_source(
-        &state.match_state.session,
-        &state.match_state.sim_runtime.runtime()?.simulation,
+        &match_state.session,
+        &match_state.sim_runtime.runtime()?.simulation,
         i32::from(house),
     )
 }
@@ -927,7 +938,7 @@ fn open_dialog(state: &mut AppState, elapsed: u64) {
             name: participant_name(session, source_index),
         })
         .collect();
-    let reconnecting = lowest_record(state)
+    let reconnecting = lowest_record(&state.match_state)
         .map(|source| participant_name(&state.match_state.session, source))
         .unwrap_or_default();
     let network_wait = &mut state.match_state.network_wait;
@@ -1040,7 +1051,7 @@ pub(crate) fn service_wait(state: &mut AppState, now_ms: u64) -> WaitPass {
     if !state.match_state.sim_runtime.is_installed()
         || !state.match_state.session_mode().is_network()
         || state.match_state.live_network.is_none()
-        || super::network_failure::pending(state)
+        || super::network_failure::pending(&state.frontend.screen, &state.match_state)
     {
         state.match_state.network_wait.wait = None;
         return WaitPass::Running;
@@ -1070,7 +1081,10 @@ pub(crate) fn service_wait(state: &mut AppState, now_ms: u64) -> WaitPass {
             .is_some_and(|live| live.watch_over())
     {
         log::info!("The watched match is over");
-        crate::app::shell_wol::hold_problem_line(state, crate::i18n::tr("VERA:WatchedMatchOver"));
+        crate::app::shell_wol::hold_problem_line(
+            state.frontend.wol.as_mut(),
+            crate::i18n::tr("VERA:WatchedMatchOver"),
+        );
         state.match_state.network_wait.wait = None;
         return WaitPass::Leave;
     }
@@ -1126,7 +1140,7 @@ pub(crate) fn service_wait(state: &mut AppState, now_ms: u64) -> WaitPass {
         }
         if repaint {
             //648C06..648C36 snapshots peer timing and wait age for64A7B0.
-            capture_live_bars(state, elapsed, now_ms as u32);
+            capture_live_bars(&mut state.match_state, elapsed, now_ms as u32);
         }
         if let Some((voter, target)) = state.match_state.network_wait.received_votes.pop_front() {
             add_vote(state, voter, target);
@@ -1152,7 +1166,7 @@ pub(crate) fn service_wait(state: &mut AppState, now_ms: u64) -> WaitPass {
         }
         //64B410 chooses the first minimum signed peer frame. Recovery restarts
         //all three countdowns but retains entry, page, votes and peer+14.
-        let source = lowest_record(state);
+        let source = lowest_record(&state.match_state);
         let runtime = state.match_state.sim_runtime.runtime();
         let house = source.and_then(|source| {
             source_house(&state.match_state.session, &runtime?.simulation, source)
@@ -1225,8 +1239,8 @@ fn exit_awaits_unreachable_relay(
 
 /// Quit Game 2 (`0x0064AE50` WM_COMMAND 2): the result cell becomes 2 and
 /// the next dialog pass leaves.
-pub(crate) fn request_leave(state: &mut AppState) {
-    if let Some(wait) = state.match_state.network_wait.wait.as_mut() {
+pub(crate) fn request_leave(network_wait: &mut NetworkMatchWait) {
+    if let Some(wait) = network_wait.wait.as_mut() {
         wait.leave = true;
     }
 }

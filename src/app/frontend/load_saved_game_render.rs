@@ -13,6 +13,7 @@ use crate::app::frontend::menu_page_render::{
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::frontend::skirmish_shell_render::gui_paint::ButtonArt;
 use crate::app::frontend::skirmish_shell_render::{paint_saved_browser, push_saved_browser_box};
+use crate::render::hud_paint::Material;
 use crate::ui::skirmish_shell::saved_seed_browser::BROWSER_DIALOG;
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
@@ -25,12 +26,17 @@ pub(crate) fn render_load_saved_game_page(
     if state.frontend.load_saved_game.is_none() || !family_art_ready(state) {
         return Ok(false);
     }
-    let layout = crate::app::frontend::shell_layout::load_saved_game_layout(state);
+    let layout = crate::app::frontend::shell_layout::load_saved_game_layout(
+        &state.renderer.gpu,
+        &state.frontend,
+    );
     let panel = page_panel_state(
         state,
         ShellSlideKind::LoadSavedGame,
         false,
-        crate::app::App::load_saved_game_status_key,
+        |state| {
+            crate::app::App::load_saved_game_status_key(state.frontend.load_saved_game.as_ref())
+        },
         layout.page.status_help,
     );
     let leaving = panel.leaving;
@@ -57,21 +63,32 @@ pub(crate) fn render_load_saved_game_page(
     }
     // The list and its rows, blank while the teardown slide runs, then the box.
     let mut over = paint_saved_browser(
-        state,
+        &state.platform.ime,
+        &state.renderer.bit_font,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
         state.frontend.skirmish_shell_chrome.as_ref(),
         &layout.browser,
         browser,
         ButtonArt::Host,
         !leaving,
     );
-    push_saved_browser_box(
-        state,
-        state.frontend.skirmish_shell_chrome.as_ref(),
-        &layout.browser,
-        browser,
-        &mut over.controls,
-        &mut over.texts,
-    );
+    let atlas = state.frontend.skirmish_shell_chrome.as_ref();
+    over.draw(Material::Controls, |sprites, texts| {
+        push_saved_browser_box(
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            atlas,
+            &layout.browser,
+            browser,
+            sprites,
+            texts,
+        )
+    });
     frame.over = over;
     encode_family_page(state, encoder, destination, frame);
     Ok(true)

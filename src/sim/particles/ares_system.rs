@@ -839,8 +839,11 @@ fn update_smoke(
                 sys.coords.z.wrapping_add(10),
             );
             // MapClass::GetCellFloorHeight 578080, raised to the coordinate.
-            let floor = match super::spark_world::constructor_ground_height(sim, coords.x, coords.y)
-            {
+            let floor = match super::spark_world::constructor_ground_height(
+                sim.resolved_terrain.as_ref(),
+                coords.x,
+                coords.y,
+            ) {
                 Ok(floor) => floor.unwrap_or(coords.z),
                 Err(error) => {
                     log::warn!("particles: Ares smoke spawn floor refused: {error}");
@@ -993,7 +996,10 @@ fn smoke_movement(ext: &mut AresParticleSystemExt, sim: &mut Simulation, rules: 
         ];
         // Ares 10028270..10028354: rising from below the old cell's deck to
         // deck minus 0x104 or higher dies. The stock fallback is floor + 0x1A0.
-        match super::spark_world::smoke_bridge_deck(sim, IVec3::from_array(old)) {
+        match super::spark_world::smoke_bridge_deck(
+            sim.resolved_terrain.as_ref(),
+            IVec3::from_array(old),
+        ) {
             Ok(Some(deck)) => {
                 if old[2] < deck && new_z >= deck.wrapping_sub(0x104) {
                     smoke.dead = true;

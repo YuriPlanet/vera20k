@@ -603,10 +603,14 @@ pub(crate) fn respond_to_base_attack(
                     &sim.interner,
                 ),
                 //4D985F/4D986E read virtual+38C=70EFE0, the retained
-                // type Speed+678. The shared reader conversion supplies its
-                // integer budget; Foot4DB1A0's live fractions are a different
-                // getter and do not enter this score.
-                speed_leptons_per_frame: ra2_speed_to_leptons_per_frame(candidate_object.speed),
+                // type Speed+678, which a Tiberian Sun limpet lowers
+                // (`sim::limpet::max_speed`). The shared reader conversion
+                // supplies its integer budget; Foot4DB1A0's live fractions
+                // are a different getter and do not enter this score.
+                speed_leptons_per_frame: crate::sim::limpet::max_speed(
+                    candidate,
+                    ra2_speed_to_leptons_per_frame(candidate_object.speed),
+                ),
                 current_coord: [current_coord.x, current_coord.y, current_coord.z],
                 attacker_coord: Some(attacker_coord),
                 primary_range_leptons: primary_range_leptons(

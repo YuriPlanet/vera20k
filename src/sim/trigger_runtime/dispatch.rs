@@ -145,9 +145,10 @@ impl Simulation {
         self.publish_trigger_effects(effects);
     }
 
-    /// Retail gamemd.exe: TeamClass::Recalc6EA49F..6EA4D2 walks the Tag
-    /// array backwards; TeamClass::AI6E92D0..6E9320 walks forwards and
+    /// Retail gamemd.exe: TeamClass::Recalc6EA49F..6EA4D2 walks the Logic Tag
+    /// list (items 8B40CC, count 8B40D8) backwards; TeamClass::AI walks forwards and
     /// revisits the slot after a successful raise (6E9312). Both broadcast
+    /// to Logic Tags only (game.exe 6B8C6F/6B7C6E: items 866164, count 866170),
     /// before destroying the empty leaving Team. No own RNG draws, timers
     /// or detach: ordinary Register/Reset/actions own those effects.
     ///
@@ -165,11 +166,11 @@ impl Simulation {
     ) {
         let mut ordinal = match order {
             TeamTagOrder::Forward => Some(0),
-            TeamTagOrder::Reverse => self.trigger_runtime.tag_order.len().checked_sub(1),
+            TeamTagOrder::Reverse => self.trigger_runtime.logic_tags.len().checked_sub(1),
         };
         let mut effects = Vec::new();
         while let Some(slot) = ordinal {
-            if let Some(&tag) = self.trigger_runtime.tag_order.get(slot) {
+            if let Some(&tag) = self.trigger_runtime.logic_tags.get(slot) {
                 let repeating = self.trigger_runtime.tag(tag).is_some_and(|live| {
                     self.trigger_runtime.definitions.tag_types[live.type_index].repeat == 2
                 });
@@ -184,12 +185,12 @@ impl Simulation {
                     registry,
                     frame_effects,
                 );
-                if raised && self.trigger_runtime.tag_order.is_empty() {
+                if raised && self.trigger_runtime.logic_tags.is_empty() {
                     break;
                 }
                 if raised
                     && order == TeamTagOrder::Forward
-                    && (!repeating || self.trigger_runtime.tag_order.get(slot) != Some(&tag))
+                    && (!repeating || self.trigger_runtime.logic_tags.get(slot) != Some(&tag))
                 {
                     continue;
                 }
@@ -880,6 +881,7 @@ impl Simulation {
     /// The 50 Scenario global values, read as the campaign carry-over record
     /// copies their bytes (`0x004C6187..0x004C61A1`).
     pub fn global_variables(&self) -> [bool; SCENARIO_GLOBAL_COUNT] {
+        self.trigger_runtime.check_attached();
         std::array::from_fn(|index| self.trigger_runtime.globals_set.contains(&(index as u32)))
     }
 

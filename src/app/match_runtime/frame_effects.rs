@@ -6,7 +6,7 @@ use super::sound_dispatch::dispatch_sim_sound_events;
 use crate::app::input::messages::HudMessage;
 use crate::app::input::planning_mode::PlanningInputState;
 use crate::app::presentation::building_anim::SoundPlaybackInputs;
-use crate::app::sidebar_projection::SidebarProjectionState;
+use crate::app::sidebar_projection::SidebarModel;
 use crate::audio::events::{GameSoundEvent, SoundEventQueue};
 use crate::audio::sfx::SfxPlayer;
 use crate::rules::ruleset::RuleSet;
@@ -38,7 +38,7 @@ type TacticalRadarSetter<'a> =
     dyn FnMut(bool, Option<&mut SfxPlayer>, &RuleSet) -> Option<GameSoundEvent> + 'a;
 /// MainTick55DBCD's campaign save, given the strip and the elapsed clock this
 /// boundary also lends to Strip6A8F42's request clear and to scenario pauses.
-type CampaignSave<'a> = dyn FnMut(&Simulation, &mut SidebarProjectionState, &mut super::frame_pacer::ScenarioElapsedClock)
+type CampaignSave<'a> = dyn FnMut(&Simulation, &mut SidebarModel, &mut super::frame_pacer::ScenarioElapsedClock)
     + 'a;
 
 struct ScenarioPauseOwners<'a> {
@@ -74,7 +74,7 @@ pub(crate) struct FrameClientBoundary<'a> {
     scenario_pause: Option<ScenarioPauseOwners<'a>>,
     /// The local production strip, for Strip6A8F42's synchronous request
     /// clear and the campaign save's sidebar order.
-    sidebar: Option<&'a mut SidebarProjectionState>,
+    sidebar: Option<&'a mut SidebarModel>,
     campaign_save: Option<&'a mut CampaignSave<'a>>,
     /// Whether the result's own EVA line is withheld for a commander clip
     /// (`Custom End Game Movie`,
@@ -234,7 +234,7 @@ impl<'a> FrameClientBoundary<'a> {
     /// scenario pause's elapsed clock.
     pub(crate) fn with_sidebar(
         mut self,
-        sidebar: &'a mut SidebarProjectionState,
+        sidebar: &'a mut SidebarModel,
         campaign_save: Option<&'a mut CampaignSave<'a>>,
     ) -> Self {
         self.sidebar = Some(sidebar);

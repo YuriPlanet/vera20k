@@ -36,7 +36,7 @@ impl LivePublication<'_> {
             zones: &mut sim.zone_grid,
             path: &mut sim.path_grid,
             overlays: sim.overlay_grid.as_ref(),
-            playfield_bounds: sim.playfield_bounds,
+            playfield_bounds: *sim.playfield_bounds,
         }
         .publish_current_path_cell(
             sim.resolved_terrain.as_ref().unwrap(),
@@ -229,7 +229,7 @@ impl IsoTileFloodHost for LiveTileFlood<'_, '_> {
             overlay,
             level_override,
             registry,
-            sim.playfield_bounds,
+            *sim.playfield_bounds,
         );
         let level = terrain.cells()[index].level;
         if level != previous_level {
@@ -253,7 +253,7 @@ impl IsoTileFloodHost for LiveTileFlood<'_, '_> {
             zones: &mut sim.zone_grid,
             path: &mut sim.path_grid,
             overlays: sim.overlay_grid.as_ref(),
-            playfield_bounds: sim.playfield_bounds,
+            playfield_bounds: *sim.playfield_bounds,
         }
         .publish_recalculated_cell(
             terrain,

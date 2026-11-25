@@ -8,7 +8,7 @@
 //! double-click timing stay in the node's `WidgetState::List`; the limits are
 //! the GUI's ([`crate::Gui::set_double_click`]).
 
-use super::{Capture, Ctx, WidgetState, instant, ui_ms};
+use super::{Capture, Ctx, WidgetState};
 use crate::Rect;
 use crate::gui::{UiEvent, UiMs};
 use crate::node::{Node, NodeId, Prop, Tree, Value};
@@ -16,7 +16,6 @@ use crate::shell::geom::ShellScale;
 use crate::shell::list::{
     ListMetrics, ListScrollInteraction, ListScrollPart, ShellListGeometry, is_double_click, log_top,
 };
-use crate::time::{Duration, Instant};
 
 /// One owner-draw list box (gamemd's movie list `0x129`, for one). Its
 /// row count, top and selection are reloaded from the props before every
@@ -30,7 +29,7 @@ pub struct ListState {
     selected: Option<usize>,
     top: usize,
     /// Previous press for the ListBox class's `CS_DBLCLKS` detection.
-    last_press: Option<(Instant, i32, i32)>,
+    last_press: Option<(UiMs, i32, i32)>,
     /// Scrollbar capture and arrow repeat (`0x0061C690`).
     scroll: ListScrollInteraction,
     /// Rows its owner shows at once, when it lays them out itself
@@ -61,17 +60,21 @@ pub struct ListView {
     pub pressed: Option<ListScrollPart>,
 }
 
-impl ListView {
-    /// The list's geometry on its paint surface `list` (its `Rect`).
-    pub fn geometry(&self, list: Rect, metrics: ListMetrics) -> ShellListGeometry {
-        ShellListGeometry::new(list, self.rows, self.top, metrics)
+/// The node's list metrics at `scale`: the scaled defaults, on its own
+/// `RowHeight` when set.
+fn metrics_of(n: &Node, scale: ShellScale) -> ListMetrics {
+    let mut metrics = ListMetrics::scaled(scale);
+    if let Some(Value::Int(row_h)) = n.props.get(&Prop::RowHeight) {
+        metrics.row_h = (*row_h).max(1);
     }
+    metrics
 }
 
-fn row_count(n: &Node) -> usize {
-    match n.props.get(&Prop::Items) {
-        Some(Value::Items(items)) => items.len(),
-        _ => n.int_prop(Prop::RowCount, 0).max(0) as usize,
+/// The rows its owner shows at once (`VisibleRows`); none fits the window.
+fn visible_rows_of(n: &Node) -> Option<usize> {
+    match n.props.get(&Prop::VisibleRows) {
+        Some(Value::Int(rows)) => usize::try_from(*rows).ok(),
+        _ => None,
     }
 }
 
@@ -82,9 +85,9 @@ pub(crate) fn view(tree: &Tree, node: NodeId) -> Option<ListView> {
         _ => None,
     };
     Some(ListView {
-        rows: row_count(n),
+        rows: n.row_count(),
         top: n.int_prop(Prop::Top, 0).max(0) as usize,
-        selected: usize::try_from(n.int_prop(Prop::Selected, -1)).ok(),
+        selected: n.selected(),
         pressed,
     })
 }
@@ -97,14 +100,11 @@ fn with_list<R>(
     f: impl FnOnce(&mut ListState, Rect, ListMetrics, &mut Vec<UiEvent>) -> R,
 ) -> Option<R> {
     let rect = ctx.tree.screen_rect(node).ok()?;
-    let mut metrics = ListMetrics::scaled(ctx.scale);
     let n = ctx.tree.node_mut(node).ok()?;
-    if let Some(Value::Int(row_h)) = n.props.get(&Prop::RowHeight) {
-        metrics.row_h = (*row_h).max(1);
-    }
-    let count = row_count(n);
+    let metrics = metrics_of(n, ctx.scale);
+    let count = n.row_count();
     let top = n.int_prop(Prop::Top, 0).max(0) as usize;
-    let selected = usize::try_from(n.int_prop(Prop::Selected, -1)).ok();
+    let selected = n.selected();
     let mut state = match std::mem::take(&mut n.state) {
         WidgetState::List(state) => state,
         _ => ListState::default(),
@@ -112,10 +112,7 @@ fn with_list<R>(
     state.rows = count;
     state.top = top;
     state.selected = selected;
-    state.visible_rows = match n.props.get(&Prop::VisibleRows) {
-        Some(Value::Int(rows)) => usize::try_from(*rows).ok(),
-        _ => None,
-    };
+    state.visible_rows = visible_rows_of(n);
     let result = f(&mut state, rect, metrics, ctx.events);
     let (new_top, new_selected) = (state.top, state.selected);
     let n = ctx.tree.node_mut(node).ok()?;
@@ -138,20 +135,13 @@ fn with_list<R>(
 pub(crate) fn geometry(tree: &Tree, node: NodeId, scale: ShellScale) -> Option<ShellListGeometry> {
     let rect = tree.screen_rect(node).ok()?;
     let n = tree.node(node).ok()?;
-    let mut metrics = ListMetrics::scaled(scale);
-    if let Some(Value::Int(row_h)) = n.props.get(&Prop::RowHeight) {
-        metrics.row_h = (*row_h).max(1);
-    }
     let state = ListState {
-        rows: row_count(n),
+        rows: n.row_count(),
         top: n.int_prop(Prop::Top, 0).max(0) as usize,
-        visible_rows: match n.props.get(&Prop::VisibleRows) {
-            Some(Value::Int(rows)) => usize::try_from(*rows).ok(),
-            _ => None,
-        },
+        visible_rows: visible_rows_of(n),
         ..ListState::default()
     };
-    Some(state.geometry(rect, metrics))
+    Some(state.geometry(rect, metrics_of(n, scale)))
 }
 
 /// A transcript's new row count (the shell's line adder `0x005E29A0`):
@@ -163,19 +153,15 @@ pub(crate) fn geometry(tree: &Tree, node: NodeId, scale: ShellScale) -> Option<S
 pub(crate) fn log_rows(tree: &mut Tree, node: NodeId, scale: ShellScale, rows: usize, dropped: usize) {
     let Ok(rect) = tree.screen_rect(node) else { return };
     let Ok(n) = tree.node_mut(node) else { return };
-    let mut metrics = ListMetrics::scaled(scale);
-    if let Some(Value::Int(row_h)) = n.props.get(&Prop::RowHeight) {
-        metrics.row_h = (*row_h).max(1);
-    }
     let visible = match n.props.get(&Prop::VisibleRows) {
         Some(Value::Int(v)) => usize::try_from(*v).unwrap_or(0),
-        _ => ShellListGeometry::new(rect, 0, 0, metrics).visible_rows,
+        _ => ShellListGeometry::new(rect, 0, 0, metrics_of(n, scale)).visible_rows,
     };
     let top = match n.props.get(&Prop::Top) {
         Some(Value::Int(top)) => Some(usize::try_from(*top).unwrap_or(0)),
         _ => None,
     };
-    let top = log_top(row_count(n), top, visible, rows, dropped);
+    let top = log_top(n.row_count(), top, visible, rows, dropped);
     n.props.insert(Prop::RowCount, Value::Int(i32::try_from(rows).unwrap_or(i32::MAX)));
     n.props.insert(Prop::Top, Value::Int(top as i32));
 }
@@ -219,9 +205,7 @@ pub(crate) fn forget_press(tree: &mut Tree, node: NodeId) {
 }
 
 pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture {
-    let now = instant(ctx.now);
-    let (ms, w, h) = ctx.double_click;
-    let limits = (Duration::from_millis(ms), w, h);
+    let (now, limits) = (ctx.now, ctx.double_click);
     let multi = ctx.tree.node(node).is_ok_and(|n| n.bool_prop(Prop::MultiSelect, false));
     let mut toggled = None;
     let capture = with_list(ctx, node, |s, rect, metrics, events| {
@@ -309,14 +293,14 @@ pub(crate) fn wheel(ctx: &mut Ctx<'_>, node: NodeId, lines: i32) -> bool {
 
 /// Timers (scroll-arrow repeat): the next time the list wants a poll.
 pub(crate) fn poll(ctx: &mut Ctx<'_>, node: NodeId) -> Option<UiMs> {
-    let now = instant(ctx.now);
+    let now = ctx.now;
     with_list(ctx, node, |s, rect, metrics, _| {
         let (x, y) = s.pointer;
         if s.scroll.repeat_at().is_some() {
             let geometry = s.geometry(rect, metrics);
             s.scroll.poll(geometry, &mut s.top, x, y, now);
         }
-        s.scroll.repeat_at().map(ui_ms)
+        s.scroll.repeat_at()
     })
     .flatten()
 }
@@ -504,15 +488,15 @@ mod tests {
         g.input(InputEvent::PointerMove { x: 50, y: 50 }, 0);
         g.drain_events();
         assert!(
-            !g.input(InputEvent::Wheel { lines: 1 }, 0).consumed,
+            !g.input(InputEvent::Wheel { lines: 1, x: 0, y: 0 }, 0).consumed,
             "already at the top"
         );
-        assert!(g.input(InputEvent::Wheel { lines: -1 }, 0).consumed);
+        assert!(g.input(InputEvent::Wheel { lines: -1, x: 0, y: 0 }, 0).consumed);
         assert_eq!(
             g.drain_events(),
             vec![UiEvent::Scrolled { node: list, top: 3 }]
         );
-        g.input(InputEvent::Wheel { lines: -100 }, 0);
+        g.input(InputEvent::Wheel { lines: -100, x: 0, y: 0 }, 0);
         assert_eq!(g.get(list, Prop::Top).unwrap(), Some(&Value::Int(47)));
     }
 }

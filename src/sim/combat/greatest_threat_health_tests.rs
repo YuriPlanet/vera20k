@@ -102,6 +102,7 @@ fn actual_scorer_consumes_live_signed_strength_and_masked_zero_division() {
             },
             ThreatReference::NullCoord,
             None,
+            0,
         )
         .unwrap();
         assert_eq!(
@@ -152,6 +153,7 @@ fn distance_term_reads_the_weapon_range_in_leptons() {
             },
             ThreatReference::NullCoord,
             None,
+            0,
         )
         .unwrap();
         // Zero distance: the score is 100000 + 10 * min(range in cells, 0).

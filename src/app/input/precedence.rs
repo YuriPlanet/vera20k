@@ -17,6 +17,7 @@
 //!   loading screen, an in-game modal or the battlefield, or a score page.
 //!   An in-game modal or a result without its retail page is a status card.
 
+use crate::app::frontend::state::FrontendState;
 use crate::app::shell_route::ShellRoute;
 use crate::app::{App, AppState, GameScreen};
 use crate::ui::pause_menu::InGameMenuState;
@@ -117,11 +118,14 @@ impl Layers {
     fn of(state: &AppState) -> Self {
         let frontend = &state.frontend;
         Self {
-            house_outcome_wait: App::house_outcome_wait_pending(state),
+            house_outcome_wait: App::house_outcome_wait_pending(&state.match_state.sim_runtime),
             shell_transition: crate::app::frontend::shell_transition::blocks_shell_input(state),
             shell_error: frontend.screen == GameScreen::MainMenu
                 && frontend.main_menu_shell_error.is_some(),
-            network_failure: crate::app::match_runtime::network_failure::pending(state),
+            network_failure: crate::app::match_runtime::network_failure::pending(
+                &state.frontend.screen,
+                &state.match_state,
+            ),
             network_wait: frontend.screen == GameScreen::InGame
                 && state.match_state.network_wait.dialog_open(),
             keyboard: frontend.keyboard_dialog.is_some(),
@@ -133,17 +137,17 @@ impl Layers {
                 GameScreen::InGame => Screen::InGame,
                 GameScreen::MissionResult { .. } => Screen::MissionResult,
             },
-            route_page: route_page(state),
+            route_page: route_page(&state.frontend),
             fullscreen_movie: frontend.fullscreen_movie.is_some(),
             credits_roll: frontend.credits_roll.is_some(),
-            launcher_options: App::native_launcher_options_active(state),
+            launcher_options: App::native_launcher_options_active(&state.frontend),
             in_game_menu: state.match_state.match_presentation.in_game_menu,
             in_game_shell: crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(
                 state,
             ),
-            coop_score: crate::app::input::coop_score::active(state),
-            campaign_score: App::campaign_score_shell_active(state),
-            score: App::score_shell_active(state),
+            coop_score: crate::app::input::coop_score::active(&state.frontend),
+            campaign_score: App::campaign_score_shell_active(&state.frontend),
+            score: App::score_shell_active(&state.frontend),
         }
     }
 
@@ -229,8 +233,7 @@ impl Layers {
 /// The page the shell route shows on the main-menu screen once its model is
 /// built, else the main menu, which also stands in for a page not built.
 /// Overlays (a movie, the credits, Options) are left to [`Layers`].
-pub(crate) fn route_page(state: &AppState) -> ScreenPage {
-    let frontend = &state.frontend;
+pub(crate) fn route_page(frontend: &FrontendState) -> ScreenPage {
     if frontend.screen != GameScreen::MainMenu {
         return ScreenPage::MainMenu;
     }

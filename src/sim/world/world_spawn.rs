@@ -1976,7 +1976,7 @@ impl Simulation {
             || self
                 .resolved_terrain
                 .as_ref()
-                .zip(self.playfield_bounds)
+                .zip(*self.playfield_bounds)
                 .is_some_and(|(terrain, bounds)| {
                     !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                         (i32::from(packed_cell.0), i32::from(packed_cell.1)),
@@ -2860,6 +2860,9 @@ impl Simulation {
         // slot initialization. Otherwise full-health animations consume IDs/RNG
         // here and ActuallyPlaced suppresses the real completion callback.
         converted_health.apply(&mut destination);
+        if let Some(source) = self.substrate.entities.get(stable_id) {
+            crate::sim::limpet::carry(source, &mut destination);
+        }
         #[cfg(feature = "phobos")]
         {
             destination.invulnerability = self.curtain_to_carry(stable_id, rules);
@@ -2976,7 +2979,7 @@ impl Simulation {
             new_sid,
             rules,
         );
-        self.mission_spawned_entities = true;
+        *self.mission_spawned_entities = true;
         if recalc_context.is_some() {
             // The new Building's committed north-west anchor is the native
             // `+0x9C/+0xA0` source. This bounded write order is load-bearing:
@@ -3164,6 +3167,10 @@ impl Simulation {
             unit.invulnerability = self.curtain_to_carry(sid, rules);
             unit
         };
+        let mut unit = unit;
+        if let Some(building) = self.substrate.entities.get(sid) {
+            crate::sim::limpet::carry(building, &mut unit);
+        }
         let (new_sid, position) = self.store_with_constructor_managers(unit, rules, frame_effects);
         // Selling449E74/449E80 caches the building's refund before its Limbo
         // and the new Unit's Unlimbo. Those callbacks may change the owner.

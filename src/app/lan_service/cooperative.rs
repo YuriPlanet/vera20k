@@ -34,7 +34,7 @@ pub(crate) fn release_transport(state: &mut AppState) {
     let now = super::super::match_runtime::frame_pacer::frame_bucket(
         super::super::match_runtime::frame_pacer::wall_clock_ms(),
     );
-    service_transport(state, now);
+    service_transport(&state.platform, &mut state.match_state, now);
     if let Some(service) = state.match_state.lan_service.as_mut() {
         if let Some(transport) = service.transport.as_mut() {
             transport.connections_mut().reset();
@@ -67,7 +67,7 @@ pub(super) fn poll(state: &mut AppState, now: u32) -> bool {
         if let Err(error) = receive(state, incoming, now) {
             log::debug!("Ignored co-op round packet: {error:#}");
         }
-        service_transport(state, now);
+        service_transport(&state.platform, &mut state.match_state, now);
         // Go or Quit closed the round: later packets (the next mission's
         // loading) belong to the ordinary service.
         if state.match_state.session.cooperative_round().is_none() {
@@ -144,7 +144,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 now,
             }
         } else if let Some(chat) = message.in_game_chat_fields() {
-            let game = super::active_game_name(state).unwrap_or_default();
+            let game = super::active_game_name(&state.match_state).unwrap_or_default();
             let Some(event) = chat_event(source, &chat, &game) else {
                 return Ok(());
             };
@@ -175,25 +175,28 @@ fn chat_event(
 }
 
 /// A queued round record to every other node.
-pub(super) fn send(state: &mut AppState, request: NetworkSendRequest) {
-    if state.match_state.session_mode() != SessionMode::Lan {
+pub(super) fn send(
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    request: NetworkSendRequest,
+) {
+    if match_state.session_mode() != SessionMode::Lan {
         return;
     }
     if request == NetworkSendRequest::CooperativeAbort {
         let now = super::super::match_runtime::frame_pacer::wall_clock_bucket();
-        if let Some(service) = state.match_state.lan_service.as_mut()
-            && let Err(error) = service.queue_departure(&state.match_state.session, now)
+        if let Some(service) = match_state.lan_service.as_mut()
+            && let Err(error) = service.queue_departure(&match_state.session, now)
         {
             log::warn!("Co-op handoff departure did not queue: {error:#}");
         }
         return;
     }
-    let name = local_name(state);
-    let peers: Vec<_> =
-        super::super::match_runtime::network_match::nodes(&state.match_state.session)
-            .into_iter()
-            .skip(1)
-            .collect();
+    let name = local_name(frontend, &match_state.session);
+    let peers: Vec<_> = super::super::match_runtime::network_match::nodes(&match_state.session)
+        .into_iter()
+        .skip(1)
+        .collect();
     let signal = match request {
         NetworkSendRequest::CooperativeReady => CooperativeSignal::Ready,
         NetworkSendRequest::CooperativeLeave => CooperativeSignal::Left,
@@ -202,14 +205,14 @@ pub(super) fn send(state: &mut AppState, request: NetworkSendRequest) {
         NetworkSendRequest::CooperativeGo => CooperativeSignal::Go,
         NetworkSendRequest::CooperativeOptions(options) => {
             if let Ok(message) = options_record(&options).encode(&name) {
-                send_sources(state, message.as_bytes(), peers);
+                send_sources(match_state, message.as_bytes(), peers);
             }
             return;
         }
         _ => return,
     };
     if let Ok(bytes) = signal.encode(&name) {
-        send_sources(state, &bytes, peers);
+        send_sources(match_state, &bytes, peers);
     }
 }
 
@@ -272,7 +275,7 @@ fn round_options(
         if words.country == -1 {
             continue;
         }
-        let choices = options::decoded_choices(
+        let choices = super::picks::decoded_pick(
             &human.slot,
             words.country,
             words.color,
@@ -296,7 +299,7 @@ fn round_options(
             start_position: LaunchStartPosition::Auto,
             team: LaunchTeam::None,
         };
-        let choices = options::decoded_choices(
+        let choices = super::picks::decoded_pick(
             &placeholder,
             words.country,
             words.color,

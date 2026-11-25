@@ -43,7 +43,8 @@ impl WolCapture {
 
     /// `0x116` and its mirror: the rows once every locate has answered.
     pub(super) fn buddy_rows(state: &AppState) -> Result<Vec<(String, Option<i32>, String)>> {
-        let dialog = crate::app::shell_wol::buddy::page(state).context("0x116")?;
+        let dialog =
+            crate::app::shell_wol::buddy::page(state.frontend.wol.as_ref()).context("0x116")?;
         Ok(dialog
             .ui
             .rows
@@ -60,7 +61,8 @@ impl WolCapture {
 
     fn buddy_row_click(state: &mut AppState, name: &str) -> Result<()> {
         let layout = crate::app::shell_wol::buddy::layout(state);
-        let dialog = crate::app::shell_wol::buddy::page(state).context("0x116")?;
+        let dialog =
+            crate::app::shell_wol::buddy::page(state.frontend.wol.as_ref()).context("0x116")?;
         let ui = &dialog.ui;
         let row = ui
             .rows
@@ -128,7 +130,8 @@ impl WolCapture {
         match self.target {
             WolTarget::BuddySteady => {
                 Self::buddy_row_click(state, "Tanya")?;
-                let dialog = crate::app::shell_wol::buddy::page(state).context("0x116")?;
+                let dialog = crate::app::shell_wol::buddy::page(state.frontend.wol.as_ref())
+                    .context("0x116")?;
                 let texts = dialog.ui.texts.clone().unwrap_or_default();
                 ensure!(
                     texts.iter().any(|(id, text)| *id == WINS && text == "12")
@@ -142,16 +145,21 @@ impl WolCapture {
             WolTarget::BuddyAddPopup | WolTarget::BuddyAdded => {
                 Self::buddy_button(state, ADD)?;
                 App::handle_wol_key(state, None, true, Some("Natasha"));
-                let dialog = crate::app::shell_wol::buddy::page(state).context("0x116")?;
+                let dialog = crate::app::shell_wol::buddy::page(state.frontend.wol.as_ref())
+                    .context("0x116")?;
                 dialog.ui.add.as_ref().context("Add did not open 0x115")?;
                 let text = crate::app::shell_wol::leaf::text(
-                    state,
+                    &state.frontend.shell_controller,
                     ADD_DIALOG,
                     crate::ui::wol_buddy::NAME,
                 );
                 ensure!(
                     text == "Natasha"
-                        && crate::app::shell_wol::leaf::enabled(state, ADD_DIALOG, ADD),
+                        && crate::app::shell_wol::leaf::enabled(
+                            &state.frontend.shell_controller,
+                            ADD_DIALOG,
+                            ADD
+                        ),
                     "0x115 did not take the name: {text:?}"
                 );
                 self.event(frame, "0x115 opened, Natasha typed");
@@ -159,7 +167,7 @@ impl WolCapture {
                     App::handle_wol_key(state, Some(winit::keyboard::KeyCode::Enter), true, None);
                     let rows = Self::buddy_rows(state)?;
                     ensure!(
-                        crate::app::shell_wol::buddy::page(state)
+                        crate::app::shell_wol::buddy::page(state.frontend.wol.as_ref())
                             .is_some_and(|dialog| dialog.ui.add.is_none())
                             && rows.iter().any(|(name, _, _)| name == "Natasha"),
                         "Enter did not add Natasha: {rows:?}"
@@ -186,8 +194,9 @@ impl WolCapture {
             WolTarget::BuddyPage => {
                 Self::buddy_row_click(state, "Tanya")?;
                 Self::buddy_button(state, PAGE_BUTTON)?;
-                let received = crate::app::shell_wol::page::page_received(state)
-                    .context("Page did not open 0x11E")?;
+                let received =
+                    crate::app::shell_wol::page::page_received(state.frontend.wol.as_ref())
+                        .context("Page did not open 0x11E")?;
                 ensure!(
                     received.reply_to == "Tanya" && received.lines.is_empty(),
                     "0x11E did not reply to Tanya: {:?}",

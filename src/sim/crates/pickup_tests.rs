@@ -373,7 +373,7 @@ fn solo_money_pays_saved_current_house_for_foreign_controlled_collector() {
     let terrain_speed = sim.terrain_speed_config().clone();
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Campaign);
-    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
     let current = sim.intern("Americans");
     let collector = sim.intern("Russians");
     for (id, name) in [(current, "Americans"), (collector, "Russians")] {
@@ -685,7 +685,7 @@ fn cloak_crate_ability_survives_save_load_and_does_not_edit_the_type() {
     );
     // Match the snapshot loader's native Seed0 reset; no RNG comparison is
     // part of this persistence regression.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "cloak-crate", 0);
     let restored = GameSnapshot::load(&bytes).unwrap().sim;
@@ -954,7 +954,7 @@ fn arena() -> (Simulation, RuleSet, OverlayTypeRegistry, InternedId, u64) {
     .unwrap();
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.game_options_mut_for_test().crates = false;
@@ -1691,7 +1691,7 @@ fn retail_cash_pickup_does_not_rebind_a_failed_animation_until_reread() {
     bind(&mut rules);
     let pickup = |rules: &RuleSet| {
         let mut sim = crate::sim::arena_fixture::rival_arena(rules, 31);
-        sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+        *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
@@ -1794,7 +1794,7 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
         );
         let mut sim = Simulation::with_seed(input["placement_seed"].as_u64().unwrap());
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-        sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+        *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
         let size = &input["geometry"]["size"];
         let local = &input["geometry"]["raw_local_size"];
         // This is the corpus's supplied geometry, not a full Pack5 map load.
@@ -1868,9 +1868,9 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
             input["pickup_cell"][1].as_i64().unwrap() as i16,
         );
         let placement_seed = input["placement_seed"].as_u64().unwrap();
-        sim.scenario_rng = SimRng::new(placement_seed);
-        sim.main_rng = SimRng::new(placement_seed);
-        sim.mapgen_rng = SimRng::new(placement_seed);
+        *sim.scenario_rng = SimRng::new(placement_seed);
+        *sim.main_rng = SimRng::new(placement_seed);
+        *sim.mapgen_rng = SimRng::new(placement_seed);
         assert!(
             super::super::place_crate(
                 &mut sim,
@@ -1932,9 +1932,9 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
             row["id_cursor_before"]
         );
         let seed = input["seed"].as_u64().unwrap();
-        sim.scenario_rng = SimRng::new(seed);
-        sim.main_rng = SimRng::new(seed);
-        sim.mapgen_rng = SimRng::new(seed);
+        *sim.scenario_rng = SimRng::new(seed);
+        *sim.main_rng = SimRng::new(seed);
+        *sim.mapgen_rng = SimRng::new(seed);
         let rng = |sim: &Simulation| {
             json!({"scenario": sim.scenario_rng.native_state_hex(),
             "main": sim.main_rng.native_state_hex(), "mapgen": sim.mapgen_rng.native_state_hex()})
@@ -2250,7 +2250,7 @@ fn tiberium_crate_with_the_drawn_type_one_clamps_to_type_zero_and_places_anyway(
             probe.next_range_i32_inclusive(0, 1) == 1
         })
         .expect("a seed whose first draw is 1");
-    sim.scenario_rng = crate::sim::rng::SimRng::new(seed);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(seed);
     let receiver = sim.resolved_terrain.as_ref().map(|terrain| {
         crate::map::resolved_terrain::NativeCellQuery::canonical(terrain).lookup(CELL)
     });

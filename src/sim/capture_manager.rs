@@ -219,6 +219,7 @@ impl CaptureManagerState {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn with_victims_for_test(max_control: i32, infinite: bool, victims: &[u64]) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         let mut state = Self::constructed(max_control, infinite);
         state.nodes = victims
             .iter()
@@ -239,6 +240,7 @@ impl CaptureManagerState {
     /// A manager holding these `(victim, original owner)` nodes in order.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_nodes_for_test(nodes: &[(u64, InternedId)]) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         let mut state = Self::constructed(3, false);
         state.nodes = nodes
             .iter()
@@ -955,12 +957,12 @@ impl Simulation {
         // unchanged house, which CanCapture already excluded.
         self.announce_controlled_building(target_id, controller_owner, rules);
         self.change_owner_with_rules(target_id, controller_owner, rules, registry, frame_effects);
-        if let Some(manager) = self
-            .substrate
-            .entities
-            .get_mut(controller_id)
-            .and_then(|controller| controller.capture_manager.as_mut())
-        {
+        let controller = self.substrate.entities.get_mut(controller_id);
+        // A node's victim is a name the pointer-expiry index reads.
+        if let Some(manager) = controller.and_then(|controller| {
+            let _ = controller.note_names();
+            controller.capture_manager.as_mut()
+        }) {
             manager.nodes.push(ControlNode {
                 victim: target_id,
                 original_owner,
@@ -1594,10 +1596,7 @@ impl Simulation {
             return;
         };
         let mut choice = i32::from(choice);
-        let controller_team = self
-            .team_script_vm
-            .team_for_member(controller_id)
-            .map(|(team_id, _)| team_id);
+        let controller_team = self.team_script_vm.team_of(controller_id);
         if let Some(decision) = controller_team
             .and_then(|team_id| self.team_script_vm.mind_control_decision(team_id))
             .filter(|&decision| decision != 0)

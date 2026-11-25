@@ -122,7 +122,7 @@ fn supply_step(sim: &mut Simulation, rules: &RuleSet, input: &Value) {
     use crate::sim::combat::TargetKind;
     sim.session
         .set_binary_frame_for_test(input["frame"].as_u64().unwrap_or(173) as u32);
-    sim.substrate.occupancy = OccupancyGrid::new();
+    *sim.substrate.occupancy = OccupancyGrid::new();
     for (index, id, x) in [(0, 1, 10), (1, 2, 12)] {
         let deck = input["on_bridge"][index].as_i64().unwrap_or(0) != 0;
         let flags = input["flags"][index].as_u64().unwrap_or(0x100) as u32;

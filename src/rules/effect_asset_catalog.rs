@@ -842,7 +842,7 @@ mod tests {
                 crate::map::entities::EntityCategory::Infantry,
             ),
         );
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let anim = sim.attach_parachute_anim(&rules, 1).unwrap();
         assert_eq!(
             sim.interner.resolve(sim.anim(anim).unwrap().type_id()),
@@ -909,7 +909,7 @@ mod tests {
                 11,
                 crate::map::entities::EntityCategory::Infantry,
             ));
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let owner = sim.entities().get(1).unwrap().owner();
         sim.houses
             .register(crate::sim::house_state::HouseState::new(

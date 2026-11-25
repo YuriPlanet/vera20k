@@ -145,8 +145,11 @@ impl Simulation {
             if restore && let Some(unit) = self.substrate.entities.get_mut(id) {
                 // Unit73A4E9 restores only the raw NavCom; unlike the Foot
                 // setter this does not clear NavComAux or change movement.
-                unit.navigation
-                    .store_nav_com(Some(crate::sim::components::NavTargetRef::object(contact)));
+                let note = unit.note_names();
+                unit.navigation.store_nav_com(
+                    Some(crate::sim::components::NavTargetRef::object(contact)),
+                    note,
+                );
             }
             self.foot_per_cell_process(id, PerCellReason::Arrival, rules, registry, effects);
             crate::sim::radio::transmit_to_contact(
@@ -415,6 +418,12 @@ impl Simulation {
             });
         if promote {
             self.mission_host_promote(id, self.session.binary_frame(), rules);
+        }
+        // Firestorm 2.0 UnitClass::Per_Cell_Process 0x651890..0x651975 runs
+        // the ice chain after its promotion: a heavy unit cracks or breaks
+        // the ice it arrives on (docs/ts-ice.md).
+        if reason == PerCellReason::Arrival {
+            self.unit_arrival_ice(id, rules, registry, effects);
         }
         // 0x0073ACD7..0x0073ADC4: a harvester (or weeder) off Enter/Unload
         // drops a refinery (weeder) contact at every track end.
@@ -2029,7 +2038,7 @@ mod discovery_tests {
             .register(HouseState::new(player, 0, None, true, 0, 10));
         sim.houses
             .register(HouseState::new(enemy, 1, None, false, 0, 10));
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        *sim.fog = crate::sim::vision::FogState::new(32, 32);
         let type_ref = sim.interner.intern("TEST");
         sim.substrate
             .entities

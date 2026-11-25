@@ -14,7 +14,7 @@ fn mirage(destination: Option<DriveCoord>) -> (Simulation, RuleSet) {
     .expect("rules");
     rules.general.default_mirage_disguises = vec!["TREE01".to_string()];
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_flat_ground_grid(16));
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_flat_ground_grid(16));
     let mut entity = GameEntity::test_default(1, "MGTK", "Americans", 5, 5);
     entity.set_category_for_test(EntityCategory::Unit);
     entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
@@ -29,7 +29,7 @@ fn mirage(destination: Option<DriveCoord>) -> (Simulation, RuleSet) {
             ))
     );
     sim.substrate.entities.insert(entity);
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     (sim, rules)
 }
 
@@ -389,13 +389,13 @@ fn whole_unit_fixture(
         .set_binary_frame_for_test(first["frame"].as_u64().unwrap() as u32);
     // Setup is a supplied-state boundary. Restore the recorded complete streams
     // after constructor/registration transport; none of their draws is modeled.
-    fixture.sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+    *fixture.sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
         first["rng_before"]["scenario"].as_str().unwrap(),
     );
-    fixture.sim.main_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+    *fixture.sim.main_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
         first["rng_before"]["main"].as_str().unwrap(),
     );
-    fixture.sim.mapgen_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+    *fixture.sim.mapgen_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
         first["rng_before"]["mapgen"].as_str().unwrap(),
     );
     fixture

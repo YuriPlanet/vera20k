@@ -112,7 +112,7 @@ fn campaign_without_a_factory_creates_recruits_and_finishes_after_reload() {
     crate::sim::arena_fixture::flat_ground(&mut loaded, &rules);
     // Native load resets Scenario RNG and discards active planning tokens
     // (ClearScene6370B0 / TechnoLoad70BF79); apply both to the control.
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     sim.reset_planning_after_player_load();
     assert_eq!(sim.state_hash(), loaded.state_hash());
     let mut formed = false;

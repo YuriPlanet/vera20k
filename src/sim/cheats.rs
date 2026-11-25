@@ -113,7 +113,7 @@ impl Simulation {
         let modified = self.debug_tools.modified;
         let replay_locked = self.debug_tools.replay_locked;
         let logged = std::mem::take(&mut self.debug_tools.logged_entities);
-        self.debug_tools = DebugToolsState {
+        *self.debug_tools = DebugToolsState {
             modified,
             replay_locked,
             context: if replay_locked {

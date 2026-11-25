@@ -6,7 +6,7 @@ use crate::skirmish_launch::{LaunchTeam, NETWORK_PLAYER_SLOT_COUNT, SkirmishLoca
 
 use super::{
     MatchSession, NetworkPhase, NetworkRoom, NetworkRowKind, NetworkSession, NetworkVacancy,
-    SeatPick, mode_default_team, row_limit,
+    SeatPick, host_extra_row, mode_default_team, row_limit,
 };
 
 impl MatchSession {
@@ -404,6 +404,11 @@ impl MatchSession {
         let Some(teams) = self.network_teams() else {
             return Ok(false);
         };
+        // A count outside the room's own range is not a room to seat: it is
+        // Teams Off, and the room keeps its teams as they are.
+        if !crate::skirmish_launch::ROOM_TEAMS.contains(&teams) {
+            return Ok(false);
+        }
         let launch = self.editable_network_setup()?;
         let on_team = |team: LaunchTeam| match team {
             LaunchTeam::Team(team) if team < teams => Some(usize::from(team)),
@@ -712,10 +717,17 @@ impl MatchSession {
         maximum_players.min(raw)
     }
 
-    /// Rows admitting players are bounded by the active mode/map capacity.
-    /// The native host-observer row0 exception adds one physical row without
-    /// adding a player, up to the active eight/30-slot allocation (all 30 in
-    /// VERA's rooms, whose spectator rows follow the players).
+    /// The rows that admit players: the map's capacity, plus the host's
+    /// observer row when the room has one more.
+    ///
+    /// A VERA room, and an extended room of a map with more starts than the
+    /// native eight rows, seat as many players as their map has starts, and
+    /// the host's own observer row is one more row beside them. A native
+    /// room follows `0x005EC4A3..0x005EC4EF`: the host's observer row adds
+    /// a row when the row limit was skipped or the capacity is under it (a
+    /// WOL limit under six counts one more). The room list reads this same
+    /// number (`shell_network_setup::view::room_listing`), so a row the room
+    /// hands out is a row the list shows.
     pub(crate) fn network_player_row_limit(&self) -> u8 {
         let Some(capacity) = self.network_setup_capacity() else {
             return 0;
@@ -725,8 +737,35 @@ impl MatchSession {
         } else {
             8
         };
-        let extra = i32::from(self.network_observer_row() == Some(0) && capacity < allocation);
+        let extra = if self.network_several_observers() || capacity > 8 {
+            i32::from(self.network_observer_row() == Some(0) && capacity < allocation)
+        } else {
+            i32::from(self.network_host_extra_row(capacity))
+        };
         capacity.saturating_add(extra).clamp(0, allocation) as u8
+    }
+
+    /// Whether native gives the room one row more for the host's observer
+    /// row (`0x005EC4A3..0x005EC4EF`), for the room's mode and capacity.
+    /// The host watches from row 0 (`open_host_setup`), so that row is what
+    /// marks the host as the observer, for the host and for every guest the
+    /// room publishes it to.
+    fn network_host_extra_row(&self, capacity: i32) -> bool {
+        if self.network_observer_row() != Some(0) {
+            return false;
+        }
+        let Some(network) = self.network.as_ref() else {
+            return false;
+        };
+        let Some(launch) = self.network_setup() else {
+            return false;
+        };
+        host_extra_row(
+            network.return_context.session_mode(),
+            network.room,
+            &launch.mode,
+            capacity,
+        )
     }
 
     /// `0x005E9510`: no Open player row, including the host-observer row0

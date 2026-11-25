@@ -8,6 +8,13 @@
 //! - Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::presentation::state::MatchPresentationState;
+use crate::app::presentation::text_hud::{self, TextHud};
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::render::batch::SpriteInstance;
 use crate::ui::game_screen::GameScreen;
 
@@ -28,8 +35,8 @@ const TYPE_SELECT_FALLBACK_SCHEME_ENTRY: crate::rules::house_colors::HouseColorI
 /// Menu/Scenario pause stops polling, not this clock. EnterPause683EB0 and
 /// ExitPause683FB0 only stop/rearm the separate Scenario614 score clock.
 /// Source: original gamemd.exe instructions and message-pause native controls.
-pub(crate) fn message_now_ms(state: &AppState) -> u64 {
-    crate::app::input::tooltips::now_ms(state)
+pub(crate) fn message_now_ms(diag: &DiagnosticsState, match_state: &MatchState) -> u64 {
+    crate::app::input::tooltips::now_ms(diag, match_state)
 }
 
 /// Original TAction11 6DE0B0..6DE122 resolves its CSF label, selects the
@@ -135,9 +142,9 @@ pub(crate) fn post_planning_message(state: &mut AppState, csf_key: &str) {
 
 fn post_silent_house_feedback(state: &mut AppState, csf_key: &str, timeout_ms: u64) {
     sync_view(state);
-    let now = message_now_ms(state);
+    let now = message_now_ms(&state.diag, &state.match_state);
     let rgb = house_message_rgb(
-        crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
+        crate::app::input::commands::preferred_local_owner_name(&state.match_state).as_deref(),
         &state.match_state.match_presentation.house_color_map,
         state.rules().map(|rules| rules.color_schemes.as_slice()),
     );
@@ -210,9 +217,9 @@ fn add_localized_message(
 /// TypeSelect, after formatting MSG:UnitsWorth/NoUnitsSel/NavEmpty (733569).
 pub(crate) fn post_selection_navigation_text(state: &mut AppState, text: &str) {
     sync_view(state);
-    let now = message_now_ms(state);
+    let now = message_now_ms(&state.diag, &state.match_state);
     let rgb = house_message_rgb(
-        crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
+        crate::app::input::commands::preferred_local_owner_name(&state.match_state).as_deref(),
         &state.match_state.match_presentation.house_color_map,
         state.rules().map(|rules| rules.color_schemes.as_slice()),
     );
@@ -413,7 +420,7 @@ pub(crate) fn post_ares_superweapon_refusal(
         R::InsufficientFunds => M::InsufficientFunds,
         R::NotReady | R::ManualFireDisabled | R::Unstoppable => return,
     };
-    let owner = crate::app::input::commands::preferred_local_owner_name(state);
+    let owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state);
     post_ares_superweapon_message(state, section, message, owner.as_deref());
 }
 
@@ -432,7 +439,7 @@ pub(crate) fn post_ares_superweapon_message(
     else {
         return;
     };
-    let player = crate::app::input::commands::preferred_local_owner_name(state);
+    let player = crate::app::input::commands::preferred_local_owner_name(&state.match_state);
     let Some(rules) = state.rules() else {
         return;
     };
@@ -508,7 +515,8 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
             prefix: None,
             text: &label,
             rgb: house_message_rgb(
-                crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
+                crate::app::input::commands::preferred_local_owner_name(&state.match_state)
+                    .as_deref(),
                 &state.match_state.match_presentation.house_color_map,
                 Some(&rules.color_schemes),
             ),
@@ -519,7 +527,12 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
         return;
     }
     if let HudMessage::EvaObjectLine { label, type_id } = message {
-        if let Some(name) = eva_text_product_name(state, type_id) {
+        if let Some(name) = eva_text_product_name(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            type_id,
+        ) {
             post_eva_text(state, label, &name);
         }
         return;
@@ -543,7 +556,7 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
         return;
     };
     let rgb = house_message_rgb(
-        crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
+        crate::app::input::commands::preferred_local_owner_name(&state.match_state).as_deref(),
         &state.match_state.match_presentation.house_color_map,
         Some(&rules.color_schemes),
     );
@@ -556,17 +569,22 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
 /// ([`crate::assets::csf_file::type_ui_name`]); a type with no `UIName=`
 /// keeps its rules key (e.g. `HTNK`).
 fn eva_text_product_name(
-    state: &AppState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     type_id: crate::sim::intern::InternedId,
 ) -> Option<String> {
-    let section = state
-        .match_state
+    let section = match_state
         .sim_runtime
         .runtime()?
         .simulation
         .interner()
         .resolve(type_id);
-    eva_text_name(section, state.rules()?, state.process_assets.csf.as_ref())
+    eva_text_name(
+        section,
+        crate::app::state::active_rules(frontend, match_state)?,
+        process_assets.csf.as_ref(),
+    )
 }
 
 fn eva_text_name(
@@ -649,7 +667,7 @@ fn post_eva_plain_text(state: &mut AppState, label: &str) {
     };
     let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
     let rgb = house_message_rgb(
-        crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
+        crate::app::input::commands::preferred_local_owner_name(&state.match_state).as_deref(),
         &state.match_state.match_presentation.house_color_map,
         Some(&rules.color_schemes),
     );
@@ -678,7 +696,7 @@ fn post_eva_text(state: &mut AppState, label: &str, name: &str) {
     };
     let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
     let rgb = house_message_rgb(
-        crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
+        crate::app::input::commands::preferred_local_owner_name(&state.match_state).as_deref(),
         &state.match_state.match_presentation.house_color_map,
         Some(&rules.color_schemes),
     );
@@ -715,7 +733,7 @@ pub(crate) fn post_eva_auto_loaded(state: &mut AppState, count: usize) {
     };
     let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
     let rgb = house_message_rgb(
-        crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
+        crate::app::input::commands::preferred_local_owner_name(&state.match_state).as_deref(),
         &state.match_state.match_presentation.house_color_map,
         Some(&rules.color_schemes),
     );
@@ -776,7 +794,14 @@ fn post_house_names_line(
 ) {
     let Some(names) = houses
         .iter()
-        .map(|&house| crate::app::presentation::house_ui::house_ui_name(state, house))
+        .map(|&house| {
+            crate::app::presentation::house_ui::house_ui_name(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                house,
+            )
+        })
         .collect::<Option<Vec<String>>>()
     else {
         return;
@@ -849,23 +874,31 @@ fn post_named_house_line(
 
 /// MapPlayerColorToScheme `0x0069A310` of a player's Session colour: VERA
 /// reads it as the House's own scheme, as MPlayer_Defeated's lines do.
-pub(crate) fn player_line_rgb(state: &AppState, owner: crate::sim::intern::InternedId) -> [f32; 3] {
-    let owner = state
-        .match_state
+pub(crate) fn player_line_rgb(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    owner: crate::sim::intern::InternedId,
+) -> [f32; 3] {
+    let owner = match_state
         .sim_runtime
         .runtime()
         .map(|runtime| runtime.simulation.interner().resolve(owner).to_string());
     house_message_rgb(
         owner.as_deref(),
-        &state.match_state.match_presentation.house_color_map,
-        state.rules().map(|rules| rules.color_schemes.as_slice()),
+        &match_state.match_presentation.house_color_map,
+        crate::app::state::active_rules(frontend, match_state)
+            .map(|rules| rules.color_schemes.as_slice()),
     )
 }
 
 /// Network packet colour is a Session priority, converted by69A310 before
 /// TextLabel72A4A0. Keep this in the same message-colour owner as local echoes.
-pub(crate) fn packet_player_line_rgb(state: &AppState, priority: i32) -> [f32; 3] {
-    let Some(rules) = state.rules() else {
+pub(crate) fn packet_player_line_rgb(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    priority: i32,
+) -> [f32; 3] {
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return MESSAGE_RGB_SYSTEM;
     };
     country_message_rgb(
@@ -1023,9 +1056,12 @@ pub(crate) fn show_status_notices(state: &mut AppState) {
     };
     let rgb = grey_rgb(rules);
     let delay_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
-    let network =
-        crate::app::match_runtime::network_match::recovery_notice(state).map(crate::i18n::tr);
-    let pause = crate::app::input::pause_menu::multiplayer_control(state)
+    let network = crate::app::match_runtime::network_match::recovery_notice(
+        &state.frontend,
+        &state.match_state,
+    )
+    .map(crate::i18n::tr);
+    let pause = crate::app::input::pause_menu::multiplayer_control(&state.match_state)
         .and_then(|control| control.status)
         .map(crate::i18n::tr);
     let diagnostics = &state.match_state.match_diagnostics;
@@ -1036,7 +1072,7 @@ pub(crate) fn show_status_notices(state: &mut AppState) {
     };
     let replay = diagnostics.playback_status();
     sync_view(state);
-    let now = message_now_ms(state);
+    let now = message_now_ms(&state.diag, &state.match_state);
     let font = &state.renderer.bit_font;
     let list = &mut state.match_state.match_presentation.message_list;
     for (slot, text, timeout_ms) in [
@@ -1141,7 +1177,7 @@ fn post_resolved_message(state: &mut AppState, post: &crate::ui::messages::Messa
 
 fn post_message(state: &mut AppState, post: &crate::ui::messages::MessagePost<'_>, localize: bool) {
     sync_view(state);
-    let now = message_now_ms(state);
+    let now = message_now_ms(&state.diag, &state.match_state);
     let font = &state.renderer.bit_font;
     let outcome = add_localized_message(
         &mut state.match_state.match_presentation.message_list,
@@ -1151,10 +1187,13 @@ fn post_message(state: &mut AppState, post: &crate::ui::messages::MessagePost<'_
         &|s| font.text_width(s) as i32,
     );
     if outcome.play_sound {
-        let sound = state
-            .rules()
-            .and_then(|r| r.general.incoming_message_sound().map(str::to_owned));
-        crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        crate::app::App::play_shell_rules_sound(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            |rules| rules.general.incoming_message_sound(),
+        );
     }
 }
 
@@ -1207,7 +1246,7 @@ pub(crate) fn update(state: &mut AppState, main_tick_admitted: bool) -> Option<u
         return None;
     }
     sync_view(state);
-    let now = message_now_ms(state);
+    let now = message_now_ms(&state.diag, &state.match_state);
     state
         .match_state
         .match_presentation
@@ -1240,75 +1279,119 @@ fn sync_view(state: &mut AppState) {
         state,
         crate::ui::field_layout::FieldPart::Messages,
     );
-    let (_, tactical_y, _, _) = crate::app::input::camera::tactical_viewport_px(state);
-    let top = state.renderer.performance_overlay.message_top();
-    state.match_state.match_presentation.message_list.set_view(
-        x,
-        y.max(tactical_y as i32 + top),
-        width,
+    let (_, tactical_y, _, _) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
     );
+    let top = state.renderer.performance_overlay.message_top();
+    // Android: the battle view fills the window, so the screen's rounded
+    // corner and its cutout sit over the lane's first rows. Move the lane in
+    // by what they hide, from screen pixels to the render frame's own units.
+    #[cfg(target_os = "android")]
+    let (x, y) = {
+        let window = state.platform.window.inner_size();
+        let (dx, dy) = crate::util::display_insets::frame_offset(
+            (state.render_width(), state.render_height()),
+            (window.width, window.height),
+        );
+        (x + dx, y.max(tactical_y as i32 + top + dy))
+    };
+    #[cfg(not(target_os = "android"))]
+    let y = y.max(tactical_y as i32 + top);
+    state.match_state.match_presentation.message_list.set_view(x, y, width);
 }
 
 /// Prepare one successful offline TextLabel paint, using raw wall time for
 /// typing and the existing sound owner for every MessageCharTyped request.
 /// Expiry uses the same wall clock, but is polled only by admitted Main_Tick passes.
-pub(crate) fn build_message_instances(
-    state: &mut AppState,
-) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+/// Each drawn frame's message step, before the messages are drawn:
+/// nonsilent TextLabel72A4A0 advances its raw-wall reveal and requests the
+/// typing sound once per successful paint. It steps whether or not a layout
+/// shows the messages.
+pub(crate) fn advance_messages(state: &mut AppState) {
     if state.frontend.screen != GameScreen::InGame {
-        return (Vec::new(), Vec::new());
+        return;
     }
-    let wall_ms = crate::app::input::tooltips::now_ms(state) as u32;
+    let wall_ms = crate::app::input::tooltips::now_ms(&state.diag, &state.match_state) as u32;
     let requests = state
         .match_state
         .match_presentation
         .message_list
         .advance_reveal(wall_ms);
     if requests > 0 {
-        let sound = state
-            .rules()
-            .and_then(|rules| rules.general.message_char_typed_sound().map(str::to_owned));
         for _ in 0..requests {
-            crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+            crate::app::App::play_shell_rules_sound(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                |rules| rules.general.message_char_typed_sound(),
+            );
         }
+    }
+}
+
+/// The message lines as they stand after this frame's
+/// [`advance_messages`], drawn through `hud`.
+pub(crate) fn build_message_instances(
+    state: &AppState,
+    hud: &mut TextHud,
+) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+    if state.frontend.screen != GameScreen::InGame {
+        return (Vec::new(), Vec::new());
     }
     // A layout that leaves the messages out only takes them off the screen.
     if !crate::app::presentation::field_parts::shows(
-        state,
+        &state.match_state.match_presentation,
         crate::ui::field_layout::FieldPart::Messages,
     ) {
         return (Vec::new(), Vec::new());
     }
-    message_instances(
-        &state.renderer.bit_font,
+    let font = &state.renderer.bit_font;
+    let rows = message_rows(
+        font,
         &state.match_state.match_presentation.message_list,
         state
             .platform
             .ime
             .composition(crate::app::input::ime::ImeTarget::InGameChat)
             .map(|(units, _)| units),
+    );
+    draw_message_rows(
+        font,
+        &rows,
         [
             state.match_state.input.camera_x,
             state.match_state.input.camera_y,
         ],
+        hud,
     )
 }
 
 /// The open edit line in window pixels, where the input method shows its
 /// candidates; `None` while no edit is open.
-pub(crate) fn ime_edit_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
-    if state.frontend.screen != GameScreen::InGame {
+pub(crate) fn ime_edit_rect(
+    renderer: &RendererState,
+    screen: &GameScreen,
+    presentation: &MatchPresentationState,
+) -> Option<crate::ui::shell::geom::RectPx> {
+    if *screen != GameScreen::InGame {
         return None;
     }
-    let list = &state.match_state.match_presentation.message_list;
+    let list = &presentation.message_list;
     let edit = list.edit_line()?;
-    let font = &state.renderer.bit_font;
+    let font = &renderer.bit_font;
     // The message rows are frame pixels, which a zoomed match shows scaled
     // and centred in the window.
     let (x, y) = (list.x() as f32, edit.y as f32);
-    let ((x, y), scale) = state.tactical_zoom().map_or(((x, y), 1.0), |zoom| {
-        (zoom.source_to_window(x, y), zoom.scale())
-    });
+    let ((x, y), scale) = renderer
+        .tactical_zoom(screen)
+        .map_or(((x, y), 1.0), |zoom| {
+            (zoom.source_to_window(x, y), zoom.scale())
+        });
     Some(crate::ui::shell::geom::RectPx::new(
         x as i32,
         y as i32,
@@ -1317,23 +1400,32 @@ pub(crate) fn ime_edit_rect(state: &AppState) -> Option<crate::ui::shell::geom::
     ))
 }
 
-fn message_instances(
+/// One message row as it draws: where its text starts, the text, its row,
+/// its colour in whole 255ths and how many of its units the label reveals.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct MessageRow {
+    pub(crate) x: f32,
+    pub(crate) text: String,
+    pub(crate) y: i32,
+    pub(crate) rgb: [u8; 3],
+    pub(crate) reveal: u32,
+}
+
+/// The rows Draw `0x005D49A0` paints, in order: the open edit line, whole
+/// (its reveal flag is never set and the chat cursor character 0 draws no
+/// caret), the input method's composition after its typed text, then the
+/// messages. A hidden edit (the beacon label's) draws nothing, nor its
+/// composition.
+fn message_rows(
     font: &crate::render::bit_font::BitFont,
     list: &crate::ui::messages::MessageList,
     composition: Option<&[u16]>,
-    camera_offset: [f32; 2],
-) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+) -> Vec<MessageRow> {
     let x = list.x() as f32;
-    let mut fills = Vec::new();
-    let mut texts = Vec::new();
-    // Draw 0x005D49A0 paints the edit label first, whole: its reveal flag
-    // is never set and the chat cursor character 0 draws no caret.
-    // A hidden edit (the beacon label's) draws nothing, nor its composition.
     let edit = list
         .edit_line()
         .filter(|edit| !edit.hidden)
         .map(|edit| crate::ui::messages::Message::edit_row(&edit));
-    // The open composition follows the typed text (`app::input::ime`).
     let composition = edit.as_ref().zip(composition).map(|(row, units)| {
         let mut row = row.clone();
         row.text = String::from_utf16_lossy(units);
@@ -1343,50 +1435,76 @@ fn message_instances(
     let composition_x = edit
         .as_ref()
         .map_or(x, |row| x + font.text_width(&row.text) as f32);
-    let rows = edit
-        .iter()
+    edit.iter()
         .map(|row| (x, row))
         .chain(composition.iter().map(|row| (composition_x, row)))
-        .chain(list.messages().iter().map(|row| (x, row)));
-    for (x, m) in rows {
+        .chain(list.messages().iter().map(|row| (x, row)))
+        .map(|(x, m)| MessageRow {
+            x,
+            text: m.text.clone(),
+            y: m.y,
+            rgb: m.rgb.map(|channel| (channel * 255.0).round() as u8),
+            reveal: m.reveal_count(),
+        })
+        .collect()
+}
+
+/// The rows as a box node and a label node of `hud` each: the box one pixel
+/// out around the text, behind its own glyphs (box depth 0.00023, text
+/// 0.00022, the tooltip lane's ordering). Returns the boxes and the glyphs.
+fn draw_message_rows(
+    font: &crate::render::bit_font::BitFont,
+    rows: &[MessageRow],
+    camera_offset: [f32; 2],
+    hud: &mut TextHud,
+) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+    hud.begin();
+    for row in rows {
         // Message rows are screen-space, but `draw_pooled_ui` binds the
         // live world camera and the shader subtracts it. Add that camera
         // back here so scrolling cannot displace the HUD text.
-        let text = font.build_text_label(
-            &m.text,
-            x,
-            m.y as f32,
-            0.00022,
-            camera_offset,
-            m.rgb.map(|channel| (channel * 255.0).round() as u8),
-            m.reveal_count(),
-        );
-        let width = font.text_width(&m.text) as f32;
+        let width = font.text_width(&row.text) as f32;
         let height = font.cell_height() as f32;
-        fills.push(SpriteInstance {
-            position: [
-                x - 1.0 + camera_offset[0],
-                m.y as f32 - 1.0 + camera_offset[1],
+        let corner = [row.x as i32 - 1, row.y - 1];
+        hud.fill(
+            vera20k_gui::Rect::new(corner[0], corner[1], width as i32 + 2, height as i32 + 2),
+            [
+                row.x - 1.0 + camera_offset[0],
+                row.y as f32 - 1.0 + camera_offset[1],
             ],
-            size: [width + 2.0, height + 2.0],
-            uv_origin: [0.0, 0.0],
-            uv_size: [1.0, 1.0],
-            // The UI pass depth-tests: the box must sit BEHIND its own glyphs
-            // (text depth 0.00022), mirroring the tooltip lane's ordering
-            // (fill 0.00021 > border 0.000205 > text).
-            depth: 0.00023,
-            tint: [0.0; 3],
-            alpha: 1.0,
-            ..Default::default()
-        });
-        texts.extend(text);
+            [width + 2.0, height + 2.0],
+            text_hud::rgb([0; 3]),
+            0.00023,
+        );
+        hud.text(
+            vera20k_gui::Rect::new(row.x as i32, row.y, width as i32, height as i32),
+            &row.text,
+            [row.x + camera_offset[0], row.y as f32 + camera_offset[1]],
+            text_hud::rgb(row.rgb),
+            Some((0.00022, row.reveal)),
+        );
     }
-    (fills, texts)
+    hud.finish(font);
+    (
+        hud.boxes().copied().collect(),
+        hud.glyphs().copied().collect(),
+    )
 }
 
 #[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
+
+    /// The rows of `list` drawn through a fresh tree.
+    fn message_instances(
+        font: &crate::render::bit_font::BitFont,
+        list: &crate::ui::messages::MessageList,
+        composition: Option<&[u16]>,
+        camera_offset: [f32; 2],
+    ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+        let rows = message_rows(font, list, composition);
+        draw_message_rows(font, &rows, camera_offset, &mut TextHud::default())
+    }
 
     #[test]
     fn movie_subtitle_rows_keep_native_duration_and_literal_text() {

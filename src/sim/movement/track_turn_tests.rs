@@ -145,7 +145,7 @@ fn fixture(kind: LocomotorKind) -> Simulation {
         _ => unreachable!(),
     }
     sim.substrate.entities.insert(entity);
-    sim.substrate.occupancy =
+    *sim.substrate.occupancy =
         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
     sim
 }
@@ -724,7 +724,7 @@ fn ordinary_fresh_turn_and_drive_refusal_reach_entry_without_running_speed() {
                     blocker.lifecycle.set_in_limbo_for_test(false);
                     blocker.lifecycle.set_cell_marked_for_test(true);
                     sim.substrate.entities.insert(blocker);
-                    sim.substrate.occupancy =
+                    *sim.substrate.occupancy =
                         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
                 }
                 let stats = sim
@@ -823,7 +823,7 @@ fn live_rotation_returns_before_fresh_selection_with_a_queued_path_and_no_displa
                 })
             })
             .collect();
-        sim.resolved_terrain =
+        *sim.resolved_terrain =
             Some(crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(20, 20, cells));
         assert_eq!(
             sim.resolved_terrain
@@ -974,7 +974,7 @@ fn actual_turn_and_arrival_crush_use_binary_frame_for_both_shield_kinds() {
                         ));
                         sim.substrate.entities.insert(victim);
                     }
-                    sim.substrate.occupancy =
+                    *sim.substrate.occupancy =
                         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
                     sim.process_ground_locomotor_for_test(1, Some(&rules), None, None)
                         .unwrap();

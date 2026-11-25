@@ -10,6 +10,7 @@
 use crate::util::time::Instant;
 use std::collections::{BTreeMap, HashMap};
 
+use crate::app::process_assets::ProcessAssets;
 use crate::map::houses::{HouseColorMap, HouseRoster};
 use crate::map::overlay::TerrainObject;
 use crate::map::terrain::TerrainGrid;
@@ -70,6 +71,8 @@ pub(crate) struct MatchPresentationState {
     /// string table stay fixed for the match. `None` unless Ares plays in
     /// the game (`RuleSet::ares`).
     pub(crate) ares_status_texts: Option<crate::app::presentation::sidebar_build::AresStatusTexts>,
+    /// The cameo status strip's own labels, resolved with the Ares ones.
+    pub(crate) status_texts: StatusTexts,
     /// The local country's own win/lose card from `[EndGameScreens]`, drawn in
     /// the same tactical slot as the retail banner. `None` keeps the native
     /// art; the player's Custom End Game Banner switch is read at draw time.
@@ -156,6 +159,18 @@ pub(crate) struct MatchPresentationState {
     pub(crate) super_timer_next_flip_ms: Option<u64>,
     /// Local timer-list folding and scroll state, independent of simulation.
     pub(crate) super_timer_dock: crate::app::presentation::super_timers::TimerDock,
+    /// What the timer lines show this frame (`super_timers::update_super_timers`).
+    pub(crate) super_timer_frame: crate::app::presentation::super_timers::TimerFrame,
+    /// The outcome banner's drawing trees.
+    pub(crate) outcome_banner_huds: crate::app::presentation::outcome_banner::BannerHuds,
+    /// The layout edit mode's overlay tree.
+    pub(crate) layout_edit_hud: crate::app::presentation::text_hud::TextHud,
+    /// The tooltip's drawing tree.
+    pub(crate) tooltip_hud: crate::app::presentation::text_hud::TextHud,
+    /// The message rows' drawing tree.
+    pub(crate) message_hud: crate::app::presentation::text_hud::TextHud,
+    /// The timer lines' drawing tree.
+    pub(crate) super_timer_hud: crate::app::presentation::text_hud::TextHud,
     pub(crate) combat_lights: crate::app::presentation::combat_lights::CombatLightRuntime,
     /// The sole client owner of native GScreenClass shake offsets; input
     /// events decay it and Simulation only sends ordered axis writes.
@@ -245,9 +260,9 @@ pub(crate) struct MatchPresentationState {
     /// `sidebar_gadgets::update_sidebar_gadget_state` on every pass;
     /// read each frame by the sidebar view builder to pick SHP frame indices.
     pub(crate) sidebar_gadget_state: crate::ui::sidebar::gadget_flash::SidebarGadgetState,
-    /// In-game gadget substrate (study §6.1): retained sidebar button list +
-    /// capture/focus state + reusable tick output + the mouse-held record.
-    pub(crate) in_game_gadgets: crate::app::input::gadget_input::InGameGadgets,
+    /// The match's chrome nodes on `dialog_ui`'s chrome layer
+    /// (`input::chrome_input`).
+    pub(crate) in_game_chrome: crate::app::input::chrome_input::InGameChrome,
     /// Retained immutable sidebar view plus its per-owner animated credit state.
     /// Consumers read the snapshot; explicit transitions rebuild it.
     pub(crate) sidebar_projection: crate::app::sidebar_projection::SidebarProjectionState,
@@ -267,6 +282,18 @@ pub(crate) struct MatchPresentationState {
     pub(crate) layout_edit: Option<crate::app::input::layout_edit::LayoutEditState>,
     /// The buttons and texts the local side's layout adds.
     pub(crate) added_parts: std::sync::Arc<[crate::ui::added_parts::AddedPart]>,
+    /// What the local side's layout gives the built-in parts' own code:
+    /// the buttons' commands and the money counter's value and alignment.
+    pub(crate) stock_parts: crate::app::presentation::layout_parts::StockParts,
+    /// Their drawing trees, brought to `added_parts` as each frame draws.
+    pub(crate) added_part_huds: crate::app::presentation::layout_parts::PartsHuds,
+    /// The radar's minimap as a host area of a tree.
+    pub(crate) minimap_hud: crate::app::presentation::picture_hud::AreaHud,
+    /// The sidebar column's chrome and the bottom command bar, drawn by
+    /// their nodes on `dialog_ui`'s chrome layer (`in_game_chrome`).
+    pub(crate) chrome_paint: crate::app::presentation::sidebar_build::ChromePaint,
+    /// The sidebar's texts and the observer's strip as drawing trees.
+    pub(crate) sidebar_huds: crate::app::presentation::sidebar_build::SidebarHuds,
     /// The row each grid of build pictures the layout adds is scrolled to,
     /// by the grid's place in `added_parts`.
     pub(crate) added_grid_scroll: Vec<usize>,
@@ -437,5 +464,42 @@ mod relation_colour_tests {
         assert_eq!(seen["Foe"], RELATION_ENEMY);
         assert_eq!(seen["Civ"], colors["Civ"]);
         assert_eq!(relation_house_colors(&sim, &colors, None), None);
+    }
+}
+
+/// The cameo status strip's labels: `TXT_READY`, gamemd's strip draw's
+/// `TXT_HOLD` ("On Hold") for suspended production, and
+/// `SuperClass::NameReadiness6CC2B0`'s drain labels `TXT_CHARGING` and
+/// `TXT_FIRESTORM_ON`. Resolved with the incoming world and after the string
+/// table's labels change ([`crate::app::loading::transitions::resolve_status_texts`]),
+/// not with every sidebar draw.
+#[derive(Debug, Clone)]
+pub(crate) struct StatusTexts {
+    pub(crate) ready: String,
+    pub(crate) hold: String,
+    pub(crate) charging: String,
+    pub(crate) active: String,
+}
+
+impl StatusTexts {
+    pub(crate) fn resolve(process_assets: &ProcessAssets) -> Self {
+        Self {
+            ready: process_assets.csf_label("TXT_READY", "Ready"),
+            hold: process_assets.csf_label("TXT_HOLD", "On Hold"),
+            charging: process_assets.csf_label("TXT_CHARGING", "Charging"),
+            active: process_assets.csf_label("TXT_FIRESTORM_ON", "Firestorm On"),
+        }
+    }
+}
+
+/// The labels while no string table is loaded.
+impl Default for StatusTexts {
+    fn default() -> Self {
+        Self {
+            ready: "Ready".to_owned(),
+            hold: "On Hold".to_owned(),
+            charging: "Charging".to_owned(),
+            active: "Firestorm On".to_owned(),
+        }
     }
 }

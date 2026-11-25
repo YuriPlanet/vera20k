@@ -7,17 +7,21 @@
 
 use crate::app::AppState;
 use crate::app::input::dialog_page::InGameDialog;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::presentation::state::MatchPresentationState;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::render::batch::SpriteInstance;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::scaled_copy::ScaledSurface;
 use crate::render::sidebar_chrome::{SidebarChromeAtlas, SidebarChromeEntry};
+use crate::ui::game_screen::GameScreen;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::geom::RectPx;
-use crate::ui::shell::geom::ShellAlign;
-use crate::ui::shell::in_game_shell::{
-    InGameShellLayout, InGameShellSizes, right_panel_title_rect, status_line_rect,
-};
-use crate::ui::shell::pause_menu::PauseMenuButtonState;
+use crate::ui::shell::in_game_shell::{InGameShellLayout, InGameShellSizes};
 use crate::ui::sidebar::command_bar::spacer_pieces;
+use crate::ui::sidebar::{ArtKey, SidebarPart};
 
 pub(super) fn shell_layout(
     atlas: &SidebarChromeAtlas,
@@ -33,13 +37,13 @@ pub(super) fn shell_layout(
             background_small: size(atlas.background_small?),
             background_medium: size(atlas.background_medium?),
             background_large: size(atlas.background_large?),
-            credits: size(atlas.top_strip_thin?),
-            top: size(atlas.top_strip_sidebar?),
-            radar: size(atlas.radar),
-            side1: size(atlas.side1),
-            side2: size(atlas.side2),
-            side3: size(atlas.side3),
-            addon: size(atlas.unknown_top_housing?),
+            credits: size(atlas.art(SidebarPart::Credits, ArtKey::Art, 0)?),
+            top: size(atlas.art(SidebarPart::Top, ArtKey::Art, 0)?),
+            radar: size(atlas.art(SidebarPart::Radar, ArtKey::Art, 0)?),
+            side1: size(atlas.art(SidebarPart::Middle, ArtKey::Art, 0)?),
+            side2: size(atlas.art(SidebarPart::Cameos, ArtKey::RowArt, 0)?),
+            side3: size(atlas.art(SidebarPart::Cameos, ArtKey::EndArt, 0)?),
+            addon: size(atlas.art(SidebarPart::Cameos, ArtKey::FootArt, 0)?),
             bottom_spacer: size(atlas.command_bar.spacer?),
             left_cap: size(atlas.command_bar.left_cap[2]?),
             button_background: size(atlas.command_bar.background?),
@@ -59,18 +63,42 @@ pub(super) fn shell_layout(
 /// The pixels every active-game shell lays out, paints and hit-tests in: the
 /// match frame in sidebar pixels (`SidebarFrame::layout_size`), the frame
 /// itself at Normal.
-pub(crate) fn in_game_shell_size(state: &AppState) -> (i32, i32) {
-    let (width, height) = state.sidebar_frame().layout_size();
+pub(crate) fn in_game_shell_size(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    presentation: &MatchPresentationState,
+    persistence: &PersistenceState,
+) -> (i32, i32) {
+    let (width, height) = crate::app::state::sidebar_frame(
+        platform,
+        persistence,
+        renderer,
+        screen,
+        &presentation.sidebar_layout_spec,
+    )
+    .layout_size();
     (width as i32, height as i32)
 }
 
 /// The pointer in [`in_game_shell_size`]'s pixels: the shell pixel shown at
 /// the frame pixel under it.
-pub(crate) fn in_game_shell_cursor(state: &AppState) -> (i32, i32) {
-    let (x, y) = state.cursor_position();
-    state
-        .sidebar_frame()
-        .pixel_to_layout(x.round() as i32, y.round() as i32)
+pub(crate) fn in_game_shell_cursor(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> (i32, i32) {
+    let (x, y) = match_state.input.cursor_position();
+    crate::app::state::sidebar_frame(
+        platform,
+        persistence,
+        renderer,
+        screen,
+        &match_state.match_presentation.sidebar_layout_spec,
+    )
+    .pixel_to_layout(x.round() as i32, y.round() as i32)
 }
 
 /// An active-game shell's pixel space and its native layout there.
@@ -119,7 +147,13 @@ pub(crate) fn native_in_game_shell_active(state: &AppState) -> bool {
 
 pub(crate) fn current_in_game_shell_layout(state: &AppState) -> Option<InGameShellGeometry> {
     let atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)?;
-    let (width, height) = in_game_shell_size(state);
+    let (width, height) = in_game_shell_size(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     // The Phobos switch is absent from builds without the capability, so those
     // keep the native top-left placement.
     #[cfg(feature = "phobos")]
@@ -161,9 +195,6 @@ pub(super) struct InGamePaint<'a> {
     pub(super) art: Vec<SpriteInstance>,
     pub(super) controls: Vec<SpriteInstance>,
     pub(super) texts: Vec<crate::render::shell_text::ShellTextDraw>,
-    /// The status line's text: the hovered control's help (`0x006040B0`)
-    /// unless the dialog puts its own.
-    pub(super) help: Option<String>,
 }
 
 impl<'a> InGamePaint<'a> {
@@ -180,7 +211,6 @@ impl<'a> InGamePaint<'a> {
             art: background_instances(atlas, shell.layout, shell.width, shell.height),
             controls: Vec::new(),
             texts: Vec::new(),
-            help: None,
         }
     }
 
@@ -197,91 +227,83 @@ impl<'a> InGamePaint<'a> {
         RectPx::new(0, 0, self.shell.width, self.shell.height)
     }
 
-    pub(super) fn label(&self, (key, fallback): (&str, &str)) -> String {
-        self.state.csf_label(key, fallback)
-    }
-
-    /// A right-panel owner-draw button (`0x00612B70`), pushed in while
-    /// `pressed`.
-    pub(super) fn button(&mut self, rect: RectPx, caption: &str, pressed: bool) {
-        self.owner_button(
-            rect,
-            caption,
-            PauseMenuButtonState {
-                pressed,
-                ..Default::default()
-            },
-        );
-    }
-
-    /// A right-panel owner-draw button in `look`: its SIDEBTTN frame
-    /// ([`super::pause_menu::button_frame`]) and centred caption, in the
-    /// side's colour while disabled or lit.
-    pub(super) fn owner_button(&mut self, rect: RectPx, caption: &str, look: PauseMenuButtonState) {
-        let (buttons, screen) = (&self.atlas.in_game_shell.buttons, self.screen());
-        if let Some(entry) = buttons[super::pause_menu::button_frame(look)].or(buttons[0]) {
-            push_art(&mut self.art, entry, rect, screen);
+    /// This shell's type-2 button art for [`super::gui_paint::ButtonArt::Side`].
+    pub(super) fn side_buttons(&self) -> super::gui_paint::SideButtons {
+        super::gui_paint::SideButtons {
+            frames: self.atlas.in_game_shell.buttons,
+            theme: self.theme,
+            clip: self.screen(),
         }
-        // A lit face takes the art's dark label colour, as a disabled one
-        // does: yellow is hard to read on it.
-        let rgb = super::pause_menu::button_text_rgb(self.theme, look.enabled && !look.highlighted);
-        let at = super::pause_menu::button_text_rect(rect, look.pressed);
-        self.text_rgb(
-            caption,
-            at,
-            rgb,
-            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-        );
     }
 
-    /// A static's text in the label colour.
-    pub(super) fn text(&mut self, value: &str, rect: RectPx, align: ShellAlign) {
-        self.text_rgb(value, rect, super::SHELL_LABEL_TEXT_RGB, align);
-    }
-
-    pub(super) fn text_rgb(&mut self, value: &str, rect: RectPx, rgb: [f32; 3], align: ShellAlign) {
-        let at = super::text::rect_to_text_rect(rect);
-        let depth = super::SHELL_CONTROL_TEXT_DEPTH;
-        super::text::push_text_draw(
-            &mut self.texts,
-            self.state,
-            value,
-            at,
-            rgb,
-            align,
-            depth,
-            1.0,
-        );
-    }
-
-    /// VERA's Previous/Next page buttons and "page n of m" over the first.
-    pub(super) fn paging(
+    /// The controls `ids` of `ui`'s top dialog, each with its subtree, in
+    /// that order, painted by [`super::gui_paint`] in `style` and appended
+    /// lane by lane: [`super::gui_paint::ButtonArt::Side`] art on `art`, the
+    /// rest on `controls` and `texts`. A missing id paints nothing. The
+    /// nodes must be current this frame
+    /// ([`crate::app::input::dialog_page::InGameDialog::sync`]).
+    pub(super) fn nodes(
         &mut self,
-        rects: [RectPx; 2],
-        pressed: [bool; 2],
-        page: usize,
-        pages: usize,
+        ui: &DialogController,
+        ids: &[u16],
+        style: super::gui_paint::GuiStyle<'_>,
     ) {
-        for ((rect, pressed), label) in rects
-            .into_iter()
-            .zip(pressed)
-            .zip(["VERA:Previous", "VERA:Next"])
-        {
-            self.button(rect, &crate::i18n::tr(label), pressed);
+        if let Some(root) = ui.top_id().and_then(|dialog| ui.root_in(dialog)) {
+            self.nodes_in(ui.gui(), root, ids, style);
         }
-        let first = rects[0];
-        let shown = crate::i18n::tr_fill("VERA:PageOf", &[("page", &page), ("pages", &pages)]);
-        self.text(
-            &shown,
-            RectPx::new(first.x, first.y - 24, first.w, 20),
-            ShellAlign::H_CENTER,
+    }
+
+    /// [`Self::nodes`] of the dialog rooted at `root` in `gui`, which may lie
+    /// under another.
+    pub(super) fn nodes_in(
+        &mut self,
+        gui: &vera20k_gui::Gui,
+        root: vera20k_gui::NodeId,
+        ids: &[u16],
+        style: super::gui_paint::GuiStyle<'_>,
+    ) {
+        let state = self.state;
+        let atlas = state.frontend.skirmish_shell_chrome.as_ref();
+        // The controls and texts move in and back out: no new buffers.
+        let (controls, texts) = (
+            std::mem::take(&mut self.controls),
+            std::mem::take(&mut self.texts),
         );
+        let mut paint = HudPaint::from_lane(Material::Controls, controls, texts);
+        let scale = crate::ui::shell::geom::RETAIL_SCALE;
+        for node in ids
+            .iter()
+            .filter_map(|id| gui.find_id(root, i32::from(*id)))
+        {
+            super::gui_paint::paint_gui_into(
+                &mut paint,
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                atlas,
+                gui,
+                node,
+                scale,
+                &[],
+                style,
+            );
+        }
+        // The type-2 buttons' art under the rest, onto this shell's lanes.
+        paint.drain_lane(Material::Side, &mut self.art);
+        self.controls = paint.take_lane(Material::Controls);
+        self.texts = std::mem::take(&mut paint.texts);
     }
 }
 
-/// Paints `dialog` over the active-game shell (`0x00621E90` -> `0x0072F540`):
-/// the shell art, its lower right-panel button and title 0x694, what
-/// `extras` adds, then the status line 0x695.
+/// Paints `dialog`, whose nodes are current ([`InGameDialog::sync`]), over
+/// the active-game shell (`0x00621E90` -> `0x0072F540`): the shell art, its
+/// lower right-panel button (its spec's control `dialog.lower.0` on the
+/// layout's lower rect, a [`super::gui_paint::ButtonArt::Side`] button
+/// captioned `dialog.lower.1`) and title 0x694, what `extras` adds, then the
+/// status line 0x695 with the help of the control under the pointer
+/// ([`crate::app::input::dialog_page::help`]), each from its node.
 pub(super) fn paint_dialog(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
@@ -289,34 +311,41 @@ pub(super) fn paint_dialog(
     dialog: &InGameDialog,
     extras: impl FnOnce(&mut InGamePaint<'_>, &DialogController),
 ) -> anyhow::Result<()> {
+    use crate::ui::shell::in_game_shell::{FOOTER, TITLE};
     let frame = {
         let state: &AppState = state;
-        let ui = (dialog.ui)(state).expect("the open dialog's controls");
+        let ui =
+            (dialog.ui)(&state.match_state.match_presentation).expect("the open dialog's controls");
         let mut paint = InGamePaint::new(state);
-        paint.help = crate::app::input::dialog_page::help(ui).map(|key| state.csf_label(key, ""));
-        let shell = paint.shell;
-        let (id, caption) = dialog.lower;
-        let rect = shell
-            .layout
-            .lower_button_rect(shell.width, shell.button_size);
-        let caption = paint.label(caption);
-        paint.button(
-            rect,
-            &caption,
-            crate::app::input::dialog_page::pressed(ui, id),
-        );
-        if let Some(title) = dialog.title {
-            let title = paint.label(title);
-            paint.text(
-                &title,
-                right_panel_title_rect(shell.width),
-                ShellAlign::PANEL_TITLE,
-            );
-        }
+        let (lower, (key, fallback)) = dialog.lower;
+        let under = dialog.help_under_held.then(|| {
+            in_game_shell_cursor(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            )
+        });
+        let text_of = |id: i32| -> Option<String> {
+            match u16::try_from(id).ok()? {
+                TITLE => dialog
+                    .title
+                    .map(|(key, fallback)| state.csf_label(key, fallback)),
+                FOOTER => crate::app::input::dialog_page::help(ui, under)
+                    .map(|key| state.csf_label(key, (dialog.help_fallback)(key))),
+                _ => Some(state.csf_label(key, fallback)),
+            }
+        };
+        let style = super::gui_paint::GuiStyle {
+            buttons: super::gui_paint::ButtonArt::Side,
+            side: Some(paint.side_buttons()),
+            text_of: Some(&text_of),
+            ..Default::default()
+        };
+        paint.nodes(ui, &[lower, TITLE], style);
         extras(&mut paint, ui);
-        if let Some(help) = paint.help.take() {
-            paint.text(&help, status_line_rect(shell.height), ShellAlign::NONE);
-        }
+        paint.nodes(ui, &[FOOTER], style);
         paint.finish(dialog.label)
     };
     render_in_game_shell_frame(state, encoder, destination, frame)
@@ -372,13 +401,13 @@ pub(super) fn background_instances(
     if let Some(entry) = background {
         push_art_scaled(&mut out, entry, layout.background, screen);
     }
-    for (entry, rect) in [
-        (atlas.top_strip_thin, layout.credits),
-        (atlas.top_strip_sidebar, layout.top),
-        (Some(atlas.radar), layout.radar),
-        (Some(atlas.side1), layout.side1),
+    for (part, rect) in [
+        (SidebarPart::Credits, layout.credits),
+        (SidebarPart::Top, layout.top),
+        (SidebarPart::Radar, layout.radar),
+        (SidebarPart::Middle, layout.side1),
     ] {
-        if let Some(entry) = entry {
+        if let Some(entry) = atlas.art(part, ArtKey::Art, 0) {
             push_art(&mut out, entry, rect, screen);
         }
     }
@@ -392,9 +421,13 @@ pub(super) fn background_instances(
             );
         }
     }
-    push_art(&mut out, atlas.side3, layout.side3, screen);
-    if let Some(entry) = atlas.unknown_top_housing {
-        push_art(&mut out, entry, layout.addon, screen);
+    for (key, rect) in [
+        (ArtKey::EndArt, layout.side3),
+        (ArtKey::FootArt, layout.addon),
+    ] {
+        if let Some(entry) = atlas.art(SidebarPart::Cameos, key, 0) {
+            push_art(&mut out, entry, rect, screen);
+        }
     }
     // LSPACER reaches the closed left cap as the match's bar lays it out
     // (`spacer_pieces`).
@@ -599,10 +632,17 @@ pub(super) fn render_shell_frame(
         .iter()
         .map(|d| batch.create_instance_buffer(gpu, &d.instances))
         .collect();
-    let zoom_buffers = overlay.zoom.as_ref().map(|zoom| zoom.buffers(state));
+    let zoom_buffers = overlay
+        .zoom
+        .as_ref()
+        .map(|zoom| zoom.buffers(&state.renderer));
     let cursor_raster = window_raster.map(|_| {
-        crate::app::presentation::window_ui::dialog_raster(state)
-            .unwrap_or(crate::render::bit_font::TextRaster::NATIVE)
+        crate::app::presentation::window_ui::dialog_raster(
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.input,
+        )
+        .unwrap_or(crate::render::bit_font::TextRaster::NATIVE)
     });
     let cursor: Vec<_> = match cursor_policy {
         ShellFrameCursor::Visible => {
@@ -717,7 +757,13 @@ pub(super) fn render_shell_frame(
     }
     if let (Some(buffers), Some(atlas)) = (&zoom_buffers, control_atlas) {
         pass.set_scissor_rect(0, 0, shell_width, shell_height);
-        super::preview::draw_zoom(&mut pass, state, atlas, buffers);
+        super::preview::draw_zoom(
+            &mut pass,
+            &state.renderer,
+            &state.frontend.skirmish_preview_texture,
+            atlas,
+            buffers,
+        );
     }
     drop(pass);
     if let Some(surface) = shell_surface {
@@ -764,7 +810,10 @@ pub(super) fn render_shell_frame(
     }
     if let Some(raster) = window_raster {
         let view = destination.create_view(&Default::default());
-        let mut pass = state.renderer.window_ui.begin_pass(state, encoder, &view);
+        let mut pass = state
+            .renderer
+            .window_ui
+            .begin_pass(&state.renderer, encoder, &view);
         let atlas = state.renderer.bit_font.atlas();
         for (draw, buffer) in texts.iter().zip(&text_buffers) {
             if let Some((buffer, count)) = buffer {
@@ -789,7 +838,11 @@ pub(super) fn render_shell_frame(
             }
         }
         if let (Some((buffer, count)), Some(texture)) = (&cursor_buffer, cursor_texture) {
-            let frame = crate::app::presentation::window_ui::frame_rect(state);
+            let frame = crate::app::presentation::window_ui::frame_rect(
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state.input,
+            );
             pass.draw_cursor(texture, buffer, *count, frame);
         }
     }

@@ -403,13 +403,34 @@ impl Simulation {
         country: crate::rules::ruleset::CountryIdx,
         rules: &RuleSet,
     ) -> Option<InternedId> {
-        self.houses.order().iter().copied().find(|owner| {
+        // VERA-only: a House is of `country` when its Country's name is the
+        // one `RuleSet::country_index` answers `country` for, so the name is
+        // asked of the rules once, not once per House. The index keeps the
+        // first Country of an identity: a later one of the same identity is
+        // no name's answer, and no House's.
+        let identity = rules.country_name(country)?;
+        if rules.country_index(identity) != Some(country) {
+            return None;
+        }
+        let found = self.houses.order().iter().copied().find(|owner| {
             self.houses
                 .get(owner)
                 .and_then(|house| house.country())
-                .and_then(|id| rules.country_index(self.interner.resolve(id)))
-                == Some(country)
-        })
+                .is_some_and(|id| self.interner.resolve(id).eq_ignore_ascii_case(identity))
+        });
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled()
+                || found
+                    == self.houses.order().iter().copied().find(|owner| {
+                        self.houses
+                            .get(owner)
+                            .and_then(|house| house.country())
+                            .and_then(|id| rules.country_index(self.interner.resolve(id)))
+                            == Some(country)
+                    }),
+            "the House of {identity:?} differs from the one its Country index finds"
+        );
+        found
     }
 
     /// Original House510F60 -> Scenario510ED0, otherwise502D30. Only the
@@ -814,14 +835,13 @@ impl Simulation {
             self.houses.request_house_tech_tree_recheck(old_owner);
             self.houses.request_house_tech_tree_recheck(new_owner);
         }
-        let old_house = self.houses.index_of(old_owner);
         if let Some(entity) = self.substrate.entities.get(stable_id)
             && let Some(house) = self.houses.get_mut(&new_owner)
         {
             //701607..70164D: DontScore suppresses this captured-object
             //count, not the preceding old-House price addition.
             if !entity.tracking_facts().dont_score() {
-                house.stats_mut().record_kill(category, old_house);
+                house.stats_mut().record_kill(category);
             }
         }
         //701674 Mark(UP),70D4A0 detach and701691 Mark(DOWN) all precede
@@ -855,7 +875,7 @@ impl Simulation {
         self.substrate.entities.change_owner(stable_id, new_owner);
         #[cfg(feature = "phobos")]
         self.phobos_attach_effects_on_owner_change(stable_id, old_owner, new_owner, rules);
-        self.ownership_changed_since_output = true;
+        *self.ownership_changed_since_output = true;
         self.spatial_threat_after_owner_change(stable_id, spatial_threat_cell, rules);
         if category == EntityCategory::Structure {
             self.houses

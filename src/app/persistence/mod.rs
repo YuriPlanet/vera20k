@@ -6,6 +6,7 @@
 //! F12 owner tree: options persistence lives here beside the save repository.
 
 pub(crate) mod account;
+pub(crate) mod autosave;
 pub(crate) mod commands;
 pub(crate) mod intro_play;
 pub(crate) mod options;
@@ -48,6 +49,8 @@ pub(crate) struct PersistenceState {
     /// render, and audio state are projections of this single retained value.
     pub(crate) options_profile: options_profile::RetailOptionsProfile,
     pub(crate) repository: SaveRepository,
+    /// The opt-in autosave's schedule (`[VERA] AutosaveMinutes=`).
+    pub(crate) autosave: autosave::Autosave,
 }
 
 impl PersistenceState {
@@ -57,6 +60,7 @@ impl PersistenceState {
             pending_load: None,
             options_profile,
             repository: SaveRepository::new(),
+            autosave: autosave::Autosave::default(),
         }
     }
 
@@ -81,6 +85,74 @@ impl PersistenceState {
 
     pub(crate) fn initial_campaign_save_pending(&self, campaign: bool) -> bool {
         campaign && !self.initial_campaign_save_attempted
+    }
+
+    /// `[VERA] HealthBars=`: the client health-strip policy. Presentation only;
+    /// the simulation never reads it.
+    pub(crate) fn health_bar_mode(&self) -> crate::ui::main_menu_dialogs::options::HealthBarMode {
+        self.options_profile.health_bars
+    }
+
+    /// `[VERA] ColorVisionMode=`: the final-frame colour filter. Presentation
+    /// only; the simulation never reads it, and the frame reads it live.
+    pub(crate) fn color_vision_mode(
+        &self,
+    ) -> crate::ui::main_menu_dialogs::options::ColorVisionMode {
+        self.options_profile.color_vision
+    }
+
+    /// This frame's matrix for the shared frame-output filter.
+    pub(crate) fn color_vision_matrix(&self) -> Option<crate::render::color_vision::Mat3> {
+        crate::app::state::color_vision_matrix_for(self.color_vision_mode())
+    }
+
+    /// Whether VERA's HD radar is on (`[VERA] HdRadar=`); a capture takes its
+    /// profile's choice (`PlatformState::capture_choices`).
+    pub(crate) fn hd_radar(
+        &self,
+        capture: Option<&crate::app::state::CapturePresentation>,
+    ) -> bool {
+        capture.map_or(self.options_profile.hd_radar, |capture| capture.hd_radar)
+    }
+
+    /// Whether VERA's smooth sidebar is on (`[VERA] SmoothSidebar=`); a
+    /// capture takes its profile's choice.
+    pub(crate) fn smooth_sidebar(
+        &self,
+        capture: Option<&crate::app::state::CapturePresentation>,
+    ) -> bool {
+        capture.map_or(self.options_profile.smooth_sidebar, |capture| {
+            capture.smooth_sidebar
+        })
+    }
+
+    /// The Sidebar size the match frame uses; a capture takes its own,
+    /// Normal unless its profile says.
+    pub(crate) fn sidebar_size(
+        &self,
+        capture: Option<&crate::app::state::CapturePresentation>,
+    ) -> crate::ui::main_menu_dialogs::options::SidebarSize {
+        capture.map_or(self.options_profile.sidebar, |capture| capture.sidebar)
+    }
+
+    /// Whether the setup screens show VERA's own map pictures
+    /// (`[VERA] HdMapPreviews=`, `app::map_picture`). Captures keep the map's
+    /// `[PreviewPack]` picture, which retail comparisons check, and the
+    /// browser build cannot start the hidden run that draws one.
+    pub(crate) fn hd_map_previews(
+        &self,
+        capture: Option<&crate::app::state::CapturePresentation>,
+    ) -> bool {
+        crate::ui::main_menu_dialogs::options::HAS_HD_MAP_PREVIEWS
+            && capture.is_none()
+            && self.options_profile.hd_map_previews
+    }
+
+    /// Whether VERA's online client draws its enlarged art smoothed
+    /// (`[VERA] SmoothOnlineMenus=`). The native-UI diagnostics, the only
+    /// sessions without that client, keep their art's own pixels.
+    pub(crate) fn smooth_online_menus(&self, native_shell_ui: bool) -> bool {
+        self.options_profile.smooth_online_menus && !native_shell_ui
     }
 
     /// A one-shot production capture uses its own new directory, so the
@@ -343,6 +415,9 @@ impl PreparedLoad {
         // Original successful LoadGame67E6C4 publishes A8ED5C=1 after the
         // fallible content/read tail. Failed preparation never changes it.
         self.simulation.publish_scenario_started();
+        // A loaded match draws its turns as a new match does
+        // (`world::turn_streams`): a save does not carry the switch.
+        self.simulation.separate_turn_streams(true);
         (
             self.simulation,
             CommittedLoadPresentation {
@@ -503,6 +578,19 @@ impl SaveRepository {
         let path = self.directory.join(file_name);
         crate::util::file_system::write_new(&path, bytes).map_err(SaveWriteError::write_file)?;
         Ok(path)
+    }
+
+    /// The autosave slot (`autosave::FILE_NAME`): created on the first
+    /// autosave, then replaced through [`Self::overwrite_existing`]'s staged
+    /// rename, so a failed write leaves the previous autosave.
+    pub(crate) fn write_autosave(&self, bytes: &[u8]) -> Result<PathBuf, SaveWriteError> {
+        let path = self.directory.join(autosave::FILE_NAME);
+        if crate::util::file_system::exists(&path) {
+            self.overwrite_existing(&path, bytes)?;
+            Ok(path)
+        } else {
+            self.write_named(autosave::FILE_NAME, bytes)
+        }
     }
 
     /// New saves may not silently replace a timestamp-name collision. Remove
@@ -1253,6 +1341,10 @@ mod tests {
             Some((122, 135))
         );
         let simulation = &mut runtime.simulation;
+        assert!(
+            simulation.turn_streams_separate(),
+            "a loaded match draws its turns from their own streams, as a new one does"
+        );
         let restored_dummy = simulation.effective_shared_cell_dummy();
         assert!(restored_dummy.same_identity(&live_dummy));
         assert_eq!(

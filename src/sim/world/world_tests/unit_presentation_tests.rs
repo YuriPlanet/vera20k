@@ -23,7 +23,7 @@ fn a_jumpjet_cruising_over_water_leaves_no_wake() {
     for cell in terrain.cells_mut_for_test() {
         cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
     }
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     let runtime = sim
         .substrate
         .entities
@@ -94,7 +94,7 @@ fn a_ship_wakes_every_eighth_frame_unless_it_is_underwater() {
     for cell in terrain.cells_mut_for_test() {
         cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
     }
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     let wakes = |sim: &Simulation| {
         sim.logic_order()
             .iter()
@@ -163,7 +163,7 @@ Rate=120
     for cell in terrain.cells_mut_for_test() {
         cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
     }
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     {
         let boat = sim
             .substrate
@@ -211,7 +211,7 @@ fn a_drive_tube_turn_omits_the_wake_even_when_it_finishes_on_water() {
         .cloned()
         .collect();
     let tube = TubeFact::explicit((0, 0), (1, 0), 2, vec![2]);
-    sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells_with_tubes(
+    *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells_with_tubes(
         2,
         1,
         cells,
@@ -328,7 +328,7 @@ fn a_hover_wake_starts_at_the_hulls_height() {
     for cell in terrain.cells_mut_for_test() {
         cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
     }
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     let hover = sim.substrate.entities.get_mut(id).expect("hover");
     let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Hover);
     *locomotor.hover_runtime_mut().expect("Hover payload") =
@@ -428,23 +428,30 @@ fn idle_squid_body_counter_starts_move_sound() {
         .unwrap()
         .body_frame_counter
         .get();
-    crate::sim::animation::tick_foot_body_frame_counter(
-        sim.substrate.entities.get_mut(1).unwrap(),
-        crate::sim::movement::SpeedRules::new(
-            crate::rules::ruleset::RuleSet::empty_for_test(),
-            &sim.interner,
-            &sim.houses,
-        ),
-        crate::sim::animation::FootBodyCadence {
-            walk_rate: object.walk_rate,
-            idle_rate: object.idle_rate,
-        },
-        object.hover_attack,
-        object.deploy_to_land,
-        0,
-        None,
-        4,
-    );
+    {
+        let entity = sim.substrate.entities.get(1).unwrap();
+        let due = crate::sim::animation::foot_body_frame_due(
+            entity,
+            crate::sim::movement::SpeedRules::new(
+                crate::rules::ruleset::RuleSet::empty_for_test(),
+                &sim.interner,
+                &sim.houses,
+            ),
+            crate::sim::animation::FootBodyCadence {
+                walk_rate: object.walk_rate,
+                idle_rate: object.idle_rate,
+            },
+            object.hover_attack,
+            object.deploy_to_land,
+            0,
+            None,
+            4,
+        );
+        crate::sim::animation::tick_foot_body_frame_counter(
+            sim.substrate.entities.get_mut(1).unwrap(),
+            due,
+        );
+    }
     assert_eq!(
         sim.substrate
             .entities

@@ -355,12 +355,12 @@ mod tests {
                 )
                 .unwrap()
             );
-            world.main_rng =
+            *world.main_rng =
                 SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-            world.scenario_rng = SimRng::from_native_state_hex_for_test(
+            *world.scenario_rng = SimRng::from_native_state_hex_for_test(
                 row["rng_before"]["scenario"].as_str().unwrap(),
             );
-            world.mapgen_rng = SimRng::from_native_state_hex_for_test(
+            *world.mapgen_rng = SimRng::from_native_state_hex_for_test(
                 row["rng_before"]["mapgen"].as_str().unwrap(),
             );
             CALLS.with_borrow_mut(|capture| *capture = Some(Vec::new()));

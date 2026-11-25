@@ -487,7 +487,7 @@ fn retail_skirmish_chrono_warp_sinks_a_landed_harrier_to_terminal_cleanup() {
     sim.session.set_game_mode(ScenarioGameMode::Skirmish);
     sim.session.set_current_house_for_test(Some(owner));
     sim.set_input_delay_ticks(0);
-    sim.fog = crate::sim::vision::FogState::new(64, 64);
+    *sim.fog = crate::sim::vision::FogState::new(64, 64);
     sim.fog.reveal_all_for_owner(owner);
     spawn(&mut sim, &rules, "GACNST", "Americans", (5, 5));
     spawn(&mut sim, &rules, "NACNST", "Russians", (10, 30));
@@ -1352,7 +1352,7 @@ fn retail_chrono_update_position_matches_native_rows() {
                 terrain.cells_mut_for_test()[index].bridge_facts.raw_flags = int(&cell[3]) as u32;
             }
         }
-        sim.zone_grid = None;
+        *sim.zone_grid = None;
         crate::sim::arena_fixture::supply_native_map(&mut sim);
         let owner_type = if row["owner"] == "infantry" {
             "CLEG"
@@ -1498,7 +1498,7 @@ fn retail_chrono_warp_destinations_match_native_rows() {
                 terrain.cells_mut_for_test()[index].bridge_facts.raw_flags = int(&cell[3]) as u32;
             }
         }
-        sim.zone_grid = None;
+        *sim.zone_grid = None;
         crate::sim::arena_fixture::supply_native_map(&mut sim);
         let infantry = int(&row["what"]) == 0xF;
         let at = (

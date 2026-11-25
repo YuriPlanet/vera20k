@@ -6,11 +6,15 @@ use super::{
     queue_deploy_undeploy_for_selected, queue_selection_snapshot_command,
 };
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::{
     cancel_build_by_type, preferred_command_owner, queue_build_by_type, schedule_command,
     suspend_build,
 };
 use crate::app::input::sidebar_eva;
+use crate::app::match_audio::MatchAudioState;
+use crate::app::match_runtime::sim_host::SimHost;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::presentation::sidebar_render::current_sidebar_view;
 use crate::map::entities::EntityCategory;
 use crate::sim::command::Command;
@@ -60,10 +64,11 @@ pub(crate) fn wheel_notch(delta_lines: f32) -> Option<WheelAction> {
 /// hit-tested gadget, so the wheel scrolls the sidebar from anywhere on the
 /// screen — and there is no world zoom in gamemd for the wheel to reach instead.
 pub(crate) fn sidebar_scroll_command(state: &mut AppState, action: WheelAction) {
-    if crate::app::input::campaign_input::is_locked(state) {
+    if crate::app::input::campaign_input::is_locked(&state.match_state) {
         return;
     }
-    let Some(visible_rows) = current_sidebar_view(state).map(|view| view.layout.side2_tile_count)
+    let Some(visible_rows) = current_sidebar_view(&state.match_state.match_presentation)
+        .map(|view| view.layout.side2_tile_count)
     else {
         return;
     };
@@ -74,7 +79,7 @@ pub(crate) fn sidebar_scroll_command(state: &mut AppState, action: WheelAction) 
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
-    let over = current_sidebar_view(state).and_then(|view| {
+    let over = current_sidebar_view(&state.match_state.match_presentation).and_then(|view| {
         view.added_grids
             .iter()
             .find(|grid| grid.rect.contains(x, y))
@@ -93,7 +98,7 @@ pub(crate) fn sidebar_scroll_command(state: &mut AppState, action: WheelAction) 
         return;
     }
     let presentation = &mut state.match_state.match_presentation;
-    presentation.sidebar_projection.queue_scroll(
+    presentation.sidebar_projection.model.queue_scroll(
         presentation.active_sidebar_tab,
         action == WheelAction::SidebarDown,
         visible_rows,
@@ -102,17 +107,16 @@ pub(crate) fn sidebar_scroll_command(state: &mut AppState, action: WheelAction) 
 }
 
 /// The local player's queue of record, in queue order (empty without a sim).
-pub(crate) fn local_queue_view(state: &AppState) -> Vec<crate::sim::production::QueueItemView> {
-    let Some(owner) = preferred_command_owner(state) else {
+pub(crate) fn local_queue_view(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+) -> Vec<crate::sim::production::QueueItemView> {
+    let Some(owner) = preferred_command_owner(&match_state.sim_runtime) else {
         return Vec::new();
     };
     match (
-        state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|rt| &rt.simulation),
-        state.rules(),
+        match_state.sim_runtime.runtime().map(|rt| &rt.simulation),
+        crate::app::state::active_rules(frontend, match_state),
     ) {
         (Some(sim), Some(rules)) => {
             crate::sim::production::queue_view_for_owner(sim, rules, &owner)
@@ -122,20 +126,16 @@ pub(crate) fn local_queue_view(state: &AppState) -> Vec<crate::sim::production::
 }
 
 /// The interned id a type name already has in the sim (never interns).
-fn local_interned(state: &AppState, type_id: &str) -> Option<crate::sim::intern::InternedId> {
-    state
-        .match_state
-        .sim_runtime
+fn local_interned(sim_runtime: &SimHost, type_id: &str) -> Option<crate::sim::intern::InternedId> {
+    sim_runtime
         .runtime()
         .and_then(|rt| rt.simulation.interner().get(type_id))
 }
 
 /// Speak an app-local EVA line (`VoxClass::PlayEVA(name, -1)` inside a click
 /// handler): the entry's own `Type=`/`Priority=` route it.
-pub(crate) fn push_local_eva(state: &mut AppState, event: &str) {
-    state
-        .match_state
-        .match_audio
+pub(crate) fn push_local_eva(match_audio: &mut MatchAudioState, event: &str) {
+    match_audio
         .sound_events
         .push(crate::audio::events::GameSoundEvent::Eva {
             event: event.to_string(),
@@ -168,24 +168,26 @@ fn sidebar_cameo_press(
     else {
         return;
     };
-    let queue = local_queue_view(state);
-    let type_iid = local_interned(state, type_id);
-    let linked_factory = preferred_command_owner(state).and_then(|owner| {
-        let sim = &state.match_state.sim_runtime.runtime()?.simulation;
-        state
-            .match_state
-            .match_presentation
-            .sidebar_projection
-            .cameo_factory(sim, sim.interner().get(&owner)?, type_iid?)
-            .map(|factory| {
-                (
-                    factory.cameo_state(),
-                    factory
-                        .complete_object()
-                        .and_then(|object| object.entity_id.map(|held| (object.type_id, held))),
-                )
-            })
-    });
+    let queue = local_queue_view(&state.frontend, &state.match_state);
+    let type_iid = local_interned(&state.match_state.sim_runtime, type_id);
+    let linked_factory =
+        preferred_command_owner(&state.match_state.sim_runtime).and_then(|owner| {
+            let sim = &state.match_state.sim_runtime.runtime()?.simulation;
+            state
+                .match_state
+                .match_presentation
+                .sidebar_projection
+                .model
+                .cameo_factory(sim, sim.interner().get(&owner)?, type_iid?)
+                .map(|factory| {
+                    (
+                        factory.cameo_state(),
+                        factory
+                            .complete_object()
+                            .and_then(|object| object.entity_id.map(|held| (object.type_id, held))),
+                    )
+                })
+        });
     // The linked Factory's state also decides whether Shift may repeat: a held
     // or finished build takes the resume/placement arm, not a fresh PRODUCE.
     let own_for_repeat = linked_factory.map(|(status, _)| status);
@@ -204,6 +206,7 @@ fn sidebar_cameo_press(
                 .match_state
                 .match_presentation
                 .sidebar_projection
+                .model
                 .cameo_request(type_id)
         }),
         press,
@@ -222,14 +225,17 @@ fn sidebar_cameo_press(
     };
     let ctrl_repeat = vera_keys
         && press == sidebar_eva::CameoPress::Left
-        && is_ctrl_held(state)
+        && is_ctrl_held(&state.match_state.input)
         && super::build_repeat::repeats(category);
     let repeat = &mut state.match_state.input.build_repeat;
     if ctrl_repeat && repeat.stop(type_id) {
-        let sound = state
-            .rules()
-            .and_then(|rules| rules.general.gui_build_sound.clone());
-        crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        crate::app::App::play_shell_rules_sound(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            |rules| rules.general.gui_build_sound.as_deref(),
+        );
         return;
     }
     match click.order {
@@ -248,13 +254,16 @@ fn sidebar_cameo_press(
         state.match_state.input.cancel_building_placement();
     }
     if click.sound {
-        let sound = state
-            .rules()
-            .and_then(|rules| rules.general.gui_build_sound.clone());
-        crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        crate::app::App::play_shell_rules_sound(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            |rules| rules.general.gui_build_sound.as_deref(),
+        );
     }
     if let Some(line) = click.eva {
-        push_local_eva(state, line);
+        push_local_eva(&mut state.match_state.match_audio, line);
         // Accessibility: `EVA_Building` / `EVA_Training` / `EVA_Canceled`
         // name no object, but the clicked cameo's type key is right here.
         // Other click lines (hold, refusal, target select) post nothing.
@@ -270,7 +279,7 @@ fn sidebar_cameo_press(
             );
         }
     }
-    let owner = preferred_command_owner(state).and_then(|name| {
+    let owner = preferred_command_owner(&state.match_state.sim_runtime).and_then(|name| {
         state
             .match_state
             .sim_runtime
@@ -286,6 +295,7 @@ fn sidebar_cameo_press(
             .match_state
             .match_presentation
             .sidebar_projection
+            .model
             .record_cameo_click(
                 &runtime.simulation,
                 &runtime.resources.rules,
@@ -327,7 +337,7 @@ fn sidebar_cameo_press(
             );
             let front = (profile.shift_queue
                 && press == sidebar_eva::CameoPress::Left
-                && is_alt_held(state)
+                && is_alt_held(&state.match_state.input)
                 && !sidebar_eva::is_structure_strip(category)
                 && appends)
                 .then(|| {
@@ -364,10 +374,13 @@ fn sidebar_cameo_press(
             suspend_build(state, type_id);
             // Select6AB1D4 plays GUIBuildSound again before this ABANDON.
             if let Some(all) = click.then_abandon {
-                let sound = state
-                    .rules()
-                    .and_then(|rules| rules.general.gui_build_sound.clone());
-                crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+                crate::app::App::play_shell_rules_sound(
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    |rules| rules.general.gui_build_sound.as_deref(),
+                );
                 cancel_build_by_type(state, type_id, all);
             }
         }
@@ -378,29 +391,33 @@ fn sidebar_cameo_press(
             // Select6AB30D plays GUIBuildSound before ObjectFindFactory5F5C20
             // (0,0) at6AB31A, including repeated pending clicks. A null builder
             // instead queues ABANDON16 before EVA_UnableToComply6AB3A9.
-            let ready_target = preferred_command_owner(state).and_then(|owner| {
-                let runtime = state.match_state.sim_runtime.runtime()?;
-                let sim = &runtime.simulation;
-                let rules = &runtime.resources.rules;
-                let owner_id = sim.interner().get(&owner)?;
-                // Select6AB2CC reads this linked Factory's actual product;
-                // an older cameo can still refer to a rearmed Factory.
-                let (held_type, held) = linked_factory?.1?;
-                let builder = ready_cameo_factory(sim, rules, held)?;
-                Some((
-                    owner_id,
-                    held,
-                    sim.interner().resolve(held_type).to_string(),
-                    sim.entities().get(held)?.category() == EntityCategory::Structure,
-                    builder,
-                ))
-            });
+            let ready_target =
+                preferred_command_owner(&state.match_state.sim_runtime).and_then(|owner| {
+                    let runtime = state.match_state.sim_runtime.runtime()?;
+                    let sim = &runtime.simulation;
+                    let rules = &runtime.resources.rules;
+                    let owner_id = sim.interner().get(&owner)?;
+                    // Select6AB2CC reads this linked Factory's actual product;
+                    // an older cameo can still refer to a rearmed Factory.
+                    let (held_type, held) = linked_factory?.1?;
+                    let builder = ready_cameo_factory(sim, rules, held)?;
+                    Some((
+                        owner_id,
+                        held,
+                        sim.interner().resolve(held_type).to_string(),
+                        sim.entities().get(held)?.category() == EntityCategory::Structure,
+                        builder,
+                    ))
+                });
             let Some((owner_id, held, held_type, is_building, builder)) = ready_target else {
                 return;
             };
             let Some(builder) = builder else {
                 cancel_build_by_type(state, type_id, false);
-                push_local_eva(state, sidebar_eva::EVA_UNABLE_TO_COMPLY);
+                push_local_eva(
+                    &mut state.match_state.match_audio,
+                    sidebar_eva::EVA_UNABLE_TO_COMPLY,
+                );
                 return;
             };
             if !is_building {
@@ -472,11 +489,11 @@ pub(in crate::app::input) fn ready_cameo_factory(
 
 pub(crate) fn apply_sidebar_action(state: &mut AppState, action: SidebarAction) {
     apply_sidebar_action_inner(state, action);
-    super::commands::reconcile_paid_super_weapon_cursor(state);
+    super::commands::reconcile_paid_super_weapon_cursor(&mut state.match_state);
 }
 
 fn apply_sidebar_action_inner(state: &mut AppState, action: SidebarAction) {
-    if crate::app::input::campaign_input::is_locked(state) {
+    if crate::app::input::campaign_input::is_locked(&state.match_state) {
         return;
     }
     match action {

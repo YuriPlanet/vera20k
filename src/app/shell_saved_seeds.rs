@@ -14,7 +14,12 @@ use crate::ui::skirmish_shell::{
 };
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
 use crate::ui::shell::saved_file_input::{self, BrowserInputResult};
+use crate::ui::skirmish_shell::SkirmishShellState;
+use crate::util::config::GameConfig;
 
 /// The rows a saved-file browser's list shows on `layout`.
 pub(super) fn saved_browser_rows(layout: &SavedSeedLayout) -> usize {
@@ -22,12 +27,10 @@ pub(super) fn saved_browser_rows(layout: &SavedSeedLayout) -> usize {
 }
 
 impl App {
-    fn saved_seed_browser(state: &mut AppState) -> Option<&mut SavedSeedBrowserState> {
-        state
-            .frontend
-            .skirmish_shell_state
-            .saved_seed_browser
-            .as_mut()
+    fn saved_seed_browser(
+        skirmish_shell: &mut SkirmishShellState,
+    ) -> Option<&mut SavedSeedBrowserState> {
+        skirmish_shell.saved_seed_browser.as_mut()
     }
 
     /// The open browser's layout.
@@ -37,11 +40,15 @@ impl App {
             .skirmish_shell_state
             .saved_seed_browser
             .as_ref()?;
-        Some(shell_layout::saved_seed_layout(state, browser.mode))
+        Some(shell_layout::saved_seed_layout(
+            &state.renderer,
+            &state.frontend.screen,
+            browser.mode,
+        ))
     }
 
     pub(super) fn open_saved_seed_browser(state: &mut AppState, mode: SavedSeedMode) {
-        let entries = Self::random_map_dir(state)
+        let entries = Self::random_map_dir(state.platform.game_config.as_ref())
             .map(|dir| saved_seeds::list_saved_seeds(&dir))
             .unwrap_or_default();
         let shell = &state.frontend.skirmish_shell_state;
@@ -50,19 +57,26 @@ impl App {
             .map(|modal| modal.options.description.clone())
             .unwrap_or_default();
         let empty = state.csf_label("TXT_EMPTY_SLOT", "[EMPTY SLOT]");
-        let rows = saved_browser_rows(&shell_layout::saved_seed_layout(state, mode));
+        let rows = saved_browser_rows(&shell_layout::saved_seed_layout(
+            &state.renderer,
+            &state.frontend.screen,
+            mode,
+        ));
         let time = saved_seeds::new_slot_file_time(crate::util::time::SystemTime::now());
         let browser = SavedSeedBrowserState::open(mode, entries, current, empty.into(), time, rows);
         state.frontend.skirmish_shell_state.saved_seed_browser = Some(browser);
-        Self::blur_player_name(state);
+        Self::blur_player_name(&mut state.frontend.shell_controller);
     }
 
-    fn close_saved_seed_browser(state: &mut AppState) {
-        state.frontend.skirmish_shell_state.saved_seed_browser = None;
+    fn close_saved_seed_browser(
+        game_config: Option<&GameConfig>,
+        skirmish_shell: &mut SkirmishShellState,
+    ) {
+        skirmish_shell.saved_seed_browser = None;
         // Re-entry sees physical disk state, including failed native-style deletes.
-        let available =
-            Self::random_map_dir(state).is_some_and(|dir| saved_seeds::saved_seeds_available(&dir));
-        if let Some(modal) = random_map_dialog(state) {
+        let available = Self::random_map_dir(game_config)
+            .is_some_and(|dir| saved_seeds::saved_seeds_available(&dir));
+        if let Some(modal) = random_map_dialog(skirmish_shell) {
             modal.saved_seed_buttons_enabled = available;
             // `0x105` is uncovered, not shown again: its statics repaint.
             modal.statics.uncovered();
@@ -71,17 +85,17 @@ impl App {
 
     /// The saved-file browsers' message box: Yes/No to confirm, else OK.
     pub(super) fn saved_browser_prompt<I>(
-        state: &AppState,
+        process_assets: &ProcessAssets,
         purpose: SavedSeedPromptPurpose<I>,
         body: String,
         confirm: bool,
     ) -> SavedSeedPrompt<I> {
         let affirmative = if confirm {
-            state.csf_label("TXT_YES", "Yes")
+            process_assets.csf_label("TXT_YES", "Yes")
         } else {
-            state.csf_label("TXT_OK", "OK")
+            process_assets.csf_label("TXT_OK", "OK")
         };
-        let negative = confirm.then(|| state.csf_label("TXT_NO", "No"));
+        let negative = confirm.then(|| process_assets.csf_label("TXT_NO", "No"));
         SavedSeedPrompt {
             purpose,
             body,
@@ -91,13 +105,14 @@ impl App {
     }
 
     fn show_saved_seed_prompt(
-        state: &mut AppState,
+        skirmish_shell: &mut SkirmishShellState,
+        process_assets: &ProcessAssets,
         purpose: SavedSeedPromptPurpose,
         body: String,
         confirm: bool,
     ) {
-        let prompt = Self::saved_browser_prompt(state, purpose, body, confirm);
-        if let Some(browser) = Self::saved_seed_browser(state) {
+        let prompt = Self::saved_browser_prompt(process_assets, purpose, body, confirm);
+        if let Some(browser) = Self::saved_seed_browser(skirmish_shell) {
             browser.show_prompt(prompt);
         }
     }
@@ -108,11 +123,15 @@ impl App {
         description: SeedDescription,
         action: SeedWrite,
     ) {
-        let Some(dir) = Self::random_map_dir(state) else {
-            Self::show_saved_seed_error(state, "VERA:RandomMapSaveFailed");
+        let Some(dir) = Self::random_map_dir(state.platform.game_config.as_ref()) else {
+            Self::show_saved_seed_error(
+                &mut state.frontend.skirmish_shell_state,
+                &state.process_assets,
+                "VERA:RandomMapSaveFailed",
+            );
             return;
         };
-        let Some(modal) = random_map_dialog(state) else {
+        let Some(modal) = random_map_dialog(&mut state.frontend.skirmish_shell_state) else {
             return;
         };
         // MapSeed Save 0x00597804 updates the working description before file I/O.
@@ -121,28 +140,43 @@ impl App {
             saved_seeds::write_browser_seed(&dir, &file_name, &modal.options, modal.ares, action)
         {
             log::warn!("saved seed: could not save {file_name}: {error}");
-            Self::show_saved_seed_error(state, "VERA:RandomMapSaveFailed");
+            Self::show_saved_seed_error(
+                &mut state.frontend.skirmish_shell_state,
+                &state.process_assets,
+                "VERA:RandomMapSaveFailed",
+            );
             return;
         }
         Self::refresh_saved_random_maps(state);
         let body = state.csf_label("GUI:MapSaved", "Map Saved");
-        Self::show_saved_seed_prompt(state, SavedSeedPromptPurpose::Saved, body, false);
+        Self::show_saved_seed_prompt(
+            &mut state.frontend.skirmish_shell_state,
+            &state.process_assets,
+            SavedSeedPromptPurpose::Saved,
+            body,
+            false,
+        );
     }
 
     fn resolve_saved_seed_prompt(state: &mut AppState, affirmative: bool) {
-        let Some(prompt) =
-            Self::saved_seed_browser(state).and_then(|browser| browser.take_prompt())
+        let Some(prompt) = Self::saved_seed_browser(&mut state.frontend.skirmish_shell_state)
+            .and_then(|browser| browser.take_prompt())
         else {
             return;
         };
         match prompt.purpose {
             // 0x00559269 explicitly restores the edit focus after this warning.
             SavedSeedPromptPurpose::EmptyDescription => {
-                if let Some(browser) = Self::saved_seed_browser(state) {
+                if let Some(browser) =
+                    Self::saved_seed_browser(&mut state.frontend.skirmish_shell_state)
+                {
                     browser.focus_edit();
                 }
             }
-            SavedSeedPromptPurpose::Saved => Self::close_saved_seed_browser(state),
+            SavedSeedPromptPurpose::Saved => Self::close_saved_seed_browser(
+                state.platform.game_config.as_ref(),
+                &mut state.frontend.skirmish_shell_state,
+            ),
             SavedSeedPromptPurpose::Overwrite {
                 file_name,
                 description,
@@ -150,7 +184,7 @@ impl App {
                 Self::finish_saved_seed_write(state, file_name, description, SeedWrite::Overwrite);
             }
             SavedSeedPromptPurpose::Delete { file_name } if affirmative => {
-                if let Some(dir) = Self::random_map_dir(state)
+                if let Some(dir) = Self::random_map_dir(state.platform.game_config.as_ref())
                     && let Err(error) = file_name.delete(&dir)
                 {
                     log::warn!("saved seed: could not delete {file_name}: {error}");
@@ -158,23 +192,36 @@ impl App {
                 // As in driver 0x00558DD0 the browser drops the row after the
                 // attempt. The chooser reflects the files still on disk.
                 Self::refresh_saved_random_maps(state);
-                let layout = shell_layout::saved_seed_layout(state, SavedSeedMode::Delete);
+                let layout = shell_layout::saved_seed_layout(
+                    &state.renderer,
+                    &state.frontend.screen,
+                    SavedSeedMode::Delete,
+                );
                 let rows = saved_browser_rows(&layout);
-                let empty = Self::saved_seed_browser(state).is_some_and(|browser| {
-                    browser.remove_entry(&file_name, rows);
-                    browser.entries.is_empty()
-                });
+                let empty = Self::saved_seed_browser(&mut state.frontend.skirmish_shell_state)
+                    .is_some_and(|browser| {
+                        browser.remove_entry(&file_name, rows);
+                        browser.entries.is_empty()
+                    });
                 if empty {
-                    Self::close_saved_seed_browser(state);
+                    Self::close_saved_seed_browser(
+                        state.platform.game_config.as_ref(),
+                        &mut state.frontend.skirmish_shell_state,
+                    );
                 }
             }
             _ => {} // Message-box dismissal focuses the parent dialog, not its old edit.
         }
     }
 
-    fn show_saved_seed_error(state: &mut AppState, key: &str) {
+    fn show_saved_seed_error(
+        skirmish_shell: &mut SkirmishShellState,
+        process_assets: &ProcessAssets,
+        key: &str,
+    ) {
         Self::show_saved_seed_prompt(
-            state,
+            skirmish_shell,
+            process_assets,
             SavedSeedPromptPurpose::Error,
             crate::i18n::tr(key),
             false,
@@ -183,11 +230,18 @@ impl App {
 
     /// Load one saved seed. The chooser's Use Map generates it and then accepts
     /// it in the chosen mode; Load in the generator leaves its controls open.
-    pub(super) fn load_random_map_seed(state: &mut AppState, file: &SavedSeedFile, use_map: bool) {
-        let dir = Self::random_map_dir(state);
-        let default = state.csf_label(RANDOM_MAP_DESCRIPTION_KEY, RANDOM_MAP_DESCRIPTION_FALLBACK);
-        let Some(modal) = state
-            .frontend
+    pub(super) fn load_random_map_seed(
+        game_config: Option<&GameConfig>,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
+        file: &SavedSeedFile,
+        use_map: bool,
+    ) {
+        let dir = Self::random_map_dir(game_config);
+        let default =
+            process_assets.csf_label(RANDOM_MAP_DESCRIPTION_KEY, RANDOM_MAP_DESCRIPTION_FALLBACK);
+        let Some(modal) = frontend
             .skirmish_shell_state
             .random_map_setup_modal
             .as_mut()
@@ -213,14 +267,18 @@ impl App {
                         "Could not open this saved map. Go back and pick another.",
                     ));
                 } else {
-                    Self::show_saved_seed_error(state, "VERA:RandomMapOpenFailed");
+                    Self::show_saved_seed_error(
+                        &mut frontend.skirmish_shell_state,
+                        process_assets,
+                        "VERA:RandomMapOpenFailed",
+                    );
                 }
                 return;
             }
         };
         if use_map {
             if options.num_players > modal.players_range.max
-                && state.frontend.shell_route == crate::app::shell_route::ShellRoute::NetworkSetup
+                && frontend.shell_route == crate::app::shell_route::ShellRoute::NetworkSetup
             {
                 modal.extras_note = Some((
                     "VERA:RandomMapRoomLimit",
@@ -239,14 +297,18 @@ impl App {
         let options = modal.options.clone();
         modal.begin_generate();
         if !use_map {
-            Self::close_saved_seed_browser(state);
+            Self::close_saved_seed_browser(game_config, &mut frontend.skirmish_shell_state);
         }
-        if !Self::start_random_map_generation(state, &options, use_map)
-            && let Some(modal) = state
-                .frontend
-                .skirmish_shell_state
-                .random_map_setup_modal
-                .as_mut()
+        if !Self::start_random_map_generation(
+            frontend,
+            match_state,
+            process_assets,
+            &options,
+            use_map,
+        ) && let Some(modal) = frontend
+            .skirmish_shell_state
+            .random_map_setup_modal
+            .as_mut()
         {
             modal.fail_generate();
         }
@@ -254,11 +316,19 @@ impl App {
 
     fn apply_saved_seed_outcome(state: &mut AppState, outcome: SavedSeedOutcome) {
         match outcome {
-            SavedSeedOutcome::Close => Self::close_saved_seed_browser(state),
+            SavedSeedOutcome::Close => Self::close_saved_seed_browser(
+                state.platform.game_config.as_ref(),
+                &mut state.frontend.skirmish_shell_state,
+            ),
             SavedSeedOutcome::BeginConvert(_) => {}
-            SavedSeedOutcome::Load(file_name) => {
-                Self::load_random_map_seed(state, &file_name, false)
-            }
+            SavedSeedOutcome::Load(file_name) => Self::load_random_map_seed(
+                state.platform.game_config.as_ref(),
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+                &file_name,
+                false,
+            ),
             SavedSeedOutcome::Save {
                 file_name,
                 description,
@@ -267,7 +337,13 @@ impl App {
                     let body = state
                         .csf_label("TXT_MUSTENTER_DESCRIPTION", "You must enter a description!");
                     let purpose = SavedSeedPromptPurpose::EmptyDescription;
-                    Self::show_saved_seed_prompt(state, purpose, body, false);
+                    Self::show_saved_seed_prompt(
+                        &mut state.frontend.skirmish_shell_state,
+                        &state.process_assets,
+                        purpose,
+                        body,
+                        false,
+                    );
                     return;
                 }
                 if let Some(file_name) = file_name {
@@ -276,11 +352,21 @@ impl App {
                         file_name,
                         description,
                     };
-                    Self::show_saved_seed_prompt(state, purpose, body, true);
+                    Self::show_saved_seed_prompt(
+                        &mut state.frontend.skirmish_shell_state,
+                        &state.process_assets,
+                        purpose,
+                        body,
+                        true,
+                    );
                     return;
                 }
-                let Some(dir) = Self::random_map_dir(state) else {
-                    Self::show_saved_seed_error(state, "VERA:RandomMapSaveFailed");
+                let Some(dir) = Self::random_map_dir(state.platform.game_config.as_ref()) else {
+                    Self::show_saved_seed_error(
+                        &mut state.frontend.skirmish_shell_state,
+                        &state.process_assets,
+                        "VERA:RandomMapSaveFailed",
+                    );
                     return;
                 };
                 let assets = state.process_assets.manager();
@@ -294,7 +380,11 @@ impl App {
                     }
                     Err(error) => {
                         log::warn!("saved seed: could not create a new slot: {error}");
-                        Self::show_saved_seed_error(state, "VERA:RandomMapSaveFailed");
+                        Self::show_saved_seed_error(
+                            &mut state.frontend.skirmish_shell_state,
+                            &state.process_assets,
+                            "VERA:RandomMapSaveFailed",
+                        );
                     }
                 }
             }
@@ -309,7 +399,13 @@ impl App {
                 let description = row.map(|row| row.description.display_text());
                 let body = format!("{prefix}\n\n{}", description.unwrap_or_default());
                 let purpose = SavedSeedPromptPurpose::Delete { file_name };
-                Self::show_saved_seed_prompt(state, purpose, body, true);
+                Self::show_saved_seed_prompt(
+                    &mut state.frontend.skirmish_shell_state,
+                    &state.process_assets,
+                    purpose,
+                    body,
+                    true,
+                );
             }
         }
     }
@@ -326,7 +422,13 @@ impl App {
                 BrowserInputResult::PromptAnswer(answer) => {
                     Self::resolve_saved_seed_prompt(state, answer)
                 }
-                BrowserInputResult::Cue(cue) => Self::play_page_cue(state, cue),
+                BrowserInputResult::Cue(cue) => Self::play_page_cue(
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    cue,
+                ),
             }
         }
     }
@@ -336,7 +438,7 @@ impl App {
         code: Option<KeyCode>,
         text: Option<&str>,
     ) {
-        if let Some(browser) = Self::saved_seed_browser(state) {
+        if let Some(browser) = Self::saved_seed_browser(&mut state.frontend.skirmish_shell_state) {
             let results = saved_file_input::key(browser, code, text);
             Self::apply_saved_seed_input(state, results);
         }
@@ -350,7 +452,7 @@ impl App {
         };
         let extent = (state.render_width(), state.render_height());
         let pointer = state.match_state.input.cursor_px();
-        if let Some(browser) = Self::saved_seed_browser(state) {
+        if let Some(browser) = Self::saved_seed_browser(&mut state.frontend.skirmish_shell_state) {
             let results = saved_file_input::pointer(browser, &layout, extent, pointer, down);
             Self::apply_saved_seed_input(state, results);
         }

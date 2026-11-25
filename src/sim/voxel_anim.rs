@@ -29,7 +29,6 @@ use crate::rules::particle_system_type::ParticleSystemTypeId;
 use crate::rules::voxel_anim_type::{VoxelAnimType, VoxelAnimTypeId};
 use crate::sim::bounce::BounceState;
 use crate::sim::intern::InternedId;
-use crate::sim::particles::spawn::AttachedParticleSystem;
 use crate::sim::rng::{SimRng, abs_before_modulo};
 use crate::sim::world::ObjectLifecycle;
 use crate::util::native_x87::{NativeF64Bits, NativeX87Error, X87Chop53};
@@ -68,7 +67,7 @@ pub struct VoxelAnimObject {
     /// RESIDUAL: nothing clears `+0x108` when the system ends first, so
     /// gamemd's destructor and CRC (`0x0074AA63`) then read a freed system;
     /// VERA keeps the stale handle and reads nothing through it.
-    attached_system: AttachedParticleSystem,
+    attached_system: Option<u64>,
     /// LogicClass membership, reconstructed from the serialized vector.
     #[serde(skip)]
     in_logic_vector: bool,
@@ -136,12 +135,12 @@ impl VoxelAnimObject {
 
     /// The `+0x108` system handle, as the constructor stored it.
     pub(crate) const fn attached_system(&self) -> Option<u64> {
-        self.attached_system.system()
+        self.attached_system
     }
 
     /// The constructor's store of its AttachedSystem result.
     pub(crate) fn bind_attached_system(&mut self, system: Option<u64>) {
-        self.attached_system.bind(system);
+        self.attached_system = system;
     }
 
     /// Only the shared lifecycle owner writes the private Object bytes.
@@ -397,7 +396,7 @@ pub fn spawn_debris_piece(
             location: launch.start.to_array(),
             lifecycle: ObjectLifecycle::default(),
             bounce,
-            attached_system: AttachedParticleSystem::default(),
+            attached_system: None,
             in_logic_vector: false,
         });
     }
@@ -458,7 +457,7 @@ pub fn spawn_debris_piece(
         location: origin.to_array(),
         lifecycle: ObjectLifecycle::default(),
         bounce,
-        attached_system: AttachedParticleSystem::default(),
+        attached_system: None,
         in_logic_vector: false,
     })
 }

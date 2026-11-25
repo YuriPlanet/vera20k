@@ -21,6 +21,15 @@ and executes the saved command before it accepts the fixture.
 | `main-41f140f93.sav` | `41f140f93` (pre-release) | `skirmish` |
 | `main-6d6caa108.sav` | `6d6caa108` (pre-release) | `skirmish` |
 | `main-ffe8b25af.sav` | `ffe8b25af` (pre-release) | `skirmish` |
+| `main-93ab2ce86.sav` | `93ab2ce86` (pre-release) | `skirmish` |
+| `main-06789b62b.sav` | `06789b62b` (pre-release) | `skirmish` |
+| `main-8d55b4a73.sav` | `8d55b4a73` (pre-release) | `skirmish` |
+| `main-8852f7a76.sav` | `8852f7a76` (pre-release) | `skirmish` |
+| `main-bc55c35e7.sav` | `bc55c35e7` (pre-release) | `skirmish` |
+| `main-30e9a0f38.sav` | `30e9a0f38` (pre-release) | `skirmish` |
+
+The Kratos writer revision is in PR #5080. In a fresh clone, fetch it with
+`git fetch origin pull/5080/head` before checking out `bc55c35e7`.
 
 The ordinary worlds use `compat.map`, a flat 3×3 terrain and an authored
 APC type. At tick 91 the Americans player has 1,000 credits. The pending

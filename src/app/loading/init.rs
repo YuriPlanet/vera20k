@@ -1886,15 +1886,21 @@ mod match_theater_tests {
         };
         // A cell without a tile names none.
         let original_tiles = [0, theater::NO_TILE, i32::from(u16::MAX)];
-        let original = load_match_theater(&mut assets, &map_naming(&original_tiles), true).unwrap();
+        let original = load_match_theater(&mut assets, &map_naming(&original_tiles), true)
+            .unwrap()
+            .unwrap();
         assert!(assets.names_pinned());
         assert!(!original.lookup.is_morphable(0));
 
-        let skirmish = load_match_theater(&mut assets, &map_naming(&[0]), false).unwrap();
+        let skirmish = load_match_theater(&mut assets, &map_naming(&[0]), false)
+            .unwrap()
+            .unwrap();
         assert!(!assets.names_pinned());
         assert!(skirmish.lookup.is_morphable(0));
 
-        let folder = load_match_theater(&mut assets, &map_naming(&[0, 1]), true).unwrap();
+        let folder = load_match_theater(&mut assets, &map_naming(&[0, 1]), true)
+            .unwrap()
+            .unwrap();
         assert!(!assets.names_pinned());
         assert!(folder.lookup.is_morphable(0));
     }
@@ -2319,7 +2325,13 @@ impl MapLoadInitial {
         // constructor replay on that owner, the GPU-free population funnel,
         // standard Battle launch application, and the shared Post_Map_Init
         // finalizer.
-        let theater_result = theater::load_theater(asset_manager, &map_data.header.theater);
+        let theater_result = theater::load_scenario_theater(
+            asset_manager,
+            &map_data.header.theater,
+            &map_data.ini,
+            false,
+        )
+        .expect("generated fixture theater");
         let (mut rules, _, art_ini, native_rules_receipt) = generated_rules
             .expect("generated-map receipt includes its early Full_Init Rules")
             .native
@@ -3186,21 +3198,25 @@ fn load_match_theater(
     asset_manager: &mut crate::assets::asset_manager::AssetManager,
     map: &crate::map::map_file::MapFile,
     network: bool,
-) -> Option<theater::TheaterData> {
-    let loaded = theater::load_theater_for_play(asset_manager, &map.header.theater, network)?;
-    if !asset_manager.names_pinned() {
-        return Some(loaded);
+) -> Result<Option<theater::TheaterData>> {
+    let Some(loaded) =
+        theater::load_scenario_theater(asset_manager, &map.header.theater, &map.ini, network)?
+    else {
+        return Ok(None);
+    };
+    if loaded.uses_bundled_ice() || !asset_manager.names_pinned() {
+        return Ok(Some(loaded));
     }
     if crate::map::resolved_terrain::map_tiles_exist(map, &loaded.lookup, |name| {
         asset_manager.get_ref(name).is_some()
     }) {
         log::info!("Network match terrain: the original game's files");
-        return Some(loaded);
+        return Ok(Some(loaded));
     }
     log::info!(
         "Network match terrain: the game folder's files; the map names a tile the original game lacks"
     );
-    theater::load_theater(asset_manager, &map.header.theater)
+    Ok(theater::load_theater(asset_manager, &map.header.theater))
 }
 
 fn load_map_first_step(
@@ -3290,6 +3306,7 @@ fn load_map_first_step(
     let map_hash = match &map_source {
         LoadedMapSource::Loose { .. }
         | LoadedMapSource::Mix { .. }
+        | LoadedMapSource::Bundled { .. }
         | LoadedMapSource::Generated { .. } => Some(map_data.ini.content_hash()),
         LoadedMapSource::LegacyFallback { .. } => None,
     };
@@ -3299,7 +3316,7 @@ fn load_map_first_step(
         services.asset_manager,
         &map_data,
         startup.session_mode().is_network(),
-    );
+    )?;
     if theater_cache_mismatch {
         services.progress.milestone(12)?;
         // Native advances while rebuilding each color scheme. Rust's theater

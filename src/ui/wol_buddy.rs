@@ -391,6 +391,14 @@ impl WolAddBuddy {
     }
 }
 
+/// The page's nodes its painter reaches for, found once per tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BuddyNodes {
+    pub(crate) root: NodeId,
+    pub(crate) refresh: Option<NodeId>,
+    pub(crate) list: NodeId,
+}
+
 /// `0x116` while it runs.
 #[derive(Debug, Clone)]
 pub(crate) struct WolBuddyPage {
@@ -405,6 +413,8 @@ pub(crate) struct WolBuddyPage {
     pub(crate) texts: Option<Vec<(u16, String)>>,
     /// The modal Add Buddy `0x115`.
     pub(crate) add: Option<WolAddBuddy>,
+    /// Its tree's nodes, found when the tree is built ([`Self::nodes`]).
+    nodes: std::cell::Cell<Option<BuddyNodes>>,
 }
 
 impl WolBuddyPage {
@@ -417,7 +427,23 @@ impl WolBuddyPage {
             observer,
             texts: None,
             add: None,
+            nodes: std::cell::Cell::new(None),
         }
+    }
+
+    /// The tree under `root`'s Refresh and list: found the first time the
+    /// built tree is asked for, then kept while `root` stays its root.
+    pub(crate) fn nodes(&self, gui: &Gui, root: NodeId) -> Option<BuddyNodes> {
+        if let Some(nodes) = self.nodes.get().filter(|nodes| nodes.root == root) {
+            return Some(nodes);
+        }
+        let nodes = BuddyNodes {
+            root,
+            refresh: gui.find_id(root, REFRESH.into()),
+            list: gui.find_id(root, LIST.into())?,
+        };
+        self.nodes.set(Some(nodes));
+        Some(nodes)
     }
 
     pub(crate) fn enabled(&self, control: u16) -> bool {
@@ -612,6 +638,8 @@ pub(crate) fn spec() -> NodeSpec {
         .children(
             STATS.map(|id| help(NodeKind::Text, id).with(Prop::Align, align(ShellAlign::NONE))),
         )
+        // The group box's frame, which takes nothing.
+        .child(NodeSpec::new(NodeKind::Text).id(GROUP_BOX.into()))
 }
 
 #[cfg(all(test, tests_ui))]

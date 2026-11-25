@@ -1124,7 +1124,7 @@ impl WolCapture {
                 "the WOL handoff became offline"
             );
             return Ok(state.frontend.screen == GameScreen::Loading
-                && crate::app::loading::pump::next_native_loading_frame(state)
+                && crate::app::loading::pump::next_native_loading_frame(&state.frontend)
                     == Some(crate::app::loading::pump::NextLoadingFrame::First));
         }
         // Behind a box `0x10E`/`0x10F` is gone, and with it the status line;
@@ -1132,13 +1132,14 @@ impl WolCapture {
         // family line belong to this check.
         // The Quick Match runner's lobby is never shown, but `0x117` over
         // it paints the status line unless a box or the wait covers it.
-        let quick_match_page = crate::app::shell_wol::quick_match::dialog(state).is_some()
-            && state
-                .frontend
-                .wol
-                .as_ref()
-                .and_then(|visit| visit.lobby())
-                .is_some_and(|lobby| lobby.message().is_none() && lobby.wait.is_none());
+        let quick_match_page =
+            crate::app::shell_wol::quick_match::dialog(state.frontend.wol.as_ref()).is_some()
+                && state
+                    .frontend
+                    .wol
+                    .as_ref()
+                    .and_then(|visit| visit.lobby())
+                    .is_some_and(|lobby| lobby.message().is_none() && lobby.wait.is_none());
         let backdrop = !quick_match_page
             && state.frontend.wol.as_ref().is_some_and(|visit| {
                 matches!(
@@ -1335,7 +1336,7 @@ fn games(hash: i32, map: &str) -> Vec<WolChannel> {
 /// The games with the local hash, Alpha's naming the first scenario record.
 fn local_games(state: &AppState) -> Vec<WolChannel> {
     games(
-        crate::app::shell_wol::lobby::local_ini_hash(state).unwrap_or(0),
+        crate::app::shell_wol::lobby::local_ini_hash(&state.process_assets).unwrap_or(0),
         &first_record(state).0,
     )
 }
@@ -1371,7 +1372,7 @@ fn wol_setup_settled(state: &AppState, host: bool) -> bool {
     MoviesCapture::slide_settled(
         state,
         ShellSlideKind::NetworkSetup(crate::app::shell_network_setup::setup_dialog(
-            state,
+            &state.frontend,
             host,
             crate::ui::multiplayer_setup::SetupFlavor::Wol,
         )),
@@ -1633,7 +1634,12 @@ fn unverified_host_options(state: &AppState) -> Result<NetworkSetupEvent> {
         .context("C9 setup")?
         .clone();
     let file = launch.selected_map_file.clone().context("host map")?;
-    let mut map_metadata = crate::app::shell_network_setup::local_map_metadata(state, &file)?;
+    let mut map_metadata = crate::app::shell_network_setup::local_map_metadata(
+        state.platform.game_config.as_ref(),
+        &state.frontend.scenario_catalog,
+        &state.process_assets,
+        &file,
+    )?;
     map_metadata.digest = "another version".into();
     Ok(NetworkSetupEvent::HostSetup(
         crate::app::shell_network_setup::HostOptions {
@@ -1667,13 +1673,6 @@ fn setup_chat_has(state: &AppState, text: &str) -> Result<bool> {
         .lines
         .iter()
         .any(|line| String::from_utf16_lossy(&line.text) == text))
-}
-
-fn setup_click(state: &mut AppState, rect: RectPx) {
-    set_window_pointer_to_rect_center(state, rect);
-    crate::app::input::multiplayer_setup::cursor_moved(state);
-    crate::app::input::multiplayer_setup::mouse(state, winit::event::MouseButton::Left, true);
-    crate::app::input::multiplayer_setup::mouse(state, winit::event::MouseButton::Left, false);
 }
 
 /// Presses the Join or Watch on the header of `group`'s box.
@@ -1721,8 +1720,8 @@ struct MyInfoShown {
 fn my_info_shown(state: &AppState) -> Result<MyInfoShown> {
     use crate::app::shell_wol::my_info;
     use crate::ui::wol_my_info::*;
-    let page = my_info::page(state).context("0x114")?;
-    let root = my_info::root(state).context("0x114's widgets")?;
+    let page = my_info::page(state.frontend.wol.as_ref()).context("0x114")?;
+    let root = my_info::root(&state.frontend.shell_controller).context("0x114's widgets")?;
     let gui = state.frontend.shell_controller.gui();
     let flag = |id: u16, prop: Prop| {
         crate::ui::shell::page::get(gui, root, id, prop) != Some(&vera20k_gui::Value::Bool(false))

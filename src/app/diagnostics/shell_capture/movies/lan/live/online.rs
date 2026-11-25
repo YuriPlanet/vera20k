@@ -118,7 +118,7 @@ impl LiveRoundFlow {
             return true;
         }
         let host = self.online_config().host.clone();
-        let present = crate::app::shell_wol::lobby::member_names(state)
+        let present = crate::app::shell_wol::lobby::member_names(state.frontend.wol.as_ref())
             .any(|name| name.eq_ignore_ascii_case(&host));
         let (since, seen, left) =
             self.quick_match_wait
@@ -431,7 +431,8 @@ impl LiveRoundFlow {
                     .iter()
                     .position(|row| row.locale != 0)
                     .unwrap_or(0);
-                let (geometry, top) = persona::list_view(state).context("online location list")?;
+                let (geometry, top) = persona::list_view(&state.frontend.shell_controller)
+                    .context("online location list")?;
                 ensure!(
                     row >= top && row < top + geometry.visible_rows,
                     "online location choice is outside the visible list"
@@ -802,7 +803,10 @@ impl LiveRoundFlow {
                                 && session.network_map_status(i) == Some(1)
                         })
                 });
-                let starting = crate::app::shell_network_setup::start_phase(state).in_progress();
+                let starting = crate::app::shell_network_setup::start_phase(
+                    state.frontend.network_setup_protocol.as_ref(),
+                )
+                .in_progress();
                 let start = self.online_config().start;
                 if ready
                     && !starting
@@ -865,8 +869,9 @@ impl LiveRoundFlow {
             // matchbot's host, which must be the configured one. A second
             // pairing means the first room never started.
             RoundPhase::QuickMatch => {
-                let Some(room) = crate::app::shell_wol::lobby::current_channel(state)
-                    .filter(|channel| channel.kind == wol_lobby::GAME_CHANNEL)
+                let Some(room) =
+                    crate::app::shell_wol::lobby::current_channel(state.frontend.wol.as_ref())
+                        .filter(|channel| channel.kind == wol_lobby::GAME_CHANNEL)
                 else {
                     return Ok(());
                 };
@@ -964,6 +969,8 @@ impl LiveRoundFlow {
                         core.host() == (self.rounds.len() == 1)
                     };
                     if observe {
+                        use super::super::super::abort_return::AbortGoal;
+                        use crate::ui::shell::abort::AbortButton;
                         let solo_ai = self
                             .config
                             .as_ref()
@@ -979,19 +986,27 @@ impl LiveRoundFlow {
                                 state,
                                 &mut self.route,
                                 frame,
+                                AbortGoal::Choose(Some(AbortButton::Leave)),
+                                true,
                             )?
                         } else if quick_match {
                             // A Quick Match game is a tournament game: Abort
                             // opens the Surrender box instead of B6.
-                            super::super::super::abort_return::AbortReturnInput::begin_surrender(
+                            super::super::super::abort_return::AbortReturnInput::begin(
                                 state,
                                 &mut self.route,
                                 frame,
+                                AbortGoal::Surrender { press_ok: true },
                                 true,
                             )?
                         } else {
-                            super::super::super::abort_return::AbortReturnInput::begin_network_observe(
-                                state, &mut self.route, frame)?
+                            super::super::super::abort_return::AbortReturnInput::begin(
+                                state,
+                                &mut self.route,
+                                frame,
+                                AbortGoal::Choose(Some(AbortButton::Secondary)),
+                                false,
+                            )?
                         });
                         self.record(
                             frame,
@@ -1075,9 +1090,10 @@ impl LiveRoundFlow {
                 );
                 self.result_rows.extend(visible);
                 if page.page_index() + 1 < page.page_count() {
-                    let rect = crate::app::frontend::shell_layout::score_layout(state)
-                        .paging_button(crate::ui::score_shell::NEXT_PAGE)
-                        .context("score Next")?;
+                    let rect =
+                        crate::app::frontend::shell_layout::score_layout(&state.renderer.gpu)
+                            .paging_button(crate::ui::score_shell::NEXT_PAGE)
+                            .context("score Next")?;
                     set_window_pointer_to_rect_center(state, rect);
                     App::handle_score_shell_mouse(state, None);
                     App::handle_score_shell_mouse(state, Some(true));
@@ -1104,7 +1120,7 @@ impl LiveRoundFlow {
                     json!(self.result_rows);
                 self.current_round.as_mut().context("completed round")?["terminal_simulation"] =
                     terminal_simulation_receipt(state)?;
-                let rect = crate::app::frontend::shell_layout::score_layout(state)
+                let rect = crate::app::frontend::shell_layout::score_layout(&state.renderer.gpu)
                     .page
                     .button_rect(crate::ui::score_shell::CONTINUE_BUTTON)
                     .context("score Continue")?;
@@ -1472,7 +1488,7 @@ pub(super) fn online_setup_settled(state: &AppState, host: bool) -> bool {
     MoviesCapture::slide_settled(
         state,
         ShellSlideKind::NetworkSetup(crate::app::shell_network_setup::setup_dialog(
-            state,
+            &state.frontend,
             host,
             crate::ui::multiplayer_setup::SetupFlavor::Wol,
         )),

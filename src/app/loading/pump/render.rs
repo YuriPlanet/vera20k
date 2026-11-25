@@ -519,7 +519,7 @@ fn push_loading_participant_row(
     scale: ShellScale,
 ) {
     let bar_origin = [layout.bar_origin[0] as f32, layout.bar_origin[1] as f32];
-    push_loading_progress_span(
+    push_progress_meter(
         instances,
         progress_frame,
         solid_texel,
@@ -527,6 +527,7 @@ fn push_loading_participant_row(
         bar_origin,
         backing_rgb,
         scale,
+        [PROGRESS_FRAME_DEPTH, PROGRESS_DEPTH],
     );
     if let (Some(icon), Some(origin)) = (side_icon, layout.icon_origin) {
         push_entry_scaled(
@@ -580,9 +581,9 @@ fn push_campaign_loading_chrome(
 }
 
 /// `ProgressMeterClass__DrawFill @ 0x00643400` emits the optional house-colour
-/// outline (`+0x71`), then the one clipped shape span. The existing progress owner
-/// supplies native ftol; both loading families use this same submission body.
-fn push_loading_progress_span(
+/// outline (`+0x71`), then the one clipped shape span. Shared by the loading
+/// screen and random map setup, which draw on different depth planes.
+pub(crate) fn push_progress_meter(
     out: &mut Vec<SpriteInstance>,
     frame: LoadingScreenEntry,
     solid_texel: LoadingScreenEntry,
@@ -590,6 +591,7 @@ fn push_loading_progress_span(
     bar_origin: [f32; 2],
     backing_rgb: Option<[f32; 3]>,
     scale: ShellScale,
+    [outline_depth, fill_depth]: [f32; 2],
 ) {
     let bar_size = scale.art_size(frame.pixel_size[0], frame.pixel_size[1]);
     // The `+0x71` branch is a one-pixel **outline**, not a filled panel:
@@ -619,7 +621,7 @@ fn push_loading_progress_span(
                 solid_texel,
                 origin,
                 size,
-                PROGRESS_FRAME_DEPTH,
+                outline_depth,
                 frame_rgb,
             );
         }
@@ -635,7 +637,7 @@ fn push_loading_progress_span(
             bar_origin,
             progress_width,
             scale,
-            PROGRESS_DEPTH,
+            fill_depth,
         );
     }
 }
@@ -1175,7 +1177,7 @@ mod tests {
             let mut progress = LoadingProgressState::standard_skirmish();
             progress.advance_progress(row["percent"].as_u64().unwrap() as u32);
             let mut draws = Vec::new();
-            push_loading_progress_span(
+            push_progress_meter(
                 &mut draws,
                 frame,
                 solid,
@@ -1183,6 +1185,7 @@ mod tests {
                 layout.bar_origin.map(|value| value as f32),
                 None,
                 crate::ui::shell::geom::RETAIL_SCALE,
+                [PROGRESS_FRAME_DEPTH, PROGRESS_DEPTH],
             );
             let clip = row["clip_rect"].as_array().unwrap();
             let clip_width = clip[2].as_i64().unwrap() as f32;

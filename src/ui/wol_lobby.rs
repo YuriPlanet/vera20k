@@ -54,8 +54,6 @@ pub(crate) const BACK_TO_ROOM: u16 = 0x7E30;
 /// VERA: the online page's button between its games and its chat with the
 /// player list ([`LobbyView`]).
 pub(crate) const VIEW: u16 = 0x7E3A;
-/// VERA: the online page's Join Any Game ([`WolLobbyAction::JoinAny`]).
-pub(crate) const JOIN_ANY: u16 = 0x7E3B;
 /// VERA: the games view's filter row under the list: the room search and
 /// the Hide Full and Hide Locked checkboxes ([`RoomFilter`]).
 pub(crate) const SEARCH: u16 = 0x7E3C;
@@ -118,25 +116,24 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     back: button(BACK, 332, "GUI:Back", "STT:WOLLobbyBack"),
 };
 
-/// The normal VERA lobby keeps core play and Options. Its third row is
-/// VERA's Join Any Game. It has no welcome `0x10E`, so its fourth row is that
-/// page's Quick Match (`0x6E0`, its caption and tooltip) and Options moves to
-/// the fifth. The sixth swaps the games for the chat and the player list; its
-/// caption and help are the view's ([`WolLobbyState::view_caption`]). The
-/// retail page above remains the owner for legacy service diagnostics.
+/// The normal VERA lobby keeps core play and Options. It has no welcome
+/// `0x10E`, so its third row is that page's Quick Match (`0x6E0`, its caption
+/// and tooltip) and Options moves to the fourth. The fifth swaps the games
+/// for the chat and the player list; its caption and help are the view's
+/// ([`WolLobbyState::view_caption`]). The retail page above remains the owner
+/// for legacy service diagnostics.
 const ONLINE_PAGE: MenuPageSpec = MenuPageSpec {
     stacked: &[
         button(CREATE, 111, "GUI:CreateGame", "STT:LobbyButtonNew"),
         button(JOIN, 138, "GUI:JoinGame", "STT:LobbyButtonJoin"),
-        button(JOIN_ANY, 166, "VERA:JoinAnyGame", "VERA:JoinAnyGameHelp"),
         button(
             QUICK_MATCH,
-            193,
+            166,
             "GUI:QuickMatch",
             "STT:WOLWelcomeQuickMatch",
         ),
-        button(OPTIONS, 222, "GUI:WOLOptions", "STT:WOLLobbyOptions"),
-        button(VIEW, 250, "VERA:LobbyChat", "VERA:LobbyChatHelp"),
+        button(OPTIONS, 193, "GUI:WOLOptions", "STT:WOLLobbyOptions"),
+        button(VIEW, 222, "VERA:LobbyChat", "VERA:LobbyChatHelp"),
     ],
     ..PAGE
 };
@@ -501,9 +498,6 @@ pub(crate) enum WolLobbyAction {
     BackToRoom,
     /// VERA: the view button swapped the online page's view.
     View,
-    /// VERA: Join Any Game, for the lobby owner to join the first room the
-    /// list shows that admits this player.
-    JoinAny,
     /// VERA: Hide Full or Hide Locked was clicked; the lobby owner keeps the
     /// choice ([`RoomFilter::toggle`]) and refills the games.
     FilterToggled(u16),
@@ -647,7 +641,7 @@ fn page_spec() -> NodeSpec {
         .children(
             PAGE.buttons()
                 .map(|b| b.id)
-                .chain([QUICK_MATCH, BACK_TO_ROOM, VIEW, JOIN_ANY])
+                .chain([QUICK_MATCH, BACK_TO_ROOM, VIEW])
                 .map(button),
         )
         .children(SORT_BUTTONS.iter().map(|(id, key)| {
@@ -1040,14 +1034,6 @@ impl WolLobbyState {
             && self.chat_blink()
     }
 
-    /// Button `id` paints pushed: captured and under the pointer in its
-    /// own dialog (612B70).
-    pub(crate) fn pressed(&self, id: u16) -> bool {
-        self.find(id).is_some_and(|(dialog, node)| {
-            self.gui.pressed_in(dialog) == Some(node) && self.gui.hovered_in(dialog) == Some(node)
-        })
-    }
-
     /// The control under the pointer in the top dialog.
     pub(crate) fn hovered(&self) -> Option<u16> {
         self.gui
@@ -1301,7 +1287,6 @@ impl WolLobbyState {
                 self.toggle_view();
                 WolLobbyAction::View
             }
-            JOIN_ANY if self.page_spec().button(JOIN_ANY).is_some() => WolLobbyAction::JoinAny,
             HIDE_FULL | HIDE_LOCKED if self.modern => WolLobbyAction::FilterToggled(control),
             BUDDY | CLAN | TOURNAMENT | NEWS => WolLobbyAction::Unported(control),
             _ => return None,
@@ -1568,28 +1553,17 @@ mod tests {
             lobby.page_spec(),
         );
         let controls: Vec<_> = layout.page.buttons.iter().map(|button| button.id).collect();
-        assert_eq!(
-            controls,
-            [CREATE, JOIN, JOIN_ANY, QUICK_MATCH, OPTIONS, VIEW, BACK]
-        );
+        assert_eq!(controls, [CREATE, JOIN, QUICK_MATCH, OPTIONS, VIEW, BACK]);
         let retail = WolLobbyLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE, &PAGE);
-        assert_eq!(layout.control_rect(JOIN_ANY), retail.control_rect(BUDDY));
-        assert_eq!(layout.control_rect(QUICK_MATCH), retail.control_rect(CLAN));
-        assert_eq!(
-            layout.control_rect(OPTIONS),
-            retail.control_rect(TOURNAMENT)
-        );
-        assert_eq!(layout.control_rect(VIEW), retail.control_rect(NEWS));
+        assert_eq!(layout.control_rect(QUICK_MATCH), retail.control_rect(BUDDY));
+        assert_eq!(layout.control_rect(OPTIONS), retail.control_rect(CLAN));
+        assert_eq!(layout.control_rect(VIEW), retail.control_rect(TOURNAMENT));
         assert_eq!(
             tooltip_key(QUICK_MATCH, lobby.page_spec()),
             Some("STT:WOLWelcomeQuickMatch")
         );
         // Only the online page offers them; the retail page has its welcome.
         assert_eq!(WolLobbyState::new(false, false).activate(QUICK_MATCH), None);
-        assert_eq!(WolLobbyState::new(false, false).activate(JOIN_ANY), None);
-        let mut visitor = WolLobbyState::new(false, true);
-        visitor.set_visiting(true);
-        assert_eq!(visitor.activate(JOIN_ANY), None);
         assert_eq!(retail.control_rect(QUICK_MATCH), None);
         lobby.set_commands(false, false, false);
         lobby.set_commands(true, true, false);

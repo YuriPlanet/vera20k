@@ -5,13 +5,19 @@
 //! humans while the local House is not defeated, otherwise hidden. The
 //! ordinary question uses60B7A0.
 
-use vera20k_gui::{NodeKind, NodeSpec};
+use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use super::descriptor::DialogResourceId;
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
 
 pub const DIALOG: DialogResourceId = DialogResourceId(0xB6);
+
+/// The question static's node: the resource's id-less static (`0xFFFF`).
+pub const QUESTION: u16 = 0xFFFF;
+
+/// The question's caption.
+pub const QUESTION_LABEL: (&str, &str) = ("GUI:AskAbortMission", "What would you like to do?");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AbortButton {
@@ -132,18 +138,34 @@ impl AbortLayout {
 
     /// Control `id`'s rect, `None` for the hidden 712.
     pub fn rect(self, id: u16) -> Option<RectPx> {
+        match id {
+            QUESTION => return Some(self.question),
+            in_game_shell::FOOTER => return Some(self.footer),
+            _ => {}
+        }
         self.button(AbortButton::from_id(id)?)
     }
 }
 
 /// B6's buttons in resource order, each with the help its stored result
-/// keys (`0x006040B0`).
+/// keys (`0x006040B0`), then the question. Plain static `0x00615A81`
+/// takes its style's horizontal centring but not `SS_CENTERIMAGE`'s
+/// vertical one; it has no help, so the pointer passes it by. Then the
+/// status line (B6 has no title).
 pub fn spec(secondary: AbortSecondary) -> NodeSpec {
-    NodeSpec::new(NodeKind::Dialog).children(AbortButton::ALL.map(|button| {
+    let buttons = AbortButton::ALL.map(|button| {
         NodeSpec::new(NodeKind::Button)
             .id(button.id().into())
             .tooltip(button.help(secondary).0)
-    }))
+    });
+    let align = crate::ui::shell::geom::ShellAlign::H_CENTER;
+    let question = NodeSpec::new(NodeKind::Text)
+        .id(QUESTION.into())
+        .with(Prop::Align, Value::Int(i32::from(align.0)));
+    NodeSpec::new(NodeKind::Dialog)
+        .children(buttons)
+        .child(question)
+        .children(in_game_shell::panel_statics())
 }
 
 pub fn abort_layout(

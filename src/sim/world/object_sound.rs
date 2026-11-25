@@ -160,10 +160,11 @@ impl Simulation {
         }
     }
 
-    /// Execute98 at6DE7A5..6DE842: scan702 slots in order, retaining at most
-    ///400 nonempty pairs. The signed Scenario range request runs even for no
-    ///candidates; a singleton consumes no draw. Cell642740 uses Z=0, without
-    ///Map/ground/bridge or custom-object lookup. Voc750E20 receives flags0.
+    /// Execute98 at6DE7A5..6DE842 scans waypoint slots in order, retaining at
+    /// most 400 nonempty pairs. VERA's extended slots follow the stock range.
+    /// The signed Scenario range request runs even for no candidates, and a
+    /// singleton consumes no draw. Cell642740 uses Z=0 and Voc750E20 receives
+    /// flags0.
     pub(crate) fn trigger_play_sound_at_random_waypoint(
         &mut self,
         sound: Option<&SoundReference>,
@@ -173,53 +174,30 @@ impl Simulation {
         // Ares 3.0 TActionClass_PlayAudioAtRandomWP (10039B60, hook 0x6E1780,
         // #1004906) replaces the scan: every defined slot is a candidate,
         // without the 400 cap, and no candidate means no draw and no sound.
-        let cell = if rules.ares() {
-            let candidates: Vec<i32> = (0..crate::map::waypoints::WAYPOINT_SLOT_COUNT as i32)
-                .filter(|&index| self.session.waypoint_is_valid(index))
-                .collect();
-            if candidates.is_empty() {
-                return true;
-            }
-            let selected = self
-                .scenario_rng
-                .next_range_i32_inclusive(0, candidates.len() as i32 - 1);
-            let Some(cell) = usize::try_from(selected)
-                .ok()
-                .and_then(|index| candidates.get(index))
-                .and_then(|&index| self.session.waypoint_cell(index))
-            else {
-                return true;
-            };
-            cell
+        let ares = rules.ares();
+        let limit = if ares { usize::MAX } else { 400 };
+        let candidates: Vec<_> = self.session.defined_waypoint_cells().take(limit).collect();
+        if ares && candidates.is_empty() {
+            return true;
+        }
+        let selected = self
+            .scenario_rng
+            .next_range_i32_inclusive(0, candidates.len() as i32 - 1);
+        let cell = if candidates.is_empty() && selected == 0 {
+            //4068F0 initializes the original100 CellStruct scratch entries.
+            (0, 0)
+        } else if let Some(cell) = usize::try_from(selected)
+            .ok()
+            .and_then(|index| candidates.get(index))
+        {
+            *cell
         } else {
-            let mut candidates = Vec::new();
-            for index in 0..crate::map::waypoints::WAYPOINT_SLOT_COUNT as i32 {
-                if self.session.waypoint_is_valid(index) {
-                    candidates.push(self.session.waypoint_cell(index).expect("valid slot"));
-                    if candidates.len() == 400 {
-                        break;
-                    }
-                }
-            }
-            let selected = self
-                .scenario_rng
-                .next_range_i32_inclusive(0, candidates.len() as i32 - 1);
-            if candidates.is_empty() && selected == 0 {
-                //4068F0 initializes the original100 CellStruct scratch entries.
-                (0, 0)
-            } else if let Some(cell) = usize::try_from(selected)
-                .ok()
-                .and_then(|index| candidates.get(index))
-            {
-                *cell
-            } else {
-                //RESIDUAL: no-waypoint result-1 reads before native's scratch
-                //array. Keep the real RNG request and Execute's unconditional
-                //AL1 (6DE836), while skipping audio with an undefined coordinate.
-                //A Vec also avoids native stack corruption when its
-                //400-entry admission exceeds that100-entry scratch allocation.
-                return true;
-            }
+            //RESIDUAL: no-waypoint result-1 reads before native's scratch
+            //array. Keep the real RNG request and Execute's unconditional
+            //AL1 (6DE836), while skipping audio with an undefined coordinate.
+            //A Vec also avoids native stack corruption when its
+            //400-entry admission exceeds that100-entry scratch allocation.
+            return true;
         };
         let coordinate = crate::sim::cell_kernel::cell_center(
             crate::sim::cell_kernel::CellCoordinate {

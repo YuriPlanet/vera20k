@@ -842,7 +842,7 @@ mod tests {
             bridge_cell.has_bridge_deck = supplied.has_bridge_deck;
             bridge_cell.bridge_walkable = supplied.bridge_walkable;
             bridge_cell.bridge_deck_level = supplied.bridge_deck_level;
-            sim.bridge_state = Some(
+            *sim.bridge_state = Some(
                 crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain(
                     sim.resolved_terrain.as_ref().unwrap(),
                     true,
@@ -1294,10 +1294,10 @@ mod tests {
             }
             let mut terrain = ResolvedTerrainGrid::from_cells(8, 8, cells);
             terrain.test_set_native_allocated_cells(&allocated);
-            terrain.bind_shared_cell_dummy(sim.shared_cell_dummy.clone());
+            terrain.bind_shared_cell_dummy((*sim.shared_cell_dummy).clone());
             terrain.set_projectile_water_set_base(row["water_base"].as_i64().unwrap_or(100) as i32);
-            sim.resolved_terrain = Some(terrain);
-            sim.overlay_grid = Some(overlays);
+            *sim.resolved_terrain = Some(terrain);
+            *sim.overlay_grid = Some(overlays);
             if row["source"].as_bool().unwrap_or(true) {
                 place(
                     &mut sim,
@@ -1721,8 +1721,8 @@ mod tests {
             .collect::<Vec<_>>();
         let mut terrain = ResolvedTerrainGrid::from_cells(extent, extent, cells);
         terrain.test_set_native_allocated_cells(&allocated);
-        terrain.bind_shared_cell_dummy(sim.shared_cell_dummy.clone());
-        sim.resolved_terrain = Some(terrain);
+        terrain.bind_shared_cell_dummy((*sim.shared_cell_dummy).clone());
+        *sim.resolved_terrain = Some(terrain);
     }
 
     #[test]
@@ -1738,7 +1738,7 @@ mod tests {
             install_native_size_terrain(&mut sim, 8, 8);
             let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(24, 24);
             overlays.place_overlay(5, 5, 0, 0);
-            sim.overlay_grid = Some(overlays);
+            *sim.overlay_grid = Some(overlays);
             if source_present {
                 place(
                     &mut sim,
@@ -1823,7 +1823,7 @@ mod tests {
             let mut overlays =
                 crate::sim::overlay_grid::OverlayGrid::new(terrain.width(), terrain.height());
             overlays.place_overlay(12, 12, 0, 0);
-            sim.overlay_grid = Some(overlays);
+            *sim.overlay_grid = Some(overlays);
             let source = sim.substrate.allocate_stable_id();
             place(
                 &mut sim,
@@ -2131,7 +2131,7 @@ mod tests {
             install_native_size_terrain(&mut sim, 16, 16);
             let terrain_template = sim.resolved_terrain.as_ref().unwrap().clone();
             sim.install_resolved_terrain_for_new_map(terrain_template.clone());
-            sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
+            *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
                 terrain_template.width(),
                 terrain_template.height(),
             ));
@@ -2502,7 +2502,7 @@ mod tests {
             if overlay >= 0 {
                 let mut grid = crate::sim::overlay_grid::OverlayGrid::new(8, 8);
                 grid.place_overlay(2, 2, overlay as u8, 0);
-                sim.overlay_grid = Some(grid);
+                *sim.overlay_grid = Some(grid);
             }
             if row["source"].as_bool().unwrap_or(true) {
                 place(

@@ -200,11 +200,11 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
         }
         // Original constructor/Unlimbo owns placement. Only the three measured
         // stream priors are imported; the real Rust RNG produces every word.
-        scene.sim.main_rng =
+        *scene.sim.main_rng =
             SimRng::from_native_state_hex_for_test(initial["rng"]["main"].as_str().unwrap());
-        scene.sim.scenario_rng =
+        *scene.sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(initial["rng"]["scenario"].as_str().unwrap());
-        scene.sim.mapgen_rng =
+        *scene.sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(initial["rng"]["mapgen"].as_str().unwrap());
         let (_, draws) = crate::sim::rng::trace_draws(|| {
             compare_native_phase(&scene, initial);

@@ -29,7 +29,7 @@ impl Simulation {
         let Some(location) = self.direct_strike_coord(cell) else {
             return false;
         };
-        let Some(bounds) = self.playfield_bounds else {
+        let Some(bounds) = *self.playfield_bounds else {
             return false;
         };
         let edge = crate::map::playfield::playfield_edge_cell(

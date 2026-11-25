@@ -685,6 +685,12 @@ pub(super) fn hash_entity_owed(
         0x284_u32.hash(hasher);
         entity.chrono_warp_delay().hash(hasher);
     }
+    // Tiberian Sun's limpets (`sim::limpet`), which Firestorm's sync CRC
+    // folds (`Object_CRC 0x00638F4E`); tagged like +0x1F8.
+    if entity.seldom.limpets.is_attached() {
+        b"ts-limpets-v1".hash(hasher);
+        entity.seldom.limpets.hash(hasher);
+    }
 
     if let Some(ref loco) = entity.locomotor {
         1u8.hash(hasher);
@@ -841,6 +847,14 @@ pub(super) fn hash_entity_owed(
         // stream unchanged until a receiver actually stores 1.
         if infantry.cell_entry_blocked() {
             0x36DC_u32.hash(hasher);
+        }
+        // Firestorm 2.0 Infantry+0x370, the web timer's end frame: tagged
+        // once a Webby warhead has set it, so streams without webs stay
+        // unchanged.
+        let web_end = entity.web_end();
+        if web_end != 0 {
+            0x5745_4253_u32.hash(hasher);
+            web_end.hash(hasher);
         }
     } else {
         0u8.hash(hasher);

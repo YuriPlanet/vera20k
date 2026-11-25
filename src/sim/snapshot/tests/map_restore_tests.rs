@@ -20,7 +20,7 @@ fn retail_static_tree_display_survives_load_without_logic_membership() {
     );
     let terrain = flat_terrain(8, 8);
     let mut sim = Simulation::new();
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
     sim.install_resolved_terrain_for_new_map(terrain.clone());
     crate::sim::terrain_spawn::construct_terrain_objects(
         &mut sim,
@@ -191,13 +191,13 @@ fn snapshot_restore_replays_overlay_passability_and_publishes_canonical_navigati
     // This fixture places a live wall but is not a blocker-count subject:
     // its plane stays zero. A real wall always carries its
     // `OverlayClass::Mark` increments.
-    sim.overlay_grid = Some(runtime_overlays);
+    *sim.overlay_grid = Some(runtime_overlays);
     sim.install_resolved_terrain_for_new_map(map_terrain.clone());
     sim.restore_map_authority_after_snapshot_load(&rules, &registry, None)
         .expect("publish the live runtime overlay navigation before saving");
     // Original Scenario full-load resets this stream to Seed(0). Match
     // that retained load policy when comparing the published live fixture.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let authoritative_hash = sim.state_hash();
 
     let bytes = GameSnapshot::save(&sim, 0, 0, "overlay_restore.map", 0);
@@ -300,7 +300,7 @@ fn terrain_asset_restore_fixture() -> (
         off_108: 16,
     }));
     sim.set_playfield_size_height_for_test(Some(2));
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
     sim.overlay_grid.as_mut().unwrap().place_overlay(2, 2, 0, 0);
     sim.install_resolved_terrain_for_new_map(flat_terrain(4, 4));
     let mut replaced = sim
@@ -414,8 +414,8 @@ fn snapshot_restore_rejects_truncated_overlay_cell_storage() {
     let rules = RuleSet::from_ini(&ini).expect("truncated-grid rules");
     let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
     let mut sim = Simulation::new();
-    sim.overlay_grid = Some(malformed);
-    sim.resolved_terrain = Some(flat_terrain(2, 1));
+    *sim.overlay_grid = Some(malformed);
+    *sim.resolved_terrain = Some(flat_terrain(2, 1));
 
     assert!(matches!(
         sim.restore_map_authority_after_snapshot_load(&rules, &registry, None),
@@ -456,8 +456,8 @@ fn snapshot_restore_rejects_truncated_retained_wall_neighbor_storage() {
     let rules = RuleSet::from_ini(&ini).expect("truncated-retained-grid rules");
     let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
     let mut sim = Simulation::new();
-    sim.overlay_grid = Some(malformed);
-    sim.resolved_terrain = Some(flat_terrain(2, 1));
+    *sim.overlay_grid = Some(malformed);
+    *sim.resolved_terrain = Some(flat_terrain(2, 1));
 
     assert!(matches!(
         sim.restore_map_authority_after_snapshot_load(&rules, &registry, None),
@@ -575,7 +575,7 @@ fn gsi_04_10_destroyed_terrain_snapshot_rebuild_does_not_resurrect_cache() {
         !PathGrid::from_resolved_terrain(&stale_original_grid)
             .is_walkable(destroyed_cell.0, destroyed_cell.1)
     );
-    sim.resolved_terrain = Some(original_occupied_grid);
+    *sim.resolved_terrain = Some(original_occupied_grid);
 
     let result = damage_terrain_object_at_cell(
         &mut sim.terrain_objects,
@@ -593,7 +593,7 @@ fn gsi_04_10_destroyed_terrain_snapshot_rebuild_does_not_resurrect_cache() {
     sim.substrate.pending_delete.queue_object(destroyed_id);
     // Native in-scenario load restarts Scenario RNG from Seed0; isolate
     // destroyed-terrain persistence on that same post-load cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let authoritative_hash = sim.state_hash();
 

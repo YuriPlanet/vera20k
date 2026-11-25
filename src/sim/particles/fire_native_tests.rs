@@ -126,8 +126,8 @@ fn fire_system_matches_native_sweep_spawns_particles_and_damage_to_retirement() 
             names.insert(id, object["name"].as_str().unwrap());
         }
         sim.set_logic_order_for_test(Vec::new());
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1000));
-        sim.scenario_rng =
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1000));
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(case["initial_scenario_rng"].as_str().unwrap());
         let target = xyz(&case["target"]);
         let id = sim

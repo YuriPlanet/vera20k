@@ -56,7 +56,7 @@ impl Simulation {
             overlay,
             -1,
             registry,
-            self.playfield_bounds,
+            *self.playfield_bounds,
         ) {
             Ok(outcome) => outcome,
             Err(error) => {
@@ -64,15 +64,25 @@ impl Simulation {
                 return;
             }
         };
-        self.overlay_grid
-            .as_mut()
+        // A Recalc that leaves the cell's pair as it is takes neither the
+        // overlay grid nor, for a current cell, the navigation caches for
+        // writing (`util::forked`).
+        if !self
+            .overlay_grid
+            .as_ref()
             .unwrap()
-            .write_finalized_map_cell(coord.0, coord.1, outcome.finalized);
+            .holds_finalized_map_cell(coord.0, coord.1, outcome.finalized)
+        {
+            self.overlay_grid
+                .as_mut()
+                .unwrap()
+                .write_finalized_map_cell(coord.0, coord.1, outcome.finalized);
+        }
         if let Err(error) = (NavigationCaches {
             zones: &mut self.zone_grid,
             path: &mut self.path_grid,
             overlays: self.overlay_grid.as_ref(),
-            playfield_bounds: self.playfield_bounds,
+            playfield_bounds: *self.playfield_bounds,
         })
         .publish_recalculated_cell_with_presence(terrain, coord, structure_blocked)
         {

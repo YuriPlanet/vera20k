@@ -4,58 +4,145 @@
 //! monitor are the shared family statics, and its column slides in and out
 //! (`0x006071E0`). Every control paints from the dialog's tree.
 
-use super::gui_paint::{ButtonArt, GuiPaint, GuiStyle, paint_gui_styled};
+use super::gui_paint::{ButtonArt, GuiStyle, SideButtons, paint_gui_styled};
 use super::{chrome::*, *};
 use crate::app::AppState;
+use crate::app::frontend::menu_page_render::{PanelStatic, paint_panel_statics};
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::ime::ImeState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
 use crate::render::batch::SpriteInstance;
-use crate::render::shell_text::{self, TextRect};
-use crate::render::shell_text_reveal::PathAReveal;
+use crate::render::bit_font::BitFont;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::ui::main_menu_dialogs::options::OptionsDialogState;
 use crate::ui::main_menu_dialogs::options::shell::{Control, LauncherOptionsLayout};
 use crate::ui::shell::geom::{RectPx, ShellAlign, ShellScale};
 use crate::util::time::Instant;
 
+/// How the page's right-hand column buttons paint ([`paint_page`]).
+#[derive(Clone, Copy)]
+pub(crate) enum ColumnArt {
+    /// Not at all: a slide's column covers them, or the box has none.
+    Hidden,
+    /// On the launcher panel's art, the page that shows lit (612B70
+    /// record+C5, SDBTNANM 3).
+    Panel,
+    /// The in-game menu's own buttons on the side's type-2 art
+    /// ([`ButtonArt::Side`]), the page that shows lit.
+    Side(SideButtons),
+}
+
 /// The page's controls and its open list, painted from the dialog's tree
 /// (synced to its layout by the caller). The page's own buttons are drawn as
 /// Sound Options' Play and Stop are (609FC7..609FE2/60A330): owner-draw type
-/// 3, MNBTTN centred on the control. With `column` the right-hand column's
-/// buttons paint on the panel's art, the page that shows lit (612B70
-/// record+C5, SDBTNANM 3); without, a slide or the in-game menu draws them.
+/// 3, MNBTTN centred on the control; the right-hand column's in `column`.
 /// Captions under `covered` are left out: a box draws all its art before its
 /// text, so that text would otherwise show through the list.
 pub(crate) fn paint_page(
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     dialog: &OptionsDialogState,
     scale: ShellScale,
-    column: bool,
+    column: ColumnArt,
     covered: &[RectPx],
-) -> GuiPaint {
+) -> HudPaint {
     let (gui, panel) = dialog.shell_gui();
     let art = |id| match dialog.shell_control(id)? {
         Control::Button(button) if button.on_page() => Some(ButtonArt::ModalSqueezed),
-        Control::Button(_) if column => Some(ButtonArt::Panel),
+        Control::Button(_) => match column {
+            ColumnArt::Hidden => None,
+            ColumnArt::Panel => Some(ButtonArt::Panel),
+            ColumnArt::Side(_) => Some(ButtonArt::Side),
+        },
         _ => None,
     };
     let style = GuiStyle {
         art_of: Some(&art),
+        side: match column {
+            ColumnArt::Side(side) => Some(side),
+            _ => None,
+        },
         ..Default::default()
     };
-    paint_gui_styled(state, gui, panel, scale, covered, style)
+    if frontend.skirmish_shell_chrome.is_some() {
+        return paint_gui_styled(
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            gui,
+            panel,
+            scale,
+            covered,
+            style,
+        );
+    }
+    // Without the control art only the side's column paints: its art is
+    // the sidebar's.
+    let mut paint = HudPaint::default();
+    if let ColumnArt::Side(_) = column {
+        let side = gui
+            .tree()
+            .children(panel)
+            .unwrap_or_default()
+            .iter()
+            .copied();
+        for node in side.filter(|node| {
+            gui.id_of(*node)
+                .and_then(|id| art(id))
+                .is_some_and(|art| art == ButtonArt::Side)
+        }) {
+            super::gui_paint::paint_gui_into(
+                &mut paint,
+                ime,
+                bit_font,
+                frontend,
+                match_state,
+                process_assets,
+                None,
+                gui,
+                node,
+                scale,
+                covered,
+                style,
+            );
+        }
+    }
+    paint
 }
 
 /// Options' controls on another box's art: VERA's Esc menu shows a few of
 /// them. They paint in submission order, after the box and its buttons.
 pub(crate) fn paint_options_settings(
     draw: &mut crate::render::shell_paint::ModalDraw,
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     layout: &LauncherOptionsLayout,
     settings: &OptionsDialogState,
 ) {
     let list = settings.shell_popup_rect();
-    let page = paint_page(state, settings, layout.scale, false, list.as_slice());
-    draw.sprites.extend(page.controls);
+    let page = paint_page(
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
+        settings,
+        layout.scale,
+        ColumnArt::Hidden,
+        list.as_slice(),
+    );
+    draw.sprites.extend(page.lane(Material::Controls).copied());
+    draw.sprites.extend(page.lane(Material::Popup).copied());
     draw.text.extend(page.texts);
-    draw.sprites.extend(page.popup);
     draw.text.extend(page.popup_texts);
 }
 
@@ -113,9 +200,11 @@ pub(crate) fn render_launcher_options(
     // pumps no messages until it ends: every child stays blank. The entry
     // slide suppresses the heading, status line, monitor and column buttons
     // (`0x00606800`); the left-side controls paint.
-    let exit_wave =
-        crate::app::frontend::shell_transition::shell_exit_wave(state, ShellSlideKind::Options)
-            .cloned();
+    let exit_wave = crate::app::frontend::shell_transition::shell_exit_wave(
+        &state.frontend.shell_exit,
+        ShellSlideKind::Options,
+    )
+    .cloned();
     let leaving = exit_wave.is_some();
     let wave = exit_wave.or_else(|| state.frontend.shell_first_paint_slide.clone());
     let sliding = wave.is_some();
@@ -143,7 +232,7 @@ pub(crate) fn render_launcher_options(
             .map(|key| state.csf_text(key))
             .unwrap_or_default();
         let status = crate::app::frontend::menu_page_render::paint_shell_status_line(
-            state,
+            &mut state.frontend.shell_status_line,
             status_text,
             layout.status_help,
         );
@@ -170,7 +259,6 @@ pub(crate) fn render_launcher_options(
             SHELL_CONTROL_DEPTH,
         );
     }
-    let font = &state.renderer.bit_font;
     let mut texts = Vec::new();
     if let Some(wave) = wave.as_ref() {
         let common = crate::ui::skirmish_shell::compute_layout_on(
@@ -186,37 +274,49 @@ pub(crate) fn render_launcher_options(
             SHELL_CONTROL_DEPTH,
         );
     }
-    if let Some(window) = title {
-        texts.push(shell_text::draw_in_rect_path_a_scaled(
-            font,
-            dialog.shell_title_text(),
-            TextRect {
-                x: layout.title.x,
-                y: layout.title.y,
-                w: layout.title.w as u32,
-                h: layout.title.h as u32,
-            },
-            ShellAlign::H_CENTER | ShellAlign::PANEL_FACE,
-            [0.0, 0.0],
-            SHELL_CONTROL_TEXT_DEPTH,
-            PathAReveal {
-                count: window.count,
-                range: window.range,
-                base_rgb: [255, 255, 0],
-                highlight_rgb: [255, 255, 255],
-            },
-            scale.factor(),
-        ));
-    }
-    let page = (!leaving).then(|| paint_page(state, dialog, scale, !sliding, &[]));
-    let page = page.unwrap_or_default();
-    instances.extend(page.controls);
+    // The heading and the status line from the panel's widgets in one
+    // paint, the heading before the page's text and the status line after
+    // it (each shown `Text` gives one draw).
+    let heading = title.map(|window| {
+        let align = ShellAlign::H_CENTER | ShellAlign::PANEL_FACE;
+        PanelStatic::title(dialog.shell_title_text(), layout.title, align, window)
+    });
+    let heading_draws = usize::from(heading.as_ref().is_some_and(|h| !h.text.is_empty()));
+    let status = status_label.map(PanelStatic::status);
+    let mut statics = paint_panel_statics(
+        &state.platform.ime,
+        &state.renderer.bit_font,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        [heading, status],
+        scale,
+    );
+    let status_texts = statics.split_off(heading_draws.min(statics.len()));
+    texts.extend(statics);
+    let column = if sliding {
+        ColumnArt::Hidden
+    } else {
+        ColumnArt::Panel
+    };
+    let page = (!leaving).then(|| {
+        paint_page(
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            dialog,
+            scale,
+            column,
+            &[],
+        )
+    });
+    let mut page = page.unwrap_or_default();
+    instances.extend(page.lane(Material::Controls).copied());
+    let popup = page.take_lane(Material::Popup);
     texts.extend(page.texts);
-    texts.extend(crate::render::shell_paint::paint_labels_scaled(
-        font,
-        &status_label.into_iter().collect::<Vec<_>>(),
-        scale.factor(),
-    ));
+    texts.extend(status_texts);
     super::in_game_shell::render_shell_frame(
         state,
         encoder,
@@ -229,7 +329,7 @@ pub(crate) fn render_launcher_options(
         },
         super::in_game_shell::ShellFrameArt::Launcher,
         super::in_game_shell::ShellFrameOverlay {
-            controls: page.popup,
+            controls: popup,
             texts: page.popup_texts,
             ..Default::default()
         },

@@ -9,7 +9,7 @@ use crate::sim::bounce::{BounceOutcome, BounceState};
 use crate::sim::movement::ground_pose::deck_surface_z;
 use crate::sim::overlay_mark_host::{OverlayRecalc, RuntimeOverlayError};
 use crate::sim::projectile::{ProjectileCoord, projectile_ground_z};
-use crate::sim::world::{FrameEffects, Simulation};
+use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
 use crate::util::native_x87::{NativeF64Bits, NativeX87Error, X87Chop53};
 
@@ -124,6 +124,10 @@ impl Simulation {
     ///   with `ftol(Damage=)` and the type's `Warhead=`, sourceless and
     ///   houseless, then the combat light (`0x0048A620`, not forced).
     ///
+    /// A type that sets Tiberian Sun's `BounceSound=` or `ExpireSound=`
+    /// also plays them, as Firestorm does, after the `BounceAnim=` and after
+    /// the dry landing's damage.
+    ///
     pub(super) fn anim_bounce_step(
         &mut self,
         id: AnimId,
@@ -144,33 +148,39 @@ impl Simulation {
             return Ok(Some(false));
         }
         let position = body.position_leptons();
+        let location = AnimWorldCoord {
+            x: position.x,
+            y: position.y,
+            z: position.z,
+        };
+        // A chunk still in the air runs nothing between the body's store and
+        // the Location's (`0x00423AA8`), so one read of the anim takes both.
+        let falling = outcome == BounceOutcome::Falling;
         if let Some(anim) = self.substrate.anims.get_mut(id) {
             anim.bounce = Some(body);
+            if falling {
+                anim.world_coord = location;
+            }
+        }
+        if falling {
+            return Ok(None);
         }
         let mut bridge_state_changed = false;
-        match outcome {
-            BounceOutcome::Falling => {}
-            BounceOutcome::Bounced => {
-                bridge_state_changed |= self.anim_bounce_contact(
-                    id,
-                    config,
-                    rules,
-                    overlay_registry,
-                    position,
-                    frame_effects,
-                );
-            }
-            BounceOutcome::Stopped => self.destroy_anim(id, rules),
+        if outcome == BounceOutcome::Bounced {
+            bridge_state_changed |= self.anim_bounce_contact(
+                id,
+                config,
+                rules,
+                overlay_registry,
+                position,
+                frame_effects,
+            );
+        } else {
+            // Stopped (`0x00423976`).
+            self.destroy_anim(id, rules);
         }
         if let Some(anim) = self.substrate.anims.get_mut(id) {
-            anim.world_coord = AnimWorldCoord {
-                x: position.x,
-                y: position.y,
-                z: position.z,
-            };
-        }
-        if outcome == BounceOutcome::Falling {
-            return Ok(None);
+            anim.world_coord = location;
         }
         bridge_state_changed |=
             self.anim_bounce_landing(config, rules, overlay_registry, position, frame_effects)?;
@@ -192,10 +202,19 @@ impl Simulation {
         position: glam::IVec3,
         frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
-        if let (Some(bounce_anim), Some(coord)) =
-            (config.bounce_anim.as_deref(), self.anim_absolute_coord(id))
-        {
+        let coord = self.anim_absolute_coord(id);
+        if let (Some(bounce_anim), Some(coord)) = (config.bounce_anim.as_deref(), coord) {
             self.spawn_named_anim(rules, bounce_anim, coord, 0, BOUNCE_CONTACT_DRAW_FLAGS, 0);
+        }
+        // Tiberian Sun's BounceSound= at the same coordinates, with or without
+        // a BounceAnim=, before the contact damage: Firestorm 2.0's bounce
+        // step 0x00414CE8..0x00414D0C (Sound_Effect 0x00664AE0). gamemd has
+        // no such sound.
+        if let (Some(sound), Some(coord)) = (config.bounce_sound.as_deref(), coord) {
+            self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
+                rules.sound_name(sound),
+                coord,
+            ));
         }
         let Some(warhead_name) = config.warhead.as_deref() else {
             return false;
@@ -301,6 +320,16 @@ impl Simulation {
                     });
             }
         }
+        // Tiberian Sun's ExpireSound= on every dry landing, with or without an
+        // ExpireAnim=: Firestorm 2.0 AnimClass::AI 0x004150D3..0x004150F6 plays
+        // it at the anim's coordinates after the expiry damage. gamemd has no
+        // such sound.
+        if let Some(sound) = config.expire_sound.as_deref() {
+            self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
+                rules.sound_name(sound),
+                location,
+            ));
+        }
         //423F37..423FC4: two inclusive draws precede the live constructor loop.
         //Each child completes constructor/Start before constructing the next.
         if let Some(child) = config.spawns.as_deref().filter(|_| config.spawn_count > 0) {
@@ -314,6 +343,11 @@ impl Simulation {
             for _ in 0..count {
                 self.spawn_named_anim(rules, child, location, 0, BOUNCE_CONTACT_DRAW_FLAGS, 0);
             }
+        }
+        // Firestorm's meteor craters (Firestorm 2.0 0x4151B1), VERA's terrain
+        // deformation.
+        if config.is_meteor && !above_deck {
+            self.dig_meteor_craters(position, rules, frame_effects);
         }
         if config.is_tiberium && !above_deck {
             self.anim_landing_tiberium(config, rules, overlay_registry, position, frame_effects)?;

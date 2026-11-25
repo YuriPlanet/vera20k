@@ -77,8 +77,9 @@ impl FrameClock {
 
 thread_local! {
     /// The running object pass's clock. Only that pass installs one, so an
-    /// unprofiled frame or a worker thread finds nothing here: the main
-    /// thread's wait for its workers is what the slot shows.
+    /// unprofiled frame or a worker thread finds nothing here: a slot shows
+    /// the simulation thread's own share of pooled work and its wait for the
+    /// workers.
     static AREAS: RefCell<Option<AreaClock>> = const { RefCell::new(None) };
 }
 
@@ -130,9 +131,10 @@ pub(crate) fn area(slot: usize) -> Area {
 
 /// Slots in the per-frame ledger, in the order `advance_master_frame` runs
 /// them, except that `TEAM_AI` runs between the two stretches `BOMBS` folds
-/// (Kamikaze, then the Disk walk), and that `UNIT_AI` through `EFFECTS` are
-/// parts of the one object pass. Names are stable keys: the dashboard's i18n
-/// table is indexed by them.
+/// (Kamikaze, then the Disk walk), that `UNIT_AI` through `EFFECTS` are
+/// parts of the one object pass, and that `EFFECTS` also takes the
+/// presentation effects' step after `COMBAT`. Names are stable keys: the
+/// dashboard's i18n table is indexed by them.
 pub mod phase {
     pub const COMMANDS_INGRESS: usize = 0;
     pub const COMMANDS_ADMIT: usize = 1;

@@ -59,6 +59,16 @@ impl ObjectType {
         self.weapon_offsets.weapon(index, use_elite)
     }
 
+    /// The Kratos crawling offsets retained by this type.
+    pub(crate) fn kratos_crawling(&self) -> crate::rules::kratos_crawling_flh::CrawlingFlh<'_> {
+        self.weapon_offsets.kratos_crawling()
+    }
+
+    /// Kratos' frozen status inputs for this type (`kratos_freeze`).
+    pub(crate) fn kratos_freeze(&self) -> &crate::rules::kratos_freeze::FreezeRules {
+        &self.kratos_freeze
+    }
+
     /// GetFLH6F3AF5: an open transport lends its zero-based cargo port.
     pub fn alternate_fire_flh(&self, port: usize) -> crate::rules::flh::Flh {
         self.weapon_offsets.alternate(port)

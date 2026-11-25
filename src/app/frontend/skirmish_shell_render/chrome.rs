@@ -12,6 +12,7 @@ pub(super) use crate::render::shell_paint::{
     push_flag_entry_clipped_centered, push_tinted_entry,
 };
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
+use crate::ui::shell::geom::{SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW};
 use crate::ui::shell::slide::panel_art_origin;
 use crate::ui::skirmish_shell::{RectPx, SkirmishShellLayout, SkirmishShellState};
 
@@ -201,6 +202,7 @@ pub(super) fn push_button_30(
     }
 }
 
+/// Returns whether the selected frame uses the standard SDBTNANM canvas.
 pub(super) fn push_right_panel_button_shp(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
@@ -208,7 +210,7 @@ pub(super) fn push_right_panel_button_shp(
     visual: impl Into<vera20k_gui::shell::button::ButtonVisual>,
     disabled: bool,
     depth: f32,
-) {
+) -> bool {
     let visual = visual.into();
     let pressed = visual.pressed;
     // Skirmish shell setup classifies Start/Choose/Back as owner-draw type 1.
@@ -230,8 +232,10 @@ pub(super) fn push_right_panel_button_shp(
             depth,
             1.0,
         );
+        entry.pixel_size == [SDBTNANM_CELL_W_NARROW as f32, SDBTNANM_CELL_H as f32]
     } else {
         push_button_30(out, atlas, rect, pressed, disabled, depth);
+        false
     }
 }
 
@@ -279,37 +283,21 @@ pub(super) fn push_rect_outline(
     tint: [f32; 3],
     depth: f32,
 ) {
-    if rect.w <= 0 || rect.h <= 0 {
-        return;
+    push_rect_outline_px(out, atlas.white_pixel, rect, tint, depth);
+}
+
+/// [`push_rect_outline`] from the white pixel alone: top, bottom, left,
+/// right.
+pub(super) fn push_rect_outline_px(
+    out: &mut Vec<SpriteInstance>,
+    white_pixel: Option<SkirmishShellChromeEntry>,
+    rect: RectPx,
+    tint: [f32; 3],
+    depth: f32,
+) {
+    for edge in vera20k_gui::shell::bar::outline_edges(rect).into_iter().flatten() {
+        push_solid_rect_px(out, white_pixel, edge, tint, depth);
     }
-    push_solid_rect(
-        out,
-        atlas,
-        RectPx::new(rect.x, rect.y, rect.w, 1),
-        tint,
-        depth,
-    );
-    push_solid_rect(
-        out,
-        atlas,
-        RectPx::new(rect.x, rect.y + rect.h - 1, rect.w, 1),
-        tint,
-        depth,
-    );
-    push_solid_rect(
-        out,
-        atlas,
-        RectPx::new(rect.x, rect.y, 1, rect.h),
-        tint,
-        depth,
-    );
-    push_solid_rect(
-        out,
-        atlas,
-        RectPx::new(rect.x + rect.w - 1, rect.y, 1, rect.h),
-        tint,
-        depth,
-    );
 }
 
 pub(super) fn push_bevel_ring_px(

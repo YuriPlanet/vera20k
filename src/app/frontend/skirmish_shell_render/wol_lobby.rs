@@ -7,15 +7,18 @@
 //! Residual: the five text sort buttons (`0x765`, `0x766`, `0x76A..0x76C`)
 //! paint their caption only; their owner-draw face is not traced.
 
-use super::chrome::*;
-use super::gui_paint::{ButtonArt, CellRow, ComboArt, GuiStyle, HostRows};
-use super::text::rect_to_text_rect;
-use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
-use crate::app::AppState;
+use super::gui_paint::{ButtonArt, CellRow, ComboArt, GuiStyle, HostRows, Picture};
+use super::{SHELL_CONTROL_DEPTH, SHELL_LABEL_TEXT_RGB};
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::ime::ImeState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
 use crate::render::batch::SpriteInstance;
+use crate::render::bit_font::BitFont;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::main_menu_shell_chrome::WolPageArt;
-use crate::render::shell_paint::{self, ModalDepths, PaintLabel};
-use crate::render::shell_text::{self, ShellTextDraw};
+use crate::render::shell_paint::{self, ModalDepths};
+use crate::render::shell_text::ShellTextDraw;
 use crate::ui::shell::geom::{RectPx, ShellAlign, ShellScale};
 use crate::ui::wol_lobby::*;
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
@@ -92,34 +95,38 @@ pub(super) fn push_icon(
 }
 
 pub(crate) fn paint_wol_lobby_children(
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     ui: &WolLobbyState,
     layout: &WolLobbyLayout,
     art: Option<&WolPageArt>,
     base_names: &[String; 8],
 ) -> WolLobbyPaint {
     let mut paint = WolLobbyPaint::default();
-    let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
+    if frontend.skirmish_shell_chrome.is_none() {
         return paint;
-    };
-    let font = &state.renderer.bit_font;
+    }
+    let font = bit_font;
     let scale = layout.page.scale;
     let modern = ui.is_modern();
     let rect_of = |id| layout.control_rect(id).unwrap_or_default();
-    // The image buttons' faces.
-    for (id, released, pressed) in IMAGE_BUTTONS {
-        let face = if ui.pressed(id) { pressed } else { released };
-        let (Some(art), Some(rect)) = (art, layout.control_rect(id)) else {
-            continue;
-        };
-        if let Some((_, entry)) = art.icons.iter().find(|(name, _)| *name == face) {
-            let (w, h) = entry.native_size();
-            let base = scale.base_rect(rect);
-            let [x, y] = scale.scale_point([base.x + (base.w - w) / 2, base.y + (base.h - h) / 2]);
-            let depth = SHELL_CONTROL_DEPTH - 0.00003;
-            shell_paint::push_entry_grown(&mut paint.icons, *entry, x, y, scale, depth);
-        }
-    }
+    // The image buttons show their faces on the page art; the native
+    // lobby's observer image shows its eye.
+    let image = |id: i32| {
+        IMAGE_BUTTONS
+            .into_iter()
+            .find(|(image, ..)| i32::from(*image) == id)
+    };
+    let art_of = |id: i32| image(id).map(|_| ButtonArt::Image);
+    let observer = ui.observer();
+    let picture_of = |id: i32| match image(id) {
+        Some((_, released, pressed)) => Some(Picture::Icon { released, pressed }),
+        None if id == i32::from(OBSERVER_IMAGE) => Some(Picture::Observer { on: observer }),
+        None => None,
+    };
 
     // The observer box, the chat NewEdit (its caret on the page's blink,
     // under the popups too) and the owner-draw lists from the page's tree:
@@ -158,6 +165,12 @@ pub(crate) fn paint_wol_lobby_children(
     };
     // The edit that takes the keys: the chat's, or VERA's room search.
     let caret_of = |node| ui.caret_visible() && ui.node(ui.view_edit()) == Some(node);
+    // VERA's room search names itself while empty, as the map search does.
+    let hint_of = |id: i32| {
+        let empty = ui.edit(SEARCH).units.is_empty();
+        (id == i32::from(SEARCH) && empty && ime.open_composition().is_none())
+            .then(|| (crate::i18n::tr("VERA:LobbySearchHint"), 5))
+    };
     let style = GuiStyle {
         text_of: Some(&text_of),
         buttons: ButtonArt::Caption,
@@ -165,7 +178,10 @@ pub(crate) fn paint_wol_lobby_children(
         cells_of: Some(&cells_of),
         art,
         caret_of: Some(&caret_of),
+        hint_of: Some(&hint_of),
         control_lists: true,
+        art_of: Some(&art_of),
+        picture_of: Some(&picture_of),
         ..GuiStyle::default()
     };
     let captions = LABELS
@@ -187,42 +203,29 @@ pub(crate) fn paint_wol_lobby_children(
         HIDE_LOCKED,
     ];
     let texts = SORT_BUTTONS.iter().map(|(id, _)| *id);
-    for node in (captions.chain(texts).chain(lists))
-        .filter(|id| !IMAGE_BUTTONS.iter().any(|(image, ..)| image == id))
-        .filter_map(|id| ui.node(id))
-    {
-        let widget = super::gui_paint::paint_gui_styled(state, ui.gui(), node, scale, &[], style);
-        paint.controls.extend(widget.controls);
-        paint.icons.extend(widget.icons);
-        paint.texts.extend(widget.texts);
-    }
-    // VERA's room search names itself while empty, as the map search does.
-    if let Some(search) = layout.control_rect(SEARCH)
-        && ui.edit(SEARCH).units.is_empty()
-        && state.platform.ime.open_composition().is_none()
-    {
-        let hint = scale.derive_rect(search, |rect| {
-            RectPx::new(rect.x + 5, rect.y, rect.w - 5, rect.h)
-        });
-        paint.texts.push(shell_text::draw_in_rect_scaled(
-            font,
-            &crate::i18n::tr("VERA:LobbySearchHint"),
-            rect_to_text_rect(hint),
-            SHELL_LABEL_TEXT_RGB,
-            ShellAlign::V_CENTER,
-            [0.0; 2],
-            SHELL_CONTROL_TEXT_DEPTH,
-            scale.factor(),
-        ));
-    }
-    if !modern && let Some(entry) = atlas.lan_observer_toggle(ui.observer()) {
-        push_flag_entry_clipped_centered(
-            &mut paint.controls,
-            entry,
-            rect_of(OBSERVER_IMAGE),
+    let faces = IMAGE_BUTTONS.map(|(id, ..)| id);
+    let others = (captions.chain(texts).chain(lists))
+        .filter(|id| !IMAGE_BUTTONS.iter().any(|(image, ..)| image == id));
+    // The image buttons' faces first, the observer image last.
+    let eye = (!modern).then_some(OBSERVER_IMAGE);
+    for node in (faces.into_iter().chain(others).chain(eye)).filter_map(|id| ui.node(id)) {
+        let widget = super::gui_paint::paint_gui_styled(
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            ui.gui(),
+            node,
             scale,
-            SHELL_CONTROL_DEPTH,
+            &[],
+            style,
         );
+        paint
+            .controls
+            .extend(widget.lane(Material::Controls).copied());
+        paint.icons.extend(widget.lane(Material::Icons).copied());
+        paint.texts.extend(widget.texts);
     }
     paint
 }
@@ -284,11 +287,9 @@ fn game_cells(
             if modern {
                 let width = name_w.max(1) as u32;
                 if !font.fitted(Fit::TIGHTEST, |font| font.text_width(&game.text) <= width) {
-                    caption = font.fitted(Fit::NONE, |font| {
-                        let cut = width.saturating_sub(font.text_width("..."));
-                        let end = font.truncate_to_width(&game.text, cut);
-                        std::borrow::Cow::Owned(format!("{end}..."))
-                    });
+                    caption = std::borrow::Cow::Owned(font.fitted(Fit::NONE, |font| {
+                        font.truncate_with_ellipsis(&game.text, width, "...")
+                    }));
                 }
             }
             row.text(name_x, name_w.max(1), &caption, v, rgb);
@@ -374,7 +375,11 @@ fn player_cells(ui: &WolLobbyState) -> Vec<CellRow> {
 /// first, then its widgets: OK and Cancel, the room's limits, the boxes and
 /// the edits, and their captions, titles and values in the order they read.
 pub(crate) fn paint_wol_lobby_popup(
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     ui: &WolLobbyState,
     width: i32,
     height: i32,
@@ -382,10 +387,8 @@ pub(crate) fn paint_wol_lobby_popup(
     status: &str,
 ) -> WolLobbyPaint {
     let mut paint = WolLobbyPaint::default();
-    let (Some(atlas), Some(popup)) = (
-        state.frontend.skirmish_shell_chrome.as_ref(),
-        ui.popup.as_ref(),
-    ) else {
+    let (Some(atlas), Some(popup)) = (frontend.skirmish_shell_chrome.as_ref(), ui.popup.as_ref())
+    else {
         return paint;
     };
     let modern = ui.is_modern();
@@ -415,7 +418,7 @@ pub(crate) fn paint_wol_lobby_popup(
         STATUS => Some(status.to_owned()),
         CREATE_WATCHING if modern => {
             let key = popup.watching()?.label_key();
-            Some(state.csf_label(key, key))
+            Some(process_assets.csf_label(key, key))
         }
         id if modern && titled(id.into()).is_some_and(|((control, _), _)| *control == id) => {
             let key = if ui.popup_checked(id) {
@@ -423,7 +426,7 @@ pub(crate) fn paint_wol_lobby_popup(
             } else {
                 "GUI:No"
             };
-            Some(state.csf_label(key, key))
+            Some(process_assets.csf_label(key, key))
         }
         _ => None,
     };
@@ -465,11 +468,24 @@ pub(crate) fn paint_wol_lobby_popup(
             POPUP_PASSWORD,
             CREATE_NAME,
         ]);
-    let paint_ids =
-        |ids| super::gui_paint::paint_gui_ids(state, ui.gui(), popup.root, ids, scale, style);
+    let paint_ids = |ids| {
+        super::gui_paint::paint_gui_ids(
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            ui.gui(),
+            popup.root,
+            ids,
+            scale,
+            style,
+        )
+    };
+    let widgets = paint_ids(sprites.collect::<Vec<_>>());
     paint
         .controls
-        .extend(paint_ids(sprites.collect::<Vec<_>>()).controls);
+        .extend(widgets.lane(Material::Controls).copied());
     paint.texts = paint_ids(texts.collect::<Vec<_>>()).texts;
     paint
 }
@@ -478,76 +494,60 @@ pub(crate) fn paint_wol_lobby_popup(
 /// a caption and value per row, the player list's badge beside the name, the
 /// four buttons and the status line.
 pub(crate) fn paint_wol_player_card(
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     view: &crate::app::shell_wol::player_card::PlayerCardView,
-    art: Option<&WolPageArt>,
     scale: ShellScale,
 ) -> WolLobbyPaint {
     let mut paint = WolLobbyPaint::default();
-    let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
+    let Some(atlas) = frontend.skirmish_shell_chrome.as_ref() else {
         return paint;
-    };
-    let plain = |text: &str, rect: RectPx, align: ShellAlign, rgb: [f32; 3]| PaintLabel {
-        text: text.to_owned().into(),
-        rect,
-        align,
-        rgb,
-        path_a_reveal: None,
     };
     let layout = &view.layout;
-    let mut labels = Vec::new();
-    for (row, ((caption, value), &(caption_rect, value_rect))) in
-        view.rows.iter().zip(&layout.rows).enumerate()
-    {
-        labels.push(plain(
-            caption,
-            caption_rect,
-            ShellAlign(ShellAlign::H_RIGHT.0 | ShellAlign::V_CENTER.0),
-            SHELL_LABEL_TEXT_RGB,
-        ));
-        // The name sits after its badge as in the modern player list.
-        let value_rect = match (row, view.badge, art) {
-            (0, Some(file), Some(art)) => {
-                push_icon(&mut paint.icons, art, file, value_rect, 2, scale);
-                scale.derive_rect(value_rect, |rect| {
-                    let x = 2 + PLAYER_NAME_X - PLAYER_BADGE_X;
-                    RectPx::new(rect.x + x, rect.y, rect.w - x, rect.h)
-                })
-            }
-            _ => value_rect,
-        };
-        labels.push(plain(
-            value,
-            value_rect,
-            ShellAlign::V_CENTER,
-            SHELL_LABEL_TEXT_RGB,
-        ));
-    }
-    labels.push(plain(
-        &view.status,
-        layout.status,
-        ShellAlign::NONE,
-        SHELL_LABEL_TEXT_RGB,
-    ));
-    let background = atlas
-        .ra2_dialog_background
-        .or_else(|| atlas.mode_two_dialog_background(None));
-    let draw = shell_paint::paint_modal_shp(
-        &state.renderer.bit_font,
-        background,
-        super::type3_button_frames(atlas),
-        layout.dialog,
-        &[],
-        &labels,
-        scale,
-        POPUP_DEPTHS,
-    );
-    paint.controls = draw.sprites;
-    paint.texts = draw.text;
-    // The buttons from the lobby's tree, with the card's captions.
-    let Some(lobby) = state.frontend.wol.as_ref().and_then(|visit| visit.lobby()) else {
+    paint.controls = online_box(atlas, layout.dialog, scale);
+    let Some(lobby) = frontend.wol.as_ref().and_then(|visit| visit.lobby()) else {
         return paint;
     };
+    // The name's badge, the rows' captions and values and the status line
+    // from their nodes (`app::shell_wol::player_card::sync`).
+    if let Some(root) = lobby.ui.card_root() {
+        let gui = lobby.ui.gui();
+        let badge = i32::from(CARD_BADGE);
+        let picture_of = |id: i32| view.badge.filter(|_| id == badge).map(Picture::Badge);
+        let style = GuiStyle {
+            picture_of: Some(&picture_of),
+            ..GuiStyle::default()
+        };
+        let mut statics = HudPaint::default();
+        for &node in gui.tree().children(root).unwrap_or_default() {
+            let id = gui.id_of(node).and_then(|id| u16::try_from(id).ok());
+            if id.is_some_and(|id| id == CARD_BADGE || (CARD_CAPTIONS..=CARD_STATUS).contains(&id))
+            {
+                super::gui_paint::paint_gui_into(
+                    &mut statics,
+                    ime,
+                    bit_font,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    Some(atlas),
+                    gui,
+                    node,
+                    scale,
+                    &[],
+                    style,
+                );
+            }
+        }
+        paint
+            .controls
+            .extend(statics.lane(Material::Controls).copied());
+        paint.texts = statics.texts;
+    }
+    // The buttons from the lobby's tree, with the card's captions.
     let text_of = |id: i32| {
         let button = view
             .buttons
@@ -560,9 +560,21 @@ pub(crate) fn paint_wol_player_card(
         ..GuiStyle::popup()
     };
     for node in view.buttons.iter().filter_map(|(id, _)| lobby.ui.node(*id)) {
-        let button =
-            super::gui_paint::paint_gui_styled(state, lobby.ui.gui(), node, scale, &[], style);
-        paint.controls.extend(button.controls);
+        let button = super::gui_paint::paint_gui_styled(
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            lobby.ui.gui(),
+            node,
+            scale,
+            &[],
+            style,
+        );
+        paint
+            .controls
+            .extend(button.lane(Material::Controls).copied());
         paint.texts.extend(button.texts);
     }
     paint
@@ -570,8 +582,15 @@ pub(crate) fn paint_wol_player_card(
 
 /// Your own card's open country list, over the card: its combo's drop
 /// list from the lobby's tree.
-pub(crate) fn paint_wol_card_countries(state: &AppState, scale: ShellScale) -> WolLobbyPaint {
-    let lobby = state.frontend.wol.as_ref().and_then(|visit| visit.lobby());
+pub(crate) fn paint_wol_card_countries(
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    scale: ShellScale,
+) -> WolLobbyPaint {
+    let lobby = frontend.wol.as_ref().and_then(|visit| visit.lobby());
     let Some((ui, node)) =
         lobby.and_then(|lobby| Some((&lobby.ui, lobby.ui.node(CARD_COUNTRIES)?)))
     else {
@@ -581,9 +600,20 @@ pub(crate) fn paint_wol_card_countries(state: &AppState, scale: ShellScale) -> W
         combos: ComboArt::Host,
         ..GuiStyle::default()
     };
-    let list = super::gui_paint::paint_gui_styled(state, ui.gui(), node, scale, &[], style);
+    let mut list = super::gui_paint::paint_gui_styled(
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
+        ui.gui(),
+        node,
+        scale,
+        &[],
+        style,
+    );
     WolLobbyPaint {
-        controls: list.popup,
+        controls: list.take_lane(Material::Popup),
         icons: Vec::new(),
         texts: list.popup_texts,
     }

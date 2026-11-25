@@ -2,11 +2,10 @@
 //! Session data is a read-only projection; rendering never changes readiness.
 
 use super::chrome::*;
-use super::controls::{
-    ControlPaint, dropdown_scroll_part, house_color_tint, paint_control, push_new_edit,
-    team_caption_tint,
+use super::controls::team_caption_tint;
+use super::gui_paint::{
+    ButtonArt, ComboArt, FrameArt, GuiStyle, Picture, paint_gui_ids, paint_gui_styled,
 };
-use super::gui_paint::{ComboArt, GuiStyle, paint_gui_ids};
 use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
@@ -14,18 +13,23 @@ use super::preview::{
     aspect_fit_rect, build_preview_surface_instance, ensure_map_preview_texture,
     ensure_zoom_texture, project_preview_start_positions, push_start_marker_sprites, zoom_draws,
 };
-use super::text::{push_start_marker_labels, rect_to_text_rect, static_label, status_line_label};
+use super::text::{push_start_marker_labels, static_label, status_line_label};
 use super::{
     SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB, SHELL_LOWER_STRIP_DEPTH,
-    SHELL_PARENT_BACKGROUND_DEPTH, SHELL_SWATCH_DEPTH,
+    SHELL_PARENT_BACKGROUND_DEPTH,
 };
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
 use crate::render::batch::SpriteInstance;
-use crate::render::shell_text::{self, ShellTextDraw};
+use crate::render::hud_paint::Material;
+use crate::render::shell_text;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::ui::multiplayer_setup::*;
 use crate::ui::shell::geom::{RectPx, ShellAlign};
+use crate::ui::skirmish_shell::SkirmishShellState;
 use crate::util::time::Instant;
 use vera20k_gui::NodeId;
 
@@ -35,16 +39,34 @@ pub(crate) fn render_multiplayer_setup(
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
     let Some(view) = crate::app::shell_network_setup::view(state) else {
-        crate::app::frontend::preview_zoom::close(state);
+        crate::app::frontend::preview_zoom::close(&state.platform.window, &mut state.frontend);
         return Ok(());
     };
     crate::app::input::multiplayer_setup::update_geometry(state);
+    crate::app::shell_network_setup::verify_sync(state);
     let layout = crate::app::input::multiplayer_setup::layout_of(state, &view);
     let scale = layout.page.scale;
     let (width, height) = (state.render_width(), state.render_height());
+    // The notice on its widgets before it paints.
+    let notice_parts = (state.frontend.multiplayer_setup.as_ref())
+        .and_then(|ui| ui.notice.as_ref())
+        .map(|notice| super::shell_box::skirmish_parts(notice, (width as i32, height as i32)));
+    {
+        let frontend = &mut state.frontend;
+        let notice = frontend
+            .multiplayer_setup
+            .as_ref()
+            .and_then(|ui| ui.notice.as_ref());
+        if let (Some(notice), Some(parts)) = (notice, notice_parts.as_ref()) {
+            let controller = &mut frontend.shell_controller;
+            if let Some(root) = controller.root_in(notice.dialog) {
+                notice.sync(controller.gui_mut(), root, parts);
+            }
+        }
+    }
     let now = Instant::now();
     let exit = crate::app::frontend::shell_transition::shell_exit_wave(
-        state,
+        &state.frontend.shell_exit,
         ShellSlideKind::NetworkSetup(view.dialog),
     )
     .cloned();
@@ -54,7 +76,7 @@ pub(crate) fn render_multiplayer_setup(
     if let Some(index) = view.selected_map_index {
         ensure_map_preview_texture(state, index, layout.map_preview);
     } else if !view.dialog.host {
-        super::preview::ensure_received_preview_texture(state);
+        super::preview::ensure_received_preview_texture(&state.renderer, &mut state.frontend);
     } else {
         state.frontend.skirmish_preview_texture = None;
     }
@@ -112,7 +134,11 @@ pub(crate) fn render_multiplayer_setup(
         ))
         .collect::<Vec<_>>()
     };
-    let look = crate::app::input::multiplayer_setup::room_look(state, &view);
+    let look = crate::app::input::multiplayer_setup::room_look(
+        &state.frontend,
+        &state.match_state.input,
+        &view,
+    );
     let ui = state
         .frontend
         .multiplayer_setup
@@ -195,7 +221,7 @@ pub(crate) fn render_multiplayer_setup(
             shell_text::draw_in_rect_scaled(
                 font,
                 value,
-                rect_to_text_rect(rect),
+                shell_text::TextRect::of(rect),
                 rgb,
                 align,
                 [0.0; 2],
@@ -203,9 +229,6 @@ pub(crate) fn render_multiplayer_setup(
                 scale.factor() * size,
             )
         };
-    let text = |value: &str, rect: RectPx, align: ShellAlign, rgb: [f32; 3], depth: f32| {
-        sized(value, rect, align, rgb, depth, 1.0)
-    };
     // VERA's roster is smaller text than the shell's own, and its room's
     // text is green.
     let roster_size = if layout.roster {
@@ -221,16 +244,38 @@ pub(crate) fn render_multiplayer_setup(
     // The room's widgets paint from its trees, in the order the room drew.
     let controller = &state.frontend.shell_controller;
     let page_root = controller.root_in(view.page().dialog);
-    let text_of = |id: i32| widget_text(state, &view, id);
+    let text_of = |id: i32| {
+        widget_text(
+            &state.frontend.skirmish_shell_state,
+            &state.process_assets,
+            &view,
+            &layout,
+            id,
+        )
+    };
     let room_style = GuiStyle {
-        buttons: super::gui_paint::ButtonArt::Modal,
+        buttons: ButtonArt::Modal,
         text_of: Some(&text_of),
         ..GuiStyle::default()
+    };
+    // The room's own looks: its texts' and cells' colours, its boxes and
+    // bands, and its pictures.
+    let drag = row_drag(controller, &view);
+    let rgb_of = |id: i32| room_rgb(&state.frontend, &state.match_state, &view, &look, id);
+    let frame_of = |id: i32| room_frame(&view, &look, drag, id);
+    let picture_of = |id: i32| room_picture(&view, id);
+    let frames = GuiStyle {
+        frame_of: Some(&frame_of),
+        ..room_style
     };
     let paint_ids = |root: Option<NodeId>, ids: &[u16], scale, style| {
         root.map(|root| {
             paint_gui_ids(
-                state,
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
                 controller.gui(),
                 root,
                 ids.iter().copied(),
@@ -240,111 +285,58 @@ pub(crate) fn render_multiplayer_setup(
         })
         .unwrap_or_default()
     };
+    // The room's own nodes, found when its page was built.
+    let nodes = Some(ui.room_nodes.get())
+        .filter(|nodes| page_root.is_some() && nodes.root == page_root)
+        .unwrap_or_default();
+    let paint_node = |node: Option<NodeId>, style| {
+        node.map(|node| {
+            paint_gui_styled(
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                controller.gui(),
+                node,
+                scale,
+                &[],
+                style,
+            )
+        })
+        .unwrap_or_default()
+    };
+    // The column labels and the roster's headers in the room's text, at
+    // the roster's size over VERA's roster.
+    let room_text = GuiStyle {
+        text_factor: Some(scale.factor() * roster_size),
+        rgb: label_rgb,
+        rgb_of: Some(&rgb_of),
+        ..room_style
+    };
     if !leaving && ui.notice.is_none() {
-        for (key, rect) in layout
-            .labels
-            .iter()
-            .filter(|(key, _)| view.team_header || *key != "GUI:Team")
-        {
-            let key = if view.campaign {
-                match *key {
-                    "GUI:Side" => &"VERA:CampaignRole",
-                    "GUI:Color" | "GUI:StartPosition" | "GUI:Team" => continue,
-                    _ => key,
-                }
-            } else {
-                key
-            };
-            // Over VERA's roster, the narrow cells' labels centre on them.
-            let align = if layout.roster
-                && !matches!(*key, "GUI:Players" | "GUI:Side" | "VERA:CampaignRole")
-            {
-                ShellAlign::H_CENTER
-            } else {
-                ShellAlign::NONE
-            };
-            texts.push(sized(
-                &state.csf_label(key, key),
-                *rect,
-                align,
-                label_rgb,
-                SHELL_CONTROL_TEXT_DEPTH,
-                roster_size,
-            ));
-        }
+        let statics = paint_node(nodes.labels, room_text);
+        texts.extend(statics.texts);
         if view.pages.len() > 1 {
             // Ordinary MNBTTN buttons, as Game Options' OK; one with no page
-            // to go to is hidden.
-            let buttons = paint_ids(page_root, &[PREVIOUS_ROWS, NEXT_ROWS], scale, room_style);
-            controls.extend(buttons.controls);
+            // to go to is hidden. The line between them names the page.
+            let ids = [PREVIOUS_ROWS, NEXT_ROWS];
+            let buttons = paint_ids(page_root, &ids, scale, room_style);
+            controls.extend(buttons.lane(Material::Controls).copied());
             texts.extend(buttons.texts);
-            let page_line = crate::i18n::tr_fill(
-                "VERA:RosterPage",
-                &[
-                    ("first", &(view.first_row + 1)),
-                    ("last", &(view.first_row + view.page_len)),
-                    ("total", &view.row_count),
-                ],
-            );
-            texts.push(text(
-                &page_line,
-                layout.roster_page_label,
-                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-                SHELL_LABEL_TEXT_RGB,
-                SHELL_CONTROL_TEXT_DEPTH,
-            ));
+            texts.extend(paint_node(nodes.page_line, room_style).texts);
         }
         // VERA's roster's headers: the caption where the players' names
         // stand, then Join (or Watch), text at the column's right end like
         // its cells, lit with its group's box under the pointer and grey
         // while it is closed; and a box around each group, lit while a press
         // in it joins the group or the host carries a row over it.
-        let drag = row_drag(controller, &view);
         if layout.roster {
-            let target = drag.and_then(|drag| drag.target);
-            for (row, header) in view.headers.iter().enumerate() {
-                let Some(header) = header else {
-                    continue;
-                };
-                texts.push(sized(
-                    &header.caption,
-                    layout.combos[row][0],
-                    ShellAlign::V_CENTER,
-                    team_caption_tint(state.rules(), &header.member_colors).unwrap_or(label_rgb),
-                    SHELL_CONTROL_TEXT_DEPTH,
-                    roster_size,
-                ));
-                let id = team_join(row);
-                if let Some(caption) = &header.join {
-                    texts.push(sized(
-                        caption,
-                        layout.header_controls[row].0,
-                        ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
-                        if !view.enabled(id) {
-                            ROOM_CLOSED_TEXT_RGB
-                        } else if look.pressed(id) || look.target == Some(id) {
-                            [1.0, 1.0, 1.0]
-                        } else {
-                            ROOM_TEXT_RGB
-                        },
-                        SHELL_CONTROL_TEXT_DEPTH,
-                        roster_size,
-                    ));
-                }
-                let lit = target == Some(row)
-                    || header.join.is_some()
-                        && view.enabled(id)
-                        && (look.target == Some(id) || look.pressed(id));
-                if let Some(rect) = layout.group_boxes[row] {
-                    push_rect_outline(
-                        &mut controls,
-                        atlas,
-                        rect,
-                        if lit { ROOM_TEXT_RGB } else { ROSTER_BOX_RGB },
-                        SHELL_CONTROL_DEPTH,
-                    );
-                }
-            }
+            let headers = paint_node(nodes.headers, room_text);
+            texts.extend(headers.texts);
+            // A box shows round each group with a header.
+            let boxes = paint_node(nodes.boxes, frames);
+            controls.extend(boxes.lane(Material::Controls).copied());
             // The carried row's name follows the pointer, centred on it.
             if let Some(drag) = drag.filter(|drag| drag.carrying)
                 && let Some(name) = view
@@ -371,61 +363,23 @@ pub(crate) fn render_multiplayer_setup(
                 ));
             }
             // The shell's own scrollbar, when the groups do not all fit.
-            if let Some(roster) = layout.roster_scroll(&view)
-                && let (Some(scrollbar), Some(thumb)) = (roster.scrollbar, roster.thumb)
-            {
-                paint_control(
-                    &mut controls,
-                    &atlas.control_chrome(),
-                    ControlPaint::ScrollBar {
-                        scrollbar,
-                        thumb,
-                        pressed_part: look.roster_scroll.map(dropdown_scroll_part),
-                    },
-                    scale,
-                );
-            }
+            let bar = paint_node(nodes.scroll, frames);
+            controls.extend(bar.lane(Material::Controls).copied());
         }
         // VERA's team bar under the roster, in its own box: the Teams count
         // and the host's Room size (drawn with the room's trackbars), and the
         // host's two lists (drawn with the room's combos).
-        if let Some(bar) = layout.team_bar.filter(|_| view.team_bar()) {
-            push_rect_outline(
-                &mut controls,
-                atlas,
-                bar,
-                ROSTER_BOX_RGB,
-                SHELL_CONTROL_DEPTH,
-            );
-            for (id, rect, caption) in [
-                (TEAM_COUNT, layout.teams_label, "VERA:Teams"),
-                (ROOM_SIZE, layout.room_size_label, "VERA:RoomSize"),
-            ] {
-                if view.trackbars.iter().any(|bar| bar.id == id && bar.visible) {
-                    texts.push(sized(
-                        &crate::i18n::tr(caption),
-                        rect,
-                        ShellAlign::V_CENTER,
-                        SHELL_LABEL_TEXT_RGB,
-                        SHELL_CONTROL_TEXT_DEPTH,
-                        ROSTER_TEXT_SCALE,
-                    ));
-                }
-            }
-        }
+        let team_bar = GuiStyle {
+            text_factor: Some(scale.factor() * ROSTER_TEXT_SCALE),
+            ..frames
+        };
+        let team_bar = paint_node(nodes.team_bar, team_bar);
+        controls.extend(team_bar.lane(Material::Controls).copied());
+        texts.extend(team_bar.texts);
         // VERA's roster marks the local player's row with a dark band.
         if layout.roster {
-            for (row, icon) in view.row_icons.iter().enumerate() {
-                if icon.as_ref().is_some_and(|icon| icon.local) {
-                    push_solid_rect(
-                        &mut controls,
-                        atlas,
-                        layout.roster_rows[row],
-                        ROSTER_OWN_ROW_RGB,
-                        SHELL_CONTROL_DEPTH + 0.00001,
-                    );
-                }
-            }
+            let bands = paint_node(nodes.bands, frames);
+            controls.extend(bands.lane(Material::Controls).copied());
         }
         // The rows' lists, VERA's roster's as its cells; the team bar's and a
         // campaign's lists on faces. An open list goes over the page in the
@@ -436,23 +390,6 @@ pub(crate) fn render_multiplayer_setup(
             !layout.roster || matches!(id, TEAM_MENU | SEAT_MENU | CAMPAIGN_SERIES | CAMPAIGN_STAGE)
         };
         let team_bar = |id: u16| layout.roster && matches!(id, TEAM_MENU | SEAT_MENU);
-        for combo in shown.iter().filter(|combo| !faced(combo.id)) {
-            let Some(rect) = layout.control_rect(combo.id) else {
-                continue;
-            };
-            let pointed =
-                look.target == Some(combo.id) || look.open.is_some_and(|(id, _)| id == combo.id);
-            push_roster_cell(
-                &mut controls,
-                &mut texts,
-                state,
-                &view,
-                &layout,
-                combo,
-                rect,
-                pointed,
-            );
-        }
         let rows_of = |id: i32| {
             let combo = view.combo(u16::try_from(id).ok()?)?;
             let row = |choice: &SetupChoice| {
@@ -463,12 +400,14 @@ pub(crate) fn render_multiplayer_setup(
             };
             Some(combo.choices.iter().map(row).collect())
         };
+        // VERA's roster's cells show only their value or swatch.
         let combo_style = GuiStyle {
             combos: match layout.roster {
-                true => ComboArt::Host,
+                true => ComboArt::Cell,
                 false => ComboArt::Plain,
             },
             rows_of: Some(&rows_of),
+            rgb_of: Some(&rgb_of),
             text_factor: layout.roster.then(|| scale.factor() * ROSTER_TEXT_SCALE),
             rgb: label_rgb,
             ..room_style
@@ -499,53 +438,26 @@ pub(crate) fn render_multiplayer_setup(
             (ids(&|id| faced(id) && !team_bar(id)), face_style),
         ] {
             let combos = paint_ids(page_root, &ids, scale, style);
-            controls.extend(combos.controls);
+            controls.extend(combos.lane(Material::Controls).copied());
+            overlay
+                .controls
+                .extend(combos.lane(Material::Popup).copied());
             texts.extend(combos.texts);
-            overlay.controls.extend(combos.popup);
             overlay.texts.extend(combos.popup_texts);
         }
-        for (row, icon) in view.row_icons.iter().enumerate() {
-            let Some(icon) = icon else {
-                continue;
-            };
-            // VERA's roster names the side in text and shows no flags or
-            // acceptance; a player's badge stands in front of the name,
-            // shrunk to fit.
-            if layout.roster {
-                if let Some(entry) = icon.badge.and_then(|file| atlas.wol_badge(file))
-                    && let Some(rect) = layout.badge_rect(&view, SetupColumn::Player.control(row))
-                {
-                    push_entry_fitted(&mut controls, entry, rect, scale, SHELL_SWATCH_DEPTH);
-                }
-                continue;
-            }
-            if let Some(flag) = icon
-                .country
-                .as_deref()
-                .and_then(|country| atlas.lan_player_side(country))
-            {
-                push_flag_entry_clipped_centered(
-                    &mut controls,
-                    flag,
-                    layout.flags[row],
-                    scale,
-                    SHELL_CONTROL_DEPTH,
-                );
-            }
-            if let Some(status) = atlas.lan_player_status(icon.host, icon.accepted) {
-                push_flag_entry_clipped_centered(
-                    &mut controls,
-                    status,
-                    layout.acceptance[row],
-                    scale,
-                    SHELL_CONTROL_DEPTH,
-                );
-            }
-        }
+        // The rows' pictures: VERA's roster names the side in text and
+        // shows no flags or acceptance; a player's badge stands in front of
+        // the name, shrunk to fit.
+        let pictures = GuiStyle {
+            picture_of: Some(&picture_of),
+            ..room_style
+        };
+        let icons = paint_node(nodes.icons, pictures);
+        controls.extend(icons.lane(Material::Controls).copied());
         // VERA's room keeps its options in Game Options; Difficulty stays.
         if layout.game_options.is_none() {
             let options = paint_ids(page_root, &option_ids(&view, &layout), scale, room_style);
-            controls.extend(options.controls);
+            controls.extend(options.lane(Material::Controls).copied());
             texts.extend(options.texts);
         }
         // The team bar's trackbars draw at its 78% and keep their values at
@@ -562,51 +474,27 @@ pub(crate) fn render_multiplayer_setup(
                 ..room_style
             };
             let bar = paint_ids(page_root, &[bar.id], bar_scale, style);
-            controls.extend(bar.controls);
+            controls.extend(bar.lane(Material::Controls).copied());
             texts.extend(bar.texts);
         }
-        if let Some(description) = &view.cooperative_description {
-            texts.push(text(
-                description,
-                layout.cooperative_description,
-                ShellAlign::NONE,
-                SHELL_LABEL_TEXT_RGB,
-                SHELL_CONTROL_TEXT_DEPTH,
-            ));
-        }
-        if view.cooperative || view.campaign {
-            for (key, x) in [("TXT_Easy", 170), ("TXT_Normal", 295), ("TXT_Hard", 430)] {
-                texts.push(text(
-                    &state.csf_label(key, key),
-                    scale.scale_rect(RectPx::new(x, 190, 75, 20)),
-                    ShellAlign::H_CENTER,
-                    SHELL_LABEL_TEXT_RGB,
-                    SHELL_CONTROL_TEXT_DEPTH,
-                ));
-            }
-        }
+        // A cooperative map's description and Difficulty's words.
+        let notes = paint_node(nodes.notes, room_style);
+        texts.extend(notes.texts);
         // The chat edit as its widget holds it: it keeps the room's focus,
         // and its caret, under the room's boxes too.
-        if let Some(node) = controller.control(view.page().dialog, CHAT) {
-            let mut edit = controller.gui().edit_state(node).unwrap_or_default();
-            edit.focused = controller.focused_control(view.page().dialog) == Some(CHAT);
-            push_new_edit(
-                &mut controls,
-                &mut texts,
-                atlas,
-                font,
-                &edit,
-                state
-                    .platform
-                    .ime
-                    .composition(crate::app::input::ime::ImeTarget::SetupChat),
-                layout.chat,
-                controller.caret_visible_in(view.page().dialog, node),
-                label_rgb,
-                SHELL_CONTROL_TEXT_DEPTH,
-                scale,
-            );
-        }
+        let dialog = view.page().dialog;
+        let chat_focus = |_: NodeId| controller.focused_control(dialog) == Some(CHAT);
+        let chat_caret = |node: NodeId| controller.caret_visible_in(dialog, node);
+        let chat_edit = GuiStyle {
+            focus_of: Some(&chat_focus),
+            caret_of: Some(&chat_caret),
+            ime_target: Some(crate::app::input::ime::ImeTarget::SetupChat),
+            rgb: label_rgb,
+            ..GuiStyle::default()
+        };
+        let chat = paint_node(nodes.chat, chat_edit);
+        controls.extend(chat.lane(Material::Controls).copied());
+        texts.extend(chat.texts);
         let chat_rows = |_| {
             let line = |line: &crate::ui::lan_shell::LanChatLine| {
                 (String::from_utf16_lossy(&line.text), line.color)
@@ -621,7 +509,7 @@ pub(crate) fn render_multiplayer_setup(
             ..GuiStyle::default()
         };
         let chat = paint_ids(page_root, &[CHAT_LOG], scale, chat_style);
-        controls.extend(chat.controls);
+        controls.extend(chat.lane(Material::Controls).copied());
         texts.extend(chat.texts);
         if !sliding {
             if let Some(preview) = state.frontend.skirmish_preview_texture.as_ref() {
@@ -659,9 +547,16 @@ pub(crate) fn render_multiplayer_setup(
                     .and_then(|protocol| protocol.received_preview_bounds())
                     .or(received_bounds.as_ref())
                     .or(own_bounds.as_ref());
-                overlay.zoom = zoom_layout
-                    .as_ref()
-                    .map(|zoom_layout| zoom_draws(state, atlas, zoom_layout, bounds, scale));
+                overlay.zoom = zoom_layout.as_ref().map(|zoom_layout| {
+                    zoom_draws(
+                        &state.renderer,
+                        &state.frontend.screen,
+                        atlas,
+                        zoom_layout,
+                        bounds,
+                        scale,
+                    )
+                });
                 if let Some(bounds) = bounds {
                     let fitted = aspect_fit_rect(layout.map_preview, preview.width, preview.height);
                     let positions = project_preview_start_positions(bounds, fitted);
@@ -670,7 +565,13 @@ pub(crate) fn render_multiplayer_setup(
                     // 6409D7..640A15 draws1-based numbers after STARTBUT, using
                     // the destination surface clip, not the thumbnail bounds.
                     let mut instances = Vec::new();
-                    push_start_marker_labels(&mut instances, state, &positions, scale, 0.00040);
+                    push_start_marker_labels(
+                        &mut instances,
+                        &state.renderer.bit_font,
+                        &positions,
+                        scale,
+                        0.00040,
+                    );
                     texts.push(shell_text::ShellTextDraw {
                         instances,
                         scissor: shell_text::ScissorRect {
@@ -688,35 +589,21 @@ pub(crate) fn render_multiplayer_setup(
                 ..room_style
             };
             let buttons = paint_ids(page_root, &ids, scale, style);
-            art.extend(buttons.controls);
+            art.extend(buttons.lane(Material::Controls).copied());
             texts.extend(buttons.texts);
         }
         // C2/C9 0x3ED image button (00612B70, frame type 0): +0x14 wodact
         // released, +0x18 wouact while pressed, copied 1:1 at the rect's
         // top-left with no frame or caption (0x6131D7..0x613237).
-        if let Some(rect) = layout.emote
-            && let (Some(released), pressed_art) = atlas.wol_emote_images()
-        {
-            let mut entry = if look.pressed(EMOTE) {
-                pressed_art.unwrap_or(released)
-            } else {
-                released
-            };
-            let [art_w, art_h] = scale.art_size(entry.pixel_size[0], entry.pixel_size[1]);
-            if art_w > 0.0 && art_h > 0.0 {
-                let draw = [art_w.min(rect.w as f32), art_h.min(rect.h as f32)];
-                entry.uv_size[0] *= draw[0] / art_w;
-                entry.uv_size[1] *= draw[1] / art_h;
-                push_entry_sized(
-                    &mut controls,
-                    entry,
-                    rect.x as f32,
-                    rect.y as f32,
-                    draw,
-                    SHELL_CONTROL_DEPTH,
-                );
-            }
-        }
+        let emote_pressed = |id: i32| (id == i32::from(EMOTE)).then(|| look.pressed(EMOTE));
+        let emote = GuiStyle {
+            buttons: ButtonArt::Image,
+            picture_of: Some(&picture_of),
+            pressed_of: Some(&emote_pressed),
+            ..GuiStyle::default()
+        };
+        let emote = paint_node(nodes.emote, emote);
+        controls.extend(emote.lane(Material::Controls).copied());
         texts.extend(crate::render::shell_paint::paint_labels_scaled(
             font,
             &labels,
@@ -739,7 +626,9 @@ pub(crate) fn render_multiplayer_setup(
                 ..GuiStyle::popup()
             };
             let widgets = paint_ids(controller.root_in(GAME_OPTIONS_BOX), &ids, scale, style);
-            overlay.controls.extend(widgets.controls);
+            overlay
+                .controls
+                .extend(widgets.lane(Material::Controls).copied());
             overlay.texts.extend(widgets.texts);
         }
         // VERA asks a guest before downloading a map it does not have, then
@@ -784,32 +673,48 @@ pub(crate) fn render_multiplayer_setup(
             // Download greys while the map comes, but still takes a press.
             let enabled_of =
                 |id: i32| (id == i32::from(MAP_OFFER_DOWNLOAD)).then_some(!offer.downloading);
+            // How much of the map has arrived, in the label colour.
+            let frame_of = |id: i32| {
+                let (done, total) = progress.filter(|_| id == i32::from(MAP_OFFER_PROGRESS))?;
+                Some(FrameArt::Progress {
+                    rgb: SHELL_LABEL_TEXT_RGB,
+                    done,
+                    total,
+                    depth: super::wol_lobby::POPUP_DEPTHS.button,
+                })
+            };
             let style = GuiStyle {
                 text_of: Some(&text_of),
                 enabled_of: Some(&enabled_of),
+                frame_of: Some(&frame_of),
                 ..GuiStyle::popup()
             };
-            let ids = [MAP_OFFER_BODY, MAP_OFFER_DOWNLOAD, MAP_OFFER_LEAVE];
-            let widgets = paint_ids(
-                controller.root_in(MAP_OFFER_BOX),
-                &ids,
-                crate::ui::shell::geom::RETAIL_SCALE,
-                style,
-            );
-            overlay.controls.extend(widgets.controls);
+            // Its text, buttons and bar in tree order.
+            let scale = crate::ui::shell::geom::RETAIL_SCALE;
+            let widgets = controller
+                .root_in(MAP_OFFER_BOX)
+                .map(|root| {
+                    paint_gui_styled(
+                        &state.platform.ime,
+                        &state.renderer.bit_font,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        controller.gui(),
+                        root,
+                        scale,
+                        &[],
+                        style,
+                    )
+                })
+                .unwrap_or_default();
+            overlay
+                .controls
+                .extend(widgets.lane(Material::Controls).copied());
             overlay.texts.extend(widgets.texts);
-            if let Some(progress) = progress {
-                super::modals::push_download_progress_bar(
-                    &mut overlay.controls,
-                    atlas,
-                    boxed.body,
-                    progress,
-                    super::wol_lobby::POPUP_DEPTHS.button,
-                );
-            }
         }
     }
-    if let Some(notice) = &ui.notice {
+    if let (Some(notice), Some(parts)) = (&ui.notice, notice_parts.as_ref()) {
         // 5D3514 replaces the parent dialog with the shared empty shell
         // backdrop, centred under the box as on every other page, VERA's
         // room's too.
@@ -822,16 +727,18 @@ pub(crate) fn render_multiplayer_setup(
         let ok = look.notice_ok;
         let pressed = |id| ok && id == crate::ui::shell::modal::control::OK;
         let box_look = super::BoxLook::skirmish(atlas.mode_two_dialog_background(None));
-        let size = (width as i32, height as i32);
-        let (sprites, texts) = (
-            Some(&mut overlay.controls),
-            Some((&mut overlay.texts, false)),
-        );
+        let (sprites, texts) = (&mut overlay.controls, (&mut overlay.texts, false));
+        let tree = super::controller_tree(&state.frontend.shell_controller, notice.dialog);
         super::shell_box::push_skirmish_box(
-            state,
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
             Some(atlas),
-            size,
+            tree,
             notice,
+            parts,
             pressed,
             box_look,
             sprites,
@@ -845,7 +752,8 @@ pub(crate) fn render_multiplayer_setup(
     }
     // Start Game Now's 0x130 over the locked C2/C9; VERA's room waits a
     // moment so a quick check does not flash it.
-    let verify = crate::app::shell_network_setup::verify(state);
+    let verify =
+        crate::app::shell_network_setup::verify(state.frontend.network_setup_protocol.as_ref());
     if verify.is_some_and(|verify| !verify.shown(view.dialog.modern, now)) {
         state.platform.window.request_redraw();
     }
@@ -947,74 +855,133 @@ const ROOM_CLOSED_TEXT_RGB: [f32; 3] = [0.0, 0.5, 0.0];
 /// The local player's row in VERA's roster: a dark red band behind it.
 const ROSTER_OWN_ROW_RGB: [f32; 3] = [90.0 / 255.0, 10.0 / 255.0, 4.0 / 255.0];
 
-/// One cell of VERA's roster: no face, frame or arrow, only its value in
-/// the roster's small text, or a colour's swatch. A cell whose list opens
-/// lights white under the pointer and while its list is open.
-fn push_roster_cell(
-    controls: &mut Vec<SpriteInstance>,
-    texts: &mut Vec<ShellTextDraw>,
-    state: &AppState,
+/// The room's own colours by node: a header's caption in its team's tint,
+/// Join grey while it is closed and white under the pointer or while it is
+/// pressed, and a roster cell whose list opens white under the pointer and
+/// while its list is open.
+fn room_rgb(
+    frontend: &FrontendState,
+    match_state: &MatchState,
     view: &SetupView,
-    layout: &MultiplayerSetupLayout,
-    combo: &SetupCombo,
-    rect: RectPx,
-    pointed: bool,
-) {
-    let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
-        return;
-    };
-    let Some(item) = combo.selected.and_then(|index| combo.choices.get(index)) else {
-        return;
-    };
-    let scale = layout.page.scale;
-    let lit = pointed && view.enabled(combo.id) && roster_cell_opens(combo);
-    let rgb = if lit { [1.0, 1.0, 1.0] } else { ROOM_TEXT_RGB };
-    if let Some(swatch) = item.swatch {
-        let chip = scale.derive_rect(rect, |rect| {
-            RectPx::new(
-                rect.x + (rect.w - 12) / 2,
-                rect.y + (rect.h - 12) / 2,
-                12,
-                12,
-            )
-        });
-        push_solid_rect(
-            controls,
-            atlas,
-            chip,
-            house_color_tint(state.rules(), swatch),
-            SHELL_SWATCH_DEPTH,
+    look: &RoomLook,
+    id: i32,
+) -> Option<[f32; 3]> {
+    let id = u16::try_from(id).ok()?;
+    if let Some(row) = painted_row(id, HEADER_CAPTION) {
+        let header = view.headers[row].as_ref()?;
+        return team_caption_tint(
+            crate::app::state::active_rules(frontend, match_state),
+            &header.member_colors,
         );
-        if lit {
-            let ring = scale.derive_rect(chip, |rect| {
-                RectPx::new(rect.x - 1, rect.y - 1, rect.w + 2, rect.h + 2)
-            });
-            push_rect_outline(controls, atlas, ring, rgb, SHELL_SWATCH_DEPTH);
-        }
-        return;
     }
-    let align = match SetupColumn::decode(combo.id) {
-        Some((SetupColumn::Start | SetupColumn::Team, _)) => {
-            ShellAlign::H_CENTER | ShellAlign::V_CENTER
+    if let Some(row) = painted_row(id, JOIN_CAPTION) {
+        let join = team_join(row);
+        return Some(if !view.enabled(join) {
+            ROOM_CLOSED_TEXT_RGB
+        } else if look.pressed(join) || look.target == Some(join) {
+            [1.0, 1.0, 1.0]
+        } else {
+            ROOM_TEXT_RGB
+        });
+    }
+    let combo = view.combo(id)?;
+    let pointed =
+        look.target == Some(id) || look.open.as_ref().is_some_and(|(open, _)| *open == id);
+    (pointed && view.enabled(id) && roster_cell_opens(combo)).then_some([1.0, 1.0, 1.0])
+}
+
+/// The room's boxes by node: the roster's scrollbar; the team bar's box; a
+/// group's box, lit while a press in it joins the group or the host carries
+/// a row over it; the band behind the local player's row.
+fn room_frame(
+    view: &SetupView,
+    look: &RoomLook,
+    drag: Option<RowDrag>,
+    id: i32,
+) -> Option<FrameArt> {
+    let id = u16::try_from(id).ok()?;
+    match id {
+        ROSTER_SCROLL => return Some(FrameArt::ListBar),
+        TEAM_BAR_BOX => {
+            return Some(FrameArt::Outline {
+                rgb: ROSTER_BOX_RGB,
+            });
         }
-        _ => ShellAlign::V_CENTER,
-    };
-    texts.push(shell_text::draw_in_rect_scaled(
-        &state.renderer.bit_font,
-        &item.text,
-        rect_to_text_rect(rect),
-        rgb,
-        align,
-        [0.0; 2],
-        SHELL_CONTROL_TEXT_DEPTH,
-        scale.factor() * ROSTER_TEXT_SCALE,
-    ));
+        _ => {}
+    }
+    if painted_row(id, OWN_ROW).is_some() {
+        return Some(FrameArt::Fill {
+            rgb: ROSTER_OWN_ROW_RGB,
+            depth: SHELL_CONTROL_DEPTH + 0.00001,
+        });
+    }
+    let row = usize::from(id.checked_sub(GROUP_BOX)?);
+    let header = view.headers.get(row)?.as_ref()?;
+    let join = team_join(row);
+    let lit = drag.and_then(|drag| drag.target) == Some(row)
+        || header.join.is_some()
+            && view.enabled(join)
+            && (look.target == Some(join) || look.pressed(join));
+    let rgb = if lit { ROOM_TEXT_RGB } else { ROSTER_BOX_RGB };
+    Some(FrameArt::Outline { rgb })
+}
+
+/// The room's pictures by node: the emote button's, a player's badge, a
+/// row's host or accepted icon (its flag is its node's `Art`).
+fn room_picture(view: &SetupView, id: i32) -> Option<Picture> {
+    let id = u16::try_from(id).ok()?;
+    if id == EMOTE {
+        return Some(Picture::Emote);
+    }
+    if let Some(row) = painted_row(id, BADGE) {
+        return Some(Picture::Badge(view.row_icons[row].as_ref()?.badge?));
+    }
+    let icon = view.row_icons[painted_row(id, ROW_STATUS)?].as_ref()?;
+    Some(Picture::Status {
+        host: icon.host,
+        accepted: icon.accepted,
+    })
 }
 
 /// The room's own texts for its widgets: the lists' faces, the page
-/// buttons' captions and the trackbars' values the room words itself.
-fn widget_text(state: &AppState, view: &SetupView, id: i32) -> Option<String> {
+/// buttons' captions and the trackbars' values the room words itself, and
+/// its statics' words: the column labels, the roster's page line, its
+/// headers' captions and Joins, the team bar's captions, a cooperative
+/// map's description.
+fn widget_text(
+    skirmish_shell_state: &SkirmishShellState,
+    process_assets: &ProcessAssets,
+    view: &SetupView,
+    layout: &MultiplayerSetupLayout,
+    id: i32,
+) -> Option<String> {
     let id = u16::try_from(id).ok()?;
+    match id {
+        ROSTER_PAGE_LINE => {
+            return Some(crate::i18n::tr_fill(
+                "VERA:RosterPage",
+                &[
+                    ("first", &(view.first_row + 1)),
+                    ("last", &(view.first_row + view.page_len)),
+                    ("total", &view.row_count),
+                ],
+            ));
+        }
+        TEAMS_CAPTION => return Some(crate::i18n::tr("VERA:Teams")),
+        ROOM_SIZE_CAPTION => return Some(crate::i18n::tr("VERA:RoomSize")),
+        COOPERATIVE_TEXT => return view.cooperative_description.clone(),
+        id if (COLUMN_LABEL..ROSTER_PAGE_LINE).contains(&id) => {
+            let (key, _) = column_label(view, layout, usize::from(id - COLUMN_LABEL))?;
+            return Some(process_assets.csf_label(key, key));
+        }
+        _ => {}
+    }
+    if let Some(row) = painted_row(id, HEADER_CAPTION) {
+        return Some(view.headers[row].as_ref()?.caption.clone());
+    }
+    if let Some(row) = painted_row(id, JOIN_CAPTION) {
+        return view.headers[row].as_ref()?.join.clone();
+    }
     // A list's face shows its pick, a colour as its swatch alone.
     if let Some(combo) = view.combo(id) {
         let selected = combo.selected.and_then(|row| combo.choices.get(row));
@@ -1028,7 +995,7 @@ fn widget_text(state: &AppState, view: &SetupView, id: i32) -> Option<String> {
     if let Some(spec) = view.page().button(id) {
         let key = spec.csf_key;
         let label = view.dialog.button_label(id);
-        return Some(label.map_or_else(|| state.csf_label(key, key), crate::i18n::tr));
+        return Some(label.map_or_else(|| process_assets.csf_label(key, key), crate::i18n::tr));
     }
     let bar = view.trackbars.iter().find(|bar| bar.id == id)?;
     Some(match id {
@@ -1036,9 +1003,7 @@ fn widget_text(state: &AppState, view: &SetupView, id: i32) -> Option<String> {
             let context = crate::ui::shell::game_speed::SpeedContext::Network;
             context.value_text(context.stored_speed(bar.value))
         }
-        CREDITS => state
-            .frontend
-            .skirmish_shell_state
+        CREDITS => skirmish_shell_state
             .trackbar_bounds
             .credits_from_visual_position(bar.value)
             .to_string(),

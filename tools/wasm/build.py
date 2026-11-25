@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the opt-in browser client and its minimal, asset-free host page."""
+"""Build the opt-in browser client and package its host page and game resources."""
 import argparse
 import html
 import os
@@ -77,6 +77,13 @@ def package_host(stage, destination, network, lan=False, label=None):
     (stage / 'host.js').write_text(host, encoding='utf-8')
     (stage / 'index.html').write_text(page, encoding='utf-8')
     destination.mkdir(exist_ok=True)
+    maps = destination / 'Maps'
+    maps.mkdir(exist_ok=True)
+    shutil.copy(ROOT / 'maps' / 'Arctic_Circle_16_Ice_Passages.map', maps)
+    terrain = destination / 'pkg/Terrain'
+    terrain.mkdir(parents=True, exist_ok=True)
+    for name in ('vera_ice.mix', 'vera_ice_tiles.ini'):
+        shutil.copyfile(ROOT / 'Terrain' / name, terrain / name)
     for name in ('index.html', 'host.js', *optional_files):
         if (stage / name).exists():
             shutil.copyfile(stage / name, destination / name)
@@ -142,7 +149,7 @@ def main():
         stage = Path(temporary)
         subprocess.run([cli, '--target', 'web', '--out-dir', str(stage / 'pkg'), str(binary)], check=True)
         destination = ROOT / 'target/wasm-dist'
-        # Only generated public files; retail data never enters the package.
+        # Only the package resources and generated bindings go in the distribution.
         package_host(stage, destination, args.network, args.lan, build_label(args.profile, args.network, args.lan, args.threads))
         shutil.copytree(stage / 'pkg', destination / 'pkg', dirs_exist_ok=True)
         package_fonts(destination / 'pkg' / 'fonts')

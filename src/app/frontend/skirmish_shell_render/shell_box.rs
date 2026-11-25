@@ -1,27 +1,39 @@
 //! The one painter of the shell's message and wait boxes
 //! ([`crate::ui::shell::modal::ShellBox`]): the mode-2 PUDLGBGN panel
-//! (`0x00621E90`), its MNBTTN owner-draw buttons (`0x00612B70`), the body
-//! static (`0x5B0` left-top wrapped; the wait box's `0x5B2` is SS_CENTER) and
-//! each caption centred on its button with the press sink.
+//! (`0x00621E90`), then the box's widgets, from the tree its input hits
+//! ([`ShellBox::sync`] puts the box on it first), through
+//! [`super::gui_paint`]: the
+//! body static (`0x5B0` left-top wrapped; the wait box's `0x5B2` is
+//! SS_CENTER) and the MNBTTN owner-draw buttons (`0x00612B70`), each caption
+//! centred on its button with the press sink ([`ButtonArt::ModalBox`]).
+
+use vera20k_gui::{Gui, NodeId};
 
 use super::chrome::{push_rect_outline, push_solid_rect, type3_button_frames};
-use super::text::text_covered_by_overlay;
+use super::gui_paint::{BoxStyle, ButtonArt, GuiStyle, paint_gui_into};
 use super::{
     OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68, SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
     SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH, SHELL_MODAL_PANEL_RGB,
 };
 use crate::app::AppState;
-use crate::app::frontend::shell_pass::owner_draw_button_label_rect;
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::ime::ImeState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::shell_paint::{
-    ModalButton, ModalDepths, ModalDraw, PaintLabel, SHELL_TEXT_RGB_ENABLED,
-    paint_labels_at_depth_scaled, paint_modal_sprites,
+    ModalDepths, ModalDraw, SHELL_TEXT_RGB_ENABLED, paint_modal_sprites,
 };
 use crate::render::shell_text::ShellTextDraw;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
-use crate::ui::shell::geom::{RectPx, ShellAlign};
-use crate::ui::shell::modal::{BoxButton, BoxParts, ShellBox};
+use crate::ui::game_screen::GameScreen;
+use crate::ui::shell::controller::DialogController;
+use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::modal::{BoxParts, ShellBox, body_node};
 
 /// How a box sits in its host's paint: its art, its layers' depths (the
 /// body's text may sit apart from the captions'), and the host's overlays
@@ -75,124 +87,193 @@ impl BoxLook<'_> {
     }
 }
 
-/// `shell_box` on `parts`, `pressed` telling which buttons show pushed.
-/// Without `atlas` only its texts paint.
-pub(crate) fn paint_shell_box(
-    state: &AppState,
+/// A box's widgets ([`ShellBox::sync`]): the gui of the controller its input
+/// hits and the dialog root they hang under; none while its dialog is not up.
+pub(crate) type BoxTree<'a> = Option<(&'a Gui, NodeId)>;
+
+/// `dialog`'s widgets in `ui`'s live instance.
+pub(crate) fn controller_tree(ui: &DialogController, dialog: DialogResourceId) -> BoxTree<'_> {
+    ui.root_in(dialog).map(|root| (ui.gui(), root))
+}
+
+/// `shell_box` on `parts` appended to `paint`: the panel's art, when
+/// `atlas` holds it, then its widgets from `tree` (body, then its buttons),
+/// `pressed` telling which buttons show pushed. Without `atlas` only its
+/// texts paint.
+#[allow(clippy::too_many_arguments)]
+fn paint_box_into(
+    paint: &mut HudPaint,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     atlas: Option<&SkirmishShellChromeAtlas>,
+    tree: BoxTree<'_>,
+    shell_box: &ShellBox,
+    parts: &BoxParts,
+    pressed: &dyn Fn(u16) -> bool,
+    look: BoxLook<'_>,
+) {
+    if let Some(atlas) = atlas {
+        paint.draw(Material::Controls, |out, _| {
+            out.extend(paint_modal_sprites(
+                look.background,
+                type3_button_frames(atlas),
+                parts.dialog,
+                &[],
+                parts.scale,
+                look.depths,
+            ))
+        });
+    }
+    let Some((gui, root)) = tree else {
+        return;
+    };
+    let pressed_of = |id: i32| Some(u16::try_from(id).is_ok_and(pressed));
+    let style = GuiStyle {
+        buttons: ButtonArt::ModalBox,
+        pressed_of: Some(&pressed_of),
+        rgb: SHELL_TEXT_RGB_ENABLED,
+        shell_box: Some(BoxStyle {
+            depths: look.depths,
+            body_depth: look.body_depth,
+            disabled_rgb: look.disabled_rgb,
+        }),
+        ..GuiStyle::default()
+    };
+    let (scale, covered) = (parts.scale, look.covered);
+    if let Some(body) = body_node(gui, root) {
+        paint_gui_into(
+            paint,
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            atlas,
+            gui,
+            body,
+            scale,
+            covered,
+            style,
+        );
+    }
+    // Only the box's own buttons, each once: a host's dialog may hold more
+    // (a list, the verify's boxes), and the hidden IDOK may share an id.
+    let mut painted = 0u64;
+    for &node in gui.tree().children(root).unwrap_or_default() {
+        let id = gui.id_of(node).and_then(|id| u16::try_from(id).ok());
+        let index = id.and_then(|id| shell_box.buttons.iter().position(|b| b.id == id));
+        let Some(bit) = index.and_then(|index| 1u64.checked_shl(index as u32)) else {
+            continue;
+        };
+        if painted & bit == 0 {
+            painted |= bit;
+            paint_gui_into(
+                paint,
+                ime,
+                bit_font,
+                frontend,
+                match_state,
+                process_assets,
+                atlas,
+                gui,
+                node,
+                scale,
+                covered,
+                style,
+            );
+        }
+    }
+}
+
+/// `shell_box` on `parts` from its widgets in `tree`, `pressed` telling
+/// which buttons show pushed. Without `atlas` only its texts paint.
+pub(crate) fn paint_shell_box(
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    atlas: Option<&SkirmishShellChromeAtlas>,
+    tree: BoxTree<'_>,
     shell_box: &ShellBox,
     parts: &BoxParts,
     pressed: impl Fn(u16) -> bool,
     look: BoxLook<'_>,
 ) -> ModalDraw {
-    let sprites = atlas.map_or_else(Vec::new, |a| {
-        box_sprites(a, shell_box, parts, &pressed, look)
-    });
-    let text = box_texts(&state.renderer.bit_font, shell_box, parts, &pressed, look);
-    ModalDraw { sprites, text }
-}
-
-/// Each shown button with its rect and whether it shows pushed.
-fn shown<'a>(
-    shell_box: &'a ShellBox,
-    parts: &'a BoxParts,
-    pressed: &'a impl Fn(u16) -> bool,
-) -> impl Iterator<Item = (&'a BoxButton, RectPx, bool)> + 'a {
-    let buttons = shell_box.buttons.iter();
-    buttons.filter_map(move |b| Some((b, parts.rect_of(b.id)?, pressed(b.id))))
-}
-
-/// The panel and its buttons.
-pub(crate) fn box_sprites(
-    atlas: &SkirmishShellChromeAtlas,
-    shell_box: &ShellBox,
-    parts: &BoxParts,
-    pressed: &impl Fn(u16) -> bool,
-    look: BoxLook<'_>,
-) -> Vec<SpriteInstance> {
-    let button = |(b, rect, pressed): (&BoxButton, _, _)| ModalButton {
-        rect,
-        pressed,
-        enabled: b.enabled,
-    };
-    let buttons: Vec<ModalButton> = shown(shell_box, parts, pressed).map(button).collect();
-    let (frames, at) = (type3_button_frames(atlas), parts.dialog);
-    paint_modal_sprites(
-        look.background,
-        frames,
-        at,
-        &buttons,
-        parts.scale,
-        look.depths,
-    )
-}
-
-/// The body, then the captions; those an overlay covers give way.
-pub(crate) fn box_texts(
-    font: &BitFont,
-    shell_box: &ShellBox,
-    parts: &BoxParts,
-    pressed: &impl Fn(u16) -> bool,
-    look: BoxLook<'_>,
-) -> Vec<ShellTextDraw> {
-    let label = |text: &str, rect, align, rgb| PaintLabel {
-        text: text.to_owned().into(),
-        rect,
-        align,
-        rgb,
-        path_a_reveal: None,
-    };
-    let centre = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
-    let captions: Vec<PaintLabel> = shown(shell_box, parts, pressed)
-        .map(|(b, rect, pressed)| {
-            let at = parts
-                .scale
-                .derive_rect(rect, |r| owner_draw_button_label_rect(r, pressed));
-            let rgb = match b.enabled {
-                true => SHELL_TEXT_RGB_ENABLED,
-                false => look.disabled_rgb,
-            };
-            label(&b.caption, at, centre, rgb)
-        })
-        .collect();
-    let align = [ShellAlign::NONE, ShellAlign::H_CENTER][usize::from(parts.centred)];
-    let body = vec![label(
-        &shell_box.body,
-        parts.body,
-        align,
-        SHELL_TEXT_RGB_ENABLED,
-    )];
-    let mut text = Vec::new();
-    for (mut labels, depth) in [(body, look.body_depth), (captions, look.depths.text)] {
-        labels.retain(|label| !text_covered_by_overlay(label.rect, look.covered));
-        text.extend(paint_labels_at_depth_scaled(
-            font,
-            &labels,
-            depth,
-            parts.scale.factor(),
-        ));
+    let mut paint = HudPaint::default();
+    paint_box_into(
+        &mut paint,
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
+        atlas,
+        tree,
+        shell_box,
+        parts,
+        &pressed,
+        look,
+    );
+    ModalDraw {
+        sprites: paint.take_lane(Material::Controls),
+        text: paint.texts,
     }
-    text
 }
 
-/// A Skirmish-family box at retail size in a `w`x`h` window: its sprites
-/// into `sprites` (over a solid panel when its art is missing) and its
-/// texts into `texts`, which give up the box's rect first when
-/// `exclude_under`.
-pub(crate) fn push_skirmish_box(
-    state: &AppState,
+/// A Skirmish-family box's draws: its sprites, its texts, and its rect,
+/// which the texts queued before them give up when the host asks
+/// ([`Self::push_texts`]).
+pub(crate) struct SkirmishBoxDraw {
+    paint: HudPaint,
+    dialog: RectPx,
+}
+
+impl SkirmishBoxDraw {
+    /// Its sprites after `out`'s.
+    pub(crate) fn push_sprites(&mut self, out: &mut Vec<SpriteInstance>) {
+        self.paint.drain_lane(Material::Controls, out);
+    }
+
+    /// Its texts after `out`'s, which give up the box's rect first when
+    /// `exclude_under`.
+    pub(crate) fn push_texts(&mut self, out: &mut Vec<ShellTextDraw>, exclude_under: bool) {
+        if exclude_under {
+            super::text::exclude_text_under(out, self.dialog);
+        }
+        out.append(&mut self.paint.texts);
+    }
+}
+
+/// A Skirmish-family box's rects at retail size in a `w`x`h` window.
+pub(crate) fn skirmish_parts(shell_box: &ShellBox, (w, h): (i32, i32)) -> BoxParts {
+    shell_box.parts(w, h, crate::ui::shell::geom::RETAIL_SCALE)
+}
+
+/// A Skirmish-family box on `parts` ([`skirmish_parts`]) from its widgets
+/// in `tree`, after what `paint` holds: over a solid panel when its art is
+/// missing.
+#[allow(clippy::too_many_arguments)]
+fn skirmish_box_into(
+    mut paint: HudPaint,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     atlas: Option<&SkirmishShellChromeAtlas>,
-    (w, h): (i32, i32),
+    tree: BoxTree<'_>,
     shell_box: &ShellBox,
-    pressed: impl Fn(u16) -> bool,
+    parts: &BoxParts,
+    pressed: &dyn Fn(u16) -> bool,
     look: BoxLook<'_>,
-    sprites: Option<&mut Vec<SpriteInstance>>,
-    texts: Option<(&mut Vec<ShellTextDraw>, bool)>,
-) {
-    let parts = shell_box.parts(w, h, crate::ui::shell::geom::RETAIL_SCALE);
-    if let (Some(out), Some(atlas)) = (sprites, atlas) {
+) -> SkirmishBoxDraw {
+    if let (Some(atlas), None) = (atlas, look.background) {
         let (at, edge) = (parts.dialog, OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68);
-        if look.background.is_none() {
+        paint.draw(Material::Controls, |out, _| {
             push_solid_rect(
                 out,
                 atlas,
@@ -201,42 +282,128 @@ pub(crate) fn push_skirmish_box(
                 look.depths.background,
             );
             push_rect_outline(out, atlas, at, edge, SHELL_DROPDOWN_DEPTH - 0.00015);
-        }
-        out.extend(box_sprites(atlas, shell_box, &parts, &pressed, look));
+        });
     }
-    if let Some((out, exclude_under)) = texts {
-        if exclude_under {
-            super::text::exclude_text_under(out, parts.dialog);
-        }
-        out.extend(box_texts(
-            &state.renderer.bit_font,
-            shell_box,
-            &parts,
-            &pressed,
-            look,
-        ));
+    paint_box_into(
+        &mut paint,
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
+        atlas,
+        tree,
+        shell_box,
+        parts,
+        pressed,
+        look,
+    );
+    SkirmishBoxDraw {
+        paint,
+        dialog: parts.dialog,
     }
+}
+
+/// A Skirmish-family box on `parts` from its widgets in `tree`
+/// ([`SkirmishBoxDraw`]).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn skirmish_box(
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    atlas: Option<&SkirmishShellChromeAtlas>,
+    tree: BoxTree<'_>,
+    shell_box: &ShellBox,
+    parts: &BoxParts,
+    pressed: impl Fn(u16) -> bool,
+    look: BoxLook<'_>,
+) -> SkirmishBoxDraw {
+    let paint = HudPaint::default();
+    skirmish_box_into(
+        paint,
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
+        atlas,
+        tree,
+        shell_box,
+        parts,
+        &pressed,
+        look,
+    )
+}
+
+/// [`skirmish_box`]'s sprites into `sprites` and its texts into `texts`,
+/// which give up the box's rect first when `exclude_under`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn push_skirmish_box(
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    atlas: Option<&SkirmishShellChromeAtlas>,
+    tree: BoxTree<'_>,
+    shell_box: &ShellBox,
+    parts: &BoxParts,
+    pressed: impl Fn(u16) -> bool,
+    look: BoxLook<'_>,
+    sprites: &mut Vec<SpriteInstance>,
+    (texts, exclude_under): (&mut Vec<ShellTextDraw>, bool),
+) {
+    let mut draw = skirmish_box(
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
+        atlas,
+        tree,
+        shell_box,
+        parts,
+        pressed,
+        look,
+    );
+    draw.push_sprites(sprites);
+    draw.push_texts(texts, exclude_under);
 }
 
 /// The window a Skirmish-family box centres in: the render size.
-pub(crate) fn render_size(state: &AppState) -> (i32, i32) {
-    (state.render_width() as i32, state.render_height() as i32)
+pub(crate) fn render_size(renderer: &RendererState, screen: &GameScreen) -> (i32, i32) {
+    (
+        renderer.render_width(screen) as i32,
+        renderer.render_height(screen) as i32,
+    )
 }
 
-/// Use Map's two-button box over the chooser. gamemd's eject-AI question
-/// and VERA's random-map failure draw gamemd's art; VERA's map-library
-/// download boxes Red Alert 2's, with how much has arrived under the text.
-pub(crate) fn push_choose_map_prompt(
+/// Use Map's two-button box over the chooser as it shows: its body and
+/// captions in the current language.
+pub(crate) fn choose_map_prompt_shell_box(
+    state: &AppState,
+    prompt: &crate::ui::skirmish_shell::ChooseMapPrompt,
+) -> ShellBox {
+    let (body, ok) = super::text::choose_map_prompt_labels(state, prompt);
+    let cancel = state.csf_label("GUI:Cancel", "Cancel");
+    prompt.shell_box(body, ok, cancel)
+}
+
+/// Use Map's box `shell_box` ([`choose_map_prompt_shell_box`]) on `parts`
+/// from its widgets on the shell controller. gamemd's eject-AI question and VERA's
+/// random-map failure draw gamemd's art; VERA's map-library download boxes
+/// Red Alert 2's, with how much has arrived under the text. Its texts give
+/// up the box's rect.
+pub(crate) fn choose_map_prompt_box(
     state: &AppState,
     atlas: Option<&SkirmishShellChromeAtlas>,
     prompt: &crate::ui::skirmish_shell::ChooseMapPrompt,
-    mut sprites: Option<&mut Vec<SpriteInstance>>,
-    texts: Option<&mut Vec<ShellTextDraw>>,
-) {
+    shell_box: &ShellBox,
+    parts: &BoxParts,
+) -> SkirmishBoxDraw {
     use crate::ui::skirmish_shell::ChooseMapPromptKind as Kind;
-    let (body, ok) = super::text::choose_map_prompt_labels(state, prompt);
-    let cancel = state.csf_label("GUI:Cancel", "Cancel");
-    let shell_box = prompt.shell_box(body, ok, cancel);
     let background = atlas.and_then(|atlas| {
         match prompt.kind {
             Kind::EjectAi | Kind::RandomMapFailed => None,
@@ -244,30 +411,35 @@ pub(crate) fn push_choose_map_prompt(
         }
         .or_else(|| atlas.mode_two_dialog_background(None))
     });
-    if let (Some(out), Some(atlas), Kind::Downloading) =
-        (sprites.as_deref_mut(), atlas, prompt.kind)
-        && let Some(progress) = crate::app::map_library::download_progress(state)
+    let mut paint = HudPaint::default();
+    if let (Some(atlas), Kind::Downloading) = (atlas, prompt.kind)
+        && let Some(progress) = crate::app::map_library::download_progress(&state.frontend)
     {
-        let (w, h) = render_size(state);
-        let body = shell_box
-            .parts(w, h, crate::ui::shell::geom::RETAIL_SCALE)
-            .body;
+        let track = parts.progress_track();
         let depth = BoxLook::skirmish(None).depths.button;
-        super::modals::push_download_progress_bar(out, atlas, body, progress, depth);
+        let (white, rgb) = (atlas.white_pixel, super::SHELL_LABEL_TEXT_RGB);
+        paint.draw(Material::Controls, |out, _| {
+            super::gui_paint::push_progress(out, white, track, rgb, progress, depth)
+        });
     }
     // Its widgets' captured button keeps its pushed look off the pointer too.
-    let held =
-        crate::ui::shell::menu_page::pressed_id(&state.frontend.shell_controller, shell_box.dialog);
+    let controller = &state.frontend.shell_controller;
+    let held = crate::ui::shell::menu_page::pressed_id(controller, shell_box.dialog);
     let pressed = |id| held == Some(id);
-    let (texts, look) = (texts.map(|out| (out, true)), BoxLook::prompt(background));
-    push_skirmish_box(
-        state,
+    let look = BoxLook::prompt(background);
+    let tree = controller_tree(controller, shell_box.dialog);
+    skirmish_box_into(
+        paint,
+        &state.platform.ime,
+        &state.renderer.bit_font,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
         atlas,
-        render_size(state),
-        &shell_box,
-        pressed,
+        tree,
+        shell_box,
+        parts,
+        &pressed,
         look,
-        sprites,
-        texts,
-    );
+    )
 }

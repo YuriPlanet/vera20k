@@ -115,8 +115,13 @@ impl FailureCapture {
         let source = network_match::house_source(&state.match_state.session, sim, house)
             .context("failure peer source")?;
         let owner = sim.houses().order()[house as usize];
-        self.peer_name = crate::app::presentation::house_ui::house_ui_name(state, owner)
-            .context("failure peer UI name")?;
+        self.peer_name = crate::app::presentation::house_ui::house_ui_name(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            owner,
+        )
+        .context("failure peer UI name")?;
         self.peer_house = Some(house);
         self.peer_source = Some(source);
         self.sent_before = live.sent_commands();
@@ -261,14 +266,7 @@ impl FailureCapture {
                         )
                     })
                     .context("EA Quit hit geometry")?;
-                let point = set_window_pointer_to_rect_center(state, layout.quit);
-                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                for edge in [
-                    winit::event::ElementState::Pressed,
-                    winit::event::ElementState::Released,
-                ] {
-                    crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-                }
+                let point = click_in_game(state, layout.quit);
                 self.quit = Some(json!({"held_frame":frame,"observed_bucket":now,"point":point}));
                 route.push(json!({"render_frame":render,"native_frame":frame,"action":"real EA Quit Game clicked","point":point}));
             }
@@ -523,7 +521,7 @@ impl FailureCapture {
                     && state.frontend.shell_controller.top_id() == Some(network_failure::DIALOG),
                 "real checksum CE dialog is absent"
             );
-            let labels = network_failure::labels(state);
+            let labels = network_failure::labels(&state.match_state.sim_runtime);
             ensure!(
                 labels.0.0 == "TXT_OUT_OF_SYNC" && labels.1.0 == "TXT_STOP",
                 "another error dialog replaced the checksum modal"

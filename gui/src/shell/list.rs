@@ -3,8 +3,9 @@
 //! 17 + 2; a host with other text sets its own metrics. Inner rectangles
 //! exclude borders.
 
+use super::combobox::COMBO_DROPDOWN_ROW_H;
 use super::geom::{RectPx, ShellScale};
-use crate::time::{Duration, Instant};
+use crate::gui::UiMs;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListScrollPart {
@@ -21,10 +22,17 @@ pub const ROW_HEIGHT: i32 = 19;
 const SCROLLBAR_WIDTH: i32 = 20;
 const ARROW_HEIGHT: i32 = 22;
 const MIN_THUMB_HEIGHT: i32 = 14;
+/// The list frame's border inside its window, on every side.
+const FRAME_INSET: i32 = 1;
 
 /// A list box's row and scrollbar metrics in the pixels its page is drawn in:
 /// the default metrics on an unscaled layout, grown with the window on a
 /// stretched one.
+/// `px` grown by the stretch of `scale`, at least one pixel.
+fn grow(px: i32, scale: ShellScale) -> i32 {
+    ((px as f32 * scale.factor()).round() as i32).max(1)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ListMetrics {
     pub row_h: i32,
@@ -46,12 +54,23 @@ impl ListMetrics {
         if scale.is_unscaled() {
             return Self::RETAIL;
         }
-        let grow = |px: i32, factor: f32| ((px as f32 * factor).round() as i32).max(1);
         Self {
-            row_h: grow(ROW_HEIGHT, scale.factor()),
-            scrollbar_w: grow(SCROLLBAR_WIDTH, scale.factor()),
-            arrow_h: grow(ARROW_HEIGHT, scale.factor()),
-            min_thumb_h: grow(MIN_THUMB_HEIGHT, scale.factor()),
+            row_h: grow(ROW_HEIGHT, scale),
+            scrollbar_w: grow(SCROLLBAR_WIDTH, scale),
+            arrow_h: grow(ARROW_HEIGHT, scale),
+            min_thumb_h: grow(MIN_THUMB_HEIGHT, scale),
+        }
+    }
+
+    /// The `ComboDropWin` drop-down's metrics: the same scrollbar child
+    /// (0060E72F creates it, 0060E745 subclasses it to 0061C690) on rows
+    /// [`COMBO_DROPDOWN_ROW_H`] tall, all grown by the page's stretch, so a
+    /// drop-down under a stretched combo has rows as tall as its face and
+    /// stays the same number of rows deep.
+    pub fn combo(scale: ShellScale) -> Self {
+        Self {
+            row_h: grow(COMBO_DROPDOWN_ROW_H, scale),
+            ..Self::scaled(scale)
         }
     }
 
@@ -73,10 +92,10 @@ impl ListMetrics {
 /// including callbacks outside the arrows. Release61D2D3..61D310 kills capture.
 /// Geometry remains the shared owner of pointer admission and thumb projection.
 #[derive(Debug, Clone, Default)]
-pub struct ListScrollInteraction {
+pub(crate) struct ListScrollInteraction {
     captured: Option<ListScrollPart>,
     hovered: Option<ListScrollPart>,
-    repeat_at: Option<Instant>,
+    repeat_at: Option<UiMs>,
 }
 impl ListScrollInteraction {
     pub fn press(
@@ -85,11 +104,11 @@ impl ListScrollInteraction {
         geometry: ShellListGeometry,
         top: &mut usize,
         y: i32,
-        now: Instant,
+        now: UiMs,
     ) {
         self.captured = Some(part);
         self.hovered = Some(part);
-        self.repeat_at = Some(now + Duration::from_millis(500));
+        self.repeat_at = Some(now + 500);
         match part {
             ListScrollPart::Up | ListScrollPart::Down => Self::step(part, geometry.max_top, top),
             ListScrollPart::Track => *top = geometry.top_at_pointer(y),
@@ -111,7 +130,7 @@ impl ListScrollInteraction {
         top: &mut usize,
         x: i32,
         y: i32,
-        now: Instant,
+        now: UiMs,
     ) -> bool {
         let before = (*top, self.pressed_part());
         self.hovered = geometry.scroll_part_at(x, y);
@@ -119,7 +138,7 @@ impl ListScrollInteraction {
             if let Some(part) = self.hovered {
                 Self::step(part, geometry.max_top, top);
             }
-            self.repeat_at = Some(now + Duration::from_millis(25));
+            self.repeat_at = Some(now + 25);
         }
         before != (*top, self.pressed_part())
     }
@@ -137,16 +156,12 @@ impl ListScrollInteraction {
             _ => None,
         }
     }
-    pub fn repeat_at(&self) -> Option<Instant> {
+    pub fn repeat_at(&self) -> Option<UiMs> {
         self.repeat_at
     }
     /// The part a press holds until the release.
     pub(crate) fn captured_part(&self) -> Option<ListScrollPart> {
         self.captured
-    }
-    /// Whether a press holds the scrollbar's capture, until the release.
-    pub fn captured(&self) -> bool {
-        self.captured.is_some()
     }
     pub fn cancel(&mut self) {
         *self = Self::default();
@@ -165,7 +180,7 @@ pub struct ShellListGeometry {
 }
 impl ShellListGeometry {
     pub fn new(outer: RectPx, count: usize, top: usize, metrics: ListMetrics) -> Self {
-        let visible_rows = ((outer.h - 2).max(0) / metrics.row_h) as usize;
+        let visible_rows = ((outer.h - 2 * FRAME_INSET).max(0) / metrics.row_h) as usize;
         Self::with_visible_rows(outer, count, visible_rows, top, metrics)
     }
     /// A list whose rows its owner lays out, `visible_rows` of them showing:
@@ -177,29 +192,30 @@ impl ShellListGeometry {
         top: usize,
         metrics: ListMetrics,
     ) -> Self {
-        let inner_height = (outer.h - 2).max(0);
+        Self::laid_out(outer, FRAME_INSET, count, visible_rows, top, metrics)
+    }
+    /// [`Self::with_visible_rows`] on a window without the list's frame
+    /// inset: the combo drop-down (`ComboDropWin`), whose rows and scrollbar
+    /// reach its edges.
+    pub fn unframed(
+        outer: RectPx,
+        count: usize,
+        visible_rows: usize,
+        top: usize,
+        metrics: ListMetrics,
+    ) -> Self {
+        Self::laid_out(outer, 0, count, visible_rows, top, metrics)
+    }
+    fn laid_out(
+        outer: RectPx,
+        inset: i32,
+        count: usize,
+        visible_rows: usize,
+        top: usize,
+        metrics: ListMetrics,
+    ) -> Self {
         let max_top = count.saturating_sub(visible_rows);
-        let scrollbar = (max_top > 0).then(|| {
-            RectPx::new(
-                outer.x + outer.w - metrics.scrollbar_w - 1,
-                outer.y,
-                metrics.scrollbar_w,
-                outer.h,
-            )
-        });
-        let content = RectPx::new(
-            outer.x + 1,
-            outer.y + 1,
-            (outer.w
-                - 2
-                - if scrollbar.is_some() {
-                    metrics.scrollbar_w
-                } else {
-                    0
-                })
-            .max(0),
-            inner_height,
-        );
+        let (content, scrollbar) = Self::panes(outer, inset, max_top > 0, metrics);
         let thumb = scrollbar.map(|bar| {
             let height = thumb_height(bar.h, max_top, metrics);
             RectPx::new(
@@ -218,6 +234,32 @@ impl ShellListGeometry {
             max_top,
             metrics,
         }
+    }
+    /// The row content and, when it `scrolls`, the scrollbar of window
+    /// `outer` whose frame takes `inset` px on each side: the bar spans the
+    /// window's height at its right, inside the right inset.
+    pub(crate) fn panes(
+        outer: RectPx,
+        inset: i32,
+        scrolls: bool,
+        metrics: ListMetrics,
+    ) -> (RectPx, Option<RectPx>) {
+        let bar_w = if scrolls { metrics.scrollbar_w } else { 0 };
+        let scrollbar = scrolls.then(|| {
+            RectPx::new(
+                outer.x + outer.w - metrics.scrollbar_w - inset,
+                outer.y,
+                metrics.scrollbar_w,
+                outer.h,
+            )
+        });
+        let content = RectPx::new(
+            outer.x + inset,
+            outer.y + inset,
+            (outer.w - 2 * inset - bar_w).max(0),
+            (outer.h - 2 * inset).max(0),
+        );
+        (content, scrollbar)
     }
     pub fn row(&self, visible: usize) -> RectPx {
         RectPx::new(
@@ -302,7 +344,7 @@ pub fn list_box_geometry(
 /// Shared 0061C890..0061C8AA scrollbar placement. Both list boxes and
 /// ComboDropWin create the same 0061C690 child; its range is the maximum
 /// top index, not the item count. The paint origin includes the one-pixel inset.
-pub fn scrollbar_thumb_y(
+pub(crate) fn scrollbar_thumb_y(
     bar: RectPx,
     thumb_h: i32,
     top: usize,
@@ -322,7 +364,7 @@ pub fn scrollbar_thumb_y(
 /// Native reads the pointer in window coordinates (before the paint inset),
 /// recenters the thumb on every drag update, and truncates signed division.
 /// The down event inside the thumb only captures; callers invoke this on move.
-pub fn scrollbar_top_at_pointer(
+pub(crate) fn scrollbar_top_at_pointer(
     bar: RectPx,
     thumb_h: i32,
     max_top: usize,
@@ -436,14 +478,14 @@ pub fn grip_tiles(thumb: RectPx, tile_h: i32) -> Vec<(i32, i32)> {
 /// no sound. A double-click ends the sequence, so the next press starts a
 /// new one.
 pub fn is_double_click(
-    last_press: &mut Option<(Instant, i32, i32)>,
-    now: Instant,
+    last_press: &mut Option<(UiMs, i32, i32)>,
+    now: UiMs,
     x: i32,
     y: i32,
-    (time, width, height): (Duration, i32, i32),
+    (time, width, height): (UiMs, i32, i32),
 ) -> bool {
     let double = last_press.is_some_and(|(last, px, py)| {
-        now.duration_since(last) <= time
+        now.saturating_sub(last) <= time
             && (x - px).abs() * 2 <= width
             && (y - py).abs() * 2 <= height
     });
@@ -486,7 +528,7 @@ mod tests {
             ShellListGeometry::new(RectPx::new(10, 20, 400, 255), 60, 10, ListMetrics::RETAIL);
         let bar = geometry.scrollbar.unwrap();
         let (x, y) = (bar.x + 10, bar.y + bar.h - 10);
-        let now = Instant::now();
+        let now: UiMs = 1_000;
         let mut interaction = ListScrollInteraction::default();
         let mut top = 10;
         interaction.press(ListScrollPart::Down, geometry, &mut top, y, now);
@@ -498,13 +540,13 @@ mod tests {
                 &mut top,
                 x,
                 y,
-                now + Duration::from_millis(elapsed),
+                now + elapsed,
             );
             assert_eq!(top, expected, "at {elapsed}ms");
         }
         assert_eq!(
             interaction.repeat_at(),
-            Some(now + Duration::from_millis(925))
+            Some(now + 925)
         );
     }
     #[test]
@@ -513,28 +555,28 @@ mod tests {
             ShellListGeometry::new(RectPx::new(10, 20, 400, 255), 60, 10, ListMetrics::RETAIL);
         let bar = geometry.scrollbar.unwrap();
         let (x, y) = (bar.x + 10, bar.y + bar.h - 10);
-        let now = Instant::now();
+        let now: UiMs = 1_000;
         let mut interaction = ListScrollInteraction::default();
         let mut top = 10;
         interaction.press(ListScrollPart::Down, geometry, &mut top, y, now);
         interaction.pointer_moved(geometry, &mut top, 0, 0);
         assert_eq!(interaction.pressed_part(), None);
-        interaction.poll(geometry, &mut top, 0, 0, now + Duration::from_millis(500));
+        interaction.poll(geometry, &mut top, 0, 0, now + 500);
         assert_eq!(top, 11);
         assert_eq!(
             interaction.repeat_at(),
-            Some(now + Duration::from_millis(525))
+            Some(now + 525)
         );
         interaction.pointer_moved(geometry, &mut top, x, y);
         assert_eq!(interaction.pressed_part(), Some(ListScrollPart::Down));
-        interaction.poll(geometry, &mut top, x, y, now + Duration::from_millis(510));
+        interaction.poll(geometry, &mut top, x, y, now + 510);
         assert_eq!(top, 11);
-        interaction.poll(geometry, &mut top, x, y, now + Duration::from_millis(525));
+        interaction.poll(geometry, &mut top, x, y, now + 525);
         assert_eq!(top, 12);
         // Both button release and shell focus loss call this same cleanup.
         interaction.cancel();
         assert_eq!(interaction.repeat_at(), None);
-        interaction.poll(geometry, &mut top, x, y, now + Duration::from_secs(2));
+        interaction.poll(geometry, &mut top, x, y, now + 2_000);
         assert_eq!(top, 12);
         assert_eq!(interaction.pressed_part(), None);
     }
@@ -544,7 +586,7 @@ mod tests {
             ShellListGeometry::new(RectPx::new(10, 20, 400, 255), 60, 0, ListMetrics::RETAIL);
         let bar = geometry.scrollbar.unwrap();
         let x = bar.x + 10;
-        let now = Instant::now();
+        let now: UiMs = 1_000;
         let mut interaction = ListScrollInteraction::default();
         let mut top = 0;
         interaction.press(ListScrollPart::Up, geometry, &mut top, bar.y + 10, now);
@@ -554,7 +596,7 @@ mod tests {
             &mut top,
             x,
             bar.y + bar.h - 10,
-            now + Duration::from_millis(500),
+            now + 500,
         );
         assert_eq!(top, 1);
         assert_eq!(interaction.pressed_part(), Some(ListScrollPart::Down));
@@ -564,7 +606,7 @@ mod tests {
             &mut top,
             x,
             bar.y + bar.h - 10,
-            now + Duration::from_millis(525),
+            now + 525,
         );
         assert_eq!(top, geometry.max_top);
     }
@@ -573,7 +615,7 @@ mod tests {
         let geometry =
             ShellListGeometry::new(RectPx::new(10, 20, 400, 255), 60, 10, ListMetrics::RETAIL);
         let bar = geometry.scrollbar.unwrap();
-        let now = Instant::now();
+        let now: UiMs = 1_000;
         let mut interaction = ListScrollInteraction::default();
         let mut top = 10;
         interaction.press(
@@ -596,7 +638,7 @@ mod tests {
             &mut top,
             bar.x + 10,
             bar.y + bar.h - 10,
-            now + Duration::from_millis(500),
+            now + 500,
         );
         assert_eq!(top, (track_top + 1).min(geometry.max_top));
     }

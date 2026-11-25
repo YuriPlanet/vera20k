@@ -31,7 +31,7 @@ fn campaign_perimeter(
     let roster = crate::map::houses::parse_house_roster(&ini, &rules.color_schemes, Some(&rules));
     let mut sim = Simulation::with_seed(0x5082C0);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.session

@@ -589,11 +589,11 @@ impl Simulation {
                 self.restamp_edge_dummy(viewer, order, notified, rank, context.reborrow());
             }
             let cursor = order.cursor_after(rank);
-            self.native_allocated_cell_cursor = Some(cursor);
+            *self.native_allocated_cell_cursor = Some(cursor);
             let mark = self.fog.edge_cells_listed(viewer, refresh);
             notify(self, change, &mut context);
             notified = Some(rank);
-            if self.native_allocated_cell_cursor != Some(cursor) {
+            if *self.native_allocated_cell_cursor != Some(cursor) {
                 // A nested walk moved the shared cursor: the complete walk
                 // goes on from there, and the cells it may skip wait for
                 // the next update.
@@ -619,7 +619,7 @@ impl Simulation {
         if refresh && let Some(last) = order.len().checked_sub(1) {
             self.restamp_edge_dummy(viewer, order, notified, last, context);
         }
-        self.native_allocated_cell_cursor = Some(order.end());
+        *self.native_allocated_cell_cursor = Some(order.end());
     }
 
     /// Leave the canonical Dummy as the complete refresh walk's lookups leave
@@ -756,7 +756,7 @@ impl Simulation {
         }
         let rules = context.rules();
         let (Some(waypoint), Some(bounds)) =
-            (self.session.waypoint_cell(index), self.playfield_bounds)
+            (self.session.waypoint_cell(index), *self.playfield_bounds)
         else {
             return false;
         };
@@ -779,8 +779,8 @@ impl Simulation {
             };
             zone
         };
-        self.native_local_cell_cursor = Some(NativeLocalCellCursor::reset(bounds));
-        let mut height_source = self.path_grid.clone();
+        *self.native_local_cell_cursor = Some(NativeLocalCellCursor::reset(bounds));
+        let mut height_source = (*self.path_grid).clone();
         let mut height_grid = self.sight_height_grid(&self.sight_reveal_config(rules));
         loop {
             // No borrow/cursor snapshot spans a reveal callback. A nested18
@@ -788,7 +788,7 @@ impl Simulation {
             let identity = {
                 let (Some(terrain), Some(bounds), Some(cursor)) = (
                     context.terrain().or(self.resolved_terrain.as_ref()),
-                    self.playfield_bounds,
+                    *self.playfield_bounds,
                     self.native_local_cell_cursor.as_mut(),
                 ) else {
                     return false;
@@ -851,14 +851,14 @@ impl Simulation {
                 // change. Reuse its snapshot across small radius2 passes;
                 // a synchronous discovery callback can republish it, so
                 // invalidate before the very next pass, not just next tick.
-                let same_heights = match (&height_source, &self.path_grid) {
+                let same_heights = match (&height_source, &*self.path_grid) {
                     (Some(before), Some(current)) => std::sync::Arc::ptr_eq(before, current),
                     (None, None) => true,
                     _ => false,
                 };
                 if !same_heights {
                     height_grid = self.sight_height_grid(&config);
-                    height_source = self.path_grid.clone();
+                    height_source = (*self.path_grid).clone();
                 }
                 for &viewer in active_viewers {
                     let _ = self.reveal_area(
@@ -1293,7 +1293,7 @@ impl Simulation {
         let Some((width, _)) = self.map_size_diamond() else {
             return false;
         };
-        self.native_allocated_cell_cursor =
+        *self.native_allocated_cell_cursor =
             Some(crate::map::resolved_terrain::NativeAllocatedCellCursor::reset(width));
         true
     }
@@ -1642,14 +1642,11 @@ impl Simulation {
     /// (`0x0050B716`) passes only on `house`'s own. Mode zero reads `house`'s
     /// human and PlayerControl flags (`+0x1EC`, `+0x1ED`), so a campaign
     /// PlayerControl house passes on the player's client too.
-    pub(crate) fn human_player_clients(&self, house: InternedId) -> Vec<InternedId> {
-        self.human_player_client_set(house).to_vec()
-    }
-
-    /// [`Self::human_player_clients`] without the extra copy of the client
-    /// list (inside the object pass the list is the pass's own, so nothing is
-    /// copied): a shot's RevealOnFire asks it per shot at a human player's
-    /// object.
+    ///
+    /// The answer owns no copy of the client list (inside the object pass the
+    /// list is the pass's own), so a caller may reveal through `&mut self`
+    /// while it walks it: a shot's RevealOnFire asks it per shot at a human
+    /// player's object.
     pub(crate) fn human_player_client_set(&self, house: InternedId) -> HumanPlayerClients {
         let control = super::ControlProjection::for_native_view(&self.session, &self.houses);
         if control.uses_player_pointer() {
@@ -1665,6 +1662,9 @@ impl Simulation {
         }
     }
 
+    /// An owned list: it is built, not stored (offline, the current house
+    /// moved first), and its callers reveal through `&mut self` while they
+    /// walk it. [`Self::any_fog_client`] asks it without building it.
     fn fog_clients_current_first(&self) -> Vec<crate::sim::intern::InternedId> {
         if self.session.execution_topology().is_lockstep() {
             return self.represented_player_maps();
@@ -1675,6 +1675,16 @@ impl Simulation {
             clients.insert(0, current);
         }
         clients
+    }
+
+    /// Whether `admits` holds for one of [`Self::fog_clients_current_first`].
+    fn any_fog_client(&self, mut admits: impl FnMut(&InternedId) -> bool) -> bool {
+        if self.session.execution_topology().is_lockstep() {
+            return self
+                .each_represented_player_map()
+                .any(|house| admits(&house));
+        }
+        self.offline_player_map().iter().any(&mut admits) || self.fog_viewers().iter().any(admits)
     }
 
     /// RegrowFogAtCell4ACC50, with an explicit DFS stack preserving its
@@ -2079,6 +2089,8 @@ impl Simulation {
                 .iter()
                 .copied()
                 .filter(|&viewer| self.fog.retain_source_sight(id, viewer, owner, geometry))
+                // A house that limpeted the source sees through it too
+                // (`sim::limpet`, Firestorm 2.0 Look `0x0063829A`).
                 .filter(|&viewer| {
                     vision::reveal_admits(
                         &self.house_alliances,
@@ -2086,7 +2098,7 @@ impl Simulation {
                         viewer,
                         config,
                         &self.interner,
-                    )
+                    ) || crate::sim::limpet::seen_through_by(entity, viewer)
                 }),
         );
         // The footprint indexes an admitting map's source counts. A source no
@@ -2220,7 +2232,14 @@ impl Simulation {
                 viewer,
                 config,
                 &self.interner,
-            ) {
+            ) && !self
+                .substrate
+                .entities
+                .get(id)
+                // The reveal's limpet arm (`sim::limpet`); its mask changes
+                // only between a release and a reveal.
+                .is_some_and(|entity| crate::sim::limpet::seen_through_by(entity, viewer))
+            {
                 // Native RevealArea's House gate refuses this release. Retire
                 // only the derived index; the old map counts stay remembered.
                 self.fog.abandon_sight_admission(id, viewer);
@@ -2480,7 +2499,7 @@ impl Simulation {
                     &self.interner,
                     &clients,
                 );
-                let viewers: Vec<_> = viewers
+                let viewers: Vec<_> = crate::sim::limpet::sight_viewers(entity, &clients, viewers)
                     .iter()
                     .copied()
                     .filter(|viewer| only_viewer.is_none_or(|only| *viewer == only))
@@ -2535,6 +2554,7 @@ impl Simulation {
             &self.interner,
             &clients,
         );
+        let projected = crate::sim::limpet::sight_viewers(entity, &clients, projected);
         let viewers: Vec<_> = projected
             .iter()
             .copied()
@@ -2840,10 +2860,7 @@ impl Simulation {
             };
             // A map that hears cell notifications hands them to receivers
             // beyond the maps: walk every map with it.
-            if quiet
-                && paranoid.unsettled.is_some()
-                && !self.fog_clients_current_first().iter().any(walked)
-            {
+            if quiet && paranoid.unsettled.is_some() && !self.any_fog_client(walked) {
                 let maps: Vec<_> = self.houses.order().iter().copied().filter(walked).collect();
                 walks.journaled = !maps.is_empty();
                 walks.maps = Some(maps);

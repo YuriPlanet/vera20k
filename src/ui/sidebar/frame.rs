@@ -23,10 +23,7 @@
 //! sidebar_surface`) shows them over the zoomed frame. Layout, hit tests and
 //! the native coordinates stay in sidebar pixels.
 
-use super::Rect;
-
-/// The sidebar column's native width (`6A5090`), in sidebar pixels.
-pub const SIDEBAR_WIDTH_PX: u32 = 168;
+use super::{Rect, SidebarChromeLayoutSpec};
 
 /// Stock YR reserves the right sidebar and a fixed 32-pixel bottom strip, the
 /// command bar's, when it builds the tactical view rectangle. In sidebar
@@ -79,8 +76,8 @@ pub struct SidebarFrame {
     frame_height: u32,
     /// Frame pixels per 100 sidebar pixels: 100 at Normal.
     percent: u32,
-    /// The column's width in sidebar pixels: [`SIDEBAR_WIDTH_PX`] unless the
-    /// side's layout gives another.
+    /// The column's width in sidebar pixels: the side's layout's
+    /// `[Side] Width=`, 168 in the original (`6A5090`).
     column_width: u32,
     /// The band's height in sidebar pixels, for a sidebar on the top or the
     /// bottom edge.
@@ -96,34 +93,40 @@ pub struct SidebarFrame {
 }
 
 impl SidebarFrame {
+    /// A frame laid out by the original interface (the built-in
+    /// `veraui_default.ini`).
     pub fn new(frame_width: u32, frame_height: u32, percent: u32) -> Self {
+        Self::for_layout(
+            frame_width,
+            frame_height,
+            percent,
+            &SidebarChromeLayoutSpec::stock(),
+        )
+    }
+
+    /// A frame laid out by the side's layout `spec`: the column as wide and
+    /// a band as tall as it makes them (`[Side] Width=` and `Height=`), and
+    /// the column and the bar where it puts them.
+    pub fn for_layout(
+        frame_width: u32,
+        frame_height: u32,
+        percent: u32,
+        spec: &SidebarChromeLayoutSpec,
+    ) -> Self {
         Self {
             frame_width,
             frame_height,
             percent: percent.max(100),
-            column_width: SIDEBAR_WIDTH_PX,
-            band_height: SIDEBAR_WIDTH_PX,
-            places: PanelPlaces::default(),
+            column_width: (spec.sidebar_width as u32).max(1),
+            band_height: (spec.side_height as u32).max(1),
+            places: spec.places,
             draw_scale: 1.0,
             zoom_percent: 100,
         }
     }
 
-    /// This frame with the column as wide as the side's layout makes it.
-    pub fn with_column_width(self, column_width: u32) -> Self {
-        Self {
-            column_width: column_width.max(1),
-            ..self
-        }
-    }
-
-    /// The column's width in sidebar pixels.
-    pub fn column_width(self) -> u32 {
-        self.column_width
-    }
-
-    /// This frame with a band, a sidebar on the top or the bottom edge, as
-    /// tall as the side's layout makes it.
+    /// This frame with a band as tall as `band_height`.
+    #[cfg(test)]
     pub fn with_band_height(self, band_height: u32) -> Self {
         Self {
             band_height: band_height.max(1),
@@ -131,8 +134,8 @@ impl SidebarFrame {
         }
     }
 
-    /// This frame with the column and the bar where the side's layout puts
-    /// them.
+    /// This frame with the column and the bar at `places`.
+    #[cfg(test)]
     pub fn with_places(self, places: PanelPlaces) -> Self {
         Self { places, ..self }
     }
@@ -344,6 +347,13 @@ impl SidebarFrame {
         }
     }
 
+    /// The sidebar's area in layout space, as whole `x, y, width, height`:
+    /// what the parts a layout adds to it are placed in.
+    pub fn side_area(self) -> [i32; 4] {
+        let (width, height) = self.surface_size();
+        [self.layout_left() as i32, 0, width as i32, height as i32]
+    }
+
     /// The bar's surface in its own pixels: the layout's width beside a
     /// column (all of it beside a band or when the sidebar floats), and the
     /// strip's native height.
@@ -538,6 +548,17 @@ impl SidebarFrame {
         }
     }
 
+    /// [`Self::rect_to_frame`] rounded to whole frame pixels, as
+    /// `x, y, width, height`: where hit tests and tips take it.
+    pub fn rect_to_frame_px(self, rect: Rect) -> [i32; 4] {
+        whole_pixels(self.rect_to_frame(rect))
+    }
+
+    /// [`Self::bar_rect_to_frame`] rounded the same way.
+    pub fn bar_rect_to_frame_px(self, rect: Rect) -> [i32; 4] {
+        whole_pixels(self.bar_rect_to_frame(rect))
+    }
+
     /// A rect of the bar's, in layout space, in frame pixels.
     pub fn bar_rect_to_frame(self, rect: Rect) -> Rect {
         let scale = self.scale();
@@ -569,6 +590,11 @@ impl SidebarFrame {
         let y = (y as f32 + 0.5) / scale;
         (x.floor() as i32, y.floor() as i32)
     }
+}
+
+/// A frame-pixel rect rounded to whole pixels.
+fn whole_pixels(rect: Rect) -> [i32; 4] {
+    [rect.x, rect.y, rect.w, rect.h].map(|v| v.round() as i32)
 }
 
 #[cfg(all(test, tests_ui))]

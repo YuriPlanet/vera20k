@@ -416,9 +416,8 @@ fn sell_node(
     }
     if let Some(overlays) = registry {
         let (x, y) = unpack_base_plan_cell(node.packed_cell);
-        let house = sim.interner.resolve(owner).to_string();
         // Original 0x4FDFC7 passes 0, as the Event SELL caller does.
-        sim.sell_wall_at_cell(&house, None, x, y, false, rules, overlays, effects);
+        sim.sell_wall_at_cell(owner.into(), None, x, y, false, rules, overlays, effects);
     }
     remove_node(&mut sim.houses, owner, index, sale);
 }

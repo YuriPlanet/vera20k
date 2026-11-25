@@ -76,9 +76,9 @@ fn all03_inputs() -> Option<(RuleSet, MapFile)> {
 
 fn seeded_rngs(sim: &mut Simulation, data: &Value) {
     let seeds = &data["rng_seed_states"];
-    sim.main_rng = SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap());
-    sim.scenario_rng = SimRng::from_native_state_hex_for_test(seeds["scenario"].as_str().unwrap());
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap());
+    *sim.scenario_rng = SimRng::from_native_state_hex_for_test(seeds["scenario"].as_str().unwrap());
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());
 }
 
 fn rng_hashes(sim: &Simulation) -> Value {
@@ -360,12 +360,10 @@ fn dispatch_matches_original_signed_override_waypoint_and_incoming_house_gates()
         assert_eq!(json!(entry.waypoint_index), row["read"]["waypoint"]);
         assert_eq!(json!(entry.auxiliary_value()), row["read"]["auxiliary"]);
         if let Some(index) = entry.waypoint_index {
-            if index < 702 {
-                let (rx, ry) = cell(&input["waypoint_cell"]);
-                let waypoint = Waypoint { index, rx, ry };
-                sim.session
-                    .install_waypoints(&[(index, waypoint)].into_iter().collect());
-            }
+            let (rx, ry) = cell(&input["waypoint_cell"]);
+            let waypoint = Waypoint { index, rx, ry };
+            sim.session
+                .install_waypoints(&[(index, waypoint)].into_iter().collect());
         }
         let action = RuntimeDefinitions::default().resolve_action(entry, None, None, None);
         let context = TriggerActionContext {

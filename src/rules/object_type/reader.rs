@@ -805,6 +805,10 @@ impl ObjectType {
             balloon_hover: section.read_bool("BalloonHover", false),
             target_laser: section.read_bool("TargetLaser", false),
             is_simple_deployer: section.read_bool("IsSimpleDeployer", false),
+            is_limpet_mine: category == ObjectCategory::Building
+                && section.read_bool("IsLimpetMine", false),
+            is_limpet_drone: category == ObjectCategory::Vehicle
+                && section.read_bool("IsLimpetDrone", false),
             small_visceroid: category == ObjectCategory::Vehicle
                 && section.read_bool("SmallVisceroid", false),
             large_visceroid: category == ObjectCategory::Vehicle
@@ -1018,6 +1022,7 @@ impl ObjectType {
             resolved_weapons: Default::default(),
             resolved_debris: Default::default(),
             weapon_offsets: Default::default(),
+            kratos_freeze: crate::rules::kratos_freeze::FreezeRules::read(section),
             weapon_count: 0,
             naval_targeting: section.read_int("NavalTargeting", 0),
             land_targeting: section.read_int("LandTargeting", 0),
@@ -1160,6 +1165,12 @@ impl ObjectType {
             stupid_hunt: section.read_bool("StupidHunt", false),
             default_to_guard_area: section.read_bool("DefaultToGuardArea", false),
             cyborg: section.read_bool("Cyborg", false),
+            // Firestorm 2.0 InfantryTypeClass::Read_INI 0x004DAB31..0x004DAB45
+            // reads it with the current value as its default, from the
+            // constructor's false (0x004DA229); the layered read keeps the
+            // current value across rules passes the same way.
+            is_web_immune: category == ObjectCategory::Infantry
+                && section.read_bool("IsWebImmune", false),
             damage_sparks: false,
             use_own_name: category == ObjectCategory::Infantry
                 && section.read_bool("UseOwnName", false),

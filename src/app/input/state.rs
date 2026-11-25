@@ -247,7 +247,7 @@ pub(crate) struct MatchInputState {
     pub(crate) cursor_x: f32,
     pub(crate) cursor_y: f32,
     /// The match zoom `cursor_x`/`cursor_y` are in; `None` is window pixels.
-    /// `AppState::sync_cursor_space` keeps it matching the current screen.
+    /// [`MatchInputState::sync_cursor_space`] keeps it matching the current screen.
     pub(crate) cursor_zoom: Option<crate::ui::main_menu_dialogs::options::ZoomGeometry>,
     /// Last physical window event, used only to measure confined cursor motion.
     /// The source cursor above remains authoritative; this anchor is neither
@@ -320,7 +320,7 @@ pub(crate) struct MatchInputState {
     /// for the modern-RTS double-click select-same-type-on-screen shortcut.
     /// Wall clock, never sim state; the host's double-click time and rectangle
     /// decide the pair. Only an admitted selection click writes it.
-    pub(crate) last_selection_click: Option<(crate::util::time::Instant, i32, i32)>,
+    pub(crate) last_selection_click: Option<(vera20k_gui::UiMs, i32, i32)>,
     /// Types the local player builds endlessly (Ctrl + left click on a cameo).
     pub(crate) build_repeat: crate::app::input::build_repeat::BuildRepeat,
     /// The object the camera is following, i.e. `DisplayClass +0x11A0` behind
@@ -498,6 +498,35 @@ impl MatchInputState {
         self.last_cursor_window = Some(point);
     }
 
+    /// The pointer in the pixels the current screen paints and hit-tests in:
+    /// the match frame's during a match (source pixels when zoomed), the
+    /// window's elsewhere.
+    pub(crate) fn cursor_position(&self) -> (f32, f32) {
+        (self.cursor_x, self.cursor_y)
+    }
+
+    /// The pointer in window pixels, where the status cards paint even over
+    /// a zoomed match; `zoom` is the match zoom in use.
+    pub(crate) fn window_cursor_position(&self, zoom: Option<ZoomGeometry>) -> (f32, f32) {
+        zoom.map_or((self.cursor_x, self.cursor_y), |zoom| {
+            zoom.source_to_window(self.cursor_x, self.cursor_y)
+        })
+    }
+
+    /// The building-placement section name while targeting places one.
+    pub(crate) fn armed_building_type(&self) -> Option<&str> {
+        self.targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_building_placement)
+    }
+
+    /// The super weapon section name while targeting fires one.
+    pub(crate) fn armed_super_weapon_type(&self) -> Option<&str> {
+        self.targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_super_weapon)
+    }
+
     /// The OS pointer's last position in window pixels, while one is known.
     pub(crate) fn pointer_in_window(&self) -> Option<(f32, f32)> {
         self.last_cursor_window
@@ -543,19 +572,20 @@ impl MatchInputState {
     pub(crate) fn note_tactical_selection_click(
         &mut self,
         admitted: bool,
-        now: crate::util::time::Instant,
+        now: vera20k_gui::UiMs,
         point: (i32, i32),
     ) -> bool {
         if !admitted {
             self.last_selection_click = None;
             return false;
         }
+        let (time, width, height) = crate::ui::shell::controller::host_double_click_limits();
         vera20k_gui::shell::list::is_double_click(
             &mut self.last_selection_click,
             now,
             point.0,
             point.1,
-            crate::ui::shell::controller::host_double_click_limits(),
+            (time.as_millis() as u64, width, height),
         )
     }
 
@@ -822,7 +852,7 @@ impl MatchInputState {
     /// the active cursor, even if OutList is full.
     pub(crate) fn submit_building_placement(
         &mut self,
-        sidebar: &mut crate::app::sidebar_projection::SidebarProjectionState,
+        sidebar: &mut crate::app::sidebar_projection::SidebarModel,
     ) {
         if let Some(crate::app::types::TargetingMode::BuildingPlacement(target)) =
             &self.targeting_mode
@@ -1126,9 +1156,9 @@ mod double_click_tests {
     #[test]
     fn right_click_orders_double_click_pairs_quick_same_spot_selection_clicks_only() {
         let mut input = MatchInputState::new(Default::default());
-        let start = crate::util::time::Instant::now();
+        let start: vera20k_gui::UiMs = 1_000;
         let point = (120, 80);
-        let shortly = |millis| start + crate::util::time::Duration::from_millis(millis);
+        let shortly = |millis| start + millis;
         assert!(!input.note_tactical_selection_click(false, start, point));
         assert!(!input.note_tactical_selection_click(false, shortly(5), point));
         assert!(!input.note_tactical_selection_click(true, start, point));

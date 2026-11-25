@@ -110,9 +110,9 @@ impl ArmedSidebarEntry {
     }
 }
 use super::{
-    Rect, SidebarAction, SidebarChromeLayoutSpec, SidebarItem, SidebarPart, SidebarScrollButton,
-    SidebarTab, SidebarTabButton, SidebarToggleButton, SidebarView, compute_layout_with_spec,
-    scroll_button_rects,
+    Rect, SidebarAction, SidebarChromeLayoutSpec, SidebarFrame, SidebarItem, SidebarPart,
+    SidebarScrollButton, SidebarTab, SidebarTabButton, SidebarToggleButton, SidebarView,
+    compute_layout_with_spec,
 };
 
 #[cfg(test)]
@@ -139,8 +139,7 @@ pub(crate) fn build_sidebar_view(
     cameos.set_scroll_row(active_tab, scroll_rows);
     build_sidebar_view_with_spec(
         SidebarChromeLayoutSpec::stock(),
-        screen_w,
-        screen_h,
+        SidebarFrame::native(screen_w as u32, screen_h as u32),
         active_tab,
         credits,
         power_produced,
@@ -164,8 +163,7 @@ pub(crate) fn build_sidebar_view(
 
 pub(crate) fn build_sidebar_view_with_spec(
     layout_spec: SidebarChromeLayoutSpec,
-    screen_w: f32,
-    screen_h: f32,
+    frame: SidebarFrame,
     active_tab: SidebarTab,
     credits: i32,
     power_produced: i32,
@@ -209,114 +207,100 @@ pub(crate) fn build_sidebar_view_with_spec(
     let total_rows = total_items.div_ceil(columns);
 
     // Native screen capacity is independent of the item count.
-    let layout = compute_layout_with_spec(layout_spec, screen_w, screen_h, total_rows);
+    let layout = compute_layout_with_spec(layout_spec, frame);
+    let (side_width, side_height) = frame.surface_size();
     let panel_rect = Rect {
         x: layout.sidebar_x,
         y: 0.0,
-        w: layout_spec.side_width(screen_w),
-        h: screen_h,
+        w: side_width as f32,
+        h: side_height as f32,
     };
     let low_power = power_produced < power_drained;
 
-    // 6ABD30 positions the four SBGadgets with the side-specific tab pitch.
-    // Their actual SHP canvas determines size (`69DE00`), not the pitch.
-    // A part the layout leaves out keeps its place with an empty rect, so
-    // nothing hits it; the chrome builder skips its picture.
+    // 6ABD30 positions the four SBGadgets, Repair and Sell, and the two
+    // strip arrows. A button's actual SHP canvas determines its size
+    // (`69DE00`); without the atlas (a `None` size) its rect is empty, so
+    // hit-testing never matches. A part the layout leaves out keeps its place
+    // with an empty rect, so nothing hits it; the chrome builder skips its
+    // picture.
     let shows = |part| layout_spec.shows(part);
-    let [tab_w, tab_h] = tab_button_size.unwrap_or([0.0, 0.0]);
+    let rect = |part: SidebarPart, size: Option<[f32; 2]>, shown: bool| {
+        let [x, y] = layout.origin(&layout_spec, part);
+        let [w, h] = size.unwrap_or([0.0, 0.0]);
+        Rect { x, y, w, h }.shown(shown)
+    };
     let tabs: Vec<SidebarTabButton> = SidebarTab::all()
         .into_iter()
+        .zip(SidebarPart::TABS)
         .enumerate()
-        .map(|(idx, tab)| SidebarTabButton {
+        .map(|(idx, (tab, part))| SidebarTabButton {
             tab,
-            rect: Rect {
-                x: layout.side1_x + layout_spec.tab_x + idx as f32 * layout_spec.tab_pitch,
-                y: layout.tabs_y,
-                w: tab_w,
-                h: tab_h,
-            }
-            .shown(shows(SidebarPart::Tabs)),
+            rect: rect(part, tab_button_size, shows(SidebarPart::Tabs)),
             active: tab == active_tab,
             disabled: gadget_state.tab_disabled[idx],
             frame_index: gadget_state.tab_frame(idx, tab == active_tab),
         })
         .collect();
-
-    // Repair / Sell SHP-driven toggle buttons. Position comes from
-    // SidebarChromeLayoutSpec (already-scaled). Dimensions come from the
-    // chrome atlas via repair_button_size / sell_button_size — matches the
-    // tab_button_size convention so hit-test and render rects agree. When the
-    // atlas is unavailable
-    // (callers passing None), rects collapse to zero size so hit-test never
-    // matches. Frame index comes from SidebarGadgetState.
-    let [repair_w, repair_h] = repair_button_size.unwrap_or([0.0, 0.0]);
-    let [sell_w, sell_h] = sell_button_size.unwrap_or([0.0, 0.0]);
-    let side1_y_local = layout.side1_y;
-    let repair_rect = Rect {
-        x: layout.side1_x + layout_spec.repair_x,
-        y: side1_y_local + layout_spec.repair_y,
-        w: repair_w,
-        h: repair_h,
-    }
-    .shown(shows(SidebarPart::Repair));
-    let sell_rect = Rect {
-        x: layout.side1_x + layout_spec.sell_x,
-        y: side1_y_local + layout_spec.sell_y,
-        w: sell_w,
-        h: sell_h,
-    }
-    .shown(shows(SidebarPart::Sell));
-    let repair_button = SidebarToggleButton {
-        rect: repair_rect,
-        action: SidebarAction::ToggleRepairMode,
-        active: gadget_state.repair_mode_on,
-        frame_index: gadget_state.repair_frame(),
-    };
-    let sell_button = SidebarToggleButton {
-        rect: sell_rect,
-        action: SidebarAction::ToggleSellMode,
-        active: gadget_state.sell_mode_on,
-        frame_index: gadget_state.sell_frame(),
-    };
-    let (scroll_down_rect, scroll_up_rect) = scroll_button_rects(
-        &layout,
-        layout_spec,
-        scroll_down_button_size,
-        scroll_up_button_size,
+    // Native never disables Repair or Sell; the frame comes from
+    // SidebarGadgetState.
+    let [repair_button, sell_button] = [
+        (
+            SidebarPart::Repair,
+            repair_button_size,
+            SidebarAction::ToggleRepairMode,
+            gadget_state.repair_mode_on,
+            gadget_state.repair_frame(),
+        ),
+        (
+            SidebarPart::Sell,
+            sell_button_size,
+            SidebarAction::ToggleSellMode,
+            gadget_state.sell_mode_on,
+            gadget_state.sell_frame(),
+        ),
+    ]
+    .map(
+        |(part, size, action, active, frame_index)| SidebarToggleButton {
+            rect: rect(part, size, shows(part)),
+            action,
+            active,
+            frame_index,
+        },
     );
-    // Ordinary local-player branch of 6A6610: both arrows share capacity
-    // availability, independent of the current end position.
-    let scroll_disabled = total_items <= layout.side2_tile_count * columns;
-    // `RadarClass::AddOrRemoveButtons @ 0x00652E50` adds both buttons to the
-    // gadget list whenever ToggleSidebar shows the sidebar, which every
+    // `RadarClass::AddOrRemoveButtons @ 0x00652E50` adds both top buttons to
+    // the gadget list whenever ToggleSidebar shows the sidebar, which every
     // scenario keeps shown (Init and Action pass 1), so they are always laid out.
     let top_buttons = std::array::from_fn(|i| {
-        let [w, h] = top_button_sizes[i].unwrap_or([0.0, 0.0]);
+        let part = [SidebarPart::Diplomacy, SidebarPart::Options][i];
         SidebarScrollButton {
-            rect: Rect {
-                x: layout.top_x + layout_spec.top_buttons[i][0],
-                y: layout.top_y + layout_spec.top_buttons[i][1],
-                w,
-                h,
-            }
-            .shown(shows([SidebarPart::Diplomacy, SidebarPart::Options][i])),
+            rect: rect(part, top_button_sizes[i], shows(part)),
             disabled: false,
             frame_index: gadget_state.top_button_frame(i),
         }
     });
-    let scroll_down_button = SidebarScrollButton {
-        rect: scroll_down_rect,
+    // Ordinary local-player branch of 6A6610: both arrows share capacity
+    // availability, independent of the current end position.
+    let scroll_disabled = total_items <= layout.side2_tile_count * columns;
+    let [scroll_down_button, scroll_up_button] = [
+        (
+            SidebarPart::ScrollDown,
+            scroll_down_button_size,
+            gadget_state.scroll_down_frame(scroll_disabled),
+        ),
+        (
+            SidebarPart::ScrollUp,
+            scroll_up_button_size,
+            gadget_state.scroll_up_frame(scroll_disabled),
+        ),
+    ]
+    .map(|(part, size, frame_index)| SidebarScrollButton {
+        rect: rect(part, size, shows(SidebarPart::Cameos)),
         disabled: scroll_disabled,
-        frame_index: gadget_state.scroll_down_frame(scroll_disabled),
-    };
-    let scroll_up_button = SidebarScrollButton {
-        rect: scroll_up_rect,
-        disabled: scroll_disabled,
-        frame_index: gadget_state.scroll_up_frame(scroll_disabled),
-    };
+        frame_index,
+    });
 
     // Cameo grid positioning.
-    let grid_top = layout.cameo_grid_top + layout_spec.cameo_inset_y;
+    let grid_origin = layout.grid_origin(&layout_spec);
     let visible_rows = layout.side2_tile_count;
     let max_scroll_rows = total_rows.saturating_sub(visible_rows);
     let scroll_rows = scroll_rows.min(max_scroll_rows);
@@ -334,7 +318,7 @@ pub(crate) fn build_sidebar_view_with_spec(
             .into_iter()
             .skip(visible_items)
             .take(max_visible),
-        [layout.strip_x + layout_spec.cameo_inset_x, grid_top],
+        grid_origin,
         columns,
         layout_spec,
         cameo_order,
@@ -344,14 +328,7 @@ pub(crate) fn build_sidebar_view_with_spec(
     let records = cameo_order.items(active_tab).len();
     let flash_empty_slots = (visible_items..visible_items + max_visible)
         .filter(|&slot| slot >= records && cameo_order.empty_slot_flash_darkened(active_tab, slot))
-        .map(|slot| {
-            grid_slot_rect(
-                [layout.strip_x + layout_spec.cameo_inset_x, grid_top],
-                slot - visible_items,
-                columns,
-                layout_spec,
-            )
-        })
+        .map(|slot| grid_slot_rect(grid_origin, slot - visible_items, columns, layout_spec))
         .collect();
 
     SidebarView {
@@ -448,6 +425,7 @@ pub(crate) fn append_added_grids(
             layout_spec,
             cameo_order,
         );
+        let [w, h] = layout_spec.grid_size(columns, rows);
         view.added_grids.push(super::AddedGridView {
             part: grid.part,
             first: view.items.len(),
@@ -455,8 +433,8 @@ pub(crate) fn append_added_grids(
             rect: Rect {
                 x: grid.origin[0].round(),
                 y: grid.origin[1].round(),
-                w: columns as f32 * layout_spec.cameo_column_pitch,
-                h: rows as f32 * layout_spec.cameo_row_height,
+                w,
+                h,
             },
             scroll_rows,
             max_scroll_rows,
@@ -487,10 +465,7 @@ pub(crate) fn apply_observer_strip(
     } else {
         0
     };
-    let origin = [
-        view.layout.strip_x + layout_spec.cameo_inset_x,
-        view.layout.cameo_grid_top + layout_spec.cameo_inset_y,
-    ];
+    let origin = view.layout.grid_origin(&layout_spec);
     let disabled = houses.len() * 2 <= rows;
     view.observer = Some(
         houses

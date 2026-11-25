@@ -45,8 +45,19 @@ pub(crate) fn save_game(
     save(state, Some(description), SaveDestination::Player(overwrite))
 }
 
+/// The opt-in autosave (`persistence::autosave`): the match under
+/// `description` in the one autosave slot.
+pub(crate) fn autosave_game(
+    state: &mut AppState,
+    description: &str,
+) -> Result<PathBuf, SaveCommandError> {
+    save(state, Some(description), SaveDestination::Autosave)
+}
+
 enum SaveDestination<'a> {
     Player(Option<&'a Path>),
+    /// `autosave::FILE_NAME`, replacing the previous autosave.
+    Autosave,
     InitialCampaign(&'a str),
 }
 
@@ -185,16 +196,16 @@ fn prepare_save<'a>(
     let active_tab = saved_active_tab(presentation.active_sidebar_tab);
     let sidebar_order = presentation
         .sidebar_projection
+        .model
         .saved_order()
         .map(|order| order.with_active_tab(active_tab));
-    // Phobos keeps `SWSidebar_Enable` in the scenario extension, so it rides
-    // the local presentation envelope rather than the simulation hash.
-    #[cfg(feature = "phobos")]
-    let sidebar_order = sidebar_order.map(|mut order| {
-        order.set_sw_sidebar_expanded(state.match_state.match_presentation.sw_sidebar.expanded);
-        order
-    });
-    let tactical_view = crate::app::input::camera::saved_tactical_view(state);
+    let tactical_view = crate::app::input::camera::saved_tactical_view(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     let rules_owner = rules_owner.ok_or(SaveCommandError::MissingResources("process rules"))?;
     let processed =
         rules_owner
@@ -226,12 +237,12 @@ fn prepare_save<'a>(
             .as_ref()
             .map(crate::render::radar::anim::RadarAnimState::saved_housing),
     );
-    local_view.set_credits_counter(
-        state
-            .match_state
-            .local_player_owner()
-            .and_then(|owner| presentation.sidebar_projection.saved_credits_counter(owner)),
-    );
+    local_view.set_credits_counter(state.match_state.local_player_owner().and_then(|owner| {
+        presentation
+            .sidebar_projection
+            .model
+            .saved_credits_counter(owner)
+    }));
     local_view.set_radar_events(presentation.minimap.as_ref().map_or_else(
         Default::default,
         crate::render::radar::minimap::MinimapRenderer::saved_radar_events,
@@ -352,6 +363,7 @@ impl PreparedSave<'_> {
                 SaveDestination::InitialCampaign(filename) => {
                     repository.write_initial_campaign(filename, &bytes)
                 }
+                SaveDestination::Autosave => repository.write_autosave(&bytes),
             }
             .map_err(Into::into)
         });
@@ -381,22 +393,21 @@ fn log_save_result(label: &str, result: Result<PathBuf, SaveCommandError>) {
 }
 
 #[cfg(feature = "dev-overlays")]
-pub(crate) fn quickload(state: &mut AppState) {
-    let path = match state
-        .persistence
-        .repository
-        .quickload_path_by_modified_time()
-    {
+pub(crate) fn quickload(
+    platform: &crate::app::PlatformState,
+    persistence: &mut crate::app::persistence::PersistenceState,
+) {
+    let path = match persistence.repository.quickload_path_by_modified_time() {
         Some(p) => p,
         None => {
             log::warn!(
                 "Quickload: no save files found in {}/",
-                state.persistence.repository.directory().display()
+                persistence.repository.directory().display()
             );
             return;
         }
     };
-    request_saved_game_load(state, path);
+    request_saved_game_load(platform, persistence, path);
 }
 
 pub(crate) struct PendingSavedGameLoad {
@@ -423,10 +434,14 @@ impl PendingSavedGameLoad {
 
 /// LoadOptions559D60 shows F0 before LoadGame67E440. Returning after that
 /// frame gives the browser a paint opportunity before synchronous restoration.
-pub(crate) fn request_saved_game_load(state: &mut AppState, path: PathBuf) {
-    if state.persistence.pending_load.is_none() {
-        state.persistence.pending_load = Some(PendingSavedGameLoad::new(path));
-        state.platform.window.request_redraw();
+pub(crate) fn request_saved_game_load(
+    platform: &crate::app::PlatformState,
+    persistence: &mut crate::app::persistence::PersistenceState,
+    path: PathBuf,
+) {
+    if persistence.pending_load.is_none() {
+        persistence.pending_load = Some(PendingSavedGameLoad::new(path));
+        platform.window.request_redraw();
     }
 }
 
@@ -457,7 +472,13 @@ pub(crate) fn pump_saved_game_load(state: &mut AppState) -> Option<bool> {
         .is_some();
     let result = restore_save_file(state, path);
     if from_menu {
-        crate::app::App::finish_load_saved_game_from_menu(state, path, result);
+        crate::app::App::finish_load_saved_game_from_menu(
+            &mut state.frontend,
+            &mut state.match_state.match_presentation,
+            &state.process_assets,
+            path,
+            result,
+        );
     } else if from_browser {
         crate::app::App::finish_saved_game_load(state, path, result);
     } else if let Err(error) = result {
@@ -495,8 +516,17 @@ fn restore_save_file(
     // UI559DBC->69BB40->5BF450 precedes the lower load, including failure;
     // a failed load leaves the radar to wind its clip down itself.
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-    crate::app::radar_movie::retire_for_load(state, wall_ms);
-    crate::app::chrono_screen::retire(state, wall_ms);
+    crate::app::radar_movie::retire_for_load(
+        &mut state.match_state.match_presentation,
+        &mut state.audio,
+        wall_ms,
+    );
+    crate::app::chrono_screen::retire(
+        &state.frontend.screen,
+        &mut state.match_state,
+        &mut state.audio,
+        wall_ms,
+    );
     use crate::app::persistence::{PreparedLoadError, PreparedSavedGame, SavedGamePreparationView};
     let from_menu = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu;
     let Some(mut assets) = state.process_assets.lease_for_loading() else {

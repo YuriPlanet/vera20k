@@ -48,8 +48,18 @@ flag and convert with that flag off. The `41f140f93` writer's layout
 `0xCB545137` predates the fixed high-bridge deck level and Fly's EMP spin;
 its bridge cells convert with no fixed deck. The `6d6caa108` writer's layout
 `0xCADF6067` predates a map House's Ares `Degrades=`; its Houses convert with
-none and keep their country's answer. The `ffe8b25af` writer covers direct
-loading of layout `0xD6C75D57`.
+none and keep their country's answer. The `ffe8b25af` writer's layout
+`0xD6C75D57` predates the Firestorm ice chain; its worlds convert with no ice.
+The `93ab2ce86` writer's layout `0xAFC7F643` predates the pending terrain
+dent; it converts with none pending. The `06789b62b` writer's layout
+`0x82C32EA4` predates the Tiberian Sun limpets; its objects convert with none.
+The `8d55b4a73` writer's layout `0xF6127DC1` predates Tiberian Sun's
+BounceSound and ExpireSound; its animation types convert with neither sound.
+The `8852f7a76` writer's layout `0x9441E8D8` predates the Kratos infantry firing
+offsets. Its saves convert with Kratos off, as those matches played. The
+`bc55c35e7` writer's layout `0x9F1BD701` predates Tiberian Sun webs; its
+infantry convert with no web. The `30e9a0f38` writer covers direct loading of
+layout `0xF215BF3A`.
 
 Run the menu and compatibility tests with this command.
 

@@ -92,8 +92,8 @@ fn stock_world(rules: &RuleSet, input: &Value) -> Simulation {
         local_height: local[3],
     });
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.bridge_state = Some(state);
-    sim.overlay_grid = Some(grid);
+    *sim.bridge_state = Some(state);
+    *sim.overlay_grid = Some(grid);
     sim
 }
 
@@ -323,7 +323,7 @@ fn bridge_rim_middle_section_fallout_and_restored_navigation() {
             );
         }
     }
-    assert_eq!(sim.dynamic_terrain_cells, restored.dynamic_terrain_cells);
+    assert_eq!(*sim.dynamic_terrain_cells, *restored.dynamic_terrain_cells);
     assert!(
         restored
             .resolved_terrain

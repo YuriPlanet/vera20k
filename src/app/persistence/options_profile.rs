@@ -248,6 +248,10 @@ pub(crate) struct RetailOptionsProfile {
     /// 0, off, by default; read as
     /// [`crate::rules::personal_rules::admitted_superweapon_limit`] admits it.
     pub(crate) superweapon_limit: u8,
+    /// `[VERA] AutosaveMinutes=`: an offline match is saved every this many
+    /// minutes of play (`persistence::autosave`), 0 never. 0 by default;
+    /// read clamped to 0..=60.
+    pub(crate) autosave_minutes: u8,
     /// `[VERA] SoloSkirmish=`: Start accepts a skirmish that has fewer than two
     /// sides for an undisturbed test match — either no AI row enabled, or every
     /// enabled AI on the local player's own explicit team. Off by default, so
@@ -291,6 +295,11 @@ pub(crate) struct RetailOptionsProfile {
     /// change applies from the next start. Auto keeps the game's data in
     /// charge; an unknown value reads as Auto.
     pub(crate) ares: crate::util::ares_launch::AresSetting,
+    /// `[VERA] Kratos=Auto|On|Off`: the Kratos extension setting
+    /// (`util::kratos_launch::KratosSetting`). Read at start, like the mod: a
+    /// change applies from the next start. Auto keeps the game's data in
+    /// charge; an unknown value reads as Auto.
+    pub(crate) kratos: crate::util::kratos_launch::KratosSetting,
     /// `[VERA] RA2Mode=`: the Options page's RA2 Mode box (docs/ra2-mode.md).
     /// On, the game plays original Red Alert 2 from the installation's
     /// non-md files (`util::ra2_launch`). Read at start, like the Ares
@@ -446,6 +455,7 @@ impl Default for RetailOptionsProfile {
             terrain_deformation: false,
             skirmish_cheats: false,
             superweapon_limit: 0,
+            autosave_minutes: 0,
             solo_skirmish: false,
             commander_feedback: true,
             custom_end_game_banner: false,
@@ -453,6 +463,7 @@ impl Default for RetailOptionsProfile {
             custom_end_game_movie: false,
             health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode::Vanilla,
             ares: crate::util::ares_launch::AresSetting::Auto,
+            kratos: crate::util::kratos_launch::KratosSetting::Auto,
             color_vision: crate::ui::main_menu_dialogs::options::ColorVisionMode::Off,
             chat_translation: Default::default(),
             language: None,
@@ -482,7 +493,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 44],
+    pub(crate) vera: [(&'static str, String); 46],
 }
 
 impl RetailOptionsLoad {
@@ -732,6 +743,9 @@ impl RetailOptionsProfile {
             self.auto_repair = vera.read_bool("AutoRepair", self.auto_repair);
             self.ra2_mode = vera.read_bool("RA2Mode", self.ra2_mode);
             self.minimap_beacons = vera.read_bool("MinimapBeacons", self.minimap_beacons);
+            self.autosave_minutes = vera
+                .read_int("AutosaveMinutes", i32::from(self.autosave_minutes))
+                .clamp(0, 60) as u8;
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
             self.custom_end_game_banner =
@@ -763,6 +777,10 @@ impl RetailOptionsProfile {
                 self.ares.ini_value(),
                 16,
             ));
+            // Absent keeps the current value; an unknown one reads as Auto.
+            self.kratos = crate::util::kratos_launch::KratosSetting::from_ini_text(
+                &vera.read_string("Kratos", self.kratos.ini_value(), 16),
+            );
             // Absent keeps the current value; a value this build does not know
             // reads as Off instead of enabling a filter with no matrix.
             self.color_vision =
@@ -890,6 +908,7 @@ impl RetailOptionsProfile {
                 ("ShiftQueue", format_bool(self.shift_queue).to_string()),
                 ("ShiftQueueCount", self.shift_queue_count.to_string()),
                 ("SoloSkirmish", format_bool(self.solo_skirmish).to_string()),
+                ("AutosaveMinutes", self.autosave_minutes.to_string()),
                 (
                     "CommanderFeedback",
                     format_bool(self.commander_feedback).to_string(),
@@ -921,6 +940,7 @@ impl RetailOptionsProfile {
                 ("GraphicsAPI", self.graphics_api.ini_value().to_owned()),
                 ("HealthBars", self.health_bars.ini_value().to_string()),
                 ("Ares", self.ares.ini_value().to_string()),
+                ("Kratos", self.kratos.ini_value().to_string()),
                 ("HdRadar", format_bool(self.hd_radar).to_string()),
                 (
                     "SmoothSidebar",

@@ -337,7 +337,7 @@ fn pending_turn_roundtrips_through_save_and_hashes_its_latches() {
     crate::sim::arena_fixture::flat_ground(&mut restored, &rules);
     // Retail's save reader deliberately reinitializes Scenario RNG. Align the
     // control run to that documented load contract before comparing continuation.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let loaded_sound = restored.substrate.entities.get(id).unwrap().move_sound;
     assert!(!loaded_sound.is_active());
     assert_eq!(loaded_sound.countdown(), 0);
@@ -443,7 +443,7 @@ fn placement_is_rechecked_on_turn_completion() {
 #[test]
 fn move_order_during_turn_prevents_conversion_at_the_old_site() {
     let (mut sim, rules, id) = fixture("AMCV", 64, 5, 4);
-    sim.path_grid = Some(std::sync::Arc::new(crate::sim::pathfinding::PathGrid::new(
+    *sim.path_grid = Some(std::sync::Arc::new(crate::sim::pathfinding::PathGrid::new(
         64, 64,
     )));
     tick(&mut sim, &rules, Some(Command::DeployMcv { entity_id: id }));
@@ -512,7 +512,7 @@ fn continuation_result_and_rotation_edge_match_original_blocks() {
 #[test]
 fn conversion_receipt_rebuilds_navigation_in_the_conversion_frame() {
     let (mut sim, rules, id) = fixture("AMCV", 64, 5, 4);
-    sim.resolved_terrain = Some(crate::sim::deploy_tests::mcv_deploy_terrain_with(|_| {}));
+    *sim.resolved_terrain = Some(crate::sim::deploy_tests::mcv_deploy_terrain_with(|_| {}));
     assert!(sim.rebuild_dynamic_navigation(&rules));
     assert!(sim.path_grid.as_ref().unwrap().is_walkable(19, 21));
     let accepted = tick(&mut sim, &rules, Some(Command::DeployMcv { entity_id: id }));

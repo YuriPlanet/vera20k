@@ -34,6 +34,8 @@ use crate::app::AppState;
 use crate::app::input::keyboard::InGameKeyEdge;
 use crate::app::match_runtime::beacons::{self, BeaconTarget};
 use crate::app::match_runtime::session::SessionMode;
+use crate::app::match_runtime::sim_host::SimHost;
+use crate::app::match_runtime::state::MatchState;
 use crate::sim::intern::InternedId;
 use crate::sim::skirmish_cheats::SkirmishCheat;
 use crate::ui::messages::{EditInput, EditKey};
@@ -228,7 +230,7 @@ pub(crate) fn key_edge(state: &mut AppState, edge: &InGameKeyEdge<'_>) -> bool {
             return false;
         };
         // 0x0055E4E2: PlayerPtr's selected beacon picks the branch.
-        if beacons::own_selected(state) {
+        if beacons::own_selected(&state.match_state) {
             return open_beacon_edit(state);
         }
         return open_edit(state, target);
@@ -253,7 +255,7 @@ pub(crate) fn commit_text(state: &mut AppState, text: &str) {
     }
     // VERA: the label shows the committed text now (see the module notes).
     if state.match_state.match_presentation.chat.target != ChatTarget::Skirmish
-        && beacons::own_selected(state)
+        && beacons::own_selected(&state.match_state)
     {
         follow_label(state, None);
     }
@@ -265,18 +267,15 @@ pub(crate) fn commit_text(state: &mut AppState, text: &str) {
 pub(crate) fn composition_changed(state: &mut AppState) {
     if state.match_state.match_presentation.chat.target != ChatTarget::Skirmish
         && state.match_state.match_presentation.message_list.editing()
-        && composition(state).is_some()
+        && composition(&state.platform.ime).is_some()
     {
         follow_label(state, None);
     }
 }
 
 /// The open composition `0x00B73318` the label appends.
-fn composition(state: &AppState) -> Option<Vec<u16>> {
-    state
-        .platform
-        .ime
-        .composition(crate::app::input::ime::ImeTarget::InGameChat)
+fn composition(ime: &crate::app::input::ime::ImeState) -> Option<Vec<u16>> {
+    ime.composition(crate::app::input::ime::ImeTarget::InGameChat)
         .map(|(units, _)| units.to_vec())
 }
 
@@ -290,9 +289,14 @@ fn follow_label(state: &mut AppState, typed: Option<Vec<u16>>) {
             list.edit_typed().map(<[u16]>::to_vec)
         })
         .unwrap_or_default();
-    text.extend(composition(state).unwrap_or_default());
+    text.extend(composition(&state.platform.ime).unwrap_or_default());
     text.push(u16::from(b'_'));
-    beacons::edit_beacon_message(state, Some(&text), BeaconTarget::Selected, false);
+    beacons::edit_beacon_message(
+        &mut state.match_state,
+        Some(&text),
+        BeaconTarget::Selected,
+        false,
+    );
 }
 
 /// A right press or release (key 2 or `0x802`) ends an open edit; the game
@@ -307,7 +311,7 @@ pub(crate) fn right_button(state: &mut AppState) {
 /// the player's House UI name, in the player's colour; overflow is on and
 /// no sound plays. The cursor character 0 draws no caret.
 fn open_edit(state: &mut AppState, target: ChatTarget) -> bool {
-    let Some(local) = local_house(state) else {
+    let Some(local) = local_house(&state.match_state.sim_runtime) else {
         return false;
     };
     // VERA shared control: a shared House's player writes under its own name.
@@ -316,7 +320,14 @@ fn open_edit(state: &mut AppState, target: ChatTarget) -> bool {
         .and_then(|source| {
             crate::app::match_runtime::network_match::shared_house_player_name(session, source)
         })
-        .or_else(|| crate::app::presentation::house_ui::house_ui_name(state, local))
+        .or_else(|| {
+            crate::app::presentation::house_ui::house_ui_name(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                local,
+            )
+        })
     else {
         return false;
     };
@@ -325,7 +336,8 @@ fn open_edit(state: &mut AppState, target: ChatTarget) -> bool {
         &template,
         &[crate::assets::csf_file::CsfArg::Str(&name)],
     );
-    let rgb = crate::app::input::messages::player_line_rgb(state, local);
+    let rgb =
+        crate::app::input::messages::player_line_rgb(&state.frontend, &state.match_state, local);
     let presentation = &mut state.match_state.match_presentation;
     if presentation.message_list.add_edit(&prefix, rgb, true) {
         presentation.chat.target = target;
@@ -342,17 +354,23 @@ fn open_edit(state: &mut AppState, target: ChatTarget) -> bool {
 /// (`0x0055E5CA`) and with the chat target untouched; the selected beacon's
 /// label becomes the bare cursor.
 fn open_beacon_edit(state: &mut AppState) -> bool {
-    let Some(local) = local_house(state) else {
+    let Some(local) = local_house(&state.match_state.sim_runtime) else {
         return false;
     };
     let prefix = state.csf_text("TXT_BEACON_MESSAGE");
-    let rgb = crate::app::input::messages::player_line_rgb(state, local);
+    let rgb =
+        crate::app::input::messages::player_line_rgb(&state.frontend, &state.match_state, local);
     let list = &mut state.match_state.match_presentation.message_list;
     if list.add_edit(&prefix, rgb, false) {
         list.hide_edit();
     }
     let cursor = [u16::from(b'_')];
-    beacons::edit_beacon_message(state, Some(&cursor), BeaconTarget::Selected, false);
+    beacons::edit_beacon_message(
+        &mut state.match_state,
+        Some(&cursor),
+        BeaconTarget::Selected,
+        false,
+    );
     true
 }
 
@@ -374,11 +392,19 @@ fn apply_input(state: &mut AppState, key: EditKey) {
     if presentation.chat.target == ChatTarget::Skirmish {
         match presentation.chat.skirmish_post(result) {
             Some(SkirmishPost::Message(text)) => {
-                if let Some(local) = local_house(state)
-                    && let Some(name) =
-                        crate::app::presentation::house_ui::house_ui_name(state, local)
+                if let Some(local) = local_house(&state.match_state.sim_runtime)
+                    && let Some(name) = crate::app::presentation::house_ui::house_ui_name(
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        local,
+                    )
                 {
-                    let rgb = crate::app::input::messages::player_line_rgb(state, local);
+                    let rgb = crate::app::input::messages::player_line_rgb(
+                        &state.frontend,
+                        &state.match_state,
+                        local,
+                    );
                     crate::app::input::messages::post_chat_line(state, &name, &text, rgb);
                 }
             }
@@ -406,16 +432,21 @@ fn apply_input(state: &mut AppState, key: EditKey) {
     // 0x0055E642..0x0055E734: result 1 with an own beacon selected, results
     // 2 and 4 and an open composition update the first selected beacon;
     // Escape clears and sends its label instead.
-    let own = beacons::own_selected(state);
+    let own = beacons::own_selected(&state.match_state);
     if (own && result == EditInput::Typed)
         || matches!(
             result,
             EditInput::Deleted | EditInput::Ended | EditInput::Overflowed(_)
         )
-        || composition(state).is_some()
+        || composition(&state.platform.ime).is_some()
     {
         if key == EditKey::Escape {
-            beacons::edit_beacon_message(state, None, BeaconTarget::Selected, true);
+            beacons::edit_beacon_message(
+                &mut state.match_state,
+                None,
+                BeaconTarget::Selected,
+                true,
+            );
         } else {
             follow_label(state, Some(typed.clone()));
         }
@@ -423,7 +454,12 @@ fn apply_input(state: &mut AppState, key: EditKey) {
     // 0x0055E77B..0x0055E7AE: results 3 and 4 with an own beacon selected
     // send the buffer as its label, and no line.
     if matches!(result, EditInput::Sent(_) | EditInput::Overflowed(_)) && own {
-        beacons::edit_beacon_message(state, Some(&typed), BeaconTarget::Selected, true);
+        beacons::edit_beacon_message(
+            &mut state.match_state,
+            Some(&typed),
+            BeaconTarget::Selected,
+            true,
+        );
         if matches!(result, EditInput::Sent(_)) {
             state.match_state.match_presentation.chat.target = ChatTarget::None;
         }
@@ -459,8 +495,8 @@ fn skirmish_input_available(state: &AppState) -> bool {
         && !state.match_state.match_diagnostics.is_replay_playback()
         && !state.match_state.frame_stopped
         && !state.match_state.paused()
-        && !crate::app::input::campaign_input::is_locked(state)
-        && !crate::app::App::house_outcome_wait_pending(state)
+        && !crate::app::input::campaign_input::is_locked(&state.match_state)
+        && !crate::app::App::house_outcome_wait_pending(&state.match_state.sim_runtime)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -546,11 +582,7 @@ fn skirmish_command(state: &mut AppState, line: &str) -> Result<String, &'static
             );
             // A button held while typing cannot confirm the new order.
             state.match_state.input.cancel_tactical_drag();
-            state
-                .match_state
-                .match_presentation
-                .in_game_gadgets
-                .cancel_pointer_capture();
+            crate::app::input::chrome_input::cancel(&mut state.match_state.match_presentation);
             state.match_state.input.skirmish_spawn = Some(order);
             Ok(prompt)
         }
@@ -655,7 +687,7 @@ fn apply_skirmish_cheat(
     use crate::app::match_runtime::{sim_host::SimWrite, sim_tick};
     use crate::i18n::{tr, tr_fill};
     use crate::sim::skirmish_cheats::CheatEffect;
-    sim_tick::prepare_replay_recording(state);
+    sim_tick::prepare_replay_recording(&mut state.match_state, &state.process_assets);
     let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return Err("VERA:CheatUnavailable");
     };
@@ -708,10 +740,10 @@ fn send(state: &mut AppState, target: ChatTarget, text: &str) {
     if !state.match_state.session_mode().is_network() {
         return;
     }
-    let Some(local) = local_house(state) else {
+    let Some(local) = local_house(&state.match_state.sim_runtime) else {
         return;
     };
-    let Some((recipients, refused)) = route(state, local, target) else {
+    let Some((recipients, refused)) = route(&state.match_state, local, target) else {
         return;
     };
     if refused {
@@ -728,7 +760,8 @@ fn send(state: &mut AppState, target: ChatTarget, text: &str) {
     let name = crate::app::match_runtime::network_match::local_source(session)
         .map(|source| crate::app::match_runtime::network_match::participant_name(session, source))
         .unwrap_or_default();
-    let rgb = crate::app::input::messages::player_line_rgb(state, local);
+    let rgb =
+        crate::app::input::messages::player_line_rgb(&state.frontend, &state.match_state, local);
     crate::app::input::messages::post_chat_line(state, &name, text, rgb);
 }
 
@@ -740,11 +773,15 @@ fn send(state: &mut AppState, target: ChatTarget, text: &str) {
 /// packet on the connection whose name equals its UI name; VERA's
 /// participant-to-House map stands in for that match. AI Houses and the
 /// local House have no connection.
-fn route(state: &AppState, local: InternedId, target: ChatTarget) -> Option<(Vec<usize>, bool)> {
-    let runtime = state.match_state.sim_runtime.runtime()?;
+fn route(
+    match_state: &MatchState,
+    local: InternedId,
+    target: ChatTarget,
+) -> Option<(Vec<usize>, bool)> {
+    let runtime = match_state.sim_runtime.runtime()?;
     let sim = &runtime.simulation;
     let rules = &runtime.resources.rules;
-    let session = &state.match_state.session;
+    let session = &match_state.session;
     let connected = session.network_connected_source_indices();
     let local_source = crate::app::match_runtime::network_match::local_source(session);
     let houses: Vec<ChatHouse> = sim
@@ -777,7 +814,7 @@ fn route(state: &AppState, local: InternedId, target: ChatTarget) -> Option<(Vec
     Some(route_houses(
         target,
         sim.local_player_defeated(),
-        &state.match_state.match_presentation.chat,
+        &match_state.match_presentation.chat,
         &houses,
     ))
 }
@@ -786,8 +823,9 @@ fn route(state: &AppState, local: InternedId, target: ChatTarget) -> Option<(Vec
 /// the Multiplay Houses whose chat-mask byte is set. The taunt command has
 /// already refused a local player who is out, so the observer gate never
 /// refuses here.
-pub(crate) fn listener_peers(state: &AppState, local: InternedId) -> Vec<usize> {
-    route(state, local, ChatTarget::Listeners).map_or_else(Vec::new, |(recipients, _)| recipients)
+pub(crate) fn listener_peers(match_state: &MatchState, local: InternedId) -> Vec<usize> {
+    route(match_state, local, ChatTarget::Listeners)
+        .map_or_else(Vec::new, |(recipients, _)| recipients)
 }
 
 /// One Multiplay House as the send block sees it.
@@ -837,15 +875,23 @@ fn route_houses(
 /// RESIDUAL: the `-MESSAGES` game-name hash filter (`[0xA8D60D]`, off by
 /// default) is not ported; the switch is accepted and ignored.
 pub(crate) fn receive_packet(state: &mut AppState, name: &str, color: i32, text: &str) {
-    let rgb = crate::app::input::messages::packet_player_line_rgb(state, color);
+    let rgb = crate::app::input::messages::packet_player_line_rgb(
+        &state.frontend,
+        &state.match_state,
+        color,
+    );
     crate::app::input::messages::post_chat_line(state, name, text, rgb);
-    let sound = state
-        .rules()
-        .and_then(|rules| rules.general.incoming_message_sound().map(str::to_owned));
-    crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+    crate::app::App::play_shell_rules_sound(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        |rules| rules.general.incoming_message_sound(),
+    );
     let units: Vec<u16> = text.encode_utf16().collect();
     crate::app::shell_wol::translation::received(
-        state,
+        state.frontend.wol.as_mut(),
+        &state.persistence.options_profile,
         &units,
         false,
         crate::app::shell_wol::translation::TranslatedLine::Match {
@@ -855,14 +901,8 @@ pub(crate) fn receive_packet(state: &mut AppState, name: &str, color: i32, text:
     );
 }
 
-fn local_house(state: &AppState) -> Option<InternedId> {
-    state
-        .match_state
-        .sim_runtime
-        .runtime()?
-        .simulation
-        .session()
-        .current_house()
+fn local_house(sim_runtime: &SimHost) -> Option<InternedId> {
+    sim_runtime.runtime()?.simulation.session().current_house()
 }
 
 #[cfg(all(test, tests_app_input_a_c))]
