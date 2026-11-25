@@ -2,8 +2,10 @@
 //! Existing source, staging, generation and UI owners decide what those bytes mean.
 use super::{LiveService, http};
 use crate::app::AppState;
+use crate::app::match_runtime::session::MatchSession;
 use crate::app::shell_network_setup::maps::{self as shared_maps, GeneratedMapManifest};
 use crate::app::shell_network_setup::{accept_network_map_source, set_network_map_progress};
+use crate::app::shell_wol::WolVisit;
 use crate::map::source::{LoadedTransferAsset, TransferResource};
 use crate::util::time::{Duration, Instant};
 use anyhow::{Result, anyhow, ensure};
@@ -161,12 +163,12 @@ pub(super) fn poll(state: &mut AppState, service: &mut LiveService) {
     service.maps = maps;
 }
 impl Transfers {
-    pub(super) fn current_verified(&self, state: &AppState) -> bool {
-        self.complete && self.matches_selection(state)
+    pub(super) fn current_verified(&self, session: &MatchSession, wol: Option<&WolVisit>) -> bool {
+        self.complete && self.matches_selection(session, wol)
     }
 
-    fn matches_selection(&self, state: &AppState) -> bool {
-        let Some(metadata) = state.match_state.session.network_map_metadata() else {
+    fn matches_selection(&self, session: &MatchSession, wol: Option<&WolVisit>) -> bool {
+        let Some(metadata) = session.network_map_metadata() else {
             return false;
         };
         self.key.as_ref().is_some_and(|key| {
@@ -174,7 +176,7 @@ impl Transfers {
                 && key.total == usize::try_from(metadata.byte_length).unwrap_or(0)
                 && key.effective_digest == metadata.effective_digest
                 && key.random == self.generated
-                && self.scope(state).is_some_and(|scope| scope == key.room)
+                && self.scope(wol).is_some_and(|scope| scope == key.room)
         })
     }
     /// The current attempt failed and cannot advance.
@@ -183,16 +185,16 @@ impl Transfers {
     }
     /// What the transfer belongs to: the room this game is in, or the match
     /// it watches.
-    fn scope(&self, state: &AppState) -> Option<String> {
+    fn scope(&self, wol: Option<&WolVisit>) -> Option<String> {
         self.watching.clone().or_else(|| {
-            super::super::lobby::current_channel(state).map(|channel| channel.name.clone())
+            super::super::lobby::current_channel(wol).map(|channel| channel.name.clone())
         })
     }
     fn fail(&mut self, state: &mut AppState) {
         let can_retry = !state.match_state.session.host()
             && !crate::app::shell_network_setup::quick_match(state)
             && !crate::app::shell_network_setup::external(state)
-            && self.matches_selection(state);
+            && self.matches_selection(&state.match_state.session, state.frontend.wol.as_ref());
         let map = state
             .match_state
             .session
@@ -256,7 +258,7 @@ impl Transfers {
         let Some(metadata) = state.match_state.session.network_map_metadata().cloned() else {
             return Ok(());
         };
-        let Some(scope) = self.scope(state) else {
+        let Some(scope) = self.scope(state.frontend.wol.as_ref()) else {
             return Ok(());
         };
         let seed = shared_maps::generated_selection(&state.match_state.session);
@@ -569,7 +571,7 @@ impl Transfers {
         let Some(resource) = self.transfer_for_response(generation).map(|t| t.resource) else {
             return Ok(());
         };
-        if !self.matches_selection(state) {
+        if !self.matches_selection(&state.match_state.session, state.frontend.wol.as_ref()) {
             return Ok(());
         }
         let key = self.key.as_ref().expect("current transfer key");
@@ -713,7 +715,8 @@ pub(super) fn available(
     digest: &str,
     total: usize,
 ) {
-    let room = super::super::lobby::current_channel(state).map(|channel| channel.name.clone());
+    let room = super::super::lobby::current_channel(state.frontend.wol.as_ref())
+        .map(|channel| channel.name.clone());
     let mut maps = std::mem::take(&mut service.maps);
     if maps.heard_available(state, room, digest, total).is_err() {
         maps.fail(state);

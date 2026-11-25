@@ -140,7 +140,7 @@ fn hold_chat_line(state: &mut AppState) {
         Some(csf.get(key)?.to_string())
     });
     if let Some(line) = line {
-        crate::app::shell_wol::hold_problem_line(state, line);
+        crate::app::shell_wol::hold_problem_line(state.frontend.wol.as_mut(), line);
     }
 }
 
@@ -154,7 +154,7 @@ pub(crate) fn hold_quit_line(state: &mut AppState) {
         .is_some_and(|counters| !counters.started);
     if online(state) && never_started {
         crate::app::shell_wol::hold_problem_line(
-            state,
+            state.frontend.wol.as_mut(),
             crate::i18n::tr("VERA:MatchStartCancelled"),
         );
     }

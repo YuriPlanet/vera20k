@@ -832,7 +832,7 @@ pub(super) fn try_commit_start(state: &mut AppState, agreed_seed: u32) -> anyhow
         .session
         .set_network_room_return(room_return);
     if state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol {
-        crate::app::shell_wol::match_started(state);
+        crate::app::shell_wol::match_started(&mut state.frontend);
     }
     state.frontend.multiplayer_setup = None;
     state.frontend.network_setup_protocol = None;

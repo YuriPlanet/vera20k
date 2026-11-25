@@ -864,7 +864,7 @@ impl App {
         }
         Self::browser_match_ended(state, ExternalMatchResult::Quit);
         crate::web::request_exit(state.frontend.external_launch_error.as_deref());
-        crate::app::shell_wol::discard_spawned_visit(state);
+        crate::app::shell_wol::discard_spawned_visit(&mut state.frontend);
         if state.match_state.lan_service.is_some() {
             crate::app::lan_service::close(state);
         }

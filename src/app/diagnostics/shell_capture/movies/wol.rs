@@ -1132,13 +1132,14 @@ impl WolCapture {
         // family line belong to this check.
         // The Quick Match runner's lobby is never shown, but `0x117` over
         // it paints the status line unless a box or the wait covers it.
-        let quick_match_page = crate::app::shell_wol::quick_match::dialog(state).is_some()
-            && state
-                .frontend
-                .wol
-                .as_ref()
-                .and_then(|visit| visit.lobby())
-                .is_some_and(|lobby| lobby.message().is_none() && lobby.wait.is_none());
+        let quick_match_page =
+            crate::app::shell_wol::quick_match::dialog(state.frontend.wol.as_ref()).is_some()
+                && state
+                    .frontend
+                    .wol
+                    .as_ref()
+                    .and_then(|visit| visit.lobby())
+                    .is_some_and(|lobby| lobby.message().is_none() && lobby.wait.is_none());
         let backdrop = !quick_match_page
             && state.frontend.wol.as_ref().is_some_and(|visit| {
                 matches!(
@@ -1335,7 +1336,7 @@ fn games(hash: i32, map: &str) -> Vec<WolChannel> {
 /// The games with the local hash, Alpha's naming the first scenario record.
 fn local_games(state: &AppState) -> Vec<WolChannel> {
     games(
-        crate::app::shell_wol::lobby::local_ini_hash(state).unwrap_or(0),
+        crate::app::shell_wol::lobby::local_ini_hash(&state.process_assets).unwrap_or(0),
         &first_record(state).0,
     )
 }
@@ -1714,8 +1715,8 @@ struct MyInfoShown {
 fn my_info_shown(state: &AppState) -> Result<MyInfoShown> {
     use crate::app::shell_wol::my_info;
     use crate::ui::wol_my_info::*;
-    let page = my_info::page(state).context("0x114")?;
-    let root = my_info::root(state).context("0x114's widgets")?;
+    let page = my_info::page(state.frontend.wol.as_ref()).context("0x114")?;
+    let root = my_info::root(&state.frontend.shell_controller).context("0x114's widgets")?;
     let gui = state.frontend.shell_controller.gui();
     let flag = |id: u16, prop: Prop| {
         crate::ui::shell::page::get(gui, root, id, prop) != Some(&vera20k_gui::Value::Bool(false))

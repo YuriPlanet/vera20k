@@ -139,7 +139,7 @@ impl LiveRoundFlow {
             lobby.ui.is_modern(),
             "only the modern online lobby lists matches to watch"
         );
-        let matches = crate::app::shell_wol::lobby::watch_matches(state);
+        let matches = crate::app::shell_wol::lobby::watch_matches(state.frontend.wol.as_ref());
         let listed = lobby
             .ui
             .game_rows

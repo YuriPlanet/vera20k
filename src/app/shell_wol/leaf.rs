@@ -10,9 +10,13 @@ use vera20k_gui::{NodeId, NodeSpec, Prop};
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::skirmish_shell_render::gui_paint;
 use crate::app::{App, AppState};
+use crate::render::bit_font::BitFont;
+use crate::render::main_menu_shell_chrome::WolPageArt;
+use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::page::{self, PageEvent};
+use winit::window::Window;
 
 /// A WOL page's art loader: its background shape and palette (loaded only at
 /// 800 wide, [`shell_layout::art_key_screen_width`]) and its PCX images.
@@ -70,7 +74,7 @@ fn art_files(dialog: DialogResourceId) -> Option<((&'static str, &'static str), 
 
 /// Loads `dialog`'s art once (its loader above); whether it is loaded.
 pub(crate) fn open_art(state: &mut AppState, dialog: DialogResourceId) -> bool {
-    if art(state, dialog).is_some() {
+    if art(&state.frontend.wol_art, dialog).is_some() {
         return true;
     }
     let (Some((background, icons)), Some(assets)) =
@@ -93,23 +97,25 @@ pub(crate) fn open_art(state: &mut AppState, dialog: DialogResourceId) -> bool {
 
 /// `dialog`'s loaded art.
 pub(crate) fn art(
-    state: &AppState,
+    wol_art: &[(DialogResourceId, WolPageArt)],
     dialog: DialogResourceId,
 ) -> Option<&crate::render::main_menu_shell_chrome::WolPageArt> {
-    let arts = &state.frontend.wol_art;
-    arts.iter()
+    wol_art
+        .iter()
         .find(|(id, _)| *id == dialog)
         .map(|(_, art)| art)
 }
 
 /// Frees `dialog`'s art (its page's teardown).
-pub(crate) fn free_art(state: &mut AppState, dialog: DialogResourceId) {
-    state.frontend.wol_art.retain(|(id, _)| *id != dialog);
+pub(crate) fn free_art(
+    wol_art: &mut Vec<(DialogResourceId, WolPageArt)>,
+    dialog: DialogResourceId,
+) {
+    wol_art.retain(|(id, _)| *id != dialog);
 }
 
 /// `dialog`'s root while it takes the input: the screen's top dialog, or the top overlay over it.
-pub(crate) fn root(state: &AppState, dialog: DialogResourceId) -> Option<NodeId> {
-    let controller = &state.frontend.shell_controller;
+pub(crate) fn root(controller: &DialogController, dialog: DialogResourceId) -> Option<NodeId> {
     let takes = |top: Option<DialogResourceId>| top == Some(dialog);
     controller
         .root_in(dialog)
@@ -118,17 +124,18 @@ pub(crate) fn root(state: &AppState, dialog: DialogResourceId) -> Option<NodeId>
 
 /// Builds `dialog`'s widgets once and puts them on the layout; the root.
 pub(super) fn sync(
-    state: &mut AppState,
+    controller: &mut DialogController,
+    font: &BitFont,
     dialog: DialogResourceId,
     scale: ShellScale,
     spec: impl FnOnce() -> NodeSpec,
     rect_of: impl Fn(u16) -> Option<RectPx>,
 ) -> Option<NodeId> {
-    let root = place(state, dialog, scale, spec, rect_of)?;
+    let root = place(controller, dialog, scale, spec, rect_of)?;
     // Only the focused edit takes keys, so only it scrolls; an assigned text
     // shows from its start.
-    if let Some(node) = state.frontend.shell_controller.gui().focus() {
-        scroll_edit(state, node);
+    if let Some(node) = controller.gui().focus() {
+        scroll_edit(controller, font, node);
     }
     Some(root)
 }
@@ -136,14 +143,13 @@ pub(super) fn sync(
 /// [`sync`] without scrolling the edits, for a screen that scrolls them
 /// itself ([`scroll_edit`]).
 pub(super) fn place(
-    state: &mut AppState,
+    controller: &mut DialogController,
     dialog: DialogResourceId,
     scale: ShellScale,
     spec: impl FnOnce() -> NodeSpec,
     rect_of: impl Fn(u16) -> Option<RectPx>,
 ) -> Option<NodeId> {
-    let root = root(state, dialog)?;
-    let controller = &mut state.frontend.shell_controller;
+    let root = root(controller, dialog)?;
     controller.set_scale_in(dialog, scale);
     page::ensure_built(controller.gui_mut(), root, spec);
     page::sync_rects(controller.gui_mut(), root, rect_of);
@@ -152,33 +158,31 @@ pub(super) fn place(
 
 /// NewEdit keeps its caret in view (text widths in the box's authored
 /// pixels). Anything but an edit is left alone.
-pub(super) fn scroll_edit(state: &mut AppState, node: NodeId) {
-    let font = &state.renderer.bit_font;
-    let gui = state.frontend.shell_controller.gui_mut();
+pub(super) fn scroll_edit(controller: &mut DialogController, font: &BitFont, node: NodeId) {
+    let gui = controller.gui_mut();
     let _ = gui.keep_caret_in_view(node, &|text| font.text_width(text));
 }
 
 /// Control `id`'s text under `dialog`'s root ("" when it has none).
-pub(crate) fn text(state: &AppState, dialog: DialogResourceId, id: u16) -> String {
-    state.frontend.shell_controller.text(dialog, id)
+pub(crate) fn text(controller: &DialogController, dialog: DialogResourceId, id: u16) -> String {
+    controller.text(dialog, id)
 }
 
 /// Whether control `id` under `dialog`'s root is there and enabled.
-pub(crate) fn enabled(state: &AppState, dialog: DialogResourceId, id: u16) -> bool {
-    let controller = &state.frontend.shell_controller;
+pub(crate) fn enabled(controller: &DialogController, dialog: DialogResourceId, id: u16) -> bool {
     controller.control(dialog, id).is_some() && controller.flag(dialog, id, Prop::Enabled, true)
 }
 
 /// The edit holding the top dialog's keyboard focus, by control id.
-pub(crate) fn focused(state: &AppState) -> Option<u16> {
-    let gui = state.frontend.shell_controller.gui();
+pub(crate) fn focused(controller: &DialogController) -> Option<u16> {
+    let gui = controller.gui();
     gui.id_of(gui.focus()?)
         .and_then(|id| u16::try_from(id).ok())
 }
 
 /// `SetFocus` on edit `id` under `dialog`'s root (`None` clears the focus).
-pub(super) fn focus(state: &mut AppState, dialog: DialogResourceId, id: Option<u16>) {
-    state.frontend.shell_controller.focus_control(dialog, id);
+pub(super) fn focus(controller: &mut DialogController, dialog: DialogResourceId, id: Option<u16>) {
+    controller.focus_control(dialog, id);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -215,20 +219,19 @@ pub(super) fn pointer_quiet(state: &mut AppState, at: Pointer) -> Vec<PageEvent>
 
 /// The open page's widget timers (a list's scroll-arrow repeat); the next
 /// deadline.
-pub(super) fn poll(state: &mut AppState, open: bool) -> Option<crate::util::time::Instant> {
+pub(super) fn poll(
+    controller: &mut DialogController,
+    window: &Window,
+    open: bool,
+) -> Option<crate::util::time::Instant> {
     if !open {
         return None;
     }
-    let window = &state.platform.window;
-    state
-        .frontend
-        .shell_controller
-        .poll_then(|| window.request_redraw())
+    controller.poll_then(|| window.request_redraw())
 }
 
 /// The hovered control's status help on `dialog`, under a box too.
-pub(crate) fn status_key(state: &AppState, dialog: DialogResourceId) -> Option<&str> {
-    let controller = &state.frontend.shell_controller;
+pub(crate) fn status_key(controller: &DialogController, dialog: DialogResourceId) -> Option<&str> {
     page::hovered_key_in(controller.gui(), controller.root_in(dialog)?)
 }
 

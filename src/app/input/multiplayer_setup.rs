@@ -206,7 +206,7 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
 /// over it.
 fn room_takes_keys(state: &AppState) -> bool {
     crate::app::shell_network_setup::verify(state).is_none()
-        && !crate::app::shell_wol::page::open(state)
+        && !crate::app::shell_wol::page::open(state.frontend.wol.as_ref())
         && !notice_active(state)
         && crate::app::shell_network_setup::view(state).is_some()
 }
@@ -251,7 +251,7 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
         return;
     }
     // The page dialog 0xCF runs its own modal loop over C2/C9.
-    if crate::app::shell_wol::page::open(state) {
+    if crate::app::shell_wol::page::open(state.frontend.wol.as_ref()) {
         crate::app::shell_wol::page::key_press(state, code, text);
         return;
     }
@@ -492,7 +492,7 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         crate::app::shell_network_setup::verify_pointer(state, None);
         return;
     }
-    if crate::app::shell_wol::page::open(state) {
+    if crate::app::shell_wol::page::open(state.frontend.wol.as_ref()) {
         crate::app::shell_wol::page::cursor_moved(state);
         return;
     }
@@ -521,7 +521,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         crate::app::shell_network_setup::verify_pointer(state, Some(pressed));
         return;
     }
-    if crate::app::shell_wol::page::open(state) {
+    if crate::app::shell_wol::page::open(state.frontend.wol.as_ref()) {
         crate::app::shell_wol::page::mouse(state, pressed);
         return;
     }
@@ -583,7 +583,7 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
     if lines == 0.0
         || notice_active(state)
         || crate::app::shell_network_setup::verify(state).is_some()
-        || crate::app::shell_wol::page::open(state)
+        || crate::app::shell_wol::page::open(state.frontend.wol.as_ref())
     {
         return false;
     }

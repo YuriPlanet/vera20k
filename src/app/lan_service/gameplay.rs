@@ -340,7 +340,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
 /// socket pair for BB. It is dropped only when that visit itself ends.
 pub(crate) fn return_transport(state: &mut AppState) {
     if let Some(report) = crate::app::match_runtime::network_quality::close(state) {
-        crate::app::shell_wol::keep_network_report(state, &report);
+        crate::app::shell_wol::keep_network_report(state.frontend.wol.as_mut(), &report);
     }
     let online = state.match_state.session_mode() == SessionMode::Wol;
     let Some(live) = state.match_state.live_network.take() else {
