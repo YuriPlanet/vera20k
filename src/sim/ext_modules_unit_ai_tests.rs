@@ -58,7 +58,7 @@ fn step_module(target: i64, at: u32, answer: i64) -> Vec<u8> {
         r#"(module
   (import "vera:sim@1.0" "trigger_create" (func $create (param i32 i32 i32) (result i32)))
   (import "vera:sim@1.0" "trigger_bind" (func $bind (param i64 i64) (result i32)))
-  (@custom "vera.delivery" "\01\00\04\00\00\a0\00\00\00")
+  (@custom "vera.delivery" "\01\00\04\00\00\00\04\00\00")
   (memory (export "memory") 1)
   (data (i32.const 2048) "{bytes}")
   (func (export "on_scenario_start")
@@ -384,9 +384,11 @@ fn mission_step_picks_the_target_of_an_attacking_gi() {
     assert!(picked, "the module's pick became the GI's target");
     assert_eq!(i32_at(&memory, 516), EVENT_MISSION_STEP);
     assert_eq!(i64_at(&memory, 584), 1, "the Attack body asked last");
+    // The area comes holding the body's target: the order's, the module's
+    // pick, or none on a frame the body has just cleared it.
     let native = i64_at(&memory, 704);
     assert!(
-        native == enemy as i64 || native == second as i64,
+        [0, enemy as i64, second as i64].contains(&native),
         "the area came holding the body's target, {native}"
     );
 }
