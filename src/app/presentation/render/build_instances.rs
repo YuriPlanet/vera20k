@@ -1330,7 +1330,7 @@ pub(super) fn build_ui_instances(
             tactical_line_calls.push(TacticalLineCall::Designation { id, coords, style });
         }
     };
-    let ground_strokes = ferry_lines::build_rings(state, view);
+    let ground_strokes = ferry_lines::build_rings(&state.match_state, view);
     let (mut target_line, planning_highlights) = planning_lines::build(
         &state.platform,
         &state.renderer,

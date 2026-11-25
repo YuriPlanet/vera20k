@@ -1182,11 +1182,8 @@ pub(super) fn dispatch_draw_passes(
                 );
                 // Ore, gems, walls, rocks and the other overlays, then trees
                 // and the other terrain objects: the overlay atlas's bodies.
-                if let Some(overlays) = match_state.match_presentation.overlay_atlas.as_ref()
-                {
-                    let bodies = &match_state
-                        .match_presentation
-                        .cached_cell_body_instances;
+                if let Some(overlays) = match_state.match_presentation.overlay_atlas.as_ref() {
+                    let bodies = &match_state.match_presentation.cached_cell_body_instances;
                     let overlay_bodies = bodies
                         .iter()
                         .zip(data.cell_body_draws)

@@ -6,7 +6,6 @@ use super::planning_lines::{
     emit_marker, emit_marker_outer, emit_segment, emit_solid_segment, project, stroke_phase,
     stroke_rgb,
 };
-use crate::app::AppState;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::presentation::target_lines::TacticalViewport;
 use crate::render::surface_line::SurfaceStroke;
@@ -21,9 +20,9 @@ const REFUSED_RGB: [u8; 3] = [255, 64, 51];
 /// The pick-up and drop circles, each a closed one-pixel solid stroke. They
 /// are for the ground pass (`draw_passes`, "ground_strokes"): drawn on the
 /// finished ground and before the buildings and objects, which cover them.
-pub(super) fn build_rings(state: &AppState, view: TacticalViewport) -> Vec<SurfaceStroke> {
+pub(super) fn build_rings(match_state: &MatchState, view: TacticalViewport) -> Vec<SurfaceStroke> {
     let mut out = Vec::new();
-    for ring in crate::app::input::ferry::marks(&state.match_state) {
+    for ring in crate::app::input::ferry::marks(match_state) {
         let rgb = if ring.refused {
             REFUSED_RGB
         } else if ring.drop {
