@@ -2465,12 +2465,19 @@ pub(crate) fn handle_death(
     let mut structure_destroyed: bool = false;
     // What the death weapon and the bomb set off, after this arm's own effects.
     let mut blast_effects = DeathEffects::default();
+    // Each death's plan, at the arm's entry (`super::death_plan`): the
+    // engine's own, or a Wasm module's `FatalDamage` answer.
+    let mut plans: Vec<(u64, super::death_plan::DeathPlan)> = Vec::new();
     for &dead_id in dead_entities {
         // Native702035 re-enters this branch for an already-zero receiver.
         // Keep unique diagnostic IDs, without suppressing receiver effects.
         if !run.handled_deaths.contains(&dead_id) {
             run.handled_deaths.push(dead_id);
         }
+        let Some(plan) = super::death_plan::death_plan(world, rules, dead_id, damage_events) else {
+            continue;
+        };
+        plans.push((dead_id, plan));
         let dead_info = world.substrate.entities.get(dead_id).map(|e| {
             if e.category() == EntityCategory::Structure {
                 structure_destroyed = true;
@@ -2484,11 +2491,10 @@ pub(crate) fn handle_death(
                 location,
                 e.owner(),
                 e.category(),
-                e.veterancy.rank(),
             )
         });
 
-        if let Some((type_id, location, owner, _category, veterancy)) = dead_info {
+        if let Some((type_id, location, owner, _category)) = dead_info {
             // Phobos `TechnoClass_ReceiveDamage_AttachEffectExpireWeapon`
             // (`0x702050`): effects with `ExpireWeapon.TriggerOn=death` fire
             // before the native death arm frees slaves and before the death
@@ -2635,9 +2641,9 @@ pub(crate) fn handle_death(
                     });
                 // Techno702232..70227B jumps to 0x702672 for a low dropped
                 // bomb over water, past the debris, KillPassengers and the
-                // death weapon; ordinary water deaths still run them.
-                let low_water_bomb = world.dropped_bomb_water_death_location(dead_id).is_some();
-                if !low_water_bomb {
+                // death weapon; ordinary water deaths still run them. The
+                // plan carries that test.
+                if plan.debris {
                     throw_debris_for_death(
                         world,
                         obj,
@@ -2652,19 +2658,9 @@ pub(crate) fn handle_death(
                 // (`0x00702603..0x00702667`, FootClass::KillPassengers' loop
                 // inlined, credited to the killing hit's source) before its
                 // death weapon. A unit that does not explode lets them escape
-                // after this arm (`finish_concrete_death`).
-                let numbered_weapon = world.substrate.entities.get(dead_id).and_then(|entity| {
-                    super::combat_weapon::get_weapon(
-                        entity,
-                        obj,
-                        super::combat_weapon::attacker_facts(entity, obj).current_weapon_number,
-                        &world.substrate.entities,
-                        rules,
-                        &world.interner,
-                    )
-                });
-                let explodes =
-                    !low_water_bomb && death_arm_explodes(obj, veterancy, numbered_weapon);
+                // after this arm (`finish_concrete_death`). The plan holds
+                // the gate (`death_arm_explodes`, read at the arm's entry).
+                let explodes = plan.explode;
                 if explodes && callbacks_enabled(world) {
                     let attacker = killing_attacker(world, damage_events, dead_id);
                     world.kill_passengers(
@@ -2679,17 +2675,17 @@ pub(crate) fn handle_death(
                 // Crazy Ivan's own bomber) plants a bomb on the dying object
                 // instead of damaging (`0x00469343`), which goes off below.
                 // Ares TechnoClass_ReceiveDamage_SuppressDeathWeapon (hook
-                // 0x702669) skips only this Fire_Death_Weapon call.
-                let death_weapon_suppressed = killing_combat
-                    .is_some_and(|combat| combat.suppresses_death_weapon(obj.category, &obj.id));
+                // 0x702669) skips only this Fire_Death_Weapon call; the plan
+                // carries it, and a module's weapon in place of the type's.
                 if explodes
-                    && !death_weapon_suppressed
+                    && plan.death_weapon
                     && let Some(detonation) = super::death_weapon_detonation(
                         &mut world.interner,
                         &world.substrate,
                         &world.resolved_terrain,
                         dead_id,
                         rules,
+                        plan.weapon(rules),
                     )
                 {
                     let commit =
@@ -2750,6 +2746,9 @@ pub(crate) fn handle_death(
         let Some(entity) = world.substrate.entities.get(dead_id) else {
             continue;
         };
+        let Some(&(_, plan)) = plans.iter().find(|(id, _)| *id == dead_id) else {
+            continue;
+        };
         let category = entity.category();
         if category == EntityCategory::Structure && !entity.lifecycle.object_alive() {
             continue;
@@ -2796,6 +2795,7 @@ pub(crate) fn handle_death(
         finish_concrete_death(
             world,
             dead_id,
+            plan,
             run.selected_units.contains(&dead_id),
             damage_events,
             rules,
@@ -2816,6 +2816,7 @@ pub(crate) fn handle_death(
 fn finish_concrete_death(
     world: &mut Simulation,
     dead_id: u64,
+    plan: super::death_plan::DeathPlan,
     selected_by_player: bool,
     damage_events: &[EntityDamageEvent],
     rules: &RuleSet,
@@ -2838,19 +2839,10 @@ fn finish_concrete_death(
     // Ares TechnoClass_ReceiveDamage_SuppressUnitLost (1004B020, hook
     // 0x702050) marks the victim of a `UnitLost.Suppress=yes` kill;
     // FootClass_Destroyed (10049080) and BuildingClass_Destroyed_UnitLost
-    // (10013F10) then stay silent. The unit-lost announcement takes its Ares
-    // form when the Rules were read the Ares way.
+    // (10013F10) then stay silent: the plan's announcement bit. The unit-lost
+    // announcement takes its Ares form when the Rules were read the Ares way.
     let ares_form = rules.ares_form();
-    let unit_lost_suppressed = if ares_form {
-        damage_events
-            .iter()
-            .rfind(|event| event.target_id == dead_id)
-            .and_then(|event| world.interner.warhead_type(event.warhead_ref, rules))
-            .and_then(WarheadType::ares_combat)
-            .is_some_and(|combat| combat.unit_lost_suppress())
-    } else {
-        false
-    };
+    let unit_lost_suppressed = !plan.announce;
     // `UnitClass::ReceiveDamage` `0x00737DA7..0x00737DDD`: an art
     // `DeathFrames=` type defers its death to its count (`world::death_frames`),
     // and only the hit that starts the count announces the loss.
@@ -2885,16 +2877,12 @@ fn finish_concrete_death(
                 .warhead_type(event.warhead_ref, rules)
                 .map(|wh| (wh, event.damage))
         });
-    // The killing call's concrete receiver booleans: IgnoreDefenses (arg5)
-    // becomes the building's NoSurvivor and kills a unit's passengers, arg6
-    // gates the vehicle crew.
-    let killing_flags = damage_events
-        .iter()
-        .rfind(|event| event.target_id == dead_id)
-        .map(|event| event.receiver_flags);
-    let ignore_defenses = killing_flags.is_some_and(|flags| flags.ignore_defenses);
+    // The killing call's concrete receiver booleans, as the plan has them:
+    // IgnoreDefenses (arg5) becomes the building's NoSurvivor and kills a
+    // unit's passengers, arg6 gates the vehicle crew.
+    let ignore_defenses = !plan.survivors;
     // Ares's survivor release (`0x100464C0`) reads only IgnoreDefenses.
-    let prevent_crew_escape = killing_flags.is_some_and(|flags| flags.arg6);
+    let prevent_crew_escape = !plan.crew;
 
     // BuildingClass runs DestructionEffects/SpawnSurvivors only after
     // TechnoClass's synchronous death weapon has returned. Capture the
@@ -2995,9 +2983,8 @@ fn finish_concrete_death(
     // warhead its receiver resolved (a record it cannot resolve does no
     // damage). Only a receiver fixture without one falls back, to the
     // constructor's InfDeath.
-    let inf_death = killing_warhead
-        .as_ref()
-        .map_or(WarheadType::DEFAULT_INF_DEATH, |(wh, _)| wh.inf_death);
+    // The plan holds it (`DeathPlan::inf_death`), a module's choice or this.
+    let inf_death = plan.inf_death;
     if category == EntityCategory::Infantry {
         // `InfantryClass::ReceiveDamage` on result 4 (`0x00518077..0x0051808E`):
         // a dying slave leaves its master's node (RemoveSlave).
@@ -3267,7 +3254,7 @@ fn finish_concrete_death(
 
 /// The killing ReceiveDamage call's attacker (its fourth argument), when it
 /// names an object.
-fn killing_attacker(
+pub(super) fn killing_attacker(
     world: &Simulation,
     damage_events: &[EntityDamageEvent],
     dead_id: u64,

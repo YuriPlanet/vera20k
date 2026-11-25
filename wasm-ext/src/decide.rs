@@ -13,6 +13,8 @@
 //!   to defeat a house;
 //! - `CommandAllowed` (4.5): 1 allow, 0 refuse, when the simulation
 //!   executes a player command (a module order included) on a bound object;
+//! - `FatalDamage` (4.3, preview): the death plan's bits, at the entry of
+//!   the receiver's death arm;
 //! - `Fire` (4.3, preview): the shot plan, a count of [`ProjectileSpec`]s in
 //!   the result area, just before FireAt launches its bullet;
 //! - `Launch` (4.5, preview): a [`PathSpec`] in the result area, its byte
@@ -24,7 +26,7 @@
 //! in appendix order, 4.3 (1000..1025), then 4.4 (1026..1030), then 4.5
 //! (1031..1036).
 
-use crate::triggers::{EVENT_FIRE, EVENT_TAKE_DAMAGE, EventRecord};
+use crate::triggers::{EVENT_FATAL_DAMAGE, EVENT_FIRE, EVENT_TAKE_DAMAGE, EventRecord};
 
 pub const EVENT_PRODUCTION_ALLOWED: i32 = 1031;
 pub const EVENT_PRODUCTION_QUEUED: i32 = 1032;
@@ -34,8 +36,9 @@ pub const EVENT_LAUNCH: i32 = 1035;
 pub const EVENT_PROJECTILE_FRAME: i32 = 1036;
 
 /// Events with a decision form in this engine.
-pub const DECIDABLE_EVENTS: [i32; 8] = [
+pub const DECIDABLE_EVENTS: [i32; 9] = [
     EVENT_TAKE_DAMAGE,
+    EVENT_FATAL_DAMAGE,
     EVENT_FIRE,
     EVENT_PRODUCTION_ALLOWED,
     EVENT_PRODUCTION_QUEUED,

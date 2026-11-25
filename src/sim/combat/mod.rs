@@ -40,6 +40,7 @@ pub(crate) mod crit;
 mod crit_tests;
 pub(crate) mod damage;
 pub(crate) mod destruction_effects;
+mod death_plan;
 pub(crate) mod detonation_anim;
 mod effects;
 pub mod electric_bolt;
