@@ -729,7 +729,6 @@ super::fork::fork_helpers! {
     air_slots,
     base_reservations,
     entities,
-    #[cfg(feature = "phobos")]
     phobos_limbo_control,
     anims,
     voxel_anims,

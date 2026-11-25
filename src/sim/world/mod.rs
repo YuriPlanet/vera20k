@@ -668,7 +668,7 @@ pub struct Simulation {
     /// `AddUnique` order. A derived targeting cache: not saved or hashed.
     /// Live membership is `is_falling_down`; the scan filters ended falls.
     #[serde(skip, default)]
-    pub(crate) phobos_falling_down: Vec<u64>,
+    pub(crate) phobos_falling_down: Forked<Vec<u64>>,
     /// Phobos `ScenarioExt::AutoDeathObjects`
     /// (`Ext/Scenario/Body.cpp:101-134`): Technos whose type sets
     /// `AutoDeath.Behavior=` and which Ares creates into limbo, in
@@ -678,7 +678,7 @@ pub struct Simulation {
     /// (`UpdateAutoDeathObjectsInLimbo`) is the only visit a limboed object
     /// gets. See `sim::auto_death`.
     #[serde(default)]
-    pub(crate) auto_death_objects: Vec<u64>,
+    pub(crate) auto_death_objects: Forked<Vec<u64>>,
     /// Ares CanMakeStuffUp's RulesClass writes (100677B0, hook 0x687C16),
     /// drawn once at scenario start; saved and hashed. See
     /// `sim::ares_make_stuff_up`.
@@ -838,7 +838,7 @@ pub struct Simulation {
     /// guard for the `0x4690C1` whole-map pass, held per warhead type. Set and
     /// cleared inside one synchronous detonation; never set between frames.
     #[serde(default)]
-    pub(crate) phobos_all_map_detonation_active: Option<InternedId>,
+    pub(crate) phobos_all_map_detonation_active: Forked<Option<InternedId>>,
     /// Persistent WaveClass registrations. They have their own logic lifetime;
     /// this is not a one-frame weapon-fire presentation list.
     pub(crate) waves: Forked<crate::sim::wave::WaveStore>,
@@ -921,7 +921,7 @@ pub struct Simulation {
     /// Source of truth is the marked structures; a full navigation rebuild
     /// derives it and reconciles the terrain classes against this set.
     #[serde(skip)]
-    destroyable_obstacle_cells: BTreeSet<(u16, u16)>,
+    destroyable_obstacle_cells: Forked<BTreeSet<(u16, u16)>>,
     #[serde(skip)]
     pub(crate) resolved_terrain: Forked<Option<ResolvedTerrainGrid>>,
     /// Process-global MapClass fallback CellClass identity. Native owns this at
@@ -1056,12 +1056,17 @@ pub struct Simulation {
     /// Saved, never hashed.
     #[serde(default)]
     alpha_shapes: Forked<alpha_shape::AlphaShapes>,
+    /// `0x48A444` sets and `0x48A47E` clears the light-flash mark a
+    /// `WH.Particle` system spawns its AlphaImage under. It is a transient
+    /// register, not saved state, and it is only read while a particle
+    /// reveal is inside that window.
+    particle_light_flash: Forked<bool>,
     /// `ScenarioExt::Global()->FiringAnimUpdateCount`
     /// (`Ext/Anim/Body.cpp:25`, `Hooks.cpp:731`): how many anims still owe a
     /// per-frame `UpdateAsFiringAnim`. Saved with the scenario
     /// (`Ext/Scenario/Body.cpp:195`).
     #[serde(default)]
-    pub(crate) firing_anim_update_count: u32,
+    pub(crate) firing_anim_update_count: Forked<u32>,
     /// Per-cell terrain speed modifier config (slope climb/descend).
     /// Built from [General] rules at map load.
     #[serde(skip)]
@@ -1137,7 +1142,7 @@ pub struct Simulation {
     /// stops a cyclic chain (native would recurse to stack exhaustion) and is
     /// zero outside a launch. Not saved or hashed.
     #[serde(skip)]
-    pub(crate) super_weapon_chain_depth: crate::sim::superweapon::ChainDepth,
+    pub(crate) super_weapon_chain_depth: Forked<crate::sim::superweapon::ChainDepth>,
     /// Serialized map trigger state, initialized and mutated by trigger_runtime.
     /// Remains installed while actions call other Simulation mechanisms.
     pub(crate) trigger_runtime: Forked<TriggerRuntime>,
@@ -1145,7 +1150,7 @@ pub struct Simulation {
     /// passengers reloaded by the pre-Logic pass while inside a transport, in
     /// boarding order. Saved (`Ext/Scenario/Body.cpp:182`) and hashed.
     #[serde(default)]
-    pub(crate) transport_reloaders: crate::sim::passenger::TransportReloaderQueue,
+    pub(crate) transport_reloaders: Forked<crate::sim::passenger::TransportReloaderQueue>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
