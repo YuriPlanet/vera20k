@@ -5,6 +5,7 @@
 
 use super::dialog_page::InGameDialog;
 use crate::app::match_runtime::session::SessionMode;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::{App, AppState};
 use crate::ui::pause_menu::{AbortConfirmAction, resolve_abort_action};
 use crate::ui::shell::abort::{self, AbortButton, AbortLayout, AbortSecondary, abort_layout};
@@ -14,12 +15,11 @@ use crate::ui::shell::page::PageEvent;
 /// Restart, 5 hides it, LAN/WOL show Observe with two or more live humans
 /// while the local House is not defeated. Saved campaigns recover their
 /// continuation inputs at successful load and also offer Restart.
-fn select_abort_secondary(state: &AppState) -> AbortSecondary {
+fn select_abort_secondary(match_state: &MatchState) -> AbortSecondary {
     secondary_for(
-        state.match_state.session_mode(),
-        state.match_state.startup.installed_campaign().is_some(),
-        state
-            .match_state
+        match_state.session_mode(),
+        match_state.startup.installed_campaign().is_some(),
+        match_state
             .sim_runtime
             .runtime()
             .map(|runtime| &runtime.simulation),
@@ -57,8 +57,8 @@ fn secondary_for(
 
 /// B6 init runs once per dialog: its stored results and control712 stay
 /// fixed until the dialog closes, whatever the match does meanwhile.
-pub(crate) fn on_open(state: &mut AppState) {
-    state.match_state.match_presentation.abort_secondary = select_abort_secondary(state);
+pub(crate) fn on_open(match_state: &mut MatchState) {
+    match_state.match_presentation.abort_secondary = select_abort_secondary(match_state);
 }
 
 /// B6: no title, Resume 0x686 as the lower right-panel button.
@@ -70,6 +70,8 @@ pub(crate) const DIALOG: InGameDialog = InGameDialog {
     ui: super::dialog_page::shared_ui,
     ui_mut: super::dialog_page::shared_ui_mut,
     own_checkbox_sound: false,
+    help_under_held: false,
+    help_fallback: |_| "",
 };
 
 /// The open B6's geometry.
@@ -78,6 +80,21 @@ pub(crate) fn current_abort_layout(state: &AppState) -> Option<AbortLayout> {
     super::dialog_page::layout(state, |w, h, shell, size| {
         abort_layout(w, h, shell, size, secondary)
     })
+}
+
+/// Makes B6's nodes current without input (rects, the hidden 712): its
+/// renderer's call every drawn frame before it paints from them.
+pub(crate) fn sync(state: &mut AppState) -> Option<AbortLayout> {
+    let layout = current_abort_layout(state)?;
+    let nodes = || abort::spec(layout.secondary_kind);
+    let rect_of = |id| layout.rect(id);
+    DIALOG.sync(
+        &mut state.match_state.match_presentation,
+        nodes,
+        rect_of,
+        super::dialog_page::no_sync,
+    );
+    Some(layout)
 }
 
 /// One pointer message on B6 (`down`: `None` moves).

@@ -36,7 +36,7 @@ fn scout_marks_a_house_without_buildings_then_completes() {
     assert!(sim.houses[&owner].has_scouted_house(peer));
     assert!(!sim.houses[&peer].has_scouted_house(owner));
     assert_ne!(sim.state_hash(), unmarked_hash);
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     let hash = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "scout", 0);
     sim = GameSnapshot::load(&bytes).unwrap().sim;
@@ -98,7 +98,7 @@ fn scout_draws_from_the_global_building_array_including_dead_and_limbo_entries()
     let team = sim
         .team_script_vm
         .create_team(owner, script, vec![member], 0);
-    sim.scenario_rng = SimRng::answering(0, 1, 0);
+    *sim.scenario_rng = SimRng::answering(0, 1, 0);
     let mut expected = sim.scenario_rng.clone();
     expected.next_range_i32_inclusive(0, 1); // two unmarked Houses
     expected.next_range_i32_inclusive(0, 1); // both registered Buildings

@@ -459,7 +459,7 @@ fn game_speed_ingress_uses_house_order_and_survives_same_frame_exit() {
     assert!(!result.frame_committed);
     assert_eq!(result.executed_commands, 3);
     assert_eq!(sim.session.game_options().game_speed, 2);
-    assert!(sim.quit_requested);
+    assert!(*sim.quit_requested);
     assert_eq!(result.state_hash, Some(sim.state_hash()));
 }
 
@@ -796,8 +796,8 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
     let (rules, _) = gsi_04_07_wall_sell_rules(false, false);
     let mut sim = Simulation::new();
     sim.hash_state_every(std::num::NonZeroU64::MIN);
-    sim.resolved_terrain = Some(gsi_04_10_clear_terrain(4, 4));
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
+    *sim.resolved_terrain = Some(gsi_04_10_clear_terrain(4, 4));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let owner = sim.interner.intern("WallOwner");
     sim.overlay_grid
@@ -870,8 +870,8 @@ fn terminal_app_frame_finalizes_overlay_updates_before_hash() {
         .slope_type = 5;
 
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(terrain);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(2, 1));
+    *sim.resolved_terrain = Some(terrain);
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(2, 1));
     assert!(sim.rebuild_dynamic_navigation(&rules));
     {
         let grid = sim.overlay_grid.as_mut().expect("overlay grid");
@@ -997,7 +997,7 @@ fn mission_host_counter_changes_state_hash() {
     sim.substrate
         .entities
         .insert(GameEntity::test_default(1, "E1", "Americans", 3, 3));
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     sim.set_logic_order_for_test(vec![1]);
     let before = sim.state_hash();
     sim.object_ai_stage(None);
@@ -1068,4 +1068,27 @@ fn runtime_frame_call_order_matches_the_app_seam() {
         "a due command executes in the runtime frame that drained it"
     );
     assert!(runtime.simulation.take_due_commands().is_empty());
+}
+
+/// A frame is one native logic frame however fast the host paced it, so the
+/// session's simulated clock must not follow the step its caller declared
+/// (issue #5107: the client declares 22 ms, headless 66 ms).
+#[test]
+fn the_session_clock_counts_native_frames_not_the_host_step() {
+    let mut client = Simulation::new();
+    let mut headless = Simulation::new();
+    for _ in 0..3 {
+        client.advance_tick(&[], None, None, None, 22);
+        headless.advance_tick(&[], None, None, None, 66);
+    }
+    assert_eq!(
+        client.session.total_sim_ms(),
+        headless.session.total_sim_ms(),
+        "22 ms and 66 ms steps report different simulated time for 3 frames"
+    );
+    assert_eq!(
+        client.session.total_sim_ms(),
+        3 * 1000 / u64::from(crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND),
+        "3 native frames are 200 ms, not 3 x the host's step"
+    );
 }

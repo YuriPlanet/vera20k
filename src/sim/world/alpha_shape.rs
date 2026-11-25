@@ -192,6 +192,23 @@ pub struct AlphaShapeDraw<'a> {
 }
 
 impl Simulation {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn alpha_shape_slots_for_test(&self) -> Vec<(u64, [i32; 2], &str, bool, bool)> {
+        self.alpha_shapes
+            .shapes
+            .iter()
+            .map(|shape| {
+                (
+                    shape.object,
+                    shape.origin,
+                    shape.image.as_str(),
+                    shape.disabled,
+                    shape.anim_listener,
+                )
+            })
+            .collect()
+    }
+
     /// GetCoords and the AlphaImage name of `object`, of `kind`, for a type
     /// that names one. The name is read first: UpdateAlphaShape (`10009F40`)
     /// returns before GetCoords for a type without an AlphaImage, and it runs

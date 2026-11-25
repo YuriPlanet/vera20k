@@ -638,7 +638,7 @@ fn unit_null_arm_matches_original_execution() {
             sim.substrate
                 .entities
                 .insert(with_mission(&actor, MissionType::Guard));
-            sim.interner = crate::sim::intern::test_interner();
+            *sim.interner = crate::sim::intern::test_interner();
             1
         };
         let nav = sim.foot_navigation_coordinate(unit).unwrap();
@@ -740,7 +740,7 @@ fn receive_damage_scatter_gates_match_original_execution() {
         }
         let owner = actor.owner();
         let mut sim = Simulation::new();
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let mut house = HouseState::new(owner, 0, None, flag("human"), 0, 10);
         house.set_player_control_for_test(flag("player_control"));
         sim.houses.register(house);
@@ -900,7 +900,7 @@ fn unit_source_arm_matches_original_execution() {
             );
         }
         let nav_before = actor.navigation.nav_com();
-        sim.scenario_rng = crate::sim::rng::SimRng::new(input["seed"].as_u64().unwrap_or(1));
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(input["seed"].as_u64().unwrap_or(1));
         let checks = row["checks"].as_array().unwrap();
         fresh_oracle_seam::install(
             checks

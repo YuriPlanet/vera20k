@@ -324,16 +324,7 @@ pub(super) fn attack_action_with(
         if target_id == actor_id && sim.infantry_healer_guards_itself(control, actor_id, rules) {
             return AttackAction::GuardArea;
         }
-        if sim.terrain_objects().get(target_id).is_some()
-            && sim.infantry_heal_action_with(
-                control,
-                actor_id,
-                target_id,
-                actor.owner(),
-                Default::default(),
-                rules,
-            ) == Some(crate::sim::world::InfantryHealAction::AttackSupport)
-        {
+        if healer_supports_over_terrain(sim, control, rules, actor_id, target_id) {
             return AttackAction::AttackSupport;
         }
     }
@@ -526,7 +517,10 @@ pub(super) fn attack_action_with(
     if actor.category() == EntityCategory::Structure {
         // Building447366..4473C7 /4476F3..447749 inspect GetWeapon(0),
         // irrespective of SelectWeapon. These are class post-processing of
-        // Attack, not a replacement range owner.
+        // Attack, not a replacement range owner. A Tiberian Sun limpet mine
+        // takes no attack order either: Firestorm 2.0 `BuildingClass::
+        // What_Action` tests `IsLimpetMine=` in the same list (object
+        // `0x0042ECC6`, cell `0x0042EF65`; `sim::limpet`).
         if action == AttackAction::Attack
             && let Some(weapon) = crate::sim::combat::combat_weapon::get_weapon(
                 actor,
@@ -540,6 +534,7 @@ pub(super) fn attack_action_with(
                 .weapon_projectile(weapon)
                 .is_some_and(|projectile| !projectile.ag)
                 || kind.emp_pulse_cannon
+                || kind.is_limpet_mine
                 || actor.mission.current().known()
                     == Some(crate::sim::mission::MissionType::Selling))
         {
@@ -1032,13 +1027,16 @@ pub(super) struct AttackDispatch {
 }
 
 /// The keys a healer's object action reads ([`crate::sim::world::HealArmKeys`]):
-/// Alt, the ForceMove binding (held for Ctrl+Alt too), and the base action
-/// Techno's key rungs answer ([`object_key_action`]): Ctrl+Alt's admitted
-/// GuardArea or Alt's Move.
+/// Alt, the ForceMove binding (held for Ctrl+Alt too), and the Foot answer
+/// the infantry tail keeps (`0x0051E776..0x0051E782`): Ctrl+Alt's admitted
+/// GuardArea or a Move, which Alt's key rung ([`object_key_action`]) or, in
+/// a campaign, Foot's shroud rung over a shrouded object gives
+/// (`shroud_moves`, [`base_action`]).
 fn heal_arm_keys(
     key_action: Option<ObjectKeyAction>,
     modifier: OrderModifier,
     force_move_key: bool,
+    shroud_moves: bool,
 ) -> crate::sim::world::HealArmKeys {
     crate::sim::world::HealArmKeys {
         force_move: matches!(
@@ -1046,7 +1044,7 @@ fn heal_arm_keys(
             OrderModifier::ForceMove | OrderModifier::GuardArea
         ) || (modifier == OrderModifier::AttackMove && force_move_key),
         guard_area: key_action == Some(ObjectKeyAction::GuardArea),
-        moves: key_action == Some(ObjectKeyAction::Move),
+        moves: key_action == Some(ObjectKeyAction::Move) || shroud_moves,
     }
 }
 
@@ -1083,6 +1081,33 @@ pub(in crate::app::input) fn healer_guards_itself(
         forced,
         None,
     ) == AttackAction::GuardArea
+}
+
+/// Infantry What_Action's healer arm over a Terrain object (`0x0051E797`):
+/// the object has no House, so the ally test (`0x004F9A90`) refuses it and a
+/// human player's healer answers AttackSupport. The arm comes after Foot's
+/// What_Action, so it replaces the key rungs' Move, NoMove or GuardArea
+/// too; only Shift's ToggleSelect returns before it (`0x0051E453`), and
+/// the Engineer's refusal (`0x0051E6B4`) tests only an Attack answer, which
+/// no key rung gives. The cursor and the click share it.
+pub(in crate::app::input) fn healer_supports_over_terrain(
+    sim: &crate::sim::world::Simulation,
+    control: &ControlProjection<'_>,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor: u64,
+    terrain: u64,
+) -> bool {
+    sim.terrain_objects().get(terrain).is_some()
+        && sim.entities().get(actor).is_some_and(|entity| {
+            sim.infantry_heal_action_with(
+                control,
+                actor,
+                terrain,
+                entity.owner(),
+                Default::default(),
+                rules,
+            ) == Some(crate::sim::world::InfantryHealAction::AttackSupport)
+        })
 }
 
 /// A healer's action over another Techno, which the cursor and the click
@@ -1141,7 +1166,19 @@ pub(super) fn healer_object_action_with(
         modifier,
         force_move_key,
     );
-    let keys = heal_arm_keys(key_action, modifier, force_move_key);
+    // Without a key answer Foot's is the base action, which the shroud rung
+    // makes Move or NoMove (`0x004DDED0`).
+    let shroud_moves = key_action.is_none()
+        && base_action(
+            sim,
+            control,
+            rules,
+            actor,
+            &TargetKind::Entity(target),
+            ctrl_forces_attack_rung(modifier, key_action),
+            None,
+        ) == AttackAction::Move;
+    let keys = heal_arm_keys(key_action, modifier, force_move_key, shroud_moves);
     if sim.entities().get(actor)?.category() != EntityCategory::Infantry {
         return sim
             .unit_repair_action_with(control, actor, target, issuing_house, keys, rules)

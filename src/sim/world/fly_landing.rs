@@ -404,11 +404,17 @@ impl Simulation {
     /// compares pointers: the same cell, or the same object). Fly's landing
     /// callback asks for the cell under the aircraft (`0x004CD3B6`);
     /// Find_Attack_Cell for its parameter and each candidate cell.
+    ///
+    /// `aircraft_claims` is the set of the live aircraft's NavCom
+    /// reservations a search reads once for all its candidate cells; a
+    /// caller that asks about one cell only passes `None` and the live
+    /// objects are read here.
     pub(super) fn foot_land_zone_clear(
         &self,
         id: u64,
         destination: NavTargetRef,
         rules: &RuleSet,
+        aircraft_claims: Option<&super::aircraft_fire_location::AircraftNavClaims>,
     ) -> bool {
         use crate::rules::locomotor_type::{MovementZone, SpeedType};
         use crate::sim::cell_rect::{
@@ -440,7 +446,7 @@ impl Simulation {
             .map_or(requested, |t| t.native_cell_coord(identity.unwrap()));
         if !cell_is_in_playfield_height_aware(
             (i32::from(cell.0), i32::from(cell.1)),
-            self.playfield_bounds,
+            *self.playfield_bounds,
             self.resolved_terrain.as_ref(),
         ) {
             return false;
@@ -486,30 +492,40 @@ impl Simulation {
         {
             return false;
         }
-        !self.substrate.entities.values().any(|other| {
-            other.stable_id() != id
-                && other.category() == EntityCategory::Aircraft
-                && other.lifecycle.object_alive()
-                && !other.lifecycle.in_limbo()
-                && match (object, other.navigation.nav_com()) {
-                    (None, Some(NavTargetRef::Cell { rx, ry })) => {
-                        self.resolved_terrain.as_ref().map_or(
-                            (rx, ry) == (cell.0 as u16, cell.1 as u16),
-                            |t| {
-                                use crate::map::cell_index::NativeCellIdentity;
-                                //4DDDBF compares retained pointers. Do not
-                                // restamp the shared Dummy while comparing.
-                                let reserved = t
-                                    .native_fixed_cell_index(rx as i16, ry as i16)
-                                    .map_or(NativeCellIdentity::Dummy, NativeCellIdentity::Real);
-                                Some(reserved) == identity
-                            },
-                        )
+        // 0x004DDDBF..0x004DDDC7: another live aircraft holds the zone when
+        // its NavCom names the same cell, or the same object. The search
+        // that asks about every candidate cell reads the live aircraft once
+        // and answers from the set; a single-cell caller reads them here.
+        let held = match aircraft_claims {
+            Some(claims) => claims.holds(object, retained),
+            None => self.substrate.entities.values().any(|other| {
+                other.stable_id() != id
+                    && other.category() == EntityCategory::Aircraft
+                    && other.lifecycle.object_alive()
+                    && !other.lifecycle.in_limbo()
+                    && match (object, other.navigation.nav_com()) {
+                        (None, Some(NavTargetRef::Cell { rx, ry })) => {
+                            self.resolved_terrain.as_ref().map_or(
+                                (rx, ry) == (cell.0 as u16, cell.1 as u16),
+                                |t| {
+                                    use crate::map::cell_index::NativeCellIdentity;
+                                    //4DDDBF compares retained pointers. Do not
+                                    // restamp the shared Dummy while comparing.
+                                    let reserved =
+                                        t.native_fixed_cell_index(rx as i16, ry as i16).map_or(
+                                            NativeCellIdentity::Dummy,
+                                            NativeCellIdentity::Real,
+                                        );
+                                    Some(reserved) == identity
+                                },
+                            )
+                        }
+                        (Some(object), Some(NavTargetRef::Object { id: nav })) => nav == object,
+                        _ => false,
                     }
-                    (Some(object), Some(NavTargetRef::Object { id: nav })) => nav == object,
-                    _ => false,
-                }
-        })
+            }),
+        };
+        !held
     }
 
     pub(super) fn finish_fly_layer_transition(
@@ -665,10 +681,10 @@ mod tests {
         let mut sim = Simulation::with_seed(31);
         sim.session.set_map_width_for_test(128);
         sim.session.set_map_height_for_test(128);
-        sim.playfield_bounds = Some(
+        *sim.playfield_bounds = Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(64, 0, 0, 64, 64),
         );
-        sim.playfield_size_height = Some(64);
+        *sim.playfield_size_height = Some(64);
         install_common_raw_terrain(
             &mut sim,
             128,
@@ -687,7 +703,7 @@ mod tests {
             .unwrap();
         cell.level = input["level"].as_u64().unwrap_or(0) as u8;
         cell.slope_type = input["slope"].as_u64().unwrap_or(0) as u8;
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
         sim.overlay_grid
             .as_mut()
             .unwrap()
@@ -1101,7 +1117,8 @@ mod tests {
                         query[0].as_u64().unwrap() as u16,
                         query[1].as_u64().unwrap() as u16
                     ),
-                    &rules
+                    &rules,
+                    None,
                 ),
                 row["result"].as_bool().unwrap(),
                 "{input}"
@@ -1324,11 +1341,11 @@ mod tests {
         );
         // Native Scenario Load deliberately reseeds its RNG to0. Normalize
         // both branches at this checkpoint so unrelated load policy is equal.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = GameSnapshot::save(&sim, 0, 0, "Fly landing continuation", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
         restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
-        restored.resolved_terrain = sim.resolved_terrain.clone();
+        *restored.resolved_terrain = (*sim.resolved_terrain).clone();
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(sim.state_hash(), restored.state_hash());
         for frame in 101..126 {

@@ -32,9 +32,9 @@ fn scene_with(scripts: &str, rules: &str) -> (Simulation, RuleSet, InternedId) {
     ini.merge(&IniFile::from_str(rules));
     let rules = RuleSet::from_ini(&ini).unwrap();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x6E_9140);
-    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
-    sim.ore_growth_config = OreGrowthConfig::for_test(false, false, false);
-    sim.ore_growth_state = OreGrowthState::new(32, 32);
+    *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    *sim.ore_growth_config = OreGrowthConfig::for_test(false, false, false);
+    *sim.ore_growth_state = OreGrowthState::new(32, 32);
     sim.fog.set_width_for_test(32);
     sim.fog.set_height_for_test(32);
     sim.intern_rule_type_ids(&rules);

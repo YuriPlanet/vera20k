@@ -132,6 +132,25 @@ impl RuleSet {
             b"infantry-theft-flags-v1".hash(&mut hasher);
             theft_flags.hash(&mut hasher);
         }
+        // Firestorm's web keys (docs/ts-webs.md) keep their values across
+        // passes (WarheadWeb::read_pass), as the theft bytes do. Left out
+        // while no rules set them.
+        let webs = Self::by_upper_id(
+            self.warhead_entries()
+                .filter_map(|(id, warhead)| warhead.web.map(|web| (id, web))),
+        );
+        let web_immune = Self::by_upper_id(
+            self.object_list
+                .iter()
+                .filter(|object| object.is_web_immune)
+                .map(|object| (&object.id, object.category)),
+        );
+        if !webs.is_empty() || !web_immune.is_empty() || self.general.webbed_infantry.is_some() {
+            b"ts-webs-v1".hash(&mut hasher);
+            webs.hash(&mut hasher);
+            web_immune.hash(&mut hasher);
+            self.general.webbed_infantry.hash(&mut hasher);
+        }
         // OverlayRead5FE8BE / InitTheater5FE620 retain typed history that a
         // flattened Image key cannot recover; saved resource plans matter too.
         self.overlay_registry.hash_configuration(&mut hasher);
@@ -247,6 +266,18 @@ impl RuleSet {
         {
             b"phobos-super-availability-v1".hash(&mut hasher);
             self.phobos_super_weapon_metadata.hash(&mut hasher);
+        }
+        if self.kratos {
+            b"kratos-infantry-flh-v1".hash(&mut hasher);
+            Self::by_upper_id(
+                self.object_list
+                    .iter()
+                    .filter(|object| {
+                        object.category == ObjectCategory::Infantry && !object.fearless
+                    })
+                    .map(|object| (&object.id, object.kratos_crawling().arrays())),
+            )
+            .hash(&mut hasher);
         }
         if self.phobos {
             self.parallel_ai_queues.hash_into(&mut hasher);

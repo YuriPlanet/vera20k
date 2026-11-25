@@ -17,6 +17,9 @@ mod area_rocker;
 #[path = "building_hit_fire.rs"]
 mod building_hit_fire;
 
+#[path = "web_burst.rs"]
+mod web_burst;
+
 /// FootClass::AI `0x004DA554..0x004DA635`: after the whole Techno AI and
 /// before locomotor Process, read this Foot's current cell and synchronously
 /// enter its concrete ReceiveDamage. Unit/Infantry/Aircraft call Foot at
@@ -598,7 +601,7 @@ pub(crate) fn collect_area(
             .cell_target_detaches
             .append(&mut cliff_effects.cell_target_detaches);
     }
-    for &(dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64, rules.ares()).iter() {
+    for (dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64, rules.ares()) {
         // Ares 3.0 DamageArea_ChainReaction (10051000, hook 0x48964F): the
         // cell's CellChainReact precedes its Reduce_Tiberium (the prelude).
         if rules.ares() {
@@ -1506,6 +1509,28 @@ fn commit_entity(
             &world.interner,
             world.resolved_terrain.as_ref(),
         );
+        // Firestorm 2.0 `InfantryClass::Take_Damage` 0x004D2380: after the
+        // prone head, a Webby warhead webs the man and zeroes the damage, and
+        // the zero-damage receivers below it return at once (`0x004D24D4`).
+        if let Some(web) = world
+            .interner
+            .warhead_type(prepared_event.warhead_ref, rules)
+            .and_then(|warhead| warhead.webby())
+            .copied()
+        {
+            if world.infantry_take_web(target_id, &web, rules, run.effects()) {
+                caller_damage.write(world, rules, 0);
+                break 'receiver;
+            }
+            // The zero hits a web gives everything else do nothing in
+            // Firestorm: `TechnoClass::Take_Damage` skips its defence math
+            // for damage not above 0 (`0x006325D6`) and `ObjectClass::
+            // Take_Damage` returns at once for 0 (`0x00585EE4`). gamemd's
+            // receiver below would floor it to 1 (`0x007019D8`).
+            if prepared_event.damage == 0 {
+                break 'receiver;
+            }
+        }
         let event = &prepared_event;
         caller_damage.write(world, rules, event.damage);
         // FootClass::ReceiveDamage 0x004D7330..0x004D7413 runs its parasite
@@ -1523,6 +1548,11 @@ fn commit_entity(
         let mut receiver_event = *event;
         receiver_event.damage = caller_damage.read(world, rules);
         let event = &receiver_event;
+        // Firestorm 2.0 `TechnoClass::Take_Damage @ 0x006325A0` opens with a
+        // heal taking every Tiberian Sun limpet off (`sim::limpet`).
+        if event.damage < 0 {
+            world.clear_limpets(target_id, rules, run.effects());
+        }
         // Phobos `TechnoClass_ReceiveDamage @ 0x701900+0x6` runs the shield
         // before gamemd's receiver body and replaces `args->Damage` with the
         // surviving damage. The stage owns the mutation here, before the
@@ -2229,7 +2259,7 @@ fn commit_entity(
                         ) && crate::sim::mission::control::current_control(rules, &target.mission)
                             .is_some_and(|entry| entry.no_threat && !entry.zombie)
                     })
-                && world.team_script_vm.team_for_member(target_id).is_none()
+                && world.team_script_vm.team_of(target_id).is_none()
             {
                 crate::sim::world::enter_idle_mode(
                     world,
@@ -3696,14 +3726,15 @@ fn continue_area_damage(
             world.spawn_particle_in_system(system, position, position, rules);
         }
     }
-    // VERA terrain deformation: Tiberian Sun rolled its crater after the
-    // Explodes branch.
+    // VERA terrain deformation: Firestorm rolled its dent after the Explodes
+    // branch (Firestorm 2.0 0x46006B).
     world.roll_terrain_deformation(
         rules,
         context.warhead,
         context.impact,
         context.cell,
         context.damage,
+        run.effects(),
     );
     //48A437..48A479 follows both the bridge and Explodes branches. WH.Particle
     //uses the outer sourceHouse and also constructs one immediate child.
@@ -3724,6 +3755,16 @@ fn continue_area_damage(
     {
         world.spawn_particle_in_system(system, position, position, rules);
     }
+    // Firestorm ice: TS Explosion_Damage cracked ice after its particle
+    // system (Firestorm 2.0 0x4601b4..0x46024f, docs/ts-ice.md).
+    world.explosion_ice(
+        rules,
+        overlay_registry,
+        run.effects(),
+        context.warhead,
+        context.impact,
+        context.cell,
+    );
     death
 }
 
@@ -3918,6 +3959,7 @@ fn ares_damage_occupants(
 /// The area damage's house (`0x00469A5C..0x00469A75`) is the live bullet
 /// owner's: a bullet whose firer has expired (`BulletClass::PointerExpired
 /// @ 0x004684E0` nulled `+0xB0`) damages with no house.
+#[allow(clippy::too_many_arguments)]
 fn emit_detonation_receivers<'r>(
     world: &mut Simulation,
     run: &mut ReceiverRun<'_>,
@@ -3926,6 +3968,7 @@ fn emit_detonation_receivers<'r>(
     detonation: &ProjectileDetonation,
     warhead: &'r WarheadType,
     out: &mut CombatEmit,
+    pings: &mut Vec<UnderAttackEvent>,
 ) -> (Option<AreaDamageContinuation<'r>>, bool) {
     let (impact_rx, impact_ry, ..) = projectile_impact_cell(detonation.impact);
 
@@ -4090,6 +4133,25 @@ fn emit_detonation_receivers<'r>(
 
             let current = world.projectiles.current_detonation(*detonation);
             let detonation = &current;
+
+            // Firestorm 2.0 `BulletClass::Detonate` 0x004465B0: a Webby
+            // warhead webs the cells around it instead of calling
+            // `Explosion_Damage` (0x00446632..0x0044663A); the anim tail
+            // (0x00446856) still follows.
+            if let Some(web) = warhead.webby() {
+                web_burst::commit_web_burst(
+                    world,
+                    run,
+                    rules,
+                    overlay_registry,
+                    detonation,
+                    warhead,
+                    web,
+                    out,
+                    pings,
+                );
+                return (None, false);
+            }
 
             // `0x00469A69..0x00469A75`: the bullet's live Owner's house;
             // Phobos keeps `BulletExt::FirerHouse` once the owner is gone.
@@ -4541,6 +4603,7 @@ pub(crate) fn commit_projectile_detonations_inline(
                 &clustered,
                 warhead,
                 emit,
+                under_attack_events,
             );
             let outer_explosion_effects = emit.effects.explosion_effects.split_off(explosion_start);
             let outer_anim_requests = emit.effects.smudge_spawn_requests.split_off(smudge_start);
@@ -4656,7 +4719,6 @@ pub(crate) fn commit_projectiles(
 
     debug_assert!(emit.remove_attack.is_empty());
     debug_assert!(emit.fire_events.is_empty());
-    debug_assert!(emit.unit_facing.is_empty());
     debug_assert!(emit.spawn_target_updates.is_empty());
 
     LogicProjectileCommit {

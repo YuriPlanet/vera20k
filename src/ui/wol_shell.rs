@@ -214,9 +214,14 @@ pub fn spec(filled: &[(u16, String)]) -> NodeSpec {
             None => node.label(text.key),
         }
     });
+    // The group boxes' frames and the glossary's icons, which take nothing.
+    let group_boxes = GROUP_BOXES.map(|id| NodeSpec::new(NodeKind::Text).id(id.into()));
+    let icons = WOL_ICONS.map(|icon| NodeSpec::new(NodeKind::Image).id(icon.id.into()));
     NodeSpec::new(NodeKind::Dialog)
         .children(buttons.map(button))
         .children(texts)
+        .children(group_boxes)
+        .children(icons)
 }
 
 /// A kind-2 image static the proc's `0x497` sets (`0x00603D30`).

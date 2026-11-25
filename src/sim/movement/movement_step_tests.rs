@@ -132,9 +132,9 @@ fn native_track_fixture(kind: LocomotorKind, budget: i32) -> (Simulation, TrackI
                 ))
         );
     }
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     sim.substrate.entities.insert(entity);
-    sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
+    *sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
     (
         sim,
         TrackInvocation {

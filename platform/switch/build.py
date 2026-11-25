@@ -27,9 +27,9 @@ WGPU_ARCHIVES = {
     "wgpu-hal": "b6b7fb58561a792bc237628ba0792e332de418fefe145f13b5ed8201e6d52f58",
     "wgpu-core-deps-windows-linux-android": "7586165fd5f6d881cb9ce4bb71f40d6caab2c0f1837e3fc1d9788a197fb6004f",
 }
-CLIENT_VERSION = "0.0.5"
+CLIENT_VERSION = "0.0.6"
 # NACP application title shown in the Switch menu (Yuri's Revenge build).
-CLIENT_TITLE = "尤里的复仇"
+CLIENT_TITLE = "VER20K:红警2"
 PROFILE_FEATURES = "horizon-frame-profile,telemetry"
 
 

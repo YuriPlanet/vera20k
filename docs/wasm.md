@@ -20,7 +20,7 @@ python3 tools/wasm/build.py
 
 The helper builds the client library as a `cdylib` with
 `--target wasm32-unknown-unknown --no-default-features --features wasm` and
-packages its bindings and an asset-free host into `target/wasm-dist/`. By default
+packages its bindings, host page, ice terrain and skirmish map into `target/wasm-dist/`. By default
 it uses the `wasm` profile, which players download: optimized for size, fat LTO,
 one codegen unit and no symbol names; it takes several times as long to build
 (on 2026-11-09 the single-player Wasm was 16.5 MB, 4.6 MB compressed with brotli, against 45.6 MB and 10.3 MB with `fast`). Use `--profile fast` while editing, or `--profile release`. It
@@ -34,12 +34,15 @@ The browser engine embeds none of the interface's bundled fonts. They (Noto Sans
 Noto Sans CJK and 19 script fonts, about 30 MB) and Unifont's CJK glyph table are
 copied with their licences to `pkg/fonts/`. The engine starts fetching Noto Sans
 and the glyph table, which draw GAME.FNT's missing letters, as soon as it
-loads, and `fonts_ready()` resolves once both have arrived: await it before
-`start_game` or `start_spawn`, which fail until then. It fetches each other font
-the first time text needs a character only that font draws, such as a Thai name
+loads. The host awaits `fonts_ready()` before calling `start_game` or `start_spawn`.
+It fetches each other font the first time text needs a character only that font draws, such as a Thai name
 in a chat. A host that serves the package must serve that folder too. Each URL
 carries its file's version, so a browser keeps the fonts across engine updates.
-The engine does not set a window icon in the browser build.
+Every host should also serve `pkg/Terrain/vera_ice.mix` and
+`pkg/Terrain/vera_ice_tiles.ini` beside the bindings. The same `fonts_ready()`
+promise waits for the engine to fetch them into `/Terrain/` before launch.
+Await it before probing a map with `VeraIce=yes` as well. Other maps can start
+if these files are missing. The engine does not set a window icon in the browser build.
 
 For the optional online build:
 
@@ -82,12 +85,15 @@ python3 -m http.server 8000 --bind 127.0.0.1 --directory target/wasm-dist
 
 Open `http://localhost:8000` in a browser with WebGPU or WebGL2. The page
 requires a secure context (HTTPS or localhost). Select an extracted retail
-Yuri's Revenge resource folder, then click Start. No game resources are included
-in the package. The single-player package uploads none; online play can share
-the selected map through the existing map-transfer protocol, while other retail
+Yuri's Revenge resource folder, then click Start. The single-player host reads these files locally.
+Online play can share the selected map through the existing map-transfer protocol, while other retail
 assets stay local. Audio is prepared in that click to satisfy browser autoplay
 policy. Resource bytes are held in memory, so large installations need
 substantial browser memory.
+
+The host installs `Maps/Arctic_Circle_16_Ice_Passages.map` into the browser
+profile on first use. Serve the `Maps/` folder beside the page. Players' edits
+and deletions persist across visits.
 
 The host restores and queues settings/save writes in IndexedDB for this origin.
 The page shows storage failures and pending writes. Engine writes complete in

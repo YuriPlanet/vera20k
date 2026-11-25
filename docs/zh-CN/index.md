@@ -47,4 +47,5 @@ lang: zh-CN
 
 ## 扩展与原作者
 
-- [Ares、Phobos、NPatch、VeraX 与原作者](credits.md)
+- [Ares、Phobos、Kratos、NPatch、VeraX 与原作者](credits.md)
+- [Kratos 扩展支持](kratos.md)

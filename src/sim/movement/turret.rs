@@ -191,13 +191,17 @@ pub(crate) fn facing_update(
     let has_turret = entity.barrel_facing.is_some();
 
     // --- A. AIM ---------------------------------------------------------
-    let target_facing: Option<u16> = entity
-        .attack_target
-        .target()
-        .and_then(|attack| facing_toward_target(entity, &attack, world));
-    if let Some(tgt) = target_facing
-        && !entity.turret_rotation_latch.is_set()
-    {
+    // The latch is tested before DirectionToTarget, a pure read, so a held
+    // arc asks none (VERA-only order, results unchanged).
+    let target_facing: Option<u16> = if entity.turret_rotation_latch.is_set() {
+        None
+    } else {
+        entity
+            .attack_target
+            .target()
+            .and_then(|attack| facing_toward_target(entity, &attack, world))
+    };
+    if let Some(tgt) = target_facing {
         if has_turret {
             if !current_weapon_is_omni_fire(entity, entities, rules, interner) {
                 out.turret_destination = Some(tgt);
@@ -347,7 +351,7 @@ mod tests {
                 .attack_target
                 .set_for_test(Some(TargetKind::Cell(10, 5)));
             let mut sim = crate::sim::world::Simulation::new();
-            sim.interner = crate::sim::intern::test_interner();
+            *sim.interner = crate::sim::intern::test_interner();
             for (mode, turns) in [(0, true), (2, false), (0, true)] {
                 entity.set_gunner_weapon(mode, object, ares_way);
                 assert_eq!(

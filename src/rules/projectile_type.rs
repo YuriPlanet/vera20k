@@ -59,6 +59,17 @@ pub struct ProjectileType {
     pub aa: bool,
     /// Can hit ground units and buildings. True by default for most projectiles.
     pub ag: bool,
+    /// Kratos `AAOnly` (`BulletTypeExt::TypeData`, `src/Extension/BulletTypeExt.h`):
+    /// the shot is refused against a target that is not in the air.
+    /// `TechnoStatus::CanFire_CheckBullet` runs it from the hook at `0x6FC339`.
+    pub aa_only: bool,
+    /// Tiberian Sun's `AV=` (docs/ts-limpets.md): the projectile hunts only
+    /// vehicles. Firestorm 2.0 reads it into BulletType+0x136 with ReadBool
+    /// over the current value (`0x00448027..0x00448047`; the constructor
+    /// zeroes it at `0x00447BB9`); gamemd has no such key. Its one reader is
+    /// `WeaponTypeClass::Allowable_Threat @ 0x00681150`
+    /// (`combat_weapon::weapon_class_bits`).
+    pub av: bool,
 
     // --- Flight behavior ---
     /// Ballistic arc trajectory (e.g., artillery shells). Cannot be intercepted.
@@ -438,6 +449,10 @@ impl ProjectileType {
             // Targeting
             aa: section.read_bool("AA", false),
             ag: section.read_bool("AG", true),
+            aa_only: crate::rules::kratos_switch::kratos_read(|| {
+                section.read_bool("AAOnly", false)
+            }),
+            av: section.read_bool("AV", false),
             // Flight behavior
             arcing: section.read_bool("Arcing", false),
             rot: section.read_int("ROT", 0),

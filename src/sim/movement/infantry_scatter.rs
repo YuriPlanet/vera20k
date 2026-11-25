@@ -723,7 +723,8 @@ impl Simulation {
                 return EnterRadioArm::Continue;
             };
             if matches!(category, EntityCategory::Unit | EntityCategory::Structure) {
-                actor.pending_entry.install(target);
+                let note = actor.note_names();
+                actor.pending_entry.install(target, note);
                 actor.set_archive_target(None);
                 return EnterRadioArm::Queued;
             }

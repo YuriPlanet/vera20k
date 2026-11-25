@@ -668,6 +668,47 @@ fn retail_lunar_water_family_uses_the_original_postpass() {
     assert!(TileIds::resolve(&theater).is_water_shore_or_waterfall(0));
 }
 
+/// Retail SNOWMD.INI names Ice1Set..IceShoreSet but gives those sets no
+/// tiles, so the retail snow theater runs no ice (docs/ts-ice.md).
+#[test]
+fn retail_snow_theater_runs_no_ice() {
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let theater = load_theater(&mut assets, "SNOW").expect("load retail snow theater");
+    let ini = IniFile::from_bytes(&theater.ini_data).expect("SNOWMD.INI");
+    let general = ini.section("General").expect("[General]");
+    for key in ["Ice1Set", "Ice2Set", "Ice3Set", "IceShoreSet"] {
+        let set = usize::try_from(general.read_int(key, -1)).expect(key);
+        assert_eq!(theater.lookup.bounds()[set].count, 0, "{key}");
+    }
+    assert_eq!(theater.ice_sets, None);
+}
+
+#[test]
+fn an_ice_map_gets_bundled_tiles_then_an_ordinary_snow_map_gets_stock_tiles() {
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let map = IniFile::from_str("[Map]\nTheater=SNOW\nVeraIce=yes\n");
+    let ice = load_scenario_theater(&mut assets, "SNOW", &map, true)
+        .unwrap()
+        .unwrap();
+    assert_eq!(ice.ice_sets, Some([4096, 4160, 4224]));
+    assert_eq!(ice.lookup.filename(964), None);
+    let cracked = ice.lookup.filename(4112).unwrap();
+    let (bytes, source) = assets.get_with_source_ref(cracked).unwrap();
+    assert_eq!(source, "vera_ice.mix");
+    assert!(TmpFile::from_bytes(bytes).is_ok());
+
+    let stock = load_scenario_theater(&mut assets, "SNOW", &IniFile::empty(), false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(stock.ice_sets, None);
+    assert_eq!(stock.lookup.filename(4096), None);
+    assert_eq!(ice.lookup.filename(963), stock.lookup.filename(963));
+}
+
 #[test]
 fn selected_retail_temperate_rmg_roles_reach_tile_ids() {
     use crate::map::rmg::tiles::TileIds;
@@ -1261,6 +1302,8 @@ fn synthetic_theater_with_bridge_keys(
         automatic_tube_bases: [-1; 4],
         cliff_ranges: TheaterCliffRanges::default(),
         rmg_tiles: super::RmgTileKeys::default(),
+        ice_sets: None,
+        terrain_files: crate::map::theater::TerrainFiles::GameFolder,
     }
 }
 

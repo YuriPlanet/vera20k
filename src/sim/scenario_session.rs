@@ -1005,7 +1005,8 @@ pub struct ScenarioSession {
     tiberium_death_to_visceroid: bool,
     /// Scenario+34A8. Execute87 stores the literal low byte at6DDBE1;
     /// Basic's bool reader normalizes only when it actually reads a value.
-    /// Retain the byte even though no ice-growth simulation leaf is ported.
+    /// gamemd has no reader; the Firestorm ice chain's Grow and Solidify
+    /// read it (Firestorm 2.0 Scenario+0x1D84, docs/ts-ice.md).
     ice_growth: u8,
     /// Scenario34A7. Native Veinhole74D80A reads this byte; that separate
     /// TS mechanism is not ported. Do not fabricate growth from this switch.
@@ -1073,13 +1074,20 @@ pub struct ScenarioSession {
     /// Scenario+1224/+122C, restarted before RegrowFog by
     /// LogicClass::AI55B2DF..55B326. Save/load retains its frame anchor.
     fog_regrow_timer: CdTimer,
+    /// The Firestorm ice growth timer (docs/ts-ice.md), Firestorm 2.0
+    /// Scenario+0x7D4/+0x7DC, restarted by LogicClass::AI 0x506f06..0x506f20
+    /// before Grow. None until a map that runs ice first polls it: the
+    /// Firestorm constructor (0x5daaf0..0x5daafb) leaves it started at its
+    /// frame with no delay, so that first poll expires.
+    ice_growth_timer: Option<CdTimer>,
     /// Monotonic Rust-side simulation ordinal. This is kept separately from
     /// the wrapping native frame so long-running diagnostics and command
     /// bookkeeping do not lose their ordering at the 32-bit wrap.
     tick: u64,
-    /// Diagnostic accumulation of the nominal milliseconds supplied by the
-    /// host for each admitted frame. Gameplay must not derive timer state,
-    /// cadence, or the native frame from this value.
+    /// Simulated time. One admitted frame is one native logic frame, so this
+    /// reads `frames * 1000 / 15`, not the milliseconds the host paced the
+    /// frame at. Gameplay must not derive timer state, cadence, or the native
+    /// frame from this value.
     total_sim_ms: u64,
     /// Wrapping native gameplay-frame counter. One admitted `advance_tick`
     /// executes entirely under frame N, then commits N+1 at the late tail.
@@ -1249,11 +1257,17 @@ impl ScenarioSession {
     // ---- Operations ------------------------------------------------------
 
     /// The late frame commit (Main_Tick's tail): the wrapping native frame
-    /// advances after every phase observed frame N; host milliseconds are
-    /// diagnostic only.
-    pub(crate) fn commit_native_frame(&mut self, tick_ms: u32) {
-        self.total_sim_ms = self.total_sim_ms.saturating_add(u64::from(tick_ms));
+    /// advances after every phase observed frame N.
+    ///
+    /// The simulated clock follows that native frame. `host_tick_ms` is the
+    /// step the caller paced the frame at — 22 ms in the client, 66 ms in
+    /// headless tools, a relay's `1000 / FPS` online — and it does not set the
+    /// clock, so a client trace, a headless digest and a capture report the
+    /// same simulated time for the same frame count.
+    pub(crate) fn commit_native_frame(&mut self, _host_tick_ms: u32) {
         self.binary_frame = self.binary_frame.wrapping_add(1);
+        self.total_sim_ms = u64::from(self.binary_frame).saturating_mul(1000)
+            / u64::from(crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND);
     }
 
     /// The Rust tick ordinal reaches the executed tick after the drain.
@@ -1281,6 +1295,18 @@ impl ScenarioSession {
             return false;
         }
         self.fog_regrow_timer.start(frame, interval_frames);
+        true
+    }
+
+    /// Firestorm 2.0 LogicClass::AI 0x506edb..0x506f20: test the ice growth
+    /// timer against the native frame and, once it has expired, restart it
+    /// with `interval_frames` before the caller runs Grow.
+    pub(crate) fn poll_ice_growth(&mut self, interval_frames: i32) -> bool {
+        let frame = self.binary_frame as i32;
+        if !self.ice_growth_timer.unwrap_or_default().expired(frame) {
+            return false;
+        }
+        self.ice_growth_timer = Some(CdTimer::started(frame, interval_frames));
         true
     }
 
@@ -2193,6 +2219,10 @@ impl ScenarioSession {
             b"scenario-fog-regrow-timer-v1".hash(hasher);
             s.fog_regrow_timer.hash(hasher);
         }
+        if let Some(timer) = s.ice_growth_timer {
+            b"scenario-ice-growth-timer-v1".hash(hasher);
+            timer.hash(hasher);
+        }
         let (money, cap) = s.campaign_money_policy();
         if money != crate::util::native_x87::NativeF64Bits::POSITIVE_ZERO || cap != 0 {
             b"scenario-campaign-money-policy-v1".hash(hasher);
@@ -2377,7 +2407,7 @@ impl ScenarioSession {
             map_value.unwrap_or(tiberium_death_to_visceroid_default());
     }
 
-    /// Retained native Scenario+34A8; not a claim of an active ice grower.
+    /// Scenario+34A8, which the Firestorm ice chain's Grow and Solidify read.
     pub const fn ice_growth_enabled(&self) -> bool {
         self.ice_growth != 0
     }
@@ -2466,6 +2496,7 @@ impl ScenarioSession {
             game_options: GameOptions::default(),
             shroud_growth_timer: initial_map_regrowth_timer(),
             fog_regrow_timer: initial_map_regrowth_timer(),
+            ice_growth_timer: None,
             tick: 0,
             total_sim_ms: 0,
             binary_frame: 0,
@@ -2647,7 +2678,7 @@ mod tests {
             sim.session.install_current_house(Some(current));
             let hash = sim.state_hash();
             let bytes = serde_json::to_vec(&sim.session).unwrap();
-            sim.session = serde_json::from_slice(&bytes).unwrap();
+            *sim.session = serde_json::from_slice(&bytes).unwrap();
             assert_eq!(sim.session.campaign_mission_counter(), Some(7));
             assert_eq!(sim.session.current_house(), Some(current));
             assert_eq!(sim.state_hash(), hash);
@@ -2741,7 +2772,7 @@ mod tests {
         assert!(!sim.session.game_options.build_off_ally);
         let hash = sim.state_hash();
         let encoded = serde_json::to_vec(&sim.session).unwrap();
-        sim.session = serde_json::from_slice(&encoded).unwrap();
+        *sim.session = serde_json::from_slice(&encoded).unwrap();
         assert_eq!(sim.state_hash(), hash);
         assert_eq!(sim.projected_in_game_options_speed(), Some(5));
         let other = GameOptions {
@@ -2845,7 +2876,7 @@ mod tests {
         assert!(a.native_unique_ids.is_none());
         assert_eq!(b.native_unique_ids.as_ref().unwrap().current_raw(), 0);
         assert_ne!(a.state_hash(), b.state_hash());
-        a.native_unique_ids =
+        *a.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
         assert_eq!(a.state_hash(), b.state_hash());
     }
@@ -2908,7 +2939,7 @@ mod tests {
                 ..Default::default()
             });
             // This synthetic fixture omits the production native Rules prefix.
-            sim.native_unique_ids =
+            *sim.native_unique_ids =
                 Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
             crate::sim::arena_fixture::flat_ground(&mut sim, rules);
             let entity = MapEntity {
@@ -3031,7 +3062,7 @@ mod tests {
         let mut sim = Simulation::from_descriptor(&desc);
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // descriptor persistence on that same post-load cursor.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 1, 2, "tournamentb.map", 0);
         let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .expect("snapshot load")
@@ -3071,7 +3102,7 @@ mod tests {
 
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // waypoint persistence after the independent hash-sensitivity check.
-        a.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *a.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&a, 1, 2, "wp", 0);
         let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .expect("snapshot load")
@@ -3129,7 +3160,7 @@ mod tests {
         assert_eq!(inert.state_hash(), ordinary.state_hash());
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // no-damage persistence after the independent hash-sensitivity check.
-        inert.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *inert.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&inert, 1, 2, "inert.map", 0);
         let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .expect("v61 inert snapshot")
@@ -3165,7 +3196,7 @@ mod tests {
         assert_ne!(forced.state_hash(), grows_only.state_hash());
         assert_ne!(clear.state_hash(), grows_only.state_hash());
 
-        forced.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *forced.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&forced, 1, 2, "skirmish.map", 0);
         let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .expect("snapshot load")
@@ -3196,7 +3227,7 @@ mod tests {
 
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // the bit's persistence after the independent hash check.
-        immune.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *immune.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&immune, 1, 2, "truce.map", 0);
         let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .expect("snapshot load")

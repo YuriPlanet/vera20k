@@ -131,11 +131,11 @@ fn counts(sim: &Simulation) -> Value {
 
 fn scene(row: &Value, terminal: bool, rules: &RuleSet) -> (Simulation, u64) {
     let mut sim = Simulation::with_seed(31);
-    sim.main_rng = SimRng::new(31);
-    sim.scenario_rng = SimRng::new(31);
+    *sim.main_rng = SimRng::new(31);
+    *sim.scenario_rng = SimRng::new(31);
     sim.session
         .set_binary_frame_for_test(row["supplied"]["frame"].as_i64().unwrap() as u32);
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
         row["before_native_id"].as_u64().unwrap() as u32,
     ));
     assert_eq!(
@@ -420,8 +420,8 @@ fn restored(sim: &Simulation) -> Simulation {
     // Production restores live process streams around the native Scenario
     // seed-zero reset. This continuation has no constructor RNG left to draw.
     // These loaded controls run as independent test processes.
-    result.main_rng = sim.main_rng.clone();
-    result.mapgen_rng = sim.mapgen_rng.clone();
+    *result.main_rng = (*sim.main_rng).clone();
+    *result.mapgen_rng = (*sim.mapgen_rng).clone();
     result.restore_after_snapshot_load().unwrap();
     result
 }
@@ -455,7 +455,10 @@ fn projectile_trailer_save_load_preserves_live_and_pending_cleanup_boundaries() 
             anim_state(&first, first.anim(bubble).unwrap()),
             anim_state(&sim, sim.anim(bubble).unwrap())
         );
-        assert_eq!(first.substrate.pending_delete, sim.substrate.pending_delete);
+        assert_eq!(
+            *first.substrate.pending_delete,
+            *sim.substrate.pending_delete
+        );
         assert_eq!(
             first.scenario_rng.logical_state(),
             SimRng::new(0).logical_state()
@@ -627,17 +630,17 @@ fn scalable_snapshot_mechanical_state_and_native_load_have_distinct_membership()
     let mut no_members = restored(&sim);
     assert!(no_members.projectiles.scalable_members().is_empty());
     assert_eq!(no_members.projectiles.scaled_spawn_delay(type_id), 4);
-    let retained = no_members.projectiles.clone();
+    let retained = (*no_members.projectiles).clone();
     let retained_hash = no_members.state_hash();
     let mut raw = serde_json::to_value(&no_members.projectiles).unwrap();
     raw["scaled_spawn_delays"] = json!({});
-    no_members.projectiles = serde_json::from_value(raw).unwrap();
+    *no_members.projectiles = serde_json::from_value(raw).unwrap();
     assert_ne!(
         retained_hash,
         no_members.state_hash(),
         "retained type cadence is hashed even without members"
     );
-    no_members.projectiles = retained;
+    *no_members.projectiles = retained;
     assert_eq!(no_members.state_hash(), retained_hash);
     // Loaded membership is empty but the old type cadence remains effective
     // until another Unit shot overwrites it, through the same AI/Anim owner.
@@ -652,14 +655,14 @@ fn scalable_snapshot_mechanical_state_and_native_load_have_distinct_membership()
     let mut invalid = serde_json::to_value(&mechanical).unwrap();
     invalid["scalable_members"] = json!([u64::MAX]);
     let mut rejected = no_members;
-    rejected.projectiles = serde_json::from_value(invalid).unwrap();
+    *rejected.projectiles = serde_json::from_value(invalid).unwrap();
     assert!(matches!(
         rejected.restore_after_snapshot_load(),
         Err(crate::sim::snapshot::SnapshotRestoreError::InvalidScalableProjectileRuntime(_))
     ));
     let mut invalid = serde_json::to_value(&mechanical).unwrap();
     invalid["scaled_spawn_delays"] = json!({"4294967295": 4});
-    rejected.projectiles = serde_json::from_value(invalid).unwrap();
+    *rejected.projectiles = serde_json::from_value(invalid).unwrap();
     assert!(matches!(
         rejected.restore_after_snapshot_load(),
         Err(crate::sim::snapshot::SnapshotRestoreError::InvalidScalableProjectileRuntime(_))

@@ -21,6 +21,7 @@ use super::descriptor::DialogResourceId;
 use super::geom::RectPx;
 use super::in_game_shell::{self, InGameShellLayout};
 use super::layout_data;
+use crate::ui::shell::geom::ShellAlign;
 use vera20k_gui::shell::trackbar::TrackbarRange;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -146,13 +147,15 @@ impl PauseMenuTemplate {
     pub const fn title(self) -> PauseMenuControl {
         match self {
             Self::Offline | Self::Network => PauseMenuControl {
-                id: 0x694,
+                id: TITLE,
                 csf_key: "GUI:GameOptions",
+                fallback: "Game Options",
                 help: None,
             },
             Self::Internet => PauseMenuControl {
-                id: 0x694,
+                id: TITLE,
                 csf_key: "GUI:OptionsInternet",
+                fallback: "Internet Options",
                 help: None,
             },
         }
@@ -177,50 +180,72 @@ impl Default for PauseMenuButtonState {
     }
 }
 
-/// A template control: id, CSF caption and executed `0x006040B0` help key.
-/// The rects are `shell_layout.ini`'s.
+/// A template control: id, CSF caption (and its text while no string table
+/// is loaded) and executed `0x006040B0` help key. The rects are
+/// `shell_layout.ini`'s.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PauseMenuControl {
     pub id: u16,
     pub csf_key: &'static str,
+    pub fallback: &'static str,
     pub help: Option<&'static str>,
 }
 
-const fn button(id: u16, csf_key: &'static str, help: &'static str) -> PauseMenuControl {
+impl PauseMenuControl {
+    pub const fn caption(self) -> (&'static str, &'static str) {
+        (self.csf_key, self.fallback)
+    }
+}
+
+const fn button(
+    id: u16,
+    (csf_key, fallback): (&'static str, &'static str),
+    help: &'static str,
+) -> PauseMenuControl {
     PauseMenuControl {
         id,
         csf_key,
+        fallback,
         help: Some(help),
     }
 }
 
+const GAME_CONTROLS: (&str, &str) = ("GUI:GameControls", "Game Controls");
+const ABORT: (&str, &str) = ("GUI:AbortMission", "Abort Mission");
+const RESUME: (&str, &str) = ("GUI:ResumeMission", "Resume Mission");
+
 /// B5 in [`PauseMenuButton::NATIVE`] order.
 const B5_BUTTONS: [PauseMenuControl; 6] = [
-    button(0x521, "GUI:GameControls", "STT:IGSingleOptButtonControls"),
-    button(0x51e, "GUI:LoadGame", "STT:IGSingleOptButtonLoad"),
-    button(0x51f, "GUI:SaveGame", "STT:IGSingleOptButtonSave"),
-    button(0x520, "GUI:DeleteGame", "STT:IGSingleOptButtonDelete"),
-    button(0x522, "GUI:AbortMission", "STT:IGSingleOptButtonAbort"),
-    button(0x686, "GUI:ResumeMission", "STT:IGSingleOptButtonBack"),
+    button(0x521, GAME_CONTROLS, "STT:IGSingleOptButtonControls"),
+    button(0x51e, ("GUI:LoadGame", "Load Game"), "STT:IGSingleOptButtonLoad"),
+    button(0x51f, ("GUI:SaveGame", "Save Game"), "STT:IGSingleOptButtonSave"),
+    button(0x520, ("GUI:DeleteGame", "Delete Game"), "STT:IGSingleOptButtonDelete"),
+    button(0x522, ABORT, "STT:IGSingleOptButtonAbort"),
+    button(0x686, RESUME, "STT:IGSingleOptButtonBack"),
 ];
 
 /// BBA (C019C8, five controls): Game Controls, Abort, Resume.
 const BBA_BUTTONS: [PauseMenuControl; 3] = [
-    button(0x521, "GUI:GameControls", "STT:IGMultiOptButtonControls"),
-    button(0x522, "GUI:AbortMission", "STT:IGMultiOptButtonAbort"),
-    button(0x686, "GUI:ResumeMission", "STT:IGMultiOptButtonResume"),
+    button(0x521, GAME_CONTROLS, "STT:IGMultiOptButtonControls"),
+    button(0x522, ABORT, "STT:IGMultiOptButtonAbort"),
+    button(0x686, RESUME, "STT:IGMultiOptButtonResume"),
 ];
 
 /// FF (BFAB00, twelve controls): Resume is control675, not686.
 const FF_BUTTONS: [PauseMenuControl; 3] = [
-    button(0x521, "GUI:GameControls", "STT:OptionInternetGameControls"),
-    button(0x522, "GUI:AbortMission", "STT:OptionInternetAbortMission"),
-    button(0x675, "GUI:ResumeMission", "STT:IGMultiOptButtonResume"),
+    button(0x521, GAME_CONTROLS, "STT:OptionInternetGameControls"),
+    button(0x522, ABORT, "STT:OptionInternetAbortMission"),
+    button(0x675, RESUME, "STT:IGMultiOptButtonResume"),
 ];
 
+/// The right-panel title static and the status line: every template has
+/// both, each a node of its own ([`spec`]).
+pub use super::in_game_shell::{FOOTER, TITLE};
+
 pub const PAUSE_MENU_FOOTER: PauseMenuControl = PauseMenuControl {
-    id: 0x695,
+    id: FOOTER,
     csf_key: "GUI:Blank",
+    fallback: "",
     help: None,
 };
 
@@ -337,12 +362,27 @@ impl PauseMenuLayout {
             .filter_map(|button| Some((*button, self.button(*button)?)))
     }
 
-    /// Control `id`'s rect: a shown button or one of FF's trackbars.
+    /// Control `id`'s rect: a shown button, the title or the status line,
+    /// or one of FF's trackbars, its group box and statics.
     pub fn rect(&self, id: u16) -> Option<RectPx> {
-        match (self.template.button(id), InternetSlider::from_id(id)) {
-            (Some(button), _) => self.button(button),
-            (None, Some(slider)) => Some(self.internet?.sliders[slider as usize]),
-            (None, None) => None,
+        if let Some(button) = self.template.button(id) {
+            return self.button(button);
+        }
+        match id {
+            TITLE => return Some(self.title),
+            FOOTER => return Some(self.footer),
+            _ => {}
+        }
+        let internet = self.internet?;
+        let slot = |ids: [u16; 2]| ids.iter().position(|of| *of == id);
+        if id == INTERNET_GROUP {
+            Some(internet.group)
+        } else if let Some(slider) = InternetSlider::from_id(id) {
+            Some(internet.sliders[slider as usize])
+        } else if let Some(index) = slot(INTERNET_CAPTIONS) {
+            Some(internet.captions[index])
+        } else {
+            slot(INTERNET_VALUES).map(|index| internet.values[index])
         }
     }
 
@@ -458,7 +498,10 @@ impl PauseMenuLayout {
 
 /// The menu's buttons (every template's, with VERA's) and FF's trackbars
 /// at `positions`, each with its status help (`0x006040B0`); `keyboard_help`
-/// is VERA's Keyboard button's.
+/// is VERA's Keyboard button's. Then the statics, which have no help so the
+/// pointer passes them by: the title (`PANEL_TITLE`) and status line, and
+/// FF's group box, the sliders' right-aligned captions and their value
+/// statics, in [`InternetSlider`] order.
 pub fn spec(template: PauseMenuTemplate, positions: [i32; 2], keyboard_help: &str) -> NodeSpec {
     let buttons = template
         .buttons()
@@ -485,14 +528,44 @@ pub fn spec(template: PauseMenuTemplate, positions: [i32; 2], keyboard_help: &st
                 .with(Prop::Max, Value::Int(range.max))
                 .with(Prop::Pos, Value::Int(positions[slider as usize]))
         });
+    let text = |id: u16, align: Option<ShellAlign>| {
+        let node = NodeSpec::new(NodeKind::Text).id(id.into());
+        match align {
+            Some(align) => node.with(Prop::Align, Value::Int(i32::from(align.0))),
+            None => node,
+        }
+    };
+    let statics = in_game_shell::panel_statics();
+    // The group's caption takes no alignment.
+    let internet = (template == PauseMenuTemplate::Internet)
+        .then(|| {
+            [
+                text(INTERNET_GROUP, None),
+                text(INTERNET_CAPTIONS[0], Some(ShellAlign::H_RIGHT)),
+                text(INTERNET_CAPTIONS[1], Some(ShellAlign::H_RIGHT)),
+                text(INTERNET_VALUES[0], Some(ShellAlign::NONE)),
+                text(INTERNET_VALUES[1], Some(ShellAlign::NONE)),
+            ]
+        })
+        .into_iter()
+        .flatten();
     NodeSpec::new(NodeKind::Dialog)
         .children(buttons)
         .children(sliders)
+        .children(statics)
+        .children(internet)
 }
 
 /// FF's group box and the sliders' left captions (template statics `0xFFFF`).
-const INTERNET_GROUP: u16 = 0xFF02;
-const INTERNET_CAPTIONS: [u16; 2] = [0xFF00, 0xFF01];
+pub const INTERNET_GROUP: u16 = 0xFF02;
+/// The group box's caption.
+pub const INTERNET_GROUP_LABEL: (&str, &str) =
+    ("GUI:InternetGameControls", "Internet Game Controls");
+/// BBB's 0x52C caption, VERA's Keyboard button's.
+pub const KEYBOARD_LABEL: (&str, &str) = ("GUI:Keyboard", "");
+pub const INTERNET_CAPTIONS: [u16; 2] = [0xFF00, 0xFF01];
+/// The sliders' value statics 0x672 and 0x671.
+pub const INTERNET_VALUES: [u16; 2] = [0x672, 0x671];
 
 /// 72 DLUs in pixels, a multiple of 8 so each rect keeps its authored size
 /// ([`super::geom::dlu_rect`] is `y * 13 / 8`).
@@ -517,7 +590,7 @@ pub fn pause_menu_layout(
         group: rect(INTERNET_GROUP),
         sliders: InternetSlider::ALL.map(|slider| rect(slider.id())),
         captions: INTERNET_CAPTIONS.map(rect),
-        values: [rect(0x672), rect(0x671)],
+        values: INTERNET_VALUES.map(rect),
     });
     PauseMenuLayout {
         template,

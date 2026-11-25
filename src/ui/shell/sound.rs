@@ -9,6 +9,8 @@ use super::descriptor::DialogResourceId;
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
 
+use crate::ui::shell::geom::ShellAlign;
+
 /// Active B8 (resource `0xBEFE4C`).
 pub const DIALOG: DialogResourceId = DialogResourceId(0xB8);
 
@@ -39,7 +41,7 @@ pub enum SoundControl {
 }
 
 impl SoundControl {
-    const ALL: [Self; 9] = [
+    pub const ALL: [Self; 9] = [
         Self::Button(SoundButton::Back),
         Self::Button(SoundButton::Play),
         Self::Button(SoundButton::Stop),
@@ -126,19 +128,30 @@ impl SoundState {
                 SoundControl::Slider(slider) => trackbar(slider, positions, true),
                 // The proc toggles the box on the press of its icon.
                 SoundControl::Shuffle | SoundControl::Repeat => NodeSpec::new(NodeKind::Checkbox),
-                // Every press on a row selects it (no double-click case).
+                // Every press on a row selects it (no double-click case);
+                // the rows draw unaligned, 2 px in.
                 SoundControl::List => NodeSpec::new(NodeKind::List)
-                    .with(Prop::RowCount, Value::Int(rows.len() as i32))
+                    .with(
+                        Prop::Items,
+                        Value::Items(rows.iter().map(|row| row.text.clone()).collect()),
+                    )
+                    .with(Prop::Align, Value::Int(i32::from(ShellAlign::NONE.0)))
                     .with(Prop::Selected, row(selected))
                     .with(Prop::Top, row(Some(top))),
             };
             node.id(control.id().into()).tooltip(control.help().0)
         });
+        // The slider captions, title and status line are statics with no
+        // help.
+        let labels = [0, 1, 2].map(slider_label);
         let mut ui = DialogController::default();
         ui.reset_to(DIALOG);
         if let Some(root) = ui.root_in(DIALOG) {
             super::page::ensure_built(ui.gui_mut(), root, || {
-                NodeSpec::new(NodeKind::Dialog).children(controls)
+                NodeSpec::new(NodeKind::Dialog)
+                    .children(controls)
+                    .children(labels)
+                    .children(in_game_shell::panel_statics())
             });
         }
         Self { rows, ui }
@@ -161,17 +174,47 @@ impl SoundState {
             .get(usize::try_from(row).ok()?)
             .map(|row| row.theme_index)
     }
+}
 
-    pub fn thumb_left(&self, id: SoundSlider, rect: RectPx) -> i32 {
-        let position = self.positions()[id as usize];
-        vera20k_gui::shell::trackbar::thumb_left(i32::from(position), rect.w, 50, 10)
-    }
+/// B8's controls in paint order (`gui_paint`): the trackbars, the boxes,
+/// the list, Play and Stop, then the slider captions.
+pub const PAINT_ORDER: [u16; 11] = [
+    SHELL_SOUND_SLIDERS[0],
+    SHELL_SOUND_SLIDERS[1],
+    SHELL_SOUND_SLIDERS[2],
+    SoundControl::Shuffle.id(),
+    SoundControl::Repeat.id(),
+    SoundControl::List.id(),
+    SoundControl::Button(SoundButton::Play).id(),
+    SoundControl::Button(SoundButton::Stop).id(),
+    SHELL_SOUND_LABELS[0],
+    SHELL_SOUND_LABELS[1],
+    SHELL_SOUND_LABELS[2],
+];
 
-    /// The list's view: rows, top, selection and held scroll part.
-    pub fn list(&self) -> Option<vera20k_gui::ListView> {
-        let gui = self.ui.gui();
-        gui.list_view(gui.find_id(self.root()?, SoundControl::List.id().into())?)
+/// B8's captions by control id: Play, Stop, the boxes and the slider
+/// captions (key and fallback). The rest have none.
+pub fn caption(id: u16) -> Option<(&'static str, &'static str)> {
+    const FALLBACKS: [&str; 3] = ["Music Volume", "Sound Volume", "Voice Volume"];
+    if let Some(index) = SHELL_SOUND_LABELS.iter().position(|label| *label == id) {
+        return Some((SHELL_SOUND_LABEL_KEYS[index], FALLBACKS[index]));
     }
+    Some(match SoundControl::from_id(id)? {
+        SoundControl::Button(SoundButton::Play) => ("GUI:Play", "Play"),
+        SoundControl::Button(SoundButton::Stop) => ("GUI:Stop", "Stop"),
+        SoundControl::Shuffle => ("GUI:Shuffle", "Shuffle"),
+        SoundControl::Repeat => ("GUI:Repeat", "Repeat"),
+        _ => return None,
+    })
+}
+
+/// Slider `index`'s right-aligned caption static.
+fn slider_label(index: usize) -> NodeSpec {
+    let align = i32::from(ShellAlign::H_RIGHT.0);
+    NodeSpec::new(NodeKind::Text)
+        .id(SHELL_SOUND_LABELS[index].into())
+        .label(SHELL_SOUND_LABEL_KEYS[index])
+        .with(Prop::Align, Value::Int(align))
 }
 
 /// The horizontal volume row shared by the launcher and online options.
@@ -226,15 +269,10 @@ pub(crate) const SHELL_SOUND_LABELS: [u16; 3] = [0x7E50, 0x7E51, 0x7E52];
 /// disabled window takes no press. B8 never opens without one (BBB disables
 /// its Sound button, `0x004E2201..0x004E2223`), so only `0xD6` clears it.
 pub fn shell_sound_spec(positions: [u8; 3], sliders_enabled: bool) -> NodeSpec {
-    let align = i32::from(crate::ui::shell::geom::ShellAlign::H_RIGHT.0);
     let rows = SoundSlider::ALL.map(|id| {
-        let index = id as usize;
         [
             trackbar(id, positions, sliders_enabled),
-            NodeSpec::new(NodeKind::Text)
-                .id(SHELL_SOUND_LABELS[index].into())
-                .label(SHELL_SOUND_LABEL_KEYS[index])
-                .with(Prop::Align, Value::Int(align)),
+            slider_label(id as usize),
         ]
     });
     NodeSpec::new(NodeKind::Dialog)
@@ -345,8 +383,17 @@ impl SoundLayout {
         }
     }
 
-    /// Control `id`'s rect.
+    /// Control `id`'s rect, a slider caption's, the title's and the status
+    /// line's included.
     pub fn rect(self, id: u16) -> Option<RectPx> {
+        if let Some(index) = SHELL_SOUND_LABELS.iter().position(|label| *label == id) {
+            return Some(self.labels[index]);
+        }
+        match id {
+            in_game_shell::TITLE => return Some(self.title),
+            in_game_shell::FOOTER => return Some(self.footer),
+            _ => {}
+        }
         Some(match SoundControl::from_id(id)? {
             SoundControl::Button(button) => self.button(button),
             SoundControl::Slider(slider) => self.sliders[slider as usize],
@@ -359,6 +406,11 @@ impl SoundLayout {
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
+    /// Slider `id`'s painted thumb offset in `rect`.
+    fn thumb_left(state: &SoundState, id: SoundSlider, rect: RectPx) -> i32 {
+        let position = i32::from(state.positions()[id as usize]);
+        vera20k_gui::shell::trackbar::TrackbarRange::new(0, 10, 1).thumb_left(position, rect.w)
+    }
     #[test]
     fn shell_0xd6_page_matches_the_executed_wol_relayout() {
         let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -430,7 +482,7 @@ mod tests {
         for sample in native["positions"].as_array().unwrap() {
             set(&mut state, sample["position"].as_i64().unwrap() as i32);
             assert_eq!(
-                state.thumb_left(SoundSlider::Music, rect),
+                thumb_left(&state, SoundSlider::Music, rect),
                 sample["thumb_left"].as_i64().unwrap() as i32
             );
         }
@@ -444,7 +496,7 @@ mod tests {
                 sample["position"].as_u64().unwrap() as u8
             );
             assert_eq!(
-                state.thumb_left(SoundSlider::Music, rect),
+                thumb_left(&state, SoundSlider::Music, rect),
                 sample["thumb_left"].as_i64().unwrap() as i32
             );
         }
@@ -504,7 +556,7 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         use vera20k_gui::{InputEvent, MouseButton};
-        let thumb = r.x + s.thumb_left(SoundSlider::Music, r) + 1;
+        let thumb = r.x + thumb_left(&s, SoundSlider::Music, r) + 1;
         let button = MouseButton::Left;
         assert_eq!(
             send(
@@ -543,7 +595,7 @@ mod tests {
                 .filter_map(shell_sound_volume)
                 .collect::<Vec<_>>()
         };
-        let thumb = r.x + vera20k_gui::shell::trackbar::thumb_left(5, r.w, 50, 10);
+        let thumb = r.x + vera20k_gui::shell::trackbar::TrackbarRange::new(0, 10, 1).thumb_left(5, r.w);
         for x in [r.x + 1, thumb] {
             assert_eq!(press(&mut gui, x), []);
         }

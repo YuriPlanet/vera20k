@@ -193,9 +193,7 @@ impl Gpu {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
-
-
-multiview_mask: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &camera_group, &[]);
@@ -313,9 +311,9 @@ fn retail_command_bar_atlas_and_production_append_match_native_capture() {
         true,
     )
     .unwrap();
-    let mut instances = Vec::new();
     let camera = [-316.25, 1086.75];
-    crate::app::presentation::sidebar_build::command_bar::append_prepared(
+    let mut instances: Vec<crate::render::batch::SpriteInstance> = Vec::new();
+    crate::app::presentation::sidebar_build::command_bar::draw(
         &mut instances,
         &art,
         layout,
@@ -408,8 +406,11 @@ fn production_radar_loss_and_reversal_preserve_final_gpu_pixels() {
     map.uv_origin = copy.uv_origin;
     map.uv_size = copy.uv_size;
     let mut line = quad([origin[0] + 20., origin[1] + 8.], [120., 1.]);
-    line.tint = super::sidebar_text::native_radar_outline_color(
-        super::sidebar_chrome::SidebarTheme::Allied,
+    line.tint = super::sidebar_text::native_outline_from(
+        crate::ui::sidebar::SidebarChromeLayoutSpec::for_theme(
+            super::sidebar_chrome::SidebarTheme::Allied,
+        )
+        .side_text,
     );
     let layer = |rgba: &[u8]| Layer {
         quad: housing,
@@ -504,7 +505,9 @@ fn native_radar_outline_all_themes_match_gpu_presentation() {
         ),
     ] {
         let mut line = quad([0.; 2], [168., 1.]);
-        line.tint = super::sidebar_text::native_radar_outline_color(theme);
+        line.tint = super::sidebar_text::native_outline_from(
+            crate::ui::sidebar::SidebarChromeLayoutSpec::for_theme(theme).side_text,
+        );
         let actual = gpu.render(
             &[Layer {
                 quad: line,

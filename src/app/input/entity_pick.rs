@@ -323,9 +323,9 @@ pub(crate) fn cursor_hover_object(state: &crate::app::AppState) -> Option<HoverO
     let host = &state.match_state.sim_runtime;
     let sim = &host.runtime()?.simulation;
     let frame = (!host.is_lent()).then(|| host.frame()).flatten();
-    let owner = crate::app::input::commands::preferred_local_owner_name(state)?;
+    let owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state)?;
     let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        state,
+        &state.match_state.input,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
@@ -336,7 +336,7 @@ pub(crate) fn cursor_hover_object(state: &crate::app::AppState) -> Option<HoverO
         world_y,
         &owner,
         state.match_state.sandbox_full_visibility,
-        crate::app::input::campaign_input::is_locked(state),
+        crate::app::input::campaign_input::is_locked(&state.match_state),
     )
 }
 

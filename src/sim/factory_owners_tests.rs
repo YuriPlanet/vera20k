@@ -14,9 +14,9 @@ fn fixture(extra: &str) -> (Simulation, RuleSet, InternedId) {
          [SOURCE]\nParentCountry=SOURCE\n[CHILD]\nParentCountry=SOURCE\n\
          [BUYER]\nParentCountry=BUYER\n[BuildingTypes]\n0=YARD\n1=PASS\n2=UP\n3=TARGET\n\
          [VehicleTypes]\n0=MCV\n[MCV]\nStrength=100\n\
-         [YARD]\nStrength=100\nFactory=BuildingType\n\
+         [YARD]\nStrength=100\nFactory=BuildingType\nUpgrades=1\n\
          [PASS]\nStrength=100\nFactoryOwners.HasAllPlans=yes\n\
-         [UP]\nStrength=100\nFactoryOwners.Permanent=yes\n\
+         [UP]\nStrength=100\nFactoryOwners.Permanent=yes\nPowersUpBuilding=YARD\n\
          [TARGET]\nStrength=100\nFactoryOwners=SOURCE\n{extra}"
     )))
     .unwrap();
@@ -228,6 +228,51 @@ fn factory_qualification_uses_one_candidate_for_both_lists_and_requires_a_matchi
     ));
 }
 
+/// Ares' Put hook (0x004409F4 -> 10014490) hands UpdateFactoryOwnersPlans
+/// (100449D0) the upgrade being put: its own type and Country, not the
+/// captured host's.
+#[test]
+fn a_put_upgrade_grants_its_own_country_not_the_captured_hosts() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let (mut sim, rules, _) = fixture("");
+    let host = construct(&mut sim, &rules, "YARD");
+    let buyer = sim.interner.intern("BUYER-HOUSE");
+    let country = sim.interner.intern("BUYER");
+    sim.houses
+        .register(HouseState::new(buyer, 0, Some(country), true, 0, 10));
+    sim.substrate
+        .entities
+        .get_mut(host)
+        .unwrap()
+        .set_owner_for_test(buyer);
+    assert_eq!(
+        sim.entities().get(host).unwrap().original_factory_country(),
+        rules.country_index("SOURCE")
+    );
+    let upgrade = sim
+        .construct_object_limbo_at_height(
+            "UP",
+            "BUYER-HOUSE",
+            8,
+            8,
+            0,
+            0,
+            &rules,
+            &mut FrameEffects::default(),
+        )
+        .unwrap();
+    assert!(sim.try_install_building_upgrade(
+        upgrade,
+        host,
+        &rules,
+        crate::sim::world::UninitContext::new(&rules)
+    ));
+    assert_eq!(
+        sim.houses[&buyer].permanent_factory_plans(),
+        &[rules.country_index("BUYER").unwrap()]
+    );
+}
+
 #[test]
 fn permanent_grant_scans_all_upgrade_slots_and_persists_without_the_building() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -284,7 +329,7 @@ fn permanent_grant_scans_all_upgrade_slots_and_persists_without_the_building() {
     // discards active planning, including the yard's constructor token
     // (ClearScene6370B0 / TechnoLoad70BF79). Isolate the retained factory
     // state from those independent load transitions.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     sim.reset_planning_after_player_load();
     let before = sim.state_hash();
     let bytes = GameSnapshot::save_validated(&sim, 1, 2, "factory plans", 0);

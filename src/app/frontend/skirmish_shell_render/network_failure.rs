@@ -13,13 +13,20 @@ pub(crate) fn render_network_failure(
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
     let (width, height) = (state.render_width(), state.render_height());
-    let (body, button) = labels(state);
+    let (body, button) = labels(&state.match_state.sim_runtime);
     let shell_box = crate::ui::shell::modal::ShellBox::notice(
         vera_body(state).unwrap_or_else(|| state.csf_label(body.0, body.1)),
         state.csf_label(button.0, button.1),
     )
     .on_screen();
-    let pressed = crate::app::match_runtime::network_failure::ok_pressed(state);
+    let parts = super::shell_box::skirmish_parts(&shell_box, (width as i32, height as i32));
+    crate::app::match_runtime::network_failure::sync_box(
+        &mut state.frontend.shell_controller,
+        &shell_box,
+        &parts,
+    );
+    let pressed =
+        crate::app::match_runtime::network_failure::ok_pressed(&state.frontend.shell_controller);
     let pressed = |id| pressed && id == crate::ui::shell::modal::control::OK;
     let mut art = Vec::new();
     let mut controls = Vec::new();
@@ -47,13 +54,18 @@ pub(crate) fn render_network_failure(
     }
     let look =
         super::BoxLook::skirmish(atlas.and_then(|atlas| atlas.mode_two_dialog_background(None)));
-    let size = (width as i32, height as i32);
-    let (controls_out, texts_out) = (Some(&mut controls), Some((&mut texts, false)));
+    let (controls_out, texts_out) = (&mut controls, (&mut texts, false));
+    let tree = super::controller_tree(&state.frontend.shell_controller, shell_box.dialog);
     super::shell_box::push_skirmish_box(
-        state,
+        &state.platform.ime,
+        &state.renderer.bit_font,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
         atlas,
-        size,
+        tree,
         &shell_box,
+        &parts,
         pressed,
         look,
         controls_out,

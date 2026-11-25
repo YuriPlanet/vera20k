@@ -897,7 +897,7 @@ mod tests {
         let owner = sim.interner.intern("Russians");
         sim.houses
             .register(HouseState::new(owner, 1, None, true, 0, 10));
-        sim.resolved_terrain = Some(test_grid(80, 220, |x, y| ResolvedTerrainCell {
+        *sim.resolved_terrain = Some(test_grid(80, 220, |x, y| ResolvedTerrainCell {
             level: if (x, y) == target { target_level } else { 0 },
             ..test_flat_cell(x, y)
         }));

@@ -229,7 +229,7 @@ impl Simulation {
         position: RevealPosition,
         context: UninitContext<'_>,
     ) -> bool {
-        let Some(bounds) = self.playfield_bounds else {
+        let Some(bounds) = *self.playfield_bounds else {
             return true;
         };
         crate::sim::cell_rect::cell_is_in_playfield_height_aware(

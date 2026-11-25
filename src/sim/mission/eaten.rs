@@ -1,6 +1,9 @@
 //! Foot Mission_Eaten4D4CB0..4D4DB8, inherited by Infantry and Unit.
 //! Original Steam gamemd; dispatcher5B332C calls
 //! vt+218 (both class tables contain4D4CB0). Arrival belongs to PerCell.
+//! The aircraft dispatch runs this body too (`sim::aircraft::dispatch_mission`):
+//! AircraftClass keeps `4D4CB0` in its own slot (the retail table at
+//! `0x007E22A4` holds it at `vt+0x218`).
 
 use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;

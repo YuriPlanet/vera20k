@@ -128,6 +128,8 @@ pub struct SavedLocalView {
 /// `app::input::beacon`) is in the same body and survives a native load too;
 /// VERA saves no beacon field, so a save made while placing a beacon loads with
 /// the mode off. Saving it would change this layout and refuse older saves.
+/// Ares' power mode (+11B2, `app::input::power_mode`) is left out for the
+/// same reason: a save made in it loads with the mode off.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SavedCursorModes {
     pub repair: bool,

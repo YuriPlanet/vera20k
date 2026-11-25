@@ -322,7 +322,7 @@ fn ares_laser_wave_damages_its_cells_on_each_update_until_it_fades() {
         };
         let rules = &patched.rules;
         let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x1A5E_0001);
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        *sim.fog = crate::sim::vision::FogState::new(32, 32);
         let owner = sim.interner.intern("Americans");
         sim.session.set_current_house_for_test(Some(owner));
         sim.intern_rule_type_ids(rules);
@@ -552,7 +552,7 @@ fn guard_infantry_acquire_return_fire_and_finish_a_duel() {
     ))
     .expect("GI fixture");
     let mut sim = Simulation::with_seed(0x5EED_0061);
-    sim.input_delay_ticks = 0;
+    *sim.input_delay_ticks = 0;
     let terrain = ResolvedTerrainGrid::from_cells(
         12,
         3,
@@ -581,7 +581,7 @@ fn guard_infantry_acquire_return_fire_and_finish_a_duel() {
     // enemy only as the player's GI (+0x41A) and an enemy it has seen (+0x41B).
     crate::sim::arena_fixture::own(&mut sim, gi);
     crate::sim::arena_fixture::discover(&mut sim, enemy);
-    sim.path_grid = Some(std::sync::Arc::new(PathGrid::test_all_passable(12, 3)));
+    *sim.path_grid = Some(std::sync::Arc::new(PathGrid::test_all_passable(12, 3)));
     let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
     runtime.resources_mut().rules = rules;
 
@@ -690,7 +690,7 @@ fn guard_infantry_acquire_return_fire_and_finish_a_duel() {
 fn sonic_fire_registers_immediately_but_later_techno_fires_before_wave_tail_ai() {
     let rules = sonic_tail_order_test_rules();
     let mut sim = Simulation::with_seed(0x5EED_760F);
-    sim.input_delay_ticks = 0;
+    *sim.input_delay_ticks = 0;
     let terrain = ResolvedTerrainGrid::from_cells(
         8,
         3,
@@ -738,7 +738,7 @@ fn sonic_fire_registers_immediately_but_later_techno_fires_before_wave_tail_ai()
     sim.clear_lifecycle_test_events_for_test();
 
     let path = PathGrid::test_all_passable(8, 3);
-    sim.path_grid = Some(std::sync::Arc::new(path));
+    *sim.path_grid = Some(std::sync::Arc::new(path));
     let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
     runtime.resources_mut().rules = rules;
     let output = runtime
@@ -845,7 +845,7 @@ fn sonic_cell_fire_wave_damage_selects_level_two_bridge_plane() {
     // geometry while placing the shot strictly inside the weapon's range.
     let rules = sonic_wave_test_rules(7);
     let mut sim = Simulation::with_seed(0x5EED_6240);
-    sim.input_delay_ticks = 0;
+    *sim.input_delay_ticks = 0;
     let mut cells = (0..8)
         .map(|rx| bridgehead_base_cell(rx, 0))
         .collect::<Vec<_>>();
@@ -922,7 +922,7 @@ fn sonic_cell_fire_wave_damage_selects_level_two_bridge_plane() {
     ));
 
     let path = PathGrid::test_all_passable(8, 1);
-    sim.path_grid = Some(std::sync::Arc::new(path));
+    *sim.path_grid = Some(std::sync::Arc::new(path));
     let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
     runtime.resources_mut().rules = rules;
     let output = runtime

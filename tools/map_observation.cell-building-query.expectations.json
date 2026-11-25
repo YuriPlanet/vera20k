@@ -2,10 +2,35 @@
   "schema_version": "vera20k.map-observation-expectations.v1",
   "assertions": [
     {
+      "name": "interior D resolves to the deploy hotkey",
+      "subject": {"gesture": 0},
+      "at_step": 7380,
+      "field": "keyboard.binding_command",
+      "op": "eq",
+      "value": "DeployObject"
+    },
+    {
+      "name": "interior deploy has a scheduled command",
+      "subject": {"gesture": 0},
+      "at_step": 7380,
+      "field": "queued_commands",
+      "op": "ne",
+      "value": []
+    },
+    {
+      "name": "interior deploy starts on the factory footprint",
+      "subject": {"actor": {"owner": "VERA-OBSERVER", "type_id": "AMCV", "bind_step": 7380}},
+      "at_step": 7380,
+      "field": "cell",
+      "op": "eq",
+      "value": [29, 92]
+    },
+    {
       "name": "factory gate keeps moving",
       "subject": {
         "actor": {
-          "stable_id": 1737,
+          "owner": "VERA-OBSERVER",
+          "type_id": "AMCV",
           "bind_step": 7380
         }
       },
@@ -18,7 +43,8 @@
       "name": "factory gate does not queue deploy",
       "subject": {
         "actor": {
-          "stable_id": 1737,
+          "owner": "VERA-OBSERVER",
+          "type_id": "AMCV",
           "bind_step": 7380
         }
       },
@@ -31,7 +57,8 @@
       "name": "factory gate retains destination",
       "subject": {
         "actor": {
-          "stable_id": 1737,
+          "owner": "VERA-OBSERVER",
+          "type_id": "AMCV",
           "bind_step": 7380
         }
       },
@@ -49,7 +76,8 @@
       "name": "outside factory admits deployment",
       "subject": {
         "actor": {
-          "stable_id": 1737,
+          "owner": "VERA-OBSERVER",
+          "type_id": "AMCV",
           "bind_step": 7380
         }
       },
@@ -62,7 +90,9 @@
       "name": "converted yard owns new site",
       "subject": {
         "actor": {
-          "stable_id": 2176,
+          "owner": "VERA-OBSERVER",
+          "type_id": "GACNST",
+          "cell": [40, 96],
           "bind_step": 8450
         }
       },

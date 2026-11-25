@@ -8,6 +8,7 @@ use super::{
 use crate::app::AppState;
 use crate::app::input::commands::preferred_command_owner;
 use crate::app::input::entity_pick::SelectionMutation;
+use crate::app::match_runtime::sim_host::SimHost;
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::map::entities::EntityCategory;
 use crate::sim::command::Command;
@@ -144,14 +145,14 @@ pub(super) fn schedule_control_group_assignment(
 }
 
 pub(super) fn queue_control_group_assignment(
-    state: &mut AppState,
+    sim_runtime: &mut SimHost,
     slot: usize,
     entity_ids: Vec<u64>,
 ) {
-    let Some(owner) = preferred_command_owner(state) else {
+    let Some(owner) = preferred_command_owner(sim_runtime) else {
         return;
     };
-    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
+    let Some(runtime) = sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     let _ = schedule_control_group_assignment(&mut runtime.simulation, &owner, slot, entity_ids);
@@ -301,15 +302,17 @@ pub(super) fn handle_control_group_command(
     if action != GroupPressAction::Assign {
         // Recall731205, CenterCamera7313DE and AddTeam7314FD each START by
         // turning off every armed map mode on DisplayClass 0x87F7E8:
-        // SetTogglePowerMode(0) 0x4AC820 (unreachable in YR), SetWaypointMode
+        // SetTogglePowerMode(0) 0x4AC820 (0x7311D3, 0x7313AC, 0x7314CB; only
+        // Ares' TogglePower command arms it), SetWaypointMode
         // (0,0) 0x4AC700 — its +0x11B3 byte is never armed in YR, the only
         // write of 1 (0x004AC7A7) only ever runs with 0, see cursor.rs —
         // SetRepairMode(0) 0x4AC8C0 and SetSellMode(0) 0x4AC660, then
-        // SetPlaceBeaconMode(0) 0x4AC960. The repair/sell and beacon owners
-        // refuse these under a pending placement themselves. The PlanMgr
+        // SetPlaceBeaconMode(0) 0x4AC960. The mode owners refuse these under
+        // a pending placement themselves. The PlanMgr
         // planning mode is a separate owner these Display setters do not
         // cancel. TeamAssign 731060 is not evidenced to clear any mode, so
         // Assign keeps every armed mode as it is.
+        crate::app::input::power_mode::disable(&mut state.match_state);
         state
             .match_state
             .match_presentation
@@ -327,7 +330,7 @@ pub(super) fn handle_control_group_command(
         .map(|rt| &rt.simulation);
     match action {
         GroupPressAction::Assign => {
-            queue_control_group_assignment(state, group_idx, selected);
+            queue_control_group_assignment(&mut state.match_state.sim_runtime, group_idx, selected);
         }
         GroupPressAction::Center => {
             // Alt+digit and Recall's double tap both run CenterCamera, which
@@ -336,7 +339,13 @@ pub(super) fn handle_control_group_command(
             if let Some(selection) = team_selection(sim, action, &group, &selected) {
                 queue_team_selection(state, selection);
             }
-            crate::app::input::camera::center_view_on_selection(state);
+            crate::app::input::camera::center_view_on_selection(
+                &state.platform,
+                &mut state.renderer,
+                &state.frontend,
+                &mut state.match_state,
+                &state.persistence,
+            );
         }
         GroupPressAction::AddToSelection => {
             if let Some(selection) = team_selection(sim, action, &group, &selected) {
@@ -351,7 +360,10 @@ pub(super) fn handle_control_group_command(
             if let Some(selection) = team_selection(sim, action, &group, &selected) {
                 queue_team_selection(state, selection);
             }
-            apply_selection_action_line_policy(state, ORDINARY_SELECTION_ACTION_LINE_POLICY);
+            apply_selection_action_line_policy(
+                &mut state.match_state,
+                ORDINARY_SELECTION_ACTION_LINE_POLICY,
+            );
         }
     }
 }

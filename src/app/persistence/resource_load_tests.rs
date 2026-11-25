@@ -16,6 +16,54 @@ const LOAD_CLOCK_MS: u64 = 16_000;
 const SAVED_ELAPSED_BUCKETS: u32 = 180;
 const MISSING_FOLLOW_ID: u64 = 0xBAD_F011;
 
+/// Optional local replay of a player's save with their installed retail assets.
+#[cfg(not(any(
+    feature = "phobos",
+    feature = "npatch",
+    feature = "verax",
+    feature = "npbug"
+)))]
+#[test]
+#[ignore = "requires VERA20K_VERIFY_PLAYER_SAVE and its matching RA2_DIR"]
+fn external_player_save_resumes_and_saves_again() {
+    crate::test_fixture::on_game_stack(|| {
+        let source =
+            std::env::var_os("VERA20K_VERIFY_PLAYER_SAVE").expect("set the input save path");
+        let bytes = std::fs::read(&source).expect("read player save");
+        let header = GameSnapshot::read_metadata(&bytes).expect("read player save header");
+        let directory = TestDirectory::new("external-player-save");
+        let repository = SaveRepository::at(directory.path().to_owned());
+        let copy = repository.write_named("input.sav", &bytes).unwrap();
+        drop(bytes);
+        let (_, mut assets) = retail_assets().expect("set RA2_DIR to the matching assets");
+        let mut owner = retail_rules_owner(&assets);
+        let player = std::cell::Cell::new(None);
+        super::release_save_tests::resume_player_file(
+            &repository,
+            &copy,
+            &mut assets,
+            &mut owner,
+            &MainRng::new(1),
+            |runtime| {
+                let session = runtime.simulation.session();
+                assert_eq!(session.map_name(), header.map_name);
+                assert_eq!(session.tick(), header.tick);
+                player.set(Some(session.current_house().expect("saved player House")));
+                let due = runtime.simulation.take_due_commands();
+                runtime
+                    .advance_frame_for_tooling(&due, 67)
+                    .expect("advance resumed game");
+                assert_eq!(runtime.simulation.session().tick(), header.tick + 1);
+            },
+            |sim| {
+                assert_eq!(sim.session().map_name(), header.map_name);
+                assert_eq!(sim.session().tick(), header.tick + 1);
+                assert_eq!(sim.session().current_house(), player.get());
+            },
+        );
+    });
+}
+
 #[test]
 fn packed_ice_bytes_survive_materialization_and_saved_resource_loading() {
     crate::test_fixture::on_game_stack(
@@ -124,20 +172,7 @@ fn packed_ice_bytes_survive_materialization_and_saved_resource_loading_body() {
     let bytes = snapshot_bytes(&runtime, &owner, &metadata, None, hash);
     std::fs::remove_file(&path).unwrap();
     let repository = SaveRepository::at(directory.path().join("saves"));
-    let frontend = frontend_main();
-    let clock = || LOAD_CLOCK_MS;
-    let view = SavedGamePreparationView {
-        repository: &repository,
-        current_simulation: None,
-        frontend_main: &frontend,
-        rules_owner: &owner,
-        tile_cache: &cache,
-        lighting: &crate::app::presentation::lighting::MatchLighting::default(),
-        load_clock: &clock,
-    };
-    let restored = assets
-        .prepare_saved_load(|assets| PreparedSavedGame::prepare_resources(&bytes, &view, assets))
-        .unwrap();
+    let restored = restore_map_save(&bytes, &repository, &mut assets, &owner, &cache);
     assert_eq!(
         ice(
             restored.world.simulation.resolved_terrain().unwrap(),
@@ -169,6 +204,78 @@ fn packed_ice_bytes_survive_materialization_and_saved_resource_loading_body() {
     );
 }
 
+#[test]
+fn bundled_ice_map_restores_its_tiles_without_the_source_file() {
+    crate::test_fixture::on_game_stack(|| {
+        let Some((root, mut assets)) = retail_assets() else {
+            return;
+        };
+        let directory = TestDirectory::new("ice-lake-save");
+        // Give a mapmaker's copy a different name and delete it before restore.
+        let data = crate::map::source::bundled_map_bytes("vera-ice-lake.map").unwrap();
+        directory.write("crossing.map", data);
+        let path = directory.path().join("crossing.map");
+        let name = path.to_str().unwrap();
+        let loaded =
+            crate::map::source::load_map_by_name_or_path_with_assets(&root, name, &assets).unwrap();
+        let mut owner = retail_rules_owner(&assets);
+        let mode = crate::rules::retail_sources::select_ini(&assets, "MPBattleMD.ini")
+            .unwrap()
+            .ini;
+        let mut cache = TileVariantSelectorCache::default();
+        let (mut runtime, map, _) =
+            bound_saved_world(loaded, name, &mut assets, &mut owner, &mode, &mut cache);
+        assert!(
+            runtime
+                .simulation
+                .rebuild_dynamic_navigation(&runtime.resources.rules)
+        );
+        let bytes = snapshot_bytes(
+            &runtime,
+            &owner,
+            &map,
+            None,
+            runtime.resources.rules.simulation_config_hash(),
+        );
+        std::fs::remove_file(path).unwrap();
+
+        let repository = SaveRepository::at(directory.path().join("saves"));
+        let restored = restore_map_save(&bytes, &repository, &mut assets, &owner, &cache);
+        assert!(restored.map.uses_bundled_ice());
+        assert!(restored.theater.uses_bundled_ice());
+        assert!(
+            restored
+                .world
+                .simulation
+                .resolved_terrain()
+                .unwrap()
+                .ice_atlas_tiles()
+                .contains(&4112)
+        );
+    });
+}
+
+fn restore_map_save(
+    bytes: &[u8],
+    repository: &SaveRepository,
+    assets: &mut AssetManager,
+    owner: &NativeRulesProcessOwner,
+    cache: &TileVariantSelectorCache,
+) -> PreparedSavedResources {
+    let view = SavedGamePreparationView {
+        repository,
+        current_simulation: None,
+        frontend_main: &frontend_main(),
+        rules_owner: owner,
+        tile_cache: cache,
+        lighting: &crate::app::presentation::lighting::MatchLighting::default(),
+        load_clock: &|| LOAD_CLOCK_MS,
+    };
+    assets
+        .prepare_saved_load(|assets| PreparedSavedGame::prepare_resources(bytes, &view, assets))
+        .unwrap()
+}
+
 fn map_text(theater: &str, strength: i32, size: u32) -> String {
     // This Pack5 record is the existing map/source.rs one-cell fixture. The
     // map owner supplies the remaining native Size diamond from retail Clear.
@@ -193,8 +300,9 @@ fn bound_saved_world(
     cache: &mut TileVariantSelectorCache,
 ) -> (SimRuntime, SavedMapMetadata, String) {
     let map = loaded.map;
-    let theater =
-        theater::load_theater(assets, &map.header.theater).expect("retail saved-world theater");
+    let theater = theater::load_scenario_theater(assets, &map.header.theater, &map.ini, false)
+        .unwrap()
+        .expect("retail saved-world theater");
     let (mut rules, _, fixed_art, _) = owner
         .load_scenario(
             crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(mode)),

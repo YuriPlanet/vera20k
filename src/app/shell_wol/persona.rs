@@ -10,22 +10,27 @@ use super::service::{self, WolServiceRequest};
 use super::{WolPage, WolProvider};
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_transition::{ShellExitThen, ShellSlideKind};
+use crate::app::frontend::state::FrontendState;
 use crate::app::persistence::wol_profile::{WolInfoFile, WolPersona};
+use crate::app::process_assets::ProcessAssets;
+use crate::app::shell_wol::WolVisit;
 use crate::app::{App, AppState};
 use crate::assets::csf_file::{CsfArg, format_csf};
+use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::page::{self, PageEvent};
 use crate::ui::wol_persona::*;
-use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
+use crate::util::config::GameConfig;
+use vera20k_gui::shell::list::ShellListGeometry;
 use vera20k_gui::{NodeId, Prop, Value};
 
 /// Native diagnostics use the file next to VERA.INI; modern online visits
 /// never read or create the legacy account/persona file.
-pub(super) fn info_file(state: &AppState) -> Option<WolInfoFile> {
-    let config = state.platform.game_config.as_ref()?;
-    native_info_file(
-        state.frontend.wol.as_ref().map(|visit| visit.provider),
-        config.paths.settings_dir(),
-    )
+pub(super) fn info_file(
+    wol: Option<&WolVisit>,
+    game_config: Option<&GameConfig>,
+) -> Option<WolInfoFile> {
+    let config = game_config?;
+    native_info_file(wol.map(|visit| visit.provider), config.paths.settings_dir())
 }
 
 fn native_info_file(provider: Option<WolProvider>, directory: &Path) -> Option<WolInfoFile> {
@@ -33,9 +38,14 @@ fn native_info_file(provider: Option<WolProvider>, directory: &Path) -> Option<W
 }
 
 /// `WOLPlayerInfo__LoadRecord` `0x00778A20` for `name`.
-pub(super) fn load(state: &AppState, name: &str) -> WolPersona {
-    match info_file(state) {
-        Some(file) => file.load_persona(name, &|key| state.csf_text(key)),
+pub(super) fn load(
+    wol: Option<&WolVisit>,
+    game_config: Option<&GameConfig>,
+    process_assets: &ProcessAssets,
+    name: &str,
+) -> WolPersona {
+    match info_file(wol, game_config) {
+        Some(file) => file.load_persona(name, &|key| process_assets.csf_text(key)),
         None => WolPersona::default(),
     }
 }
@@ -44,12 +54,18 @@ pub(super) fn load(state: &AppState, name: &str) -> WolPersona {
 /// (`0x00789F55`) and in the joined user list (`0x007A7110`), as connect
 /// does (`0x00786938`). Online visits have no persona file, so the picks the
 /// player saved in VERA.INI stay instead of becoming Random.
-pub(super) fn take_side_and_color(state: &mut AppState, name: &str) {
-    if let Some((country, color)) =
-        persona_picks(info_file(state).as_ref(), name, &|key| state.csf_text(key))
-    {
-        state
-            .frontend
+pub(super) fn take_side_and_color(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    process_assets: &ProcessAssets,
+    name: &str,
+) {
+    if let Some((country, color)) = persona_picks(
+        info_file(frontend.wol.as_ref(), game_config).as_ref(),
+        name,
+        &|key| process_assets.csf_text(key),
+    ) {
+        frontend
             .multiplayer_shell_runtime
             .set_side_and_color(country, color);
     }
@@ -65,38 +81,52 @@ fn persona_picks(
 }
 
 /// `WOLInfo__SaveProfileToINI` `0x0077A080` under `name`.
-pub(super) fn save(state: &AppState, persona: &mut WolPersona, name: &str) {
-    if let Some(file) = info_file(state) {
-        file.save_persona(persona, name, &|key| state.csf_text(key));
+pub(super) fn save(
+    wol: Option<&WolVisit>,
+    game_config: Option<&GameConfig>,
+    process_assets: &ProcessAssets,
+    persona: &mut WolPersona,
+    name: &str,
+) {
+    if let Some(file) = info_file(wol, game_config) {
+        file.save_persona(persona, name, &|key| process_assets.csf_text(key));
     }
 }
 
 /// `WOL_Main` entry (`0x0077B322..0x0077B399`): an empty nickname
 /// `[0xB73E40]` becomes AutoLogin, then LastValid.
-pub(super) fn enter_wol_main(state: &mut AppState) {
-    if !state.frontend.wol_account.nickname.is_empty() {
+pub(super) fn enter_wol_main(frontend: &mut FrontendState, game_config: Option<&GameConfig>) {
+    if !frontend.wol_account.nickname.is_empty() {
         return;
     }
     // The assignment allocates the buffer even for an empty AutoLogin.
-    state.frontend.wol_account.nickname_allocated = true;
-    let Some(file) = info_file(state) else {
+    frontend.wol_account.nickname_allocated = true;
+    let Some(file) = info_file(frontend.wol.as_ref(), game_config) else {
         return;
     };
     let mut nickname = file.auto_login();
     if nickname.is_empty() {
         nickname = file.last_valid();
     }
-    state.frontend.wol_account.nickname = nickname;
+    frontend.wol_account.nickname = nickname;
 }
 
 /// `0x10E`'s init (`0x007989AA`): with a nickname, the persona (loading it
 /// creates the file) fills the heading, the five stats and the update line.
-pub(super) fn welcome_texts(state: &AppState) -> Vec<(u16, String)> {
-    let nickname = &state.frontend.wol_account.nickname;
+pub(super) fn welcome_texts(
+    frontend: &FrontendState,
+    game_config: Option<&GameConfig>,
+    process_assets: &ProcessAssets,
+) -> Vec<(u16, String)> {
+    let nickname = &frontend.wol_account.nickname;
     if nickname.is_empty() {
         return Vec::new();
     }
-    profile_texts(state, nickname, &load(state, nickname))
+    profile_texts(
+        process_assets,
+        nickname,
+        &load(frontend.wol.as_ref(), game_config, process_assets, nickname),
+    )
 }
 
 /// `0x0077A9F0`'s texts by control id: the heading (`GUI:UserProfileLabel`,
@@ -104,13 +134,13 @@ pub(super) fn welcome_texts(state: &AppState) -> Vec<(u16, String)> {
 /// (`GUI:UnknownStats` for -1) and the update line (`GUI:WelcomeUpdate`
 /// with both date and time, else `GUI:Blank`).
 pub(super) fn profile_texts(
-    state: &AppState,
+    process_assets: &ProcessAssets,
     name: &str,
     persona: &WolPersona,
 ) -> Vec<(u16, String)> {
     let stat = |value: i32| {
         if value == -1 {
-            state.csf_text("GUI:UnknownStats")
+            process_assets.csf_text("GUI:UnknownStats")
         } else {
             value.to_string()
         }
@@ -119,20 +149,20 @@ pub(super) fn profile_texts(
         String::new()
     } else {
         format_csf(
-            &state.csf_text("GUI:UserProfileLabel"),
+            &process_assets.csf_text("GUI:UserProfileLabel"),
             &[CsfArg::Str(name)],
         )
     };
     let update = if !persona.update_date.is_empty() && !persona.update_time.is_empty() {
         format_csf(
-            &state.csf_text("GUI:WelcomeUpdate"),
+            &process_assets.csf_text("GUI:WelcomeUpdate"),
             &[
                 CsfArg::Str(&persona.update_date),
                 CsfArg::Str(&persona.update_time),
             ],
         )
     } else {
-        state.csf_text("GUI:Blank")
+        process_assets.csf_text("GUI:Blank")
     };
     vec![
         (0x06EF, heading),
@@ -149,7 +179,12 @@ pub(super) fn profile_texts(
 /// table by lowered name; this user's also into the persona with priority
 /// 2, saved. Returns whether this user was listed (event 14,
 /// `0x007ABAD8`). A failed result is only logged.
-pub(super) fn user_locales(state: &mut AppState, result: Result<Vec<(String, i32)>, u32>) -> bool {
+pub(super) fn user_locales(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    process_assets: &ProcessAssets,
+    result: Result<Vec<(String, i32)>, u32>,
+) -> bool {
     let users = match result {
         Ok(users) => users,
         Err(code) => {
@@ -157,9 +192,9 @@ pub(super) fn user_locales(state: &mut AppState, result: Result<Vec<(String, i32
             return false;
         }
     };
-    let nickname = state.frontend.wol_account.nickname.clone();
+    let nickname = frontend.wol_account.nickname.clone();
     let mut local = None;
-    if let Some(visit) = state.frontend.wol.as_mut() {
+    if let Some(visit) = frontend.wol.as_mut() {
         for (name, locale) in users {
             if name.eq_ignore_ascii_case(&nickname) {
                 local = Some(locale);
@@ -170,9 +205,20 @@ pub(super) fn user_locales(state: &mut AppState, result: Result<Vec<(String, i32
     let Some(locale) = local else {
         return false;
     };
-    let mut persona = load(state, &nickname);
+    let mut persona = load(
+        frontend.wol.as_ref(),
+        game_config,
+        process_assets,
+        &nickname,
+    );
     persona.set_locale(locale, 2);
-    save(state, &mut persona, &nickname);
+    save(
+        frontend.wol.as_ref(),
+        game_config,
+        process_assets,
+        &mut persona,
+        &nickname,
+    );
     true
 }
 
@@ -224,8 +270,11 @@ pub(super) fn open_auto_login_query(state: &mut AppState) {
 /// `0x112`'s teardown has run: Yes stores the nickname as AutoLogin, No the
 /// Ask flag; `0x0072BCF0` frees the art and the flow returns 1.
 pub(crate) fn commit_auto_login(state: &mut AppState, answer: AutoLoginAnswer) {
-    super::leaf::free_art(state, AUTO_LOGIN_DIALOG);
-    if let Some(file) = info_file(state) {
+    super::leaf::free_art(&mut state.frontend.wol_art, AUTO_LOGIN_DIALOG);
+    if let Some(file) = info_file(
+        state.frontend.wol.as_ref(),
+        state.platform.game_config.as_ref(),
+    ) {
         match answer {
             AutoLoginAnswer::Yes => file.set_auto_login(&state.frontend.wol_account.nickname),
             AutoLoginAnswer::No { ask_again } => file.set_ask_auto_login(ask_again),
@@ -247,9 +296,15 @@ pub(super) fn open_add_buddy_query(state: &mut AppState, opponent: &str) {
         opponent: opponent.to_owned(),
     }));
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
-    let _ = App::ensure_skirmish_shell_chrome(state);
+    let _ = App::ensure_skirmish_shell_chrome(
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+    );
     state.frontend.shell_controller.reset_to(ADD_BUDDY_DIALOG);
-    let question = add_buddy_text(state).unwrap_or_default();
+    let question =
+        add_buddy_text(state.frontend.wol.as_ref(), &state.process_assets).unwrap_or_default();
     if let Some(root) = sync(state) {
         let gui = state.frontend.shell_controller.gui_mut();
         page::set(gui, root, TEXT, Prop::Text, Value::Text(question));
@@ -263,12 +318,15 @@ pub(crate) struct AddBuddyQuery {
 }
 
 /// `0x122`'s question.
-pub(crate) fn add_buddy_text(state: &AppState) -> Option<String> {
-    let WolPage::AddBuddyQuery(page) = &state.frontend.wol.as_ref()?.page else {
+pub(crate) fn add_buddy_text(
+    wol: Option<&WolVisit>,
+    process_assets: &ProcessAssets,
+) -> Option<String> {
+    let WolPage::AddBuddyQuery(page) = &wol?.page else {
         return None;
     };
     Some(format_csf(
-        &state.csf_text(ADD_BUDDY_TEXT_KEY),
+        &process_assets.csf_text(ADD_BUDDY_TEXT_KEY),
         &[CsfArg::Str(&page.opponent)],
     ))
 }
@@ -290,8 +348,10 @@ pub(crate) fn commit_locale(state: &mut AppState, locale: i32) {
 }
 
 /// The open page's dialog.
-pub(crate) fn dialog(state: &AppState) -> Option<crate::ui::shell::descriptor::DialogResourceId> {
-    match state.frontend.wol.as_ref()?.page {
+pub(crate) fn dialog(
+    wol: Option<&WolVisit>,
+) -> Option<crate::ui::shell::descriptor::DialogResourceId> {
+    match wol?.page {
         WolPage::AutoLoginQuery => Some(AUTO_LOGIN_DIALOG),
         WolPage::Locale(_) => Some(LOCALE_DIALOG),
         WolPage::AddBuddyQuery(_) => Some(ADD_BUDDY_DIALOG),
@@ -300,8 +360,8 @@ pub(crate) fn dialog(state: &AppState) -> Option<crate::ui::shell::descriptor::D
 }
 
 pub(crate) fn layout(state: &AppState) -> Option<WolPersonaLayout> {
-    let dialog = dialog(state)?;
-    Some(shell_layout::on(state, |w, h, scale| {
+    let dialog = dialog(state.frontend.wol.as_ref())?;
+    Some(shell_layout::on(&state.renderer.gpu, |w, h, scale| {
         WolPersonaLayout::new(dialog, w, h, scale)
     }))
 }
@@ -311,7 +371,8 @@ pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
     let layout = layout(state)?;
     let dialog = layout.dialog;
     leaf::sync(
-        state,
+        &mut state.frontend.shell_controller,
+        &state.renderer.bit_font,
         dialog,
         layout.page.scale,
         || spec(dialog),
@@ -320,16 +381,10 @@ pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
 }
 
 /// `0xFE`'s list as it shows: its geometry and top row.
-pub(crate) fn list_view(state: &AppState) -> Option<(ShellListGeometry, usize)> {
-    let layout = layout(state)?;
-    let gui = state.frontend.shell_controller.gui();
-    let list = gui.find_id(leaf::root(state, LOCALE_DIALOG)?, LOCALE_LIST.into())?;
-    let view = gui.list_view(list)?;
-    let metrics = ListMetrics::scaled(layout.page.scale);
-    Some((
-        view.geometry(layout.rect_of(LOCALE_LIST)?, metrics),
-        view.top,
-    ))
+pub(crate) fn list_view(controller: &DialogController) -> Option<(ShellListGeometry, usize)> {
+    let gui = controller.gui();
+    let list = gui.find_id(leaf::root(controller, LOCALE_DIALOG)?, LOCALE_LIST.into())?;
+    Some((gui.list_geometry(list)?, gui.list_view(list)?.top))
 }
 
 pub(super) fn cursor_moved(state: &mut AppState) {

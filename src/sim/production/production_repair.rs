@@ -290,26 +290,35 @@ pub(crate) fn engineer_repair(sim: &mut Simulation, rules: &RuleSet, id: u64) ->
     true
 }
 
-/// `BuildingClass::Can_Repair @ 0x00452630` (vt+0x94): a building with
-/// Health (`+0x6C`), of a `ClickRepairable=` type (`+0x157A`) that is not a
-/// 1x1 `UndeploysInto=` type (`BuildingTypeClass 0x00465D40`), whose
-/// `Repairable=` type (TechnoType `+0xCCC`) has it below Strength
-/// (`0x00701140`). Every building of a computer house asks each frame, so
-/// the undeploy test's type lookup runs last.
-pub fn can_repair_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
+/// The wrench's type permission. `BuildingClass::Can_Repair @ 0x00452630`
+/// tests ClickRepairable (+0x157A) and the one-cell undeploy restriction
+/// (0x00465D40); its TechnoClass base (0x00701140) tests Repairable (+0xCCC).
+fn wrench_admits(sim: &Simulation, rules: &RuleSet, id: u64, require_damage: bool) -> bool {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;
     };
     if entity.category() != EntityCategory::Structure || entity.health.current() == 0 {
         return false;
     }
-    let Some(object) = sim.object_type(entity.type_ref(), rules) else {
+    let Some(object) = sim.entity_object_type(entity, rules) else {
         return false;
     };
     object.click_repairable
         && object.repairable
-        && entity.health.current() != object.strength
+        && (!require_damage || entity.health.current() != object.strength)
         && !(object.foundation.dimensions() == (1, 1) && undeploys(rules, object))
+}
+
+/// VERA checks the wrench's static permission at the REPAIR receiver. The
+/// native receiver (0x004C6ED2) accepts an alive full-health building too.
+pub fn player_repair_type_admits(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
+    wrench_admits(sim, rules, id, false)
+}
+
+/// `BuildingClass::Can_Repair @ 0x00452630`: the wrench and the computer only
+/// offer to repair a permitted building whose health differs from Strength.
+pub fn can_repair_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
+    wrench_admits(sim, rules, id, true)
 }
 
 /// VERA Auto Repair (`docs/auto-repair.md`): `owner`'s buildings a player

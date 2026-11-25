@@ -1050,9 +1050,7 @@ impl TerrainDrawRenderer {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
-
-
-multiview_mask: None,
+                    multiview_mask: None,
                 });
                 pass.set_pipeline(&self.snapshot_pipeline);
                 pass.set_bind_group(0, &targets.source, &[]);
@@ -1071,9 +1069,7 @@ multiview_mask: None,
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
-
-
-multiview_mask: None,
+                    multiview_mask: None,
                 });
                 // Each touched-pixel quad lies inside its own chunk's scissor.
                 pass.set_scissor_rect(x, y, w, h);

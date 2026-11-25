@@ -64,6 +64,7 @@ mod hunter_seeker;
 #[cfg(all(test, tests_sim_superweapon))]
 mod hunter_seeker_tests;
 pub mod invulnerability;
+mod ion_cannon;
 pub mod iron_curtain;
 pub mod lightning_storm;
 #[cfg(all(test, any(tests_sim_superweapon, tests_sim_trigger)))]
@@ -104,8 +105,8 @@ mod view_admission_tests;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponType;
 use crate::sim::houses::Houses;
-use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
+use crate::sim::intern::{InternKey, InternedId};
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::FrameChannel;
@@ -223,19 +224,30 @@ fn deck_coords(sim: &Simulation, (x, y): (u16, u16)) -> [i32; 3] {
 /// Dominator's (`0x0053AEE5`, `0x0053B139`) and the Lightning Storm's clouds,
 /// bolts and debris (`0x0053A237`, `0x0053A387`, `0x0053A68B`). An empty name
 /// or an art type that never bound constructs nothing.
-pub(super) fn spawn_super_anim(
+///
+/// A name is trimmed and looked up uppercased. An id whose text is already
+/// trimmed and not empty is that lookup's answer (the interner looks names
+/// up ignoring case), so it is taken as it is and nothing is interned for it.
+pub(super) fn spawn_super_anim<'k>(
     sim: &mut Simulation,
     rules: &RuleSet,
-    anim_name: &str,
+    anim_name: impl Into<InternKey<'k>>,
     [x, y, z]: [i32; 3],
 ) -> Option<crate::sim::anim_class::AnimId> {
-    let name = anim_name.trim();
+    let anim_name = anim_name.into();
+    let name = sim.interner.key_name(anim_name).trim();
     if name.is_empty() {
         return None;
     }
+    let type_id = match anim_name {
+        InternKey::Id(id) if name.len() == sim.interner.resolve(id).len() => id,
+        _ => {
+            let name = name.to_ascii_uppercase();
+            sim.interner.intern(&name)
+        }
+    };
     let world = crate::sim::anim_class::AnimWorldCoord { x, y, z };
     let (rx, ry, sub_x, sub_y, level) = world.to_cell_sub_z();
-    let type_id = sim.interner.intern(&name.to_ascii_uppercase());
     let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
         delay: 0,
         loop_count: 1,
@@ -249,7 +261,10 @@ pub(super) fn spawn_super_anim(
     match sim.spawn_anim_at_world(rules, descriptor, world) {
         Ok(anim) => Some(anim),
         Err(error) => {
-            log::debug!("superweapon anim [{name}] did not construct: {error}");
+            log::debug!(
+                "superweapon anim [{}] did not construct: {error}",
+                sim.interner.key_name(anim_name).trim()
+            );
             None
         }
     }
@@ -2418,19 +2433,19 @@ pub fn building_super_charges(
     let Some(object) = sim.object_type(building.type_ref(), rules) else {
         return Vec::new();
     };
+    let mut supers = type_super_weapons(object).peekable();
+    if supers.peek().is_none() {
+        return Vec::new();
+    }
     let Some(held) = sim.super_weapons.get(&building.owner()) else {
         return Vec::new();
     };
     let frame = sim.session.binary_frame() as i32;
-    let draws_all = match sim.session.current_house() {
-        None => true,
-        Some(house) => crate::map::houses::is_allied_with(
-            sim.house_alliances().as_map(),
-            sim.interner.resolve(house),
-            sim.interner.resolve(building.owner()),
-        ),
-    };
-    type_super_weapons(object)
+    let draws_all = sim.session.current_house().is_none_or(|house| {
+        sim.house_alliances()
+            .is_allied(&sim.interner, house, building.owner())
+    });
+    supers
         .filter_map(|name| {
             let id = sim.interner.get(name)?;
             let instance = held.get(&id)?;
@@ -2563,7 +2578,6 @@ fn finish_ares_launch(
         instance.record_ares_launch(frame);
     }
     let data = ares_launch_data_type(sim, rules, owner, typ);
-    let data_name = sim.interner.resolve(data).to_owned();
     let recheck = sim
         .super_weapons
         .get(&owner)
@@ -2571,7 +2585,7 @@ fn finish_ares_launch(
         .is_some_and(|instance| {
             instance.one_time
                 || rules
-                    .super_weapon_metadata(&data_name)
+                    .super_weapon_metadata(sim.interner.resolve(data))
                     .is_some_and(|metadata| {
                         !metadata
                             .availability()
@@ -2587,11 +2601,11 @@ fn finish_ares_launch(
     // 10032F91..10032FBB: neither a PostClick type nor an SW.AutoFire one
     // becomes the House's last Super (the type index of the data Super).
     let auto_fire = rules
-        .super_weapon_target_policy(&data_name)
+        .super_weapon_target_policy(sim.interner.resolve(data))
         .is_some_and(|policy| policy.auto_fire());
     if !flags.has(F::POST_CLICK)
         && !auto_fire
-        && let Some(index) = rules.super_weapon_index(&data_name)
+        && let Some(index) = rules.super_weapon_index(sim.interner.resolve(data))
         && let Some(house) = sim.houses.get_mut(&owner)
     {
         house.remember_ares_last_super(index as i32);

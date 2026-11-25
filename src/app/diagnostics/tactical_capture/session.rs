@@ -39,6 +39,7 @@ use crate::sim::command::Command;
 use crate::sim::house_state::HouseDifficulty;
 use crate::sim::production;
 use crate::ui::game_screen::GameScreen;
+use crate::ui::sidebar::SidebarPart;
 
 #[path = "map_observation.rs"]
 mod map_observation;
@@ -205,7 +206,13 @@ impl TacticalCaptureSession {
                 modal.begin_generate();
                 state.frontend.skirmish_shell_state.random_map_setup_modal = Some(modal);
                 ensure!(
-                    crate::app::App::start_random_map_generation(state, &options, false),
+                    crate::app::App::start_random_map_generation(
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &mut state.process_assets,
+                        &options,
+                        false
+                    ),
                     "cannot start normal random-map setup generation"
                 );
                 self.preparing_random_map = true;
@@ -544,7 +551,11 @@ impl TacticalCaptureSession {
         owner: &str,
         command: Command,
     ) -> Result<()> {
-        let execute_tick = crate::app::input::commands::try_schedule_command(state, owner, command);
+        let execute_tick = crate::app::input::commands::try_schedule_command(
+            &mut state.match_state,
+            owner,
+            command,
+        );
         let script = self
             .controller
             .script_mut()
@@ -1080,7 +1091,7 @@ impl TacticalCaptureSession {
             .match_presentation
             .radar_content_insets
             .context("radar content insets are absent")?;
-        let drawn_sidebar = output.drawn_sidebar_view(state);
+        let drawn_sidebar = output.drawn_sidebar_view(&state.match_state.match_presentation);
         let render_evidence = SidebarRenderEvidence::from_render_output(
             output,
             drawn_sidebar,
@@ -1089,6 +1100,8 @@ impl TacticalCaptureSession {
             [state.render_width(), state.render_height()],
         )?;
         let sidebar = drawn_sidebar.context("production render emitted no SidebarView")?;
+        let spec = state.match_state.match_presentation.sidebar_layout_spec;
+        let top_of = |part: SidebarPart| sidebar.layout.origin(&spec, part)[1];
         let panel_contains_aperture = aperture.x >= sidebar.panel_rect.x
             && aperture.y >= 0.0
             && aperture.x + aperture.w <= sidebar.panel_rect.x + sidebar.panel_rect.w
@@ -1203,9 +1216,9 @@ impl TacticalCaptureSession {
                     "low_power": sidebar.low_power,
                     "layout": {
                         "sidebar_x": sidebar.layout.sidebar_x,
-                        "radar_y": sidebar.layout.radar_y,
-                        "side1_y": sidebar.layout.side1_y,
-                        "tabs_y": sidebar.layout.tabs_y,
+                        "radar_y": top_of(SidebarPart::Radar),
+                        "side1_y": top_of(SidebarPart::Middle),
+                        "tabs_y": top_of(SidebarPart::Tabs),
                         "cameo_grid_top": sidebar.layout.cameo_grid_top,
                         "cameo_grid_bottom": sidebar.layout.cameo_grid_bottom,
                         "side3_y": sidebar.layout.side3_y,

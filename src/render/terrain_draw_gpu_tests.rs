@@ -477,9 +477,7 @@ pub(crate) fn clear(
         }),
         timestamp_writes: None,
         occlusion_query_set: None,
-
-
-multiview_mask: None,
+        multiview_mask: None,
     });
 }
 /// Draw `strokes` through the production stroke draw over the loaded
@@ -1901,9 +1899,7 @@ pub(crate) fn seed_depth_grid(
         }),
         timestamp_writes: None,
         occlusion_query_set: None,
-
-
-multiview_mask: None,
+        multiview_mask: None,
     });
     pass.set_pipeline(&pipeline);
     pass.set_bind_group(0, &binding, &[]);

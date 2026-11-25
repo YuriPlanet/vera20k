@@ -572,6 +572,11 @@ pub fn locomotor_consults_current_speed(kind: Option<LocomotorKind>) -> bool {
 /// Call this wherever a type `Speed=` becomes an entity's movement speed —
 /// native reaches the FASTER stage on every speed query a mover makes, so a
 /// resolver that skips it runs a promoted unit at rookie speed.
+///
+/// The getter's first read is the object's max speed (vt+0x38C at
+/// `0x004DB1C3`), which `max_speed` gives for the type speed: the type speed
+/// itself in gamemd (`TechnoClass 0x0070EFE0`), less for a Tiberian Sun
+/// limpeted vehicle ([`crate::sim::limpet::max_speed`]).
 fn mover_speed_leptons_per_second(
     raw_type_speed: i32,
     loco_kind: Option<LocomotorKind>,
@@ -580,11 +585,12 @@ fn mover_speed_leptons_per_second(
     veteran_speed: f64,
     house_bonus: crate::util::native_x87::NativeF32Bits,
     speed_multiplier: crate::util::native_x87::NativeF64Bits,
+    max_speed: impl FnOnce(i32) -> i32,
 ) -> SimFixed {
     let type_speed = crate::util::fixed_math::ra2_speed_to_leptons_per_frame(raw_type_speed);
     let speed = match object {
         Some(object) if locomotor_consults_current_speed(loco_kind) => current_type_speed(
-            type_speed,
+            max_speed(type_speed),
             house_bonus,
             speed_multiplier,
             has_weapon_ability(rank, object, Ability::Faster).then_some(veteran_speed),
@@ -613,6 +619,7 @@ pub fn entity_mover_speed_leptons_per_second(
         veteran_speed,
         house_bonus,
         entity.speed_multiplier(),
+        |type_speed| crate::sim::limpet::max_speed(entity, type_speed),
     )
 }
 
@@ -1003,6 +1010,7 @@ mod tests {
                 1.2,
                 NativeF32Bits::ONE,
                 NativeF64Bits::ONE,
+                |speed| speed,
             )
         };
         // Rhino Speed=6 and Grizzly Speed=7: native type speeds 15 and 17.

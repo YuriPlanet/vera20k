@@ -195,7 +195,7 @@ fn building_uninit_expires_attached_fires_then_limbo_uninits_them_and_survives_s
         assert!(sim.sound_events.iter().any(|event| matches!(event,
             SimSoundEvent::ObjectSoundReleased { owner } if *owner == *id)));
     }
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let hash = sim.state_hash();
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "building-expiry", 0);
     sim = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -765,7 +765,7 @@ fn deployment_attachment_expiry_clears_only_the_matching_pointer() {
 fn attached_animation_transfer_and_expiry_preserve_shared_owner_state() {
     let rules = runtime_rules("[A]\nEnd=3\n", &[("A", 3)]);
     let mut sim = Simulation::new();
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     for owner in [100, 101] {
         sim.substrate
             .entities
@@ -847,7 +847,7 @@ fn attached_animation_transfer_and_expiry_preserve_shared_owner_state() {
 fn the_last_anim_naming_an_owner_releases_it_through_writes_loads_and_removals() {
     let rules = runtime_rules("[A]\nEnd=3\n", &[("A", 3)]);
     let mut sim = Simulation::new();
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     for owner in [100, 101] {
         sim.substrate
             .entities
@@ -863,7 +863,7 @@ fn the_last_anim_naming_an_owner_releases_it_through_writes_loads_and_removals()
     }
     let parachuted =
         |sim: &Simulation, owner| sim.substrate.entities.get(owner).unwrap().is_parachuted();
-    sim.substrate.anims = crate::util::save_codec::deserialize(
+    *sim.substrate.anims = crate::util::save_codec::deserialize(
         &crate::util::save_codec::serialize(&sim.substrate.anims).unwrap(),
     )
     .unwrap();
@@ -1542,7 +1542,7 @@ fn anim_store_saves_as_before_and_notes_every_hand_out() {
 fn runtime_anim_retains_native_identity_and_spends_it_before_asset_failure() {
     let rules = runtime_rules("[LIVE]\nRate=900\nEnd=2\n", &[("LIVE", 2)]);
     let mut sim = Simulation::new();
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(1000));
     let live = sim.interner.intern("LIVE");
     let missing = sim.interner.intern("UNBOUND");
@@ -1864,8 +1864,8 @@ fn make_infantry_occupation_reads_constructor_side_flags_without_sprite_state() 
             crate::sim::overlay_grid::OverlayGrid::new(terrain.width(), terrain.height());
         overlays.cell_mut_for_test(x, y).overlay_data = native["state"].as_u64().unwrap() as u8;
         let mut sim = Simulation::new();
-        sim.resolved_terrain = Some(terrain);
-        sim.overlay_grid = Some(overlays);
+        *sim.resolved_terrain = Some(terrain);
+        *sim.overlay_grid = Some(overlays);
         assert!(sim.bridge_state.is_none());
         let world = AnimWorldCoord {
             x: i32::from(x) * 256 + 128,
@@ -1913,7 +1913,7 @@ fn make_infantry_occupation_reads_constructor_side_flags_without_sprite_state() 
 fn a_make_infantry_anim_left_of_the_map_edge_occupies_cell_zero() {
     const SIZE: u16 = 8;
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(
+    *sim.resolved_terrain = Some(
         crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(
             SIZE,
             SIZE,
@@ -1963,7 +1963,7 @@ fn a_make_infantry_anim_left_of_the_map_edge_occupies_cell_zero() {
 fn a_make_infantry_anim_writes_owner_minus_one_on_a_real_or_dummy_cell() {
     const SIZE: u16 = 8;
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(
+    *sim.resolved_terrain = Some(
         crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(
             SIZE,
             SIZE,
@@ -2208,7 +2208,7 @@ fn bouncer_launch_int_min_axes_match_the_original() {
         let mut sim = Simulation::with_seed(0);
         // The recorded seed describes native setup, not this constrained
         // boundary. Import every logical RNG field without reseeding it.
-        sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+        *sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
             row["rng_before"].as_str().unwrap(),
         );
         let type_id = sim.interner.intern(name);
@@ -2444,9 +2444,9 @@ fn middle_world(art_text: &str, frames: i32) -> (RuleSet, Simulation) {
             terrain.cell_mut_for_test(rx, ry).unwrap().accepts_smudge = true;
         }
     }
-    sim.resolved_terrain = Some(terrain);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
-    sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(8, 8));
+    *sim.resolved_terrain = Some(terrain);
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
+    *sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(8, 8));
     (rules, sim)
 }
 
@@ -3359,7 +3359,7 @@ fn anim_store_slots_scheduler_and_hash_roundtrip() {
     assert!(sim.substrate.pending_delete.is_empty());
     // Native in-scenario load restarts Scenario RNG from Seed0; isolate
     // AnimStore/scheduler persistence on that same post-load cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
     let expected_order = sim.live_object_order_snapshot();
     let bytes = crate::util::save_codec::serialize(&sim).expect("serialize sim with AnimStore");
@@ -3405,7 +3405,7 @@ fn waypoint_cue_flare_scene() -> (Simulation, RuleSet, crate::sim::intern::Inter
     // MapRevealArea rejects the arena's default Size20 diamond edge at
     // (10,10). Install this scene's Size16 through the normal owner.
     sim.install_playfield_from_map_header(&map.header);
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     let player = sim.interner.intern("Player");
     let other = sim.interner.intern("Other");
     for (id, human) in [(player, true), (other, false)] {

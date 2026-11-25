@@ -12,11 +12,15 @@ use super::{
     lobby_mut, local_ini_hash, message_line, modern_lobby, nickname, options_screen, request,
     retext_wait, show_wait,
 };
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::session::MatchSession;
+use crate::app::process_assets::ProcessAssets;
+use crate::util::config::GameConfig;
 
 /// Create's slide has run: `UI__BeginDialog(0xC2)` over a hidden `0x113`.
 pub(crate) fn commit_create(state: &mut AppState, observe: bool) {
     commit_hide(state);
-    if App::open_host_setup(state, observe) && modern_lobby(state) {
+    if App::open_host_setup(state, observe) && modern_lobby(state.frontend.wol.as_ref()) {
         message_line(state, crate::i18n::tr(HOST_ROOM_LINE));
     }
 }
@@ -26,7 +30,9 @@ pub(crate) fn commit_create(state: &mut AppState, observe: bool) {
 /// runs before it (GameMode options, the host node, `[0x8316A4]`) belongs
 /// to the setup owner that creates C2 ([`App::open_host_setup`]).
 pub(super) fn send_create(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    process_assets: &ProcessAssets,
     channel: WolChannel,
     key: String,
     observe: bool,
@@ -35,9 +41,9 @@ pub(super) fn send_create(
     // 0x00789F55..0x00789FB4: with registry Options bit 1 clear (VERA reads
     // no registry), the nickname's persona Country and Color become the
     // MultiPlayer picks the host node then takes (0x0069B700/0x0069B720).
-    let nickname = nickname(state);
-    super::persona::take_side_and_color(state, &nickname);
-    if let Some(lobby) = lobby_mut(state) {
+    let nickname = nickname(&frontend.wol_account);
+    super::persona::take_side_and_color(frontend, game_config, process_assets, &nickname);
+    if let Some(lobby) = lobby_mut(frontend.wol.as_mut()) {
         lobby.step = Step::Creating {
             observe,
             channel: channel.clone(),
@@ -45,14 +51,14 @@ pub(super) fn send_create(
         };
     }
     request(
-        state,
+        frontend.wol.as_mut(),
         WolServiceRequest::CreateChannel {
             channel,
             key,
             ranked,
         },
     );
-    show_wait(state, "GUI:CreatingChannel");
+    show_wait(frontend, process_assets, "GUI:CreatingChannel");
 }
 
 /// `0x00789B60`'s record (`0x10C` bytes): type `0x29`, `"%s's_game"` of the
@@ -98,19 +104,22 @@ pub(super) fn created_channel(
 /// observer and no open observer slot.
 /// RESIDUAL: a setup earlier in the visit leaves its own slots, which
 /// native's Create publishes instead.
-pub(super) fn ex_info(state: &AppState) -> String {
-    let index = state.frontend.multiplayer_shell_runtime.scenario_index();
-    let scenario = state
-        .frontend
+pub(super) fn ex_info(
+    frontend: &FrontendState,
+    session: &MatchSession,
+    process_assets: &ProcessAssets,
+) -> String {
+    let index = frontend.multiplayer_shell_runtime.scenario_index();
+    let scenario = frontend
         .scenario_catalog
         .records()
         .get(index)
         .map(|record| record.file_name.clone())
         .unwrap_or_default();
-    let (ai_players, observer_taken, observer_open) = slot_ex_info(&state.match_state.session);
+    let (ai_players, observer_taken, observer_open) = slot_ex_info(session);
     ExInfo {
         version: EX_INFO_VERSION,
-        hash: local_ini_hash(state).unwrap_or(0),
+        hash: local_ini_hash(process_assets).unwrap_or(0),
         ai_players,
         observer_taken,
         observer_open,
@@ -185,17 +194,17 @@ pub(super) fn republished_limit(
 /// RESIDUAL: API+0xFC's count (the limit plus the AI rows,
 /// `0x0078F1D9..0x0078F1E5`) has no field in VERA's channel record, so a
 /// native room's list adds its AI to the count but not to the capacity.
-pub(crate) fn republish_channel(state: &mut AppState) -> Option<WolChannel> {
-    let observer = state
-        .frontend
-        .multiplayer_shell_runtime
-        .lan_create_observer();
-    let session = &state.match_state.session;
+pub(crate) fn republish_channel(
+    frontend: &mut FrontendState,
+    session: &MatchSession,
+    process_assets: &ProcessAssets,
+) -> Option<WolChannel> {
+    let observer = frontend.multiplayer_shell_runtime.lan_create_observer();
     let max_users = session
         .network_people_capacity()
         .or_else(|| republished_limit(session, observer))?;
-    let ex_info = ex_info(state);
-    let current = lobby_mut(state)?.current.as_mut()?;
+    let ex_info = ex_info(frontend, session, process_assets);
+    let current = lobby_mut(frontend.wol.as_mut())?.current.as_mut()?;
     current.max_users = max_users;
     current.ex_info = ex_info;
     Some(current.clone())
@@ -211,12 +220,16 @@ pub(super) fn create_confirmed(
     observe: bool,
     ranked: bool,
 ) {
-    let nickname = nickname(state);
+    let nickname = nickname(&state.frontend.wol_account);
     let (width, _) = options_screen(state);
     let globals = &mut state.frontend.wol_lobby_globals;
     globals.limit_resolution = limit;
     let lobby_number = globals.lobby_number;
-    let ex_info = ex_info(state);
+    let ex_info = ex_info(
+        &state.frontend,
+        &state.match_state.session,
+        &state.process_assets,
+    );
     let mut channel = created_channel(&nickname, clan, limit, width, lobby_number, ex_info);
     // VERA's online lobby names the room as its host typed.
     if let Some(name) = name {
@@ -229,12 +242,20 @@ pub(super) fn create_confirmed(
         .frontend
         .multiplayer_shell_runtime
         .set_lan_observer(observe);
-    let Some(lobby) = lobby_mut(state) else {
+    let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) else {
         return;
     };
     lobby.ui.close_popup();
     lobby.ui.set_observer(observe);
-    leave_then_create(state, channel, key, observe, ranked);
+    leave_then_create(
+        &mut state.frontend,
+        state.platform.game_config.as_ref(),
+        &state.process_assets,
+        channel,
+        key,
+        observe,
+        ranked,
+    );
 }
 
 /// `0x00789B60`'s leave and create: API+0x24 runs unconditionally, and
@@ -242,13 +263,15 @@ pub(super) fn create_confirmed(
 /// while still joined.
 /// `ranked` false asks VERA's lobby to keep the room's games unranked.
 pub(super) fn leave_then_create(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    process_assets: &ProcessAssets,
     channel: WolChannel,
     key: String,
     observe: bool,
     ranked: bool,
 ) {
-    let Some(lobby) = lobby_mut(state) else {
+    let Some(lobby) = lobby_mut(frontend.wol.as_mut()) else {
         return;
     };
     let joined = lobby.current.is_some();
@@ -263,12 +286,20 @@ pub(super) fn leave_then_create(
             },
         };
     }
-    request(state, WolServiceRequest::LeaveChannel);
+    request(frontend.wol.as_mut(), WolServiceRequest::LeaveChannel);
     if joined {
-        request(state, WolServiceRequest::LeaveChannel);
-        retext_wait(state, "WOL:LeavingChannel");
+        request(frontend.wol.as_mut(), WolServiceRequest::LeaveChannel);
+        retext_wait(frontend.wol.as_mut(), process_assets, "WOL:LeavingChannel");
     } else {
-        send_create(state, channel, key, observe, ranked);
+        send_create(
+            frontend,
+            game_config,
+            process_assets,
+            channel,
+            key,
+            observe,
+            ranked,
+        );
     }
 }
 
@@ -276,11 +307,11 @@ pub(super) fn leave_then_create(
 /// (`0x0078AC10`'s 0x62B tail), focus on the chat edit. The Buddy List
 /// runner takes its stop path back to `0x116`.
 pub(super) fn create_ended(state: &mut AppState) {
-    if buddy_runner(state) {
+    if buddy_runner(state.frontend.wol.as_ref()) {
         super::buddy::stopped(state);
         return;
     }
-    if let Some(lobby) = lobby_mut(state) {
+    if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
         lobby.covered = false;
         lobby.step = Step::Ready;
         lobby.ui.set_commands(true, false, false);

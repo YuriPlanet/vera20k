@@ -308,12 +308,24 @@ impl IniSection {
     /// This projection keeps an absent constructor value as Option::None and
     /// returns canonical names for actual reads, including action0's "None".
     pub(crate) fn read_action_name(&self, key: &str) -> Option<&'static str> {
+        self.read_action_name_with(key, None)
+    }
+
+    /// [`Self::read_action_name`] that also knows `extra`, an action past
+    /// gamemd's table (a VERA type's own action, such as Tiberian Sun's
+    /// IonCannon).
+    pub(crate) fn read_action_name_with(
+        &self,
+        key: &str,
+        extra: Option<&'static str>,
+    ) -> Option<&'static str> {
         self.fold_rules_values(key, None, |_, raw| {
             let name = strtrim_ascii(truncate_native_bytes(raw, 0x1f));
             Some(
                 ACTION_NAMES
                     .iter()
                     .copied()
+                    .chain(extra)
                     .find(|candidate| candidate.eq_ignore_ascii_case(name))
                     .unwrap_or(ACTION_NAMES[0]),
             )
@@ -598,6 +610,19 @@ impl IniSection {
         let _ares = crate::rules::ares_switch::ares_reads();
         self.read_string_with(key, 2048, current, |previous, value| {
             parse_ares_coord3(value).unwrap_or(previous)
+        })
+    }
+
+    /// Kratos PP v0.2.4 INIBuffer::GetParsed<CoordStruct> zeroes its three
+    /// integers and accepts any nonzero count from Parser<int, 3>::Parse.
+    pub(crate) fn read_kratos_coord3(&self, key: &str, default: [i32; 3]) -> [i32; 3] {
+        self.read_string_with(key, 2048, default, |previous, value| {
+            let mut coords = [0; 3];
+            if scan_ares_fields(value, &mut coords) > 0 {
+                coords
+            } else {
+                previous
+            }
         })
     }
 

@@ -663,7 +663,7 @@ mod tests {
             for id in ["Americans", "FV", "DEST"] {
                 crate::sim::intern::test_intern(id);
             }
-            world.interner = crate::sim::intern::test_interner();
+            *world.interner = crate::sim::intern::test_interner();
             let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
             let cell = terrain.cell_mut_for_test(10, 20).unwrap();
             cell.level = input["level"].as_u64().unwrap() as u8;

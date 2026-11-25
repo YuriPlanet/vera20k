@@ -93,6 +93,14 @@ pub struct VoxelAnimType {
     /// `-1` for absent.
     pub start_sound: Option<String>,
     pub stop_sound: Option<String>,
+    /// Tiberian Sun's `BounceSound=` and `ExpireSound=` (Firestorm 2.0
+    /// VoxelAnimType +170/+174), which gamemd no longer reads: played where
+    /// the piece bounces and where it comes down on dry ground. See
+    /// docs/ts-anim-sounds.md.
+    #[serde(default)]
+    pub bounce_sound: Option<String>,
+    #[serde(default)]
+    pub expire_sound: Option<String>,
     /// `+0x2E4`. `AnimType` played on every ground bounce.
     pub bounce_anim: Option<String>,
     /// `+0x2E8`. `AnimType` played when `Duration` runs out.
@@ -141,6 +149,8 @@ impl VoxelAnimType {
             spawn_count: 0,
             start_sound: None,
             stop_sound: None,
+            bounce_sound: None,
+            expire_sound: None,
             bounce_anim: None,
             expire_anim: None,
             trailer_anim: None,
@@ -191,6 +201,14 @@ impl VoxelAnimType {
             .map(str::to_string);
         out.stop_sound = section
             .read_type_name("StopSound", 0x80)
+            .map(str::to_string);
+        // Firestorm 2.0 VoxelAnimTypeClass::Read_INI reads both after
+        // StartSound= (0x0065F6AA..0x0065F734); gamemd reads neither.
+        out.bounce_sound = section
+            .read_type_name("BounceSound", 0x80)
+            .map(str::to_string);
+        out.expire_sound = section
+            .read_type_name("ExpireSound", 0x80)
             .map(str::to_string);
         out.damage = read_damage(section, out.damage);
         out.damage_radius = section.read_int("DamageRadius", out.damage_radius);

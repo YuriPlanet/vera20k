@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct Spotlight {
     stable_id: u64,
     native_id: i32,
@@ -85,7 +85,7 @@ impl SpotlightStore {
             self.order.hash(h);
             // The derived +98 flag is rebuilt from Logic after load.
             for id in &self.order {
-                let mut light = self.objects[id].clone();
+                let mut light = self.objects[id];
                 light.in_logic_vector = false;
                 light.hash(h);
             }
@@ -347,6 +347,12 @@ impl Simulation {
         })
     }
 
+    /// Every stored spotlight's id, ascending: what
+    /// [`Self::building_spotlight`] answers.
+    pub fn spotlight_ids(&self) -> impl Iterator<Item = u64> + '_ {
+        self.substrate.spotlights.iter().map(|(&id, _)| id)
+    }
+
     pub(super) fn spotlight_alive(&self, id: u64) -> Option<bool> {
         self.substrate.spotlights.get(id).map(|l| l.alive)
     }
@@ -441,13 +447,9 @@ impl Simulation {
         };
         self.substrate.spotlights.objects.insert(id, light);
         self.substrate.spotlights.order.push(id);
-        self.substrate
-            .entities
-            .get_mut(parent_id)
-            .unwrap()
-            .building
-            .building_light
-            .attach(id);
+        let parent = self.substrate.entities.get_mut(parent_id).unwrap();
+        let note = parent.note_names();
+        parent.building.building_light.attach(id, note);
         // BuildingLightClass::GetLayer @ 0x004369F0 returns Air (3).
         Self::submit_object_display(&mut self.substrate, id, DisplayLayer::AIR);
         // BuildingLightClass::Unlimbo @ 0x00437050 registers it with Logic;
@@ -622,7 +624,10 @@ impl Simulation {
         rules: &RuleSet,
         mut context: UninitContext<'_>,
     ) {
-        let Some(mut light) = self.substrate.spotlights.get(id).cloned() else {
+        // Changed on a copy and committed below only once the mode arm
+        // finds its coordinate: an arm whose rotate fails returns and leaves
+        // the light as it was.
+        let Some(mut light) = self.substrate.spotlights.get(id).copied() else {
             return;
         };
         let Some(parent) = light

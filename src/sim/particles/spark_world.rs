@@ -97,11 +97,11 @@ fn ground_height_for_selection(
 /// CellClass::GetGroundHeight @ 0x00578080 once for the comparison and again
 /// only when the input Z is at or below the first result.
 pub(super) fn constructor_ground_height(
-    sim: &Simulation,
+    terrain: Option<&ResolvedTerrainGrid>,
     world_x: i32,
     world_y: i32,
 ) -> Result<Option<i32>, SparkWorldError> {
-    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+    let Some(terrain) = terrain else {
         return Ok(None);
     };
     let selected = select_cell(terrain, SparkCellSelectionRole::Ground, world_x, world_y);
@@ -124,11 +124,12 @@ fn selected_bridge_z(
 
 /// SmokeMove62D3F0 queries the OLD cell and reads ground only if that
 /// selected real/dummy cell has a live structural bridge. No overlay lookup.
+/// Without terrain (fixtures) there is no deck.
 pub(super) fn smoke_bridge_deck(
-    sim: &Simulation,
+    terrain: Option<&ResolvedTerrainGrid>,
     coords: IVec3,
 ) -> Result<Option<i32>, SparkWorldError> {
-    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+    let Some(terrain) = terrain else {
         return Ok(None);
     };
     let cell = select_cell(terrain, SparkCellSelectionRole::Cell, coords.x, coords.y);
@@ -483,8 +484,8 @@ pub(super) mod tests {
 
     pub(in crate::sim::particles) fn one_cell_sim(cell: ResolvedTerrainCell) -> Simulation {
         let mut sim = Simulation::new();
-        sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(1, 1, vec![cell]));
-        sim.overlay_grid = Some(OverlayGrid::new(1, 1));
+        *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(1, 1, vec![cell]));
+        *sim.overlay_grid = Some(OverlayGrid::new(1, 1));
         sim
     }
 
@@ -782,7 +783,7 @@ pub(super) mod tests {
     #[test]
     fn gsi_04_03_dummy_structural_no_crossing_skips_old_and_slope_selection() {
         let mut sim = one_cell_sim(terrain_cell(0, 0));
-        sim.overlay_grid = None;
+        *sim.overlay_grid = None;
         let terrain = sim.resolved_terrain.as_ref().unwrap();
         terrain
             .shared_cell_dummy()
@@ -816,7 +817,7 @@ pub(super) mod tests {
     #[test]
     fn gsi_04_03_overlay_and_slope_dependencies_are_lazy() {
         let mut sim = one_cell_sim(terrain_cell(0, 0));
-        sim.overlay_grid = None;
+        *sim.overlay_grid = None;
         let rules = empty_rules();
         let world = SparkCollisionWorld::new(&sim, &rules).unwrap();
 
@@ -847,7 +848,7 @@ pub(super) mod tests {
             None,
             CellListInsertion::AppendBuilding,
         );
-        corrupt.overlay_grid = None;
+        *corrupt.overlay_grid = None;
         let world = SparkCollisionWorld::new(&corrupt, &rules).unwrap();
         assert!(
             world
@@ -861,7 +862,7 @@ pub(super) mod tests {
 
         let mut accepted = one_cell_sim(terrain_cell(0, 0));
         add_building(&mut accepted, 1, "Solid");
-        accepted.overlay_grid = None;
+        *accepted.overlay_grid = None;
         let facts = SparkCollisionWorld::new(&accepted, &rules)
             .unwrap()
             .query(motion_between(IVec3::new(0, 0, 100), IVec3::new(0, 0, 100)))
@@ -884,7 +885,7 @@ pub(super) mod tests {
         let anchor = terrain.native_cell_identity((0, 0));
         terrain.set_authored_high_bridge_deck(anchor, 10);
         let mut sim = Simulation::new();
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         let rules = empty_rules();
         let motion = motion_between(IVec3::new(255, 0, 1050), IVec3::new(256, 0, 1030));
         let world = SparkCollisionWorld::new(&sim, &rules).unwrap();
@@ -893,7 +894,7 @@ pub(super) mod tests {
         assert_eq!(collision.committed_coords.z, 1040);
         assert!(ares_spark_dies(&sim, &rules, motion.old_coords, motion.candidate_coords).unwrap());
         assert_eq!(
-            smoke_bridge_deck(&sim, motion.old_coords).unwrap(),
+            smoke_bridge_deck(sim.resolved_terrain.as_ref(), motion.old_coords).unwrap(),
             Some(1040)
         );
     }
@@ -911,7 +912,7 @@ pub(super) mod tests {
             None,
             CellListInsertion::AppendBuilding,
         );
-        sim.overlay_grid = None;
+        *sim.overlay_grid = None;
         let rules = empty_rules();
         let world = SparkCollisionWorld::new(&sim, &rules).unwrap();
         let motion = motion_between(IVec3::new(0, 0, 500), IVec3::new(0, 0, 100));
@@ -940,7 +941,7 @@ pub(super) mod tests {
             ResolvedTerrainGrid::from_cells(2, 1, vec![terrain_cell(0, 0), terrain_cell(1, 0)]);
         terrain.test_set_native_allocated_cells(&[(0, 0)]);
         let mut sim = Simulation::new();
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         let rules = empty_rules();
         let world = SparkCollisionWorld::new(&sim, &rules).unwrap();
 
@@ -963,7 +964,7 @@ pub(super) mod tests {
         add_building(&mut sim, 1, "Deployable");
         // Original62C88A branches on a null Building, not on its later virtual80
         // answer. A nonnull excluded Building must suppress even a wall read.
-        sim.overlay_grid = None;
+        *sim.overlay_grid = None;
         let facts = SparkCollisionWorld::new(&sim, &rules)
             .unwrap()
             .query(motion_at(0, 0))

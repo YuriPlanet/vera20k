@@ -34,6 +34,12 @@ pub struct GeneralRules {
     /// (`0x0066571B`), read by ReadInteger at `0x006719A1` without a clamp.
     /// ReceiveDamage starts each Techno's radar combat flash with it.
     pub radar_combat_flash_time: i32,
+    /// `[General] CraterLevel=`, which gamemd does not read: Firestorm's
+    /// meteor craters (`docs/terrain-deformation.md`). Firestorm 2.0 0x5C4600
+    /// gives Rules `+0x2B8` 4 and 0x5C9A39 reads it with `INIClass::Get_Int`
+    /// (0x4DD0C0, gamemd's ReadInteger) without a clamp. Retail sets 1. It
+    /// acts only while `[CombatDamage] TerrainDeformation=` is on.
+    pub crater_level: i32,
     /// `[AudioVisual]` thresholds copied to the presentation frame-rate
     /// controller by Fill_In_Data6850F5 and the radar movie transitions.
     pub detail: DetailRules,
@@ -241,7 +247,9 @@ pub struct GeneralRules {
     /// ReadAI672AE0). Constructor666E09/666E1A stores the literal double
     /// 0.016; each reached AI pass retains its prior value as the default.
     /// Team Script16 uses the signed global frame modulo ftol(value*900),
-    /// without a clamp or a per-team timer. Source: Steam gamemd,
+    /// without a clamp or a per-team timer; with batched target scans each
+    /// team scans at its own phase of that period, a sim-scale deviation
+    /// (`team_action_patrol_waypoint`). Source: Steam gamemd,
     /// tools/team_recruit_oracle.py --patrol.
     pub patrol_scan_minutes: NativeF64Bits,
     /// `[General] AITriggerSuccessWeightDelta=` (`Rules+0xC0`, ReadDouble at
@@ -789,6 +797,8 @@ pub struct GeneralRules {
     /// entirely when the count is zero and otherwise plays
     /// `items[rand % count]` at the strike coordinate.
     pub lightning_sounds: Vec<String>,
+    /// The Firestorm ice chain's keys (docs/ts-ice.md).
+    pub ice: crate::rules::ice_rules::IceRules,
     /// Displayed-credits tick cues from `[AudioVisual] CreditTicks=` (stock
     /// `CreditUp,CreditDown`), the `Rules+0x6D0` sound list (count `+0x6DC`).
     ///
@@ -849,6 +859,10 @@ pub struct GeneralRules {
     /// the AnimType lookup at `0x0066A587..0x0066A5B1` over the constructor's
     /// null (`0x00665A10`). Retail leaves it unset.
     pub dig_anim: Option<String>,
+    /// Tiberian Sun Firestorm's `[AudioVisual] WebbedInfantry=` (Rules
+    /// `+0xF68`), the AnimType whose shapes a webbed infantryman's Struggle
+    /// frames come from (`docs/ts-webs.md`). gamemd has no such key.
+    pub webbed_infantry: Option<String>,
     /// `[General] NukeTakeOff=` (stock `NUKETO`), the AnimType at `Rules+0x98`
     /// (ReadString then the AnimType lookup, `0x0066D829..0x0066D850`;
     /// constructor null at `0x00665735`). `BuildingClass::Mission_Missile`
@@ -1847,6 +1861,7 @@ impl Default for GeneralRules {
             flash_frame_time: 7,
             weed_capacity: 0,
             radar_combat_flash_time: 21,
+            crater_level: 4,
             detail: DetailRules::default(),
             pose_dir: 0,
             deploy_dir: 0,
@@ -2053,6 +2068,7 @@ impl Default for GeneralRules {
             create_aircraft_sound: None,
             disk_laser_charge_up: None,
             lightning_sounds: Vec::new(),
+            ice: Default::default(),
             credit_ticks: Vec::new(),
             storm_sound: None,
             // `RulesClass::Constructor @ 0x006676BC` writes AL, and the last
@@ -2060,6 +2076,7 @@ impl Default for GeneralRules {
             lightning_print_text: true,
             dig_sound: None,
             dig_anim: None,
+            webbed_infantry: None,
             nuke_take_off: String::new(),
             ai_super_defense_probability: Vec::new(),
             ai_super_defense_distance: 10,
@@ -2617,8 +2634,11 @@ impl GeneralRules {
         let airstrike_line_z_adjust = crate::rules::ares_switch::not_ares_read(|| {
             audio_visual.read_ares_int("AirstrikeLineZAdjust", defaults.airstrike_line_z_adjust)
         });
+        let mut ice = defaults.ice.clone();
+        ice.read_audio_visual(&audio_visual);
         let Some(general) = ini.section("General") else {
             return Self {
+                ice,
                 message_delay_minutes,
                 savour_delay_minutes,
                 pose_dir,
@@ -2676,7 +2696,9 @@ impl GeneralRules {
             general.read_double("ConditionRedSparkingProbability", 0.02);
         let condition_yellow_spark_prob: f64 =
             general.read_double("ConditionYellowSparkingProbability", 0.01);
+        ice.read_general(general);
         Self {
+            ice,
             pose_dir,
             deploy_dir,
             max_waypoint_path_length: general
@@ -2685,6 +2707,7 @@ impl GeneralRules {
             weed_capacity: general.read_int("WeedCapacity", defaults.weed_capacity),
             radar_combat_flash_time: general
                 .read_int("RadarCombatFlashTime", defaults.radar_combat_flash_time),
+            crater_level: general.read_int("CraterLevel", defaults.crater_level),
             scroll_multiplier: audio_visual
                 .read_double("ScrollMultiplier", defaults.scroll_multiplier),
             savour_delay_minutes,
@@ -2995,6 +3018,7 @@ impl GeneralRules {
             // Published by the Rules processor's `Dig` pointer
             // (`rules_type_references`).
             dig_anim: None,
+            webbed_infantry: None,
             nuke_take_off: defaults.nuke_take_off.clone(),
             ai_super_defense_probability: general
                 .read_int_list("AISuperDefenseProbability")

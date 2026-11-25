@@ -1,10 +1,17 @@
 use super::*;
 use crate::app::frontend::shell_layout::random_map_setup_layout;
 use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::sim_host::SimWrite;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
 use crate::app::shell_route::ShellRoute;
 use crate::map::skirmish_scenarios::{RANDMAP_PREVIEW, RANDMAP_SED};
+use crate::sim::rng::MainRng;
+use crate::ui::skirmish_shell::SkirmishShellState;
 use crate::ui::skirmish_shell::page::Pointer;
+use crate::util::config::GameConfig;
+use winit::window::Window;
 
 /// Description the setup dialog stamps onto a randomized configuration; it also
 /// becomes the sentinel row's displayed name.
@@ -16,13 +23,9 @@ const RANDOM_MAP_PREVIEW_CLIFF_BACK_IMPASSABILITY: u8 = 2;
 
 /// The open random-map dialog `0x105`.
 pub(super) fn random_map_dialog(
-    state: &mut AppState,
+    skirmish_shell: &mut SkirmishShellState,
 ) -> Option<&mut crate::ui::skirmish_shell::RandomMapSetupModalState> {
-    state
-        .frontend
-        .skirmish_shell_state
-        .random_map_setup_modal
-        .as_mut()
+    skirmish_shell.random_map_setup_modal.as_mut()
 }
 
 /// Native RMG map-storage identity used by its guarded Resize predicate.
@@ -1291,11 +1294,8 @@ impl App {
 
     /// The Maps folder shared by the generator's working files and the
     /// Random Maps subfolder where the player saves seeds.
-    pub(super) fn random_map_dir(state: &AppState) -> Option<std::path::PathBuf> {
-        state
-            .platform
-            .game_config
-            .as_ref()
+    pub(super) fn random_map_dir(game_config: Option<&GameConfig>) -> Option<std::path::PathBuf> {
+        game_config
             .map(|config| crate::map::source::random_map_dir(&config.paths.ra2_dir).to_path_buf())
     }
 
@@ -1304,45 +1304,43 @@ impl App {
     /// Everything that needs the asset manager is done here, up front; only
     /// plain data crosses to the worker.
     pub(super) fn start_random_map_generation(
-        state: &mut AppState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
         options: &crate::map::rmg::RmgOptions,
         accept_on_finish: bool,
     ) -> bool {
         // A second Generate makes the previous dialog result stale immediately,
         // even when setup cannot progress far enough to spawn the worker.
         begin_random_map_generation_owners(
-            &mut state.frontend.multiplayer_shell_runtime,
-            &mut state.frontend.random_map_retention,
+            &mut frontend.multiplayer_shell_runtime,
+            &mut frontend.random_map_retention,
             options,
         );
         // Reset668B8E reads the committed Session mode. ChooseMap only
         // commits its draft after UseMap5E7367; RMG runs before that call.
-        let network = state.frontend.shell_route == ShellRoute::NetworkSetup;
+        let network = frontend.shell_route == ShellRoute::NetworkSetup;
         let mode_file = if network {
-            state
-                .match_state
+            match_state
                 .session
                 .network_setup()
                 .map(|launch| launch.mode.override_file.clone())
         } else {
-            state
-                .frontend
+            frontend
                 .skirmish_shell_state
                 .selected_mode
-                .resolve(&state.frontend.skirmish_modes)
+                .resolve(&frontend.skirmish_modes)
                 .map(|mode| mode.override_file.clone())
         };
         if network {
             // A network preview must not reuse the preceding match's Rules
             // generation or MapClass storage state (native599B8E cache gate).
-            state.frontend.random_map_retention.destroy_map_storage();
+            frontend.random_map_retention.destroy_map_storage();
         }
-        let map_storage_decision = state
-            .frontend
+        let map_storage_decision = frontend
             .random_map_retention
             .begin_map_storage_decision(options);
-        let (manager, mut native_rules, _) =
-            state.process_assets.manager_and_rules_with_tile_cache();
+        let (manager, mut native_rules, _) = process_assets.manager_and_rules_with_tile_cache();
         let Some(asset_manager) = manager else {
             return false;
         };
@@ -1358,7 +1356,7 @@ impl App {
         };
         if map_storage_decision.reinitialize
             && let Some(owner) = native_rules.as_deref_mut()
-            && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle)
+            && let Some(runtime) = match_state.sim_runtime.write_sim(SimWrite::Lifecycle)
         {
             // The outgoing Simulation can remain resident for shell drawing.
             // Drain its live Rules writes before59A0F0 destroys those Types;
@@ -1401,7 +1399,7 @@ impl App {
             return false;
         };
         let options = options.clone();
-        let shared_cell_dummy = state.process_assets.shared_cell_dummy.clone();
+        let shared_cell_dummy = process_assets.shared_cell_dummy.clone();
         // The dialog's Generate draws Ares' foot picks from process Main.
         let objects = if ares {
             RandomMapObjects {
@@ -1410,7 +1408,7 @@ impl App {
                 urban: options.urban_areas.then(|| {
                     (
                         urban_catalog,
-                        crate::app::state::process_main_draws(&state.frontend.frontend_main_rng),
+                        crate::app::state::process_main_draws(&frontend.frontend_main_rng),
                     )
                 }),
             }
@@ -1429,11 +1427,10 @@ impl App {
             map_storage_decision,
         ) {
             Ok(receiver) => {
-                state
-                    .frontend
+                frontend
                     .random_map_retention
                     .commit_map_storage_decision(map_storage_decision);
-                state.frontend.random_map_generation = Some(RandomMapGenerationJob {
+                frontend.random_map_generation = Some(RandomMapGenerationJob {
                     receiver,
                     theater: Box::new(theater),
                     terrain_rules: Box::new(terrain_rules),
@@ -1502,7 +1499,13 @@ impl App {
                 .expect("checked present above");
             // Persistence belongs to common teardown, not generation completion.
             let map = run.map();
-            let preview = Self::rasterise_map(state, &job, &map.map_file, &map.start_waypoints);
+            let preview = Self::rasterise_map(
+                &state.frontend.frontend_main_rng,
+                &mut state.process_assets,
+                &job,
+                &map.map_file,
+                &map.start_waypoints,
+            );
             let accept = {
                 let resident_simulation = state
                     .match_state
@@ -1544,7 +1547,7 @@ impl App {
             // does not sit disabled forever waiting on it.
             log::warn!("random map: the generator thread ended without a result");
             state.frontend.random_map_generation = None;
-            if let Some(modal) = random_map_dialog(state) {
+            if let Some(modal) = random_map_dialog(&mut state.frontend.skirmish_shell_state) {
                 modal.fail_generate();
             }
             return true;
@@ -1560,10 +1563,15 @@ impl App {
             .random_map_generation
             .take()
             .expect("checked present above");
-        let preview =
-            Self::rasterise_map(state, &job, &snapshot.map_file, &snapshot.start_waypoints);
+        let preview = Self::rasterise_map(
+            &state.frontend.frontend_main_rng,
+            &mut state.process_assets,
+            &job,
+            &snapshot.map_file,
+            &snapshot.start_waypoints,
+        );
         state.frontend.random_map_generation = Some(job);
-        if let Some(modal) = random_map_dialog(state)
+        if let Some(modal) = random_map_dialog(&mut state.frontend.skirmish_shell_state)
             && let Some(preview) = preview
         {
             modal.show_progress_preview(preview);
@@ -1579,24 +1587,26 @@ impl App {
     /// That matters beyond tidiness: a late finish would otherwise overwrite
     /// `RandMap.img`, changing the chooser's thumbnail to a map the player
     /// walked away from.
-    pub(super) fn cancel_random_map_setup(state: &mut AppState) {
-        let dir = Self::random_map_dir(state);
-        state.frontend.random_map_generation = None;
-        let frontend = &mut state.frontend;
+    pub(super) fn cancel_random_map_setup(
+        game_config: Option<&GameConfig>,
+        frontend: &mut FrontendState,
+    ) {
+        let dir = Self::random_map_dir(game_config);
+        frontend.random_map_generation = None;
         let _ = cancel_random_map_setup_owners(
             &mut frontend.multiplayer_shell_runtime,
             &mut frontend.skirmish_shell_state.random_map_setup_modal,
             &mut frontend.random_map_retention,
             dir.as_deref(),
         );
-        Self::show_choose_map_after_random_map(state);
+        Self::show_choose_map_after_random_map(&mut frontend.skirmish_shell_state);
     }
 
     /// The random-map run has returned to the hidden chooser: unless its
     /// Use Map closed it or asks to eject AI players, it shows again and its
     /// first paint slides it in (`0x005E6B47`, `0x005E6B51`).
-    fn show_choose_map_after_random_map(state: &mut AppState) {
-        let shell = &mut state.frontend.skirmish_shell_state;
+    fn show_choose_map_after_random_map(skirmish_shell: &mut SkirmishShellState) {
+        let shell = skirmish_shell;
         if shell.random_map_setup_modal.is_some() {
             return;
         }
@@ -1610,7 +1620,7 @@ impl App {
     /// Commit the dialog's options and close it. Shared by the immediate accept
     /// and the one deferred behind a generation.
     pub(super) fn accept_random_map_setup(state: &mut AppState) {
-        let dir = Self::random_map_dir(state);
+        let dir = Self::random_map_dir(state.platform.game_config.as_ref());
         let options = {
             let frontend = &mut state.frontend;
             accept_random_map_setup_owners(
@@ -1646,7 +1656,7 @@ impl App {
                 }
             }
         }
-        Self::show_choose_map_after_random_map(state);
+        Self::show_choose_map_after_random_map(&mut state.frontend.skirmish_shell_state);
     }
 
     /// Colour and rasterise a map. Main thread only: the resolver reads theater
@@ -1655,13 +1665,14 @@ impl App {
     /// Mid-generation snapshots go through here too, so an in-progress preview
     /// is coloured by exactly the path that colours the finished one.
     fn rasterise_map(
-        state: &mut AppState,
+        frontend_main_rng: &MainRng,
+        process_assets: &mut ProcessAssets,
         job: &RandomMapGenerationJob,
         map_file: &crate::map::map_file::MapFile,
         start_waypoints: &[(u8, u16, u16)],
     ) -> Option<crate::map::rmg::preview::PreviewImage> {
-        let mut main = crate::app::state::process_main_draws(&state.frontend.frontend_main_rng);
-        let (manager, _, selector_cache) = state.process_assets.manager_and_rules_with_tile_cache();
+        let mut main = crate::app::state::process_main_draws(frontend_main_rng);
+        let (manager, _, selector_cache) = process_assets.manager_and_rules_with_tile_cache();
         rasterise_random_map(
             map_file,
             &crate::map::rmg::preview::marker_waypoints(start_waypoints),
@@ -1686,7 +1697,7 @@ impl App {
         state: &mut AppState,
         options: &crate::map::rmg::RmgOptions,
     ) -> anyhow::Result<()> {
-        let dir = Self::random_map_dir(state)
+        let dir = Self::random_map_dir(state.platform.game_config.as_ref())
             .ok_or_else(|| anyhow::anyhow!("no game config; cannot locate VERA's Maps folder"))?;
         let ares = state.process_assets.reads_ares_way();
         crate::util::file_system::create_dir_all(&dir)?;
@@ -1700,7 +1711,10 @@ impl App {
         };
         // Reuse the modal helper: it upserts the single sentinel, honours the
         // mode's random-map admission, and refreshes the filtered record list.
-        let chooser_layout = crate::app::frontend::shell_layout::choose_map_layout(state);
+        let chooser_layout = crate::app::frontend::shell_layout::choose_map_layout(
+            &state.renderer,
+            &state.frontend.screen,
+        );
         let Some(modal) = state
             .frontend
             .skirmish_shell_state
@@ -1731,10 +1745,21 @@ impl App {
             };
             // Success runs the hidden chooser's Use Map (`0x005E6B2F`): its
             // eject box can keep the chooser (`0x005E6B47`).
-            if Self::prompt_choose_map_eject(state, selection) {
+            if Self::prompt_choose_map_eject(
+                &state.platform.window,
+                &mut state.frontend,
+                &state.match_state.session,
+                selection,
+            ) {
                 return Ok(());
             }
-            Self::commit_choose_map_use(state, selection);
+            Self::commit_choose_map_use(
+                state.platform.game_config.as_ref(),
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                selection,
+            );
         }
         Ok(())
     }
@@ -1745,7 +1770,7 @@ impl App {
         state: &mut AppState,
         at: Pointer,
     ) -> Option<crate::ui::skirmish_shell::RandomMapSetupControl> {
-        let layout = random_map_setup_layout(state);
+        let layout = random_map_setup_layout(&state.renderer, &state.frontend.screen);
         let (x, y) = state.match_state.input.cursor_px();
         let modal = state
             .frontend
@@ -1760,15 +1785,24 @@ impl App {
             x,
             y,
         );
-        Self::play_cues(state, cues);
+        Self::play_cues(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            cues,
+        );
         state.platform.window.request_redraw();
         activated
     }
 
     pub(super) fn handle_random_map_setup_mouse_down(state: &mut AppState) -> bool {
         use crate::app::frontend::preview_zoom;
-        let preview =
-            preview_zoom::over_box(state, crate::ui::skirmish_shell::random_map_page::DIALOG);
+        let preview = preview_zoom::over_box(
+            &state.frontend.shell_controller,
+            &state.match_state.input,
+            crate::ui::skirmish_shell::random_map_page::DIALOG,
+        );
         // VERA: a press on the preview enlarges it, as on the other setup
         // screens (`preview_zoom`), while the dialog rests: no list open and
         // no generation running.
@@ -1780,7 +1814,9 @@ impl App {
         let resting = modal.is_some_and(|modal| {
             !modal.generating && state.frontend.shell_controller.gui().popup().is_none()
         });
-        if !(resting && preview_zoom::press_on_box(state, preview)) {
+        if !(resting
+            && preview_zoom::press_on_box(&mut state.frontend, &state.match_state.input, preview))
+        {
             Self::random_map_pointer(state, Pointer::Down);
         }
         true
@@ -1788,7 +1824,11 @@ impl App {
 
     pub(super) fn handle_random_map_setup_mouse_move(state: &mut AppState) {
         Self::random_map_pointer(state, Pointer::Move);
-        Self::update_random_map_status_help(state);
+        Self::update_random_map_status_help(
+            &state.platform.window,
+            &mut state.frontend,
+            &state.process_assets,
+        );
     }
 
     /// `0x105`'s proc runs the common handler first (`0x0059631A`): every move
@@ -1798,10 +1838,14 @@ impl App {
     /// the dialog for the row's help (`0x4E9`), which `0x105` never answers,
     /// so the status line keeps its text. So does a slider holding the mouse
     /// since a press on it.
-    fn update_random_map_status_help(state: &mut AppState) {
+    fn update_random_map_status_help(
+        window: &Window,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+    ) {
         use crate::ui::skirmish_shell::random_map_page;
-        let controller = &state.frontend.shell_controller;
-        let shell = &state.frontend.skirmish_shell_state;
+        let controller = &frontend.shell_controller;
+        let shell = &frontend.skirmish_shell_state;
         let Some(modal) = shell.random_map_setup_modal.as_ref() else {
             return;
         };
@@ -1813,14 +1857,14 @@ impl App {
             .flatten()
             // The preview static hovers with no help of its own.
             .filter(|key| !key.is_empty())
-            .map(|key| state.csf_label(key, ""))
+            .map(|key| process_assets.csf_label(key, ""))
             .unwrap_or_default();
-        if let Some(setup) = random_map_dialog(state)
+        if let Some(setup) = random_map_dialog(&mut frontend.skirmish_shell_state)
             && setup
                 .statics
                 .hover(&help, crate::util::time::Instant::now())
         {
-            state.platform.window.request_redraw();
+            window.request_redraw();
         }
     }
 
@@ -1839,7 +1883,11 @@ impl App {
         );
         let released = Self::random_map_pointer(state, Pointer::Up);
         if held {
-            Self::update_random_map_status_help(state);
+            Self::update_random_map_status_help(
+                &state.platform.window,
+                &mut state.frontend,
+                &state.process_assets,
+            );
         }
         let Some(released) = released else {
             return true;
@@ -1854,7 +1902,7 @@ impl App {
         let description =
             state.csf_label(RANDOM_MAP_DESCRIPTION_KEY, RANDOM_MAP_DESCRIPTION_FALLBACK);
         // VERA: where the Extras view keeps the player's own presets.
-        let preset_dir = Self::random_map_dir(state);
+        let preset_dir = Self::random_map_dir(state.platform.game_config.as_ref());
         let Some(modal) = state
             .frontend
             .skirmish_shell_state
@@ -2014,7 +2062,7 @@ impl App {
             let exported = Self::export_generated_map(state);
             let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
                 .map(std::path::PathBuf::from);
-            if let Some(modal) = random_map_dialog(state) {
+            if let Some(modal) = random_map_dialog(&mut state.frontend.skirmish_shell_state) {
                 modal.exported = exported.is_some();
                 modal.exported_to = exported
                     .as_deref()
@@ -2028,18 +2076,25 @@ impl App {
         if generate_requested {
             // Ordinary Generate stamps the working label (0x00595BC0).
             // Using a saved map in Choose Map keeps the player's description.
-            let options = random_map_dialog(state).map(|modal| {
-                modal.options.description = description.into();
-                modal.options.clone()
-            });
+            let options =
+                random_map_dialog(&mut state.frontend.skirmish_shell_state).map(|modal| {
+                    modal.options.description = description.into();
+                    modal.options.clone()
+                });
             let started = options.is_some_and(|options| {
-                Self::start_random_map_generation(state, &options, accept_requested)
+                Self::start_random_map_generation(
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &mut state.process_assets,
+                    &options,
+                    accept_requested,
+                )
             });
             if !started {
                 // Nothing will arrive, so the dialog must not be left sitting
                 // in its generating state with every control disabled.
                 log::warn!("random map: could not start generation for the configured options");
-                if let Some(modal) = random_map_dialog(state) {
+                if let Some(modal) = random_map_dialog(&mut state.frontend.skirmish_shell_state) {
                     modal.fail_generate();
                 }
             }
@@ -2052,7 +2107,12 @@ impl App {
             Self::leave_shell_dialog(state, slide, App::accept_random_map_setup);
         }
         if close_setup {
-            Self::leave_shell_dialog(state, slide, App::cancel_random_map_setup);
+            Self::leave_shell_dialog(state, slide, |state| {
+                App::cancel_random_map_setup(
+                    state.platform.game_config.as_ref(),
+                    &mut state.frontend,
+                )
+            });
         }
         true
     }

@@ -161,6 +161,12 @@ impl BoxParts {
             .nth(index)
             .map_or_else(RectPx::default, |(_, rect)| rect)
     }
+
+    /// VERA's download bar under the body (the map downloads' boxes): six
+    /// pixels below it, as wide, ten tall.
+    pub fn progress_track(&self) -> RectPx {
+        RectPx::new(self.body.x, self.body.y + self.body.h + 6, self.body.w, 10)
+    }
 }
 
 /// Section `template` in the box centred on `area`, in authored pixels.
@@ -198,6 +204,24 @@ pub fn message_box_parts(buttons: usize, area: RectPx) -> BoxParts {
 /// A menu's count-rule box (see [`message_box_parts`]).
 pub fn menu_message_box(buttons: usize, width: i32, height: i32) -> BoxParts {
     message_box_parts(buttons, menu_area(width, height))
+}
+
+/// A box's body static under `root` ([`ShellBox::nodes`]): its first
+/// `Text` child without an id.
+pub fn body_node(gui: &vera20k_gui::Gui, root: vera20k_gui::NodeId) -> Option<vera20k_gui::NodeId> {
+    let children = gui.tree().children(root).ok()?;
+    children.iter().copied().find(|node| {
+        gui.tree().kind(*node) == Ok(vera20k_gui::NodeKind::Text) && gui.id_of(*node).is_none()
+    })
+}
+
+/// Hides the body static under `root`, for a dialog that shows its box only
+/// at times (the connection verify's mismatch).
+pub fn hide_body(gui: &mut vera20k_gui::Gui, root: vera20k_gui::NodeId) {
+    use vera20k_gui::{Prop, Value};
+    if let Some(body) = body_node(gui, root) {
+        super::page::set_if_changed(gui, body, Prop::Visible, Value::Bool(false));
+    }
 }
 
 impl ShellBox {
@@ -311,17 +335,63 @@ impl ShellBox {
         }
     }
 
-    /// Its buttons as nodes under its dialog root.
+    /// Its body static and buttons as nodes under its dialog root, in the
+    /// order they paint, then the hidden IDOK. The body (`0x5B0`; the wait
+    /// box's `0x5B2`) carries no id: no host's rect table names it, and
+    /// [`Self::sync`] places it.
     pub fn nodes(&self) -> vera20k_gui::NodeSpec {
         use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
+        let body = NodeSpec::new(NodeKind::Text);
         let button = |b: &BoxButton| NodeSpec::new(NodeKind::Button).id(i32::from(b.id));
         let keys = NodeSpec::new(NodeKind::Button)
             .id(i32::from(control::IDOK))
             .with(Prop::Default, Value::Bool(true))
             .with(Prop::Cancel, Value::Bool(true));
         NodeSpec::new(NodeKind::Dialog)
+            .child(body)
             .children(self.buttons.iter().map(button))
             .child(keys)
+    }
+
+    /// Puts the box on `parts` in its widgets under `root`, the one tree its
+    /// input hits and its paint reads, whichever spec built them (its own
+    /// [`Self::nodes`] or a host's): the body static (added on the first
+    /// sync when the spec has none) with its text, alignment and rect, and
+    /// each of its buttons' caption, enable and rect. Each is written only
+    /// when it changes, so a steady box writes and allocates nothing.
+    pub fn sync(&self, gui: &mut vera20k_gui::Gui, root: vera20k_gui::NodeId, parts: &BoxParts) {
+        use super::page::{set_if_changed, set_node_text};
+        use vera20k_gui::{NodeKind, Prop, Value};
+        let body = body_node(gui, root).or_else(|| gui.create(NodeKind::Text, Some(root)).ok());
+        if let Some(body) = body {
+            let align = [geom::ShellAlign::NONE, geom::ShellAlign::H_CENTER];
+            let align = Value::Int(i32::from(align[usize::from(parts.centred)].0));
+            set_node_text(gui, body, Prop::Text, &self.body);
+            set_if_changed(gui, body, Prop::Align, align);
+            set_if_changed(gui, body, Prop::Rect, Value::Rect(parts.body));
+            set_if_changed(gui, body, Prop::Visible, Value::Bool(true));
+        }
+        // Each button's first node: the hidden IDOK may share an id.
+        let mut synced = 0u64;
+        let count = gui.tree().children(root).map_or(0, <[vera20k_gui::NodeId]>::len);
+        for index in 0..count {
+            let child = gui.tree().children(root).ok().and_then(|c| c.get(index).copied());
+            let Some(node) = child else { break };
+            let id = gui.id_of(node).and_then(|id| u16::try_from(id).ok());
+            let Some(at) = id.and_then(|id| self.buttons.iter().position(|b| b.id == id)) else {
+                continue;
+            };
+            let Some(bit) = 1u64.checked_shl(at as u32).filter(|bit| synced & bit == 0) else {
+                continue;
+            };
+            synced |= bit;
+            let button = &self.buttons[at];
+            let rect = parts.rect_of(button.id);
+            set_node_text(gui, node, Prop::Text, &button.caption);
+            set_if_changed(gui, node, Prop::Enabled, Value::Bool(button.enabled));
+            set_if_changed(gui, node, Prop::Rect, Value::Rect(rect.unwrap_or_default()));
+            set_if_changed(gui, node, Prop::Visible, Value::Bool(rect.is_some()));
+        }
     }
 
     /// Each button's enable, for its node.

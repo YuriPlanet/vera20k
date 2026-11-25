@@ -17,7 +17,12 @@ pub(crate) fn commit_prepared_load(
     crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
-    crate::app::chrono_screen::retire(state, wall_ms);
+    crate::app::chrono_screen::retire(
+        &state.frontend.screen,
+        &mut state.match_state,
+        &mut state.audio,
+        wall_ms,
+    );
     let native_tiberium_stats = prepared.native_tiberium_stats();
     log::info!(
         "Load: rebuilt native tiberium queues ({} growth, {} spread)",
@@ -46,7 +51,10 @@ pub(crate) fn commit_prepared_load(
         &state.frontend.frontend_main_rng,
         &mut state.match_state.sim_runtime,
     );
-    crate::app::audio_runtime::bind_match_eva_context(state);
+    crate::app::audio_runtime::bind_match_eva_context(
+        &state.match_state.sim_runtime,
+        &mut state.audio,
+    );
     // All preparation has succeeded. Surface allocation and saved camera
     // conversion now use the tactical upscaler dimensions on either route.
     state.frontend.screen = crate::ui::game_screen::GameScreen::InGame;
@@ -106,8 +114,8 @@ pub(crate) fn commit_prepared_load(
         .restore_from_save(game_mode, committed.map.local_player_name());
     state.match_state.scenario_elapsed_clock = committed.elapsed_clock;
     #[cfg(feature = "telemetry-dashboard")]
-    crate::app::telemetry_capture::reset_observation(state);
-    super::scenario_pause::load_clock(state, wall_ms);
+    crate::app::telemetry_capture::reset_observation(&mut state.diag, &mut state.match_state);
+    super::scenario_pause::load_clock(&mut state.match_state.match_presentation, wall_ms);
     let pause_effects = state
         .match_state
         .sim_runtime
@@ -119,7 +127,12 @@ pub(crate) fn commit_prepared_load(
             )
         });
     // Load rearms614; reapply physical audio without a new pause acquisition.
-    super::scenario_pause::resume(state, wall_ms);
+    super::scenario_pause::resume(
+        &state.frontend.screen,
+        &mut state.match_state,
+        &mut state.audio,
+        wall_ms,
+    );
     state.match_state.sandbox_full_visibility = false;
     let runtime = state
         .match_state
@@ -157,7 +170,14 @@ pub(crate) fn commit_prepared_load(
     // Load_Game's Set_View_Dimensions (`0x0067E7F9`): Init `0x005D3A60`
     // deletes every row and an open edit, and SetWidth `0x005D4AD0` leaves
     // the list tactical_w − 8 wide.
-    let tactical_w = crate::app::input::camera::tactical_viewport_size(state).0 as i32;
+    let tactical_w = crate::app::input::camera::tactical_viewport_size(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    )
+    .0 as i32;
     let message_list = &mut state.match_state.match_presentation.message_list;
     *message_list = crate::ui::messages::MessageList::scenario();
     message_list.set_width(tactical_w);
@@ -199,7 +219,11 @@ pub(crate) fn commit_prepared_load(
         sfx.restore_static_sounds(committed.map.static_sounds(), catalog.sounds());
     }
 
-    crate::app::audio_runtime::bind_match_theme_context(state);
+    crate::app::audio_runtime::bind_match_theme_context(
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+    );
     let music_now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     if let Some(assets) = state.process_assets.manager() {
         state.audio.restore_saved_theme(
@@ -235,28 +259,19 @@ pub(crate) fn commit_prepared_load(
     // without reordering.
     state.match_state.match_presentation.active_sidebar_tab =
         crate::app::sidebar_projection::loaded_active_tab(committed.details.sidebar_order.as_ref());
-    #[cfg(feature = "phobos")]
-    let sw_sidebar_expanded = committed
-        .details
-        .sidebar_order
-        .as_ref()
-        .map(|order| order.sw_sidebar_expanded());
     state
         .match_state
         .match_presentation
         .sidebar_projection
+        .model
         .restore_order(committed.details.sidebar_order);
-    #[cfg(feature = "phobos")]
-    if let Some(expanded) = sw_sidebar_expanded {
-        // `ScenarioExt::SWSidebar_Enable` survives the load like the strips.
-        state.match_state.match_presentation.sw_sidebar.expanded = expanded;
-    }
 
     let owner = state.match_state.local_player_owner().map(str::to_owned);
     state
         .match_state
         .match_presentation
         .sidebar_projection
+        .model
         .restore_credits_counter(owner.as_deref(), committed.credits_counter);
     if let Some(owner) = owner {
         state
@@ -280,7 +295,14 @@ pub(crate) fn commit_prepared_load(
         &mut state.match_state.input,
         &mut state.match_state.match_presentation.sidebar_gadget_state,
     );
-    crate::app::input::camera::restore_tactical_view(state, committed.details.tactical_view);
+    crate::app::input::camera::restore_tactical_view(
+        &state.platform,
+        &mut state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state,
+        &state.persistence,
+        committed.details.tactical_view,
+    );
 
     // Reset pacing, not saved simulation input delay or elapsed score time.
     state.platform.frame_pacer.reset_for_new_world();
@@ -292,7 +314,13 @@ pub(crate) fn commit_prepared_load(
     // The incoming chrome owns the footer allowance; refresh its layout
     // before initializing derived geometry, including on a cold/different-side
     // load. No Power AI visit or retained-band clamp belongs in this phase.
-    let power_budget = crate::app::presentation::building_anim::power_bar_budget_px(state);
+    let power_budget = crate::app::presentation::building_anim::power_bar_budget_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     state
         .match_state
         .match_presentation

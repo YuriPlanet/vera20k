@@ -25,7 +25,7 @@ pub fn worker_count() -> usize {
     1
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     #[test]
     fn worker_count_is_at_least_one_and_bounded() {

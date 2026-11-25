@@ -18,18 +18,18 @@ pub(crate) const DIALOG: DialogResourceId = DialogResourceId(0xCE);
 pub(crate) const BODY: (&str, &str) = ("TXT_OUT_OF_SYNC", "Reconnection Error!");
 pub(crate) const STOP: (&str, &str) = ("TXT_STOP", "Stop");
 
-fn interruption(state: &AppState) -> Option<NetworkInterruption> {
-    state
-        .match_state
-        .sim_runtime
+fn interruption(
+    sim_runtime: &crate::app::match_runtime::sim_host::SimHost,
+) -> Option<NetworkInterruption> {
+    sim_runtime
         .runtime()
         .and_then(|rt| rt.simulation.pending_network_interruption())
 }
 
 pub(crate) fn labels(
-    state: &AppState,
+    sim_runtime: &crate::app::match_runtime::sim_host::SimHost,
 ) -> ((&'static str, &'static str), (&'static str, &'static str)) {
-    let body = match interruption(state) {
+    let body = match interruption(sim_runtime) {
         Some(NetworkInterruption::ScenariosDiffer) => {
             ("TXT_SCENARIOS_DO_NOT_MATCH", "Scenarios do not match.")
         }
@@ -81,12 +81,12 @@ fn reason(state: &AppState) -> Option<String> {
     if state.match_state.frame_stopped {
         return Some(crate::i18n::tr("VERA:MatchInternalError"));
     }
-    match interruption(state)? {
+    match interruption(&state.match_state.sim_runtime)? {
         NetworkInterruption::NewerClientRequired => Some(crate::i18n::tr_fill(
             "VERA:MatchNeedsNewerVera",
             &[("url", &crate::app::web_link::DOWNLOAD_PAGE)],
         )),
-        NetworkInterruption::ConnectionFailed if online(state) => {
+        NetworkInterruption::ConnectionFailed if online(&state.match_state) => {
             Some(crate::i18n::tr("VERA:GameServerConnectionFailed"))
         }
         NetworkInterruption::FederationLost => Some(crate::i18n::tr("VERA:FederationLost")),
@@ -111,12 +111,17 @@ fn start_mismatch_text(state: &AppState) -> String {
     let mut text = crate::i18n::tr("VERA:MatchStartMismatch");
     text.push_str("\n\n");
     text.push_str(
-        &start_changes_text(state).unwrap_or_else(|| crate::i18n::tr("VERA:RulesDifferOriginal")),
+        &start_changes_text(
+            &state.frontend.mods,
+            &state.match_state.sim_runtime,
+            &state.process_assets,
+        )
+        .unwrap_or_else(|| crate::i18n::tr("VERA:RulesDifferOriginal")),
     );
     if state.frontend.external_launch
         && !state.process_assets.match_reads_folder_terrain()
-        && !match_keeps_ares_off(state)
-        && match_picture_files(state).is_empty()
+        && !match_keeps_ares_off(&state.match_state.sim_runtime)
+        && match_picture_files(&state.match_state.sim_runtime, &state.process_assets).is_empty()
     {
         text.push('\n');
         text.push_str(&crate::i18n::tr("VERA:LauncherShowsMismatch"));
@@ -124,40 +129,64 @@ fn start_mismatch_text(state: &AppState) -> String {
     text
 }
 
-fn online(state: &AppState) -> bool {
-    state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol
+fn online(match_state: &crate::app::match_runtime::state::MatchState) -> bool {
+    match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol
 }
 
 /// VERA: the box closes with the match, so its reason also waits for the
 /// chat the player lands in.
 fn hold_chat_line(state: &mut AppState) {
-    if !online(state) {
+    if !online(&state.match_state) {
         return;
     }
     let line = reason(state).or_else(|| {
-        let ((key, _), _) = labels(state);
+        let ((key, _), _) = labels(&state.match_state.sim_runtime);
         let csf = state.process_assets.csf.as_ref()?;
         Some(csf.get(key)?.to_string())
     });
     if let Some(line) = line {
-        crate::app::shell_wol::hold_problem_line(state, line);
+        crate::app::shell_wol::hold_problem_line(state.frontend.wol.as_mut(), line);
     }
 }
 
 /// VERA: Quit on the wait of a match the relay never started shows no box.
-pub(crate) fn hold_quit_line(state: &mut AppState) {
-    let never_started = state
-        .match_state
+pub(crate) fn hold_quit_line(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+) {
+    let never_started = match_state
         .live_network
         .as_ref()
         .and_then(|live| live.delivery_counters())
         .is_some_and(|counters| !counters.started);
-    if online(state) && never_started {
+    if online(match_state) && never_started {
         crate::app::shell_wol::hold_problem_line(
-            state,
+            frontend.wol.as_mut(),
             crate::i18n::tr("VERA:MatchStartCancelled"),
         );
     }
+}
+
+/// The box's widgets: OK, its default and cancel button.
+fn nodes() -> NodeSpec {
+    NodeSpec::new(NodeKind::Dialog).child(
+        NodeSpec::new(NodeKind::Button)
+            .id(control::OK.into())
+            .with(Prop::Default, Value::Bool(true))
+            .with(Prop::Cancel, Value::Bool(true)),
+    )
+}
+
+/// `shell_box` on `parts` in the widgets its input routes to, before it
+/// paints ([`crate::ui::shell::modal::ShellBox::sync`]).
+pub(crate) fn sync_box(
+    shell_controller: &mut DialogController,
+    shell_box: &crate::ui::shell::modal::ShellBox,
+    parts: &crate::ui::shell::modal::BoxParts,
+) {
+    let rect = |id| (id == control::OK).then(|| parts.button(0));
+    let sync = |gui: &mut vera20k_gui::Gui, root| shell_box.sync(gui, root, parts);
+    dialog_page::sync_dialog(shell_controller, DIALOG, nodes, rect, sync);
 }
 
 #[derive(Debug, Default)]
@@ -176,14 +205,6 @@ impl NetworkFailureModal {
         event: InputEvent,
         ok: RectPx,
     ) -> Vec<PageEvent> {
-        let nodes = || {
-            NodeSpec::new(NodeKind::Dialog).child(
-                NodeSpec::new(NodeKind::Button)
-                    .id(control::OK.into())
-                    .with(Prop::Default, Value::Bool(true))
-                    .with(Prop::Cancel, Value::Bool(true)),
-            )
-        };
         let rect = |id| (id == control::OK).then_some(ok);
         let events =
             dialog_page::route(controller, DIALOG, nodes, rect, dialog_page::no_sync, event);
@@ -192,10 +213,13 @@ impl NetworkFailureModal {
     }
 }
 
-pub(crate) fn pending(state: &AppState) -> bool {
-    state.frontend.screen == crate::app::GameScreen::InGame
-        && (state.match_state.frame_stopped
-            || state.match_state.sim_runtime.runtime().is_some_and(|rt| {
+pub(crate) fn pending(
+    screen: &crate::ui::game_screen::GameScreen,
+    match_state: &crate::app::match_runtime::state::MatchState,
+) -> bool {
+    *screen == crate::app::GameScreen::InGame
+        && (match_state.frame_stopped
+            || match_state.sim_runtime.runtime().is_some_and(|rt| {
                 rt.simulation.pending_network_failure().is_some()
                     || rt.simulation.pending_network_interruption().is_some()
             }))
@@ -224,11 +248,7 @@ pub(crate) fn show(state: &mut AppState) {
         state.match_state.network_failure = Some(NetworkFailureModal::default());
         state.match_state.input.cancel_tactical_drag();
         state.match_state.input.keys_held.clear();
-        state
-            .match_state
-            .match_presentation
-            .in_game_gadgets
-            .cancel_pointer_capture();
+        crate::app::input::chrome_input::cancel(&mut state.match_state.match_presentation);
     }
     state.frontend.shell_controller.ensure_active(DIALOG);
     state.platform.window.request_redraw();
@@ -257,9 +277,8 @@ fn ok_rect(width: i32, height: i32) -> RectPx {
 }
 
 /// Whether OK shows pushed.
-pub(crate) fn ok_pressed(state: &AppState) -> bool {
-    let controller = &state.frontend.shell_controller;
-    controller.top_id() == Some(DIALOG) && dialog_page::pressed(controller, control::OK)
+pub(crate) fn ok_pressed(shell_controller: &DialogController) -> bool {
+    shell_controller.top_id() == Some(DIALOG) && dialog_page::pressed(shell_controller, control::OK)
 }
 
 pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {

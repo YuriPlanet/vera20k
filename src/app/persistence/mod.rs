@@ -86,6 +86,74 @@ impl PersistenceState {
         campaign && !self.initial_campaign_save_attempted
     }
 
+    /// `[VERA] HealthBars=`: the client health-strip policy. Presentation only;
+    /// the simulation never reads it.
+    pub(crate) fn health_bar_mode(&self) -> crate::ui::main_menu_dialogs::options::HealthBarMode {
+        self.options_profile.health_bars
+    }
+
+    /// `[VERA] ColorVisionMode=`: the final-frame colour filter. Presentation
+    /// only; the simulation never reads it, and the frame reads it live.
+    pub(crate) fn color_vision_mode(
+        &self,
+    ) -> crate::ui::main_menu_dialogs::options::ColorVisionMode {
+        self.options_profile.color_vision
+    }
+
+    /// This frame's matrix for the shared frame-output filter.
+    pub(crate) fn color_vision_matrix(&self) -> Option<crate::render::color_vision::Mat3> {
+        crate::app::state::color_vision_matrix_for(self.color_vision_mode())
+    }
+
+    /// Whether VERA's HD radar is on (`[VERA] HdRadar=`); a capture takes its
+    /// profile's choice (`PlatformState::capture_choices`).
+    pub(crate) fn hd_radar(
+        &self,
+        capture: Option<&crate::app::state::CapturePresentation>,
+    ) -> bool {
+        capture.map_or(self.options_profile.hd_radar, |capture| capture.hd_radar)
+    }
+
+    /// Whether VERA's smooth sidebar is on (`[VERA] SmoothSidebar=`); a
+    /// capture takes its profile's choice.
+    pub(crate) fn smooth_sidebar(
+        &self,
+        capture: Option<&crate::app::state::CapturePresentation>,
+    ) -> bool {
+        capture.map_or(self.options_profile.smooth_sidebar, |capture| {
+            capture.smooth_sidebar
+        })
+    }
+
+    /// The Sidebar size the match frame uses; a capture takes its own,
+    /// Normal unless its profile says.
+    pub(crate) fn sidebar_size(
+        &self,
+        capture: Option<&crate::app::state::CapturePresentation>,
+    ) -> crate::ui::main_menu_dialogs::options::SidebarSize {
+        capture.map_or(self.options_profile.sidebar, |capture| capture.sidebar)
+    }
+
+    /// Whether the setup screens show VERA's own map pictures
+    /// (`[VERA] HdMapPreviews=`, `app::map_picture`). Captures keep the map's
+    /// `[PreviewPack]` picture, which retail comparisons check, and the
+    /// browser build cannot start the hidden run that draws one.
+    pub(crate) fn hd_map_previews(
+        &self,
+        capture: Option<&crate::app::state::CapturePresentation>,
+    ) -> bool {
+        crate::ui::main_menu_dialogs::options::HAS_HD_MAP_PREVIEWS
+            && capture.is_none()
+            && self.options_profile.hd_map_previews
+    }
+
+    /// Whether VERA's online client draws its enlarged art smoothed
+    /// (`[VERA] SmoothOnlineMenus=`). The native-UI diagnostics, the only
+    /// sessions without that client, keep their art's own pixels.
+    pub(crate) fn smooth_online_menus(&self, native_shell_ui: bool) -> bool {
+        self.options_profile.smooth_online_menus && !native_shell_ui
+    }
+
     /// A one-shot production capture uses its own new directory, so the
     /// ordinary save command cannot replace a player's existing saves.
     pub(crate) fn isolate_capture_saves(&mut self, directory: &Path) -> std::io::Result<()> {
@@ -103,8 +171,6 @@ impl PersistenceState {
 pub(crate) enum PreparedLoadError {
     #[error("could not read save file: {0}")]
     ReadFile(#[source] std::io::Error),
-    #[error(transparent)]
-    SaveMigration(#[from] save_migration::SaveMigrationError),
     #[error("a network match cannot load a saved game")]
     NetworkMatch,
     // The three `#[cfg(test)]` variants belong to the headless same-content
@@ -140,15 +206,6 @@ pub(crate) enum PreparedLoadError {
     LocalView(#[from] crate::sim::snapshot::saved_local_view::SavedLocalViewError),
     #[error(transparent)]
     RadarEvents(#[from] crate::render::radar::SavedRadarEventsError),
-}
-
-impl PreparedLoadError {
-    pub(crate) fn migration_message_key(&self) -> Option<&'static str> {
-        match self {
-            Self::SaveMigration(error) => Some(error.message_key()),
-            _ => None,
-        }
-    }
 }
 
 impl From<SnapshotRestoreError> for PreparedLoadError {
@@ -357,6 +414,9 @@ impl PreparedLoad {
         // Original successful LoadGame67E6C4 publishes A8ED5C=1 after the
         // fallible content/read tail. Failed preparation never changes it.
         self.simulation.publish_scenario_started();
+        // A loaded match draws its turns as a new match does
+        // (`world::turn_streams`): a save does not carry the switch.
+        self.simulation.separate_turn_streams(true);
         (
             self.simulation,
             CommittedLoadPresentation {
@@ -442,9 +502,16 @@ pub(crate) struct SaveRepository {
 
 impl SaveRepository {
     fn new() -> Self {
-        Self {
-            directory: PathBuf::from(DEFAULT_SAVES_DIRECTORY),
+        #[cfg(target_os = "horizon")]
+        {
+            static RECOVER: std::sync::Once = std::sync::Once::new();
+            RECOVER.call_once(|| {
+                if let Err(error) = recover_horizon_saves(Path::new(DEFAULT_SAVES_DIRECTORY)) {
+                    log::error!("Could not recover interrupted saves: {error}");
+                }
+            });
         }
+        Self::at(DEFAULT_SAVES_DIRECTORY)
     }
 
     pub(crate) fn at(directory: impl Into<PathBuf>) -> Self {
@@ -462,6 +529,46 @@ impl SaveRepository {
         crate::util::file_system::read(path)
     }
 
+    /// A slot's display description is stored verbatim. Only its generated
+    /// filename trims whitespace, replaces reserved characters and caps length.
+    fn filename_part(description: &str) -> Option<String> {
+        let trimmed = description.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        Some(
+            trimmed
+                .chars()
+                .take(64)
+                .map(|ch| match ch {
+                    '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+                    ch if ch.is_control() => '_',
+                    ch => ch,
+                })
+                .collect(),
+        )
+    }
+
+    /// Shared destination policy for ordinary saves and converted saves.
+    fn write_player_slot(
+        &self,
+        overwrite: Option<&Path>,
+        filename_part: Option<&str>,
+        tick: u64,
+        timestamp: u64,
+        bytes: &[u8],
+    ) -> Result<PathBuf, SaveWriteError> {
+        if let Some(path) = overwrite {
+            self.overwrite_existing(path, bytes)?;
+            return Ok(path.to_owned());
+        }
+        let filename = match filename_part {
+            Some(name) => format!("save_{name}_tick{tick}_{timestamp}.bin"),
+            None => format!("save_tick{tick}_{timestamp}.bin"),
+        };
+        self.write_named(&filename, bytes)
+    }
+
     pub(crate) fn write_named(
         &self,
         file_name: &str,
@@ -475,7 +582,8 @@ impl SaveRepository {
             }
         })?;
         let path = self.directory.join(file_name);
-        self.create_new_file(&path, bytes)?;
+        crate::util::file_system::write_new(&path, bytes).map_err(SaveWriteError::write_file)?;
+        commit_save_storage(&path).map_err(SaveWriteError::write_file)?;
         Ok(path)
     }
 
@@ -500,7 +608,7 @@ impl SaveRepository {
                 let _ = crate::util::file_system::remove_file(path);
                 return Err(SaveWriteError::write_file(source));
             }
-            commit_save_storage(path).map_err(SaveWriteError::write_file)
+            Ok(())
         }
     }
 
@@ -512,29 +620,37 @@ impl SaveRepository {
         path: &Path,
         bytes: &[u8],
     ) -> Result<(), SaveWriteError> {
-        if path.parent() != Some(self.directory.as_path()) || !Self::is_save_file(path) {
+        if !self.contains_save_path(path) {
             return Err(SaveWriteError::write_file(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "overwrite target is not a save in this repository",
             )));
         }
-        self.validate_existing_save(path)?;
-        self.replace_file(path, bytes)
+        self.replace_file(path, bytes, GameSnapshotHeader::is_compatible)
     }
 
-    fn validate_existing_save(&self, path: &Path) -> Result<(), SaveWriteError> {
-        let previous = self.read(path).map_err(SaveWriteError::write_file)?;
-        // SaveGame67CF42 replaces the slot; an old VERA body's load layout
-        // must not prevent replacement of its recognizable product metadata.
-        GameSnapshot::read_metadata(&previous).map_err(|error| {
-            SaveWriteError::write_file(std::io::Error::new(std::io::ErrorKind::InvalidData, error))
-        })?;
-        Ok(())
-    }
-
-    fn replace_file(&self, path: &Path, bytes: &[u8]) -> Result<(), SaveWriteError> {
+    fn replace_file(
+        &self,
+        path: &Path,
+        bytes: &[u8],
+        eligible: impl FnOnce(&GameSnapshotHeader) -> bool,
+    ) -> Result<(), SaveWriteError> {
+        // Re-read the selected row immediately before publishing. It may
+        // have changed while the dialog was open or the snapshot was staged.
+        #[cfg(not(target_os = "horizon"))]
+        let validate = || {
+            if eligible(&Self::file_header(path)?) {
+                Ok(())
+            } else {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "the selected save is no longer compatible",
+                ))
+            }
+        };
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         {
+            validate().map_err(SaveWriteError::write_file)?;
             crate::util::file_system::write(path, bytes).map_err(SaveWriteError::write_file)
         }
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
@@ -556,11 +672,25 @@ impl SaveRepository {
                     Err(error) => return Err(error),
                 }
             };
-            let result = std::fs::rename(&stage, path);
+            #[cfg(not(target_os = "horizon"))]
+            let result = validate().and_then(|()| std::fs::rename(&stage, path));
+            #[cfg(target_os = "horizon")]
+            let result = replace_horizon_slot(path, &stage, |backup| {
+                if eligible(&Self::file_header(backup)?) {
+                    Ok(())
+                } else {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "the selected save is no longer compatible",
+                    ))
+                }
+            });
             if result.is_err() {
                 let _ = crate::util::file_system::remove_file(&stage);
             }
-            result.and_then(|()| commit_save_storage(path)).map_err(SaveWriteError::write_file)
+            #[cfg(not(target_os = "horizon"))]
+            let result = result.and_then(|()| commit_save_storage(path));
+            result.map_err(SaveWriteError::write_file)
         }
     }
 
@@ -597,10 +727,11 @@ impl SaveRepository {
         })?;
         let path = self.directory.join(file);
         if crate::util::file_system::exists(&path) {
-            self.validate_existing_save(&path)?;
-            self.replace_file(&path, bytes)?;
+            // SaveGame67CF42 can replace this mission's own older VERA slot.
+            self.replace_file(&path, bytes, |_| true)?;
         } else {
             self.create_new_file(&path, bytes)?;
+            commit_save_storage(&path).map_err(SaveWriteError::write_file)?;
         }
         Ok(path)
     }
@@ -610,6 +741,10 @@ impl SaveRepository {
             path.extension().and_then(|ext| ext.to_str()),
             Some("bin" | "sav")
         )
+    }
+
+    fn contains_save_path(&self, path: &Path) -> bool {
+        path.parent() == Some(self.directory.as_path()) && Self::is_save_file(path)
     }
 
     pub(crate) fn delete(&self, path: &Path) -> std::io::Result<()> {
@@ -634,6 +769,14 @@ impl SaveRepository {
     /// loadable) where gamemd hides it.
     pub(crate) fn has_browser_entry(&self) -> bool {
         self.readable_entries().next().is_some()
+    }
+
+    fn file_header(path: &Path) -> std::io::Result<GameSnapshotHeader> {
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let reader = std::fs::File::open(path)?;
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let reader = std::io::Cursor::new(crate::util::file_system::read_shared(path)?);
+        Self::read_browser_metadata(reader)
     }
 
     /// SaveInfo681840/559ED0 needs metadata, not the simulation body. Reuse
@@ -674,12 +817,7 @@ impl SaveRepository {
                 if !metadata.is_file() {
                     return None;
                 }
-                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-                let reader = std::fs::File::open(&path).ok()?;
-                #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-                let reader =
-                    std::io::Cursor::new(crate::util::file_system::read_shared(&path).ok()?);
-                let header = Self::read_browser_metadata(reader).ok()?;
+                let header = Self::file_header(&path).ok()?;
                 let ticks = crate::map::rmg::saved_seeds::system_time_to_file_time(
                     metadata.modified().ok()?,
                 );
@@ -701,6 +839,139 @@ impl SaveRepository {
             Some((path, item.metadata().ok()?.modified().ok()?))
         }))
     }
+}
+
+/// Horizon's filesystem cannot rename over an existing file. Preserve a
+/// committed backup until the new slot has itself been committed.
+#[cfg(any(target_os = "horizon", all(test, tests_app)))]
+fn replace_horizon_slot(
+    target: &Path,
+    stage: &Path,
+    validate: impl FnOnce(&Path) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    static NEXT_BACKUP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let parent = target.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "save has no parent directory",
+        )
+    })?;
+    let backup_dir = loop {
+        let id = NEXT_BACKUP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let directory = parent.join(format!(".save-backup-{}-{id}", std::process::id()));
+        match std::fs::create_dir(&directory) {
+            Ok(()) => break directory,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    };
+    let backup = backup_dir.join(target.file_name().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "save has no file name")
+    })?);
+    if let Err(error) = std::fs::rename(target, &backup) {
+        let _ = std::fs::remove_dir(&backup_dir);
+        return Err(error);
+    }
+    let result = commit_save_storage(&backup)
+        .and_then(|()| validate(&backup))
+        .and_then(|()| std::fs::rename(stage, target));
+    if let Err(error) = result {
+        if let Err(restore_error) =
+            std::fs::rename(&backup, target).and_then(|()| commit_save_storage(target))
+        {
+            log::warn!(
+                "Could not restore {}: {restore_error}. Previous slot retained at {}",
+                target.display(),
+                backup.display()
+            );
+        } else {
+            let _ = std::fs::remove_dir(&backup_dir);
+        }
+        return Err(error);
+    }
+    // A failed commit leaves both the original backup and the new slot on disk.
+    commit_save_storage(target)?;
+    if let Err(error) = std::fs::remove_file(&backup)
+        .and_then(|()| std::fs::remove_dir(&backup_dir))
+        .and_then(|()| commit_save_storage(target))
+    {
+        log::warn!("Could not retire save backup {}: {error}", backup.display());
+    }
+    Ok(())
+}
+
+/// Restore a committed old slot left by an interrupted Horizon replacement.
+/// A slot created in the meantime is preserved, and the old file is instead
+/// returned to the browser under a fresh recovered name.
+#[cfg(any(target_os = "horizon", all(test, tests_app)))]
+fn recover_horizon_saves(directory: &Path) -> std::io::Result<()> {
+    fn recover_entries(
+        directory: &Path,
+        backup_parent: &Path,
+        prefix: &str,
+    ) -> std::io::Result<()> {
+        let entries = match std::fs::read_dir(backup_parent) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error),
+        };
+        for entry in entries {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir()
+                || !entry.file_name().to_string_lossy().starts_with(prefix)
+            {
+                continue;
+            }
+            let backup_dir = entry.path();
+            for backup in std::fs::read_dir(&backup_dir)? {
+                let backup = backup?;
+                if !backup.file_type()?.is_file() || !SaveRepository::is_save_file(&backup.path()) {
+                    continue;
+                }
+                let name = backup.file_name();
+                let original = directory.join(&name);
+                match crate::util::file_system::persist_noclobber(&backup.path(), &original) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                        let mut recovered = false;
+                        for serial in 0..10000 {
+                            let name = format!("recovered-{serial}-{}", name.to_string_lossy());
+                            let destination = directory.join(name);
+                            match crate::util::file_system::persist_noclobber(
+                                &backup.path(),
+                                &destination,
+                            ) {
+                                Ok(()) => {
+                                    recovered = true;
+                                    break;
+                                }
+                                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                                }
+                                Err(error) => return Err(error),
+                            }
+                        }
+                        if !recovered {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::AlreadyExists,
+                                "no available name for recovered save",
+                            ));
+                        }
+                    }
+                    Err(error) => return Err(error),
+                }
+                commit_save_storage(directory)?;
+            }
+            match std::fs::remove_dir(&backup_dir) {
+                Ok(()) => commit_save_storage(directory)?,
+                Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(())
+    }
+
+    recover_entries(directory, directory, ".save-backup-")?;
+    recover_entries(directory, &directory.join("backups/replaced"), ".pending-")
 }
 
 #[cfg(any(feature = "dev-overlays", test))]
@@ -731,6 +1002,96 @@ mod tests {
     };
     use crate::ui::game_screen::GameScreen;
 
+    #[test]
+    fn horizon_replacement_publishes_the_new_slot_after_validating_the_backup() {
+        let directory = isolated_directory("horizon-replace");
+        std::fs::create_dir_all(&directory)
+            .unwrap_or_else(|error| panic!("{}: {error}", directory.display()));
+        let target = directory.join("save.bin");
+        let stage = directory.join(".stage");
+        std::fs::write(&target, b"previous").unwrap();
+        std::fs::write(&stage, b"replacement").unwrap();
+
+        replace_horizon_slot(&target, &stage, |backup| {
+            assert_eq!(std::fs::read(backup)?, b"previous");
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(std::fs::read(&target).unwrap(), b"replacement");
+        assert!(!stage.exists());
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn horizon_replacement_restores_the_previous_slot_when_validation_fails() {
+        let directory = isolated_directory("horizon-restore");
+        std::fs::create_dir_all(&directory).unwrap();
+        let target = directory.join("save.bin");
+        let stage = directory.join(".stage");
+        std::fs::write(&target, b"previous").unwrap();
+        std::fs::write(&stage, b"replacement").unwrap();
+
+        let error = replace_horizon_slot(&target, &stage, |_| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "changed",
+            ))
+        })
+        .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(std::fs::read(&target).unwrap(), b"previous");
+        assert_eq!(std::fs::read(&stage).unwrap(), b"replacement");
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 2);
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn horizon_recovery_restores_an_interrupted_slot() {
+        let directory = isolated_directory("horizon-recover");
+        std::fs::create_dir_all(&directory).unwrap();
+        let backup = directory.join(".save-backup-1-0");
+        std::fs::create_dir(&backup).unwrap();
+        std::fs::write(backup.join("save.bin"), b"previous").unwrap();
+
+        recover_horizon_saves(&directory).unwrap();
+        recover_horizon_saves(&directory).unwrap();
+
+        assert_eq!(
+            std::fs::read(directory.join("save.bin")).unwrap(),
+            b"previous"
+        );
+        assert!(!backup.exists());
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn horizon_recovery_preserves_a_new_slot_and_the_interrupted_conversion_backup() {
+        let directory = isolated_directory("horizon-recover-conflict");
+        std::fs::create_dir_all(&directory).unwrap();
+        let target = directory.join("save.bin");
+        std::fs::write(&target, b"new").unwrap();
+        std::fs::write(directory.join("recovered-0-save.bin"), b"another").unwrap();
+        let backup = directory.join("backups/replaced/.pending-attempt");
+        std::fs::create_dir_all(&backup).unwrap();
+        std::fs::write(backup.join("save.bin"), b"previous").unwrap();
+
+        recover_horizon_saves(&directory).unwrap();
+
+        assert_eq!(std::fs::read(target).unwrap(), b"new");
+        assert_eq!(
+            std::fs::read(directory.join("recovered-0-save.bin")).unwrap(),
+            b"another"
+        );
+        assert_eq!(
+            std::fs::read(directory.join("recovered-1-save.bin")).unwrap(),
+            b"previous"
+        );
+        assert!(!backup.exists());
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
     const LOAD_FIXTURE_MAP_HASH: u64 = 0x1234_5678_9ABC_DEF0;
     const LOAD_FIXTURE_MAP_NAME: &str = "TRANSACTION.MAP";
     const LOAD_FIXTURE_SEED: u32 = 0x1234_5678;
@@ -1214,6 +1575,10 @@ mod tests {
             Some((122, 135))
         );
         let simulation = &mut runtime.simulation;
+        assert!(
+            simulation.turn_streams_separate(),
+            "a loaded match draws its turns from their own streams, as a new one does"
+        );
         let restored_dummy = simulation.effective_shared_cell_dummy();
         assert!(restored_dummy.same_identity(&live_dummy));
         assert_eq!(

@@ -369,9 +369,7 @@ impl TerrainDrawRenderer {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
-
-
-multiview_mask: None,
+                    multiview_mask: None,
                 });
                 let [x, y, w, h] = blast.read;
                 pass.set_scissor_rect(x, y, w, h);
@@ -386,9 +384,7 @@ multiview_mask: None,
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
-
-
-multiview_mask: None,
+                    multiview_mask: None,
                 });
                 let [x, y, w, h] = blast.edit;
                 pass.set_scissor_rect(x, y, w, h);

@@ -238,8 +238,8 @@ fn test_destroyed_bridge_arms_fall_over_water_below() {
     let mut sim = Simulation::new();
     let (resolved, bridge_state) = structural_bridge_for_fallout(0, true);
     install_rectangular_test_playfield(&mut sim, resolved.width(), resolved.height());
-    sim.resolved_terrain = Some(resolved.clone());
-    sim.bridge_state = Some(bridge_state);
+    *sim.resolved_terrain = Some(resolved.clone());
+    *sim.bridge_state = Some(bridge_state);
 
     sim.spawn_from_map_with_resolved(
         &[MapEntity {
@@ -296,8 +296,8 @@ fn test_bridge_collapse_kills_ground_unit_under_destroyed_cell() {
     let mut sim = Simulation::new();
     let (resolved, bridge_state) = structural_bridge_for_fallout(0, false);
     install_rectangular_test_playfield(&mut sim, resolved.width(), resolved.height());
-    sim.resolved_terrain = Some(resolved.clone());
-    sim.bridge_state = Some(bridge_state);
+    *sim.resolved_terrain = Some(resolved.clone());
+    *sim.bridge_state = Some(bridge_state);
 
     // Spawn at (5, 5), then explicitly model the native lower object-list
     // occupant below the structural bridge deck. Constructor admission rightly
@@ -418,7 +418,7 @@ fn concrete_damage_fixture(
         let terrain = sim.resolved_terrain.as_mut().unwrap();
         let index = terrain.index(x, y).unwrap();
         terrain
-            .recalc_resident_bridge_cell(index, empty, -1, &registry, sim.playfield_bounds)
+            .recalc_resident_bridge_cell(index, empty, -1, &registry, *sim.playfield_bounds)
             .unwrap();
         let cell = terrain.cell(x, y).unwrap();
         assert_eq!(cell.final_tile_index, 0);
@@ -438,14 +438,14 @@ fn concrete_damage_fixture(
         let terrain = sim.resolved_terrain.as_mut().unwrap();
         let index = terrain.index(x, y).unwrap();
         let outcome = terrain
-            .recalc_resident_bridge_cell(index, finalized, -1, &registry, sim.playfield_bounds)
+            .recalc_resident_bridge_cell(index, finalized, -1, &registry, *sim.playfield_bounds)
             .unwrap();
         sim.overlay_grid
             .as_mut()
             .unwrap()
             .write_finalized_map_cell(x, y, outcome.finalized);
     }
-    sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
+    *sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
         sim.resolved_terrain.as_ref().unwrap(),
         true,
         strength,
@@ -525,9 +525,9 @@ fn test_bridge_walker_collapses_full_3_cell_strip_on_single_hit() {
 fn test_structural_bridge_collapse_preserves_dynamic_navigation_and_snapshot() {
     let mut sim = Simulation::new();
     let (resolved, bridge_state, overlays) = structural_bridge_for_damage_dispatch();
-    sim.resolved_terrain = Some(resolved);
-    sim.bridge_state = Some(bridge_state);
-    sim.overlay_grid = Some(overlays);
+    *sim.resolved_terrain = Some(resolved);
+    *sim.bridge_state = Some(bridge_state);
+    *sim.overlay_grid = Some(overlays);
     crate::sim::arena_fixture::supply_native_map(&mut sim);
 
     // This navigation fixture supplies a foundation at the native (0,0)
@@ -747,8 +747,8 @@ fn install_water_move_fixture(
     resolved: ResolvedTerrainGrid,
 ) -> PathGrid {
     install_rectangular_test_playfield(sim, resolved.width(), resolved.height());
-    sim.playfield_size_height = Some(i32::from(resolved.height()));
-    sim.resolved_terrain = Some(resolved);
+    *sim.playfield_size_height = Some(i32::from(resolved.height()));
+    *sim.resolved_terrain = Some(resolved);
     assert!(sim.rebuild_dynamic_navigation(rules));
     sim.path_grid().expect("published path grid").clone()
 }
@@ -799,7 +799,7 @@ fn test_water_movers_pass_under_a_structural_bridge() {
     for mover in ["BOAT", "DRED"] {
         let mut sim = Simulation::new();
         let (resolved, bridge_state) = water_under_structural_bridge();
-        sim.bridge_state = Some(bridge_state);
+        *sim.bridge_state = Some(bridge_state);
         let grid = install_water_move_fixture(&mut sim, &rules, resolved);
         let id = sim
             .spawn_object(mover, "Americans", 5, 3, 64, &rules)

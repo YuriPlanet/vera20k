@@ -35,7 +35,7 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.resolve_rule_animation_lists(&rules);

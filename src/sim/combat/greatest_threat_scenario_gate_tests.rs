@@ -127,7 +127,7 @@ fn campaign_discovery_prelude_admits_an_enemy_once_its_ground_is_revealed() {
     let (mut sim, tank, enemy) = rival_pair(rules, "MTNK", "HTNK");
     let player = sim.interner.get("Americans").unwrap();
     sim.session.set_current_house_for_test(Some(player));
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     let discovered = |sim: &Simulation| {
         sim.substrate
             .entities

@@ -17,10 +17,10 @@ use crate::ui::shell::page::PageCue;
 use crate::ui::skirmish_shell::layout::compute_choose_map_modal_layout;
 use crate::ui::skirmish_shell::page;
 use crate::ui::skirmish_shell::{
-    COMBO_DROPDOWN_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H, COMBO_DROPDOWN_SCROLLBAR_W,
-    COMBO_FACE_H, RectPx, checkbox_text_rect, combo_face_rect, compute_layout,
+    COMBO_DROPDOWN_ROW_H, COMBO_FACE_H, RectPx, checkbox_text_rect, combo_face_rect, compute_layout,
     compute_layout_for_rows,
 };
+use vera20k_gui::shell::list::ListMetrics;
 use vera20k_gui::shell::trackbar::THUMB_W;
 
 // The page's widgets driven as the app drives them ([`page::pointer`]): one
@@ -1432,6 +1432,47 @@ fn solo_skirmish_option_accepts_no_opponent_and_no_team_split() {
     assert_eq!(session.humans.len(), 1);
 }
 
+/// Ares_AllowSinglePlay (hook `0x006AD0ED`) skips both side gates whenever
+/// Ares plays in the front end, without SoloSkirmish=.
+#[test]
+fn an_ares_front_end_starts_a_skirmish_alone() {
+    let mut shell = controlled_country_shell();
+    for opponent in &mut shell.opponents {
+        opponent.row_type = SkirmishAiRowType::None;
+    }
+    let maps = [test_map_entry_with_starts("solo.mmx", 1)];
+    let modes = stock_skirmish_modes();
+    let types = "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n";
+    let stock = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(types)).unwrap();
+    let ares = {
+        let _way = crate::rules::ares_switch::read_ares_way(true);
+        crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(&format!(
+            "{types}[General]\nTogglePowerAllowed=yes\n"
+        )))
+        .unwrap()
+    };
+    assert!(!stock.ares() && ares.ares());
+
+    let start = |rules| {
+        launch_session(
+            &shell,
+            &maps,
+            &modes,
+            start_skips_side_gates(false, Some(rules)),
+        )
+    };
+    assert_eq!(
+        start(&stock).unwrap_err(),
+        LaunchValidationError::NoEnabledOpponent
+    );
+    assert!(
+        start(&ares)
+            .expect("Ares starts one player")
+            .opponents
+            .is_empty()
+    );
+}
+
 #[test]
 fn solo_skirmish_option_accepts_every_opponent_on_the_local_team() {
     let mut shell = controlled_country_shell();
@@ -1980,7 +2021,7 @@ fn side_combo_exposes_random_country_and_verified_dropdown_cap() {
         combo_dropdown_content_rect(&shell, &layout, &maps, SkirmishComboId::Side(0)).unwrap();
     let scrollbar =
         combo_dropdown_scrollbar_rect(&shell, &layout, &maps, SkirmishComboId::Side(0)).unwrap();
-    assert_eq!(content.w, dropdown.w - COMBO_DROPDOWN_SCROLLBAR_W);
+    assert_eq!(content.w, dropdown.w - ListMetrics::RETAIL.scrollbar_w);
     assert_eq!(scrollbar.x, dropdown.x + content.w);
     assert_eq!(scrollbar.h, dropdown.h);
 }
@@ -2136,7 +2177,7 @@ fn skirmish_side_dropdown_scrollbar_track_click_jumps_to_native_top_index() {
     let scrollbar =
         combo_dropdown_scrollbar_rect(&shell, &layout, &maps, SkirmishComboId::Side(0)).unwrap();
     let max_top = combo_dropdown_max_top_index(&shell, &maps, SkirmishComboId::Side(0));
-    let click_y = scrollbar.y + scrollbar.h - COMBO_DROPDOWN_SCROLLBAR_BUTTON_H - 2;
+    let click_y = scrollbar.y + scrollbar.h - ListMetrics::RETAIL.arrow_h - 2;
     let selected_before = selected_combo_item(&shell, SkirmishComboId::Side(0));
     let expected = combo_list(&shell, &layout, &maps, SkirmishComboId::Side(0))
         .unwrap()

@@ -3,15 +3,18 @@
 //! and replies here; only MatchSession owns admitted participants/setup.
 
 use super::{App, AppState};
+use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::match_runtime::session::{
     LanRoomRejoin, MatchSession, NetworkReturnContext, NetworkRoomReturn,
 };
+use crate::app::process_assets::ProcessAssets;
 use crate::app::shell_route::ShellRoute;
 use crate::net::lan_messages::setup;
 use crate::skirmish_launch::SkirmishHumanSlot;
 use crate::ui::lan_shell::*;
 use crate::ui::room_limits::RoomLimits;
+use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 use crate::util::time::{Duration, Instant};
@@ -199,25 +202,38 @@ impl LanShellRuntime {
 }
 
 pub(crate) fn layout(state: &AppState) -> LanLobbyLayout {
-    shell_layout::on(state, LanLobbyLayout::new)
+    shell_layout::on(&state.renderer.gpu, LanLobbyLayout::new)
 }
 
 pub(crate) fn create_box_layout(state: &AppState) -> crate::ui::shell::modal::LanCreateGameLayout {
-    shell_layout::on(state, crate::ui::shell::modal::lan_create_game_layout_on)
+    shell_layout::on(
+        &state.renderer.gpu,
+        crate::ui::shell::modal::lan_create_game_layout_on,
+    )
 }
 
 impl App {
     /// MainMenu52E418 and setup-return5DC624/5DC964 construct a fresh BB.
     /// The retained preference owner supplies the edit; admission stays empty.
     pub(crate) fn open_lan_lobby(state: &mut AppState) {
-        crate::app::shell_main_menu::clear_typed_codes_for_network_session(state);
+        crate::app::shell_main_menu::clear_typed_codes_for_network_session(
+            &mut state.frontend.main_menu_shell_state,
+            &mut state.persistence.options_profile,
+        );
         if !Self::prepare_multiplayer_settings(
-            state,
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
             crate::app::match_runtime::session::SessionMode::Lan,
         ) {
             return;
         }
-        if !Self::ensure_skirmish_shell_chrome(state) {
+        if !Self::ensure_skirmish_shell_chrome(
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+        ) {
             return;
         }
         state
@@ -242,7 +258,7 @@ impl App {
         crate::app::lan_service::open(state);
         App::destroy_current_shell_dialog(state);
         let route = ShellRoute::LanLobby;
-        App::show_shell_page(state, route, PAGE.dialog);
+        App::show_shell_page(&mut state.frontend, route, PAGE.dialog);
         state.frontend.shell_first_paint_slide = None;
     }
 
@@ -253,7 +269,7 @@ impl App {
             .multiplayer_shell_runtime
             .persist_lan_preferences();
         state.frontend.lan = None;
-        crate::app::lan_service::close(state);
+        crate::app::lan_service::close(&state.frontend, &mut state.match_state);
         #[cfg(target_os = "android")]
         crate::util::lan_network::release();
         state.match_state.session.leave_network();
@@ -275,7 +291,9 @@ impl App {
             return;
         }
         match rematch {
-            NetworkRoomReturn::LanHost if !crate::app::lan_service::unavailable(state) => {
+            NetworkRoomReturn::LanHost
+                if !crate::app::lan_service::unavailable(&state.platform, &state.match_state) =>
+            {
                 let observe = state
                     .frontend
                     .multiplayer_shell_runtime
@@ -301,7 +319,7 @@ impl App {
     }
 
     pub(crate) fn commit_lan_create(state: &mut AppState, observe: bool) {
-        crate::app::lan_service::force_presence(state);
+        crate::app::lan_service::force_presence(&mut state.match_state);
         state.frontend.lan = None;
         Self::open_host_setup(state, observe);
     }
@@ -320,11 +338,11 @@ pub(crate) fn local_lobby_row(name: &str) -> LanPlayerRow {
 // Original5E87A0 populates AC117C..AC1194 in this order. The join caller
 // compares low-byte narrow labels exactly; case-insensitive matching is only
 // used for Create's duplicate game-name test.
-fn reserved_names(state: &AppState) -> Vec<String> {
+fn reserved_names(process_assets: &ProcessAssets) -> Vec<String> {
     RESERVED_LABELS
         .iter()
         .map(|key| {
-            state
+            process_assets
                 .csf_label(key, key)
                 .encode_utf16()
                 .map(|unit| unit as u8)
@@ -455,7 +473,9 @@ pub(crate) fn append_chat(state: &mut AppState, line: LanChatLine) {
 pub(crate) fn append_chat_sent_at(state: &mut AppState, line: LanChatLine, sent_at: Option<u64>) {
     let route = state.frontend.shell_route;
     // WOL Quick Match's 0x117 is the top dialog with a 0x53F.
-    if route == ShellRoute::Wol && crate::app::shell_wol::quick_match::page_open(state) {
+    if route == ShellRoute::Wol
+        && crate::app::shell_wol::quick_match::page_open(state.frontend.wol.as_ref())
+    {
         crate::app::shell_wol::quick_match::append_line(state, line);
         return;
     }
@@ -482,7 +502,7 @@ pub(crate) fn append_room_chat_sent_at(
     line: LanChatLine,
     sent_at: Option<u64>,
 ) {
-    if crate::app::shell_wol::lobby::visiting(state) {
+    if crate::app::shell_wol::lobby::visiting(state.frontend.wol.as_ref()) {
         append_chat_to(state, true, false, line, sent_at);
     } else {
         append_chat_sent_at(state, line, sent_at);
@@ -536,7 +556,11 @@ fn append_chat_to(
         )
     };
     let width = crate::ui::lan_shell::chat_wrap_width(rect, scale, text);
-    let setup_page = setup.then(|| crate::app::shell_network_setup::dialog(state).page().dialog);
+    let setup_page = setup.then(|| {
+        crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state)
+            .page()
+            .dialog
+    });
     let font = &state.renderer.bit_font;
     let measure = |units: &[u16]| font.text_width(&String::from_utf16_lossy(units)) as i32;
     let frontend = &mut state.frontend;
@@ -588,11 +612,13 @@ pub(crate) fn report_error(state: &mut AppState, key: &str) {
             color: u32::MAX,
         },
     );
-    let sound = state
-        .rules()
-        .and_then(|rules| rules.general.system_error_sound())
-        .map(str::to_owned);
-    App::play_shell_ui_sound_by_id(state, sound.as_deref());
+    App::play_shell_rules_sound(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        |rules| rules.general.system_error_sound(),
+    );
 }
 
 pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
@@ -604,12 +630,12 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
     if matches!(
         action,
         LanLobbyAction::Create { .. } | LanLobbyAction::Join { .. }
-    ) && crate::app::lan_service::unavailable(state)
+    ) && crate::app::lan_service::unavailable(&state.platform, &state.match_state)
     {
         // Without its sockets the room would be one nobody sees: try them
         // again, and say why when they are still taken.
         crate::app::lan_service::open(state);
-        if crate::app::lan_service::unavailable(state) {
+        if crate::app::lan_service::unavailable(&state.platform, &state.match_state) {
             if let Some(runtime) = state.frontend.lan.as_mut() {
                 runtime.lobby.set_enabled(true);
             }
@@ -638,7 +664,7 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
         LanLobbyAction::Create { observe: _ } => create(state, &name),
         LanLobbyAction::Join { game_id, observe } => {
             state.match_state.session.take_network_room_return();
-            let reserved = reserved_names(state);
+            let reserved = reserved_names(&state.process_assets);
             let error = join_error(
                 &state.frontend.lan.as_ref().expect("active BB").lobby,
                 &name,
@@ -778,7 +804,10 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
             // VERA: the host compared the rules hash, and retail's text for
             // it sends the player to Westwood. Say what this game changes.
             if reason == 6 {
-                let body = crate::app::shell_network_setup::agreement::rules_differ_text(state);
+                let body = crate::app::shell_network_setup::agreement::rules_differ_text(
+                    &state.frontend.mods,
+                    &state.process_assets,
+                );
                 if let Some(runtime) = state.frontend.lan.as_mut() {
                     runtime.modal_body = Some(body);
                 }
@@ -828,7 +857,7 @@ fn rejoin_host(state: &mut AppState) {
         .multiplayer_shell_runtime
         .local_participant()
         .name;
-    let name_error = join_name_error(&name, &reserved_names(state));
+    let name_error = join_name_error(&name, &reserved_names(&state.process_assets));
     let Some(end) = state.frontend.lan.as_mut().and_then(|runtime| {
         runtime.rejoin_host(
             &mut state.match_state.session,
@@ -876,20 +905,25 @@ fn discovery_notice(state: &mut AppState, name: &str, open: bool, new_record: bo
         &state.csf_label(key, key),
         &[crate::assets::csf_file::CsfArg::Str(name)],
     );
-    let sound = state
-        .rules()
-        .and_then(|rules| {
-            if open {
-                rules.general.game_forming_sound()
-            } else {
-                rules.general.game_closed_sound()
-            }
-        })
-        .map(str::to_owned);
+    let play = |state: &mut AppState| {
+        App::play_shell_rules_sound(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            |rules| {
+                if open {
+                    rules.general.game_forming_sound()
+                } else {
+                    rules.general.game_closed_sound()
+                }
+            },
+        );
+    };
     // Existing-row transitions play5E030A before chat5E031E; new open ads
     // append5E04C1 before playing5E04E0. Both run only in membership0/1 (BB).
     if !new_record {
-        App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        play(state);
     }
     append_chat(
         state,
@@ -899,7 +933,7 @@ fn discovery_notice(state: &mut AppState, name: &str, open: bool, new_record: bo
         },
     );
     if new_record {
-        App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        play(state);
     }
 }
 
@@ -941,7 +975,7 @@ fn close_create_box(state: &mut AppState, confirmed: bool) {
         return;
     };
     runtime.creating = false;
-    let limits = room_limits(state);
+    let limits = room_limits(&state.frontend);
     state.frontend.shell_controller.pop();
     if confirmed {
         state.frontend.room_limits = limits;
@@ -956,21 +990,17 @@ fn close_create_box(state: &mut AppState, confirmed: bool) {
     }
 }
 
-fn acknowledge(state: &mut AppState) {
-    if let Some(runtime) = state.frontend.lan.as_mut() {
+fn acknowledge(frontend: &mut FrontendState) {
+    if let Some(runtime) = frontend.lan.as_mut() {
         runtime.modal = None;
         runtime.modal_body = None;
     }
-    state.frontend.shell_controller.pop();
+    frontend.shell_controller.pop();
 }
 
 /// VERA's Esc menu (`app::shell_menu`): the create box and notices keep Esc.
-pub(crate) fn leaves_escape(state: &AppState) -> bool {
-    state
-        .frontend
-        .lan
-        .as_ref()
-        .is_some_and(|runtime| !runtime.creating && runtime.modal.is_none())
+pub(crate) fn leaves_escape(lan: Option<&LanShellRuntime>) -> bool {
+    lan.is_some_and(|runtime| !runtime.creating && runtime.modal.is_none())
 }
 
 pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
@@ -1058,7 +1088,7 @@ pub(crate) fn sync_gui(state: &mut AppState) {
         controller.focus_control(PAGE.dialog, Some(CHAT));
     }
     let gui = controller.gui_mut();
-    page::sync_rects(gui, root, |id| layout.rect(id));
+    page::sync_rects(gui, root, |id| layout.widget_rect(id));
     let lobby = &mut runtime.lobby;
     let _ = gui.set(root, Prop::Enabled, Value::Bool(lobby.enabled));
     // The observer image `0x75F` toggles like its box, anywhere on it.
@@ -1115,18 +1145,17 @@ pub(crate) fn sync_gui(state: &mut AppState) {
 }
 
 /// The limits VERA's Create Game box shows.
-pub(crate) fn room_limits(state: &AppState) -> RoomLimits {
-    let controller = &state.frontend.shell_controller;
+pub(crate) fn room_limits(frontend: &FrontendState) -> RoomLimits {
+    let controller = &frontend.shell_controller;
     let (gui, root) = (controller.gui(), controller.root_in(MODAL));
-    root.map_or(state.frontend.room_limits, |root| RoomLimits {
+    root.map_or(frontend.room_limits, |root| RoomLimits {
         players: page::int(gui, root, ROOM_PLAYERS, Prop::Pos).unwrap_or_default() as u8,
         spectators: page::checked(gui, root, ROOM_SPECTATORS),
     })
 }
 
 /// List `id`'s top row as its widget holds it.
-pub(crate) fn list_top(state: &AppState, id: u16) -> usize {
-    let controller = &state.frontend.shell_controller;
+pub(crate) fn list_top(controller: &DialogController, id: u16) -> usize {
     let top = controller
         .root_in(PAGE.dialog)
         .and_then(|root| page::int(controller.gui(), root, id, Prop::Top));
@@ -1134,8 +1163,8 @@ pub(crate) fn list_top(state: &AppState, id: u16) -> usize {
 }
 
 /// Whether BB itself takes the pointer: no box covers it.
-fn on_top(state: &AppState) -> bool {
-    state.frontend.shell_controller.top_id() == Some(PAGE.dialog)
+fn on_top(controller: &DialogController) -> bool {
+    controller.top_id() == Some(PAGE.dialog)
 }
 
 pub(crate) fn cursor_moved(state: &mut AppState) {
@@ -1179,7 +1208,13 @@ fn lobby_command(state: &mut AppState, id: u16) {
 /// then what it does.
 fn handle_events(state: &mut AppState) {
     // The games and players lists play their own GenericClick.
-    let events = App::shell_page_events(state, false);
+    let events = App::shell_page_events(
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        false,
+    );
     if events.is_empty() {
         return;
     }
@@ -1193,7 +1228,7 @@ fn handle_events(state: &mut AppState) {
             PageEvent::Activated(OK | CANCEL) if creating => {
                 close_create_box(state, event == PageEvent::Activated(OK))
             }
-            PageEvent::Activated(OK) => acknowledge(state),
+            PageEvent::Activated(OK) => acknowledge(&mut state.frontend),
             PageEvent::Activated(id)
             | PageEvent::Toggled(id @ (OBSERVER_TOGGLE | OBSERVER_IMAGE), _) => {
                 lobby_command(state, id)
@@ -1211,7 +1246,13 @@ fn handle_events(state: &mut AppState) {
                 for action in selection.into_iter().chain(join) {
                     dispatch(state, action);
                 }
-                App::play_page_cue(state, PageCue::ListClick);
+                App::play_page_cue(
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    PageCue::ListClick,
+                );
             }
             // A double-click's second press only notifies LBN_DBLCLK
             // (0x0061A904..0x0061A945), which this dialog ignores.
@@ -1225,7 +1266,13 @@ fn handle_events(state: &mut AppState) {
                     .as_mut()
                     .is_some_and(|runtime| runtime.lobby.select_player(row as usize))
                 {
-                    App::play_page_cue(state, PageCue::ListClick);
+                    App::play_page_cue(
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                        PageCue::ListClick,
+                    );
                 }
             }
             _ => {}
@@ -1269,7 +1316,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
         .as_ref()
         .filter(|request| !request.canceling)
         .map(|request| request.expires);
-    if !on_top(state) {
+    if !on_top(&state.frontend.shell_controller) {
         return deadline;
     }
     let repeat = state.frontend.shell_controller.poll();

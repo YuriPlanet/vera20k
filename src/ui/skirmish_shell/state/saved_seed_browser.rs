@@ -4,7 +4,7 @@
 //! scroll and double-click. SED identities carry the save folder and native
 //! filename. List rebuild 5596A0 keeps filenames separate from text.
 
-use super::super::layout::{RectPx, SavedSeedMode};
+use super::super::layout::SavedSeedMode;
 use crate::map::rmg::{
     SeedDescription,
     saved_seeds::{SavedSeed, SavedSeedFile},
@@ -28,13 +28,18 @@ pub const ACTION: u16 = 0x40F;
 pub const BACK: u16 = 0x686;
 pub const LOAD: u16 = 0x7501;
 pub const DELETE: u16 = 0x7502;
+pub use crate::ui::shell::saved_games::CONVERT_BUTTON as CONVERT;
 pub const YES: u16 = 1;
 pub const NO: u16 = 2;
+/// The heading `0x694` and the prompt static `0x40C`, which only the
+/// active-game browser shows ([`SavedSeedBrowserState::statics`]).
+pub const TITLE: u16 = 0x694;
+pub const PROMPT: u16 = 0x40C;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SavedSeedOutcome<I = SavedSeedFile> {
     Load(I),
-    Convert(I),
+    BeginConvert(I),
     Save {
         file_name: Option<I>,
         description: SeedDescription,
@@ -79,14 +84,6 @@ impl<I> SavedSeedPrompt<I> {
             None => shell_box,
         }
     }
-
-    /// Both shapes use the shared native message-box templates: dialog,
-    /// body, affirmative and negative.
-    pub fn layout(&self, width: u32, height: u32) -> (RectPx, RectPx, RectPx, Option<RectPx>) {
-        let retail = crate::ui::shell::geom::RETAIL_SCALE;
-        let parts = self.shell_box().parts(width as i32, height as i32, retail);
-        (parts.dialog, parts.body, parts.button(0), parts.rect_of(NO))
-    }
 }
 
 /// A visible or not-yet-filtered native metadata row. None identifies New.
@@ -123,7 +120,12 @@ pub struct SavedSeedBrowserState<I = SavedSeedFile> {
     pub prompt: Option<SavedSeedPrompt<I>>,
     /// The browser's widgets and, while `prompt` is up, the box's buttons.
     pub ui: DialogController,
+    /// Its heading and prompt statics show: the active-game browser's
+    /// (`0x00558F8A`'s hide condition is false there). The pre-match
+    /// browsers keep them hidden.
+    pub statics: bool,
     current_description: SeedDescription,
+    conversion_source: Option<I>,
 }
 
 impl SavedSeedBrowserState<SavedSeedFile> {
@@ -157,8 +159,11 @@ impl SavedSeedBrowserState<SavedSeedFile> {
 
 /// The browser's widgets in hit order (the edit and list before the column),
 /// the buttons with their captions, the edit framed in its rect. Load's
-/// carry their status help (`0x006040B0`).
+/// carry their status help (`0x006040B0`). First, the heading and the
+/// prompt, in their aligns (both `lowstylebits1`: `0x00615A81` puts the
+/// prompt top and centred), hidden until a browser shows them.
 fn spec(mode: SavedSeedMode) -> NodeSpec {
+    use crate::ui::shell::geom::ShellAlign;
     use crate::ui::shell::saved_games::{LOAD_LIST_HELP_KEY, LOAD_SAVED_GAME_PAGE as PAGE};
     let help = |node: NodeSpec, key| match mode {
         SavedSeedMode::Load => node.tooltip(key),
@@ -171,17 +176,34 @@ fn spec(mode: SavedSeedMode) -> NodeSpec {
             .with(Prop::Label, caption)
     };
     let list = NodeSpec::new(NodeKind::List).id(LIST.into());
-    let limit = Value::Int(SAVED_SEED_DESCRIPTION_MAX_UNITS as i32);
     let inset = Value::Rect(super::super::layout::FRAMED_EDIT_TEXT_INSET);
     let edit = NodeSpec::new(NodeKind::Edit)
         .id(EDIT.into())
-        .with(Prop::MaxLen, limit)
+        .with(
+            Prop::MaxLen,
+            Value::Int(SAVED_SEED_DESCRIPTION_MAX_UNITS as i32),
+        )
         .with(Prop::TextInset, inset);
     let action = button((ACTION, mode.action_label().0));
+    let statics = [
+        (TITLE, ShellAlign::PANEL_TITLE),
+        (PROMPT, ShellAlign::H_CENTER),
+    ]
+    .map(|(id, align)| {
+        NodeSpec::new(NodeKind::Text)
+            .id(id.into())
+            .with(Prop::Align, Value::Int(i32::from(align.0)))
+            .with(Prop::Visible, Value::Bool(false))
+    });
     NodeSpec::new(NodeKind::Dialog)
+        .children(statics)
         .child(edit)
         .child(help(list, LOAD_LIST_HELP_KEY))
         .child(help(action, PAGE.stacked[0].tooltip_key))
+        .child(help(
+            button((CONVERT, "VERA:ConvertSave")),
+            "VERA:ConvertSaveHelp",
+        ))
         .children([(LOAD, "GUI:Load"), (DELETE, "GUI:Delete")].map(button))
         .child(help(button((BACK, "GUI:Back")), PAGE.back.tooltip_key))
 }
@@ -215,43 +237,27 @@ impl<I> SavedSeedBrowserState<I> {
         self.selected().and_then(|index| self.entries.get(index))
     }
 
-    fn action_converts(&self) -> bool {
+    pub fn conversion_source(&self) -> Option<&I> {
+        self.conversion_source.as_ref()
+    }
+
+    pub fn is_naming_conversion(&self) -> bool {
+        self.conversion_source.is_some()
+    }
+
+    pub fn game_title_label(&self) -> (&'static str, &'static str) {
+        if self.is_naming_conversion() {
+            ("VERA:SaveConvertedGame", "Save Converted Game")
+        } else {
+            crate::ui::shell::saved_games::saved_game_title_label(self.mode)
+        }
+    }
+
+    pub fn convert_enabled(&self) -> bool {
         self.mode == SavedSeedMode::Load
             && self
                 .selected_entry()
-                .is_some_and(|row| row.migratable && !row.loadable)
-    }
-
-    pub fn action_label(&self) -> (&'static str, &'static str) {
-        if self.action_converts() {
-            ("VERA:ConvertSave", "Convert")
-        } else {
-            self.mode.action_label()
-        }
-    }
-
-    fn sync_load_action_caption(&mut self) {
-        if self.mode != SavedSeedMode::Load {
-            return;
-        }
-        let label = self.action_label().0;
-        let tooltip = if self.action_converts() {
-            "VERA:ConvertSaveHelp"
-        } else {
-            crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE.stacked[0].tooltip_key
-        };
-        self.ui.set_prop(
-            BROWSER_DIALOG,
-            ACTION,
-            Prop::Label,
-            Value::Text(label.to_owned()),
-        );
-        self.ui.set_prop(
-            BROWSER_DIALOG,
-            ACTION,
-            Prop::Tooltip,
-            Value::Text(tooltip.to_owned()),
-        );
+                .is_some_and(|row| row.file_name.is_some() && row.migratable && !row.loadable)
     }
 
     pub fn top(&self) -> usize {
@@ -266,7 +272,6 @@ impl<I> SavedSeedBrowserState<I> {
             .set_prop(BROWSER_DIALOG, LIST, Prop::Selected, selected);
         self.ui
             .set_prop(BROWSER_DIALOG, LIST, Prop::Top, Value::Int(top as i32));
-        self.sync_load_action_caption();
     }
 
     /// Whether button `id` holds the press (a box's buttons, or the
@@ -348,7 +353,11 @@ impl<I> SavedSeedBrowserState<I> {
     /// The answered box goes; the browser takes the input again.
     pub fn take_prompt(&mut self) -> Option<SavedSeedPrompt<I>> {
         self.ui.close(PROMPT_DIALOG);
-        self.prompt.take()
+        let prompt = self.prompt.take();
+        if self.is_naming_conversion() {
+            self.focus_edit();
+        }
+        prompt
     }
 
     /// The edit focus back after a warning (0x00559269).
@@ -418,7 +427,9 @@ impl<I: Clone + PartialEq> SavedSeedBrowserState<I> {
             entries: rows,
             prompt: None,
             ui,
+            statics: false,
             current_description,
+            conversion_source: None,
         };
         result.set_list(selected, top);
         if mode == SavedSeedMode::Save {
@@ -428,10 +439,11 @@ impl<I: Clone + PartialEq> SavedSeedBrowserState<I> {
     }
 
     fn assign_selected_description(&mut self) {
-        let row = self.selected_entry().filter(|row| row.file_name.is_some());
-        let text = row
-            .map_or(&self.current_description, |row| &row.description)
-            .clone();
+        let text = match self.selected_entry() {
+            Some(_) if !self.action_enabled() => SeedDescription::default(),
+            Some(row) if row.file_name.is_some() => row.description.clone(),
+            _ => self.current_description.clone(),
+        };
         self.set_description(&text);
     }
 
@@ -449,25 +461,71 @@ impl<I: Clone + PartialEq> SavedSeedBrowserState<I> {
         if self.mode == SavedSeedMode::Save {
             self.assign_selected_description();
         }
-        self.sync_load_action_caption();
+    }
+
+    /// Select an output by its file identity after rebuilding the browser.
+    pub fn select_file(&mut self, file: &I, visible_rows: usize) -> bool {
+        let Some(index) = self
+            .entries
+            .iter()
+            .position(|row| row.file_name.as_ref() == Some(file))
+        else {
+            return false;
+        };
+        self.reveal_row(index, visible_rows);
+        true
+    }
+
+    fn reveal_row(&mut self, index: usize, visible_rows: usize) {
+        let visible_rows = visible_rows.max(1);
+        let top = self
+            .top()
+            .clamp((index + 1).saturating_sub(visible_rows), index)
+            .min(self.entries.len().saturating_sub(visible_rows));
+        self.ui
+            .set_prop(BROWSER_DIALOG, LIST, Prop::Top, Value::Int(top as i32));
+        self.select(index);
+    }
+
+    /// Use the normal Save browser to choose a destination. Even a file with a
+    /// future timestamp ahead of the new slot must require an explicit selection.
+    pub fn set_conversion_source(&mut self, source: I, visible_rows: usize) {
+        self.conversion_source = Some(source);
+        for (id, key) in [
+            (LIST, "VERA:SaveConversionSlotHelp"),
+            (EDIT, "VERA:SaveConversionNameHelp"),
+            (ACTION, "VERA:SaveConversionSaveHelp"),
+            (BACK, "VERA:SaveConversionBackHelp"),
+        ] {
+            self.ui
+                .set_prop(BROWSER_DIALOG, id, Prop::Tooltip, Value::Text(key.into()));
+        }
+        if let Some(index) = self.entries.iter().position(|row| row.file_name.is_none()) {
+            self.reveal_row(index, visible_rows);
+        }
     }
 
     pub fn action_enabled(&self) -> bool {
         //558DD0 enables from visible count, even when Load has no selection
         // or Save has a blank description. The action loop handles those cases.
+        if let Some(source) = self.conversion_source() {
+            return self.selected_entry().is_some_and(|row| {
+                row.file_name
+                    .as_ref()
+                    .is_none_or(|file| file != source && row.loadable)
+            });
+        }
         !self.entries.is_empty()
     }
 
     pub fn action_outcome(&self) -> Option<SavedSeedOutcome<I>> {
         let entry = self.selected_entry()?;
         match self.mode {
+            SavedSeedMode::Save if !self.action_enabled() => None,
             SavedSeedMode::Save => Some(SavedSeedOutcome::Save {
                 file_name: entry.file_name.clone(),
                 description: self.description(),
             }),
-            SavedSeedMode::Load if self.action_converts() => {
-                Some(SavedSeedOutcome::Convert(entry.file_name.clone()?))
-            }
             SavedSeedMode::Load => Some(SavedSeedOutcome::Load(entry.file_name.clone()?)),
             SavedSeedMode::Delete => Some(SavedSeedOutcome::Delete(entry.file_name.clone()?)),
         }

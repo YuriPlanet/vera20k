@@ -1,42 +1,59 @@
 //! BC6 (`0xBC6`) window input adapter. The dialog produces intents;
 //! `app::cooperative_round` and `MatchSession` decide their effects.
 
+use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::{App, AppState};
 use crate::ui::coop_score_shell::*;
+use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::page::PageEvent;
 use crate::util::time::Instant;
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::window::Window;
 
 pub(crate) fn layout(state: &AppState) -> CoopScoreLayout {
-    let (w, h) = shell_layout::shell_screen_size(state);
-    CoopScoreLayout::new(w as i32, h as i32, shell_layout::fills_window(state))
+    let (w, h) = shell_layout::shell_screen_size(&state.renderer.gpu);
+    CoopScoreLayout::new(
+        w as i32,
+        h as i32,
+        shell_layout::fills_window(&state.renderer.gpu),
+    )
 }
 
 /// BC6 owns the result screen while its page is open.
-pub(crate) fn active(state: &AppState) -> bool {
+pub(crate) fn active(frontend: &FrontendState) -> bool {
     matches!(
-        state.frontend.screen,
+        frontend.screen,
         crate::app::GameScreen::MissionResult { .. }
-    ) && state.frontend.coop_score_page.is_some()
+    ) && frontend.coop_score_page.is_some()
 }
 
-/// BC6's page is the active dialog, its nodes on `layout`: the chat edit
-/// holds the focus throughout (BC6 never moves it), the transcript's list
-/// follows new lines, and NewEdit keeps the chat's caret in view.
+/// BC6's page is the active dialog, its nodes on `layout` and the round:
+/// a control the round hides has no rect, the lists and the slider show
+/// the slots' picks, the flags their PCX. The chat edit holds the focus
+/// throughout (BC6 never moves it), the transcript's list follows new
+/// lines, and NewEdit keeps the chat's caret in view.
 fn sync(state: &mut AppState, layout: &CoopScoreLayout) {
-    let enabled = [CONTINUE, QUIT].map(|id| (id, enabled(state, id)));
-    let rows = state
-        .frontend
-        .coop_score_page
-        .as_ref()
-        .map_or(0, |page| page.ui.chat.lines.len());
+    let view = crate::app::cooperative_round::view(state);
+    let page = state.frontend.coop_score_page.as_ref();
+    let can_continue = page.is_some_and(|page| page.model.can_continue);
+    let enabled = [CONTINUE, QUIT].map(|id| (id, enabled_in(view.as_ref(), page, id)));
+    let rows = page.map_or(0, |page| page.ui.chat.lines.len());
+    let slots = view.as_ref().map_or([false; 2], |view| {
+        view.slots.each_ref().map(Option::is_some)
+    });
     let font = &state.renderer.bit_font;
     let controller = &mut state.frontend.shell_controller;
     controller.ensure_active(COOP_SCORE_DIALOG);
     controller.set_scale_in(COOP_SCORE_DIALOG, layout.page.scale);
-    let rect_of = |id| layout.control_rect(id);
+    let rect_of = |id| match id {
+        TITLE => Some(layout.page.title),
+        STATUS => Some(layout.page.status_help),
+        id => layout
+            .control_rect(id)
+            .filter(|_| shown(id, can_continue, slots)),
+    };
     crate::ui::shell::menu_page::sync_nodes(
         controller,
         COOP_SCORE_DIALOG,
@@ -44,6 +61,9 @@ fn sync(state: &mut AppState, layout: &CoopScoreLayout) {
         rect_of,
         &enabled,
     );
+    if let (Some(view), Some(root)) = (&view, controller.root_in(COOP_SCORE_DIALOG)) {
+        sync_values(controller.gui_mut(), root, view);
+    }
     if controller.focused_control(COOP_SCORE_DIALOG).is_none() {
         controller.focus_control(COOP_SCORE_DIALOG, Some(CHAT));
     }
@@ -60,8 +80,69 @@ fn sync(state: &mut AppState, layout: &CoopScoreLayout) {
     }
 }
 
+/// The round's picks on BC6's nodes, in one pass over them, each written
+/// only on a change: Difficulty's position, the flags' PCX and the lists'
+/// swatches (a colour's pick shows its swatch alone).
+fn sync_values(
+    gui: &mut vera20k_gui::Gui,
+    root: vera20k_gui::NodeId,
+    view: &crate::app::cooperative_round::CoopScoreView,
+) {
+    use crate::ui::shell::page::{set_if_changed, set_node_text};
+    use vera20k_gui::{Prop, Value};
+    let count = gui.tree().children(root).map_or(0, <[_]>::len);
+    for index in 0..count {
+        let Some(node) = gui
+            .tree()
+            .children(root)
+            .ok()
+            .and_then(|children| children.get(index).copied())
+        else {
+            break;
+        };
+        let Some(id) = gui.id_of(node).and_then(|id| u16::try_from(id).ok()) else {
+            continue;
+        };
+        if id == DIFFICULTY {
+            set_if_changed(gui, node, Prop::Pos, Value::Int(view.difficulty));
+            continue;
+        }
+        let slot = |ids: [u16; 2]| {
+            let row = ids.iter().position(|each| *each == id)?;
+            view.slots[row].as_ref()
+        };
+        if FLAGS.contains(&id) {
+            let flag = slot(FLAGS).and_then(|slot| slot.flag.as_deref());
+            set_node_text(gui, node, Prop::Art, flag.unwrap_or_default());
+            continue;
+        }
+        let choice = match (slot(COUNTRIES), slot(COLORS), slot(STARTS)) {
+            (Some(slot), _, _) => &slot.country,
+            (_, Some(slot), _) => &slot.color,
+            (_, _, Some(slot)) => &slot.start,
+            _ => continue,
+        };
+        let same = match (gui.get(node, Prop::Swatches).ok().flatten(), choice.swatch) {
+            (Some(Value::Items(items)), Some(swatch)) => {
+                items.len() == 1 && items[0].parse::<usize>() == Ok(swatch)
+            }
+            (Some(Value::Items(items)), None) => items.is_empty(),
+            (None, None) => true,
+            _ => false,
+        };
+        if !same {
+            let items = choice.swatch.map(|swatch| vec![swatch.to_string()]);
+            let _ = gui.set(
+                node,
+                Prop::Swatches,
+                Value::Items(items.unwrap_or_default()),
+            );
+        }
+    }
+}
+
 pub(crate) fn update_geometry(state: &mut AppState) {
-    if active(state) {
+    if active(&state.frontend) {
         let layout = layout(state);
         sync(state, &layout);
     }
@@ -69,10 +150,17 @@ pub(crate) fn update_geometry(state: &mut AppState) {
 
 /// Whether control `id` takes input now (`0x0046FB50`, `0x0046DE20`).
 fn enabled(state: &AppState, id: u16) -> bool {
-    let (Some(view), Some(page)) = (
-        crate::app::cooperative_round::view(state),
-        state.frontend.coop_score_page.as_ref(),
-    ) else {
+    let view = crate::app::cooperative_round::view(state);
+    enabled_in(view.as_ref(), state.frontend.coop_score_page.as_ref(), id)
+}
+
+/// [`enabled`] on the round's `view`.
+fn enabled_in(
+    view: Option<&crate::app::cooperative_round::CoopScoreView>,
+    page: Option<&CoopScorePage>,
+    id: u16,
+) -> bool {
+    let (Some(view), Some(page)) = (view, page) else {
         return false;
     };
     if !page.model.can_continue && hidden_on_final_mission(id) {
@@ -122,7 +210,13 @@ fn pointer(state: &mut AppState, layout: &CoopScoreLayout, down: Option<bool>) -
     let (x, y) = state.match_state.input.cursor_px();
     let event = crate::app::input::dialog_page::event_at(x, y, down);
     state.frontend.shell_controller.on_input(event);
-    let events = App::shell_page_events(state, false);
+    let events = App::shell_page_events(
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        false,
+    );
     events.into_iter().rev().find_map(|event| match event {
         PageEvent::Activated(id) => Some(id),
         _ => None,
@@ -163,10 +257,6 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
 }
 
 /// The chat list's scrollbar repeat timer.
-pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
-    let window = &state.platform.window;
-    state
-        .frontend
-        .shell_controller
-        .poll_then(|| window.request_redraw())
+pub(crate) fn poll(window: &Window, controller: &mut DialogController) -> Option<Instant> {
+    controller.poll_then(|| window.request_redraw())
 }

@@ -106,6 +106,7 @@ impl ShellGui {
         self.gui.input(event, now.as_millis() as u64);
     }
 
+    #[cfg(all(test, tests_ui))]
     fn node(&self, control: Control) -> Option<NodeId> {
         self.built
             .iter()
@@ -667,6 +668,7 @@ impl LauncherOptionsLayout {
     }
 
     /// The page's buttons, the column's first.
+    #[cfg(all(test, tests_ui))]
     pub(crate) fn buttons(&self) -> impl Iterator<Item = (LauncherButton, RectPx)> + '_ {
         self.controls
             .iter()
@@ -872,6 +874,7 @@ impl OptionsDialogState {
 
     /// The pushed look: the button holds the press and the pointer is still
     /// on it (612B70).
+    #[cfg(all(test, tests_ui))]
     pub(crate) fn shell_button_pressed(&self, id: LauncherButton) -> bool {
         self.shell
             .node(Control::Button(id))
@@ -947,6 +950,12 @@ impl OptionsDialogState {
                 &v.ares,
                 |s| super::ares_label(*s),
                 E::AresSelected,
+            ),
+            LauncherComboId::Kratos => LauncherList::new(
+                super::kratos_choices(),
+                &v.kratos,
+                |s| super::kratos_label(*s),
+                E::KratosSelected,
             ),
             LauncherComboId::GraphicsApi => LauncherList::new(
                 super::GraphicsApi::choices(),
@@ -1304,13 +1313,11 @@ impl OptionsDialogState {
         window: RectPx,
         scale: ShellScale,
     ) -> i32 {
-        vera20k_gui::shell::trackbar::thumb_left_at(
-            i32::from(self.trackbar_position(id)),
-            window,
-            id.plaque_reserve(),
-            i32::from(id.maximum()),
-            scale,
-        )
+        let range = vera20k_gui::shell::trackbar::TrackbarRange {
+            reserve: id.plaque_reserve(),
+            ..vera20k_gui::shell::trackbar::TrackbarRange::new(0, i32::from(id.maximum()), 1)
+        };
+        range.thumb_left_in(i32::from(self.trackbar_position(id)), window, scale)
     }
 
     /// The slider holding the mouse, and whether it follows the pointer.

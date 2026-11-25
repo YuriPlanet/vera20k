@@ -65,8 +65,7 @@ impl LowBridgeTubeMovementState {
     }
 
     /// The step along the tube's path.
-    #[cfg(test)]
-    pub fn cursor(&self) -> u8 {
+    pub(crate) fn cursor(&self) -> u8 {
         self.cursor
     }
 
@@ -1124,7 +1123,7 @@ mod tests {
             target: spot,
         });
         sim.substrate.entities.insert(entity);
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         (sim, rules)
     }
 
@@ -1380,7 +1379,7 @@ mod tests {
         locomotor.store_track_head(TrackFamily::Drive, Some(DriveCoord::cell(rx, 0, 0)));
         locomotor.store_track_valid(TrackFamily::Drive, true);
         sim.substrate.entities.insert(vehicle);
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         crate::sim::arena_fixture::supply_native_map(&mut sim);
         sim.add_entity_occupancy(1);
         assert!(
@@ -1638,7 +1637,7 @@ mod tests {
                 .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Campaign);
             let player = sim.intern("Russians");
             sim.session.set_current_house_for_test(Some(player));
-            sim.fog = crate::sim::vision::FogState::new(4, 1);
+            *sim.fog = crate::sim::vision::FogState::new(4, 1);
             sim.fog.reveal_all_for_owner(player);
             let rider = sim.substrate.entities.get_mut(1).unwrap();
             rider.position.put_location(DriveCoord::cell(0, 0, 0));

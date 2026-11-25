@@ -10,7 +10,10 @@
 //! in-match `0xCF`; what native shows behind it after B5 closes is not
 //! captured.
 
+use crate::app::presentation::state::MatchPresentationState;
+use crate::app::renderer_state::RendererState;
 use crate::app::{App, AppState};
+use crate::ui::game_screen::GameScreen;
 use crate::ui::pause_menu::{InGameMenuState, ModalOutcome};
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
@@ -57,30 +60,69 @@ pub(crate) fn open(state: &mut AppState) {
 }
 
 /// `0x120` centred over the frame the battlefield draws into.
-pub(crate) fn layout(state: &AppState) -> BoxParts {
-    let (w, h) = (state.render_width() as i32, state.render_height() as i32);
+pub(crate) fn layout(renderer: &RendererState, screen: &GameScreen) -> BoxParts {
+    let (w, h) = (
+        renderer.render_width(screen) as i32,
+        renderer.render_height(screen) as i32,
+    );
     message_box_parts(2, RectPx::new(0, 0, w, h))
+}
+
+/// The box's body static `0x5B0`, which takes no pointer.
+pub(crate) const BODY: u16 = 0x5B0;
+
+/// The box's widgets in the order they paint: the body, OK and Cancel.
+fn nodes() -> vera20k_gui::NodeSpec {
+    use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
+    let button = |id: SurrenderButton| NodeSpec::new(NodeKind::Button).id(id as i32);
+    NodeSpec::new(NodeKind::Dialog)
+        .child(
+            NodeSpec::new(NodeKind::Text)
+                .id(BODY.into())
+                .with(Prop::Align, Value::Int(0)),
+        )
+        .child(button(SurrenderButton::Ok))
+        .child(button(SurrenderButton::Cancel))
+}
+
+/// Where control `id` of the box stands.
+fn rect_of(layout: &BoxParts, id: u16) -> Option<RectPx> {
+    match id {
+        BODY => Some(layout.body),
+        0x5AE => Some(layout.button(0)),
+        2 => Some(layout.button(1)),
+        _ => None,
+    }
+}
+
+/// The box's nodes on its layout before it paints: input syncs them only
+/// on a pointer message.
+pub(crate) fn sync(
+    renderer: &RendererState,
+    screen: &GameScreen,
+    presentation: &mut MatchPresentationState,
+) {
+    if presentation.in_game_menu != InGameMenuState::Surrender {
+        return;
+    }
+    let layout = layout(renderer, screen);
+    let ui = &mut presentation.dialog_ui;
+    let rect = |id| rect_of(&layout, id);
+    super::dialog_page::sync_dialog(ui, DIALOG, nodes, rect, super::dialog_page::no_sync);
+}
+
+/// The box's widgets under its live dialog.
+pub(crate) fn root(presentation: &MatchPresentationState) -> Option<vera20k_gui::NodeId> {
+    presentation.dialog_ui.root_in(DIALOG)
 }
 
 /// One pointer message on the box (`down`: `None` moves).
 pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
-    let layout = layout(state);
+    let layout = layout(&state.renderer, &state.frontend.screen);
     let (x, y) = state.match_state.input.cursor_px();
     let event = super::dialog_page::event_at(x, y, down);
     let ui = &mut state.match_state.match_presentation.dialog_ui;
-    let button = |id: SurrenderButton| {
-        vera20k_gui::NodeSpec::new(vera20k_gui::NodeKind::Button).id(id as i32)
-    };
-    let nodes = || {
-        vera20k_gui::NodeSpec::new(vera20k_gui::NodeKind::Dialog)
-            .child(button(SurrenderButton::Ok))
-            .child(button(SurrenderButton::Cancel))
-    };
-    let rect = |id| match id {
-        0x5AE => Some(layout.button(0)),
-        2 => Some(layout.button(1)),
-        _ => None,
-    };
+    let rect = |id| rect_of(&layout, id);
     let events =
         super::dialog_page::route(ui, DIALOG, nodes, rect, super::dialog_page::no_sync, event);
     for event in super::dialog_page::play_cues(state, events) {
@@ -94,11 +136,8 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
 }
 
 /// Whether `button` shows pushed.
-pub(crate) fn pressed(state: &AppState, button: SurrenderButton) -> bool {
-    super::dialog_page::pressed(
-        &state.match_state.match_presentation.dialog_ui,
-        button as u16,
-    )
+pub(crate) fn pressed(presentation: &MatchPresentationState, button: SurrenderButton) -> bool {
+    super::dialog_page::pressed(&presentation.dialog_ui, button as u16)
 }
 
 /// Enter (IDOK) and Escape (IDCANCEL) both give result 1.

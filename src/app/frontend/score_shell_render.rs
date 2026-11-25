@@ -9,10 +9,13 @@
 //! teardown slide starts with a full dialog repaint (`0x00622C4F`) whose
 //! shaded rectangle follows only once the slide has ended (the proc paints
 //! after the common handler returns), and pumps no messages: the art and the
-//! column. The panel, monitor, column, Continue, heading and status line are
-//! the family compositor's ([`encode_family_page`]).
+//! column. The panel, monitor, column, Continue and status line are the
+//! family compositor's ([`encode_family_page`]); the heading the proc sets,
+//! the table's statics, VERA's page counter and the band bars paint from
+//! their nodes ([`crate::ui::score_shell::nodes`]).
 
 use anyhow::Result;
+use vera20k_gui::Prop;
 
 use crate::app::AppState;
 use crate::app::frontend::main_menu_shell_render::shell_reveal_path_a;
@@ -21,59 +24,47 @@ use crate::app::frontend::menu_page_render::{
 };
 use crate::app::frontend::shell_pass::TexturedDraw;
 use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::frontend::skirmish_shell_render::gui_paint::{GuiStyle, PageArt, paint_gui_into};
+use crate::app::process_assets::ProcessAssets;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::shell_paint::{
-    PARENT_BACKGROUND_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED, STATIC_IMAGE_DEPTH,
-    push_entry_crop, push_entry_native, push_entry_scaled, push_entry_window_crop,
+    PARENT_BACKGROUND_DEPTH, SHELL_TEXT_RGB_ENABLED, push_entry_crop, push_entry_native,
+    push_entry_scaled, push_entry_window_crop,
 };
 use crate::render::shell_text_reveal::PathAReveal;
+use crate::ui::score_shell::ScorePage;
 use crate::ui::score_shell::{
-    BAND_IDS, CONTINUE_BUTTON, NEXT_PAGE, PREVIOUS_PAGE, SCORE_PAGE, ScoreStatics,
+    BAND_IDS, CONTINUE_BUTTON, HEADING, NEXT_PAGE, PREVIOUS_PAGE, SCORE_PAGE, ScoreStatics,
+    sync_static_texts,
 };
-use crate::ui::shell::geom::ShellAlign;
-use crate::ui::shell::geom::{RectPx, centred_in_window, dialog_origin};
-use crate::ui::shell::menu_page;
+use crate::ui::shell::geom::dialog_origin;
+use crate::ui::shell::{menu_page, paging};
 use crate::util::time::Instant;
 
 /// The shaded part of the art sits over the art.
 const SHADE_DEPTH: f32 = PARENT_BACKGROUND_DEPTH - 0.00001;
 
-/// A score dialog's kind-1 statics (`0x108`, `0x103`, `0xBC7`) as Path-A
-/// labels at `rect_of`'s windows: each in its `0x498` colour, else the
-/// shell's yellow, trailing the white highlight; hidden until its reveal
-/// starts.
-pub(crate) fn score_static_labels(
-    statics: &mut ScoreStatics,
-    now: Instant,
-    rect_of: impl Fn(u16) -> Option<RectPx>,
-    labels: &mut Vec<PaintLabel<'static>>,
-) {
-    for text in &mut statics.0 {
-        let (Some(window), Some(rect)) = (text.paint(now), rect_of(text.id)) else {
-            continue;
-        };
-        let base = text.rgb.unwrap_or([255, 255, 0]);
-        labels.push(PaintLabel {
-            text: text.text().to_owned().into(),
-            rect,
-            align: text.align,
-            rgb: base.map(|channel| f32::from(channel) / 255.0),
-            path_a_reveal: Some(PathAReveal {
-                count: window.count,
-                range: window.range,
-                base_rgb: base,
-                highlight_rgb: [255, 255, 255],
-            }),
-        });
-    }
+/// A score dialog's kind-1 static `id` (`0x108`, `0x103`, `0xBC7`) as it
+/// reveals this recomposition: in its `0x498` colour, else the shell's
+/// yellow, trailing the white highlight; `None` while it is hidden.
+pub(crate) fn static_reveal(statics: &ScoreStatics, id: u16) -> Option<PathAReveal> {
+    let (window, rgb) = statics.shown(id)?;
+    Some(PathAReveal {
+        count: window.count,
+        range: window.range,
+        base_rgb: rgb.unwrap_or([255, 255, 0]),
+        highlight_rgb: [255, 255, 255],
+    })
 }
 
 /// The heading `0x694` the proc sets (`0x005C9BEC..0x005C9C34`).
-pub(crate) fn score_title_text(state: &AppState) -> String {
-    state
-        .frontend
-        .score_page
+pub(crate) fn score_title_text(
+    score_page: &Option<ScorePage>,
+    process_assets: &ProcessAssets,
+) -> String {
+    score_page
         .as_ref()
-        .map(|page| state.csf_text(page.model.title_key))
+        .map(|page| process_assets.csf_text(page.model.title_key))
         .unwrap_or_default()
 }
 
@@ -89,15 +80,21 @@ pub(crate) fn render_score_page(
     {
         return Ok(false);
     }
-    let layout = crate::app::frontend::shell_layout::score_layout(state);
+    let layout = crate::app::frontend::shell_layout::score_layout(&state.renderer.gpu);
     let (screen, scale, dialog) = (layout.page.screen, layout.page.scale, SCORE_PAGE.dialog);
     let paged = state
         .frontend
         .score_page
         .as_ref()
         .is_some_and(|page| page.page_count() > 1);
-    let rect_of = |id| layout.control_rect(id, paged);
-    let tree = page_tree(state, dialog, crate::ui::score_shell::nodes, rect_of, &[]);
+    let rect_of = |id| layout.node_rect(id, paged);
+    let mut tree = page_tree(
+        &mut state.frontend.shell_controller,
+        dialog,
+        crate::ui::score_shell::nodes,
+        rect_of,
+        &[],
+    );
     // Only Continue has status help; the paging pair has none.
     let mut panel = page_panel_state(
         state,
@@ -112,23 +109,33 @@ pub(crate) fn render_score_page(
         layout.page.status_help,
     );
     // Children paint until the teardown repaint covers them; the kind-1
-    // texts stay hidden until the entry slide's end starts them.
+    // texts stay hidden until the entry slide's end starts them. The
+    // heading reveals the proc's title in place of the family's.
     let leaving = panel.leaving;
-    let mut labels: Vec<PaintLabel<'static>> = Vec::new();
-    if let Some(window) = panel.title.take() {
-        labels.push(PaintLabel {
-            text: score_title_text(state).into(),
-            rect: layout.page.title,
-            align: ShellAlign::H_CENTER,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: Some(shell_reveal_path_a(window)),
-        });
-    }
-    // The statics carry the template windows `0x0060B950` keeps; on a
-    // stretched page they map onto the window with the table.
-    if let Some(page) = state.frontend.score_page.as_mut().filter(|_| !leaving) {
-        let rect_of = |id| layout.table.get(id);
-        score_static_labels(&mut page.statics, Instant::now(), rect_of, &mut labels);
+    let title = panel.title.take().map(shell_reveal_path_a);
+    let column = panel.column.is_some();
+    {
+        let frontend = &mut state.frontend;
+        let page = frontend.score_page.as_mut().expect("checked before render");
+        page.statics.paint(Instant::now(), !leaving);
+        let page = &*page;
+        // The statics carry the template windows `0x0060B950` keeps; on a
+        // stretched page they map onto the window with the table. A row
+        // past the result's shows nothing.
+        let text_of = |id: u16| match id {
+            HEADING => Some((Prop::Label, page.model.title_key)),
+            paging::COUNTER => None,
+            id => Some((Prop::Text, page.statics.text(id).unwrap_or_default())),
+        };
+        let controller = &mut frontend.shell_controller;
+        match tree.as_mut() {
+            Some((gui, root)) => sync_static_texts(gui, *root, text_of),
+            None => {
+                if let Some(root) = controller.root_in(dialog) {
+                    sync_static_texts(controller.gui_mut(), root, text_of);
+                }
+            }
+        }
     }
     let page = state
         .frontend
@@ -140,6 +147,62 @@ pub(crate) fn render_score_page(
         .score_art
         .as_ref()
         .expect("checked before render");
+    let rows = page.visible_range().len();
+
+    // The heading, the statics while they show, the page counter beside
+    // the paging pair (the slide engine draws the whole column while either
+    // slide runs, `0x006071E0`), and the bands: 0 and 1 always carry a bar,
+    // player bands only up to the row count (`0x005C9D82..0x005C9DD1`,
+    // `0x005C9E4C..0x005C9E7A`).
+    let bands = if leaving { 0 } else { 2 + rows };
+    let text_of = |id: i32| match u16::try_from(id).ok()? {
+        HEADING => title.is_none().then(String::new),
+        paging::COUNTER => Some(match column {
+            true => String::new(),
+            false => paging::counter_text(page.page_index(), page.page_count()),
+        }),
+        id => page.statics.shown(id).is_none().then(String::new),
+    };
+    let reveal_of = |id: i32| match u16::try_from(id).ok()? {
+        HEADING => title,
+        id => static_reveal(&page.statics, id),
+    };
+    let page_art_of = |id: i32| {
+        let band = BAND_IDS.iter().position(|band| i32::from(*band) == id)?;
+        art.bars[band].filter(|_| band < bands).map(PageArt::Pcx)
+    };
+    let style = GuiStyle {
+        text_of: Some(&text_of),
+        reveal_of: Some(&reveal_of),
+        page_art_of: Some(&page_art_of),
+        rgb: SHELL_TEXT_RGB_ENABLED,
+        ..Default::default()
+    };
+    let controller = &state.frontend.shell_controller;
+    let nodes = match &tree {
+        Some((gui, root)) => Some((gui, *root)),
+        None => controller
+            .root_in(dialog)
+            .map(|root| (controller.gui(), root)),
+    };
+    let mut paint = HudPaint::default();
+    if let Some((gui, root)) = nodes {
+        paint_gui_into(
+            &mut paint,
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            None,
+            gui,
+            root,
+            scale,
+            &[],
+            style,
+        );
+    }
+
     // Paint mode 1 (`0x00621E90`): the right panel, then the dialog's own
     // background at the dialog origin.
     let origin = dialog_origin(screen.w, screen.h);
@@ -165,7 +228,6 @@ pub(crate) fn render_score_page(
         }
     }
     if !leaving {
-        let rows = page.visible_range().len();
         match (art.background_shaded, layout.shaded_rect(rows)) {
             (Some(shaded), Some(rect)) if scale.is_unscaled() => {
                 push_entry_crop(&mut art_sprites, shaded, origin, rect, SHADE_DEPTH)
@@ -176,33 +238,9 @@ pub(crate) fn render_score_page(
             }
             _ => {}
         }
-        // Bands 0 and 1 always carry a bar; player bands only up to the row
-        // count (`0x005C9D82..0x005C9DD1`, `0x005C9E4C..0x005C9E7A`). The bar
-        // image is centred by its authored window and stretched with it.
-        let bands = 2 + rows;
-        for (id, bar) in BAND_IDS.into_iter().zip(&art.bars).take(bands) {
-            let (Some(bar), Some(window)) = (*bar, layout.table.get(id)) else {
-                continue;
-            };
-            let (w, h) = bar.native_size();
-            let (x, y) = centred_in_window(scale.base_rect(window), w, h);
-            push_entry_scaled(&mut art_sprites, bar, x, y, scale, STATIC_IMAGE_DEPTH);
-        }
     }
-
-    // The slide engine draws the whole column while either slide runs
-    // (`0x006071E0`); otherwise Continue and VERA's paging pair paint.
-    if panel.column.is_none() && paged {
-        let (index, count) = (page.page_index() + 1, page.page_count());
-        labels.push(PaintLabel {
-            text: crate::i18n::tr_fill("VERA:PageOf", &[("page", &index), ("pages", &count)])
-                .into(),
-            rect: layout.page_label(),
-            align: ShellAlign::H_CENTER,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: None,
-        });
-    }
+    // The bars over the shade, on the art's texture.
+    art_sprites.extend(paint.lane(Material::PageArt).copied());
 
     // The shell pass draws in array order with depth off, so paint mode 1's
     // panel goes under the background. A country card (`[EndGameScreens]
@@ -213,10 +251,13 @@ pub(crate) fn render_score_page(
         instances: art_sprites,
     };
     let title = SCORE_PAGE.title_key;
-    let mut frame =
-        FamilyFrame::new("Score Shell", &layout.page, panel, title).on(state, dialog, &tree);
+    let mut frame = FamilyFrame::new("Score Shell", &layout.page, panel, title).on(
+        &state.frontend.shell_controller,
+        dialog,
+        &tree,
+    );
     frame.ids = vec![CONTINUE_BUTTON, PREVIOUS_PAGE, NEXT_PAGE];
-    frame.labels = labels;
+    frame.over = paint;
     if page.model.background.is_some() {
         frame.under.push(art_draw);
     } else {

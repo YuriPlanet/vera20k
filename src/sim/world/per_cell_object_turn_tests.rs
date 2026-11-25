@@ -20,7 +20,7 @@ fn output_arrival_fixture() -> (Simulation, RuleSet) {
     let mut sim = Simulation::with_seed(31);
     sim.fog.set_width_for_test(32);
     sim.fog.set_height_for_test(32);
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 0,
         off_fc: -100,
         off_100: -100,
@@ -197,7 +197,7 @@ fn a_parachute_landing_in_its_own_cell_runs_the_foot_body() {
     let mut sim = Simulation::with_seed(0);
     sim.fog.set_width_for_test(32);
     sim.fog.set_height_for_test(32);
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 0,
         off_fc: -100,
         off_100: -100,

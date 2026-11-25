@@ -56,6 +56,8 @@ impl DiplomacyHeader {
 
 pub const TITLE_LABEL: (&str, &str) = ("GUI:DiplomacyMenu", "Diplomacy");
 pub const RETURN_LABEL: (&str, &str) = ("GUI:Return", "Return");
+/// 0x730's caption, drawn by the checkbox proc beside its box.
+pub const TAUNTS_LABEL: (&str, &str) = ("GUI:TauntsOn", "Taunts On");
 
 /// A child the pointer can rest on, for the status-line help.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,8 +125,8 @@ impl DiplomacyControl {
     pub fn id(self) -> u16 {
         match self {
             Self::Return => 0x423,
-            Self::PreviousPage => 0xF201,
-            Self::NextPage => 0xF202,
+            Self::PreviousPage => super::paging::PREVIOUS,
+            Self::NextPage => super::paging::NEXT,
             Self::Header(DiplomacyHeader::Player) => 0x421,
             Self::Header(DiplomacyHeader::Allies) => 0x597,
             Self::Header(DiplomacyHeader::Chat) => 0x425,
@@ -271,10 +273,13 @@ pub struct DiplomacyView {
 }
 
 /// Every child: Return and the paging buttons, the boxes (taking their
-/// press, `0x00616700`; the row boxes anywhere in their window) and the
-/// statics, each with its status help. Disabled children still hover.
+/// press, `0x00616700`; the row boxes anywhere in their window), the
+/// insignia pictures and the left-aligned statics, each with its status
+/// help, then VERA's page counter, the title and the status line. Disabled
+/// children still hover.
 pub fn spec() -> NodeSpec {
-    NodeSpec::new(NodeKind::Dialog).children(DiplomacyControl::all().map(|control| {
+    let left = Value::Int(i32::from(crate::ui::shell::geom::ShellAlign::NONE.0));
+    let controls = DiplomacyControl::all().map(|control| {
         let kind = match control {
             DiplomacyControl::Return
             | DiplomacyControl::PreviousPage
@@ -282,16 +287,23 @@ pub fn spec() -> NodeSpec {
             DiplomacyControl::Allies(_) | DiplomacyControl::Chat(_) | DiplomacyControl::Taunts => {
                 NodeKind::Checkbox
             }
+            DiplomacyControl::Insignia(_) => NodeKind::Image,
             _ => NodeKind::Text,
         };
         let node = NodeSpec::new(kind)
             .id(control.id().into())
             .tooltip(control.help_key().unwrap_or_default());
-        match kind {
-            NodeKind::Checkbox => node,
+        match control {
+            DiplomacyControl::PreviousPage => node.label(super::paging::PREVIOUS_LABEL),
+            DiplomacyControl::NextPage => node.label(super::paging::NEXT_LABEL),
+            _ if kind == NodeKind::Text => node.with(Prop::Align, left.clone()),
             _ => node,
         }
-    }))
+    });
+    NodeSpec::new(NodeKind::Dialog)
+        .children(controls)
+        .child(super::paging::counter_node())
+        .children(in_game_shell::panel_statics())
 }
 
 impl DiplomacyView {
@@ -316,37 +328,64 @@ impl DiplomacyView {
 
     /// Control `id`'s rect; `None` while it is hidden.
     pub fn rect(&self, layout: &DiplomacyLayout, id: u16) -> Option<RectPx> {
+        match id {
+            super::paging::COUNTER => {
+                return (self.page_count > 1).then(|| super::paging::counter_rect(layout.paging));
+            }
+            in_game_shell::TITLE => return Some(layout.title),
+            in_game_shell::FOOTER => return Some(layout.status_line),
+            _ => {}
+        }
         let control = DiplomacyControl::from_id(id)?;
         self.shows(control).then(|| layout.control_rect(control))
     }
 
-    /// The boxes' states on their nodes under `root`.
+    /// The rows on their nodes under `root`: the boxes' states (an Allies
+    /// box's partner flag in `Selected`, its dual-state face), the insignia
+    /// PCX in `Art`, names and kills in the row's colour, the mode and map.
+    /// Texts allocate only when they change.
     pub fn sync(&self, layout: &DiplomacyLayout, gui: &mut Gui, root: NodeId) {
-        let mut set = |control: DiplomacyControl, checked: bool, enabled: bool| {
+        use super::page::{set, set_text};
+        let boxed = |gui: &mut Gui, control: DiplomacyControl, checked: bool, enabled: bool| {
             let id = control.id();
-            super::page::set(gui, root, id, Prop::Checked, Value::Bool(checked));
-            super::page::set(gui, root, id, Prop::Enabled, Value::Bool(enabled));
+            set(gui, root, id, Prop::Checked, Value::Bool(checked));
+            set(gui, root, id, Prop::Enabled, Value::Bool(enabled));
             let rect = layout.control_rect(control);
             if control != DiplomacyControl::Taunts {
-                super::page::set(gui, root, id, Prop::HitRect, Value::Rect(rect));
+                set(gui, root, id, Prop::HitRect, Value::Rect(rect));
             }
         };
         for (index, row) in self.rows.iter().enumerate() {
             let Some(row) = row else { continue };
+            let insignia = row.insignia.as_deref().unwrap_or_default();
+            set_text(gui, root, DiplomacyControl::Insignia(index).id(), Prop::Art, insignia);
+            let [r, g, b] = row.rgb;
+            let rgb = Value::Rgba(vera20k_gui::Rgba(r, g, b, 255));
+            let name = DiplomacyControl::Name(index).id();
+            set_text(gui, root, name, Prop::Text, &row.name);
+            set(gui, root, name, Prop::Color, rgb.clone());
+            let kills = DiplomacyControl::Kills(index).id();
+            match row.kills {
+                Some(count) => set_text(gui, root, kills, Prop::Text, &count.to_string()),
+                None => set_text(gui, root, kills, Prop::Text, ""),
+            }
+            set(gui, root, kills, Prop::Color, rgb);
             if let Some(allies) = row.allies {
-                set(
-                    DiplomacyControl::Allies(index),
-                    allies.checked,
-                    allies.enabled,
-                );
+                let control = DiplomacyControl::Allies(index);
+                boxed(gui, control, allies.checked, allies.enabled);
+                let partner = Value::Int(i32::from(allies.partner));
+                set(gui, root, control.id(), Prop::Selected, partner);
             }
             if let Some(chat) = row.chat {
-                set(DiplomacyControl::Chat(index), chat.checked, chat.enabled);
+                boxed(gui, DiplomacyControl::Chat(index), chat.checked, chat.enabled);
             }
         }
         if let Some(on) = self.taunts {
-            set(DiplomacyControl::Taunts, on, true);
+            boxed(gui, DiplomacyControl::Taunts, on, true);
         }
+        let mode = self.mode_name.as_deref().unwrap_or_default();
+        set_text(gui, root, DiplomacyControl::ModeName.id(), Prop::Text, mode);
+        set_text(gui, root, DiplomacyControl::MapName.id(), Prop::Text, &self.map_name);
     }
 }
 
@@ -467,6 +506,57 @@ mod tests {
                 "{control:?}"
             );
         }
+    }
+
+    /// The painter's props: the insignia picture, the row texts in the row
+    /// colour, the Allies box's partner flag, the mode and map texts.
+    #[test]
+    fn sync_puts_the_rows_on_their_nodes() {
+        use crate::ui::shell::page::get;
+        let layout = diplomacy_layout(800, 600, shell(800, 600), [125, 25]);
+        let mut view = DiplomacyView {
+            map_name: "Dustbowl".into(),
+            ..DiplomacyView::default()
+        };
+        view.rows[1] = Some(DiplomacyRow {
+            insignia: Some("usai.pcx".into()),
+            name: "Peer".into(),
+            rgb: [10, 20, 30],
+            kills: Some(7),
+            allies: Some(DiplomacyAlliesBox {
+                checked: true,
+                partner: true,
+                enabled: false,
+            }),
+            chat: None,
+        });
+        let mut gui = Gui::new(256);
+        let root = gui.create(NodeKind::Dialog, None).unwrap();
+        crate::ui::shell::page::ensure_built(&mut gui, root, spec);
+        view.sync(&layout, &mut gui, root);
+        let text = |gui: &Gui, control: DiplomacyControl| {
+            match get(gui, root, control.id(), Prop::Text) {
+                Some(Value::Text(text)) => text.clone(),
+                _ => String::from("<none>"),
+            }
+        };
+        let insignia = gui.find_id(root, DiplomacyControl::Insignia(1).id().into()).unwrap();
+        assert_eq!(gui.tree().kind(insignia).unwrap(), NodeKind::Image);
+        assert_eq!(
+            get(&gui, root, DiplomacyControl::Insignia(1).id(), Prop::Art),
+            Some(&Value::Text("usai.pcx".into()))
+        );
+        assert_eq!(text(&gui, DiplomacyControl::Name(1)), "Peer");
+        assert_eq!(text(&gui, DiplomacyControl::Kills(1)), "7");
+        assert_eq!(
+            get(&gui, root, DiplomacyControl::Kills(1).id(), Prop::Color),
+            Some(&Value::Rgba(vera20k_gui::Rgba(10, 20, 30, 255)))
+        );
+        let allies = DiplomacyControl::Allies(1).id();
+        assert_eq!(get(&gui, root, allies, Prop::Selected), Some(&Value::Int(1)));
+        assert_eq!(get(&gui, root, allies, Prop::Enabled), Some(&Value::Bool(false)));
+        assert_eq!(text(&gui, DiplomacyControl::ModeName), "");
+        assert_eq!(text(&gui, DiplomacyControl::MapName), "Dustbowl");
     }
 
     #[test]

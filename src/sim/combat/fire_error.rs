@@ -210,6 +210,10 @@ pub(crate) struct WeaponFacts {
     /// `+0xA0`. Never NULL natively (read unchecked at T38, T39, T41, U11 and
     /// U12).
     pub projectile: ProjectileFacts,
+    /// Kratos `NoMoneyNoTalk`: money the firer's house needs for this weapon.
+    pub no_money_no_talk: i32,
+    /// Kratos `DontNeedMoney`: this weapon ignores [`Self::no_money_no_talk`].
+    pub dont_need_money: bool,
 }
 
 /// A WarheadTypeClass, as the tests read it against this target.
@@ -239,6 +243,9 @@ pub(crate) struct ProjectileFacts {
     pub aa: bool, // +0x2A4
     pub ag: bool, // +0x2A5
     pub rot: i32, // +0x2DC
+    /// Kratos `AAOnly`: this projectile may only be fired at a target in the
+    /// air (`src/Extension/BulletTypeExt.h`).
+    pub aa_only: bool,
 }
 
 /// The firer's own fields.
@@ -275,6 +282,9 @@ pub(crate) struct FirerFacts {
     /// `+0x504` and, for a Unit, `+0x6D8` DeathFrameCounter (vt+0x37C).
     pub emp_remaining: i32,
     pub death_frame_counter: i32,
+    /// Firestorm 2.0 Infantry `+0x370`: the web timer runs
+    /// ([`GameEntity::is_webbed`](crate::sim::game_entity::GameEntity::is_webbed)).
+    pub webbed: bool,
     /// Live continuous effects: `+0x304` fire, `+0x308` spark and `+0x314`
     /// railgun particle systems, `+0x324` the Wave.
     pub fire_particles_live: bool,
@@ -360,6 +370,7 @@ impl Default for FirerFacts {
             weapons_disabled: false,
             emp_remaining: 0,
             death_frame_counter: -1,
+            webbed: false,
             fire_particles_live: false,
             spark_particles_live: false,
             railgun_particles_live: false,
@@ -567,6 +578,8 @@ impl Default for TargetTypeFacts {
 pub(crate) struct FireFacts {
     /// [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
     pub ares: bool,
+    /// [`RuleSet::kratos`](crate::rules::ruleset::RuleSet::kratos).
+    pub kratos: bool,
     pub class: FirerClass,
     /// `[0x00A8ED84]`.
     pub frame: i32,
@@ -615,6 +628,9 @@ pub(crate) trait FireQuery {
     fn allied(&mut self) -> bool;
     /// `0x00703B10` IsOnBridge_ForFiring (T35).
     fn bridge_for_firing(&mut self) -> bool;
+    /// `HouseClass::Available_Money` (`0x004F6990`) of the firer's house,
+    /// asked by Kratos' `NoMoneyNoTalk` arm.
+    fn available_money(&mut self) -> i32;
     /// ParasiteClass `0x0062A8E0` CanInfect (T50) and CaptureManager
     /// `0x00471C90` CanCapture (T53).
     fn can_infect(&mut self) -> bool;
@@ -989,11 +1005,13 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
         return Illegal;
     }
     // T20 `0x006FC2E0`: EMP (vt+0x37C; a Unit also while its death frames
-    // run), except a visceroid.
+    // run), except a visceroid. Firestorm 2.0's `TechnoClass::Can_Fire`
+    // asks Is_Immobilized there (`0x0062F88B`), whose Infantry override
+    // (`0x004D5B10`) adds the web.
     let emp = crate::sim::game_entity::GameEntity::under_emp(
         firer.emp_remaining,
         (class == FirerClass::Unit).then_some(firer.death_frame_counter),
-    );
+    ) || firer.webbed;
     if emp
         && (class != FirerClass::Unit
             || !(firer_type.large_visceroid || firer_type.small_visceroid))
@@ -1009,6 +1027,35 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
     // firer) right after the weapon exists and before the per-target arms.
     if !query.attach_effect_gate(facts.weapon_index) {
         return Cant;
+    }
+    // Kratos `TechnoClass_CanFire` (`0x6FC339`, its refusal returns
+    // `0x6FCB7E` = ILLEGAL): `TechnoStatus::CanFire_CheckBullet` stops an
+    // `AAOnly` projectile when the target is not in the air. Kratos leaves a
+    // firer whose LandTargeting is 1 (`Land_Not_OK`) to the stock land-target
+    // refusals at T40 and T41 below.
+    if facts.kratos
+        && weapon.projectile.aa_only
+        && weapon.projectile.aa
+        && !query.high_flying()
+        && firer_type.land_targeting != 1
+    {
+        return Illegal;
+    }
+    // Kratos `TechnoClass_CanFire` (`0x6FC339`) `CanFire_CheckWeapon`: the
+    // shot waits until the firer's house can pay `NoMoneyNoTalk`; a negative
+    // value refuses while the house holds more than its magnitude, and
+    // `DontNeedMoney` skips the test. The AE that can supply the value is not
+    // ported, so only the weapon's own key counts.
+    if facts.kratos && !weapon.dont_need_money && weapon.no_money_no_talk != 0 {
+        let need = i64::from(weapon.no_money_no_talk);
+        let money = i64::from(query.available_money());
+        if if need > 0 {
+            money < need
+        } else {
+            money > need.abs()
+        } {
+            return Illegal;
+        }
     }
     // T22 (IonSensitive) asks `0x0053A130`, which is `XOR AL,AL; RET`.
     let warhead = weapon.warhead.unwrap_or_default();

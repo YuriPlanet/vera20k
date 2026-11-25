@@ -15,6 +15,9 @@ use super::{
     ex_info, join_channel, join_failed_locally, leave_then_create, lobby_mut, nickname,
     options_screen, request, show_box, show_wait,
 };
+use crate::app::frontend::state::FrontendState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::shell_wol::WolVisit;
 
 pub(super) fn new_runner(
     runner: Runner,
@@ -75,11 +78,23 @@ pub(in crate::app::shell_wol) fn open_runner(state: &mut AppState, runner: Runne
             .session
             .enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);
     }
-    super::leaf::free_art(state, crate::ui::wol_login::DIALOG);
+    super::leaf::free_art(&mut state.frontend.wol_art, crate::ui::wol_login::DIALOG);
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
-    let _ = App::ensure_skirmish_shell_chrome(state);
-    show_wait(state, "TXT_REQ_CHANLIST");
-    request(state, WolServiceRequest::ListChannels { kind: 0, flags: 0 });
+    let _ = App::ensure_skirmish_shell_chrome(
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+    );
+    show_wait(
+        &mut state.frontend,
+        &state.process_assets,
+        "TXT_REQ_CHANLIST",
+    );
+    request(
+        state.frontend.wol.as_mut(),
+        WolServiceRequest::ListChannels { kind: 0, flags: 0 },
+    );
 }
 
 /// `0x00788800` for the Quick Match lobby (stage 2): a lobby already
@@ -97,7 +112,7 @@ pub(in crate::app::shell_wol) fn quick_match_join(
 /// RESIDUAL: `DL=0`'s internals are not traced; the Quick Match game has
 /// no key and no resolution bits, so neither popup can follow.
 pub(in crate::app::shell_wol) fn quick_match_join_game(state: &mut AppState, channel: WolChannel) {
-    let context = admission_context(state);
+    let context = admission_context(state.frontend.wol.as_ref(), &state.process_assets);
     if let Err(reason) = admit(&channel, false, context) {
         // VERA: the log keeps what was compared; gamemd records nothing.
         log::warn!(
@@ -117,16 +132,28 @@ pub(in crate::app::shell_wol) fn quick_match_join_game(state: &mut AppState, cha
 /// `0x00789EC4..0x00789EEE`): no `0xC3` and no key; the leave and the
 /// create then run as for Create.
 pub(in crate::app::shell_wol) fn quick_match_create(state: &mut AppState) {
-    let nickname = nickname(state);
-    let tournament = i32::from(!super::quick_match::quick_coop(state));
+    let nickname = nickname(&state.frontend.wol_account);
+    let tournament = i32::from(!super::quick_match::quick_coop(state.frontend.wol.as_ref()));
     let (width, _) = options_screen(state);
-    let ex_info = ex_info(state);
+    let ex_info = ex_info(
+        &state.frontend,
+        &state.match_state.session,
+        &state.process_assets,
+    );
     let globals = &mut state.frontend.wol_lobby_globals;
     if width >= 1024 {
         globals.limit_resolution = false;
     }
     let channel = quick_match_channel(&nickname, tournament, globals.lobby_number, ex_info);
-    leave_then_create(state, channel, String::new(), false, true);
+    leave_then_create(
+        &mut state.frontend,
+        state.platform.game_config.as_ref(),
+        &state.process_assets,
+        channel,
+        String::new(),
+        false,
+        true,
+    );
 }
 
 /// `0x00789B60`'s record in Quick Match: Create's record and exInfo
@@ -150,18 +177,25 @@ pub(super) fn quick_match_channel(
 
 /// A box of the Quick Match runner over `0x117` or the backdrop.
 pub(in crate::app::shell_wol) fn quick_match_box(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
     key: &str,
     then: QuickMatchBoxThen,
 ) {
-    show_box(state, key, false, BoxThen::QuickMatch(then));
+    show_box(
+        frontend,
+        process_assets,
+        key,
+        false,
+        BoxThen::QuickMatch(then),
+    );
 }
 
 /// The runner's exit leave (`0x007A03A0..0x007A0410`): a channel this user
 /// is in is left behind `WOL:LeavingChannel` (at most 150 x 100 ms);
 /// then the runner returns 0.
 pub(in crate::app::shell_wol) fn quick_match_leave_and_return(state: &mut AppState) {
-    let Some(lobby) = lobby_mut(state) else {
+    let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) else {
         close_runner(state);
         return;
     };
@@ -174,14 +208,18 @@ pub(in crate::app::shell_wol) fn quick_match_leave_and_return(state: &mut AppSta
         deadline: Instant::now() + LEAVE_WAIT,
         then: AfterLeave::Return,
     };
-    request(state, WolServiceRequest::LeaveChannel);
-    show_wait(state, "WOL:LeavingChannel");
+    request(state.frontend.wol.as_mut(), WolServiceRequest::LeaveChannel);
+    show_wait(
+        &mut state.frontend,
+        &state.process_assets,
+        "WOL:LeavingChannel",
+    );
 }
 
 /// The Buddy List runner's dialog loop takes over: its records stay, the
 /// runner's own boxes are closed and the backdrop shows under `0x116`.
-pub(in crate::app::shell_wol) fn buddy_dialog_opens(state: &mut AppState) {
-    if let Some(lobby) = lobby_mut(state) {
+pub(in crate::app::shell_wol) fn buddy_dialog_opens(wol: Option<&mut WolVisit>) {
+    if let Some(lobby) = lobby_mut(wol) {
         lobby.wait = None;
         lobby.message = None;
         lobby.step = Step::Ready;
@@ -193,8 +231,8 @@ pub(in crate::app::shell_wol) fn buddy_dialog_opens(state: &mut AppState) {
 
 /// The Buddy List runner's dialog loop after a match or a stopped
 /// Create/Join (C2/C9 Back left the game channel).
-pub(in crate::app::shell_wol) fn buddy_runner_resumes(state: &mut AppState) {
-    if let Some(lobby) = lobby_mut(state) {
+pub(in crate::app::shell_wol) fn buddy_runner_resumes(wol: Option<&mut WolVisit>) {
+    if let Some(lobby) = lobby_mut(wol) {
         // A game channel C2 Back is still leaving stays until its OnPart.
         if lobby
             .current
@@ -210,9 +248,9 @@ pub(in crate::app::shell_wol) fn buddy_runner_resumes(state: &mut AppState) {
 }
 
 /// C2 Back's own leave (API+0x24 at `0x007900B8`), after the dialog closed.
-pub(crate) fn host_setup_left(state: &mut AppState) {
-    if current_channel(state).is_some_and(|current| current.kind == GAME_CHANNEL) {
-        request(state, WolServiceRequest::LeaveChannel);
+pub(crate) fn host_setup_left(mut wol: Option<&mut WolVisit>) {
+    if current_channel(wol.as_deref()).is_some_and(|current| current.kind == GAME_CHANNEL) {
+        request(wol.as_deref_mut(), WolServiceRequest::LeaveChannel);
     }
 }
 
@@ -223,12 +261,18 @@ pub(crate) fn host_setup_left(state: &mut AppState) {
 /// on. RESIDUAL: its refusal line (`show` = 1) goes to a list that is not
 /// traced while `0x116` is down; none is printed.
 pub(in crate::app::shell_wol) fn buddy_join(state: &mut AppState, channel: WolChannel) {
-    if let Some(lobby) = lobby_mut(state) {
+    if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
         lobby.step = Step::Ready;
         lobby.shown = false;
     }
     let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
-    if admit(&channel, observer, admission_context(state)).is_err() {
+    if admit(
+        &channel,
+        observer,
+        admission_context(state.frontend.wol.as_ref(), &state.process_assets),
+    )
+    .is_err()
+    {
         join_failed_locally(state, true);
         return;
     }
@@ -238,16 +282,20 @@ pub(in crate::app::shell_wol) fn buddy_join(state: &mut AppState, channel: WolCh
 /// Join from `0x116` for a game the list lacks: type `0x29` again behind
 /// `TXT_REQ_CHANLIST` (`0x0077EF90(0x29, 0)`, `0x0077F120`), then a
 /// second search.
-pub(in crate::app::shell_wol) fn buddy_find_game(state: &mut AppState, name: String) {
-    if let Some(lobby) = lobby_mut(state) {
+pub(in crate::app::shell_wol) fn buddy_find_game(
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    name: String,
+) {
+    if let Some(lobby) = lobby_mut(frontend.wol.as_mut()) {
         lobby.step = Step::FindingGame {
             name,
             deadline: Instant::now() + LIST_WAIT,
         };
     }
-    show_wait(state, "TXT_REQ_CHANLIST");
+    show_wait(frontend, process_assets, "TXT_REQ_CHANLIST");
     request(
-        state,
+        frontend.wol.as_mut(),
         WolServiceRequest::ListChannels {
             kind: GAME_CHANNEL,
             flags: 0,

@@ -107,6 +107,7 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::FrameChannel;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::util::forked::Forked;
 
 /// `BombListClass` (`0x0087F5D8`): the carriers of the live bombs and the
 /// BombVisible countdown. Nothing here is saved: the records live on their
@@ -836,10 +837,12 @@ impl Simulation {
 
     /// `BombClass::Defuse @ 0x004389B0`: remove the bomb and detach its cue
     /// through VocHandle405FD0 (`0x004389D6`), leaving the current clip's tail.
+    /// Every UnInit asks it, so the sound channel is written only for a
+    /// carrier.
     pub(crate) fn bomb_defuse(
         substrate: &mut ObjectSubstrate,
         bombs: &mut BombList,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
+        sound_events: &mut Forked<FrameChannel<SimSoundEvent>>,
         carrier: u64,
     ) {
         if bombs.carriers.remove(&carrier)
@@ -860,11 +863,18 @@ impl Simulation {
         expired: u64,
     ) {
         for &carrier in &bombs.carriers {
+            // Every object's expiry comes here, so a carrier whose bomb
+            // another object planted is only read: a hand-out would wake it
+            // and enter the store's touch logs.
             if let Some(bomb) = substrate
                 .entities
-                .get_mut(carrier)
+                .get_mut_if(carrier, |entity| {
+                    entity
+                        .bomb
+                        .as_ref()
+                        .is_some_and(|bomb| bomb.planter == Some(expired))
+                })
                 .and_then(|entity| entity.bomb.as_mut())
-                && bomb.planter == Some(expired)
             {
                 bomb.planter = None;
             }

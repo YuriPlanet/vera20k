@@ -208,6 +208,11 @@ pub(crate) enum TargetFacts<'a> {
         tile_in_water_set: bool,
         /// `CellClass+0x140 Flags & 0x100` (structural bridge cell).
         bridge_flag: bool,
+        /// Firestorm 2.0's web test of a cell (`What_Weapon_Should_I_Use`
+        /// `0x0062A089..0x0062A0D2`): not one of the bridge set's first two
+        /// tiles, not a bridge cell and no standing low bridge overlay
+        /// (74..=99).
+        webbable: bool,
     },
     /// Any `TechnoClass` target.
     Techno {
@@ -225,6 +230,10 @@ pub(crate) enum TargetFacts<'a> {
         /// `HouseClass::Is_Ally_ByObject @ 0x004F9A90` of the attacker's
         /// owner against this target.
         is_ally: bool,
+        /// Firestorm 2.0's web test of an object (`What_Weapon_Should_I_Use`
+        /// `0x0062A0D6..0x0062A137`): an infantryman whose type is not
+        /// `IsWebImmune=` and who is not Is_Immobilized (EMP or a web).
+        webbable: bool,
     },
 }
 
@@ -296,6 +305,15 @@ impl TargetFacts<'_> {
         match self {
             TargetFacts::Techno { kind, .. } => Some(*kind),
             TargetFacts::Cell { .. } | TargetFacts::Terrain => None,
+        }
+    }
+
+    /// Firestorm 2.0's webbable target (`0x0062A083..0x0062A137`); a Terrain
+    /// object is not one.
+    fn webbable(&self) -> bool {
+        match self {
+            TargetFacts::Techno { webbable, .. } | TargetFacts::Cell { webbable, .. } => *webbable,
+            TargetFacts::Terrain => false,
         }
     }
 }
@@ -669,10 +687,20 @@ fn projectile_aa(rules: &RuleSet, weapon: &WeaponType) -> bool {
 /// ORs `0xB8`. A weapon naming no projectile section reads the reader's
 /// defaults (AA=no, AG=yes), as weapon selection does; retail weapons always
 /// name one.
+///
+/// Tiberian Sun's `AV=` (docs/ts-limpets.md) comes first: Firestorm 2.0
+/// `WeaponTypeClass::Allowable_Threat @ 0x00681150` answers only `0x10`
+/// (vehicles, the same bit in gamemd's mask) for an AV projectile
+/// (`0x00681153..0x00681162`), whatever its AA and AG say.
 fn weapon_class_bits(rules: &RuleSet, weapon: &WeaponType) -> u32 {
-    let (aa, ag) = rules
+    let (aa, ag, av) = rules
         .weapon_projectile(weapon)
-        .map_or((false, true), |projectile| (projectile.aa, projectile.ag));
+        .map_or((false, true, false), |projectile| {
+            (projectile.aa, projectile.ag, projectile.av)
+        });
+    if av {
+        return 0x10;
+    }
     let mut bits = 0;
     if aa {
         bits = 4;
@@ -924,12 +952,30 @@ fn techno_what_weapon_should_i_use<'r>(
         land_type,
         tile_in_water_set,
         bridge_flag,
+        ..
     } = *target
     {
         let on_land = land_type != LandType::Water.as_index() && !tile_in_water_set;
         if (on_land || (bridge_flag && obj.naval)) && obj.land_targeting == 2 {
             return 1;
         }
+    }
+    // Firestorm 2.0 `TechnoClass::What_Weapon_Should_I_Use` 0x00629F20: when
+    // either slot's warhead is `Webby=` (`0x00629FB5`, `0x0062A028`), it
+    // picks the secondary exactly when the target's webbability equals the
+    // secondary's (`0x0062A13A..0x0062A145`): a web gun webs what it can,
+    // the other gun takes the rest. gamemd's ladder has no such arm; it sits
+    // here, after the arms gamemd adds. Residuals: Firestorm first drops a
+    // slot whose Can_Fire answers CANT, ILLEGAL or REARM, which this ladder
+    // does not ask. It has no arms C/D either: an empty slot's Can_Fire
+    // answers CANT (`0x0062F8D6`), so a unit whose only weapon webs picks
+    // the empty slot for what it cannot web and holds its fire
+    // (`UnitClass::Firing_AI` `0x0064E7CD`), where C/D here answer slot 0
+    // and it fires the web gun at everything.
+    let webs = |warhead: Option<&WarheadType>| warhead.is_some_and(|w| w.webby().is_some());
+    let secondary_webs = webs(secondary_warhead);
+    if secondary_webs || webs(primary_warhead) {
+        return i32::from(target.webbable() == secondary_webs);
     }
     // Q @ 0x006F36DB.
     let Some(TargetFacts::Techno {
@@ -1082,13 +1128,14 @@ pub fn attacker_facts(entity: &GameEntity, obj: &ObjectType) -> AttackerFacts {
     }
 }
 
-/// Target facts for a Techno target. `terrain == None` (headless fixtures)
-/// reads the occupied cell as clear land.
+/// Target facts for a Techno target at game frame `frame`. `terrain == None`
+/// (headless fixtures) reads the occupied cell as clear land.
 pub(crate) fn techno_target_facts<'a>(
     target: &'a GameEntity,
     target_obj: &'a ObjectType,
     terrain: Option<&'a ResolvedTerrainGrid>,
     is_ally: bool,
+    frame: i32,
     rules: &'a RuleSet,
     interner: &'a StringInterner,
 ) -> TargetFacts<'a> {
@@ -1112,25 +1159,49 @@ pub(crate) fn techno_target_facts<'a>(
             .as_ref()
             .is_some_and(|cloak| cloak.state() != 0),
         is_ally,
+        // `0x0062A0D8` (Foot), `0x0062A0F0` (InfantryClass), `0x0062A102`
+        // (Is_Immobilized), `0x0062A112` (InfantryType `+0x4B7`).
+        webbable: target.category() == EntityCategory::Infantry
+            && !target_obj.is_web_immune
+            && !target.is_immobilized(frame),
     }
 }
 
-/// Target facts for a force-fire cell.
+/// Target facts for a force-fire cell holding overlay `overlay` (Cell
+/// `+0x44`).
 pub(crate) fn cell_target_facts(
     rx: u16,
     ry: u16,
     terrain: Option<&ResolvedTerrainGrid>,
+    overlay: Option<u8>,
 ) -> TargetFacts<'static> {
+    // `0x0062A0C5..0x0062A0D0`: a standing low bridge (overlay 74..=99).
+    let low_bridge = overlay.is_some_and(|overlay| {
+        crate::sim::bridge_state::ordinary::standing(
+            i32::from(overlay),
+            crate::sim::bridge_state::ramp_repair::Family::Low,
+        )
+    });
     match terrain.and_then(|grid| grid.cell(rx, ry).map(|cell| (grid, cell))) {
-        Some((grid, cell)) => TargetFacts::Cell {
-            land_type: cell.land_type,
-            tile_in_water_set: grid.tile_is_water_set(cell.final_tile_index),
-            bridge_flag: cell.bridge_facts.has_structural_bridge(),
-        },
+        Some((grid, cell)) => {
+            let bridge_flag = cell.bridge_facts.has_structural_bridge();
+            // `0x0062A0A6..0x0062A0B8`: ITType against the bridge set's
+            // first tile and the one after it.
+            let base = grid.concrete_bridge_set_base();
+            let tile = cell.final_tile_index;
+            let bridge_tile = base != -1 && (tile == base || tile == base.wrapping_add(1));
+            TargetFacts::Cell {
+                land_type: cell.land_type,
+                tile_in_water_set: grid.tile_is_water_set(cell.final_tile_index),
+                bridge_flag,
+                webbable: !bridge_tile && !bridge_flag && !low_bridge,
+            }
+        }
         None => TargetFacts::Cell {
             land_type: LandType::Clear.as_index(),
             tile_in_water_set: false,
             bridge_flag: false,
+            webbable: !low_bridge,
         },
     }
 }
@@ -1237,6 +1308,7 @@ pub(crate) fn select_weapon_index_against_in_query(
                     target_obj,
                     terrain,
                     is_ally,
+                    world.session.binary_frame() as i32,
                     rules,
                     interner,
                 );
@@ -1256,7 +1328,15 @@ pub(crate) fn select_weapon_index_against_in_query(
                 Some(TargetFacts::Terrain)
             }
         }
-        Some(TargetKind::Cell(rx, ry)) => Some(cell_target_facts(rx, ry, terrain)),
+        Some(TargetKind::Cell(rx, ry)) => Some(cell_target_facts(
+            rx,
+            ry,
+            terrain,
+            world
+                .overlay_grid
+                .as_ref()
+                .and_then(|grid| grid.cell(rx, ry).overlay_id),
+        )),
         None => None,
     };
     Some(what_weapon_should_i_use(
@@ -1427,7 +1507,24 @@ pub(crate) fn get_weapon_record<'r>(
         )?;
         return occupant_weapon_record(kind, occupant.veterancy.rank());
     }
-    weapon_for_index(obj, entity.veterancy.rank(), index)
+    let mut record = weapon_for_index(obj, entity.veterancy.rank(), index)?;
+    // Kratos PP v0.2.4 CrawlingFLH::OnUpdate, dispatched at the entry to
+    // TechnoClass::AI 0x006F9E50 (stock prologue resumes at 0x006F9E55),
+    // selects by the man's rank even when GetWeapon 0x0070E140 falls back to
+    // his normal gun. Resolve per shooter at the GetFLH 0x006F3B28 read so
+    // infantry sharing a type cannot overwrite each other's muzzle position.
+    if rules.kratos()
+        && entity.category() == EntityCategory::Infantry
+        && !obj.fearless
+        && let Some(infantry) = entity.infantry
+        && (0..=1).contains(&index)
+    {
+        let elite = entity.veterancy.rank() >= RANK_ELITE_U16;
+        record.flh = obj
+            .kratos_crawling()
+            .flh(index as usize, elite, infantry.is_prone());
+    }
+    Some(record)
 }
 
 #[cfg(all(test, tests_sim_combat_a_c))]
@@ -1501,6 +1598,7 @@ mod tests {
                 land_type: 0,
                 tile_in_water_set: false,
                 bridge_flag: false,
+                webbable: true,
             }),
             &world.substrate.entities,
             &world.interner,
@@ -1580,7 +1678,7 @@ mod tests {
                 5,
                 EntityCategory::Infantry,
             ));
-        world.interner = crate::sim::intern::test_interner();
+        *world.interner = crate::sim::intern::test_interner();
         let obj = rules.object("HOUSE").unwrap();
         let read = |world: &Simulation| {
             get_weapon_record(
@@ -1777,6 +1875,7 @@ mod tests {
             cell_land_type: LandType::Clear.as_index(),
             submerged: false,
             is_ally: false,
+            webbable: false,
         }
     }
 
@@ -1789,6 +1888,7 @@ mod tests {
                 cell_land_type,
                 submerged,
                 is_ally,
+                webbable,
                 ..
             } => TargetFacts::Techno {
                 obj,
@@ -1798,6 +1898,7 @@ mod tests {
                 cell_land_type,
                 submerged,
                 is_ally,
+                webbable,
             },
             cell => cell,
         }
@@ -1966,6 +2067,7 @@ mod tests {
                     land_type: 0,
                     tile_in_water_set: false,
                     bridge_flag: false,
+                    webbable: true,
                 }),
                 "terrain" => Some(TargetFacts::Terrain),
                 kind => {
@@ -2071,7 +2173,7 @@ mod tests {
                 EntityCategory::Infantry,
             ));
         // The fixture entities' names were interned by `test_default`.
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         sim.substrate
             .entities
             .get_mut(1)
@@ -2101,6 +2203,98 @@ mod tests {
             Some(expected),
             "a transport-arm rider reaches its OpenTopped carrier's controller"
         );
+    }
+
+    // ---- Kratos prone firing offset ----------------------------------------
+
+    fn infantry_muzzle(
+        rules: &RuleSet,
+        unit: &str,
+        slot: i32,
+        prone: bool,
+        elite: bool,
+    ) -> [i32; 3] {
+        let world = Simulation::new();
+        let mut entity = GameEntity::test_default_of_category(
+            1,
+            unit,
+            "Americans",
+            5,
+            5,
+            EntityCategory::Infantry,
+        );
+        entity
+            .infantry
+            .as_mut()
+            .unwrap()
+            .set_is_prone_for_test(prone);
+        if elite {
+            entity.veterancy.set_rank_for_test(RANK_ELITE_U16);
+        }
+        get_weapon_record(
+            &entity,
+            rules.object(unit).unwrap(),
+            slot,
+            &world.substrate.entities,
+            rules,
+            &world.interner,
+        )
+        .unwrap()
+        .flh
+        .into()
+    }
+
+    #[test]
+    fn kratos_crawling_flh_replaces_the_fire_flh_only_while_prone() {
+        let roster = IniFile::from_str(
+            "[InfantryTypes]\n0=GI\n1=HERO\n[GI]\nPrimary=GUN\n[HERO]\nPrimary=GUN\nFearless=yes",
+        );
+        let stock = RuleSet::from_ini_with_fixed_art_for_test(
+            &roster,
+            &IniFile::from_str("[GI]\nPrimaryFireFLH=80,0,105"),
+        )
+        .unwrap();
+        assert!(!stock.kratos());
+        assert_eq!(infantry_muzzle(&stock, "GI", 0, true, false), [80, 0, 105]);
+
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &roster,
+            &IniFile::from_str(
+                "[GI]\nPrimaryFireFLH=80,0,105\nSecondaryCrawlingFLH=7,8,9\n\
+                [HERO]\nPrimaryFireFLH=60,0,101\nPrimaryCrawlingFLH=1,2,3",
+            ),
+        )
+        .unwrap();
+        assert!(rules.kratos());
+        assert_eq!(infantry_muzzle(&rules, "GI", 0, false, false), [80, 0, 105]);
+        assert_eq!(infantry_muzzle(&rules, "GI", 0, true, false), [80, 0, 20]);
+        assert_eq!(
+            infantry_muzzle(&rules, "HERO", 0, true, false),
+            [60, 0, 101]
+        );
+    }
+
+    #[test]
+    fn kratos_elite_muzzles_follow_rank_with_normal_weapons() {
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str("[InfantryTypes]\n0=GI\n[GI]\nPrimary=GUN\nSecondary=GUN"),
+            &IniFile::from_str(
+                "[GI]\nPrimaryFireFLH=20,0,80\nElitePrimaryFireFLH=90,0,99\n\
+                ElitePrimaryCrawlingFLH=1Eh,4\nSecondaryCrawlingFLH=4,5,6\n\
+                EliteSecondaryFireFLH=8,9,72\nEliteSecondaryCrawlingFLH=77,88,99",
+            ),
+        )
+        .unwrap();
+        assert!(rules.kratos());
+        let gi = rules.object("GI").unwrap();
+        assert_eq!(gi.elite_weapon_at(0), None);
+        assert_eq!(gi.elite_weapon_at(1), None);
+        assert_eq!(infantry_muzzle(&rules, "GI", 0, false, true), [90, 0, 99]);
+        // Kratos's integer parser accepts a hex suffix and zero-fills the missing Z.
+        assert_eq!(infantry_muzzle(&rules, "GI", 0, true, true), [30, 4, 0]);
+        assert_eq!(infantry_muzzle(&rules, "GI", 1, true, false), [4, 5, 6]);
+        // v0.2.4 reads EliteSecondaryFireFLH for both stances.
+        assert_eq!(infantry_muzzle(&rules, "GI", 1, true, true), [8, 9, 72]);
     }
 
     // ---- Garrison ----------------------------------------------------------

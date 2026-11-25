@@ -90,17 +90,17 @@ fn world(rules: &RuleSet) -> Simulation {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.playfield_bounds = Some(bounds);
-    sim.playfield_size_height = Some(16);
+    *sim.playfield_bounds = Some(bounds);
+    *sim.playfield_size_height = Some(16);
     sim.session.set_map_width_for_test(32);
     sim.session.set_map_height_for_test(32);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
     sim.session.publish_started();
-    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
-    sim.bridge_state = Some(bridges);
-    sim.zone_grid = Some(zones.into());
-    sim.path_grid = Some(Arc::new(path));
+    *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    *sim.bridge_state = Some(bridges);
+    *sim.zone_grid = Some(zones.into());
+    *sim.path_grid = Some(Arc::new(path));
     sim.install_resolved_terrain_for_new_map(terrain);
     let owner = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, Some(owner), true, 0, 10);
@@ -260,7 +260,7 @@ fn vehicle_passenger_escape_matches_native_caller_scatter() {
                 "{name}: passenger {index} input state"
             );
         }
-        sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
+        *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
         let rng_before = sim.scenario_rng.state();
         sim.release_dying_unit_passengers(
             &rules,

@@ -3,7 +3,7 @@
 //! `VisibleRows` (the rows it pages over and how many show) size the thumb.
 //!
 //! It acts on the press as a trackbar does: an arrow (the drop-down
-//! scrollbar's button height at either end) steps one position, with no
+//! scrollbar's arrow height at either end) steps one position, with no
 //! repeat; a press on the thumb or the track takes the position under the
 //! pointer and holds the mouse, the position following it until the
 //! release. Each change is a `Changed` (`final_` false); the release sends
@@ -13,7 +13,6 @@ use super::{Capture, Ctx};
 use crate::Rect;
 use crate::gui::UiEvent;
 use crate::node::{Node, NodeId, Prop, Tree, Value};
-use crate::shell::combobox::DropdownMetrics;
 use crate::shell::geom::ShellScale;
 use crate::shell::list::{ListMetrics, scrollbar_thumb_y, scrollbar_top_at_pointer, thumb_height};
 
@@ -74,12 +73,12 @@ fn move_to(ctx: &mut Ctx<'_>, node: NodeId, pos: i32) {
 
 pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, _x: i32, y: i32) -> Capture {
     let Some(b) = bar(ctx, node) else { return Capture::No };
-    let button_h = DropdownMetrics::scaled(ctx.scale).button_h;
-    if y < b.rect.y + button_h {
+    let arrow_h = b.metrics.arrow_h;
+    if y < b.rect.y + arrow_h {
         move_to(ctx, node, b.pos - 1);
         return Capture::No;
     }
-    if y >= b.rect.y + b.rect.h - button_h {
+    if y >= b.rect.y + b.rect.h - arrow_h {
         move_to(ctx, node, b.pos + 1);
         return Capture::No;
     }

@@ -18,16 +18,18 @@ use super::{
     show_wait, sort_lobby, units, visit_joined, visit_room_left, visit_settles, visit_user_joined,
     visit_user_left, visiting, watch_refused,
 };
+use crate::app::frontend::state::FrontendState;
+use crate::app::shell_wol::WolVisit;
 
 /// Lobby events of the service. Events nothing waits for are stale.
 pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolServiceEvent) {
-    if lobby(state).is_none() {
+    if lobby(state.frontend.wol.as_ref()).is_none() {
         log::debug!("WOL lobby event without a lobby: {event:?}");
         return;
     }
     match event {
         WolServiceEvent::Channels { kind, channels } => {
-            let lobby = lobby_mut(state).expect("checked");
+            let lobby = lobby_mut(state.frontend.wol.as_mut()).expect("checked");
             if kind == GAME_CHANNEL && lobby.runner == Runner::QuickMatch {
                 lobby.games = channels.clone();
                 super::quick_match::games_listed(state, &channels);
@@ -35,38 +37,38 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
             }
             if kind == GAME_CHANNEL {
                 lobby.games = channels;
-                refill_games(state);
+                refill_games(&mut state.frontend, &state.process_assets);
                 // The channel-list sink rebuilds an open 0x116's rows.
                 super::buddy::buddies_changed(state, false);
-                let lobby = lobby_mut(state).expect("checked");
+                let lobby = lobby_mut(state.frontend.wol.as_mut()).expect("checked");
                 if let Step::FindingGame { name, .. } = &lobby.step {
                     let name = name.clone();
                     lobby.step = Step::Ready;
-                    close_wait(state);
+                    close_wait(&mut state.frontend);
                     super::buddy::game_listed(state, &name, true);
                 }
                 return;
             }
             lobby.set_lobbies(channels);
-            refill_lobbies(state);
-            let lobby = lobby_mut(state).expect("checked");
+            refill_lobbies(state.frontend.wol.as_mut());
+            let lobby = lobby_mut(state.frontend.wol.as_mut()).expect("checked");
             if let (Step::ListingLobbies { .. }, Runner::QuickMatch) = (&lobby.step, lobby.runner) {
                 lobby.step = Step::Ready;
-                close_wait(state);
+                close_wait(&mut state.frontend);
                 super::quick_match::lobbies_listed(state);
             } else if let (Step::ListingLobbies { .. }, Runner::Buddy) = (&lobby.step, lobby.runner)
             {
                 lobby.step = Step::Ready;
-                close_wait(state);
+                close_wait(&mut state.frontend);
                 super::buddy::lobbies_listed(state);
             } else if let Step::ListingLobbies { .. } = lobby.step {
-                show_wait(state, "TXT_JOINLOB");
+                show_wait(&mut state.frontend, &state.process_assets, "TXT_JOINLOB");
                 let skip_full = state
                     .frontend
                     .wol
                     .as_ref()
                     .is_some_and(|visit| visit.lobby_joined_before)
-                    && !lobby_postmatch(state);
+                    && !lobby_postmatch(state.frontend.wol.as_ref());
                 let joined = join_picked_lobby(state, skip_full, true);
                 if let Some(visit) = state.frontend.wol.as_mut() {
                     visit.lobby_joined_before = true;
@@ -77,17 +79,17 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
             }
         }
         WolServiceEvent::VisitJoined(joined) => visit_joined(state, joined),
-        WolServiceEvent::VisitUserJoined(member) => visit_user_joined(state, member),
-        WolServiceEvent::VisitUserLeft(name) => visit_user_left(state, name),
+        WolServiceEvent::VisitUserJoined(member) => visit_user_joined(&mut state.frontend, member),
+        WolServiceEvent::VisitUserLeft(name) => visit_user_left(&mut state.frontend, name),
         WolServiceEvent::Joined(result) => joined(state, result),
         WolServiceEvent::UserJoined(member) => {
-            let lobby = lobby_mut(state).expect("checked");
+            let lobby = lobby_mut(state.frontend.wol.as_mut()).expect("checked");
             if lobby.current.is_some() {
                 let name = member.name.clone();
                 // 0x7A62B7..0x7A62EE: a joiner in a squad whose tag is not
                 // known yet.
                 if member.squad != 0 && member.clan_tag.is_empty() {
-                    request_squad(state, member.squad);
+                    request_squad(state.frontend.wol.as_mut(), member.squad);
                 }
                 // 0x7A6542..0x7A662D: the lowered name's ladder record and
                 // high score, each unless its table holds it, before the
@@ -97,20 +99,26 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
                 // is pending ([0xB77DEC]/[0xB77E28]/[0xB77E27]) before these
                 // requests and the insert; VERA kicks in setup::user_joined.
                 let key = name.to_ascii_lowercase();
-                let modern = modern_lobby(state);
+                let modern = modern_lobby(state.frontend.wol.as_ref());
                 let globals = &state.frontend.wol_lobby_globals;
                 let ladder = modern || !globals.ladder.contains_key(&key);
                 let high_score = modern || !globals.high_scores.contains_key(&key);
                 if ladder {
-                    request(state, WolServiceRequest::LadderRecords(vec![key.clone()]));
+                    request(
+                        state.frontend.wol.as_mut(),
+                        WolServiceRequest::LadderRecords(vec![key.clone()]),
+                    );
                 }
                 if high_score {
-                    request(state, WolServiceRequest::HighScores(vec![key]));
+                    request(
+                        state.frontend.wol.as_mut(),
+                        WolServiceRequest::HighScores(vec![key]),
+                    );
                 }
-                sort_lobby(state, |lobby, sort, rank| {
+                sort_lobby(&mut state.frontend, |lobby, sort, rank| {
                     lobby.user_joined(member, sort, rank)
                 });
-                refill_players(state);
+                refill_players(&mut state.frontend);
                 if in_setup_channel(state)
                     && let Err(error) = setup::user_joined(state, name)
                 {
@@ -119,13 +127,13 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
             }
         }
         WolServiceEvent::UserLeft(name) => {
-            let lobby = lobby_mut(state).expect("checked");
+            let lobby = lobby_mut(state.frontend.wol.as_mut()).expect("checked");
             let operator = lobby
                 .members
                 .iter()
                 .any(|member| member.name == name && member.flags & MEMBER_OPERATOR != 0);
             lobby.members.retain(|member| member.name != name);
-            refill_players(state);
+            refill_players(&mut state.frontend);
             if in_setup_channel(state)
                 && let Err(error) = setup::user_left(state, &name, operator)
             {
@@ -134,8 +142,12 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
         }
         WolServiceEvent::RoomReopened(joined) => room_reopened(state, joined),
         WolServiceEvent::HostChanged { name, channel } => host_changed(state, name, channel),
-        WolServiceEvent::ChannelLeft if visiting(state) => visit_room_left(state),
-        WolServiceEvent::ChannelLeft if awaiting_room(state) => room_not_returned(state, true),
+        WolServiceEvent::ChannelLeft if visiting(state.frontend.wol.as_ref()) => {
+            visit_room_left(state)
+        }
+        WolServiceEvent::ChannelLeft if awaiting_room(&state.match_state.session) => {
+            room_not_returned(state, true)
+        }
         WolServiceEvent::ChannelLeft if in_setup_channel(state) => setup_channel_left(state),
         WolServiceEvent::ChannelLeft => leave_finished(state, true),
         WolServiceEvent::PlayerChoices {
@@ -144,7 +156,7 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
             observer,
         } => {
             // 0x7A82F8..0x7A833C: only from a user of this channel.
-            let member = lobby_mut(state)
+            let member = lobby_mut(state.frontend.wol.as_mut())
                 .expect("checked")
                 .members
                 .iter()
@@ -172,10 +184,14 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
         }
         WolServiceEvent::Created(result) => created(state, result),
         WolServiceEvent::Matches(matches) => {
-            lobby_mut(state).expect("checked").matches = matches;
-            refill_games(state);
+            lobby_mut(state.frontend.wol.as_mut())
+                .expect("checked")
+                .matches = matches;
+            refill_games(&mut state.frontend, &state.process_assets);
         }
-        WolServiceEvent::WatchRefused(code) => watch_refused(state, code),
+        WolServiceEvent::WatchRefused(code) => {
+            watch_refused(&mut state.frontend, &state.process_assets, code)
+        }
         other => log::debug!("WOL event not for the lobby: {other:?}"),
     }
 }
@@ -185,15 +201,15 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
 pub(super) fn in_setup_channel(state: &AppState) -> bool {
     // A visitor's room goes on while the lobby page shows.
     (state.frontend.shell_route == ShellRoute::NetworkSetup
-        || setup::quick_match(state)
-        || visiting(state))
-        && lobby(state)
+        || setup::quick_match(state.frontend.network_setup_protocol.as_ref())
+        || visiting(state.frontend.wol.as_ref()))
+        && lobby(state.frontend.wol.as_ref())
             .and_then(|lobby| lobby.current.as_ref())
             .is_some_and(|current| current.kind == GAME_CHANNEL)
 }
 
-fn lobby_postmatch(state: &AppState) -> bool {
-    lobby(state).is_some_and(|lobby| lobby.postmatch)
+fn lobby_postmatch(wol: Option<&WolVisit>) -> bool {
+    lobby(wol).is_some_and(|lobby| lobby.postmatch)
 }
 
 fn sender(member: &WolMember) -> wol_chat::WolSender<'_> {
@@ -211,17 +227,17 @@ fn sender(member: &WolMember) -> wol_chat::WolSender<'_> {
 /// up. The local record is found by the login nickname
 /// (`[0xB73E40]`) among the channel's users.
 /// `room`: the line is the game room's, shown or a visitor's hidden one.
-fn sender_passes(state: &AppState, from: &WolMember, text: &[u16], room: bool) -> bool {
-    let visit = state.frontend.wol.as_ref();
+fn sender_passes(frontend: &FrontendState, from: &WolMember, text: &[u16], room: bool) -> bool {
+    let visit = frontend.wol.as_ref();
     let filters = wol_chat::WolDisplayFilters::new(
-        &state.frontend.wol_preferences,
+        &frontend.wol_preferences,
         visit.is_some_and(|visit| visit.modern_ui()),
     );
     let sender = sender(from);
     let setup_open = room;
-    let local = nickname(state);
+    let local = nickname(&frontend.wol_account);
     let in_game = visit.is_none_or(|visit| visit.in_game);
-    let lobby = lobby_dialog(state).filter(|_| !in_game);
+    let lobby = lobby_dialog(frontend.wol.as_ref()).filter(|_| !in_game);
     let local_clan = lobby
         .and_then(|lobby| {
             lobby
@@ -234,7 +250,7 @@ fn sender_passes(state: &AppState, from: &WolMember, text: &[u16], room: bool) -
         && wol_chat::buddy_clan_gate(
             &sender,
             local_clan,
-            state.frontend.wol_buddies.names(),
+            frontend.wol_buddies.names(),
             filters,
             lobby.is_some(),
         )
@@ -282,17 +298,18 @@ pub(in crate::app::shell_wol) fn message_received(state: &mut AppState, message:
     } = message;
     // A visitor's room goes on hidden: its lines go to it, and the visited
     // lobby's to the lobby page.
-    if visit && !visiting(state) {
+    if visit && !visiting(state.frontend.wol.as_ref()) {
         return;
     }
-    let room =
-        !visit && (state.frontend.shell_route == ShellRoute::NetworkSetup || visiting(state));
+    let room = !visit
+        && (state.frontend.shell_route == ShellRoute::NetworkSetup
+            || visiting(state.frontend.wol.as_ref()));
     let in_game = state
         .frontend
         .wol
         .as_ref()
         .is_none_or(|visit| visit.in_game);
-    if ansi && !action && !in_game && super::quick_match::mode_active(state) {
+    if ansi && !action && !in_game && super::quick_match::mode_active(state.frontend.wol.as_ref()) {
         let text = String::from_utf16_lossy(&text);
         super::quick_match::ansi_message(state, &from, &text, private, options);
         return;
@@ -302,8 +319,10 @@ pub(in crate::app::shell_wol) fn message_received(state: &mut AppState, message:
         .wol
         .as_ref()
         .is_none_or(|visit| visit.in_game)
-        || !sender_passes(state, &from, &text, room)
-        || from.name.eq_ignore_ascii_case(&nickname(state))
+        || !sender_passes(&state.frontend, &from, &text, room)
+        || from
+            .name
+            .eq_ignore_ascii_case(&nickname(&state.frontend.wol_account))
     {
         return;
     }
@@ -321,7 +340,8 @@ pub(in crate::app::shell_wol) fn message_received(state: &mut AppState, message:
     }
     let (prefix, _) = wol_chat::received_line(&sender(&from), &[], private, action);
     super::translation::received(
-        state,
+        state.frontend.wol.as_mut(),
+        &state.persistence.options_profile,
         &text,
         localized,
         super::translation::TranslatedLine::Wol {
@@ -346,7 +366,12 @@ pub(in crate::app::shell_wol) fn located(state: &mut AppState, result: Result<Wo
         return;
     }
     // 0x007A997A: with 0xCF in the stack its status takes the answer.
-    if super::page::located(state, &result) {
+    if super::page::located(
+        state.frontend.wol.as_mut(),
+        &state.platform.window,
+        &state.process_assets,
+        &result,
+    ) {
         return;
     }
     let Some(visit) = state.frontend.wol.as_ref() else {
@@ -357,7 +382,10 @@ pub(in crate::app::shell_wol) fn located(state: &mut AppState, result: Result<Wo
     let text = match result {
         Ok(channel) => {
             let room = match channel.lobby_number().filter(|_| channel.kind == 0) {
-                Some(number) => WolLobbyRow::joined_name(number, &base_names(state)),
+                Some(number) => WolLobbyRow::joined_name(
+                    number,
+                    &base_names(state.frontend.wol.as_ref(), &state.process_assets),
+                ),
                 None => channel.name.clone(),
             };
             format_csf(
@@ -401,11 +429,11 @@ pub(in crate::app::shell_wol) fn page_result(state: &mut AppState, result: Resul
         Err(_) => "TXT_PAGEFAILED",
     };
     let line = LanChatLine {
-        text: units(state, key),
+        text: units(&state.process_assets, key),
         color: u32::MAX,
     };
     if result.is_ok() {
-        super::page::append_page_line(state, line);
+        super::page::append_page_line(&mut state.frontend, &state.renderer, line);
     } else {
         super::page::current_window_line(state, line);
     }
@@ -473,14 +501,20 @@ pub(in crate::app::shell_wol) fn net_status(state: &mut AppState, status: u32) {
         if state.frontend.shell_route == ShellRoute::NetworkSetup {
             crate::app::shell_network_setup::abandon_for_wol_runner(state);
         }
-        super::buddy::dialog_ended(state);
-        show_box(state, "TXT_YOURE_DISCON", false, BoxThen::Close);
+        super::buddy::dialog_ended(&mut state.frontend);
+        show_box(
+            &mut state.frontend,
+            &state.process_assets,
+            "TXT_YOURE_DISCON",
+            false,
+            BoxThen::Close,
+        );
         return;
     }
     if state.frontend.shell_route == ShellRoute::NetworkSetup {
         crate::app::shell_network_setup::abandon_for_wol_runner(state);
         state.frontend.shell_route = ShellRoute::WolLobby;
-        if let Some(lobby) = lobby_mut(state) {
+        if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
             lobby.shown = true;
             lobby.covered = false;
         }
@@ -488,7 +522,13 @@ pub(in crate::app::shell_wol) fn net_status(state: &mut AppState, status: u32) {
     }
     // The records are zeroed without a list refill; the box shows over the
     // lists as they were, and the runner then closes.
-    show_box(state, "TXT_YOURE_DISCON", false, BoxThen::Close);
+    show_box(
+        &mut state.frontend,
+        &state.process_assets,
+        "TXT_YOURE_DISCON",
+        false,
+        BoxThen::Close,
+    );
 }
 
 /// The kick sink `0x007AB670` in a chat lobby; nothing while a match runs.
@@ -516,7 +556,7 @@ pub(in crate::app::shell_wol) fn kicked(
     {
         return;
     }
-    let Some(lobby) = lobby(state) else {
+    let Some(lobby) = lobby(state.frontend.wol.as_ref()) else {
         return;
     };
     use crate::assets::csf_file::{CsfArg, format_csf};
@@ -527,19 +567,21 @@ pub(in crate::app::shell_wol) fn kicked(
     {
         // VERA: a kicked visitor stays in the lobby they visit; the lobby
         // made it their channel.
-        if user.flags & MEMBER_LOCAL != 0 && visiting(state) {
+        if user.flags & MEMBER_LOCAL != 0 && visiting(state.frontend.wol.as_ref()) {
             let text = format_csf(
-                &state.csf_text(setup::kicked_key(state)),
+                &state.csf_text(setup::kicked_key(&state.match_state.session)),
                 &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
             );
             visit_settles(state, text);
             return;
         }
-        if state.frontend.shell_route != ShellRoute::NetworkSetup && !visiting(state) {
+        if state.frontend.shell_route != ShellRoute::NetworkSetup
+            && !visiting(state.frontend.wol.as_ref())
+        {
             return;
         }
         if user.flags & MEMBER_LOCAL != 0 {
-            let key = setup::kicked_key(state);
+            let key = setup::kicked_key(&state.match_state.session);
             let text = format_csf(
                 &state.csf_text(key),
                 &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
@@ -563,7 +605,7 @@ pub(in crate::app::shell_wol) fn kicked(
                 CsfArg::Str(&by.name),
             ],
         );
-        if let Some(lobby) = lobby_mut(state) {
+        if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
             lobby.members.retain(|member| member.name != user.name);
         }
         if let Err(error) = setup::user_kicked(state, &user.name, text) {
@@ -576,8 +618,8 @@ pub(in crate::app::shell_wol) fn kicked(
             &state.csf_text("TXT_YOURE_KICKED"),
             &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
         );
-        let message = service::message_box(state, text, false);
-        put_box(state, message, BoxThen::Kicked);
+        let message = service::message_box(&state.process_assets, text, false);
+        put_box(&mut state.frontend, message, BoxThen::Kicked);
     } else {
         let text = format_csf(
             &state.csf_text("TXT_USER_KICKED"),
@@ -588,10 +630,10 @@ pub(in crate::app::shell_wol) fn kicked(
             ],
         );
         message_line(state, text);
-        if let Some(lobby) = lobby_mut(state) {
+        if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
             lobby.members.retain(|member| member.name != user.name);
         }
-        refill_players(state);
+        refill_players(&mut state.frontend);
     }
 }
 
@@ -638,7 +680,7 @@ pub(in crate::app::shell_wol) fn page_received(
 ) {
     if state.frontend.wol.is_none()
         || !sender_passes(
-            state,
+            &state.frontend,
             &from,
             &text,
             state.frontend.shell_route == ShellRoute::NetworkSetup,
@@ -660,7 +702,7 @@ pub(in crate::app::shell_wol) fn page_received(
     if in_game {
         let row = String::from_utf16_lossy(&line.text);
         crate::app::input::messages::post_wol_page_rows(state, &row, ansi);
-        super::page::append_page_line(state, line);
+        super::page::append_page_line(&mut state.frontend, &state.renderer, line);
         if ansi {
             let now = crate::ui::wol_page::reply_window_now(
                 crate::app::match_runtime::frame_pacer::wall_clock_ms(),
@@ -672,26 +714,33 @@ pub(in crate::app::shell_wol) fn page_received(
                 .arm(now, crate::ui::wol_page::REPLY_WINDOW_TICKS);
         }
     } else {
-        super::page::append_page_line(state, line.clone());
+        super::page::append_page_line(&mut state.frontend, &state.renderer, line.clone());
         // The walk down the stack stops at the first `0x53F`: the lobby's
         // (also while Options `0x2BC` hides it), C2/C9's, or `0x11E`'s.
         let route = state.frontend.shell_route;
-        let transcript = super::page::page_received(state).is_none()
+        let transcript = super::page::page_received(state.frontend.wol.as_ref()).is_none()
             && (route == ShellRoute::NetworkSetup
-                || lobby_dialog(state).is_some()
-                || super::quick_match::page_open(state));
+                || lobby_dialog(state.frontend.wol.as_ref()).is_some()
+                || super::quick_match::page_open(state.frontend.wol.as_ref()));
         if transcript {
             crate::app::shell_lan::append_chat(state, line);
         } else {
-            super::page::page_received_line(state, line);
+            super::page::page_received_line(
+                &mut state.frontend,
+                &state.platform.window,
+                &state.renderer,
+                line,
+            );
         }
     }
     // 0x7A94ED..0x7A9510: with [0xB77E40] the pager gets the Quick Match
     // away text (API+0xEC).
-    super::quick_match::page_reply(state, &from.name);
-    let sound = state
-        .rules()
-        .and_then(|rules| rules.general.incoming_message_sound())
-        .map(str::to_owned);
-    App::play_shell_ui_sound_by_id(state, sound.as_deref());
+    super::quick_match::page_reply(state.frontend.wol.as_mut(), &from.name);
+    App::play_shell_rules_sound(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        |rules| rules.general.incoming_message_sound(),
+    );
 }

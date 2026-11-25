@@ -106,9 +106,7 @@ fn seed_depth(
         }),
         timestamp_writes: None,
         occlusion_query_set: None,
-
-
-multiview_mask: None,
+        multiview_mask: None,
     });
     pass.set_pipeline(&pipeline);
     pass.draw(0..3, 0..1);

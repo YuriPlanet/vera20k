@@ -622,8 +622,8 @@ fn rocking_crash_birth_respects_the_victims_live_logic_slot() {
             expected,
             "earlier={earlier}: never retroactively visit the new crash"
         );
-        sim.session
-            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+        let session = &mut *sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         sim.object_ai_stage_with(Some(&rules), &mut ObjectAiCtx::default());
         let rocking = sim.substrate.entities.get(victim).unwrap().rocking.unwrap();
         assert_eq!(
@@ -1089,7 +1089,7 @@ fn techno_playfield_stored_membership_gates_same_frame_passive_targeting() {
     );
     // The player has seen the enemy: the campaign scan gate needs +0x41B.
     crate::sim::arena_fixture::discover(&mut sim, 2);
-    sim.playfield_bounds =
+    *sim.playfield_bounds =
         Some(crate::map::playfield::PlayfieldBounds::from_normalized_local_size(64, 2, 2, 56, 52));
     sim.substrate
         .entities
@@ -1921,7 +1921,7 @@ fn move_handler_rearms_from_the_authoritative_object_ai_host() {
 
     // Native in-scenario load resets Scenario RNG; isolate mission-timer
     // persistence by comparing against that same post-load baseline.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let hash = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "move_cadence", 0);
     let restored = GameSnapshot::load(&bytes).expect("snapshot").sim;
@@ -3168,7 +3168,7 @@ fn save_load_round_trip_trusts_serialized_mission() {
     sim.set_logic_order_for_test(vec![1]);
     // Native in-scenario load resets Scenario RNG; isolate MissionCom
     // persistence by comparing against that same post-load baseline.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let hash_before = sim.state_hash();
 
     let bytes = GameSnapshot::save(&sim, 0, 0, "test_map", 0);

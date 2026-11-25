@@ -19,6 +19,7 @@
 //! local player, never on the camera, the cursor or render caches.
 
 use crate::app::presentation::instances::TetherDraw;
+use crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder;
 use crate::app::presentation::render_pose::RenderPose;
 use crate::map::entities::EntityCategory;
 use crate::render::draw_state::ObserverDrawContext;
@@ -175,6 +176,7 @@ struct Answers {
     #[cfg(feature = "phobos")]
     is_power_plant_enhancer_active: bool,
     emp_remaining: i32,
+    is_under_emp: bool,
     #[cfg(feature = "phobos")]
     shield: Option<crate::sim::shield::ShieldState>,
     #[cfg(feature = "phobos")]
@@ -204,6 +206,7 @@ impl Answers {
             #[cfg(feature = "phobos")]
             is_power_plant_enhancer_active: entity.is_power_plant_enhancer_active(),
             emp_remaining: entity.emp_remaining(),
+            is_under_emp: entity.is_under_emp(),
             #[cfg(feature = "phobos")]
             shield: entity.shield().cloned(),
             #[cfg(feature = "phobos")]
@@ -840,6 +843,11 @@ impl ObjectRecord {
         self.answers.emp_remaining
     }
 
+    /// vt+0x37C IsUnderEMP ([`GameEntity::is_under_emp`]).
+    pub(crate) fn is_under_emp(&self) -> bool {
+        self.answers.is_under_emp
+    }
+
     /// `GameEntity::voxel_recoil`, which the pose holds.
     pub(crate) fn voxel_recoil(&self) -> ([f32; 2], bool) {
         self.pose.recoil
@@ -1187,6 +1195,98 @@ impl Flashing {
     }
 }
 
+/// Where a frame's ascending record ids hold each id, found without searching
+/// all of them: the id range is cut into buckets of `1 << shift` ids, no more
+/// buckets than records, and `starts` keeps each bucket's first slot, so an
+/// id's search covers only its own bucket. It answers as a search of every id
+/// would.
+#[derive(Debug, Default)]
+struct SlotIndex {
+    /// The first record's id.
+    base: u64,
+    shift: u32,
+    /// Each bucket's first slot, then the record count.
+    starts: Vec<u32>,
+}
+
+impl SlotIndex {
+    fn of(ids: &[u64]) -> Self {
+        let (Some(&base), Some(&last)) = (ids.first(), ids.last()) else {
+            return Self::default();
+        };
+        debug_assert!(ids.is_sorted_by(|a, b| a < b), "record ids ascend");
+        // Buckets wider than the ids' mean gap.
+        let gap = (last - base) / ids.len() as u64;
+        let shift = (u64::BITS - gap.leading_zeros()).min(u64::BITS - 1);
+        let buckets = (last - base) >> shift;
+        let mut starts = Vec::with_capacity(buckets as usize + 2);
+        let mut slot = 0;
+        for bucket in 0..=buckets {
+            while ids
+                .get(slot)
+                .is_some_and(|&id| (id - base) >> shift < bucket)
+            {
+                slot += 1;
+            }
+            starts.push(slot as u32);
+        }
+        starts.push(ids.len() as u32);
+        Self {
+            base,
+            shift,
+            starts,
+        }
+    }
+
+    /// `id`'s slot in `ids`, the ids this index was built of.
+    fn slot(&self, ids: &[u64], id: u64) -> Option<usize> {
+        let bucket = usize::try_from(id.checked_sub(self.base)? >> self.shift).ok()?;
+        let start = *self.starts.get(bucket)? as usize;
+        let end = *self.starts.get(bucket + 1)? as usize;
+        let at = ids.get(start..end)?.binary_search(&id).ok()?;
+        Some(start + at)
+    }
+}
+
+/// What a frame lists of its records, in their order: each one's id, with
+/// its index, and screen span, and the slots of the Structures and of the
+/// records that may draw a line.
+struct Listed {
+    ids: Vec<u64>,
+    index: SlotIndex,
+    spans: Vec<crate::app::presentation::display_members::ScreenSpan>,
+    structures: Vec<usize>,
+    line_sources: Vec<usize>,
+}
+
+impl Listed {
+    fn of(objects: &[ObjectRecord]) -> Self {
+        let mut listed = Self {
+            ids: Vec::with_capacity(objects.len()),
+            index: SlotIndex::default(),
+            spans: Vec::with_capacity(objects.len()),
+            structures: Vec::new(),
+            line_sources: Vec::new(),
+        };
+        for (slot, object) in objects.iter().enumerate() {
+            listed.ids.push(object.id);
+            listed
+                .spans
+                .push(crate::app::presentation::display_members::ScreenSpan::of(
+                    object,
+                ));
+            if object.category() == EntityCategory::Structure {
+                listed.structures.push(slot);
+            }
+            if object.may_draw_a_line() {
+                listed.line_sources.push(slot);
+            }
+        }
+        listed.index = SlotIndex::of(&listed.ids);
+        listed
+    }
+}
+
 /// Every stored object's record, for one world state and local player.
 #[derive(Debug, Default)]
 pub(crate) struct PresentationFrame {
@@ -1196,6 +1296,8 @@ pub(crate) struct PresentationFrame {
     /// searches. A draw asks for every Display member, and a search over the
     /// records themselves lands on a different large record at each step.
     ids: Vec<u64>,
+    /// Where in `ids` each id's search starts ([`SlotIndex`]).
+    index: SlotIndex,
     /// Each record's screen span, in the same order: what the object loop
     /// culls from without reading the record.
     spans: Vec<crate::app::presentation::display_members::ScreenSpan>,
@@ -1206,25 +1308,24 @@ pub(crate) struct PresentationFrame {
     /// ([`ObjectRecord::may_draw_a_line`], [`Self::line_sources`]).
     line_sources: Vec<usize>,
     /// The Display members of the world this frame was captured from, filed
-    /// by the first draw that asks ([`Self::display_members`]).
+    /// by the first read ([`Self::display_members`]): before a tick is lent
+    /// (`SimHost::lend`), or by the first draw.
     display_members:
         crate::util::sync::OnceLock<crate::app::presentation::display_members::DisplayMembers>,
-    /// The Display order of the world this frame was captured from, built by
-    /// the first live-world read or before publishing a detached copy. The frame is
-    /// dropped before that world can change, so every later draw of it reads
-    /// the same order.
-    display_order: crate::util::sync::OnceLock<
-        crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
-    >,
-    /// The rules the world was captured under, which the Ground draw order
-    /// reads (`Simulation::ground_draw_order`).
-    resources: CapturedRules,
+    /// The Display order of the world this frame was captured from, sorted
+    /// beside its records: Ground sorts by the objects, which the world copy
+    /// a lent tick's draws read leaves out.
+    display_order: NativeDisplayOrder,
     /// Every anim's absolute coordinate (`Simulation::anim_absolute_coord`),
     /// which an attached anim takes from its owner object.
     anim_coords: crate::util::lookup_hash::LookupMap<u64, crate::sim::anim_class::AnimWorldCoord>,
     /// Object+88's held canopy identities, copied from GameEntity at capture.
     /// The frame rebuilds this sparse lookup each time; ordinary objects add no entry.
     parachute_animations: crate::util::lookup_hash::LookupMap<u64, u64>,
+    /// Each control group's members, with the queued assignments
+    /// (`Simulation::projected_control_groups`), for the group digits
+    /// (`ui_overlays`).
+    control_groups: [Vec<u64>; 10],
     /// What the scene's other drawers read of the world's objects
     /// (`frame_scene`).
     pub(crate) scene: crate::app::presentation::frame_scene::SceneFrame,
@@ -1232,21 +1333,10 @@ pub(crate) struct PresentationFrame {
     pub(crate) psychic_detection: bool,
 }
 
-/// The resources a frame was captured under; none for a default frame.
-#[derive(Default)]
-struct CapturedRules(Option<std::sync::Arc<crate::sim::runtime::SimResources>>);
-
-impl std::fmt::Debug for CapturedRules {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("CapturedRules")
-    }
-}
-
 impl PresentationFrame {
-    /// Release the live match's resources before the host accepts its next Rules write.
-    /// Freeing the frame's 20,000 object records can still run on the pool.
-    pub(crate) fn retire(mut self: Box<Self>) {
-        self.resources.0 = None;
+    /// Free the frame's 20,000 object records on the pool. The frame holds
+    /// none of the match's resources, so a Rules write need not wait for it.
+    pub(crate) fn retire(self: Box<Self>) {
         crate::sim::parallel::drop_on_pool(self);
     }
 
@@ -1279,14 +1369,41 @@ impl PresentationFrame {
                 (!sites.is_empty()).then_some((viewer, sites))
             }),
         };
-        // The scene frame reads no record, so it is captured beside them.
-        let mut objects = Vec::new();
+        // What reads no record is captured beside the records, each part a
+        // task of the pool: the Display order, and the anims' coordinates,
+        // the parachutes and the control groups together. The scene frame is
+        // captured here.
+        let mut display_order = None;
+        let mut anim_coords = Default::default();
+        let mut parachute_animations = Default::default();
+        let mut control_groups = Default::default();
+        let mut records = None;
         let mut scene = None;
+        let sort = || display_order = Some(NativeDisplayOrder::from_world(sim, Some(at.rules())));
+        let gather = || {
+            anim_coords = sim.anim_absolute_coords().collect();
+            parachute_animations = sim
+                .entities()
+                .values()
+                .filter_map(|entity| {
+                    entity
+                        .parachute_animation()
+                        .map(|animation| (entity.stable_id(), animation))
+                })
+                .collect();
+            control_groups = sim.projected_control_groups();
+        };
+        let record = || {
+            let objects = sim
+                .entities()
+                .par_map(|_, entity| ObjectRecord::capture(entity, &at));
+            records = Some((Listed::of(&objects), objects));
+        };
         crate::sim::parallel::alongside(
             || {
-                objects = sim
-                    .entities()
-                    .par_map(|_, entity| ObjectRecord::capture(entity, &at));
+                crate::sim::parallel::alongside(sort, || {
+                    crate::sim::parallel::alongside(gather, record)
+                })
             },
             || {
                 scene = Some(crate::app::presentation::frame_scene::SceneFrame::capture(
@@ -1295,53 +1412,36 @@ impl PresentationFrame {
             },
         );
         let scene = scene.expect("captured beside the records");
-        let anim_coords = sim.anim_absolute_coords().collect();
-        let parachute_animations = sim
-            .entities()
-            .values()
-            .filter_map(|entity| {
-                entity
-                    .parachute_animation()
-                    .map(|animation| (entity.stable_id(), animation))
-            })
-            .collect();
+        let display_order = display_order.expect("sorted beside the records");
+        let (listed, objects) = records.expect("captured on the pool");
+        let Listed {
+            ids,
+            index,
+            spans,
+            structures,
+            line_sources,
+        } = listed;
         let psychic_detection = at.psychic.is_some();
-        let mut ids = Vec::with_capacity(objects.len());
-        let mut spans = Vec::with_capacity(objects.len());
-        let mut structures = Vec::new();
-        let mut line_sources = Vec::new();
-        for (slot, object) in objects.iter().enumerate() {
-            ids.push(object.id);
-            spans.push(crate::app::presentation::display_members::ScreenSpan::of(
-                object,
-            ));
-            if object.category() == EntityCategory::Structure {
-                structures.push(slot);
-            }
-            if object.may_draw_a_line() {
-                line_sources.push(slot);
-            }
-        }
         Self {
             objects,
+            index,
             ids,
             spans,
             structures,
             line_sources,
             display_members: Default::default(),
-            display_order: Default::default(),
-            resources: CapturedRules(Some(runtime.resources.clone())),
+            display_order,
             anim_coords,
             parachute_animations,
+            control_groups,
             scene,
             psychic_detection,
         }
     }
 
     pub(crate) fn object(&self, id: u64) -> Option<&ObjectRecord> {
-        self.ids
-            .binary_search(&id)
-            .ok()
+        self.index
+            .slot(&self.ids, id)
             .and_then(|slot| self.record_at(slot))
     }
 
@@ -1350,7 +1450,7 @@ impl PresentationFrame {
         &self,
         id: u64,
     ) -> Option<(usize, crate::app::presentation::display_members::ScreenSpan)> {
-        let slot = self.ids.binary_search(&id).ok()?;
+        let slot = self.index.slot(&self.ids, id)?;
         Some((slot, *self.spans.get(slot)?))
     }
 
@@ -1370,18 +1470,10 @@ impl PresentationFrame {
         })
     }
 
-    /// `sim`'s draw order for this frame's draws. `sim` is the world the
-    /// frame was captured from.
-    pub(crate) fn display_order(
-        &self,
-        sim: &Simulation,
-    ) -> &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder {
-        self.display_order.get_or_init(|| {
-            crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder::from_world(
-                sim,
-                self.resources.0.as_ref().map(|resources| &resources.rules),
-            )
-        })
+    /// The draw order of the world this frame was captured from, for every
+    /// draw of it.
+    pub(crate) fn display_order(&self) -> &NativeDisplayOrder {
+        &self.display_order
     }
 
     /// `Simulation::anim_absolute_coord` of anim `id`.
@@ -1392,6 +1484,12 @@ impl PresentationFrame {
     /// `GameEntity::parachute_animation` of object `id` at capture.
     pub(crate) fn parachute_animation(&self, id: u64) -> Option<u64> {
         self.parachute_animations.get(&id).copied()
+    }
+
+    /// Each control group's members at capture, with the queued assignments
+    /// (`Simulation::projected_control_groups`).
+    pub(crate) fn control_groups(&self) -> &[Vec<u64>; 10] {
+        &self.control_groups
     }
 
     /// Whether `object` stands for its own sound handles

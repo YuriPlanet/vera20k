@@ -4,7 +4,8 @@
 
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 use crate::ui::skirmish_shell::saved_seed_browser::{
-    ACTION, BACK, BROWSER_DIALOG, DELETE, EDIT, LIST, LOAD, NO, PROMPT_DIALOG, YES,
+    ACTION, BACK, BROWSER_DIALOG, CONVERT, DELETE, EDIT, LIST, LOAD, NO, PROMPT, PROMPT_DIALOG,
+    TITLE, YES,
 };
 use crate::ui::skirmish_shell::{
     SavedSeedBrowserState, SavedSeedLayout, SavedSeedMode, SavedSeedOutcome,
@@ -33,14 +34,19 @@ fn sync<I: Clone + PartialEq>(
     // (0x00558FE5), VERA's Setups Load and Delete without a saved row.
     let enabled = [
         (ACTION, browser.action_enabled()),
+        (CONVERT, browser.convert_enabled()),
         (LOAD, browser.selected_saved().is_some()),
         (DELETE, browser.selected_saved().is_some()),
     ];
-    let prompt = browser
-        .prompt
-        .as_ref()
-        .map(|prompt| prompt.layout(extent.0, extent.1));
+    // The box with its texts, on its template.
+    let prompt = browser.prompt.as_ref().map(|prompt| {
+        let shell_box = prompt.shell_box();
+        let retail = crate::ui::shell::geom::RETAIL_SCALE;
+        let parts = shell_box.parts(extent.0 as i32, extent.1 as i32, retail);
+        (shell_box, parts)
+    });
     let rows = Value::Int(browser.entries.len() as i32);
+    let statics = browser.statics;
     let ui = &mut browser.ui;
     ui.set_scale_in(BROWSER_DIALOG, layout.scale);
     ui.set_prop(BROWSER_DIALOG, LIST, Prop::RowCount, rows);
@@ -52,18 +58,22 @@ fn sync<I: Clone + PartialEq>(
             LIST => Some(layout.list),
             EDIT => layout.name_edit,
             ACTION => Some(layout.action),
+            CONVERT => layout.convert,
             LOAD => layout.load,
             DELETE => layout.delete,
             BACK => Some(layout.back),
+            TITLE => statics.then_some(layout.title),
+            PROMPT => statics.then_some(layout.prompt),
             _ => None,
         });
     }
-    if let (Some((_, _, yes, no)), Some(root)) = (prompt, ui.root_in(PROMPT_DIALOG)) {
-        page::sync_rects(ui.gui_mut(), root, |id| match id {
-            YES => Some(yes),
-            NO => no,
+    if let (Some((shell_box, parts)), Some(root)) = (prompt.as_ref(), ui.root_in(PROMPT_DIALOG)) {
+        let gui = ui.gui_mut();
+        page::sync_rects(gui, root, |id| match id {
+            YES | NO => parts.rect_of(id),
             _ => None,
         });
+        shell_box.sync(gui, root, parts);
     }
 }
 
@@ -102,6 +112,11 @@ fn take_events<I: Clone + PartialEq>(
             PageEvent::Activated(ACTION) => {
                 browser.action_outcome().map(BrowserInputResult::Outcome)
             }
+            PageEvent::Activated(CONVERT) if browser.convert_enabled() => browser
+                .selected_saved()
+                .cloned()
+                .map(SavedSeedOutcome::BeginConvert)
+                .map(BrowserInputResult::Outcome),
             PageEvent::Submitted(EDIT, _) if browser.mode == SavedSeedMode::Save => {
                 browser.action_outcome().map(BrowserInputResult::Outcome)
             }
@@ -157,6 +172,9 @@ pub fn key<I: Clone + PartialEq>(
     // A prompt's No takes Enter and Escape and the box every other key.
     // Enter in the edit acts; the base browser ignores IDCANCEL, so Escape
     // does not close it, and control characters (Tab too) type nothing.
+    if browser.is_naming_conversion() && browser.prompt.is_none() && code == Some(KeyCode::Escape) {
+        return vec![BrowserInputResult::Outcome(SavedSeedOutcome::Close)];
+    }
     let event = super::controller::gui_input(code, false, text);
     let Some(event) = event.filter(|e| !matches!(e, InputEvent::Key(Key::Tab | Key::BackTab)))
     else {
@@ -257,7 +275,10 @@ mod tests {
     #[test]
     fn a_press_on_a_prompt_button_cues_and_its_release_answers() {
         let (mut browser, layout) = fixture(SavedSeedMode::Save, 0);
-        let (dialog, _, ok, _) = error().layout(800, 600);
+        let parts = error()
+            .shell_box()
+            .parts(800, 600, crate::ui::shell::geom::RETAIL_SCALE);
+        let (dialog, ok) = (parts.dialog, parts.button(0));
         browser.show_prompt(error());
         assert!(click(&mut browser, &layout, (dialog.x + 2, dialog.y + 2)).is_empty());
         assert!(matches!(
@@ -293,9 +314,18 @@ mod tests {
     }
 
     #[test]
-    fn only_the_convert_button_asks_to_migrate_a_supported_old_save() {
-        let (mut browser, layout) = fixture(SavedSeedMode::Load, 2);
+    fn load_and_double_click_keep_their_action_on_convertible_rows() {
+        let (mut browser, _) = fixture(SavedSeedMode::Load, 2);
+        let layout = crate::ui::shell::saved_games::main_menu_saved_game_layout(
+            SavedSeedMode::Load,
+            800,
+            600,
+        )
+        .browser;
         let action = (layout.action.x + 5, layout.action.y + 5);
+        let rect = layout.convert.unwrap();
+        let convert = (rect.x + 5, rect.y + 5);
+        assert!(click(&mut browser, &layout, convert).is_empty());
         assert!(matches!(
             &click(&mut browser, &layout, action)[..],
             [BrowserInputResult::Cue(PageCue::Button), BrowserInputResult::Outcome(SavedSeedOutcome::Load(path))]
@@ -309,7 +339,7 @@ mod tests {
         click(&mut browser, &layout, old_save);
         assert_eq!(
             browser.ui.prop(BROWSER_DIALOG, ACTION, Prop::Label),
-            Some(&Value::Text("VERA:ConvertSave".into()))
+            Some(&Value::Text("GUI:Load".into()))
         );
         assert!(key(&mut browser, Some(KeyCode::Enter), None).is_empty());
         assert!(matches!(
@@ -318,11 +348,101 @@ mod tests {
         ));
         assert!(matches!(
             &click(&mut browser, &layout, action)[..],
-            [BrowserInputResult::Cue(PageCue::Button), BrowserInputResult::Outcome(SavedSeedOutcome::Convert(path))]
+            [BrowserInputResult::Cue(PageCue::Button), BrowserInputResult::Outcome(SavedSeedOutcome::Load(path))]
                 if *path == *"save1.bin"
         ));
-        browser.select(0);
-        assert_eq!(browser.action_label().0, "GUI:Load");
+        assert!(matches!(&click(&mut browser, &layout, convert)[..],
+            [BrowserInputResult::Cue(PageCue::Button), BrowserInputResult::Outcome(SavedSeedOutcome::BeginConvert(source))]
+                if *source == *"save1.bin"));
+        browser.entries[1].migratable = false;
+        assert!(click(&mut browser, &layout, convert).is_empty());
+        assert!(!browser.is_naming_conversion());
+    }
+
+    #[test]
+    fn conversion_destinations_use_the_save_list_and_description_edit() {
+        let (sources, _) = fixture(SavedSeedMode::Load, 3);
+        let mut rows = sources.entries;
+        rows[1].loadable = false;
+        let source = rows[0].file_name.clone().unwrap();
+        let mut browser = SavedSeedBrowserState::open_rows(
+            SavedSeedMode::Save,
+            rows,
+            "".into(),
+            "New".into(),
+            0,
+            8,
+        );
+        assert_eq!(browser.selected_saved(), Some(&source));
+        browser.set_conversion_source(source.clone(), 8);
+        assert_eq!(browser.conversion_source(), Some(&source));
+        assert!(browser.selected_entry().unwrap().file_name.is_none());
+        assert_eq!(browser.top(), 0);
+        assert!(browser.edit().focused);
+        let shell = crate::ui::shell::in_game_shell::allied_fixture_layout(800, 600);
+        let layout = crate::ui::shell::saved_games::saved_game_layout(
+            SavedSeedMode::Save,
+            800,
+            600,
+            shell,
+            [147, 44],
+        );
+        let at = |rect: crate::ui::shell::geom::RectPx| (rect.x + 5, rect.y + 5);
+        pointer(
+            &mut browser,
+            &layout,
+            (800, 600),
+            at(layout.name_edit.unwrap()),
+            None,
+        );
+        assert_eq!(browser.hovered_help(), Some("VERA:SaveConversionNameHelp"));
+        key(&mut browser, None, Some("中文战役"));
+        assert!(matches!(&key(&mut browser, Some(KeyCode::Enter), None)[..],
+            [BrowserInputResult::Outcome(SavedSeedOutcome::Save {file_name: None, description})]
+                if description.display_text() == "中文战役"));
+
+        let list = ShellListGeometry::new(
+            layout.list,
+            4,
+            browser.top(),
+            ListMetrics::scaled(layout.scale),
+        );
+        for read_only in [0, 1] {
+            click(&mut browser, &layout, at(list.row(read_only)));
+            assert!(browser.description().is_empty());
+            assert!(!browser.action_enabled());
+            key(&mut browser, None, Some("edited"));
+            assert!(key(&mut browser, Some(KeyCode::Enter), None).is_empty());
+            assert!(click(&mut browser, &layout, at(layout.action)).is_empty());
+        }
+        click(&mut browser, &layout, at(list.row(2)));
+        assert_eq!(browser.description(), "Save 2");
+        key(&mut browser, None, Some("新"));
+        assert!(
+            matches!(&click(&mut browser, &layout, at(layout.action))[..],
+            [BrowserInputResult::Cue(PageCue::Button), BrowserInputResult::Outcome(SavedSeedOutcome::Save {file_name: Some(file), description})]
+                if *file == *"save2.bin" && description.display_text() == "Save 2新")
+        );
+
+        browser.show_prompt(error());
+        assert!(matches!(
+            &key(&mut browser, Some(KeyCode::Escape), None)[..],
+            [BrowserInputResult::PromptAnswer(false)]
+        ));
+        browser.take_prompt();
+        assert_eq!(browser.description(), "Save 2新");
+        assert!(browser.edit().focused);
+        assert!(matches!(
+            &key(&mut browser, Some(KeyCode::Escape), None)[..],
+            [BrowserInputResult::Outcome(SavedSeedOutcome::Close)]
+        ));
+        assert!(matches!(
+            &click(&mut browser, &layout, at(layout.back))[..],
+            [
+                BrowserInputResult::Cue(PageCue::Button),
+                BrowserInputResult::Outcome(SavedSeedOutcome::Close)
+            ]
+        ));
     }
 
     #[test]

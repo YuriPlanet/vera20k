@@ -144,7 +144,7 @@ fn native_base_response_dispatch_matches_14_represented_original_tails() {
         for label in input["base_defense_team"].as_array().into_iter().flatten() {
             install_supplied_base_defense_team(&mut sim, ids[label.as_str().unwrap()]);
         }
-        sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
+        *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
         assert_eq!(
             sim.scenario_rng.native_state_hex(),
             row["rng_before"],

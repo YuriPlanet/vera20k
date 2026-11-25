@@ -616,7 +616,7 @@ pub(crate) fn hotkey_pressed(state: &mut AppState) {
     if !state.match_state.session_mode().is_single_player() {
         return;
     }
-    let Some(owner) = preferred_local_owner_name(state) else {
+    let Some(owner) = preferred_local_owner_name(&state.match_state) else {
         return;
     };
     let orders = {

@@ -1009,7 +1009,8 @@ impl Simulation {
             && enter_radio_arm
         {
             if let Some(unit) = self.substrate.entities.get_mut(id) {
-                unit.pending_entry.install(target);
+                let note = unit.note_names();
+                unit.pending_entry.install(target, note);
                 unit.set_archive_target(None);
             }
             destination = None;
@@ -1044,19 +1045,28 @@ impl Simulation {
                         destination = None;
                     }
                     if unit_repair {
+                        // Firestorm 2.0 `UnitClass::Assign_Destination`
+                        // (`0x00657EA5..0x00657F45`) asks no health of a
+                        // unit bound for a busy depot. A unit with Tiberian
+                        // Sun limpets waits as a damaged one does
+                        // (`sim::limpet`): the depot's RepairTick takes them
+                        // off whatever its health.
                         let damaged = self
                             .substrate
                             .entities
                             .get(id)
                             .and_then(|unit| {
-                                self.entity_object_type(unit, rules)
-                                    .map(|object| !unit.health.is_full(object.strength))
+                                self.entity_object_type(unit, rules).map(|object| {
+                                    !unit.health.is_full(object.strength)
+                                        || unit.foot_speed.limpeted()
+                                })
                             })
                             .unwrap_or(false);
                         if damaged {
                             // `0x00741D9F`.
                             if let Some(unit) = self.substrate.entities.get_mut(id) {
-                                unit.pending_entry.install(building);
+                                let note = unit.note_names();
+                                unit.pending_entry.install(building, note);
                             }
                         } else {
                             crate::sim::radio::transmit_to_contact(
@@ -1143,7 +1153,8 @@ impl Simulation {
                 .and_then(|loco| loco.tunnel_runtime())
                 .is_some_and(super::tunnel_movement::TunnelRuntime::is_surfacing)
         {
-            unit.navigation.push_nav_queue_front(requested);
+            let note = unit.note_names();
+            unit.navigation.push_nav_queue_front(requested, note);
             let location =
                 super::ground_pose::object_location(unit, self.resolved_terrain.as_ref());
             destination = Some(NavTargetRef::Cell {

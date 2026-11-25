@@ -7,8 +7,11 @@ use super::DEFAULT_LOBBY_URL;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 use super::lobby_base_url;
 use super::{LiveService, http};
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::persistence::account;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::shell_wol::WolVisit;
+use crate::util::config::GameConfig;
 
 /// The configured lobby's origin, as [`LiveService::open`] takes it without an
 /// external launch.
@@ -22,9 +25,12 @@ fn configured_lobby() -> Option<String> {
 
 /// The name this computer signs in to without its password on this visit's
 /// lobby (docs/lobby-protocol.md "Accounts").
-pub(in crate::app::shell_wol) fn remembered_name(state: &AppState) -> Option<String> {
-    let dir = state.platform.game_config.as_ref()?.paths.settings_dir();
-    let lobby = match state.frontend.wol.as_ref()?.live_service.as_ref() {
+pub(in crate::app::shell_wol) fn remembered_name(
+    wol: Option<&WolVisit>,
+    game_config: Option<&GameConfig>,
+) -> Option<String> {
+    let dir = game_config?.paths.settings_dir();
+    let lobby = match wol?.live_service.as_ref() {
         Some(service) => service.lobby.clone(),
         None => configured_lobby()?,
     };
@@ -32,12 +38,8 @@ pub(in crate::app::shell_wol) fn remembered_name(state: &AppState) -> Option<Str
 }
 
 /// The folder of VERA.INI, which holds `Account.json`.
-pub(super) fn settings_dir(state: &AppState) -> Option<&std::path::Path> {
-    state
-        .platform
-        .game_config
-        .as_ref()
-        .map(|config| config.paths.settings_dir())
+pub(super) fn settings_dir(game_config: Option<&GameConfig>) -> Option<&std::path::Path> {
+    game_config.map(|config| config.paths.settings_dir())
 }
 
 /// Guest entry sends no credential. Account entry sends the typed password
@@ -84,27 +86,27 @@ pub(super) fn forget_sign_in(settings: Option<&std::path::Path>, service: &LiveS
 
 /// The lobby has deleted this account. Forget only credentials and profile
 /// entries that still name it, even if the original form has closed.
-pub(super) fn forget_deleted_account(state: &mut AppState, lobby: &str, name: &str) {
-    if let Some(dir) = settings_dir(state)
+pub(super) fn forget_deleted_account(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    options_profile: &mut RetailOptionsProfile,
+    lobby: &str,
+    name: &str,
+) {
+    if let Some(dir) = settings_dir(game_config)
         && let Err(error) = account::forget(dir, lobby, Some(name))
     {
         log::warn!("Could not forget the deleted account's sign-in: {error}");
     }
-    if state
-        .persistence
-        .options_profile
-        .online_name
-        .eq_ignore_ascii_case(name)
-    {
-        remember_online_name(state, "");
+    if options_profile.online_name.eq_ignore_ascii_case(name) {
+        remember_online_name(game_config, options_profile, "");
     }
-    let globals = &mut state.frontend.wol_account;
+    let globals = &mut frontend.wol_account;
     if globals.nickname.eq_ignore_ascii_case(name) {
         globals.nickname.clear();
         globals.password.clear();
         globals.remember = false;
     }
-    let frontend = &mut state.frontend;
     if let Some(super::WolPage::Login(login)) = frontend.wol.as_mut().map(|visit| &mut visit.page) {
         login.account_deleted(&mut frontend.shell_controller, name);
     }
@@ -113,14 +115,17 @@ pub(super) fn forget_deleted_account(state: &mut AppState, lobby: &str, name: &s
 /// VERA: keep the name the lobby accepted as `[VERA] OnlineName=`, so the
 /// next visit's login starts with it
 /// ([`crate::ui::wol_login::WolLoginState::open_online`]).
-pub(super) fn remember_online_name(state: &mut AppState, nickname: &str) {
-    let profile = &mut state.persistence.options_profile;
-    if profile.online_name == nickname {
+pub(super) fn remember_online_name(
+    game_config: Option<&GameConfig>,
+    options_profile: &mut RetailOptionsProfile,
+    nickname: &str,
+) {
+    if options_profile.online_name == nickname {
         return;
     }
-    profile.online_name = nickname.to_owned();
-    if let Some(config) = state.platform.game_config.as_ref()
-        && let Err(error) = profile.commit_online_name(config.paths.settings_dir())
+    options_profile.online_name = nickname.to_owned();
+    if let Some(config) = game_config
+        && let Err(error) = options_profile.commit_online_name(config.paths.settings_dir())
     {
         log::warn!("Could not save the online name: {error}");
     }

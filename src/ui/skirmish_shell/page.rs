@@ -9,7 +9,7 @@
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Rgba, Value};
 
 use super::layout::{
-    DropdownMetrics, RectPx, SEAT_MENU, SKIRMISH_LONG_ROW_COUNT, SKIRMISH_ROW_COUNT,
+    RectPx, SEAT_MENU, SKIRMISH_LONG_ROW_COUNT, SKIRMISH_ROW_COUNT,
     SkirmishCheckboxId, SkirmishShellLayout, SkirmishTrackbarId, TEAM_MENU, combo_face_rect,
 };
 use super::state::{
@@ -80,6 +80,10 @@ const FLAG: u16 = 0x7300;
 /// VERA: the row slots' left-margin numbers, `ROW_NUMBER + slot`. Past the
 /// flags (`0x7300..0x730C`) and clear of the combos and headings.
 const ROW_NUMBER: u16 = 0x7310;
+/// The row slots' flag pictures as they paint, `FLAG_ART + slot`: `Image`
+/// nodes on the flags' rects (the flag statics keep their hover help), each
+/// its `Art` as [`show_flags`] puts it. Past the row numbers.
+pub const FLAG_ART: u16 = 0x7320;
 /// VERA: a row number takes the same yellow as the player columns' text when
 /// the seat is taken, and the disabled red an empty ("None") row's captions
 /// take when it is not — the two colours the row's own combo face uses.
@@ -226,11 +230,15 @@ fn spec() -> NodeSpec {
             .id((ROW_NUMBER + slot as u16).into())
             .with(Prop::Align, centre.clone())
     });
-    // The scrollbar takes a press first, as it did over the page's controls.
+    // The scrollbar takes a press first, as it did over the page's controls;
+    // its list shows no selection.
     let scroll = NodeSpec::new(NodeKind::List)
         .id(OPPONENT_SCROLL.into())
         .with(Prop::WheelStep, Value::Int(1))
-        .with(Prop::RehoverOnRelease, Value::Bool(true));
+        .with(Prop::RehoverOnRelease, Value::Bool(true))
+        .with(Prop::NoSelectionFill, Value::Bool(true));
+    let flag_art = (0..SKIRMISH_LONG_ROW_COUNT)
+        .map(|slot| NodeSpec::new(NodeKind::Image).id((FLAG_ART + slot as u16).into()));
     let menus = MENUS.map(|(id, combo)| {
         NodeSpec::new(NodeKind::Combo)
             .id(id.into())
@@ -243,6 +251,40 @@ fn spec() -> NodeSpec {
         .children(controls)
         .children(row_numbers)
         .children(headings)
+        .children(flag_art)
+}
+
+/// The row slot `FLAG_ART + slot` pictures.
+fn flag_art_slot(id: u16) -> Option<usize> {
+    id.checked_sub(FLAG_ART)
+        .map(usize::from)
+        .filter(|slot| *slot < SKIRMISH_LONG_ROW_COUNT)
+}
+
+/// Puts each row slot's flag picture, `flag(slot)` (none for a row that
+/// shows none), on its `FLAG_ART` node under `root`. The pictures are the
+/// tree's last children, built in slot order, so each is found by its
+/// place, not a search; a node's `Art` changes only when its flag does.
+pub fn show_flags<'a>(gui: &mut Gui, root: NodeId, flag: impl Fn(usize) -> Option<&'a str>) {
+    let Ok(children) = gui.tree().children(root) else {
+        return;
+    };
+    let Some(first) = children.len().checked_sub(SKIRMISH_LONG_ROW_COUNT) else {
+        return;
+    };
+    let nodes: [Option<NodeId>; SKIRMISH_LONG_ROW_COUNT] =
+        std::array::from_fn(|slot| children.get(first + slot).copied());
+    for (slot, node) in nodes.into_iter().enumerate() {
+        let Some(node) = node.filter(|node| {
+            gui.id_of(*node) == Some(i32::from(FLAG_ART) + slot as i32)
+        }) else {
+            continue;
+        };
+        let art = flag(slot).unwrap_or_default();
+        if !matches!(gui.get(node, Prop::Art), Ok(Some(Value::Text(old))) if old == art) {
+            let _ = gui.set(node, Prop::Art, Value::Text(art.to_owned()));
+        }
+    }
 }
 
 /// Control `id`'s rect on `layout`; none while it does not show.
@@ -261,7 +303,7 @@ fn rect(
     if let Some(combo) = menu_of(id) {
         return combo_rect(layout, state, combo);
     }
-    if let Some(slot) = flag_slot(id) {
+    if let Some(slot) = flag_slot(id).or_else(|| flag_art_slot(id)) {
         return layout.flags.get(slot).copied().filter(|_| slot_shows(slot));
     }
     if let Some(slot) = row_number_slot(id) {
@@ -296,7 +338,7 @@ pub fn sync_page(
     let gui = controller.gui_mut();
     page::ensure_built(gui, root, spec);
     page::sync_rects(gui, root, |id| rect(state, layout, maps, id));
-    let scrollbar_w = DropdownMetrics::scaled(layout.scale).scrollbar_w;
+    let scrollbar_w = vera20k_gui::shell::list::ListMetrics::scaled(layout.scale).scrollbar_w;
     // VERA: on the longer player list a low row's list would run over the
     // status line or off the screen, so it opens upward instead. gamemd's
     // eight rows never reach it.
@@ -772,14 +814,6 @@ pub fn wheel(
     let events = page::page_events(controller.gui(), events);
     take_scroll(controller, state, &events);
     scrolled
-}
-
-/// The computer rows' scrollbar arrow drawn pushed.
-pub fn opponent_arrow(
-    controller: &DialogController,
-) -> Option<vera20k_gui::shell::list::ListScrollPart> {
-    let node = controller.control(DIALOG, OPPONENT_SCROLL)?;
-    controller.gui().list_view(node)?.pressed
 }
 
 /// A key or typed text (none: a key the widgets do not read) for the

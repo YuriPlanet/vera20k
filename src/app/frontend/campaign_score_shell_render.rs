@@ -5,23 +5,30 @@
 //! Cooperative `+0xA4` opens `0xBC7` through `0x00471420`; this renderer
 //! consumes the open dialog's retail controls and texts from
 //! `ui::campaign_score_shell`. It deliberately does not borrow the Skirmish
-//! score table (`0x108`) or its side-art owner.
+//! score table (`0x108`) or its side-art owner. The statics, `0xBC7`'s
+//! cells and the SCRA emblem `0x72B` paint from the dialog's nodes
+//! ([`CampaignScoreDialog::nodes`]).
 
 use crate::util::time::Instant;
 
 use anyhow::Result;
+use vera20k_gui::Prop;
 
 use crate::app::AppState;
 use crate::app::frontend::menu_page_render::{
     FamilyFrame, PanelState, encode_family_page, family_art_ready, page_tree,
 };
+use crate::app::frontend::score_shell_render::static_reveal;
 use crate::app::frontend::shell_pass::TexturedDraw;
+use crate::app::frontend::skirmish_shell_render::gui_paint::{GuiStyle, PageArt, paint_gui_into};
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::shell_paint::{
-    self, DIALOG_BACKGROUND_DEPTH, PARENT_BACKGROUND_DEPTH, PaintLabel,
+    self, DIALOG_BACKGROUND_DEPTH, PARENT_BACKGROUND_DEPTH, SHELL_TEXT_RGB_ENABLED,
 };
 use crate::ui::campaign_score_shell::{
     CampaignScoreDialog, SCORE_ART_REGION_STATIC, STATUS_HELP_STATIC,
 };
+use crate::ui::score_shell::sync_static_texts;
 use crate::ui::shell::menu_page::hovered_id;
 
 /// Paint campaign dialog `0x103` or `0xBC7`. It needs the shared shell chrome,
@@ -35,8 +42,9 @@ pub(crate) fn render_campaign_score_page(
         return Ok(false);
     }
 
-    let (width, height) = crate::app::frontend::shell_layout::shell_screen_size(state);
-    let fills_window = crate::app::frontend::shell_layout::fills_window(state);
+    let (width, height) =
+        crate::app::frontend::shell_layout::shell_screen_size(&state.renderer.gpu);
+    let fills_window = crate::app::frontend::shell_layout::fills_window(&state.renderer.gpu);
     let now = Instant::now();
     // `0x006071E0` owns both slides; `SetSlideChildSuppressProc` hides the
     // dialog's statics (including the SCRA kind-4 static) until SHOW completes,
@@ -48,7 +56,7 @@ pub(crate) fn render_campaign_score_page(
         .expect("checked before render")
         .dialog;
     let exit_wave = crate::app::frontend::shell_transition::shell_exit_wave(
-        state,
+        &state.frontend.shell_exit,
         crate::app::frontend::shell_transition::ShellSlideKind::campaign_score(dialog),
     )
     .cloned();
@@ -93,10 +101,16 @@ pub(crate) fn render_campaign_score_page(
         (page.layout(width, height, fills_window), frame)
     };
     let rect_of = |id| layout.control_rect(id);
-    let tree = page_tree(state, dialog.id(), || dialog.nodes(), rect_of, &[]);
+    let mut tree = page_tree(
+        &mut state.frontend.shell_controller,
+        dialog.id(),
+        || dialog.nodes(),
+        rect_of,
+        &[],
+    );
     // `0xBC7`'s monitor `0x71C` runs the shared kind-4 timer.
     let monitor_frame = (children && dialog == CampaignScoreDialog::CampaignEnd)
-        .then(|| crate::app::frontend::menu_page_render::paint_shell_monitor(state))
+        .then(|| crate::app::frontend::menu_page_render::paint_shell_monitor(&mut state.frontend))
         .flatten();
     let controller = &state.frontend.shell_controller;
     let active = controller.top_id() == Some(dialog.id());
@@ -109,36 +123,88 @@ pub(crate) fn render_campaign_score_page(
         .map(|key| state.csf_text(key))
         .unwrap_or_default();
 
-    let mut labels: Vec<PaintLabel<'static>> = Vec::new();
+    {
+        let frontend = &mut state.frontend;
+        let page = frontend
+            .campaign_score_page
+            .as_mut()
+            .expect("checked before render");
+        if children {
+            page.statics.set_text(STATUS_HELP_STATIC, &status, now);
+        }
+        page.statics.paint(now, children);
+        let page = &*page;
+        let text_of = |id: u16| {
+            let cell = || page.cell(id).map(|cell| cell.text.as_str());
+            let text = page.statics.text(id).or_else(cell);
+            Some((Prop::Text, text.unwrap_or_default()))
+        };
+        let controller = &mut frontend.shell_controller;
+        match tree.as_mut() {
+            Some((gui, root)) => sync_static_texts(gui, *root, text_of),
+            None => {
+                if let Some(root) = controller.root_in(dialog.id()) {
+                    sync_static_texts(controller.gui_mut(), root, text_of);
+                }
+            }
+        }
+    }
+
+    // The statics while they reveal, then `0xBC7`'s score cells whole in
+    // their row colour, and the SCRA frame the kind-4 timer selected.
     let campaign_page = state
         .frontend
         .campaign_score_page
-        .as_mut()
+        .as_ref()
         .expect("checked before render");
-    if children {
-        let statics = &mut campaign_page.statics;
-        statics.set_text(STATUS_HELP_STATIC, &status, now);
-        let rect_of = |id| layout.control_rect(id);
-        crate::app::frontend::score_shell_render::score_static_labels(
-            statics,
-            now,
-            rect_of,
-            &mut labels,
+    let scra = (state.frontend.campaign_score_art.as_ref()).and_then(|art| art.scra.as_ref());
+    let text_of = |id: i32| {
+        let id = u16::try_from(id).ok()?;
+        let cell = children && campaign_page.cell(id).is_some();
+        let shown = cell || campaign_page.statics.shown(id).is_some();
+        (!shown).then(String::new)
+    };
+    let reveal_of = |id: i32| static_reveal(&campaign_page.statics, u16::try_from(id).ok()?);
+    let rgb_of = |id: i32| {
+        let cell = campaign_page.cell(u16::try_from(id).ok()?)?;
+        Some(cell.rgb.map(|channel| f32::from(channel) / 255.0))
+    };
+    let page_art_of = |id: i32| {
+        let frame = scra?.frames.get(emblem_frame?)?;
+        (id == i32::from(SCORE_ART_REGION_STATIC)).then_some(PageArt::Shape(*frame))
+    };
+    let style = GuiStyle {
+        text_of: Some(&text_of),
+        reveal_of: Some(&reveal_of),
+        rgb_of: Some(&rgb_of),
+        page_art_of: Some(&page_art_of),
+        rgb: SHELL_TEXT_RGB_ENABLED,
+        ..Default::default()
+    };
+    let controller = &state.frontend.shell_controller;
+    let nodes = match &tree {
+        Some((gui, root)) => Some((gui, *root)),
+        None => (controller.root_in(dialog.id())).map(|root| (controller.gui(), root)),
+    };
+    let mut paint = HudPaint::default();
+    if let Some((gui, root)) = nodes {
+        let scale = layout.page.scale;
+        paint_gui_into(
+            &mut paint,
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            None,
+            gui,
+            root,
+            scale,
+            &[],
+            style,
         );
-        // `0xBC7`'s score cells paint whole in their row colour.
-        for cell in campaign_page.cells() {
-            let Some(rect) = layout.control_rect(cell.id) else {
-                continue;
-            };
-            labels.push(PaintLabel {
-                text: cell.text.clone().into(),
-                rect,
-                align: cell.align,
-                rgb: cell.rgb.map(|channel| f32::from(channel) / 255.0),
-                path_a_reveal: None,
-            });
-        }
     }
+    let emblem = paint.take_lane(Material::PageArt);
 
     // The family compositor paints the right panel, the monitor, the column
     // or Continue with its caption; the heading and status line are this
@@ -153,11 +219,11 @@ pub(crate) fn render_campaign_score_page(
     };
     let title = dialog.page().title_key;
     let mut frame = FamilyFrame::new("Campaign Score Shell", &layout.page, panel, title).on(
-        state,
+        &state.frontend.shell_controller,
         dialog.id(),
         &tree,
     );
-    frame.labels = labels;
+    frame.over = paint;
     if let Some(art) = state.frontend.campaign_score_art.as_ref() {
         let background = layout.background;
         let mut background_sprites = Vec::with_capacity(1);
@@ -200,16 +266,10 @@ pub(crate) fn render_campaign_score_page(
                 instances: panel_sprites,
             });
         }
-        if let (Some(strip), Some(frame_index)) = (art.scra.as_ref(), emblem_frame)
-            && let (Some(entry), Some(window)) = (
-                strip.frames.get(frame_index).copied(),
-                layout.control_rect(SCORE_ART_REGION_STATIC),
-            )
-            && let Some(sprite) = shell_paint::paint_kind4_static(entry, window, layout.page.scale)
-        {
+        if let Some(strip) = art.scra.as_ref().filter(|_| !emblem.is_empty()) {
             frame.over_panel_art.push(TexturedDraw {
                 texture: &strip.texture,
-                instances: vec![sprite],
+                instances: emblem,
             });
         }
     } else {

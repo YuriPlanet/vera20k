@@ -13,6 +13,7 @@
 use std::collections::BTreeMap;
 
 use crate::app::AppState;
+use crate::app::match_runtime::state::MatchState;
 use crate::map::lighting::CellLightGrid;
 use crate::map::overlay::OverlayEntry;
 use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
@@ -200,16 +201,15 @@ pub(crate) fn build_bridge_body_instances_inner(
     }
 }
 
-/// Thin `AppState` wrapper around `build_bridge_body_instances_inner`. Pulls
-/// the live fields the inner function needs out of `state` and forwards.
+/// Thin `MatchState` wrapper around `build_bridge_body_instances_inner`. Pulls
+/// the live fields the inner function needs out of `match_state` and forwards.
 pub(crate) fn build_bridge_body_instances(
-    state: &AppState,
+    match_state: &MatchState,
     sw: f32,
     sh: f32,
     out: &mut Vec<CellBody>,
 ) {
-    let Some(sim) = state
-        .match_state
+    let Some(sim) = match_state
         .sim_runtime
         .presentation()
         .map(|rt| &rt.simulation)
@@ -219,11 +219,10 @@ pub(crate) fn build_bridge_body_instances(
     let Some(terrain) = sim.resolved_terrain() else {
         return;
     };
-    let Some(atlas) = state.match_state.match_presentation.bridge_atlas.as_ref() else {
+    let Some(atlas) = match_state.match_presentation.bridge_atlas.as_ref() else {
         return;
     };
-    let (origin_y, world_height) = state
-        .match_state
+    let (origin_y, world_height) = match_state
         .match_presentation
         .terrain_grid
         .as_ref()
@@ -233,12 +232,12 @@ pub(crate) fn build_bridge_body_instances(
         terrain,
         sim.overlay_grid(),
         atlas,
-        &state.match_state.match_presentation.overlay_names,
-        state.match_state.match_presentation.lighting.grid(),
+        &match_state.match_presentation.overlay_names,
+        match_state.match_presentation.lighting.grid(),
         origin_y,
         world_height,
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
+        match_state.input.camera_x,
+        match_state.input.camera_y,
         sw,
         sh,
         out,
@@ -487,7 +486,13 @@ pub(crate) fn build_bridge_shadow_instances(state: &AppState, out: &mut Vec<Spri
     );
     // The shadow window is cut from the camera, the frame's corner, so it
     // takes the centring size: the battlefield and its offset on both sides.
-    let (width, height) = crate::app::input::camera::tactical_centring_size(state);
+    let (width, height) = crate::app::input::camera::tactical_centring_size(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let zoom = state.match_state.input.zoom_level.max(f32::EPSILON);
     let (sw, sh) = (width as f32 / zoom, height as f32 / zoom);
     let window = bridge_shadow_window(terrain, atlas.shadow_extent(), cam_x, cam_y, sw, sh);
@@ -497,7 +502,7 @@ pub(crate) fn build_bridge_shadow_instances(state: &AppState, out: &mut Vec<Spri
         && !state.match_state.sandbox_full_visibility)
         .then(|| {
             (
-                crate::app::input::commands::preferred_local_owner_name(state)
+                crate::app::input::commands::preferred_local_owner_name(&state.match_state)
                     .as_deref()
                     .and_then(|name| sim.interner().get(name)),
                 state.overlay_registry(),

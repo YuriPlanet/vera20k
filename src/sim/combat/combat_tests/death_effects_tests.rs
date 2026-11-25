@@ -265,8 +265,8 @@ fn gsi_04_07_damage_postmortem_stock_barrel_delay_and_nested_order() {
             crate::sim::timer::CdTimer::started(0, 40),
             Some(center),
         )));
-    sim.overlay_grid = Some(OverlayGrid::new(20, 12));
-    sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(20, 12));
+    *sim.overlay_grid = Some(OverlayGrid::new(20, 12));
+    *sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(20, 12));
     sim.overlay_grid.as_mut().unwrap().place_overlay(8, 5, 0, 0);
     let oil_wh = sim.interner.intern("OilExplosionWH");
 

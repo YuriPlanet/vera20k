@@ -743,9 +743,13 @@ impl Simulation {
             }
         }
         // One record per instance, at the instance's index; the removal below
-        // drops both together so they stay aligned. Built per object that
-        // holds effects, as long as its effect list; only the `phobos` build
-        // runs this.
+        // drops both together so they stay aligned. A list beside the
+        // instances, not fields on them: the cumulative pass reads every
+        // other instance's `can_show`, after the removal, so the reads cannot
+        // be taken one instance at a time; and the instances and their list
+        // derive their hash and equality, so a frame's reads held on them
+        // would enter the saved and hashed state. Only an object that holds
+        // effects builds one.
         let mut records: Vec<InstanceFrame> = list
             .instances
             .iter()

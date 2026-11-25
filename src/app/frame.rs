@@ -156,7 +156,7 @@ impl App {
         {
             return None;
         }
-        let (game_speed, network_fps) = sim_tick::local_pacing_inputs(state);
+        let (game_speed, network_fps) = sim_tick::local_pacing_inputs(&state.match_state);
         state
             .platform
             .frame_pacer
@@ -199,6 +199,26 @@ impl App {
         catch_up_allowed: bool,
         wait_for_tick: bool,
     ) -> RuntimeServiceResult {
+        // A spawn test switch counts what the pass costs this thread.
+        let cost = crate::app::spawn_frame_cost::begin(&state.frontend.external_progress);
+        let result = Self::service_match_runtime_pass(
+            state,
+            event_loop,
+            simulation_allowed,
+            catch_up_allowed,
+            wait_for_tick,
+        );
+        crate::app::spawn_frame_cost::end_service(&mut state.frontend.external_progress, cost);
+        result
+    }
+
+    fn service_match_runtime_pass(
+        state: &mut AppState,
+        event_loop: &ActiveEventLoop,
+        simulation_allowed: bool,
+        catch_up_allowed: bool,
+        wait_for_tick: bool,
+    ) -> RuntimeServiceResult {
         if state.persistence.pending_load.is_some() {
             return RuntimeServiceResult::default();
         }
@@ -226,7 +246,7 @@ impl App {
         // A watcher catching up plays minutes of its match at once, muted,
         // with a longer budget a picture (`LocalFramePacer::permits_catch_up`).
         let watcher_catching_up = crate::app::match_runtime::watching::catching_up(
-            state,
+            &state.match_state,
             crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
         );
         let restoring = state
@@ -280,8 +300,8 @@ impl App {
                 || state.frontend.screen != GameScreen::InGame
                 || state.match_state.scenario_exit.is_some()
                 || state.match_state.scenario_outcome.is_some()
-                || Self::house_outcome_wait_pending(state)
-                || crate::app::match_runtime::network_failure::pending(state)
+                || Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
+                || crate::app::match_runtime::network_failure::pending(&state.frontend.screen, &state.match_state)
                 || !crate::app::match_runtime::frame_pacer::LocalFramePacer::permits_catch_up(
                     attempts,
                     started.elapsed(),
@@ -310,7 +330,7 @@ impl App {
                 // waiting for a refresh: run every frame already due, so an
                 // interval shorter than one refresh keeps its native rate.
                 let (game_speed, network_fps) =
-                    crate::app::match_runtime::sim_tick::local_pacing_inputs(state);
+                    crate::app::match_runtime::sim_tick::local_pacing_inputs(&state.match_state);
                 if state.platform.frame_pacer.should_admit(
                     crate::app::match_runtime::frame_pacer::wall_clock_ms(),
                     game_speed,
@@ -324,7 +344,9 @@ impl App {
             if !live.has_terminal_network_error() {
                 let frame = session.binary_frame();
                 let inputs = crate::app::match_runtime::sim_tick::online_pacing_inputs(
-                    state,
+                    &state.platform,
+                    &state.diag,
+                    &state.match_state,
                     frame,
                     crate::app::match_runtime::frame_pacer::wall_clock_ms(),
                 );
@@ -340,7 +362,11 @@ impl App {
             }
         }
         state.platform.frame_pacer.end_service();
-        crate::app::match_runtime::network_quality::observe_pass(state);
+        crate::app::match_runtime::network_quality::observe_pass(
+            &state.platform,
+            &state.frontend.screen,
+            &mut state.match_state,
+        );
         result
     }
 
@@ -369,7 +395,7 @@ impl App {
         // 0x00649827; repeated services read the same binary-frame parity.
         let input_is_active = in_game
             && (!state.focus_freeze_active()
-                || Self::house_outcome_wait_pending(state)
+                || Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
                 || network_wait_pending);
         let input_frame = input_is_active.then(|| {
             state
@@ -391,7 +417,10 @@ impl App {
             None
         };
         #[cfg(feature = "telemetry-dashboard")]
-        crate::app::telemetry_capture::synchronize_observer(state);
+        crate::app::telemetry_capture::synchronize_observer(
+            &mut state.diag,
+            &mut state.match_state,
+        );
         #[cfg(feature = "debug-tools")]
         crate::app::debug_tools::service(state);
         // HouseClass keeps simulating for SavourDelay, then blocks on the
@@ -415,14 +444,17 @@ impl App {
         crate::app::lan_service::poll(state, scenario_now_ms);
         crate::app::match_runtime::narrative_sync::service(state, scenario_now_ms);
         crate::app::match_runtime::stage_result::poll(state, scenario_now_ms);
-        Self::poll_external_launch_progress(state);
+        Self::poll_external_launch_progress(&mut state.frontend, &state.match_state);
         Self::poll_spawn_actions(state);
         // Resume receipts must release only the relay clock hold even while
         // focus or a local modal prevents another simulation transaction.
         state
             .match_state
             .sync_multiplayer_pause_clock(scenario_now_ms);
-        if crate::app::match_runtime::network_failure::pending(state) {
+        if crate::app::match_runtime::network_failure::pending(
+            &state.frontend.screen,
+            &state.match_state,
+        ) {
             // ExecuteDoList64CD0C blocks inside ShellMessageBox5D3490. Its
             // message pump still reaches Network_ServiceLoop48D080/audio,
             // while Main_Tick's terminal tests and frame tail wait for Stop.
@@ -465,14 +497,17 @@ impl App {
                 ..Default::default()
             };
         }
-        if Self::house_outcome_wait_pending(state) {
+        if Self::house_outcome_wait_pending(&state.match_state.sim_runtime) {
             // The native House wait services Network_ServiceLoop/audio before
             // continuing this same House. Keep that service live while later
             // House callbacks and MainTick's termination router remain held.
             crate::app::match_runtime::sim_tick::pump_audio_service(state, scenario_now_ms);
             main_tick_admitted = sim_tick::advance_in_game_runtime(state, scenario_now_ms, false);
-            if !Self::house_outcome_wait_pending(state)
-                && !crate::app::match_runtime::network_failure::pending(state)
+            if !Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
+                && !crate::app::match_runtime::network_failure::pending(
+                    &state.frontend.screen,
+                    &state.match_state,
+                )
             {
                 Self::consume_scenario_restart_request(state);
                 Self::consume_executed_abort_exit(state, scenario_now_ms);
@@ -578,12 +613,25 @@ impl App {
             simulation_allowed,
         );
         if main_tick_pumps_audio {
-            crate::app::match_runtime::sim_tick::service_audio_outputs(state, scenario_now_ms);
+            crate::app::match_runtime::sim_tick::service_audio_outputs(
+                &state.frontend.screen,
+                &state.match_state,
+                &mut state.audio,
+                scenario_now_ms,
+            );
         } else {
             crate::app::match_runtime::sim_tick::pump_audio_service(state, scenario_now_ms);
         }
         crate::app::radar_movie::service(state, scenario_now_ms);
-        crate::app::commander_feedback::service(state, scenario_now_ms);
+        crate::app::commander_feedback::service(
+            &state.renderer,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &state.persistence.options_profile,
+            scenario_now_ms,
+        );
 
         // Deactivated windows do not simulate when `pause_on_focus_loss` is
         // configured. gamemd parks its main tick in a sleep-and-network-only
@@ -624,8 +672,11 @@ impl App {
             }
             main_tick_admitted =
                 sim_tick::advance_in_game_runtime(state, now_ms, main_tick_pumps_audio);
-            if Self::house_outcome_wait_pending(state)
-                || crate::app::match_runtime::network_failure::pending(state)
+            if Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
+                || crate::app::match_runtime::network_failure::pending(
+                    &state.frontend.screen,
+                    &state.match_state,
+                )
             {
                 return RuntimeServiceResult {
                     main_tick_admitted,
@@ -668,8 +719,11 @@ impl App {
             || state.frontend.quit_cascade.is_some()
             || state.match_state.scenario_exit.is_some()
             || state.match_state.scenario_outcome.is_some()
-            || Self::house_outcome_wait_pending(state)
-            || crate::app::match_runtime::network_failure::pending(state)
+            || Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
+            || crate::app::match_runtime::network_failure::pending(
+                &state.frontend.screen,
+                &state.match_state,
+            )
             || state.match_state.network_wait.dialog_open()
             || state.match_state.match_diagnostics.is_replay_playback()
         {
@@ -691,7 +745,9 @@ impl App {
         let frontier = live.committed_frontier();
         if let Some((timing, recovering)) =
             crate::app::match_runtime::sim_tick::online_pacing_inputs(
-                state,
+                &state.platform,
+                &state.diag,
+                &state.match_state,
                 frame,
                 crate::app::match_runtime::frame_pacer::wall_clock_ms(),
             )
@@ -713,18 +769,23 @@ impl App {
     pub(super) fn online_start_runs_while_hidden(state: &AppState) -> bool {
         state.platform.window_hidden
             && state.match_state.live_network.is_none()
-            && crate::app::lan_service::has_online_relay_route(state)
+            && crate::app::lan_service::has_online_relay_route(&state.match_state)
     }
 
     /// Keep transport live during campaign stage voting and handoff as well
     /// as during an active match or a synchronized fullscreen cutscene.
     pub(super) fn match_runs_while_hidden(state: &AppState) -> bool {
-        crate::app::match_runtime::narrative_sync::owns_fullscreen(state)
-            || match_screen_runs_while_hidden(
-                &state.frontend.screen,
-                state.match_state.session.campaign_result().is_some(),
-                || Self::house_outcome_wait_pending(state) || !state.focus_freeze_active(),
-            )
+        crate::app::match_runtime::narrative_sync::owns_fullscreen(
+            &state.frontend,
+            &state.match_state.match_presentation,
+        ) || match_screen_runs_while_hidden(
+            &state.frontend.screen,
+            state.match_state.session.campaign_result().is_some(),
+            || {
+                Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
+                    || !state.focus_freeze_active()
+            },
+        )
     }
 
     /// The active-game shell `page` into `destination`.
@@ -738,7 +799,7 @@ impl App {
         use crate::ui::pause_menu::InGameMenuState;
         match page {
             ScreenPage::InGameShell(InGameMenuState::Menu) => {
-                let buttons = crate::app::input::pause_menu::button_states(state);
+                let buttons = crate::app::input::pause_menu::button_states(&state.match_state);
                 shell::render_pause_menu_shell(state, encoder, destination, buttons)
             }
             ScreenPage::InGameShell(InGameMenuState::AbortConfirm) => {
@@ -845,7 +906,7 @@ impl App {
                     .playback_capture_requested(),
         );
         if let Some(presented) = crate::app::persistence::commands::pump_saved_game_load(state) {
-            crate::app::input::hardware_cursor::hide_game_cursor(state);
+            crate::app::input::hardware_cursor::hide_game_cursor(&mut state.platform);
             return Ok(if presented {
                 FrameRenderOutcome::Presented
             } else {
@@ -867,11 +928,19 @@ impl App {
             let _ = state.renderer.gpu.device.poll(wgpu::PollType::Poll);
         }
         state.platform.frame_pacer.clear_render_continuation();
+        // A slow PC's planned picture cost is paid every pass, drawn or not: a
+        // hidden spawn window's passes seldom draw, and a slow GPU never
+        // skips. The fixed switch's is paid by drawn pictures only.
+        let slow = crate::app::cncnet::SpawnSlowPc::of(&state.frontend);
+        crate::app::cncnet::SpawnSlowPc::spend(slow.draw);
         if matches!(pass, FramePass::Draw) {
-            crate::app::cncnet::SpawnSlowPc::spend(crate::app::cncnet::SpawnSlowPc::of(state).draw);
+            crate::app::cncnet::SpawnSlowPc::spend(slow.drawn);
         }
         #[cfg(feature = "telemetry-dashboard")]
-        crate::app::telemetry_capture::synchronize_observer(state);
+        crate::app::telemetry_capture::synchronize_observer(
+            &mut state.diag,
+            &mut state.match_state,
+        );
         if let Some(session) = hidden_run.as_deref_mut() {
             session.drive_before_render(state)?;
         }
@@ -979,8 +1048,10 @@ impl App {
             .scenario_exit
             .as_ref()
             .is_some_and(|exit| exit.holding_banner())
-            || crate::app::commander_feedback::verdict_is_waiting_for_clip(state);
-        if Self::house_outcome_wait_pending(state)
+            || crate::app::commander_feedback::verdict_is_waiting_for_clip(
+                &state.match_state.match_presentation,
+            );
+        if Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
             || (state.frontend.screen == GameScreen::InGame
                 && state.match_state.scenario_exit.is_some()
                 && Self::local_outcome_exit_ready(state)
@@ -1006,7 +1077,9 @@ impl App {
         // Atlas growths publish before the picture is judged. Captures wait
         // for them, so their pictures never depend on worker timing.
         crate::app::match_runtime::sim_tick::publish_entity_atlas_growth(
-            state,
+            &state.renderer,
+            &mut state.match_state,
+            &state.process_assets,
             shell_capture.is_some() || hidden_run.is_some(),
         );
         // A changed picture is drawn in this same pass, so each drawn frame
@@ -1050,6 +1123,7 @@ impl App {
         }
         let draw_started = Instant::now();
         state.diag.frame_timer.sample(draw_started);
+        let picture_cost = crate::app::spawn_frame_cost::begin(&state.frontend.external_progress);
 
         // A finished teardown slide destroys its dialog and runs the result
         // (`0x00622720` returns into PrepareSession) before the next dialog is
@@ -1057,7 +1131,7 @@ impl App {
         // next screen's first frame. Native queues/maintains [INTRO] before
         // arming the 0xE2 first-paint owner.
         Self::drive_shell_exit(state);
-        Self::maintain_main_menu_intro(state);
+        Self::maintain_main_menu_intro(&state.frontend, &state.process_assets, &mut state.audio);
         let entry_completed =
             crate::app::frontend::shell_transition::drive_shell_entry(state, Instant::now());
         if entry_completed == Some(crate::app::frontend::shell_transition::ShellSlideKind::MainMenu)
@@ -1126,9 +1200,17 @@ impl App {
 
         if state.match_state.match_presentation.in_game_menu.is_open()
             || state.match_state.network_wait.dialog_open()
-            || crate::app::match_runtime::network_failure::pending(state)
+            || crate::app::match_runtime::network_failure::pending(
+                &state.frontend.screen,
+                &state.match_state,
+            )
         {
-            Self::ensure_skirmish_shell_chrome(state);
+            Self::ensure_skirmish_shell_chrome(
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+            );
         }
         // The main menu's chrome, dropped for the match: back before a shell
         // screen (the menu pages, the score page) draws or hit-tests with it.
@@ -1136,7 +1218,11 @@ impl App {
             state.frontend.screen,
             GameScreen::MainMenu | GameScreen::MissionResult { .. }
         ) {
-            Self::ensure_main_menu_shell_chrome(state);
+            Self::ensure_main_menu_shell_chrome(
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+            );
         }
         Self::update_saved_game_browser(state, false);
         // Input routes to these same pages (`input::precedence`).
@@ -1144,7 +1230,7 @@ impl App {
         // VERA's enlarged map preview shows only over the pages that open it.
         if page.is_some() || !matches!(screen_page, ScreenPage::Skirmish | ScreenPage::NetworkSetup)
         {
-            crate::app::frontend::preview_zoom::close(state);
+            crate::app::frontend::preview_zoom::close(&state.platform.window, &mut state.frontend);
         }
         match &state.frontend.screen {
             _ if page == Some(ModalPage::ShellError) => {
@@ -1180,7 +1266,8 @@ impl App {
                 Self::advance_fullscreen_movie(state)?;
                 if state.frontend.fullscreen_movie.is_some() {
                     crate::app::frontend::movies_credits_render::render_fullscreen_movie(
-                        state,
+                        &state.renderer,
+                        &state.frontend.fullscreen_movie,
                         &mut encoder,
                         &output.texture,
                     )?;
@@ -1189,7 +1276,7 @@ impl App {
                     // The movie ended this frame: recreate the caller's
                     // dialog on the next frame's normal dispatch.
                     crate::app::frontend::movies_credits_render::render_fullscreen_black(
-                        state,
+                        &state.renderer,
                         &mut encoder,
                         &output.texture,
                     );
@@ -1199,14 +1286,16 @@ impl App {
                 Self::advance_credits_roll(state);
                 if state.frontend.credits_roll.is_some() {
                     crate::app::frontend::movies_credits_render::render_credits_roll(
-                        state,
+                        state.platform.window_active,
+                        &state.renderer,
+                        &mut state.frontend.credits_roll,
                         &mut encoder,
                         &output.texture,
                     )?;
                     presented_shell = PresentedShell::CreditsRoll;
                 } else {
                     crate::app::frontend::movies_credits_render::render_fullscreen_black(
-                        state,
+                        &state.renderer,
                         &mut encoder,
                         &output.texture,
                     );
@@ -1250,7 +1339,7 @@ impl App {
                     }
                     ScreenPage::Wol => {
                         wol_welcome_render::render_wol_page(state, encoder, texture)?
-                            .then(|| wol_welcome_render::presented_wol_page(state))
+                            .then(|| wol_welcome_render::presented_wol_page(&state.frontend.wol))
                     }
                     ScreenPage::LoadSavedGame => {
                         load_saved_game_render::render_load_saved_game_page(
@@ -1315,11 +1404,15 @@ impl App {
                 ) {
                     crate::app::loading::pump::LoadingRenderResult::NativeRendered => {}
                     crate::app::loading::pump::LoadingRenderResult::GenericFallback => {
-                        let map_name_display = crate::app::loading::pump::loading_map_name(state)
-                            .unwrap_or("auto")
-                            .to_string();
+                        let map_name_display =
+                            crate::app::loading::pump::loading_map_name(&state.frontend)
+                                .unwrap_or("auto")
+                                .to_string();
                         crate::app::frontend::status_screen::render(
-                            state,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &state.match_state.input,
+                            &state.process_assets,
                             &mut encoder,
                             &view,
                             &crate::i18n::tr("VERA:Loading"),
@@ -1337,8 +1430,15 @@ impl App {
                 // No battlefield commands share this encoder/camera upload.
                 // Its text is laid out at the Sidebar size and drawn in the
                 // window (`window_ui::shell_raster`).
-                let raster = crate::app::presentation::window_ui::shell_raster(state, true)
-                    .unwrap_or(crate::render::bit_font::TextRaster::NATIVE);
+                let raster = crate::app::presentation::window_ui::shell_raster(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &state.match_state.match_presentation,
+                    &state.persistence,
+                    true,
+                )
+                .unwrap_or(crate::render::bit_font::TextRaster::NATIVE);
                 let frame_raster = state.renderer.bit_font.set_raster(raster);
                 let painted =
                     Self::render_in_game_shell(state, &mut encoder, &output.texture, screen_page);
@@ -1349,7 +1449,10 @@ impl App {
                 let abort = state.match_state.match_presentation.in_game_menu
                     == crate::ui::pause_menu::InGameMenuState::AbortConfirm;
                 crate::app::frontend::status_screen::render(
-                    state,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state.input,
+                    &state.process_assets,
                     &mut encoder,
                     &view,
                     &crate::i18n::tr(if abort {
@@ -1368,7 +1471,13 @@ impl App {
             GameScreen::InGame => {
                 //53B460 copies the already-composed surface, before this
                 //frame's world replaces it. The effect owns the retained copy.
-                let chrono_tactical = crate::app::input::camera::tactical_viewport_px(state);
+                let chrono_tactical = crate::app::input::camera::tactical_viewport_px(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &state.match_state.match_presentation,
+                    &state.persistence,
+                );
                 state
                     .match_state
                     .match_presentation
@@ -1434,7 +1543,9 @@ impl App {
                         .draw(&mut encoder, &view);
                     render::draw_world_window_copy(state, &mut encoder, &view);
                     crate::app::presentation::sidebar_surface::draw_window_copy(
-                        state,
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &state.match_state.match_presentation,
                         &mut encoder,
                         &view,
                     );
@@ -1451,7 +1562,9 @@ impl App {
                         .renderer
                         .copy_game_frame_to(&mut encoder, &output.texture);
                     render::draw_software_cursor(
-                        state,
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &state.match_state.match_presentation,
                         &mut encoder,
                         &view,
                         render_output.software_cursor,
@@ -1496,7 +1609,10 @@ impl App {
                     presented_shell = PresentedShell::Score;
                 } else {
                     crate::app::frontend::status_screen::render(
-                        state,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.match_state.input,
+                        &state.process_assets,
                         &mut encoder,
                         &view,
                         &title,
@@ -1594,7 +1710,11 @@ impl App {
         // Browser capture reads the visible canvas, not the native retained
         // PCX composition (which requires a synchronous GPU map and std::fs).
         let retail_screenshot_current_frame = screenshot_requested
-            && !cfg!(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"));
+            && !cfg!(all(
+                feature = "wasm",
+                target_arch = "wasm32",
+                target_os = "unknown"
+            ));
         let screenshot_central_rect = shake_central_rect(state, &output.texture);
         // Text drawn in the window (`window_ui`) is not in the frame the
         // screenshot retains, and neither is the wheel-zoomed battlefield's
@@ -1630,7 +1750,7 @@ impl App {
                 state
                     .renderer
                     .window_ui
-                    .draw_screenshot_text(state, &mut encoder, copy);
+                    .draw_screenshot_text(&state.renderer, &mut encoder, copy);
             }
         }
         let pending_retail_screenshot = previous_composition
@@ -1683,6 +1803,10 @@ impl App {
         }
         let submission = state.renderer.gpu.hand_off_frame(encoder, output);
         let presented_at = Instant::now();
+        crate::app::spawn_frame_cost::end_picture(
+            &mut state.frontend.external_progress,
+            picture_cost,
+        );
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         if screenshot_requested {
             // Browser hand-off submits/presents inline. Ask for the snapshot

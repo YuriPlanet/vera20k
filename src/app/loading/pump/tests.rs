@@ -1785,7 +1785,7 @@ fn stock_prefix_rejects_legacy_fallback_source() {
 
     let err = request.admit_context(&initial).unwrap_err();
     assert!(
-        format!("{err:#}").contains("requires an exact Loose, MIX, or accepted generated source"),
+        format!("{err:#}").contains("requires an authored map or an accepted generated source"),
         "unexpected error: {err:#}"
     );
 
@@ -1794,7 +1794,7 @@ fn stock_prefix_rejects_legacy_fallback_source() {
     let accepted_err = accepted.admit_context(&initial).unwrap_err();
     assert!(
         format!("{accepted_err:#}")
-            .contains("requires an exact Loose, MIX, or accepted generated source"),
+            .contains("requires an authored map or an accepted generated source"),
         "unexpected error: {accepted_err:#}"
     );
 }

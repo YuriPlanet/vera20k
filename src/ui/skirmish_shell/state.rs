@@ -18,14 +18,16 @@ pub(crate) use combos::{apply_combo_selection, combo_open};
 pub use combos::{
     available_color_choices, available_start_choices, combo_dropdown_max_visible_rows,
     combo_enabled, combo_items, combo_rect, country_choices, selected_combo_item,
-    selected_combo_item_index, team_choices,
+    selected_combo_item_index, team_choices, team_items,
 };
 pub(crate) use hit_test::status_help_key_for_hover_with_catalog;
 pub use hit_test::{
     status_help_key_for_choose_map_hover, status_help_key_for_hover,
     status_help_key_for_random_map_setup,
 };
-pub use launch::{launch_session, pack_launch_session_without_start_validation};
+pub use launch::{
+    launch_session, pack_launch_session_without_start_validation, start_skips_side_gates,
+};
 pub use opponent_scroll::{opponent_scroll_geometry, opponent_scroll_rows};
 
 pub use choose_map::{

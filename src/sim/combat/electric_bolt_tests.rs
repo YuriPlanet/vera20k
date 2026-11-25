@@ -60,10 +60,10 @@ fn ordinary_spark() -> &'static Value {
 }
 
 fn restore_rng(sim: &mut Simulation, expected: &Value) {
-    sim.main_rng = SimRng::from_native_state_hex_for_test(expected["main"].as_str().unwrap());
-    sim.scenario_rng =
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(expected["main"].as_str().unwrap());
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(expected["scenario"].as_str().unwrap());
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(expected["mapgen"].as_str().unwrap());
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(expected["mapgen"].as_str().unwrap());
 }
 
 fn assert_rng(sim: &Simulation, expected: &Value, name: &str) {
@@ -235,7 +235,7 @@ fn retail_birth_fields_match_native_exact_flh() {
         let rules = controlled_rules(&retail, input);
         let (mut sim, source, target) = scene(&rules, input);
         restore_rng(&mut sim, &row["rng_before"]);
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(initial_id));
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(initial_id));
         let stable_before = sim.next_stable_object_id();
         electric_bolt::fired(
             &mut sim,
@@ -343,7 +343,7 @@ fn direct_bolt_uses_explicit_weapon_source_and_existing_rng_constructor() {
         .unwrap()["native_id_before"]
         .as_u64()
         .unwrap() as u32;
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(initial_id));
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(initial_id));
     let expected = &row["bolts"][0];
     let from = coord(&expected["source"]);
     electric_bolt::create(
@@ -1030,6 +1030,120 @@ fn a_tesla_tank_bolt_names_its_firer_and_follows_its_flh() {
     sim.uninit_with_rules(tank, &rules);
     sim.substrate.entities.remove(tank);
     assert_eq!(electric_bolt::owner_source(&sim, &rules, owner), None);
+}
+
+/// In a match (`Simulation::present_effect_anims`) a Tesla tank bolt's
+/// retail `SparkSys` changes nothing but its picture, so it is a presentation
+/// system, which takes no shared slot, Logic or Display place or unique id.
+/// Without the switch it is the shared system gamemd makes, and so it is
+/// when a map gives the spark a `Warhead=`. Retail's damage smoke is
+/// picture-only too; its gas cloud is not.
+#[test]
+fn a_match_presents_the_retail_bolt_sparks_but_not_a_spark_with_a_warhead() {
+    let Some(retail) = retail_battle_rules_for_map("Hills.mmx") else {
+        return;
+    };
+    let Some(warhead) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "Hills.mmx",
+        &IniFile::from_str("[Spark]\nWarhead=Super\n"),
+    ) else {
+        return;
+    };
+    let only = |name: &str| {
+        let rules = &retail.rules;
+        rules.particle_system_presentation_only(rules.ps_type_id_by_name(name).unwrap())
+    };
+    assert!(only("SmallGreySSys"));
+    assert!(!only("GasCloudSys"));
+    // The shared systems, the presentation ones and the unique ids one bolt
+    // leaves.
+    let fire = |rules: &RuleSet, present: bool| {
+        let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x6FD570);
+        if present {
+            sim.present_effect_anims();
+        }
+        let tank = sim
+            .spawn_object("TTNK", "Russians", 10, 10, 0, rules)
+            .unwrap();
+        let target = sim
+            .spawn_object("MTNK", "Americans", 13, 10, 0, rules)
+            .unwrap();
+        let unique = sim.next_native_runtime_id();
+        electric_bolt::fired(
+            &mut sim,
+            rules,
+            tank,
+            TargetKind::Entity(target),
+            rules.weapon("TankBolt").unwrap(),
+        );
+        let name = |kind| rules.particle_system_type(kind).name.clone();
+        let systems = sim.particle_systems();
+        let shared: Vec<_> = systems
+            .iter()
+            .map(|(_, system)| name(system.type_id()))
+            .collect();
+        let presented: Vec<_> = systems
+            .presented_systems()
+            .inspect(|&(id, system)| {
+                assert_eq!(sim.display_layers().layer_of(id), None);
+                assert!(!system.in_logic_vector());
+            })
+            .map(|(_, system)| name(system.type_id()))
+            .collect();
+        (shared, presented, sim.next_native_runtime_id() - unique - 1)
+    };
+    let spark = || vec!["SparkSys".to_owned()];
+    assert_eq!(fire(&retail.rules, true), (vec![], spark(), 0));
+    assert_eq!(fire(&retail.rules, false), (spark(), vec![], 1));
+    assert_eq!(fire(&warhead.rules, true), (spark(), vec![], 1));
+}
+
+/// A presentation spark changes nothing the simulation hashes and takes no
+/// Scenario draw: a world that made one ends each frame as its twin that
+/// did not, while the system's own stream bursts its sparks.
+#[test]
+fn a_presentation_spark_changes_no_state_hash_and_takes_no_scenario_draw() {
+    let Some(retail) = retail_battle_rules_for_map("Hills.mmx") else {
+        return;
+    };
+    let rules = retail.rules;
+    let world = || {
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x5EED);
+        // A spark's collision reads the overlay grid every map has
+        // (`SparkCollisionWorld`); without one it retires on its first visit.
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        sim.present_effect_anims();
+        sim.spawn_object("MTNK", "Americans", 13, 10, 0, &rules)
+            .unwrap();
+        sim
+    };
+    let (mut sparked, mut plain) = (world(), world());
+    sparked.spawn_effect_particle_system(
+        rules.ps_type_id_by_name("SparkSys").unwrap(),
+        glam::IVec3::new(13 * 256 + 128, 10 * 256 + 128, 0),
+        None,
+        None,
+        glam::IVec3::ZERO,
+        None,
+        &rules,
+    );
+    let mut sparks = 0usize;
+    for _ in 0..3 {
+        assert_eq!(sparked.state_hash(), plain.state_hash());
+        assert_eq!(sparked.rng_views().scenario, plain.rng_views().scenario);
+        for sim in [&mut sparked, &mut plain] {
+            sim.advance_tick(&[], Some(&rules), None, None, 67);
+        }
+        sparks = sparks.max(
+            sparked
+                .particle_systems()
+                .presented_systems()
+                .map(|(_, system)| system.particles().len())
+                .sum(),
+        );
+    }
+    assert_eq!(sparked.state_hash(), plain.state_hash());
+    assert!(sparks > 0, "the presentation system ran");
 }
 
 /// Ares TechnoClass_FireEBolt (Ares.dll 10056350) and EBolt_Fire_Particles

@@ -140,6 +140,24 @@ pub fn sync_nodes(
     }
 }
 
+/// A box whose input builds its widgets from [`ShellBox::nodes`] put on
+/// `parts` in `shell_box.dialog`'s live instance, before it paints: built
+/// once, then [`ShellBox::sync`]. Its root; none while the dialog is not up.
+///
+/// [`ShellBox::nodes`]: super::modal::ShellBox::nodes
+/// [`ShellBox::sync`]: super::modal::ShellBox::sync
+pub fn sync_box(
+    controller: &mut DialogController,
+    shell_box: &super::modal::ShellBox,
+    parts: &super::modal::BoxParts,
+) -> Option<vera20k_gui::NodeId> {
+    let root = controller.root_in(shell_box.dialog)?;
+    let gui = controller.gui_mut();
+    super::page::ensure_built(gui, root, || shell_box.nodes());
+    shell_box.sync(gui, root, parts);
+    Some(root)
+}
+
 /// The control `dialog`'s live instance holds captured.
 pub fn pressed_id(controller: &DialogController, dialog: DialogResourceId) -> Option<u16> {
     node_id(controller, controller.pressed_node_in(dialog))

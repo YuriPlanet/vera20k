@@ -1,5 +1,6 @@
 //! IonBlastClass53CB10/53CBE0/53D310: one ordered vector for Dominator's
-//! forceless ripples and TAction94's damaging blast. Native vector AA0118,
+//! forceless ripples, TAction94's damaging blast and the Tiberian Sun Ion
+//! Cannon superweapon's (`sim::superweapon::ion_cannon`). Native vector AA0118,
 //! itemsAA011C/countAA0128, records coord/frame/skip-forces (14h bytes).
 //!
 //! Execute94's table entry6DD913 and IonBlastAtWP6E3380 use the tail
@@ -32,6 +33,7 @@ use crate::sim::ion_blast_ripple::{RippleFrames, spiral_point};
 use crate::sim::movement::{ground_pose, locomotor::MovementLayer};
 use crate::sim::projectile::ProjectileCoord;
 use crate::sim::rocking::ion_blast;
+use crate::util::forked::Forked;
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 
@@ -74,8 +76,8 @@ pub(super) fn save<S: serde::Serializer>(
 }
 pub(super) fn load<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> Result<Vec<IonBlast>, D::Error> {
-    Vec::deserialize(deserializer)
+) -> Result<Forked<Vec<IonBlast>>, D::Error> {
+    Vec::deserialize(deserializer).map(Forked::new)
 }
 
 impl Simulation {
@@ -95,13 +97,21 @@ impl Simulation {
         let Some(coord) = self.trigger_waypoint_ground_coord(waypoint) else {
             return false;
         };
+        self.add_ion_cannon_blast(coord);
+        true
+    }
+
+    /// A damaging blast at `coord` (leptons): the constructor appends it at
+    /// frame 0 with its forces on. TAction94 and the Tiberian Sun Ion Cannon
+    /// (Firestorm 2.0 SuperClass::Place case 3, `new IonBlast` 0x60BEC6) build
+    /// one this way.
+    pub(crate) fn add_ion_cannon_blast(&mut self, coord: [i32; 3]) {
         self.ion_blasts.push(IonBlast {
             coord,
             frame: 0,
             skip_forces: false,
             ares_warhead: None,
         });
-        true
     }
 
     /// Ares WarheadTypeExt::applyRipples (installed 10051AE0), first in

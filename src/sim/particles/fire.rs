@@ -235,7 +235,14 @@ pub(super) fn tick_system_with(
     let (owner, owner_house) = (sys.owner_entity, sys.owner_house);
     // 0x0062F9AE..0x0062F9CF: each particle's AI (0x0062CE40) and move
     // (0x0062D5E0), last first.
-    for (index, id) in super::gas::reverse_ids(sys) {
+    let Some(walk) = sim
+        .substrate
+        .particle_systems
+        .take_reverse_walk(system, |_| true)
+    else {
+        return;
+    };
+    for &(index, id) in &walk {
         let Some(mut p) = sim.particle_systems().particle_for_tick(system, index, id) else {
             continue;
         };
@@ -250,19 +257,17 @@ pub(super) fn tick_system_with(
             .particle_systems
             .commit_particle_tick(system, index, p);
     }
+    sim.substrate.particle_systems.return_walk(walk);
 
     // 0x0062F9D1..0x0062F9F6: destroy the marked ones, last first.
-    let Some(sys) = sim.particle_systems().get(system) else {
+    let Some(marked) = sim
+        .substrate
+        .particle_systems
+        .take_reverse_walk(system, |p| p.marked_for_deletion)
+    else {
         return;
     };
-    let marked: Vec<u64> = sys
-        .particles
-        .iter()
-        .rev()
-        .filter(|p| p.marked_for_deletion)
-        .map(Particle::stable_id)
-        .collect();
-    for id in marked {
+    for &(_, id) in &marked {
         let particle = sim
             .substrate
             .particle_systems
@@ -272,6 +277,7 @@ pub(super) fn tick_system_with(
             sim.retire_particle(particle, rules);
         }
     }
+    sim.substrate.particle_systems.return_walk(marked);
 
     // 0x0062F9F8..0x0062FBC9: follow the owner, or end spawning without one.
     let facts = world.owner(sim, rules, owner);

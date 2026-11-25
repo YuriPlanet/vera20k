@@ -139,7 +139,7 @@ impl LiveRoundFlow {
             lobby.ui.is_modern(),
             "only the modern online lobby lists matches to watch"
         );
-        let matches = crate::app::shell_wol::lobby::watch_matches(state);
+        let matches = crate::app::shell_wol::lobby::watch_matches(state.frontend.wol.as_ref());
         let listed = lobby
             .ui
             .game_rows
@@ -236,7 +236,7 @@ impl LiveRoundFlow {
         frame: u32,
     ) -> Result<()> {
         ensure!(
-            state.frontend.screen == GameScreen::InGame && watching::active(state),
+            state.frontend.screen == GameScreen::InGame && watching::active(&state.match_state),
             "the watched match ended {} frames after its catch-up, before {FRAMES_AFTER_CATCH_UP}",
             run.frames_after
         );
@@ -254,7 +254,7 @@ impl LiveRoundFlow {
             );
         }
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32;
-        if watching::catching_up(state, now_ms) {
+        if watching::catching_up(&state.match_state, now_ms) {
             if !run.catch_up_seen || run.caught_up_frame.is_some() {
                 self.record(frame, &format!("Catching up at native frame {native}"));
             }
@@ -501,7 +501,13 @@ fn shown_view(state: &AppState) -> Result<String> {
 fn begin_pan(state: &mut AppState) -> Result<(f32, f32)> {
     MoviesCapture::restore_neutral_pointer(state);
     ensure!(
-        crate::app::input::camera::cursor_over_battlefield(state),
+        crate::app::input::camera::cursor_over_battlefield(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence
+        ),
         "the resting pointer is off the battlefield"
     );
     let from = (
@@ -517,7 +523,7 @@ fn begin_pan(state: &mut AppState) -> Result<(f32, f32)> {
 /// key events reach it in a watched match.
 fn press(state: &mut AppState, code: KeyCode) -> Result<()> {
     ensure!(
-        state.frontend.screen == GameScreen::InGame && watching::active(state),
+        state.frontend.screen == GameScreen::InGame && watching::active(&state.match_state),
         "{code:?} reached no watched match"
     );
     for pressed in [true, false] {

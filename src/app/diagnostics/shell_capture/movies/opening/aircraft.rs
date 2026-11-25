@@ -172,11 +172,15 @@ fn raster(
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
-
-
-multiview_mask: None,
+            multiview_mask: None,
         });
-        let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(state);
+        let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+        );
         pass.set_scissor_rect(x, y, w, h);
         for (index, piece) in pieces.iter().enumerate() {
             let texture = match piece.target {

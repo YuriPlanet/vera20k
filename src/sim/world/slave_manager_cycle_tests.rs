@@ -43,7 +43,7 @@ fn refinery_with_slaves(count: usize) -> SlaveScene {
             [18, 14, 0, 0, 5], [17, 12, 0, 0, 5], [18, 12, 0, 0, 5],
         ],
     }));
-    s.scene.sim.ore_growth_config = OreGrowthConfig::disabled();
+    *s.scene.sim.ore_growth_config = OreGrowthConfig::disabled();
     s
 }
 
@@ -283,8 +283,24 @@ fn a_destroyed_refinery_frees_its_slaves_to_the_killer() {
         .spawn_object("MTNK", "Russians", 10, 20, 0, &s.scene.rules)
         .expect("killer");
     s.scene.sim.sound_events.clear_for_test();
+    let ordered = s.slaves[&1];
+    let move_order = Command::Move {
+        entity_id: ordered,
+        target_rx: 18,
+        target_ry: 17,
+    };
+    assert!(
+        !s.scene
+            .sim
+            .can_issue_local_command(&move_order, &s.scene.rules)
+    );
     let master = s.master;
     kill(&mut s, master, Some(killer));
+    assert!(
+        s.scene
+            .sim
+            .can_issue_local_command(&move_order, &s.scene.rules)
+    );
 
     let sim = &s.scene.sim;
     assert!(
@@ -324,17 +340,10 @@ fn a_destroyed_refinery_frees_its_slaves_to_the_killer() {
     // (Ready_To_Commence). The Cheer's end, `InfantryClass::DoType_Sequencer`'s
     // default arm, forces Ready on a standing slave or Walk on a moving one;
     // the queued Move then commences.
-    let ordered = s.slaves[&1];
     let tick = s.scene.sim.session.tick();
-    s.scene.sim.queue_command(CommandEnvelope::new(
-        russians,
-        tick + 1,
-        Command::Move {
-            entity_id: ordered,
-            target_rx: 18,
-            target_ry: 17,
-        },
-    ));
+    s.scene
+        .sim
+        .queue_command(CommandEnvelope::new(russians, tick + 1, move_order));
     let doing = |s: &SlaveScene, id: u64| {
         s.scene
             .sim
@@ -534,7 +543,7 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
         &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
-        std::mem::take(&mut sim.mission_spawned_entities),
+        std::mem::take(&mut *sim.mission_spawned_entities),
         "converted"
     );
     constructed(&sim, &mut expected);
@@ -584,7 +593,7 @@ fn a_refinery_whose_ore_runs_out_packs_up_and_moves_to_the_next_field() {
         "nodes": [inside, inside, inside],
         "ore": [[24, 13, 0, 0, 5], [25, 13, 0, 0, 5], [24, 14, 0, 0, 5], [25, 14, 0, 0, 5]],
     }));
-    s.scene.sim.ore_growth_config = OreGrowthConfig::disabled();
+    *s.scene.sim.ore_growth_config = OreGrowthConfig::disabled();
     let first = s.master;
     let slaves: Vec<u64> = s.slaves.values().copied().collect();
     let holder_of = |s: &SlaveScene| -> Option<u64> {
@@ -783,7 +792,7 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
         &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
-        std::mem::take(&mut sim.mission_spawned_entities),
+        std::mem::take(&mut *sim.mission_spawned_entities),
         "converted"
     );
     let miner = sim
@@ -823,8 +832,8 @@ fn a_player_cell_order_relocates_a_refinery_with_its_existing_slave_manager() {
             "ore": if ore { serde_json::json!([[17,13,0,0,5],[24,13,0,0,5]]) }
                 else { serde_json::json!([[17,13,0,0,5]]) },
         }));
-        s.scene.sim.ore_growth_config = OreGrowthConfig::disabled();
-        s.scene.sim.input_delay_ticks = 0;
+        *s.scene.sim.ore_growth_config = OreGrowthConfig::disabled();
+        *s.scene.sim.input_delay_ticks = 0;
         s.scene
             .rules
             .set_buildup_control_for_test("YAREFN", [0, 17, 3]);

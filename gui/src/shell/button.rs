@@ -27,8 +27,3 @@ impl From<bool> for ButtonVisual {
         }
     }
 }
-/// Original612B70 4DC starts a1000ms alternating highlight, initiallyoff.
-/// Both the ordinary menu policy and explicit guest Accept prompt use it.
-pub fn flash_phase(start: crate::time::Instant, now: crate::time::Instant) -> bool {
-    now.saturating_duration_since(start).as_millis() / 1000 % 2 == 1
-}

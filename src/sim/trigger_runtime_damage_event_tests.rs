@@ -105,9 +105,10 @@ fn timer(value: &Value) -> CdTimer {
 }
 
 fn install_rng_boundary(sim: &mut Simulation, states: &Value) {
-    sim.scenario_rng = SimRng::from_native_state_hex_for_test(states["scenario"].as_str().unwrap());
-    sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap());
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(states["mapgen"].as_str().unwrap());
+    *sim.scenario_rng =
+        SimRng::from_native_state_hex_for_test(states["scenario"].as_str().unwrap());
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap());
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(states["mapgen"].as_str().unwrap());
 }
 
 fn rng_states(sim: &Simulation) -> Value {
@@ -282,7 +283,7 @@ fn retail_no_dock_crash_springs_41_before_record_kill() {
     let tag = sim.trigger_runtime.attachments[&TagAttachment::Object(aircraft)];
     sim.trigger_runtime.dispatch_trace.clear();
     sim.clear_lifecycle_test_events_for_test();
-    sim.scenario_rng = SimRng::new(5);
+    *sim.scenario_rng = SimRng::new(5);
     let (_, draws) = crate::sim::rng::trace_draws(|| {
         crate::sim::aircraft::enter_idle_mode_for(
             &mut sim,
@@ -723,7 +724,7 @@ fn retail_damage_scene(route: &Value) -> Option<RetailDamageScene> {
     let bounds =
         crate::map::playfield::PlayfieldBounds::from_normalized_local_size(32, 0, 0, 32, 32);
     let path = crate::sim::pathfinding::PathGrid::from_resolved_terrain(&terrain);
-    sim.zone_grid = Some(
+    *sim.zone_grid = Some(
         crate::sim::pathfinding::zone_map::ZoneGrid::build_with_native_map_context(
             &path,
             &terrain,
@@ -1080,10 +1081,10 @@ fn retail_all06_red_damage_runs_parliament_destroy_attached_synchronously() {
         .unwrap();
     let bytes = save_codec::serialize(&sim.trigger_runtime).unwrap();
     let mut restored: TriggerRuntime = save_codec::deserialize(&bytes).unwrap();
-    assert_eq!(restored, sim.trigger_runtime);
+    assert_eq!(restored, *sim.trigger_runtime);
     restored.action_trace = std::mem::take(&mut sim.trigger_runtime.action_trace);
     restored.dispatch_trace = std::mem::take(&mut sim.trigger_runtime.dispatch_trace);
-    sim.trigger_runtime = restored;
+    *sim.trigger_runtime = restored;
     sim.validate_restored_trigger_runtime(rules.ares_form())
         .unwrap();
     // A repeated direct hit or deferred retirement must not book another

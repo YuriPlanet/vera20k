@@ -35,7 +35,7 @@ fn native_bridge_record_geometry_changes_rebuild_and_restore_navigation() {
         )
     };
     sim.install_resolved_terrain_for_new_map(terrain.clone());
-    sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
+    *sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
         &terrain,
         true,
         300,
@@ -73,7 +73,7 @@ fn native_bridge_record_geometry_changes_rebuild_and_restore_navigation() {
     let mut replacement =
         BridgeRuntimeState::from_resolved_terrain_with_map_size(&terrain, true, 300, (8, 10));
     replacement.test_set_endpoint_records(vec![record]);
-    sim.bridge_state = Some(replacement);
+    *sim.bridge_state = Some(replacement);
     assert_ne!(hash_before, sim.state_hash());
     sim.rebuild_zone_grid(&path);
     // Side19 maps the identical endpoint to (7,1), on the source side.
@@ -107,7 +107,7 @@ fn native_bridge_record_geometry_changes_rebuild_and_restore_navigation() {
     let mut replacement =
         BridgeRuntimeState::from_resolved_terrain_with_map_size(&terrain, true, 300, (8, 8));
     replacement.test_set_endpoint_records(vec![record]);
-    restored.bridge_state = Some(replacement);
+    *restored.bridge_state = Some(replacement);
     restored.rebuild_zone_grid(&path);
     assert!(reachable(&restored));
     let mut inactive = record;
@@ -188,7 +188,7 @@ fn recalc_keeps_marked_structure_over_partial_terrain_occupation_and_bridge_deck
         zones: &mut sim.zone_grid,
         path: &mut sim.path_grid,
         overlays: sim.overlay_grid.as_ref(),
-        playfield_bounds: sim.playfield_bounds,
+        playfield_bounds: *sim.playfield_bounds,
     }
     .publish_recalculated_cell(
         terrain,
@@ -283,7 +283,7 @@ fn held_factory_and_consumed_upgrade_stay_off_navigation_through_frame_and_resto
     let terrain = gsi_04_10_clear_terrain(16, 16);
     sim.install_resolved_terrain_for_new_map(terrain.clone());
     let overlay_grid = OverlayGrid::from_overlay_entries(&[], 16, 16);
-    sim.overlay_grid = Some(overlay_grid);
+    *sim.overlay_grid = Some(overlay_grid);
     sim.intern_rule_type_ids(&rules);
     let owner = sim.interner.intern("Americans");
     sim.houses
@@ -416,7 +416,7 @@ fn structure_changes_publish_footprint_cells_without_rebuilding_zones() {
     let (rules, overlays) = rules_and_overlays();
     let mut sim = Simulation::with_seed(0x442048);
     sim.install_resolved_terrain_for_new_map(gsi_04_10_clear_terrain(16, 16));
-    sim.overlay_grid = Some(OverlayGrid::new(16, 16));
+    *sim.overlay_grid = Some(OverlayGrid::new(16, 16));
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let open = sim.path_grid_snapshot().unwrap();
     let zone_storage = |sim: &Simulation| {
@@ -509,7 +509,7 @@ fn structure_mark_publishes_presence_and_preserves_other_marked_blockers() {
     assert!(!sim.unmark_entity_remove(10, context));
     assert_eq!(*sim.path_grid_snapshot().unwrap(), *empty);
     assert_eq!(
-        sim.structure_navigation_cells,
+        *sim.structure_navigation_cells,
         super::navigation::structure_movement_cells(&sim.substrate.entities, &sim.interner, &rules),
         "the published structure-cell cache follows the same Mark authority"
     );
