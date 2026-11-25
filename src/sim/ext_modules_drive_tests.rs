@@ -306,7 +306,7 @@ fn factory_properties_follow_a_queued_production() {
     );
     let read = |sim: &mut crate::sim::world::Simulation, name: &str| {
         sim.with_module_host(rules, ModuleSource::Map, |host| {
-            host.read(house, prop(name))
+            host.reader().read(house, prop(name))
         })
         .expect("a valid read")
     };

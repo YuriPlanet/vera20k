@@ -384,7 +384,9 @@ impl Host<'_, '_> {
             EVENT_MODIFIER_COUNT_POLL => object,
             EVENT_DISTANCE_POLL => match decode_ref(def.value)? {
                 Some(Ref::Cell { .. }) => object,
-                Some(Ref::Waypoint(number)) if self.waypoint_cell(number).is_some() => object,
+                Some(Ref::Waypoint(number)) if self.reader().waypoint_cell(number).is_some() => {
+                    object
+                }
                 Some(Ref::Waypoint(_)) => return Ok(Err(Status::NotFound)),
                 _ => return invalid(format!("{:#x} is not a cell", def.value)),
             },
@@ -777,8 +779,9 @@ impl Simulation {
     ) -> Option<i64> {
         let house = house.map_or(0, |index| house_ref(index as usize));
         self.with_module_host(rules, source, |host| {
+            let reader = host.reader();
             let get = |reference: i64, name: &str| match property_id(name)
-                .map(|prop| host.read(reference, prop))
+                .map(|prop| reader.read(reference, prop))
             {
                 Some(Ok((value, Status::Ok))) => Some(value),
                 _ => None,
@@ -786,7 +789,7 @@ impl Simulation {
             match def.kind {
                 EVENT_PROPERTY_POLL => {
                     let reference = if holder == 0 { house } else { holder as i64 };
-                    match host.read(reference, def.id) {
+                    match reader.read(reference, def.id) {
                         Ok((value, Status::Ok)) => Some(value),
                         _ => None,
                     }
@@ -806,7 +809,7 @@ impl Simulation {
                 EVENT_DISTANCE_POLL => {
                     let (x, y) = match decode_ref(def.value).ok()?? {
                         Ref::Cell { x, y } => (x, y),
-                        Ref::Waypoint(number) => host.waypoint_cell(number)?,
+                        Ref::Waypoint(number) => reader.waypoint_cell(number)?,
                         _ => return None,
                     };
                     let centre = |cell: u16| i64::from(cell) * 256 + 128;
@@ -823,7 +826,7 @@ impl Simulation {
                         Ok(VarScope::House) => house,
                         _ => 0,
                     };
-                    match host.read_var(scope, def.id) {
+                    match reader.read_var(scope, def.id) {
                         Ok((value, Status::Ok)) => Some(value),
                         _ => None,
                     }

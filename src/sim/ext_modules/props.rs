@@ -69,7 +69,7 @@ use vera20k_wasm_ext::{
     NAME_WARHEAD, NAME_WEAPON, Query, SCOPE_CELLS, Status,
 };
 
-use super::{Host, Ref, cell_ref, decode_ref, house_ref, techno_type, type_ref};
+use super::{Reader, Ref, cell_ref, decode_ref, house_ref, techno_type, type_ref};
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
@@ -88,17 +88,18 @@ const RELATION_NEUTRAL: i64 = 3;
 /// Whom a viewpoint property is read for (appendix 7, "Viewpoint"): the
 /// trigger house in a filter clause, the query's `viewpoint` in `find`, no
 /// one in a direct `get` (the property then answers `Unsupported`).
+/// A client module's viewpoint is always its own house (RFC 10).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(super) struct View {
+pub(crate) struct View {
     /// The viewpoint house's array index: the query's house, or its
     /// viewpoint object's owner.
-    pub(super) house: Option<usize>,
+    pub(crate) house: Option<usize>,
     /// The query's viewpoint object, which object viewpoint properties
     /// (`Engage`) read for.
-    pub(super) object: Option<u64>,
+    pub(crate) object: Option<u64>,
     /// The query's TechnoType ID, which `Placeable` places (cells queries
     /// only).
-    pub(super) placing: Option<u32>,
+    pub(crate) placing: Option<u32>,
 }
 
 impl View {
@@ -112,7 +113,7 @@ impl View {
     }
 }
 
-impl Host<'_, '_> {
+impl Reader<'_> {
     /// A query's view: its `viewpoint`, which must be 0, a house or an
     /// object (whose owner is then the viewpoint house; a gone object leaves
     /// the house unset), and for a cells query its TechnoType.

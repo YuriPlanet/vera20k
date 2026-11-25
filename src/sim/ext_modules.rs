@@ -107,7 +107,8 @@ pub use client_outbox::{ClientNotify, ClientOutbox, ClientSimEvent};
 pub(crate) use decide::CommandAdmission;
 use modifiers::{Modifier, ModifierOp, ModifierStore, Stat};
 pub(crate) use orders::take_due_orders;
-use props::{View, type_property};
+pub(crate) use props::View;
+use props::type_property;
 use rules::check_notify_collision;
 pub use rules::{MapUi, PreparedExtModules, WasmPolicy};
 use vars::{FIRST_DECLARED_VAR, VarStore, VarValues};
@@ -177,7 +178,7 @@ pub const fn house_ref(index: usize) -> i64 {
 /// 2^46) and every house reference (bit 47 clear).
 const SUPER_REF_BIT: i64 = 1 << 46;
 
-const fn super_ref(house: usize, index: usize) -> i64 {
+pub(crate) const fn super_ref(house: usize, index: usize) -> i64 {
     SUPER_REF_BIT | ((house as i64) << 16) | index as i64
 }
 
@@ -619,6 +620,24 @@ impl ExtModules {
         &self.modifiers
     }
 
+    /// The declared variables (RFC 6e), for client reads.
+    pub(crate) fn vars(&self) -> &VarStore {
+        &self.vars
+    }
+
+    /// Declares variables as loaded modules would, for client read tests.
+    #[cfg(test)]
+    pub(crate) fn declare_vars_for_test(
+        &mut self,
+        decls: &[(ModuleSource, vera20k_wasm_ext::VarDecl)],
+    ) {
+        self.vars.declare(
+            decls
+                .iter()
+                .map(|(source, decl)| (*source, std::slice::from_ref(decl))),
+        );
+    }
+
     /// A declared variable's value for `holder` (`0` global, else a house
     /// or object reference); `None` for an unknown variable, a wrong scope
     /// or a gone holder.
@@ -781,18 +800,18 @@ const REF_GLOBAL: i64 = 4;
 const REF_LIMIT: i64 = 1 << 53;
 
 /// A type reference: name kind and ID.
-const fn type_ref(kind: i32, id: u32) -> i64 {
+pub(crate) const fn type_ref(kind: i32, id: u32) -> i64 {
     (REF_TYPE << REF_KIND_SHIFT) | ((kind as i64) << 32) | id as i64
 }
 
 /// A cell reference, in cells.
-const fn cell_ref(x: u16, y: u16) -> i64 {
+pub(crate) const fn cell_ref(x: u16, y: u16) -> i64 {
     (REF_CELL << REF_KIND_SHIFT) | ((x as i64) << 16) | y as i64
 }
 
 /// What a nonzero reference names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Ref {
+pub(crate) enum Ref {
     Object(u64),
     House(usize),
     /// House `house`'s Super of `[SuperWeaponTypes]` entry `index`.
@@ -816,7 +835,7 @@ enum Ref {
 
 /// Decodes a reference; `None` for 0. Client kinds (5, 6) and unknown kinds
 /// are invalid in the simulation.
-fn decode_ref(reference: i64) -> Result<Option<Ref>, Invalid> {
+pub(crate) fn decode_ref(reference: i64) -> Result<Option<Ref>, Invalid> {
     if reference == 0 {
         return Ok(None);
     }
@@ -878,8 +897,53 @@ struct Host<'a, 'f> {
     rules_ini: Option<&'a IniFile>,
 }
 
-/// `has_kind`, the same in every call (the rules stage included).
-fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
+impl Host<'_, '_> {
+    /// What this call's reads (`get`, `find`, `var_get`, filter clauses)
+    /// go through: the simulation, read-only, with no client gate.
+    fn reader(&self) -> Reader<'_> {
+        Reader {
+            sim: &*self.sim,
+            rules: self.rules,
+            overlay_registry: self.overlay_registry,
+            gate: None,
+        }
+    }
+}
+
+/// The one reader of module-visible state (appendix 7, 8.2): property
+/// reads, variable reads and `find`, over a simulation it never writes. The
+/// module host reads through it ([`Host::reader`]); client modules read
+/// through it too (`app::ui_modules::reads`), behind their visibility gate,
+/// on whatever runtime the app reads (possibly the presentation copy).
+#[derive(Clone, Copy)]
+pub(crate) struct Reader<'a> {
+    pub(crate) sim: &'a Simulation,
+    pub(crate) rules: &'a RuleSet,
+    /// For `Placeable` (the placement owner's overlay test).
+    pub(crate) overlay_registry: Option<&'a OverlayTypeRegistry>,
+    /// A client's view (RFC 10, "Client reads"); `None` in the simulation.
+    /// With one, `find` lists only the candidates the gate admits and reads
+    /// every clause through it.
+    pub(crate) gate: Option<&'a dyn ReadGate>,
+}
+
+/// What a client may see of a `find` (RFC 10, "Client reads"; appendix 8.2
+/// "client" column): which candidates exist for it, and how its clauses
+/// read. Candidates it does not list are passed over like keys without a
+/// candidate ([`FindPage::skip`]), so a page says nothing about them.
+pub(crate) trait ReadGate {
+    /// Whether `find` may list `reference`: an object, a cell or a
+    /// superweapon reference.
+    fn lists(&self, reference: i64) -> bool;
+    /// A clause's reading of `prop` on `reference`, for the query's `view`.
+    fn clause_read(&self, reference: i64, prop: i32, view: View) -> Result<(i64, Status), Invalid>;
+    /// A clause's reading of variable `var` in `scope`.
+    fn clause_var(&self, scope: i64, var: i32) -> Result<(i64, Status), Invalid>;
+}
+
+/// `has_kind`, the same in every call (the rules stage included); client
+/// modules answer the simulation's tables with it too.
+pub(crate) fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
     match table {
         vera20k_wasm_ext::triggers::TABLE_EVENT => {
             events::raises(rules, id)
@@ -1009,9 +1073,61 @@ fn variable_name(vars: &VarStore, id: i32) -> Result<(String, Status), Invalid> 
 }
 
 /// TechnoType `id`: an index into the rules' type registry.
-fn techno_type(rules: &RuleSet, id: i32) -> Option<&crate::rules::object_type::ObjectType> {
+pub(crate) fn techno_type(
+    rules: &RuleSet,
+    id: i32,
+) -> Option<&crate::rules::object_type::ObjectType> {
     let id = usize::try_from(id).ok()?;
     rules.all_objects().nth(id)
+}
+
+/// `lookup` of the name kinds the simulation answers, for a module of
+/// `source` (whose variables a name without a `mod.`/`map.` prefix finds).
+/// The module host and client modules (`client_lookup`) both answer with it;
+/// `Property`, `ActionKind` and `ModuleAction` are the sandbox's.
+pub(crate) fn lookup_name(
+    sim: &Simulation,
+    rules: &RuleSet,
+    source: ModuleSource,
+    kind: i32,
+    name: &str,
+) -> (i32, Status) {
+    let id = match kind {
+        NAME_TEAM_TYPE => sim
+            .stock_definition(crate::sim::trigger_runtime::StockReferenceKind::Team, name)
+            .map(|index| index as i32),
+        NAME_VARIABLE => sim.ext_modules.vars.lookup(source, name),
+        NAME_STRING => sim.ext_modules.ini.string_id(name),
+        NAME_MODULE_EVENT => sim.ext_modules.ini.event_id(name),
+        _ => match rules_name_id(rules, kind, name) {
+            Some(id) => id,
+            None => return (-1, Status::Unsupported),
+        },
+    };
+    id.map_or((-1, Status::NotFound), |id| (id, Status::Ok))
+}
+
+/// `name_of` of the name kinds the simulation answers ([`lookup_name`]'s).
+pub(crate) fn name_of_id(
+    sim: &Simulation,
+    rules: &RuleSet,
+    kind: i32,
+    id: i32,
+) -> Result<(String, Status), Invalid> {
+    let name = match kind {
+        NAME_VARIABLE => return variable_name(&sim.ext_modules.vars, id),
+        NAME_STRING | NAME_MODULE_EVENT => {
+            return Ok(ini_name_of(&sim.ext_modules.ini, kind, id));
+        }
+        NAME_TEAM_TYPE => usize::try_from(id)
+            .ok()
+            .and_then(|id| sim.stock_team_type_name(id)),
+        _ => match rules_id_name(rules, kind, id) {
+            Some(name) => name,
+            None => return Ok((String::new(), Status::Unsupported)),
+        },
+    };
+    name_answer(name, kind, id)
 }
 
 impl SimHost for Host<'_, '_> {
@@ -1048,44 +1164,18 @@ impl SimHost for Host<'_, '_> {
     }
 
     fn lookup(&mut self, kind: i32, name: &str) -> Result<(i32, Status), Invalid> {
-        let id = match kind {
-            NAME_TEAM_TYPE => self
-                .sim
-                .stock_definition(crate::sim::trigger_runtime::StockReferenceKind::Team, name)
-                .map(|index| index as i32),
-            NAME_VARIABLE => self.sim.ext_modules.vars.lookup(self.source, name),
-            NAME_STRING => self.sim.ext_modules.ini.string_id(name),
-            NAME_MODULE_EVENT => self.sim.ext_modules.ini.event_id(name),
-            _ => match rules_name_id(self.rules, kind, name) {
-                Some(id) => id,
-                None => return Ok((-1, Status::Unsupported)),
-            },
-        };
-        Ok(id.map_or((-1, Status::NotFound), |id| (id, Status::Ok)))
+        Ok(lookup_name(self.sim, self.rules, self.source, kind, name))
     }
 
     fn name_of(&mut self, kind: i32, id: i32) -> Result<(String, Status), Invalid> {
-        let name = match kind {
-            NAME_VARIABLE => return variable_name(&self.sim.ext_modules.vars, id),
-            NAME_STRING | NAME_MODULE_EVENT => {
-                return Ok(ini_name_of(&self.sim.ext_modules.ini, kind, id));
-            }
-            NAME_TEAM_TYPE => usize::try_from(id)
-                .ok()
-                .and_then(|id| self.sim.stock_team_type_name(id)),
-            _ => match rules_id_name(self.rules, kind, id) {
-                Some(name) => name,
-                None => return Ok((String::new(), Status::Unsupported)),
-            },
-        };
-        name_answer(name, kind, id)
+        name_of_id(self.sim, self.rules, kind, id)
     }
 
     fn get(&mut self, reference: i64, prop: i32) -> Result<(i64, Status), Invalid> {
         if let Some(answer) = self.trigger_property(reference, prop, None) {
             return Ok(answer);
         }
-        self.read(reference, prop)
+        self.reader().read(reference, prop)
     }
 
     fn set(&mut self, reference: i64, prop: i32, value: i64) -> Result<Status, Invalid> {
@@ -1120,7 +1210,7 @@ impl SimHost for Host<'_, '_> {
                 _ => {}
             }
         }
-        let (_, status) = self.read(reference, prop)?;
+        let (_, status) = self.reader().read(reference, prop)?;
         Ok(match status {
             Status::Ok => Status::Refused,
             other => other,
@@ -1214,18 +1304,11 @@ impl SimHost for Host<'_, '_> {
     }
 
     fn find(&mut self, query: &Query, cap: usize) -> Result<(FindPage, Status), Invalid> {
-        match query.scope {
-            SCOPE_OBJECTS => self.find_objects(query, cap),
-            SCOPE_HOUSES => self.find_houses(query, cap),
-            SCOPE_CELLS => self.find_cells(query, cap),
-            SCOPE_MODIFIERS => self.find_modifiers(query, cap),
-            SCOPE_SUPER_WEAPONS => self.find_super_weapons(query, cap),
-            _ => Ok((FindPage::default(), Status::Unsupported)),
-        }
+        self.reader().find(query, cap)
     }
 
     fn var_get(&mut self, scope: i64, var: i32) -> Result<(i64, Status), Invalid> {
-        self.read_var(scope, var)
+        self.reader().read_var(scope, var)
     }
 
     fn var_set(&mut self, scope: i64, var: i32, value: i64) -> Result<Status, Invalid> {
@@ -1496,7 +1579,19 @@ fn property_id_range((first, last): (&str, &str)) -> std::ops::RangeInclusive<i3
     id(first)..=id(last)
 }
 
-impl Host<'_, '_> {
+impl Reader<'_> {
+    /// `find`, by scope (appendix 8.2).
+    pub(crate) fn find(&self, query: &Query, cap: usize) -> Result<(FindPage, Status), Invalid> {
+        match query.scope {
+            SCOPE_OBJECTS => self.find_objects(query, cap),
+            SCOPE_HOUSES => self.find_houses(query, cap),
+            SCOPE_CELLS => self.find_cells(query, cap),
+            SCOPE_MODIFIERS => self.find_modifiers(query, cap),
+            SCOPE_SUPER_WEAPONS => self.find_super_weapons(query, cap),
+            _ => Ok((FindPage::default(), Status::Unsupported)),
+        }
+    }
+
     /// A house reference's house; `None` for a house that does not exist.
     fn house(&self, reference: i64) -> Result<Option<crate::sim::intern::InternedId>, Invalid> {
         if reference & HOUSE_REF_BIT == 0 || reference >> 48 != 0 {
@@ -1507,7 +1602,7 @@ impl Host<'_, '_> {
     }
 
     /// A property, as `get` reads it: without a viewpoint.
-    fn read(&self, reference: i64, prop: i32) -> Result<(i64, Status), Invalid> {
+    pub(crate) fn read(&self, reference: i64, prop: i32) -> Result<(i64, Status), Invalid> {
         self.read_in(reference, prop, View::default())
     }
 
@@ -1516,7 +1611,12 @@ impl Host<'_, '_> {
     /// house, or an object: `Engage` reads for it, the house properties for
     /// its owner). A direct `get` has none, and the viewpoint properties
     /// answer `Unsupported` there.
-    fn read_in(&self, reference: i64, prop: i32, view: View) -> Result<(i64, Status), Invalid> {
+    pub(crate) fn read_in(
+        &self,
+        reference: i64,
+        prop: i32,
+        view: View,
+    ) -> Result<(i64, Status), Invalid> {
         let name = property_name(prop).unwrap_or_default();
         let Some(reference) = decode_ref(reference)? else {
             return Ok((0, Status::Gone));
@@ -1558,7 +1658,7 @@ impl Host<'_, '_> {
     }
 
     /// A variable, as `var_get` reads it.
-    fn read_var(&self, scope: i64, var: i32) -> Result<(i64, Status), Invalid> {
+    pub(crate) fn read_var(&self, scope: i64, var: i32) -> Result<(i64, Status), Invalid> {
         if var >= FIRST_DECLARED_VAR {
             let holder = self.sim.module_var_holder(scope, var)?;
             return Ok(self.sim.ext_modules.vars.read(var, holder));
@@ -1675,7 +1775,8 @@ impl Host<'_, '_> {
 
     /// Whether `candidate` passes every clause; `None` when a clause needs
     /// what is not kept yet. Clauses read like `get`, for the query's
-    /// viewpoint; a reading that is not `Ok` fails its clause.
+    /// viewpoint; a reading that is not `Ok` fails its clause. A client
+    /// reads them through its gate.
     fn passes(&self, candidate: i64, query: &Query) -> Result<Option<bool>, Invalid> {
         let view = if query.clauses.is_empty() {
             View::default()
@@ -1683,10 +1784,17 @@ impl Host<'_, '_> {
             self.query_view(query)?
         };
         for clause in &query.clauses {
-            let (reading, status) = match clause.subject {
-                ClauseSubject::Property(prop) => self.read_in(candidate, prop, view)?,
-                ClauseSubject::Var { var, subject } => {
-                    self.read_var(if subject { candidate } else { 0 }, var)?
+            let (reading, status) = match (clause.subject, self.gate) {
+                (ClauseSubject::Property(prop), None) => self.read_in(candidate, prop, view)?,
+                (ClauseSubject::Property(prop), Some(gate)) => {
+                    gate.clause_read(candidate, prop, view)?
+                }
+                (ClauseSubject::Var { var, subject }, gate) => {
+                    let scope = if subject { candidate } else { 0 };
+                    match gate {
+                        None => self.read_var(scope, var)?,
+                        Some(gate) => gate.clause_var(scope, var)?,
+                    }
                 }
             };
             if status != Status::Ok || !clause.op.holds(reading, clause.value) {
@@ -1764,7 +1872,17 @@ impl Host<'_, '_> {
         };
         let mut page = FindPage::default();
         for (id, entity) in candidates {
-            if page.found.len() == cap || !page.examine(id as i64, query) {
+            if page.found.len() == cap {
+                break;
+            }
+            // What a client cannot see is no candidate for it.
+            if self.gate.is_some_and(|gate| !gate.lists(id as i64)) {
+                if !page.skip(id as i64) {
+                    break;
+                }
+                continue;
+            }
+            if !page.examine(id as i64, query) {
                 break;
             }
             if centre.is_some_and(|(cx, cy)| !in_area(entity, query.area, cx, cy))
@@ -1809,7 +1927,9 @@ impl Host<'_, '_> {
         }
         Ok((page, Status::Ok))
     }
+}
 
+impl Host<'_, '_> {
     /// `Health`: sets health without kill credit or damage events, clamped
     /// to the type's Strength. Writing 0 or less would kill without credit,
     /// which needs the death owner's credit-free path: it answers `Refused`.
@@ -1852,7 +1972,7 @@ impl Host<'_, '_> {
         let Some(Ref::House(_)) = decode_ref(value)? else {
             return Err(Invalid(format!("{value:#x} is not a house reference")));
         };
-        let Some(house) = self.house(value)? else {
+        let Some(house) = self.reader().house(value)? else {
             return Ok(Status::Gone);
         };
         let Some(entity) = self.sim.entities().get(id) else {
@@ -1888,7 +2008,9 @@ impl Host<'_, '_> {
         }
         Ok(Status::Ok)
     }
+}
 
+impl Reader<'_> {
     /// `find` over houses, in house array order. Houses have no place or
     /// type: a query with an area, type or owner answers `Unsupported`.
     fn find_houses(&self, query: &Query, cap: usize) -> Result<(FindPage, Status), Invalid> {

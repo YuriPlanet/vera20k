@@ -66,7 +66,7 @@ use std::collections::BTreeMap;
 use vera20k_wasm_ext::decide::{EVENT_LAUNCH, EVENT_PROJECTILE_FRAME, PathSpec, ProjectileStep};
 use vera20k_wasm_ext::{NAME_PROJECTILE, Status};
 
-use super::{Host, ModuleEvent, Ref, cell_ref, decode_ref, type_ref};
+use super::{Host, ModuleEvent, Reader, Ref, cell_ref, decode_ref, type_ref};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::projectile::{
     ModuleMotion, Projectile, ProjectileCoord, ProjectileTarget, ProjectileVelocity,
@@ -588,7 +588,7 @@ impl Simulation {
     }
 }
 
-impl Host<'_, '_> {
+impl Reader<'_> {
     /// A projectile's property (appendix 7.4).
     pub(super) fn projectile_property(&self, id: u64, name: &str) -> (i64, Status) {
         let Some(projectile) = self.sim.projectiles.get(id) else {
@@ -628,7 +628,9 @@ impl Host<'_, '_> {
         };
         (value, Status::Ok)
     }
+}
 
+impl Host<'_, '_> {
     /// `set` of `Data0` or `Data1` on a projectile; the other projectile
     /// properties are read-only (appendix 7.4).
     pub(super) fn write_projectile_property(&mut self, id: u64, name: &str, value: i64) -> Status {

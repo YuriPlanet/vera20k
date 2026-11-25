@@ -24,14 +24,14 @@
 
 use vera20k_wasm_ext::{ActionParams, Area, FindPage, Invalid, NAME_SUPER_WEAPON, Query, Status};
 
-use super::{Host, Ref, decode_ref, house_ref, super_ref, type_ref};
+use super::{Host, Reader, Ref, decode_ref, house_ref, super_ref, type_ref};
 use crate::sim::superweapon::SuperWeaponInstance;
 
 /// Stock action `SuperWeaponSetCharge` (TAction 129), which writing
 /// `ChargePercent` runs.
 const ACTION_SET_CHARGE: i32 = 129;
 
-impl Host<'_, '_> {
+impl Reader<'_> {
     /// House `house`'s Super of type `index`, with the type's name.
     fn super_weapon(&self, house: usize, index: usize) -> Option<(&SuperWeaponInstance, &str)> {
         let owner = *self.sim.houses.order().get(house)?;
@@ -76,7 +76,9 @@ impl Host<'_, '_> {
         };
         (value, Status::Ok)
     }
+}
 
+impl Host<'_, '_> {
     /// `set` on a superweapon: `ChargePercent` 0..=100 runs stock action
     /// 129 for its house and type (refused for an ungranted Super, as the
     /// action refuses); the other properties are read-only.
@@ -87,7 +89,7 @@ impl Host<'_, '_> {
         name: &str,
         value: i64,
     ) -> Result<Status, Invalid> {
-        if self.super_weapon(house, index).is_none() {
+        if self.reader().super_weapon(house, index).is_none() {
             return Ok(Status::Gone);
         }
         Ok(match name {
@@ -110,7 +112,9 @@ impl Host<'_, '_> {
             _ => Status::Unsupported,
         })
     }
+}
 
+impl Reader<'_> {
     /// `find` over granted Supers, by (house index, type index): one house
     /// with an `owner`, one type with a `SuperWeapon` `type`.
     pub(super) fn find_super_weapons(
@@ -162,7 +166,12 @@ impl Host<'_, '_> {
                 let granted = self
                     .super_weapon(house, index)
                     .is_some_and(|(instance, _)| instance.is_active());
-                if !granted {
+                // An ungranted Super, or (for a client) another house's.
+                if !granted
+                    || self
+                        .gate
+                        .is_some_and(|gate| !gate.lists(super_ref(house, index)))
+                {
                     if !page.skip(key) {
                         break 'houses;
                     }

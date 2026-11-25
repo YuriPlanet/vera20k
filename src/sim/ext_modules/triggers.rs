@@ -52,7 +52,7 @@ use vera20k_wasm_ext::{
 
 use super::{
     ActionContext, GLOBAL_VARS, Host, LOCAL_VARS, ModuleSource, Ref, cell_ref, decode_ref,
-    house_ref, run_action, vars::VarStore,
+    house_ref, run_action, techno_type, vars::VarStore,
 };
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -373,7 +373,7 @@ impl Host<'_, '_> {
                 kind: NAME_TECHNO_TYPE,
                 id,
             }) => {
-                let known = i32::try_from(id).is_ok_and(|id| self.techno_type(id).is_some());
+                let known = i32::try_from(id).is_ok_and(|id| techno_type(self.rules, id).is_some());
                 if !known {
                     return Err(Invalid(format!("no TechnoType {id}")));
                 }
@@ -674,11 +674,14 @@ impl Simulation {
         let view = super::View::of_trigger_house(house);
         let house = house.map_or(0, |index| house_ref(index as usize));
         self.with_module_host(rules, source, |host| {
+            let reader = host.reader();
             clauses.iter().all(|clause| {
                 let reading = match clause.subject {
-                    FilterSubject::Subject(prop) => host.read_in(event.subject as i64, prop, view),
-                    FilterSubject::Other(prop) => host.read_in(event.other as i64, prop, view),
-                    FilterSubject::House(prop) => host.read_in(house, prop, view),
+                    FilterSubject::Subject(prop) => {
+                        reader.read_in(event.subject as i64, prop, view)
+                    }
+                    FilterSubject::Other(prop) => reader.read_in(event.other as i64, prop, view),
+                    FilterSubject::House(prop) => reader.read_in(house, prop, view),
                     FilterSubject::Var { var, target } => {
                         let scope = match target {
                             VarTarget::Global => 0,
@@ -686,7 +689,7 @@ impl Simulation {
                             VarTarget::Other => event.other as i64,
                             VarTarget::House => house,
                         };
-                        host.read_var(scope, var)
+                        reader.read_var(scope, var)
                     }
                 };
                 matches!(reading, Ok((value, Status::Ok)) if clause.holds(value))
@@ -823,7 +826,9 @@ impl Simulation {
         } else if event.at_subject {
             self.with_module_host(rules, source, |host| {
                 ["X", "Y", "Z"].map(|name| {
-                    match property_id(name).map(|prop| host.read(event.subject as i64, prop)) {
+                    match property_id(name)
+                        .map(|prop| host.reader().read(event.subject as i64, prop))
+                    {
                         Some(Ok((value, Status::Ok))) => i32::try_from(value).unwrap_or(-1),
                         _ => -1,
                     }

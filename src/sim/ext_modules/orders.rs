@@ -70,7 +70,7 @@ use serde::{Deserialize, Serialize};
 use vera20k_wasm_ext::triggers::{EVENT_COMMANDED, EVENT_ORDER_REFUSED};
 use vera20k_wasm_ext::{Invalid, NAME_SUPER_WEAPON, NAME_TECHNO_TYPE, Order, Status};
 
-use super::{Host, ModuleEvent, Ref, decode_ref};
+use super::{Host, ModuleEvent, Reader, Ref, decode_ref, techno_type};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::{Command, CommandEnvelope, CommandRefusal};
@@ -186,7 +186,7 @@ const fn command_spec(kind: i32) -> Option<(TargetKindSpec, ValueSpec, bool)> {
 impl Host<'_, '_> {
     /// `order`: checks and queues one order.
     pub(super) fn queue_order(&mut self, house: i64, order: &Order) -> Result<Status, Invalid> {
-        let Some(owner) = self.house(house)? else {
+        let Some(owner) = self.reader().house(house)? else {
             return Err(Invalid(format!("{house:#x} names no house")));
         };
         let Some(state) = self.sim.houses.get(&owner) else {
@@ -225,7 +225,7 @@ impl Host<'_, '_> {
                 Target::Cell(x, y)
             }
             (TargetKindSpec::Cell | TargetKindSpec::Any, Some(Ref::Waypoint(number))) => {
-                match self.waypoint_cell(number) {
+                match self.reader().waypoint_cell(number) {
                     Some((x, y)) => Target::Cell(x, y),
                     None => return Ok(Status::NotFound),
                 }
@@ -251,7 +251,7 @@ impl Host<'_, '_> {
                 ) => {
                     let object = i32::try_from(id)
                         .ok()
-                        .and_then(|id| self.techno_type(id))
+                        .and_then(|id| techno_type(self.rules, id))
                         .ok_or_else(|| Invalid(format!("no TechnoType {id}")))?;
                     if value_spec == ValueSpec::Building
                         && object.category != crate::rules::object_type::ObjectCategory::Building
@@ -297,9 +297,11 @@ impl Host<'_, '_> {
     fn frame_now(&self) -> u32 {
         self.sim.session.binary_frame()
     }
+}
 
+impl Reader<'_> {
     /// A waypoint's cell; `None` for a waypoint the map does not set.
-    pub(super) fn waypoint_cell(&self, number: i32) -> Option<(u16, u16)> {
+    pub(crate) fn waypoint_cell(&self, number: i32) -> Option<(u16, u16)> {
         if !self.sim.session.waypoint_is_valid(number) {
             return None;
         }

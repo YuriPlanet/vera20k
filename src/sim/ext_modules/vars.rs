@@ -17,7 +17,7 @@
 
 use std::collections::BTreeMap;
 
-use vera20k_wasm_ext::{Invalid, Status, VarDecl, VarScope};
+use vera20k_wasm_ext::{Invalid, Status, VarDecl, VarScope, Visibility};
 
 use super::{ModuleSource, Ref, decode_ref};
 
@@ -86,6 +86,12 @@ impl VarStore {
     /// A declared variable's scope.
     pub(super) fn scope(&self, var: i32) -> Option<VarScope> {
         self.decl(var).map(|decl| decl.scope)
+    }
+
+    /// A declared variable's client visibility (RFC 6e), which client
+    /// modules read it under; the simulation reads every variable.
+    pub(crate) fn visibility(&self, var: i32) -> Option<Visibility> {
+        self.decl(var).map(|decl| decl.visibility)
     }
 
     /// A declared variable's name.

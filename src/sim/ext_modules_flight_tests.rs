@@ -303,7 +303,7 @@ fn property(scene: &mut HeadlessScenario, id: u64, name: &str) -> i64 {
     runtime
         .simulation
         .with_module_host(&runtime.resources.rules, ModuleSource::Map, |host| {
-            host.read(id as i64, prop)
+            host.reader().read(id as i64, prop)
         })
         .expect("a valid read")
         .0
