@@ -278,7 +278,6 @@ pub(crate) fn begin_shell_exit(
     if current_shell_slide_target(state) != Some(kind)
         || state.frontend.shell_slide_active_shell != Some(kind)
         || state.frontend.shell_first_paint_slide.is_some()
-        || exits_in_place(kind)
     {
         return ShellExitStart::Immediate(then);
     }
@@ -367,29 +366,6 @@ pub(crate) fn shell_slide_running(frontend: &FrontendState) -> bool {
     frontend.shell_first_paint_slide.is_some() || frontend.shell_exit.is_some()
 }
 
-/// Whether `to` opens in place of `from`, as a page of VERA's Options window
-/// replaces another: Options `0xD5` and its Keyboard page `0xA3`, in either
-/// direction ([`exits_in_place`] has the matching exits). Retail slides
-/// `0xD5` out before `0xA3` (`0x0055FD06`) and `0xA3` out before the new
-/// `0xD5` (`0x005FBEF0`); VERA's Options window is its own layout, so such
-/// an entry arms no slide and plays no cue, and the page's statics start at
-/// once as a slide's SHOW completion would start them.
-fn moves_in_place(from: Option<ShellSlideKind>, to: ShellSlideKind) -> bool {
-    matches!(
-        (from, to),
-        (Some(ShellSlideKind::Options), ShellSlideKind::Keyboard)
-            | (Some(ShellSlideKind::Keyboard), ShellSlideKind::Options)
-    )
-}
-
-/// Whether leaving `kind` opens its next dialog in place ([`moves_in_place`]):
-/// the front-end Keyboard page, whose Back and Cancel both rebuild Options.
-/// Options' own Keyboard button commits at once from its owner
-/// (`App::commit_launcher_options_result`).
-fn exits_in_place(kind: ShellSlideKind) -> bool {
-    kind == ShellSlideKind::Keyboard
-}
-
 /// Forget the destroyed/recreated 0xE2 dialog instance at an actual route
 /// boundary, even when the destination never reaches a paint, so a collapsed
 /// 0xE2 -> 0x100 -> Back round trip makes a fresh 0xE2 entry edge (new
@@ -424,12 +400,6 @@ pub(crate) fn drive_shell_entry(state: &mut AppState, now: Instant) -> Option<Sh
             frontend.shell_monitor = Default::default();
             frontend.shell_page_title.reset();
             frontend.shell_status_line.reset();
-            // A page that opens in place of the other arms no slide: its
-            // statics start now, as the SHOW completion would start them.
-            if moves_in_place(previous, kind) {
-                show_completion(state, kind, now);
-                return Some(kind);
-            }
             let wave = new_wave(
                 &state.renderer.gpu,
                 &state.frontend,
@@ -724,20 +694,6 @@ pub(crate) fn skirmish_slide_target(
 mod tests {
     use super::*;
     use std::time::Duration;
-
-    /// Options and its Keyboard page replace each other in place, as the
-    /// pages of VERA's Options window do, while every other way into either
-    /// still slides.
-    #[test]
-    fn options_and_its_keyboard_page_replace_each_other_without_a_slide() {
-        use ShellSlideKind::{Keyboard, MainMenu, Options};
-        assert!(moves_in_place(Some(Options), Keyboard));
-        assert!(moves_in_place(Some(Keyboard), Options));
-        assert!(!moves_in_place(Some(MainMenu), Options));
-        assert!(!moves_in_place(None, Keyboard));
-        assert!(exits_in_place(Keyboard));
-        assert!(!exits_in_place(Options));
-    }
 
     #[test]
     fn campaign_score_owns_dialog_0x103() {
