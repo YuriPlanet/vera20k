@@ -6,7 +6,6 @@ use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::input::state::MatchInputState;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::process_assets::ProcessAssets;
-use crate::app::shell_route::ShellRoute;
 use crate::app::{App, AppState};
 use crate::render::gpu::GpuContext;
 use crate::ui::multiplayer_setup::*;
@@ -253,10 +252,12 @@ pub(crate) fn leaves_escape(state: &AppState) -> bool {
 
 /// The chat NewEdit while it takes keys, for the input method
 /// (`app::input::ime`): [`key_press`] reaches the focused chat with no
-/// verify box, page dialog, notice or ChooseMap over the dialog.
+/// verify box, page dialog, notice or ChooseMap over the dialog. Android
+/// routes every GUI edit through `ImeTarget::Gui`.
+#[cfg(not(target_os = "android"))]
 pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
     let routed = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-        && state.frontend.shell_route == ShellRoute::NetworkSetup
+        && state.frontend.shell_route == crate::app::shell_route::ShellRoute::NetworkSetup
         && state
             .frontend
             .skirmish_shell_state
@@ -575,7 +576,7 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         crate::app::shell_wol::page::cursor_moved(state);
         return;
     }
-    let Some((view, _)) = synced(state, true) else {
+    let Some((view, _layout)) = synced(state, true) else {
         return;
     };
     let (x, y) = state.match_state.input.cursor_px();
@@ -583,12 +584,28 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     let held = slider_held(&state.frontend.shell_controller) || notice_active(&state.frontend);
     state.frontend.shell_controller.on_pointer_move(x, y);
     if !held {
-        let help = hovered_help(
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            &view,
-        );
+        // VERA's send key has no control id, so it answers its own hint here:
+        // the emote button's, whose tile it borrows (`STT:EmoteButton`).
+        #[cfg(target_os = "android")]
+        let send_help = (!view.dialog.wol() && {
+            let key = crate::app::frontend::skirmish_shell_render::room_chat_send_rect(
+                _layout.chat,
+                _layout.chat_log,
+                _layout.page.scale,
+            );
+            x >= key.x && x < key.x + key.w && y >= key.y && y < key.y + key.h
+        })
+        .then(|| state.csf_text("STT:EmoteButton"));
+        #[cfg(not(target_os = "android"))]
+        let send_help: Option<String> = None;
+        let help = send_help.unwrap_or_else(|| {
+            hovered_help(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &view,
+            )
+        });
         let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
             return;
         };
@@ -615,6 +632,20 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         return;
     };
     let (x, y) = state.match_state.input.cursor_px();
+    // VERA's send key: a phone has no Enter, so the button on the chat box
+    // sends the line.
+    #[cfg(target_os = "android")]
+    if pressed
+        && crate::app::frontend::skirmish_shell_render::room_chat_send_rect(
+            layout.chat,
+            layout.chat_log,
+            layout.page.scale,
+        )
+        .contains(x, y)
+    {
+        key_press(state, Some(winit::keyboard::KeyCode::Enter), None);
+        return;
+    }
     if pressed {
         let over_preview = crate::app::frontend::preview_zoom::over_box(
             &state.frontend.shell_controller,

@@ -7,6 +7,8 @@
 
 pub(crate) mod account;
 pub(crate) mod autosave;
+#[cfg(any(target_os = "android", test))]
+pub(crate) mod chat_hint;
 pub(crate) mod commands;
 pub(crate) mod intro_play;
 pub(crate) mod options;

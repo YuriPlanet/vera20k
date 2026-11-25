@@ -1160,6 +1160,11 @@ fn upload_to_gpu(
     // tooltip (O10). Prepare once: nonsilent TextLabel72A4A0 advances its
     // raw-wall reveal and requests typing audio once per successful paint.
     // Keep the row's existing opaque black background behind its glyphs.
+    // Android posts its one-shot touch-to-chat line first.
+    #[cfg(target_os = "android")]
+    if state.frontend.screen == crate::ui::game_screen::GameScreen::InGame {
+        crate::app::input::messages::maybe_post_chat_hint(state);
+    }
     crate::app::input::messages::advance_messages(
         &state.diag,
         &state.frontend,

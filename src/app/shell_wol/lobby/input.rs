@@ -43,10 +43,22 @@ pub(crate) fn sync(state: &mut AppState) {
     super::player_card::sync(state);
 }
 
+/// The lobby's own dialog tree (`0x113` and its popups), while the lobby page
+/// takes the keys: `handle_wol_key` reaches [`key_press`] with no page dialog
+/// over it, so its edits are the ones the input method edits
+/// (`app::input::ime`).
+#[cfg(target_os = "android")]
+pub(crate) fn ime_gui(state: &AppState) -> Option<&vera20k_gui::Gui> {
+    lobby(state.frontend.wol.as_ref())
+        .filter(|lobby| lobby.interactive())
+        .map(|lobby| lobby.ui.gui())
+}
+
 /// The NewEdit that takes keys, for the input method (`app::input::ime`):
 /// `handle_wol_key` reaches [`key_press`] with the lobby page up, no page
 /// dialog and no popup. It is the chat edit while the chat shows, else VERA's
-/// room search.
+/// room search. Android routes every GUI edit through `ImeTarget::Gui`.
+#[cfg(not(target_os = "android"))]
 pub(crate) fn ime_edit_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
     let routed = crate::app::input::precedence::route_page(&state.frontend)
         == crate::app::input::precedence::ScreenPage::Wol
@@ -157,6 +169,13 @@ fn pointer(state: &mut AppState, press: Option<bool>) {
         return;
     };
     let effects = lobby.ui.pointer(x, y, press);
+    // Android: a press that lands on one of the lobby's edits arms the keyboard
+    // for its own dialog (`0x113`).
+    #[cfg(target_os = "android")]
+    if press == Some(true) && lobby.ui.gui().pressed_edit() {
+        crate::util::android_ime::arm(crate::ui::wol_lobby::DIALOG.0);
+        crate::util::android_ime::request_show();
+    }
     apply(state, effects);
 }
 

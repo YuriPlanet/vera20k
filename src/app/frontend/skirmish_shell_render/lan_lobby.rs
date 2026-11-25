@@ -132,9 +132,23 @@ pub(crate) fn render_lan_lobby(
         None
     } else {
         let gui = state.frontend.shell_controller.gui();
-        let help = crate::ui::shell::page::hovered_key(gui)
-            .map(|key| state.csf_label(key, ""))
-            .unwrap_or_default();
+        // VERA's send key answers the emote button's hint, whose tile it borrows.
+        #[cfg(target_os = "android")]
+        let send_help = {
+            let (px, py) = state.match_state.input.cursor_px();
+            layout.chat_send().is_some_and(|rect| {
+                px >= rect.x && px < rect.x + rect.w && py >= rect.y && py < rect.y + rect.h
+            })
+        };
+        #[cfg(not(target_os = "android"))]
+        let send_help = false;
+        let help = if send_help {
+            state.csf_text("STT:EmoteButton")
+        } else {
+            crate::ui::shell::page::hovered_key(gui)
+                .map(|key| state.csf_label(key, ""))
+                .unwrap_or_default()
+        };
         crate::app::frontend::menu_page_render::paint_shell_status_line(
             &mut state.frontend.shell_status_line,
             help,
@@ -298,6 +312,13 @@ pub(crate) fn render_lan_lobby(
     }
     if runtime.creating {
         paint_create_box(state, atlas, &mut overlay);
+    }
+    // Android: VERA's send key beside the chat box. The host draws it, so it
+    // has to go with the page's slide: otherwise it hangs over the next menu's
+    // entrance.
+    #[cfg(target_os = "android")]
+    if !leaving && let Some(rect) = layout.chat_send() {
+        super::push_chat_send_key(&mut overlay.controls, atlas, scale, rect);
     }
     in_game_shell::render_shell_frame(
         state,

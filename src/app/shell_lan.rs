@@ -1015,7 +1015,8 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
 
 /// The chat NewEdit while it takes keys, for the input method
 /// (`app::input::ime`). The name edit takes byte text only, so it keeps
-/// plain key text.
+/// plain key text. Android routes every GUI edit through `ImeTarget::Gui`.
+#[cfg(not(target_os = "android"))]
 pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
     let routed = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
         && state.frontend.shell_route == ShellRoute::LanLobby
@@ -1088,7 +1089,16 @@ pub(crate) fn sync_gui(state: &mut AppState) {
         controller.focus_control(PAGE.dialog, Some(CHAT));
     }
     let gui = controller.gui_mut();
-    page::sync_rects(gui, root, |id| layout.widget_rect(id));
+    page::sync_rects(gui, root, |id| {
+        // Android: the chat edit takes the room's row, beside the send key.
+        #[cfg(target_os = "android")]
+        if id == CHAT
+            && let Some(rect) = layout.chat_text()
+        {
+            return Some(rect);
+        }
+        layout.widget_rect(id)
+    });
     let lobby = &mut runtime.lobby;
     let _ = gui.set(root, Prop::Enabled, Value::Bool(lobby.enabled));
     // The observer image `0x75F` toggles like its box, anywhere on it.
@@ -1180,6 +1190,17 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     }
     sync_gui(state);
     let (x, y) = state.match_state.input.cursor_px();
+    // VERA's send key: a phone has no Enter to press, so the button on the
+    // chat box sends the line.
+    #[cfg(target_os = "android")]
+    if pressed
+        && layout(state)
+            .chat_send()
+            .is_some_and(|rect| rect.contains(x, y))
+    {
+        key_press(state, Some(KeyCode::Enter), None);
+        return;
+    }
     let controller = &mut state.frontend.shell_controller;
     if !pressed {
         controller.on_pointer_up(x, y);

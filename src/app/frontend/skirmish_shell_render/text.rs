@@ -817,8 +817,12 @@ fn choose_map_empty_text(
 /// The committed query plus the currently composed IME text, for display
 /// only; filtering still uses the committed query.
 pub(super) fn map_search_display(ime: &ImeState, search: &str) -> String {
-    let composition = ime
-        .composition(crate::app::input::ime::ImeTarget::ChooseMapSearch)
+    #[cfg(not(target_os = "android"))]
+    let composition = ime.composition(crate::app::input::ime::ImeTarget::ChooseMapSearch);
+    // Android: the search line is the focused GUI edit (`ImeTarget::Gui`).
+    #[cfg(target_os = "android")]
+    let composition = ime.open_composition();
+    let composition = composition
         .map(|(text, _)| String::from_utf16_lossy(text))
         .unwrap_or_default();
     format!("{search}{composition}")

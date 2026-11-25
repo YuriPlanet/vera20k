@@ -2368,8 +2368,20 @@ pub(crate) fn sync(
         // The Game Options box shows its page's controls.
         let box_page = (dialog == GAME_OPTIONS_BOX).then_some(ui.game_options_page);
         page_nodes::sync_rects(gui, root, |id| {
-            control_rect(view, layout, id)
-                .filter(|_| box_page.is_none_or(|page| on_game_options_page(view, page, id)))
+            let rect = control_rect(view, layout, id)
+                .filter(|_| box_page.is_none_or(|page| on_game_options_page(view, page, id)))?;
+            // Android: the chat edit leaves room for VERA's send key.
+            #[cfg(target_os = "android")]
+            if dialog == page && id == CHAT {
+                return Some(
+                    crate::app::frontend::skirmish_shell_render::room_chat_text_rect(
+                        rect,
+                        layout.chat_log,
+                        scale,
+                    ),
+                );
+            }
+            Some(rect)
         });
         let nodes: Vec<(NodeId, u16)> = gui
             .tree()

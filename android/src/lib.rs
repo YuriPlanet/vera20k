@@ -1,8 +1,8 @@
 //! Android entry point for the VERA20k client.
 //!
-//! Android never runs `main`. `android.app.NativeActivity` loads the cdylib and
-//! resolves `android_main` by symbol (the manifest names the library through
-//! `android.app.lib_name`), so the process starts here instead. Everything
+//! Android never runs `main`. `GameActivity` calls into the cdylib through
+//! `initializeNativeCode` (the activity loads `libvera20k_android.so` before
+//! `onCreate`), so the process starts here instead. Everything
 //! platform-specific that has to happen before the first window — the working
 //! directory, logging, panic reporting — runs in this order and then hands over
 //! to `vera20k::entry`, the same start-up the desktop binary uses.
@@ -145,6 +145,69 @@ fn handle_suffix() -> Option<String> {
             .map(|text| text.to_string_lossy().into_owned())
     })?;
     suffix.filter(|text| !text.is_empty())
+}
+
+/// The activity, kept for the soft-keyboard hooks: [`AndroidApp`] is cheap to
+/// clone, and its text-input calls work from any thread.
+static ACTIVITY: std::sync::OnceLock<AndroidApp> = std::sync::OnceLock::new();
+
+/// Show the soft keyboard (`util::android_ime`).
+fn ime_show() {
+    if let Some(app) = ACTIVITY.get() {
+        app.show_soft_input(false);
+    }
+}
+
+/// Hide the soft keyboard.
+fn ime_hide() {
+    if let Some(app) = ACTIVITY.get() {
+        app.hide_soft_input(false);
+    }
+}
+
+/// What the input method currently holds.
+fn ime_state() -> vera20k::util::android_ime::TextState {
+    ACTIVITY
+        .get()
+        .map(|app| {
+            let state = app.text_input_state();
+            vera20k::util::android_ime::TextState {
+                text: state.text,
+                cursor: state.selection.start,
+                compose: state.compose_region.map(|span| (span.start, span.end)),
+            }
+        })
+        .unwrap_or_default()
+}
+
+/// Replace the input method's buffer, with the caret at `cursor` characters.
+fn ime_set_state(text: &str, cursor: usize) {
+    use android_activity::input::{TextInputState, TextSpan};
+    if let Some(app) = ACTIVITY.get() {
+        app.set_text_input_state(TextInputState {
+            text: text.to_owned(),
+            selection: TextSpan {
+                start: cursor,
+                end: cursor,
+            },
+            compose_region: None,
+        });
+    }
+}
+
+/// Tell the input method whether the focused edit hides its text
+/// (`app::shell_wol::login::ime_secret`), so its dictionary and suggestions
+/// never see a password.
+fn ime_set_secret(secret: bool) {
+    let _ = with_activity(|env, activity| {
+        env.call_method(
+            activity,
+            "setImeKind",
+            "(Z)V",
+            &[jni::objects::JValue::Bool(secret as u8)],
+        )
+        .map(|_| ())
+    });
 }
 
 /// The activity's folder-picker answer: the chosen tree as a `content://` URI,
@@ -387,6 +450,16 @@ fn android_main(app: AndroidApp) {
     vera20k::util::device_identity::install(vera20k::util::device_identity::Hooks {
         handle_suffix,
     });
+    // winit's Android backend has no IME text events (winit#4736 adds them), so
+    // the engine reads the activity's GameTextInput buffer through these hooks.
+    let _ = ACTIVITY.set(app.clone());
+    vera20k::util::android_ime::install(vera20k::util::android_ime::Hooks {
+        show: ime_show,
+        hide: ime_hide,
+        state: ime_state,
+        set_state: ime_set_state,
+        set_secret: ime_set_secret,
+    });
     // Android starts every process in "/" with no writable home. Hand the app's
     // private folder to the engine before anything opens a file: it becomes
     // both the working directory and the settings folder, so logs, config.toml,
@@ -475,4 +548,44 @@ fn claim_event_loop() -> bool {
     use std::sync::OnceLock;
     static CLAIMED: OnceLock<()> = OnceLock::new();
     CLAIMED.set(()).is_ok()
+}
+
+use std::ffi::{c_int, c_void};
+
+unsafe extern "C" {
+    fn __real_pthread_create(
+        thread: *mut *mut c_void,
+        attr: *const c_void,
+        start_routine: extern "C" fn(*mut c_void) -> *mut c_void,
+        arg: *mut c_void,
+    ) -> c_int;
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn __wrap_pthread_create(
+    thread: *mut *mut c_void,
+    attr: *const c_void,
+    start_routine: extern "C" fn(*mut c_void) -> *mut c_void,
+    arg: *mut c_void,
+) -> c_int {
+    use std::mem::MaybeUninit;
+    let mut attr_copy: MaybeUninit<libc::pthread_attr_t> = MaybeUninit::uninit();
+    let mut attr_ptr = attr;
+
+    // SAFETY: `attr` is either null or an initialised `pthread_attr_t` the
+    // caller owns, and `attr_copy` is a local of that same type.
+    unsafe {
+        if !attr.is_null() {
+            std::ptr::copy_nonoverlapping(
+                attr as *const libc::pthread_attr_t,
+                attr_copy.as_mut_ptr(),
+                1,
+            );
+        } else {
+            libc::pthread_attr_init(attr_copy.as_mut_ptr());
+        }
+        attr_ptr = attr_copy.as_ptr() as *const c_void;
+        libc::pthread_attr_setstacksize(attr_copy.as_mut_ptr(), 8 * 1024 * 1024);
+        __real_pthread_create(thread, attr_ptr, start_routine, arg)
+    }
 }
