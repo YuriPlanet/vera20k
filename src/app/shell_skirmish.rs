@@ -6,6 +6,7 @@ use crate::app::frontend::state::FrontendState;
 use crate::app::input::state::MatchInputState;
 use crate::app::match_runtime::session::MatchSession;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::SaveRepository;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
@@ -125,32 +126,32 @@ impl App {
     /// The Choose Map search line takes keys only while its page is active.
     /// Its visible rectangle also anchors the platform's IME candidate UI.
     pub(super) fn choose_map_search_ime_rect(
-        state: &AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
     ) -> Option<crate::ui::shell::geom::RectPx> {
         use crate::app::input::precedence::{InputLayer, ScreenPage};
         if !matches!(
             crate::app::input::precedence::input_layer(
-                &state.platform,
-                &state.renderer,
-                &state.frontend,
-                &state.match_state,
-                &state.persistence
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence
             ),
             InputLayer::Screen(ScreenPage::NetworkSetup | ScreenPage::Skirmish)
         ) {
             return None;
         }
-        let modal = (state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_ref())
-        .filter(|modal| modal.message_box.is_none() && !modal.is_hidden())?;
-        let layout = choose_map_layout(&state.renderer, &state.frontend.screen);
+        let modal = (frontend.skirmish_shell_state.choose_map_modal.as_ref())
+            .filter(|modal| modal.message_box.is_none() && !modal.is_hidden())?;
+        let layout = choose_map_layout(renderer, &frontend.screen);
         Some(
             crate::app::frontend::skirmish_shell_render::choose_map_search_ime_area(
-                &state.platform.ime,
-                &state.renderer.bit_font,
+                &platform.ime,
+                &renderer.bit_font,
                 &layout,
                 &modal.search,
             ),
@@ -162,27 +163,53 @@ impl App {
     #[cfg(target_os = "android")]
     pub(crate) fn choose_map_search_backspace(state: &mut AppState) -> bool {
         Self::choose_map_search_input(
-            state,
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state,
+            &state.persistence,
             vera20k_gui::InputEvent::Key(vera20k_gui::Key::Backspace),
         )
     }
 
     /// Apply committed input-method text to Choose Map's search line, as
     /// the ordinary key path does; its control characters are dropped.
-    pub(super) fn choose_map_search_text(state: &mut AppState, text: &str) -> bool {
+    pub(super) fn choose_map_search_text(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+        text: &str,
+    ) -> bool {
         let text = text.chars().filter(|ch| !ch.is_control()).collect();
-        Self::choose_map_search_input(state, vera20k_gui::InputEvent::Text(text))
+        Self::choose_map_search_input(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+            vera20k_gui::InputEvent::Text(text),
+        )
     }
 
     /// Typed text or Backspace for the search line of a Choose Map that
     /// takes keys (see [`Self::choose_map_search_ime_rect`]), through its
     /// edit; false when none does.
-    fn choose_map_search_input(state: &mut AppState, event: vera20k_gui::InputEvent) -> bool {
-        if Self::choose_map_search_ime_rect(state).is_none() {
+    fn choose_map_search_input(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+        event: vera20k_gui::InputEvent,
+    ) -> bool {
+        if Self::choose_map_search_ime_rect(platform, renderer, frontend, match_state, persistence)
+            .is_none()
+        {
             return false;
         }
-        let layout = choose_map_layout(&state.renderer, &state.frontend.screen);
-        let frontend = &mut state.frontend;
+        let layout = choose_map_layout(renderer, &frontend.screen);
         let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() else {
             return false;
         };
@@ -196,7 +223,7 @@ impl App {
             ),
             event,
         );
-        state.platform.window.request_redraw();
+        platform.window.request_redraw();
         true
     }
 
@@ -1018,25 +1045,25 @@ impl App {
 
     /// Arrow repeat on VERA's scrollbar beside the Skirmish computer rows;
     /// returns the next wake deadline.
-    pub(super) fn poll_skirmish_opponent_scroll(state: &mut AppState) -> Option<Instant> {
+    pub(super) fn poll_skirmish_opponent_scroll(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+    ) -> Option<Instant> {
         use crate::app::input::precedence::{InputLayer, ScreenPage, input_layer};
-        if input_layer(
-            &state.platform,
-            &state.renderer,
-            &state.frontend,
-            &state.match_state,
-            &state.persistence,
-        ) != InputLayer::Screen(ScreenPage::Skirmish)
+        if input_layer(platform, renderer, frontend, match_state, persistence)
+            != InputLayer::Screen(ScreenPage::Skirmish)
         {
             return None;
         }
-        let frontend = &mut state.frontend;
         let (changed, next) = crate::ui::skirmish_shell::page::poll(
             &mut frontend.shell_controller,
             &mut frontend.skirmish_shell_state,
         );
         if changed {
-            state.platform.window.request_redraw();
+            platform.window.request_redraw();
         }
         next
     }
@@ -1339,7 +1366,11 @@ impl App {
     /// search line. False for other keys, and while a box or the random-map
     /// run is over the chooser.
     pub(super) fn choose_map_search_key(
-        state: &mut AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
         event: &winit::event::KeyEvent,
     ) -> bool {
         if !event.state.is_pressed() {
@@ -1347,10 +1378,25 @@ impl App {
         }
         if event.physical_key == PhysicalKey::Code(KeyCode::Backspace) {
             let backspace = vera20k_gui::InputEvent::Key(vera20k_gui::Key::Backspace);
-            return Self::choose_map_search_input(state, backspace);
+            return Self::choose_map_search_input(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
+                backspace,
+            );
         }
         let typed = event.text.as_deref().unwrap_or_default();
-        typed.chars().any(|ch| !ch.is_control()) && Self::choose_map_search_text(state, typed)
+        typed.chars().any(|ch| !ch.is_control())
+            && Self::choose_map_search_text(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
+                typed,
+            )
     }
 
     /// VERA's Esc menu (`app::shell_menu`): Esc stays with the seed browser,

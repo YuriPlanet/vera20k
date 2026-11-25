@@ -26,7 +26,13 @@ use winit::window::Window;
 pub(crate) fn commit_create(state: &mut AppState, observe: bool) {
     commit_hide(state);
     if App::open_host_setup(state, observe) && modern_lobby(state.frontend.wol.as_ref()) {
-        message_line(state, crate::i18n::tr(HOST_ROOM_LINE));
+        message_line(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            crate::i18n::tr(HOST_ROOM_LINE),
+        );
     }
 }
 

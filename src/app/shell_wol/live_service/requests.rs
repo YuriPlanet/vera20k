@@ -564,7 +564,14 @@ pub(super) fn restore_accepted_options(state: &mut AppState, service: &LiveServi
                 .try_for_each(|event| crate::app::shell_network_setup::service_event(state, event))
         });
     if result.is_err() {
-        notice(state, &tr("VERA:HostSettingsUnavailable"));
+        notice(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &tr("VERA:HostSettingsUnavailable"),
+        );
     }
 }
 
@@ -788,7 +795,14 @@ pub(super) fn request_setup(
                     protocol
                         .set_start_phase(crate::app::shell_network_setup::StartPhase::Preparing);
                 }
-                notice(state, &tr("VERA:ConfirmingFinalSettings"));
+                notice(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    &tr("VERA:ConfirmingFinalSettings"),
+                );
             }
         }
         NetworkSetupRequest::Leave => {
@@ -824,7 +838,14 @@ pub(super) fn request_setup(
             json!({"text":String::from_utf16_lossy(&text),"to":[],"action":true}),
         ),
         NetworkSetupRequest::RequestAcceptance | NetworkSetupRequest::ObserverSlot { .. } => {}
-        _ => notice(state, &tr("VERA:SetupOperationUnavailable")),
+        _ => notice(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &tr("VERA:SetupOperationUnavailable"),
+        ),
     }
     Ok(())
 }

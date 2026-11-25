@@ -17,13 +17,28 @@ fn setup_control_at_row(
     use crate::ui::multiplayer_setup::{NEXT_ROWS, PREVIOUS_ROWS, VISIBLE_SETUP_ROWS};
     let pages = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT / VISIBLE_SETUP_ROWS + 1;
     for _ in 0..pages {
-        if setup::view(state).context("setup view")?.first_row == 0 {
+        if setup::view(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        )
+        .context("setup view")?
+        .first_row
+            == 0
+        {
             break;
         }
         setup_button(state, PREVIOUS_ROWS)?;
     }
     for _ in 0..pages {
-        let view = setup::view(state).context("setup view")?;
+        let view = setup::view(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        )
+        .context("setup view")?;
         if let Some(combo) = view.combos.iter().find(|combo| {
             combo.row as usize == row
                 && combo.visible
@@ -554,7 +569,13 @@ impl LiveLanCapture {
         let control = setup_control_at_row(state, SetupColumn::Country, usize::from(row))?
             .context("visible local country row")?;
         if self.isolation_start().is_some() {
-            let view = setup::view(state).context("isolation setup choices")?;
+            let view = setup::view(
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+            )
+            .context("isolation setup choices")?;
             let choices = &view.combo(control).context("local Country combo")?.choices;
             self.setup_catalog = Some(json!({
                 "countries":choices.iter().filter(|choice| choice.value >= 0)
@@ -663,7 +684,13 @@ impl LiveLanCapture {
         }
         let control = setup_control_at_row(state, SetupColumn::Country, usize::from(row))?
             .context("visible local Side list")?;
-        let view = setup::view(state).context("Side list view")?;
+        let view = setup::view(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        )
+        .context("Side list view")?;
         let value = view
             .combo(control)
             .context("local Side list")?
@@ -754,7 +781,13 @@ impl LiveLanCapture {
             .context("local start-choice row")?;
         let control = setup_control_at_row(state, SetupColumn::Start, usize::from(row))?
             .context("visible local Start combo")?;
-        let view = setup::view(state).context("start-choice view")?;
+        let view = setup::view(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        )
+        .context("start-choice view")?;
         let combo = view.combo(control).context("local Start combo")?;
         ensure!(
             view.enabled(control)
@@ -1289,14 +1322,18 @@ impl LiveLanCapture {
             let Some(control) = setup_control_at_row(state, SetupColumn::Player, row)? else {
                 continue;
             };
-            if setup::view(state)
-                .and_then(|view| view.combo(control).cloned())
-                .is_some_and(|combo| {
-                    combo.visible
-                        && combo.enabled
-                        && combo.choices.iter().any(|choice| choice.value == 2)
-                })
-            {
+            if setup::view(
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+            )
+            .and_then(|view| view.combo(control).cloned())
+            .is_some_and(|combo| {
+                combo.visible
+                    && combo.enabled
+                    && combo.choices.iter().any(|choice| choice.value == 2)
+            }) {
                 setup::apply_action(state, SetupAction::Select { control, value: 2 });
             }
         }

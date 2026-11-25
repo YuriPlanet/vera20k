@@ -8,7 +8,6 @@
 //! scenario, the `C0` text).
 
 use super::NetworkSetupRequest;
-use crate::app::AppState;
 use crate::app::frontend::skirmish_session::cooperative::{
     CooperativeCampaignText, CooperativeSlotContext, SavedCampaignJoin, SavedCampaignLeave,
 };
@@ -19,7 +18,9 @@ use crate::app::frontend::skirmish_session::MultiplayerShellRuntime;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::CooperativeResume;
 use crate::app::match_runtime::session::MatchSession;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::scenario_catalog::ScenarioCatalog;
 use crate::app::shell_network_setup::NetworkSetupProtocol;
 use crate::skirmish_modes::SkirmishGameMode;
@@ -447,32 +448,32 @@ pub(super) fn map_used(
 /// tail. In retail BC6's Continue goes through `+0xAC`'s rematch
 /// (`0x005C46E0`) straight to Start_Scenario (`GameExit__Victory`,
 /// `0x00685670`, on LAN and WOL alike), so no join and no tail run there.
-pub(super) fn guest_joined(state: &mut AppState) -> anyhow::Result<()> {
-    if !peer_mode_cooperative(&state.frontend, &state.match_state.session) {
+pub(super) fn guest_joined(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+) -> anyhow::Result<()> {
+    if !peer_mode_cooperative(frontend, &match_state.session) {
         return Ok(());
     }
-    let inputs = SlotInputs::read(&state.frontend, &state.match_state.session);
-    let setup = setup_open(state.frontend.network_setup_protocol.as_ref());
+    let inputs = SlotInputs::read(frontend, &match_state.session);
+    let setup = setup_open(frontend.network_setup_protocol.as_ref());
     let published = {
-        let parts = state.frontend.multiplayer_shell_runtime.cooperative_parts();
+        let parts = frontend.multiplayer_shell_runtime.cooperative_parts();
         inputs.with(|_, nodes| parts.progress.join(parts.registry, parts.rng, nodes, setup))
     };
-    publish(
-        &mut state.frontend,
-        &mut state.match_state.session,
-        published,
-    )?;
-    if state.match_state.session.take_cooperative_rematch_seat() {
+    publish(frontend, &mut match_state.session, published)?;
+    if match_state.session.take_cooperative_rematch_seat() {
         return Ok(());
     }
-    let save = state.frontend.multiplayer_shell_runtime.cooperative_save();
-    let files = scenario_files(&state.frontend.scenario_catalog);
+    let save = frontend.multiplayer_shell_runtime.cooperative_save();
+    let files = scenario_files(&frontend.scenario_catalog);
     let files: Vec<(usize, &str)> = files
         .iter()
         .map(|(index, file)| (*index, file.as_str()))
         .collect();
-    let tail = state
-        .frontend
+    let tail = frontend
         .multiplayer_shell_runtime
         .cooperative_parts()
         .progress
@@ -480,9 +481,13 @@ pub(super) fn guest_joined(state: &mut AppState) -> anyhow::Result<()> {
     match tail {
         SavedCampaignJoin::Nothing => {}
         SavedCampaignJoin::Notice => {
-            let text = state.csf_label("TXT_SAVE_CAMP_AVAILABLE", "TXT_SAVE_CAMP_AVAILABLE");
+            let text =
+                process_assets.csf_label("TXT_SAVE_CAMP_AVAILABLE", "TXT_SAVE_CAMP_AVAILABLE");
             crate::app::shell_lan::append_room_chat(
-                state,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
                 crate::ui::lan_shell::LanChatLine {
                     text: text.encode_utf16().collect(),
                     color: u32::MAX,
@@ -490,13 +495,8 @@ pub(super) fn guest_joined(state: &mut AppState) -> anyhow::Result<()> {
             );
         }
         SavedCampaignJoin::Row(record) => {
-            let label = saved_row_label(&state.process_assets);
-            if let Some(modal) = state
-                .frontend
-                .skirmish_shell_state
-                .choose_map_modal
-                .as_mut()
-            {
+            let label = saved_row_label(process_assets);
+            if let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() {
                 modal.push_row(record, label);
             }
         }

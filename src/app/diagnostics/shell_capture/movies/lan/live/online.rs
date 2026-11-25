@@ -360,7 +360,13 @@ impl LiveRoundFlow {
         let local = setup.and_then(|launch| launch.humans.get(launch.local_player_index));
         let local_row = local.and_then(|human| human.raw_slot_index);
         let local_start = local.map(|human| human.slot.start_position);
-        let accept_enabled = setup::view(state).map(|view| view.accept_enabled);
+        let accept_enabled = setup::view(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        )
+        .map(|view| view.accept_enabled);
         let desired_start = self.config.as_ref().and_then(|config| config.start);
         let sim = state
             .match_state
@@ -777,7 +783,13 @@ impl LiveRoundFlow {
                     crate::skirmish_launch::AiDifficulty::Normal => 5,
                     crate::skirmish_launch::AiDifficulty::Hard => 6,
                 };
-                let view = setup::view(state).context("AI Player dropdown view")?;
+                let view = setup::view(
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                )
+                .context("AI Player dropdown view")?;
                 let row = view
                     .combos
                     .iter()

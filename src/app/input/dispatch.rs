@@ -232,7 +232,16 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
         match state.match_state.match_presentation.in_game_menu {
             crate::ui::pause_menu::InGameMenuState::Page => {
                 if button == MouseButton::Left {
-                    crate::app::shell_wol::page::mouse(state, pressed);
+                    crate::app::shell_wol::page::mouse(
+                        &mut state.frontend,
+                        &mut state.platform,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        pressed,
+                    );
                 }
             }
             crate::ui::pause_menu::InGameMenuState::SavedGame(_) => {

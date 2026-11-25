@@ -878,9 +878,36 @@ fn activate(state: &mut AppState, button: PauseMenuButton) {
                 )
             }
         }
-        PauseMenuButton::Load => App::open_saved_game_browser(state, SavedSeedMode::Load),
-        PauseMenuButton::Save => App::open_saved_game_browser(state, SavedSeedMode::Save),
-        PauseMenuButton::Delete => App::open_saved_game_browser(state, SavedSeedMode::Delete),
+        PauseMenuButton::Load => App::open_saved_game_browser(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            SavedSeedMode::Load,
+        ),
+        PauseMenuButton::Save => App::open_saved_game_browser(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            SavedSeedMode::Save,
+        ),
+        PauseMenuButton::Delete => App::open_saved_game_browser(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            SavedSeedMode::Delete,
+        ),
         PauseMenuButton::SharedPause => {
             toggle_multiplayer_pause(&state.platform.window, &mut state.match_state);
         }

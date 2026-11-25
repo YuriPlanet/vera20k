@@ -38,12 +38,26 @@ pub(crate) fn render_multiplayer_setup(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    let Some(view) = crate::app::shell_network_setup::view(state) else {
+    let Some(view) = crate::app::shell_network_setup::view(
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    ) else {
         crate::app::frontend::preview_zoom::close(&state.platform.window, &mut state.frontend);
         return Ok(());
     };
-    crate::app::input::multiplayer_setup::update_geometry(state);
-    crate::app::shell_network_setup::verify_sync(state);
+    crate::app::input::multiplayer_setup::update_geometry(
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    );
+    crate::app::shell_network_setup::verify_sync(
+        &state.renderer.gpu,
+        &mut state.frontend,
+        &state.match_state,
+    );
     let layout = crate::app::input::multiplayer_setup::layout_of(
         &state.renderer.gpu,
         &state.frontend,
@@ -793,7 +807,11 @@ pub(crate) fn render_multiplayer_setup(
             &state.match_state,
             &state.process_assets,
             verify,
-            &crate::app::shell_network_setup::verify_layout(state),
+            &crate::app::shell_network_setup::verify_layout(
+                &state.renderer.gpu,
+                &state.frontend,
+                &state.match_state,
+            ),
         );
         overlay.controls.extend(paint.controls);
         overlay.texts.extend(paint.texts);

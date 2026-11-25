@@ -821,7 +821,13 @@ impl LanCapture {
             text.starts_with("C0,1,0,"),
             "C0 names another campaign: {text}"
         );
-        let view = setup::view(state).context("BC")?;
+        let view = setup::view(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        )
+        .context("BC")?;
         ensure!(
             view.cooperative && view.cooperative_description.is_some(),
             "BC lacks the campaign description"
@@ -883,7 +889,13 @@ impl LanCapture {
             encode_name(self.human(false)?.name.as_bytes())
         );
         setup::service_event(state, NetworkSetupEvent::CooperativeCampaign(text.clone()))?;
-        let view = setup::view(state).context("BD")?;
+        let view = setup::view(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        )
+        .context("BD")?;
         let expected = state.csf_label("NAME:COOPDESC21", "NAME:COOPDESC21");
         ensure!(
             view.cooperative && view.cooperative_description.as_deref() == Some(expected.as_str()),
@@ -1149,7 +1161,10 @@ impl LanCapture {
                             .encode_utf16()
                             .collect::<Vec<_>>();
                         lobby::append_chat(
-                            state,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
                             LanChatLine {
                                 text: incoming.clone(),
                                 color: 0x0000_F0F0,
@@ -1390,7 +1405,12 @@ impl LanCapture {
                             .context("BC")?
                             .options
                             .short_game;
-                        let layout = setup_input::layout(state);
+                        let layout = setup_input::layout(
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                        );
                         let icon = crate::ui::skirmish_shell::checkbox_icon_rect(
                             layout.checkboxes[0],
                             layout.page.scale,
@@ -1582,8 +1602,13 @@ impl LanCapture {
                                     && state.match_state.session.network_map_status(1) == Some(1),
                                 "departure lost surviving peer admission state"
                             );
-                            let view =
-                                setup::view(state).context("BC projection after departure")?;
+                            let view = setup::view(
+                                &state.renderer,
+                                &state.frontend,
+                                &state.match_state,
+                                &state.process_assets,
+                            )
+                            .context("BC projection after departure")?;
                             ensure!(
                                 view.dialog.host
                                     // Visible vacant rows retain their country flag;
@@ -1718,8 +1743,19 @@ impl LanCapture {
                     && setup_settled(&state.frontend, true) =>
             {
                 use crate::ui::multiplayer_setup::{CREDITS, SPEED, SetupColumn, UNITS};
-                let view = setup::view(state).context("BC settings view")?;
-                let layout = setup_input::layout(state);
+                let view = setup::view(
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                )
+                .context("BC settings view")?;
+                let layout = setup_input::layout(
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                );
                 ensure!(!view.locked, "settings driver encountered locked BC");
                 if step <= 4 {
                     let candidate = if step < 4 {
@@ -1915,7 +1951,13 @@ impl LanCapture {
                 value,
             } if rendered == PresentedShell::NetworkSetup => {
                 use crate::ui::multiplayer_setup::SetupColumn;
-                let view = setup::view(state).context("presented settings popup")?;
+                let view = setup::view(
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                )
+                .context("presented settings popup")?;
                 let open = setup_input::open_list(&state.frontend, &state.match_state);
                 ensure!(
                     open.map(|(id, _)| id) == Some(control),
@@ -2044,9 +2086,14 @@ impl LanCapture {
                         "production map availability did not publish K{status}"
                     );
                     ensure!(
-                        setup::view(state)
-                            .context("configured guest view")?
-                            .accept_enabled
+                        setup::view(
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.process_assets
+                        )
+                        .context("configured guest view")?
+                        .accept_enabled
                             == (status != 0),
                         "map availability and Accept disagree"
                     );
@@ -2065,7 +2112,13 @@ impl LanCapture {
                 LanTarget::StartPrompt | LanTarget::StartPromptAccepted => {
                     self.drain_requests(&mut state.frontend.network_setup_protocol);
                     setup::service_event(state, NetworkSetupEvent::StartPrompt)?;
-                    let view = setup::view(state).context("prompted BD")?;
+                    let view = setup::view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )
+                    .context("prompted BD")?;
                     ensure!(
                         view.start_requested
                             && view.accept_enabled
@@ -2133,7 +2186,13 @@ impl LanCapture {
             {
                 // Let the production renderer advance its own one-second
                 // native Accept flash timer; never set its private phase.
-                let view = setup::view(state).context("presented prompt")?;
+                let view = setup::view(
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                )
+                .context("presented prompt")?;
                 ensure!(
                     view.start_requested && view.accept_enabled,
                     "prompt disappeared before presentation"
@@ -2148,7 +2207,13 @@ impl LanCapture {
                         requests == vec![NetworkSetupRequest::Ready(true)],
                         "prompted real Accept must emit exactly one A1"
                     );
-                    let view = setup::view(state).context("accepted BD")?;
+                    let view = setup::view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )
+                    .context("accepted BD")?;
                     ensure!(
                         !view.start_requested && !view.accept_enabled,
                         "Accept retained prompt or remained eligible"
@@ -4022,9 +4087,14 @@ fn lobby_button(state: &mut AppState, id: u16) -> Result<()> {
     Ok(())
 }
 fn setup_button(state: &mut AppState, id: u16) -> Result<()> {
-    let rect = setup_input::layout(state)
-        .control_rect(id)
-        .context("setup button")?;
+    let rect = setup_input::layout(
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    )
+    .control_rect(id)
+    .context("setup button")?;
     setup_click(state, rect);
     Ok(())
 }

@@ -1218,7 +1218,10 @@ pub(crate) fn restart_lobby_visit(
 
 fn reject_setup_compatibility(state: &mut AppState, message: &str) {
     super::shell_lan::append_chat(
-        state,
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
         crate::ui::lan_shell::LanChatLine {
             text: message.encode_utf16().collect(),
             color: u32::MAX,
@@ -1349,7 +1352,14 @@ pub(crate) fn open(state: &mut AppState) {
         return;
     }
     if online_retirement_pending(&state.match_state) {
-        super::shell_lan::report_error(state, "VERA:WaitingForOnlineDeparture");
+        super::shell_lan::report_error(
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            "VERA:WaitingForOnlineDeparture",
+        );
         return;
     }
     if state.match_state.lan_service.is_some() {
@@ -1378,13 +1388,18 @@ pub(crate) fn unavailable(
 
 /// Why the LAN lobby cannot host or join: its ports are taken.
 pub(crate) fn report_ports_unavailable(state: &mut AppState) {
+    let key = if state.frontend.native_shell_ui {
+        "TXT_UNABLE_TO_CONNECT"
+    } else {
+        "VERA:LanPortsUnavailable"
+    };
     super::shell_lan::report_error(
-        state,
-        if state.frontend.native_shell_ui {
-            "TXT_UNABLE_TO_CONNECT"
-        } else {
-            "VERA:LanPortsUnavailable"
-        },
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        key,
     );
 }
 
@@ -1912,7 +1927,13 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             &message,
             &chat,
         ) {
-            super::shell_lan::append_chat(state, line);
+            super::shell_lan::append_chat(
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                line,
+            );
             super::App::play_shell_rules_sound(
                 &state.frontend,
                 &state.match_state,

@@ -1605,7 +1605,12 @@ impl WolCapture {
                             .is_some_and(|ui| ui.game_options),
                         "Game Options did not open"
                     );
-                    let layout = crate::app::input::multiplayer_setup::layout(state);
+                    let layout = crate::app::input::multiplayer_setup::layout(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    );
                     setup_click(
                         state,
                         crate::ui::skirmish_shell::checkbox_icon_rect(
@@ -1833,7 +1838,12 @@ impl WolCapture {
                     // The host drags the guest's name onto Team A's box: the
                     // list the press opened closes, and the guest moves.
                     let view = setup_view(state)?;
-                    let layout = crate::app::input::multiplayer_setup::layout(state);
+                    let layout = crate::app::input::multiplayer_setup::layout(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    );
                     let (_, name) = row_combo(
                         &view,
                         SetupColumn::Player,
@@ -1928,7 +1938,12 @@ impl WolCapture {
                                 .collect()
                         })
                         .unwrap_or_default();
-                    let layout = crate::app::input::multiplayer_setup::layout(state);
+                    let layout = crate::app::input::multiplayer_setup::layout(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    );
                     let roster = layout.roster_scroll(&wide).context("the roster's scroll")?;
                     // Release the roster thumb, then use the host's colour list.
                     setup_click(state, roster.thumb.context("roster thumb")?);

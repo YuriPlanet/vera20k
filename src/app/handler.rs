@@ -831,7 +831,17 @@ impl App {
                 &mut state.frontend,
                 event,
             ))
-            || Self::shell_menu_key(state, event, screen)
+            || Self::shell_menu_key(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                state.audio.launcher_audio_available,
+                &state.persistence.options_profile,
+                event,
+                screen,
+            )
         {
             return;
         }
@@ -839,7 +849,18 @@ impl App {
             ScreenPage::CoopScore => return crate::app::input::coop_score::key(state, event),
             ScreenPage::LanLobby => return crate::app::shell_lan::key(state, event),
             // VERA: typing in Choose Map fills its search line.
-            _ if zoom_page && Self::choose_map_search_key(state, event) => return,
+            _ if zoom_page
+                && Self::choose_map_search_key(
+                    &state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                    event,
+                ) =>
+            {
+                return;
+            }
             ScreenPage::NetworkSetup if !chooser_open => {
                 return crate::app::input::multiplayer_setup::key(state, event);
             }
@@ -1046,7 +1067,13 @@ impl App {
             _ if in_game && menu == InGameMenuState::Page => {
                 if pressed {
                     crate::app::shell_wol::page::key_press(
-                        state,
+                        &mut state.frontend,
+                        &mut state.platform,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        &mut state.audio,
+                        &mut state.persistence,
                         Some(code),
                         event.text.as_deref(),
                     );
@@ -2376,7 +2403,15 @@ impl ApplicationHandler for App {
                 },
                 crate::app::shell_lan::poll,
                 crate::app::shell_wol::poll,
-                crate::app::shell_network_setup::poll,
+                |state| {
+                    crate::app::shell_network_setup::poll(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                    )
+                },
                 crate::app::input::multiplayer_setup::poll,
                 |state| {
                     use crate::app::input::coop_score;
@@ -2422,8 +2457,23 @@ impl ApplicationHandler for App {
                         &mut state.frontend,
                     )
                 },
-                Self::poll_skirmish_opponent_scroll,
-                Self::poll_language_files,
+                |state| {
+                    Self::poll_skirmish_opponent_scroll(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.match_state,
+                        &state.persistence,
+                    )
+                },
+                |state| {
+                    Self::poll_language_files(
+                        &state.platform,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &mut state.process_assets,
+                    )
+                },
                 |state| Self::campaign_score_animation_deadline(&state.frontend),
             ];
             // Captures and hidden runs replay sealed input: they never read

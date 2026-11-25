@@ -34,9 +34,12 @@ use super::{
     WolServiceRequest, service_event,
 };
 use crate::app::AppState;
+use crate::app::PlatformState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::MatchSession;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_network_setup::{NetworkSetupEvent, NetworkSetupRequest};
 use crate::i18n::tr;
 use crate::net::udp::LanUdpTransport;
@@ -941,14 +944,28 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                         service.start_preparation = None;
                         fail_start(state, &text);
                     } else {
-                        notice(state, &text);
+                        notice(
+                            &mut state.frontend,
+                            &state.platform.window,
+                            &state.match_state,
+                            &state.process_assets,
+                            &state.renderer,
+                            &text,
+                        );
                     }
                 }
             }
         }
         if service.room.choices_unanswered(Instant::now()) {
             restore_accepted_options(state, &service);
-            notice(state, &tr("VERA:ChoicesNotAcknowledged"));
+            notice(
+                &mut state.frontend,
+                &state.platform.window,
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &tr("VERA:ChoicesNotAcknowledged"),
+            );
         }
         if let Err(error) = poll_start_preparation(state, &mut service) {
             log::warn!("Online start preparation failed: {error:#}");
@@ -977,7 +994,14 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                 fail_start(state, &tr(line));
             }
         }
-        poll_maps(state, &mut service);
+        poll_maps(
+            &mut state.frontend,
+            &state.platform,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &mut service,
+        );
         if let Err(error) = poll_watch(state, &mut service) {
             log::warn!("Could not watch the match: {error:#}");
             fail_watch(
@@ -995,27 +1019,57 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
         if service.spawned {
             poll_spawned_exit(state, &mut service);
         }
-        show_problem_line(state);
+        show_problem_line(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+        );
     }
     put_service(&mut state.frontend, service);
     Some(Instant::now() + POLL_INTERVAL)
 }
 
-fn notice(state: &mut AppState, text: &str) {
+fn notice(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    text: &str,
+) {
     crate::app::shell_lan::append_chat(
-        state,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
         crate::ui::lan_shell::LanChatLine {
             text: text.encode_utf16().collect(),
             color: u32::MAX,
         },
     );
-    state.platform.window.request_redraw();
+    window.request_redraw();
 }
 
 /// The room's map transfer runs only between matches.
-fn poll_maps(state: &mut AppState, service: &mut LiveService) {
+fn poll_maps(
+    frontend: &mut FrontendState,
+    platform: &PlatformState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    service: &mut LiveService,
+) {
     if !service.spawned && service.pending.is_none() && service.match_id.is_none() {
-        maps::poll(state, service);
+        maps::poll(
+            frontend,
+            platform,
+            match_state,
+            process_assets,
+            renderer,
+            service,
+        );
     }
 }
 
@@ -1037,28 +1091,39 @@ fn problem_chat_open(
     }
 }
 
-fn show_problem_line(state: &mut AppState) {
+fn show_problem_line(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+) {
     let open = problem_chat_open(
-        state.frontend.shell_route,
-        state.frontend.multiplayer_setup.is_some(),
-        super::quick_match::page_open(state.frontend.wol.as_ref()),
-        state
-            .frontend
+        frontend.shell_route,
+        frontend.multiplayer_setup.is_some(),
+        super::quick_match::page_open(frontend.wol.as_ref()),
+        frontend
             .wol
             .as_ref()
             .is_some_and(|visit| visit.lobby().is_some()),
-        super::lobby::awaiting_room(&state.match_state.session),
+        super::lobby::awaiting_room(&match_state.session),
     );
     if !open {
         return;
     }
-    if let Some(text) = state
-        .frontend
+    if let Some(text) = frontend
         .wol
         .as_mut()
         .and_then(|visit| visit.take_problem_line())
     {
-        notice(state, &text);
+        notice(
+            frontend,
+            window,
+            match_state,
+            process_assets,
+            renderer,
+            &text,
+        );
     }
 }
 
@@ -1078,7 +1143,14 @@ fn fail_start(state: &mut AppState, text: &str) {
         // A rejected HTTP Start has not handed the setup to the lobby runner.
         // Keep the ordinary host/join screen and release its pending input.
         protocol.set_start_phase(crate::app::shell_network_setup::StartPhase::Idle);
-        notice(state, text);
+        notice(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            text,
+        );
         return;
     }
     // VERA: the abort leaves the room, and the setup's chat with it

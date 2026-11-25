@@ -2511,7 +2511,12 @@ impl ShellCaptureSession {
             .language
             .clone()
             .unwrap_or_else(|| crate::i18n::DEFAULT_LANGUAGE.to_owned());
-        if !state.use_language(&language) {
+        if !crate::app::shell_main_menu::use_language(
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
+            &language,
+        ) {
             self.fail(format!(
                 "--language {language}: no language file provides it"
             ));

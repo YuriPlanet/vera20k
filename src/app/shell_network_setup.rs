@@ -46,6 +46,7 @@ use crate::app::match_runtime::session::SessionMode;
 use crate::app::match_runtime::session::{MatchSession, NetworkVacancy};
 use crate::app::match_runtime::state::MatchState;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::scenario_catalog::ScenarioCatalog;
 use crate::skirmish_launch::{SkirmishHumanSlot, SkirmishLaunchSession};
 use crate::ui::multiplayer_setup::{MultiplayerSetupState, SetupDialog, SetupFlavor};
@@ -683,14 +684,30 @@ pub(crate) fn install_watch_setup(
 
 /// A white (0xFFFFFFFF) CSF line in the setup chat log: Start refusals and
 /// WOL chat notices.
-fn chat_notice(state: &mut AppState, key: &str, args: &[crate::assets::csf_file::CsfArg]) {
-    let text = crate::assets::csf_file::format_csf(&state.csf_label(key, key), args);
-    room_notice(state, &text);
+fn chat_notice(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    key: &str,
+    args: &[crate::assets::csf_file::CsfArg],
+) {
+    let text = crate::assets::csf_file::format_csf(&process_assets.csf_label(key, key), args);
+    room_notice(renderer, frontend, match_state, process_assets, &text);
 }
 
-fn room_notice(state: &mut AppState, text: &str) {
+fn room_notice(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    text: &str,
+) {
     crate::app::shell_lan::append_room_chat(
-        state,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
         crate::ui::lan_shell::LanChatLine {
             text: text.encode_utf16().collect(),
             color: u32::MAX,
@@ -1082,12 +1099,17 @@ pub(super) fn note_scenario(frontend: &mut FrontendState, session: &MatchSession
     frontend.multiplayer_shell_runtime.set_scenario_index(index);
 }
 
-pub(crate) fn show_statics(state: &mut AppState) {
-    let Some(view) = view(state) else {
+pub(crate) fn show_statics(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) {
+    let Some(view) = view(renderer, frontend, match_state, process_assets) else {
         return;
     };
-    let heading = state.csf_label(view.page().title_key, view.page().title_key);
-    if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+    let heading = process_assets.csf_label(view.page().title_key, view.page().title_key);
+    if let Some(ui) = frontend.multiplayer_setup.as_mut() {
         ui.statics
             .show(&heading, &view.mode_label, &view.map_label, Instant::now());
         ui.shown = true;
@@ -1189,20 +1211,31 @@ pub(crate) fn return_after_match(state: &mut AppState) {
 /// VERA: the room goes on unshown while its player looks round the public
 /// lobby (docs/lobby-protocol.md "Visiting the lobby"); [`show_room`] shows
 /// it again and [`abandon_for_wol_runner`] ends it.
-pub(crate) fn hide_room(state: &mut AppState) {
-    crate::app::input::multiplayer_setup::park_chat(&mut state.frontend, &state.match_state);
-    state.frontend.skirmish_shell_state.choose_map_modal = None;
-    if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+pub(crate) fn hide_room(frontend: &mut FrontendState, match_state: &MatchState) {
+    crate::app::input::multiplayer_setup::park_chat(frontend, match_state);
+    frontend.skirmish_shell_state.choose_map_modal = None;
+    if let Some(ui) = frontend.multiplayer_setup.as_mut() {
         ui.show_game_options(None);
     }
-    state.frontend.shell_route = crate::app::shell_route::ShellRoute::WolLobby;
+    frontend.shell_route = crate::app::shell_route::ShellRoute::WolLobby;
 }
 
 /// The hidden room is back on screen as it is now.
-pub(crate) fn show_room(state: &mut AppState) {
-    let dialog = dialog(&state.frontend, &state.match_state);
-    show_dialog(&state.platform.window, &mut state.frontend, dialog);
-    crate::app::input::multiplayer_setup::unpark_chat(state);
+pub(crate) fn show_room(
+    window: &Window,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) {
+    let dialog = dialog(frontend, match_state);
+    show_dialog(window, frontend, dialog);
+    crate::app::input::multiplayer_setup::unpark_chat(
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+    );
 }
 
 /// The setup's dialog on screen, newly installed or shown again.
@@ -1263,18 +1296,16 @@ fn leave_setup(frontend: &mut FrontendState, match_state: &mut MatchState) -> Se
 /// VERA asks first: a guest's online room offers its map before the
 /// transfer downloads it (`shell_wol::live_service::maps`).
 pub(crate) fn offer_missing_map(
-    state: &mut AppState,
+    window: &Window,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
     name: String,
     message: String,
     button_key: &'static str,
 ) {
     // The offer takes the pointer from a row's open list too.
-    crate::app::input::multiplayer_setup::drop_pointer(
-        &mut state.frontend,
-        &state.match_state,
-        true,
-    );
-    if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+    crate::app::input::multiplayer_setup::drop_pointer(frontend, match_state, true);
+    if let Some(ui) = frontend.multiplayer_setup.as_mut() {
         ui.map_offer = Some(crate::ui::multiplayer_setup::MapOffer {
             name,
             message,
@@ -1283,7 +1314,7 @@ pub(crate) fn offer_missing_map(
             opened: Instant::now(),
         });
     }
-    state.platform.window.request_redraw();
+    window.request_redraw();
 }
 
 /// The offer's map arrived, changed, or its transfer ended.

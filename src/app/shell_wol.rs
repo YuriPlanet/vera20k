@@ -901,7 +901,18 @@ impl App {
                         &mut state.audio.sfx_player,
                     )
                 },
-                page::mouse,
+                |state, pressed| {
+                    page::mouse(
+                        &mut state.frontend,
+                        &mut state.platform,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        pressed,
+                    )
+                },
             )),
             Some(WolPage::Options(_)) => Some((options::cursor_moved, options::mouse)),
             Some(WolPage::AutoLoginQuery | WolPage::Locale(_) | WolPage::AddBuddyQuery(_)) => {
@@ -1020,7 +1031,19 @@ impl App {
         type KeyPress = fn(&mut AppState, Option<winit::keyboard::KeyCode>, Option<&str>);
         let shown = state.frontend.wol.as_ref().map(|visit| &visit.page);
         let handler: Option<KeyPress> = match shown {
-            _ if page::open(state.frontend.wol.as_ref()) => Some(page::key_press),
+            _ if page::open(state.frontend.wol.as_ref()) => Some(|state, code, text| {
+                page::key_press(
+                    &mut state.frontend,
+                    &mut state.platform,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    &mut state.audio,
+                    &mut state.persistence,
+                    code,
+                    text,
+                )
+            }),
             Some(WolPage::Login(_)) => Some(login::key_press),
             Some(WolPage::Lobby) => Some(lobby::key_press),
             Some(WolPage::Buddy(_)) => Some(buddy::key_press),

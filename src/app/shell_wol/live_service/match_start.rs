@@ -11,11 +11,13 @@ use crate::app::AppState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_network_setup::NetworkSetupEvent;
 use crate::app::shell_network_setup::campaign_room;
 use crate::app::shell_wol::WolVisit;
 use crate::net::reliable::{LanConnectionConfig, LanConnections, RetryTiming};
 use crate::net::udp::{LanUdpTransport, UdpBindConfig};
+use crate::util::config::GameConfig;
 use crate::util::time::Instant;
 use anyhow::{Result, anyhow, ensure};
 use serde_json::json;
@@ -189,7 +191,11 @@ pub(super) fn begin_start(
 /// [`followed_user`] picks. The match's map then arrives as a guest's would,
 /// and [`poll_watch`] asks the relay to let this game in.
 pub(super) fn prepare_watch(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
     started: wire::WatchStarted,
 ) -> Result<WatchStart> {
     let grant = decode_watch_grant(&started.relay, &started.match_id)?;
@@ -212,33 +218,25 @@ pub(super) fn prepare_watch(
     let names: Vec<_> = started.users.iter().map(|user| user.name.clone()).collect();
     let room = started.options.campaign.clone();
     if let Some(room) = &room {
-        campaign_room::verify_current(
-            state.platform.game_config.as_ref(),
-            &state.process_assets,
-            room,
-        )?;
+        campaign_room::verify_current(game_config, process_assets, room)?;
     }
     let options = started.options.into_options(&followed)?;
     let speed = options.launch.options.game_speed;
     crate::app::shell_network_setup::install_watch_setup(
-        &mut state.frontend,
-        &mut state.match_state,
+        frontend,
+        match_state,
         options,
         crate::app::match_runtime::session::NetworkRoom {
             tournament: started.tournament != 0,
             clan: false,
         },
     )?;
-    state
-        .match_state
-        .session
-        .canonicalize_online_roster(&names)?;
+    match_state.session.canonicalize_online_roster(&names)?;
     if let Some(room) = room {
-        state
-            .match_state
+        match_state
             .session
             .accept_campaign_room(Some(room), speed)?;
-        campaign_room::report_local_files(state, true)?;
+        campaign_room::report_local_files(renderer, frontend, match_state, process_assets, true)?;
     }
     Ok(WatchStart {
         version: started.version,

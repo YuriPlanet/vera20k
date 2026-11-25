@@ -162,8 +162,28 @@ impl WolCapture {
             "PageUser did not open 0xCF with the pager prefilled"
         );
         self.event(frame, "PageUser opened 0xCF, prefilled");
-        page::key_press(state, None, Some("on my way"));
-        page::key_press(state, Some(winit::keyboard::KeyCode::Enter), None);
+        page::key_press(
+            &mut state.frontend,
+            &mut state.platform,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &mut state.audio,
+            &mut state.persistence,
+            None,
+            Some("on my way"),
+        );
+        page::key_press(
+            &mut state.frontend,
+            &mut state.platform,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &mut state.audio,
+            &mut state.persistence,
+            Some(winit::keyboard::KeyCode::Enter),
+            None,
+        );
         self.page_tick = state
             .match_state
             .sim_runtime

@@ -185,7 +185,14 @@ fn edit_target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
             ),
             InputLayer::Screen(ScreenPage::InGameShell(InGameMenuState::SavedGame(_))) => (
                 ImeTarget::InGameConversionName,
-                App::saved_game_layout(state, browser.mode)?,
+                App::saved_game_layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                    browser.mode,
+                )?,
             ),
             _ => return None,
         };
@@ -219,19 +226,30 @@ fn edit_target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
         ),
         (
             ImeTarget::LanLobbyChat,
-            crate::app::shell_lan::ime_chat_rect(state),
+            crate::app::shell_lan::ime_chat_rect(&state.renderer.gpu, &state.frontend),
         ),
         (
             ImeTarget::SetupChat,
-            crate::app::input::multiplayer_setup::ime_chat_rect(state),
+            crate::app::input::multiplayer_setup::ime_chat_rect(
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+            ),
         ),
         (
             ImeTarget::WolLobbyEdit,
-            crate::app::shell_wol::lobby::ime_edit_rect(state),
+            crate::app::shell_wol::lobby::ime_edit_rect(&state.frontend, &state.renderer.gpu),
         ),
         (
             ImeTarget::ChooseMapSearch,
-            crate::app::App::choose_map_search_ime_rect(state),
+            crate::app::App::choose_map_search_ime_rect(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.persistence,
+            ),
         ),
     ]
     .into_iter()
@@ -592,11 +610,28 @@ fn gui_key(state: &mut AppState, code: Option<winit::keyboard::KeyCode>, text: O
             }
             _ => {
                 if let Some(text) = text {
-                    crate::app::App::choose_map_search_text(state, text);
+                    crate::app::App::choose_map_search_text(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.match_state,
+                        &state.persistence,
+                        text,
+                    );
                 }
             }
         },
-        GuiScreen::InGamePage => crate::app::shell_wol::page::key_press(state, code, text),
+        GuiScreen::InGamePage => crate::app::shell_wol::page::key_press(
+            &mut state.frontend,
+            &mut state.platform,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &mut state.audio,
+            &mut state.persistence,
+            code,
+            text,
+        ),
         GuiScreen::LoadSavedGame => crate::app::App::handle_load_saved_game_key(state, code, text),
         GuiScreen::InGameSavedGame => crate::app::App::saved_game_key(state, code, text),
     }
@@ -770,7 +805,14 @@ fn commit(state: &mut AppState, text: &str) {
         }
         #[cfg(not(target_os = "android"))]
         Some(ImeTarget::ChooseMapSearch) => {
-            crate::app::App::choose_map_search_text(state, text);
+            crate::app::App::choose_map_search_text(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.persistence,
+                text,
+            );
         }
         #[cfg(not(target_os = "android"))]
         Some(ImeTarget::MainMenuConversionName) => {

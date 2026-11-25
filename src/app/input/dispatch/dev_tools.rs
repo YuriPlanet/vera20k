@@ -243,7 +243,13 @@ pub(super) fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keybo
         KeyCode::F5 => {
             // Diagnostic shortcut shares the retail browser and modal owner.
             crate::app::App::open_saved_game_browser(
-                state,
+                &mut state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
                 crate::ui::skirmish_shell::SavedSeedMode::Load,
             );
         }

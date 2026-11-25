@@ -683,7 +683,10 @@ fn run_step(state: &mut AppState, step: CooperativeRoundStep) {
             finish(state);
             let text = state.csf_text("TXT_SYSTEM_NOT_RESPONDING");
             crate::app::shell_lan::append_chat(
-                state,
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
                 crate::ui::lan_shell::LanChatLine {
                     text: text.encode_utf16().collect(),
                     color: u32::MAX,
