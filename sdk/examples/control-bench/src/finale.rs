@@ -1,5 +1,5 @@
-//! The bench's finale (see `lib.rs`), run once every area's `MARKS` is
-//! reached, since its points pause or end the match the areas play in.
+//! The bench's finale (see `lib.rs`), run after the areas, since its
+//! points pause or end the match the areas play in.
 //! Marks are named `finale.<point>`; `bench.all` follows the last.
 //!
 //! In order:
@@ -14,8 +14,14 @@
 //! 3. `EndFor` the player as the winner (`end`, logged before the call);
 //!    `after-end` once the module has run 30 more frames.
 //!
-//! Lib stops the areas' frame work when the finale starts (their triggers
-//! and records stay), so nothing works on the house once it is gone.
+//! It starts once every area's `MARKS` is reached, or at lib's
+//! `FINALE_DEADLINE` (frame 4800) so it is tested on its own. Lib then stops
+//! the areas' frame work and no longer hands them records or decisions
+//! (their triggers stay; an unanswered decision keeps the engine's result),
+//! so no area acts on, or misreports, a scene the finale cuts short or a
+//! house that is gone. Each step gives up after its limit with a
+//! `BENCH-FAIL`, so the steps take at most about 1050 frames: pick 300,
+//! two watches of 45, removal 150, defeat 450, then 31.
 
 use core::sync::atomic::{AtomicI64, Ordering::Relaxed};
 
@@ -48,9 +54,9 @@ const DONE: i64 = 8;
 /// Frames production is watched after an order.
 const WATCH: i64 = 45;
 /// Longest wait for something in production, then for the defeat.
-const PICK_LIMIT: i64 = 1500;
-const REMOVE_LIMIT: i64 = 300;
-const DEFEAT_LIMIT: i64 = 900;
+const PICK_LIMIT: i64 = 300;
+const REMOVE_LIMIT: i64 = 150;
+const DEFEAT_LIMIT: i64 = 450;
 /// Frames the house must stay undefeated after the veto.
 const VETO_HOLD: i64 = 10;
 

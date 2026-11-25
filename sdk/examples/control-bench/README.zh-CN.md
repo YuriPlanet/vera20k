@@ -4,7 +4,7 @@
 日志里写一行 `DEMO-OK <标记>`；全部到齐后再写 `DEMO-OK bench.all`。它是测试基准，
 不是玩法 mod：自己在玩家出生点附近生成单位并自己指挥，所以一局无人操作、对一个电脑的
 遭遇战就够了。地图是 `ControlBench.map`：原版 XMP03T4 并进本目录的 `map.ini`（两个队伍类型，
-原图没有）。各区域的标记到齐后，收尾（`finale`）暂停再恢复电脑的生产、让电脑战败、
+原图没有）。各区域的标记到齐后（最迟第 4800 帧，届时用 `BENCH-MISSING` 列出各区域还缺的标记），收尾（`finale`）暂停再恢复电脑的生产、让电脑战败、
 宣布玩家获胜，最后才写 `bench.all`。
 
 标记的意思是“生效”，不只是“事件来了”：能便宜地验证效果的都验证了（读回数值、下一帧
@@ -41,7 +41,7 @@ RA2_DIR=<原版目录> python3 -m tools.cargo_run -- test --locked -p vera20k-co
 | `triggers` | 99 | 触发器生命周期与各种绑定、投递事件（受伤、击杀、开火、计时、出生、乘客上下、易主、心控、超武、修饰器事件、模块事件）、原版对象/房屋/逻辑/单元格事件、各种轮询、过滤子句、立即动作与连锁、几乎全部原子动作和几个原版动作、房屋命令及 `Commanded`/`OrderRefused`、控制域认领、INI 触发器、队伍类型的 `lookup`/`name_of`、援军（原版动作 7、80）、超时空援军（107）和触发器造出的建筑（125）的 `Birth` |
 | `combat` | 10 | `TakeDamage` 决策与事件、`DamageIncoming`、`FatalDamage`（泰矿残留位）、`Fire` 射击计划、`FireAllowed`、`Retaliate`、`Launch`、`ProjectileFrame`、`CrushAllowed` |
 | `movement` | 13 | `ProductionAllowed`、`ProductionQueued`、`CommandAllowed`、`DestinationSet`、`HarvestCell`、`DeployAllowed`、`IdleMission`、`MissionStep`、`MoveFrame`、`PathFound`、`ApproachPoint`、推动、`SetFacing` |
-| `finale` | 6 | 前面全部到齐后才运行，各区域的逐帧工作随之停止：对电脑下 `SuspendProduction`（工厂进度停住）再 `QueueProduction` 同类型（进度继续）；移除电脑的全部对象，`Defeat` 先否决一次（之后几帧仍未战败）再放行（读到 `IsDefeated`）；`EndFor` 宣布玩家获胜（调用前记标记），之后模块继续运行 30 帧 |
+| `finale` | 6 | 前面全部到齐后运行，最迟第 4800 帧开始（每步有时限，约 1050 帧内走完）；开始后各区域的逐帧工作、事件和决策都不再执行：对电脑下 `SuspendProduction`（工厂进度停住）再 `QueueProduction` 同类型（进度继续）；移除电脑的全部对象，`Defeat` 先否决一次（之后几帧仍未战败）再放行（读到 `IsDefeated`）；`EndFor` 宣布玩家获胜（调用前记标记），之后模块继续运行 30 帧 |
 
 ## 没覆盖的点
 

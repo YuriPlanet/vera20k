@@ -80,7 +80,7 @@ with the bench's merged in, since a mod's `rulesmd.ini` replaces the game's;
 loads the Battle against one computer house through that mod
 (`headless_scenario::load_with_mod_folder`), so `vera_init` and `on_rules` run
 at the rules stage. It needs `DEMO-OK bench.all`, which the bench logs after its
-finale (`SuspendProduction`, `Defeat` veto then defeat, `EndFor`); a failure names
+finale (`SuspendProduction`, `Defeat` veto then defeat, `EndFor`; it starts when the areas are done or at frame 4800); a failure names
 the marks of its latest `BENCH-MISSING` lines. Its `README.zh-CN.md` lists what
 it leaves out and why. The examples' `.cargo/config.toml` is ignored by the root
 `.gitignore`; add a new one with `git add -f`.
