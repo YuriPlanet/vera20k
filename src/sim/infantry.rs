@@ -30,6 +30,7 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::timer::MissionTimer;
 use crate::sim::world::FrameEffects;
 use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+use crate::util::forked::Forked;
 
 /// An infantryman's fear, stance, idle timer and failed-path answer.
 /// - Fear: this module's fear receiver raises and decays it.
@@ -687,13 +688,14 @@ enum IdleTurn {
 
 /// Single Infantry51CDB0 decision body. The world receiver applies its class
 /// action immediately, before a mission caller can spend its cadence draw.
-/// `ares` is the game's `RuleSet::ares_form`.
+/// `ares` is the game's `RuleSet::ares_form`. A refused turn draws nothing
+/// and leaves the stream unwritten.
 fn select_idle_action(
     entity: &mut GameEntity,
     object: &ObjectType,
     controlled_by_human: bool,
     frequency: f64,
-    rng: &mut crate::sim::rng::SimRng,
+    rng: &mut Forked<crate::sim::rng::SimRng>,
     frame: u32,
     ares: bool,
 ) -> Result<IdleTurn, String> {
@@ -860,7 +862,7 @@ pub(crate) fn tick_idle_actions(
     houses: &crate::sim::houses::Houses,
     rules: &crate::rules::ruleset::RuleSet,
     interner: &crate::sim::intern::StringInterner,
-    rng: &mut crate::sim::rng::SimRng,
+    rng: &mut Forked<crate::sim::rng::SimRng>,
     frame: u32,
 ) -> Vec<(u64, i32)> {
     let mut fidgets = Vec::new();

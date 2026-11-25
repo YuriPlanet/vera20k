@@ -16,6 +16,7 @@ use crate::rules::particle_type::{ParticleBehavesLike, ParticleType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
+use crate::util::forked::Forked;
 use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF32Bits};
 use glam::IVec3;
 
@@ -219,7 +220,12 @@ pub(super) fn owner_in_tube(sim: &Simulation, owner: Option<u64>) -> bool {
 }
 
 /// SmokeAI62C540 body; the shared dispatcher owns the subsequent EC tail.
-pub(super) fn tick_particle(p: &mut Particle, pt: &ParticleType, frame: u32, rng: &mut SimRng) {
+pub(super) fn tick_particle(
+    p: &mut Particle,
+    pt: &ParticleType,
+    frame: u32,
+    rng: &mut Forked<SimRng>,
+) {
     if frame & 1 != 0 {
         if (rng.next_u32() as i32).wrapping_abs() & 3 == 0 {
             let axis = (rng.next_u32() as i32).wrapping_abs() & 1;
