@@ -78,6 +78,7 @@ mod actions;
 mod cells;
 mod chains;
 mod claims;
+mod control;
 mod decide;
 mod events;
 mod held;

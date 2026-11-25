@@ -306,6 +306,8 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
         // `0x00443B90`), which hands a target it refuses to this base setter
         // as NULL (`0x00443BA9`, `0x00443BFE`): the same-target test then
         // compares NULL, so a refused current target is cleared.
+        // The TarCom before this setter, for the Wasm module `TargetChanged`.
+        let before = sim.module_target_before(prepared.receiver);
         let requested = requested
             .filter(|_| sim.building_admits_target(prepared.receiver, requested, self.rules));
         let entity = sim
@@ -366,6 +368,13 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                 self.rules,
                 Some(self.rules.overlay_registry()),
             );
+            // Wasm module `TargetChanged` after the store (`0x006FCF3E`).
+            sim.raise_module_target_changed(
+                self.rules,
+                &mut self.frame_effects,
+                prepared.receiver,
+                before,
+            );
         }
         //51B2B1..51B33F: an Infiltrate= infantryman with no NavCom heads for
         // a building target it may enter (vt+0x480(target, 1)).
@@ -395,6 +404,21 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
         prepared: &Self::Prepared,
         requested: Option<NavTargetRef>,
     ) -> bool {
+        // Wasm module `DestinationSet` on a non-null destination
+        // (`ext_modules::control`): a replacement this setter's admission
+        // refuses keeps the native destination.
+        let requested = match requested {
+            Some(native) => match sim.module_destination(self.rules, prepared.receiver, native) {
+                Some(Some(replacement))
+                    if self.destination_available(sim, prepared.receiver, Some(replacement)) =>
+                {
+                    Some(replacement)
+                }
+                Some(None) => None,
+                _ => Some(native),
+            },
+            None => None,
+        };
         if sim
             .substrate
             .entities

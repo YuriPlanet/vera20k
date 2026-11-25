@@ -80,6 +80,8 @@
 //!   landing crush (`0x0054CCDE`);
 //! - `Detonated` after a fired projectile's whole detonation
 //!   (`raise_module_detonated`);
+//! - `TargetChanged`, `Deployed`, `Promoted`, `ExperienceGained`, `Cloaked`
+//!   and `Decloaked` at the unit control points (`ext_modules::control`);
 //! - `HouseTransferred` at the end of ChangeOwner (`0x007014A0`), `house`
 //!   the old house, `value` 1 when CaptureManager's Capture (0x00471D40),
 //!   FreeUnit (0x004720D5), PsyDom's permanent capture or Ares' permanent
@@ -122,7 +124,8 @@
 //!   object's type when due.
 //! - The other 4.3 events answer `Unsupported`: `HitByWarhead` and
 //!   `HitTarget` (no raise point apart from `TakeDamage` that knows the
-//!   immune hit or the shooter's weapon), `SpawnFire`, `TargetChanged`,
+//!   immune hit or the shooter's weapon), `SpawnFire`, `MissionChanged`
+//!   (`ext_modules::control`),
 //!   `ProjectileIncoming`,
 //!   `HouseTransfer` (before ChangeOwner, which would have to recheck),
 //!   the modifier events and `ProductionCancelled` (House Abandon 0x004FAA10
@@ -139,7 +142,10 @@ use vera20k_wasm_ext::triggers::{
     EVENT_SUPER_WEAPON_LAUNCHED, EVENT_TAKE_DAMAGE, EVENT_TIMER, EVENT_TRANSPORT_ENTERED,
     EVENT_TRANSPORT_EXITED, EVENT_VARIABLE_POLL, EventDef,
 };
-use vera20k_wasm_ext::triggers::{EVENT_COMMANDED, EVENT_ORDER_REFUSED};
+use vera20k_wasm_ext::triggers::{
+    EVENT_CLOAKED, EVENT_COMMANDED, EVENT_DECLOAKED, EVENT_DEPLOYED, EVENT_EXPERIENCE_GAINED,
+    EVENT_ORDER_REFUSED, EVENT_PROMOTED, EVENT_TARGET_CHANGED,
+};
 use vera20k_wasm_ext::{Invalid, Status, VarScope, property_id, property_name};
 
 use super::triggers::variable_scope;
@@ -154,10 +160,16 @@ use crate::sim::world::{FrameEffects, Simulation};
 
 /// New delivered events this engine raises (appendix 4.3, and the INI
 /// module event of RFC 0001 section 6h).
-const DELIVERED: [i32; 21] = [
+const DELIVERED: [i32; 27] = [
     EVENT_TAKE_DAMAGE,
     EVENT_DETONATED,
     EVENT_CRUSHED,
+    EVENT_TARGET_CHANGED,
+    EVENT_DEPLOYED,
+    EVENT_PROMOTED,
+    EVENT_EXPERIENCE_GAINED,
+    EVENT_CLOAKED,
+    EVENT_DECLOAKED,
     EVENT_ATTACKED_BY,
     EVENT_FATAL_DAMAGE,
     EVENT_KILLED,
@@ -322,6 +334,15 @@ impl Host<'_, '_> {
             vera20k_wasm_ext::decide::EVENT_PRODUCTION_ALLOWED
             | vera20k_wasm_ext::decide::EVENT_PRODUCTION_QUEUED
             | vera20k_wasm_ext::decide::EVENT_COMMAND_ALLOWED => object,
+            // The unit decisions (`decide`, `control`) bind to the object
+            // or its type.
+            vera20k_wasm_ext::decide::EVENT_DAMAGE_INCOMING
+            | vera20k_wasm_ext::decide::EVENT_FIRE_ALLOWED
+            | vera20k_wasm_ext::decide::EVENT_RETALIATE
+            | vera20k_wasm_ext::decide::EVENT_DESTINATION_SET
+            | vera20k_wasm_ext::decide::EVENT_CRUSH_ALLOWED
+            | vera20k_wasm_ext::decide::EVENT_HARVEST_CELL
+            | vera20k_wasm_ext::decide::EVENT_DEPLOY_ALLOWED => object,
             EVENT_FIRE => TriggerScope::Object { weapon: true },
             // Detonated is also reached through the weapon, warhead and
             // projectile bindings.
@@ -340,7 +361,13 @@ impl Host<'_, '_> {
             | EVENT_MODIFIER_START
             | EVENT_MODIFIER_EXPIRE
             | EVENT_MODIFIER_STACKS
-            | EVENT_COMMANDED => object,
+            | EVENT_COMMANDED
+            | EVENT_TARGET_CHANGED
+            | EVENT_DEPLOYED
+            | EVENT_PROMOTED
+            | EVENT_EXPERIENCE_GAINED
+            | EVENT_CLOAKED
+            | EVENT_DECLOAKED => object,
             // Appendix 4.4: other properties are refused at creation.
             EVENT_PROPERTY_POLL => match property_name(def.id) {
                 Some("Money") => TriggerScope::Global,
