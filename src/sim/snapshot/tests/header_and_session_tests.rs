@@ -854,12 +854,16 @@ fn validated_load_requires_exact_content_and_session_metadata() {
 
 /// Every saved type traces to one description, and its id can never equal
 /// a counter from the hand-kept scheme.
+// Unoptimized, the trace's frames hold about 1.9 MiB of whole snapshots and
+// worlds, which leaves a body on libtest's 2 MiB thread next to nothing.
 #[test]
 fn snapshot_layout_describes_every_saved_type() {
-    let description =
-        save_codec::layout::describe::<GameSnapshot>().unwrap_or_else(|error| panic!("{error}"));
-    assert!(description.starts_with("GameSnapshot\n"));
-    assert!(description.contains("\nSimulation struct{"));
-    assert_ne!(super::snapshot_layout() & 0x8000_0000, 0);
-    assert_eq!(super::snapshot_layout(), super::snapshot_layout());
+    crate::test_fixture::on_game_stack(|| {
+        let description = save_codec::layout::describe::<GameSnapshot>()
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert!(description.starts_with("GameSnapshot\n"));
+        assert!(description.contains("\nSimulation struct{"));
+        assert_ne!(super::snapshot_layout() & 0x8000_0000, 0);
+        assert_eq!(super::snapshot_layout(), super::snapshot_layout());
+    });
 }
