@@ -109,9 +109,10 @@
 //! match does; `--serial-paths` searches and `--serial-scans` scans in native
 //! order instead. The `path_batch` line sums the batch's passes over the
 //! measured frames ([`PathBatchStats`]): registrations waiting and answered,
-//! the ones the cap or a re-path budget left for a later pass, and the
-//! cells the searches expanded, with the code-2 re-paths' share at each
-//! urgency.
+//! the ones the cap, a re-path budget or the urgency-2 limit left for a later
+//! pass (`capped` counts the limit's), and the cells the searches expanded,
+//! with the most one pass and one search expanded (`peak_steps`,
+//! `peak_search`) and the code-2 re-paths' share at each urgency.
 //!
 //! `--threads N` gives the worker pool N threads instead of one per CPU
 //! thread; no result depends on it. The `measured` line gives the mean, p50,
@@ -825,7 +826,12 @@ struct PathTotals {
     /// Passes that left any registration for a later one.
     left_out_passes: u64,
     peak_left_out: u32,
+    /// Urgency-2 re-paths stopped at their limit.
+    capped: u64,
     steps: u64,
+    /// The most cells one pass's searches expanded, and one search.
+    peak_steps: u64,
+    peak_search: u64,
     urgency2_steps: u64,
     urgency1_steps: u64,
     peak_pass_ms: f64,
@@ -839,7 +845,10 @@ impl PathTotals {
         self.left_out += u64::from(pass.left_out);
         self.left_out_passes += u64::from(pass.left_out > 0);
         self.peak_left_out = self.peak_left_out.max(pass.left_out);
+        self.capped += u64::from(pass.capped);
         self.steps += pass.steps;
+        self.peak_steps = self.peak_steps.max(pass.steps);
+        self.peak_search = self.peak_search.max(pass.largest_search);
         self.urgency2_steps += pass.urgency2_steps;
         self.urgency1_steps += pass.urgency1_steps;
         self.peak_pass_ms = self.peak_pass_ms.max(pass.last_ms);
@@ -1254,15 +1263,18 @@ fn main() -> Result<(), String> {
     if paths.passes > 0 {
         println!(
             "path_batch passes={} waiting={} answered={} left_out={} left_out_passes={} \
-             peak_left_out={} steps={} urgency2_steps={} urgency1_steps={} \
-             peak_pass_ms={:.2}",
+             peak_left_out={} capped={} steps={} peak_steps={} peak_search={} \
+             urgency2_steps={} urgency1_steps={} peak_pass_ms={:.2}",
             paths.passes,
             paths.waiting,
             paths.answered,
             paths.left_out,
             paths.left_out_passes,
             paths.peak_left_out,
+            paths.capped,
             paths.steps,
+            paths.peak_steps,
+            paths.peak_search,
             paths.urgency2_steps,
             paths.urgency1_steps,
             paths.peak_pass_ms,
