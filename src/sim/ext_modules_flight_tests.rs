@@ -162,19 +162,41 @@ fn an_empty_fire_plan_launches_nothing() {
     assert_eq!(scene.sim().ext_modules().status()[0].1, None);
 }
 
-/// The native entry twice: the first shot hits twice as hard as a native
-/// one (two bullets, same weapon, same frame).
+/// The native entry twice: two bullets of the shot's weapon. The second one
+/// enters the logic list behind the walk (as a second native bullet would)
+/// and lands within the next frames; a native shot lands once.
 #[test]
 fn a_doubled_native_entry_hits_twice() {
     let Some((mut plain, attacker, target)) = super::tests::gi_duel() else {
         return;
     };
-    let baseline = super::tests::first_hit(&mut plain, attacker, target, |_| {});
+    let plain_hits = hits_after_first(&mut plain, attacker, target);
     let (mut scene, attacker, target) = super::tests::gi_duel().expect("second duel");
     install(&mut scene, EVENT_FIRE, DOUBLE, attacker as i64);
-    let doubled = super::tests::first_hit(&mut scene, attacker, target, |_| {});
-    assert_eq!(doubled, 2 * baseline);
+    let doubled_hits = hits_after_first(&mut scene, attacker, target);
+    assert_eq!((plain_hits, doubled_hits), (1, 2));
+    assert_eq!(requests(&scene), 1);
     assert_eq!(scene.sim().ext_modules().status()[0].1, None);
+}
+
+/// The hits the target takes from the frame of the first one through the
+/// next two frames (the GI's rearm is longer than that).
+fn hits_after_first(scene: &mut HeadlessScenario, attacker: u64, target: u64) -> u32 {
+    let health = |scene: &HeadlessScenario| {
+        scene.sim().entities().get(target).expect("target lives").health.current()
+    };
+    super::tests::first_hit(scene, attacker, target, |_| {});
+    let mut hits = 1;
+    let mut last = health(scene);
+    for _ in 0..2 {
+        scene.tick();
+        let now = health(scene);
+        if now < last {
+            hits += 1;
+        }
+        last = now;
+    }
+    hits
 }
 
 /// A chemical missile strike (TAction 96) at the first waypoint the map
