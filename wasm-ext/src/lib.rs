@@ -55,6 +55,10 @@ pub use triggers::{EventRecord, TriggerDef};
 
 pub mod decide;
 
+pub mod client;
+
+pub use client::{ClientEvent, ClientEventRecord, ClientHost, NodeInit, Source};
+
 pub use decide::DecideRecord;
 
 /// The import module name for API 1.0 (`vera:sim@<major>.<minor>`).
