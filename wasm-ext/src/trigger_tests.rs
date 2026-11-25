@@ -268,3 +268,44 @@ fn trigger_event_numbers_match_the_event_kind_table() {
     );
     assert_eq!(crate::event_kind_id("TechTypeDoesNotExist"), Some(61));
 }
+
+/// RFC 0001 0.0.22's events take 100044.. (1044.. here) in the event kind
+/// table, decision-only and delivered alike, and `DamageIncoming` keeps 1039.
+#[test]
+fn control_point_event_numbers_match_the_event_kind_table() {
+    use crate::decide::{
+        DECISION_ONLY_EVENTS, EVENT_CRUSH_ALLOWED, EVENT_DAMAGE_INCOMING, EVENT_DEPLOY_ALLOWED,
+        EVENT_DESTINATION_SET, EVENT_FIRE_ALLOWED, EVENT_HARVEST_CELL, EVENT_RETALIATE,
+    };
+    use crate::triggers::{
+        EVENT_CLOAKED, EVENT_DECLOAKED, EVENT_DEPLOYED, EVENT_EXPERIENCE_GAINED,
+        EVENT_MISSION_CHANGED, EVENT_PROMOTED,
+    };
+    for (name, kind) in [
+        ("DamageIncoming", EVENT_DAMAGE_INCOMING),
+        ("FireAllowed", EVENT_FIRE_ALLOWED),
+        ("Retaliate", EVENT_RETALIATE),
+        ("DestinationSet", EVENT_DESTINATION_SET),
+        ("CrushAllowed", EVENT_CRUSH_ALLOWED),
+        ("MissionChanged", EVENT_MISSION_CHANGED),
+        ("HarvestCell", EVENT_HARVEST_CELL),
+        ("DeployAllowed", EVENT_DEPLOY_ALLOWED),
+        ("Deployed", EVENT_DEPLOYED),
+        ("Promoted", EVENT_PROMOTED),
+        ("ExperienceGained", EVENT_EXPERIENCE_GAINED),
+        ("Cloaked", EVENT_CLOAKED),
+        ("Decloaked", EVENT_DECLOAKED),
+    ] {
+        assert_eq!(crate::event_kind_id(name), Some(kind), "{name}");
+    }
+    for delivered in [
+        EVENT_MISSION_CHANGED,
+        EVENT_DEPLOYED,
+        EVENT_PROMOTED,
+        EVENT_EXPERIENCE_GAINED,
+        EVENT_CLOAKED,
+        EVENT_DECLOAKED,
+    ] {
+        assert!(!DECISION_ONLY_EVENTS.contains(&delivered));
+    }
+}

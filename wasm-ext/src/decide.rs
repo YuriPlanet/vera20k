@@ -12,14 +12,20 @@
 //! - `Defeat` (4.5): 1 defeat, 0 veto, when the house defeat gate is about
 //!   to defeat a house;
 //! - `CommandAllowed` (4.5): 1 allow, 0 refuse, when the simulation
-//!   executes a player command (a module order included) on a bound object.
+//!   executes a player command (a module order included) on a bound object;
+//! - `DamageIncoming` (4.5, preview): the incoming damage at the Techno
+//!   receiver's entry, after the shield and before death prevention;
+//! - `FireAllowed`, `Retaliate`, `DestinationSet`, `CrushAllowed`,
+//!   `HarvestCell` and `DeployAllowed` (4.5, RFC 0001 0.0.22): 1 allow, 0
+//!   refuse at their commit points; `DestinationSet` and `HarvestCell`
+//!   answer a reference (0 for none).
 //!
 //! `Launch` (1035) and `ProjectileFrame` (1036) are tier "later" in the RFC's
 //! phase table and have no decision point here.
 //!
 //! Provisional numbering (open question 5): new events continue from 1000
 //! in appendix order, 4.3 (1000..1025), then 4.4 (1026..1030), then 4.5
-//! (1031..1036).
+//! (1031..1036); RFC numbers 100000 + n are 1000 + n here.
 
 use crate::triggers::{EVENT_TAKE_DAMAGE, EventRecord};
 
@@ -27,22 +33,46 @@ pub const EVENT_PRODUCTION_ALLOWED: i32 = 1031;
 pub const EVENT_PRODUCTION_QUEUED: i32 = 1032;
 pub const EVENT_DEFEAT: i32 = 1033;
 pub const EVENT_COMMAND_ALLOWED: i32 = 1034;
+/// The preview shield event (appendix 4.5, 100039).
+pub const EVENT_DAMAGE_INCOMING: i32 = 1039;
+/// Decision-only events RFC 0001 0.0.22 added to appendix 4.5 (100044 on;
+/// the delivered ones of that version are in [`crate::triggers`]).
+pub const EVENT_FIRE_ALLOWED: i32 = 1044;
+pub const EVENT_RETALIATE: i32 = 1045;
+pub const EVENT_DESTINATION_SET: i32 = 1046;
+pub const EVENT_CRUSH_ALLOWED: i32 = 1047;
+pub const EVENT_HARVEST_CELL: i32 = 1049;
+pub const EVENT_DEPLOY_ALLOWED: i32 = 1050;
 
 /// Events with a decision form in this engine.
-pub const DECIDABLE_EVENTS: [i32; 5] = [
+pub const DECIDABLE_EVENTS: [i32; 12] = [
     EVENT_TAKE_DAMAGE,
     EVENT_PRODUCTION_ALLOWED,
     EVENT_PRODUCTION_QUEUED,
     EVENT_DEFEAT,
     EVENT_COMMAND_ALLOWED,
+    EVENT_DAMAGE_INCOMING,
+    EVENT_FIRE_ALLOWED,
+    EVENT_RETALIATE,
+    EVENT_DESTINATION_SET,
+    EVENT_CRUSH_ALLOWED,
+    EVENT_HARVEST_CELL,
+    EVENT_DEPLOY_ALLOWED,
 ];
 /// Of those, the decision-only ones (appendix 4.5): they need a decision
 /// handler and are never delivered.
-pub const DECISION_ONLY_EVENTS: [i32; 4] = [
+pub const DECISION_ONLY_EVENTS: [i32; 11] = [
     EVENT_PRODUCTION_ALLOWED,
     EVENT_PRODUCTION_QUEUED,
     EVENT_DEFEAT,
     EVENT_COMMAND_ALLOWED,
+    EVENT_DAMAGE_INCOMING,
+    EVENT_FIRE_ALLOWED,
+    EVENT_RETALIATE,
+    EVENT_DESTINATION_SET,
+    EVENT_CRUSH_ALLOWED,
+    EVENT_HARVEST_CELL,
+    EVENT_DEPLOY_ALLOWED,
 ];
 
 /// Operations one `on_decide` call may use (open question 7): a tenth of
