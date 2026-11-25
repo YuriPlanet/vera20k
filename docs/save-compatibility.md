@@ -67,7 +67,8 @@ writer's layout `0xE18EA373` holds the modules, main's writer from #5205,
 layout `0x8C73B1B3`, the swap, the `2e39b88dd` writer's layout `0xB65C0664`
 both, and the `2e67ebaa8` writer's layout `0xE5279FB2` only the NPatch reads.
 Each converts with its missing parts empty; without the reads, the switch
-stays off, as those matches played. No frozen save holds `0x8C73B1B3`.
+stays off, as those matches played. No frozen save holds `0x8C73B1B3`. The
+`fb29ff473` writer covers direct loading of the current layout `0xBA51A42C`.
 
 Run the menu and compatibility tests with this command.
 
