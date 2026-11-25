@@ -657,7 +657,11 @@ pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
         // A capture keeps its fixed surface.
         HotkeyCommand::FullScreen if state.platform.capture_client_size.is_none() => {
             let full_screen = state.platform.window.fullscreen().is_none();
-            crate::app::App::set_full_screen(state, full_screen);
+            crate::app::App::set_full_screen(
+                &mut state.platform,
+                &state.persistence.options_profile,
+                full_screen,
+            );
         }
         HotkeyCommand::PerformanceStats => {
             let shown = state.renderer.performance_overlay.toggle();

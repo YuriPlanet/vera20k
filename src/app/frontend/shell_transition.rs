@@ -319,7 +319,8 @@ pub(crate) fn advance_shell_exit(state: &mut AppState, now: Instant) -> Option<S
         state.frontend.shell_exit = None;
         return None;
     }
-    let hidden_online_start = crate::app::App::online_start_runs_while_hidden(state);
+    let hidden_online_start =
+        crate::app::App::online_start_runs_while_hidden(&state.platform, &state.match_state);
     let exit = state.frontend.shell_exit.as_mut()?;
     if !exit.advance(now, hidden_online_start) {
         return None;

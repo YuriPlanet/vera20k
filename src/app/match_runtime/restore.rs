@@ -45,7 +45,11 @@ pub(crate) fn commit_prepared_load(
     );
     // The outgoing replay closes before the process dummy and runtime change.
     crate::app::match_runtime::sim_tick::close_replay_segment_for_new_timeline(state);
-    crate::app::reset_scenario_exit_runtime(state);
+    crate::app::reset_scenario_exit_runtime(
+        &mut state.frontend,
+        &mut state.match_state,
+        &mut state.audio,
+    );
     let committed = prepared.commit_into(
         &mut state.process_assets,
         &state.frontend.frontend_main_rng,

@@ -3620,7 +3620,7 @@ pub(crate) fn present_saved_game_loading(state: &mut AppState) -> anyhow::Result
 /// the first game frame (`0x00683E07..0x00683E1C`, again at
 /// `0x0052EAA1..0x0052EAEB`); the tactical install runs under it.
 pub(crate) fn present_game_mode_blank(state: &AppState) {
-    if crate::app::App::online_start_runs_while_hidden(state) {
+    if crate::app::App::online_start_runs_while_hidden(&state.platform, &state.match_state) {
         return;
     }
     if let Err(err) = render::present_blank(

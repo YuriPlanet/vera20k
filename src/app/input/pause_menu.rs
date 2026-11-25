@@ -106,7 +106,11 @@ impl InGameOptionsPage {
 /// Fit the match to changed display choices, as a window resize does: the
 /// zoom pass, then the sidebar laid out again for the new frame.
 fn refit_match(state: &mut AppState) {
-    App::sync_zoom_pass(state);
+    App::sync_zoom_pass(
+        &state.platform,
+        &mut state.renderer,
+        &state.persistence.options_profile,
+    );
     crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
 }
 
@@ -178,7 +182,11 @@ pub(crate) fn options_page_layout(state: &AppState) -> Option<LauncherOptionsLay
         &state.match_state,
         &state.persistence,
     )?;
-    let battle = App::match_zoom_geometry(state);
+    let battle = App::match_zoom_geometry(
+        &state.platform,
+        &state.renderer.gpu,
+        &state.persistence.options_profile,
+    );
     let menu = current_layout(state)?;
     Some(
         LauncherOptionsLayout::in_game(
