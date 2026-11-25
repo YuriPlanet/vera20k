@@ -89,6 +89,8 @@ fn scene() -> Scene {
         index(&sim, "British"),
     );
     let player = sim.interner.get("Americans").expect("player");
+    // The arena starts without a fog map; the scene's is its 32x32 cells.
+    *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(32, 32);
     sim.fog_mut_for_test().reveal_cells_for_owner(
         player,
         (0..32_u16).flat_map(|y| (0..EXPLORED).map(move |x| (x, y))),
@@ -793,3 +795,4 @@ fn references_to_nothing_are_gone() {
     assert!(!sees_object(&view, house_ref(scene.americans)));
     assert!(get(&view, -5, prop("Type")).is_err());
 }
+

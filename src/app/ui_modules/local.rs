@@ -960,9 +960,10 @@ mod tests {
             (mod_events[0].kind, mod_events[0].id),
             (client_event::HOTKEY, 0)
         );
+        // The map's third registration (after "Odd" and "Bare").
         assert_eq!(
             (map_events[0].kind, map_events[0].id),
-            (client_event::HOTKEY, 1)
+            (client_event::HOTKEY, 2)
         );
 
         // Rebinding keeps the ID.
