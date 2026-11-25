@@ -39,6 +39,7 @@ use crate::util::direction::DIRECTION_DELTAS;
 use crate::util::direction_tables::dir_from_facing16;
 #[cfg(test)]
 use crate::util::fixed_math::SIM_ZERO;
+use crate::util::forked::Forked;
 
 /// AStar429F54's live Foot +1AC receiver: Infantry 0x0051BF90 or Unit
 /// 0x0073F0A0, the one class port behind `Simulation::foot_can_enter`, with
@@ -487,9 +488,10 @@ impl Simulation {
     /// 750920 receives Rules ScoldSound, centered pan0x2000, volume1 and0.
     /// Clearing is caller-owned: Drive4B3AC9/Ship6A3118 can recurse before
     /// their later clear. Evidence: tools/spatial_oracle/foot_scold_latch.
+    /// The sound channel is written only by the sound (`util::forked`).
     pub(crate) fn play_foot_path_scold(
         substrate: &ObjectSubstrate,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
+        sound_events: &mut Forked<FrameChannel<SimSoundEvent>>,
         id: u64,
         rules: &RuleSet,
     ) {

@@ -1148,7 +1148,9 @@ fn dispatch_tiberium_reduction_inline(
 /// World-owned half of Apply_area_damage's per-cell transaction for non-combat
 /// producers. Overlay/terrain/RNG are lent by AoELayerContext at each spread
 /// entry; this value owns the disjoint Simulation fields needed by the optional
-/// tiberium prelude and synchronous wall-navigation callbacks.
+/// tiberium prelude and synchronous wall-navigation callbacks. It holds the
+/// dirty cells and the navigation caches as the world's fields
+/// (`util::forked`), so only a reduction or a wall step takes them for writing.
 pub(crate) struct SimulationAreaDamageCellPrelude<'a> {
     rules: &'a RuleSet,
     tiberium_amount: Option<i32>,
@@ -1159,9 +1161,9 @@ pub(crate) struct SimulationAreaDamageCellPrelude<'a> {
     terrain_object_cells: &'a BTreeMap<(u16, u16), u64>,
     binary_frame: u32,
     spread_enabled: bool,
-    dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
-    zone_grid: &'a mut Option<ZoneGrid>,
-    path_grid: &'a mut Option<Arc<PathGrid>>,
+    dirty_cells: &'a mut Forked<crate::sim::dirty_cells::DirtyCells>,
+    zone_grid: &'a mut Forked<Option<ZoneGrid>>,
+    path_grid: &'a mut Forked<Option<Arc<PathGrid>>>,
     bridge_state: Option<&'a BridgeRuntimeState>,
     playfield_bounds: Option<PlayfieldBounds>,
 }
@@ -1251,9 +1253,9 @@ pub(crate) fn simulation_area_damage_cell_prelude<'a>(
     terrain_object_cells: &'a BTreeMap<(u16, u16), u64>,
     binary_frame: u32,
     spread_enabled: bool,
-    dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
-    zone_grid: &'a mut Option<ZoneGrid>,
-    path_grid: &'a mut Option<Arc<PathGrid>>,
+    dirty_cells: &'a mut Forked<crate::sim::dirty_cells::DirtyCells>,
+    zone_grid: &'a mut Forked<Option<ZoneGrid>>,
+    path_grid: &'a mut Forked<Option<Arc<PathGrid>>>,
     bridge_state: Option<&'a BridgeRuntimeState>,
     playfield_bounds: Option<PlayfieldBounds>,
 ) -> SimulationAreaDamageCellPrelude<'a> {

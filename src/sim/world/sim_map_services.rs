@@ -15,6 +15,7 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::smudge_grid::SmudgeGrid;
 use crate::sim::terrain_object::TerrainObjectStore;
 use crate::sim::trigger_runtime::TriggerEffect;
+use crate::util::forked::Forked;
 
 use super::FrameAdvanceError;
 use super::FrameEffects;
@@ -29,10 +30,15 @@ use super::lifecycle;
 use super::turret_rotate_sound;
 
 impl Simulation {
+    /// Mark the smudge grid's dirty cells. The grids are the world's fields
+    /// (`util::forked`): with no dirt pending, neither is written.
     pub(crate) fn flush_smudge_dirty(
-        smudge_grid: &mut Option<SmudgeGrid>,
-        dirty_cells: &mut DirtyCells,
+        smudge_grid: &mut Forked<Option<SmudgeGrid>>,
+        dirty_cells: &mut Forked<DirtyCells>,
     ) {
+        if !smudge_grid.as_ref().is_some_and(SmudgeGrid::has_dirty) {
+            return;
+        }
         let dirty = smudge_grid
             .as_mut()
             .map(crate::sim::smudge_grid::SmudgeGrid::drain_dirty)

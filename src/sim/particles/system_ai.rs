@@ -13,6 +13,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::particles::ParticleSystem;
 use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
+use crate::util::forked::Forked;
 use thiserror::Error;
 
 use super::spark::{
@@ -112,7 +113,7 @@ where
         // but still reaches the shared RemainingEC decrement at62CE86.
         ParticleBehavesLike::Unknown => {}
         ParticleBehavesLike::Smoke => {
-            tick_smoke_particle(p, pt, sim.session.binary_frame(), sim.particle_rng());
+            tick_smoke_particle(p, pt, sim.session.binary_frame(), &mut sim.scenario_rng);
             return Ok(()); // The Smoke arm's owner runs the lifetime tail.
         }
         // gamemd.exe ParticleClass::AI_Gas (0x0062BD50), 62C2C2..62C2DC:
@@ -168,12 +169,13 @@ where
 /// The Smoke arm of `ParticleClass::AI_Dispatch @ 0x0062CE40` with the shared
 /// lifetime tail (`0x0062CE86`). AI_Smoke (`0x0062C540`) reads only the
 /// particle, its type, the frame and the Scenario stream, so a system runs it
-/// on the child where it is stored (VERA-only, same writes and draws).
+/// on the child where it is stored (VERA-only, same writes and draws). It
+/// draws only on odd frames and takes the stream for writing only then.
 pub(super) fn tick_smoke_particle(
     p: &mut super::Particle,
     pt: &ParticleType,
     frame: u32,
-    rng: &mut SimRng,
+    rng: &mut Forked<SimRng>,
 ) {
     super::smoke::tick_particle(p, pt, frame, rng);
     finish_lifetime(p);

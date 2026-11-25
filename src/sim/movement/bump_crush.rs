@@ -24,6 +24,7 @@ use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::rng::SimRng;
 use crate::sim::world::ObjectSubstrate;
+use crate::util::forked::Forked;
 
 /// Functional infantry sub-cell positions. The original engine uses sub-cells
 /// 2 (NE), 3 (SW), 4 (SE) — three corners of the isometric diamond. Sub-cells
@@ -260,7 +261,7 @@ impl GroundGate<'_> {
 /// north-west quadrant (preference 0, `0x004811F5..0x00481212`), then draws
 /// its `RandomRanged(0, 3)` row rotation on the Scenario stream before
 /// scanning, even when every spot is taken; a NE, SW or SE request prefers
-/// its own spot and draws nothing.
+/// its own spot and draws nothing, and leaves the stream unwritten.
 ///
 /// `walk_head_occupation` compares all 176 original selection controls. Packed
 /// output XYZ remains with `walk_head::selected_head`; its caller samples ground
@@ -272,7 +273,7 @@ pub(crate) fn place_infantry_in_native_cell(
     input: DriveCoord,
     priority: bool,
     gate: GroundGate<'_>,
-    rng: &mut SimRng,
+    rng: &mut Forked<SimRng>,
 ) -> Option<u8> {
     let preferred = cell_kernel::infantry_preferred_spot(CellQueryPoint {
         x: input.x,
@@ -319,7 +320,7 @@ pub(crate) fn pick_infantry_sublocation(
     entities: &EntityStore,
     rules: &crate::rules::ruleset::RuleSet,
     interner: &crate::sim::intern::StringInterner,
-    rng: &mut SimRng,
+    rng: &mut Forked<SimRng>,
     coords: DriveCoord,
 ) -> Option<(u8, bool)> {
     use crate::sim::occupancy::RawCellKey;
@@ -367,7 +368,7 @@ impl crate::sim::world::Simulation {
     /// (`0x00443182`) and Mission_Selling's crew (`0x0044A6ED`) ask it so.
     pub(crate) fn place_infantry_in_ground_cell(
         interner: &StringInterner,
-        scenario_rng: &mut SimRng,
+        scenario_rng: &mut Forked<SimRng>,
         substrate: &ObjectSubstrate,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         rules: &crate::rules::ruleset::RuleSet,
@@ -393,7 +394,7 @@ impl crate::sim::world::Simulation {
     /// `0x0048146E`). `None` is the empty coordinate.
     pub(crate) fn place_infantry_spot_in_cell(
         interner: &StringInterner,
-        scenario_rng: &mut SimRng,
+        scenario_rng: &mut Forked<SimRng>,
         substrate: &ObjectSubstrate,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         rules: &crate::rules::ruleset::RuleSet,
@@ -431,7 +432,7 @@ impl crate::sim::world::Simulation {
     /// priority, with the live ground Gate.
     pub(crate) fn place_infantry_in_ground_key(
         world_interner: &StringInterner,
-        scenario_rng: &mut SimRng,
+        scenario_rng: &mut Forked<SimRng>,
         substrate: &ObjectSubstrate,
         rules: &crate::rules::ruleset::RuleSet,
         key: crate::sim::occupancy::RawCellKey,

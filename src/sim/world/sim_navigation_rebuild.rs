@@ -282,6 +282,10 @@ impl Simulation {
         cells: &[(u16, u16)],
         blocked: &BTreeSet<(u16, u16)>,
     ) {
+        // No cell publishes nothing, and takes no cache for writing.
+        if cells.is_empty() {
+            return;
+        }
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return;
         };
@@ -358,11 +362,19 @@ impl Simulation {
         rules: &RuleSet,
         terrain_changed_cells: &[(u16, u16)],
     ) {
-        let overlay_cells = self
+        // Asked through a read first: a grid with no receipt is not written.
+        let overlay_cells = if self
             .overlay_grid
-            .as_mut()
-            .map(|grid| grid.take_synchronous_navigation_cells())
-            .unwrap_or_default();
+            .as_ref()
+            .is_some_and(|grid| grid.has_synchronous_navigation_cells())
+        {
+            self.overlay_grid
+                .as_mut()
+                .map(|grid| grid.take_synchronous_navigation_cells())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         let all_cells: Vec<_> = overlay_cells
             .iter()
             .chain(terrain_changed_cells)

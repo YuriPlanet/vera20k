@@ -18,6 +18,7 @@ use crate::sim::radar::RadarEventRequest;
 use crate::sim::radar::RadarEventType;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::util::fixed_math::SimFixed;
+use crate::util::forked::Forked;
 
 use super::AresUnitLostLine;
 use super::FrameChannel;
@@ -1139,11 +1140,12 @@ impl Simulation {
     /// `EVA_OurAllyIsUnderAttack` behind `CreateRadarEvent(0x10, cell)`,
     /// unless the victim's country is `MultiplayPassive=` in a non-campaign
     /// mode (`0x004F945D..0x004F9472`). Native has no other rate limit.
+    /// `sound_events` is written only for an event it takes (`util::forked`).
     pub(crate) fn dispatch_under_attack_events(
         interner: &StringInterner,
         session: &ScenarioSession,
         house_alliances: &HouseAlliances,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
+        sound_events: &mut Forked<FrameChannel<SimSoundEvent>>,
         houses: &Houses,
         events: &[crate::sim::combat::UnderAttackEvent],
         rules: &RuleSet,

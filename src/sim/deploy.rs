@@ -16,6 +16,7 @@ use crate::sim::world::FrameChannel;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::util::forked::Forked;
 
 /// Techno `+0x2A4`, a deployed infantryman's crush immunity, which the crush
 /// test reads (`movement::bump_crush`). Construction clears it. The
@@ -410,11 +411,13 @@ impl Simulation {
     /// it on each admitted updater visit. Every site plays at the actor's own
     /// Location: Infantry `0x0051D94F..0x0051D9CA`, Unit deploy
     /// `0x00739C86..0x00739CB9`, Unit undeploy `0x00739E81..0x00739EB3`.
+    /// The interner and the sound channel are written only by a sound it
+    /// plays (`util::forked`).
     pub(crate) fn emit_deploy_action_sound(
-        interner: &mut StringInterner,
+        interner: &mut Forked<StringInterner>,
         substrate: &ObjectSubstrate,
         terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
+        sound_events: &mut Forked<FrameChannel<SimSoundEvent>>,
         id: u64,
         requested: i32,
         rules: &RuleSet,
