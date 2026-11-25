@@ -12,6 +12,7 @@
 use anyhow::Result;
 
 use crate::app::AppState;
+use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::diagnostics::shell_capture::PresentedShell;
 use crate::app::frontend::menu_page_render::{PanelStatic, paint_panel_statics};
 use crate::app::frontend::shell_pass::{
@@ -26,6 +27,7 @@ use crate::app::frontend::skirmish_shell_render::{BoxLook, controller_tree, pain
 use crate::app::frontend::state::FrontendState;
 use crate::app::input::ime::ImeState;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::app::shell_wol::WolPage;
@@ -171,35 +173,36 @@ impl Painted {
 
 /// The visit's page with its art loaded and its widgets placed; `None` for
 /// the empty backdrop (a dialog has closed, under a box or the wait box).
-fn painted(state: &mut AppState) -> Option<Painted> {
+fn painted(
+    frontend: &mut FrontendState,
+    renderer: &RendererState,
+    process_assets: &ProcessAssets,
+    options_profile: &RetailOptionsProfile,
+    audio: &AppAudioRuntime,
+) -> Option<Painted> {
     use crate::app::shell_wol::{buddy, leaf, lobby, my_info, options, persona, quick_match};
     use crate::ui::{wol_buddy, wol_lobby, wol_login, wol_my_info, wol_options, wol_quick_match};
     // 0x11E opens over the empty backdrop (0x0052FEC0), except from 0x116's
     // Page, which runs it over the Buddy List.
-    let received = crate::app::shell_wol::page::page_received(state.frontend.wol.as_ref());
+    let received = crate::app::shell_wol::page::page_received(frontend.wol.as_ref());
     if received.is_some_and(|received| !received.modal) {
         return None;
     }
-    let dialog = match &state.frontend.wol.as_ref()?.page {
+    let dialog = match &frontend.wol.as_ref()?.page {
         WolPage::Welcome => WOL_WELCOME_DIALOG,
         WolPage::Login(_) => wol_login::DIALOG,
         WolPage::Lobby => wol_lobby::DIALOG,
         WolPage::Options(page) if page.sound.is_some() => SOUND_DIALOG,
         WolPage::Options(_) => wol_options::DIALOG,
         WolPage::AutoLoginQuery | WolPage::Locale(_) | WolPage::AddBuddyQuery(_) => {
-            persona::dialog(state.frontend.wol.as_ref())?
+            persona::dialog(frontend.wol.as_ref())?
         }
         WolPage::MyInformation(_) => wol_my_info::DIALOG,
         WolPage::Buddy(_) => wol_buddy::DIALOG,
         WolPage::QuickMatch(_) => wol_quick_match::DIALOG,
         WolPage::Backdrop { .. } | WolPage::Message { .. } => return None,
     };
-    leaf::open_art(
-        &mut state.frontend,
-        &state.process_assets,
-        &state.renderer,
-        dialog,
-    );
+    leaf::open_art(frontend, process_assets, renderer, dialog);
     let painted = |page, status_help, spec, body| Painted {
         dialog,
         page,
@@ -209,13 +212,8 @@ fn painted(state: &mut AppState) -> Option<Painted> {
     };
     Some(match dialog {
         WOL_WELCOME_DIALOG => {
-            crate::app::App::wol_welcome_sync(
-                &mut state.frontend.shell_controller,
-                &state.renderer,
-                &[],
-            );
-            let layout =
-                crate::app::frontend::shell_layout::wol_welcome_layout(&state.renderer.gpu);
+            crate::app::App::wol_welcome_sync(&mut frontend.shell_controller, renderer, &[]);
+            let layout = crate::app::frontend::shell_layout::wol_welcome_layout(&renderer.gpu);
             let spec = layout.page_spec();
             painted(
                 layout.page.clone(),
@@ -225,10 +223,7 @@ fn painted(state: &mut AppState) -> Option<Painted> {
             )
         }
         wol_login::DIALOG => {
-            let layout = crate::app::shell_wol::login_layout(
-                state.frontend.wol.as_ref(),
-                &state.renderer.gpu,
-            );
+            let layout = crate::app::shell_wol::login_layout(frontend.wol.as_ref(), &renderer.gpu);
             let spec = layout.page_spec();
             painted(
                 layout.page.clone(),
@@ -240,13 +235,13 @@ fn painted(state: &mut AppState) -> Option<Painted> {
         wol_lobby::DIALOG => {
             // Hidden (created hidden, or slid out for a join) or covered by
             // the empty backdrop for a popup: only the backdrop shows.
-            let lobby_ui = state.frontend.wol.as_ref().and_then(|visit| visit.lobby());
+            let lobby_ui = frontend.wol.as_ref().and_then(|visit| visit.lobby());
             if !lobby_ui.is_some_and(|lobby| lobby.shown && !lobby.covered) {
                 return None;
             }
             let spec = lobby_ui.map_or(&wol_lobby::PAGE, |lobby| lobby.ui.page_spec());
-            lobby::sync(&mut state.frontend, &state.process_assets, &state.renderer);
-            let layout = lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
+            lobby::sync(frontend, process_assets, renderer);
+            let layout = lobby::layout(frontend.wol.as_ref(), &renderer.gpu);
             painted(
                 layout.page.clone(),
                 layout.page.status_help,
@@ -255,14 +250,14 @@ fn painted(state: &mut AppState) -> Option<Painted> {
             )
         }
         wol_options::DIALOG => {
-            let spec = options::menu_spec(state.frontend.wol.as_ref());
-            let layout = options::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
+            let spec = options::menu_spec(frontend.wol.as_ref());
+            let layout = options::layout(frontend.wol.as_ref(), &renderer.gpu);
             options::sync_gui(
-                &mut state.frontend,
-                &state.process_assets,
-                &state.renderer.gpu,
-                &state.persistence.options_profile,
-                &state.audio,
+                frontend,
+                process_assets,
+                &renderer.gpu,
+                options_profile,
+                audio,
             );
             painted(
                 layout.page.clone(),
@@ -272,13 +267,13 @@ fn painted(state: &mut AppState) -> Option<Painted> {
             )
         }
         SOUND_DIALOG => {
-            let layout = options::sound_layout(&state.renderer.gpu);
+            let layout = options::sound_layout(&renderer.gpu);
             options::sync_gui(
-                &mut state.frontend,
-                &state.process_assets,
-                &state.renderer.gpu,
-                &state.persistence.options_profile,
-                &state.audio,
+                frontend,
+                process_assets,
+                &renderer.gpu,
+                options_profile,
+                audio,
             );
             painted(
                 layout.page.clone(),
@@ -288,14 +283,14 @@ fn painted(state: &mut AppState) -> Option<Painted> {
             )
         }
         wol_my_info::DIALOG => {
-            my_info::sync(&mut state.frontend.shell_controller, &state.renderer);
-            let layout = my_info::layout(&state.renderer.gpu);
+            my_info::sync(&mut frontend.shell_controller, renderer);
+            let layout = my_info::layout(&renderer.gpu);
             let help = layout.page.status_help;
             painted(layout.page.clone(), help, &wol_my_info::PAGE, Body::MyInfo)
         }
         wol_buddy::DIALOG => {
-            buddy::sync(&mut state.frontend, &state.renderer);
-            let layout = buddy::layout(&state.renderer.gpu);
+            buddy::sync(frontend, renderer);
+            let layout = buddy::layout(&renderer.gpu);
             painted(
                 layout.page.clone(),
                 layout.page.status_help,
@@ -304,8 +299,8 @@ fn painted(state: &mut AppState) -> Option<Painted> {
             )
         }
         wol_quick_match::DIALOG => {
-            quick_match::sync(&mut state.frontend, &state.renderer);
-            let layout = quick_match::layout(&state.renderer.gpu);
+            quick_match::sync(frontend, renderer);
+            let layout = quick_match::layout(&renderer.gpu);
             let spec = &wol_quick_match::PAGE;
             painted(
                 layout.page.clone(),
@@ -315,8 +310,8 @@ fn painted(state: &mut AppState) -> Option<Painted> {
             )
         }
         _ => {
-            persona::sync(&mut state.frontend, &state.renderer);
-            let layout = persona::layout(state.frontend.wol.as_ref(), &state.renderer.gpu)?;
+            persona::sync(frontend, renderer);
+            let layout = persona::layout(frontend.wol.as_ref(), &renderer.gpu)?;
             let spec = crate::ui::wol_persona::WolPersonaLayout::spec(dialog);
             painted(
                 layout.page.clone(),
@@ -338,7 +333,13 @@ pub(crate) fn render_wol_page(
         return Ok(false);
     }
     crate::app::shell_network_setup::verify_sync(state);
-    let painted = painted(state);
+    let painted = painted(
+        &mut state.frontend,
+        &state.renderer,
+        &state.process_assets,
+        &state.persistence.options_profile,
+        &state.audio,
+    );
     let kind = painted.as_ref().map(Painted::kind);
     let page = match &painted {
         Some(painted) => painted.page.clone(),

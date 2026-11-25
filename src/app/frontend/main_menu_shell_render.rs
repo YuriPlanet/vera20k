@@ -16,6 +16,8 @@ use crate::app::frontend::shell_transition::{
 };
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::state::ShellMessageBox;
+use crate::app::input::ime::ImeState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::mods::Mods;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
@@ -688,7 +690,16 @@ pub(crate) fn render_shell_message_box_over_page(
     let _ = crate::app::shell_mod_import::sync(&state.renderer, &mut state.frontend);
     let state = &*state;
     let (Some(overlay), Some(chrome)) = (
-        parts.and_then(|parts| build_shell_message_box_overlay(state, &parts)),
+        parts.and_then(|parts| {
+            build_shell_message_box_overlay(
+                &state.platform.ime,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &parts,
+            )
+        }),
         state.frontend.skirmish_shell_chrome.as_ref(),
     ) else {
         return;
@@ -765,12 +776,16 @@ fn sync_shell_menu_settings(
 /// pressed button is read from the shared shell controller (its top dialog is the
 /// modal while open). Returns `None` when the modal is closed or its art is absent.
 fn build_shell_message_box_overlay(
-    state: &AppState,
+    ime: &ImeState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     parts: &crate::ui::shell::modal::BoxParts,
 ) -> Option<shell_paint::ModalDraw> {
     use crate::app::frontend::state::ShellMessageBoxPurpose;
-    let message_box = state.frontend.shell_message_box.as_ref()?;
-    let atlas = state.frontend.skirmish_shell_chrome.as_ref()?;
+    let message_box = frontend.shell_message_box.as_ref()?;
+    let atlas = frontend.skirmish_shell_chrome.as_ref()?;
     // VERA's own boxes pick their art: the Esc menu the Allied eagle, the
     // updater's Red Alert 2's. The others draw gamemd's.
     let background = match message_box.purpose {
@@ -802,14 +817,14 @@ fn build_shell_message_box_overlay(
     })
     .or_else(|| atlas.mode_two_dialog_background(None));
     let shell_box = &message_box.shell_box;
-    let controller = &state.frontend.shell_controller;
+    let controller = &frontend.shell_controller;
     let pressed = controller
         .top_id()
         .and_then(|top| crate::ui::shell::menu_page::pressed_id(controller, top));
     let menu = message_box.menu_settings().map(|settings| {
         let controls = shell_layout::shell_menu_settings_layout(
-            shell_layout::shell_screen_size(&state.renderer.gpu),
-            &state.renderer.bit_font,
+            shell_layout::shell_screen_size(&renderer.gpu),
+            &renderer.bit_font,
         );
         (settings, controls)
     });
@@ -837,11 +852,11 @@ fn build_shell_message_box_overlay(
     let tree =
         crate::app::frontend::skirmish_shell_render::controller_tree(controller, shell_box.dialog);
     let mut draw = crate::app::frontend::skirmish_shell_render::paint_shell_box(
-        &state.platform.ime,
-        &state.renderer.bit_font,
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
+        ime,
+        &renderer.bit_font,
+        frontend,
+        match_state,
+        process_assets,
         Some(atlas),
         tree,
         shell_box,
@@ -854,39 +869,35 @@ fn build_shell_message_box_overlay(
     // dialog's picture, which has no list backing, so their sprites go over
     // the box's and their text after its own.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    let notes = crate::app::updater::notes::node(&state.renderer.gpu, &state.frontend).map(
-        |(node, notes)| {
-            use crate::app::frontend::skirmish_shell_render::gui_paint::{
-                GuiStyle, paint_gui_styled,
-            };
-            use crate::app::updater::notes::LIST_ID;
-            // The rows are the list's `Items`, written as it was built.
-            let gui = state.frontend.shell_controller.gui();
-            // A change's further rows hang under its text.
-            let indent_of = |id: i32, row: usize| {
-                (id == LIST_ID)
-                    .then(|| notes.row(row).map(|(_, indent)| indent))
-                    .flatten()
-            };
-            let style = GuiStyle {
-                indent_of: Some(&indent_of),
-                solid_lists: true,
-                ..Default::default()
-            };
-            paint_gui_styled(
-                &state.platform.ime,
-                &state.renderer.bit_font,
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
-                gui,
-                node,
-                parts.scale,
-                &[],
-                style,
-            )
-        },
-    );
+    let notes = crate::app::updater::notes::node(&renderer.gpu, frontend).map(|(node, notes)| {
+        use crate::app::frontend::skirmish_shell_render::gui_paint::{GuiStyle, paint_gui_styled};
+        use crate::app::updater::notes::LIST_ID;
+        // The rows are the list's `Items`, written as it was built.
+        let gui = frontend.shell_controller.gui();
+        // A change's further rows hang under its text.
+        let indent_of = |id: i32, row: usize| {
+            (id == LIST_ID)
+                .then(|| notes.row(row).map(|(_, indent)| indent))
+                .flatten()
+        };
+        let style = GuiStyle {
+            indent_of: Some(&indent_of),
+            solid_lists: true,
+            ..Default::default()
+        };
+        paint_gui_styled(
+            ime,
+            &renderer.bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            gui,
+            node,
+            parts.scale,
+            &[],
+            style,
+        )
+    });
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     let notes = notes.map(|mut notes| {
         let controls = notes.take_lane(crate::render::hud_paint::Material::Controls);
@@ -896,11 +907,11 @@ fn build_shell_message_box_overlay(
     if let Some((settings, controls)) = menu {
         crate::app::frontend::skirmish_shell_render::paint_options_settings(
             &mut draw,
-            &state.platform.ime,
-            &state.renderer.bit_font,
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
+            ime,
+            &renderer.bit_font,
+            frontend,
+            match_state,
+            process_assets,
             &controls,
             settings,
         );
@@ -908,29 +919,26 @@ fn build_shell_message_box_overlay(
     // Add Mod's parts, each row's text inset 4 pixels from both ends and cut
     // to its row: the list's `Items`, which its sync writes as they change.
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-    let import_parts = crate::app::shell_mod_import::node(&state.renderer.gpu, &state.frontend)
-        .map(|node| {
-            use crate::app::frontend::skirmish_shell_render::gui_paint::{
-                GuiStyle, paint_gui_styled,
-            };
-            let gui = state.frontend.shell_controller.gui();
-            let style = GuiStyle {
-                solid_lists: true,
-                ..Default::default()
-            };
-            paint_gui_styled(
-                &state.platform.ime,
-                &state.renderer.bit_font,
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
-                gui,
-                node,
-                parts.scale,
-                &[],
-                style,
-            )
-        });
+    let import_parts = crate::app::shell_mod_import::node(&renderer.gpu, frontend).map(|node| {
+        use crate::app::frontend::skirmish_shell_render::gui_paint::{GuiStyle, paint_gui_styled};
+        let gui = frontend.shell_controller.gui();
+        let style = GuiStyle {
+            solid_lists: true,
+            ..Default::default()
+        };
+        paint_gui_styled(
+            ime,
+            &renderer.bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            gui,
+            node,
+            parts.scale,
+            &[],
+            style,
+        )
+    });
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
     let import_parts = import_parts.map(|mut import_parts| {
         let controls = import_parts.take_lane(crate::render::hud_paint::Material::Controls);
