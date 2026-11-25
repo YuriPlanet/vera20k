@@ -6,8 +6,8 @@ content as work lands; do not append a diary.
 
 ## Where the work is
 
-- Branch `feature/wasm-extension-modules` on `libi/vera20k`; the upstream is
-  `YuriPlanet/vera20k`.
+- Phase 1 is on `main` of `YuriPlanet/vera20k` (#5183); its further control
+  points are on `feature/wasm-control-points` of `libi/vera20k`.
 - Scope: RFC phase 1 (`rules.wasm`) first, then phase 2 (`ui.wasm`), then phase 3.
   The TypeScript SDK is deferred by the maintainer; validate with the Rust SDK.
 - Feedback: the RFC draft PR

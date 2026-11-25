@@ -59,9 +59,8 @@ rustup target add wasm32-unknown-unknown
 SDK 和示例都在 VERA20K 源码里：
 
 ```sh
-git clone https://github.com/libi/vera20k.git
+git clone https://github.com/YuriPlanet/vera20k.git
 cd vera20k
-git checkout feature/wasm-extension-modules   # 模块功能在这个分支上
 ```
 
 这里面你会用到：
