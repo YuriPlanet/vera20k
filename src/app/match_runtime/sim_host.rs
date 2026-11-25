@@ -882,6 +882,38 @@ mod tests {
         assert!(runtime.simulation.global_variables()[3]);
     }
 
+    /// The world copy clones the anims beside the rest of the world: the
+    /// copy draws the live world's anims, and the live world keeps them.
+    #[test]
+    fn the_world_copy_holds_the_anims_the_live_world_keeps() {
+        use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile, ruleset::RuleSet};
+        use crate::sim::{anim_class::AnimWorldCoord, components::AnimClassSpawnDescriptor};
+        let rules_ini = IniFile::from_str("[Animations]\n0=FIRE\n");
+        let art_ini = IniFile::from_str("[FIRE]\nEnd=20\n");
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
+        rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+        rules.bind_anim_frame_count_for_test("FIRE", 20);
+        let mut sim = Simulation::with_seed(31);
+        let fire = sim.intern("FIRE");
+        let coord = AnimWorldCoord {
+            x: 16512,
+            y: 16512,
+            z: 0,
+        };
+        let (rx, ry, sub_x, sub_y, z) = coord.to_cell_sub_z();
+        let anim = sim
+            .spawn_anim_at_world(
+                &rules,
+                AnimClassSpawnDescriptor::new(fire, rx, ry, sub_x, sub_y, z),
+                coord,
+            )
+            .unwrap();
+        let mut runtime = SimRuntime::from_simulation(sim);
+        let copy = runtime.presentation_copy(None, None);
+        assert!(copy.simulation.anim(anim).is_some());
+        assert!(runtime.simulation.anim(anim).is_some());
+    }
+
     /// A frame answers every type the sidebar has asked of the scenario. A
     /// new one drops a home frame but not a lent tick's, whose successor
     /// answers it; another scenario starts with none asked.
