@@ -94,6 +94,11 @@ pub(crate) struct MatchState {
     /// The debug pause (`J` hotkey): the simulation is frozen
     /// without an in-scenario modal. Every modal transition ends it.
     pub(crate) debug_pause: bool,
+    /// The match's client extension modules (`ui.wasm`, RFC 0001 section
+    /// 10) and their nodes; `None` for a match without any, which then
+    /// pays nothing for them. Built when the world is installed, dropped
+    /// with it ([`crate::app::ui_modules`]).
+    pub(crate) ui_modules: Option<crate::app::ui_modules::UiModules>,
 }
 
 impl MatchState {

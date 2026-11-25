@@ -1341,6 +1341,7 @@ impl App {
                 configured_input_delay_ticks: input_delay_ticks,
                 sandbox_full_visibility: false,
                 debug_pause: false,
+                ui_modules: None,
             },
             frontend: crate::app::frontend::state::FrontendState {
                 shell_dialog_background: None,

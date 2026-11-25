@@ -1454,6 +1454,10 @@ impl ApplicationHandler for App {
                 }
                 WindowEvent::CursorMoved { position, .. } => {
                     state.set_cursor_from_window(position.x as f32, position.y as f32);
+                    // Client module nodes take a viewer's pointer too.
+                    if state.frontend.screen == GameScreen::InGame {
+                        crate::app::ui_modules::pointer_moved(state);
+                    }
                     return;
                 }
                 WindowEvent::MouseInput {
@@ -1461,11 +1465,17 @@ impl ApplicationHandler for App {
                     button,
                     ..
                 } if watching => {
-                    crate::app::match_runtime::watching::mouse(
+                    if !crate::app::ui_modules::pointer_button(
                         state,
                         *button,
                         button_state.is_pressed(),
-                    );
+                    ) {
+                        crate::app::match_runtime::watching::mouse(
+                            state,
+                            *button,
+                            button_state.is_pressed(),
+                        );
+                    }
                     return;
                 }
                 WindowEvent::MouseWheel { delta, .. } => {
