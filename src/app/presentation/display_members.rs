@@ -126,7 +126,16 @@ impl DisplayMembers {
     /// `sim`'s Display members, filed. `sim` is the world `frame` was
     /// captured from. The worker pool files them a run at a time, and the
     /// runs join in order, so each loop's members keep Tactical's order.
+    /// They are filed while no tick is out (the host files them before one
+    /// leaves), so the pool is idle and the caller only waits: the main
+    /// thread's time is the frame's.
     pub(crate) fn of(frame: &PresentationFrame, sim: &Simulation) -> Self {
+        let mut members = None;
+        crate::sim::parallel::alongside(|| members = Some(Self::filed(frame, sim)), || {});
+        members.expect("filed on the pool")
+    }
+
+    fn filed(frame: &PresentationFrame, sim: &Simulation) -> Self {
         let particles: LookupMap<_, _> = sim.particle_systems().display_particle_places().collect();
         let runs: Vec<_> = frame.display_order().ordered().chunks(FILED_RUN).collect();
         let filed = crate::sim::parallel::map(&runs, |run| file_run(frame, sim, &particles, run));
