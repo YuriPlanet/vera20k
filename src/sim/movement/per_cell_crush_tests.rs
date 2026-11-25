@@ -376,7 +376,7 @@ fn unit_crush_rocking(extra: &str) -> [u32; 4] {
     // Techno allocates when built; a zero forward velocity takes the store.
     sim.substrate.entities.get_mut(tank).unwrap().rocking =
         Some(crate::sim::rocking::RockingState::default());
-    sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
+    *sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
     sim.per_cell_process(
         tank,
         PerCellReason::Arrival,
@@ -455,7 +455,7 @@ fn tilts_when_crushes_overlays_gates_the_overlay_recoil() {
             Some(crate::sim::rocking::RockingState::default());
         let mut grid = OverlayGrid::new(32, 32);
         grid.place_overlay(10, 10, 0, 0);
-        sim.overlay_grid = Some(grid);
+        *sim.overlay_grid = Some(grid);
         sim.unit_per_cell_overlay_crush(
             tank,
             (10, 10),

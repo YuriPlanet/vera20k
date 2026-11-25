@@ -500,7 +500,7 @@ impl Simulation {
         if self.auto_death_objects.is_empty() {
             return;
         }
-        let pending = std::mem::take(&mut self.auto_death_objects);
+        let pending = std::mem::take(&mut *self.auto_death_objects);
         for &id in &pending {
             // `!IsInLogic && IsAlive`: `Object+0x98` is the object's own
             // membership byte, which `ObjectClass::Conceal`
@@ -520,7 +520,7 @@ impl Simulation {
                 .get(*id)
                 .is_some_and(|entity| entity.lifecycle.object_alive())
         });
-        std::mem::swap(&mut self.auto_death_objects, &mut survivors);
+        std::mem::swap(&mut *self.auto_death_objects, &mut survivors);
     }
 
     /// `TechnoExt::KillSelf`'s `Vanish` arm (`:771-790`): a random

@@ -941,8 +941,8 @@ mod tests {
         assert_eq!(registry.flags(wall).unwrap().damage_levels, 3);
         let scene = |wall| {
             let mut sim = crate::sim::world::Simulation::new();
-            sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
-            sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(8, 8));
+            *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
+            *sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(8, 8));
             let grid = sim.overlay_grid.as_mut().unwrap();
             grid.place_overlay(2, 2, wall, 0);
             grid.place_overlay(3, 2, wall, 0);
@@ -1297,11 +1297,7 @@ Tiberium=yes
         };
         // Phobos 0x47D36E clears cardinal ramps too unless the projected
         // AllowRamps flag admits them.
-        let cardinal = if true {
-            None
-        } else {
-            Some(LandType::Tiberium)
-        };
+        let cardinal = if true { None } else { Some(LandType::Tiberium) };
         assert_eq!(retained_overlay_land(&resource, 4), cardinal);
         assert_eq!(retained_overlay_land(&resource, 1), cardinal);
         assert_eq!(retained_overlay_land(&resource, 5), None);

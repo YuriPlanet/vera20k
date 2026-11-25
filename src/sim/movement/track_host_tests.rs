@@ -3407,7 +3407,7 @@ fn crush_forward_tilt_per_frame_replaces_the_drive_crush_rate() {
                 grid.place_overlay(x, y, 0, 0);
             }
         }
-        sim.overlay_grid = Some(grid);
+        *sim.overlay_grid = Some(grid);
         let loco = sim
             .substrate
             .entities

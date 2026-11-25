@@ -21,7 +21,7 @@ fn scene(eater: &str) -> (Simulation, RuleSet, u64, InternedId) {
     )))
     .expect("rules");
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(flat_terrain(16, 16));
+    *sim.resolved_terrain = Some(flat_terrain(16, 16));
     place_tiberium_on_map(&mut sim, (5, 5), ResourceType::Ore, 6);
     let owner = sim.interner.intern("Americans");
     sim.houses
@@ -109,7 +109,12 @@ fn cash_multiplier_scales_and_display_off_is_silent() {
 #[test]
 fn a_negative_trans_delay_disables_the_eater() {
     let (mut sim, rules, id, owner) = scene("TiberiumEater.TransDelay=-1\n");
-    sim.phobos_update_tiberium_eater(id, &rules, Some(overlay_registry()), &mut FrameEffects::empty());
+    sim.phobos_update_tiberium_eater(
+        id,
+        &rules,
+        Some(overlay_registry()),
+        &mut FrameEffects::empty(),
+    );
     assert_eq!(bales_at(&sim, 5, 5), 6, "nothing was taken");
     assert_eq!(
         sim.houses.get(&owner).unwrap().economy().available_money(),
@@ -174,7 +179,12 @@ fn trans_delay_defers_and_limbo_holds_the_timer() {
 #[test]
 fn amount_per_cell_zero_takes_the_whole_cell() {
     let (mut sim, rules, id, owner) = scene("TiberiumEater.TransDelay=0\n");
-    sim.phobos_update_tiberium_eater(id, &rules, Some(overlay_registry()), &mut FrameEffects::empty());
+    sim.phobos_update_tiberium_eater(
+        id,
+        &rules,
+        Some(overlay_registry()),
+        &mut FrameEffects::empty(),
+    );
     assert_eq!(bales_at(&sim, 5, 5), 0, "the whole cell was taken");
     assert_eq!(
         sim.houses.get(&owner).unwrap().economy().available_money(),

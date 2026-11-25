@@ -162,7 +162,6 @@ impl Simulation {
             return true;
         }
 
-
         object.powered
     }
 

@@ -1078,7 +1078,7 @@ mod canopy_tests {
             ))
             .expect("rules");
             let mut sim = Simulation::new();
-            sim.interner = crate::sim::intern::test_interner();
+            *sim.interner = crate::sim::intern::test_interner();
             let id = sim.substrate.allocate_stable_id();
             let mut entity = GameEntity::test_default(id, "E1", "Americans", 10, 11);
             entity.lifecycle.set_in_limbo_for_test(false);
@@ -1214,7 +1214,7 @@ Speed=4
             .spawn_object("FALLER", "Americans", 10, 10, 0, &rules)
             .expect("faller");
         sim.entities_mut_for_test().get_mut(id).unwrap().health = Health::new(400);
-        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
+        *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
             let mut cell = crate::map::resolved_terrain::ResolvedTerrainCell::clear_for_test(x, y);
             if water && (x, y) == (10, 10) {
                 cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();

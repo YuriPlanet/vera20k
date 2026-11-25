@@ -2235,15 +2235,15 @@ fn reveal_houses_filters_the_viewer_maps_a_sight_reaches() {
         let americans = intern::test_intern("Americans");
         let soviet = intern::test_intern("Soviet");
         let mut world = crate::sim::world::Simulation::default();
-        world.fog = FogState::new(32, 32);
-        world.substrate.entities = store;
-        world.interner = ti();
+        *world.fog = FogState::new(32, 32);
+        *world.substrate.entities = store;
+        *world.interner = ti();
         let alliances =
             HouseAllianceMap::from([("AMERICANS".to_string(), ["SOVIET".to_string()].into())]);
         // Both houses are seated logical clients; the alliance makes the
         // Soviet map the one the default Team must admit.
         seat_fixture_clients(&mut world, &alliances, &[]);
-        world.house_alliances = HouseAlliances::new(alliances);
+        *world.house_alliances = HouseAlliances::new(alliances);
         let rules = rules(country_keys, type_keys);
         let country = world.interner.intern("Americans");
         world

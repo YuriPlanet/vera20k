@@ -74,7 +74,7 @@ impl Simulation {
         // Phobos `AnimClass_AI_Early @ 0x423B95`
         // (`Ext/Anim/Hooks.cpp:714-740`) runs before the stock AI's single
         // instance read, so this visit sees the retype and new anchor.
-        if rules.phobos() && self.firing_anim_update_count > 0 {
+        if rules.phobos() && *self.firing_anim_update_count > 0 {
             self.update_as_firing_anim(id, rules);
         }
         // One read serves the visit's prefix and gates: most visits end at a

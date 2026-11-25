@@ -1060,7 +1060,13 @@ fn strafing_target_cell_and_simulate_burst_change_the_shots() {
         "Limbo refuses FireAt"
     );
     assert_eq!(
-        sim.substrate.entities.get(1).unwrap().seldom.weapon_burst.index(),
+        sim.substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .seldom
+            .weapon_burst
+            .index(),
         1,
         "bombDropCount 0 stores CurrentBurstIndex 1"
     );

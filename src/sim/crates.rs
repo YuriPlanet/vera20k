@@ -3001,7 +3001,7 @@ pub(crate) mod tests {
                 .expect("wrong-movement decoy")
                 .speed_costs
                 .track = Some(crate::util::native_x87::NativeF32Bits::ONE);
-            sim.resolved_terrain = Some(terrain);
+            *sim.resolved_terrain = Some(terrain);
             sim
         };
 

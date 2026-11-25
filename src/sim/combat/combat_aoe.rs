@@ -2073,12 +2073,12 @@ mod pr_regression_tests {
                     .set_for_test(Some(TargetKind::Cell(21, 21)));
                 let wh = interner.intern("WH");
                 let mut world = Simulation::with_seed(0x489608);
-                world.interner = interner;
-                world.substrate.entities = entities;
-                world.substrate.occupancy = occupancy;
-                world.resolved_terrain = Some(terrain);
-                world.overlay_grid = Some(overlays);
-                world.terrain_objects = objects;
+                *world.interner = interner;
+                *world.substrate.entities = entities;
+                *world.substrate.occupancy = occupancy;
+                *world.resolved_terrain = Some(terrain);
+                *world.overlay_grid = Some(overlays);
+                *world.terrain_objects = objects;
                 let result = super::super::world_receiver::collect_area(
                     &mut world,
                     &rules,
@@ -3279,7 +3279,8 @@ mod pr_regression_tests {
             dispatch_timer: MissionDispatchTimer::at_frame(0),
         });
         restored
-            .seldom.suspended_attack_target
+            .seldom
+            .suspended_attack_target
             .set_for_test(Some(TargetKind::Cell(8, 8)));
         entities.insert(restored);
 
@@ -3304,10 +3305,10 @@ mod pr_regression_tests {
         overlays.place_overlay(8, 8, 2, 0);
         overlays.place_owned_wall(8, 7, 2, 0x24, owner);
         let mut world = crate::sim::world::Simulation::with_seed(5);
-        world.interner = test_interner();
-        world.substrate.entities = entities;
-        world.resolved_terrain = Some(terrain);
-        world.overlay_grid = Some(overlays);
+        *world.interner = test_interner();
+        *world.substrate.entities = entities;
+        *world.resolved_terrain = Some(terrain);
+        *world.overlay_grid = Some(overlays);
         let wh = world.interner.intern("WH");
         let result = super::super::world_receiver::collect_area(
             &mut world,
@@ -3416,12 +3417,13 @@ mod pr_regression_tests {
             let (rules, warhead, registry) =
                 wall_aoe_fixture("1", "WallAbsoluteDestroyer=yes\nWall=yes");
             let mut world = Simulation::with_seed(5);
-            world.interner = test_interner();
-            world.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(16, 16));
+            *world.interner = test_interner();
+            *world.resolved_terrain =
+                Some(crate::sim::tiberium::test_support::flat_terrain(16, 16));
             let mut overlays = OverlayGrid::new(16, 16);
             overlays.place_overlay(8, 8, 2, 0);
-            world.overlay_grid = Some(overlays);
-            world.receiver_fixture = Some(FixturePolicy {
+            *world.overlay_grid = Some(overlays);
+            *world.receiver_fixture = Some(FixturePolicy {
                 current_tick: 0,
                 require_playfield_membership: false,
                 fog_enabled: false,
@@ -4943,11 +4945,11 @@ mod pr_regression_tests {
                 event.receiver_flags.ignore_defenses = true;
             }
             let mut world = crate::sim::world::Simulation::new();
-            world.substrate.entities = entities;
-            world.substrate.occupancy = occupancy;
-            world.substrate.raw_cell_occupation = raw;
-            world.interner = interner;
-            world.resolved_terrain = Some(terrain);
+            *world.substrate.entities = entities;
+            *world.substrate.occupancy = occupancy;
+            *world.substrate.raw_cell_occupation = raw;
+            *world.interner = interner;
+            *world.resolved_terrain = Some(terrain);
             world.set_playfield_bounds_for_test(Some(
                 crate::sim::cell_rect::PlayfieldBounds::from_normalized_local_size(
                     16, -16, -16, 64, 64,
@@ -4962,7 +4964,7 @@ mod pr_regression_tests {
             }
             world.session.set_binary_frame_for_test(100);
             world.main_rng = SimRng::new(7).into();
-            world.scenario_rng = SimRng::new(1);
+            *world.scenario_rng = SimRng::new(1);
             // Some(false) models campaign PlayerControl without IsHuman.
             world.session.set_game_mode(
                 crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
@@ -5490,7 +5492,7 @@ mod pr_regression_tests {
             .spawn_object("VICTIM", "VictimHouse", 5, 5, 0, &rules)
             .expect("nested C4 victim spawns");
 
-        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(10, 10, |rx, ry| {
+        *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(10, 10, |rx, ry| {
             test_terrain_cell(rx, ry)
         }));
 
@@ -5637,7 +5639,7 @@ mod pr_regression_tests {
         let victim_id = sim
             .spawn_object("VICTIM", "VictimHouse", 5, 5, 0, &rules)
             .expect("inert receiver victim spawns");
-        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(10, 10, |rx, ry| {
+        *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(10, 10, |rx, ry| {
             test_terrain_cell(rx, ry)
         }));
 

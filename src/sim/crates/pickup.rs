@@ -249,9 +249,7 @@ fn announce_upgrade(
 /// `CellClass_GoodieCheck_UnitCrateVehicleCap @ 0x481C27`): the Unit crate's
 /// tracked-vehicle ceiling, `50` natively; a negative value never caps.
 fn unit_crate_vehicle_cap(rules: &RuleSet) -> i32 {
-    {
-        rules.phobos_globals.unit_crate_vehicle_cap
-    }
+    { rules.phobos_globals.unit_crate_vehicle_cap }
 }
 
 /// `0x00481C03..0x00481D6B`: the multiplayer eligibility switch on the
@@ -349,9 +347,7 @@ pub(crate) fn multiplayer_eligible_slot(
 /// `CellClass_GoodieCheck_FreeMCV @ 0x481BB8`): the MCV pre-empt's credit
 /// floor, `1500` natively.
 fn free_mcv_credits_threshold(rules: &RuleSet) -> i32 {
-    {
-        rules.phobos_globals.free_mcv_credits_threshold
-    }
+    { rules.phobos_globals.free_mcv_credits_threshold }
 }
 
 /// `0x00481BB8..0x00481BFF`: with the lobby Bases option, a house with no

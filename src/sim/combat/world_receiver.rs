@@ -4310,7 +4310,7 @@ fn detonate_on_all_map_objects(
         return false;
     }
     let warhead_ref = detonation.payload.warhead;
-    if world.phobos_all_map_detonation_active == Some(warhead_ref) {
+    if *world.phobos_all_map_detonation_active == Some(warhead_ref) {
         return false;
     }
     use crate::rules::phobos_crit::AffectedTarget;
@@ -4335,7 +4335,7 @@ fn detonate_on_all_map_objects(
         .map(String::as_str)
         .filter(|name| rules.object(name).is_some())
         .collect();
-    world.phobos_all_map_detonation_active = Some(warhead_ref);
+    *world.phobos_all_map_detonation_active = Some(warhead_ref);
     // The nested detonations commit their own receiver records synchronously.
     // Drop the records they append so the caller does not commit the same
     // receivers a second time in its own area pass.
@@ -4417,7 +4417,7 @@ fn detonate_on_all_map_objects(
         }
     }
     out.damage_events.truncate(receiver_mark);
-    world.phobos_all_map_detonation_active = None;
+    *world.phobos_all_map_detonation_active = None;
     true
 }
 
@@ -4488,7 +4488,7 @@ fn all_map_claims(
     warhead: &WarheadType,
 ) -> bool {
     warhead.detonate_on_all_map.claims_detonation()
-        && world.phobos_all_map_detonation_active != Some(detonation.payload.warhead)
+        && *world.phobos_all_map_detonation_active != Some(detonation.payload.warhead)
 }
 
 /// `BulletClass::DetonateAtCoord @ 0x004690B0` up to its receivers: the

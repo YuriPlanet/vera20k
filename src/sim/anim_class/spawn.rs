@@ -534,17 +534,17 @@ impl Simulation {
     ) {
         if let Some(anim) = self.substrate.anims.get_mut(id) {
             anim.set_firing_anim(state);
-            self.firing_anim_update_count = self.firing_anim_update_count.saturating_add(1);
+            *self.firing_anim_update_count = self.firing_anim_update_count.saturating_add(1);
         }
     }
 
     pub fn firing_anim_update_count(&self) -> u32 {
-        self.firing_anim_update_count
+        *self.firing_anim_update_count
     }
 
     pub(crate) fn release_firing_anim_count(&mut self, anim: &AnimObject) {
         if anim.firing_anim().is_some() {
-            self.firing_anim_update_count = self.firing_anim_update_count.saturating_sub(1);
+            *self.firing_anim_update_count = self.firing_anim_update_count.saturating_sub(1);
         }
     }
 

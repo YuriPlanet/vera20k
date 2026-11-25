@@ -257,7 +257,7 @@ fn the_gas_drift_clamp_uses_the_particle_types_max_speed() {
         let rules = RuleSet::from_ini(&ini).expect("gas drift rules");
         let kind = rules.p_type_id_by_name("CLOUD").expect("particle type");
         let mut sim = Simulation::with_seed(1);
-        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+        *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
             32,
             32,
             test_flat_cell,
@@ -281,7 +281,7 @@ fn the_gas_drift_clamp_uses_the_particle_types_max_speed() {
                 rng.next_raw_abs_modulo(8) == 0 && rng.next_raw_abs_modulo(2) == 0
             })
             .expect("a seed with a zero drift draw");
-        sim.scenario_rng = SimRng::new(seed);
+        *sim.scenario_rng = SimRng::new(seed);
         let _ = crate::sim::particles::gas::tick_particle(
             &mut p,
             &mut sim,

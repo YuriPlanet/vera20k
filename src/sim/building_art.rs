@@ -1740,7 +1740,7 @@ TurretAnim=S
             entity.set_owner_for_test(sim.interner.intern("A"));
             entity.health.set_for_test(100);
             sim.substrate.entities.insert(entity);
-            sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+            *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
             sim.grand_opening(id, false, false, &rules, None, &mut FrameEffects::default());
             let slot = sim.entities().get(id).unwrap().building_art.anim_slots()[9];
             slot.map(|anim| {
@@ -2582,7 +2582,7 @@ mod roof_production_anim_tests {
         entity.set_owner_for_test(sim.interner.intern("A"));
         entity.health.set_for_test(100);
         sim.substrate.entities.insert(entity);
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         (sim, rules, id)
     }
 

@@ -505,12 +505,15 @@ mod tests {
             entity.seldom.weapon_burst.set_index(2);
             entity.last_fire_frame.set_for_test(-100);
             let mut sim = Simulation::new();
-            sim.interner = crate::sim::intern::test_interner();
+            *sim.interner = crate::sim::intern::test_interner();
             entity.seldom.phobos_last_weapon_type = Some(sim.interner.intern("Gun"));
             sim.substrate.entities.insert(entity);
             super::update_phobos_recount_burst(&mut sim, 1, rules);
             let entity = sim.substrate.entities.get(1).unwrap();
-            (entity.seldom.weapon_burst.index(), entity.seldom.rearm_timer.remaining(0))
+            (
+                entity.seldom.weapon_burst.index(),
+                entity.seldom.rearm_timer.remaining(0),
+            )
         };
         // `Burst=1` with a retained index of 2: ratio 2 x ROF 60 - 60 = 60.
         assert_eq!(recount(&rules("RecountBurst=yes\n", "")), (0, 60));

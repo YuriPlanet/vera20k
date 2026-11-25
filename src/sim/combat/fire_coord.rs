@@ -1835,7 +1835,7 @@ mod tests {
             .get_mut(RIDER_ID)
             .unwrap()
             .passenger_role = PassengerRole::boarded_for_test(CARRIER_ID, true);
-        world.interner = crate::sim::intern::test_interner();
+        *world.interner = crate::sim::intern::test_interner();
         (world, RIDER_ID)
     }
 

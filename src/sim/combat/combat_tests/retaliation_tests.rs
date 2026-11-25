@@ -492,7 +492,13 @@ fn gsi_04_07_should_retaliate_world_refusals() {
         .unwrap()
         .seldom
         .slave = crate::sim::slave_manager::SlaveLink::for_test(Some(9), Vec::new());
-    assert!(!should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE, None));
+    assert!(!should_retaliate(
+        &sim,
+        &rules,
+        GATE_VICTIM,
+        GATE_SOURCE,
+        None
+    ));
     // `0x00708899`: the source is disguised to the victim's house as one of
     // its own (vt+0xC8).
     let (mut sim, rules) = tank(false);
@@ -505,7 +511,13 @@ fn gsi_04_07_should_retaliate_world_refusals() {
         .disguise
         .get_or_insert_with(Default::default)
         .acquire(0, None, Some(victim_owner));
-    assert!(!should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE, None));
+    assert!(!should_retaliate(
+        &sim,
+        &rules,
+        GATE_VICTIM,
+        GATE_SOURCE,
+        None
+    ));
     // `0x00708905..0x007089A5`: a human's C4 infantryman leaves a building
     // alone; a computer's does not.
     for human in [false, true] {
@@ -541,7 +553,13 @@ fn gsi_04_07_should_retaliate_world_refusals() {
         EntityCategory::Unit,
         false,
     );
-    assert!(!should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE, None));
+    assert!(!should_retaliate(
+        &sim,
+        &rules,
+        GATE_VICTIM,
+        GATE_SOURCE,
+        None
+    ));
 }
 
 /// A garrisoned building fights back with its occupant's weapon: GetWeapon

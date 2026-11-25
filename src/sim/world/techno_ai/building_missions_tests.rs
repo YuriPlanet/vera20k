@@ -335,7 +335,7 @@ fn guard_retry_delay_replaces_the_aarate_delay() {
             MissionId::from_known(MissionType::Guard),
             0,
         );
-        sim.scenario_rng = SimRng::new(4);
+        *sim.scenario_rng = SimRng::new(4);
         let before = sim.scenario_rng.logical_state();
         let returns = mission_guard(
             &mut sim,

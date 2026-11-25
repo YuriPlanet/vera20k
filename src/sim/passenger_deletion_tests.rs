@@ -21,7 +21,7 @@ fn make_rules(rate: &str, passenger: &str) -> RuleSet {
 /// cargo order; both houses start at zero credits.
 fn scene(rules: &RuleSet, passengers: &[(u64, &str)]) -> Simulation {
     let mut sim = Simulation::with_seed(1);
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     let mut owners = Vec::new();
     for name in passengers
         .iter()

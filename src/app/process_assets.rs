@@ -207,6 +207,19 @@ impl ProcessAudioCatalog {
 }
 
 impl ProcessAssets {
+    /// A label in the language in use ([`crate::i18n::label`]): VERA's own
+    /// (`VERA:`) come from its language files, the game's from the loaded
+    /// table, and `fallback` stands in while none is loaded.
+    pub(crate) fn csf_label(&self, key: &str, fallback: &str) -> String {
+        crate::i18n::label(self.csf.as_ref(), key, fallback)
+    }
+
+    /// [`Self::csf_label`] with the key itself standing in while no table is
+    /// loaded (a missing label resolves to the CSF's `MISSING:'key'` text).
+    pub(crate) fn csf_text(&self, key: &str) -> String {
+        self.csf_label(key, key)
+    }
+
     pub(crate) fn new(media_archive_mode: MediaArchiveMode, load_audio_index: bool) -> Self {
         Self {
             media_archive_mode,
@@ -1606,7 +1619,10 @@ mod tests {
 
         let install = audio_test_install("kratos-agreement");
         for (file, data) in [
-            ("rulesmd.ini", "[InfantryTypes]\n0=GI\n[GI]\nPrimary=GUN\nFearless=no\n"),
+            (
+                "rulesmd.ini",
+                "[InfantryTypes]\n0=GI\n[GI]\nPrimary=GUN\nFearless=no\n",
+            ),
             ("aimd.ini", "[AI]\nValue=1\n"),
         ] {
             std::fs::write(install.path().join(file), data).unwrap();
@@ -1619,7 +1635,10 @@ mod tests {
             process.return_from_loading(assets);
             let parts = process.multiplayer_rules_parts(&[""]).unwrap().remove(0);
             let parts: serde_json::Value = serde_json::from_str(&parts.json()).unwrap();
-            (process.multiplayer_rules_digest("").unwrap(), parts["settings"].get("kratos").cloned())
+            (
+                process.multiplayer_rules_digest("").unwrap(),
+                parts["settings"].get("kratos").cloned(),
+            )
         };
         let art = install.path().join("artmd.ini");
         std::fs::write(&art, "[GI]\nPrimaryFireFLH=12,0,60\n").unwrap();

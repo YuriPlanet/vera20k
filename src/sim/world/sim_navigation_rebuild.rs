@@ -169,7 +169,7 @@ impl Simulation {
                 .as_mut()
                 .expect("checked terrain")
                 .reconcile_destroyable_obstacle_cells(&self.destroyable_obstacle_cells, &current);
-            self.destroyable_obstacle_cells = current;
+            *self.destroyable_obstacle_cells = current;
         }
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return false;
@@ -234,7 +234,7 @@ impl Simulation {
                 &self.interner,
                 rules,
             );
-            if obstacles != self.destroyable_obstacle_cells {
+            if obstacles != *self.destroyable_obstacle_cells {
                 let _ = self.rebuild_dynamic_navigation(rules);
                 return;
             }

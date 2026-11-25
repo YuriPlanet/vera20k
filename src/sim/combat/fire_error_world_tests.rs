@@ -329,7 +329,7 @@ fn an_iron_curtained_target_reads_the_weapon_and_owner_globals() {
             "Soviet",
             (7, 5),
         );
-        sim.interner = test_interner();
+        *sim.interner = test_interner();
         let americans = sim.interner_mut_for_test().intern("Americans");
         sim.register_house(crate::sim::house_state::HouseState::new(
             americans, 0, None, human, 0, 10,
@@ -402,7 +402,7 @@ fn berzerk_firers_respect_berzerk_targeting() {
             "Soviet",
             (7, 5),
         );
-        sim.interner = test_interner();
+        *sim.interner = test_interner();
         sim.substrate
             .entities
             .get_mut(1)

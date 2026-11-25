@@ -69,7 +69,45 @@ pub(crate) struct RendererState {
     pub(crate) native_z_seed: crate::render::native_z::ZSeed,
 }
 
+/// The surface `screen` draws into: menu and result artwork use the window,
+/// its own artwork uses the window directly. Frontend layout and hit testing
+/// must never inherit the match zoom's source size.
+fn render_dimensions(
+    screen: &crate::app::GameScreen,
+    window: (u32, u32),
+    tactical_source: Option<(u32, u32)>,
+) -> (u32, u32) {
+    match screen {
+        crate::app::GameScreen::MainMenu | crate::app::GameScreen::MissionResult { .. } => window,
+        crate::app::GameScreen::Loading | crate::app::GameScreen::InGame => {
+            tactical_source.unwrap_or(window)
+        }
+    }
+}
+
 impl RendererState {
+    /// Current projection on `screen`: frontend/result use physical window
+    /// pixels; tactical rendering and pending tactical installation use the
+    /// optional zoom pass. Loading artwork explicitly uses GPU/window
+    /// dimensions in loading::pump.
+    pub(crate) fn render_size(&self, screen: &crate::app::GameScreen) -> (u32, u32) {
+        render_dimensions(
+            screen,
+            (self.gpu.config.width, self.gpu.config.height),
+            self.upscale_pass
+                .as_ref()
+                .map(|up| (up.src_width(), up.src_height())),
+        )
+    }
+
+    pub(crate) fn render_width(&self, screen: &crate::app::GameScreen) -> u32 {
+        self.render_size(screen).0
+    }
+
+    pub(crate) fn render_height(&self, screen: &crate::app::GameScreen) -> u32 {
+        self.render_size(screen).1
+    }
+
     /// Completed match frame with its chrome, in frame pixels. The software
     /// cursor goes over this frame's copies, so it stays cursor-free.
     pub(crate) fn game_frame_texture(&self) -> &wgpu::Texture {

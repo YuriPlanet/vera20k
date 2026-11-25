@@ -2382,8 +2382,8 @@ fn ai_wall_fill_scene(
     let (mut rules, registry) = gsi_04_07_wall_placement_contract();
     rules.phobos_globals.ai_node_walls_only = key;
     let mut sim = placement_sim();
-    sim.overlay_grid = Some(OverlayGrid::new(64, 64));
-    sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |_| {}));
+    *sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+    *sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |_| {}));
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
     let owner = sim.interner.get("Americans").expect("owner");
     let house = sim.houses.get_mut(&owner).expect("house");

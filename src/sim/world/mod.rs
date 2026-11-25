@@ -1543,7 +1543,7 @@ impl Simulation {
                 .map(|entity| entity.stable_id())
                 .collect()
         } else {
-            self.phobos_falling_down.clone()
+            (*self.phobos_falling_down).clone()
         };
         tracked
             .into_iter()

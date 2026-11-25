@@ -678,7 +678,7 @@ fn a_positive_reveal_touches_only_the_owner_and_its_allies() {
         let koreans = sim.interner.intern("Koreans");
         // The arena scene carries no client map; `ResetShroud`/`RevealArea`
         // need a real grid, as every other reveal test gives its world.
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        *sim.fog = crate::sim::vision::FogState::new(32, 32);
         sim.houses
             .register(crate::sim::house_state::HouseState::new(
                 koreans, 0, None, true, 0, 10,
@@ -742,7 +742,7 @@ fn a_negative_reveal_clears_the_owner_whole_map() {
     let (mut sim, rules, firer, target) = scene("", "Reveal=-1\n", "", "", "Russians");
     let americans = sim.interner.intern("Americans");
     let russians = sim.interner.intern("Russians");
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     sim.houses
         .get_mut(&russians)
         .expect("russians")
@@ -905,7 +905,8 @@ fn remove_disguise_strips_a_target_on_impact() {
             .entities
             .get_mut(target)
             .unwrap()
-            .seldom.disguise
+            .seldom
+            .disguise
             .get_or_insert_with(Default::default)
             .acquire(0, Some(type_id), Some(house));
         detonate_once(&mut sim, &rules, firer, target, Some(target));
@@ -917,7 +918,8 @@ fn remove_disguise_strips_a_target_on_impact() {
         .entities
         .get(target)
         .unwrap()
-        .seldom.disguise
+        .seldom
+        .disguise
         .as_ref()
         .unwrap();
     assert!(!disguise.is_disguised(), "the warhead strips the disguise");
@@ -929,7 +931,8 @@ fn remove_disguise_strips_a_target_on_impact() {
             .entities
             .get(target)
             .unwrap()
-            .seldom.disguise
+            .seldom
+            .disguise
             .as_ref()
             .unwrap()
             .is_disguised(),

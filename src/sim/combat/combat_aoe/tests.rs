@@ -903,7 +903,7 @@ fn gsi_04_07_damage_air_source_admission_follows_damage_self() {
     }
 
     // Retail admits the airborne source unconditionally.
-        {
+    {
         assert_eq!(run(false, "BlastWH"), vec![1]);
         assert_eq!(run(true, "BlastWH"), vec![1]);
     }

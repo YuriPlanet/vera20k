@@ -73,7 +73,7 @@ fn the_ally_column_governs_an_allied_hit() {
         "",
         "DamageEnemiesMultiplier=2\nDamageAlliesMultiplier=0.25\n",
     );
-    sim.house_alliances = HouseAlliances::new(HouseAllianceMap::from([(
+    *sim.house_alliances = HouseAlliances::new(HouseAllianceMap::from([(
         "Americans".to_string(),
         ["Russians".to_string()].into_iter().collect(),
     )]));

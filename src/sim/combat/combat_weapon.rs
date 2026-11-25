@@ -1658,7 +1658,8 @@ fn phobos_force_weapon_index(
             force = settings.cloaked;
         } else if settings.disguised >= 0
             && entity
-                .seldom.disguise
+                .seldom
+                .disguise
                 .as_ref()
                 .is_some_and(|state| state.is_disguised())
         {
@@ -2723,7 +2724,7 @@ mod tests {
                 10,
                 EntityCategory::Infantry,
             ));
-        sim.interner = test_interner();
+        *sim.interner = test_interner();
         for carrier_id in [1u64, 3] {
             let mut cargo = PassengerCargo::new(1, 0.0);
             cargo.set_passengers_for_test(vec![2]);

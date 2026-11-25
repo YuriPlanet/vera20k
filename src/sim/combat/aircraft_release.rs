@@ -290,7 +290,8 @@ impl CombatStrike<'_, '_, '_> {
     }
 
     fn write_strafe_counter(&mut self, value: i32) {
-        if let Some(entity) = self.world.substrate.entities.get_mut(self.id())
+        let id = self.id();
+        if let Some(entity) = self.world.substrate.entities.get_mut(id)
             && entity.mission_leaf.as_aircraft().is_some()
         {
             entity
@@ -327,7 +328,8 @@ impl CombatStrike<'_, '_, '_> {
             return;
         }
         let mut empty = false;
-        if let Some(entity) = self.world.substrate.entities.get_mut(self.id())
+        let id = self.id();
+        if let Some(entity) = self.world.substrate.entities.get_mut(id)
             && let Some(ammo) = entity.ammo_mut()
         {
             ammo.add(-1);

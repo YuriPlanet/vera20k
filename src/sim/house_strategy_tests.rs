@@ -1250,7 +1250,7 @@ fn an_unset_key_keeps_the_vanilla_strategy_timer() {
         .economy_mut()
         .set_credits_for_test(1000);
     spawn_building(&mut sim, owner, "FACTORY", 1000, false);
-    sim.scenario_rng = SimRng::answering(1, 7, 7);
+    *sim.scenario_rng = SimRng::answering(1, 7, 7);
 
     assert_eq!(
         ai_sw_strategy_tries(&mut sim, &rules, owner, 0),
@@ -1424,7 +1424,7 @@ fn ai_bias_spawn_cell_needs_two_yards_and_a_non_campaign() {
     );
     bias_base_center_to_nearest_conyard(&mut sim, &rules, owner);
     assert_eq!(sim.houses[&owner].base_center(), Some((20, 20)));
-    }
+}
 /// Three houses with base centres: H0 far from H1, H2 beside it.
 fn houses_with_bases() -> (Simulation, Vec<InternedId>) {
     let (mut sim, names) = houses(true, 3);

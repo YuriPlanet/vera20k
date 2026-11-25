@@ -114,7 +114,8 @@ fn index(sim: &Simulation, firer: u64) -> i32 {
     sim.entities()
         .get(firer)
         .expect("firer")
-        .seldom.weapon_burst
+        .seldom
+        .weapon_burst
         .index()
 }
 
@@ -122,7 +123,8 @@ fn rearm(sim: &Simulation, firer: u64) -> i32 {
     sim.entities()
         .get(firer)
         .expect("firer")
-        .seldom.rearm_timer
+        .seldom
+        .rearm_timer
         .duration()
 }
 
@@ -137,7 +139,7 @@ fn listed_delays_move_the_admission_frames_without_draws() {
     // The stock frame (2) still admits the first shot; the delays are zero
     // there.
     set_firing_frame(&mut sim, firer, 2);
-    sim.scenario_rng = SimRng::new(9);
+    *sim.scenario_rng = SimRng::new(9);
     let before = sim.scenario_rng.logical_state();
     assert_eq!(visit(&mut sim, &rules, firer), 1);
     assert_eq!(index(&sim, firer), 1);
@@ -186,7 +188,7 @@ fn unset_entries_draw_one_value_per_index_in_order() {
 
     // Index 0 draws nothing even when the frame does not match.
     set_firing_frame(&mut sim, firer, 0);
-    sim.scenario_rng = SimRng::new(9);
+    *sim.scenario_rng = SimRng::new(9);
     let seed = sim.scenario_rng.logical_state();
     assert_eq!(visit(&mut sim, &rules, firer), 0);
     assert_eq!(sim.scenario_rng.logical_state(), seed);
@@ -195,7 +197,7 @@ fn unset_entries_draw_one_value_per_index_in_order() {
     let actor = sim.entities_mut_for_test().get_mut(firer).expect("firer");
     actor.seldom.weapon_burst.set_index(2);
     set_firing_frame(&mut sim, firer, 0);
-    sim.scenario_rng = SimRng::new(9);
+    *sim.scenario_rng = SimRng::new(9);
     assert_eq!(visit(&mut sim, &rules, firer), 0);
     let mut expected = SimRng::new(9);
     expected.next_range_u32_inclusive(3, 5);
@@ -247,7 +249,8 @@ fn overrun_arms_the_full_rearm_and_restarts_the_burst() {
         !sim.entities()
             .get(firer)
             .expect("firer")
-            .seldom.weapon_burst
+            .seldom
+            .weapon_burst
             .force_full_rearm(),
         "the shot's burst step clears the flag"
     );
@@ -268,7 +271,8 @@ fn a_frame_inside_the_sequence_keeps_the_mid_burst_delay() {
         !sim.entities()
             .get(firer)
             .expect("firer")
-            .seldom.weapon_burst
+            .seldom
+            .weapon_burst
             .force_full_rearm()
     );
 }
@@ -281,7 +285,7 @@ fn the_key_off_keeps_the_stock_stage() {
     let actor = sim.entities_mut_for_test().get_mut(firer).expect("firer");
     actor.seldom.weapon_burst.set_index(1);
     set_firing_frame(&mut sim, firer, 4);
-    sim.scenario_rng = SimRng::new(9);
+    *sim.scenario_rng = SimRng::new(9);
     let before = sim.scenario_rng.logical_state();
     assert_eq!(
         visit(&mut sim, &rules, firer),
@@ -358,7 +362,7 @@ fn a_unit_without_the_art_key_stays_stock() {
         )
         .is_ok()
     );
-    sim.scenario_rng = SimRng::new(9);
+    *sim.scenario_rng = SimRng::new(9);
     let before = sim.scenario_rng.logical_state();
     let before_ids: std::collections::BTreeSet<_> =
         sim.projectiles.iter().map(|(&id, _)| id).collect();

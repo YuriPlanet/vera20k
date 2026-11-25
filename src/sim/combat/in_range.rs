@@ -3535,7 +3535,7 @@ mod tests {
                 10,
                 EntityCategory::Infantry,
             ));
-        sim.interner = test_interner();
+        *sim.interner = test_interner();
         sim.substrate.entities.get_mut(2).unwrap().passenger_role =
             PassengerRole::boarded_for_test(1, true);
 

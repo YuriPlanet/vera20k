@@ -437,7 +437,7 @@ mod tests {
             .collect();
         cells[5 * 16 + 5].land_type = land.as_index();
         let mut sim = crate::sim::world::Simulation::new();
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         sim.install_resolved_terrain_for_new_map(
             crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(16, 16, cells),
         );

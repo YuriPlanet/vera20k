@@ -1524,7 +1524,7 @@ fn stop_berzerk_leaves_a_team_member_where_a_positive_stack_liberates_it() {
         let (vm, diagnostics) =
             TeamScriptVm::from_ini_registry(&team_registry, &mut sim.interner, &rules);
         assert!(diagnostics.is_empty(), "{diagnostics:?}");
-        sim.team_script_vm = vm;
+        *sim.team_script_vm = vm;
         let team_type = sim.interner.get("TEAM").expect("team type");
         let team = sim
             .create_team(team_type, Some(soviet), &rules)
@@ -2476,7 +2476,7 @@ fn stock_sniper_damage_retaliation_uses_wall_context_before_sight_fallback() {
         if blocked {
             overlays.place_overlay(13, 12, wall, 0);
         }
-        sim.overlay_grid = Some(overlays);
+        *sim.overlay_grid = Some(overlays);
         assert!(
             combat_targeting::should_retaliate(&sim, rules, victim, source, None),
             "the non-range refusal gates must admit this source"
@@ -4507,8 +4507,8 @@ fn gsi_04_07_damage_postmortem_stock_barrel_delay_and_nested_order() {
             crate::sim::timer::CdTimer::started(0, 40),
             Some(center),
         )));
-    sim.overlay_grid = Some(OverlayGrid::new(20, 12));
-    sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(20, 12));
+    *sim.overlay_grid = Some(OverlayGrid::new(20, 12));
+    *sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(20, 12));
     sim.overlay_grid.as_mut().unwrap().place_overlay(8, 5, 0, 0);
     let oil_wh = sim.interner.intern("OilExplosionWH");
 
@@ -6755,8 +6755,8 @@ fn build_minimal_sim_with_gawall(rx: u16, ry: u16) -> (Simulation, RuleSet, Over
     let mut grid = OverlayGrid::new(10, 10);
     // Place GAWALL (overlay_id=2). Initial frame = 0 (isolated, stage 0).
     grid.place_overlay(rx, ry, 2, 0);
-    sim.overlay_grid = Some(grid);
-    sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(10, 10));
+    *sim.overlay_grid = Some(grid);
+    *sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(10, 10));
 
     (sim, rules, registry)
 }
@@ -6768,8 +6768,8 @@ fn vehicle_on_overlay(rules: &RuleSet, veh_type: &str, overlay_id: u8) -> Simula
     let mut sim = Simulation::new();
     let mut grid = OverlayGrid::new(10, 10);
     grid.place_overlay(5, 5, overlay_id, 0);
-    sim.overlay_grid = Some(grid);
-    sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(10, 10));
+    *sim.overlay_grid = Some(grid);
+    *sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(10, 10));
     let owner_id = sim.interner.intern("Test");
     let obj = rules.object(veh_type).expect("veh object");
     let veh_type_id = sim.interner.intern(veh_type);
@@ -7752,13 +7752,13 @@ fn an_illegal_shot_is_still_in_range() {
     sim.substrate
         .entities
         .insert(make_entity_owned(2, "HTNK", 5, 2, 300, "Americans"));
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     let cells = (0..16u16)
         .flat_map(|ry| {
             (0..16u16).map(move |rx| crate::map::resolved_terrain::test_flat_cell(rx, ry))
         })
         .collect();
-    sim.resolved_terrain =
+    *sim.resolved_terrain =
         Some(crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(16, 16, cells));
     let target = TargetKind::Entity(2);
     let tank = sim.substrate.entities.get(1).unwrap();
@@ -8176,11 +8176,11 @@ fn fire_admission_preserves_flat_projectile_layer_through_save_and_retirement() 
         assert_eq!(fire.projectile_spawns.len(), 1);
         assert_eq!(fire.projectile_spawns[0].flat, flat);
         let mut sim = crate::sim::world::Simulation::new();
-        sim.interner = interner;
+        *sim.interner = interner;
         // Preserve the real firer and target identities across the save.
         assert_eq!(sim.substrate.allocate_stable_id(), 1);
         assert_eq!(sim.substrate.allocate_stable_id(), 2);
-        sim.substrate.entities = entities;
+        *sim.substrate.entities = entities;
         let id = sim.substrate.allocate_stable_id();
         sim.admit_projectile(id, fire.projectile_spawns[0]);
         let layer = if flat {
@@ -9789,7 +9789,7 @@ RadSiteWarhead=RadSite
             .unwrap();
         // The area-fire pick reads the live Scenario stream; the fixture's
         // spawn already consumed constructor draws, so predict from a clone.
-        *seed_rng = sim.scenario_rng.clone();
+        *seed_rng = (*sim.scenario_rng).clone();
         sim.session.set_binary_frame_for_test(1);
         let mission = &mut sim.substrate.entities.get_mut(deso).unwrap().mission;
         mission.apply_test_fixture(MissionTestFixture {
@@ -9806,7 +9806,11 @@ RadSiteWarhead=RadSite
         });
         sim.fire_events.clear_for_test();
         let first_tail = sim.next_stable_object_id();
-        sim.object_ai_visit_one(deso, Some(rules), &mut crate::sim::world::ObjectAiCtx::default());
+        sim.object_ai_visit_one(
+            deso,
+            Some(rules),
+            &mut crate::sim::world::ObjectAiCtx::default(),
+        );
         sim.visit_combat_tail(
             first_tail,
             rules,
@@ -10788,13 +10792,13 @@ fn shrapnel_world(rules: &RuleSet, entities: Vec<GameEntity>) -> Simulation {
         store.insert(entity);
     }
     let mut sim = Simulation::with_seed(1);
-    sim.interner = test_interner();
-    sim.substrate.occupancy = OccupancyGrid::rebuild(&store);
-    sim.substrate.entities = store;
+    *sim.interner = test_interner();
+    *sim.substrate.occupancy = OccupancyGrid::rebuild(&store);
+    *sim.substrate.entities = store;
     sim.set_next_stable_object_id_for_test(next_id);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
     sim
 }
@@ -11119,10 +11123,10 @@ fn projectile_shrapnel_is_refused_in_a_missing_cell() {
     );
     let mut terrain = super::impact_height_tests::terrain_at_level(0);
     terrain.test_set_native_allocated_cells(&[(5, 5)]);
-    sim.resolved_terrain = Some(terrain.clone());
+    *sim.resolved_terrain = Some(terrain.clone());
     assert_eq!(commit_shrapnel_at_5_5(&mut sim, &rules).len(), 1);
     terrain.test_set_native_allocated_cells(&[(2, 2)]);
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     assert!(commit_shrapnel_at_5_5(&mut sim, &rules).is_empty());
 }
 
@@ -11270,11 +11274,11 @@ fn gsi_04_01_projectile_shrapnel_captures_each_shared_dummy_lookup() {
         expected_target(expected_cells[2], true),
     ];
     let mut sim = Simulation::with_seed(0x46_a310);
-    sim.substrate.entities = entities;
-    sim.substrate.occupancy = occupancy;
+    *sim.substrate.entities = entities;
+    *sim.substrate.occupancy = occupancy;
     sim.set_next_stable_object_id_for_test(2);
-    sim.interner = interner;
-    sim.native_unique_ids =
+    *sim.interner = interner;
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
     sim.install_resolved_terrain_for_new_map(terrain.clone());
     emit_projectile_shrapnel(&mut sim, &rules, &detonation, detonation.impact);

@@ -2544,11 +2544,11 @@ fn phobos_crater_destroy_tiberium_controls_the_middle_frame_ore_reduction() {
                 terrain.cell_mut_for_test(rx, ry).unwrap().accepts_smudge = true;
             }
         }
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         let mut grid = OverlayGrid::new(8, 8);
         grid.place_overlay(4, 4, overlays.id_for_name("TIB01").unwrap(), density);
-        sim.overlay_grid = Some(grid);
-        sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(8, 8));
+        *sim.overlay_grid = Some(grid);
+        *sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(8, 8));
 
         let id = spawn_mark(&mut sim, &rules, 0);
         for frame in 1..40 {

@@ -35,6 +35,7 @@ InitialPayload.Types=E1AD\nInitialPayload.Nums=1\n\
 [Projectiles]\n0=SHOT\n[SHOT]\nInviso=yes\n";
 
 fn arena() -> (Simulation, RuleSet) {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(RULES)).unwrap();
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
@@ -97,7 +98,7 @@ fn a_limboed_auto_death_object_dies_only_when_allow_limboed_is_set() {
         limbo(&mut sim, &rules, id);
         sim.register_auto_death(id, &rules);
     }
-    assert_eq!(sim.auto_death_objects, [allowed, refused]);
+    assert_eq!(*sim.auto_death_objects, [allowed, refused]);
     // The first sweep starts the countdown; the second completes it.
     tick(&mut sim, &rules, 2);
     assert!(

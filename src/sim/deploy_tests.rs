@@ -1865,7 +1865,7 @@ fn amphibious_unload_admits_a_human_transport_on_water() {
         let id = sim
             .spawn_object("LCRF", "Americans", 20, 22, 0, &rules)
             .expect("the transport builds");
-        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |rx, ry| {
+        *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |rx, ry| {
             let mut cell = crate::map::resolved_terrain::test_tiberium_cell(rx, ry);
             if (rx, ry) == (20, 22) {
                 cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();

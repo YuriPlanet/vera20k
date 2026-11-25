@@ -221,11 +221,11 @@ impl Simulation {
     /// The `0x48A444..0x48A47E` window a `WH.Particle` system runs in, read by
     /// [`Self::unlimbo_particle_alpha_shape`] so each spawned particle keeps the mark.
     pub(crate) fn set_particle_light_flash(&mut self, light_flash: bool) {
-        self.particle_light_flash = light_flash;
+        *self.particle_light_flash = light_flash;
     }
 
     pub(crate) fn particle_light_flash(&self) -> bool {
-        self.particle_light_flash
+        *self.particle_light_flash
     }
 
     /// Each shape's origin, AlphaImage name and light-flash mark, in vector
@@ -371,7 +371,7 @@ impl Simulation {
             [x - width / 2, y - height / 2],
             source.image,
             rules.ares() && kind == ObjectKind::Anim,
-            kind == ObjectKind::Particle && self.particle_light_flash,
+            kind == ObjectKind::Particle && *self.particle_light_flash,
             rules.ares(),
         );
     }

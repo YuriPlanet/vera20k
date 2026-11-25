@@ -2931,6 +2931,30 @@ pub(crate) fn scale_pip_draws<'a>(
 /// [`scale_pip_draws`] admits. They read the live world (its passengers,
 /// mind-control count, pip fill), so the record captures them
 /// ([`HudFacts::capture`]).
+/// The frame one `PipWrap` slot shows: the wrap level counter above the
+/// start frame, or the bare start frame once the level drops below zero.
+fn ammo_wrap_frame(slot: usize, wrap: i32, levels: i32, start: i32, ammo: i32) -> i32 {
+    let mut frame = start;
+    if levels >= 0 {
+        let i = i32::try_from(slot).unwrap_or(i32::MAX);
+        let mut counter = i.wrapping_add(wrap.wrapping_mul(levels));
+        let mut frame_counter = levels;
+        let mut calculate = true;
+        while counter >= ammo {
+            frame_counter -= 1;
+            counter = counter.wrapping_sub(wrap);
+            if frame_counter < 0 {
+                calculate = false;
+                break;
+            }
+        }
+        if calculate {
+            frame = frame_counter.wrapping_add(start).wrapping_add(1);
+        }
+    }
+    frame
+}
+
 fn scale_pip_rows(
     sim: &crate::sim::world::Simulation,
     entity: &crate::sim::game_entity::GameEntity,
@@ -2960,17 +2984,33 @@ fn scale_pip_rows(
         // Phobos `TechnoClass_DrawPips_Spawns` (`0x709B8B`,
         // `Ext/Techno/Hooks.Pips.cpp:187-226`): ShowSpawnsPips=no skips the
         // row; otherwise SpawnsPipFrame/EmptySpawnsPipFrame select the frames.
-        if rules.phobos() && object.phobos_show_spawns_pips() {
-            let filled = object.phobos_spawns_pip_frame().max(0) as usize;
-            let empty = object.phobos_empty_spawns_pip_frame().max(0) as usize;
+        if rules.phobos() {
+            if object.phobos_show_spawns_pips() {
+                let size = object
+                    .phobos_spawns_pip_size()
+                    .unwrap_or(rules.phobos_globals.pips_generic_size);
+                let [dx, dy] = object.phobos_spawns_pip_offset();
+                let filled = object.phobos_spawns_pip_frame().max(0) as usize;
+                let empty = object.phobos_empty_spawns_pip_frame().max(0) as usize;
+                pips.extend((0..object.spawns_number as usize).map(|slot| {
+                    let step = i32::try_from(slot).unwrap_or(i32::MAX);
+                    ScalePipDraw {
+                        slot,
+                        frame: if slot < docked { filled } else { empty },
+                        lift: 0,
+                        offset_pixels: [
+                            dx.wrapping_add(step.wrapping_mul(size[0])),
+                            10 + dy.wrapping_add(step.wrapping_mul(size[1])),
+                        ],
+                    }
+                }));
+            }
+        } else {
             pips.extend(
                 (0..object.spawns_number as usize)
-                    .map(|slot| pip(slot, if slot < docked { filled } else { empty })),
+                    .map(|slot| pip(slot, usize::from(slot < docked))),
             );
         }
-        pips.extend(
-            (0..object.spawns_number as usize).map(|slot| pip(slot, usize::from(slot < docked))),
-        );
     }
     //709C27..D17 precedes passengers and uses raw OccupyPip, including
     //reader-produced1..5 as well as person frames6..12. Keep its own origin.
@@ -3105,7 +3145,29 @@ fn scale_pip_rows(
                 .techno_pip_fill_level(object, rules, None)
                 .clamp(0, object.pip_max(rules).max(0))
                 .min(PIP_ROW_LIMIT as i32);
-            if object.pip_wrap() == 0 {
+            let wrap = object.pip_wrap();
+            // A positive PipWrap draws the wrap levels above the stock start
+            // frame (`0x0070A421..0x0070A4E6`); a negative one draws nothing.
+            if wrap > 0 {
+                let ammo = entity.ammo().map_or(0, |ammo| ammo.current());
+                let levels = object.pip_max(rules).wrapping_div(wrap).wrapping_sub(1);
+                let start = object.ammo_pip_wrap_start_frame();
+                let slots = usize::try_from(wrap).unwrap_or(0);
+                pips.extend((0..slots).map(|slot| {
+                    let frame = ammo_wrap_frame(slot, wrap, levels, start, ammo);
+                    ScalePipDraw {
+                        lift: -3,
+                        offset_pixels: [
+                            i32::try_from(slot)
+                                .unwrap_or(i32::MAX)
+                                .wrapping_add(1)
+                                .wrapping_mul(4),
+                            7,
+                        ],
+                        ..pip(slot, usize::try_from(frame).unwrap_or(0))
+                    }
+                }));
+            } else if wrap == 0 {
                 pips.extend((0..filled as usize).map(|slot| ScalePipDraw {
                     lift: -3,
                     ..pip(slot, stock_ammo_pip_frame())
@@ -3138,13 +3200,21 @@ fn scale_pip_rows(
         // `AmmoPipSize=` replaces the 4-pixel step and `AmmoPipOffset=`
         // translates the whole strip (`Ext/Techno/Hooks.Pips.cpp:241`).
         let apply_ammo_keys = |pips: &mut Vec<ScalePipDraw>| {
-            let size = object.ammo_pip_size().unwrap_or([4, 0]);
+            let fallback = if building {
+                rules.phobos_globals.pips_ammo_buildings_size
+            } else {
+                rules.phobos_globals.pips_ammo_size
+            };
+            let size = object.ammo_pip_size().unwrap_or(fallback);
             let offset = object.ammo_pip_offset();
+            // 70A3B7 resets the ammo arm three pixels above the ordinary Y
+            // anchor; a Building's anchor has no low row bias.
+            let row_y = if building { 0 } else { 10 };
             for pip in &mut pips[row_start..] {
                 let slot = i32::try_from(pip.slot).unwrap_or(i32::MAX);
                 pip.offset_pixels = [
                     offset[0].wrapping_add(slot.wrapping_mul(size[0])),
-                    7 + offset[1].wrapping_add(slot.wrapping_mul(size[1])),
+                    row_y - 3 + offset[1].wrapping_add(slot.wrapping_mul(size[1])),
                 ];
             }
         };
@@ -3158,24 +3228,7 @@ fn scale_pip_rows(
             let start = object.ammo_pip_wrap_start_frame();
             let slots = usize::try_from(wrap).unwrap_or(0);
             pips.extend((0..slots).map(|slot| {
-                let mut frame = start;
-                if levels >= 0 {
-                    let i = i32::try_from(slot).unwrap_or(i32::MAX);
-                    let mut counter = i.wrapping_add(wrap.wrapping_mul(levels));
-                    let mut frame_counter = levels;
-                    let mut calculate = true;
-                    while counter >= ammo {
-                        frame_counter -= 1;
-                        counter = counter.wrapping_sub(wrap);
-                        if frame_counter < 0 {
-                            calculate = false;
-                            break;
-                        }
-                    }
-                    if calculate {
-                        frame = frame_counter.wrapping_add(start).wrapping_add(1);
-                    }
-                }
+                let frame = ammo_wrap_frame(slot, wrap, levels, start, ammo);
                 place(slot + 1, usize::try_from(frame).unwrap_or(0))
             }));
             apply_ammo_keys(&mut pips);

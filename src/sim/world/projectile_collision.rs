@@ -939,7 +939,7 @@ mod tests {
     fn world(sim: &Simulation) -> ProjectileCollisionWorld<'_> {
         ProjectileCollisionWorld {
             terrain: sim.resolved_terrain.as_ref(),
-            dummy: sim.shared_cell_dummy.clone(),
+            dummy: (*sim.shared_cell_dummy).clone(),
             occupancy: &sim.substrate.occupancy,
             entities: &sim.substrate.entities,
             terrain_objects: sim.terrain_objects.objects(),

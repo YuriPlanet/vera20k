@@ -246,7 +246,8 @@ fn a_delayed_fire_weapon_keeps_its_burst_cadence() {
             sim.entities()
                 .get(firer)
                 .expect("firer")
-                .seldom.weapon_burst
+                .seldom
+                .weapon_burst
                 .index(),
             1,
             "{category}: the burst stepped once, as an ordinary burst does"
@@ -301,7 +302,7 @@ fn burst_no_delay_fires_all_shots_without_redrawing_the_sequence() {
         // full arm takes exactly one Scenario value.
         "",
     );
-    sim.scenario_rng = crate::sim::rng::SimRng::new(9);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(9);
     let mut expected = crate::sim::rng::SimRng::new(9);
     expected.next_range_u32_inclusive(0, 2);
     enter_firing_sequence(&mut sim, firer, 0);
