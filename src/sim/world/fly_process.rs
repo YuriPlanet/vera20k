@@ -374,12 +374,7 @@ impl Simulation {
         );
         // VERA: a Wasm module `SpeedMultiplier` scales the paid speed
         // (`ext_modules::modifiers`); none leaves the native value.
-        let factor = entity.module_speed_factor();
-        let speed = if factor == 1.0 {
-            speed
-        } else {
-            (f64::from(speed) * factor) as i32
-        };
+        let speed = entity.module_scaled_speed(speed);
         let mut candidate = location;
         if speed > 0 {
             let [x, y] = crate::util::native_trig::facing_step_world_xy(

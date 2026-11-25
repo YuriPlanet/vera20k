@@ -3,8 +3,12 @@
 //! kill without a damage commit, `TargetChanged` at the class setter,
 //! `Promoted` at the rank sample, `Detonated` after a GI's shot, stock
 //! `SpiedBy`/`ThievedBy` and the garrison exit events at their raises, the
-//! `DamageIncoming`, `DestinationSet` and `FireAllowed` decisions, and the
-//! Jumpjet speed factor.
+//! `DamageIncoming`, `DestinationSet` and `FireAllowed` decisions, the
+//! Jumpjet speed factor, an `ImmunityFlags` override at the radiation gate,
+//! an MCV's `Deployed` and its yard's `Birth`, a `DeployAllowed` refusal,
+//! `Crushed` and a `CrushAllowed` refusal, the `Retaliate` request and its
+//! refusal, `Cloaked`/`Decloaked` through the cloak modifiers, survivors'
+//! `Birth`, and Fly's and Rocket's speed factor.
 
 use vera20k_wasm_ext::decide::{
     EVENT_CRUSH_ALLOWED, EVENT_DAMAGE_INCOMING, EVENT_DEPLOY_ALLOWED, EVENT_DESTINATION_SET,
@@ -516,4 +520,471 @@ fn an_immunity_override_nullifies_a_radiation_hit() {
     let (before, after, flags) = hit(true).expect("second scene");
     assert_eq!(after, before, "immune by the override");
     assert_eq!(flags, 0b10, "the override replaces the type's flags");
+}
+
+/// The top-left cell of a level, walkable `size`×`size` block at least 14
+/// cells from every object (`gi_duel`'s search, larger).
+fn open_block(scene: &HeadlessScenario, size: u16) -> Option<(u16, u16)> {
+    let sim = scene.sim();
+    let (grid, terrain) = (sim.path_grid()?, sim.resolved_terrain()?);
+    let occupied: Vec<(u16, u16)> = sim
+        .entities()
+        .iter_sorted()
+        .map(|(_, e)| (e.position.rx(), e.position.ry()))
+        .collect();
+    (20..120_u16)
+        .flat_map(|y| (20..120_u16).map(move |x| (x, y)))
+        .find(|&(x, y)| {
+            let Some(level) = terrain.cell(x, y).map(|c| c.level) else {
+                return false;
+            };
+            (x..x + size).all(|cx| {
+                (y..y + size).all(|cy| {
+                    terrain.cell(cx, cy).is_some_and(|c| c.level == level)
+                        && grid.cell(cx, cy).is_some_and(|c| c.ground_walkable)
+                })
+            }) && occupied.iter().all(|&(ox, oy)| {
+                let (cx, cy) = (x + size / 2, y + size / 2);
+                ox.abs_diff(cx).max(oy.abs_diff(cy)) >= 14
+            })
+        })
+}
+
+/// Sends `command` as the Americans' and advances up to `frames` frames,
+/// stopping after the first one `done` holds for.
+fn order_until(
+    scene: &mut HeadlessScenario,
+    command: crate::sim::command::Command,
+    frames: usize,
+    done: impl Fn(&HeadlessScenario) -> bool,
+) {
+    use crate::sim::command::CommandEnvelope;
+    let order = {
+        let sim = scene.sim();
+        CommandEnvelope::new(
+            sim.interner.get("Americans").expect("Americans house"),
+            sim.session.tick() + 1,
+            command,
+        )
+    };
+    let mut orders = vec![order];
+    for _ in 0..frames {
+        scene
+            .runtime
+            .advance_frame(
+                &std::mem::take(&mut orders),
+                crate::headless_scenario::SIM_TICK_MS,
+                crate::sim::world::TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
+            .expect("frame advances");
+        if done(scene) {
+            return;
+        }
+    }
+}
+
+/// Puts a map-origin modifier on `target`.
+fn put_modifier(
+    scene: &mut HeadlessScenario,
+    target: u64,
+    stat: super::modifiers::Stat,
+    op: super::modifiers::ModifierOp,
+    value: i64,
+) {
+    let sim = &mut scene.runtime.simulation;
+    let handle = sim.substrate.allocate_stable_id();
+    let modifier = super::modifiers::Modifier {
+        target,
+        stat,
+        op,
+        value,
+        expires: None,
+        source: 0,
+        group: 0,
+        origin: super::ModuleSource::Map,
+    };
+    sim.ext_modules
+        .modifiers
+        .insert(&mut sim.substrate.entities, handle, modifier)
+        .expect("the modifier fits");
+}
+
+/// A GI duel scene with an American MCV in an open block, and the MCV.
+fn mcv_scene() -> Option<(HeadlessScenario, u64)> {
+    let (mut scene, _, _) = super::tests::gi_duel()?;
+    let (x, y) = open_block(&scene, 8)?;
+    let runtime = &mut scene.runtime;
+    let rules = &runtime.resources.rules;
+    let mcv = runtime
+        .simulation
+        .spawn_object("AMCV", "Americans", x + 4, y + 4, 0, rules)?;
+    runtime.simulation.resolve_type_handles(rules);
+    Some((scene, mcv))
+}
+
+/// The live American objects of `type_id`.
+fn americans_of(scene: &HeadlessScenario, type_id: &str) -> Vec<u64> {
+    let sim = scene.sim();
+    let americans = sim.interner.get("Americans");
+    sim.entities()
+        .iter_sorted()
+        .filter(|(_, e)| {
+            Some(e.owner()) == americans
+                && e.lifecycle.object_alive()
+                && sim.interner.resolve(e.type_ref()) == type_id
+        })
+        .map(|(id, _)| id)
+        .collect()
+}
+
+/// The type an American MCV deploys into.
+fn yard_type(scene: &HeadlessScenario) -> String {
+    scene
+        .runtime
+        .resources
+        .rules
+        .object("AMCV")
+        .and_then(|object| object.deploys_into.clone())
+        .expect("the MCV deploys into a yard")
+}
+
+/// An MCV's deploy raises `Deployed` on it (`value` 1, `other` the yard)
+/// and `Birth` on the yard (`other` the MCV), bound to the yard's type.
+#[test]
+fn an_mcv_deploy_raises_deployed_and_the_yards_birth() {
+    use crate::sim::command::Command;
+    use vera20k_wasm_ext::NAME_TECHNO_TYPE;
+    use vera20k_wasm_ext::triggers::EVENT_BIRTH;
+    let Some((scene, mcv)) = mcv_scene() else {
+        return;
+    };
+    let deployed = def(0, 2, &[Ev::on(EVENT_DEPLOYED)], &[]);
+    let mut scene = installed(scene, &module(&deployed, mcv as i64, ""));
+    order_until(&mut scene, Command::DeployMcv { entity_id: mcv }, 300, |scene| {
+        received(scene) > 0
+    });
+    assert_eq!(received(&scene), 1, "the MCV deployed");
+    let (kind, subject, _, value, _) = first_record(&scene);
+    assert_eq!((kind, subject, value), (EVENT_DEPLOYED, mcv as i64, 1));
+    let yard = yard_type(&scene);
+    assert_eq!(
+        americans_of(&scene, &yard),
+        [first_other(&scene) as u64],
+        "`other` is the yard"
+    );
+
+    let (scene, mcv) = mcv_scene().expect("second scene");
+    let yard = yard_type(&scene);
+    let bound = super::type_ref(
+        NAME_TECHNO_TYPE,
+        scene
+            .runtime
+            .resources
+            .rules
+            .type_handle(&yard)
+            .expect("the yard type")
+            .0,
+    );
+    let birth = def(0, 2, &[Ev::on(EVENT_BIRTH)], &[]);
+    let mut scene = installed(scene, &module(&birth, bound, ""));
+    order_until(&mut scene, Command::DeployMcv { entity_id: mcv }, 300, |scene| {
+        received(scene) > 0
+    });
+    assert_eq!(received(&scene), 1, "the yard was born");
+    let (kind, subject, _, _, _) = first_record(&scene);
+    assert_eq!(kind, EVENT_BIRTH);
+    assert_eq!(americans_of(&scene, &yard), [subject as u64]);
+    assert_eq!(first_other(&scene), mcv as i64, "`other` the MCV");
+}
+
+/// A `DeployAllowed` refusal keeps the MCV an MCV.
+#[test]
+fn a_deploy_allowed_refusal_keeps_the_mcv() {
+    use crate::sim::command::Command;
+    let Some((mut scene, mcv)) = mcv_scene() else {
+        return;
+    };
+    install_decider(&mut scene, EVENT_DEPLOY_ALLOWED, REFUSE, mcv as i64);
+    order_until(&mut scene, Command::DeployMcv { entity_id: mcv }, 300, |_| false);
+    let yard = yard_type(&scene);
+    assert_eq!(
+        i32::from_le_bytes(memory(&scene)[512 + 4..512 + 8].try_into().expect("4 bytes")),
+        EVENT_DEPLOY_ALLOWED,
+        "the deploy was asked"
+    );
+    assert!(americans_of(&scene, &yard).is_empty(), "no yard");
+    assert_eq!(americans_of(&scene, "AMCV"), [mcv], "the MCV stays");
+}
+
+/// A GI duel scene with an American Grizzly east of the Russian GI and the
+/// Move order that drives it over the GI: (scene, tank, victim, order).
+fn crush_scene() -> Option<(HeadlessScenario, u64, u64, crate::sim::command::Command)> {
+    let (mut scene, _, victim) = super::tests::gi_duel()?;
+    let (x, y) = {
+        let entity = scene.sim().entities().get(victim)?;
+        (entity.position.rx(), entity.position.ry())
+    };
+    let runtime = &mut scene.runtime;
+    let rules = &runtime.resources.rules;
+    let tank = runtime
+        .simulation
+        .spawn_object("MTNK", "Americans", x + 1, y, 192, rules)?;
+    runtime.simulation.resolve_type_handles(rules);
+    let order = crate::sim::command::Command::Move {
+        entity_id: tank,
+        target_rx: x - 1,
+        target_ry: y,
+    };
+    Some((scene, tank, victim, order))
+}
+
+fn alive(scene: &HeadlessScenario, id: u64) -> bool {
+    scene
+        .sim()
+        .entities()
+        .get(id)
+        .is_some_and(|entity| entity.lifecycle.object_alive())
+}
+
+/// A Grizzly driven over an enemy GI crushes it: `Crushed` on the GI,
+/// `other` the tank. A `CrushAllowed` refusal leaves the GI alive.
+#[test]
+fn a_crush_raises_crushed_and_crush_allowed_can_spare_the_victim() {
+    let Some((scene, tank, victim, order)) = crush_scene() else {
+        return;
+    };
+    let crushed = def(0, 2, &[Ev::on(EVENT_CRUSHED)], &[]);
+    let mut scene = installed(scene, &module(&crushed, victim as i64, ""));
+    order_until(&mut scene, order, 150, |scene| received(scene) > 0);
+    assert_eq!(received(&scene), 1, "the GI was crushed");
+    let (kind, subject, _, _, _) = first_record(&scene);
+    assert_eq!((kind, subject), (EVENT_CRUSHED, victim as i64));
+    assert_eq!(first_other(&scene), tank as i64);
+    assert!(!alive(&scene, victim));
+
+    let (mut scene, tank, victim, order) = crush_scene().expect("second scene");
+    install_decider(&mut scene, EVENT_CRUSH_ALLOWED, REFUSE, victim as i64);
+    let goal = match order {
+        crate::sim::command::Command::Move {
+            target_rx,
+            target_ry,
+            ..
+        } => (target_rx, target_ry),
+        _ => unreachable!(),
+    };
+    order_until(&mut scene, order, 150, |scene| {
+        scene.sim().entities().get(tank).is_some_and(|entity| {
+            (entity.position.rx(), entity.position.ry()) == goal
+                && entity.navigation.nav_com().is_none()
+        })
+    });
+    assert_eq!(
+        i32::from_le_bytes(memory(&scene)[512 + 4..512 + 8].try_into().expect("4 bytes")),
+        EVENT_CRUSH_ALLOWED,
+        "the crush was asked"
+    );
+    assert_eq!(
+        i64::from_le_bytes(memory(&scene)[512 + 32..512 + 40].try_into().expect("8 bytes")),
+        tank as i64,
+        "`other` the crusher"
+    );
+    assert!(alive(&scene, victim), "spared");
+}
+
+/// A hit with a source asks `Retaliate` on the victim (`other` the
+/// source, `id` the warhead, `native` the engine's answer); a refusal
+/// leaves the victim's target as it was.
+#[test]
+fn a_retaliate_refusal_keeps_the_victims_target() {
+    let hit_from = |scene: &mut HeadlessScenario, victim: u64, source: u64| {
+        let runtime = &mut scene.runtime;
+        let rules = &runtime.resources.rules;
+        let warhead = runtime.simulation.interner.intern("SA");
+        let event = EntityDamageEvent::direct_receiver(
+            victim,
+            10,
+            0,
+            source,
+            None,
+            warhead,
+            ReceiverCallFlags {
+                ignore_defenses: false,
+                arg6: false,
+            },
+        );
+        runtime.simulation.commit_direct_damage_receiver(
+            rules,
+            Some(rules.overlay_registry()),
+            event,
+            &mut FrameEffects::default(),
+        );
+    };
+    let target_of = |scene: &HeadlessScenario, id: u64| {
+        scene
+            .sim()
+            .entities()
+            .get(id)
+            .expect("lives")
+            .attack_target
+            .target()
+    };
+    let Some((mut scene, attacker, victim)) = super::tests::gi_duel() else {
+        return;
+    };
+    install_decider(&mut scene, EVENT_RETALIATE, REFUSE, victim as i64);
+    let before = target_of(&scene, victim);
+    hit_from(&mut scene, victim, attacker);
+    let m = memory(&scene);
+    let i64_at = |at: usize| i64::from_le_bytes(m[512 + at..512 + at + 8].try_into().unwrap());
+    let i32_at = |at: usize| i32::from_le_bytes(m[512 + at..512 + at + 4].try_into().unwrap());
+    assert_eq!(i32_at(4), EVENT_RETALIATE);
+    assert_eq!((i64_at(24), i64_at(32)), (victim as i64, attacker as i64));
+    let sa = scene
+        .runtime
+        .resources
+        .rules
+        .warhead_index("SA")
+        .map_or(-1, |index| index as i32);
+    assert_eq!(i32_at(88), sa, "`id` the warhead");
+    let native = i64_at(120);
+    assert_eq!(target_of(&scene, victim), before, "refused: no new target");
+
+    let (mut scene, attacker, victim) = super::tests::gi_duel().expect("second scene");
+    scene.tick();
+    let before = target_of(&scene, victim);
+    hit_from(&mut scene, victim, attacker);
+    let attacked = Some(TargetKind::Entity(attacker));
+    if native == 1 && before != attacked {
+        assert_eq!(target_of(&scene, victim), attacked, "natively retaliates");
+    }
+}
+
+/// A Wasm module `Cloakable` override cloaks a unit (`Cloaked`), and a
+/// `ForceDecloak` override then uncloaks it (`Decloaked`).
+#[test]
+fn cloakable_and_force_decloak_raise_the_cloak_edges() {
+    use super::modifiers::{ModifierOp, Stat};
+    for decloak in [false, true] {
+        let Some(scene) = scenario() else { return };
+        let (unit, _) = ground_unit(&scene);
+        let kind = if decloak {
+            EVENT_DECLOAKED
+        } else {
+            EVENT_CLOAKED
+        };
+        let edge = def(0, 2, &[Ev::on(kind)], &[]);
+        let mut scene = installed(scene, &module(&edge, unit as i64, ""));
+        put_modifier(&mut scene, unit, Stat::Cloakable, ModifierOp::Override, 1);
+        for _ in 0..300 {
+            scene.tick();
+            if !decloak && received(&scene) > 0 {
+                break;
+            }
+        }
+        if decloak {
+            // The cloak has had its time; force it off.
+            put_modifier(&mut scene, unit, Stat::ForceDecloak, ModifierOp::Override, 1);
+            for _ in 0..300 {
+                scene.tick();
+                if received(&scene) > 0 {
+                    break;
+                }
+            }
+        }
+        assert!(received(&scene) > 0, "event {kind}");
+        let (got, subject, _, _, _) = first_record(&scene);
+        assert_eq!((got, subject), (kind, unit as i64));
+    }
+}
+
+/// A Power Plant's survivors are born with `Birth`, `other` the building,
+/// bound to the side's crew type.
+#[test]
+fn building_survivors_raise_birth() {
+    use crate::map::entities::EntityCategory;
+    use vera20k_wasm_ext::NAME_TECHNO_TYPE;
+    use vera20k_wasm_ext::triggers::EVENT_BIRTH;
+    let Some((scene, _, _)) = super::tests::gi_duel() else {
+        return;
+    };
+    let rules = &scene.runtime.resources.rules;
+    let Some(crew) = rules.general.allied_crew.clone() else {
+        return;
+    };
+    let bound = super::type_ref(
+        NAME_TECHNO_TYPE,
+        rules.type_handle(&crew).expect("the crew type").0,
+    );
+    let plant = {
+        let sim = scene.sim();
+        sim.entities()
+            .iter_sorted()
+            .find(|(_, e)| {
+                e.category() == EntityCategory::Structure
+                    && sim.interner.resolve(e.type_ref()) == "GAPOWR"
+            })
+            .map(|(id, _)| id)
+            .expect("the duel's power plant")
+    };
+    let birth = def(0, 2, &[Ev::on(EVENT_BIRTH)], &[]);
+    let mut scene = installed(scene, &module(&birth, bound, ""));
+    let crews = americans_of(&scene, &crew);
+    {
+        let runtime = &mut scene.runtime;
+        let rules = &runtime.resources.rules;
+        let warhead = runtime.simulation.interner.intern("Super");
+        let event = EntityDamageEvent::direct_receiver(
+            plant,
+            100_000,
+            0,
+            RAD_NO_ATTACKER,
+            None,
+            warhead,
+            ReceiverCallFlags {
+                ignore_defenses: false,
+                arg6: false,
+            },
+        );
+        runtime.simulation.commit_direct_damage_receiver(
+            rules,
+            Some(rules.overlay_registry()),
+            event,
+            &mut FrameEffects::default(),
+        );
+    }
+    for _ in 0..60 {
+        scene.tick();
+    }
+    let survivors: Vec<u64> = americans_of(&scene, &crew)
+        .into_iter()
+        .filter(|id| !crews.contains(id))
+        .collect();
+    assert!(!survivors.is_empty(), "the plant leaves survivors");
+    assert_eq!(received(&scene) as usize, survivors.len(), "one Birth each");
+    let (kind, subject, _, _, _) = first_record(&scene);
+    assert_eq!(kind, EVENT_BIRTH);
+    assert!(survivors.contains(&(subject as u64)));
+    assert_eq!(first_other(&scene), plant as i64, "`other` the plant");
+}
+
+/// Fly's paid speed and Rocket's type speed scale by the module
+/// `SpeedMultiplier` alone, truncated toward zero; without one they stay.
+#[test]
+fn fly_and_rocket_speeds_scale_by_the_module_speed_multiplier() {
+    use super::modifiers::{ModifierOp, Stat};
+    let Some(mut scene) = scenario() else { return };
+    let (unit, _) = ground_unit(&scene);
+    let scaled = |scene: &HeadlessScenario, speed: i32| {
+        scene
+            .sim()
+            .entities()
+            .get(unit)
+            .expect("unit")
+            .module_scaled_speed(speed)
+    };
+    assert_eq!(scaled(&scene, 41), 41);
+    put_modifier(&mut scene, unit, Stat::Speed, ModifierOp::Multiply, 1 << 15);
+    assert_eq!(scaled(&scene, 41), 20, "half, truncated");
+    assert_eq!(scaled(&scene, -41), -20, "toward zero");
 }

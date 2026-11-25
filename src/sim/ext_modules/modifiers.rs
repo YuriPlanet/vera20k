@@ -455,6 +455,18 @@ impl GameEntity {
         self.with_module_modifiers(Stat::Speed, 1.0)
     }
 
+    /// A type speed in leptons per frame scaled by
+    /// [`Self::module_speed_factor`], truncated toward zero: Fly's paid
+    /// speed and Rocket's type speed. `speed` itself without a modifier.
+    pub(crate) fn module_scaled_speed(&self, speed: i32) -> i32 {
+        let factor = self.module_speed_factor();
+        if factor == 1.0 {
+            speed
+        } else {
+            (f64::from(speed) * factor) as i32
+        }
+    }
+
     /// GetROF's `ROF=` factor (`0x006FD0B5`): Phobos' AttachEffect product
     /// and the module modifiers.
     pub(crate) fn effect_rof_multiplier(&self) -> f64 {

@@ -111,12 +111,7 @@ impl RocketHost for RocketProcessHost<'_> {
             });
         // VERA: a Wasm module `SpeedMultiplier` scales the type speed
         // (`ext_modules::modifiers`); none leaves the native value.
-        let factor = owner.module_speed_factor();
-        if factor == 1.0 {
-            speed
-        } else {
-            (f64::from(speed) * factor) as i32
-        }
+        owner.module_scaled_speed(speed)
     }
     fn in_bounds(&self, cell: (i16, i16)) -> bool {
         self.sim.map_cell_in_bounds(cell)
