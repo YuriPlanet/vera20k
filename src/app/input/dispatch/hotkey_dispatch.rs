@@ -798,8 +798,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         ),
         #[cfg(feature = "phobos")]
         HotkeyCommand::FireTacticalSw(index) => {
-            if state
-                .rules()
+            if crate::app::state::active_rules(&state.frontend, &state.match_state)
                 .is_some_and(|rules| rules.sw_sidebar.keys_enabled)
                 && let Some(entry) = crate::app::presentation::sw_sidebar::positional_entry(
                     &state.match_state.match_presentation,
@@ -824,8 +823,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         }
         #[cfg(feature = "phobos")]
         HotkeyCommand::ToggleSwSidebar => {
-            if state
-                .rules()
+            if crate::app::state::active_rules(&state.frontend, &state.match_state)
                 .is_some_and(|rules| rules.sw_sidebar.toggle_key_enabled)
                 && crate::app::presentation::sw_sidebar::toggle(
                     &mut state.match_state.match_presentation,

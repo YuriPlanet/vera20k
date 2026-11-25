@@ -51,7 +51,10 @@ pub(crate) fn render_keyboard_shell(
         .expect("active A3 frame")
     });
     let (width, height) = shell.map_or(
-        (state.render_width() as i32, state.render_height() as i32),
+        (
+            state.renderer.render_width(&state.frontend.screen) as i32,
+            state.renderer.render_height(&state.frontend.screen) as i32,
+        ),
         |shell| (shell.width, shell.height),
     );
     // The front-end page slides like its family: the teardown slide keeps
@@ -107,7 +110,7 @@ pub(crate) fn render_keyboard_shell(
             .keyboard_dialog
             .as_ref()
             .and_then(|dialog| crate::app::input::dialog_page::help(&dialog.ui, None))
-            .map(|key| state.csf_label(key, ""))
+            .map(|key| state.process_assets.csf_label(key, ""))
             .unwrap_or_default();
         crate::app::frontend::menu_page_render::paint_shell_status_line(
             &mut state.frontend.shell_status_line,
@@ -195,7 +198,7 @@ pub(crate) fn render_keyboard_shell(
             // front end's is the family static.
             FOOTER => {
                 let key = crate::app::input::dialog_page::help(&dialog.ui, None)?;
-                return active.then(|| shared.csf_label(key, ""));
+                return active.then(|| shared.process_assets.csf_label(key, ""));
             }
             _ => match KeyboardControl::from_id(id)? {
                 KeyboardControl::Button(KeyboardButton::Back) => ("GUI:Back", "Back"),
@@ -205,7 +208,7 @@ pub(crate) fn render_keyboard_shell(
                 _ => return None,
             },
         };
-        Some(shared.csf_label(key, fallback))
+        Some(shared.process_assets.csf_label(key, fallback))
     };
     let reveal_of = |id: i32| -> Option<PathAReveal> {
         let window = title.filter(|_| id == i32::from(TITLE))?;

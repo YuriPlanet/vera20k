@@ -3054,12 +3054,17 @@ pub(crate) fn shown_cursor_id(state: &AppState) -> Option<CursorId> {
 /// Observation of the same cursor selection used by the production draw.
 /// Map captures admit only a static arrow, so cursor wall time cannot alter it.
 pub(crate) fn static_default_cursor(state: &AppState) -> bool {
-    state.use_software_cursor()
-        && active_cursor_sequence(
-            state,
-            &CursorTargets::read(&state.platform, &state.frontend, &state.match_state),
-        )
-        .is_some_and(|(id, sequence)| id == CursorId::Default && sequence.interval_ms == 0)
+    crate::app::state::use_software_cursor(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) && active_cursor_sequence(
+        state,
+        &CursorTargets::read(&state.platform, &state.frontend, &state.match_state),
+    )
+    .is_some_and(|(id, sequence)| id == CursorId::Default && sequence.interval_ms == 0)
 }
 
 /// The software cursor frame a draw shows. Its sprite and its texture come
@@ -3075,7 +3080,14 @@ pub(crate) fn build_software_cursor_instances(
     state: &AppState,
     targets: &CursorTargets,
 ) -> (Vec<SpriteInstance>, Option<SoftwareCursorDraw>) {
-    if !state.use_software_cursor() || !state.match_state.input.cursor_visibility.is_visible() {
+    if !crate::app::state::use_software_cursor(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) || !state.match_state.input.cursor_visibility.is_visible()
+    {
         return (Vec::new(), None);
     }
     let Some((id, sequence)) = active_cursor_sequence(state, targets) else {

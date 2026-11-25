@@ -617,8 +617,7 @@ impl OpeningCapture {
         let mut expected = crate::render::radar::ClientRadarEvents::from_saved(before.clone())?;
         expected.advance_to_frame(
             receipt.tick_after,
-            &state
-                .rules()
+            &crate::app::state::active_rules(&state.frontend, &state.match_state)
                 .context("restored radar rules")?
                 .radar_event_config,
         );

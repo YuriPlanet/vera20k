@@ -425,7 +425,7 @@ pub(crate) fn render_wol_page(
                 &state.process_assets,
             ),
             _ => status_key
-                .map(|key| state.csf_text(key))
+                .map(|key| state.process_assets.csf_text(key))
                 .unwrap_or_default(),
         };
         let status_label = crate::app::frontend::menu_page_render::paint_shell_status_line(
@@ -829,7 +829,7 @@ pub(crate) fn render_wol_page(
                     return Some(ui.view_caption());
                 }
                 let button = painted.spec.button(id)?;
-                Some(state.csf_text(button.csf_key))
+                Some(state.process_assets.csf_text(button.csf_key))
             };
             let enabled_of = |id: i32| Some(lobby_ui?.enabled(u16::try_from(id).ok()?));
             let style = GuiStyle {
@@ -868,7 +868,7 @@ pub(crate) fn render_wol_page(
     }
     let title_key = painted.as_ref().and_then(Painted::title_key);
     let title = title_window.zip(title_key).map(|(window, key)| {
-        let text = state.csf_text(key);
+        let text = state.process_assets.csf_text(key);
         PanelStatic::title(text, page.title, ShellAlign::PANEL_TITLE, window)
     });
     let status = status_label.map(PanelStatic::status);
@@ -1028,7 +1028,9 @@ pub(crate) fn render_wol_page(
             text: &text,
             cursor: software_cursor(state, CURSOR_DEPTH),
             effects: None,
-            smooth_art: state.smooth_online_menus(),
+            smooth_art: state
+                .persistence
+                .smooth_online_menus(state.frontend.native_shell_ui),
         },
     );
     state.platform.window.request_redraw();

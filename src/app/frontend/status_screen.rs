@@ -457,7 +457,14 @@ pub(crate) fn handle_event(
         WindowEvent::CursorMoved { position, .. } => {
             // Match input keeps source pixels even while a card covers a
             // zoomed match; the card maps back through `window_cursor_position`.
-            state.set_cursor_from_window(position.x as f32, position.y as f32);
+            crate::app::state::set_cursor_from_window(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state.input,
+                position.x as f32,
+                position.y as f32,
+            );
             None
         }
         WindowEvent::MouseInput {
@@ -465,7 +472,10 @@ pub(crate) fn handle_event(
             button: MouseButton::Left,
             ..
         } => {
-            let (x, y) = state.window_cursor_position();
+            let (x, y) = state
+                .match_state
+                .input
+                .window_cursor_position(state.renderer.tactical_zoom(&state.frontend.screen));
             let (x, y) = (x as i32, y as i32);
             Some(match pressed {
                 ElementState::Pressed => InputEvent::PointerDown {
@@ -499,7 +509,10 @@ pub(crate) fn handle_event(
         state.renderer.gpu.config.width,
         state.renderer.gpu.config.height,
     );
-    let (x, y) = state.window_cursor_position();
+    let (x, y) = state
+        .match_state
+        .input
+        .window_cursor_position(state.renderer.tactical_zoom(&state.frontend.screen));
     let card = &mut state.frontend.status_card;
     card.sync(&buttons.actions(), &layout, (x as i32, y as i32));
     let activated = input.map_or_else(Vec::new, |input| card.input(input));

@@ -686,7 +686,7 @@ fn render_skirmish_shell_with_atlas(
         _ if message_box_up => None,
         (Some(_), Some(seed_layout)) => shell.saved_seed_browser.as_ref().map(|browser| {
             let (key, fallback) = browser.mode.title_label();
-            let title = state.csf_label(key, fallback);
+            let title = state.process_assets.csf_label(key, fallback);
             saved_games::seed_browser_paint(
                 &state.platform.ime,
                 &state.renderer,
@@ -873,8 +873,8 @@ fn render_skirmish_shell_with_atlas(
         .create_instance_buffer(&state.renderer.gpu, &marker_label_instances);
     state.renderer.batch_renderer.update_camera(
         &state.renderer.gpu,
-        state.render_width() as f32,
-        state.render_height() as f32,
+        state.renderer.render_width(&state.frontend.screen) as f32,
+        state.renderer.render_height(&state.frontend.screen) as f32,
         0.0,
         0.0,
         1.0,
@@ -932,7 +932,9 @@ fn render_skirmish_shell_with_atlas(
         .map(|frame| &frame.texture);
 
     // A game room's Choose Map is one of the online client's screens.
-    let smooth_art = state.smooth_online_menus()
+    let smooth_art = state
+        .persistence
+        .smooth_online_menus(state.frontend.native_shell_ui)
         && state.frontend.shell_route == crate::app::shell_route::ShellRoute::NetworkSetup;
     let mut pass = begin_shell_pass(encoder, target, "Skirmish Shell");
     state.renderer.batch_renderer.draw_chrome(
@@ -976,7 +978,12 @@ fn render_skirmish_shell_with_atlas(
         &shell_draws,
         &scissored_text_buffers,
     );
-    pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
+    pass.set_scissor_rect(
+        0,
+        0,
+        state.renderer.render_width(&state.frontend.screen),
+        state.renderer.render_height(&state.frontend.screen),
+    );
     if let Some((buffer, count)) = dropdown_buffer.as_ref() {
         state.renderer.batch_renderer.draw_chrome(
             &mut pass,
@@ -993,7 +1000,12 @@ fn render_skirmish_shell_with_atlas(
         &dropdown_text_buffers,
     );
     // Reset scissor to full render so any subsequent draws / passes aren't clipped.
-    pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
+    pass.set_scissor_rect(
+        0,
+        0,
+        state.renderer.render_width(&state.frontend.screen),
+        state.renderer.render_height(&state.frontend.screen),
+    );
     if let Some(buffers) = zoom_buffers.as_ref() {
         draw_zoom(
             &mut pass,

@@ -592,7 +592,12 @@ pub(crate) fn band_box_left_up(state: &mut AppState, click: LeftUp) {
 fn left_up_branches(state: &mut AppState, click: LeftUp) {
     // A pending placement takes the clicked Cell, whatever the action
     // (`0x004ABA16..0x004ABC67`).
-    if let Some(type_id) = state.armed_building_type().map(str::to_owned) {
+    if let Some(type_id) = state
+        .match_state
+        .input
+        .armed_building_type()
+        .map(str::to_owned)
+    {
         let cell = match click {
             LeftUp::Tactical => crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
                 &state.match_state,
@@ -658,7 +663,11 @@ fn left_up_branches(state: &mut AppState, click: LeftUp) {
         true,
     );
     if let Some(action) = super_weapon
-        && let Some(armed) = state.armed_super_weapon_type().map(str::to_owned)
+        && let Some(armed) = state
+            .match_state
+            .input
+            .armed_super_weapon_type()
+            .map(str::to_owned)
     {
         crate::app::input::commands::launch_super_weapon_at_cell(
             &state.frontend,
@@ -684,7 +693,7 @@ fn tactical_left_up(state: &mut AppState) {
             .sim_runtime
             .runtime()
             .map(|rt| &rt.simulation),
-        state.rules(),
+        crate::app::state::active_rules(&state.frontend, &state.match_state),
         &state.match_state.input.selection_order,
         state.match_state.input.selection_order_pending,
     )
@@ -918,7 +927,8 @@ fn tactical_left_up(state: &mut AppState) {
             && !is_alt_held(&state.match_state.input)
             && state.match_state.input.queued_order_mode == OrderMode::Move;
         let window_point = state
-            .tactical_zoom()
+            .renderer
+            .tactical_zoom(&state.frontend.screen)
             .map_or((sx, sy), |zoom| zoom.source_to_window(sx, sy));
         let admitted = ordinary && state.persistence.options_profile.right_click_orders;
         let now = state.frontend.shell_controller.now();
@@ -979,7 +989,7 @@ fn tactical_left_up(state: &mut AppState) {
                 .sim_runtime
                 .runtime()
                 .map(|rt| &rt.simulation),
-            state.rules(),
+            crate::app::state::active_rules(&state.frontend, &state.match_state),
             &state.match_state.input.selection_order,
             state.match_state.input.selection_order_pending,
         );
@@ -999,7 +1009,7 @@ fn tactical_left_up(state: &mut AppState) {
                 let click_order =
                     crate::app::presentation::instances::tactical_entity_encounter_order(
                         sim,
-                        state.rules(),
+                        crate::app::state::active_rules(&state.frontend, &state.match_state),
                     );
                 let world_x: f32 =
                     sx / state.match_state.input.zoom_level + state.match_state.input.camera_x;
@@ -1034,7 +1044,7 @@ fn tactical_left_up(state: &mut AppState) {
                             clicked_id,
                             pick_toggles,
                             preferred_local_owner_name(&state.match_state).as_deref(),
-                            state.rules(),
+                            crate::app::state::active_rules(&state.frontend, &state.match_state),
                             Some(sim.interner()),
                             sim.playfield_bounds().is_some(),
                         ))
@@ -1053,7 +1063,7 @@ fn tactical_left_up(state: &mut AppState) {
                             world_x,
                             world_y,
                             pick_toggles,
-                            state.rules(),
+                            crate::app::state::active_rules(&state.frontend, &state.match_state),
                             Some(sim.interner()),
                             sim.playfield_bounds().is_some(),
                             sim.resolved_terrain(),
@@ -1075,7 +1085,7 @@ fn tactical_left_up(state: &mut AppState) {
                         world_x,
                         world_y,
                         pick_toggles,
-                        state.rules(),
+                        crate::app::state::active_rules(&state.frontend, &state.match_state),
                         Some(sim.interner()),
                         sim.playfield_bounds().is_some(),
                         sim.resolved_terrain(),
@@ -1113,7 +1123,7 @@ fn tactical_left_up(state: &mut AppState) {
                         max_x,
                         max_y,
                         shift,
-                        state.rules(),
+                        crate::app::state::active_rules(&state.frontend, &state.match_state),
                         Some(sim.interner()),
                         sim.playfield_bounds().is_some(),
                     ));
@@ -1139,7 +1149,7 @@ fn tactical_left_up(state: &mut AppState) {
                         max_x,
                         max_y,
                         shift,
-                        state.rules(),
+                        crate::app::state::active_rules(&state.frontend, &state.match_state),
                         Some(sim.houses()),
                         Some(sim.interner()),
                         sim.playfield_bounds().is_some(),

@@ -125,7 +125,9 @@ impl WolCapture {
                 ansi: true,
             },
         );
-        let hint = state.csf_label("TXT_HOW_TO_REPLY", "TXT_HOW_TO_REPLY");
+        let hint = state
+            .process_assets
+            .csf_label("TXT_HOW_TO_REPLY", "TXT_HOW_TO_REPLY");
         let after = rows(state);
         ensure!(
             after.len() == before + 2
@@ -226,7 +228,9 @@ impl WolCapture {
             .iter()
             .map(|line| String::from_utf16_lossy(&line.text))
             .collect();
-        let sent = state.csf_label("TXT_PAGESENT", "TXT_PAGESENT");
+        let sent = state
+            .process_assets
+            .csf_label("TXT_PAGESENT", "TXT_PAGESENT");
         ensure!(
             texts.contains(&format!("[{NICKNAME}] on my way"))
                 && texts.contains(&sent)
@@ -241,7 +245,9 @@ impl WolCapture {
             .iter()
             .map(|row| row.text.clone())
             .collect();
-        let hint = state.csf_label("TXT_HOW_TO_REPLY", "TXT_HOW_TO_REPLY");
+        let hint = state
+            .process_assets
+            .csf_label("TXT_HOW_TO_REPLY", "TXT_HOW_TO_REPLY");
         ensure!(
             rows.last()
                 .is_some_and(|row| row.contains("(Tanya) Got your page."))
@@ -348,7 +354,7 @@ impl WolCapture {
             .iter()
             .map(|line| String::from_utf16_lossy(&line.text))
             .collect();
-        let csf = |key: &str| state.csf_label(key, key);
+        let csf = |key: &str| state.process_assets.csf_label(key, key);
         let done = match self.target {
             WolTarget::PageFindStatus => page.status == csf("TXT_FINDPAGE_NOT_ONLINE"),
             WolTarget::PageUserGone => texts.contains(&csf("TXT_PAGEUSERGONE")),

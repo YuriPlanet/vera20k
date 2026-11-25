@@ -1630,6 +1630,7 @@ pub(super) fn box_closed(state: &mut AppState, then: lobby::QuickMatchBoxThen) {
 /// 11 and the away text set again; event 6 then ends the runner with 0.
 pub(crate) fn start_aborted(state: &mut AppState) {
     let away = state
+        .process_assets
         .csf_text("TXT_AWAY_QUICKMATCH")
         .encode_utf16()
         .collect();

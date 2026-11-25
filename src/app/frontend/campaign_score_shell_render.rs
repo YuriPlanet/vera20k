@@ -127,7 +127,7 @@ pub(crate) fn render_campaign_score_page(
     let status = hovered
         .and_then(|id| dialog.control(id))
         .and_then(|control| control.tooltip_key)
-        .map(|key| state.csf_text(key))
+        .map(|key| state.process_assets.csf_text(key))
         .unwrap_or_default();
 
     {

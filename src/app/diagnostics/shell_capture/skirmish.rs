@@ -803,8 +803,8 @@ impl SkirmishCapture {
         if browsing {
             let back = crate::ui::skirmish_shell::compute_saved_seed_layout(
                 crate::ui::skirmish_shell::SavedSeedMode::Save,
-                state.render_width(),
-                state.render_height(),
+                state.renderer.render_width(&state.frontend.screen),
+                state.renderer.render_height(&state.frontend.screen),
             )
             .back;
             Self::set_pointer(&mut state.match_state.input, centre(back));
@@ -845,8 +845,8 @@ impl SkirmishCapture {
         } else if generated && !self.save_pressed {
             self.save_pressed = true;
             let save = crate::ui::skirmish_shell::compute_random_map_setup_layout(
-                state.render_width(),
-                state.render_height(),
+                state.renderer.render_width(&state.frontend.screen),
+                state.renderer.render_height(&state.frontend.screen),
             )
             .rect(0x6C3);
             Some((centre(save), "SaveMap"))
@@ -897,8 +897,8 @@ impl SkirmishCapture {
         let press = if min_players && !self.players_set {
             self.players_set = true;
             let track = crate::ui::skirmish_shell::compute_random_map_setup_layout(
-                state.render_width(),
-                state.render_height(),
+                state.renderer.render_width(&state.frontend.screen),
+                state.renderer.render_height(&state.frontend.screen),
             )
             .control_rects[5];
             Some(((track.x + 3, track.y + track.h / 2), "Players 2"))
@@ -1095,8 +1095,8 @@ impl SkirmishCapture {
         };
         let layout = crate::ui::shell::modal::menu_message_box(
             2,
-            state.render_width() as i32,
-            state.render_height() as i32,
+            state.renderer.render_width(&state.frontend.screen) as i32,
+            state.renderer.render_height(&state.frontend.screen) as i32,
         );
         let button = match answer {
             crate::ui::skirmish_shell::ChooseMapPromptButton::Ok => layout.button(0),

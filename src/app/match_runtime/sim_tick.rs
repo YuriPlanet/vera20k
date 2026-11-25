@@ -1104,7 +1104,7 @@ pub(crate) struct RuntimePassInputs {
     /// The window owns the foreground; gates input polling.
     pub(crate) window_active: bool,
     /// The deactivated window freezes the world
-    /// (`AppState::focus_freeze_active`).
+    /// (`app::state::focus_freeze_active`).
     pub(crate) focus_frozen: bool,
     pub(crate) startup_admitted: bool,
     pub(crate) frame_stepping: bool,
@@ -1420,7 +1420,7 @@ fn advance_in_game_runtime_mode(
         && !replaying
         && !state.match_state.match_presentation.in_game_menu.is_open()
         && !state.match_state.debug_pause
-        && !state.focus_freeze_active();
+        && !crate::app::state::focus_freeze_active(&state.platform, &state.match_state);
     if service_live {
         super::scenario_pause::poll(state, wall_ms);
     }
@@ -1466,7 +1466,7 @@ fn advance_in_game_runtime_mode(
     let mut decision = decide_runtime_pass(RuntimePassInputs {
         exact_step: matches!(mode, RuntimeAdvanceMode::ExactOneStep),
         window_active: state.platform.window_active,
-        focus_frozen: state.focus_freeze_active(),
+        focus_frozen: crate::app::state::focus_freeze_active(&state.platform, &state.match_state),
         startup_admitted,
         frame_stepping,
         paused: state.match_state.paused(),
@@ -1497,7 +1497,8 @@ fn advance_in_game_runtime_mode(
         decision.frames_running &= can_advance;
         decision.tactical_mutation = false;
         // Camera remains available when the last recorded frame is frozen.
-        decision.scroll_input = state.platform.window_active && !state.focus_freeze_active();
+        decision.scroll_input = state.platform.window_active
+            && !crate::app::state::focus_freeze_active(&state.platform, &state.match_state);
         decision.camera_scroll = decision.scroll_input;
     }
     if frame_stepping {
@@ -1794,7 +1795,7 @@ pub(crate) fn service_beside_tick(state: &mut AppState) {
     let decision = decide_runtime_pass(RuntimePassInputs {
         exact_step: false,
         window_active: state.platform.window_active,
-        focus_frozen: state.focus_freeze_active(),
+        focus_frozen: crate::app::state::focus_freeze_active(&state.platform, &state.match_state),
         startup_admitted: state.match_state.startup.admits_ordinary_tick(),
         frame_stepping: false,
         paused: state.match_state.paused(),
@@ -1861,7 +1862,8 @@ fn after_simulation_pass(
 ) -> bool {
     // MainThrottle55E33B publishes Logic visits per60 wall-clock buckets,
     // including the path where the pacer admitted no simulation frame.
-    let wall_ms = state.radar_presentation_ms();
+    let wall_ms =
+        crate::app::diagnostics::state::radar_presentation_ms(&state.diag, &state.match_state);
     state
         .match_state
         .match_presentation
@@ -3213,7 +3215,7 @@ fn finish_simulation_frame(
                 .get(&owner)
         });
         // House4F8B08..4F8B2B: this frame's House rung is the native caller.
-        let placement_armed = state.armed_building_type().is_some();
+        let placement_armed = state.match_state.input.armed_building_type().is_some();
         if let Some(rt) = state.match_state.sim_runtime.runtime() {
             crate::app::presentation::sidebar_gadgets::exit_sell_mode_without_buildings(
                 &mut state.match_state.match_presentation.sidebar_gadget_state,
@@ -3222,8 +3224,7 @@ fn finish_simulation_frame(
                 placement_armed,
             );
         }
-        let ares = state
-            .rules()
+        let ares = crate::app::state::active_rules(&state.frontend, &state.match_state)
             .is_some_and(crate::rules::ruleset::RuleSet::ares);
         for output in drained_lifecycle_outputs {
             if let Some(cursor_clear) = state

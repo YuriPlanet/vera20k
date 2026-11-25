@@ -398,7 +398,11 @@ impl App {
             Self::finish_credits_roll_return(state, return_to);
             return;
         };
-        let lookup = |key: &str| state.csf_label(key, &format!("MISSING:'{key}'"));
+        let lookup = |key: &str| {
+            state
+                .process_assets
+                .csf_label(key, &format!("MISSING:'{key}'"))
+        };
         let config = &state.renderer.gpu.config;
         let viewport = CreditsViewport::new(config.width, config.height);
         let lines = crate::ui::movies_credits_shell::parse_credits(

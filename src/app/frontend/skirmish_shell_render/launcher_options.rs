@@ -229,7 +229,7 @@ pub(crate) fn render_launcher_options(
             .options_dialog
             .as_ref()
             .and_then(|dialog| dialog.shell_status_help())
-            .map(|key| state.csf_text(key))
+            .map(|key| state.process_assets.csf_text(key))
             .unwrap_or_default();
         let status = crate::app::frontend::menu_page_render::paint_shell_status_line(
             &mut state.frontend.shell_status_line,
@@ -248,8 +248,12 @@ pub(crate) fn render_launcher_options(
         .skirmish_shell_chrome
         .as_ref()
         .expect("launcher atlas");
-    let mut instances =
-        launcher_background_instances(atlas, state.render_width(), state.render_height(), scale);
+    let mut instances = launcher_background_instances(
+        atlas,
+        state.renderer.render_width(&state.frontend.screen),
+        state.renderer.render_height(&state.frontend.screen),
+        scale,
+    );
     if let Some(frame) = monitor_frame.and_then(|frame| atlas.launcher_warning_frames.get(frame)) {
         push_flag_entry_clipped_centered(
             &mut instances,
@@ -263,8 +267,8 @@ pub(crate) fn render_launcher_options(
     if let Some(wave) = wave.as_ref() {
         let common = crate::ui::skirmish_shell::compute_layout_on(
             scale,
-            state.render_width(),
-            state.render_height(),
+            state.renderer.render_width(&state.frontend.screen),
+            state.renderer.render_height(&state.frontend.screen),
         );
         push_slide_column(
             &mut instances,

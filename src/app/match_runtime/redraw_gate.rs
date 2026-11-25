@@ -205,8 +205,8 @@ pub(crate) fn still_frame(
                 || detail.threshold_wraps()
                 // Ares' FPS counter line shows each new sample's average.
                 || (presentation.ares_fps_counter
-                    && state.rules().is_some_and(crate::rules::ruleset::RuleSet::ares))
-                || (state.use_software_cursor() && input.software_cursor_step_due())
+                    && crate::app::state::active_rules(&state.frontend, &state.match_state).is_some_and(crate::rules::ruleset::RuleSet::ares))
+                || (crate::app::state::use_software_cursor(&state.platform, &state.renderer, &state.frontend, &state.match_state, &state.persistence) && input.software_cursor_step_due())
                 || crate::app::presentation::super_timers::blink_due(&state.diag, &state.match_state);
             (!moving).then(|| StillFrame::Battlefield {
                 revision,

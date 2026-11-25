@@ -758,7 +758,7 @@ pub(crate) fn encode_family_page(
     };
     let title = panel.title.map(|window| {
         let rect = layout.right_panel.family_title_caption(layout.title);
-        let text = state.csf_text(title_key);
+        let text = state.process_assets.csf_text(title_key);
         PanelStatic::title(text, rect, ShellAlign::ART_CAPTION, window)
     });
     let mut text =

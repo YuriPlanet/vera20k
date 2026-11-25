@@ -100,7 +100,10 @@ pub(crate) fn render_lan_lobby(
     crate::app::shell_lan::sync_gui(&state.renderer, &mut state.frontend);
     // The message box on its widgets (built as it opened) before it paints.
     let notice = lan_notice(&state.frontend.lan, &state.process_assets);
-    let size = (state.render_width() as i32, state.render_height() as i32);
+    let size = (
+        state.renderer.render_width(&state.frontend.screen) as i32,
+        state.renderer.render_height(&state.frontend.screen) as i32,
+    );
     let notice_parts = notice
         .as_ref()
         .map(|notice| super::shell_box::skirmish_parts(notice, size));
@@ -113,8 +116,8 @@ pub(crate) fn render_lan_lobby(
     let now = Instant::now();
     let layout = crate::app::shell_lan::layout(&state.renderer.gpu);
     let scale = layout.page.scale;
-    let width = state.render_width();
-    let height = state.render_height();
+    let width = state.renderer.render_width(&state.frontend.screen);
+    let height = state.renderer.render_height(&state.frontend.screen);
     let exit = crate::app::frontend::shell_transition::shell_exit_wave(
         &state.frontend.shell_exit,
         ShellSlideKind::LanLobby,
@@ -151,10 +154,10 @@ pub(crate) fn render_lan_lobby(
         #[cfg(not(target_os = "android"))]
         let send_help = false;
         let help = if send_help {
-            state.csf_text("STT:EmoteButton")
+            state.process_assets.csf_text("STT:EmoteButton")
         } else {
             crate::ui::shell::page::hovered_key(gui)
-                .map(|key| state.csf_label(key, ""))
+                .map(|key| state.process_assets.csf_label(key, ""))
                 .unwrap_or_default()
         };
         crate::app::frontend::menu_page_render::paint_shell_status_line(
@@ -207,10 +210,12 @@ pub(crate) fn render_lan_lobby(
             Some(match u16::try_from(id).ok()? {
                 GAMES => (0..lobby.game_count())
                     .map(|index| match index.checked_sub(1) {
-                        None => yellow(state.csf_label("TXT_LOBBY", "Lobby")),
+                        None => yellow(state.process_assets.csf_label("TXT_LOBBY", "Lobby")),
                         Some(game) => {
                             let game = &lobby.games[game];
-                            let format = state.csf_label(game.label_key(), game.label_key());
+                            let format = state
+                                .process_assets
+                                .csf_label(game.label_key(), game.label_key());
                             yellow(format.replacen("%s", &game.name, 1))
                         }
                     })
@@ -237,12 +242,14 @@ pub(crate) fn render_lan_lobby(
         let text_of = |id: i32| {
             let id = u16::try_from(id).ok()?;
             let key = match id {
-                TITLE => return title.map(|_| state.csf_label(PAGE.title_key, "Lobby")),
+                TITLE => {
+                    return title.map(|_| state.process_assets.csf_label(PAGE.title_key, "Lobby"));
+                }
                 STATUS => return status.as_ref().map(|status| status.text.to_string()),
                 JOIN if observer => "GUI:Observe",
                 id => PAGE.button(id)?.csf_key,
             };
-            Some(state.csf_label(key, key))
+            Some(state.process_assets.csf_label(key, key))
         };
         let reveal_of = |id: i32| match u16::try_from(id).ok()? {
             TITLE => title.map(|reveal| PathAReveal {

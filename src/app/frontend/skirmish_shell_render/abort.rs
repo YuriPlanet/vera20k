@@ -34,7 +34,7 @@ pub(crate) fn render_abort_shell(
                 None if id == QUESTION => QUESTION_LABEL,
                 None => return None,
             };
-            Some(state.csf_label(key, fallback))
+            Some(state.process_assets.csf_label(key, fallback))
         };
         let style = GuiStyle {
             buttons: ButtonArt::Side,

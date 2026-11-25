@@ -934,7 +934,9 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                     log::warn!("Online setup request failed: {error:#}");
                     let text = if let Some(MapTooSmall(capacity)) = error.downcast_ref() {
                         crate::assets::csf_file::format_csf(
-                            &state.csf_label("TXT_SCENARIO_TOO_SMALL", "TXT_SCENARIO_TOO_SMALL"),
+                            &state
+                                .process_assets
+                                .csf_label("TXT_SCENARIO_TOO_SMALL", "TXT_SCENARIO_TOO_SMALL"),
                             &[crate::assets::csf_file::CsfArg::Int(i64::from(*capacity))],
                         )
                     } else {

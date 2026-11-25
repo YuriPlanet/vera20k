@@ -9,16 +9,6 @@ use crate::render::shell_surface_present::SurfaceEffects;
 use crate::render::shell_text::ShellTextDraw;
 use crate::ui::shell::geom::RectPx;
 
-impl AppState {
-    pub(crate) fn csf_text(&self, key: &str) -> String {
-        self.process_assets.csf_text(key)
-    }
-
-    pub(crate) fn csf_label(&self, key: &str, fallback: &str) -> String {
-        self.process_assets.csf_label(key, fallback)
-    }
-}
-
 /// Native owner-draw button label clip: unpressed `(x, y+1, w-2, h-1)`,
 /// pressed `(x+2, y+5, w-4, h-5)`.
 pub(crate) fn owner_draw_button_label_rect(rect: RectPx, pressed: bool) -> RectPx {

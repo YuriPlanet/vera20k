@@ -232,7 +232,7 @@ pub(super) fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
             None => joined.channel.name.clone(),
         };
         let text = crate::assets::csf_file::format_csf(
-            &state.csf_text("TXT_JOINED_S"),
+            &state.process_assets.csf_text("TXT_JOINED_S"),
             &[crate::assets::csf_file::CsfArg::Str(&name)],
         );
         message_line(
@@ -394,7 +394,7 @@ fn join_error(state: &mut AppState, code: u32) {
     {
         // 0x7A5961..0x7A5D2A: modes 1-3 print these as lines (colour -1)
         // instead of the boxes; every failure sets event 5.
-        let text = state.csf_text(key);
+        let text = state.process_assets.csf_text(key);
         message_line(
             &mut state.frontend,
             &state.match_state,
@@ -433,9 +433,11 @@ fn join_error(state: &mut AppState, code: u32) {
             );
         }
         JoinErrorReply::Chat => {
-            let text = state
-                .csf_text("TXT_CANT_JOINCHAN")
-                .replacen("%X", &format!("{code:X}"), 1);
+            let text = state.process_assets.csf_text("TXT_CANT_JOINCHAN").replacen(
+                "%X",
+                &format!("{code:X}"),
+                1,
+            );
             message_line(
                 &mut state.frontend,
                 &state.match_state,

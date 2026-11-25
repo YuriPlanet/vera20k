@@ -203,7 +203,7 @@ impl App {
         };
         let output = settings.drain_output();
         if Self::run_launcher_options_events(state, output.cues, output.events) {
-            let csf = |key: &str, fallback: &str| state.csf_label(key, fallback);
+            let csf = |key: &str, fallback: &str| state.process_assets.csf_label(key, fallback);
             let shell_box = shell_menu(&csf);
             let option_labels =
                 Self::launcher_options_labels(state.frontend.shell_route, &state.process_assets);

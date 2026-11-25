@@ -77,7 +77,7 @@ impl App {
         pressed: bool,
         repeat: bool,
     ) -> bool {
-        if !state.main_menu_dialog_open() {
+        if !state.frontend.main_menu_dialog_open() {
             return false;
         }
         let is_escape = code == KeyCode::Escape && pressed && !repeat;
@@ -457,7 +457,7 @@ impl App {
             ScreenPage::LauncherOptions if left => Self::handle_launcher_options_mouse(state, down),
             // A retained main-menu dialog takes the click: the SHP
             // quit-confirm modal hit-tests its OK/Cancel here.
-            _ if down.is_some() && state.main_menu_dialog_open() => {
+            _ if down.is_some() && state.frontend.main_menu_dialog_open() => {
                 if screen == ScreenPage::MainMenu
                     && state.frontend.shell_message_box.is_some()
                     && left
@@ -1725,7 +1725,11 @@ impl ApplicationHandler for App {
         }
 
         let Some(state) = &mut self.state else { return };
-        state.sync_cursor_space();
+        crate::app::state::sync_cursor_space(
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state.input,
+        );
         // Playback has presentation-only input. Exit is local and never
         // schedules EventClass EXIT or changes the recorded simulation. A
         // watcher's is presentation-only too: it gives no orders, Tab follows
@@ -1777,7 +1781,14 @@ impl ApplicationHandler for App {
                     return;
                 }
                 WindowEvent::CursorMoved { position, .. } => {
-                    state.set_cursor_from_window(position.x as f32, position.y as f32);
+                    crate::app::state::set_cursor_from_window(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &mut state.match_state.input,
+                        position.x as f32,
+                        position.y as f32,
+                    );
                     return;
                 }
                 WindowEvent::MouseInput {
@@ -2206,7 +2217,14 @@ impl ApplicationHandler for App {
                 if !from_touch {
                     state.match_state.input.cursor_from_touch = false;
                 }
-                state.set_cursor_from_window(position.x as f32, position.y as f32);
+                crate::app::state::set_cursor_from_window(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &mut state.match_state.input,
+                    position.x as f32,
+                    position.y as f32,
+                );
                 Self::route_input(state, Input::Move);
             }
             WindowEvent::MouseInput {

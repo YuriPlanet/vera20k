@@ -53,7 +53,7 @@ pub(crate) fn render_pause_menu_shell(
             let index = ids.iter().position(|of| *of == id)?;
             Some(InternetSlider::ALL[index])
         };
-        let caption = |(key, fallback): (&str, &str)| state.csf_label(key, fallback);
+        let caption = |(key, fallback): (&str, &str)| state.process_assets.csf_label(key, fallback);
         let text_of = |id: i32| -> Option<String> {
             let id = u16::try_from(id).ok()?;
             if let Some(button) = template.button(id) {

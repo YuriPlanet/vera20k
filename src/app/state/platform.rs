@@ -182,7 +182,7 @@ impl PlatformState {
     }
 
     /// True while the window is deactivated and `pause_on_focus_loss` is
-    /// configured; [`super::AppState::focus_freeze_active`] adds the session
+    /// configured; [`super::focus_freeze_active`] adds the session
     /// gate and is the single gate for the simulation and the message clock.
     /// The audio stop is deliberately not part of it: gamemd gates its primary
     /// output on the activation edge itself, so that gate follows

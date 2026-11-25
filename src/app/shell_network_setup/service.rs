@@ -730,7 +730,9 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 protocol.accept_eligible = true;
             }
             if !ready {
-                let text = state.csf_label("GUI:HostGameStartJoiner", "GUI:HostGameStartJoiner");
+                let text = state
+                    .process_assets
+                    .csf_label("GUI:HostGameStartJoiner", "GUI:HostGameStartJoiner");
                 crate::app::shell_lan::append_room_chat(
                     &state.renderer,
                     &mut state.frontend,
@@ -1247,8 +1249,8 @@ fn fail_go_handoff_with_notice(state: &mut AppState, label: &str, fallback: &str
         App::fail_external_launch(state, "the direct start handshake failed");
         return;
     }
-    let message = state.csf_label(label, fallback);
-    let ok = state.csf_label("TXT_OK", "OK");
+    let message = state.process_assets.csf_label(label, fallback);
+    let ok = state.process_assets.csf_label("TXT_OK", "OK");
     state
         .frontend
         .multiplayer_setup

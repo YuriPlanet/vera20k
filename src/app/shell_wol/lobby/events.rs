@@ -694,7 +694,9 @@ pub(in crate::app::shell_wol) fn kicked(
         // made it their channel.
         if user.flags & MEMBER_LOCAL != 0 && visiting(state.frontend.wol.as_ref()) {
             let text = format_csf(
-                &state.csf_text(setup::kicked_key(&state.match_state.session)),
+                &state
+                    .process_assets
+                    .csf_text(setup::kicked_key(&state.match_state.session)),
                 &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
             );
             visit_settles(
@@ -714,7 +716,7 @@ pub(in crate::app::shell_wol) fn kicked(
         if user.flags & MEMBER_LOCAL != 0 {
             let key = setup::kicked_key(&state.match_state.session);
             let text = format_csf(
-                &state.csf_text(key),
+                &state.process_assets.csf_text(key),
                 &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
             );
             crate::app::shell_lan::append_wol_lobby_chat(
@@ -732,7 +734,7 @@ pub(in crate::app::shell_wol) fn kicked(
             return;
         }
         let text = format_csf(
-            &state.csf_text("TXT_USER_KICKED"),
+            &state.process_assets.csf_text("TXT_USER_KICKED"),
             &[
                 CsfArg::Str(&user.name),
                 CsfArg::Str(&channel.name),
@@ -749,14 +751,14 @@ pub(in crate::app::shell_wol) fn kicked(
     }
     if user.flags & MEMBER_LOCAL != 0 {
         let text = format_csf(
-            &state.csf_text("TXT_YOURE_KICKED"),
+            &state.process_assets.csf_text("TXT_YOURE_KICKED"),
             &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
         );
         let message = service::message_box(&state.process_assets, text, false);
         put_box(&mut state.frontend, message, BoxThen::Kicked);
     } else {
         let text = format_csf(
-            &state.csf_text("TXT_USER_KICKED"),
+            &state.process_assets.csf_text("TXT_USER_KICKED"),
             &[
                 CsfArg::Str(&user.name),
                 CsfArg::Str(&channel.name),

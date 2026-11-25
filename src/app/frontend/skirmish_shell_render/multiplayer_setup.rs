@@ -65,7 +65,10 @@ pub(crate) fn render_multiplayer_setup(
         &view,
     );
     let scale = layout.page.scale;
-    let (width, height) = (state.render_width(), state.render_height());
+    let (width, height) = (
+        state.renderer.render_width(&state.frontend.screen),
+        state.renderer.render_height(&state.frontend.screen),
+    );
     // The notice on its widgets before it paints.
     let notice_parts = (state.frontend.multiplayer_setup.as_ref())
         .and_then(|ui| ui.notice.as_ref())
@@ -116,7 +119,9 @@ pub(crate) fn render_multiplayer_setup(
         scale,
         !sliding,
     );
-    let heading = state.csf_label(view.page().title_key, view.page().title_key);
+    let heading = state
+        .process_assets
+        .csf_label(view.page().title_key, view.page().title_key);
     let accept_highlight = state
         .frontend
         .multiplayer_setup
@@ -248,7 +253,9 @@ pub(crate) fn render_multiplayer_setup(
     let mut controls = Vec::new();
     let mut texts = Vec::new();
     let mut overlay = ShellFrameOverlay {
-        smooth_art: state.smooth_online_menus(),
+        smooth_art: state
+            .persistence
+            .smooth_online_menus(state.frontend.native_shell_ui),
         ..Default::default()
     };
     let sized =
@@ -703,7 +710,7 @@ pub(crate) fn render_multiplayer_setup(
             let text_of = |id: i32| match u16::try_from(id).ok()? {
                 MAP_OFFER_BODY => Some(body.clone()),
                 MAP_OFFER_DOWNLOAD => Some(crate::i18n::tr(offer.button_key)),
-                MAP_OFFER_LEAVE => Some(state.csf_label("GUI:Leave", "Leave")),
+                MAP_OFFER_LEAVE => Some(state.process_assets.csf_label("GUI:Leave", "Leave")),
                 _ => None,
             };
             // Download greys while the map comes, but still takes a press.

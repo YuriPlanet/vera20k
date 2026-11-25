@@ -1236,7 +1236,7 @@ pub(crate) fn service_wait(state: &mut AppState, now_ms: u64) -> WaitPass {
                 }
             }
             let text = crate::assets::csf_file::format_csf(
-                &state.csf_text("TXT_TIME_ALLOWED"),
+                &state.process_assets.csf_text("TXT_TIME_ALLOWED"),
                 &[crate::assets::csf_file::CsfArg::Int(i64::from(seconds))],
             );
             if let Some(page) = state.match_state.network_wait.page_mut() {
