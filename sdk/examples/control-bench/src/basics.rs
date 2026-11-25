@@ -16,9 +16,10 @@
 //! From the 47th frame the properties past the first set: an enemy HTNK
 //! made and removed beside A within one frame (`NearbyEnemyCount`), a
 //! player MTNK that cloaks under a `Cloakable` modifier and uncloaks under
-//! `ForceDecloak` (`Cloaked`), and a player MTNK ordered to attack a far
-//! enemy HTNK, then a near one (`TargetInRange`, `CanFireAtTarget`); the
-//! enemy's war factory door is polled once it stands (`DoorOpen`).
+//! `ForceDecloak` (`Cloaked`), a player MTNK ordered to attack an enemy
+//! HTNK beside it, read in and (under a `WeaponRangeMultiplier` override)
+//! out of range (`TargetInRange`, `CanFireAtTarget`), and a war factory of
+//! the player's ordered to Unload, which opens its door (`DoorOpen`).
 //!
 //! Not marked (left out of `MARKS`):
 //! - `lookup`/`name_of(TeamType)`: TeamType IDs are the map's own team
@@ -184,11 +185,10 @@ static ENTRIES: AtomicI64 = AtomicI64::new(0);
 static CLOAKER: AtomicI64 = AtomicI64::new(NO_HANDLE);
 /// 1 once `CLOAKER` read cloaked and `ForceDecloak` was added.
 static CLOAK_SEEN: AtomicI64 = AtomicI64::new(0);
-/// Player MTNK for the target reads, its far and its near enemy.
+/// Player MTNK for the target reads and its enemy target.
 static SHOOTER: AtomicI64 = AtomicI64::new(NO_HANDLE);
-static FAR_FOE: AtomicI64 = AtomicI64::new(NO_HANDLE);
-static NEAR_FOE: AtomicI64 = AtomicI64::new(NO_HANDLE);
-/// The enemy's war factory, and 1 once its door read shut.
+static FOE: AtomicI64 = AtomicI64::new(NO_HANDLE);
+/// The player's own war factory, and 1 once its door read shut.
 static WAR_FACTORY: AtomicI64 = AtomicI64::new(NO_HANDLE);
 static DOOR_SHUT: AtomicI64 = AtomicI64::new(0);
 
@@ -398,8 +398,8 @@ pub fn frame(now: i32) {
     if (51..=900).contains(&step) && !marked("basics.cloaked") {
         cloak_poll(step == 900);
     }
-    if (61..=600).contains(&step) && !marked("basics.can-fire") {
-        target_poll(step == 600);
+    if (61..=900).contains(&step) && !marked("basics.can-fire") {
+        target_poll(step, step == 900);
     }
     if step >= 35 && step % 100 == 35 && !marked("basics.buildable") {
         buildable_poll();
@@ -1742,23 +1742,21 @@ fn cloak_poll(last: bool) {
     }
 }
 
-/// A player MTNK ordered at an enemy HTNK far off (weapons off, so
-/// neither fights back).
+/// A player MTNK beside an enemy HTNK (weapons off, so it does not fight
+/// back), ordered to attack it.
 fn target_start() {
     let spot = offset(arena(BASICS), 3, 6);
-    let (Some(shooter), Some(far)) = (
-        spawn(spot, "MTNK", player()),
-        spawn(offset(spot, -16, 0), "HTNK", enemy()),
-    ) else {
-        return bench_fail(
-            "basics.target-in-range",
-            "the shooter or its target is missing",
-        );
+    let Some(shooter) = spawn(spot, "MTNK", player()) else {
+        return bench_fail("basics.target-in-range", "no shooter could be made");
     };
     SHOOTER.store(shooter.0, Relaxed);
-    FAR_FOE.store(far.0, Relaxed);
+    let at = get(shooter, Prop::Cell).map_or(spot, Cell);
+    let Some(foe) = spawn(offset(at, 2, 0), "HTNK", enemy()) else {
+        return bench_fail("basics.target-in-range", "no target could be made");
+    };
+    FOE.store(foe.0, Relaxed);
     let _ = Modifier::new(
-        far,
+        foe,
         Prop::DisableWeapons,
         ModifierOp::Override,
         1,
@@ -1768,98 +1766,90 @@ fn target_start() {
     );
     let idle =
         get(shooter, Prop::TargetInRange) == Ok(0) && get(shooter, Prop::CanFireAtTarget) == Ok(0);
-    if !idle || Action::set_mission_on(shooter, Mission::Attack, far).is_err() {
-        bench_fail("basics.target-in-range", "the shooter starts wrong");
+    if !idle {
+        bench_fail(
+            "basics.target-in-range",
+            "a shooter without a target reads one",
+        );
     }
+    let _ = Action::set_mission_on(shooter, Mission::Attack, foe);
 }
 
-/// Once the far enemy is the target both read 0, and a near enemy is made
-/// and ordered; once that one is the target it is in range, and the shooter
-/// can fire on it at some poll. Everything is removed when done or at the
-/// `last` poll.
-fn target_poll(last: bool) {
-    let (shooter, far, near) = (unit(&SHOOTER), unit(&FAR_FOE), unit(&NEAR_FOE));
-    if !alive(shooter) {
+/// Until the foe is the shooter's target (ordered again every 15 frames):
+/// then it reads in range, out of range while a `WeaponRangeMultiplier`
+/// override shrinks the weapon to nothing, and in range again once that is
+/// removed (all in one frame); the shooter can fire at some poll. Both are
+/// removed when done or at the `last` poll.
+fn target_poll(step: i64, last: bool) {
+    let (shooter, foe) = (unit(&SHOOTER), unit(&FOE));
+    if !alive(shooter) || !alive(foe) {
         return;
     }
-    let target = get(shooter, Prop::Target).unwrap_or(NO_HANDLE);
-    if near.is_none() && target == far.0 && target != NO_HANDLE {
-        let far_reads = get(shooter, Prop::TargetInRange) == Ok(0)
-            && get(shooter, Prop::CanFireAtTarget) == Ok(0);
-        if !far_reads {
-            bench_fail("basics.target-in-range", "the far target reads in range");
+    if get(shooter, Prop::Target) != Ok(foe.0) {
+        if step % 15 == 0 {
+            let _ = Action::set_mission_on(shooter, Mission::Attack, foe);
         }
-        let Ok(cell) = get(shooter, Prop::Cell) else {
-            return;
-        };
-        let Some(close) = spawn(offset(Cell(cell), 2, 0), "HTNK", enemy()) else {
-            return bench_fail("basics.target-in-range", "no near target could be made");
-        };
-        NEAR_FOE.store(close.0, Relaxed);
-        let _ = Modifier::new(
-            close,
-            Prop::DisableWeapons,
-            ModifierOp::Override,
-            1,
-            -1,
-            0,
-            99,
-        );
-        if far_reads {
-            let _ = Action::set_mission_on(shooter, Mission::Attack, close);
-        }
-        return;
-    }
-    if !near.is_none() && target == near.0 {
-        if get(shooter, Prop::TargetInRange) == Ok(1) {
-            mark("basics.target-in-range");
+    } else {
+        if !marked("basics.target-in-range") && get(shooter, Prop::TargetInRange) == Ok(1) {
+            let range = Prop::WeaponRangeMultiplier;
+            if let Ok(m) = Modifier::new(shooter, range, ModifierOp::Override, 1, -1, 0, 95) {
+                let out = get(shooter, Prop::TargetInRange) == Ok(0)
+                    && get(shooter, Prop::CanFireAtTarget) == Ok(0);
+                let removed = m.remove().is_ok();
+                check(
+                    "basics.target-in-range",
+                    out && removed && get(shooter, Prop::TargetInRange) == Ok(1),
+                    "TargetInRange does not follow the weapon's range",
+                );
+            }
         }
         if marked("basics.target-in-range") && get(shooter, Prop::CanFireAtTarget) == Ok(1) {
             mark("basics.can-fire");
         }
     }
     if last || marked("basics.can-fire") {
-        for foe in [shooter, far, near] {
-            if alive(foe) {
-                let _ = Action::remove(foe);
-            }
-        }
+        let _ = Action::remove(shooter);
+        let _ = Action::remove(foe);
     }
 }
 
-/// The enemy's war factory (looked up every 100 frames until it stands):
-/// its door read shut, then open while a vehicle leaves. A tank has no
-/// door.
+/// A war factory of the player's own, ordered to Unload once built up
+/// (again every 30 frames): Mission_Unload's factory arm opens its door
+/// whether or not a product waits. Its door reads shut first, then open; a
+/// tank has no door.
 fn door_poll(step: i64) {
     let mut factory = unit(&WAR_FACTORY);
-    if !alive(factory) {
-        if step % 100 != 0 {
-            return;
-        }
-        factory = Techno(NO_HANDLE);
+    if factory.is_none() {
+        let spot = offset(arena(BASICS), -6, 6);
         for name in ["GAWEAP", "NAWEAP", "YAWEAP"] {
-            let Ok(kind) = TypeRef::techno_type(name) else {
-                continue;
-            };
-            let found = Find::objects().owned_by(enemy()).of_type(kind).first();
-            if found != NO_HANDLE {
-                factory = Techno(found);
+            if let Some(made) = spawn(spot, name, player()) {
+                factory = made;
                 break;
             }
         }
-        WAR_FACTORY.store(factory.0, Relaxed);
-        DOOR_SHUT.store(0, Relaxed);
         if factory.is_none() {
-            return;
+            return bench_fail("basics.door-open", "no war factory could be made");
         }
+        WAR_FACTORY.store(factory.0, Relaxed);
+    }
+    if !alive(factory) {
+        return;
     }
     match get(factory, Prop::DoorOpen) {
-        Ok(0) => DOOR_SHUT.store(1, Relaxed),
-        Ok(1) if DOOR_SHUT.load(Relaxed) == 1 => check(
-            "basics.door-open",
-            get(unit(&UNIT_A), Prop::DoorOpen) == Err(Status::Unsupported),
-            "a tank reads a door",
-        ),
+        Ok(0) => {
+            DOOR_SHUT.store(1, Relaxed);
+            if step % 30 == 0 && get(factory, Prop::UnderConstruction) == Ok(0) {
+                let _ = factory.set_mission(Mission::Unload);
+            }
+        }
+        Ok(1) if DOOR_SHUT.load(Relaxed) == 1 => {
+            check(
+                "basics.door-open",
+                get(unit(&UNIT_A), Prop::DoorOpen) == Err(Status::Unsupported),
+                "a tank reads a door",
+            );
+            let _ = Action::remove(factory);
+        }
         Ok(_) => {}
         Err(_) => bench_fail("basics.door-open", "the war factory has no door"),
     }
