@@ -74,6 +74,14 @@ impl ModSwitch {
 /// Take `--mod <folder>` or `--no-mod` out of the process arguments, wherever
 /// it stands. The retail switch table matches by substring (`-CD`) and must
 /// never see a folder's name, and the other modes' parsers take exact lists.
+/// The entry a platform's launcher handed over: `mod:<folder>` picks that
+/// folder for this launch, anything else (including an empty string) picks
+/// nothing. Android shortcuts pass it as an intent extra (`docs/android.md`).
+pub fn launch_entry_switch(entry: &str) -> Option<ModSwitch> {
+    let folder = entry.strip_prefix("mod:")?.trim();
+    (!folder.is_empty()).then(|| ModSwitch::Use(folder.to_owned()))
+}
+
 pub fn take_switch(args: Vec<OsString>) -> Result<(Option<ModSwitch>, Vec<OsString>)> {
     let mut switch = None;
     let mut rest = Vec::with_capacity(args.len());
@@ -839,6 +847,19 @@ pub(crate) fn prepare_folder(mods_dir: &Path) {
 #[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_launcher_entry_picks_a_mod_folder_and_nothing_else() {
+        assert_eq!(
+            launch_entry_switch("mod:Winter War"),
+            Some(ModSwitch::Use("Winter War".into()))
+        );
+        assert_eq!(launch_entry_switch("mod:  spaced  "), Some(ModSwitch::Use("spaced".into())));
+        assert_eq!(launch_entry_switch("mod:"), None);
+        assert_eq!(launch_entry_switch(""), None);
+        assert_eq!(launch_entry_switch("profile:work"), None);
+        assert_eq!(launch_entry_switch("Winter War"), None);
+    }
 
     fn os(args: &[&str]) -> Vec<OsString> {
         args.iter().map(OsString::from).collect()

@@ -46,6 +46,9 @@ class VeraActivity : NativeActivity() {
         /** What the engine opens directly; a folder without these is not RA2. */
         val REQUIRED_ARCHIVES = listOf("ra2md.mix", "ra2.mix")
 
+        /** The intent extra a pinned shortcut carries (`docs/android.md`). */
+        const val EXTRA_ENTRY = "org.vera20k.ENTRY"
+
         /** The two launcher entries; exactly one is enabled at a time. */
         const val LAUNCHER_RETAIL = "org.vera20k.LauncherRetail"
         const val LAUNCHER_VERA = "org.vera20k.LauncherVera"
@@ -96,6 +99,20 @@ class VeraActivity : NativeActivity() {
 
     /** JNI: the top inset. */
     fun displayInsetTop(): Int = displayInsetTop
+
+    /**
+     * The entry a launcher shortcut asked for (`mod:<folder>`), read once.
+     *
+     * A shortcut starts this activity with [EXTRA_ENTRY]; the engine turns the
+     * value into a launch choice (`entry::run_with_loop_and_entry`) and keeps the
+     * player's `config.toml` untouched. The extra is removed so a later launch
+     * from the same task does not repeat it.
+     */
+    fun takeLaunchEntry(): String {
+        val entry = intent?.getStringExtra(EXTRA_ENTRY).orEmpty()
+        intent?.removeExtra(EXTRA_ENTRY)
+        return entry
+    }
 
     /**
      * Opens the system folder picker. Called from Rust on the UI thread

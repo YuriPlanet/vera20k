@@ -65,6 +65,26 @@ and add `-t x86_64` when you need it. Drop it for releases. On macOS/Linux, use
 for `CARGO_PROFILE_SHIPPING_STRIP`, and
 `./android/gradlew -p android :app:assembleDebug`.
 
+## Launching a mod from a shortcut
+
+A launcher shortcut can start the game on one mod, without changing the
+player's own choice. The activity reads the `org.vera20k.ENTRY` intent extra
+once (`VeraActivity.takeLaunchEntry`) and removes it; the engine parses
+`mod:<folder>` into the same choice `--mod <folder>` gives a desktop launch
+(`app::mods::launch_entry_switch`), so that folder's files load for this launch
+only and `config.toml` keeps the player's `[paths] mod`.
+
+```powershell
+adb shell am start -n org.vera20k/org.vera20k.VeraActivity `
+  --es org.vera20k.ENTRY "mod:Winter War"
+```
+
+The folder is a directory under `Mods/` with its `mod.ini`, as on desktop. An
+empty extra, an unknown prefix or a missing folder picks nothing, which is what
+a launch from the plain icon does. Pinning the shortcut from inside the game is
+separate work: the activity side is the platform's `ShortcutManager`, and the
+entry above is what its intent carries.
+
 ## Launcher icon
 
 The desktop picks its window icon at run time (`src/app/window_icon.rs`): the

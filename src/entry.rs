@@ -164,6 +164,18 @@ pub fn run_with_loop(
     run_with(launch_mode, app_bundle, event_loop, None)
 }
 
+/// [`run_with_loop`] for a launcher that hands over an entry, such as an
+/// Android shortcut's `mod:<folder>` (`app::mods::launch_entry_switch`).
+pub fn run_with_loop_and_entry(
+    launch_mode: AppLaunchMode,
+    app_bundle: bool,
+    event_loop: EventLoop<()>,
+    entry: Option<&str>,
+) -> Result<i32> {
+    let mod_switch = entry.and_then(crate::app::mods::launch_entry_switch);
+    run_with(launch_mode, app_bundle, event_loop, mod_switch)
+}
+
 fn run_with(
     launch_mode: AppLaunchMode,
     app_bundle: bool,

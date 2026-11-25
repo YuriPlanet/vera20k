@@ -59,6 +59,22 @@ fn display_insets() -> vera20k::util::display_insets::Insets {
         }
     })
     .unwrap_or_default()
+
+/// The entry a launcher shortcut handed over (`VeraActivity.takeLaunchEntry`),
+/// read once: `mod:<folder>` picks that mod for this launch.
+fn launch_entry() -> Option<String> {
+    with_activity(|env, activity| {
+        let value = env
+            .call_method(activity, "takeLaunchEntry", "()Ljava/lang/String;", &[])
+            .ok()?
+            .l()
+            .ok()?;
+        env.get_string(&JString::from(value))
+            .ok()
+            .map(|text| text.to_string_lossy().into_owned())
+    })
+    .flatten()
+    .filter(|entry| !entry.is_empty())
 }
 
 /// Folder-picker hook for `vera20k::util::folder_picker`.
@@ -450,7 +466,14 @@ fn android_main(app: AndroidApp) {
         vera20k::app::frontend::startup_options::RetailStartupOptions::default(),
     );
 
-    match vera20k::entry::run_with_loop(launch_mode, false, event_loop) {
+    // A pinned shortcut can name the mod this launch plays; `config.toml` keeps
+    // the player's own choice untouched.
+    let entry = launch_entry();
+    if let Some(entry) = entry.as_deref() {
+        log::info!("Launch entry: {entry}");
+    }
+    match vera20k::entry::run_with_loop_and_entry(launch_mode, false, event_loop, entry.as_deref())
+    {
         Ok(0) => {}
         // Android has no `-SPAWN` status to propagate; a non-zero one still
         // belongs in the log before the activity finishes.
