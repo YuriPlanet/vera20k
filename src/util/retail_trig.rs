@@ -287,12 +287,12 @@ fn table_value(entry: f32) -> X87Value {
         .unwrap_or_else(|_| X87Chop53::load_i32(0))
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_util, tests_map)))]
 pub(crate) mod executable;
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod executable_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

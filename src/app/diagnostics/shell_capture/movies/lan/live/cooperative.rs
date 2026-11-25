@@ -17,7 +17,7 @@
 //! starts it as a first start, and it runs over the relay.
 
 use super::*;
-use crate::app::diagnostics::shell_capture::movies::abort_return::AbortReturnInput;
+use crate::app::diagnostics::shell_capture::movies::abort_return::{AbortGoal, AbortReturnInput};
 use crate::app::match_runtime::sim_host::SimWrite;
 
 /// Both players open the menu at this committed frame, so each B6 still
@@ -146,8 +146,7 @@ impl CooperativeRun {
             {
                 let labels = click_cooperative_mode(state)?;
                 if self.saved {
-                    let label =
-                        crate::app::App::csf_label(state, "TXT_COOP_USE_SAVE", "TXT_COOP_USE_SAVE");
+                    let label = state.csf_label("TXT_COOP_USE_SAVE", "TXT_COOP_USE_SAVE");
                     let row = labels
                         .iter()
                         .position(|row| *row == label)
@@ -226,8 +225,7 @@ impl CooperativeRun {
             && next.is_some()
             && next != self.first_map
         {
-            let notice =
-                App::csf_label(state, "TXT_SAVE_CAMP_AVAILABLE", "TXT_SAVE_CAMP_AVAILABLE");
+            let notice = state.csf_label("TXT_SAVE_CAMP_AVAILABLE", "TXT_SAVE_CAMP_AVAILABLE");
             let shown = state
                 .frontend
                 .multiplayer_setup
@@ -289,8 +287,12 @@ impl CooperativeRun {
                     self.phase = CoopPhase::AwaitResult;
                     return Ok(());
                 }
-                self.abort = Some(AbortReturnInput::begin_network_observe(
-                    state, route, frame,
+                self.abort = Some(AbortReturnInput::begin(
+                    state,
+                    route,
+                    frame,
+                    AbortGoal::Choose(Some(crate::ui::shell::abort::AbortButton::Secondary)),
+                    false,
                 )?);
                 self.phase = CoopPhase::Observing;
             }
@@ -306,7 +308,7 @@ impl CooperativeRun {
                 }
             }
             CoopPhase::AwaitResult => {
-                if !crate::app::input::coop_score::active(state) {
+                if !crate::app::input::coop_score::active(&state.frontend) {
                     return Ok(());
                 }
                 let opened = *self.result_frame.get_or_insert(frame);
@@ -426,7 +428,7 @@ impl CooperativeRun {
                     "BC6 Quit opened another campaign score dialog"
                 );
                 if !MoviesCapture::slide_settled(state, ShellSlideKind::CampaignEnd)
-                    || !page.reveals_terminal()
+                    || !page.statics.is_terminal()
                 {
                     return Ok(());
                 }
@@ -436,8 +438,8 @@ impl CooperativeRun {
                     "0xBC7 opened while BC6 or the match was still open"
                 );
                 self.campaign_end = Some(json!({"render_frame":frame,
-                    "campaign":page.static_text(CAMPAIGN_END_NAME),
-                    "statics":page.statics().iter().map(|text| json!({"id":format!("{:#x}",text.id),"text":text.text(),"rgb":text.rgb})).collect::<Vec<_>>(),
+                    "campaign":page.statics.text(CAMPAIGN_END_NAME),
+                    "statics":page.statics.0.iter().map(|text| json!({"id":format!("{:#x}",text.id),"text":text.text(),"rgb":text.rgb})).collect::<Vec<_>>(),
                     "cells":page.cells().iter().map(|cell| json!({"id":format!("{:#x}",cell.id),"text":cell.text,"rgb":cell.rgb})).collect::<Vec<_>>()}));
                 if self.ending
                     != (CoopEnding::CampaignEnd {
@@ -450,18 +452,20 @@ impl CooperativeRun {
                 }
                 let page_layout = {
                     let (width, height) =
-                        crate::app::frontend::shell_layout::shell_screen_size(state);
-                    let fills = crate::app::frontend::shell_layout::fills_window(state);
+                        crate::app::frontend::shell_layout::shell_screen_size(&state.renderer.gpu);
+                    let fills =
+                        crate::app::frontend::shell_layout::fills_window(&state.renderer.gpu);
                     page.layout(width, height, fills)
                 };
-                set_window_pointer_to_rect_center(state, page_layout.continue_button);
-                App::handle_campaign_score_mouse_move(state);
-                App::handle_campaign_score_mouse_down(state);
-                App::handle_campaign_score_mouse_up(state);
+                let continue_button = page_layout.control_rect(page.dialog.continue_button());
+                set_window_pointer_to_rect_center(state, continue_button.unwrap_or_default());
+                App::handle_campaign_score_mouse(state, None);
+                App::handle_campaign_score_mouse(state, Some(true));
+                App::handle_campaign_score_mouse(state, Some(false));
                 MoviesCapture::restore_neutral_pointer(state);
                 ensure!(
                     crate::app::frontend::shell_transition::shell_exit_wave(
-                        state,
+                        &state.frontend.shell_exit,
                         ShellSlideKind::CampaignEnd,
                     )
                     .is_some(),

@@ -487,11 +487,12 @@ fn cinematic_focus_matches_native_frame_gates_projection_cleanup_and_restored_st
                         Some(&saved_view),
                         None,
                         None,
-                    );
+                    )
+                    .unwrap();
                     let snapshot = GameSnapshot::load(&bytes).unwrap();
                     let restored = snapshot.tactical_view().unwrap();
                     super::validate_saved_tactical_view(restored).unwrap();
-                    assert_eq!(snapshot.sim.session().binary_frame(), frame);
+                    assert_eq!(snapshot.session().binary_frame(), frame);
                     if let Some(rect) = step.get("local_size") {
                         let mut geometry = sequence.clone();
                         geometry.local_size = serde_json::from_value(rect.clone()).unwrap();

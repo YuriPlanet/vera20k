@@ -284,7 +284,7 @@ fn flat_sim() -> Simulation {
         off_104: 80,
         off_108: 41,
     }));
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
         WIDTH,
         HEIGHT,
         flat_terrain_cell,
@@ -351,7 +351,7 @@ fn v3_launcher_gets_a_missile_pool_on_spawn() {
         "a docked spawn child sits in limbo until launch"
     );
     assert_eq!(
-        child.spawn_owner_id.owner(),
+        child.seldom.spawn_owner_id.owner(),
         Some(v3),
         "back-pointer to the parent"
     );
@@ -404,8 +404,7 @@ fn hornet_launcher_maximum_matches_native_distance_ties() {
             &mut sim,
             &rules,
             carrier,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let manager = sim
@@ -464,8 +463,7 @@ fn gsi_05_08_idle_legality_uses_effective_3d_distance() {
         &mut sim,
         &rules,
         carrier,
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     let manager = sim
@@ -508,8 +506,7 @@ fn gsi_05_08_v3_minimum_accepts_1280_and_clears_1279() {
             &mut sim,
             &rules,
             v3,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let manager = sim
@@ -558,8 +555,7 @@ fn update_timer_gates_the_whole_ai_pass() {
         &mut sim,
         &rules,
         v3,
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let manager = sim
         .substrate
@@ -611,8 +607,7 @@ fn v3_launches_its_rocket_into_the_kamikaze_window() {
         &mut sim,
         &rules,
         v3,
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -636,8 +631,7 @@ fn v3_launches_its_rocket_into_the_kamikaze_window() {
         &mut sim,
         &rules,
         v3,
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     let child = sim.substrate.entities.get(child_id).expect("child alive");
@@ -724,7 +718,10 @@ fn a_launch_asks_the_missiles_aircraft_entry_query() {
         }
         sim.fog.by_owner_mut_for_test().insert(owner, view);
         let child = sim.substrate.entities.get_mut(child_id).unwrap();
-        child.discovery.set_owned_by_current_house_for_test(true);
+        child
+            .seldom
+            .discovery
+            .set_owned_by_current_house_for_test(true);
         assert!(!child.is_mission_only());
         let before = position_world_coord(&child.position);
         if let Some(manager) = sim
@@ -750,8 +747,7 @@ fn a_launch_asks_the_missiles_aircraft_entry_query() {
                 &mut sim,
                 &rules,
                 v3,
-                None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
         let child = sim.substrate.entities.get(child_id).expect("child alive");
@@ -830,8 +826,7 @@ fn a_missile_that_lost_its_target_retreats_for_good() {
             &mut sim,
             &rules,
             v3,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     let entity = sim.substrate.entities.get_mut(missile).unwrap();
@@ -863,7 +858,7 @@ fn a_missile_that_lost_its_target_retreats_for_good() {
     let (rx, ry) = pick().expect("the playfield has an edge");
 
     let strike =
-        crate::sim::aircraft::dispatch_mission(&mut sim, missile, &rules, Default::default());
+        crate::sim::aircraft::dispatch_mission(&mut sim, missile, &rules, &mut Default::default());
     assert!(strike.is_none());
     let entity = sim.substrate.entities.get(missile).unwrap();
     assert_eq!(
@@ -879,9 +874,9 @@ fn a_missile_that_lost_its_target_retreats_for_good() {
     );
     assert_eq!(entity.mission.dispatch_timer().delay(), 1);
 
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame() + 1);
-    crate::sim::aircraft::dispatch_mission(&mut sim, missile, &rules, Default::default());
+    let session = &mut *sim.session;
+    session.set_binary_frame_for_test(session.binary_frame() + 1);
+    crate::sim::aircraft::dispatch_mission(&mut sim, missile, &rules, &mut Default::default());
     let entity = sim.substrate.entities.get(missile).unwrap();
     assert_eq!(
         entity.navigation.nav_com(),
@@ -940,8 +935,7 @@ fn missile_held_after(setup: impl FnOnce(&mut crate::sim::game_entity::GameEntit
         &mut sim,
         &rules,
         v3,
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     let frame = sim.session.binary_frame();
@@ -958,8 +952,7 @@ fn missile_held_after(setup: impl FnOnce(&mut crate::sim::game_entity::GameEntit
         &mut sim,
         &rules,
         v3,
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     sim.substrate
         .entities
@@ -1068,8 +1061,7 @@ fn missile_impact_kills_through_the_shared_death_pipeline() {
     sim.process_rocket(
         child_id,
         &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert!(
@@ -1145,7 +1137,6 @@ fn a_v3s_fire_reaches_its_manager_at_the_next_pass() {
 /// docked missile and regenerates the slot at once; the next pass builds a
 /// new missile whose SpawnOwner is the V3. Ares skips that forward
 /// (1004A910, hook 0x707B19): `ares_own_detach_all_keeps_the_docked_missile`.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn a_live_spawners_own_expiry_rebuilds_its_docked_missile() {
     let rules = make_spawner_rules();
@@ -1162,7 +1153,7 @@ fn a_live_spawners_own_expiry_rebuilds_its_docked_missile() {
     };
     let docked = manager(&sim).slots[0].spawn.expect("a docked missile");
 
-    sim.detach_all_pointer_expired(v3, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.detach_all_pointer_expired(v3, &rules, &mut crate::sim::world::FrameEffects::default());
     assert!(
         sim.substrate
             .entities
@@ -1190,8 +1181,7 @@ fn a_live_spawners_own_expiry_rebuilds_its_docked_missile() {
         &mut sim,
         &rules,
         v3,
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let rebuilt = manager(&sim).slots[0].spawn.expect("the slot is rebuilt");
     assert_ne!(rebuilt, docked);
@@ -1200,6 +1190,7 @@ fn a_live_spawners_own_expiry_rebuilds_its_docked_missile() {
             .entities
             .get(rebuilt)
             .unwrap()
+            .seldom
             .spawn_owner_id
             .owner(),
         Some(v3)
@@ -1247,7 +1238,7 @@ fn a_killing_hit_destroys_docked_children_at_the_destroy() {
         &rules,
         None,
         &[hit],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     let events = sim.lifecycle_test_events_for_test();
@@ -1357,8 +1348,7 @@ fn launcher_death_destroys_a_missile_already_in_flight() {
             &mut sim,
             &rules,
             v3,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     assert_eq!(
@@ -1430,8 +1420,7 @@ fn a_missile_shot_down_in_flight_explodes_where_it_is() {
             &mut sim,
             &rules,
             v3,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     // The tilt holds the missile still; its climb is the first moving turn.
@@ -1568,8 +1557,7 @@ fn missile_flight_speed_uses_the_ra2_conversion() {
             &mut sim,
             &rules,
             v3,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
 
@@ -1584,13 +1572,12 @@ fn missile_flight_speed_uses_the_ra2_conversion() {
     };
     let mut fastest: f64 = 0.0;
     for _ in 0..240 {
-        sim.session
-            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+        let session = &mut *sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         sim.process_rocket(
             child_id,
             &rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         fastest = fastest.max(speed(&sim));
     }
@@ -1659,8 +1646,7 @@ fn reload_due_restores_actual_and_estimated_health_from_child_type() {
             &mut sim,
             &rules,
             carrier,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let aircraft = sim.substrate.entities.get(child).unwrap();
@@ -1707,8 +1693,7 @@ fn hornets_hold_over_the_carrier_until_the_whole_wing_is_up() {
             &mut sim,
             &rules,
             carrier,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
 
@@ -1781,8 +1766,7 @@ fn a_dead_carriers_airborne_hornet_crashes() {
             &mut sim,
             &rules,
             carrier,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     let (slot, hornet) = sim
@@ -1810,7 +1794,7 @@ fn a_dead_carriers_airborne_hornet_crashes() {
         .expect("a crashing Hornet stays represented until its impact");
     assert!(hornet.crash.is_crashing() && hornet.lifecycle.object_alive());
     assert_eq!(hornet.health.current(), 0);
-    assert_eq!(hornet.spawn_owner_id.owner(), None);
+    assert_eq!(hornet.seldom.spawn_owner_id.owner(), None);
     assert!(
         hornet
             .rocking
@@ -1879,8 +1863,7 @@ fn a_dead_carriers_hornets_crash_from_the_last_slot() {
             &mut sim,
             &rules,
             carrier,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     let wing = airborne(&sim);
@@ -1957,8 +1940,7 @@ fn a_hornet_docks_by_its_z_above_the_carrier() {
                 sim,
                 &rules,
                 carrier,
-                None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         };
         for _ in 0..2 {
@@ -2060,8 +2042,7 @@ fn a_landing_hornet_keeps_its_slot_and_reloads() {
             sim,
             &rules,
             carrier,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     };
 
@@ -2191,8 +2172,7 @@ fn target_death_clears_the_wing_target() {
         &mut sim,
         &rules,
         carrier,
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -2318,8 +2298,7 @@ fn stop_cancels_a_v3s_queued_launch() {
             &mut sim,
             &rules,
             v3,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     assert_eq!(manager(&sim).slots[0].state, SpawnSlotState::ReadyDocked);
@@ -2354,8 +2333,7 @@ fn a_null_target_drops_the_managers_queued_retarget() {
         dred,
         None,
         &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .expect("the DRED takes the setter");
     let manager = sim
@@ -2394,8 +2372,7 @@ fn stop_recalls_a_carriers_attacking_wing() {
             sim,
             &rules,
             carrier,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     };
     let states = |sim: &Simulation| {
@@ -2481,8 +2458,7 @@ fn a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue() {
             sim,
             &rules,
             carrier,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     };
     for _ in 0..2 {
@@ -2517,6 +2493,7 @@ fn a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue() {
         .attack_target
         .set_for_test(Some(crate::sim::combat::TargetKind::Entity(target)));
     child
+        .seldom
         .rearm_timer
         .set_for_test(crate::sim::timer::CdTimer::started(frame, 7));
     child.mission.set_current_for_test(
@@ -2537,7 +2514,7 @@ fn a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue() {
         "the same target is not re-assigned"
     );
     assert_eq!(
-        child.rearm_timer.timer(),
+        child.seldom.rearm_timer.timer(),
         crate::sim::timer::CdTimer::started(frame, 7)
     );
 
@@ -2836,7 +2813,7 @@ fn retail_launches(
             0x20,
             4,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("construct owner");
     assert!(
@@ -2848,13 +2825,13 @@ fn retail_launches(
             4,
             crate::sim::world::PlacementEvidence::MarkSucceeded,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .is_some()
     );
     let entity = sim.substrate.entities.get_mut(owner).unwrap();
-    entity.weapon_burst.complete_shot(2);
-    assert_eq!(entity.weapon_burst.index(), 1);
+    entity.seldom.weapon_burst.complete_shot(2);
+    assert_eq!(entity.seldom.weapon_burst.index(), 1);
     let manager = entity.spawn_manager.as_mut().expect("missile pool");
     manager.current_target = Some(TargetKind::Cell(20, 10));
     manager.mode = SpawnManagerMode::Launching;
@@ -2874,8 +2851,7 @@ fn retail_launches(
             &mut sim,
             rules,
             owner,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let frame = sim.session.binary_frame();
         let owner_entity = sim.substrate.entities.get(owner).unwrap();
@@ -2896,7 +2872,7 @@ fn retail_launches(
                 owner: position_world_coord(&owner_entity.position),
                 owner_facing: owner_entity.body_facing.current(frame),
                 owner_dir: owner_entity.body_facing_dir(frame),
-                owner_burst: owner_entity.weapon_burst.index(),
+                owner_burst: owner_entity.seldom.weapon_burst.index(),
             },
         ));
     }
@@ -3022,7 +2998,7 @@ fn ares_own_detach_all_keeps_the_docked_missile() {
             .spawn
     };
     let missile = docked(&sim).expect("a docked missile");
-    sim.detach_all_pointer_expired(v3, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.detach_all_pointer_expired(v3, &rules, &mut crate::sim::world::FrameEffects::default());
     assert_eq!(docked(&sim), Some(missile));
     assert!(
         sim.substrate

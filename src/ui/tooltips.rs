@@ -226,6 +226,14 @@ impl TooltipService {
                 && rect.contains_inclusive(self.mouse_x, self.mouse_y))
     }
 
+    /// A live provider can prepare its answer before a pending delay elapses.
+    pub fn may_read_text(&self, id: u32, rect: TipRect) -> bool {
+        self.active.as_ref().is_some_and(|tip| tip.id == id)
+            || (self.enabled
+                && self.timer_deadline_ms.is_some()
+                && rect.contains_inclusive(self.mouse_x, self.mouse_y))
+    }
+
     /// Whether [`Self::on_mouse_move`] shows the tip of the region it moves
     /// into at once: a zero delay takes 724200's immediate path, which hit
     /// tests the cursor and resolves the text at that move.
@@ -249,7 +257,7 @@ impl TooltipService {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 
@@ -403,18 +411,18 @@ mod tests {
     }
 
     #[test]
-    fn inclusive_both_edges_vs_gadget_half_open() {
+    fn inclusive_both_edges_vs_control_half_open() {
         // Region {x:10, y:10, w:5, h:5}: the (15,15) corner pixel HITS the
-        // tip rect (inclusive) but MISSES a gadget rect of the same numbers
+        // tip rect (inclusive) but MISSES a control rect of the same numbers
         // (half-open) — the deliberate 1-px observable difference (study S1).
         let mut s = service_with(&[region(1, 10, 10, 5, 5, "tip")]);
         s.on_mouse_move(15, 15, 0);
         s.poll(1000);
         assert!(s.active().is_some(), "inclusive edge hits");
-        let gadget_rect = crate::ui::gadget::GadgetRect::new(10, 10, 5, 5);
+        let control_rect = crate::ui::shell::geom::RectPx::new(10, 10, 5, 5);
         assert!(
-            !gadget_rect.contains(15, 15),
-            "same point misses the gadget rect"
+            !control_rect.contains(15, 15),
+            "same point misses the control rect"
         );
         // One past the inclusive edge misses.
         let mut s2 = service_with(&[region(1, 10, 10, 5, 5, "tip")]);

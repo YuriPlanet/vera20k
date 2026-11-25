@@ -40,7 +40,7 @@ fn order_walk(sim: &mut Simulation, rules: &RuleSet, id: u64, target: (u16, u16)
             crate::sim::components::NavTargetRef::cell(target.0, target.1),
             rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap()
     );
@@ -133,7 +133,7 @@ fn far_failure_stops_walk_clears_target_and_queues_guard_for_a_human_house() {
 
 #[test]
 fn obstructed_target_beyond_close_enough_redirects_only_when_the_nearby_cell_is_closer() {
-    let (mut sim, rules, registry) = fixture();
+    let (mut sim, rules, _registry) = fixture();
     human_house(&mut sim);
     let id = engineer_at(&mut sim, &rules, (10, 10));
     // A code-6 target is occupied (0x51C61F: an infantryman disguised to the
@@ -154,8 +154,7 @@ fn obstructed_target_beyond_close_enough_redirects_only_when_the_nearby_cell_is_
             DriveCoord::cell(13, 10, 0),
             6,
             &rules,
-            Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert_eq!((goal.x / 256, goal.y / 256), (12, 10));
@@ -174,8 +173,7 @@ fn obstructed_target_beyond_close_enough_redirects_only_when_the_nearby_cell_is_
             DriveCoord::cell(12, 10, 0),
             6,
             &rules,
-            Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert_eq!((goal.x / 256, goal.y / 256), (12, 10));
@@ -191,7 +189,7 @@ fn near_failure_returns_before_the_null_setter_and_guard_queue() {
         id,
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     // 0x4D40A6..0x4D40D4: Chebyshev 1 to a non-structural target returns.
@@ -200,7 +198,7 @@ fn near_failure_returns_before_the_null_setter_and_guard_queue() {
         DriveCoord::cell(11, 10, 0),
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     let e = sim.substrate.entities.get(id).unwrap();
@@ -240,7 +238,7 @@ fn receiver_records_an_impassable_current_cell() {
         id,
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     let e = sim.substrate.entities.get(id).unwrap();
@@ -288,6 +286,7 @@ fn jumpjet_infantry_damage_scatter_takes_the_infantry_setter() {
         None,
         &rules,
         Some(&registry),
+        &mut Vec::new(),
     );
     let e = sim.substrate.entities.get(victim).unwrap();
     assert!(e.health.current() < 125);
@@ -353,6 +352,7 @@ fn infantry_damage_scatter_reaches_the_ordinary_walk_process() {
         None,
         &rules,
         Some(&registry),
+        &mut Vec::new(),
     );
     let e = sim.substrate.entities.get(victim).unwrap();
     assert_eq!(e.health.current(), 65);

@@ -93,10 +93,11 @@ fn a_queued_post_sends_an_idle_guard_there_at_once() {
                 .entities
                 .get_mut(e1)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .insert(factory);
         }
-        sim.queue_navigation_list(e1, A, &rules, None, FrameEffects::default());
+        sim.queue_navigation_list(e1, A, &rules, None, &mut FrameEffects::default());
         if case == "guard" {
             assert_eq!(nav_com(&sim, e1), Some(A), "{case}");
             assert_eq!(list(&sim, e1), (vec![], false), "{case}");
@@ -119,11 +120,11 @@ fn queueing_itself_makes_the_list_loop() {
         .spawn_object("E1", "Americans", 10, 10, 0, &rules)
         .unwrap();
     set_mission(&mut sim, e1, MissionType::Move);
-    sim.queue_navigation_list(e1, A, &rules, None, FrameEffects::default());
+    sim.queue_navigation_list(e1, A, &rules, None, &mut FrameEffects::default());
     let itself = NavTargetRef::object(e1);
-    sim.queue_navigation_list(e1, itself, &rules, None, FrameEffects::default());
+    sim.queue_navigation_list(e1, itself, &rules, None, &mut FrameEffects::default());
     assert_eq!(list(&sim, e1), (vec![A], true));
-    sim.queue_navigation_list(e1, B, &rules, None, FrameEffects::default());
+    sim.queue_navigation_list(e1, B, &rules, None, &mut FrameEffects::default());
     assert_eq!(list(&sim, e1), (vec![A, B], true));
     sim.substrate
         .entities
@@ -131,7 +132,7 @@ fn queueing_itself_makes_the_list_loop() {
         .unwrap()
         .navigation
         .set_nav_list_for_test(vec![], true);
-    sim.queue_navigation_list(e1, B, &rules, None, FrameEffects::default());
+    sim.queue_navigation_list(e1, B, &rules, None, &mut FrameEffects::default());
     assert_eq!(list(&sim, e1), (vec![B], false));
     sim.substrate
         .entities
@@ -139,7 +140,7 @@ fn queueing_itself_makes_the_list_loop() {
         .unwrap()
         .navigation
         .set_nav_list_for_test(vec![], true);
-    sim.queue_navigation_list(e1, itself, &rules, None, FrameEffects::default());
+    sim.queue_navigation_list(e1, itself, &rules, None, &mut FrameEffects::default());
     assert_eq!(list(&sim, e1), (vec![itself], false));
 }
 
@@ -171,9 +172,9 @@ fn enter_idle_sends_the_list_head(type_name: &str, case: &str) {
             .set_for_test(Some(TargetKind::from(ELSEWHERE)));
     }
     if type_name == "MTNK" {
-        sim.unit_enter_idle_mode(id, &rules, false, FrameEffects::default());
+        sim.unit_enter_idle_mode(id, &rules, false, &mut FrameEffects::default());
     } else {
-        sim.infantry_enter_idle_mode(id, &rules, None, FrameEffects::default());
+        sim.infantry_enter_idle_mode(id, &rules, None, &mut FrameEffects::default());
     }
     let context = format!("{type_name} {case}");
     match case {
@@ -227,7 +228,7 @@ fn a_computer_area_guard_takes_its_archived_list_head() {
             &mut sim,
             id,
             &rules,
-            crate::sim::world::ObjectAiCtx::default(),
+            &mut crate::sim::world::ObjectAiCtx::default(),
         )
         .unwrap();
         let context = format!("human {human}, archive {archive:?}");
@@ -348,13 +349,14 @@ fn a_war_factory_null_destination_empties_the_list() {
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .insert(factory);
         }
         let tank = sim.substrate.entities.get_mut(id).unwrap();
         tank.navigation.set_nav_com_for_test(Some(ELSEWHERE));
         tank.navigation.set_nav_list_for_test(vec![A, B], true);
-        sim.set_unit_null_destination(id, &rules, None, FrameEffects::default());
+        sim.set_unit_null_destination(id, &rules, None, &mut FrameEffects::default());
         if factory_contact {
             assert_eq!(nav_com(&sim, id), Some(ELSEWHERE));
             assert_eq!(list(&sim, id), (vec![], true));
@@ -392,7 +394,7 @@ fn an_order_during_a_war_factory_exit_waits_on_the_list() {
         unit.navigation.set_nav_com_for_test(Some(ELSEWHERE));
         unit.navigation.set_nav_list_for_test(vec![B], false);
         if case != "no_contact" {
-            unit.radio_contacts.insert(factory);
+            unit.seldom.radio_contacts.insert(factory);
         }
         if case == "magnetron" {
             unit.lift.set_source_for_test(Some(factory + 1));
@@ -403,14 +405,8 @@ fn an_order_during_a_war_factory_exit_waits_on_the_list() {
             A
         };
         crate::sim::radio::take_transmit_log();
-        sim.assign_destination_represented(
-            tank,
-            Some(order),
-            &rules,
-            None,
-            FrameEffects::default(),
-        )
-        .unwrap();
+        sim.assign_destination_represented(tank, Some(order), &rules, &mut FrameEffects::default())
+            .unwrap();
         let over_out = crate::sim::radio::take_transmit_log()
             .iter()
             .any(|send| send.sender_sid == tank && send.target_sid == factory && send.msg == 3);
@@ -448,7 +444,7 @@ fn an_order_before_the_factory_door_opens_goes_at_once_or_is_dropped() {
             .unwrap();
         set_mission(&mut sim, tank, MissionType::Guard);
         let unit = sim.substrate.entities.get_mut(tank).unwrap();
-        unit.radio_contacts.insert(factory);
+        unit.seldom.radio_contacts.insert(factory);
         if !at_centre {
             unit.position
                 .put_location(crate::sim::components::DriveCoord {
@@ -457,18 +453,19 @@ fn an_order_before_the_factory_door_opens_goes_at_once_or_is_dropped() {
                     z: 0,
                 });
         }
-        sim.assign_destination_represented(tank, Some(A), &rules, None, FrameEffects::default())
+        sim.assign_destination_represented(tank, Some(A), &rules, &mut FrameEffects::default())
             .unwrap();
         assert_eq!(list(&sim, tank), (vec![A], false), "listed");
         assert_eq!(nav_com(&sim, tank), None, "listed");
         set_mission(&mut sim, tank, MissionType::Move);
-        sim.unit_enter_idle_mode(tank, &rules, false, FrameEffects::default());
+        sim.unit_enter_idle_mode(tank, &rules, false, &mut FrameEffects::default());
         assert_eq!(list(&sim, tank), (vec![], false), "at centre {at_centre}");
         let linked = sim
             .substrate
             .entities
             .get(tank)
             .unwrap()
+            .seldom
             .radio_contacts
             .contains(factory);
         if at_centre {
@@ -489,6 +486,6 @@ fn pointer_expiry_prunes_the_list() {
     let Some((mut sim, rules, id, victim)) = listing_tank() else {
         return;
     };
-    sim.detach_all_pointer_expired(victim, &rules, None, FrameEffects::default());
+    sim.detach_all_pointer_expired(victim, &rules, &mut FrameEffects::default());
     assert_eq!(list(&sim, id), (vec![A], true));
 }

@@ -1,4 +1,4 @@
-//! VERA's Extras view of the Generate Map dialog (offline Skirmish only);
+//! VERA's Extras view of the Generate Map dialog;
 //! gamemd's `0x105` has no counterpart.
 //!
 //! The Advanced toggle steps Basic, Advanced, Extras. The Extras view takes
@@ -259,7 +259,7 @@ impl RandomMapSetupModalState {
     /// as if the player had set each slider, so the sliders show them and a
     /// later Generate keeps them.
     pub fn adopt_share_code(&mut self, code: &str) -> Option<ShareVersion> {
-        let (options, made_by) = self.options.from_share_code(code)?;
+        let (options, made_by) = self.options.from_share_code(code, self.ares)?;
         self.options = options;
         self.pin_advanced_values();
         self.note_option_edit();

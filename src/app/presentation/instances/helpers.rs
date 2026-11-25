@@ -8,6 +8,7 @@
 
 use crate::app::AppState;
 use crate::app::presentation::frame::ObjectRecord;
+use crate::app::presentation::state::MatchPresentationState;
 use crate::map::entities::EntityCategory;
 use crate::map::terrain;
 use crate::render::batch::DepthAxis;
@@ -18,19 +19,26 @@ use crate::sim::vision::FogState;
 
 /// Tactical6D8F19..6D95A9 visits the five retained Display vectors forward.
 /// Store-only and Logic-only entities cannot become render/pick candidates.
-pub(crate) fn tactical_entity_encounter_order(sim: &crate::sim::world::Simulation) -> Vec<u64> {
-    display_objects(sim, |id| sim.entities().contains(id))
+/// Ground is in draw order (`Simulation::display_draw_order`) under `rules`.
+pub(crate) fn tactical_entity_encounter_order(
+    sim: &crate::sim::world::Simulation,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+) -> Vec<u64> {
+    display_draw_ids(sim, rules)
+        .into_iter()
+        .filter(|&id| sim.entities().contains(id))
+        .collect()
 }
 
-/// [`tactical_entity_encounter_order`] of the objects `is_object` knows.
-fn display_objects(
+/// Every Display member's id in draw order
+/// (`Simulation::display_draw_order`) under `rules`.
+pub(crate) fn display_draw_ids(
     sim: &crate::sim::world::Simulation,
-    is_object: impl Fn(u64) -> bool,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
 ) -> Vec<u64> {
-    sim.display_layers()
-        .ordered_ids()
-        .copied()
-        .filter(|id| is_object(*id))
+    sim.display_draw_order(rules)
+        .into_iter()
+        .map(|(_, id)| id)
         .collect()
 }
 
@@ -39,6 +47,8 @@ fn display_objects(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TacticalEntityPurpose {
     Drawing,
+    /// Health bars and other class extras draw separately from the body.
+    Extras,
     /// The selectable list (`TacticalClass::AddSelectable @ 0x006D9EF0`).
     ScreenSelection,
 }
@@ -109,6 +119,7 @@ pub(crate) fn observer_draw_context(
     });
     let object = rules.and_then(|r| sim.interner().object_type(entity.type_ref(), r));
     let disguise_cell = entity
+        .seldom
         .disguise
         .as_ref()
         .filter(|disguise| disguise.is_disguised())
@@ -168,6 +179,30 @@ pub(crate) fn observer_draw_context(
     }
 }
 
+/// The actual UnitType during UnitClass::DrawIt (73CEC0).73D29C saves
+/// Type,73D2C4 temporarily substitutes a Harvester's unloading type while
+/// +6D1 is set, and73D3A2 restores it. Miner owns the display-image latch.
+/// Simple deployment and disguise choose art and leave the actual type alone.
+pub(super) fn unit_draw_type_ref(
+    entity: &ObjectRecord,
+    interner: &crate::sim::intern::StringInterner,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+) -> InternedId {
+    let original = entity.type_ref();
+    let Some(rules) = rules else { return original };
+    if entity.category() == EntityCategory::Unit
+        && interner
+            .object_type(original, rules)
+            .is_some_and(|object| object.harvester)
+        && let Some(unloading) = entity.display_type_override.image()
+        && interner.object_type(unloading, rules).is_some()
+    {
+        unloading
+    } else {
+        original
+    }
+}
+
 /// Unit73D2CA..73D38F dispatches on the selected type's Voxel field. The
 /// original identity remains authoritative for animation, pose and lifecycle.
 pub(crate) fn drawn_type_uses_voxel(
@@ -218,11 +253,18 @@ pub(crate) fn tactical_entity_admission(
     if (entity.category() == EntityCategory::Structure && !entity.lifecycle.object_alive())
         // Tactical6D9985..6D9996 skips the live building while its frozen
         // FoggedObjectClass is drawn by the separate4D1890 base pass.
-        || (purpose == TacticalEntityPurpose::Drawing
+        || (purpose != TacticalEntityPurpose::ScreenSelection
             && entity.category() == EntityCategory::Structure
             && !ignore_visibility
             && local_owner_id
                 .is_some_and(|viewer| fog.is_object_fogged(viewer, entity.stable_id())))
+        // BuildingClass::DrawIt (gamemd 0x0043D308..0x0043D316, RA2 game.exe
+        // 0x0043A658..0x0043A666) skips the body even for the lamp's owner.
+        || (purpose == TacticalEntityPurpose::Drawing
+            && entity.place.structure.is_some_and(|art| art.invisible_in_game))
+        // Unit DrawIt 73D30E skips both voxel and SHP bodies in a tube;
+        // Infantry DrawIt 5190DE branches to AddSelectable at 519609.
+        || (purpose == TacticalEntityPurpose::Drawing && entity.in_tube)
         || entity.lifecycle.in_limbo()
         || entity.passenger_role.is_inside_transport()
         // UnitClass::DrawIt returns before AddSelectable while the unit
@@ -272,7 +314,7 @@ fn tactical_bounded_entity_encounter_order(
     else {
         return Vec::new();
     };
-    let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+    let local_owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state);
     // Screen selection takes what the battlefield shows.
     let Some(frame) = state.match_state.sim_runtime.frame() else {
         return Vec::new();
@@ -286,8 +328,13 @@ fn tactical_bounded_entity_encounter_order(
     let margin = 32.0 / zoom;
     // The world rectangle the battlefield shows: from the camera, the
     // frame's corner, in by the battlefield's own corner.
-    let (left_px, top_px, width_px, height_px) =
-        crate::app::input::camera::tactical_viewport_px(state);
+    let (left_px, top_px, width_px, height_px) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let left = state.match_state.input.camera_x + left_px as f32 / zoom;
     let top = state.match_state.input.camera_y + top_px as f32 / zoom;
     let min_x = left - margin;
@@ -325,7 +372,13 @@ fn compose_tactical_screen_entity_encounter_order(
     // (0x006D9EF0) refuses entries past 500, so with more objects in view the
     // band box and the T key's screen pass reach only the first 500 drawn.
     // VERA registers all.
-    let mut candidates = display_objects(sim, |id| frame.contains(id));
+    let mut candidates: Vec<u64> = frame
+        .display_order()
+        .ordered()
+        .iter()
+        .map(|&(_, id)| id)
+        .filter(|&id| frame.contains(id))
+        .collect();
     // Band-box preflight has a separate native bulk Building registration
     // path. Ordinary picking/rendering never scans the unregistered store.
     if bulk_register_live_buildings {
@@ -384,8 +437,8 @@ pub(crate) enum EntityDrawBand {
     Top,
 }
 
-/// Tactical6D8F19..6D95A9 draws the retained Display vectors, not a fresh
-/// GetLayer query. Height/locomotor changes take effect here only after their
+/// Tactical6D8F19..6D95A9 draws the Display members' registered layers, not
+/// a fresh GetLayer query. Height/locomotor changes take effect here only after their
 /// simulation-owned remove/submit transaction (Fly phase4CD2A0, for example).
 /// Unregistered objects and layers without an entity body stream emit nothing.
 pub(crate) fn layer_draw_band(
@@ -401,18 +454,19 @@ pub(crate) fn layer_draw_band(
 }
 
 /// The Display's entities that draw a body, in Tactical's order, with their bands.
-pub(crate) fn drawn_display_entities<'a>(
-    sim: &'a crate::sim::world::Simulation,
-    frame: &'a crate::app::presentation::frame::PresentationFrame,
+pub(crate) fn drawn_display_entities(
+    frame: &crate::app::presentation::frame::PresentationFrame,
 ) -> impl Iterator<
     Item = (
-        &'a crate::app::presentation::frame::ObjectRecord,
+        &crate::app::presentation::frame::ObjectRecord,
         EntityDrawBand,
     ),
 > {
-    sim.display_layers()
-        .members_in_order()
-        .filter_map(|(layer, id)| Some((frame.object(id)?, layer_draw_band(layer)?)))
+    frame
+        .display_order()
+        .ordered()
+        .iter()
+        .filter_map(|&(layer, id)| Some((frame.object(id)?, layer_draw_band(layer)?)))
 }
 
 /// Convert the screen row an entity is *drawn* at into the row it *sorts* at.
@@ -446,17 +500,19 @@ pub(crate) fn ground_sort_row(entity: &ObjectRecord, drawn_row_y: f32) -> f32 {
 /// Lower screen_y → larger depth (further from camera). The height lift is
 /// taken back off so the row is the ground-projected one, exactly as every
 /// native class folds `-AdjustForZ(Location.Z)` into its Z term.
-pub(crate) fn compute_sprite_depth(state: &AppState, screen_y: f32, z: u8) -> f32 {
-    let axis = depth_axis(state);
+pub(crate) fn compute_sprite_depth(
+    presentation: &MatchPresentationState,
+    screen_y: f32,
+    z: u8,
+) -> f32 {
+    let axis = depth_axis(presentation);
     compute_sprite_depth_params(axis.origin_y, axis.world_height, screen_y, z)
 }
 
 /// The normalised depth axis of the loaded map (`DepthAxis::NONE` outside a
 /// match): what `BatchRenderer::update_camera` uploads for the shaders.
-pub(crate) fn depth_axis(state: &AppState) -> DepthAxis {
-    state
-        .match_state
-        .match_presentation
+pub(crate) fn depth_axis(presentation: &MatchPresentationState) -> DepthAxis {
+    presentation
         .terrain_grid
         .as_ref()
         .map(|g| DepthAxis {
@@ -599,7 +655,7 @@ pub(crate) fn translucent_fog_viewer(
     if !state.translucent_fog_enabled() || state.match_state.sandbox_full_visibility {
         return None;
     }
-    let name = crate::app::input::commands::preferred_local_owner_name(state)?;
+    let name = crate::app::input::commands::preferred_local_owner_name(&state.match_state)?;
     sim.interner().get(&name)
 }
 
@@ -767,7 +823,13 @@ impl TacticalAdmission {
     /// This draw's battlefield (`camera::tactical_viewport_px`).
     pub(crate) fn of_state(state: &AppState) -> Self {
         let input = &state.match_state.input;
-        let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+        let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+        );
         Self::of(
             [input.camera_x, input.camera_y],
             [x, y, width, height],
@@ -857,8 +919,13 @@ impl PassByWindow {
         let input = &state.match_state.input;
         let camera = [input.camera_x, input.camera_y];
         let zoom = input.zoom_level;
-        let (centring_width, centring_height) =
-            crate::app::input::camera::tactical_centring_size(state);
+        let (centring_width, centring_height) = crate::app::input::camera::tactical_centring_size(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+        );
         let from_camera = |width: u32, height: u32| {
             [
                 camera[0],
@@ -893,7 +960,7 @@ impl PassByWindow {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 mod tests {
     use super::*;
     use crate::render::locomotor_visual::screen_position;
@@ -913,6 +980,64 @@ mod tests {
 
     /// Stock YR sets one global `FlightLevel=1500` for every aircraft.
     const STOCK_FLIGHT_LEVEL_LEPTONS: i32 = 1500;
+
+    #[test]
+    fn band_selection_before_drawing_uses_the_lent_frames_display_order() {
+        use crate::app::match_runtime::sim_host::SimHost;
+        use crate::sim::runtime::SimRuntime;
+        use crate::sim::world::Simulation;
+
+        let mut sim = Simulation::new();
+        let owner = sim.intern("Americans");
+        let tank = sim.intern("MTNK");
+        for id in [2, 1] {
+            let mut entity = GameEntity::new_at_frame_zero_for_test(
+                id,
+                10,
+                10,
+                0,
+                0,
+                owner,
+                crate::sim::combat::Health::new(100),
+                tank,
+                EntityCategory::Unit,
+                0,
+                5,
+                true,
+            );
+            entity.lifecycle.set_in_limbo_for_test(true);
+            sim.entities_mut_for_test().insert(entity);
+            sim.reveal(id);
+        }
+
+        let mut host = SimHost::default();
+        host.install(Some(SimRuntime::from_simulation(sim)));
+        assert!(host.lend(Box::new(|_| Box::new(()))));
+        let sim = &host.presentation().unwrap().simulation;
+        let frame = host.frame().unwrap();
+        let bounds = (-10_000.0, -10_000.0, 10_000.0, 10_000.0);
+
+        // Box-release preflight can be the first consumer of this frame.
+        let candidates = compose_tactical_screen_entity_encounter_order(
+            sim,
+            frame,
+            bounds,
+            Some(owner),
+            sim.fog(),
+            true,
+            0,
+            true,
+        );
+        assert_eq!(candidates, [2, 1]);
+        let drawn: Vec<_> = frame
+            .display_members(sim)
+            .objects()
+            .iter()
+            .map(|member| member.id)
+            .collect();
+        assert_eq!(drawn, candidates);
+        assert!(host.take_job_result().is_some());
+    }
 
     #[test]
     fn item83_equal_tactical_keys_keep_live_registration_order() {
@@ -940,39 +1065,79 @@ mod tests {
         };
         sim.entities_mut_for_test().insert(entity(1));
         sim.entities_mut_for_test().insert(entity(2));
-        sim.entities_mut_for_test()
-            .get_mut(2)
+        sim.entity_mut_for_test(2)
             .unwrap()
             .lifecycle
             .set_in_limbo_for_test(true);
-        sim.entities_mut_for_test()
-            .get_mut(1)
+        sim.entity_mut_for_test(1)
             .unwrap()
             .lifecycle
             .set_in_limbo_for_test(true);
         sim.reveal(2);
         sim.reveal(1);
         sim.set_logic_order_for_test(vec![1, 2]);
-        assert_eq!(tactical_entity_encounter_order(&sim), [2, 1]);
+        assert_eq!(tactical_entity_encounter_order(&sim, None), [2, 1]);
         sim.entities_mut_for_test().insert(entity(3));
         sim.set_logic_order_for_test(vec![3, 1, 2]);
         assert_eq!(
-            tactical_entity_encounter_order(&sim),
+            tactical_entity_encounter_order(&sim, None),
             [2, 1],
             "Logic/store membership is insufficient"
         );
         sim.conceal(2);
         assert_eq!(
-            tactical_entity_encounter_order(&sim),
+            tactical_entity_encounter_order(&sim, None),
             [1],
             "conceal removes the pick/render candidate"
         );
         sim.reveal(2);
         assert_eq!(
-            tactical_entity_encounter_order(&sim),
+            tactical_entity_encounter_order(&sim, None),
             [1, 2],
             "resubmission follows retained equal-key members"
         );
+    }
+
+    #[test]
+    fn owned_invisible_lamp_keeps_its_light_without_drawing_its_body() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = retail.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 43);
+        let owner = sim.interner().get("Americans").unwrap();
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        sim.resolve_type_handles(&rules);
+        for (x, name, draws_body) in [(10, "GALITE", true), (12, "INYELWLAMP", false)] {
+            let id = sim
+                .spawn_object(name, "Americans", x, 10, 0, &rules)
+                .unwrap();
+            let building = ObjectRecord::of_test_sim(&sim, &rules, id);
+            assert!(
+                sim.entities()
+                    .get(id)
+                    .unwrap()
+                    .seldom
+                    .discovery
+                    .owned_by_current_house()
+            );
+            let body = tactical_entity_admission(
+                TacticalEntityPurpose::Drawing,
+                &building,
+                Some(owner),
+                sim.fog(),
+                false,
+                sim.session().binary_frame(),
+                0,
+                building.seen.observer,
+            );
+            assert_eq!(body.is_some(), draws_body, "{name} building sprite");
+            assert!(
+                sim.lighting_sources().buildings()[&id].active,
+                "{name} light"
+            );
+        }
     }
 
     #[test]
@@ -1066,6 +1231,52 @@ mod tests {
             compared, 6,
             "all ordinary visibility/lifecycle controls must run"
         );
+    }
+
+    #[test]
+    fn a_foot_in_a_tube_skips_its_body_and_keeps_its_selectable_entry() {
+        use crate::map::tube_facts::TubeId;
+        use crate::sim::components::DriveCoord;
+        use crate::sim::movement::tube_movement::LowBridgeTubeMovementState;
+
+        let fog = FogState::new(8, 8);
+        for (kind, category) in [
+            ("MTNK", EntityCategory::Unit),
+            ("E1", EntityCategory::Infantry),
+        ] {
+            let mut actor =
+                GameEntity::test_default_of_category(1, kind, "Americans", 2, 2, category);
+            actor.lifecycle.set_in_limbo_for_test(false);
+            for inside in [false, true] {
+                actor.low_bridge_tube_state = inside.then(|| {
+                    LowBridgeTubeMovementState::for_test(TubeId(0), 1, DriveCoord::cell(3, 2, 0))
+                });
+                let record = ObjectRecord::of_test(&actor);
+                let admitted = |purpose| {
+                    tactical_entity_admission(
+                        purpose,
+                        &record,
+                        Some(actor.owner()),
+                        &fog,
+                        true,
+                        0,
+                        0,
+                        Default::default(),
+                    )
+                    .is_some()
+                };
+                assert_eq!(
+                    admitted(TacticalEntityPurpose::Drawing),
+                    !inside,
+                    "{kind} body"
+                );
+                assert!(admitted(TacticalEntityPurpose::Extras), "{kind} extras");
+                assert!(
+                    admitted(TacticalEntityPurpose::ScreenSelection),
+                    "{kind} selection"
+                );
+            }
+        }
     }
 
     #[test]
@@ -1272,8 +1483,7 @@ mod tests {
             sim.entities_mut_for_test().insert(unit);
             sim.reveal(id);
         }
-        sim.entities_mut_for_test()
-            .get_mut(2)
+        sim.entity_mut_for_test(2)
             .unwrap()
             .set_unit_simple_deploy_for_test(false, true, false);
         let frame = crate::app::presentation::frame::PresentationFrame::of_test(
@@ -1338,8 +1548,7 @@ mod tests {
         let building_anchor = screen_position(&hidden_building);
         sim.entities_mut_for_test().insert(hidden_mobile);
         sim.entities_mut_for_test().insert(hidden_building);
-        sim.entities_mut_for_test()
-            .get_mut(1)
+        sim.entity_mut_for_test(1)
             .unwrap()
             .lifecycle
             .set_in_limbo_for_test(true);
@@ -1458,8 +1667,7 @@ mod tests {
         sim.reveal(1);
         // A headless Reveal commits no exact Z; lift the aircraft back to 900
         // and resubmit its display, as a takeoff does.
-        sim.entities_mut_for_test()
-            .get_mut(1)
+        sim.entity_mut_for_test(1)
             .unwrap()
             .position
             .set_exact_z_leptons_for_test(Some(900));
@@ -1470,8 +1678,7 @@ mod tests {
         // reached the ground, but the phase transaction has not resubmitted.
         // A fresh altitude classifier used to choose Ground and then lose the
         // body because NativeDisplayOrder correctly had no entry for this ID.
-        sim.entities_mut_for_test()
-            .get_mut(1)
+        sim.entity_mut_for_test(1)
             .unwrap()
             .position
             .set_exact_z_leptons_for_test(Some(0));
@@ -1641,6 +1848,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "building_warp_draw_tests.rs"]
 mod building_warp_draw_tests;

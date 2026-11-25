@@ -5,12 +5,13 @@
 //! particle synchronously. AI visits the original reverse list; the subsequent
 //! Move/destruction walk includes those new births, as the original does.
 
+use super::Particle;
 use super::spark::{SparkMotionStep, resolve_collision};
 use super::spark_world::{SparkCollisionWorld, SparkWorldError, constructor_ground_height};
 use super::system_ai::SparkSystemTickError;
 use super::wind::{GAS_WIND_DX, GAS_WIND_DY};
-use super::{Particle, ParticleSystem};
-use crate::rules::particle_type::{ParticleBehavesLike, ParticleTypeId};
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::rules::particle_type::{ParticleBehavesLike, ParticleType, ParticleTypeId};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::{
     EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags, TerrainDamageEvent,
@@ -45,6 +46,13 @@ impl Simulation {
 
     /// ParticleSystem62E430: construct the explicit ParticleType and append.
     /// +C4 is DynamicVector capacity, not ParticleSystemType.ParticleCap.
+    ///
+    /// RESIDUAL: gamemd's gas spawners (`0x00425032`, `0x00518416`,
+    /// `0x005185AD`, `0x0074D0EF`) pass the cloud global `0x00A8ED78` to
+    /// `0x0062E430` with no null test, so once the cloud has retired the next
+    /// gas particle crashes gamemd at `0x0062E462`. VERA builds a new cloud
+    /// instead. The cloud retires only if a mod or map gives `[GasCloudSys]` a
+    /// `Lifetime=`; retail leaves it at -1, so stock play never gets here.
     pub(crate) fn spawn_gas_particle(
         &mut self,
         kind: ParticleTypeId,
@@ -52,7 +60,7 @@ impl Simulation {
         rules: &RuleSet,
     ) -> Option<u64> {
         let system = self.initialize_gas_cloud_system(rules)?;
-        let particle = Particle::new(kind, coords, IVec3::ZERO, rules.particle_type(kind), self);
+        let particle = Particle::new(kind, coords, IVec3::ZERO, rules, self);
         let id = particle.stable_id();
         self.substrate
             .particle_systems
@@ -63,84 +71,88 @@ impl Simulation {
     }
 }
 
-pub(super) fn reverse_ids(system: &ParticleSystem) -> Vec<(usize, u64)> {
-    system
-        .particles
-        .iter()
-        .enumerate()
-        .rev()
-        .map(|(index, p)| (index, p.stable_id()))
-        .collect()
-}
-
+/// SystemAI62E6D0, and Firestorm 2.0 `ParticleSystemClass::AI_Web`
+/// 0x005A7170, whose two walks are the same ([`super::web`]).
 pub(super) fn tick_system(
     sim: &mut Simulation,
     rules: &RuleSet,
     system: u64,
-    context: UninitContext<'_>,
+    mut context: UninitContext<'_>,
 ) {
     let Some(sys) = sim.particle_systems().get(system) else {
         return;
     };
     let (owner_house, owner_entity) = (sys.owner_house, sys.owner_entity);
-    let ids = reverse_ids(sys);
-    for (index, id) in ids {
+    let Some(walk) = sim
+        .substrate
+        .particle_systems
+        .take_reverse_walk(system, |_| true)
+    else {
+        return;
+    };
+    for &(index, id) in &walk {
         let Some(mut p) = sim.particle_systems().particle_for_tick(system, index, id) else {
             continue;
         };
-        if rules.particle_type(p.type_id).behaves_like == ParticleBehavesLike::Gas {
-            if let Err(error) =
-                tick_particle(&mut p, sim, rules, owner_house, owner_entity, context)
-            {
-                super::system_ai::retire_refused(&mut p, &error);
+        match rules.particle_type(p.type_id).behaves_like {
+            ParticleBehavesLike::Gas => {
+                if let Err(error) = tick_particle(
+                    &mut p,
+                    sim,
+                    rules,
+                    owner_house,
+                    owner_entity,
+                    context.reborrow(),
+                ) {
+                    super::system_ai::retire_refused(&mut p, &error);
+                }
+                super::system_ai::finish_lifetime(&mut p);
             }
-            super::system_ai::finish_lifetime(&mut p);
-        } else {
-            super::system_ai::tick_particle(&mut p, sim, rules, owner_house, owner_entity);
+            // A web's hits run in this system's frame, as Gas's do.
+            ParticleBehavesLike::Web => {
+                super::web::tick_particle(&mut p, sim, rules, context.reborrow());
+                super::system_ai::finish_lifetime(&mut p);
+            }
+            _ => super::system_ai::tick_particle(&mut p, sim, rules, owner_house, owner_entity),
         }
         sim.substrate
             .particle_systems
             .commit_particle_tick(system, index, p);
     }
-    let Some(sys) = sim.particle_systems().get(system) else {
+    sim.substrate.particle_systems.return_walk(walk);
+    // The Move and destroy walk takes in the births the AI walk appended.
+    let Some(count) = sim
+        .particle_systems()
+        .get(system)
+        .map(|sys| sys.particles.len())
+    else {
         return;
     };
-    for (index, id) in reverse_ids(sys) {
-        let Some(mut p) = sim.particle_systems().particle_for_tick(system, index, id) else {
-            continue;
-        };
-        if p.marked_for_deletion {
-            let pt = rules.particle_type(p.type_id);
-            if let Some(next) = pt.next_particle {
-                let coords = offset(p.coords, pt.next_particle_offset);
-                let mut child =
-                    Particle::new(next, coords, IVec3::ZERO, rules.particle_type(next), sim);
-                //62E7EB..62E811 copies E4 and C0/C4/C8, not translucency
-                //or CC/D0/D4. The constructor still takes its lifetime draw.
-                child.velocity = p.velocity;
-                [child.drift_x, child.drift_y, child.drift_z] = [p.drift_x, p.drift_y, p.drift_z];
-                sim.substrate
-                    .particle_systems
-                    .get_mut(system)
-                    .unwrap()
-                    .particles
-                    .push(child);
-            }
-            let parent = sim
-                .substrate
-                .particle_systems
-                .get_mut(system)
-                .and_then(|sys| sys.remove_expired_child(id));
-            if let Some(parent) = parent {
-                sim.retire_particle(parent, rules);
-            }
-        } else {
-            super::system_ai::move_dispatch(&mut p, sim, rules);
+    super::system_ai::move_or_destroy_children(sim, rules, system, count, |sim, p| {
+        let pt = rules.particle_type(p.type_id);
+        if let Some(next) = pt.next_particle {
+            let coords = offset(p.coords, pt.next_particle_offset);
+            let mut child = Particle::new(next, coords, IVec3::ZERO, rules, sim);
+            //62E7EB..62E811 copies E4 and C0/C4/C8, not translucency
+            //or CC/D0/D4. The constructor still takes its lifetime draw.
+            child.velocity = p.velocity;
+            [child.drift_x, child.drift_y, child.drift_z] = [p.drift_x, p.drift_y, p.drift_z];
             sim.substrate
                 .particle_systems
-                .commit_particle_tick(system, index, p);
+                .get_mut(system)
+                .unwrap()
+                .particles
+                .push(child);
         }
-    }
+        let parent = sim
+            .substrate
+            .particle_systems
+            .get_mut(system)
+            .and_then(|sys| sys.remove_expired_child(p.stable_id()));
+        if let Some(parent) = parent {
+            sim.retire_particle(parent, rules);
+        }
+    });
 }
 
 /// Complete Gas body; the dispatcher separately owns its word-EC tail.
@@ -156,9 +168,13 @@ pub(super) fn tick_particle(
     context: UninitContext<'_>,
 ) -> Result<(), SparkSystemTickError> {
     if sim.session.binary_frame() & 1 == 0 {
-        if sim.particle_rng().next_raw_abs_modulo(8) == 0 {
-            let x_axis = sim.particle_rng().next_raw_abs_modulo(2) == 0;
-            let delta = sim.particle_rng().next_raw_abs_modulo(3) as i32 - 1;
+        // 0x0062BD93..0x0062BE05: each draw takes its absolute value before
+        // the bit test or the IDIV, so a raw i32::MIN gives a delta of -3.
+        let mut draw =
+            |divisor| crate::sim::rng::abs_before_modulo(sim.particle_rng().next_u32(), divisor);
+        if draw(8) == 0 {
+            let x_axis = draw(2) == 0;
+            let delta = draw(3) - 1;
             if x_axis {
                 p.drift_x = p.drift_x.wrapping_add(delta);
             } else {
@@ -200,7 +216,10 @@ pub(super) fn tick_particle(
                 p.motion = vector;
             }
         }
-        let height = p.coords.z.wrapping_sub(ground(sim, p.coords)?);
+        let height = p
+            .coords
+            .z
+            .wrapping_sub(ground(sim.resolved_terrain.as_ref(), p.coords)?);
         p.drift_z = if height > 5 {
             p.drift_z.wrapping_sub(1).max(-5)
         } else {
@@ -233,13 +252,17 @@ fn apply_damage(
     rules: &RuleSet,
     owner_house: Option<InternedId>,
     owner: Option<u64>,
-    context: UninitContext<'_>,
+    mut context: UninitContext<'_>,
 ) {
     let pt = rules.particle_type(p.type_id);
+    // RESIDUAL: a Damage particle with no Warhead= passes a null warhead
+    // (0x0062C2ED); this skips the call. Every retail Gas type names one.
     let Some(warhead) = pt.warhead.as_deref() else {
         return;
     };
     let warhead = sim.interner.intern(warhead);
+    // GetCellAt (0x00565738..0x00565754) truncates toward zero; the shift
+    // differs only at a negative coordinate, which no gas particle reaches.
     let cell = ((p.coords.x >> 8) as u16, (p.coords.y >> 8) as u16);
     let ares = rules.ares_form();
     if ares {
@@ -315,6 +338,10 @@ fn apply_damage(
                     );
                 }
                 CellObjectMember::Terrain(id) => {
+                    // RESIDUAL: under Ares, hook 0x62C2ED (1005CFE0) also
+                    // passes the attacker to a tree, which Ares Culling (hook
+                    // 0x5F5456) reads; the terrain receiver takes none, so a
+                    // Culling= Wood= gas warhead never culls one. Mod data only.
                     sim.commit_direct_terrain_damage_receiver(
                         rules,
                         context.registry(),
@@ -328,7 +355,8 @@ fn apply_damage(
                             warhead_ref: warhead,
                             near_center_ic_isolation_eligible: false,
                         },
-                        true,
+                        // 0x0062C2DC..0x0062C300 push IgnoreDefenses = 0.
+                        false,
                         context.effects(),
                     );
                 }
@@ -352,7 +380,7 @@ fn damage_in_range(
     owner_house: Option<InternedId>,
     warhead: InternedId,
     range: f64,
-    context: UninitContext<'_>,
+    mut context: UninitContext<'_>,
 ) {
     let pt = rules.particle_type(p.type_id);
     let leptons = range * 256.0;
@@ -369,7 +397,9 @@ fn damage_in_range(
             IVec3::new(c.x, c.y, c.z)
         }),
     };
-    let mut items: Vec<(CellObjectMember, (u16, u16))> = Vec::new();
+    // The vector lives in a 0x100-entry stack buffer it cannot grow.
+    let mut items = [(CellObjectMember::Entity(0), (0u16, 0u16)); 0x100];
+    let mut count = 0;
     for (dx, dy) in crate::sim::cell_rect::cell_spread_offsets(spread.max(0) as usize) {
         let (Ok(rx), Ok(ry)) = (
             u16::try_from(center.0 + i32::from(dx)),
@@ -384,8 +414,8 @@ fn damage_in_range(
         {
             continue;
         }
-        let members: Vec<_> = sim.cell_objects((rx, ry), MovementLayer::Ground).collect();
-        for member in members {
+        // The gathering only reads the world; the damage below runs on `items`.
+        for member in sim.cell_objects((rx, ry), MovementLayer::Ground) {
             let Some(at) = location(sim, member) else {
                 continue;
             };
@@ -395,16 +425,16 @@ fn damage_in_range(
                 delta(at.y, p.coords.y),
                 delta(at.z, p.coords.z),
             );
-            // The vector lives in a 0x100-entry stack buffer it cannot grow.
             if dz * dz + dx * dx + dy * dy <= range_sq
-                && items.len() < 0x100
-                && !items.iter().any(|(item, _)| *item == member)
+                && count < items.len()
+                && !items[..count].iter().any(|(item, _)| *item == member)
             {
-                items.push((member, (rx, ry)));
+                items[count] = (member, (rx, ry));
+                count += 1;
             }
         }
     }
-    for (member, cell) in items {
+    for &(member, cell) in &items[..count] {
         let alive = match member {
             CellObjectMember::Entity(id) => sim
                 .entities()
@@ -460,7 +490,8 @@ fn damage_in_range(
                         warhead_ref: warhead,
                         near_center_ic_isolation_eligible: false,
                     },
-                    true,
+                    // 100297C0's ReceiveDamage (vt+0x16C) passes 0 too.
+                    false,
                     context.effects(),
                 );
             }
@@ -468,22 +499,24 @@ fn damage_in_range(
     }
 }
 
-fn ground(sim: &Simulation, coords: IVec3) -> Result<i32, SparkWorldError> {
-    Ok(constructor_ground_height(sim, coords.x, coords.y)?.unwrap_or(0))
+fn ground(terrain: Option<&ResolvedTerrainGrid>, coords: IVec3) -> Result<i32, SparkWorldError> {
+    Ok(constructor_ground_height(terrain, coords.x, coords.y)?.unwrap_or(0))
 }
 
+/// MoveGas62D2A0. The frame and the terrain are all it reads of the world.
 pub(super) fn move_gas(
     p: &mut Particle,
-    sim: &Simulation,
-    rules: &RuleSet,
+    pt: &ParticleType,
+    wind: i32,
+    frame: u32,
+    terrain: Option<&ResolvedTerrainGrid>,
 ) -> Result<(), SparkWorldError> {
-    let pt = rules.particle_type(p.type_id);
-    let frame = sim.session.binary_frame() as i32;
+    let frame = frame as i32;
     let mut coords = p.coords;
     // gamemd divides by `10 / WindEffect` (zero above 10) and indexes its
     // eight-entry tables with `[General] WindDirection` unchecked. VERA gives
     // either value no wind, as Smoke does.
-    let wind = usize::try_from(rules.general.wind_direction())
+    let wind = usize::try_from(wind)
         .ok()
         .filter(|&i| i < GAS_WIND_DX.len());
     if pt.wind_effect > 0
@@ -502,12 +535,12 @@ pub(super) fn move_gas(
             X87::load_i32(coords.y),
             X87::load_f32(p.motion[1]),
         ));
-        let floor = ground(sim, coords)?.wrapping_add(5);
+        let floor = ground(terrain, coords)?.wrapping_add(5);
         if coords.z > floor {
             coords.z = coords.z.wrapping_sub(coords.z.wrapping_sub(floor).min(2));
         }
         coords = offset(coords, IVec3::new(p.drift_x, p.drift_y, p.drift_z));
-        coords.z = coords.z.max(ground(sim, coords)?.wrapping_add(5));
+        coords.z = coords.z.max(ground(terrain, coords)?.wrapping_add(5));
     }
     p.coords = coords;
     Ok(())

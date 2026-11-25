@@ -129,7 +129,8 @@ fn get_small(agents: &Agents, url: &str, limit: u64) -> Result<Vec<u8>> {
 
 /// What this program can do about the newest release on `platform`
 /// ([`manifest::offer`]), when it is newer than `current`. A skipped version
-/// is still found: Check for Updates offers it.
+/// is still found: Check for Updates offers it, and so does the check the
+/// lobby's word that this version is behind starts (`lobby_outdated`).
 pub(super) fn check(current: Version, platform: &str) -> Result<Option<Offer>> {
     let agents = Agents::new();
     let latest = get_small(
@@ -220,7 +221,7 @@ fn save_to(
         .with_context(|| format!("cannot write {}", path.display()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use std::net::TcpListener;
     use std::sync::Arc;

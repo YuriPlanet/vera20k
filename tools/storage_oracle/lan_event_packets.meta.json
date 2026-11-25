@@ -31,6 +31,6 @@
     "cache": "0x0064B4D0",
     "decompress": "0x0064BDD0"
   },
-  "replay_command": "python -m tools.storage_oracle.lan_lobby --event-packets",
+  "replay_command": "python -m tools.storage_oracle.lan_event_packets",
   "payload_sha256": "523a016f196251b54bac9531fc575e6b17a250c60a3d955d7c3314c6187bc4ec"
 }

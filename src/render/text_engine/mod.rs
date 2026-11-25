@@ -45,27 +45,24 @@ pub(crate) use atlas::SUBPIXEL_STEPS;
 use atlas::{GlyphAtlas, GlyphKey, SIZE_STEPS};
 use fonts::{BASELINE, CJK_WEIGHT, LATIN_WEIGHT, LATIN_WIDTH_PERCENT, OTHER_WEIGHT, TextClass};
 
-/// How far a text is squeezed to fit the box it draws in: narrower letters
-/// first, along the bundled fonts' width axis, then smaller ones. VERA's own:
+/// How far a text is squeezed to fit the box it draws in: narrower letters,
+/// along the bundled fonts' width axis, at their own height. VERA's own:
 /// gamemd cuts off what does not fit, and translations run longer than the
-/// English the boxes were drawn for.
+/// English the boxes were drawn for. What the narrowest letters still do not
+/// fit is cut off as gamemd cuts it: smaller letters would read worse, since
+/// GAME.FNT's whole-pixel strokes run together when shrunk.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Fit(u8);
 
-/// Each step's width and size as shares of the text's own. Noto Sans's width
-/// axis ends at 62.5, a quarter narrower than Latin text's 82.
-const FIT_STEPS: [(f32, f32); 5] = [
-    (1.0, 1.0),
-    (72.0 / LATIN_WIDTH_PERCENT, 1.0),
-    (62.5 / LATIN_WIDTH_PERCENT, 1.0),
-    (62.5 / LATIN_WIDTH_PERCENT, 0.9),
-    (62.5 / LATIN_WIDTH_PERCENT, 0.8),
-];
+/// Each step's width as a share of the text's own. Noto Sans's width axis
+/// ends at 62.5, a quarter narrower than Latin text's 82.
+const FIT_STEPS: [f32; 3] = [1.0, 72.0 / LATIN_WIDTH_PERCENT, 62.5 / LATIN_WIDTH_PERCENT];
 
 impl Fit {
     /// The text as designed.
     pub const NONE: Self = Self(0);
-    /// The last step, where a word too long for a line splits.
+    /// The narrowest letters: the last step, where a word too long for a
+    /// line splits.
     pub const TIGHTEST: Self = Self(FIT_STEPS.len() as u8 - 1);
 
     /// The next step, or `None` past the tightest.
@@ -74,22 +71,12 @@ impl Fit {
     }
 
     fn width(self) -> f32 {
-        FIT_STEPS[usize::from(self.0)].0
+        FIT_STEPS[usize::from(self.0)]
     }
 
     /// Each width the steps narrow text to, as designed first.
     fn widths() -> impl Iterator<Item = f32> {
-        let mut widths: Vec<f32> = Vec::with_capacity(FIT_STEPS.len());
-        for (width, _) in FIT_STEPS {
-            if !widths.contains(&width) {
-                widths.push(width);
-            }
-        }
-        widths.into_iter()
-    }
-
-    fn size(self) -> f32 {
-        FIT_STEPS[usize::from(self.0)].1
+        FIT_STEPS.into_iter()
     }
 }
 
@@ -175,9 +162,14 @@ pub(crate) struct TextEngine {
     layouts: HashMap<(u32, Fit), HashMap<String, Arc<ShapedText>>>,
     cached_layouts: usize,
     atlas: GlyphAtlas,
+    /// The interface language, so CJK text takes its region's glyph forms
+    /// (Noto Sans CJK carries Japanese, Korean and Traditional variants).
     locale: Option<String>,
-    /// The interface language reads right to left (`i18n::right_to_left`).
+    /// The interface language reads right to left.
     right_to_left: bool,
+    /// The `i18n::catalog_revision` `locale` and `right_to_left` were read
+    /// at ([`Self::follow_interface_language`]); none before the first.
+    language_revision: Option<u64>,
 }
 
 /// Cached layouts kept before the cache starts over.
@@ -238,6 +230,7 @@ impl TextEngine {
             atlas: GlyphAtlas::new(gpu),
             locale: None,
             right_to_left: false,
+            language_revision: None,
         };
         for (place, font) in bundled.into_iter().enumerate() {
             match font.data {
@@ -356,19 +349,21 @@ impl TextEngine {
         self.clear_layouts();
     }
 
-    /// The interface language, so CJK text takes its region's glyph forms
-    /// (Noto Sans CJK carries Japanese, Korean and Traditional variants).
-    pub(crate) fn locale(&self) -> Option<&str> {
-        self.locale.as_deref()
-    }
-
-    /// Whether the interface language reads right to left.
-    pub(crate) fn right_to_left(&self) -> bool {
-        self.right_to_left
+    /// Read the interface language (`i18n::interface_language`) again when
+    /// the catalog changed since this engine last did: at its first text,
+    /// after a pick in the Language list and after the language files
+    /// reloaded. Every font follows it, a scenario's GAME.FNT font included.
+    fn follow_interface_language(&mut self) {
+        if self.language_revision == Some(crate::i18n::catalog_revision()) {
+            return;
+        }
+        let (revision, tag, right_to_left) = crate::i18n::interface_language();
+        self.language_revision = Some(revision);
+        self.set_locale(Some(&tag), right_to_left);
     }
 
     /// The interface language and whether it reads right to left.
-    pub(crate) fn set_locale(&mut self, locale: Option<&str>, right_to_left: bool) {
+    fn set_locale(&mut self, locale: Option<&str>, right_to_left: bool) {
         let locale = locale.map(str::to_owned);
         if self.locale != locale || self.right_to_left != right_to_left {
             self.locale = locale;
@@ -393,6 +388,7 @@ impl TextEngine {
     /// Shape `text` at `fit`, wrapping at `max_width` native pixels (0: one
     /// line per paragraph). Cached.
     pub(crate) fn shape(&mut self, text: &str, max_width: u32, fit: Fit) -> Arc<ShapedText> {
+        self.follow_interface_language();
         if !self.unfetched.is_empty() {
             self.add_fetched_fonts();
         }
@@ -458,6 +454,13 @@ impl TextEngine {
             if index > 0 {
                 x = ((x / tab).floor() + 1.0) * tab;
             }
+            // Before a leading tab, after a trailing one and between two in a
+            // row there is nothing to draw. parley lays out empty text as a
+            // space, whose line range then runs past the empty segment.
+            if segment.is_empty() {
+                offset += 1;
+                continue;
+            }
             let mut segment_lines = Vec::new();
             self.shape_paragraph(segment, offset, 0, fit, &mut segment_lines);
             for segment_line in segment_lines {
@@ -510,9 +513,7 @@ impl TextEngine {
         builder.push_default(StyleProperty::FontFamily(FontFamily::List(Cow::Borrowed(
             &stack,
         ))));
-        builder.push_default(StyleProperty::FontSize(
-            TextClass::Latin.size() * fit.size(),
-        ));
+        builder.push_default(StyleProperty::FontSize(TextClass::Latin.size()));
         builder.push_default(StyleProperty::FontWeight(FontWeight::new(LATIN_WEIGHT)));
         builder.push_default(StyleProperty::FontWidth(FontWidth::from_percentage(
             LATIN_WIDTH_PERCENT * fit.width(),
@@ -532,10 +533,7 @@ impl TextEngine {
                 TextClass::Cjk => CJK_WEIGHT,
                 TextClass::Other(_) => OTHER_WEIGHT,
             };
-            builder.push(
-                StyleProperty::FontSize(class.size() * fit.size()),
-                start..end,
-            );
+            builder.push(StyleProperty::FontSize(class.size()), start..end);
             builder.push(
                 StyleProperty::FontWeight(FontWeight::new(weight)),
                 start..end,
@@ -653,7 +651,6 @@ impl TextEngine {
     /// One glyph drawn `pixel_size` pixels tall, `native` its native size and
     /// pen phase ([`split_phase`]), with `pen` (device pixels, on the
     /// baseline) at the corner of the native pixel the pen lies in.
-    #[allow(clippy::too_many_arguments)]
     fn place_glyph(
         &mut self,
         font: u16,
@@ -829,7 +826,7 @@ fn paragraphs(text: &str) -> Vec<(usize, usize)> {
     out
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
     use crate::assets::fnt_file::FntFile;
@@ -927,11 +924,12 @@ mod tests {
     }
 
     /// A squeeze narrows GAME.FNT's own letters by the width it narrows the
-    /// bundled fonts to, before shrinking them; GAME.FNT has no width axis.
+    /// bundled fonts to (GAME.FNT has no width axis), and even the tightest
+    /// keeps their height: shrunk, their whole-pixel strokes run together.
     #[test]
-    fn a_squeeze_narrows_game_fnt_letters() {
+    fn a_squeeze_narrows_game_fnt_letters_and_keeps_their_height() {
         let mut engine = engine_with_tiny_fnt();
-        let narrowest = Fit(2);
+        let narrowest = Fit::TIGHTEST;
         let designed = engine.shape("AAAA", 0, Fit::NONE);
         let narrowed = engine.shape("AAAA", 0, narrowest);
         let slots = &engine.slots;
@@ -943,7 +941,9 @@ mod tests {
         );
         let share = narrowed.width() / designed.width();
         assert!((share - narrowest.width()).abs() < 0.01, "{share}");
-        assert!(narrowest.width() < 0.8 && narrowest.size() == 1.0);
+        assert!(narrowest.width() < 0.8);
+        let size = |shaped: &ShapedText| shaped.lines[0].glyphs[0].size;
+        assert_eq!(size(&narrowed), size(&designed));
     }
 
     /// A letter GAME.FNT lacks draws from it in its style ([`fnt_fill`]); a
@@ -999,7 +999,7 @@ mod tests {
         let mut engine = engine_with_tiny_fnt();
         let after_thai = engine.shape("กA", 0, Fit::NONE);
         assert!(after_thai.lines[0].glyphs[1].x.fract() != 0.0);
-        for (text, fit) in [("AAAA", Fit(2)), ("AAAA", Fit::TIGHTEST), ("กA", Fit::NONE)] {
+        for (text, fit) in [("AAAA", Fit(1)), ("AAAA", Fit::TIGHTEST), ("กA", Fit::NONE)] {
             let alpha = draw_fit(&mut engine, text, fit, 1.0, 64, 16);
             assert!(alpha.contains(&255), "{text} {fit:?}");
             assert!(alpha.iter().all(|&a| a == 0 || a == 255), "{text} {fit:?}");
@@ -1101,6 +1101,52 @@ mod tests {
         assert_eq!(name_on_the_right(&mut engine, "Abort?"), (false, false));
     }
 
+    /// A language file rewritten while the game runs turns the fonts'
+    /// reading direction, as a pick in the Language list does. The probe
+    /// changes the process's interface language, so it runs in a process of
+    /// its own.
+    #[test]
+    fn a_reloaded_language_file_turns_the_reading_direction() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "render::text_engine::tests::reloaded_language_probe",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("VERA20K_LANGUAGE_RELOAD_PROBE", "1")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("VERA20K_LANGUAGE_RELOAD_PROBE=done"),
+            "{output:?}"
+        );
+    }
+
+    /// [`a_reloaded_language_file_turns_the_reading_direction`]'s process.
+    #[test]
+    fn reloaded_language_probe() {
+        if std::env::var_os("VERA20K_LANGUAGE_RELOAD_PROBE").is_none() {
+            return;
+        }
+        let dir =
+            std::env::temp_dir().join(format!("vera20k-language-reload-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("vera20k.xx.ini");
+        std::fs::write(&file, "[Strings]\nVERA:Unlimited=Unlimited\n").unwrap();
+        assert_eq!(crate::i18n::init(Some(&dir), Some("xx")), "xx");
+        let mut engine = TextEngine::new(None);
+        let mut reads_from_the_right = || engine.shape("Tanya انضم", 0, Fit::NONE).lines[0].rtl;
+        assert!(!reads_from_the_right());
+        std::fs::write(&file, "[Strings]\nVERA:Unlimited=غير محدود\n").unwrap();
+        assert!(crate::i18n::LanguageFileWatch::default().poll(Some(&dir)));
+        let turned = reads_from_the_right();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(turned, "the rewritten file reads right to left");
+        println!("VERA20K_LANGUAGE_RELOAD_PROBE=done");
+    }
+
     #[test]
     fn text_without_spaces_breaks_between_its_words() {
         let mut engine = TextEngine::new(None);
@@ -1140,6 +1186,50 @@ mod tests {
             assert_eq!(&text[pair[0].end..pair[1].start], " ");
         }
         assert_eq!(shaped.lines.last().unwrap().end, text.len());
+    }
+
+    /// A tab at either end of a line, or two in a row, leaves an empty
+    /// segment: it draws nothing, and the tab stops still advance.
+    #[test]
+    fn empty_tab_segments_draw_nothing_and_keep_the_tab_stops() {
+        let tab = crate::render::bit_font::TAB_WIDTH as f32;
+        let stop = |x: f32| ((x / tab).floor() + 1.0) * tab;
+        let close = |a: f32, b: f32| (a - b).abs() < 1e-3;
+        let mut engine = engine_with_tiny_fnt();
+        let plain = engine.shape("A", 0, Fit::NONE);
+        let plain = &plain.lines[0];
+        assert_eq!(plain.glyphs.len(), 1);
+
+        let leading = engine.shape("\tA", 0, Fit::NONE);
+        assert_eq!(leading.lines.len(), 1);
+        let line = &leading.lines[0];
+        assert_eq!(line.glyphs.len(), 1);
+        assert!(close(line.glyphs[0].x, tab + plain.glyphs[0].x), "{line:?}");
+        assert_eq!(line.glyphs[0].cluster, 1);
+        assert!(close(line.width, tab + plain.width), "{line:?}");
+
+        let trailing = engine.shape("A\t", 0, Fit::NONE);
+        assert_eq!(trailing.lines.len(), 1);
+        let line = &trailing.lines[0];
+        assert_eq!(line.glyphs.len(), 1);
+        assert!(close(line.glyphs[0].x, plain.glyphs[0].x), "{line:?}");
+        assert!(close(line.width, stop(plain.width)), "{line:?}");
+
+        let doubled = engine.shape("A\t\tA", 0, Fit::NONE);
+        assert_eq!(doubled.lines.len(), 1);
+        let line = &doubled.lines[0];
+        assert_eq!(line.glyphs.len(), 2);
+        let second = stop(stop(plain.width));
+        assert!(close(line.glyphs[1].x, second + plain.glyphs[0].x), "{line:?}");
+        assert_eq!(line.glyphs[1].cluster, 3);
+        assert!(close(line.width, second + plain.width), "{line:?}");
+
+        let only = engine.shape("\t", 0, Fit::NONE);
+        assert_eq!(only.lines.len(), 1);
+        let line = &only.lines[0];
+        assert!(line.glyphs.is_empty(), "{line:?}");
+        assert_eq!((line.start, line.end), (0, 1));
+        assert!(close(line.width, tab), "{line:?}");
     }
 
     /// The bundled fonts with `file`'s bytes held back, as the browser build

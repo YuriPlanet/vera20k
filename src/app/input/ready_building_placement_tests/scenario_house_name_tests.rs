@@ -141,7 +141,6 @@ fn authored_computer_barracks_is_captured_and_delivers_paid_e2() {
     let mut fixture = Fixture {
         sim: scene.runtime.simulation,
         rules: scene.runtime.resources.rules.clone(),
-        overlays: scene.runtime.resources.overlay_registry.clone(),
         owner: local,
         input: MatchInputState::new(HotkeyBindings::default()),
         projection: SidebarProjectionState::default(),

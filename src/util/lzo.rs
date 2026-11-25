@@ -13,6 +13,17 @@
 //! ## Dependency rules
 //! - Part of util/ — no dependencies on game modules.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::fmt;
 
 /// Errors during LZO decompression.
@@ -450,7 +461,7 @@ fn copy_match(dst: &mut [u8], op: usize, distance: usize, count: usize) -> Resul
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

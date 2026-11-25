@@ -287,13 +287,13 @@ fn mission_guard_matches_the_original() {
         if flag("target") {
             aim_at(&mut sim, building, target);
         }
-        sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
+        *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
         let returns = with_draws(&mut sim, row, |sim| {
             mission_guard(
                 sim,
                 building,
                 &rules,
-                crate::sim::world::ObjectAiCtx::default(),
+                &mut crate::sim::world::ObjectAiCtx::default(),
             )
         });
         assert_eq!(
@@ -363,7 +363,7 @@ fn mission_attack_matches_the_original() {
                     target,
                     weapon,
                     code,
-                    ObjectAiCtx::default(),
+                    &mut ObjectAiCtx::default(),
                     &mut false,
                 )
             })
@@ -461,8 +461,7 @@ fn set_target_matches_the_original() {
             building,
             requested,
             &rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         assert_eq!(
@@ -476,7 +475,7 @@ fn set_target_matches_the_original() {
             "{name}"
         );
         assert_eq!(
-            sim.building_admits_target(building, requested, &rules, None),
+            sim.building_admits_target(building, requested, &rules),
             row["target"].is_string() || requested.is_none(),
             "{name} admission"
         );
@@ -570,8 +569,8 @@ fn enter_idle_mode_matches_the_unlimbo_rows() {
     assert_eq!(entity.mission.queued(), mission_of("guard"));
     assert_eq!(entity.building_body_state(), Some(1));
     assert_eq!(ready_latch(&sim, building), 1);
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+    let session = &mut *sim.session;
+    session.set_binary_frame_for_test(session.binary_frame() + 1);
     object_ai_visit(&mut sim, building, &rules);
     let entity = sim.substrate.entities.get(building).unwrap();
     assert_eq!(entity.mission.current(), mission_of("guard"));
@@ -582,7 +581,7 @@ fn enter_idle_mode_matches_the_unlimbo_rows() {
 }
 
 fn object_ai_visit(sim: &mut Simulation, id: u64, rules: &RuleSet) {
-    sim.object_ai_visit_one(id, Some(rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(id, Some(rules), &mut ObjectAiCtx::default());
 }
 
 fn assert_hidden_startup_state(sim: &Simulation, id: u64, expected: &Value, context: &str) {
@@ -661,12 +660,11 @@ fn hidden_startup_matches_original_mission_and_rng() {
         entity
             .mission_leaf
             .set_building_ready_latch(input["ready"].as_u64().unwrap() as u8);
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
-        sim.mapgen_rng =
+        *sim.main_rng =
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         assert_hidden_startup_state(&sim, building, &row["initial"], name);
         assert_eq!(
@@ -707,7 +705,7 @@ fn the_update_tail_drops_a_target_out_of_range() {
     let rules = rules(".016", 20);
     let (mut sim, building, target) = fixture(&rules, "DEF", (15, 5));
     aim_at(&mut sim, building, target);
-    range_drop(&mut sim, building, &rules, ObjectAiCtx::default());
+    range_drop(&mut sim, building, &rules, &mut ObjectAiCtx::default());
     assert!(
         sim.substrate
             .entities
@@ -720,7 +718,7 @@ fn the_update_tail_drops_a_target_out_of_range() {
 
     let (mut sim, building, target) = fixture(&rules, "DEF", (8, 5));
     aim_at(&mut sim, building, target);
-    range_drop(&mut sim, building, &rules, ObjectAiCtx::default());
+    range_drop(&mut sim, building, &rules, &mut ObjectAiCtx::default());
     assert!(
         sim.substrate
             .entities
@@ -788,7 +786,7 @@ fn building_dispatch_cadence_matches_the_original() {
                 (event[0].as_u64().unwrap(), kind)
             })
             .collect();
-        sim.scenario_rng = SimRng::new(1);
+        *sim.scenario_rng = SimRng::new(1);
         // The object pass of the frame `advance_tick` commits as `start + k`
         // runs at `base + k`, the frame its timers record.
         let start = sim.session.binary_frame();
@@ -819,8 +817,7 @@ fn building_dispatch_cadence_matches_the_original() {
                         building,
                         Some(TargetKind::Entity(target)),
                         &rules,
-                        None,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
                 }
@@ -829,8 +826,7 @@ fn building_dispatch_cadence_matches_the_original() {
                         building,
                         None,
                         &rules,
-                        None,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
                 }
@@ -901,6 +897,7 @@ fn building_dispatch_cadence_matches_the_original() {
                     .entities
                     .get_mut(building)
                     .unwrap()
+                    .seldom
                     .rearm_timer
                     .start((base + k as i64) as i32, rof);
             }
@@ -1058,11 +1055,12 @@ fn retail_bunker_and_airfield_guard_answer_a_contact_without_a_draw() {
                 ai_counter: 0,
                 dispatch_timer: MissionDispatchTimer::from_raw(FRAME as i32, 0),
             });
-            entity.radio_contacts.insert(building).unwrap();
+            entity.seldom.radio_contacts.insert(building).unwrap();
             sim.substrate
                 .entities
                 .get_mut(building)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .insert(unit)
                 .unwrap();
@@ -1071,7 +1069,7 @@ fn retail_bunker_and_airfield_guard_answer_a_contact_without_a_draw() {
                 &mut sim,
                 building,
                 &rules,
-                crate::sim::world::ObjectAiCtx::default(),
+                &mut crate::sim::world::ObjectAiCtx::default(),
             );
             let queued = sim
                 .substrate
@@ -1181,11 +1179,12 @@ fn retail_airfield_guard_requeues_repair_for_a_contact_that_needs_reloading() {
             dispatch_timer: MissionDispatchTimer::from_raw(FRAME as i32, 0),
         });
         entity.ammo_mut().unwrap().set_current_for_test(ammo);
-        entity.radio_contacts.insert(airfield).unwrap();
+        entity.seldom.radio_contacts.insert(airfield).unwrap();
         sim.substrate
             .entities
             .get_mut(airfield)
             .unwrap()
+            .seldom
             .radio_contacts
             .set_slot(slot, harrier);
         if target {
@@ -1197,7 +1196,7 @@ fn retail_airfield_guard_requeues_repair_for_a_contact_that_needs_reloading() {
             &mut sim,
             airfield,
             &rules,
-            crate::sim::world::ObjectAiCtx::default(),
+            &mut crate::sim::world::ObjectAiCtx::default(),
         );
         let log: Vec<_> = crate::sim::radio::take_transmit_log()
             .into_iter()
@@ -1273,11 +1272,12 @@ fn retail_airfield_alternates_guard_and_repair_for_a_stopped_contact_in_enter() 
         dispatch_timer: MissionDispatchTimer::from_raw(now as i32, 100_000),
     });
     entity.ammo_mut().unwrap().set_current_for_test(0);
-    entity.radio_contacts.insert(airfield).unwrap();
+    entity.seldom.radio_contacts.insert(airfield).unwrap();
     sim.substrate
         .entities
         .get_mut(airfield)
         .unwrap()
+        .seldom
         .radio_contacts
         .insert(harrier)
         .unwrap();
@@ -1312,7 +1312,7 @@ fn retail_airfield_alternates_guard_and_repair_for_a_stopped_contact_in_enter() 
     assert_eq!(building.mission.current().known(), repair);
     let entity = sim.substrate.entities.get(harrier).unwrap();
     assert_eq!(entity.mission.current().known(), Some(MissionType::Enter));
-    assert!(building.radio_contacts.contains(harrier));
+    assert!(building.seldom.radio_contacts.contains(harrier));
 }
 
 /// Retail Dustbowl with a `kind` base defence of `owner` at the returned cell
@@ -1407,7 +1407,7 @@ pub(super) fn retail_dustbowl_defence(
                 y,
                 0,
                 rules,
-                &resources.overlay_registry,
+                resources.rules.overlay_registry(),
             )?;
             let defence = sim
                 .spawn_object_with_overlay_registry(
@@ -1417,7 +1417,7 @@ pub(super) fn retail_dustbowl_defence(
                     y,
                     0,
                     rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
                 .expect("the defence stands where the MCV does");
             Some((defence, truck, x, y))
@@ -1435,7 +1435,7 @@ pub(super) fn retail_dustbowl_defence(
                     py,
                     0,
                     rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
             })
             .unwrap_or_else(|| panic!("room for {plant}"));
@@ -1465,7 +1465,7 @@ pub(super) fn retail_frame(
             &orders,
             crate::headless_scenario::SIM_TICK_MS,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("retail frame")
 }
@@ -1491,7 +1491,7 @@ fn retail_spawn(
             cell.1,
             0,
             &resources.rules,
-            &resources.overlay_registry,
+            resources.rules.overlay_registry(),
         )
         .expect("spawns");
     sim.resolve_type_handles(&resources.rules);
@@ -1768,9 +1768,8 @@ fn retail_dustbowl_tesla_coil_charges_before_each_shot() {
 ///   `PrismSupportDelay=45` on its rearm timer.
 #[test]
 #[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
-// The stock PrismType support; Ares builds replace it
+// The stock PrismType support; an Ares game replaces it
 // (`techno_ai::ares_prism_forwarding`).
-#[cfg(not(feature = "ares"))]
 fn retail_dustbowl_prism_towers_forward_their_charge() {
     use crate::sim::world::DelayedFire;
     let (mut scenario, master, mcv, (x, y)) =
@@ -1794,7 +1793,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
                     py,
                     0,
                     &resources.rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
             })
             .expect("room for a second GAPOWR");
@@ -1877,7 +1876,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
                 (Some(DelayedFire::SupportBeam { .. }), None) => {
                     let entity = scenario.sim().substrate.entities.get(id).unwrap();
                     assert_eq!(
-                        entity.rearm_timer.timer(),
+                        entity.seldom.rearm_timer.timer(),
                         crate::sim::timer::CdTimer::started(binary_frame, 45),
                         "the downtime starts on the beam's frame"
                     );
@@ -1979,60 +1978,28 @@ fn retail_dustbowl_ore_cell_spawn_admission_matches_native_gates() {
 
     // A defence refuses the ore cell through the live overlay table.
     assert!(
-        sim.spawn_object_with_overlay_registry(
-            "GAPILL",
-            "Americans",
-            69,
-            40,
-            0,
-            rules,
-            &resources.overlay_registry,
-        )
-        .is_none(),
+        sim.spawn_object_with_map_overlays("GAPILL", "Americans", 69, 40, 0, rules)
+            .is_none(),
         "Is_Clear_To_Build refuses a building on an ore overlay"
     );
 
     // Through the live table the ore cell admits infantry and vehicles, and
     // the infantryman stands on his requested cell.
     let engineer = sim
-        .spawn_object_with_overlay_registry(
-            "E2",
-            "Americans",
-            69,
-            40,
-            0,
-            rules,
-            &resources.overlay_registry,
-        )
+        .spawn_object_with_map_overlays("E2", "Americans", 69, 40, 0, rules)
         .expect("ore admits infantry through the live overlay table");
     let placed = sim.substrate.entities.get(engineer).unwrap();
     assert_eq!((placed.position.rx(), placed.position.ry()), (69, 40));
     assert!(
-        sim.spawn_object_with_overlay_registry(
-            "SMCV",
-            "Russians",
-            69,
-            41,
-            0,
-            rules,
-            &resources.overlay_registry,
-        )
-        .is_some(),
+        sim.spawn_object_with_map_overlays("SMCV", "Russians", 69, 41, 0, rules)
+            .is_some(),
         "ore admits vehicles through the live overlay table"
     );
 
     // On the overlay-free ground both classes stand.
     assert!(
-        sim.spawn_object_with_overlay_registry(
-            "GAPILL",
-            "Americans",
-            76,
-            40,
-            0,
-            rules,
-            &resources.overlay_registry,
-        )
-        .is_some(),
+        sim.spawn_object_with_map_overlays("GAPILL", "Americans", 76, 40, 0, rules)
+            .is_some(),
         "overlay-free Rough ground admits a building"
     );
 }
@@ -2045,7 +2012,7 @@ fn retail_dustbowl_ore_cell_spawn_admission_matches_native_gates() {
 fn turret_building_opens_slot_9_and_holds_the_frame_of_its_heading() {
     let (mut sim, rules, id) =
         crate::sim::building_art::slot_test_fixture_with("Turret=yes\nTurretAnim=N\n");
-    sim.grand_opening(id, false, true, &rules, None, Default::default());
+    sim.grand_opening(id, false, true, &rules, None, &mut Default::default());
     let turret = sim.entities().get(id).unwrap().building_art.anim_slots()[9].unwrap();
     let held = |sim: &Simulation| {
         let runtime = sim.anim(turret).unwrap().runtime();

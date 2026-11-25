@@ -72,7 +72,7 @@ fn ares_cash_timer_mut(
 ) -> &mut CdTimer {
     match slot {
         0 => &mut entity.produce_cash.timer,
-        upgrade => &mut entity.ares.cash_upgrade_timers[upgrade - 1],
+        upgrade => &mut entity.seldom.ares.cash_upgrade_timers[upgrade - 1],
     }
 }
 
@@ -283,7 +283,7 @@ fn add_produce_cash_display(
         .object_type(entity.type_ref(), rules)
         .is_some_and(|object| object.building_type_ext().produce_cash_display())
     {
-        entity.ares.bounty_display.queue(amount);
+        entity.seldom.ares.bounty_display.queue(amount);
     }
 }
 
@@ -367,6 +367,32 @@ pub(crate) fn produce_cash_on_grand_opening(
         && let Some(entity) = substrate.entities.get_mut(id)
     {
         entity.produce_cash.arm(session.binary_frame(), delay);
+    }
+}
+
+/// Ares `BuildingClass_Put_ProduceCash @ 10014490` (hook `0x004409F4`):
+/// an upgrade put with a nonzero `ProduceCashDelay` starts its own timer,
+/// CashUpgradeTimers[UpgradeLevel - 1], with a stock Start (no extra frame).
+/// A zero-capacity host leaves UpgradeLevel at 0, so Ares writes the
+/// BuildingExt bytes before that array (`+0x48`/`+0x50`); VERA starts
+/// nothing there.
+pub(crate) fn ares_produce_cash_on_put(
+    session: &ScenarioSession,
+    substrate: &mut ObjectSubstrate,
+    host_id: u64,
+    delay: i32,
+) {
+    if delay == 0 {
+        return;
+    }
+    let Some(host) = substrate.entities.get_mut(host_id) else {
+        return;
+    };
+    let Ok(slot) = usize::try_from(host.building_upgrades().count()) else {
+        return;
+    };
+    if (1..=host.seldom.ares.cash_upgrade_timers.len()).contains(&slot) {
+        *ares_cash_timer_mut(host, slot) = CdTimer::started(session.binary_frame() as i32, delay);
     }
 }
 
@@ -802,7 +828,7 @@ pub(crate) fn drain_unit_ai_step(sim: &mut Simulation, stable_id: u64, rules: &R
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -1001,10 +1027,7 @@ mod tests {
             sim.entities().get(disc).unwrap().drain.target(),
             Some(refinery)
         );
-        assert!(sim.unmark_entity_remove(
-            refinery,
-            crate::sim::world::UninitContext::with_rules(&rules)
-        ));
+        assert!(sim.unmark_entity_remove(refinery, crate::sim::world::UninitContext::new(&rules)));
         sim.session.set_binary_frame_for_test(17);
         drain_unit_ai_step(&mut sim, disc, &rules);
         assert_eq!(
@@ -1039,7 +1062,6 @@ mod tests {
     /// house grants nothing.
     /// Ares replaces both ProduceCash blocks (hooks 0x43FD2C, 0x4482BD;
     /// `ares_cash_restarts_spent_timers_and_adds_each_upgrade`).
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn derrick_capture_grant_then_twenty_per_ninety_nine_frames() {
         let rules = rules();
@@ -1070,7 +1092,7 @@ mod tests {
             americans,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             credits(&sim, americans),
@@ -1122,7 +1144,7 @@ mod tests {
             soviets,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(credits(&sim, soviets), before);
         run_ticks(&mut sim, &rules, 99 * 2);
@@ -1668,7 +1690,6 @@ mod tests {
         assert!(anim_uninited(&sim, anim));
     }
 
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn constructed_timer_never_fires() {
         // Frames only move forward from the construction frame natively.
@@ -1726,14 +1747,87 @@ mod tests {
         assert_eq!(step(&mut sim, 99), 20);
         let entity = sim.substrate.entities.get(id).unwrap();
         assert_eq!(entity.produce_cash.timer, CdTimer::started(99, 101));
-        assert_eq!(entity.ares.cash_upgrade_timers[0], CdTimer::started(99, 11));
+        assert_eq!(
+            entity.seldom.ares.cash_upgrade_timers[0],
+            CdTimer::started(99, 11)
+        );
         assert_eq!(step(&mut sim, 108), 0);
         assert_eq!(step(&mut sim, 109), 5);
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         assert_eq!(
-            entity.ares.cash_upgrade_timers[0],
+            entity.seldom.ares.cash_upgrade_timers[0],
             CdTimer::started(109, 11)
         );
-        assert_eq!(entity.ares.bounty_display.take_pending_for_test(), 25);
+        assert_eq!(
+            entity.seldom.ares.bounty_display.take_pending_for_test(),
+            25
+        );
+    }
+
+    /// Ares BuildingClass_Put_ProduceCash (10014490, hook 0x4409F4): an
+    /// upgrade put on its host starts its own cash timer for its
+    /// `ProduceCashDelay` there, so the Update hook pays first when one frame
+    /// is left, `delay - 1` frames on, not a `delay + 1` restart later.
+    #[test]
+    fn an_ares_upgrade_starts_its_cash_timer_when_put() {
+        use crate::sim::mission::state::MissionTestFixture;
+        use crate::sim::mission::{MissionDispatchTimer, MissionId};
+        use crate::sim::world::{FrameEffects, UninitContext};
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[BuildingTypes]\n0=OIL\n1=PUMP\n\
+             [OIL]\nStrength=100\nUpgrades=1\n\
+             [PUMP]\nStrength=100\nPowersUpBuilding=OIL\n\
+             ProduceCashAmount=5\nProduceCashDelay=10\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let owner = house(&mut sim, "A", true, 0);
+        let host = sim
+            .spawn_object_at_height("OIL", "A", 10, 10, 0, 0, &rules)
+            .unwrap();
+        sim.substrate
+            .entities
+            .get_mut(host)
+            .unwrap()
+            .mission
+            .apply_test_fixture(MissionTestFixture {
+                current: MissionId::from_raw(-1),
+                queued: MissionId::from_raw(5),
+                suspended: MissionId::NONE,
+                movement_bypass_latch: 0,
+                handler_state: 0,
+                mission_start_frame: 0,
+                ai_counter: 0,
+                dispatch_timer: MissionDispatchTimer::at_frame(0),
+            });
+        let pump = sim
+            .construct_object_limbo_at_height(
+                "PUMP",
+                "A",
+                10,
+                10,
+                0,
+                0,
+                &rules,
+                &mut FrameEffects::default(),
+            )
+            .unwrap();
+        sim.session.set_binary_frame_for_test(50);
+        assert!(sim.try_install_building_upgrade(pump, host, &rules, UninitContext::new(&rules)));
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(host)
+                .unwrap()
+                .seldom
+                .ares
+                .cash_upgrade_timers[0],
+            CdTimer::started(50, 10)
+        );
+        sim.session.set_binary_frame_for_test(59);
+        let before = credits(&sim, owner);
+        produce_cash_step(&mut sim, host, &rules);
+        assert_eq!(credits(&sim, owner) - before, 5);
     }
 }

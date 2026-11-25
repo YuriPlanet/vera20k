@@ -20,41 +20,45 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-#[cfg(test)]
+use crate::app::diagnostics::performance_overlay::PerformanceOverlay;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::presentation::state::MatchPresentationState;
+
+#[cfg(all(test, tests_app_presentation_render))]
 mod anim_translucency_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod bridge_shadow_gpu_tests;
 mod build_instances;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod building_bracket_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod building_shadow_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod building_slot_native_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod building_viewport_bounds_tests;
 mod draw_passes;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod magnetic_wave_gpu_tests;
 mod object_extras;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod parachute_native_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod parachute_owner_color_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod placement_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod status_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod target_laser_gpu_tests;
-pub(crate) use draw_passes::draw_software_cursor;
 #[cfg(test)]
 pub(crate) use draw_passes::{draw_bridge_shadows, draw_pooled_cell_bodies};
+pub(crate) use draw_passes::{draw_software_cursor, draw_world_window_copy};
 pub(crate) mod draw_plan_lowering;
 mod merge_passes;
 pub(crate) mod minimap_transaction;
 mod object_stages;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod object_stages_gpu_tests;
 pub(crate) mod terrain_picture;
 
@@ -69,6 +73,8 @@ use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner_name;
 use crate::ui::sidebar::SidebarView;
 
+pub(crate) use build_instances::tactical_world_view;
+#[cfg(test)]
 pub(crate) use build_instances::tactical_world_viewport;
 use build_instances::{DebugInstances, SidebarInstances, UiInstances, WorldInstances};
 
@@ -104,7 +110,16 @@ impl GameRenderInstanceCounts {
 /// readers only ever see a window's totals or means, never one frame's spans.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct RenderPhases {
-    /// Phase 1 — terrain, overlays, entities.
+    /// Capturing the presentation frame of the home world before the draw
+    /// (`SimHost::ensure_frame`); zero while a lent tick keeps its own.
+    pub snapshot: Duration,
+    /// Phase 1's visible terrain tiles.
+    pub terrain: Duration,
+    /// Phase 1's Display object walk: units, infantry, buildings, debris and
+    /// bullets, voxel image renders included.
+    pub objects: Duration,
+    /// The rest of phase 1: overlays, bridges, smudges, anims, particles,
+    /// selection brackets and health bars.
     pub world: Duration,
     /// Phase 2 — pathgrid / cell grid / heightmap overlays.
     pub debug: Duration,
@@ -135,11 +150,14 @@ pub(crate) struct RenderPhases {
 }
 
 impl RenderPhases {
-    pub(crate) const COUNT: usize = 11;
+    pub(crate) const COUNT: usize = 14;
 
     /// The spans in declaration order, for the meter and the wire.
     pub(crate) fn spans(&self) -> [Duration; Self::COUNT] {
         [
+            self.snapshot,
+            self.terrain,
+            self.objects,
             self.world,
             self.debug,
             self.shroud,
@@ -157,10 +175,13 @@ impl RenderPhases {
 
 /// Output retained from one production game render.
 ///
-/// `sidebar_view` is the existing UI handoff. The counts are observation-only
-/// evidence derived from the same vectors uploaded and dispatched this frame.
+/// The counts are observation-only evidence derived from the same vectors
+/// uploaded and dispatched this frame.
 pub(crate) struct GameRenderOutput {
-    pub sidebar_view: Option<SidebarView>,
+    /// The revision of the sidebar view this render drew, `None` when it drew
+    /// none. The view stays with its owner ([`Self::drawn_sidebar_view`]).
+    sidebar_view_revision: Option<u64>,
+    pub rendered_verdict: Option<crate::sim::house_state::HouseOutcomeKind>,
     pub instance_counts: GameRenderInstanceCounts,
     pub times: GameRenderTimes,
     pub particle_draws: Option<Vec<crate::app::presentation::instances::ParticleDrawObservation>>,
@@ -169,6 +190,19 @@ pub(crate) struct GameRenderOutput {
     /// The frame of this render's software cursor sprite, for a zoomed
     /// match's window pass (`window_ui::draw_battlefield`).
     pub software_cursor: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
+}
+
+impl GameRenderOutput {
+    /// The sidebar view this render drew, read from the retained projection:
+    /// `None` when the render drew no sidebar, or when the projection's view
+    /// has changed since and the drawn one is gone.
+    pub(crate) fn drawn_sidebar_view<'s>(
+        &self,
+        presentation: &'s MatchPresentationState,
+    ) -> Option<&'s SidebarView> {
+        let projection = &presentation.sidebar_projection;
+        projection.view_at(self.sidebar_view_revision?)
+    }
 }
 
 /// Actual HUD update inputs observed by the frame owner, and the radar draw
@@ -180,14 +214,109 @@ pub(crate) struct GameRenderTimes {
     pub message_ms: Option<u64>,
 }
 
-/// Whether this render measures its phases: for an attached dashboard, or
-/// while the performance panel shows its Most CPU row.
-fn render_phases_wanted(state: &AppState) -> bool {
-    #[cfg(feature = "telemetry-dashboard")]
-    if state.diag.telemetry_observer.active() {
+/// The frame's render pass and bounded submission counts, in the log while
+/// they are news: the first frames of the process, every frame that sets a
+/// new maximum, and one line a minute. A render pass is what an integrated
+/// GPU pays for most, loading and storing its attachments through shared
+/// memory each time; a frame of hundreds is slow there and invisible on a
+/// desktop card, and an Intel HD 620 whose frames took a second each lost
+/// its device to Windows' timeout seconds into every match.
+#[derive(Default)]
+pub(crate) struct FramePassLog {
+    frames: u64,
+    max_passes: usize,
+    /// The slowest GPU frame the startup probe has seen, in milliseconds.
+    slowest_gpu_ms: f32,
+    last_logged: Option<Instant>,
+}
+
+impl FramePassLog {
+    const FIRST_FRAMES: u64 = 3;
+    /// On a GPU that draws from the system's memory, the GPU timer runs for
+    /// this many frames of the process (half a minute at the native rate) and
+    /// the log carries each frame's GPU time, so a slow start says whether
+    /// the GPU or the processor is the slow one.
+    const PROBE_FRAMES: u64 = 450;
+    const SUMMARY_EVERY: Duration = Duration::from_secs(60);
+
+    pub(crate) fn note(
+        &mut self,
+        gpu: &crate::render::gpu::GpuContext,
+        overlay: &mut crate::app::diagnostics::performance_overlay::PerformanceOverlay,
+        passes: usize,
+        submissions: usize,
+        recording: Option<Duration>,
+    ) {
+        self.frames += 1;
+        let probing = gpu.shared_memory_graphics() && self.frames <= Self::PROBE_FRAMES;
+        overlay.set_startup_probe(probing);
+        // The panel takes its own sample while it shows.
+        let gpu_ms = (probing && !overlay.is_visible())
+            .then(|| gpu.timer.take_frame_ms())
+            .flatten();
+        let slower = gpu_ms.is_some_and(|ms| ms > self.slowest_gpu_ms);
+        let now = Instant::now();
+        let since = self.last_logged.map(|last| now.duration_since(last));
+        let rested = since.is_none_or(|since| since >= Duration::from_secs(1));
+        let first = self.frames <= Self::FIRST_FRAMES;
+        let grew = (passes > self.max_passes || slower) && rested;
+        let due = since.is_some_and(|since| since >= Self::SUMMARY_EVERY);
+        if let Some(ms) = gpu_ms {
+            self.slowest_gpu_ms = self.slowest_gpu_ms.max(ms);
+        }
+        if !(first || grew || due) {
+            return;
+        }
+        self.max_passes = self.max_passes.max(passes);
+        self.last_logged = Some(now);
+        let recorded = recording.map_or(String::new(), |recording| {
+            format!(", recorded in {:.1} ms", recording.as_secs_f64() * 1e3)
+        });
+        let timed = gpu_ms.map_or(String::new(), |ms| {
+            format!(", GPU {ms:.0} ms (slowest {:.0})", self.slowest_gpu_ms)
+        });
+        log::info!(
+            "Frame {}: {passes} render passes in {} submissions (most so far {}){recorded}{timed}",
+            self.frames,
+            submissions + 1,
+            self.max_passes
+        );
+    }
+}
+
+/// Names of the render phases, in the same order as [`RenderPhases::spans`].
+/// The perf recorder uses these as CSV column names.
+#[cfg(feature = "perf")]
+pub(crate) const RENDER_PHASE_KEYS: [&str; RenderPhases::COUNT] = [
+    "snapshot",
+    "terrain",
+    "objects",
+    "world",
+    "debug",
+    "shroud",
+    "ui",
+    "sidebar",
+    "upload",
+    "lights",
+    "effects",
+    "draw_calls",
+    "handoff",
+    "other",
+];
+
+/// Whether this render measures its phases: for an attached dashboard, while
+/// the performance panel shows its Most CPU row, or always in a perf build.
+// `diag` is read only with the telemetry dashboard.
+#[cfg_attr(not(feature = "telemetry-dashboard"), allow(unused_variables))]
+fn render_phases_wanted(performance_overlay: &PerformanceOverlay, diag: &DiagnosticsState) -> bool {
+    if cfg!(feature = "perf") {
         return true;
     }
-    state.renderer.performance_overlay.is_visible()
+    #[cfg(feature = "telemetry-dashboard")]
+    if diag.telemetry_observer.active() {
+        return true;
+    }
+    performance_overlay.is_visible()
 }
 
 /// Render one in-game frame: terrain, units, overlays, UI, sidebar.
@@ -203,10 +332,15 @@ pub(crate) fn render_game(
     // Phase accounting for the dashboard's render breakdown and the performance panel's
     // Most CPU row. One clock read per phase boundary; the spans are handed
     // back on `GameRenderOutput` and never written into the world here.
-    let render_started = render_phases_wanted(state).then(Instant::now);
+    let render_started =
+        render_phases_wanted(&state.renderer.performance_overlay, &state.diag).then(Instant::now);
     let (sw, sh) = (state.render_width() as f32, state.render_height() as f32);
     // What this picture draws of the world (`presentation::frame`).
     state.match_state.sim_runtime.ensure_frame();
+    // The sidebar chrome of the side the local player draws, built on the
+    // frame that first needs it (`SidebarChromeSet::ensure_side`).
+    crate::app::presentation::sidebar_render::ensure_current_sidebar_chrome(state);
+    let after_snapshot = render_started.map(|_| Instant::now());
 
     // Trigger action 0x28 mutates scroll/radar authority inside the committed
     // sim frame. Install and clamp it before constructing any world instances,
@@ -217,7 +351,14 @@ pub(crate) fn render_game(
     // around the view (ALL06, SOV03) or jump the camera in the same trigger
     // (SOV01 SP3.6, action 112); only SOV01's SP4.5b and base-gained shrinks
     // can leave the view outside, until the player scrolls. VERA moves it at once.
-    crate::app::input::camera::clamp_camera_to_playable_area(state, sw, sh);
+    crate::app::input::camera::clamp_camera_to_playable_area(
+        &state.platform,
+        &state.renderer,
+        &mut state.match_state,
+        &state.persistence,
+        sw,
+        sh,
+    );
     // Publish the final view once: world instances, CPU A admission and GPU
     // palette sampling must use this frame's clamped camera and zoom.
     state.renderer.batch_renderer.update_camera(
@@ -227,10 +368,11 @@ pub(crate) fn render_game(
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
         state.match_state.input.zoom_level,
-        crate::app::presentation::instances::depth_axis(state),
+        crate::app::presentation::instances::depth_axis(&state.match_state.match_presentation),
     );
+    update_native_z_origin(state);
 
-    let local_owner = preferred_local_owner_name(state);
+    let local_owner = preferred_local_owner_name(&state.match_state);
     let translucent_fog = state.translucent_fog_enabled();
     let sandbox = state.match_state.sandbox_full_visibility;
     // Effective viewport in world pixels — zoom shrinks what's visible.
@@ -244,24 +386,26 @@ pub(crate) fn render_game(
     if z == 1.0 {
         state.renderer.world_zoom_pass = None;
     } else {
+        // When the Options zoom scales the frame, the world also goes
+        // straight into the window (`draw_world_window_copy`). At 100% (the
+        // Original shape's bars) the frame's world is already the window's.
+        let window_copy = state.tactical_zoom().is_some_and(|zoom| zoom.percent > 100);
         let renderer = &mut state.renderer;
         let gpu = &renderer.gpu;
         let target = [sw as u32, sh as u32];
-        if let Some(pass) = renderer.world_zoom_pass.as_mut() {
-            pass.set_view(&gpu.device, &gpu.queue, target, z);
-        } else {
-            renderer.world_zoom_pass = Some(crate::render::upscale_pass::WorldZoomPass::new(
+        let pass = renderer.world_zoom_pass.get_or_insert_with(|| {
+            crate::render::upscale_pass::WorldZoomPass::new(
                 &gpu.device,
                 &gpu.queue,
                 gpu.surface_format,
                 target,
                 z,
-            ));
-        }
-        renderer.batch_renderer.set_native_world_resolution(
-            &gpu.queue,
-            renderer.world_zoom_pass.as_ref().unwrap().source_size(),
-        );
+            )
+        });
+        pass.set_view(&gpu.device, &gpu.queue, target, z, window_copy);
+        renderer
+            .batch_renderer
+            .set_native_world_resolution(&gpu.queue, pass.source_size());
     }
     let world_camera = state.renderer.batch_renderer.camera_uniform();
 
@@ -319,6 +463,14 @@ pub(crate) fn render_game(
     });
     let mut world =
         build_instances::build_world_instances(state, vsw, vsh, bracket_palette, &cursor_targets);
+    // The skip table the bodies just built name, before any of this picture's
+    // command buffers (`PassSubmission` submits inside the draw passes).
+    state
+        .match_state
+        .match_presentation
+        .zshape_skips
+        .borrow_mut()
+        .upload(&state.renderer.batch_renderer, &state.renderer.gpu.queue);
     for layer in &mut world.object_layers {
         object_extras::defer_health_to_frame(layer, world_camera.camera_pos, z);
     }
@@ -357,11 +509,12 @@ pub(crate) fn render_game(
                 .is_some_and(|house| house.is_defeated()),
         };
         let rules = &rt.resources.rules;
-        shroud_buf.set_alpha_shapes(view.simulation().alpha_shapes().filter_map(
-            |(origin, image)| {
+        shroud_buf.set_alpha_shapes(view.simulation().alpha_shape_draws(rules).filter_map(
+            |shape| {
                 Some(crate::render::shroud_buffer::AlphaShapeDraw {
-                    origin,
-                    image: rules.alpha_image(image)?.clone(),
+                    origin: shape.origin,
+                    image: rules.alpha_image(shape.image)?.clone(),
+                    frame: shape.frame,
                 })
             },
         ));
@@ -418,11 +571,11 @@ pub(crate) fn render_game(
         .as_mut()
         .is_some_and(|radar| radar.tick(steps, times.radar_ms));
     if housing_settled {
-        crate::app::radar_movie::end_radar_sound_loop(state);
+        crate::app::radar_movie::end_radar_sound_loop(&mut state.audio);
     }
     // Ares DisplayCredits ages its labels in the same composite, unless the
-    // chrono screen's 4F4480 interception suppresses it.
-    #[cfg(feature = "ares")]
+    // chrono screen's 4F4480 interception suppresses it. Empty unless the
+    // sim emitted Ares bounty text, so this runs in every game.
     if !chrono_holds {
         let credits = state
             .match_state
@@ -446,7 +599,7 @@ pub(crate) fn render_game(
     let after_sidebar = render_started.map(|_| Instant::now());
 
     // Phase 6: Upload all instances to GPU buffer pool.
-    upload_to_gpu(state, encoder, &world, &debug, &ui, &sidebar);
+    let rendered_verdict = upload_to_gpu(state, encoder, &world, &debug, &ui, &sidebar);
     let after_upload = render_started.map(|_| Instant::now());
     state
         .match_state
@@ -488,14 +641,6 @@ pub(crate) fn render_game(
     );
     let after_lights = render_started.map(|_| Instant::now());
     let composition_view = state.renderer.combat_light_renderer.composition_view();
-    let (_, tactical_y, _, _) = crate::app::input::camera::tactical_viewport_px(state);
-    // Shader row coordinates are unscaled world pixels; scissor uses target
-    // pixels. Native zoom1 is exact, and scaled views preserve that unit frame.
-    let native_z_origin_y = (tactical_y as f32 / z).floor();
-    state
-        .renderer
-        .batch_renderer
-        .update_native_z_origin(&state.renderer.gpu.queue, native_z_origin_y);
     // The sidebar and its bar draw into their own surfaces at the Sidebar
     // size.
     let sidebar_frame = state.sidebar_frame();
@@ -535,7 +680,7 @@ pub(crate) fn render_game(
     let armed_building = state.armed_building_type().map(str::to_owned);
     let cursor_cell = (armed_super_weapon.is_some() || armed_building.is_some()).then(|| {
         crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-            state,
+            &state.match_state,
             state.match_state.input.cursor_x,
             state.match_state.input.cursor_y,
         )
@@ -683,7 +828,7 @@ pub(crate) fn render_game(
         || !ui.tactical_line_calls.is_empty()
         || !ui.target_line.is_empty()
         || !radials.draws.is_empty();
-    #[cfg(feature = "ares")]
+    // Empty unless the sim emitted Ares bounty text, so this runs in every game.
     let animated = animated || !presentation.flying_credits.get_mut().is_empty();
     presentation.tactical_composite.record_contents(animated);
     let bolt_lines = presentation.electric_bolts.shown(viewport.camera);
@@ -796,6 +941,7 @@ pub(crate) fn render_game(
             cell_body_draws: &world.cell_body_draws,
             terrain: &world.terrain.normal,
             smudge: &world.smudge,
+            smudge_cuts: &world.smudge_cuts,
             bridge_shadows: &world.bridge_body_shadow,
             object_layers: &world.object_layers,
             fogged_objects: &world.fogged_objects,
@@ -816,8 +962,26 @@ pub(crate) fn render_game(
     // The bounded submissions made while recording belong to the hand-off;
     // the frame owner adds its final submission and present.
     let submitted = state.renderer.terrain_draw_renderer.frame_submit_time();
+    {
+        let renderer = &mut state.renderer;
+        renderer.pass_log.note(
+            &renderer.gpu,
+            &mut renderer.performance_overlay,
+            renderer.terrain_draw_renderer.closed_passes(),
+            renderer.terrain_draw_renderer.submissions(),
+            render_started
+                .zip(finished)
+                .map(|(started, finished)| finished.duration_since(started)),
+        );
+    }
     let phases = render_started.map(|render_started| RenderPhases {
-        world: after_world.unwrap().duration_since(phase1_started.unwrap()),
+        snapshot: after_snapshot.unwrap().duration_since(render_started),
+        terrain: world.spans.terrain,
+        objects: world.spans.objects,
+        world: after_world
+            .unwrap()
+            .duration_since(phase1_started.unwrap())
+            .saturating_sub(world.spans.terrain + world.spans.objects),
         debug: after_debug.unwrap().duration_since(after_world.unwrap()),
         shroud: after_shroud.unwrap().duration_since(after_debug.unwrap()),
         ui: after_ui.unwrap().duration_since(after_shroud.unwrap()),
@@ -832,7 +996,9 @@ pub(crate) fn render_game(
             .duration_since(after_effects.unwrap())
             .saturating_sub(submitted),
         handoff: submitted,
-        other: phase1_started.unwrap().duration_since(render_started)
+        other: phase1_started
+            .unwrap()
+            .duration_since(after_snapshot.unwrap())
             + effects_started
                 .unwrap()
                 .duration_since(after_lights.unwrap()),
@@ -843,12 +1009,41 @@ pub(crate) fn render_game(
         .cached_terrain_instances = std::mem::take(&mut world.terrain.normal);
     Ok(GameRenderOutput {
         instance_counts: sidebar.emitted_instance_counts(),
-        sidebar_view: sidebar.view,
+        sidebar_view_revision: sidebar.view_revision,
+        rendered_verdict,
         times,
         particle_draws: world.particle_draws,
         phases,
         software_cursor: ui.software_cursor_draw,
     })
+}
+
+/// Upload the Z buffer's row 0, the tactical view's top, and the rows the Z
+/// seed has panned with this frame's view, before any world instance takes
+/// them. Shader row coordinates are unscaled world pixels; scissor uses
+/// target pixels. Native zoom1 is exact, and scaled views preserve that unit
+/// frame.
+fn update_native_z_origin(state: &mut AppState) {
+    let (_, y, width, height) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
+    let zoom = state.match_state.input.zoom_level;
+    let origin_y = (y as f32 / zoom).floor();
+    let camera = state.renderer.batch_renderer.camera_uniform().camera_pos;
+    let pan = state.renderer.native_z_seed.frame([
+        camera[0] as i32,
+        (camera[1] + origin_y) as i32,
+        (width as f32 / zoom) as i32,
+        (height as f32 / zoom) as i32,
+    ]);
+    let renderer = &state.renderer;
+    renderer
+        .batch_renderer
+        .update_native_z_origin(&renderer.gpu.queue, origin_y, pan);
 }
 
 /// The tactical surface object-layer DSurface stores address: logical
@@ -863,12 +1058,19 @@ pub(crate) fn render_game(
 /// clip's row, on top of this origin (`4BEF03`). A sprite's depth goes by its
 /// row in the battlefield, so the origin carries the clip's row twice and a
 /// line keeps its depth against the objects wherever a layout puts the
-/// battlefield. The original's clip starts at row 0.
+/// battlefield. The original's clip starts at row 0. Its seed is the panned
+/// one (`native_z::ZSeed`).
 pub(crate) fn tactical_surface_line_viewport(
     state: &AppState,
 ) -> crate::render::surface_line::SurfaceLineViewport {
     let z = state.match_state.input.zoom_level;
-    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(state);
+    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let clip = [x, y, w, h].map(|v| (v as f32 / z) as i32);
     crate::render::surface_line::SurfaceLineViewport {
         camera: surface_line_camera(
@@ -880,7 +1082,7 @@ pub(crate) fn tactical_surface_line_viewport(
             z,
         ),
         clip,
-        z_origin_y: 2 * clip[1],
+        z_origin_y: (2 * clip[1]).wrapping_sub(state.renderer.native_z_seed.pan()),
         zoom: 1.0,
     }
 }
@@ -907,12 +1109,16 @@ fn upload_to_gpu(
     debug: &DebugInstances,
     ui: &UiInstances,
     sidebar: &SidebarInstances,
-) {
+) -> Option<crate::sim::house_state::HouseOutcomeKind> {
     // A zoomed match draws the battlefield's screen-fixed text below, with
     // the boxes and frames behind it, at the window's pixels
     // (`window_ui`): its producers lay out in the frame and emit for the
     // window.
-    let window_raster = crate::app::presentation::window_ui::battlefield_raster(state);
+    let window_raster = crate::app::presentation::window_ui::battlefield_raster(
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+    );
     let frame_raster = state
         .renderer
         .bit_font
@@ -922,52 +1128,84 @@ fn upload_to_gpu(
     // tooltip (O10). Prepare once: nonsilent TextLabel72A4A0 advances its
     // raw-wall reveal and requests typing audio once per successful paint.
     // Keep the row's existing opaque black background behind its glyphs.
-    let (message_fill, message_text) = crate::app::input::messages::build_message_instances(state);
-    let (outcome_shape, outcome_text) = crate::app::presentation::outcome_banner::instances(state);
+    crate::app::input::messages::advance_messages(state);
+    let mut message_hud = std::mem::take(&mut state.match_state.match_presentation.message_hud);
+    let (message_fill, message_text) =
+        crate::app::input::messages::build_message_instances(state, &mut message_hud);
+    state.match_state.match_presentation.message_hud = message_hud;
+    let verdict = crate::app::presentation::outcome_banner::visible_verdict(&state.match_state);
+    let mut banner_huds =
+        std::mem::take(&mut state.match_state.match_presentation.outcome_banner_huds);
+    let (outcome_shape, outcome_text) = match verdict {
+        Some(kind) => {
+            crate::app::presentation::outcome_banner::instances(state, kind, &mut banner_huds)
+        }
+        None => {
+            banner_huds.clear();
+            Default::default()
+        }
+    };
+    state.match_state.match_presentation.outcome_banner_huds = banner_huds;
+    let rendered_verdict =
+        verdict.filter(|_| !outcome_shape.is_empty() || !outcome_text.is_empty());
 
     // A4 in-game tooltip: built before the pool borrow (it reads &AppState);
     // fill (darken texture) + text (GAME.FNT atlas), drawn after the chat
     // overlay and before the software cursor (O10).
+    let mut tooltip_hud = std::mem::take(&mut state.match_state.match_presentation.tooltip_hud);
     let (mut tooltip_fill, mut tooltip_border, mut tooltip_text) =
-        crate::app::input::tooltips::build_tooltip_instances(state);
+        crate::app::input::tooltips::build_tooltip_instances(state, &mut tooltip_hud);
+    state.match_state.match_presentation.tooltip_hud = tooltip_hud;
     // The layout edit mode's outlines and names share the tooltip's lanes:
     // over the whole frame, sidebar included.
     {
-        let (fills, borders, texts) = crate::app::input::layout_edit::instances(state);
+        let mut edit_hud =
+            std::mem::take(&mut state.match_state.match_presentation.layout_edit_hud);
+        let (fills, borders, texts) =
+            crate::app::input::layout_edit::instances(state, &mut edit_hud);
+        state.match_state.match_presentation.layout_edit_hud = edit_hud;
         tooltip_fill.extend(fills);
         tooltip_border.extend(borders);
         tooltip_text.extend(texts);
     }
 
-    // TacticalClass::Draw's timer lines, which follow the PixelFX sparkles;
-    // built before the pool borrow (they step the Supers' blinks).
+    // TacticalClass::Draw's timer lines, which follow the PixelFX sparkles:
+    // their step (the Supers' blinks, the dock's rows and hit areas) runs
+    // first, then the drawing reads it.
+    crate::app::presentation::super_timers::update_super_timers(state);
+    let mut timer_hud = std::mem::take(&mut state.match_state.match_presentation.super_timer_hud);
     let (mut super_timer_fill, mut super_timer_text) =
-        crate::app::presentation::super_timers::build_super_timer_instances(state);
+        crate::app::presentation::super_timers::build_super_timer_instances(state, &mut timer_hud);
+    state.match_state.match_presentation.super_timer_hud = timer_hud;
+    // Ares' release note and FPS counter follow the timer lines (hook
+    // 0x6D4B25) in their lanes: black boxes, then text.
+    {
+        let (boxes, texts) = crate::app::presentation::ares_tactical_text::build_instances(state);
+        super_timer_fill.extend(boxes);
+        super_timer_text.extend(texts);
+    }
     // The buttons and texts the side's layout adds over the battlefield
     // share the timers' lanes: white boxes, then text, inside its clip.
     {
-        let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
-        let (boxes, texts) = crate::app::presentation::layout_parts::instances(
-            state,
-            crate::ui::added_parts::Holder::Field,
-            crate::render::sidebar_text::native_radar_outline_color(theme),
+        let side_text = state
+            .match_state
+            .match_presentation
+            .sidebar_layout_spec
+            .side_text;
+        let placed = crate::app::presentation::layout_parts::placed(state);
+        let layout_parts = &mut state.match_state.match_presentation.added_part_huds.field;
+        layout_parts.draw(
+            &placed,
+            crate::render::sidebar_text::native_outline_from(side_text),
             [
                 state.match_state.input.camera_x,
                 state.match_state.input.camera_y,
             ],
+            &state.renderer.bit_font,
         );
-        super_timer_fill.extend(boxes);
-        super_timer_text.extend(texts);
+        super_timer_fill.extend_from_slice(layout_parts.boxes());
+        super_timer_text.extend_from_slice(layout_parts.texts());
     }
-    // Their pictures come from the sidebar's atlas and zoom with the frame.
-    let layout_field_art = crate::app::presentation::layout_parts::pictures(
-        state,
-        crate::ui::added_parts::Holder::Field,
-        [
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-        ],
-    );
 
     // GScreenClass_DrawText's Phobos build description, the tactical view's
     // top-right identity box; empty outside Phobos builds.
@@ -993,7 +1231,11 @@ fn upload_to_gpu(
     });
     // The software cursor follows them into the window, last.
     let software_cursor: std::borrow::Cow<'_, [crate::render::batch::SpriteInstance]> =
-        match crate::app::presentation::window_ui::zoom_raster(state) {
+        match crate::app::presentation::window_ui::zoom_raster(
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.input,
+        ) {
             Some(raster) => ui
                 .software_cursor
                 .iter()
@@ -1002,13 +1244,25 @@ fn upload_to_gpu(
             None => ui.software_cursor.as_slice().into(),
         };
 
-    #[cfg(feature = "ares")]
-    let bounty_text = {
+    // BeaconClass::Draw's label boxes (`beacon_labels`), in frame pixels.
+    let (beacon_label_fill, beacon_label_outline, beacon_label_text) =
+        crate::app::presentation::beacon_labels::instances(state);
+
+    // Ares DisplayCredits' labels draw when Ares plays, the answer under
+    // which the sim pays a bounty (`sim::combat::record_kill`).
+    let ares = state.rules().is_some_and(|rules| rules.ares());
+    let bounty_text = if ares {
         let presentation = &state.match_state.match_presentation;
         if presentation.chrono_screen.overrides_tactical_draw() {
             Vec::new()
         } else {
-            let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+            let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state.match_presentation,
+                &state.persistence,
+            );
             presentation.flying_credits.borrow().build_instances(
                 &state.renderer.bit_font,
                 [
@@ -1019,13 +1273,21 @@ fn upload_to_gpu(
                 [left, top, width, height],
             )
         }
+    } else {
+        Vec::new()
     };
 
     // The sidebar's streams scroll with the UI camera, and its text with it
     // unless a raster already placed that on the surface.
     let ui_camera = state.renderer.batch_renderer.ui_camera_uniform().camera_pos;
     let text_camera = if matches!(
-        crate::app::presentation::sidebar_surface::column_text(state),
+        crate::app::presentation::sidebar_surface::column_text(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence
+        ),
         crate::app::presentation::sidebar_surface::ColumnText::Surface(Some(_))
     ) {
         [0.0; 2]
@@ -1068,18 +1330,31 @@ fn upload_to_gpu(
 
     // Residual effects keep their existing uploads and pass ownership.
     pool.upload("cell_sparkles", &world.cell_sparkles);
-    pool.upload("layout_field_art", &layout_field_art);
+    // The parts' pictures come from the sidebar's atlas and zoom with the frame.
+    pool.upload(
+        "layout_field_art",
+        state
+            .match_state
+            .match_presentation
+            .added_part_huds
+            .field
+            .pictures(),
+    );
     pool.upload("super_timer_fill", &super_timer_fill);
     pool.upload("super_timer_text", &super_timer_text);
     pool.upload("build_text_fill", &build_text_fill);
     pool.upload("build_text_text", &build_text_text);
-    #[cfg(feature = "ares")]
-    pool.upload("bounty_text", &bounty_text);
+    if ares {
+        pool.upload("bounty_text", &bounty_text);
+    }
 
     // UI overlays
     for (house, beacons) in ui.beacons.iter().enumerate() {
         pool.upload_page("beacons", house, beacons);
     }
+    pool.upload("beacon_label_fill", &beacon_label_fill);
+    pool.upload("beacon_label_outline", &beacon_label_outline);
+    pool.upload("beacon_label_text", &beacon_label_text);
     pool.upload("drag", &ui.drag);
     pool.upload("ground_marks", &ui.ground_marks);
     pool.upload_strokes("ground_strokes", &ui.ground_strokes);
@@ -1129,9 +1404,10 @@ fn upload_to_gpu(
     pool.upload("tooltip_fill", &tooltip_fill);
     pool.upload("tooltip_border", &tooltip_border);
     pool.upload("tooltip_text", &tooltip_text);
+    rendered_verdict
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod tests {
     include!("../render_tests.rs");
 }

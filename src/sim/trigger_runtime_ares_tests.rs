@@ -60,7 +60,7 @@ fn damage_and_kill_events_compare_the_attacking_house() {
         victim,
         attacker,
         1,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(locals(&sim, 5), [true, true, false, false, false]);
 
@@ -68,7 +68,7 @@ fn damage_and_kill_events_compare_the_attacking_house() {
         victim,
         KillSource::House(Some(houses[1])),
         KillCallback::OwnerChange,
-        UninitContext::new(&rules, Some(&overlays)),
+        UninitContext::new(&rules),
     );
     assert_eq!(locals(&sim, 5), [true, true, false, true, false]);
 }
@@ -116,7 +116,7 @@ fn owned_type_events_count_the_houses_objects() {
         &mut effects,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         locals(&sim, 9),
@@ -171,7 +171,7 @@ fn house_value_events_resolve_player_slots_and_keep_alive_counts() {
         &mut effects,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         locals(&sim, 6),
@@ -230,11 +230,22 @@ fn superweapon_launch_and_deactivation_spring_the_owner_house_tags() {
     );
     sim.session.set_binary_frame_for_test(100);
     crate::sim::superweapon::grant_provided_supers(&mut sim, &rules, owner);
-    crate::sim::superweapon::update_owned_supers(&mut sim, &rules, owner);
+    crate::sim::superweapon::update_owned_supers(
+        &mut sim,
+        &rules,
+        owner,
+        &mut FrameEffects::default(),
+    );
     sim.session.set_binary_frame_for_test(1000);
-    crate::sim::superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner);
+    crate::sim::superweapon::tick_house_superweapon_instances(
+        &mut sim,
+        &rules,
+        owner,
+        &mut FrameEffects::default(),
+    );
     let fire = |sim: &mut Simulation| {
         sim.apply_command_with_overlays(
+            None,
             "House0",
             &crate::sim::command::Command::LaunchSuperWeapon {
                 sw_type_id: cell,
@@ -243,13 +254,99 @@ fn superweapon_launch_and_deactivation_spring_the_owner_house_tags() {
             },
             &rules,
             Some(&overlays),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
     };
     assert!(fire(&mut sim));
     assert_eq!(locals(&sim, 5), [true, false, true, false, false]);
     fire(&mut sim);
     assert_eq!(locals(&sim, 5), [true, false, true, false, true]);
+}
+
+/// Drain expiry (Progress_Charged 10035730), a click-off and a low-power hold
+/// (SetOnHold 10035750 deactivates at 100357E3) all raise 76 with the
+/// caller's overlay table, so the Tag's action 108 places its crate.
+#[test]
+fn battery_expiry_places_the_same_house_tag_crate_as_manual_deactivation() {
+    use crate::sim::{command::Command, superweapon, world::TickLane};
+
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    for case in ["click", "expire", "hold"] {
+        let expire = case == "expire";
+        let (mut sim, rules, overlays, houses) = event_ingress_fixture_with_rules(
+            "[SuperWeaponTypes]\n0=Cell\n[Cell]\nType=Battery\nRechargeTime=0.02\n\
+             IsPowered=yes\nSW.AlwaysGranted=yes\nSW.InitialReady=yes\nSW.ChargeToDrainRatio=1\n\
+             [OverlayTypes]\n0=BOX\n[BOX]\nCrate=yes\n[CrateRules]\nWoodCrateImg=BOX\nCrateImg=BOX\n",
+        );
+        let owner = houses[0];
+        let cell = sim.interner.get("Cell").unwrap();
+        let crate_id = overlays.id_for_name("BOX").unwrap();
+        let map = install_event_ingress_map(
+            &mut sim,
+            &rules,
+            "[Waypoints]\n0=15015\n[Triggers]\nEND=Country0,<none>,Battery ended,0,1,1,1,0\n\
+             [Tags]\nENDTAG=0,Battery ended,END\n[Events]\nEND=1,76,0,0\n\
+             [Actions]\nEND=3,132,11,0,0,0,0,0,123,56,0,0,0,0,0,0,A,108,0,0,0,0,0,0,A\n",
+        );
+        sim.session.install_waypoints(&map.waypoints);
+        for house in houses {
+            superweapon::construct_house_supers(&mut sim, &rules, house, false);
+        }
+        superweapon::grant_provided_supers(&mut sim, &rules, owner);
+        let command = Command::LaunchSuperWeapon {
+            sw_type_id: cell,
+            target_rx: 15,
+            target_ry: 15,
+        };
+        let registry = Some(&overlays);
+        let mut effects = FrameEffects::default();
+        let mut click = |sim: &mut Simulation| {
+            sim.apply_command_with_overlays(
+                None,
+                "House0",
+                &command,
+                &rules,
+                registry,
+                &mut effects,
+            )
+        };
+        assert!(click(&mut sim));
+        assert!(sim.power_states[&owner].has_battery());
+        if expire {
+            let duration = sim.super_weapons[&owner][&cell].charge_duration();
+            assert!(duration > 0);
+            for _ in 0..=duration {
+                sim.advance_app_frame(&[], &rules, 66, TickLane::Ordinary, &mut effects)
+                    .unwrap();
+            }
+        } else if case == "hold" {
+            let power = sim.power_states.get_mut(&owner).unwrap();
+            power.set_is_low_power_for_test(true);
+            superweapon::update_owned_supers(&mut sim, &rules, owner, &mut effects);
+            let instance = &sim.super_weapons[&owner][&cell];
+            assert!(instance.is_suspended());
+            assert_eq!(instance.charge_drain_state(), -1);
+        } else {
+            click(&mut sim);
+        }
+        assert!(!sim.power_states[&owner].has_battery());
+        assert!(
+            sim.trigger_runtime.local_variable_is_set(0),
+            "event 76 marked the local variable"
+        );
+        assert_eq!(
+            sim.overlay_grid().unwrap().cell(15, 15).overlay_id,
+            Some(crate_id),
+            "place crate on deactivation ({case})"
+        );
+        if case == "hold" {
+            continue;
+        }
+        // Expiry restarts after the Tag's action 132. An immediate click-off at
+        // a 1:1 ratio already converted the full drain back to zero recharge.
+        let expected = if expire { 123 } else { 0 };
+        assert_eq!(sim.super_weapons[&owner][&cell].charge_duration(), expected);
+    }
 }
 
 /// The abduction raises 72 (by the abductor's House) and 71 on the abductee,
@@ -307,7 +404,7 @@ fn an_abduction_raises_its_events_on_both_objects() {
         rules.weapon("Grab").unwrap(),
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     assert_eq!(
         locals(&sim, 6),
@@ -322,7 +419,7 @@ fn an_abduction_raises_its_events_on_both_objects() {
         rules.weapon("Grab").unwrap(),
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     assert_eq!(
         locals(&sim, 6),
@@ -338,7 +435,7 @@ fn an_abduction_raises_its_events_on_both_objects() {
 #[test]
 fn ares_actions_write_power_group_voice_and_drivers() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
-    let (mut sim, rules, overlays, houses) = event_ingress_fixture_with_rules("");
+    let (mut sim, rules, _overlays, houses) = event_ingress_fixture_with_rules("");
     let actor = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
     let other = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (17, 15));
     let untagged = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (19, 15));
@@ -354,13 +451,7 @@ fn ares_actions_write_power_group_voice_and_drivers() {
         sim.attach_object_trigger_tag(id, Some("TAG"));
     }
     sim.drain_trigger_effects();
-    sim.dispatch_object_tag_event(
-        actor,
-        83,
-        Some(actor),
-        None,
-        UninitContext::new(&rules, Some(&overlays)),
-    );
+    sim.dispatch_object_tag_event(actor, 83, Some(actor), None, UninitContext::new(&rules));
     sim.assess_power_for_test(&rules);
     assert_eq!(sim.power_states[&houses[0]].total_output(), 25);
     assert_eq!(sim.entities().get(actor).unwrap().object_group(), 4);
@@ -384,6 +475,6 @@ fn random_waypoint_sound_without_waypoints_draws_nothing() {
     sim.session
         .install_waypoints(&std::collections::HashMap::new());
     let before = sim.scenario_rng.logical_state();
-    assert!(sim.trigger_play_sound_at_random_waypoint(None, &rules, FrameEffects::default()));
+    assert!(sim.trigger_play_sound_at_random_waypoint(None, &rules, &mut FrameEffects::default()));
     assert_eq!(sim.scenario_rng.logical_state(), before);
 }

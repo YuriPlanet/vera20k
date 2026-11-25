@@ -45,8 +45,10 @@ impl LaserDraw {
     /// existing finite numeric owner rather than an independent approximation.
     pub(crate) fn intensity(self) -> NativeF32Bits {
         // Draw5505EF: (start - end) * (duration - age) / duration + end.
-        let start = X::load_f32(self.fade_start).expect("finite laser fade start");
-        let end = X::load_f32(self.fade_end).expect("finite laser fade endpoint");
+        // No INI value reaches these: sim::combat::laser::construct seeds 1.0,
+        // and its callers pass the constants 0.0 or 0.5 (railgun 0.5 start).
+        let start = X::load_f32(self.fade_start).expect("laser fade start is a code constant");
+        let end = X::load_f32(self.fade_end).expect("laser fade end is a code constant");
         X::div(
             X::mul(
                 X::sub(start, end),
@@ -82,7 +84,8 @@ impl LaserDraw {
                 .wrapping_sub(2),
             (-2i32).wrapping_sub(crate::util::native_x87::adjust_for_z_standard(self.to.z)),
         ];
-        let intensity = X::load_f32(self.intensity()).expect("finite laser fade");
+        let intensity =
+            X::load_f32(self.intensity()).expect("intensity() stores only finite binary32");
         // 550C21 multiplies the retained float by float[7E2220]=255.
         let toward_white = X::ftol_i32_low_masked(X::mul(intensity, X::load_i32(255))) as u8;
         let mut line = |from, to, rgb: [u8; 3]| {

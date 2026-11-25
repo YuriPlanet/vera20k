@@ -179,7 +179,7 @@ impl TechnoAmmo {
     }
 
     /// The `+0x6CC` writers and PointerExpired's clear.
-    pub(crate) fn set_dock(&mut self, dock: Option<u64>) {
+    pub(crate) fn set_dock(&mut self, dock: Option<u64>, _: crate::sim::game_entity::NameNote) {
         self.dock = dock;
     }
 
@@ -206,7 +206,7 @@ impl TechnoAmmo {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
 

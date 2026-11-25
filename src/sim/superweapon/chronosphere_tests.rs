@@ -173,7 +173,7 @@ pub(crate) fn place(
             0,
             level + deck,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap_or_else(|| panic!("{kind} constructs at {x},{y}"));
     let frame = sim.session.binary_frame();
@@ -187,7 +187,10 @@ pub(crate) fn place(
     entity.set_on_bridge(bridge);
     if latch {
         let owner = entity.owner();
-        entity.drop_credit.set_warped_by_house_for_test(Some(owner));
+        entity
+            .seldom
+            .drop_credit
+            .set_warped_by_house_for_test(Some(owner));
         entity
             .locomotor
             .as_mut()
@@ -445,10 +448,9 @@ fn retail_skirmish_chrono_warp_sinks_a_landed_harrier_to_terminal_cleanup() {
         sim.advance_app_frame(
             &due,
             rules,
-            None,
             67,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("ordinary skirmish frame");
     }
@@ -485,7 +487,7 @@ fn retail_skirmish_chrono_warp_sinks_a_landed_harrier_to_terminal_cleanup() {
     sim.session.set_game_mode(ScenarioGameMode::Skirmish);
     sim.session.set_current_house_for_test(Some(owner));
     sim.set_input_delay_ticks(0);
-    sim.fog = crate::sim::vision::FogState::new(64, 64);
+    *sim.fog = crate::sim::vision::FogState::new(64, 64);
     sim.fog.reveal_all_for_owner(owner);
     spawn(&mut sim, &rules, "GACNST", "Americans", (5, 5));
     spawn(&mut sim, &rules, "NACNST", "Russians", (10, 30));
@@ -584,6 +586,60 @@ fn retail_skirmish_chrono_warp_sinks_a_landed_harrier_to_terminal_cleanup() {
     );
 }
 
+/// A landed Harrier warped onto land gets its Fly back from the warp's END
+/// and flies at its next order: FootClass::AI calls the active locomotor's
+/// Process with no layer test (`0x004DA806..0x004DA877`), so the Fly
+/// Process (`0x004CCB40`) takes it off although the warp left it on the
+/// ground plane.
+#[test]
+fn retail_chrono_warped_harrier_takes_off_at_its_next_order() {
+    use crate::sim::movement::air_movement::current_fly_height;
+    let Some((rules, mut sim, americans)) = retail_world() else {
+        return;
+    };
+    let harrier = spawn(&mut sim, &rules, "ORCA", "Americans", SOURCE);
+    let height = |sim: &Simulation| {
+        let entity = sim.substrate.entities.get(harrier).expect("alive");
+        current_fly_height(entity, sim.resolved_terrain.as_ref())
+    };
+    assert_eq!(height(&sim), 0);
+    charge_chronosphere(&mut sim, americans);
+    click(&mut sim, &rules, americans, "ChronoSphereSpecial", SOURCE);
+    step(&mut sim, &rules);
+    click(&mut sim, &rules, americans, "ChronoWarpSpecial", TARGET);
+    assert_eq!(
+        locomotors(&sim, harrier),
+        (LocomotorKind::Teleport, Some(LocomotorKind::Fly))
+    );
+    for _ in 0..70 {
+        step(&mut sim, &rules);
+    }
+    let entity = sim.substrate.entities.get(harrier).expect("alive");
+    assert!(entity.chrono_warp().is_none());
+    assert_eq!(locomotors(&sim, harrier), (LocomotorKind::Fly, None));
+    assert_eq!((cell(&sim, harrier), height(&sim)), (TARGET, 0));
+
+    let command = Command::Move {
+        entity_id: harrier,
+        target_rx: TARGET.0 + 8,
+        target_ry: TARGET.1,
+    };
+    assert!(sim.apply_command_with_overlays(
+        None,
+        "Americans",
+        &command,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default()
+    ));
+    let mut flew = false;
+    for _ in 0..30 {
+        step(&mut sim, &rules);
+        flew |= height(&sim) > 0;
+    }
+    assert!(flew, "the warped Harrier takes off");
+}
+
 /// The locomotor chain from the active object down.
 fn chain(sim: &Simulation, id: u64) -> Vec<LocomotorKind> {
     let mut kinds = Vec::new();
@@ -610,7 +666,6 @@ fn chain(sim: &Simulation, id: u64) -> Vec<LocomotorKind> {
 // replaces it with SW_ChronoWarp's lambda 1006F4D0, which forces every Foot's
 // track to its own coordinates and moves those by the cell offset. Ares
 // coverage: `ares_stock_types_tests`.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_chrono_warp_carries_a_driving_chrono_miner() {
     use LocomotorKind::{Drive, Teleport};
@@ -625,11 +680,12 @@ fn retail_chrono_warp_carries_a_driving_chrono_miner() {
             target_ry: ry,
         };
         assert!(sim.apply_command_with_overlays(
+            None,
             "Americans",
             &command,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
     };
     order(&mut sim, (30, 20));
@@ -697,7 +753,6 @@ fn retail_chrono_warp_carries_a_driving_chrono_miner() {
 // replaces it with SW_ChronoWarp's lambda 1006F4D0, which forces every Foot's
 // track to its own coordinates and moves those by the cell offset. Ares
 // coverage: `ares_stock_types_tests`.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_chrono_warp_forces_a_sailing_ships_track_to_its_landing() {
     use LocomotorKind::{Ship, Teleport};
@@ -711,11 +766,12 @@ fn retail_chrono_warp_forces_a_sailing_ships_track_to_its_landing() {
         target_ry: 20,
     };
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &command,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     charge_chronosphere(&mut sim, americans);
     click(&mut sim, &rules, americans, "ChronoSphereSpecial", SOURCE);
@@ -947,7 +1003,7 @@ fn retail_destination_while_warping_in_is_refused_by_the_drive() {
         next,
         &rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(chain(&sim, miner), [Drive, Teleport, Teleport]);
     assert!(warping_in(&sim));
@@ -1296,7 +1352,7 @@ fn retail_chrono_update_position_matches_native_rows() {
                 terrain.cells_mut_for_test()[index].bridge_facts.raw_flags = int(&cell[3]) as u32;
             }
         }
-        sim.zone_grid = None;
+        *sim.zone_grid = None;
         crate::sim::arena_fixture::supply_native_map(&mut sim);
         let owner_type = if row["owner"] == "infantry" {
             "CLEG"
@@ -1354,7 +1410,7 @@ fn retail_chrono_update_position_matches_native_rows() {
             place,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_eq!(u8::from(answer), int(&row["result"]) as u8, "{row}");
@@ -1409,7 +1465,6 @@ fn retail_chrono_update_position_matches_native_rows() {
 // replaces it with SW_ChronoWarp's lambda 1006F4D0, which forces every Foot's
 // track to its own coordinates and moves those by the cell offset. Ares
 // coverage: `ares_stock_types_tests`.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_chrono_warp_destinations_match_native_rows() {
     if retail_rules().is_none() {
@@ -1443,7 +1498,7 @@ fn retail_chrono_warp_destinations_match_native_rows() {
                 terrain.cells_mut_for_test()[index].bridge_facts.raw_flags = int(&cell[3]) as u32;
             }
         }
-        sim.zone_grid = None;
+        *sim.zone_grid = None;
         crate::sim::arena_fixture::supply_native_map(&mut sim);
         let infantry = int(&row["what"]) == 0xF;
         let at = (

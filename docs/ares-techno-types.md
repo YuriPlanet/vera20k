@@ -1,7 +1,8 @@
 # Optional Ares TechnoType combat and movement keys
 
-Build with `--features ares`. Default builds ignore every key below and keep
-the stock rocket, reload, crush, targeting, smoke and crash paths.
+When a game plays Ares ([Ares](ares.md)), every build plays the keys below.
+Other games ignore them and keep the stock rocket, reload, crush, targeting,
+smoke and crash paths.
 
 ```ini
 [MyRocket]                       ; rulesmd.ini AircraftType
@@ -73,7 +74,7 @@ Reload adds `ReloadAmount` (or `EmptyReloadAmount` to an empty count) clamped to
 zero and `Ammo=` (10047A70, hook 0x6FB05B), for the Unit and Infantry reloads.
 `NoAmmoWeapon` answers What_Weapon_Should_I_Use right after its open-topped arm
 (10047AE0, 0x6F3410). Ares' gattling hook (1004B6C0, 0x70DEBA) makes the stage
-test read the charged value, so in Ares builds every gattling steps up one
+test read the charged value, so in a game that plays Ares every gattling steps up one
 charge earlier, and restarts a `Gattling.Cycle` type at the cap. Crushing a
 Techno makes the crusher receive its `CrushDamage` (1004BCE0, 0x7418AA). A
 berserk firer's rearm is `ftol(ROF * multiplier)` (1004A3D0, 0x6FF28F).
@@ -104,8 +105,7 @@ turret (1004B320, 0x6F9E50) follow their keys.
 
 ## Not covered
 
-- `NoSelfGuardArea` (the stock self-click Area Guard arm is not ported) and
-  `DamageSparksParticleSystems`; the rest is in part 2 below.
+- `DamageSparksParticleSystems`; the rest is in part 2 below.
 - A `Missile.Weapon` without a `Projectile=`: Ares dereferences the null
   BulletType; VERA detonates it without one.
 - A zero-`Strength=` type: Ares' smoke and spark gates compare a NaN health
@@ -146,7 +146,7 @@ instead of faulting), and up to `SelfHealing.%sAmount` while Health is below
 sinking techno skips both its own and the House pulses (1004B820). The
 ReceiveDamage aftermath (1004AB50, hook 0x702819) starts the timer for a
 nonzero result of an initially positive hit. The stock pulse heals above
-Strength, so its native replays (`signed_health_tests`) run in default builds
+Strength, so its native replays (`signed_health_tests`) run without Ares
 only.
 
 ## Falls and transports
@@ -155,7 +155,7 @@ ObjectClass_Update_MaxFallRate (10049BA0, hook 0x5F3FB2) steps every falling
 Techno by its `FallRate.*` (default 1, also free fall) and selects the arm by
 the Parachute pointer (+0x88) rather than +84; an object without a TechnoType
 (a flaming guy) steps 1 either way; the stock free-fall replay
-(`drop_as_bomb_oracle_tests`) runs in default builds only. `AirRate` decides an airborne Foot's body counter alone (100493D0, hook
+(`drop_as_bomb_oracle_tests`) runs without Ares only. `AirRate` decides an airborne Foot's body counter alone (100493D0, hook
 0x4DA8B2). `NoManualUnload` leaves a Unit transport's and an Aircraft's self
 click with no action (1004BEF0, 0x740031; 10048A90, 0x417DD2) and refuses an
 unbunkered transport in CanDeploySlashUnload (10049E70, 0x700EEC);
@@ -221,8 +221,9 @@ nothing consumes them:
 - `EVA.Lost` is consumed by the unit-lost cue (FootClass_Destroyed
   10049080, hook 0x4D98C0; buildings 10013F10, hook 0x44D760;
   [ares-warhead-residuals.md](ares-warhead-residuals.md)).
-- `NoSelfGuardArea` (10049710, hook 0x51E748): the healer infantry's
-  GuardArea over itself (0x51E710..0x51E748) is not ported.
+- `NoSelfGuardArea` is consumed by the healer infantry's GuardArea over
+  itself (10049710, hook 0x51E748;
+  [ares-techno-hooks.md](ares-techno-hooks.md)).
 - `RadialIndicatorRadius` of non-building technos (0x41BE80) and the
   `~~~` theater placeholder in `CameoPalette` (the cameo atlas is not
   built per theater).

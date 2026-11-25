@@ -1,41 +1,62 @@
 //! Individual command payload behavior for the Simulation.
 //!
-//! Contains `apply_command()` and its helper methods: selection snapshots,
-//! ownership checks and the MEGAMISSION event arm. `command_schedule` owns
-//! queue admission and scheduled batch order.
+//! Contains `apply_command()` and its helper methods: production, superweapon
+//! and archive records, order-event tokens and the MEGAMISSION event arm.
+//! `command_schedule` owns queue admission and scheduled batch order.
+//!
+//! Parts: `records` (native record encode/decode), `wall_sale` (selling a wall
+//! at a cell), `selection` (rally points and selection), `admission` (ownership
+//! checks and command subjects).
 //!
 //! Dependency rules: same as sim/ (depends on rules/, map/; never render/ui/audio/net).
 
 use crate::sim::world::FrameEffects;
-use std::collections::BTreeSet;
 
-use super::{SimSoundEvent, Simulation, SimulationWallRuntimeHost};
+use super::Simulation;
 use crate::map::entities::EntityCategory;
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat;
+#[cfg(test)]
+use crate::sim::command::COMMAND_RECORD_LEN;
+#[cfg(test)]
+use crate::sim::command::CommandEnvelope;
+#[cfg(test)]
+use crate::sim::command::DeployRecord;
+#[cfg(test)]
+use crate::sim::command::StopRecord;
 use crate::sim::command::{
-    ArchiveRecord, BUILDING_OFF_LINE_OPCODE, BUILDING_ON_LINE_OPCODE, BuildingOnLineRecord,
-    COMMAND_RECORD_LEN, Command, CommandEnvelope, CommandRecord, CycleProducerRecord, DeployRecord,
-    ExitRecord, GameSpeedRecord, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget,
-    ObjectAction, ObjectActionRecord, PaidSuperAction, PaidSuperRecord, PlaceRecord,
-    ProductionEvent, ProductionRecord, RepairRecord, ScatterRecord, SellWallAtCellRecord,
-    SpecialPlaceRecord, StopRecord,
+    ArchiveRecord, AresTrenchRedirectRecord, Command, CommandRecord, CycleProducerRecord,
+    MEGAMISSION_AUXILIARY_KIND_OFFSET, MEGAMISSION_PLANNING_OFFSET, MegaMissionRecord,
+    MegaMissionTarget, PlaceRecord, ProductionEvent, ProductionRecord,
 };
+use crate::sim::control_authority::CommandCapability;
 use crate::sim::house_diplomacy::HouseAlliances;
-use crate::sim::intern::{InternedId, StringInterner};
+use crate::sim::intern::{InternKey, InternedId, StringInterner};
 use crate::sim::mission::MissionType;
-use crate::sim::overlay_grid::OverlayGrid;
-use crate::sim::overlay_grid::{
-    OverlayRecalcOutcome, RecomputeResult, runtime_wall_cleanup_visit_at,
-};
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::pathfinding::PathGrid;
-use crate::sim::pathfinding::zone_incremental::ZoneRepairKind;
-use crate::sim::pathfinding::zone_map::ZoneGrid;
 use crate::sim::production;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::vision::FogState;
 use crate::sim::world::ObjectSubstrate;
+
+mod admission;
+mod records;
+mod selection;
+mod wall_sale;
+
+/// A command's acting subject. Markers and destinations do not confer control.
+enum CommandSubject<'a> {
+    Refused,
+    Local,
+    Primary(CommandCapability),
+    House(InternedId, CommandCapability),
+    TargetHouse(Option<InternedId>),
+    Actor(u64, CommandCapability),
+    Actors(&'a [u64], CommandCapability),
+    Bunker(u64),
+    Trench(u64, AresTrenchRedirectRecord),
+}
 
 #[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,1510 +135,46 @@ impl MegaMissionExecution {
     }
 }
 
+/// `ObjectClass+0x83`, IsSelected: the object is in the player's current
+/// selection. It lives with its owners: `ObjectClass::Select @ 0x005F4520`
+/// sets it ([`Simulation::techno_select`], [`Simulation::try_select_object`]),
+/// `ObjectClass::Deselect @ 0x005F44A0` clears it
+/// ([`Simulation::object_deselect`]), and `Command::Select` commits a
+/// snapshot through `apply_selection_snapshot`. VERA keeps the
+/// current-objects vector as the app's selection ledger (input order and
+/// pending commands), which it reconciles with this byte after the frame.
+/// Combat reads it for selected-unit effects.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct Selection {
+    selected: bool,
+}
+
+impl Selection {
+    /// The object is selected.
+    pub const fn is_selected(self) -> bool {
+        self.selected
+    }
+
+    /// `ObjectClass::Select`'s write. The MCV deploy and undeploy
+    /// reselections (`world_spawn`) still write it directly.
+    pub(in crate::sim) fn select(&mut self) {
+        self.selected = true;
+    }
+
+    /// `ObjectClass::Deselect`'s write.
+    fn deselect(&mut self) {
+        self.selected = false;
+    }
+
+    /// Install a fixture's byte.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_selected_for_test(&mut self, selected: bool) {
+        self.selected = selected;
+    }
+}
+
 impl Simulation {
-    /// HouseClass::Cheer50C8C0, original gamemd. Trigger113 and Event2D
-    /// share this owner. Capture the initial Techno count; re-read each live
-    /// ordinal and delegate admission to virtual388/Infantry522C00. There is
-    /// no House-level selected, alive, limbo, health or local-player test.
-    /// Building7E3EBC/Unit7F5C70 slot388 targets41BF90 (RET4/no effect).
-    /// Source: tools/input_oracle/house_cheer.md; existing infantry_cheer.json.
-    pub(crate) fn house_cheer(
-        &mut self,
-        owner: crate::sim::intern::InternedId,
-        rules: &RuleSet,
-        effects: FrameEffects<'_>,
-    ) {
-        let count = self.substrate.entities.techno_registry_len();
-        for ordinal in 0..count {
-            let Some(id) = self.substrate.entities.techno_registry_at(ordinal) else {
-                continue;
-            };
-            if self
-                .substrate
-                .entities
-                .get(id)
-                .is_some_and(|entity| entity.owner() == owner)
-            {
-                self.infantry_cheer(id, false, rules, effects);
-            }
-        }
-        //50C905/50C90B: centered cue follows every member callback, even
-        //when the registry is empty or every infantry refuses the action.
-        if let Some(sound_id) = rules.general.cheer_sound() {
-            self.sound_events.emit(SimSoundEvent::VocCentered {
-                sound_id: sound_id.to_owned(),
-            });
-            effects.flush_sound(self, rules);
-        }
-    }
-
-    ///730F5C..730F6C -> shared EventCtor4C66C0. The payload is unused.
-    /// The House byte is the registration index, independent of interning.
-    pub fn encode_cheer_record(
-        &self,
-        owner: crate::sim::intern::InternedId,
-    ) -> Option<CommandRecord> {
-        if !self.houses.contains_key(&owner) {
-            return None;
-        }
-        let index = self
-            .houses
-            .order()
-            .iter()
-            .position(|&registered| registered == owner)?;
-        let index = i8::try_from(index).ok()?;
-        CommandRecord::encode(
-            crate::sim::command::CHEER_OPCODE,
-            i32::from(index),
-            self.session.binary_frame() as i32,
-            &[],
-        )
-        .ok()
-    }
-
-    /// ScatterSelectedObjects730FE0 admits Techno vt+A0, without Guard's
-    /// IsActive test or miner exception. All retained entities are Technos.
-    pub fn scatter_key_command(&self, id: u64, rules: &RuleSet) -> Option<Command> {
-        self.techno_player_controllable(id, rules)
-            .then_some(Command::Scatter { entity_id: id })
-    }
-
-    /// ClickedEvent6FFE00 ->4C65E0 stores issuer registration and actor UID
-    /// independently. Ownership is not rechecked by Event7 at execution.
-    pub fn encode_scatter_record(
-        &self,
-        command_owner: crate::sim::intern::InternedId,
-        entity_id: u64,
-    ) -> Option<CommandRecord> {
-        if !self.houses.contains_key(&command_owner)
-            || self.substrate.entities.get(entity_id).is_none()
-        {
-            return None;
-        }
-        let house_id = self.command_sender(command_owner)?;
-        let typed = ScatterRecord {
-            house_id,
-            frame: self.session.binary_frame() as i32,
-            entity_id: i32::try_from(entity_id).ok()?,
-        };
-        let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).ok()?;
-        typed.write_into(&mut record);
-        Some(record)
-    }
-
-    /// `FootClass::ClickedAction_Object`'s Detonate (0x37) arm
-    /// (`0x004D75F4..0x004D766F`): the DETONATE event on `carrier`, whose
-    /// house byte is its bomb's house (`bomb+0x28`, its ArrayIndex). `None`
-    /// without a bomb.
-    pub fn encode_detonate_record(&self, carrier: u64) -> Option<CommandRecord> {
-        let house = self.substrate.entities.get(carrier)?.bomb.as_ref()?.house();
-        let typed = crate::sim::command::DetonateRecord {
-            house_id: self.command_sender(house)?,
-            frame: self.session.binary_frame() as i32,
-            entity_id: i32::try_from(carrier).ok()?,
-        };
-        let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).ok()?;
-        typed.write_into(&mut record);
-        Some(record)
-    }
-
-    /// StopCommand730EE7 -> ClickedEvent6FFE34 -> EventCtor4C65E0 emits
-    /// IDLE6 with the current issuer and the actor's five-byte object token.
-    /// Keep the token even if its actor disappears before dispatch: native
-    /// Stop4C74CE resolves the identifier only when the event executes.
-    /// Source: original gamemd.exe instructions.
-    pub fn encode_stop_record(
-        &self,
-        command_owner: InternedId,
-        entity_id: u64,
-    ) -> Option<CommandRecord> {
-        let entity_id = i32::try_from(entity_id).ok()?;
-        let mut record =
-            self.encode_header_event(command_owner, crate::sim::command::IDLE_OPCODE)?;
-        StopRecord {
-            house_id: record.house_id(),
-            frame: record.frame_stamp(),
-            entity_id,
-        }
-        .write_into(&mut record);
-        Some(record)
-    }
-
-    /// D-key ClickedEvent6FFE00 -> EventCtor4C65E0. Preserve a stale UID
-    /// until the event executes; the native receiver has no actor-owner gate.
-    pub fn encode_deploy_record(
-        &self,
-        command_owner: InternedId,
-        entity_id: u64,
-    ) -> Option<CommandRecord> {
-        let mut record =
-            self.encode_header_event(command_owner, crate::sim::command::DEPLOY_OPCODE)?;
-        DeployRecord {
-            house_id: record.house_id(),
-            frame: record.frame_stamp(),
-            entity_id: i32::try_from(entity_id).ok()?,
-        }
-        .write_into(&mut record);
-        Some(record)
-    }
-
-    /// Display4AC0D3..4AC198 constructs REPAIR15 with PlayerPtr+30 and
-    /// the picked object's token. Preserve that token until execution;
-    /// constructor4C65E0 does not read its owner or repair eligibility.
-    /// Source: original gamemd.exe instructions.
-    pub fn encode_repair_record(
-        &self,
-        command_owner: InternedId,
-        entity_id: u64,
-    ) -> Option<CommandRecord> {
-        let mut record =
-            self.encode_header_event(command_owner, crate::sim::command::REPAIR_OPCODE)?;
-        RepairRecord {
-            house_id: record.house_id(),
-            frame: record.frame_stamp(),
-            entity_id: i32::try_from(entity_id).ok()?,
-        }
-        .write_into(&mut record);
-        Some(record)
-    }
-
-    /// TargetEvent4C65E0 is used by SELL16 (Execute4C6F12) and
-    /// PRIMARY11 (Execute4C718C). Eject is the existing VERA bunker action,
-    /// carried explicitly rather than claiming a native self-Unload mapping.
-    pub fn encode_object_action_record(
-        &self,
-        owner: InternedId,
-        command: &Command,
-    ) -> Option<CommandRecord> {
-        let (entity, action) = match *command {
-            Command::SellBuilding { entity_id } => (entity_id, ObjectAction::Sell),
-            Command::TogglePrimaryFactory { entity_id } => (entity_id, ObjectAction::Primary),
-            Command::EjectBunker { bunker_id } => (bunker_id, ObjectAction::EjectBunker),
-            _ => return None,
-        };
-        let mut record = self.encode_header_event(owner, action.opcode())?;
-        ObjectActionRecord {
-            house_id: record.house_id(),
-            frame: record.frame_stamp(),
-            entity_id: i32::try_from(entity).ok()?,
-            action,
-        }
-        .write_into(&mut record);
-        Some(record)
-    }
-
-    /// Event0D4C794B retains its dword GameSpeed payload for the shared receiver.
-    pub fn encode_game_speed_record(&self, owner: InternedId, speed: u8) -> Option<CommandRecord> {
-        let header = self.encode_header_event(owner, crate::sim::command::GAME_SPEED_OPCODE)?;
-        GameSpeedRecord {
-            house_id: header.house_id(),
-            frame: header.frame_stamp(),
-            speed: i32::from(speed),
-        }
-        .encode()
-        .ok()
-    }
-
-    /// VERA sidebar cycles are ordered commands, because the selected primary
-    /// affects delivery. Keep the next-candidate decision in production's
-    /// existing cycle_active_producer_for_owner_category execution owner.
-    pub fn encode_cycle_producer_record(
-        &self,
-        owner: InternedId,
-        category: production::ProductionCategory,
-    ) -> Option<CommandRecord> {
-        let header =
-            self.encode_header_event(owner, crate::sim::command::VERA_CYCLE_PRODUCER_OPCODE)?;
-        CycleProducerRecord {
-            house_id: header.house_id(),
-            frame: header.frame_stamp(),
-            category,
-        }
-        .encode()
-        .ok()
-    }
-
-    /// SPECIAL_PLACE4C6B60 carries the rules-owned registry index, not an
-    /// InternedId. Paid selections use one VERA record so their existing
-    /// saved sequence guard and cancellation execute identically on all peers.
-    pub fn encode_superweapon_record(
-        &self,
-        owner: InternedId,
-        command: &Command,
-        rules: &RuleSet,
-    ) -> Option<CommandRecord> {
-        let header = self.encode_header_event(owner, SpecialPlaceRecord::OPCODE)?;
-        let index = |id| i32::try_from(rules.super_weapon_index(self.interner.resolve(id))?).ok();
-        let (selection, action, cell) = match *command {
-            Command::LaunchSuperWeapon {
-                sw_type_id,
-                target_rx,
-                target_ry,
-            } => {
-                if target_rx >= self.cell_grid().side() || target_ry >= self.cell_grid().side() {
-                    return None;
-                }
-                return SpecialPlaceRecord {
-                    house_id: header.house_id(),
-                    frame: header.frame_stamp(),
-                    type_index: index(sw_type_id)?,
-                    cell: (
-                        i16::try_from(target_rx).ok()?,
-                        i16::try_from(target_ry).ok()?,
-                    ),
-                }
-                .encode()
-                .ok();
-            }
-            Command::BeginPaidSuperWeapon {
-                selection,
-                target_rx,
-                target_ry,
-            } => (selection, PaidSuperAction::Begin, (target_rx, target_ry)),
-            Command::CompletePaidSuperWeapon {
-                selection,
-                target_rx,
-                target_ry,
-            } => (selection, PaidSuperAction::Complete, (target_rx, target_ry)),
-            Command::CancelPaidSuperWeapon { selection } => {
-                (selection, PaidSuperAction::Cancel, (0, 0))
-            }
-            _ => return None,
-        };
-        // As for SpecialPlace above, a target lies in this map's cell array.
-        let side = self.cell_grid().side();
-        if action != PaidSuperAction::Cancel && (cell.0 >= side || cell.1 >= side) {
-            return None;
-        }
-        PaidSuperRecord {
-            house_id: header.house_id(),
-            frame: header.frame_stamp(),
-            action,
-            source: index(selection.source)?,
-            destination: index(selection.destination)?,
-            sequence: selection.sequence,
-            cell: (i16::try_from(cell.0).ok()?, i16::try_from(cell.1).ok()?),
-        }
-        .encode()
-    }
-
-    pub(super) fn superweapon_command_from_record(
-        &self,
-        record: &CommandRecord,
-        rules: &RuleSet,
-    ) -> Option<(InternedId, Command)> {
-        let owner = self.command_sender_owner(record.house_id())?;
-        if !self.houses.contains_key(&owner) {
-            return None;
-        }
-        let type_id = |index| {
-            self.interner
-                .get(rules.super_weapon_order.get(usize::try_from(index).ok()?)?)
-        };
-        if let Some(event) = SpecialPlaceRecord::decode(record) {
-            if !(0..self.cell_grid().side() as i16).contains(&event.cell.0)
-                || !(0..self.cell_grid().side() as i16).contains(&event.cell.1)
-            {
-                return None;
-            }
-            return Some((
-                owner,
-                Command::LaunchSuperWeapon {
-                    sw_type_id: type_id(event.type_index)?,
-                    target_rx: u16::try_from(event.cell.0).ok()?,
-                    target_ry: u16::try_from(event.cell.1).ok()?,
-                },
-            ));
-        }
-        let event = PaidSuperRecord::decode(record)?;
-        let side = self.cell_grid().side() as i16;
-        if event.action != PaidSuperAction::Cancel
-            && (!(0..side).contains(&event.cell.0) || !(0..side).contains(&event.cell.1))
-        {
-            return None;
-        }
-        let selection = crate::sim::superweapon::PaidSuperWeaponSelection {
-            source: type_id(event.source)?,
-            destination: type_id(event.destination)?,
-            sequence: event.sequence,
-        };
-        Some((
-            owner,
-            match event.action {
-                PaidSuperAction::Begin => Command::BeginPaidSuperWeapon {
-                    selection,
-                    target_rx: event.cell.0 as u16,
-                    target_ry: event.cell.1 as u16,
-                },
-                PaidSuperAction::Complete => Command::CompletePaidSuperWeapon {
-                    selection,
-                    target_rx: event.cell.0 as u16,
-                    target_ry: event.cell.1 as u16,
-                },
-                PaidSuperAction::Cancel => Command::CancelPaidSuperWeapon { selection },
-            },
-        ))
-    }
-
-    /// SetRallyPoint4439C5 and object-click44367B ask the actor's vt+38
-    /// (Techno6F9DB0), not PlayerPtr. Preserve that House and both tokens
-    /// at issue; send-time retiming remains the packet codec's responsibility.
-    /// Source: original gamemd.exe constructor4C6780.
-    pub(super) fn encode_archive_record(
-        &self,
-        entity_id: u64,
-        target: MegaMissionTarget,
-    ) -> Option<CommandRecord> {
-        let owner = self.substrate.entities.get(entity_id)?.owner();
-        let mut record = self.encode_header_event(owner, crate::sim::command::ARCHIVE_OPCODE)?;
-        ArchiveRecord {
-            house_id: record.house_id(),
-            frame: record.frame_stamp(),
-            entity_id: i32::try_from(entity_id).ok()?,
-            target,
-        }
-        .write_into(&mut record)
-        .ok()?;
-        Some(record)
-    }
-
-    /// Select6AAD00's production events use the clicked type's native array
-    /// index, RTTI and Naval flag, captured now rather than when dispatched.
-    pub fn encode_production_record(
-        &self,
-        command_owner: InternedId,
-        event: ProductionEvent,
-        type_id: InternedId,
-        rules: &RuleSet,
-    ) -> Option<CommandRecord> {
-        let selection =
-            production::ProductionSelection::for_type(rules, self.object_type(type_id, rules)?)?;
-        self.encode_selected_production_record(command_owner, event, selection)
-    }
-
-    /// Typed callers retain Select6AAD00's existing RTTI/index/Naval fields.
-    /// The name-only encoder above deliberately keeps broad-name semantics.
-    pub fn encode_selected_production_record(
-        &self,
-        command_owner: InternedId,
-        event: ProductionEvent,
-        selection: production::ProductionSelection,
-    ) -> Option<CommandRecord> {
-        let mut record = self.encode_header_event(command_owner, event.opcode())?;
-        ProductionRecord {
-            house_id: record.house_id(),
-            frame: record.frame_stamp(),
-            event,
-            rtti: selection.rtti,
-            type_index: selection.type_index,
-            naval: u32::from(selection.naval),
-        }
-        .write_into(&mut record);
-        Some(record)
-    }
-
-    /// Display4ABB39..4ABB55 uses the selected type's index and the held
-    /// building's object RTTI6. Cell words retain their native signed bits.
-    pub fn encode_place_building_record(
-        &self,
-        command_owner: InternedId,
-        type_id: InternedId,
-        cell: (u16, u16),
-        rules: &RuleSet,
-    ) -> Option<CommandRecord> {
-        let object = self.object_type(type_id, rules)?;
-        if object.category != crate::rules::object_type::ObjectCategory::Building {
-            return None;
-        }
-        let selection = production::ProductionSelection::for_type(rules, object)?;
-        self.encode_place_record(
-            command_owner,
-            production::ProductionSelection {
-                rtti: selection.object_rtti(),
-                ..selection
-            },
-            cell,
-        )
-    }
-
-    /// StripAI6A8EE8 snapshots the complete object's RTTI/Naval, but writes
-    /// index-1 and B07DD8's Cell(0,0), initialized by6A4BC0. The receiver
-    /// looks up the later held head; (-1,-1) is accepted but not issued here.
-    pub fn encode_place_mobile_record(
-        &self,
-        command_owner: InternedId,
-        category: production::ProductionCategory,
-        rules: &RuleSet,
-    ) -> Option<CommandRecord> {
-        let held = self
-            .production
-            .factories()
-            .view(command_owner, category)?
-            .complete_object()?;
-        let object = self.interner.object_type_in_category(
-            held.type_id,
-            category.object_category(),
-            rules,
-        )?;
-        if object.category == crate::rules::object_type::ObjectCategory::Building {
-            return None;
-        }
-        let selection = production::ProductionSelection::for_type(rules, object)?;
-        self.encode_place_record(
-            command_owner,
-            production::ProductionSelection {
-                rtti: selection.object_rtti(),
-                type_index: -1,
-                ..selection
-            },
-            (0, 0),
-        )
-    }
-
-    /// Shared EventCtor4C6AE0. Callers supply their native selector: manual
-    /// building placement, completed cameo, or automatic Strip completion.
-    pub fn encode_place_record(
-        &self,
-        command_owner: InternedId,
-        selection: production::ProductionSelection,
-        cell: (u16, u16),
-    ) -> Option<CommandRecord> {
-        let mut record =
-            self.encode_header_event(command_owner, crate::sim::command::PLACE_OPCODE)?;
-        PlaceRecord {
-            house_id: record.house_id(),
-            frame: record.frame_stamp(),
-            rtti: selection.rtti,
-            type_index: selection.type_index,
-            naval: u32::from(selection.naval),
-            x: cell.0 as i16,
-            y: cell.1 as i16,
-        }
-        .write_into(&mut record);
-        Some(record)
-    }
-
-    /// G/command-bar Guard730D60 chooses each admitted actor's current
-    /// navigation Cell before Player_Send_Command6FFBE0 emits mission11.
-    /// It admits an actor both IsControllable700C40 and IsActive7010D0
-    /// accept. Unit slave-manager/Harvester fallback bypasses both.
-    /// Existing controllability lifecycle residuals remain documented at
-    /// that owner. This is an input producer, never an event-execution gate.
-    pub fn area_guard_key_command(&self, id: u64, rules: &RuleSet) -> Option<Command> {
-        let actor = self.substrate.entities.get(id)?;
-        // Ares 3.0 GuardCommandClass_Execute (1005CAF0, hook 0x730DB0): only
-        // the player's own controllable actor, the miner arm included.
-        if rules.ares()
-            && (Some(actor.owner()) != self.session.current_house()
-                || !self.techno_player_controllable(id, rules))
-        {
-            return None;
-        }
-        if actor.category() == EntityCategory::Structure {
-            return None;
-        }
-        let ordinary =
-            self.techno_player_controllable(id, rules) && self.techno_is_active(id, rules);
-        let miner = actor.category() == EntityCategory::Unit
-            && (actor.slave_manager.is_some() || actor.is_harvester());
-        if !ordinary && !miner {
-            return None;
-        }
-        // An actor with no navigation cell (a mod type built without a
-        // locomotor) takes no Guard order, as its Move order is refused.
-        let (x, y) = self
-            .object_navigation_cell(id, rules)
-            .map_err(|cause| log::warn!("Area Guard input refused for {id}: {cause}"))
-            .ok()?;
-        Some(Command::Guard {
-            entity_id: id,
-            target: Some(combat::TargetKind::Cell(x as u16, y as u16)),
-        })
-    }
-
-    /// Build the native MegaMission record for represented player missions.
-    ///
-    /// `EventClass__BuildMegaMissionEnvelope` at `gamemd.exe` `0x004C6860`
-    /// stores HouseClass registration and Abstract stable identity separately;
-    /// the source therefore need not belong to the issuing house.
-    pub fn encode_megamission_record(
-        &self,
-        command_owner: crate::sim::intern::InternedId,
-        command: &Command,
-    ) -> Option<CommandRecord> {
-        let token = |target: Option<combat::TargetKind>| -> Option<MegaMissionTarget> {
-            Some(match target {
-                None => MegaMissionTarget::Null,
-                Some(combat::TargetKind::Cell(x, y)) => MegaMissionTarget::Cell {
-                    x: x as i16,
-                    y: y as i16,
-                },
-                Some(combat::TargetKind::Entity(id)) => MegaMissionTarget::Object {
-                    id: i32::try_from(id).ok()?,
-                },
-            })
-        };
-        let (source_id, order) = match *command {
-            Command::Attack {
-                attacker_id,
-                target_id,
-            } => (
-                attacker_id,
-                MegaMissionOrder::Attack {
-                    target: token(Some(combat::TargetKind::Entity(target_id)))?,
-                },
-            ),
-            Command::ForceAttackCell {
-                attacker_id,
-                target_rx,
-                target_ry,
-            } => (
-                attacker_id,
-                MegaMissionOrder::Attack {
-                    target: token(Some(combat::TargetKind::Cell(target_rx, target_ry)))?,
-                },
-            ),
-            Command::AttackMove {
-                entity_id,
-                target,
-                destination,
-            } => (
-                entity_id,
-                MegaMissionOrder::AttackMove {
-                    target: token(target)?,
-                    destination: token(destination)?,
-                },
-            ),
-            Command::Move {
-                entity_id,
-                target_rx,
-                target_ry,
-            } => (
-                entity_id,
-                MegaMissionOrder::Move {
-                    target_x: i16::try_from(target_rx).ok()?,
-                    target_y: i16::try_from(target_ry).ok()?,
-                },
-            ),
-            Command::MoveToObject {
-                entity_id,
-                target_id,
-            } => (
-                entity_id,
-                MegaMissionOrder::MoveToObject {
-                    id: i32::try_from(target_id).ok()?,
-                },
-            ),
-            Command::Guard { entity_id, target } => {
-                let post = token(target)?;
-                (entity_id, MegaMissionOrder::AreaGuard { post })
-            }
-            Command::PlantC4 {
-                attacker_id,
-                target_building_id,
-            } => (
-                attacker_id,
-                MegaMissionOrder::Mission {
-                    target: MegaMissionTarget::Null,
-                    mission: MissionType::Sabotage,
-                    destination: token(Some(combat::TargetKind::Entity(target_building_id)))?,
-                },
-            ),
-            Command::CaptureBuilding {
-                engineer_id,
-                target_building_id,
-            } => (
-                engineer_id,
-                MegaMissionOrder::Mission {
-                    target: MegaMissionTarget::Null,
-                    mission: MissionType::Capture,
-                    destination: token(Some(combat::TargetKind::Entity(target_building_id)))?,
-                },
-            ),
-            Command::UnloadPassengers { transport_id } => (
-                transport_id,
-                MegaMissionOrder::Mission {
-                    target: if self
-                        .substrate
-                        .entities
-                        .get(transport_id)
-                        .is_some_and(|actor| actor.category() == EntityCategory::Structure)
-                    {
-                        MegaMissionTarget::Object {
-                            id: i32::try_from(transport_id).ok()?,
-                        }
-                    } else {
-                        MegaMissionTarget::Null
-                    },
-                    mission: MissionType::Unload,
-                    destination: MegaMissionTarget::Null,
-                },
-            ),
-            Command::ToggleInfantryDeploy { entity_id } | Command::DeployMcv { entity_id } => (
-                entity_id,
-                MegaMissionOrder::Mission {
-                    target: MegaMissionTarget::Null,
-                    mission: MissionType::Unload,
-                    destination: MegaMissionTarget::Null,
-                },
-            ),
-            Command::MegaMission {
-                entity_id,
-                mission,
-                target,
-                destination,
-            } => (
-                entity_id,
-                MegaMissionOrder::Mission {
-                    mission,
-                    target: token(target)?,
-                    destination: token(destination)?,
-                },
-            ),
-            _ => return None,
-        };
-        if !self.houses.contains_key(&command_owner)
-            || self.substrate.entities.get(source_id).is_none()
-        {
-            return None;
-        }
-        let house_id = self.command_sender(command_owner)?;
-        let typed = MegaMissionRecord {
-            auxiliary: MegaMissionTarget::Null,
-            house_id,
-            frame: self.session.binary_frame() as i32,
-            source_id: i32::try_from(source_id).ok()?,
-            order,
-        };
-        let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).ok()?;
-        typed.write_into(&mut record).ok()?;
-        Some(record)
-    }
-
-    /// Encode the native synchronized record for one locally issued wall sale.
-    /// House bytes are HouseClass registration indices, never interner ids.
-    pub fn encode_sell_wall_at_cell_record(
-        &self,
-        command_owner: crate::sim::intern::InternedId,
-        x: i16,
-        y: i16,
-    ) -> Option<CommandRecord> {
-        if !self.houses.contains_key(&command_owner) {
-            return None;
-        }
-        let house_id = self.command_sender(command_owner)?;
-        SellWallAtCellRecord {
-            house_id,
-            frame: self.session.binary_frame(),
-            x,
-            y,
-        }
-        .encode()
-        .ok()
-    }
-
-    /// Ares 3.0 RaiseTrenchRedirectClick (`1006A170`, from the Enter click
-    /// of `10016F60`, hook `0x443414`): the TrenchRedirectClick event (0x60)
-    /// naming the clicked building's `cell` and the selected trench
-    /// `source_id`, stamped with the source building's House.
-    pub fn encode_ares_trench_redirect_record(
-        &self,
-        source_id: u64,
-        (x, y): (u16, u16),
-    ) -> Option<CommandRecord> {
-        let owner = self.substrate.entities.get(source_id)?.owner();
-        let house_id = self.command_sender(owner)?;
-        crate::sim::command::AresTrenchRedirectRecord::encode_cell(
-            house_id,
-            self.session.binary_frame() as i32,
-            (i16::try_from(x).ok()?, i16::try_from(y).ok()?),
-            i32::try_from(source_id).ok()?,
-        )
-        .ok()
-    }
-
-    /// Encode the header-only native EXIT event issued by Abort confirmation.
-    /// House bytes are HouseClass registration indices, never interner ids.
-    pub fn encode_exit_record(
-        &self,
-        command_owner: crate::sim::intern::InternedId,
-    ) -> Option<CommandRecord> {
-        self.encode_header_event(command_owner, crate::sim::command::EXIT_OPCODE)
-    }
-
-    pub fn encode_options_record(&self, command_owner: InternedId) -> Option<CommandRecord> {
-        self.encode_header_event(command_owner, crate::sim::command::OPTIONS_OPCODE)
-    }
-
-    pub fn encode_latency_fudge_record(
-        &self,
-        command_owner: InternedId,
-        value: i32,
-    ) -> Option<CommandRecord> {
-        self.encode_int_event(
-            command_owner,
-            crate::sim::command::LATENCY_FUDGE_OPCODE,
-            value,
-        )
-    }
-
-    /// EVENT_DESTRUCT's header-only record: `EventClass(index, 8)`
-    /// (`0x004C66C0`) writes only the type, House and frame.
-    pub fn encode_destruct_record(
-        &self,
-        command_owner: crate::sim::intern::InternedId,
-    ) -> Option<CommandRecord> {
-        self.encode_header_event(command_owner, crate::sim::command::DESTRUCT_OPCODE)
-    }
-
-    /// EVENT_REMOVEPLAYER's record: the header House is the sender, the
-    /// dword payload the removed sender (`0x004C6720`), its House's index
-    /// unless players share Houses.
-    pub fn encode_remove_player_record(
-        &self,
-        command_owner: crate::sim::intern::InternedId,
-        source: i32,
-    ) -> Option<CommandRecord> {
-        self.encode_int_event(
-            command_owner,
-            crate::sim::command::REMOVE_PLAYER_OPCODE,
-            source,
-        )
-    }
-
-    /// EVENT_ALLY's record: the header House is the sender, the dword
-    /// payload the other House's index (`0x00731877..0x007318C8`).
-    pub fn encode_ally_record(
-        &self,
-        command_owner: crate::sim::intern::InternedId,
-        house_index: i32,
-    ) -> Option<CommandRecord> {
-        self.encode_int_event(command_owner, crate::sim::command::ALLY_OPCODE, house_index)
-    }
-
-    /// `EventClass(house, type, value)` (`0x004C6720`): a header event
-    /// whose payload is one unmodified signed dword.
-    fn encode_int_event(
-        &self,
-        command_owner: crate::sim::intern::InternedId,
-        opcode: u8,
-        value: i32,
-    ) -> Option<CommandRecord> {
-        let mut record = self.encode_header_event(command_owner, opcode)?;
-        record.payload_mut()[..4].copy_from_slice(&value.to_le_bytes());
-        Some(record)
-    }
-
-    fn encode_header_event(
-        &self,
-        command_owner: crate::sim::intern::InternedId,
-        opcode: u8,
-    ) -> Option<CommandRecord> {
-        if !self.houses.contains_key(&command_owner) {
-            return None;
-        }
-        let house_id = self.command_sender(command_owner)?;
-        CommandRecord::encode(
-            opcode,
-            i32::from(house_id),
-            self.session.binary_frame() as i32,
-            &[],
-        )
-        .ok()
-    }
-
-    /// The sender byte this process writes for `command_owner`'s commands:
-    /// its own network source for the House it shares (VERA shared
-    /// control), otherwise the House's index.
-    pub(crate) fn command_sender(&self, command_owner: InternedId) -> Option<i8> {
-        if let Some(source) = self.session.local_shared_house_source()
-            && self.session.current_house() == Some(command_owner)
-        {
-            return Some(source);
-        }
-        self.houses
-            .index_of(command_owner)
-            .and_then(|index| i8::try_from(index).ok())
-    }
-
-    /// The House a command record's sender byte names. VERA shared control:
-    /// the sender is a network source, which is its House index unless
-    /// players share Houses (`ScenarioSession::network_source_house`).
-    pub(crate) fn command_sender_owner(&self, sender: i8) -> Option<InternedId> {
-        let index = self.session.network_source_house(sender)?;
-        self.houses.order().get(index).copied()
-    }
-
-    /// VERA shared control: whether House `owner` still has an admitted
-    /// sender other than `sender`. A House nobody shares has one sender, so
-    /// its EXIT, DESTRUCT or loss always ends it, as in gamemd.
-    fn house_keeps_other_sender(&self, owner: InternedId, sender: i8) -> bool {
-        let (Some(timing), Some(house)) = (
-            self.session.network_command_timing(),
-            self.houses.index_of(owner),
-        ) else {
-            return false;
-        };
-        self.session
-            .network_sources(self.houses.order().len())
-            .any(|(other, other_house)| {
-                other_house == house && other != sender && timing.admits_source(other)
-            })
-    }
-
-    /// The sender of the executing command: its record's header byte, or a
-    /// semantic envelope's House index (offline, where nobody shares).
-    fn executing_sender(&self, owner: InternedId) -> Option<i8> {
-        self.executing_record_sender.or_else(|| {
-            self.houses
-                .index_of(owner)
-                .and_then(|index| i8::try_from(index).ok())
-        })
-    }
-
-    /// VERA shared control: whether another player still controls the local
-    /// player's House.
-    pub fn local_house_has_teammate(&self) -> bool {
-        match (
-            self.session.local_shared_house_source(),
-            self.session.current_house(),
-        ) {
-            (Some(sender), Some(owner)) => self.house_keeps_other_sender(owner, sender),
-            _ => false,
-        }
-    }
-
-    /// Decode one synchronized record after its queue has admitted the stamped
-    /// frame. The semantic envelope is only a typed execution view of the raw
-    /// bytes; timing/processed-bit ownership remains with the raw queue.
-    pub fn decode_native_command_record(
-        &self,
-        record: &CommandRecord,
-        execute_tick: u64,
-    ) -> Option<CommandEnvelope> {
-        if let Some(event) = RepairRecord::decode(record) {
-            let owner = self.command_sender_owner(event.house_id)?;
-            let entity_id = u64::try_from(event.entity_id).ok()?;
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(owner, execute_tick, Command::ToggleRepair { entity_id })
-            });
-        }
-        if let Some(event) = ArchiveRecord::decode(record) {
-            let owner = self.command_sender_owner(event.house_id)?;
-            if !self.houses.contains_key(&owner) {
-                return None;
-            }
-            // Preserve late object lookup and NULL. These semantic views do
-            // not replace the native record held by queues/replay/snapshots.
-            let entity_id = u64::try_from(event.entity_id).ok()?;
-            let payload = match event.target {
-                MegaMissionTarget::Cell { x, y } => Command::SetRally {
-                    rx: x as u16,
-                    ry: y as u16,
-                    producer_ids: vec![entity_id],
-                },
-                MegaMissionTarget::Object { id } if id >= 0 => Command::ArchiveObject {
-                    entity_id,
-                    target_id: id as u64,
-                },
-                _ => Command::SynchronizedRecord {
-                    record: record.clone(),
-                },
-            };
-            return Some(CommandEnvelope::new(owner, execute_tick, payload));
-        }
-        if let Some(event) = ObjectActionRecord::decode(record) {
-            let owner = self.command_sender_owner(event.house_id)?;
-            let entity_id = u64::try_from(event.entity_id).ok()?;
-            let command = match event.action {
-                ObjectAction::Sell => Command::SellBuilding { entity_id },
-                ObjectAction::Primary => Command::TogglePrimaryFactory { entity_id },
-                ObjectAction::EjectBunker => Command::EjectBunker {
-                    bunker_id: entity_id,
-                },
-            };
-            return self
-                .houses
-                .contains_key(&owner)
-                .then(|| CommandEnvelope::new(owner, execute_tick, command));
-        }
-        if let Some(event) = CycleProducerRecord::decode(record) {
-            let owner = self.command_sender_owner(event.house_id)?;
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(
-                    owner,
-                    execute_tick,
-                    Command::CycleProducerFocus {
-                        category: event.category,
-                    },
-                )
-            });
-        }
-        // Ares 3.0 TrenchRedirectClick (0x60) stays raw until its handler,
-        // which answers on the switch; no stock opcode decodes as 0x60, and
-        // only a game Ares plays in encodes one.
-        if crate::sim::command::AresTrenchRedirectRecord::decode(record).is_some() {
-            let owner = self.command_sender_owner(record.house_id())?;
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(
-                    owner,
-                    execute_tick,
-                    Command::SynchronizedRecord {
-                        record: record.clone(),
-                    },
-                )
-            });
-        }
-        // DETONATE stays raw until its handler, which resolves the carrier
-        // late, as Execute does.
-        if crate::sim::command::DetonateRecord::decode(record).is_some() {
-            let owner = self.command_sender_owner(record.house_id())?;
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(
-                    owner,
-                    execute_tick,
-                    Command::SynchronizedRecord {
-                        record: record.clone(),
-                    },
-                )
-            });
-        }
-        if ProductionRecord::decode(record).is_some()
-            || PlaceRecord::decode(record).is_some()
-            || SpecialPlaceRecord::decode(record).is_some()
-            || PaidSuperRecord::decode(record).is_some()
-        {
-            let owner = self.command_sender_owner(record.house_id())?;
-            // Keep selectors raw: a category-only semantic view loses Naval,
-            // RTTI aliases and the -1 wildcard before the House receiver runs.
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(
-                    owner,
-                    execute_tick,
-                    Command::SynchronizedRecord {
-                        record: record.clone(),
-                    },
-                )
-            });
-        }
-        if let Some(typed) = DeployRecord::decode(record) {
-            let owner = self.command_sender_owner(typed.house_id)?;
-            let entity_id = u64::try_from(typed.entity_id).ok()?;
-            self.substrate.entities.get(entity_id)?;
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(owner, execute_tick, Command::DeployMcv { entity_id })
-            });
-        }
-        if matches!(
-            record.opcode(),
-            crate::sim::command::OPTIONS_OPCODE | crate::sim::command::LATENCY_FUDGE_OPCODE
-        ) {
-            let owner = self.command_sender_owner(record.house_id())?;
-            let command = if record.opcode() == crate::sim::command::OPTIONS_OPCODE {
-                Command::OpenOptions
-            } else {
-                Command::SetLatencyFudge {
-                    value: i32::from_le_bytes(record.payload()[..4].try_into().ok()?),
-                }
-            };
-            return self
-                .houses
-                .contains_key(&owner)
-                .then(|| CommandEnvelope::new(owner, execute_tick, command));
-        }
-        // PlanMgr637E00/638120 owns the payload and validates live actors.
-        // Keep its native byte record intact through the scheduled envelope.
-        if matches!(record.opcode(), 0x2A..=0x2C)
-            || (record.opcode() == crate::sim::command::MEGAMISSION_OPCODE
-                && matches!(record.payload()[22], 1 | 2))
-        {
-            let owner = self.command_sender_owner(record.house_id())?;
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(
-                    owner,
-                    execute_tick,
-                    Command::PlanningRecord {
-                        record: record.clone(),
-                    },
-                )
-            });
-        }
-        if let Some(typed) = StopRecord::decode(record) {
-            let owner = self.command_sender_owner(typed.house_id)?;
-            if !self.houses.contains_key(&owner) {
-                return None;
-            }
-            let entity_id = u64::try_from(typed.entity_id).ok()?;
-            self.substrate.entities.get(entity_id)?;
-            return Some(CommandEnvelope::new(
-                owner,
-                execute_tick,
-                Command::Stop { entity_id },
-            ));
-        }
-        if let Some(typed) = ScatterRecord::decode(record) {
-            let owner = self.command_sender_owner(typed.house_id)?;
-            if !self.houses.contains_key(&owner) {
-                return None;
-            }
-            let entity_id = u64::try_from(typed.entity_id).ok()?;
-            self.substrate.entities.get(entity_id)?;
-            return Some(CommandEnvelope::new(
-                owner,
-                execute_tick,
-                Command::Scatter { entity_id },
-            ));
-        }
-        if let Some(typed) = MegaMissionRecord::decode(record) {
-            let owner = self.command_sender_owner(typed.house_id)?;
-            if !self.houses.contains_key(&owner) {
-                return None;
-            }
-            let entity_id = u64::try_from(typed.source_id).ok()?;
-            self.substrate.entities.get(entity_id)?;
-            // Keep NavComAux in the native carrier until execution, where
-            // the shared MegaMission receiver applies it after the setters.
-            if typed.auxiliary != MegaMissionTarget::Null {
-                return Some(CommandEnvelope::new(
-                    owner,
-                    execute_tick,
-                    Command::SynchronizedRecord {
-                        record: record.clone(),
-                    },
-                ));
-            }
-            let target = |token: MegaMissionTarget| -> Option<Option<combat::TargetKind>> {
-                Some(match token {
-                    MegaMissionTarget::Null => None,
-                    MegaMissionTarget::Cell { x, y } => {
-                        Some(combat::TargetKind::Cell(x as u16, y as u16))
-                    }
-                    MegaMissionTarget::Object { id } => {
-                        Some(combat::TargetKind::Entity(u64::try_from(id).ok()?))
-                    }
-                })
-            };
-            let command = match typed.order {
-                MegaMissionOrder::Attack {
-                    target: attack_target,
-                } => match target(attack_target)? {
-                    // Ctrl and ordinary Attack encode identical bytes.
-                    Some(combat::TargetKind::Entity(target_id)) => Command::Attack {
-                        attacker_id: entity_id,
-                        target_id,
-                    },
-                    Some(combat::TargetKind::Cell(target_rx, target_ry)) => {
-                        Command::ForceAttackCell {
-                            attacker_id: entity_id,
-                            target_rx,
-                            target_ry,
-                        }
-                    }
-                    None => return None,
-                },
-                MegaMissionOrder::AttackMove {
-                    target: attack_target,
-                    destination,
-                } => Command::AttackMove {
-                    entity_id,
-                    target: target(attack_target)?,
-                    destination: target(destination)?,
-                },
-                MegaMissionOrder::Move { target_x, target_y } => Command::Move {
-                    entity_id,
-                    target_rx: u16::try_from(target_x).ok()?,
-                    target_ry: u16::try_from(target_y).ok()?,
-                },
-                MegaMissionOrder::MoveToObject { id } => Command::MoveToObject {
-                    entity_id,
-                    target_id: u64::try_from(id).ok()?,
-                },
-                MegaMissionOrder::AreaGuard { post } => Command::Guard {
-                    entity_id,
-                    target: target(post)?,
-                },
-                MegaMissionOrder::Mission {
-                    mission,
-                    target: order_target,
-                    destination,
-                } => Command::MegaMission {
-                    entity_id,
-                    mission,
-                    target: target(order_target)?,
-                    destination: target(destination)?,
-                },
-            };
-            return Some(CommandEnvelope::new(owner, execute_tick, command));
-        }
-
-        // Event2D4C6E2E resolves its House and calls50C8C0 without input
-        //lock, cooldown, selection or product admission being repeated.
-        if record.opcode() == crate::sim::command::CHEER_OPCODE {
-            let owner = self.command_sender_owner(record.house_id())?;
-            return self
-                .houses
-                .contains_key(&owner)
-                .then(|| CommandEnvelope::new(owner, execute_tick, Command::Cheer));
-        }
-
-        if let Some(typed) = ExitRecord::decode(record) {
-            let owner = self.command_sender_owner(typed.house_id)?;
-            return self
-                .houses
-                .contains_key(&owner)
-                .then(|| CommandEnvelope::new(owner, execute_tick, Command::ExitMatch));
-        }
-
-        let house_index_event: Option<fn(i32) -> Command> = match record.opcode() {
-            crate::sim::command::REMOVE_PLAYER_OPCODE => {
-                Some(|source| Command::RemovePlayer { source })
-            }
-            crate::sim::command::ALLY_OPCODE => Some(|house_index| Command::Ally { house_index }),
-            _ => None,
-        };
-        if let Some(command) = house_index_event {
-            let owner = self.command_sender_owner(record.house_id())?;
-            let other = i32::from_le_bytes(record.payload()[..4].try_into().ok()?);
-            return self
-                .houses
-                .contains_key(&owner)
-                .then(|| CommandEnvelope::new(owner, execute_tick, command(other)));
-        }
-
-        if record.opcode() == crate::sim::command::DESTRUCT_OPCODE {
-            let owner = self.command_sender_owner(record.house_id())?;
-            return self
-                .houses
-                .contains_key(&owner)
-                .then(|| CommandEnvelope::new(owner, execute_tick, Command::Destruct));
-        }
-
-        // Native opcode 0x0D (EventClass::Execute type-13 @ 0x004C794B): the
-        // payload dword at Event+7 is the new GameSpeed setting; the changer is
-        // the header house. It is SetGameSpeed's live-network twin.
-        if let Some(typed) = GameSpeedRecord::decode(record) {
-            let owner = self.command_sender_owner(typed.house_id)?;
-            let speed = u8::try_from(typed.speed).ok()?;
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(owner, execute_tick, Command::LiveGameSpeed { speed })
-            });
-        }
-
-        // Native opcodes 0x01/0x02 (EventClass::Execute branches 0x004C6CF0 /
-        // 0x004C6D4D) drive the Building+660 latch via GoOnline 0x00452260 /
-        // GoOffline 0x00452360; the direction is the opcode, the target the
-        // Abstract token at payload[0..4] (kind 0x34). No owner check here --
-        // input gating is the client's job, as in native.
-        if matches!(
-            record.opcode(),
-            BUILDING_ON_LINE_OPCODE | BUILDING_OFF_LINE_OPCODE
-        ) {
-            let Some(typed) = BuildingOnLineRecord::decode(record) else {
-                return None;
-            };
-            let owner = self.command_sender_owner(typed.house_id)?;
-            let entity_id = u64::try_from(typed.entity_id).ok()?;
-            self.substrate.entities.get(entity_id)?;
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(
-                    owner,
-                    execute_tick,
-                    Command::SetBuildingOnLine {
-                        entity_id,
-                        on: typed.on,
-                    },
-                )
-            });
-        }
-
-        let typed = SellWallAtCellRecord::decode(record)?;
-        let owner = self.command_sender_owner(typed.house_id)?;
-        self.houses.contains_key(&owner).then(|| {
-            CommandEnvelope::new(
-                owner,
-                execute_tick,
-                Command::SellWallAtCell {
-                    x: typed.x,
-                    y: typed.y,
-                },
-            )
-        })
-    }
-
-    /// Publish one wall-sale RecalcAttributes result to the transaction-local
-    /// path view and the retained base movement-class topology. Zone ID
-    /// assignment remains owned by the ordered native repair callback.
-    fn refresh_wall_sale_recalc_prefix(
-        world_zone_grid: &mut Option<ZoneGrid>,
-        resolved_terrain: &Option<ResolvedTerrainGrid>,
-        overlay_grid: &Option<OverlayGrid>,
-        tail_grid: &mut Option<PathGrid>,
-        rx: u16,
-        ry: u16,
-        navigation_changed: bool,
-    ) {
-        let Some(terrain) = resolved_terrain.as_ref() else {
-            return;
-        };
-
-        if navigation_changed {
-            if tail_grid.as_ref().is_some_and(|tail| {
-                tail.width() != terrain.width() || tail.height() != terrain.height()
-            }) {
-                *tail_grid = None;
-            }
-            if let (Some(tail), Some(cell)) = (tail_grid.as_mut(), terrain.cell(rx, ry)) {
-                let _ = tail.refresh_resolved_cell(cell, overlay_grid.as_ref(), false);
-            }
-        }
-
-        if let Some(zone_grid) = world_zone_grid.as_mut() {
-            let _ = zone_grid.refresh_base_cell_attributes_at(terrain, rx, ry);
-        }
-    }
-
-    /// Run the exact AssignOrphaned + local graph repair against the current
-    /// visit-prefix view. This does not publish `tail_grid`; the sale commits
-    /// the completed transaction once all cleanup visits finish.
-    fn repair_wall_sale_zone_prefix(
-        &mut self,
-        tail_grid: &PathGrid,
-        sold_cell: (u16, u16),
-        repair_cell: (u16, u16),
-        repair: ZoneRepairKind,
-    ) {
-        let Some(terrain) = self.resolved_terrain.as_ref() else {
-            return;
-        };
-        #[cfg(not(any(test, feature = "test-support")))]
-        let _ = sold_cell;
-        let Some(_zone_grid) = self.zone_grid.as_mut() else {
-            return;
-        };
-        #[cfg(any(test, feature = "test-support"))]
-        trace_wall_sell_zone_repair_step(_zone_grid, tail_grid, sold_cell, repair_cell);
-        super::repair_zone_after_recalc(
-            &mut self.zone_grid,
-            tail_grid,
-            terrain,
-            self.bridge_state.as_ref(),
-            self.playfield_bounds,
-            repair_cell,
-            repair,
-        );
-    }
-
-    /// The canonical cell and overlay a wall sale's signed CellStruct names.
-    fn wall_sale_cell(
-        &self,
-        x: i16,
-        y: i16,
-    ) -> Option<(u16, u16, crate::sim::overlay_grid::OverlayCell)> {
-        // EventClass rejects only the exact packed null CellStruct. Every
-        // other signed pair is resolved by the map's linear cell array (512
-        // wide on retail-size maps), so out-of-range components may alias a
-        // canonical slot.
-        if (x, y) == (0, 0) {
-            return None;
-        }
-        let (rx, ry) = self
-            .cell_grid()
-            .canonical_coord(i32::from(x), i32::from(y))?;
-        let grid = self.overlay_grid.as_ref()?;
-        if rx >= grid.width() || ry >= grid.height() {
-            return None;
-        }
-        Some((rx, ry, *grid.cell(rx, ry)))
-    }
-
-    /// `HouseClass::Sell_Building_At_Cell @ 0x004FCE80` for house
-    /// `command_owner` at cell `(x, y)`: the player's wall sale and the
-    /// computer's in `AI_Manage_Build_Queue` (`sim::ai_build_need`). It sells
-    /// only a wall whose owner a human controls, and refunds nothing.
-    /// `suppress_local_cue` is the original second explicit argument:
-    /// 0x4FCF78..0x4FCF98 skips only SellSound; removal and target cleanup still run.
-    /// Returns whether a wall went.
-    pub(crate) fn sell_wall_at_cell(
-        &mut self,
-        command_owner: &str,
-        x: i16,
-        y: i16,
-        suppress_local_cue: bool,
-        rules: &RuleSet,
-        overlays: &crate::rules::overlay_types::OverlayTypeRegistry,
-        effects: FrameEffects<'_>,
-    ) -> bool {
-        let Some((rx, ry, cell)) = self.wall_sale_cell(x, y) else {
-            return false;
-        };
-        let (Some(overlay_id), Some(wall_owner)) = (cell.overlay_id, cell.wall_owner) else {
-            return false;
-        };
-        let Some(owner_house) = self.houses.get(&wall_owner) else {
-            return false;
-        };
-        let owner_admitted = if self.session.game_mode_nonzero() {
-            owner_house.is_human()
-        } else {
-            owner_house.is_human() || owner_house.player_control()
-        };
-        if !owner_admitted || !overlays.flags(overlay_id).is_some_and(|flags| flags.wall) {
-            return false;
-        }
-        let Some(wall_type) = rules.first_building_type_for_overlay(overlay_id, overlays) else {
-            return false;
-        };
-        if wall_type.unsellable {
-            return false;
-        }
-
-        // Native emits the global cue before the discarded actual-cost call
-        // and before clearing the overlay. Locality belongs to the receiver.
-        if !suppress_local_cue
-            && rules.general.sell_sound.is_some()
-            && let Some(receiver) = self.interner.get(command_owner)
-        {
-            self.sound_events.emit(SimSoundEvent::WallSold { receiver });
-        }
-        let _discarded_actual_cost = rules.building_actual_cost(wall_type);
-
-        let mut tail_grid = self.path_grid.as_deref().cloned();
-        let sold_navigation_changed = if let Some(grid) = self.overlay_grid.as_mut() {
-            // gamemd-derived: `HouseClass::Sell_Building_At_Cell @ 0x004FCE80`
-            // clears the wall identity itself (`+0x44 = -1` at `0x004FCFBC`,
-            // `+0x11E = 0` at `0x004FCFCA`, `+0x50 = -1` at `0x004FCFDD`) and
-            // never touches `CellClass+0x122` anywhere in its body; the
-            // `PostDestructionWallCleanup(0)` it runs at `0x004FCFFB` then skips
-            // the just-cleared cell at `0x004807CA`. The absent plane decrement
-            // here is that behaviour, not an oversight: a sold wall keeps its
-            // eight neighbour contributions permanently.
-            grid.clear_overlay(rx, ry);
-            if let Some(terrain) = self.resolved_terrain.as_mut() {
-                grid.recalculate_runtime_cell(terrain, overlays, (rx, ry))
-                    .navigation_changed
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-        Self::refresh_wall_sale_recalc_prefix(
-            &mut self.zone_grid,
-            &self.resolved_terrain,
-            &self.overlay_grid,
-            &mut tail_grid,
-            rx,
-            ry,
-            sold_navigation_changed,
-        );
-
-        // Selling invokes exactly one PostDestructionWallCleanup at the sold
-        // cell: N, E, S, W, self. It is not damage's four-cardinal fan-out.
-        const CROSS: [(i32, i32); 5] = [(0, -1), (1, 0), (0, 1), (-1, 0), (0, 0)];
-        for (dx, dy) in CROSS {
-            let visit = {
-                let mut host = SimulationWallRuntimeHost {
-                    dirty_cells: &mut self.dirty_cells,
-                    zone_grid: &mut self.zone_grid,
-                    path_grid: &mut self.path_grid,
-                    bridge_state: self.bridge_state.as_ref(),
-                    playfield_bounds: self.playfield_bounds,
-                };
-                self.overlay_grid.as_mut().and_then(|grid| {
-                    runtime_wall_cleanup_visit_at(
-                        grid,
-                        overlays,
-                        self.resolved_terrain.as_ref(),
-                        i32::from(rx) + dx,
-                        i32::from(ry) + dy,
-                        Some(&mut host),
-                    )
-                })
-            };
-            let Some(visit) = visit else {
-                continue;
-            };
-
-            if !visit.was_wall {
-                continue;
-            }
-            let Some((nx, ny)) = visit.real_cell else {
-                // RecalcAttributes suppresses the cleared/updated shared
-                // dummy after the overlay step, so it has no represented
-                // navigation, zone, or retained-count output.
-                continue;
-            };
-            let result = visit.recomputed;
-            let recalc = match (self.overlay_grid.as_mut(), self.resolved_terrain.as_mut()) {
-                (Some(grid), Some(terrain)) => {
-                    grid.recalculate_runtime_cell(terrain, overlays, (nx, ny))
-                }
-                _ => OverlayRecalcOutcome::default(),
-            };
-            Self::refresh_wall_sale_recalc_prefix(
-                &mut self.zone_grid,
-                &self.resolved_terrain,
-                &self.overlay_grid,
-                &mut tail_grid,
-                nx,
-                ny,
-                recalc.navigation_changed,
-            );
-            let cleanup_zone_changed = recalc.zone_changed;
-            if cleanup_zone_changed && let Some(prefix_grid) = tail_grid.as_ref() {
-                self.repair_wall_sale_zone_prefix(
-                    prefix_grid,
-                    (rx, ry),
-                    (nx, ny),
-                    if result == RecomputeResult::Destroyed {
-                        ZoneRepairKind::AssignOrphaned
-                    } else {
-                        ZoneRepairKind::MergeAdjacent
-                    },
-                );
-            }
-            // gamemd-derived: `CellClass::PostDestructionWallCleanup @
-            // 0x00480630` runs its own eight-step `+0x122` decrement
-            // (`0x00480999..0x004809EF`) only when this cell's hardcoded
-            // isolated removal fired (`TEST BL,BL` at `0x0048097D`) AND
-            // `RecalcAttributes` changed its zone type (load at
-            // `0x00480972`, compare at `0x00480975`). A removed wall whose zone is unchanged keeps its
-            // eight contributions, natively.
-            if result == RecomputeResult::Destroyed && cleanup_zone_changed {
-                let terrain = self
-                    .resolved_terrain
-                    .as_ref()
-                    .expect("wall-sale cleanup zone comparison requires terrain");
-                self.overlay_grid
-                    .as_mut()
-                    .expect("wall-sale cleanup requires overlay grid")
-                    .remove_retained_wall_neighbor_source(Some(terrain), nx, ny);
-            }
-        }
-        self.dirty_cells.mark_radar([(rx, ry)]);
-
-        // House4FD018 calls70D4A0, not7258D0 pointer expiry: Restore runs
-        // before the conditional target clear, then Team targets detach.
-        self.stop_all_targeting_cell(rx, ry, rules, Some(overlays), effects);
-
-        if let Some(tail_grid) = tail_grid {
-            if self.zone_grid.is_some() {
-                // HouseClass performs the sold-cell AssignOrphaned/graph tail
-                // after PostDestructionWallCleanup has completed every visit.
-                self.repair_wall_sale_zone_prefix(
-                    &tail_grid,
-                    (rx, ry),
-                    (rx, ry),
-                    ZoneRepairKind::AssignOrphaned,
-                );
-            } else {
-                self.rebuild_zone_grid_full(&tail_grid);
-            }
-            self.path_grid = Some(std::sync::Arc::new(tail_grid));
-        }
-        true
-    }
-
     /// Execute4C70E1..4C718A hands the packet selector to the existing House
     /// production owners. Keep it intact until this call; neither the issuing
     /// client's type interner nor its then-current Factory head is authority.
@@ -1626,15 +183,20 @@ impl Simulation {
         record: &CommandRecord,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
-        let Some(owner) = self
-            .command_sender_owner(record.house_id())
-            .filter(|owner| self.houses.contains_key(owner))
-        else {
+        let Some((owner, record)) = self.house_command_record(record) else {
             return false;
         };
-        let owner = self.interner.resolve(owner).to_owned();
+        let record = record.as_ref();
+        if let Some(event) = CycleProducerRecord::decode(record) {
+            return production::cycle_active_producer_for_owner_category(
+                self,
+                rules,
+                owner,
+                event.category,
+            );
+        }
         if let Some(event) = ProductionRecord::decode(record) {
             let selection = production::ProductionSelection {
                 rtti: event.rtti,
@@ -1643,7 +205,7 @@ impl Simulation {
             };
             return match event.event {
                 ProductionEvent::Produce => {
-                    production::enqueue_selected(self, rules, &owner, selection, effects, false)
+                    production::enqueue_selected(self, rules, owner, selection, effects, false)
                 }
                 ProductionEvent::Suspend => {
                     let Some(category) = selection.category(rules) else {
@@ -1653,7 +215,7 @@ impl Simulation {
                         &self.interner,
                         &mut self.production,
                         &self.session,
-                        &owner,
+                        owner,
                         category,
                     )
                 }
@@ -1661,7 +223,7 @@ impl Simulation {
                     production::cancel_production_for_owner(
                         self,
                         rules,
-                        &owner,
+                        owner,
                         production::ProductionCancellation::Selected(selection),
                         event.event == ProductionEvent::AbandonAll,
                         effects,
@@ -1673,7 +235,7 @@ impl Simulation {
             return production::place_production_with_overlays(
                 self,
                 rules,
-                &owner,
+                owner,
                 production::ProductionPlacement::Selected {
                     selection: production::ProductionSelection {
                         rtti: event.rtti,
@@ -1691,68 +253,101 @@ impl Simulation {
 
     /// Dispatch a single command, returning true if it was successfully applied.
     #[cfg(any(test, feature = "test-support"))]
-    pub fn apply_command(
+    pub fn apply_command<'k>(
         &mut self,
-        command_owner: &str,
+        command_owner: impl Into<InternKey<'k>>,
         cmd: &Command,
         rules: Option<&RuleSet>,
     ) -> bool {
         self.apply_command_with_overlays(
+            None,
             command_owner,
             cmd,
             rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     }
 
-    pub(crate) fn apply_command_with_overlays(
+    /// The receiver for one command of `command_owner`: the id the command
+    /// carries, or a fixture's or tool's house name.
+    pub(crate) fn apply_command_with_overlays<'k>(
         &mut self,
-        command_owner: &str,
+        sender: Option<i8>,
+        command_owner: impl Into<InternKey<'k>>,
         cmd: &Command,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
+        let command_owner = command_owner.into();
+        // A semantic envelope cannot promote an embedded record into an
+        // authenticated source. DoList supplies this byte from its raw entry.
+        let has_grants = self.session.has_custom_control_grants();
+        if has_grants
+            && let Command::SynchronizedRecord { record } | Command::PlanningRecord { record } = cmd
+            && sender != Some(record.house_id())
+        {
+            return false;
+        }
         // Event command receivers clear Plan tokens before applying ordinary
         // orders. Flag2 acknowledges its path without detaching it; use the
         // same payload dispatcher while keeping state installed for callbacks.
         let decoded_native;
         let mut auxiliary = MegaMissionTarget::Null;
         let planned = matches!(cmd, Command::PlanningRecord { record }
-            if record.opcode() == 4 && record.payload()[22] == 2);
+            if super::planning::planning_dispatch_record(record));
         let native_mission = match cmd {
             Command::PlanningRecord { record } if planned => Some(record),
             Command::SynchronizedRecord { record }
-                if record.opcode() == 4 && record.payload()[22] == 0 =>
+                if MegaMissionRecord::planning_flag(record) == Some(0) =>
             {
                 Some(record)
             }
             _ => None,
         };
         let cmd = if let Some(record) = native_mission {
-            let mut ordinary = record.clone();
-            ordinary.payload_mut()[22] = 0;
-            let Some(typed) = MegaMissionRecord::decode(&ordinary) else {
+            let Some((typed, _)) = MegaMissionRecord::decode_planned(record) else {
                 return false;
             };
             auxiliary = typed.auxiliary;
-            // Only the temporary semantic projection omits NavComAux. The
-            // queue, plan graph and saved/replayed bytes keep the full token.
-            ordinary.payload_mut()[21] = 0;
+            // Only the temporary semantic projection omits the planning flag
+            // and NavComAux. The queue, plan graph and saved/replayed bytes
+            // keep the full record.
+            let mut ordinary = record.clone();
+            ordinary.payload_mut()[MEGAMISSION_PLANNING_OFFSET] = 0;
+            ordinary.payload_mut()[MEGAMISSION_AUXILIARY_KIND_OFFSET] = 0;
             let Some(envelope) = self.decode_native_command_record(&ordinary, self.session.tick())
             else {
                 return false;
             };
-            if planned && let Ok(actor) = u64::try_from(typed.source_id) {
-                self.planning_acknowledge(actor);
+            if planned {
+                if has_grants {
+                    // The generated record retires its own in-flight latch
+                    // even when its source exited before this execution.
+                    // The live-source gate below still refuses its effects.
+                    let issuing_house = self.command_sender_owner(record.house_id());
+                    if issuing_house != self.interner.key_id(command_owner)
+                        || !u64::try_from(typed.source_id)
+                            .is_ok_and(|actor| self.planning_acknowledge_generated(actor, record))
+                    {
+                        return false;
+                    }
+                } else if let Ok(actor) = u64::try_from(typed.source_id) {
+                    self.planning_acknowledge(actor);
+                }
             }
             decoded_native = envelope.payload;
             &decoded_native
         } else {
             cmd
         };
-        if self.network_command_actor_foreign(command_owner, cmd, rules.ares()) {
+        let granted_source =
+            sender.and_then(|source| self.resolve_command_grant_source(command_owner, source));
+        if (has_grants && sender.is_some() && granted_source.is_none())
+            || self.network_command_actor_foreign(command_owner, granted_source, cmd, rules, None)
+            || !self.command_subject_can_receive_order(cmd, rules, sender)
+        {
             return false;
         }
         let ordinary_actor = match cmd {
@@ -1780,10 +375,17 @@ impl Simulation {
                 // Execute_DoList64C8D8..64C911 dispatches OPTIONS only for
                 // the current House. Event4C7929 suppresses playback, then
                 // writes GameState1 at4C7939. Source: original instructions.
-                if self.interner.get(command_owner) != self.session.current_house() {
+                let for_this_client = if has_grants {
+                    self.local_grant_source()
+                        .is_some_and(|(source, _)| sender == Some(source))
+                } else {
+                    self.interner.key_id(command_owner)
+                        == self.control_projection().local_command_house()
+                };
+                if !for_this_client {
                     return false;
                 }
-                if self.replaying_recorded_commands {
+                if *self.replaying_recorded_commands {
                     return false;
                 }
                 self.lifecycle_outputs
@@ -1793,7 +395,7 @@ impl Simulation {
             Command::SetLatencyFudge { value } => {
                 // Event LATENCYFUDGE4C7F4F stores the unmodified dword; its
                 // network-session owner receives the write after MainTick.
-                let Some(owner) = self.interner.get(command_owner) else {
+                let Some(owner) = self.interner.key_id(command_owner) else {
                     return false;
                 };
                 self.lifecycle_outputs
@@ -1816,19 +418,17 @@ impl Simulation {
                     *destination,
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted(),
             Command::PlanningRecord { record } => {
-                self.apply_planning_record(command_owner, record, rules)
+                self.apply_planning_record(sender, command_owner, record, rules)
             }
             Command::SynchronizedRecord { record } => {
                 if let Some((owner, command)) = self.superweapon_command_from_record(record, rules)
                 {
-                    let owner = self.interner.resolve(owner).to_owned();
-                    return self.apply_command_with_overlays(
-                        &owner,
+                    return self.apply_superweapon_command_for_house(
+                        owner,
                         &command,
                         rules,
                         overlay_registry,
@@ -1866,6 +466,7 @@ impl Simulation {
                         crate::sim::command::AresTrenchRedirectRecord::decode(record)
                 {
                     return self.ares_respond_to_trench_redirect(
+                        granted_source.map(|(source, _)| source),
                         &event,
                         rules,
                         overlay_registry,
@@ -1879,7 +480,7 @@ impl Simulation {
             }
             Command::Select { entity_ids, .. } => self.apply_selection_snapshot(
                 entity_ids,
-                super::UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
+                super::UninitContext::new(rules).with_effects(frame_effects),
             ),
             Command::Scatter { entity_id } => {
                 // Event7 4C7859..4C78D5: clear planning tokens, then Foot,
@@ -1893,7 +494,7 @@ impl Simulation {
                         actor.category().is_foot()
                             && actor.lifecycle.object_alive()
                             && !actor.lifecycle.in_limbo()
-                            && actor.tether.partner().is_none()
+                            && actor.seldom.tether.partner().is_none()
                     });
                 if !admitted {
                     return false;
@@ -1902,15 +503,26 @@ impl Simulation {
                 // CRC4DBD60 and raw native Save/Load41035E/4103CD, not active
                 // peer checksum64DAB0. No unread Rust bookkeeping shadow is
                 // retained; class CRC/raw-native-image equivalence is absent.
-                self.scatter(
+                //
+                // The record may come from another player and name any Foot,
+                // so a Scatter body error (a class state or map input VERA's
+                // receiver needs and this actor lacks) refuses the order
+                // instead of stopping the game, as the damage, idle and
+                // cell callers do. The error is a function of the shared
+                // simulation state, so every peer refuses the same record
+                // after the same effects (an RNG draw or queued Move the body
+                // made before it failed).
+                if let Err(cause) = self.scatter(
                     *entity_id,
                     None,
                     crate::sim::movement::ScatterFlags::new(true, false),
                     rules,
                     overlay_registry,
                     frame_effects,
-                )
-                .unwrap_or_else(|cause| panic!("player Scatter event: {cause}"));
+                ) {
+                    log::warn!("Scatter order for {entity_id} refused: {cause}");
+                    return false;
+                }
                 true
             }
             Command::Move {
@@ -1925,7 +537,6 @@ impl Simulation {
                     Some(combat::TargetKind::Cell(*target_rx, *target_ry)),
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted(),
@@ -1940,7 +551,6 @@ impl Simulation {
                     Some(combat::TargetKind::Entity(*target_id)),
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted(),
@@ -1974,7 +584,7 @@ impl Simulation {
                     .entities
                     .get(*entity_id)
                     .is_some_and(|entity| {
-                        entity.tether.partner().is_some()
+                        entity.seldom.tether.partner().is_some()
                             || matches!(entity.mission.current().raw(), 0x12 | 0x13)
                     })
                 {
@@ -2022,13 +632,7 @@ impl Simulation {
                 self.assign_null_destination(*entity_id, rules, overlay_registry, frame_effects);
                 // Event Stop4C75F8 invokes virtual+3C8 AFTER its null
                 // destination4C75ED, including the Infantry class effects.
-                let _ = self.assign_target_represented(
-                    *entity_id,
-                    None,
-                    rules,
-                    overlay_registry,
-                    frame_effects,
-                );
+                let _ = self.assign_target_represented(*entity_id, None, rules, frame_effects);
                 // `0x004C75FE..0x004C7624`: a `BalloonHover=` type takes both
                 // again. Its setter's arm (`0x00741983`) kept the NavCom while
                 // the Target stood; without the Target this one clears it.
@@ -2045,13 +649,7 @@ impl Simulation {
                         overlay_registry,
                         frame_effects,
                     );
-                    let _ = self.assign_target_represented(
-                        *entity_id,
-                        None,
-                        rules,
-                        overlay_registry,
-                        frame_effects,
-                    );
+                    let _ = self.assign_target_represented(*entity_id, None, rules, frame_effects);
                 }
                 // `0x004C762A..0x004C7634`: a spawner's manager drops its
                 // targets, so a queued launch is cancelled and an attacking
@@ -2060,7 +658,6 @@ impl Simulation {
                     self,
                     *entity_id,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 );
                 // The IDLE arm leaves the installed locomotor alone: a stopped
@@ -2079,13 +676,7 @@ impl Simulation {
                 //
                 // `0x004C7639..0x004C7650`: an open-topped transport's riders
                 // let go of their targets too.
-                self.open_topped_passengers_take_target(
-                    *entity_id,
-                    None,
-                    rules,
-                    overlay_registry,
-                    frame_effects,
-                );
+                self.open_topped_passengers_take_target(*entity_id, None, rules, frame_effects);
                 // `0x004C7655..0x004C765F`: only a Unit (vt+0x2C is 1) goes on
                 // to the miner arm and `0x004C769C..0x004C76AC`, which takes a
                 // Slave Miner off its hunt (`sim::slave_manager`). A selected
@@ -2113,7 +704,6 @@ impl Simulation {
                     None,
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted(),
@@ -2129,7 +719,6 @@ impl Simulation {
                     None,
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted(),
@@ -2145,7 +734,6 @@ impl Simulation {
                     *destination,
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted(),
@@ -2157,7 +745,6 @@ impl Simulation {
                     None,
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted(),
@@ -2171,10 +758,23 @@ impl Simulation {
             // keep it. The cell-click path sends SetRally followed by
             // SellBuilding, preserving native event1E/16.
             Command::UndeployBuilding { entity_id } => {
-                if !self.entity_owned_by_id(command_owner, *entity_id) {
+                if !self.command_entity_allowed(
+                    command_owner,
+                    granted_source,
+                    *entity_id,
+                    CommandCapability::FullControl,
+                ) {
                     return false;
                 }
-                self.undeploy_building(*entity_id, rules, overlay_registry, frame_effects)
+                let delegated =
+                    self.command_delegates_yard_redeploy(granted_source, *entity_id, rules);
+                self.undeploy_building(
+                    *entity_id,
+                    delegated,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                )
             }
             // The synchronized self-deploy order is the Unload MEGAMISSION
             // (see the transport arm of `UnloadPassengers`); the concrete
@@ -2189,7 +789,12 @@ impl Simulation {
             // ground projection. Effect: it can deploy where native ignores D.
             // Frequency: rare; downstream risk: low.
             Command::ToggleInfantryDeploy { entity_id } => {
-                if !self.entity_owned_by_id(command_owner, *entity_id) {
+                if !self.command_entity_allowed(
+                    command_owner,
+                    granted_source,
+                    *entity_id,
+                    CommandCapability::Tactical,
+                ) {
                     return false;
                 }
                 let Some(actor) = self.substrate.entities.get(*entity_id) else {
@@ -2209,7 +814,6 @@ impl Simulation {
                     None,
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted()
@@ -2229,17 +833,14 @@ impl Simulation {
             ),
             // Production events act on the event's own house (the
             // EventClass header's house id); the payload names no owner.
-            Command::QueueProduction { type_id } => {
-                let type_s = self.interner.resolve(*type_id).to_string();
-                production::enqueue_by_type(
-                    self,
-                    rules,
-                    command_owner,
-                    &type_s,
-                    frame_effects,
-                    false,
-                )
-            }
+            Command::QueueProduction { type_id } => production::enqueue_by_type(
+                self,
+                rules,
+                command_owner,
+                *type_id,
+                frame_effects,
+                false,
+            ),
             Command::SuspendProduction { category } => production::suspend_production(
                 &self.interner,
                 &mut self.production,
@@ -2273,13 +874,12 @@ impl Simulation {
                 )
             }
             Command::PlaceReadyBuilding { type_id, rx, ry } => {
-                let type_s = self.interner.resolve(*type_id).to_string();
                 production::place_production_with_overlays(
                     self,
                     rules,
                     command_owner,
                     production::ProductionPlacement::Building {
-                        type_id: &type_s,
+                        type_id: (*type_id).into(),
                         cell: (*rx, *ry),
                     },
                     overlay_registry,
@@ -2299,14 +899,16 @@ impl Simulation {
                 )
             }
             Command::CancelProductionByType { type_id, all } => {
-                let type_s = self.interner.resolve(*type_id).to_string();
                 production::cancel_production_for_owner(
                     self,
                     rules,
                     command_owner,
                     crate::sim::production::ProductionCancellation::Type {
-                        type_id: &type_s,
-                        naval: rules.object(&type_s).is_some_and(|object| object.naval),
+                        type_id: (*type_id).into(),
+                        naval: self
+                            .interner
+                            .object_type(*type_id, rules)
+                            .is_some_and(|object| object.naval),
                     },
                     *all,
                     frame_effects,
@@ -2324,7 +926,12 @@ impl Simulation {
                     return false;
                 };
                 if !entity.lifecycle.object_alive()
-                    || !self.entity_owned_by_id(command_owner, *entity_id)
+                    || !self.command_house_allowed(
+                        command_owner,
+                        granted_source,
+                        entity.owner(),
+                        CommandCapability::FullControl,
+                    )
                 {
                     return false;
                 }
@@ -2359,15 +966,21 @@ impl Simulation {
                             self,
                             rules,
                             *entity_id,
-                            crate::sim::world::UninitContext::new(rules, overlay_registry)
+                            crate::sim::world::UninitContext::new(rules)
                                 .with_effects(frame_effects),
                         );
                 }
+                let order =
+                    if self.command_delegates_yard_redeploy(granted_source, *entity_id, rules) {
+                        production::SellOrder::DelegatedRedeploy { explicit: false }
+                    } else {
+                        production::SellOrder::Player
+                    };
                 production::sell_back(
                     self,
                     rules,
                     *entity_id,
-                    production::SellOrder::Player,
+                    order,
                     overlay_registry,
                     frame_effects,
                 )
@@ -2377,7 +990,16 @@ impl Simulation {
                     return false;
                 };
                 // Event 0x4C6FC4 passes 0; ordinary SELL remains audible.
-                self.sell_wall_at_cell(command_owner, *x, *y, false, rules, overlays, frame_effects)
+                self.sell_wall_at_cell(
+                    command_owner,
+                    granted_source,
+                    *x,
+                    *y,
+                    false,
+                    rules,
+                    overlays,
+                    frame_effects,
+                )
             }
             // Event1/Event2 (0x004C6CB0 branches 0x004C6CF0/0x004C6D4D) drive the
             // BuildingClass+0x660 power latch through GoOnline 0x00452260 /
@@ -2386,7 +1008,7 @@ impl Simulation {
             // Stuff flag, factory queue refresh, EVA line for a human house). The
             // dispatch has no owner check; only the VERA network gate above adds one.
             Command::SetBuildingOnLine { entity_id, on } => {
-                let Some(owner) = self.interner.get(command_owner) else {
+                let Some(owner) = self.interner.key_id(command_owner) else {
                     return false;
                 };
                 if !self.houses.contains_key(&owner) {
@@ -2433,7 +1055,7 @@ impl Simulation {
             // EventClass tail, before any House check.
             Command::LiveGameSpeed { speed } => self.session.apply_in_game_speed(*speed),
             Command::Cheer => {
-                let Some(owner) = self.interner.get(command_owner) else {
+                let Some(owner) = self.interner.key_id(command_owner) else {
                     return false;
                 };
                 if !self.houses.contains_key(&owner) {
@@ -2443,14 +1065,14 @@ impl Simulation {
                 true
             }
             Command::Destruct => {
-                let Some(owner) = self.interner.get(command_owner) else {
+                let Some(owner) = self.interner.key_id(command_owner) else {
                     return false;
                 };
                 // VERA shared control: one player resigning (B6 Leave beside
                 // Observe, Surrender's OK) leaves a House other players still
                 // control in the game; the EXIT that follows retires only them.
                 if self
-                    .executing_sender(owner)
+                    .executing_sender(sender, owner)
                     .is_some_and(|sender| self.house_keeps_other_sender(owner, sender))
                 {
                     return true;
@@ -2462,13 +1084,13 @@ impl Simulation {
                 true
             }
             Command::ExitMatch => {
-                let Some(owner) = self.interner.get(command_owner) else {
+                let Some(owner) = self.interner.key_id(command_owner) else {
                     return false;
                 };
                 if !self.houses.contains_key(&owner) {
                     return false;
                 }
-                let sender = self.executing_sender(owner);
+                let sender = self.executing_sender(sender, owner);
                 // VERA shared control: a House another player still controls
                 // stays in the game; only this sender leaves.
                 let house_left =
@@ -2493,22 +1115,24 @@ impl Simulation {
                 }
                 // A Simulation without a current House (diagnostic and replay
                 // drivers) has no remote senders. A shared House's senders
-                // are told apart by their own sources.
-                let local = match (self.session.local_shared_house_source(), sender) {
-                    (Some(local), Some(sender)) => local == sender,
-                    _ => self
-                        .session
-                        .current_house()
-                        .is_none_or(|local| local == owner),
-                };
+                // are told apart by their own sources. A watcher sends
+                // nothing: the followed player's EXIT is a remote one too.
+                let local = !self.session.watcher()
+                    && match (self.session.local_shared_house_source(), sender) {
+                        (Some(local), Some(sender)) => local == sender,
+                        _ => self
+                            .session
+                            .current_house()
+                            .is_none_or(|local| local == owner),
+                    };
                 if local {
                     // The local sender's EventClass__Execute (0x004C7903)
                     // writes the termination byte at 0x004C7917. The app
                     // consumes the owner-tagged edge after this tail.
-                    if !self.quit_requested {
-                        self.executed_exit_owner = Some(owner);
+                    if !*self.quit_requested {
+                        *self.executed_exit_owner = Some(owner);
                     }
-                    self.quit_requested = true;
+                    *self.quit_requested = true;
                 } else {
                     // A remote sender never reaches Execute (0x0064C91B):
                     // DestroyConnection(house, 0) runs for it (0x0064C9B1).
@@ -2527,7 +1151,7 @@ impl Simulation {
                 // EventClass::Execute 0x004C6DEE..0x004C6E23: no admission
                 // gate; the sender toggles on its own mask, announced.
                 let (Some(owner), Some(other)) = (
-                    self.interner.get(command_owner),
+                    self.interner.key_id(command_owner),
                     usize::try_from(*house_index)
                         .ok()
                         .and_then(|index| self.houses.order().get(index).copied()),
@@ -2540,7 +1164,7 @@ impl Simulation {
                     owner,
                     other,
                 ) {
-                    self.make_enemy(owner, other, rules, overlay_registry, frame_effects, true);
+                    self.make_enemy(owner, other, rules, frame_effects, true);
                 } else {
                     self.make_ally(owner, other, rules, overlay_registry, frame_effects, true);
                 }
@@ -2581,12 +1205,21 @@ impl Simulation {
             // before its only admission: Object+90. Accepted events survive
             // capture; neither sender ownership nor CanRepair is rechecked.
             // Source: original gamemd.exe instructions4C6ED2..4C6F01.
+            // VERA rechecks the wrench's *type* permission here so a REPAIR
+            // event that skipped the cursor (a replayed native record, a
+            // synchronized record, a captured object) cannot toggle a
+            // ClickRepairable=no building. It shares the flags with the click
+            // producer (`BuildingClass::Can_Repair @ 0x00452630`, byte
+            // +0x157A) but keeps the native receiver's admission: a live
+            // full-health building still takes an event; `player_repair_type_admits`
+            // owns the shared decision, `can_repair_building` adds damage.
             Command::ToggleRepair { entity_id } => {
                 if !self
                     .substrate
                     .entities
                     .get(*entity_id)
                     .is_some_and(|entity| entity.lifecycle.object_alive())
+                    || !production::player_repair_type_admits(self, rules, *entity_id)
                 {
                     return false;
                 }
@@ -2598,12 +1231,17 @@ impl Simulation {
                 )
             }
             Command::UnloadPassengers { transport_id } => {
-                if !self.entity_owned_by_id(command_owner, *transport_id) {
+                if !self.command_entity_allowed(
+                    command_owner,
+                    granted_source,
+                    *transport_id,
+                    CommandCapability::Tactical,
+                ) {
                     return false;
                 }
                 let has_passengers = self.substrate.entities.get(*transport_id).is_some_and(|t| {
-                    !t.passenger_role.occupants().is_empty()
-                        || t.passenger_role
+                    !t.passenger_role().occupants().is_empty()
+                        || t.passenger_role()
                             .cargo()
                             .is_some_and(|cargo| !cargo.is_empty())
                 });
@@ -2722,7 +1360,6 @@ impl Simulation {
                             None,
                             auxiliary,
                             rules,
-                            overlay_registry,
                             frame_effects,
                         )
                         .accepted()
@@ -2734,7 +1371,12 @@ impl Simulation {
                 attacker_id,
                 target_building_id,
             } => {
-                if !self.entity_owned_by_id(command_owner, *attacker_id) {
+                if !self.command_entity_allowed(
+                    command_owner,
+                    granted_source,
+                    *attacker_id,
+                    CommandCapability::Tactical,
+                ) {
                     return false;
                 }
                 if self
@@ -2807,7 +1449,6 @@ impl Simulation {
                     Some(combat::TargetKind::Entity(*target_building_id)),
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted()
@@ -2816,7 +1457,12 @@ impl Simulation {
                 engineer_id,
                 target_building_id,
             } => {
-                if !self.entity_owned_by_id(command_owner, *engineer_id) {
+                if !self.command_entity_allowed(
+                    command_owner,
+                    granted_source,
+                    *engineer_id,
+                    CommandCapability::Tactical,
+                ) {
                     return false;
                 }
                 // A Building destination with a coordinate; the event arm
@@ -2856,18 +1502,68 @@ impl Simulation {
                     Some(combat::TargetKind::Entity(*target_building_id)),
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted()
             }
+            Command::LaunchSuperWeapon { .. }
+            | Command::CompletePaidSuperWeapon { .. }
+            | Command::CancelPaidSuperWeapon { .. }
+            | Command::BeginPaidSuperWeapon { .. } => {
+                let owner = self.interner.intern_key(command_owner);
+                self.apply_superweapon_command_for_house(
+                    owner,
+                    cmd,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                )
+            }
+            // VERA-only opcode 0x31: keep the record decodable for old
+            // recordings, but never release the tank here. Native
+            // `BuildingClass::EmptyBunker @ 0x004595C0` has one caller, the
+            // linked Unit's `Mission_Unload @ 0x0073D66D`, whose DEPLOY
+            // receiver (`Event9` `0x004C76BC..0x004C7812`) owns the radio
+            // Break, null destination/target, Unload queue and the actor's
+            // alive/limbo admission. The release then happens in that Unit's
+            // Logic update, not during command execution (#3675).
+            Command::EjectBunker { bunker_id } => {
+                if !self.command_entity_allowed(
+                    command_owner,
+                    granted_source,
+                    *bunker_id,
+                    CommandCapability::Tactical,
+                ) {
+                    return false;
+                }
+                let Some(unit_id) = self
+                    .substrate
+                    .entities
+                    .get(*bunker_id)
+                    .and_then(|b| b.bunker.occupant())
+                else {
+                    return false;
+                };
+                crate::sim::deploy::issue_order(self, unit_id, rules, frame_effects)
+            }
+        }
+    }
+
+    fn apply_superweapon_command_for_house(
+        &mut self,
+        owner: InternedId,
+        command: &Command,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> bool {
+        match command {
             Command::LaunchSuperWeapon {
                 sw_type_id,
                 target_rx,
                 target_ry,
             } => {
                 // The SPECIAL_PLACE event (`EventClass::Execute 0x004C78D6`).
-                let owner = self.interner.intern(command_owner);
                 self.place_super_weapon(
                     rules,
                     owner,
@@ -2881,21 +1577,17 @@ impl Simulation {
                 selection,
                 target_rx,
                 target_ry,
-            } => {
-                let owner = self.interner.intern(command_owner);
-                self.fire_super_weapon_selected(
-                    rules,
-                    owner,
-                    selection.destination,
-                    (*target_rx, *target_ry),
-                    overlay_registry,
-                    frame_effects,
-                    crate::sim::superweapon::SuperWeaponTargetSource::Manual,
-                    Some(*selection),
-                )
-            }
+            } => self.fire_super_weapon_selected(
+                rules,
+                owner,
+                selection.destination,
+                (*target_rx, *target_ry),
+                overlay_registry,
+                frame_effects,
+                crate::sim::superweapon::SuperWeaponTargetSource::Manual,
+                Some(*selection),
+            ),
             Command::CancelPaidSuperWeapon { selection } => {
-                let owner = self.interner.intern(command_owner);
                 Self::cancel_paid_super_weapon_selection(
                     &mut self.substrate,
                     &mut self.sound_events,
@@ -2909,41 +1601,17 @@ impl Simulation {
                 selection,
                 target_rx,
                 target_ry,
-            } => {
-                let owner = self.interner.intern(command_owner);
-                self.fire_super_weapon_selected(
-                    rules,
-                    owner,
-                    selection.source,
-                    (*target_rx, *target_ry),
-                    overlay_registry,
-                    frame_effects,
-                    crate::sim::superweapon::SuperWeaponTargetSource::Manual,
-                    Some(*selection),
-                )
-            }
-            // VERA-only opcode 0x31: keep the record decodable for old
-            // recordings, but never release the tank here. Native
-            // `BuildingClass::EmptyBunker @ 0x004595C0` has one caller, the
-            // linked Unit's `Mission_Unload @ 0x0073D66D`, whose DEPLOY
-            // receiver (`Event9` `0x004C76BC..0x004C7812`) owns the radio
-            // Break, null destination/target, Unload queue and the actor's
-            // alive/limbo admission. The release then happens in that Unit's
-            // Logic update, not during command execution (#3675).
-            Command::EjectBunker { bunker_id } => {
-                if !self.entity_owned_by_id(command_owner, *bunker_id) {
-                    return false;
-                }
-                let Some(unit_id) = self
-                    .substrate
-                    .entities
-                    .get(*bunker_id)
-                    .and_then(|b| b.bunker.occupant())
-                else {
-                    return false;
-                };
-                crate::sim::deploy::issue_order(self, unit_id, rules, frame_effects)
-            }
+            } => self.fire_super_weapon_selected(
+                rules,
+                owner,
+                selection.source,
+                (*target_rx, *target_ry),
+                overlay_registry,
+                frame_effects,
+                crate::sim::superweapon::SuperWeaponTargetSource::Manual,
+                Some(*selection),
+            ),
+            _ => false,
         }
     }
 
@@ -3019,384 +1687,6 @@ impl Simulation {
             object.set_archive_target(target);
         }
         true
-    }
-
-    /// Building44377E admits HasRallyPoint OR UndeploysInto; the latter
-    /// archives the move goal before SELL. The click's admission is the
-    /// owner's and vt+0xA0's ([`Self::techno_player_controllable`]):
-    /// What_Action_OnCell asks it at `0x00447617`, and the cell click's
-    /// ConstructionYard gates (`0x0044374F..0x00443778`) repeat its own.
-    /// Neither reads build-up or sale, so a yard building up or repacking
-    /// still takes the click: SELL during build-up starts the repack
-    /// (Sell_Back `0x00447110` queues Selling unless already Selling), and a
-    /// repack's MCV then drives to the new cell.
-    pub fn takes_rally_point(&self, stable_id: u64, owner: &str, rules: &RuleSet) -> bool {
-        self.substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| {
-                entity.category() == crate::map::entities::EntityCategory::Structure
-                    && owner.eq_ignore_ascii_case(self.interner.resolve(entity.owner()))
-            })
-            && self.techno_player_controllable(stable_id, rules)
-    }
-
-    /// Replace the current selection with exactly the given stable entity IDs.
-    ///
-    /// Mirrors gamemd's mutation flow: omitted old members are deselected,
-    /// requested old members retain their existing admission, and only genuinely
-    /// new members run through `ObjectClass::Select`. This distinction matters
-    /// for an already-selected Chrono unit in warp-out: warp blocks a fresh
-    /// selection, but does not retroactively remove an existing one.
-    /// VERA-only: applies the local `Command::Select` snapshot, its source of truth, to
-    /// IsSelected `Object+0x83` through `Deselect @ 0x005F44A0` and `Select @ 0x005F4520`.
-    ///
-    /// RESIDUAL: the input ledger resolves a mutation's Select calls, their
-    /// planning expansion (`0x00637840`) and Unselect_All drains included;
-    /// this then Selects only the final new members, in vector order, with
-    /// the `0x00AC4CF6` guard clear. So (a) a Select a partner's Selected tag
-    /// event (33) starts expands its own tail node, where native's guard
-    /// returns early; (b) an object Selected and then drained within one
-    /// mutation, or a selected object drained and Selected again within it,
-    /// raises no event 33 (native raises one per Select, `0x006FBFE4`; the
-    /// re-Selected object keeps its bit here, so `try_select_object` sees it
-    /// already selected); (c) the new members' events run in vector order, not
-    /// call order. Trigger: a tag with event 33 on a planning partner (a);
-    /// on an object a later Select of the same mutation drains, which takes
-    /// another house's object on the player's planning node (b); or on two
-    /// objects one mutation selects (c). Effect: extra partners selected, or
-    /// a missing or reordered event 33 and the actions it runs (RNG draws
-    /// included). Frequency: rare; needs Selected triggers, and (a, b)
-    /// Planning Mode. Downstream risk: the selection's later orders, and
-    /// whatever those trigger actions change.
-    fn apply_selection_snapshot(
-        &mut self,
-        stable_ids: &[u64],
-        context: super::UninitContext<'_>,
-    ) -> bool {
-        let requested: BTreeSet<u64> = stable_ids.iter().copied().collect();
-        // Deselect only omitted old members. Requested old members remain set,
-        // so the final-admission gates below are never reapplied to them.
-        let keys: Vec<u64> = self.substrate.entities.keys_sorted();
-        for &id in &keys {
-            if !requested.contains(&id)
-                && let Some(e) = self.substrate.entities.get_mut(id)
-            {
-                e.selection.deselect();
-            }
-        }
-        // Iterate the original payload, not the membership set: source order is
-        // authoritative even though this sim layer stores only selected bits.
-        for &stable_id in stable_ids {
-            self.try_select_object(stable_id, context);
-        }
-        true
-    }
-
-    /// Object5F6C30 (+138), with Foot4DFA50's +6AD guard for mobile objects.
-    /// Its disguise arm (+C8 with a NULL +D0(1)) is
-    /// [`crate::sim::game_entity::GameEntity::disguise_hides_house_from`]; it
-    /// does not treat current fog as selectability.
-    pub fn object_is_selectable(&self, stable_id: u64, rules: &RuleSet) -> bool {
-        let Some(entity) = self.substrate.entities.get(stable_id) else {
-            return false;
-        };
-        if entity.category() != crate::map::entities::EntityCategory::Structure
-            && entity.lift.swap_active()
-        {
-            return false;
-        }
-        if self.session.current_house().is_some_and(|house| {
-            entity.disguise_hides_house_from(
-                house,
-                Some(&self.fog),
-                Some(&self.house_alliances),
-                &self.interner,
-            )
-        }) {
-            return false;
-        }
-        self.interner
-            .object_type(entity.type_ref(), rules)
-            .is_none_or(|object| object.selectable)
-    }
-
-    /// Object5F4520's state/type admission, shared by provisional local input
-    /// and committed selection. Membership and pending placement are caller
-    /// state: input checks its newest ledger/placement, the sim its stored bit.
-    /// Original does not read Alive or Health here; search/click callers do.
-    pub fn can_select_object(&self, stable_id: u64, rules: &RuleSet) -> bool {
-        let Some(entity) = self.substrate.entities.get(stable_id) else {
-            return false;
-        };
-        !entity.lifecycle.in_limbo()
-            && self.object_is_selectable(stable_id, rules)
-            && !(entity.is_mission_only() && self.techno_player_controllable(stable_id, rules))
-            && !entity.is_warped_out()
-    }
-
-    /// Commit an input-admitted Techno selection through Object5F4520, then
-    /// its successful Techno6FBFD0..6FBFE4 Event33 callback (Steam gamemd).
-    /// The app's input ledger applies TechnoClass::Select's gate
-    /// ([`Self::techno_select_admits`]) and Unselect_All
-    /// ([`Self::select_unselects_all`]) before emitting the ordered Select
-    /// command. Keep the graphical-client B73550 gate there: replaying this
-    /// command must not depend on a renderer.
-    /// Raw lifecycle Select writers use Selection::select and do not raise33.
-    pub(crate) fn try_select_object(
-        &mut self,
-        stable_id: u64,
-        context: super::UninitContext<'_>,
-    ) -> bool {
-        self.object_select(stable_id, false, context)
-    }
-
-    /// `TechnoClass::Select @ 0x006FBFA0`'s gate (`0x006FBFA3..0x006FBFC3`):
-    /// the current house has discovered the object (`+0x41B`) or its owner
-    /// is the human player (`HouseClass::IsHumanPlayer @ 0x0050B6F0`). Its
-    /// third arm, a zero main window handle (`0x00B73550`), never holds in a
-    /// running game. Every Select of a Techno passes it: the game's own
-    /// ([`Self::techno_select`]) and each Select the app's input ledger
-    /// resolves, planning partners included.
-    pub fn techno_select_admits(&self, stable_id: u64) -> bool {
-        self.substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| {
-                entity.discovery.discovered_by_current_house()
-                    || self.house_is_human_player(entity.owner())
-            })
-    }
-
-    /// `ObjectClass::Select @ 0x005F4520` into a non-empty selection whose
-    /// first object (current-objects `[0]`) is `first`
-    /// (`0x005F45AF..0x005F45F8`): Unselect_All (`0x0048DC90`) runs unless
-    /// both owners are the human player (`0x0050B6F0`), so a selection holds
-    /// either the player's objects or one other object. Both Select owners
-    /// decide with this: the input ledger, which knows `[0]`, and
-    /// [`Self::object_select`].
-    pub fn select_unselects_all(&self, first: u64, new: u64) -> bool {
-        let human = |id: u64| {
-            self.substrate
-                .entities
-                .get(id)
-                .is_some_and(|entity| self.house_is_human_player(entity.owner()))
-        };
-        let first_human = human(first);
-        first_human != human(new) || !first_human
-    }
-
-    /// ObjectClass::Deselect @ 0x005F44A0: an unselected object does
-    /// nothing; otherwise remove it from selection, then release Follow
-    /// (0x005F4503..0x005F4513). The app owns the retained input ledger.
-    pub(crate) fn object_deselect(&mut self, stable_id: u64) {
-        if let Some(entity) = self.substrate.entities.get_mut(stable_id)
-            && entity.selection.is_selected()
-        {
-            entity.selection.deselect();
-            self.lifecycle_outputs
-                .emit(super::LifecycleOutput::FollowReleased { stable_id });
-        }
-    }
-
-    /// `ObjectClass::Select @ 0x005F4520` and the Selected tag event that
-    /// `TechnoClass::Select` raises after it (`0x006FBFD0..0x006FBFE4`). A
-    /// Select the game makes itself (`logic`) first runs Unselect_All
-    /// (`0x0048DC90`: Deselect `0x005F44A0` of every selected object, each
-    /// releasing Follow, [`LifecycleOutput::FollowReleased`]) when
-    /// [`Self::select_unselects_all`] says so, then reports its insertion
-    /// into the current-objects vector ([`LifecycleOutput::ObjectSelected`]),
-    /// before the tag event can Select anything else. An input Select arrives
-    /// as a snapshot its owner already resolved.
-    ///
-    /// The simulation keeps selected bytes, not the vector's order, so this
-    /// reads the first selected object in store order as `[0]`. Every
-    /// Select keeps a selection all the player's or a single other object,
-    /// so any member answers as `[0]` would; they differ only if a selected
-    /// object changed owner and stayed selected.
-    ///
-    /// VERA-only: a network game (LAN or online) raises no Selected event.
-    /// Selection is client-local: no EventClass event carries it (the input
-    /// Select is frame ingress, never sent), and the game's own Selects
-    /// follow the local selected byte (crew, parasite and planning
-    /// reselects). Native raises event 33 here with no session test, and
-    /// `TagClass::RaiseEvent @ 0x006E53A0`, `TriggerClass::RegisterEvent @
-    /// 0x007264C0` and `TEventClass::HasOccurred @ 0x0071E940` (event 33
-    /// needs only the raised kind and a clear map-editor byte) add none, so
-    /// in a native network game only the selecting client springs the
-    /// trigger. `0x006FBFE2` is the program's only immediate push of 33.
-    /// Residual: trigger, a tag with event 33 on an object in a network game;
-    /// effect, its trigger never springs online, where native springs it on
-    /// the selecting client alone (a desync unless its actions are local
-    /// text or sound); frequency, rare, a map authoring Selected-by-player
-    /// triggers for multiplayer; downstream risk, only that trigger's actions.
-    ///
-    /// [`LifecycleOutput::ObjectSelected`]: super::LifecycleOutput::ObjectSelected
-    /// [`LifecycleOutput::FollowReleased`]: super::LifecycleOutput::FollowReleased
-    fn object_select(
-        &mut self,
-        stable_id: u64,
-        logic: bool,
-        context: super::UninitContext<'_>,
-    ) -> bool {
-        if !self.can_select_object(stable_id, context.rules())
-            || self
-                .substrate
-                .entities
-                .get(stable_id)
-                .is_some_and(|e| e.selection.is_selected())
-        {
-            return false;
-        }
-        if logic {
-            let first = self
-                .substrate
-                .entities
-                .values()
-                .find(|entity| entity.selection.is_selected())
-                .map(|entity| entity.stable_id());
-            if first.is_some_and(|first| self.select_unselects_all(first, stable_id)) {
-                for id in self.substrate.entities.keys_sorted() {
-                    self.object_deselect(id);
-                }
-            }
-        }
-        let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
-            return false;
-        };
-        entity.selection.select();
-        if logic {
-            self.lifecycle_outputs
-                .emit(super::LifecycleOutput::ObjectSelected { stable_id });
-        }
-        // Selection has already changed when the synchronous Tag actions run.
-        // They may change ownership, remove the Tag, or retire the object.
-        if !self.session.game_mode().is_network() {
-            self.dispatch_object_tag_event(stable_id, 33, Some(stable_id), None, context);
-        }
-        true
-    }
-
-    /// `TechnoClass::Select @ 0x006FBFA0` (vt+0x14C) for a logic caller: an
-    /// object [`Self::techno_select_admits`] refuses is not selected; then
-    /// ObjectClass::Select and the tag event ([`Self::object_select`]);
-    /// then, for a human player's
-    /// or passive house's object while the selection-voice latch
-    /// `0x00822CF2` is set (`0x006FBFF4..0x006FC018`), VoiceSelect (vt+0x360)
-    /// through [`Self::selection_voice_request`]; last, the planning-node add
-    /// (`0x006FC020`, [`Self::planning_select_tail_node`]), which in the local
-    /// player's Planning Mode Selects this object's tail-node partners
-    /// through this same function. A passenger or parasite keeps its path
-    /// through Limbo, so a reselected escapee or released parasite pulls in
-    /// its node's partners.
-    pub(crate) fn techno_select(
-        &mut self,
-        stable_id: u64,
-        voice_latch: bool,
-        context: super::UninitContext<'_>,
-    ) -> bool {
-        if !self.techno_select_admits(stable_id) || !self.object_select(stable_id, true, context) {
-            return false;
-        }
-        let rules = context.rules();
-        if let Some(sound_id) = self.selection_voice_request(rules, stable_id, voice_latch) {
-            let sound_id = sound_id.to_owned();
-            self.sound_events.emit(SimSoundEvent::UnitVoiceRequested {
-                owner: stable_id,
-                sound_id,
-            });
-        }
-        self.planning_select_tail_node(stable_id, voice_latch, context);
-        true
-    }
-
-    /// Check ownership using stable_id via EntityStore.
-    ///
-    /// Used by receivers whose contract includes an owner gate and by the
-    /// VERA network actor gate. The native MEGAMISSION receiver4C71CA..4C74CA
-    /// resolves its actor independently of the event house; its admission
-    /// checks lifetime and tokens instead.
-    pub(crate) fn entity_owned_by_id(&self, command_owner: &str, stable_id: u64) -> bool {
-        self.substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|e| command_owner.eq_ignore_ascii_case(self.interner.resolve(e.owner())))
-    }
-
-    /// VERA-only network admission, not a native receiver test: refuse an
-    /// event whose acting object exists and belongs to another House.
-    ///
-    /// `EventClass::Execute @ 0x004C6CB0` trusts the sender for most object
-    /// orders (MEGAMISSION, IDLE, Deploy, Repair, Primary, On/Off-line,
-    /// Archive, wall sale @ 0x004FCE80, PlanMgr connect @ 0x00639800 and
-    /// append @ 0x00638120), so a modified client could retask, deploy, sell
-    /// or power down an opponent's objects. Ordinary input orders
-    /// `IsHumanPlayer @ 0x0050B6F0` actors, the sending House in every
-    /// network mode. Offline modes keep the native receivers unchanged
-    /// (campaign PlayerControl houses).
-    ///
-    /// Intended retail differences, all refused alike on every client:
-    /// * retail input quirks that order a selected enemy object — the Guard
-    ///   key's miner arm (`0x00730D60`) and Stop on an enemy building with a
-    ///   rally line — do nothing online;
-    /// * an order whose actor is captured or mind-controlled between issue
-    ///   and execution is dropped, including its planning detach, where
-    ///   retail runs it on the new owner's object. The flag-2 planning
-    ///   acknowledge stays ahead of this gate, so that actor's latch clears.
-    ///
-    /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
-    fn network_command_actor_foreign(
-        &self,
-        command_owner: &str,
-        cmd: &Command,
-        ares: bool,
-    ) -> bool {
-        if !self.session.game_mode().is_network() {
-            return false;
-        }
-        let foreign = |id: u64| {
-            self.substrate.entities.get(id).is_some() && !self.entity_owned_by_id(command_owner, id)
-        };
-        match cmd {
-            Command::Stop { entity_id }
-            | Command::Scatter { entity_id }
-            | Command::DeployMcv { entity_id }
-            | Command::UndeployBuilding { entity_id }
-            | Command::ToggleRepair { entity_id }
-            | Command::SellBuilding { entity_id }
-            | Command::TogglePrimaryFactory { entity_id }
-            | Command::SetBuildingOnLine { entity_id, .. }
-            | Command::ArchiveObject { entity_id, .. } => foreign(*entity_id),
-            Command::SetRally { producer_ids, .. } => producer_ids.iter().any(|&id| foreign(id)),
-            Command::SynchronizedRecord { record } => {
-                let actor = ArchiveRecord::decode(record)
-                    .and_then(|event| u64::try_from(event.entity_id).ok());
-                // The Ares trench event's source building
-                // (`1006A540` trusts it as the other receivers do).
-                let actor = if ares {
-                    actor.or_else(|| {
-                        let event = crate::sim::command::AresTrenchRedirectRecord::decode(record)?;
-                        match event.source {
-                            MegaMissionTarget::Object { id } => u64::try_from(id).ok(),
-                            _ => None,
-                        }
-                    })
-                } else {
-                    actor
-                };
-                actor.is_some_and(foreign)
-            }
-            Command::PlanningRecord { record } => {
-                super::planning::planning_record_actor(record).is_some_and(foreign)
-            }
-            Command::SellWallAtCell { x, y } => self
-                .wall_sale_cell(*x, *y)
-                .and_then(|(_, _, cell)| cell.wall_owner)
-                .is_some_and(|owner| {
-                    !command_owner.eq_ignore_ascii_case(self.interner.resolve(owner))
-                }),
-            _ => cmd.megamission_actor().is_some_and(foreign),
-        }
     }
 
     /// The acting object's half of the native order-admission gate.
@@ -3505,7 +1795,7 @@ impl Simulation {
         if !destination_is_building {
             return false;
         }
-        receiver.radio_contacts.slot(0) == Some(destination_id)
+        receiver.seldom.radio_contacts.slot(0) == Some(destination_id)
     }
 
     /// TargetClass `0x006E6FF0`: the object an event token names, while it
@@ -3641,8 +1931,7 @@ impl Simulation {
         destination: Option<combat::TargetKind>,
         auxiliary: MegaMissionTarget,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> MegaMissionExecution {
         // A capture after issue does not revoke an event. Event4C7353 queues
         // Move and clears Target before the class applies its own refusal.
@@ -3694,13 +1983,9 @@ impl Simulation {
         if mission == MissionType::AreaGuard && foot {
             // A refused setter is logged, as the ordinary arm below does
             // (a mod type built without a locomotor has no coordinate).
-            if let Err(cause) = self.assign_target_represented(
-                entity_id,
-                None,
-                rules,
-                overlay_registry,
-                frame_effects,
-            ) {
+            if let Err(cause) =
+                self.assign_target_represented(entity_id, None, rules, frame_effects)
+            {
                 log::warn!("Area Guard order target for {entity_id} refused: {cause}");
             }
             // The target token, converted at `0x004C7418` for the
@@ -3710,7 +1995,6 @@ impl Simulation {
                 entity_id,
                 post.map(Into::into),
                 rules,
-                overlay_registry,
                 frame_effects,
             ) {
                 log::warn!("Area Guard order destination for {entity_id} refused: {cause}");
@@ -3718,24 +2002,19 @@ impl Simulation {
             // The archive write follows the virtual destination call even
             // when that class setter refuses its request.
             let archive = self.resolve_event_token(target);
-            self.substrate
-                .entities
-                .get_mut(entity_id)
-                .unwrap()
-                .set_archive_target(archive);
+            // The order's actor was admitted above; the setters do not remove
+            // it from the store, but a peer's record must not stop the game
+            // if one ever did.
+            if let Some(actor) = self.substrate.entities.get_mut(entity_id) {
+                actor.set_archive_target(archive);
+            }
             return MegaMissionExecution::Executed;
         }
         // `0x004C745B`, then the target setter.
         let target = self.resolve_event_token(target);
         // Its changed-null path6FCF5B also resets retained burst state;
         // dropping Target alone cannot.
-        let _ = self.assign_target_represented(
-            entity_id,
-            target,
-            rules,
-            overlay_registry,
-            frame_effects,
-        );
+        let _ = self.assign_target_represented(entity_id, target, rules, frame_effects);
         // `0x004C7474`, then the destination setter: Unit741970,
         // Infantry51AA40, Aircraft41AA80 or Building455D50, whatever the
         // locomotor. Each owns its same-NavCom return, preprocessing and
@@ -3747,19 +2026,12 @@ impl Simulation {
             entity_id,
             destination.map(Into::into),
             rules,
-            overlay_registry,
             frame_effects,
         ) {
             log::warn!("MegaMission destination {entity_id}: {cause}");
         }
         if let Some(target) = target {
-            self.open_topped_passengers_take_target(
-                entity_id,
-                Some(target),
-                rules,
-                overlay_registry,
-                frame_effects,
-            );
+            self.open_topped_passengers_take_target(entity_id, Some(target), rules, frame_effects);
         }
         if foot && auxiliary != MegaMissionTarget::Null {
             let auxiliary = match auxiliary {
@@ -3772,1335 +2044,17 @@ impl Simulation {
                 }
             };
             let auxiliary = self.resolve_event_token(auxiliary);
-            self.substrate
-                .entities
-                .get_mut(entity_id)
-                .unwrap()
-                .navigation
-                .set_nav_com_aux(auxiliary.map(Into::into));
+            if let Some(actor) = self.substrate.entities.get_mut(entity_id) {
+                actor.navigation.set_nav_com_aux(auxiliary.map(Into::into));
+            }
         }
         MegaMissionExecution::Executed
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "battle_opening_tests.rs"]
 mod battle_opening_tests;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::map::entities::EntityCategory;
-    use crate::rules::ini_parser::IniFile;
-    use crate::sim::combat::Health;
-    use crate::sim::game_entity::GameEntity;
-
-    use crate::sim::mission::MissionId;
-    use crate::sim::movement::locomotor::LocomotorState;
-
-    pub(super) fn amcv_move_rules() -> RuleSet {
-        let ini = IniFile::from_str(
-            "[InfantryTypes]\n\
-             [VehicleTypes]\n\
-             0=AMCV\n\
-             [AircraftTypes]\n\
-             [BuildingTypes]\n\
-             [AMCV]\n\
-             Strength=1000\n\
-             Speed=4\n\
-             Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
-             MovementZone=Normal\n\
-             Crusher=yes\n\
-             DeploysInto=GACNST\n",
-        );
-        RuleSet::from_ini(&ini).expect("amcv rules")
-    }
-
-    pub(super) fn spawn_rule_backed_unit(
-        sim: &mut Simulation,
-        sid: u64,
-        type_id: &str,
-        rules: &RuleSet,
-    ) {
-        let owner = sim.interner.intern("Americans");
-        let type_ref = sim.interner.intern(type_id);
-        let obj = rules.object(type_id).expect("object type");
-        let health = obj.strength;
-        let mut entity = GameEntity::new_at_frame_zero_for_test(
-            sid,
-            20,
-            20,
-            0,
-            0,
-            owner,
-            Health::new(health),
-            type_ref,
-            EntityCategory::Unit,
-            0,
-            obj.sight.max(0) as u16,
-            true,
-        );
-        entity.locomotor = Some(LocomotorState::from_object_type(
-            obj,
-            sim.session.binary_frame(),
-        ));
-        entity.mover_facts.set_regular_crusher_for_test(obj.crusher);
-        entity
-            .mover_facts
-            .set_drive_accelerates_for_test(obj.accelerates);
-        entity
-            .mover_facts
-            .set_omni_crusher_for_test(obj.omni_crusher);
-        // A directly-inserted GameEntity keeps the constructed `in_limbo`
-        // byte; production spawns clear it through Reveal. Order admission
-        // reads that byte, so the fixture must model a revealed object.
-        entity.lifecycle.set_in_limbo_for_test(false);
-        sim.substrate.entities.insert(entity);
-    }
-
-    /// Event IDLE's terrain exit (`0x004C752A..0x004C7577`): a harvesting
-    /// miner on a flat cell drawn under a higher one ignores Stop and keeps
-    /// Harvest. With that cell flat too, Stop puts it on Guard.
-    #[test]
-    fn stop_leaves_a_miner_on_a_hidden_flat_cell_harvesting() {
-        use crate::sim::mission::MissionType;
-        let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[VehicleTypes]\n0=HARV\n[HARV]\nStrength=600\nSpeed=4\nHarvester=yes\n\
-             MovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
-        ))
-        .expect("HARV rules");
-        let harvest = MissionId::from_known(MissionType::Harvest);
-        for hidden in [true, false] {
-            let mut sim = Simulation::new();
-            // The projection probe from (20, 20) meets (21, 21) four levels
-            // up, which covers (20, 20) on screen.
-            sim.resolved_terrain =
-                Some(crate::map::resolved_terrain::test_grid(32, 32, |rx, ry| {
-                    let mut cell = crate::map::resolved_terrain::test_flat_cell(rx, ry);
-                    if hidden && (rx, ry) == (21, 21) {
-                        cell.level = 4;
-                    }
-                    cell
-                }));
-            spawn_rule_backed_unit(&mut sim, 42, "HARV", &rules);
-            sim.substrate.entities.get_mut(42).unwrap().miner =
-                Some(Box::new(crate::sim::miner::Miner::new(
-                    crate::sim::miner::MinerKind::War,
-                    &crate::sim::miner::MinerConfig::default(),
-                    40,
-                )));
-            sim.substrate
-                .mission_assign_exact(42, harvest, 0)
-                .expect("miner");
-            assert!(sim.apply_command("Americans", &Command::Stop { entity_id: 42 }, Some(&rules)));
-            let mission = sim.substrate.entities.get(42).unwrap().mission.current();
-            let expected = if hidden {
-                harvest
-            } else {
-                MissionId::from_known(MissionType::Guard)
-            };
-            assert_eq!(mission, expected, "hidden={hidden}");
-        }
-    }
-
-    /// Event IDLE admits its actor on `+0x90` and `+0x81` alone
-    /// (`0x004C74E8..0x004C74FE`), with no strength test: a live miner at 0
-    /// strength still stops and goes on Guard. VERA's dying mark, native's
-    /// UnInit, refuses it.
-    #[test]
-    fn stop_admits_a_live_actor_at_zero_strength() {
-        use crate::sim::mission::MissionType;
-        let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[VehicleTypes]\n0=HARV\n[HARV]\nStrength=600\nSpeed=4\nHarvester=yes\n\
-             MovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
-        ))
-        .expect("HARV rules");
-        let mut sim = Simulation::new();
-        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
-            32,
-            32,
-            crate::map::resolved_terrain::test_flat_cell,
-        ));
-        spawn_rule_backed_unit(&mut sim, 42, "HARV", &rules);
-        let miner = sim.substrate.entities.get_mut(42).unwrap();
-        miner.miner = Some(Box::new(crate::sim::miner::Miner::new(
-            crate::sim::miner::MinerKind::War,
-            &crate::sim::miner::MinerConfig::default(),
-            40,
-        )));
-        miner.health = crate::sim::combat::Health::new(0);
-        sim.substrate
-            .mission_assign_exact(42, MissionId::from_known(MissionType::Harvest), 0)
-            .expect("miner");
-        assert!(sim.apply_command("Americans", &Command::Stop { entity_id: 42 }, Some(&rules)));
-        let mission = sim.substrate.entities.get(42).unwrap().mission.current();
-        assert_eq!(mission, MissionId::from_known(MissionType::Guard));
-
-        sim.substrate
-            .entities
-            .get_mut(42)
-            .unwrap()
-            .death
-            .set_dying_for_test(true);
-        sim.substrate
-            .mission_assign_exact(42, MissionId::from_known(MissionType::Harvest), 0)
-            .expect("miner");
-        assert!(!sim.apply_command("Americans", &Command::Stop { entity_id: 42 }, Some(&rules)));
-        let mission = sim.substrate.entities.get(42).unwrap().mission.current();
-        assert_eq!(mission, MissionId::from_known(MissionType::Harvest));
-    }
-
-    #[test]
-    fn network_match_refuses_orders_for_another_houses_object() {
-        use crate::sim::house_state::HouseState;
-        use crate::sim::scenario_session::ScenarioGameMode;
-        let rules = amcv_move_rules();
-        let world = |mode| {
-            let mut sim = Simulation::new();
-            for (index, name) in [(0, "Americans"), (1, "British")] {
-                let owner = sim.intern(name);
-                sim.houses
-                    .register(HouseState::new(owner, index, None, true, 0, 10));
-            }
-            sim.session.set_game_mode(mode);
-            spawn_rule_backed_unit(&mut sim, 42, "AMCV", &rules);
-            sim
-        };
-        let move_order = Command::Move {
-            entity_id: 42,
-            target_rx: 25,
-            target_ry: 20,
-        };
-        let stop = Command::Stop { entity_id: 42 };
-
-        let mut sim = world(ScenarioGameMode::Wol);
-        assert!(!sim.apply_command("British", &move_order, Some(&rules)));
-        assert!(!sim.apply_command("British", &stop, Some(&rules)));
-        let actor = sim.substrate.entities.get(42).unwrap();
-        assert_eq!(actor.mission.queued(), MissionId::NONE);
-        assert!(actor.navigation.nav_com().is_none());
-        assert!(sim.apply_command("Americans", &move_order, Some(&rules)));
-        assert!(sim.apply_command("Americans", &stop, Some(&rules)));
-
-        // Offline receivers stay native: MEGAMISSION has no sender gate.
-        let mut sim = world(ScenarioGameMode::Skirmish);
-        assert!(sim.apply_command("British", &move_order, Some(&rules)));
-    }
-
-    /// `TechnoClass::Select @ 0x006FBFA0` raises event 33 (`0x006FBFE4`) for
-    /// a client-local selection. A network game raises none, so the clients
-    /// keep one trigger state; offline Selects still spring the trigger.
-    #[test]
-    fn network_match_selection_raises_no_selected_tag_event() {
-        use crate::sim::house_state::HouseState;
-        use crate::sim::scenario_session::ScenarioGameMode;
-        let rules = amcv_move_rules();
-        let map = crate::map::map_file::MapFile::from_bytes(
-            b"[Map]\nSize=0,0,32,32\nLocalSize=0,0,32,32\n\
-              [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
-              [Triggers]\nSEL=Americans,<none>,Sel,0,1,1,1,0\n\
-              [Events]\nSEL=1,33,0,0\n\
-              [Actions]\nSEL=1,28,0,9,0,0,0,0,A\n\
-              [Tags]\nSEL_TAG=0,Sel,SEL\n",
-        )
-        .unwrap();
-        let global_after_select = |mode| {
-            let mut sim = Simulation::new();
-            let owner = sim.intern("Americans");
-            sim.houses
-                .register(HouseState::new(owner, 0, None, true, 0, 10));
-            sim.session.set_game_mode(mode);
-            spawn_rule_backed_unit(&mut sim, 42, "AMCV", &rules);
-            sim.initialize_trigger_definitions(
-                &map,
-                &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
-                None,
-                None,
-                None,
-            );
-            sim.classify_map_triggers(&rules);
-            sim.attach_object_trigger_tag(42, Some("SEL_TAG"));
-            let select = Command::Select {
-                entity_ids: vec![42],
-                additive: false,
-            };
-            assert!(sim.apply_command("Americans", &select, Some(&rules)));
-            assert!(
-                sim.substrate
-                    .entities
-                    .get(42)
-                    .unwrap()
-                    .selection
-                    .is_selected()
-            );
-            sim.global_variables()[9]
-        };
-        assert!(!global_after_select(ScenarioGameMode::Lan));
-        assert!(global_after_select(ScenarioGameMode::Skirmish));
-    }
-
-    #[test]
-    fn network_match_refuses_selling_another_houses_wall() {
-        use crate::sim::house_state::HouseState;
-        let (rules, overlays) = crate::sim::world::tests::gsi_04_07_wall_sell_rules(false, false);
-        let mut sim = Simulation::new();
-        let owner = sim.intern("Americans");
-        for (index, house) in [(0, owner), (1, sim.intern("British"))] {
-            sim.houses
-                .register(HouseState::new(house, index, None, true, 0, 10));
-        }
-        sim.session
-            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Wol);
-        let mut grid = crate::sim::overlay_grid::OverlayGrid::new(3, 3);
-        grid.place_owned_wall(1, 1, 2, 0, owner);
-        sim.overlay_grid = Some(grid);
-        let sale = Command::SellWallAtCell { x: 1, y: 1 };
-        let sell = |sim: &mut Simulation, house: &str| {
-            sim.apply_command_with_overlays(
-                house,
-                &sale,
-                &rules,
-                Some(&overlays),
-                FrameEffects::default(),
-            )
-        };
-        let wall = |sim: &Simulation| sim.overlay_grid.as_ref().unwrap().cell(1, 1).overlay_id;
-
-        assert!(!sell(&mut sim, "British"));
-        assert!(wall(&sim).is_some());
-        assert!(sell(&mut sim, "Americans"));
-        assert_eq!(wall(&sim), None);
-    }
-
-    #[test]
-    fn accepted_archive_keeps_its_tokens_after_capture_and_resolves_missing_target_to_null() {
-        use crate::sim::house_state::HouseState;
-        let rules = amcv_move_rules();
-        let mut sim = Simulation::new();
-        let old_owner = sim.intern("Americans");
-        let new_owner = sim.intern("British");
-        for owner in [old_owner, new_owner] {
-            sim.houses
-                .register(HouseState::new(owner, 0, None, true, 0, 10));
-        }
-        spawn_rule_backed_unit(&mut sim, 42, "AMCV", &rules);
-        spawn_rule_backed_unit(&mut sim, 43, "AMCV", &rules);
-        sim.substrate
-            .entities
-            .get_mut(42)
-            .unwrap()
-            .set_archive_target(Some(combat::TargetKind::Cell(5, 6)));
-        assert!(sim.issue_local_command(CommandEnvelope::new(
-            old_owner,
-            0,
-            Command::ArchiveObject {
-                entity_id: 42,
-                target_id: 43,
-            }
-        )));
-        let record = sim.network_command_queues().local_records().unwrap()[0].clone();
-        assert_eq!(
-            ArchiveRecord::decode(&record).unwrap().target,
-            MegaMissionTarget::Object { id: 43 }
-        );
-        sim.change_owner_with_rules(42, new_owner, &rules, None, FrameEffects::default());
-        sim.substrate.entities.remove(43);
-        let queued = sim.take_frame_commands_for_test();
-        assert_eq!(queued.len(), 1);
-        assert_eq!(queued[0].owner, old_owner);
-        assert!(sim.apply_command("Americans", &queued[0].payload, Some(&rules)));
-        assert_eq!(
-            sim.substrate.entities.get(42).unwrap().archive_target(),
-            None
-        );
-
-        // Native6E6F0F resolves an unknown kind to NULL too. It must still
-        // execute the archive setter, rather than silently dropping the event.
-        sim.substrate
-            .entities
-            .get_mut(42)
-            .unwrap()
-            .set_archive_target(Some(combat::TargetKind::Cell(7, 8)));
-        let mut null = record;
-        null.payload_mut()[9] = 0xff;
-        let command = sim.decode_native_command_record(&null, 0).unwrap();
-        assert!(sim.apply_command("Americans", &command.payload, Some(&rules)));
-        assert_eq!(
-            sim.substrate.entities.get(42).unwrap().archive_target(),
-            None
-        );
-    }
-
-    #[test]
-    fn queued_sale_retains_issuer_across_capture_and_does_not_readmit_can_sell() {
-        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
-            return;
-        };
-        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
-            return;
-        };
-        let mut rules = retail.rules;
-        crate::map::theater::load_theater(&mut assets, "URBAN");
-        rules.bind_building_buildup_assets(&assets, "URBAN");
-        assert!(rules.has_buildup("GAPILE"));
-        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4C6F12);
-        let old_owner = sim.interner.get("Americans").unwrap();
-        let new_owner = sim.interner.get("Russians").unwrap();
-        sim.houses
-            .get_mut(&new_owner)
-            .unwrap()
-            .set_is_human_for_test(true);
-        let building = sim
-            .spawn_object("GAPILE", "Americans", 8, 8, 0, &rules)
-            .unwrap();
-        let record = sim
-            .encode_object_action_record(
-                old_owner,
-                &Command::SellBuilding {
-                    entity_id: building,
-                },
-            )
-            .unwrap();
-        assert!(sim.admit_native_command_record(record.clone()));
-        sim.change_owner_with_rules(building, new_owner, &rules, None, FrameEffects::default());
-        let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "sale", 0);
-        let mut sim = crate::sim::snapshot::GameSnapshot::load(&bytes)
-            .unwrap()
-            .sim;
-        sim.restore_after_snapshot_load().unwrap();
-        let admitted = sim.take_frame_commands_for_test();
-        assert_eq!(admitted.len(), 1);
-        assert_eq!(admitted[0].owner, old_owner);
-        assert!(!sim.apply_command("Americans", &admitted[0].payload, Some(&rules)));
-        assert!(
-            !sim.substrate
-                .entities
-                .get(building)
-                .unwrap()
-                .building_down()
-        );
-
-        // A double click can admit two events before the first starts Selling.
-        // The second still reaches SellBack(-1), even though CanSell now refuses.
-        let current = sim
-            .encode_object_action_record(
-                new_owner,
-                &Command::SellBuilding {
-                    entity_id: building,
-                },
-            )
-            .unwrap();
-        let envelope = sim.decode_native_command_record(&current, 0).unwrap();
-        let credits = sim.houses[&new_owner].economy().credits();
-        let (accepted, draws) = crate::sim::rng::trace_draws(|| {
-            sim.apply_command("Russians", &envelope.payload, Some(&rules))
-        });
-        assert!(accepted);
-        assert!(draws.is_empty(), "crew RNG belongs to later Selling visits");
-        let actor = sim.substrate.entities.get(building).unwrap();
-        assert!(actor.building_down());
-        let progress = (actor.mission.handler_state(), *actor.native_stage());
-        assert!(!production::can_sell_building(&sim, &rules, building));
-        assert!(sim.apply_command("Russians", &envelope.payload, Some(&rules)));
-        let actor = sim.substrate.entities.get(building).unwrap();
-        assert_eq!(
-            (actor.mission.handler_state(), *actor.native_stage()),
-            progress
-        );
-        assert_eq!(sim.houses[&new_owner].economy().credits(), credits);
-        // Event4C6F2D..4C6F35 refuses a retained but no-longer-alive target.
-        sim.substrate
-            .entities
-            .get_mut(building)
-            .unwrap()
-            .lifecycle
-            .set_object_alive_for_test(false);
-        sim.sound_events.clear_for_test();
-        assert!(!sim.apply_command("Russians", &envelope.payload, Some(&rules)));
-        assert!(sim.sound_events.iter().next().is_none());
-        sim.substrate.entities.remove(building);
-        let stale = sim.decode_native_command_record(&record, 0).unwrap();
-        assert!(!sim.apply_command("Americans", &stale.payload, Some(&rules)));
-    }
-
-    #[test]
-    fn accepted_repair_resolves_the_captured_building_and_stale_target_at_dispatch() {
-        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
-            return;
-        };
-        let rules = retail.rules;
-        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4C6ED2);
-        let old_owner = sim.interner.get("Americans").unwrap();
-        let new_owner = sim.interner.get("Russians").unwrap();
-        let building = sim
-            .spawn_object("GAPILE", "Americans", 8, 8, 0, &rules)
-            .unwrap();
-        sim.substrate
-            .entities
-            .get_mut(building)
-            .unwrap()
-            .health
-            .set(300);
-        let record = sim.encode_repair_record(old_owner, building).unwrap();
-        assert!(sim.admit_native_command_record(record.clone()));
-        sim.change_owner_with_rules(building, new_owner, &rules, None, FrameEffects::default());
-        assert!(
-            !sim.substrate
-                .entities
-                .get(building)
-                .unwrap()
-                .building
-                .repairing
-                .is_on()
-        );
-        let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "repair", 0);
-        let mut sim = crate::sim::snapshot::GameSnapshot::load(&bytes)
-            .unwrap()
-            .sim;
-        sim.restore_after_snapshot_load().unwrap();
-        let admitted = sim.take_frame_commands_for_test();
-        assert_eq!(admitted.len(), 1);
-        assert_eq!(admitted[0].owner, old_owner);
-        let (accepted, draws) = crate::sim::rng::trace_draws(|| {
-            sim.apply_command("Americans", &admitted[0].payload, Some(&rules))
-        });
-        assert!(accepted, "the old issuer is not receiver admission");
-        assert!(draws.is_empty());
-        assert!(
-            sim.substrate
-                .entities
-                .get(building)
-                .unwrap()
-                .building
-                .repairing
-                .is_on()
-        );
-        assert_eq!(
-            sim.substrate
-                .entities
-                .get(building)
-                .unwrap()
-                .health
-                .current(),
-            300
-        );
-        sim.substrate.entities.remove(building);
-        let stale = sim.decode_native_command_record(&record, 0).unwrap();
-        assert!(!sim.apply_command("Americans", &stale.payload, Some(&rules)));
-    }
-
-    #[test]
-    fn idle_record_preserves_unresolved_token_and_decodes_at_execution() {
-        use crate::sim::house_state::HouseState;
-
-        let rules = amcv_move_rules();
-        let mut sim = Simulation::new();
-        sim.interner.intern("Interner gap");
-        let actor_owner = sim.interner.intern("Americans");
-        let issuer = sim.interner.intern("British");
-        sim.houses
-            .register(HouseState::new(actor_owner, 0, None, true, 0, 10));
-        sim.houses
-            .register(HouseState::new(issuer, 1, None, true, 0, 10));
-        sim.session.set_binary_frame_for_test(u32::MAX - 3);
-
-        // Encoding must not resolve a stale identifier. The native token is
-        // retained until4C74CE, independently of the issuer's House.
-        let record = sim.encode_stop_record(issuer, 42).unwrap();
-        assert_eq!(record.house_id(), 1);
-        assert_eq!(record.frame_stamp(), -4);
-        assert_eq!(StopRecord::decode(&record).unwrap().entity_id, 42);
-        assert!(sim.decode_native_command_record(&record, 123).is_none());
-        assert!(sim.encode_scatter_record(issuer, 42).is_none());
-
-        spawn_rule_backed_unit(&mut sim, 42, "AMCV", &rules);
-        let actor = sim.substrate.entities.get_mut(42).unwrap();
-        actor.navigation.set_nav_list_for_test(
-            vec![crate::sim::components::NavTargetRef::cell(12, 13)],
-            false,
-        );
-        let command = sim.decode_native_command_record(&record, 123).unwrap();
-        assert_eq!(command.owner, issuer);
-        assert_eq!(command.execute_tick, 123);
-        assert_eq!(command.payload, Command::Stop { entity_id: 42 });
-        assert!(sim.apply_command("British", &command.payload, Some(&rules)));
-        assert!(
-            sim.substrate
-                .entities
-                .get(42)
-                .unwrap()
-                .navigation
-                .nav_list()
-                .is_empty()
-        );
-    }
-
-    #[test]
-    fn idle_record_rejects_unmapped_issuer_and_out_of_range_identifier() {
-        use crate::sim::house_state::HouseState;
-
-        let mut sim = Simulation::new();
-        let issuer = sim.interner.intern("British");
-        assert!(sim.encode_stop_record(issuer, 1).is_none());
-        sim.houses
-            .register(HouseState::new(issuer, 0, None, true, 0, 10));
-        assert!(sim.encode_stop_record(issuer, i32::MAX as u64).is_some());
-        assert!(
-            sim.encode_stop_record(issuer, i32::MAX as u64 + 1)
-                .is_none()
-        );
-    }
-
-    // ===== Order admission (GSI-07.01): liveness, strength and limbo =====
-
-    /// Original Event4C73C7/4C73D7 clear the suspended references while
-    /// preserving the suspended mission selector. AreaGuard4C7409..4C7430
-    /// installs the first token as destination/post, never as combat Target.
-    /// Executed Cell/object/null controls: input_oracle/area_guard.json.
-    #[test]
-    fn area_guard_clears_suspended_references_and_keeps_the_ordered_post() {
-        use crate::sim::components::NavTargetRef;
-        use crate::sim::mission::MissionDispatchTimer;
-        use crate::sim::mission::state::MissionTestFixture;
-
-        for post in [
-            None,
-            Some(combat::TargetKind::Cell(20, 20)),
-            Some(combat::TargetKind::Entity(2)),
-            Some(combat::TargetKind::Entity(999)),
-        ] {
-            let rules = amcv_move_rules();
-            let mut sim = Simulation::new();
-            crate::sim::arena_fixture::supply_native_map(&mut sim);
-            spawn_rule_backed_unit(&mut sim, 1, "AMCV", &rules);
-            spawn_rule_backed_unit(&mut sim, 2, "AMCV", &rules);
-            let before_timer = MissionDispatchTimer::from_raw(4, 45);
-            let actor = sim.substrate.entities.get_mut(1).unwrap();
-            actor.mission.apply_test_fixture(MissionTestFixture {
-                current: MissionId::from_known(MissionType::Guard),
-                suspended: MissionId::from_known(MissionType::Attack),
-                queued: MissionId::NONE,
-                movement_bypass_latch: 0,
-                handler_state: 0,
-                mission_start_frame: 0,
-                ai_counter: 0,
-                dispatch_timer: before_timer,
-            });
-            actor
-                .suspended_attack_target
-                .set_for_test(Some(combat::TargetKind::Entity(2)));
-            actor
-                .navigation
-                .set_suspended_nav_com_for_test(Some(NavTargetRef::cell(12, 12)));
-            actor.set_archive_target(Some(combat::TargetKind::Cell(5, 5)));
-            actor.mega_mission = crate::sim::mission::mega_mission::MegaMission::attack_move(Some(
-                crate::sim::combat::TargetKind::Cell(12, 12),
-            ));
-
-            assert!(sim.apply_command(
-                "Americans",
-                &Command::Guard {
-                    entity_id: 1,
-                    target: post
-                },
-                Some(&rules),
-            ));
-            let actor = sim.substrate.entities.get(1).unwrap();
-            let post = post.filter(|post| *post != combat::TargetKind::Entity(999));
-            assert_eq!(
-                actor.mission.current(),
-                MissionId::from_known(MissionType::Guard)
-            );
-            assert_eq!(
-                actor.mission.queued(),
-                MissionId::from_known(MissionType::AreaGuard)
-            );
-            assert_eq!(
-                actor.mission.suspended(),
-                MissionId::from_known(MissionType::Attack)
-            );
-            assert_eq!(actor.mission.dispatch_timer(), before_timer);
-            assert!(actor.suspended_attack_target.target().is_none());
-            assert!(actor.navigation.suspended_nav_com().is_none());
-            assert!(actor.attack_target.target().is_none());
-            assert!(
-                !actor.mega_mission.is_attack_move(),
-                "Assign_Target_Command answers Area Guard with Clear_All_TarCom"
-            );
-            assert_eq!(actor.archive_target(), post);
-            assert_eq!(actor.navigation.nav_com(), post.map(Into::into));
-        }
-    }
-
-    // ===== Duplicate Enter on a building is a no-op (GSI-07.01 C1) =====
-
-    fn bunker_rules() -> RuleSet {
-        RuleSet::from_ini(&IniFile::from_str(
-            "[VehicleTypes]\n0=TANK\n1=NOGUN\n\n[InfantryTypes]\n\n[AircraftTypes]\n\n\
-             [BuildingTypes]\n0=NATBNK\n\n\
-             [TANK]\nStrength=400\nArmor=heavy\nSpeed=6\nTurret=yes\nPrimary=120mm\n\n\
-             [NOGUN]\nStrength=400\nArmor=heavy\nSpeed=6\nTurret=yes\n\n\
-             [NATBNK]\nStrength=1000\nArmor=heavy\nBunker=yes\n",
-        ))
-        .expect("bunker rules")
-    }
-
-    fn spawn_bunker_struct(sim: &mut Simulation, sid: u64, owner: &str, rx: u16, ry: u16) {
-        let owner_id = sim.interner.intern(owner);
-        let type_id = sim.interner.intern("NATBNK");
-        let mut ge = GameEntity::new_at_frame_zero_for_test(
-            sid,
-            rx,
-            ry,
-            0,
-            0,
-            owner_id,
-            Health::new(1000),
-            type_id,
-            EntityCategory::Structure,
-            0,
-            5,
-            false,
-        );
-        ge.building.bunker_runtime =
-            Some(crate::sim::docking::bunker_install::BunkerRuntime::idle());
-        // Revealed object: order admission reads the limbo byte.
-        ge.lifecycle.set_in_limbo_for_test(false);
-        sim.substrate.entities.insert(ge);
-    }
-
-    fn spawn_bunkerable(
-        sim: &mut Simulation,
-        sid: u64,
-        owner: &str,
-        type_name: &str,
-        rx: u16,
-        ry: u16,
-    ) {
-        let owner_id = sim.interner.intern(owner);
-        let type_id = sim.interner.intern(type_name);
-        let mut ge = GameEntity::new_at_frame_zero_for_test(
-            sid,
-            rx,
-            ry,
-            0,
-            0,
-            owner_id,
-            Health::new(400),
-            type_id,
-            EntityCategory::Unit,
-            0,
-            5,
-            true,
-        );
-        // The native Unit setter dispatches through an installed locomotor.
-        ge.locomotor = Some(
-            crate::sim::movement::locomotor::LocomotorState::for_test_kind(
-                crate::rules::locomotor_type::LocomotorKind::Drive,
-            ),
-        );
-        ge.locomotor
-            .as_mut()
-            .unwrap()
-            .ensure_installed_track_state();
-        // Revealed object: order admission reads the limbo byte. Its Unlimbo
-        // would have published its threat (`0x006F6ED2`); TANK poses none.
-        ge.lifecycle.set_in_limbo_for_test(false);
-        ge.cached_spatial_threat.publish(0);
-        sim.substrate.entities.insert(ge);
-    }
-
-    /// The MEGAMISSION arm tests neither friendship nor the actor's weapon,
-    /// and an object token no longer present resolves to NULL
-    /// (`0x004C71F6..0x004C749D`): an Attack onto an own unit, an Attack onto
-    /// a removed object and an unarmed unit's Cell attack each queue Attack
-    /// with the target the setter receives. What_Action refuses them at input.
-    #[test]
-    fn attack_event_runs_whatever_the_relation_weapon_or_token() {
-        let rules = bunker_rules();
-        for (command, attacker, target) in [
-            (
-                Command::Attack {
-                    attacker_id: 1,
-                    target_id: 2,
-                },
-                1,
-                Some(combat::TargetKind::Entity(2)),
-            ),
-            (
-                Command::Attack {
-                    attacker_id: 1,
-                    target_id: 999,
-                },
-                1,
-                None,
-            ),
-            (
-                Command::ForceAttackCell {
-                    attacker_id: 3,
-                    target_rx: 20,
-                    target_ry: 20,
-                },
-                3,
-                Some(combat::TargetKind::Cell(20, 20)),
-            ),
-        ] {
-            let mut sim = Simulation::new();
-            spawn_bunkerable(&mut sim, 1, "Americans", "TANK", 14, 14);
-            spawn_bunkerable(&mut sim, 2, "Americans", "TANK", 16, 14);
-            spawn_bunkerable(&mut sim, 3, "Americans", "NOGUN", 18, 14);
-
-            assert!(
-                sim.apply_command("Americans", &command, Some(&rules)),
-                "{command:?}"
-            );
-            let actor = sim.substrate.entities.get(attacker).unwrap();
-            assert_eq!(
-                actor.mission.queued(),
-                MissionId::from_known(MissionType::Attack),
-                "{command:?}"
-            );
-            assert_eq!(actor.attack_target.target(), target, "{command:?}");
-        }
-    }
-
-    /// What_Action's CAN_LOAD query refuses an unarmed unit (no Primary,
-    /// so CanAutoDeployHere rejects it) and an enemy bunker. This is input
-    /// admission; the MEGAMISSION event does not repeat the query.
-    #[test]
-    fn bunker_click_query_rejects_an_unarmed_unit_or_an_enemy_bunker() {
-        use crate::sim::docking::bunker_install::BunkerState;
-        use crate::sim::docking::bunker_link::BunkerLink;
-        let rules = bunker_rules();
-        for (bunker_owner, unit_type) in [("Americans", "NOGUN"), ("Soviets", "TANK")] {
-            let mut sim = Simulation::new();
-            spawn_bunker_struct(&mut sim, 2, bunker_owner, 10, 10);
-            spawn_bunkerable(&mut sim, 1, "Americans", unit_type, 14, 14);
-
-            assert_ne!(
-                crate::sim::radio::receive::can_load_query(&sim, 2, 1, &rules),
-                crate::sim::radio::RadioResponse::Roger,
-                "{bunker_owner} bunker, {unit_type}"
-            );
-            assert_eq!(
-                sim.substrate.entities.get(1).unwrap().bunker.link(),
-                BunkerLink::None
-            );
-            assert_eq!(
-                sim.substrate
-                    .entities
-                    .get(2)
-                    .unwrap()
-                    .building
-                    .bunker_runtime
-                    .unwrap()
-                    .state(),
-                BunkerState::Idle,
-                "rejected admission leaves the machine idle"
-            );
-        }
-    }
-
-    /// CAN_LOAD refuses a bunker under Construction or being sold
-    /// (`0x0043C326..0x0043C346`) without mutating the tank's current seek
-    /// or the target's ready latch. This compares the query only; no
-    /// replacement event or UI click is executed.
-    #[test]
-    fn bunker_click_query_preserves_seek_while_target_builds_up_or_is_sold() {
-        use crate::sim::docking::bunker_install::BunkerState;
-        let rules = bunker_rules();
-        for mission in [MissionType::Construction, MissionType::Selling] {
-            let mut sim = Simulation::new();
-            crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-            spawn_bunker_struct(&mut sim, 2, "Americans", 10, 10);
-            spawn_bunker_struct(&mut sim, 3, "Americans", 16, 10);
-            spawn_bunkerable(&mut sim, 1, "Americans", "TANK", 13, 14);
-            assert!(sim.apply_command(
-                "Americans",
-                &Command::clicked_mission(1, MissionType::Enter, combat::TargetKind::Entity(3)),
-                Some(&rules),
-            ));
-            sim.substrate
-                .entities
-                .get_mut(2)
-                .unwrap()
-                .mission
-                .set_current_for_test(MissionId::from_known(mission), 1);
-
-            assert_eq!(
-                crate::sim::radio::receive::can_load_query(&sim, 2, 1, &rules),
-                crate::sim::radio::RadioResponse::Negatory,
-                "{mission:?}"
-            );
-            let building = sim.substrate.entities.get(2).unwrap();
-            assert_eq!(building.building_ready_latch(), 0, "{mission:?}");
-            assert_eq!(building.mission.queued(), MissionId::NONE, "{mission:?}");
-            assert_eq!(
-                building.building.bunker_runtime.unwrap().state(),
-                BunkerState::Idle,
-                "{mission:?}"
-            );
-            assert_eq!(
-                sim.substrate
-                    .entities
-                    .get(1)
-                    .unwrap()
-                    .radio_contacts
-                    .slot(0),
-                Some(3),
-                "{mission:?} keeps the current seek"
-            );
-            assert_eq!(
-                sim.substrate
-                    .entities
-                    .get(3)
-                    .unwrap()
-                    .radio_contacts
-                    .slot(0),
-                Some(1),
-                "{mission:?}"
-            );
-        }
-    }
-
-    /// A compact installed bunker: the VERA-only eject record names the
-    /// building, so both the occupant's link and its radio contact must be
-    /// real production state.
-    fn installed_bunker_fixture() -> (Simulation, RuleSet) {
-        let rules = bunker_rules();
-        let mut sim = Simulation::new();
-        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-        spawn_bunker_struct(&mut sim, 2, "Americans", 10, 10);
-        spawn_bunkerable(&mut sim, 1, "Americans", "TANK", 10, 10);
-        crate::sim::docking::bunker_link::install_bunker_link(&mut sim, 2, 1, &rules);
-        let unit = sim.substrate.entities.get_mut(1).unwrap();
-        unit.radio_contacts.set_slot(0, 2);
-        unit.navigation
-            .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::object(2)));
-        (sim, rules)
-    }
-
-    /// `UnitClass::Mission_Unload @ 0x0073D630` is the only caller of
-    /// `BuildingClass::EmptyBunker @ 0x004595C0` (`0x0073D66D`). Opcode 0x31
-    /// must therefore publish Event9's DEPLOY order, not release the tank
-    /// while the command executes (#3675).
-    #[test]
-    fn eject_bunker_record_queues_unload_instead_of_releasing_at_command_time() {
-        let (mut sim, rules) = installed_bunker_fixture();
-        assert!(sim.apply_command(
-            "Americans",
-            &Command::EjectBunker { bunker_id: 2 },
-            Some(&rules),
-        ));
-        assert_eq!(
-            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
-            Some(1),
-            "EmptyBunker belongs to the Unload mission's Logic update"
-        );
-        assert_eq!(
-            sim.substrate.entities.get(1).unwrap().bunker.link(),
-            crate::sim::docking::bunker_link::BunkerLink::Installed(2)
-        );
-        let unit = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(unit.mission.queued().known(), Some(MissionType::Unload));
-        // Event9 `0x004C77E4` breaks contact 0 before the null destination
-        // (`0x004C77F8`) and null target (`0x004C7804`) setters.
-        assert_eq!(unit.radio_contacts.slot(0), None);
-        assert!(unit.navigation.nav_com().is_none());
-        assert!(unit.attack_target.target().is_none());
-    }
-
-    /// Event9 detaches the deployed object's planning (`0x004C76CA`), so the
-    /// eject record detaches the occupant's path, not the bunker's.
-    #[test]
-    fn eject_bunker_record_detaches_the_occupants_planning() {
-        let (mut sim, rules) = installed_bunker_fixture();
-        sim.start_empty_planning_path_for_test(1);
-        assert!(sim.apply_command(
-            "Americans",
-            &Command::EjectBunker { bunker_id: 2 },
-            Some(&rules),
-        ));
-        assert!(!sim.has_planning_path_for_test(1));
-    }
-
-    /// The command-time release only checked ownership and an occupant.
-    /// Event9's admission (`0x004C76BC`) refuses a limboed actor, so a dead
-    /// or limboed tank keeps its bunker and gets no Unload mission.
-    #[test]
-    fn eject_bunker_record_refuses_a_limboed_occupant() {
-        let (mut sim, rules) = installed_bunker_fixture();
-        sim.substrate
-            .entities
-            .get_mut(1)
-            .unwrap()
-            .lifecycle
-            .set_in_limbo_for_test(true);
-        assert!(!sim.apply_command(
-            "Americans",
-            &Command::EjectBunker { bunker_id: 2 },
-            Some(&rules),
-        ));
-        assert_eq!(
-            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
-            Some(1)
-        );
-        assert_ne!(
-            sim.substrate
-                .entities
-                .get(1)
-                .unwrap()
-                .mission
-                .queued()
-                .known(),
-            Some(MissionType::Unload)
-        );
-    }
-
-    /// Drive the record through real frames: `Mission_Unload @ 0x0073D630`
-    /// promotes, its head calls `EmptyBunker @ 0x004595C0`, and only then do
-    /// the links clear. Without the fix the very first command execution
-    /// would already have released the tank.
-    #[test]
-    fn eject_bunker_record_releases_on_the_unload_logic_visit() {
-        let (mut sim, rules) = installed_bunker_fixture();
-        // `unit_unload_empties_bunker` looks the building up in the Unit's
-        // cell (`Look_up_building_in_cell @ 0x0047C520`).
-        for (rx, ry) in
-            crate::sim::occupancy::entity_occupancy_cells(sim.substrate.entities.get(2).unwrap())
-        {
-            sim.substrate.occupancy.add(
-                rx,
-                ry,
-                2,
-                crate::sim::movement::locomotor::MovementLayer::Ground,
-                None,
-                crate::sim::occupancy::CellListInsertion::AppendBuilding,
-            );
-        }
-        assert!(sim.register_live_object(1));
-        assert!(sim.apply_command(
-            "Americans",
-            &Command::EjectBunker { bunker_id: 2 },
-            Some(&rules),
-        ));
-        assert_eq!(
-            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
-            Some(1)
-        );
-        for _ in 0..16 {
-            sim.advance_tick(&[], Some(&rules), None, None, 33);
-            if sim
-                .substrate
-                .entities
-                .get(2)
-                .unwrap()
-                .bunker
-                .occupant()
-                .is_none()
-            {
-                break;
-            }
-        }
-        assert_eq!(
-            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
-            None,
-            "the Unload Logic visit must empty the bunker"
-        );
-        assert_eq!(
-            sim.substrate.entities.get(1).unwrap().bunker.link(),
-            crate::sim::docking::bunker_link::BunkerLink::None
-        );
-    }
-
-    #[test]
-    fn bunker_full_lifecycle_enter_install_then_eject() {
-        use crate::sim::docking::bunker_install::{BunkerState, update_bunker};
-        use crate::sim::docking::bunker_link::BunkerLink;
-        let rules = bunker_rules();
-        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
-            return;
-        };
-        let mut sim = Simulation::new();
-        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-        spawn_bunker_struct(&mut sim, 2, "Americans", 10, 10);
-        // Keep this component fixture's declared TANK rules, but use the
-        // production ART reader's retail 2x2 foundation and LTNK turn rate.
-        // This exercises the same-cell case that must slide away from the
-        // building's raw display-registration coordinate before installation.
-        sim.substrate
-            .entities
-            .get_mut(2)
-            .unwrap()
-            .type_facts
-            .set_foundation_for_test(
-                retail
-                    .rules
-                    .object("NATBNK")
-                    .unwrap()
-                    .foundation
-                    .clone()
-                    .into(),
-            );
-        // The install's arrival test reads its cell's building list
-        // (`0x0047C520`), so the bunker stands on its retail foundation.
-        for (rx, ry) in
-            crate::sim::occupancy::entity_occupancy_cells(sim.substrate.entities.get(2).unwrap())
-        {
-            sim.substrate.occupancy.add(
-                rx,
-                ry,
-                2,
-                crate::sim::movement::locomotor::MovementLayer::Ground,
-                None,
-                crate::sim::occupancy::CellListInsertion::AppendBuilding,
-            );
-        }
-        let center = crate::sim::movement::ground_pose::object_get_coords(
-            sim.substrate.entities.get(2).unwrap(),
-            sim.resolved_terrain.as_ref(),
-        );
-        // The tank stands in the bunker's cell, where it stops after its
-        // approach.
-        spawn_bunkerable(&mut sim, 1, "Americans", "TANK", 10, 10);
-        let unit = sim.substrate.entities.get_mut(1).unwrap();
-        unit.body_facing
-            .set_rot(retail.rules.object("LTNK").unwrap().turret_rot);
-        unit.locomotor = Some(
-            crate::sim::movement::locomotor::LocomotorState::for_test_kind(
-                crate::rules::locomotor_type::LocomotorKind::Drive,
-            ),
-        );
-        unit.locomotor
-            .as_mut()
-            .unwrap()
-            .ensure_installed_track_state();
-        // Exercise real cell/Logic membership, not the admission-only helper's
-        // already-clear Limbo byte (which makes Reveal a no-op).
-        unit.lifecycle.set_in_limbo_for_test(true);
-        assert!(matches!(
-            sim.reveal(1),
-            crate::sim::world::RevealOutcome::Revealed { .. }
-        ));
-
-        // The supplied arrival retains Enter, object NavCom and contact
-        // zero, as in the original bunker_entry history. Run its real
-        // PerCell receiver to queue Repair and power off the Drive.
-        let unit = sim.substrate.entities.get_mut(1).unwrap();
-        unit.mission
-            .set_current_for_test(MissionId::from_known(MissionType::Enter), 0);
-        unit.navigation
-            .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::object(2)));
-        unit.radio_contacts.set_slot(0, 2);
-        sim.substrate
-            .entities
-            .get_mut(2)
-            .unwrap()
-            .radio_contacts
-            .set_slot(0, 1);
-        assert!(sim.unit_dock_now(1, &rules, None, FrameEffects::default()));
-        // This fixture starts at a completed, stopped arrival. Give the
-        // building its first visit before a new Drive Process: a fresh
-        // Process with Enter/NavCom but no retained destination re-aims the
-        // Drive (4B0971..4B09A6), so it is no longer this stopped boundary.
-        update_bunker(&mut sim, &rules, None, 2, FrameEffects::default());
-        assert_eq!(
-            sim.substrate
-                .entities
-                .get(2)
-                .unwrap()
-                .building
-                .bunker_runtime
-                .unwrap()
-                .state(),
-            BunkerState::ClearWait,
-        );
-        // Prepared same-cell arrival, then the real production locomotor
-        // corridor and installer, in their production order, one frame at a
-        // time. No head/position writes or Facing::Snap complete the motion.
-        // Object/Techno AI and a whole native match remain outside this test.
-        let mut saw_track_step = false;
-        let mut moved = 0;
-        for _ in 0..600 {
-            let movement = sim
-                .process_ground_locomotor_stats_for_test(1, Some(&rules), None)
-                .expect("flat arena supplies every production movement receiver");
-            moved += movement.moved_steps;
-            update_bunker(
-                &mut sim,
-                &rules,
-                None,
-                2,
-                crate::sim::world::FrameEffects::default(),
-            );
-            let state = sim
-                .substrate
-                .entities
-                .get(2)
-                .unwrap()
-                .building
-                .bunker_runtime
-                .unwrap()
-                .state();
-            saw_track_step |= state == BunkerState::TrackStep;
-            sim.session
-                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
-            if state == BunkerState::Occupied {
-                break;
-            }
-        }
-        assert!(
-            saw_track_step,
-            "same-cell installation must not skip Force_Track"
-        );
-        assert!(
-            moved > 0,
-            "the production track host must actually place the unit"
-        );
-        let rt = sim
-            .substrate
-            .entities
-            .get(2)
-            .unwrap()
-            .building
-            .bunker_runtime
-            .unwrap();
-        assert_eq!(rt.state(), BunkerState::Occupied);
-        assert_eq!(
-            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
-            Some(1)
-        );
-        let unit = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(unit.bunker.link(), BunkerLink::Installed(2));
-        assert!(
-            unit.in_logic_vector.is_member(),
-            "install preserves LogicVector membership"
-        );
-        assert!(!unit.lifecycle.in_limbo());
-        let parked = crate::sim::movement::ground_pose::object_get_coords(
-            unit,
-            sim.resolved_terrain.as_ref(),
-        );
-        assert_eq!(
-            parked, center,
-            "real Drive Process parks at the foundation centre"
-        );
-        assert_ne!(
-            parked,
-            crate::sim::movement::ground_pose::object_location(
-                sim.substrate.entities.get(2).unwrap(),
-                sim.resolved_terrain.as_ref(),
-            )
-        );
-        assert!(crate::sim::movement::track_head::committed_track_head(unit).is_none());
-        assert_eq!(
-            sim.bunker_wall_events.iter().filter(|e| e.up).count(),
-            1,
-            "one walls-up event on install"
-        );
-
-        // 3) Eject: opcode 0x31 publishes the Unload mission. Its Logic
-        // visit owns `EmptyBunker @ 0x004595C0` (`0x0073D66D`), so the
-        // release, Force, links and walls happen there, not at command time.
-        sim.bunker_wall_events.clear();
-        assert!(sim.apply_command(
-            "Americans",
-            &Command::EjectBunker { bunker_id: 2 },
-            Some(&rules),
-        ));
-        assert_eq!(
-            sim.substrate
-                .entities
-                .get(1)
-                .unwrap()
-                .mission
-                .queued()
-                .known(),
-            Some(MissionType::Unload)
-        );
-        assert_eq!(
-            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
-            Some(1),
-            "no command-time release"
-        );
-        assert!(
-            crate::sim::docking::bunker_link::unit_unload_empties_bunker(
-                &mut sim,
-                1,
-                &rules,
-                FrameEffects::default(),
-            )
-        );
-        assert_eq!(
-            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
-            None
-        );
-        let unit = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(unit.bunker.link(), BunkerLink::None);
-        assert!(
-            unit.in_logic_vector.is_member(),
-            "occupant stays active on eject"
-        );
-        assert!(!unit.lifecycle.in_limbo());
-        assert_eq!(
-            crate::sim::movement::ground_pose::object_get_coords(
-                unit,
-                sim.resolved_terrain.as_ref(),
-            ),
-            parked,
-            "Eject starts Force_Track without teleporting"
-        );
-        assert_eq!(
-            unit.locomotor
-                .as_ref()
-                .and_then(|loco| loco.selected_drive_runtime())
-                .and_then(|runtime| runtime.retained())
-                .unwrap()
-                .track()
-                .turn_index(),
-            0x47
-        );
-        assert_eq!(
-            unit.mission.queued(),
-            MissionId::from_known(MissionType::Move)
-        );
-        assert_eq!(
-            sim.bunker_wall_events.iter().filter(|e| !e.up).count(),
-            1,
-            "one walls-down event on eject"
-        );
-        let exit = match unit.navigation.nav_com() {
-            Some(crate::sim::components::NavTargetRef::Cell { rx, ry }) => (rx, ry),
-            other => panic!("normal bunker release must issue its exit cell: {other:?}"),
-        };
-        for _ in 0..600 {
-            sim.process_ground_locomotor_stats_for_test(1, Some(&rules), None)
-                .expect("normal release reaches the production movement corridor");
-            sim.session
-                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
-            let unit = sim.substrate.entities.get(1).unwrap();
-            if (unit.position.rx(), unit.position.ry()) == exit
-                && crate::sim::movement::track_head::committed_track_head(unit).is_none()
-                && crate::sim::movement::motion_query::is_moving(&unit) != Some(true)
-            {
-                break;
-            }
-        }
-        let unit = sim.substrate.entities.get(1).unwrap();
-        assert_eq!((unit.position.rx(), unit.position.ry()), exit);
-        assert!(crate::sim::movement::track_head::committed_track_head(unit).is_none());
-        assert!(crate::sim::movement::motion_query::is_moving(&unit) != Some(true));
-        assert_eq!(unit.bunker.link(), BunkerLink::None);
-        assert_eq!(
-            sim.substrate
-                .entities
-                .get(2)
-                .unwrap()
-                .building
-                .bunker_runtime
-                .unwrap()
-                .state(),
-            BunkerState::Idle
-        );
-    }
-}
+#[cfg(all(test, tests_sim_world_t_z))]
+mod tests;

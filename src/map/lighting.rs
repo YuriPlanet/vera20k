@@ -12,6 +12,12 @@
 //! ## Dependency rules
 //! - Part of map/ — depends on rules/ini_parser for IniFile.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)
+)]
+
 use std::collections::HashMap;
 
 use crate::rules::art_data::AnimTypeRuntimeConfig;
@@ -1525,7 +1531,7 @@ fn signed_div_1000(value: i64) -> i32 {
     (value / i64::from(LIGHT_UNIT)) as i32
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::rules::art_data::ArtRegistry;

@@ -23,7 +23,7 @@ pub(crate) mod aircraft_shadow;
 pub(crate) mod snapshot;
 pub mod area_scale;
 pub(crate) mod atlas_growth;
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod atlas_refresh_retail_tests;
 pub mod batch;
 pub mod beacon_art;
@@ -38,7 +38,7 @@ pub(crate) mod chrono_screen;
 pub(crate) mod color_vision;
 pub mod combat_light;
 pub mod cursor_atlas;
-#[cfg(test)]
+#[cfg(all(test, any(tests_render_a_r, tests_app_presentation, tests_render_s_z)))]
 pub(crate) mod depth_gpu_tests;
 pub mod draw_state;
 pub(crate) mod electric_bolt;
@@ -48,6 +48,8 @@ pub(crate) mod frame_handoff;
 pub mod frame_readback;
 pub mod gpu;
 pub(crate) mod gpu_timer;
+pub(crate) mod hud_paint;
+pub(crate) mod retained_hud;
 pub(crate) mod laser;
 pub(crate) mod line_trail;
 pub mod loading_screen_chrome;
@@ -55,6 +57,7 @@ pub mod locomotor_visual;
 pub mod main_menu_shell_chrome;
 pub mod native_surface_format;
 pub mod native_z;
+pub(crate) mod zshape_skips;
 pub mod overlay_assets;
 pub mod overlay_atlas;
 pub mod palette_light;
@@ -75,7 +78,7 @@ pub mod shell_text_reveal;
 pub mod shell_transition_pass;
 pub(crate) mod shell_ui_style_assets;
 pub mod shroud_buffer;
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod shroud_gpu_tests;
 pub mod sidebar_cameo_atlas;
 pub mod sidebar_chrome;
@@ -93,7 +96,7 @@ pub mod tactical_compat;
 pub mod tactical_draw_plan;
 pub(crate) mod tactical_shader;
 pub(crate) mod terrain_draw;
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 pub(crate) mod terrain_draw_gpu_tests;
 pub mod terrain_instances;
 pub mod text_engine;
@@ -105,7 +108,7 @@ pub(crate) mod unit_shadow;
 pub mod upscale_pass;
 pub mod voxel_image_cache;
 pub(crate) mod voxel_gpu;
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod voxel_parity_tests;
 pub mod vxl_normals;
 pub mod vxl_raster;
@@ -113,7 +116,7 @@ pub mod wave_geometry;
 pub(crate) mod webgl;
 pub mod xbr;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod sidebar_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod smooth_chrome_gpu_tests;

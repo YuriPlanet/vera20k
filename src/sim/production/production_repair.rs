@@ -219,7 +219,7 @@ pub fn toggle_repair(
     let type_id = entity.type_ref();
     let position = entity.position;
     let sound = if entity.building.repairing.on && entity.health.current() == strength {
-        rules.general.scold_sound.clone()
+        rules.general.scold_sound.as_deref()
     } else {
         if entity.building.repairing.on {
             // ToggleRepair447082..447091: House50B6F0 admits Building
@@ -233,11 +233,11 @@ pub fn toggle_repair(
             sim.sound_events
                 .emit(SimSoundEvent::Repairing { owner, type_id });
         }
-        rules.general.generic_click_sound.clone()
+        rules.general.generic_click_sound.as_deref()
     };
     if let Some(sound) = sound {
         sim.sound_events.emit(SimSoundEvent::voc_at_for(
-            sound,
+            rules.sound_name(sound),
             Some([owner, owner]),
             &position,
         ));
@@ -274,7 +274,7 @@ pub(crate) fn engineer_repair(sim: &mut Simulation, rules: &RuleSet, id: u64) ->
     }
     toggle_repair(sim, rules, id, RepairControl::Stop);
     sim.refresh_building_damage_state(id, rules);
-    if let Some(sound) = rules.general.building_repaired_sound.clone()
+    if let Some(sound) = rules.general.building_repaired_sound.as_deref()
         && let Some(entity) = sim.substrate.entities.get(id)
     {
         let coord = crate::sim::movement::ground_pose::object_get_coords(
@@ -285,31 +285,40 @@ pub(crate) fn engineer_repair(sim: &mut Simulation, rules: &RuleSet, id: u64) ->
         position.put_world_xy([coord.x, coord.y]);
         position.put_z(coord.z);
         sim.sound_events
-            .emit(SimSoundEvent::voc_at(sound, &position));
+            .emit(SimSoundEvent::voc_at(rules.sound_name(sound), &position));
     }
     true
 }
 
-/// `BuildingClass::Can_Repair @ 0x00452630` (vt+0x94): a building with
-/// Health (`+0x6C`), of a `ClickRepairable=` type (`+0x157A`) that is not a
-/// 1x1 `UndeploysInto=` type (`BuildingTypeClass 0x00465D40`), whose
-/// `Repairable=` type (TechnoType `+0xCCC`) has it below Strength
-/// (`0x00701140`). Every building of a computer house asks each frame, so
-/// the undeploy test's type lookup runs last.
-pub fn can_repair_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
+/// The wrench's type permission. `BuildingClass::Can_Repair @ 0x00452630`
+/// tests ClickRepairable (+0x157A) and the one-cell undeploy restriction
+/// (0x00465D40); its TechnoClass base (0x00701140) tests Repairable (+0xCCC).
+fn wrench_admits(sim: &Simulation, rules: &RuleSet, id: u64, require_damage: bool) -> bool {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;
     };
     if entity.category() != EntityCategory::Structure || entity.health.current() == 0 {
         return false;
     }
-    let Some(object) = sim.object_type(entity.type_ref(), rules) else {
+    let Some(object) = sim.entity_object_type(entity, rules) else {
         return false;
     };
     object.click_repairable
         && object.repairable
-        && entity.health.current() != object.strength
+        && (!require_damage || entity.health.current() != object.strength)
         && !(object.foundation.dimensions() == (1, 1) && undeploys(rules, object))
+}
+
+/// VERA checks the wrench's static permission at the REPAIR receiver. The
+/// native receiver (0x004C6ED2) accepts an alive full-health building too.
+pub fn player_repair_type_admits(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
+    wrench_admits(sim, rules, id, false)
+}
+
+/// `BuildingClass::Can_Repair @ 0x00452630`: the wrench and the computer only
+/// offer to repair a permitted building whose health differs from Strength.
+pub fn can_repair_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
+    wrench_admits(sim, rules, id, true)
 }
 
 /// VERA Auto Repair (`docs/auto-repair.md`): `owner`'s buildings a player
@@ -389,6 +398,35 @@ pub fn repair_step_cost(rules: &RuleSet, object: &ObjectType) -> i32 {
     .max(1)
 }
 
+/// VERA's Convenience Help: what the running repair of `entity` still
+/// needs at `frame`, by [`repair_step`]'s own cadence: the frames until the
+/// step that reaches Strength, and what those steps cost. `None` while it is
+/// not repairing, is at Strength, or never finishes (a zero period or
+/// `RepairStep=`). An estimate: a house that runs out of money stops (or,
+/// under Ares, waits) sooner. Read only; the draw shows it.
+pub fn repair_remaining(
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &ObjectType,
+    rules: &RuleSet,
+    frame: u32,
+) -> Option<(i32, i32)> {
+    let step = rules.general.repair_step;
+    let period =
+        crate::sim::combat::veterancy::self_heal_interval_frames(rules.general.repair_rate_minutes);
+    let missing = object.strength.saturating_sub(entity.health.current());
+    if !entity.building.repairing.on || step <= 0 || period <= 0 || missing <= 0 {
+        return None;
+    }
+    let steps = (missing - 1) / step + 1;
+    // A step is due on each frame that is a multiple of the period.
+    let first = (period - (frame as i32).rem_euclid(period)) % period;
+    let frames = first.saturating_add((steps - 1).saturating_mul(period));
+    Some((
+        frames,
+        steps.saturating_mul(repair_step_cost(rules, object)),
+    ))
+}
+
 /// `BuildingClass::UpdateRepairAndPower @ 0x00450630`, in the building's
 /// LogicVector visit. A building of an owner whose CurrentIQ (`+0x24C`)
 /// reaches `[IQ] RepairSell=`, on neither Construction nor Selling
@@ -402,7 +440,7 @@ pub(crate) fn update_repair_and_power(
     rules: &RuleSet,
     id: u64,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -440,7 +478,7 @@ fn low_credit_sale(
     rules: &RuleSet,
     id: u64,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -448,8 +486,9 @@ fn low_credit_sale(
     let Some(house) = sim.houses.get(&entity.owner()) else {
         return;
     };
-    if !((sim.session.game_mode_nonzero() || entity.ai_sell_repair.ai_sellable())
-        && entity.ai_sell_repair.was_attacked_by_enemy()
+    if !((sim.session.rule_policy().uses_ai_economy()
+        || entity.seldom.ai_sell_repair.ai_sellable())
+        && entity.seldom.ai_sell_repair.was_attacked_by_enemy()
         && house.authored_iq() as u32 >= rules.general.iq_sell_back as u32)
     {
         return;
@@ -495,9 +534,9 @@ fn auto_repair_start(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     if house.repair_start_latch() || entity.building.repairing.on {
         return;
     }
-    let controlled = house.is_controlled_by_human(sim.session.game_mode_nonzero());
+    let controlled = house.is_controlled_by_human(sim.session.rule_policy());
     if !(entity.building.has_been_captured.is_set()
-        || entity.ai_sell_repair.ai_repairable()
+        || entity.seldom.ai_sell_repair.ai_repairable()
         || controlled)
     {
         return;
@@ -572,7 +611,7 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
             && sim
                 .houses
                 .get(&owner)
-                .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
+                .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
         if !keeps_repairing && let Some(entity) = sim.substrate.entities.get_mut(id) {
             entity.building.repairing.on = false;
         }
@@ -594,7 +633,7 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     Simulation::retire_damage_smoke_after_heal(&sim.interner, &mut sim.substrate, id, rules);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod invalid_rule_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -628,6 +667,32 @@ mod invalid_rule_tests {
         let entity = sim.substrate.entities.get(id).unwrap();
         assert_eq!(entity.health.current(), 50);
         assert!(entity.building.repairing.is_on());
+    }
+
+    /// The estimate counts whole steps from the next due frame: 25 missing
+    /// health at `RepairStep=10` takes three steps, the first one frame on.
+    #[test]
+    fn repair_remaining_counts_whole_steps_from_the_next_due_frame() {
+        let (mut sim, mut rules, id) = crate::sim::building_art::slot_test_fixture_with("");
+        rules.general.repair_step = 10;
+        let period = crate::sim::combat::veterancy::self_heal_interval_frames(
+            rules.general.repair_rate_minutes,
+        );
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
+        let object = sim.interner.object_type(entity.type_ref(), &rules).unwrap();
+        entity.health.set_for_test(object.strength - 25);
+        let estimate = |entity: &crate::sim::game_entity::GameEntity, frame| {
+            repair_remaining(entity, object, &rules, frame)
+        };
+        assert_eq!(estimate(entity, 0), None, "not repairing");
+        entity.building.repairing.set_for_test(true);
+        let cost = repair_step_cost(&rules, object);
+        assert_eq!(
+            estimate(entity, period as u32 - 1),
+            Some((1 + 2 * period, 3 * cost))
+        );
+        entity.health.set_for_test(object.strength);
+        assert_eq!(estimate(entity, 0), None, "at Strength");
     }
 
     /// `RepairStep=0` can never finish a repair, so the step switches it off

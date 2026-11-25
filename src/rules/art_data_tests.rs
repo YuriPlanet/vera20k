@@ -155,6 +155,15 @@ fn test_object_shp_candidates_no_new_theater() {
 }
 
 #[test]
+fn object_shp_candidates_take_an_image_whose_second_byte_is_high() {
+    // INI byte 0xE9 widens to `é`, two UTF-8 bytes: the prefix test must not
+    // cut it.
+    let reg = ArtRegistry::empty();
+    let candidates = object_shp_candidates(Some(&reg), "A\u{e9}X", "tem", "TEMPERATE");
+    assert_eq!(candidates, ["A\u{c9}X.SHP", "A\u{c9}X.TEM"]);
+}
+
+#[test]
 fn test_object_shp_candidates_with_new_theater() {
     let reg: ArtRegistry = ArtRegistry::empty();
     let candidates: Vec<String> = object_shp_candidates(Some(&reg), "GAPOWR", "tem", "TEMPERATE");
@@ -939,6 +948,192 @@ impl Drop for AnimDimTestRoot {
     }
 }
 
+/// `End=`/`LoopEnd=` past the SHP's frames bind as written: ReadINI stores
+/// them (`0x00427FE8`, `0x0042801C`) and the loader fills only zero values
+/// (`0x00427C1C..0x00427C5C`), as for retail GAWEAP_3D's LoopStart=10 and
+/// LoopEnd=19 on 4 frames; frames past the SHP draw nothing (`CC_Draw_Shape`,
+/// `0x0069E7F3`). A 0-frame SHP binds with End, LoopEnd and Middle at 0
+/// (`0x00427C2D`), and a frame-count word of 0x8000 or more reads signed there
+/// (`MOVSX`): the bounds go negative and nothing refuses the type (issue 4493).
+#[test]
+fn animation_bounds_past_the_shp_frames_bind_as_written() {
+    use crate::rules::{native_processing::RulesLayerStack, ruleset::RuleSet};
+
+    let root = AnimDimTestRoot::new();
+    let mut header = vec![0_u8; 8];
+    header[2..4].copy_from_slice(&1_u16.to_le_bytes());
+    header[4..6].copy_from_slice(&1_u16.to_le_bytes());
+    header[6..8].copy_from_slice(&4_i16.to_le_bytes());
+    std::fs::write(root.path().join("OVER.SHP"), header).unwrap();
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let ini = IniFile::from_str("[OVER]\nEnd=9\nLoopStart=10\nLoopEnd=19\n");
+    let processed = RulesLayerStack::new(IniFile::from_str("[General]\nMetallicDebris=OVER\n"))
+        .process_with_fixed_art(&ini)
+        .unwrap();
+    let rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let mut art = ArtRegistry::from_ini(&ini);
+    art.apply_anim_type_read_states(rules.anim_type_art_read_states());
+    art.bind_scheduler_anim_assets(&rules.general.metallic_debris, &assets, "URB", "URBAN");
+    let over = art.anim_runtime_config("OVER").unwrap();
+    assert_eq!(
+        (
+            over.end,
+            over.loop_start,
+            over.loop_end,
+            over.raw_shp_frame_count,
+            over.middle_frame
+        ),
+        (9, 10, 19, Some(4), Some(2))
+    );
+
+    std::fs::write(root.path().join("OVER.SHP"), [0_u8; 8]).unwrap();
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let ini = IniFile::from_str("[OVER]\nRate=1\n");
+    let mut art = ArtRegistry::from_ini(&ini);
+    art.apply_anim_type_read_states(rules.anim_type_art_read_states());
+    art.bind_scheduler_anim_assets(&rules.general.metallic_debris, &assets, "URB", "URBAN");
+    let over = art.anim_runtime_config("OVER").unwrap();
+    assert_eq!(
+        (
+            over.end,
+            over.loop_end,
+            over.raw_shp_frame_count,
+            over.middle_frame
+        ),
+        (0, 0, Some(0), Some(0))
+    );
+
+    let mut header = vec![0_u8; 8];
+    header[6..8].copy_from_slice(&i16::MIN.to_le_bytes());
+    std::fs::write(root.path().join("OVER.SHP"), header).unwrap();
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let mut art = ArtRegistry::from_ini(&ini);
+    art.apply_anim_type_read_states(rules.anim_type_art_read_states());
+    art.bind_scheduler_anim_assets(&rules.general.metallic_debris, &assets, "URB", "URBAN");
+    let over = art.anim_runtime_config("OVER").unwrap();
+    assert_eq!(
+        (
+            over.end,
+            over.loop_end,
+            over.raw_shp_frame_count,
+            over.middle_frame
+        ),
+        (-32768, -32768, Some(-32768), Some(-16384))
+    );
+}
+
+/// A theater `Tile%02dAnim=` name that no AnimType holds and no ART section
+/// reads is built by `AnimTypeClass::FindOrAllocate` (`0x00546538`) after the
+/// ART read, with the constructor's values: the map loads, and its terrain anim
+/// spawns and draws nothing (issue 4493). Its name folds as `_strcmpi` does,
+/// ASCII letters only, so a Latin-1 `ä` keeps its case.
+#[test]
+fn a_theater_only_tile_anim_binds_as_an_unread_type_and_spawns() {
+    use crate::rules::{native_processing::RulesLayerStack, ruleset::RuleSet};
+
+    let root = AnimDimTestRoot::new();
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let art_ini = IniFile::from_str("");
+    let processed = RulesLayerStack::new(IniFile::from_str("[General]\n"))
+        .process_with_fixed_art(&art_ini)
+        .unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+    rules.bind_scheduler_anim_assets(
+        &["CUSTOM_FALLS".into(), "CUSTOM_F\u{e4}LLS".into()],
+        &assets,
+        "TEM",
+        "TEMPERATE",
+    );
+    let config = rules.art().anim_runtime_config("CUSTOM_FALLS").unwrap();
+    assert!(!config.art_body_read);
+    assert_eq!(config.raw_shp_frame_count, None, "no image");
+
+    let mut sim = crate::sim::world::Simulation::new();
+    let tile = |anim_name: &str| crate::map::resolved_terrain::TerrainTileAnimation {
+        rx: 1,
+        ry: 1,
+        anim_name: anim_name.to_string(),
+        world_x: 384,
+        world_y: 384,
+        world_z: 0,
+        z_adjust: 0,
+    };
+    let ids = crate::sim::runtime::spawn_terrain_tile_animations(
+        &mut sim,
+        &rules,
+        &[tile("custom_falls"), tile("custom_f\u{e4}lls")],
+    );
+    assert!(ids.iter().all(|&id| sim.anim(id).is_some()));
+}
+
+/// A theater `Tile%02dAnim=` whose own ART makes it a `Bouncer=` with a
+/// launch velocity outside the x87 domain VERA models does not construct; the
+/// map still loads and its other tile anims spawn.
+#[test]
+fn a_tile_anim_that_cannot_construct_is_skipped() {
+    use crate::rules::{native_processing::RulesLayerStack, ruleset::RuleSet};
+
+    let root = AnimDimTestRoot::new();
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let art_ini =
+        IniFile::from_str("[BAD_BOUNCE]\nBouncer=yes\nMaxXYVel=1000000000000000000000000000000\n");
+    let processed = RulesLayerStack::new(IniFile::from_str("[General]\n"))
+        .process_with_fixed_art(&art_ini)
+        .unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+    rules.bind_scheduler_anim_assets(
+        &["BAD_BOUNCE".into(), "THEATER_ONLY".into()],
+        &assets,
+        "TEM",
+        "TEMPERATE",
+    );
+    assert!(
+        rules
+            .art()
+            .anim_runtime_config("BAD_BOUNCE")
+            .unwrap()
+            .bouncer
+    );
+
+    let mut sim = crate::sim::world::Simulation::new();
+    let tile = |anim_name: &str| crate::map::resolved_terrain::TerrainTileAnimation {
+        rx: 1,
+        ry: 1,
+        anim_name: anim_name.to_string(),
+        world_x: 384,
+        world_y: 384,
+        world_z: 0,
+        z_adjust: 0,
+    };
+    let ids = crate::sim::runtime::spawn_terrain_tile_animations(
+        &mut sim,
+        &rules,
+        &[tile("BAD_BOUNCE"), tile("THEATER_ONLY")],
+    );
+    assert_eq!(ids.len(), 1);
+    let type_id = sim.anim(ids[0]).expect("tile anim spawned").type_id();
+    assert_eq!(type_id, sim.intern("THEATER_ONLY"));
+}
+
+/// A `DamageFireOffset%d=` far past any building converts through the one
+/// `IsometricPixelToWorld` port (`0x0043C152` calls `0x006D2070`), so it no
+/// longer stops the map's animations binding (issue 4493).
+#[test]
+fn a_huge_damage_fire_offset_does_not_stop_animation_binding() {
+    let root = AnimDimTestRoot::new();
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let mut art = ArtRegistry::from_ini(&IniFile::from_str(
+        "[GAPOWR]\nDamageFireOffset0=99999999,0\nDamageFireOffset1=-24,-1\n[FIRE01]\nRate=1\n",
+    ));
+    art.bind_scheduler_anim_assets(&["FIRE01".into()], &assets, "TEM", "TEMPERATE");
+    let offsets = &art.exact_entry("GAPOWR").unwrap().damage_fire_offsets;
+    assert_eq!(offsets.len(), 2);
+    assert_eq!((offsets[1].world_dx, offsets[1].world_dy), (-110, 93));
+    assert!(art.scheduler_anim_types().contains("FIRE01"));
+}
+
 #[test]
 fn animation_image_flag_binding_preserves_own_runtime_metadata() {
     use crate::rules::{native_processing::RulesLayerStack, ruleset::RuleSet};
@@ -970,8 +1165,7 @@ fn animation_image_flag_binding_preserves_own_runtime_metadata() {
     let rules = RuleSet::from_processed_rules(&processed).unwrap();
     let mut art = ArtRegistry::from_ini(&ini);
     art.apply_anim_type_read_states(rules.anim_type_art_read_states());
-    art.bind_scheduler_anim_assets(&rules.general.metallic_debris, &assets, "URB", "URBAN")
-        .unwrap();
+    art.bind_scheduler_anim_assets(&rules.general.metallic_debris, &assets, "URB", "URBAN");
     let damaged = art.anim_runtime_config("DAMAGED").unwrap();
     assert_eq!(damaged.raw_shp_frame_count, Some(8));
     assert_eq!(
@@ -1043,14 +1237,12 @@ fn scenario_anim_theater_replaces_only_the_shape_and_retries_the_stored_id() {
         ["FX.SNO", "FX.SHP"],
         "Read_Map4AD092 -> InitTheater427940 replaces the resolver's image plan"
     );
-    rules
-        .bind_scheduler_anim_assets(
-            &["FX".into(), "CTTILE".into(), "CTPLAIN".into()],
-            &assets,
-            "SNO",
-            "SNOW",
-        )
-        .unwrap();
+    rules.bind_scheduler_anim_assets(
+        &["FX".into(), "CTTILE".into(), "CTPLAIN".into()],
+        &assets,
+        "SNO",
+        "SNOW",
+    );
     let config = rules.art().anim_runtime_config("FX").unwrap();
     assert_eq!(config.raw_shp_frame_count, Some(2));
     assert_eq!(config.middle_frame, Some(3));
@@ -1183,10 +1375,8 @@ fn animation_theater_flags_match_original_fresh_read_and_postpass() {
             expected["loaded_filename"].as_str(),
             "{label}"
         );
-        let result =
-            art.bind_scheduler_anim_assets(&[name.to_string()], &assets, extension, theater);
+        art.bind_scheduler_anim_assets(&[name.to_string()], &assets, extension, theater);
         if expected["image_present"].as_bool().unwrap() {
-            result.unwrap_or_else(|error| panic!("{label}: {error}"));
             let config = art.anim_runtime_config(name).unwrap();
             assert_eq!(
                 config.raw_shp_frame_count,
@@ -1205,7 +1395,6 @@ fn animation_theater_flags_match_original_fresh_read_and_postpass() {
             );
             bound_cases += 1;
         } else {
-            result.unwrap_or_else(|error| panic!("{label}: {error}"));
             let config = art.anim_runtime_config(name).unwrap();
             assert_eq!(config.raw_shp_frame_count, admitted.then_some(0), "{label}");
             assert_eq!(
@@ -1250,8 +1439,7 @@ fn animation_binding_keeps_literal_types_and_exact_image_sections() {
     // Generic object resolution intentionally retains its established behavior.
     assert_eq!(art.resolve_effective_image_id(" FX", " FX"), "WRONG");
     let roots = rules.general.metallic_debris.clone();
-    art.bind_scheduler_anim_assets(&roots, &assets, "TEM", "TEMPERATE")
-        .unwrap();
+    art.bind_scheduler_anim_assets(&roots, &assets, "TEM", "TEMPERATE");
     for name in ["FX", " FX", "D", " NONE"] {
         assert!(art.scheduler_anim_types().contains(name));
     }
@@ -1278,9 +1466,7 @@ fn animation_binding_keeps_literal_types_and_exact_image_sections() {
     restored.restore_object_image_loads("TEMPERATE").unwrap();
     let mut rules = RuleSet::from_processed_rules(&restored).unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art_ini));
-    rules
-        .bind_scheduler_anim_assets(&["D".into(), " NONE".into()], &assets, "TEM", "TEMPERATE")
-        .unwrap();
+    rules.bind_scheduler_anim_assets(&["D".into(), " NONE".into()], &assets, "TEM", "TEMPERATE");
     let d = rules.art().anim_runtime_config("D").unwrap();
     assert!(!d.art_body_read);
     assert_eq!(d.raw_shp_frame_count, Some(1));
@@ -1434,16 +1620,14 @@ fn imageless_retail_animation_reaches_existing_gas_particle_owner() {
     let root = AnimDimTestRoot::new();
     let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
     let mut rules = fixture.rules;
-    rules
-        .bind_scheduler_anim_assets(&["VIRUSD".to_string()], &assets, "TEM", "TEMPERATE")
-        .unwrap();
+    rules.bind_scheduler_anim_assets(&["VIRUSD".to_string()], &assets, "TEM", "TEMPERATE");
     let config = rules.art().anim_runtime_config("VIRUSD").unwrap();
     assert_eq!(config.raw_shp_frame_count, Some(0));
     let particle = rules
         .p_type_id_by_name(config.spawns_particle.as_deref().unwrap())
         .unwrap();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(1000));
     sim.construct_post_load_particle_system_id(&rules);
     let count = |sim: &crate::sim::world::Simulation| {
@@ -1471,14 +1655,14 @@ fn imageless_retail_animation_reaches_existing_gas_particle_owner() {
     sim.object_ai_visit_one(
         anim,
         Some(&rules),
-        crate::sim::world::ObjectAiCtx::default(),
+        &mut crate::sim::world::ObjectAiCtx::default(),
     );
     assert!(sim.anim(anim).is_some(), "constructor first-AI guard");
     sim.session.set_binary_frame_for_test(1 << 16); // expire any u16 rate timer
     sim.object_ai_visit_one(
         anim,
         Some(&rules),
-        crate::sim::world::ObjectAiCtx::default(),
+        &mut crate::sim::world::ObjectAiCtx::default(),
     );
     // AI UnInit conceals and queues the physical receiver. The ordinary
     // end-of-frame deletion owner, rather than AI itself, releases storage.
@@ -1567,4 +1751,73 @@ fn ares_art_palettes_keep_the_named_file() {
         Some("cameo2.pal")
     );
     assert_eq!(art.resolve_declared_cameo_palette("E1", "E1"), None);
+}
+
+#[test]
+fn presentation_only_follows_a_long_next_chain_through_the_rules_processor() {
+    // Twenty thousand anims, each `Next=` the one after; the last marks the
+    // map, and a second chain ends back at its own start.
+    const LINKS: usize = 20_000;
+    let mut art_text = String::new();
+    let mut animations = String::from("[Animations]\n");
+    for index in 0..LINKS {
+        let next = if index + 1 == LINKS {
+            "Scorch=yes".to_owned()
+        } else {
+            format!("Next=A{}", index + 1)
+        };
+        art_text.push_str(&format!("[A{index}]\nRate=1\n{next}\n"));
+        animations.push_str(&format!("{index}=A{index}\n"));
+    }
+    for (index, next) in [(0, 1), (1, 0)] {
+        art_text.push_str(&format!("[LOOP{index}]\nRate=1\nNext=LOOP{next}\n"));
+        animations.push_str(&format!("{}=LOOP{index}\n", LINKS + index));
+    }
+    let art = IniFile::from_str(&art_text);
+    let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(&animations),
+        &art,
+    )
+    .unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+    assert!(
+        !rules.art().anim_presentation_only("a0"),
+        "its chain ends in Scorch="
+    );
+    assert!(
+        rules.art().anim_presentation_only("LOOP0"),
+        "a plain cycle of Next="
+    );
+}
+
+#[test]
+fn presentation_only_anims_change_nothing_but_their_picture_down_their_chain() {
+    let mut art = ArtRegistry::from_ini(&IniFile::from_str(
+        "[GUNFIRE]\nRate=900\n[EXPLOSML]\nScorch=yes\nCrater=yes\n\
+         [PUFF]\nRate=1\n[PUFF2]\nRate=1\n[SMOKE]\nRate=1\n[SPARK]\nRandomRate=2,4\n",
+    ));
+    // The rules processor publishes the references (`AnimTypeReferences`).
+    let mut refer = |name: &str, next: &str, trailer: &str| {
+        let config = art.anim_runtime_configs.get_mut(name).unwrap();
+        config.next = (!next.is_empty()).then(|| next.to_owned());
+        config.trailer_anim = (!trailer.is_empty()).then(|| trailer.to_owned());
+    };
+    refer("PUFF", "PUFF2", "");
+    refer("PUFF2", "PUFF", "");
+    refer("SMOKE", "", "EXPLOSML");
+    art.refresh_anim_types_affecting_play();
+    assert!(art.anim_presentation_only("gunfire"), "a plain flash");
+    assert!(art.anim_presentation_only("PUFF"), "a plain cycle of Next=");
+    assert!(
+        !art.anim_presentation_only("EXPLOSML"),
+        "Scorch/Crater mark the map"
+    );
+    assert!(
+        !art.anim_presentation_only("SMOKE"),
+        "its trailer marks the map"
+    );
+    assert!(
+        !art.anim_presentation_only("SPARK"),
+        "RandomRate draws the Scenario stream"
+    );
 }

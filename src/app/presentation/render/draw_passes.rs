@@ -12,15 +12,19 @@ use crate::app::presentation::sidebar_render::{begin_main_load_pass, begin_main_
 use crate::app::presentation::sidebar_surface::{
     SIDEBAR_STREAMS, SidebarPart, SidebarPicture, SidebarRedraw, TEXT_LAYERS, VIEWPORT_OUTLINE,
 };
+use crate::app::presentation::state::MatchPresentationState;
 use crate::app::presentation::ui_overlays::software_cursor_texture;
+use crate::app::renderer_state::RendererState;
 use crate::render::batch::{BatchRenderer, BatchTexture, InstanceBufferPool, SpriteInstance};
 use crate::render::bridge_atlas::BridgeAtlas;
 use crate::render::overlay_atlas::OverlayAtlas;
 use crate::render::tactical_draw_plan::RenderZPolicy;
-use crate::render::tile_atlas::TileAtlas;
+use crate::ui::game_screen::GameScreen;
 
 use super::merge_passes;
-use super::terrain_picture::{GroundFrame, TERRAIN_STREAMS, TerrainInputs, TerrainStep};
+use super::terrain_picture::{
+    GroundFrame, TERRAIN_STREAMS, TerrainDraws, TerrainInputs, TerrainStep,
+};
 
 /// One isolated pass for the Phobos placement preview artwork. The texture is
 /// owned by a `RefCell` cache, so the pass must end inside this call and the
@@ -52,6 +56,8 @@ pub(super) struct DrawPassData<'a> {
     /// streams.
     pub terrain: &'a [SpriteInstance],
     pub smudge: &'a [SpriteInstance],
+    /// Per smudge, the terrain tiles drawn before it.
+    pub smudge_cuts: &'a [u32],
     pub bridge_shadows: &'a [SpriteInstance],
     pub object_layers: &'a [super::draw_plan_lowering::ObjectLayerPass; 5],
     pub fogged_objects: &'a super::draw_plan_lowering::ObjectLayerPass,
@@ -87,10 +93,20 @@ fn draw_sidebar_surface(
     encoder: &mut wgpu::CommandEncoder,
     data: &DrawPassData<'_>,
 ) {
-    encode_radar_pictures(state, encoder);
+    encode_radar_pictures(
+        &state.renderer,
+        &mut state.match_state.match_presentation,
+        encoder,
+    );
     // The column's text draws here only where its pixels are the window's.
     let text_in_surface = matches!(
-        crate::app::presentation::sidebar_surface::column_text(state),
+        crate::app::presentation::sidebar_surface::column_text(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence
+        ),
         crate::app::presentation::sidebar_surface::ColumnText::Surface(_)
     );
     let side_index = crate::app::presentation::sidebar_render::current_sidebar_side(state);
@@ -327,9 +343,11 @@ fn draw_sidebar_surface(
 /// (`RadarClass::Update @ 0x00656EC0`), then the housing's paints
 /// (`RadarClass::Draw @ 0x00653100`), whose retained online draw samples it.
 /// Every frame encodes them, sidebar drawn or not, so neither waits a frame.
-fn encode_radar_pictures(state: &mut AppState, encoder: &mut wgpu::CommandEncoder) {
-    let renderer = &state.renderer;
-    let presentation = &mut state.match_state.match_presentation;
+fn encode_radar_pictures(
+    renderer: &RendererState,
+    presentation: &mut MatchPresentationState,
+    encoder: &mut wgpu::CommandEncoder,
+) {
     if let Some(minimap) = presentation.minimap.as_mut() {
         minimap.encode_composition(&renderer.gpu.device, encoder);
     }
@@ -378,6 +396,12 @@ pub(super) fn dispatch_draw_passes(
     // The sidebar's surface is complete before the frame begins; the
     // screen-fixed block copies it in.
     draw_sidebar_surface(state, encoder, data);
+    // The Surrender box paints from its nodes, kept on its layout.
+    crate::app::input::surrender::sync(
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state.match_presentation,
+    );
     let pool: &InstanceBufferPool = &state.renderer.instance_pool;
     let pose_cache = state.renderer.vxl_pose_frame_cache.borrow();
     let world_depth = state
@@ -397,7 +421,13 @@ pub(super) fn dispatch_draw_passes(
     // Keep the native surface boundary independent of chrome coverage. The
     // ordinary sidebar now uses the resolved stock side archive, real source
     // canvas heights, and one pixel per source pixel in every theme.
-    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(state);
+    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let [tac_x, tac_y, tac_w, tac_h] = state
         .renderer
         .world_zoom_pass
@@ -414,7 +444,6 @@ pub(super) fn dispatch_draw_passes(
         let overlay_atlas = presentation.overlay_atlas.as_ref();
         let inputs = TerrainInputs {
             streams: TERRAIN_STREAMS.map(|stream| pool.generation(stream)),
-            cell_bodies: data.cell_body_draws.to_vec(),
             camera: batch.camera_uniform(),
             camera_group: batch.camera_bind_group().clone(),
             a_plane: presentation
@@ -422,6 +451,7 @@ pub(super) fn dispatch_draw_passes(
                 .as_ref()
                 .map_or(0, |shroud| shroud.generation()),
             tactical: [tac_x, tac_y, tac_w, tac_h],
+            fogged_sources: fogged_sources(presentation, batch, &data.fogged_objects.runs),
             atlases: [
                 presentation
                     .tile_atlas
@@ -436,10 +466,14 @@ pub(super) fn dispatch_draw_passes(
             ],
             targets: [view.texture().clone(), world_depth.texture().clone()],
         };
+        let draws = TerrainDraws {
+            cell_bodies: data.cell_body_draws,
+            fogged_runs: &data.fogged_objects.runs,
+        };
         state
             .renderer
             .terrain_picture
-            .step(&state.renderer.gpu.device, inputs, ground)
+            .step(&state.renderer.gpu.device, inputs, draws, ground)
     };
     let mut pass = match terrain_step {
         TerrainStep::Restore => {
@@ -466,27 +500,14 @@ pub(super) fn dispatch_draw_passes(
             continue;
         }
         pass.set_scissor_rect(x, y, width, height);
-        // --- Step 1: Terrain (Z-depth pipeline for per-pixel depth from TMP Z-data) ---
-        draw_pooled_zdepth(
+        // --- Step 1: Terrain tiles (Z-depth pipeline for per-pixel depth
+        // from TMP Z-data), each cell's smudge right after its tile ---
+        draw_tiles_and_smudges(
             &mut pass,
             &state.renderer.batch_renderer,
             pool,
-            state.match_state.match_presentation.tile_atlas.as_ref(),
-            "terrain",
-        );
-
-        // --- Step 1.5: Smudges (static decals: craters + scorches) ---
-        // The native terrain-tile pass dispatches each cell's smudge right after
-        // blitting that cell's tile, so smudges land in the terrain layer — well
-        // before the cell-content layer that draws overlays. Drawing them after
-        // overlays instead put every crater and scorch mark on top of the ore and
-        // walls it should be lying under.
-        draw_pooled_passthrough_overlay(
-            &mut pass,
-            &state.renderer.batch_renderer,
-            pool,
-            state.match_state.match_presentation.overlay_atlas.as_ref(),
-            "smudge",
+            &state.match_state.match_presentation,
+            data.smudge_cuts,
         );
     }
     if terrain_step != TerrainStep::Restore {
@@ -500,6 +521,49 @@ pub(super) fn dispatch_draw_passes(
                 .renderer
                 .terrain_picture
                 .keep_ground(&state.renderer.gpu.device, encoder, ground);
+            pass = begin_main_load_pass(encoder, view, &world_depth);
+            pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
+        }
+
+        // Native base terrain 0x006D3470 calls FoggedObject::DrawAll
+        // (0x004D1890) after the tiles and smudges and before the cell
+        // content (0x006D3290) and the live Building sweep (0x006D9920).
+        // Snapshots never enter Display layers. They read and write Z, so they
+        // keep their place in the terrain picture: under the cell bodies, the
+        // overlay shadows and the VERA ground marks drawn after it.
+        if !data.fogged_objects.runs.is_empty() {
+            drop(pass);
+            state
+                .renderer
+                .terrain_draw_renderer
+                .note_external_passes(encoder, 1);
+            merge_passes::draw_native_object_pass(
+                encoder,
+                super::merge_passes::ObjectDrawPhase::Display,
+                view,
+                &world_depth,
+                &mut state.renderer.terrain_draw_renderer,
+                [tac_x, tac_y, tac_w, tac_h],
+                &state.renderer.batch_renderer,
+                pool.get("fogged_objects"),
+                data.fogged_objects,
+                state.match_state.match_presentation.overlay_atlas.as_ref(),
+                state.match_state.match_presentation.unit_atlas.as_ref(),
+                Some(&pose_cache),
+                state.match_state.match_presentation.sprite_atlas.as_ref(),
+                state.match_state.match_presentation.palette_set.as_ref(),
+                state
+                    .match_state
+                    .match_presentation
+                    .building_zshape
+                    .as_ref()
+                    .map_or(
+                        state.renderer.batch_renderer.default_zshape_bind_group(),
+                        |z| &z.bind_group,
+                    ),
+                None,
+                None,
+            );
             pass = begin_main_load_pass(encoder, view, &world_depth);
             pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
         }
@@ -542,9 +606,9 @@ pub(super) fn dispatch_draw_passes(
         .map(|o| o.white_texture());
     // VERA ground marks (the formation line's dots, the ferry's pick-up and
     // drop circles) lie on the ground. They follow the kept terrain picture,
-    // so are never stored in it, and precede the fogged snapshots, the
-    // building bases and every object, which cover them. Surface stores: no
-    // Z read or write.
+    // so are never stored in it, and precede the building bases and every
+    // object, which cover them. Remembered buildings are in that picture, so
+    // the marks cover them. Surface stores: no Z read or write.
     draw_pooled_surface_lines(
         &mut pass,
         &state.renderer.batch_renderer,
@@ -606,50 +670,26 @@ pub(super) fn dispatch_draw_passes(
     // railing pass from its tables. Retail gate/resource regression:
     // map::theater::theater_tests::active_retail_tile_shadow_route_is_dormant.
 
-    // Native base terrain6D3470 calls FoggedObject::DrawAll4D1890 before
-    // the live Building6D9920 sweep. Snapshots never enter Display layers.
-    if !data.fogged_objects.runs.is_empty() {
-        drop(pass);
-        state
-            .renderer
-            .terrain_draw_renderer
-            .note_external_passes(encoder, 1);
-        merge_passes::draw_native_object_pass(
-            encoder,
-            super::merge_passes::ObjectDrawPhase::Display,
-            view,
-            &world_depth,
-            &mut state.renderer.terrain_draw_renderer,
-            [tac_x, tac_y, tac_w, tac_h],
-            &state.renderer.batch_renderer,
-            pool.get("fogged_objects"),
-            data.fogged_objects,
-            state.match_state.match_presentation.overlay_atlas.as_ref(),
-            state.match_state.match_presentation.unit_atlas.as_ref(),
-            Some(&pose_cache),
-            state.match_state.match_presentation.sprite_atlas.as_ref(),
-            state.match_state.match_presentation.palette_set.as_ref(),
-            state
-                .match_state
-                .match_presentation
-                .building_zshape
-                .as_ref()
-                .map_or(
-                    state.renderer.batch_renderer.default_zshape_bind_group(),
-                    |z| &z.bind_group,
-                ),
-            None,
-            None,
-        );
-        pass = begin_main_load_pass(encoder, view, &world_depth);
-        pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
-    }
-
+    // Native6D3AC0 -> Ground6D97D0 draws static trees backward, after the
+    // cell content6D3290 and before the tile shadows6D3040 (dormant on
+    // retail, above) and the building bases.
     // Native6D9920 ->43CEA0/43D290 draws Ground's building bases into the
     // background before rally6D4648. These ranges draw only here; Display's
     // building branch6D916C requests the dynamic turret43DA80 instead. Anim
     // slots and voxel turrets keep their independent later Display positions.
-    if !data.object_layers[2].building_base_runs.is_empty() {
+    for (phase, runs) in [
+        (
+            merge_passes::ObjectDrawPhase::StaticTree,
+            &data.object_layers[2].static_tree_runs,
+        ),
+        (
+            merge_passes::ObjectDrawPhase::BuildingBase,
+            &data.object_layers[2].building_base_runs,
+        ),
+    ] {
+        if runs.is_empty() {
+            continue;
+        }
         drop(pass);
         state
             .renderer
@@ -657,7 +697,7 @@ pub(super) fn dispatch_draw_passes(
             .note_external_passes(encoder, 1);
         merge_passes::draw_native_object_pass(
             encoder,
-            super::merge_passes::ObjectDrawPhase::BuildingBase,
+            phase,
             view,
             &world_depth,
             &mut state.renderer.terrain_draw_renderer,
@@ -975,14 +1015,15 @@ pub(super) fn dispatch_draw_passes(
     // Ares Tactical_Draw_FlyingStrings hooks 6D4684, right after the radial
     // indicators 6D467F and before BeaconManager 6D46B6, and draws the copied
     // signed credit labels (->10064430) with the shared GAME.FNT passthrough.
-    #[cfg(feature = "ares")]
-    draw_pooled_ui_passthrough(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        Some(state.renderer.bit_font.atlas()),
-        "bounty_text",
-    );
+    if state.rules().is_some_and(|rules| rules.ares()) {
+        draw_pooled_ui_passthrough(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            Some(state.renderer.bit_font.atlas()),
+            "bounty_text",
+        );
+    }
 
     // BeaconManager Draw 430AC0 (6D46B6) precedes BandBox. Its flags 600
     // bypass A and Z; each House row has its own Convert strip.
@@ -999,6 +1040,27 @@ pub(super) fn dispatch_draw_passes(
                 );
             }
         }
+    }
+    // BeaconClass::Draw 430250's label boxes (`beacon_labels`): black fill,
+    // House-colour outline, then GAME.FNT text.
+    let beacon_label_solid = state
+        .match_state
+        .match_presentation
+        .selection_overlay
+        .as_ref()
+        .map(|overlay| overlay.white_texture());
+    for (texture, key) in [
+        (beacon_label_solid, "beacon_label_fill"),
+        (beacon_label_solid, "beacon_label_outline"),
+        (Some(state.renderer.bit_font.atlas()), "beacon_label_text"),
+    ] {
+        draw_pooled_ui_passthrough(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            texture,
+            key,
+        );
     }
     // BandBox6DA180 is between the two rally passes (native6D46BD).
     // Wheel zoom defers its screen-pixel border until after resampling;
@@ -1125,7 +1187,13 @@ pub(super) fn dispatch_draw_passes(
     // Resolve wheel zoom once, after every world/depth/destination operation.
     // Timers, sidebar, messages and cursor then draw in frame pixels.
     drop(pass);
-    let (tac_x, tac_y, tac_w, tac_h) = crate::app::input::camera::tactical_viewport_px(state);
+    let (tac_x, tac_y, tac_w, tac_h) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let view = if let Some(zoom) = state.renderer.world_zoom_pass.as_ref() {
         composite_world_with_drag_rect(
             &state.renderer.gpu.device,
@@ -1203,11 +1271,17 @@ pub(super) fn dispatch_draw_passes(
     // A zoomed match draws the battlefield's screen-fixed text, with its
     // boxes, at the window's pixels after the zoom (`window_ui`); their
     // layers are left out of the frame.
-    let text_in_frame = crate::app::presentation::window_ui::battlefield_raster(state).is_none();
+    let text_in_frame = crate::app::presentation::window_ui::battlefield_raster(
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+    )
+    .is_none();
     // --- Step 10.6: timer lines ---
     // TacticalClass::Draw's Scenario, Super and blackout timers
     // (`0x006D4941..0x006D4B25`) follow the sparkles: black boxes, then text,
-    // screen-fixed but clipped to the tactical view.
+    // screen-fixed but clipped to the tactical view. Ares' bottom-left lines
+    // (hook `0x006D4B25`) follow them in the same lanes.
     if text_in_frame {
         draw_pooled_ui_passthrough(
             &mut pass,
@@ -1240,7 +1314,11 @@ pub(super) fn dispatch_draw_passes(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
-        crate::app::presentation::outcome_banner::texture(state),
+        crate::app::presentation::outcome_banner::texture(
+            &state.renderer.outcome_banner_art,
+            &state.match_state,
+            &state.persistence.options_profile,
+        ),
         "outcome_shape",
     );
     if text_in_frame {
@@ -1298,7 +1376,13 @@ pub(super) fn dispatch_draw_passes(
     // The column's text, where its copy would resample it, over the copy
     // within the column (`sidebar_surface::column_text`).
     if let crate::app::presentation::sidebar_surface::ColumnText::Frame(_) =
-        crate::app::presentation::sidebar_surface::column_text(state)
+        crate::app::presentation::sidebar_surface::column_text(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence,
+        )
     {
         let (x, y, width, height) = state.sidebar_frame().column();
         pass.set_scissor_rect(x, y, width, height);
@@ -1404,7 +1488,7 @@ pub(super) fn dispatch_draw_passes(
     }
     // State 7's 0xCF window over the live battlefield (0x0077D840).
     if let Some(page) = page_draw.as_ref() {
-        page.draw(&mut pass, state);
+        page.draw(&mut pass, &state.renderer, &state.frontend);
     }
 
     // --- Step 10.7: build description ---
@@ -1458,25 +1542,31 @@ pub(super) fn dispatch_draw_passes(
 
 /// An unzoomed match's software cursor, over the window's copy of the frame.
 pub(crate) fn draw_software_cursor(
-    state: &AppState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    presentation: &MatchPresentationState,
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
     cursor: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
 ) {
-    let Some(texture) = cursor.and_then(|draw| software_cursor_texture(state, draw)) else {
+    let Some(texture) = cursor.and_then(|draw| software_cursor_texture(presentation, draw)) else {
         return;
     };
-    let frame_depth = state
-        .renderer
+    let frame_depth = renderer
         .world_zoom_pass
         .as_ref()
-        .map_or(&state.renderer.depth_view, |zoom| zoom.frame_depth_view());
+        .map_or(&renderer.depth_view, |zoom| zoom.frame_depth_view());
     let mut pass = begin_main_load_pass(encoder, view, frame_depth);
-    pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
+    pass.set_scissor_rect(
+        0,
+        0,
+        renderer.render_width(screen),
+        renderer.render_height(screen),
+    );
     draw_pooled_ui(
         &mut pass,
-        &state.renderer.batch_renderer,
-        &state.renderer.instance_pool,
+        &renderer.batch_renderer,
+        &renderer.instance_pool,
         Some(texture),
         "software_cursor",
     );
@@ -1486,18 +1576,67 @@ pub(crate) fn draw_software_cursor(
 // Draw helpers — thin wrappers around BatchRenderer methods with atlas lookup
 // ---------------------------------------------------------------------------
 
-/// Draw a pooled buffer with the Z-depth pipeline (per-pixel frag_depth).
-/// Uses the tile atlas's pre-built zdepth bind group (color + R8 depth textures).
-fn draw_pooled_zdepth<'a>(
+/// The walk-ordered terrain tiles with each smudge after the tiles `cuts`
+/// counts for it. `CellOverlay_TileDraw @ 0x00480350` blits a cell's tile,
+/// then its smudge (`0x004804F5`, flags 0xE00: no Z read or write), inside
+/// the tile walk: the tiles walked later still cover it where their Z
+/// passes, and it lies under the cell-content layer that draws overlays.
+/// What the remembered buildings' pixels are drawn through besides their
+/// instances and runs: the building z-shape and each run's atlas page.
+fn fogged_sources(
+    presentation: &crate::app::presentation::state::MatchPresentationState,
+    batch: &BatchRenderer,
+    runs: &[super::draw_plan_lowering::ObjectDrawRun],
+) -> Vec<wgpu::BindGroup> {
+    use super::draw_plan_lowering::ObjectTexture;
+    let zshape = presentation
+        .building_zshape
+        .as_ref()
+        .map_or(batch.default_zshape_bind_group(), |z| &z.bind_group);
+    let pages = runs.iter().filter_map(|run| match run.target {
+        ObjectTexture::ShpPage(page) | ObjectTexture::SpriteAtlasEdit(page, _) => {
+            presentation.sprite_atlas.as_ref()?.page(page)
+        }
+        _ => None,
+    });
+    std::iter::once(zshape)
+        .chain(pages.map(|page| &page.texture.bind_group))
+        .cloned()
+        .collect()
+}
+
+fn draw_tiles_and_smudges<'a>(
     pass: &mut wgpu::RenderPass<'a>,
     batch: &'a BatchRenderer,
     pool: &'a InstanceBufferPool,
-    atlas: Option<&'a TileAtlas>,
-    key: &'static str,
+    presentation: &'a crate::app::presentation::state::MatchPresentationState,
+    cuts: &[u32],
 ) {
-    if let (Some(a), Some((buf, count))) = (atlas, pool.get(key)) {
-        batch.draw_with_buffer_zdepth(pass, &a.zdepth_bind_group, buf, count);
+    let tiles = presentation.tile_atlas.as_ref().zip(pool.get("terrain"));
+    let smudges = presentation.overlay_atlas.as_ref().zip(pool.get("smudge"));
+    let draw_tiles = |pass: &mut wgpu::RenderPass<'a>, range: std::ops::Range<u32>| {
+        if let Some((atlas, (buffer, count))) = tiles {
+            let range = range.start.min(count)..range.end.min(count);
+            batch.draw_zdepth_range(pass, &atlas.zdepth_bind_group, buffer, range);
+        }
+    };
+    let mut drawn = 0;
+    let mut smudge = 0;
+    if let Some((atlas, (buffer, count))) = smudges {
+        let count = count.min(cuts.len() as u32);
+        while smudge < count {
+            let cut = cuts[smudge as usize];
+            let run = cuts[smudge as usize..count as usize]
+                .iter()
+                .take_while(|&&next| next == cut)
+                .count() as u32;
+            draw_tiles(pass, drawn..cut.max(drawn));
+            drawn = cut.max(drawn);
+            batch.draw_passthrough_range(pass, &atlas.texture, buffer, smudge, run);
+            smudge += run;
+        }
     }
+    draw_tiles(pass, drawn..u32::MAX);
 }
 
 /// Draw a pooled buffer with LessEqual depth test, depth write ON.
@@ -1550,19 +1689,6 @@ fn draw_pooled_with_camera(
     }
 }
 
-/// Draw decals with depth bypassed, using the shared overlay atlas.
-fn draw_pooled_passthrough_overlay<'a>(
-    pass: &mut wgpu::RenderPass<'a>,
-    batch: &'a BatchRenderer,
-    pool: &'a InstanceBufferPool,
-    atlas: Option<&'a OverlayAtlas>,
-    key: &'static str,
-) {
-    if let (Some(a), Some((buf, count))) = (atlas, pool.get(key)) {
-        batch.draw_passthrough_range(pass, &a.texture, buf, 0, count);
-    }
-}
-
 /// Wheel zoom's boundary between world pixels and the screen-fixed band box.
 fn composite_world_with_drag_rect(
     device: &wgpu::Device,
@@ -1582,6 +1708,42 @@ fn composite_world_with_drag_rect(
         pass.set_scissor_rect(tactical[0], tactical[1], tactical[2], tactical[3]);
         draw_pooled_ui_passthrough(&mut pass, batch, pool, drag, "drag");
     }
+}
+
+/// The wheel-zoomed world, resampled once from world pixels into the window
+/// after the Options zoom scaled the frame there (`app::frame`), instead of
+/// only through the frame. VERA-only: stock YR has no world zoom. Whatever the
+/// frame drew over the battlefield keeps showing at the frame's pixels
+/// (`WorldZoomPass::draw_window_copy`); the battlefield's window-pixel text and
+/// the cursor go over this (`window_ui`). It draws only when the frame's
+/// `set_view` kept a window copy (`render::mod`).
+pub(crate) fn draw_world_window_copy(
+    state: &AppState,
+    encoder: &mut wgpu::CommandEncoder,
+    view: &wgpu::TextureView,
+) {
+    let (Some(zoom), Some(world)) = (
+        state.tactical_zoom(),
+        state.renderer.world_zoom_pass.as_ref(),
+    ) else {
+        return;
+    };
+    let gpu = &state.renderer.gpu;
+    world.draw_window_copy(
+        &gpu.device,
+        &gpu.queue,
+        encoder,
+        view,
+        state.renderer.combat_light_renderer.composition_texture(),
+        zoom,
+        crate::app::input::camera::tactical_viewport_px(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+        ),
+    );
 }
 
 /// VERA's ground marks: world-surface stores at neutral A, before wheel zoom.
@@ -1734,7 +1896,7 @@ pub(crate) fn draw_bridge_shadows(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod tests {
     use super::{CellBodyAtlas, CellBodyDraw, RenderZPolicy, cell_body_runs};
     const SOURCE: &str = include_str!("draw_passes.rs");
@@ -1767,7 +1929,6 @@ mod tests {
         let kept = source_offset(".keep(&state.renderer.gpu.device, encoder)");
         let marks = source_offset("\"ground_marks\"");
         let rings = source_offset("\"ground_strokes\"");
-        let fogged = source_offset("pool.get(\"fogged_objects\")");
         let building_bases = source_offset("ObjectDrawPhase::BuildingBase");
         let objects = source_offset("for layer in 0..=3 {");
         assert!(kept < marks, "the kept ground must not store the marks");
@@ -1775,7 +1936,18 @@ mod tests {
             marks < rings,
             "the ferry's circles follow the formation dots"
         );
-        assert!(rings < fogged && rings < building_bases && rings < objects);
+        assert!(rings < building_bases && rings < objects);
+    }
+
+    /// Base terrain 0x006D3470 draws the remembered buildings between the
+    /// tiles and smudges and the cell content (0x006D3290).
+    #[test]
+    fn fogged_snapshots_draw_between_the_ground_and_the_cell_bodies() {
+        let ground = source_offset(".keep_ground(&state.renderer.gpu.device, encoder, ground)");
+        let fogged = source_offset("pool.get(\"fogged_objects\")");
+        let cell_bodies = source_offset("\"cell_body\",");
+        let bridge_shadows = source_offset("pool.get(\"overlay_bridge_body_shadow\")");
+        assert!(ground < fogged && fogged < cell_bodies && cell_bodies < bridge_shadows);
     }
 
     #[test]
@@ -1989,6 +2161,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 #[path = "tmp_clear_gpu_tests.rs"]
 mod tmp_clear_gpu_tests;

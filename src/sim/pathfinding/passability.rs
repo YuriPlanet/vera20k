@@ -139,7 +139,7 @@ pub fn combine_team_movement_zones(first: MovementZone, second: MovementZone) ->
     best
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 mod tests {
     use super::*;
 

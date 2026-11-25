@@ -3,7 +3,8 @@
 //! Frame-local line commands use the existing selection, Display, projection
 //! and surface A/Z owners. There is no bracket raster or retained state here.
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
 use crate::map::entities::EntityCategory;
 use crate::render::surface_line::{SurfaceLine, SurfaceLineBlend};
 use crate::util::lepton::absolute_leptons_to_screen;
@@ -130,23 +131,23 @@ pub(super) fn building_bracket_lines(
 /// Palette entries are the existing PALETTE.PAL Convert's packed indices 15/12.
 /// GetHeight 5F5F40 chooses 12 below -4; DrawExtras 6F51AA skips sinking objects.
 pub(crate) fn build_selection_bracket_lines(
-    state: &AppState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
     camera: [i32; 2],
     palette: [u16; 2],
     parents: impl IntoIterator<Item = u64>,
 ) -> BTreeMap<u64, BuildingBracketLines> {
-    let Some(sim) = state
-        .match_state
+    let Some(sim) = match_state
         .sim_runtime
         .presentation()
         .map(|rt| &rt.simulation)
     else {
         return BTreeMap::new();
     };
-    let Some(rules) = state.rules() else {
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return BTreeMap::new();
     };
-    let Some(frame) = state.match_state.sim_runtime.frame() else {
+    let Some(frame) = match_state.sim_runtime.frame() else {
         return BTreeMap::new();
     };
     parents
@@ -179,7 +180,7 @@ pub(crate) fn build_selection_bracket_lines(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use crate::sim::components::DriveCoord;
@@ -201,7 +202,8 @@ mod tests {
         e.position.put_location(DriveCoord { x, y, z });
         let f = &crate::rules::foundation::FOUNDATION_TABLE
             [g["type_result"]["foundation"].as_u64().unwrap() as usize];
-        e.type_facts
+        e.seldom
+            .type_facts
             .set_foundation_for_test(f.name.to_owned().into());
         let center = object_get_coords(&e, None);
         let mut camera: [i32; 2] = point(&g["input"]["camera"]);

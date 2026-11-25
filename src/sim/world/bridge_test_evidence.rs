@@ -113,13 +113,13 @@ pub(super) fn restored_retail(
     restored.restore_after_snapshot_load().unwrap();
     restored.rebuild_caches_after_load(
         pristine.clone(),
-        live.terrain_speed_config.clone(),
+        *live.terrain_speed_config,
         &resources.rules,
     );
     restored
         .restore_map_authority_after_snapshot_load(
             &resources.rules,
-            &resources.overlay_registry,
+            resources.rules.overlay_registry(),
             None,
         )
         .unwrap();
@@ -271,7 +271,7 @@ pub fn visit_starting_mtnk_concrete_attack(
         dispatched += due.len();
         let output = scene
             .runtime
-            .advance_frame(&due, 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&due, 22, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         assert!(output.tick.frame_committed);
         let fired = output
@@ -423,8 +423,7 @@ fn damage_bridge(
         &mut runtime.simulation,
         &runtime.resources.rules,
         &[event],
-        Some(&runtime.resources.overlay_registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
 }
 
@@ -710,7 +709,7 @@ fn repair_ordinary_bridge(
             start.1,
             0,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("ordinary Engineer bank placement");
     let orders = producer(&runtime.simulation, &runtime.resources.rules, engineer, hut);
@@ -729,7 +728,7 @@ fn repair_ordinary_bridge(
                 &due,
                 SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         published |= output.tick.bridge_state_changed;

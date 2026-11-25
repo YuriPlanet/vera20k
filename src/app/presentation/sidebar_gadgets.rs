@@ -9,6 +9,7 @@
 
 use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner_name;
+use crate::app::match_runtime::state::MatchState;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
 use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
@@ -74,18 +75,16 @@ pub(crate) fn sidebar_action_visits(
 }
 
 /// [`sidebar_action_visits`] for the running match's current pass.
-pub(crate) fn current_sidebar_action_visits(state: &AppState, sidebar_action: bool) -> u64 {
-    let tick = state
-        .match_state
+pub(crate) fn current_sidebar_action_visits(match_state: &MatchState, sidebar_action: bool) -> u64 {
+    let tick = match_state
         .sim_runtime
         .presentation()
         .map_or(0, |rt| rt.simulation.session().tick());
     sidebar_action_visits(
         sidebar_action,
-        state.match_state.session_mode().is_single_player(),
+        match_state.session_mode().is_single_player(),
         tick,
-        state
-            .match_state
+        match_state
             .match_presentation
             .sidebar_gadget_state
             .last_sim_tick,
@@ -99,8 +98,18 @@ pub(crate) fn current_sidebar_action_visits(state: &AppState, sidebar_action: bo
 /// also includes ready Supers; the shared gadget owner supplies phase/timing.
 /// The scroll roll moves one row per Sidebar Action visit
 /// ([`sidebar_action_visits`]); the view is rebuilt from the moved row by the
-/// idle tick that follows.
+/// pass's republish that follows.
 pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
+    // TabClass::ReceiveNotice @ 0x006D1770 (the planning notice sink) turns the
+    // PlanningMode button on for Planning__StartMode's 0x11C7 and off for
+    // EndMode's 0x11C8, so its look follows the PlanMgr owner's mode every
+    // frame, whatever ended or started it (hotkey, committed plan, focus loss).
+    let planning = state.match_state.input.planning.active();
+    state
+        .match_state
+        .match_presentation
+        .sidebar_gadget_state
+        .command_pressed[9] = planning;
     // A ready tab's completed object is the frame's (`presentation::frame`).
     state.match_state.sim_runtime.ensure_frame();
     let Some(frame) = state.match_state.sim_runtime.frame() else {
@@ -117,7 +126,7 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
     let Some(rules) = state.rules() else {
         return;
     };
-    let Some(owner) = preferred_local_owner_name(state) else {
+    let Some(owner) = preferred_local_owner_name(&state.match_state) else {
         return;
     };
     let owner_iid = sim.interner().get(&owner).unwrap_or_default();
@@ -128,6 +137,7 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
             .match_state
             .match_presentation
             .sidebar_projection
+            .model
             .ready_building_tabs(sim, frame, owner)
     });
     let (tick, frame) = (sim.session().tick(), sim.session().binary_frame() as i32);
@@ -140,6 +150,7 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
     {
         presentation
             .sidebar_projection
+            .model
             .step_pending_scroll(rows, visits);
     }
     update_tab_flashes_for_owner(
@@ -156,8 +167,10 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
 /// 0x006CE1A0 for each Defense-strip Super and stops only when no entry passes.
 /// This is the single Rust update step combining that result with ready
 /// buildings before the shared SidebarGadgetState advances its flash phase.
-/// The house's active views are exactly the Defense strip's Super candidates,
-/// so polling them equals polling the strip below its 75-entry cap.
+/// The house's active views that keep a cameo
+/// ([`crate::sim::superweapon::SuperWeaponView::ares_show_cameo`]) are exactly
+/// the Defense strip's Super candidates, so polling them equals polling the
+/// strip below its 75-entry cap.
 fn update_tab_flashes_for_owner(
     gadgets: &mut SidebarGadgetState,
     ready_building_tabs: [bool; 2],
@@ -165,7 +178,9 @@ fn update_tab_flashes_for_owner(
     visits: u64,
     frame: i32,
 ) {
-    let has_flash_eligible_super = superweapon_views.iter().any(|sw| sw.should_flash_tab);
+    let has_flash_eligible_super = superweapon_views
+        .iter()
+        .any(|sw| sw.ares_show_cameo && sw.should_flash_tab);
     gadgets.update_tab_flashes(
         visits,
         frame,
@@ -178,6 +193,6 @@ fn update_tab_flashes_for_owner(
     );
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "sidebar_gadgets_tests.rs"]
 mod tests;

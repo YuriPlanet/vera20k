@@ -111,6 +111,7 @@ fn place(sim: &mut Simulation, id: u64, kind: &str, category: EntityCategory, at
         .set_sub_y_for_test(SimFixed::from_num(at[1] % 256));
     entity.position.set_exact_z_leptons_for_test(Some(at[2]));
     entity
+        .seldom
         .type_facts
         .set_foundation_for_test(if kind == "GAPOWR" { "2x2" } else { "1x1" }.into());
     sim.substrate.entities.insert(entity);
@@ -278,7 +279,6 @@ fn admitted_laser_births_match_original_building_and_unit_callers() {
 
 /// FireAt `0x006FF549..0x006FF571`: an infantryman's (LUNR's) house-colour
 /// laser is 2 wide like a Unit's; an explicit-colour one keeps 1.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn an_infantry_house_color_laser_is_two_wide() {
     for (house_color, width) in [(true, 2), (false, 1)] {
@@ -506,7 +506,6 @@ fn direct_laser_keeps_explicit_source_and_native_constructor_defaults() {
 #[test]
 // The stock support beam; an Ares supporter without a support target does
 // not beam (`techno_ai::ares_prism_forwarding`).
-#[cfg(not(feature = "ares"))]
 fn production_frame_orders_laser_update_before_delayed_support_birth() {
     let rules = fixture_rules(&json!({}));
     let mut sim = Simulation::new();
@@ -545,10 +544,9 @@ fn production_frame_orders_laser_update_before_delayed_support_birth() {
         .advance_app_frame(
             &[],
             &rules,
-            None,
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let relevant = frame
@@ -583,7 +581,7 @@ fn production_frame_orders_laser_update_before_delayed_support_birth() {
     assert!(source.building.pending_building_fire.pending().is_none());
     assert_eq!(source.building.prism_support_count.count(), 0);
     assert_eq!(
-        source.rearm_timer.timer(),
+        source.seldom.rearm_timer.timer(),
         CdTimer::from_raw(
             expected["actor_after"]["rearm"][0].as_i64().unwrap() as i32,
             expected["actor_after"]["rearm"][1].as_i64().unwrap() as i32,
@@ -639,7 +637,10 @@ fn retail_delayed_main_uses_preclear_count_and_failed_admission_emits_no_laser()
                 DelayedFire::Weapon(WeaponSlot::Primary),
             )));
         source.building.prism_support_count.set_for_test(1);
-        source.rearm_timer.set_for_test(CdTimer::started(100, 0));
+        source
+            .seldom
+            .rearm_timer
+            .set_for_test(CdTimer::started(100, 0));
         source.mission_leaf.set_building_ready_latch(1);
         source.mission.apply_test_fixture(MissionTestFixture {
             current: MissionId::from_known(MissionType::Attack),
@@ -656,10 +657,9 @@ fn retail_delayed_main_uses_preclear_count_and_failed_admission_emits_no_laser()
             .advance_app_frame(
                 &[],
                 rules,
-                None,
                 67,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let update = frame

@@ -242,7 +242,7 @@ fn pack_channel(channel: i32, loss: u32, shift: u32) -> u16 {
     (reduced.wrapping_shl(shift & 31) as u32 & 0xffff) as u16
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
 
@@ -392,6 +392,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "tactical_compat_welding_tests.rs"]
 pub(crate) mod welding_tests;

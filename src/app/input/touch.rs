@@ -39,7 +39,10 @@
 
 // The module stays compiled on every host so its gestures keep their tests
 // there; only the call site is Windows-bound.
-#![cfg_attr(target_os = "linux", allow(dead_code))]
+#![cfg_attr(
+    target_os = "linux",
+    expect(dead_code, reason = "only the Windows input path calls it")
+)]
 
 use crate::util::time::{Duration, Instant};
 
@@ -473,7 +476,7 @@ fn distance(a: PhysicalPosition<f64>, b: PhysicalPosition<f64>) -> f64 {
     (a.x - b.x).hypot(a.y - b.y)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
     use winit::event::Force;

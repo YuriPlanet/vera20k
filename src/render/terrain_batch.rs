@@ -307,7 +307,7 @@ impl<'a, T> Iterator for TerrainWave<'a, T> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
 

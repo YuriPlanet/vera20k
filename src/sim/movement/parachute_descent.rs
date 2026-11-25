@@ -61,7 +61,7 @@ impl crate::sim::world::Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(bool, bool), crate::sim::world::FrameAdvanceError> {
         if self
             .substrate
@@ -72,13 +72,7 @@ impl crate::sim::world::Simulation {
             return Ok((false, false));
         }
         let old_layer = self.entity_display_layer(id, rules);
-        let landed = self.advance_fall(
-            id,
-            rules.general.parachute_max_fall_rate,
-            rules,
-            registry,
-            effects,
-        );
+        let landed = self.advance_fall(id, rules.general.parachute_max_fall_rate, rules, effects);
         let mut changed = false;
         if landed {
             changed =
@@ -114,14 +108,7 @@ impl crate::sim::world::Simulation {
             && let Some(layer) = new_layer
         {
             //5F4001..5F400E: resubmit only when the live layer changed.
-            Self::submit_object_display(
-                &self.interner,
-                &self.terrain_objects,
-                &mut self.substrate,
-                id,
-                layer,
-                rules,
-            );
+            Self::submit_object_display(&mut self.substrate, id, layer);
         }
         if let Some(health) = self
             .substrate
@@ -191,19 +178,21 @@ impl crate::sim::world::Simulation {
         rules: &crate::rules::ruleset::RuleSet,
         owner_id: u64,
     ) -> Option<crate::sim::anim_class::AnimId> {
+        let owner = self.substrate.entities.get(owner_id)?;
+        let object = self.interner.try_resolve(owner.type_ref()).and_then(|_| {
+            self.interner
+                .object_type_in_category(owner.type_ref(), owner.category().into(), rules)
+        });
         // Ares 3.0 10047C60 (hook 0x5F5ADD), before the canopy type: an
         // `IsBomb` Foot sets IsABomb (+8F), so it lands as a bomb.
         if rules.ares_form()
-            && let Some(owner) = self.substrate.entities.get(owner_id)
             && owner.category().is_foot()
-            && self
-                .interner
-                .try_resolve(owner.type_ref())
-                .and_then(|_| self.interner.object_type(owner.type_ref(), rules))
-                .is_some_and(|object| object.techno_combat().roles().is_bomb())
-            && let Some(owner) = self.substrate.entities.get_mut(owner_id)
+            && object.is_some_and(|object| object.techno_combat().roles().is_bomb())
         {
-            owner.mark_parachuted_bomb();
+            self.substrate
+                .entities
+                .get_mut(owner_id)?
+                .mark_parachuted_bomb();
         }
         let owner = self.substrate.entities.get(owner_id)?;
         let owner_house = owner.owner();
@@ -217,7 +206,7 @@ impl crate::sim::world::Simulation {
             .get(&owner_house)
             .and_then(|house| house.country())
             .map(|country| self.interner.resolve(country));
-        let Some(canopy) = parachute_anim_name(rules, owner, side, country) else {
+        let Some(canopy) = parachute_anim_name(rules, owner, object, side, country) else {
             self.substrate
                 .entities
                 .get_mut(owner_id)?
@@ -245,9 +234,7 @@ impl crate::sim::world::Simulation {
                 // the Anim owner. Keep a single held identity, not a type scan.
                 self.substrate
                     .entities
-                    .write_held_anim(owner_id, |owner, authority| {
-                        owner.hold_parachute_animation(anim_id, authority)
-                    })?;
+                    .hold_parachute_animation(owner_id, anim_id)?;
                 self.set_anim_owner_object(anim_id, Some(owner_id), rules);
                 // Native Paradrop calls SetOwnerObject, then GetRemapColour
                 // through the owner's vtable and stores that ConvertClass at
@@ -308,14 +295,25 @@ impl crate::sim::world::Simulation {
 /// (`ObjectClass::Paradrop`'s hook `0x5F5ADD` -> cave `0xC2B0E4`:
 /// `0xC2FA75..0xC2FA8A`). The cave's first arm sends an object whose type
 /// has NPSE's `IsBomb=` flag to `BombParachute=` (`0xC2B0FC..0xC2B103`);
-/// VERA has no parachuted bombs and no `IsBomb=` type flag yet, so that arm
-/// stays native-only.
+/// The NPSE-specific `BombParachute=` selection remains a residual.
 fn parachute_anim_name<'r>(
     rules: &'r crate::rules::ruleset::RuleSet,
     entity: &crate::sim::game_entity::GameEntity,
+    object: Option<&'r crate::rules::object_type::ObjectType>,
     side: i32,
     country: Option<&str>,
 ) -> Option<&'r str> {
+    // ObjectClass_SpawnParachuted_Animation (installed Ares 3.0 DLL10047C60),
+    // hook5F5ADD replaces `mov edx,[ecx+0xBBC]`
+    // and resumes5F5AE3 with the chosen type in EDX. Foot types take
+    // TechnoTypeExt+F0 before Country's GetParachuteAnim1001BBC0.
+    if rules.ares()
+        && entity.category().is_foot()
+        && let Some(canopy) =
+            object.and_then(|object| object.techno_combat().presentation().parachute_anim())
+    {
+        return Some(canopy);
+    }
     // `GetParachuteAnim @ 0x1001BBC0` answers the country's own
     // `[Country] Parachute.Anim=` first; a never-set or `none` field is the
     // null pointer there and defers to the side.
@@ -328,16 +326,10 @@ fn parachute_anim_name<'r>(
     // NPSE non-infantry branch; an unset key leaves that existing owner, and
     // `none` falls through to `Find("PARACH")`
     // (`HouseTypeExt::GetParachuteAnim @ 0x1001BBC0`).
-    //
-    // RESIDUAL (Ares): the canopy hook `0x5F5ADD` -> `0x10047C80` first takes
-    // the dropped type's own `Parachute.Anim` (TechnoTypeExt `+0xF0`), before
-    // the Country layer above; VERA does not read that type key. Trigger: a
-    // mod setting it. Effect: another canopy art; no gameplay change. Never
-    // on retail data.
     if let Some(override_) = rules.side_parachute_override(side) {
         return Some(override_.unwrap_or("PARACH"));
     }
-    if !crate::rules::NPATCH_ENABLED
+    let canopy = if !crate::rules::NPATCH_ENABLED
         || entity.category() == crate::map::entities::EntityCategory::Infantry
     {
         rules.general.parachute_shp.as_deref()
@@ -347,7 +339,14 @@ fn parachute_anim_name<'r>(
             .vehicle_parachute
             .as_deref()
             .or(rules.general.parachute_shp.as_deref())
+    };
+    // Under Ares a house with no side (`0x1001BBD7`), or no canopy from its
+    // side and `[General] Parachute=` (`0x1002E0FA`), gets `Find("PARACH")`
+    // (`0x1001BC09`) rather than none.
+    if rules.ares() && (side < 0 || canopy.is_none()) {
+        return Some("PARACH");
     }
+    canopy
 }
 
 impl crate::sim::world::Simulation {
@@ -375,8 +374,7 @@ impl crate::sim::world::Simulation {
         stable_id: u64,
         max_fall_rate: i32,
         rules: &crate::rules::ruleset::RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
@@ -390,9 +388,9 @@ impl crate::sim::world::Simulation {
         )
         .wrapping_add(rate);
         let marked = entity.lifecycle.cell_marked();
-        let context = crate::sim::world::UninitContext::new(rules, registry).with_effects(effects);
+        let mut context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
         if marked {
-            self.unmark_entity_remove(stable_id, context);
+            self.unmark_entity_remove(stable_id, context.reborrow());
         }
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.position.put_z(z);
@@ -421,7 +419,7 @@ impl crate::sim::world::Simulation {
         // SetHeight(0) (`0x005F3F7A`) runs before the falling byte clears
         // (`0x005F3F86`). Descent does not displace the locomotor, so there
         // is no piggyback to unwind here.
-        self.set_object_height(stable_id, 0, rules, registry, effects);
+        self.set_object_height(stable_id, 0, rules, effects);
         let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
             return true;
         };
@@ -430,7 +428,7 @@ impl crate::sim::world::Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod canopy_tests {
     use super::*;
     use crate::rules::art_data::ArtRegistry;
@@ -455,7 +453,7 @@ mod canopy_tests {
         rules.install_art_fixture(art);
 
         let mut sim = Simulation::new();
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let id = sim.substrate.allocate_stable_id();
         sim.substrate
             .entities
@@ -568,8 +566,7 @@ mod canopy_tests {
                 id,
                 -3,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
         let lower = sim.anim_owner_coords(id).unwrap().z;
@@ -615,7 +612,23 @@ mod canopy_tests {
         let rules = RuleSet::from_processed_rules(&processed).expect("side projection");
         let entity = GameEntity::test_default(1, "E1", "Americans", 10, 11);
         assert_eq!(
-            parachute_anim_name(&rules, &entity, 3, None),
+            parachute_anim_name(&rules, &entity, None, 3, None),
+            Some("PARACH")
+        );
+        // A house with no side skips `[General] Parachute=`, and an unset
+        // side with no `[General] Parachute=` also gets `PARACH`.
+        assert_eq!(
+            parachute_anim_name(&rules, &entity, None, -1, None),
+            Some("PARACH")
+        );
+        assert_eq!(
+            parachute_anim_name(&rules, &entity, None, 0, None),
+            Some("OTHER")
+        );
+        let mut empty = rules.clone();
+        empty.general.parachute_shp = None;
+        assert_eq!(
+            parachute_anim_name(&empty, &entity, None, 0, None),
             Some("PARACH")
         );
     }

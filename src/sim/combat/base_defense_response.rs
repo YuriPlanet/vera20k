@@ -256,8 +256,7 @@ impl ResponseSelection {
                         responder.entity_id,
                         Some(TargetKind::Entity(attacker_id)),
                         rules,
-                        None,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     )
                     .expect(
                         "selected responder remains present during synchronous target assignment",
@@ -288,7 +287,7 @@ impl ResponseSelection {
         if accumulated > budget
             && let Some(attacker) = world.substrate.entities.get_mut(attacker_id)
         {
-            attacker.base_defense_response.cooldown.start(
+            attacker.seldom.base_defense_response.cooldown.start(
                 current_frame,
                 response_delay_frames(rules.general.base_defense_delay_minutes),
             );
@@ -426,7 +425,7 @@ pub(crate) fn respond_to_base_attack(
     rules: &RuleSet,
     victim_id: u64,
     attacker_id: u64,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let entities = &world.substrate.entities;
     let interner = &world.interner;
@@ -447,6 +446,7 @@ pub(crate) fn respond_to_base_attack(
     let budget = live_threat_posed(attacker, Some(attacker_object), entities, rules, interner)
         .wrapping_mul(rules.general.computer_base_defense_response);
     let current_frame = world.session.binary_frame() as i32;
+    let campaign_base_defense = world.session.rule_policy().uses_campaign_base_defense();
 
     if world
         .house_alliances
@@ -459,14 +459,15 @@ pub(crate) fn respond_to_base_attack(
         // `0x00708114`: `[g_GameMode 0x00A8B238] == 0 && this->Is_Armed
         // (vt+0x2AC)` — an armed victim in that game mode defends itself
         // instead of calling for help.
-        || (!world.session.game_mode_nonzero() && is_armed(victim, victim_object, entities, rules, interner))
+        || (campaign_base_defense
+            && is_armed(victim, victim_object, entities, rules, interner))
         || !matches!(
             attacker.category(),
             EntityCategory::Unit | EntityCategory::Infantry
         )
         || victim_object.insignificant
         || !attacker
-            .base_defense_response
+            .seldom.base_defense_response
             .cooldown
             .expired(current_frame)
     {
@@ -527,7 +528,15 @@ pub(crate) fn respond_to_base_attack(
             else {
                 continue;
             };
-            if !candidate_admitted(sim, rules, candidate, candidate_object, victim, attacker_id) {
+            if !candidate_admitted(
+                sim,
+                rules,
+                candidate,
+                candidate_object,
+                victim,
+                attacker_id,
+                campaign_base_defense,
+            ) {
                 continue;
             }
 
@@ -594,10 +603,14 @@ pub(crate) fn respond_to_base_attack(
                     &sim.interner,
                 ),
                 //4D985F/4D986E read virtual+38C=70EFE0, the retained
-                // type Speed+678. The shared reader conversion supplies its
-                // integer budget; Foot4DB1A0's live fractions are a different
-                // getter and do not enter this score.
-                speed_leptons_per_frame: ra2_speed_to_leptons_per_frame(candidate_object.speed),
+                // type Speed+678, which a Tiberian Sun limpet lowers
+                // (`sim::limpet::max_speed`). The shared reader conversion
+                // supplies its integer budget; Foot4DB1A0's live fractions
+                // are a different getter and do not enter this score.
+                speed_leptons_per_frame: crate::sim::limpet::max_speed(
+                    candidate,
+                    ra2_speed_to_leptons_per_frame(candidate_object.speed),
+                ),
                 current_coord: [current_coord.x, current_coord.y, current_coord.z],
                 attacker_coord: Some(attacker_coord),
                 primary_range_leptons: primary_range_leptons(
@@ -627,7 +640,7 @@ pub(crate) fn respond_to_base_attack(
             // Original7085A4/7085A9 evaluate threat first;7085AD then
             // refuses a Unit for a slave victim. Earlier rejection would
             // lose this candidate's shared-Dummy coordinate/layer/zone writes.
-            if class == ResponderClass::Unit && victim.slave.owner().is_some() {
+            if class == ResponderClass::Unit && victim.seldom.slave.owner().is_some() {
                 continue;
             }
             selection.consider(candidate_id, raw_score, class, victim_is_self_anchor);
@@ -637,10 +650,10 @@ pub(crate) fn respond_to_base_attack(
     selection.dispatch(world, rules, victim_id, attacker_id);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[path = "base_defense_response_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[path = "base_defense_response_oracle_tests.rs"]
 mod oracle_tests;

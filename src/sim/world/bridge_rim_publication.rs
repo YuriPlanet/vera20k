@@ -87,8 +87,8 @@ impl HighBridgeRimHost for LiveRim<'_, '_> {
         publication.sim.dispatch_bridge_cell_tag_event(
             cell,
             publication.rules,
-            publication.registry,
-            publication.frame_effects,
+            Some(publication.rules.overlay_registry()),
+            &mut publication.frame_effects,
         );
     }
     // Native rectangles schedule partial tactical redraws. VERA clears color

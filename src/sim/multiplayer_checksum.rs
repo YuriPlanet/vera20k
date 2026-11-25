@@ -31,7 +31,9 @@ const RTTI_TERRAIN: i32 = 0x24;
 /// (`MOV EAX, 0x29; RET`).
 const RTTI_VOXEL_ANIM: i32 = 0x29;
 const RTTI_WAVE: i32 = 0x240;
-const SYNC_EXEMPT_ANIM_ID: i32 = -2;
+/// The id a LAN or online MoveFlash takes (`FootClass::ClickedAction_Cell`,
+/// `0x004D7F42`), which `0x0064DAB0` skips with its Anim RTTI.
+pub(crate) const SYNC_EXEMPT_ANIM_ID: i32 = -2;
 
 /// One ObjectClass entry as seen by a display-layer checksum pass.
 ///
@@ -433,7 +435,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::{
         ChecksumObject, MultiplayerChecksumError, RetailChecksumAccumulator, SYNC_EXEMPT_ANIM_ID,
@@ -682,15 +684,11 @@ mod tests {
         let logic = sim.substrate.allocate_stable_id();
         sim.substrate.anims.insert(test_anim(logic, 7, 100, 110));
         // Submission order is deliberately the reverse of layer order.
+        assert!(sim.substrate.display.submit(top, Some(DisplayLayer::TOP)));
         assert!(
             sim.substrate
                 .display
-                .submit(top, Some(DisplayLayer::TOP), &|_| 0)
-        );
-        assert!(
-            sim.substrate
-                .display
-                .submit(surface, Some(DisplayLayer::SURFACE), &|_| 0)
+                .submit(surface, Some(DisplayLayer::SURFACE))
         );
         sim.register_live_object(logic);
         let mut reference = sim.scenario_rng.clone();
@@ -711,8 +709,7 @@ mod tests {
         let mut sim = Simulation::new();
         assert!(sim.substrate.display.submit(
             92,
-            Some(crate::sim::world::display_layers::DisplayLayer::AIR),
-            &|_| 0
+            Some(crate::sim::world::display_layers::DisplayLayer::AIR)
         ));
 
         assert_eq!(
@@ -737,10 +734,9 @@ mod tests {
             sim.advance_app_frame(
                 &[],
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                None,
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("empty frame completes")
         };
@@ -808,10 +804,9 @@ mod tests {
                 .advance_app_frame(
                     &[],
                     crate::rules::ruleset::RuleSet::empty_for_test(),
-                    None,
                     67,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .expect("the frame completes");
             output.multiplayer_checksum.unwrap().checksum.unwrap().value
@@ -907,9 +902,7 @@ mod tests {
             ParticleSystem::test_fixture(system_id, ParticleSystemTypeId(0), IVec3::new(64, 32, 0));
         system.set_particles_for_test(vec![child]);
         sim.substrate.particle_systems.insert(system);
-        assert!(
-            sim.reveal_particle_system(system_id, crate::rules::ruleset::RuleSet::empty_for_test())
-        );
+        assert!(sim.reveal_particle_system(system_id));
         sim.substrate
             .particle_systems
             .retain_detached_particle(detached);
@@ -917,7 +910,7 @@ mod tests {
             Simulation::reveal_particle(&mut sim.substrate, id);
         }
         let bytes = GameSnapshot::save(&sim, 0, 0, "particles", 0);
-        let rng = sim.scenario_rng.clone();
+        let rng = (*sim.scenario_rng).clone();
         let mut reference = rng.clone();
 
         let frame = sim.compute_retail_multiplayer_checksum().unwrap();
@@ -935,7 +928,7 @@ mod tests {
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
         restored.restore_after_snapshot_load().unwrap();
         // The loader reseeds Scenario; continue the saved stream.
-        restored.scenario_rng = rng;
+        *restored.scenario_rng = rng;
         assert_eq!(restored.compute_retail_multiplayer_checksum(), Ok(frame));
     }
 
@@ -963,10 +956,9 @@ mod tests {
             .advance_app_frame(
                 &[],
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                None,
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("the frame completes");
 

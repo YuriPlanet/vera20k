@@ -1,36 +1,35 @@
 //! Final-window Performance Stats panel, hidden at every launch until
-//! Ctrl+Alt+F or the Options page's Performance Stats box shows it, and the
-//! replay/recovery status line below it.
+//! Ctrl+Alt+F or the Options page's Performance Stats box shows it.
 //!
 //! The panel reads like the game's message line: rows of text on black
 //! boxes, at the top left of the battlefield at the match zoom, or of the
-//! window elsewhere. While it shows, the status line and the match's message
-//! list start below it. Its rows are in [`panel`]: rates and units, the
+//! window elsewhere. While it shows, the match's message list starts below
+//! it. Its rows are in [`panel`]: rates and units, the
 //! engine areas that took the most of the last second, the load on each core
 //! and the GPU's share of each frame ([`crate::render::gpu_timer`], which
-//! times the GPU only while the panel shows). The rows and the status line
-//! are localized text ([`crate::i18n`]), so both draw with the process font, which draws
+//! times the GPU only while the panel shows). The rows are localized text
+//! ([`crate::i18n`]), so they draw with the process font, which draws
 //! GAME.FNT's style without GAME.FNT until it loads ([`BitFont::without_fnt`]).
-//! Both are independent of tactical cameras,
-//! optional dev overlays, and shell/offscreen composition.
+//! The panel is independent of tactical cameras,
+//! optional dev overlays, and shell/offscreen composition. It is a
+//! [`vera20k_gui::Gui`] tree ([`view`]).
 
 mod panel;
+mod view;
 
 use crate::util::time::Instant;
-use std::sync::Mutex;
+use std::cell::RefCell;
 
-use crate::render::batch::{
-    BatchRenderer, BatchTexture, CameraUniform, InstanceBufferPool, SpriteInstance,
-};
+use crate::render::batch::{BatchRenderer, BatchTexture, CameraUniform, InstanceBufferPool};
 use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;
+use crate::render::hud_paint::Material;
 
 use super::state::FrameTimer;
 use crate::app::match_runtime::sim_host::SimHost;
 use panel::{DOT, GREEN, HOT, PanelStats, Part, TRACK, WARM};
+use view::PanelView;
 
-/// The status line's top when the panel is hidden.
-const STATUS_TOP: f32 = 8.0;
 /// The gap between the panel and the battlefield's or window's top and left
 /// edges, and below it to the match's messages, in font pixels.
 const EDGE: f32 = 4.0;
@@ -41,26 +40,37 @@ const BAR_GAP: f32 = 2.0;
 const BAR_HEIGHT: f32 = 12.0;
 const BAR_DROP: f32 = 2.0;
 const ELLIPSIS: &str = "...";
+const POOL_KEY: &str = "window_fps";
 
 pub(crate) struct PerformanceOverlay {
     visible: bool,
+    /// The frame owner keeps the GPU timer running while it probes the first
+    /// match frames of a GPU that draws from the system's memory
+    /// (`presentation::render::FramePassLog`), panel or no panel.
+    startup_probe: bool,
+    /// Whether the panel also draws its Threads and Ticks rows.
+    thread_rows: bool,
     /// One white texel, tinted into the row boxes and the core bars.
     white: BatchTexture,
     camera_buffer: wgpu::Buffer,
     camera_group: wgpu::BindGroup,
-    frame: Mutex<OverlayFrame>,
+    /// Stepped through `&self` because the frame's last pass encodes the
+    /// panel beside `match_panel(state)`, which reads the whole app state, and
+    /// the startup splash lends it beside the other renderer parts. Main
+    /// thread only.
+    frame: RefCell<OverlayFrame>,
 }
 
 struct OverlayFrame {
     timer: FrameTimer,
     pool: InstanceBufferPool,
+    view: PanelView,
     size: [u32; 2],
-    depth: wgpu::TextureView,
+    /// The panel's depth attachment, made when it first shows (`draw`).
+    depth: Option<wgpu::TextureView>,
     logged_first_frame: bool,
     simulation_rate: SimulationRate,
     stats: PanelStats,
-    /// Where the status line starts: below the panel while it shows.
-    status_top: f32,
     /// In a match, how far down the battlefield the panel reaches: see
     /// [`PerformanceOverlay::message_top`]. 0 elsewhere.
     message_top: i32,
@@ -164,10 +174,12 @@ impl PanelPlacement {
     }
 }
 
-/// A match the panel reads its unit count and Most CPU areas from.
+/// A match the panel reads its unit count, Most CPU areas and tick counts
+/// from.
 pub(crate) struct MatchPanel<'a> {
     pub(crate) placement: PanelPlacement,
     pub(crate) host: &'a SimHost,
+    pub(crate) loop_counts: crate::app::match_runtime::frame_pacer::LoopCounts,
 }
 
 /// The panel over the battlefield of the match on screen, if one is.
@@ -177,18 +189,42 @@ pub(crate) fn match_panel(state: &crate::app::AppState) -> Option<MatchPanel<'_>
     }
     // The battlefield is the frame beside the sidebar column and the command
     // bar's strip: its top left in the original, wherever a layout puts it.
-    let (x, y, width, _) = crate::app::input::camera::tactical_viewport_px(state);
-    let (scale, (left, top)) = state.tactical_zoom().map_or((1.0, (0, 0)), |zoom| {
+    let (x, y, width, _) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
+    let (scale, origin) = state.tactical_zoom().map_or((1.0, (0, 0)), |zoom| {
         (zoom.percent as f32 / 100.0, zoom.origin)
     });
+    // Android: the message lane starts at the viewport plus its own 3 px inset,
+    // and that line clears the rounded corner and the cutout. The panel takes
+    // the same line, so its left edge meets the lane's instead of hugging the
+    // arc.
+    #[cfg(target_os = "android")]
+    let (left, top) = {
+        let window = state.platform.window.inner_size();
+        let (_, dy) = crate::util::display_insets::frame_offset(
+            (state.render_width(), state.render_height()),
+            (window.width, window.height),
+        );
+        // The lane holds battlefield-local units the battlefield scales by
+        // `scale`; the panel's placement is in window pixels and adds its own
+        // `EDGE` inside the placement.
+        let lane = state.match_state.match_presentation.message_list.x() as f32;
+        (lane * scale - EDGE * scale, y as f32 * scale + dy as f32)
+    };
+    #[cfg(not(target_os = "android"))]
+    let (left, top) = (
+        origin.0 as f32 + x as f32 * scale,
+        origin.1 as f32 + y as f32 * scale,
+    );
     Some(MatchPanel {
-        placement: PanelPlacement::top_left(
-            left as f32 + x as f32 * scale,
-            top as f32 + y as f32 * scale,
-            width as f32 * scale,
-            scale,
-        ),
+        placement: PanelPlacement::top_left(left, top, width as f32 * scale, scale),
         host: &state.match_state.sim_runtime,
+        loop_counts: state.platform.frame_pacer.loop_counts(),
     })
 }
 
@@ -197,18 +233,20 @@ impl PerformanceOverlay {
         let (camera_buffer, camera_group) = batch.create_ui_camera(&gpu.device);
         Self {
             visible: false,
+            startup_probe: false,
+            thread_rows: false,
             white: batch.create_texture(gpu, &[255; 4], 1, 1),
             camera_buffer,
             camera_group,
-            frame: Mutex::new(OverlayFrame {
+            frame: RefCell::new(OverlayFrame {
                 timer: FrameTimer::new(),
                 pool: InstanceBufferPool::new(),
+                view: PanelView::new(),
                 size: [gpu.config.width, gpu.config.height],
-                depth: gpu.create_depth_texture(),
+                depth: None,
                 logged_first_frame: false,
                 simulation_rate: SimulationRate::default(),
                 stats: PanelStats::default(),
-                status_top: STATUS_TOP,
                 message_top: 0,
             }),
         }
@@ -217,18 +255,14 @@ impl PerformanceOverlay {
     /// Count a presented frame's Logic frames. `held` zeroes the rate.
     fn observe_simulation_frame(&self, binary_frame: u32, now_ms: u32, held: bool) {
         self.frame
-            .lock()
-            .expect("performance overlay frame lock")
+            .borrow_mut()
             .simulation_rate
             .observe(binary_frame, now_ms, held);
     }
 
     /// Forget the rate: a match ended or a new one is loading.
     pub(crate) fn clear_simulation_rate(&self) {
-        self.frame
-            .lock()
-            .expect("performance overlay frame lock")
-            .simulation_rate = SimulationRate::default();
+        self.frame.borrow_mut().simulation_rate = SimulationRate::default();
     }
 
     /// One finished in-game render's phase spans, for the Most CPU row.
@@ -237,12 +271,13 @@ impl PerformanceOverlay {
         phases: crate::app::presentation::render::RenderPhases,
     ) {
         if self.visible {
-            self.frame
-                .lock()
-                .expect("performance overlay frame lock")
-                .stats
-                .record_render(phases);
+            self.frame.borrow_mut().stats.record_render(phases);
         }
+    }
+
+    /// Keep the GPU timer running for the frame owner's startup probe.
+    pub(crate) fn set_startup_probe(&mut self, on: bool) {
+        self.startup_probe = on;
     }
 
     pub(crate) fn is_visible(&self) -> bool {
@@ -251,13 +286,7 @@ impl PerformanceOverlay {
 
     /// Whether the shown panel has new figures for the next draw.
     pub(crate) fn readings_due(&self, now: Instant) -> bool {
-        self.visible
-            && self
-                .frame
-                .lock()
-                .expect("performance overlay frame lock")
-                .stats
-                .due(now)
+        self.visible && self.frame.borrow_mut().stats.due(now)
     }
 
     /// The Options page's Performance Stats box.
@@ -271,6 +300,14 @@ impl PerformanceOverlay {
         self.visible
     }
 
+    /// Ctrl+Alt+G: show or hide the panel's Threads and Ticks rows; returns
+    /// whether they are now shown. They draw with the panel, and like it
+    /// start hidden at every launch.
+    pub(crate) fn toggle_thread_rows(&mut self) -> bool {
+        self.thread_rows = !self.thread_rows;
+        self.thread_rows
+    }
+
     /// Where the match's message list starts, in frame pixels from the
     /// battlefield's top: below the shown panel, from its last drawn frame,
     /// and 0 while it is hidden.
@@ -278,10 +315,7 @@ impl PerformanceOverlay {
         if !self.visible {
             return 0;
         }
-        self.frame
-            .lock()
-            .expect("performance overlay frame lock")
-            .message_top
+        self.frame.borrow_mut().message_top
     }
 
     /// Call exactly once after all content has reached the acquired window
@@ -298,26 +332,37 @@ impl PerformanceOverlay {
         font: &BitFont,
         in_match: Option<MatchPanel<'_>>,
     ) {
-        let mut frame = self.frame.lock().expect("performance overlay frame lock");
+        let mut frame = self.frame.borrow_mut();
         let now = Instant::now();
         // Keep measuring while hidden, so the first shown frame has a rate.
         frame.timer.sample(now);
-        gpu.timer.set_active(self.visible);
+        gpu.timer
+            .set_active(self.visible || self.startup_probe || cfg!(feature = "perf"));
         if !self.visible {
             frame.stats = PanelStats::default();
-            frame.status_top = STATUS_TOP;
             frame.message_top = 0;
             return;
         }
         let size = [destination.width(), destination.height()];
         let over_battlefield = in_match.is_some();
-        let (placement, host) = match in_match {
-            Some(panel) => (panel.placement, Some(panel.host)),
-            // Loading and menu screens: the window's own pixels.
-            None => (
-                PanelPlacement::top_left(0.0, 0.0, size[0] as f32, 1.0),
-                None,
-            ),
+        let (placement, source) = match in_match {
+            Some(panel) => (panel.placement, Some((panel.host, panel.loop_counts))),
+            // Loading and menu screens: the window's own pixels, at the same
+            // shell scale a match's battlefield uses, moved off the screen's
+            // rounded corner and cutout.
+            None => {
+                #[cfg(target_os = "android")]
+                let (dx, dy) = {
+                    let insets = crate::util::display_insets::get();
+                    (insets.left as f32, insets.top as f32)
+                };
+                #[cfg(not(target_os = "android"))]
+                let (dx, dy) = (0.0, 0.0);
+                let scale =
+                    crate::ui::shell::geom::shell_scale_for_window(size[0] as i32, size[1] as i32)
+                        .factor();
+                (PanelPlacement::top_left(dx, dy, size[0] as f32, scale), None)
+            }
         };
         if frame.stats.due(now) {
             let frame_ms = frame.timer.frame_ms_mean();
@@ -325,101 +370,31 @@ impl PerformanceOverlay {
             let gpu_ms = gpu.timer.take_frame_ms();
             frame
                 .stats
-                .close_window(now, frame_ms, tps, host.and_then(match_sample), gpu_ms);
+                .close_window(now, frame_ms, tps, source.and_then(match_sample), gpu_ms);
         }
-        let mut rows = panel::rows(&frame.stats.shown);
-        let mut instances = Vec::new();
-        let mut glyphs = Vec::new();
-        let bottom = layout_rows(font, &mut rows, placement, &mut instances, &mut glyphs);
-        frame.status_top = bottom + 4.0;
+        let frame = &mut *frame;
+        let mut rows = panel::rows(&frame.stats.shown, self.thread_rows);
+        let bottom = layout_rows(font, &mut rows, placement, &mut frame.view);
         frame.message_top = if over_battlefield {
             placement.battlefield_rows(bottom)
         } else {
             0
         };
-        let solid = instances.len() as u32;
-        instances.append(&mut glyphs);
+        frame.view.paint(font);
         if !frame.logged_first_frame {
             log::info!(
                 "Performance panel: final window surface {}x{}, {} quads",
                 size[0],
                 size[1],
-                instances.len()
+                frame.view.painted().instances().len()
             );
             frame.logged_first_frame = true;
         }
-        let total = instances.len() as u32;
-        self.draw(
-            gpu,
-            batch,
-            encoder,
-            destination,
-            &mut frame,
-            "window_fps",
-            &instances,
-            &[
-                (&self.white, 0, solid),
-                (font.atlas(), solid, total - solid),
-            ],
-        );
+        self.draw(gpu, batch, encoder, destination, frame, font);
     }
 
-    /// Persistent replay/recovery facts share the final-window camera. `font`
-    /// is the process font, which covers localized text.
-    /// This call neither samples nor changes the performance panel's visibility.
-    pub(crate) fn encode_status(
-        &self,
-        gpu: &GpuContext,
-        batch: &BatchRenderer,
-        encoder: &mut wgpu::CommandEncoder,
-        destination: &wgpu::Texture,
-        font: &BitFont,
-        text: &str,
-    ) {
-        let mut frame = self.frame.lock().expect("window status overlay frame lock");
-        let top = if self.visible {
-            frame.status_top
-        } else {
-            STATUS_TOP
-        };
-        let mut instances = Vec::with_capacity(text.len() * 5);
-        let layout = font.wrap_layout(text, destination.width().saturating_sub(16));
-        let line_height = font.cell_height() + 4.0;
-        for (line_index, line) in layout.lines.iter().enumerate() {
-            for (dx, dy, tint) in [
-                (-1.0, 0.0, [0.0; 3]),
-                (1.0, 0.0, [0.0; 3]),
-                (0.0, -1.0, [0.0; 3]),
-                (0.0, 1.0, [0.0; 3]),
-                (0.0, 0.0, [1.0, 1.0, 0.25]),
-            ] {
-                instances.extend(font.build_text(
-                    &text[line.start_byte..line.end_byte],
-                    8.0 + dx,
-                    top + line_index as f32 * line_height + dy,
-                    1.0,
-                    0.0,
-                    tint,
-                    [0.0; 2],
-                ));
-            }
-        }
-        let count = instances.len() as u32;
-        self.draw(
-            gpu,
-            batch,
-            encoder,
-            destination,
-            &mut frame,
-            "window_status",
-            &instances,
-            &[(font.atlas(), 0, count)],
-        );
-    }
-
-    /// Upload `instances` and draw each `(texture, start, count)` range of
-    /// them in order over the window surface.
-    #[allow(clippy::too_many_arguments)]
+    /// Upload the painted panel and draw its runs in order over the window
+    /// surface.
     fn draw(
         &self,
         gpu: &GpuContext,
@@ -427,15 +402,18 @@ impl PerformanceOverlay {
         encoder: &mut wgpu::CommandEncoder,
         destination: &wgpu::Texture,
         frame: &mut OverlayFrame,
-        key: &'static str,
-        instances: &[SpriteInstance],
-        ranges: &[(&BatchTexture, u32, u32)],
+        font: &BitFont,
     ) {
         let size = [destination.width(), destination.height()];
         if frame.size != size {
-            frame.depth = gpu.create_depth_texture();
+            frame.depth = None;
             frame.size = size;
         }
+        // The passthrough pipeline carries a depth state, so its pass needs
+        // the attachment; a panel nobody shows holds none.
+        let depth = frame
+            .depth
+            .get_or_insert_with(|| gpu.create_depth_texture());
         let camera = CameraUniform {
             screen_size: [size[0] as f32, size[1] as f32],
             camera_pos: [0.0; 2],
@@ -444,11 +422,11 @@ impl PerformanceOverlay {
             world_height: 1.0,
             _pad: 0.0,
             native_z_origin_y: 0.0,
-            _native_z_pad: 0.0,
+            native_z_pan: 0.0,
         };
         gpu.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
-        frame.pool.upload(gpu, key, instances);
+        frame.pool.upload(gpu, POOL_KEY, frame.view.painted().instances());
         let view = destination.create_view(&wgpu::TextureViewDescriptor::default());
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Window FPS"),
@@ -462,7 +440,7 @@ impl PerformanceOverlay {
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &frame.depth,
+                view: depth,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: wgpu::StoreOp::Discard,
@@ -474,16 +452,28 @@ impl PerformanceOverlay {
             multiview_mask: None,
         });
         // The passthrough pipeline compares Always and writes no depth, so
-        // the ranges paint in order: boxes and bars under the text.
-        if let Some((buffer, _)) = frame.pool.get(key) {
-            for &(texture, start, count) in ranges {
+        // the runs paint in order: boxes and bars under the text.
+        if let Some((buffer, _)) = frame.pool.get(POOL_KEY) {
+            for (material, range) in frame.view.painted().runs() {
+                let texture = match material {
+                    Material::Solid => &self.white,
+                    Material::Glyphs => font.atlas(),
+                    // The panel has no pictures, nor any shell skin.
+                    Material::Pictures
+                    | Material::Controls
+                    | Material::Side
+                    | Material::Column
+                    | Material::Icons
+                    | Material::PageArt
+                    | Material::Popup => continue,
+                };
                 batch.draw_passthrough_range_bound(
                     &mut pass,
                     texture,
                     buffer,
                     &self.camera_group,
-                    start,
-                    count,
+                    range.start,
+                    range.len() as u32,
                 );
             }
         }
@@ -494,32 +484,34 @@ impl PerformanceOverlay {
 /// buildings, counted from the frame drawing reads: while a tick runs on the
 /// simulation thread, the world [`SimHost::runtime`] lends for reading is
 /// drawing's copy, which holds no objects (`Simulation::presentation_copy`).
-fn match_sample(host: &SimHost) -> Option<panel::MatchSample> {
+fn match_sample(
+    (host, loop_counts): (&SimHost, crate::app::match_runtime::frame_pacer::LoopCounts),
+) -> Option<panel::MatchSample> {
     let frame = host.frame()?;
     Some(panel::MatchSample {
         units: frame.objects().len() - frame.structures().len(),
         profile: host.runtime()?.simulation.frame_profile().totals_ns(),
+        loop_counts,
     })
 }
 
-/// Lay `rows` out down from `placement.top` in reading order, each on its own
-/// black box as the game's message line draws text, left-aligned at
-/// `placement.left`, and return the last box's bottom edge. Box and bar quads
-/// go to `solid`, text to `glyphs`. A row too wide narrows as long
-/// translations do in VERA's boxes, and [`fit_row`] shortens it only past
-/// the tightest squeeze.
+/// Lay `rows` out down from `placement.top` in reading order into `view`,
+/// each on its own black box as the game's message line draws text,
+/// left-aligned at `placement.left`, and return the last box's bottom edge. A
+/// row too wide narrows as long translations do in VERA's boxes, and
+/// [`fit_row`] shortens it only past the tightest squeeze.
 fn layout_rows(
     font: &BitFont,
     rows: &mut [Vec<Part>],
     placement: PanelPlacement,
-    solid: &mut Vec<SpriteInstance>,
-    glyphs: &mut Vec<SpriteInstance>,
+    view: &mut PanelView,
 ) -> f32 {
     let scale = placement.scale;
     let row_height = (font.cell_height() + 2.0) * scale;
     let left = placement.left.round();
     let mut box_top = placement.top.round();
     let max_width = placement.max_width / scale;
+    view.begin(scale);
     for row in rows.iter_mut() {
         let fit = font
             .first_fit(|font| row_width(font, row) <= max_width)
@@ -527,29 +519,23 @@ fn layout_rows(
         font.fitted(fit, |font| {
             fit_row(font, row, max_width);
             let width = row_width(font, row) * scale + 2.0 * scale;
-            solid.push(quad([left, box_top], [width, row_height], [0; 3]));
+            view.solid([left, box_top], [width, row_height], [0; 3]);
             let text_top = box_top + scale;
             let mut x = left + scale;
             for part in row.iter() {
                 match part {
                     Part::Text(text, rgb) => {
-                        glyphs.extend(font.build_text(
-                            text,
-                            x,
-                            text_top,
-                            scale,
-                            0.0,
-                            tint(*rgb),
-                            [0.0; 2],
-                        ));
-                        x += font.text_width(text) as f32 * scale;
+                        let width = font.text_width(text) as f32 * scale;
+                        let size = [width, font.cell_height() * scale];
+                        view.text([x, text_top], size, text, *rgb, fit);
+                        x += width;
                     }
                     Part::Bars(loads) => {
                         let bar_top = text_top + BAR_DROP * scale;
                         for (index, &load) in loads.iter().enumerate() {
                             let bar_x = x + index as f32 * (BAR_WIDTH + BAR_GAP) * scale;
                             let size = [BAR_WIDTH * scale, BAR_HEIGHT * scale];
-                            solid.push(quad([bar_x, bar_top], size, TRACK));
+                            view.solid([bar_x, bar_top], size, TRACK);
                             let filled = (BAR_HEIGHT * load.clamp(0.0, 100.0) / 100.0)
                                 .round()
                                 .max(1.0);
@@ -560,11 +546,11 @@ fn layout_rows(
                             } else {
                                 GREEN
                             };
-                            solid.push(quad(
+                            view.solid(
                                 [bar_x, bar_top + (BAR_HEIGHT - filled) * scale],
                                 [size[0], filled * scale],
                                 color,
-                            ));
+                            );
                         }
                         x += bars_width(loads.len()) * scale;
                     }
@@ -613,40 +599,28 @@ fn fit_row(font: &BitFont, row: &mut [Part], max_width: f32) {
         return;
     }
     crate::render::text_audit::cut_off(text, max_width as u32);
-    let mut keep = max_width - others - font.text_width(ELLIPSIS) as f32;
-    let mut buffer = [0u8; 4];
-    let end = text
-        .char_indices()
-        .find(|&(_, ch)| {
-            keep -= font.text_width(ch.encode_utf8(&mut buffer)) as f32;
-            keep < 0.0
-        })
-        .map_or(text.len(), |(index, _)| index);
-    text.truncate(end);
-    text.push_str(ELLIPSIS);
+    *text = font.truncate_with_ellipsis(text, (max_width - others).max(0.0) as u32, ELLIPSIS);
 }
 
-fn quad(position: [f32; 2], size: [f32; 2], rgb: [u8; 3]) -> SpriteInstance {
-    SpriteInstance {
-        position,
-        size,
-        uv_origin: [0.0; 2],
-        uv_size: [1.0; 2],
-        depth: 0.0,
-        tint: tint(rgb),
-        alpha: 1.0,
-        ..Default::default()
-    }
-}
-
-/// The batch shader writes tints straight to the 8-bit surface.
-fn tint(rgb: [u8; 3]) -> [f32; 3] {
-    rgb.map(|channel| f32::from(channel) / 255.0)
-}
-
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
+    use crate::render::batch::SpriteInstance;
+
+    /// Lay out and paint as `encode` does: the bottom, and the solid quads.
+    fn painted(
+        font: &BitFont,
+        rows: &mut [Vec<Part>],
+        placement: PanelPlacement,
+    ) -> (f32, Vec<SpriteInstance>) {
+        let mut view = PanelView::new();
+        let bottom = layout_rows(font, rows, placement, &mut view);
+        let paint = view.paint(font);
+        let (material, solids) = paint.runs()[0].clone();
+        assert_eq!(material, Material::Solid);
+        let solids = solids.start as usize..solids.end as usize;
+        (bottom, paint.instances()[solids].to_vec())
+    }
 
     /// The panel counts every object but the buildings, also while a tick
     /// runs on the simulation thread: what the host lends for reading then
@@ -683,7 +657,8 @@ mod tests {
         }
         let mut host = SimHost::default();
         host.install(Some(SimRuntime::from_simulation(sim)));
-        let units = |host: &SimHost| match_sample(host).map(|sample| sample.units);
+        let units =
+            |host: &SimHost| match_sample((host, Default::default())).map(|sample| sample.units);
         assert_eq!(units(&host), Some(2));
         let (go, wait) = std::sync::mpsc::channel::<()>();
         assert!(host.lend(Box::new(move |_| {
@@ -752,8 +727,7 @@ mod tests {
             scale: 1.0,
             max_width: natural * 0.9,
         };
-        let (mut boxes, mut glyphs) = (Vec::new(), Vec::new());
-        layout_rows(&font, &mut rows, placement, &mut boxes, &mut glyphs);
+        let (_, boxes) = painted(&font, &mut rows, placement);
         assert_eq!(rows[0][0], Part::Text(text.to_owned(), GREEN));
         // The box holds the narrowed text and its 1-pixel margins.
         assert!(
@@ -772,8 +746,7 @@ mod tests {
         ];
         // A 400-pixel battlefield at (100, 50), zoomed 2x.
         let placement = PanelPlacement::top_left(100.0, 50.0, 400.0, 2.0);
-        let (mut boxes, mut glyphs) = (Vec::new(), Vec::new());
-        let bottom = layout_rows(&font, &mut rows, placement, &mut boxes, &mut glyphs);
+        let (bottom, boxes) = painted(&font, &mut rows, placement);
         // EDGE font pixels in from the top and left, the first row on top.
         let row_height = (font.cell_height() + 2.0) * 2.0;
         for (index, quad) in boxes.iter().enumerate() {

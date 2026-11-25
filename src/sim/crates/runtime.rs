@@ -25,6 +25,7 @@
 
 use crate::rules::crate_rules::CrateRules;
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::AuthoredCratePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::overlay_mark_host::RuntimeOverlayError;
 use crate::sim::world::{FrameEffects, Simulation};
@@ -60,7 +61,7 @@ pub(crate) struct CrateRegeneration {
 /// `0x004A1B04..0x004A1BDC` are screen-space presentation; the sim-visible
 /// effect is exactly `CellClass+0x44 = -1` and `CellClass+0x11E = 0`, published
 /// through the OverlayGrid dirty receipt.
-pub(crate) fn remove_crate_overlay_from_cell(
+fn remove_crate_overlay_from_cell(
     sim: &mut Simulation,
     rules: &RuleSet,
     registry: &OverlayTypeRegistry,
@@ -103,32 +104,36 @@ fn clear_crate_overlay_fields(sim: &mut Simulation, cell_ref: CrateMarkCellRef) 
 /// replacement generation and the selected effect. Native comparisons:
 /// `tools/spatial_oracle/crate_pickup.json` (removal-reaching rows).
 ///
-/// Multiplayer clears only the first occupied slot with this coordinate. A
+/// Stock multiplayer clears only the first occupied slot with this coordinate. A
 /// missing slot leaves even a visible crate untouched. Solo instead looks up
 /// the cell directly, without the In_Bounds diamond test, and accepts any
 /// OverlayType whose Crate flag is set; it never modifies runtime slots.
+/// A scenario that also keeps authored crates can clear an unregistered one.
 pub(super) fn remove_pickup_crate(
     sim: &mut Simulation,
     rules: &RuleSet,
     registry: &OverlayTypeRegistry,
     cell: (i16, i16),
 ) -> bool {
-    if sim.session.game_mode_nonzero() {
-        let Some(index) = sim
-            .crate_authority
+    let policy = sim.session.rule_policy();
+    if policy.uses_match_crates() {
+        if let Some(index) = sim
+            .crate_authority()
             .slots()
             .iter()
             .position(|slot| !slot.is_empty() && (slot.cell_x, slot.cell_y) == cell)
-        else {
+        {
+            return clear_crate_slot(
+                sim,
+                rules,
+                registry,
+                index,
+                sim.session.binary_frame() as i32,
+            );
+        }
+        if policy.crates() == AuthoredCratePolicy::Skip {
             return false;
-        };
-        return clear_crate_slot(
-            sim,
-            rules,
-            registry,
-            index,
-            sim.session.binary_frame() as i32,
-        );
+        }
     }
     let cell_ref = resolve_crate_mark_cell(sim, cell);
     let overlay_id = match &cell_ref {
@@ -172,19 +177,19 @@ fn is_live_crate_image(rules: &CrateRules, registry: &OverlayTypeRegistry, overl
 /// live: an unexpired timer keeps `duration - elapsed`, an already-expired one
 /// is zeroed at `0x004A17AB`, and a slot that is already paused at `start == -1`
 /// keeps its stored duration untouched.
-pub(crate) fn clear_crate_slot(
+fn clear_crate_slot(
     sim: &mut Simulation,
     rules: &RuleSet,
     registry: &OverlayTypeRegistry,
     slot_index: usize,
     current_frame: i32,
 ) -> bool {
-    let slot = sim.crate_authority.slots()[slot_index];
+    let slot = sim.crate_authority().slots()[slot_index];
     if slot.is_empty() {
         return false;
     }
     let _ = remove_crate_overlay_from_cell(sim, rules, registry, (slot.cell_x, slot.cell_y));
-    sim.crate_authority
+    sim.crate_slot_updates()
         .clear_and_preserve_timer(slot_index, current_frame);
     true
 }
@@ -200,17 +205,17 @@ pub(crate) fn tick_crate_regeneration(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: &OverlayTypeRegistry,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<CrateRegeneration, RuntimeOverlayError> {
     let mut result = CrateRegeneration::default();
-    if !sim.session.game_mode_nonzero() || !sim.session.game_options().crates {
+    if !sim.session.rule_policy().uses_match_crates() || !sim.session.game_options().crates {
         return Ok(result);
     }
     let current_frame = sim.session.binary_frame() as i32;
     for index in 0..CRATE_SLOT_CAPACITY {
         // Reload the live slot: an earlier expiry in this same pass may have
         // reinstalled a crate at or below this index.
-        let slot = sim.crate_authority.slots()[index];
+        let slot = sim.crate_authority().slots()[index];
         // `0x0056BC1C..0x0056BC35`: a paused slot expires once its stored
         // time is zero, and then on every tick until a crate takes it.
         if slot.is_empty() || !slot.timer().expired(current_frame) {
@@ -236,13 +241,13 @@ pub(crate) fn tick_crate_regeneration(
     Ok(result)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
 
     use crate::sim::crates::state::CrateSlot;
 
-    use super::super::tests::{crate_cells, crate_registry, crate_ruleset, sim_with_grid};
+    use super::super::tests::{crate_cells, crate_ruleset, sim_with_grid};
 
     #[test]
     fn saved_game_crate_reset_retains_removed_land_without_resetting_snapshots() {
@@ -294,7 +299,7 @@ mod tests {
             cell_x: 15,
             cell_y: 15,
         };
-        *sim.crate_authority.slot_mut_for_test(0) = slot;
+        *sim.crate_authority_mut_for_test().slot_mut_for_test(0) = slot;
         assert!(sim.rebuild_dynamic_navigation(&rules));
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "internal", 0);
@@ -432,6 +437,66 @@ mod tests {
         assert_eq!(next.cell(15, 15).unwrap().land_type, 7);
     }
 
+    /// Ares skips CellLoad's crate clear (hook `0x00483BF1`) and Map
+    /// no-init's slot reset (`0x00565215`): a loaded Ares game keeps both.
+    #[test]
+    fn user_load_keeps_crates_only_in_an_ares_game() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::sim::snapshot::GameSnapshot;
+
+        let slot = CrateSlot {
+            start_frame: 30,
+            aux: 0x1234,
+            duration: 80,
+            cell_x: 15,
+            cell_y: 15,
+        };
+        for ares in [false, true] {
+            let _way = crate::rules::ares_switch::read_ares_way(ares);
+            let rules = crate_ruleset(if ares {
+                "[General]\nTogglePowerAllowed=yes\n"
+            } else {
+                ""
+            });
+            assert_eq!(rules.ares(), ares);
+            let registry =
+                OverlayTypeRegistry::from_ini(&IniFile::from_str("[OverlayTypes]\n"), None);
+            let mut sim = sim_with_grid(17);
+            let mut baseline = sim.resolved_terrain.take().unwrap();
+            baseline.set_land_speed_rules_for_test(&rules.terrain_rules);
+            sim.install_resolved_terrain_for_new_map(baseline.clone());
+            sim.overlay_grid
+                .as_mut()
+                .unwrap()
+                .place_overlay(15, 15, 179, 3);
+            *sim.crate_authority_mut_for_test().slot_mut_for_test(0) = slot;
+            assert!(sim.rebuild_dynamic_navigation(&rules));
+
+            let mut saved = baseline.capture_saved_template().unwrap();
+            saved
+                .capture_live_cell_land(sim.resolved_terrain().unwrap())
+                .unwrap();
+            let land = saved.user_load_land_values().unwrap();
+            let bytes = GameSnapshot::save(&sim, 0, 0, "user", 0);
+            let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
+            loaded.restore_after_snapshot_load().unwrap();
+            loaded.rebuild_caches_after_load(baseline, Default::default(), &rules);
+            loaded
+                .restore_map_authority_after_user_load(&rules, &registry, None, land)
+                .unwrap();
+
+            let cell = loaded.overlay_grid().unwrap().cell(15, 15);
+            let kept = loaded.crate_authority().slots()[0];
+            if ares {
+                assert_eq!((cell.overlay_id, cell.overlay_data), (Some(179), 3));
+                assert_eq!(kept, slot);
+            } else {
+                assert_eq!((cell.overlay_id, cell.overlay_data), (None, 0));
+                assert_eq!((kept.cell_x, kept.cell_y), (0, 0));
+            }
+        }
+    }
+
     #[test]
     fn pickup_removal_matches_original_cell_pickup_outputs() {
         // Compare only rows that reach Map56C020; guard/selection/effect
@@ -468,7 +533,7 @@ mod tests {
             if input["different_image"] == true {
                 rules.crate_rules.wood_crate_img = Some("SILVER".into());
             }
-            let registry = crate_registry();
+            let registry = rules.overlay_registry();
             let wood = registry.id_for_name("WOOD").unwrap();
             sim.overlay_grid.as_mut().unwrap().place_overlay(
                 cell.0 as u16,
@@ -483,7 +548,7 @@ mod tests {
                 } else {
                     input["duplicate_slot"] == true
                 };
-                *sim.crate_authority.slot_mut_for_test(index) = if occupied {
+                *sim.crate_authority_mut_for_test().slot_mut_for_test(index) = if occupied {
                     CrateSlot {
                         start_frame: start,
                         aux,
@@ -498,7 +563,7 @@ mod tests {
                     }
                 };
             }
-            let removed = remove_pickup_crate(&mut sim, &rules, &registry, cell);
+            let removed = remove_pickup_crate(&mut sim, &rules, registry, cell);
             assert_eq!(
                 serde_json::json!([u8::from(removed)]),
                 row["removal_returns"],
@@ -520,7 +585,7 @@ mod tests {
                 "{name}"
             );
             for (index, key) in [(0, "slot"), (1, "second_slot")] {
-                let slot = sim.crate_authority.slots()[index];
+                let slot = sim.crate_authority().slots()[index];
                 assert_eq!(
                     serde_json::json!([
                         slot.start_frame,
@@ -558,8 +623,8 @@ mod tests {
     fn crate_slot_clear_rebases_live_timer_and_pauses() {
         let mut sim = sim_with_grid(0x51);
         let rules = crate_ruleset("");
-        let registry = crate_registry();
-        *sim.crate_authority.slot_mut_for_test(2) = CrateSlot {
+        let registry = rules.overlay_registry();
+        *sim.crate_authority_mut_for_test().slot_mut_for_test(2) = CrateSlot {
             start_frame: 100,
             aux: 0x1234,
             duration: 500,
@@ -567,9 +632,9 @@ mod tests {
             cell_y: 11,
         };
 
-        assert!(clear_crate_slot(&mut sim, &rules, &registry, 2, 380));
+        assert!(clear_crate_slot(&mut sim, &rules, registry, 2, 380));
 
-        let slot = sim.crate_authority.slots()[2];
+        let slot = sim.crate_authority().slots()[2];
         assert_eq!(slot.cell_x, 0);
         assert_eq!(slot.cell_y, 0);
         assert_eq!(slot.start_frame, -1);
@@ -583,33 +648,33 @@ mod tests {
     fn crate_slot_clear_zeroes_expired_and_preserves_paused_duration() {
         let mut sim = sim_with_grid(0x52);
         let rules = crate_ruleset("");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
 
-        *sim.crate_authority.slot_mut_for_test(0) = CrateSlot {
+        *sim.crate_authority_mut_for_test().slot_mut_for_test(0) = CrateSlot {
             start_frame: 10,
             aux: 0,
             duration: 30,
             cell_x: 4,
             cell_y: 4,
         };
-        assert!(clear_crate_slot(&mut sim, &rules, &registry, 0, 900));
-        assert_eq!(sim.crate_authority.slots()[0].duration, 0);
-        assert_eq!(sim.crate_authority.slots()[0].start_frame, -1);
+        assert!(clear_crate_slot(&mut sim, &rules, registry, 0, 900));
+        assert_eq!(sim.crate_authority().slots()[0].duration, 0);
+        assert_eq!(sim.crate_authority().slots()[0].start_frame, -1);
 
-        *sim.crate_authority.slot_mut_for_test(1) = CrateSlot {
+        *sim.crate_authority_mut_for_test().slot_mut_for_test(1) = CrateSlot {
             start_frame: -1,
             aux: 0,
             duration: 77,
             cell_x: 5,
             cell_y: 5,
         };
-        assert!(clear_crate_slot(&mut sim, &rules, &registry, 1, 900));
+        assert!(clear_crate_slot(&mut sim, &rules, registry, 1, 900));
         assert_eq!(
-            sim.crate_authority.slots()[1].duration,
+            sim.crate_authority().slots()[1].duration,
             77,
             "a paused slot keeps its remaining frames verbatim"
         );
-        assert_eq!(sim.crate_authority.slots()[1].start_frame, -1);
+        assert_eq!(sim.crate_authority().slots()[1].start_frame, -1);
     }
 
     /// Removal accepts only the three live Rules crate images and writes exactly
@@ -622,7 +687,7 @@ mod tests {
     fn crate_overlay_removal_is_identity_specific_and_two_fields_wide() {
         let mut sim = sim_with_grid(0x54);
         let rules = crate_ruleset("");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let wood = registry.id_for_name("WOOD").expect("WOOD overlay");
         let tiberium = registry.id_for_name("TIB01").expect("TIB01 overlay");
 
@@ -636,7 +701,7 @@ mod tests {
         }
 
         assert!(
-            !remove_crate_overlay_from_cell(&mut sim, &rules, &registry, (16, 15)),
+            !remove_crate_overlay_from_cell(&mut sim, &rules, registry, (16, 15)),
             "a non-crate identity is never removed"
         );
         assert_eq!(
@@ -647,7 +712,7 @@ mod tests {
         assert!(remove_crate_overlay_from_cell(
             &mut sim,
             &rules,
-            &registry,
+            registry,
             (15, 15)
         ));
         let cleared = sim.overlay_grid.as_ref().unwrap().cell(15, 15);
@@ -674,7 +739,7 @@ mod tests {
     fn crate_overlay_removal_refuses_an_out_of_bounds_cell() {
         let mut sim = sim_with_grid(0x5B);
         let rules = crate_ruleset("");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let wood = registry.id_for_name("WOOD").expect("WOOD overlay");
         {
             let grid = sim.overlay_grid.as_mut().expect("grid");
@@ -685,7 +750,7 @@ mod tests {
         assert!(!remove_crate_overlay_from_cell(
             &mut sim,
             &rules,
-            &registry,
+            registry,
             (5, 5)
         ));
         assert_eq!(
@@ -700,7 +765,7 @@ mod tests {
     #[test]
     fn crate_regen_gates_on_game_mode_and_the_crates_option() {
         let rules = crate_ruleset("");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         for (game_mode_nonzero, crates) in [(false, true), (true, false), (false, false)] {
             let mut sim = sim_with_grid(0x56);
             sim.session.set_game_mode(
@@ -709,7 +774,7 @@ mod tests {
                 ),
             );
             sim.session.game_options_mut_for_test().crates = crates;
-            *sim.crate_authority.slot_mut_for_test(0) = CrateSlot {
+            *sim.crate_authority_mut_for_test().slot_mut_for_test(0) = CrateSlot {
                 start_frame: -1,
                 aux: 0,
                 duration: 0,
@@ -719,11 +784,11 @@ mod tests {
             let rng_before = sim.scenario_rng.state();
 
             let regen =
-                tick_crate_regeneration(&mut sim, &rules, &registry, FrameEffects::default())
+                tick_crate_regeneration(&mut sim, &rules, registry, &mut FrameEffects::default())
                     .unwrap();
 
             assert_eq!(regen, CrateRegeneration::default());
-            assert_eq!(sim.crate_authority.slots()[0].cell_x, 8);
+            assert_eq!(sim.crate_authority().slots()[0].cell_x, 8);
             assert_eq!(
                 sim.scenario_rng.state(),
                 rng_before,
@@ -743,35 +808,36 @@ mod tests {
         sim.session.game_options_mut_for_test().crates = true;
         sim.session.set_binary_frame_for_test(1_000);
         let rules = crate_ruleset("");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
 
-        *sim.crate_authority.slot_mut_for_test(0) = CrateSlot {
+        *sim.crate_authority_mut_for_test().slot_mut_for_test(0) = CrateSlot {
             start_frame: 900,
             aux: 0,
             duration: 5_000,
             cell_x: 6,
             cell_y: 6,
         };
-        *sim.crate_authority.slot_mut_for_test(1) = CrateSlot {
+        *sim.crate_authority_mut_for_test().slot_mut_for_test(1) = CrateSlot {
             start_frame: 100,
             aux: 0,
             duration: 200,
             cell_x: 7,
             cell_y: 7,
         };
-        let untouched = sim.crate_authority.slots()[0];
+        let untouched = sim.crate_authority().slots()[0];
 
         let regen =
-            tick_crate_regeneration(&mut sim, &rules, &registry, FrameEffects::default()).unwrap();
+            tick_crate_regeneration(&mut sim, &rules, registry, &mut FrameEffects::default())
+                .unwrap();
 
         assert_eq!(regen.expired, 1, "only the due slot expires");
         assert_eq!(regen.accepted, 1, "one replacement placer call");
         assert_eq!(
-            sim.crate_authority.slots()[0],
+            sim.crate_authority().slots()[0],
             untouched,
             "an unexpired slot is not touched"
         );
-        let replaced = sim.crate_authority.slots()[1];
+        let replaced = sim.crate_authority().slots()[1];
         assert!(
             !replaced.is_empty(),
             "the freed slot is the lowest free one"
@@ -793,7 +859,7 @@ mod tests {
         sim.session.game_options_mut_for_test().crates = true;
         sim.session.set_binary_frame_for_test(500);
         let rules = crate_ruleset("");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let wood = registry.id_for_name("WOOD").expect("WOOD overlay");
 
         {
@@ -801,7 +867,7 @@ mod tests {
             grid.place_overlay(15, 15, wood, 0xFF);
             let _ = grid.take_dirty_cells();
         }
-        *sim.crate_authority.slot_mut_for_test(0) = CrateSlot {
+        *sim.crate_authority_mut_for_test().slot_mut_for_test(0) = CrateSlot {
             start_frame: -1,
             aux: 0,
             duration: 0,
@@ -810,11 +876,12 @@ mod tests {
         };
 
         let regen =
-            tick_crate_regeneration(&mut sim, &rules, &registry, FrameEffects::default()).unwrap();
+            tick_crate_regeneration(&mut sim, &rules, registry, &mut FrameEffects::default())
+                .unwrap();
 
         assert_eq!(regen.expired, 1);
         assert_eq!(regen.visible, 1);
-        let now = sim.crate_authority.slots()[0];
+        let now = sim.crate_authority().slots()[0];
         assert_eq!(now.start_frame, 500, "the replacement armed a fresh timer");
         assert_ne!(
             (now.cell_x, now.cell_y),
@@ -827,7 +894,7 @@ mod tests {
             "the expired crate's overlay identity was erased"
         );
         assert_eq!(
-            crate_cells(&sim, &registry),
+            crate_cells(&sim, registry),
             vec![(now.cell_x as u16, now.cell_y as u16)],
             "the expired crate overlay is gone and only the replacement remains"
         );
@@ -839,13 +906,14 @@ mod tests {
     /// stock pointer table actually produces.
     #[test]
     fn crate_overlay_removal_accepts_every_rules_image_including_duplicates() {
-        let registry = crate_registry();
         for (wood, common, water) in [
             ("WOOD", "SILVER", "WATER"),
             // The stock shape: WoodCrateImg == CrateImg == CRATE.
             ("SILVER", "SILVER", "WATER"),
         ] {
-            let rules = super::super::tests::crate_ruleset_with_images(wood, common, water, "");
+            let rules =
+                super::super::tests::standard_crate_rules_with_images(wood, common, water, "");
+            let registry = rules.overlay_registry();
             for name in [wood, common, water] {
                 let mut sim = sim_with_grid(0x60);
                 let id = registry.id_for_name(name).expect("configured overlay");
@@ -854,7 +922,7 @@ mod tests {
                     .expect("grid")
                     .place_overlay(15, 15, id, 0xFF);
                 assert!(
-                    remove_crate_overlay_from_cell(&mut sim, &rules, &registry, (15, 15)),
+                    remove_crate_overlay_from_cell(&mut sim, &rules, registry, (15, 15)),
                     "identity {name} is one of the three live Rules crate images"
                 );
                 assert_eq!(
@@ -874,7 +942,7 @@ mod tests {
     fn crate_overlay_removal_publishes_a_removal_and_never_a_recalc_dirty_cell() {
         let mut sim = sim_with_grid(0x61);
         let rules = crate_ruleset("");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
         let wood = registry.id_for_name("WOOD").expect("WOOD overlay");
         {
             let grid = sim.overlay_grid.as_mut().expect("grid");
@@ -886,7 +954,7 @@ mod tests {
         assert!(remove_crate_overlay_from_cell(
             &mut sim,
             &rules,
-            &registry,
+            registry,
             (15, 15)
         ));
 
@@ -908,7 +976,7 @@ mod tests {
     #[test]
     fn advance_tick_reaches_crate_regeneration_only_while_crates_are_on() {
         let rules = crate_ruleset("");
-        let registry = crate_registry();
+        let registry = rules.overlay_registry();
 
         let due_slot = CrateSlot {
             start_frame: -1,
@@ -923,9 +991,9 @@ mod tests {
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
         on.session.game_options_mut_for_test().crates = true;
-        *on.crate_authority.slot_mut_for_test(0) = due_slot;
-        on.advance_tick(&[], Some(&rules), None, Some(&registry), 33);
-        let regenerated = on.crate_authority.slots()[0];
+        *on.crate_authority_mut_for_test().slot_mut_for_test(0) = due_slot;
+        on.advance_tick(&[], Some(&rules), None, Some(registry), 33);
+        let regenerated = on.crate_authority().slots()[0];
         assert_ne!(
             regenerated, due_slot,
             "the master frame must reach MapClass__UpdateCrateRegenTimers"
@@ -949,10 +1017,10 @@ mod tests {
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
         off.session.game_options_mut_for_test().crates = false;
-        *off.crate_authority.slot_mut_for_test(0) = due_slot;
-        off.advance_tick(&[], Some(&rules), None, Some(&registry), 33);
+        *off.crate_authority_mut_for_test().slot_mut_for_test(0) = due_slot;
+        off.advance_tick(&[], Some(&rules), None, Some(registry), 33);
         assert_eq!(
-            off.crate_authority.slots()[0],
+            off.crate_authority().slots()[0],
             due_slot,
             "a paused-crates session never regenerates"
         );

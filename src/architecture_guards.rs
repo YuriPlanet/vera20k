@@ -11,6 +11,7 @@
 //! `include_bytes!`. Determinism guards pin the engine files that read
 //! platform- or process-dependent values (libm math, clocks, environment,
 //! directory order, thread count) and the engine's per-client reads.
+//! A size guard keeps every source file under [`MAX_SOURCE_LINES`].
 //!
 //! The app pseudo-root matches crate::app paths and retired root app_* modules.
 //! The ui rule also forbids the retired skirmish_scenarios root. These checks
@@ -28,7 +29,7 @@ const LAYER_RULES: &[(&str, &[&str])] = &[
     ("assets", &["sim", "rules", "map", "render", "ui", "app"]),
     ("util", &["sim", "rules", "map", "render", "ui", "app"]),
     ("rules", &["sim", "map"]),
-    ("map", &["sim", "render", "app"]),
+    ("map", &["sim", "render", "app", "net", "ui"]),
     ("render", &["app"]),
     // render draws ui view models; ui stays render-agnostic.
     ("ui", &["app", "render", "skirmish_scenarios"]),
@@ -72,14 +73,102 @@ fn production_dependency_edges_match_frozen_ledger_inventory() {
     );
 }
 
-/// F09: `Simulation::advance_master_frame` and `advance_app_frame` accept
-/// swappable rules/map/path resources, so their production call sites are
-/// pinned — the master frame is reached only inside
-/// `sim/world/master_frame.rs`, the app frame only there and in
-/// `SimRuntime::advance_frame`. Every other
-/// caller must be `#[cfg(test)]` (the `advance_tick` fixture adapter and the
-/// replay `run_fixture*` runners are compile-time gated already); production
-/// and tooling advance exclusively through the bound-resource runtime.
+/// The Phase 1 chains and construction layers read admitted rules and topology.
+/// Freeze the remaining raw simulation reads until their compatibility callers
+/// can move to the corresponding owner. The budget must fall with removals.
+#[test]
+fn production_scenario_mode_reads_stay_behind_admission() {
+    const COMPLETED_CHAINS: &[&str] = &[
+        "sim/ai_base_building.rs",
+        "sim/ai_base_site.rs",
+        "sim/ai_team_creation.rs",
+        "sim/ares_tiberium_storage.rs",
+        "sim/base_plan.rs",
+        "sim/combat/base_defense_response/admission.rs",
+        "sim/combat/base_defense_response.rs",
+        "sim/combat/greatest_threat.rs",
+        "sim/combat/world_fire.rs",
+        "sim/crates/pickup.rs",
+        "sim/crates/runtime.rs",
+        "sim/house_strategy.rs",
+        "sim/hunter_seeker.rs",
+        "sim/light_sources.rs",
+        "sim/mcv_deploy.rs",
+        "sim/miner/miner_system.rs",
+        "sim/miner/ore_scan.rs",
+        "sim/ore_growth.rs",
+        "sim/production/can_build.rs",
+        "sim/production/production_repair.rs",
+        "sim/production/production_sell.rs",
+        "sim/team_script_vm/actions.rs",
+        "sim/team_script_vm/membership.rs",
+        "sim/team_script_vm/reinforcements.rs",
+        "sim/world/aircraft_fire_location.rs",
+        "sim/world/house_defeat.rs",
+        "sim/world/idle_sleep.rs",
+        "sim/world/lifecycle.rs",
+        "sim/world/object_entry.rs",
+        "sim/world/shroud_refresh.rs",
+        "sim/world/world_spawn.rs",
+    ];
+    const LEGACY_READ_COUNT: usize = 16;
+
+    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut forbidden = Vec::new();
+    let mut remaining = Vec::new();
+    for file in source_files(&src_root) {
+        let Some(production) = &file.production else {
+            continue;
+        };
+        let no_raw_reads = file.rel.starts_with("rules/")
+            || file.rel.starts_with("map/")
+            || COMPLETED_CHAINS.contains(&file.rel.as_str());
+        let output = if no_raw_reads {
+            &mut forbidden
+        } else if file.rel.starts_with("sim/") {
+            &mut remaining
+        } else {
+            continue;
+        };
+        for (line, method) in raw_scenario_mode_reads(production) {
+            output.push(format!("{}:{line}: {method}", file.rel));
+        }
+    }
+    let fix = "Use ScenarioSession::rule_policy() for gameplay, \
+               execution_topology() for lockstep and the session's local-view owner for PlayerPtr. \
+               Keep exact legacy mode reads at compatibility boundaries.";
+    assert!(forbidden.is_empty(), "{fix}\n{}", forbidden.join("\n"));
+    assert_eq!(
+        remaining.len(),
+        LEGACY_READ_COUNT,
+        "{fix}\nReduce the raw-mode budget when removing a legacy read.\n{}",
+        remaining.join("\n"),
+    );
+}
+
+fn raw_scenario_mode_reads(production: &str) -> impl Iterator<Item = (usize, &'static str)> {
+    ["game_mode", "game_mode_nonzero"]
+        .into_iter()
+        .flat_map(move |method| {
+            production.match_indices(method).filter_map(move |(at, _)| {
+                let before = production[..at].trim_end();
+                let after = production[at + method.len()..].trim_start();
+                if !(before.ends_with('.') || before.ends_with("::")) || !after.starts_with('(') {
+                    return None;
+                }
+                let line = production.as_bytes()[..at]
+                    .iter()
+                    .filter(|&&byte| byte == b'\n')
+                    .count();
+                Some((line + 1, method))
+            })
+        })
+}
+
+/// Production and tooling advance through `SimRuntime`, which supplies the
+/// match rules to the app frame. The rules supply its overlay types. Only
+/// fixture adapters drive a frame with explicitly substituted inputs. Pin the
+/// production call sites so new callers go through the bound runtime.
 #[test]
 fn master_frame_adapters_have_pinned_production_callers() {
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -127,19 +216,19 @@ fn raw_ini_walks_have_pinned_production_callers() {
                 ("app/persistence/profile_file.rs", 1),
                 // `ini-get --reader raw` and the presence report.
                 ("asset_tools/verb_ini.rs", 1),
-                // A random map's `.yrm` export copies its sections as stored.
+                // A random map export copies its sections as stored.
                 ("map/map_export.rs", 1),
                 // `[Colors]` entries copied into the processed registry.
-                ("rules/native_processing.rs", 1),
+                ("rules/native_processing/pass_processor.rs", 1),
             ],
         ),
         (
             "registry_ids",
             &[
                 ("rules/ini_parser.rs", 1), // the definition
-                ("rules/overlay_types.rs", 1),
+                ("rules/ruleset/general.rs", 1),
                 // Includes parse_registry copying already resolved stored IDs.
-                ("rules/ruleset.rs", 3),
+                ("rules/ruleset/loading.rs", 2),
                 ("rules/smudge_type.rs", 1),
             ],
         ),
@@ -169,6 +258,92 @@ fn raw_ini_walks_have_pinned_production_callers() {
         "raw INI walks called outside their pinned production sites, or a pin \
          is stale. Read values through the `ini_value` readers; pin a new \
          caller only to copy or show entries as stored."
+    );
+}
+
+/// Command producers use the read-only authority projection. Native
+/// House identity remains inside the engine and cannot authorize input.
+#[test]
+fn command_input_and_radar_do_not_read_raw_house_permissions() {
+    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let files = source_files(&src_root);
+    let tests = test_gated_files(files);
+    let input_and_radar = [
+        "app/input/",
+        "render/radar/",
+        "app/presentation/render/build_instances.rs",
+        "sim/world/move_cell_input.rs",
+    ];
+    let raw = [
+        "house_controls_selection",
+        "house_is_human_player",
+        "is_human_player_on",
+        "native_player_identity",
+        "NativePlayerIdentity",
+        "local_shared_house_source",
+        "control_scope_for_source",
+        "entity_owned_by_id",
+        "player_control",
+    ];
+    let mut violations = Vec::new();
+    for file in files {
+        if tests.contains(&file.rel)
+            || !input_and_radar
+                .iter()
+                .any(|root| file.rel.starts_with(root))
+        {
+            continue;
+        }
+        let Some(production) = &file.production else {
+            continue;
+        };
+        for symbol in raw {
+            if count_identifier(production, symbol) != 0 {
+                violations.push((file.rel.as_str(), symbol));
+            }
+        }
+        if file.rel.starts_with("app/input/") {
+            for symbol in ["techno_player_controllable", "techno_is_active"] {
+                if count_identifier(production, symbol) != 0 {
+                    violations.push((file.rel.as_str(), symbol));
+                }
+            }
+        }
+        if file.rel.starts_with("app/input/") || file.rel == "sim/world/move_cell_input.rs" {
+            let compact: String = production.chars().filter(|c| !c.is_whitespace()).collect();
+            for comparison in [
+                "entity.owner()==",
+                "entity.owner()!=",
+                "==entity.owner()",
+                "!=entity.owner()",
+                "actor.owner()==issuing_house",
+                "actor.owner()!=issuing_house",
+            ] {
+                if compact.contains(comparison) {
+                    violations.push((file.rel.as_str(), comparison));
+                }
+            }
+        }
+        if file.rel.starts_with("render/radar/")
+            || file.rel == "app/presentation/render/build_instances.rs"
+        {
+            for symbol in [
+                "can_select",
+                "can_order",
+                "can_order_from",
+                "can_manage",
+                "can_manage_from",
+                "local_command_house",
+            ] {
+                if count_identifier(production, symbol) != 0 {
+                    violations.push((file.rel.as_str(), symbol));
+                }
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "use projected command permission for input and native viewer identity for radar: {violations:?}"
     );
 }
 
@@ -338,9 +513,10 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 "map/rmg/saved_seeds.rs",
                 "map/scenario_sources.rs",
                 "map/source/cache.rs",
-                // A received map's case-folded name check; a file it finds is
-                // kept only when it holds the same verified bytes.
-                "map/source.rs",
+                // Mod package staging: the game-root check asks whether any
+                // entry is an asset, parts are sorted by name before they
+                // merge, and copies land at their own names.
+                "util/mod_package.rs",
             ],
         ),
         (
@@ -395,7 +571,7 @@ fn engine_per_client_reads_have_pinned_callers() {
         (
             "current_house",
             &[
-                ("sim/anim_class.rs", 1),
+                ("sim/anim_class/spawn.rs", 1),
                 ("sim/campaign_carry_over.rs", 2),
                 ("sim/cheats.rs", 1),
                 ("sim/cloak_disguise.rs", 2),
@@ -409,38 +585,60 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/miner/ore_scan.rs", 1),
                 ("sim/production/factory_lifecycle.rs", 4),
                 ("sim/production/production_placement.rs", 4),
-                ("sim/production/production_queue.rs", 1),
                 ("sim/production/production_tech.rs", 1),
-                ("sim/scenario_bootstrap.rs", 5),
-                ("sim/scenario_session.rs", 5),
-                ("sim/snapshot.rs", 2),
+                ("sim/scenario_bootstrap.rs", 3),
+                ("sim/scenario_bootstrap/launch_houses.rs", 2),
+                // Local identity owner, legacy restoration and its accessor.
+                ("sim/scenario_session.rs", 4),
+                // Cheat input reads the local player only in offline skirmish.
+                ("sim/skirmish_cheats.rs", 1),
+                ("sim/snapshot/simulation_restore.rs", 2),
                 // Ares IsTimerVisible (10032E80): whether the local player
                 // sees a Super's timer line; only the timer drawing asks.
                 ("sim/superweapon/ares_presentation.rs", 1),
                 ("sim/superweapon/lightning_storm.rs", 1),
-                ("sim/superweapon/psychic_reveal.rs", 1),
+                // building_super_charges: whose providers draw the countdown
+                // labels, and which lines an enemy's building may show; only
+                // the label capture (HudFacts) asks, which feeds drawing.
+                ("sim/superweapon/mod.rs", 1),
+                // The stock and Ares launches name the local player as the
+                // reveal's notification viewer; `reveal_notifies_viewer`
+                // reads it only outside a network game.
+                ("sim/superweapon/psychic_reveal.rs", 2),
                 ("sim/team_script_vm/actions.rs", 1),
                 ("sim/team_script_vm/reinforcements.rs", 2),
-                ("sim/trigger_runtime.rs", 1),
+                // A Temporal erase deselects its victim only with a current
+                // House (0x0071B167). Every game client has one; only
+                // headless runs skip it, and the selection is per client.
+                ("sim/temporal.rs", 1),
+                ("sim/trigger_runtime/events.rs", 1),
                 ("sim/world/aircraft_fire_location.rs", 1),
                 ("sim/world/camera_home.rs", 2),
-                ("sim/world/command_schedule.rs", 3),
+                ("sim/world/command_schedule.rs", 2),
                 ("sim/world/fog_objects.rs", 1),
                 ("sim/world/gap_generator.rs", 1),
-                ("sim/world/house_defeat.rs", 9),
+                ("sim/world/house_defeat.rs", 8),
                 ("sim/world/jumpjet_cruise.rs", 1),
-                ("sim/world/lifecycle.rs", 6),
-                ("sim/world/mod.rs", 7),
+                ("sim/world/lifecycle/discovery.rs", 5),
+                ("sim/world/lifecycle/limbo.rs", 1),
+                ("sim/world/lifecycle/reveal.rs", 1),
                 ("sim/world/object_turn.rs", 1),
                 ("sim/world/planning.rs", 2),
                 ("sim/world/shroud_refresh.rs", 18),
-                ("sim/world/techno_ai.rs", 1),
+                ("sim/world/sim_combat_commit.rs", 1),
+                ("sim/world/sim_frame_upkeep.rs", 1),
+                ("sim/world/sim_house_ownership.rs", 3),
+                ("sim/world/sim_map_services.rs", 1),
+                ("sim/world/sim_state_access.rs", 1),
+                ("sim/world/techno_ai/common_body.rs", 1),
                 ("sim/world/techno_ai/mission_handlers.rs", 1),
                 ("sim/world/techno_ai_cloak.rs", 3),
+                ("sim/world/world_commands.rs", 2),
                 // Includes the Ares Guard key's own-actor check (1005CAF0)
                 // in the input producer `area_guard_key_command`.
-                ("sim/world/world_commands.rs", 7),
-                ("sim/world/world_orders.rs", 2),
+                ("sim/world/world_commands/records.rs", 1),
+                ("sim/world/world_commands/selection.rs", 1),
+                ("sim/world/world_orders.rs", 1),
                 ("sim/world/world_spawn.rs", 1),
                 ("sim/world/world_spawn/construction.rs", 1),
                 ("sim/world/world_spawn/wall_unlimbo.rs", 1),
@@ -448,34 +646,37 @@ fn engine_per_client_reads_have_pinned_callers() {
         ),
         (
             "observer_houses",
-            &[("sim/scenario_session.rs", 6), ("sim/snapshot.rs", 1)],
+            &[
+                ("sim/scenario_session.rs", 1),
+                ("sim/snapshot/simulation_restore.rs", 1),
+            ],
         ),
         (
             "is_observer_house",
             &[
                 ("sim/scenario_session.rs", 1),
                 ("sim/score.rs", 1),
+                // The same offline command refuses a local observer.
+                ("sim/skirmish_cheats.rs", 1),
                 // IsTimerVisible's observer case, as for `current_house`.
                 ("sim/superweapon/ares_presentation.rs", 1),
                 ("sim/superweapon/mod.rs", 1),
-                ("sim/world/house_defeat.rs", 2),
+                // The third is `network_ai_alone`: it asks of every House,
+                // and each peer holds the same observer list from the room.
+                ("sim/world/house_defeat.rs", 3),
             ],
         ),
         (
             "is_human_player",
             &[
                 ("sim/world/crash.rs", 1),
-                ("sim/world/mod.rs", 1),
+                ("sim/world/sim_house_ownership.rs", 1),
                 ("sim/world/world_orders.rs", 2),
             ],
         ),
         (
             "house_is_human_player",
             &[
-                // What_Action's Tote rung (0x00417CC0): the clicked action.
-                ("sim/aircraft/carryall.rs", 1),
-                // What_Action's Detonate rung (0x006FFF8D): the clicked action.
-                ("sim/bomb.rs", 1),
                 ("sim/building_art.rs", 2),
                 ("sim/building_entry.rs", 1),
                 ("sim/building_power.rs", 2),
@@ -498,18 +699,14 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/production/production_repair.rs", 1),
                 ("sim/production/production_sell.rs", 1),
                 ("sim/reverse_engineering.rs", 1),
-                ("sim/vehicle_theft.rs", 1),
                 ("sim/world/camera_home.rs", 1),
                 ("sim/world/fly_process.rs", 1),
-                ("sim/world/lifecycle.rs", 1),
-                ("sim/world/move_cell_input.rs", 3),
+                ("sim/world/lifecycle/detach.rs", 1),
                 ("sim/world/planning.rs", 1),
-                ("sim/world/selection_voice.rs", 4),
                 ("sim/world/shroud_refresh.rs", 2),
-                ("sim/world/techno_ai.rs", 1),
-                ("sim/world/world_commands.rs", 2),
-                // The clicked actions, with Ares' infantry heal arm (0x0051E710).
-                ("sim/world/world_orders.rs", 13),
+                ("sim/world/techno_ai/common_body.rs", 1),
+                // Native Techno control/active checks and the infiltrate cue.
+                ("sim/world/world_orders.rs", 4),
             ],
         ),
         (
@@ -519,8 +716,14 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/combat/greatest_threat.rs", 1),
                 ("sim/game_entity.rs", 3),
                 ("sim/miner/ore_scan.rs", 1),
+                // Whether the local player sees a Techno's glow: Ares'
+                // ShouldDraw hooks (100477D0, 10047470) ask VisualCharacter,
+                // which reads +0x41A. Only the A-plane draw list
+                // (`alpha_shape_draws`) asks.
+                ("sim/world/alpha_shape.rs", 1),
                 ("sim/world/camera_home.rs", 1),
-                ("sim/world/lifecycle.rs", 8),
+                ("sim/world/lifecycle.rs", 7),
+                ("sim/world/lifecycle/discovery.rs", 2),
                 ("sim/world/object_entry.rs", 1),
             ],
         ),
@@ -532,12 +735,21 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/house_state.rs", 5),
                 ("sim/power_system.rs", 2),
                 ("sim/production/production_tech.rs", 1),
-                ("sim/trigger_runtime.rs", 1),
-                ("sim/world/lifecycle.rs", 11),
-                ("sim/world/mod.rs", 1),
+                ("sim/trigger_runtime/events.rs", 1),
+                ("sim/world/lifecycle.rs", 5),
+                ("sim/world/lifecycle/discovery.rs", 6),
+                ("sim/world/lifecycle/reveal.rs", 1),
                 ("sim/world/shroud_refresh.rs", 1),
-                ("sim/world/world_commands.rs", 1),
+                ("sim/world/sim_frame_upkeep.rs", 1),
+                ("sim/world/world_commands/selection.rs", 1),
                 ("sim/world/world_hash.rs", 1),
+            ],
+        ),
+        (
+            "local_view_identity",
+            &[
+                ("sim/scenario_session.rs", 1),
+                ("sim/world/command_schedule.rs", 1),
             ],
         ),
         (
@@ -550,7 +762,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/house_diplomacy.rs", 1),
                 ("sim/superweapon/lightning_storm.rs", 3),
                 ("sim/world/house_defeat.rs", 1),
-                ("sim/world/mod.rs", 1),
+                ("sim/world/sim_house_ownership.rs", 1),
             ],
         ),
     ];
@@ -884,6 +1096,13 @@ where
 {
     fixture_body();
 }
+#[cfg(all(
+    test,
+    not(target_os = "unknown")
+))]
+fn wrapped() {
+    fixture_body();
+}
 #[cfg(any(test, debug_assertions))]
 fn debug_production() { registry_ids(); }
 fn after_function() { registry_ids(); }
@@ -898,8 +1117,9 @@ fn after_function() { registry_ids(); }
 /// `source` without its `#[cfg(test)]` items (attribute plus the following
 /// item, braced or terminated by `;`/`,`, or a one-line item on the
 /// attribute's own line), as blanked text: `text` is `source` with
-/// comments and literals blanked. `cfg(all(test, …))` and
-/// `cfg(any(test, feature = "test-support"))` count as test-only;
+/// comments and literals blanked. `cfg(all(test, …))`, also wrapped over
+/// lines with `test` first, and `cfg(any(test, feature = "test-support"))`
+/// count as test-only;
 /// `cfg(any(test, debug_assertions))` does not. The feature gate is read from
 /// the source line, since blanking erases its string.
 fn strip_test_items(source: &str, text: &str) -> String {
@@ -910,9 +1130,36 @@ fn strip_test_items(source: &str, text: &str) -> String {
     let mut item_delimiters = Vec::new();
     let mut awaiting_function = false;
     let ends_item = |line: &str| line.trim_end().ends_with([';', ',']);
-    for (line, source_line) in text.lines().zip(source.lines()) {
+    // Lines left of a `#[cfg(all(` attribute that rustfmt wrapped with
+    // `test` on its next line; the item after it is test code.
+    let mut wrapped_attribute_lines = 0usize;
+    let mut lines = text.lines().zip(source.lines()).peekable();
+    while let Some((line, source_line)) = lines.next() {
+        if wrapped_attribute_lines > 0 {
+            wrapped_attribute_lines -= 1;
+            out.push('\n');
+            continue;
+        }
         let opens = line.bytes().filter(|&b| b == b'{').count() as i64;
         let closes = line.bytes().filter(|&b| b == b'}').count() as i64;
+        let wrapped_test_attr = skip_above.is_none()
+            && line.trim() == "#[cfg(all("
+            && lines.peek().is_some_and(|(next, _)| {
+                let next = next.trim_start();
+                next.starts_with("test,") || next.starts_with("test)")
+            });
+        if wrapped_test_attr {
+            // Skip the attribute through its closing `]`, then the item.
+            wrapped_attribute_lines = lines
+                .clone()
+                .position(|(rest, _)| rest.trim_end().ends_with(']'))
+                .map_or(0, |at| at + 1);
+            awaiting_item = true;
+            item_delimiters.clear();
+            awaiting_function = false;
+            out.push('\n');
+            continue;
+        }
         let is_test_attr = line.contains("cfg(test")
             || line.contains("cfg(all(test")
             || (line.trim_start().starts_with("#[")
@@ -995,8 +1242,8 @@ fn strip_test_items(source: &str, text: &str) -> String {
         }
         if emit {
             out.push_str(line);
-            out.push('\n');
         }
+        out.push('\n');
     }
     out
 }
@@ -1247,8 +1494,7 @@ fn sim_names_no_upper_layer_root_even_in_tests() {
         offenders.is_empty(),
         "sim/ references upper-layer root(s): {offenders:?}\n\
          Sim tests that need render/net live in those layers' boundary test \
-         modules (e.g. render::locomotor_visual tests, \
-         net::lockstep_sim_convergence_tests), never inside sim/."
+         modules (e.g. render::locomotor_visual tests), never inside sim/."
     );
 }
 
@@ -1257,6 +1503,29 @@ fn sim_names_no_upper_layer_root_even_in_tests() {
 /// Embedded fixtures made up most of the test executable and recompiled the
 /// crate on every fixture edit. A literal fixture path must name a file, so a
 /// removed fixture fails here even when only ignored tests read it.
+/// The most lines one Rust source file may hold. An owner that outgrows it
+/// is split by responsibility into a parent module and private parts, and a
+/// test file into `*_tests.rs` children, so a reader can take the whole file
+/// in. The limit is a ceiling, not a target: most files are far smaller.
+const MAX_SOURCE_LINES: usize = 5_000;
+
+#[test]
+fn no_source_file_is_over_the_line_limit() {
+    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let over: Vec<String> = source_files(&src_root)
+        .iter()
+        .map(|file| (file.source.lines().count(), &file.rel))
+        .filter(|(lines, _)| *lines > MAX_SOURCE_LINES)
+        .map(|(lines, rel)| format!("{rel}: {lines} lines"))
+        .collect();
+    assert!(
+        over.is_empty(),
+        "source files over {MAX_SOURCE_LINES} lines: {over:#?}\n\
+         Split the file by responsibility: keep it as the parent, move each part to a private \
+         child module, and re-export what other modules name."
+    );
+}
+
 #[test]
 fn test_fixtures_are_read_at_run_time_from_existing_files() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -1383,7 +1652,8 @@ const ROOTS: &[(&str, &str)] = &[
 /// owner: a struct whose fields are all private, so other modules change its
 /// state only through its operations. A raw container, primitive, enum or
 /// open struct in a root slot would let any module write that state directly.
-/// `Option`, `Box`, `Arc`, `Rc` and `Sparse` wrappers are looked through.
+/// `Option`, `Box`, `Arc`, `Rc`, `Sparse` and `Forked` wrappers are looked
+/// through.
 #[test]
 fn composition_root_slots_are_owner_types() {
     // Root slots that are not owner structs, each with its reason.
@@ -1403,6 +1673,25 @@ fn composition_root_slots_are_owner_types() {
             "building",
             "a Building's own fields stored apart from the record every turn reads; each \
              keeps its visibility and owning module, so the slot opens nothing that was closed",
+        ),
+        (
+            "ObjectSubstrate",
+            "anims",
+            "AnimStore's field is private to the `sim::anim_class` module, whose parts are \
+             separate files: `pub(super)` reaches only that module",
+        ),
+        (
+            "GameEntity",
+            "seldom",
+            "the object record's seldom part is the same record stored apart \
+             (docs/sim-thread.md); its fields keep their visibility and owning modules, \
+             so the slot opens nothing that was closed",
+        ),
+        (
+            "GameEntity",
+            "damage_fires",
+            "DamageFires' fields are private to the `sim::anim_class` module, whose parts are \
+             separate files: `pub(super)` reaches only that module",
         ),
     ];
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -1482,6 +1771,7 @@ fn slot_type_scan_reads_wrappers_tuples_and_visibility() {
         .collect();
     assert!(owner_type_verdict(&structs, "Option<C>").is_ok());
     assert!(owner_type_verdict(&structs, "Sparse<crate::x::C>").is_ok());
+    assert!(owner_type_verdict(&structs, "Forked<Option<C>>").is_ok());
     assert!(owner_type_verdict(&structs, "crate::x::B").is_err());
     assert!(owner_type_verdict(&structs, "BTreeMap<u8, C>").is_err());
     assert!(owner_type_verdict(&structs, "SomeEnum").is_err());
@@ -1523,13 +1813,14 @@ fn owner_type_verdict(
     }
 }
 
-/// The type a slot names, through `Option`/`Box`/`Arc`/`Rc`/`Sparse` and paths.
+/// The type a slot names, through `Option`/`Box`/`Arc`/`Rc`/`Sparse`/`Forked`
+/// and paths.
 fn slot_base_type(ty: &str) -> &str {
     let mut ty = ty.trim();
     loop {
         let (path, generics) = ty.find('<').map_or((ty, ""), |at| ty.split_at(at));
         let last = path.rsplit("::").next().unwrap_or(path).trim();
-        if ["Option", "Box", "Arc", "Rc", "Sparse"].contains(&last)
+        if ["Option", "Box", "Arc", "Rc", "Sparse", "Forked"].contains(&last)
             && generics.starts_with('<')
             && generics.ends_with('>')
         {
@@ -1762,8 +2053,13 @@ fn mutable_handouts_and_setters_are_owner_operations() {
                           field of its owner";
     const SPARSE: &str = "a generic out-of-line holder for state most objects leave at its \
                           default; every Sparse is a field of its owner and holds an owner struct";
+    const FORKED: &str = "a generic copy-on-write holder for a world field (util::forked); every \
+                          Forked is a slot of a composition root and holds that slot's own type";
     const LASER: &str = "LaserDraw 0x0054FE60 returns the new laser for its caller's postprocessing \
                          (FireAt 0x006FF50A..0x006FF571); the caller finishes its own frame fact";
+    const ANIM_OBJECT: &str = "AnimObject's fields are private to the `sim::anim_class` module, \
+                               whose parts are separate files: `pub(super)` reaches only that \
+                               module, so the handout opens nothing outside it";
     const PINNED_HANDOUTS: &[(&str, &str, &str)] = &[
         ("map/resolved_terrain/terrain_cells.rs", "get_mut", TERRAIN),
         ("map/resolved_terrain/terrain_cells.rs", "iter_mut", TERRAIN),
@@ -1775,6 +2071,7 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         ("map/rmg/grid.rs", "get_mut", RMG),
         ("map/rmg/grid.rs", "ref_cell_mut", RMG),
         ("map/rmg/grid.rs", "cell_native_mut", RMG),
+        ("map/rmg/grid.rs", "cells_in_native_order_mut", RMG),
         ("map/rmg/scratch.rs", "get_mut", RMG),
         ("map/rmg/scratch.rs", "cells_mut", RMG),
         (
@@ -1789,19 +2086,38 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              project the existing LanConnections and GlobalChannel owners, whose fields are private",
         ),
         (
+            "rules/native_processing/pass_processor.rs",
+            "family_mut",
+            "private to the `rules::native_processing` module, whose parts are separate files: \
+             `pub(super)` reaches only that module, whose passes fill each family",
+        ),
+        (
+            "rules/native_processing/processed_type.rs",
+            "read_member",
+            "private to the `rules::native_processing` module, whose parts are separate files: \
+             `pub(super)` reaches only that module, whose passes fill each family",
+        ),
+        (
+            "rules/ruleset/lookup.rs",
+            "warhead_mut",
+            "private to the `rules::ruleset` module, whose parts are separate files: \
+             `pub(super)` reaches only that module, whose load fills the warheads",
+        ),
+        (
+            "rules/ruleset/lookup.rs",
+            "projectile_mut",
+            "private to the `rules::ruleset` module, whose parts are separate files: \
+             `pub(super)` reaches only that module, whose load fills the projectiles",
+        ),
+        (
             "rules/art_data.rs",
             "get_mut",
             "art rules installed at load: the registry fills SHP frame sizes into its own \
              entries, and fixtures reach it through art_entry_mut_for_test",
         ),
+        ("sim/anim_class/store.rs", "get_mut", ANIM_OBJECT),
+        ("sim/anim_class/store.rs", "values_mut", ANIM_OBJECT),
         ("sim/command.rs", "payload_mut", PAYLOAD),
-        (
-            "sim/game_entity.rs",
-            "deref_mut",
-            "the object record's seldom part is the same record stored apart \
-             (docs/sim-thread.md); its fields keep their visibility and owning modules, \
-             so the deref opens nothing that was closed",
-        ),
         ("sim/cell_map.rs", "get_mut", CELL_MAP),
         ("sim/cell_map.rs", "get_or_insert_with", CELL_MAP),
         ("sim/cell_map.rs", "values_mut", CELL_MAP),
@@ -1828,13 +2144,14 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "sim/runtime.rs",
             "resources_mut",
             "SimRuntime's bound resources for a write; SimResources is the slot's own type, \
-             shared only with a presentation frame the host drops first (docs/sim-thread.md)",
+             shared only with a presentation copy the host drops first (docs/sim-thread.md)",
         ),
         (
             "sim/world/frame_channel.rs",
             "emit_and_finish",
             "a producer finishes the fact it just emitted, before the frame tail reads the channel",
         ),
+        ("util/forked.rs", "deref_mut", FORKED),
         ("util/synced.rs", "deref_mut", SHARED),
         ("util/synced.rs", "get_mut", SHARED),
         ("util/synced.rs", "iter_mut", SHARED),
@@ -1875,20 +2192,26 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              every private connection's +0x28..+0x30 (0x00540CBE..0x00540CE1)",
         ),
         (
-            "rules/object_type.rs",
+            "rules/object_type/queries.rs",
             "set_voxel_shadow_index",
             "runs only inside RuleSet's load",
         ),
         (
-            "rules/object_type.rs",
+            "rules/object_type/queries.rs",
             "set_secret_lab",
             "runs only inside RuleSet's load",
         ),
         (
             "rules/personal_rules.rs",
+            "set_building_production_queue",
+            "VERA's own switch with no native member: the Options page's Building Production \
+             Queue box, which the app passes in for the rules the next scenario reads",
+        ),
+        (
+            "rules/personal_rules.rs",
             "set_terrain_deformation",
-            "VERA's own switch with no native member: the Options page's Terrain Deformation \
-             box, which the app passes in for the rules the next scenario reads",
+            "VERA's own switch with no native member: the skirmish Game Options' Terrain \
+             Deformation box, which the app passes in for the rules the next scenario reads",
         ),
         (
             "rules/superweapon_type.rs",
@@ -2033,6 +2356,11 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              calls it after Set_Destination (0x004C74BA)",
         ),
         (
+            "sim/movement/hover.rs",
+            "set_head",
+            "Hover's path head, stored by ProcessMovement when it accepts a tunnel exit (0x005150EE)",
+        ),
+        (
             "sim/movement/teleport_movement.rs",
             "set_pending_state",
             "Techno+280, published by the reinforcement (0x0065F29F)",
@@ -2154,7 +2482,7 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              64/67 (dispatcher 0x1003A110)",
         ),
         (
-            "sim/world/mod.rs",
+            "sim/world/sim_map_services.rs",
             "set_input_delay_ticks",
             "the match's configured input delay, installed by the app at match start",
         ),
@@ -2656,3 +2984,9 @@ fn test_gated_files(files: &[SourceFile]) -> BTreeSet<String> {
     }
     gated
 }
+
+// Shared-state, worker-pool and Deref guards.
+mod shared_state;
+
+// Panic guards for the readers of outside data.
+mod outside_data;

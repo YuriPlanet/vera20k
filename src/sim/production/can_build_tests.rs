@@ -11,20 +11,18 @@ use serde_json::{Value, json};
 #[path = "can_build_ares_tests.rs"]
 mod ares_tests;
 
-#[cfg(not(feature = "ares"))]
 fn rows(section: &str) -> Vec<Value> {
     let data: Value =
         serde_json::from_str(crate::test_fixture::text("tools/can_build_oracle.json")).unwrap();
     data[section].as_array().unwrap().clone()
 }
 
-#[cfg(not(feature = "ares"))]
 fn comparable_can_build_rows() -> impl Iterator<Item = Value> {
     rows("can_build").into_iter().filter(|row| {
         // These gamemd controls intentionally differ from Ares100082B0's
         // positive specific count and CountOwnedNow100032F0's tracked
         // alternates. The Ares corpus covers those component boundaries.
-        !crate::rules::ARES_BUILD
+        !crate::rules::ares_switch::ares_way()
             || (row["proc_alternate"].is_null()
                 && row["name"].as_str() != Some("BuildingType count negative"))
     })
@@ -52,7 +50,6 @@ fn category(class: &str) -> EntityCategory {
 
 /// The row's rules: the oracle's types, the asked type `Q` of its class and
 /// the `[General]` lists.
-#[cfg(not(feature = "ares"))]
 fn rules_for(row: &Value) -> RuleSet {
     let class = row["class"].as_str().unwrap();
     let spec = &row["type"];
@@ -250,11 +247,11 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
                 0,
                 0,
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("the supplied factory object constructs");
         assert_eq!(
-            sim.production.factories_mut().link_active_entity(
+            sim.production.edit_factories().link_active_entity(
                 crate::sim::production::factory::FactoryHolder::House(holder, kind),
                 entity,
                 0, // This supplied factory prior starts with zero debt.
@@ -296,7 +293,6 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
     // The row's counters are the house's whole count, its factories'
     // objects included.
     let mut tracking = HouseTracking::default();
-    tracking.add_airport_docks(house["docks"].as_i64().map_or(0, |docks| docks as i32));
     for (key, active) in [("owned", false), ("active", true)] {
         for counter in row[key].as_array().into_iter().flatten() {
             let type_id = sim.interner.get(counter[1].as_str().unwrap()).unwrap();
@@ -309,10 +305,9 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
             }
         }
     }
-    sim.houses
-        .get_mut(&owner)
-        .unwrap()
-        .set_tracking_for_test(tracking);
+    let state = sim.houses.get_mut(&owner).unwrap();
+    state.set_tracking_for_test(tracking);
+    state.add_airport_docks(house["docks"].as_i64().map_or(0, |docks| docks as i32));
     (sim, owner)
 }
 
@@ -326,7 +321,6 @@ fn query(row: &Value, rules: &RuleSet) -> ObjectType {
     rules.object_in_category(class, "Q").unwrap().clone()
 }
 
-#[cfg(not(feature = "ares"))]
 fn upgrade_prerequisite_world() -> (Simulation, RuleSet, InternedId) {
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[Countries]\n0=C1\n[VehicleTypes]\n0=Q\n\
@@ -354,7 +348,6 @@ fn upgrade_prerequisite_world() -> (Simulation, RuleSet, InternedId) {
 /// even when an earlier host carries the prerequisite. Its fixed three-type
 /// scan does not read the upgrade count or compare PowersUpBuilding's name.
 #[test]
-#[cfg(not(feature = "ares"))]
 fn upgrade_prerequisite_uses_house_order_and_all_three_type_slots() {
     let (mut sim, rules, owner) = upgrade_prerequisite_world();
     let product = rules.object("Q").unwrap();
@@ -392,7 +385,6 @@ fn upgrade_prerequisite_uses_house_order_and_all_three_type_slots() {
 }
 
 #[test]
-#[cfg(not(feature = "ares"))]
 fn upgrade_prerequisite_skips_limbo_offline_and_both_selling_missions() {
     use crate::sim::mission::MissionDispatchTimer;
     use crate::sim::mission::state::MissionTestFixture;
@@ -429,7 +421,6 @@ fn upgrade_prerequisite_skips_limbo_offline_and_both_selling_missions() {
 }
 
 #[test]
-#[cfg(not(feature = "ares"))]
 fn can_build_matches_the_original() {
     for row in comparable_can_build_rows() {
         let rules = rules_for(&row);
@@ -456,7 +447,6 @@ fn can_build_matches_the_original() {
 /// rejects that zero mask. The limit-only and prerequisite-override arms
 /// precede this country gate in the original function.
 #[test]
-#[cfg(not(feature = "ares"))]
 fn comma_only_required_houses_refuses_ordinary_can_build_but_keeps_shortcuts() {
     let make = |required: &str| {
         RuleSet::from_ini(&IniFile::from_str(&format!(
@@ -500,7 +490,6 @@ fn comma_only_required_houses_refuses_ordinary_can_build_but_keeps_shortcuts() {
 // Ares hook 0x50B370 (10024F80) replaces CheckBuildLimit; its own tests are
 // in can_build_ares_tests.rs.
 #[test]
-#[cfg(not(feature = "ares"))]
 fn check_build_limit_matches_the_original() {
     for row in rows("check_build_limit") {
         let rules = rules_for(&row);
@@ -508,6 +497,47 @@ fn check_build_limit_matches_the_original() {
         let answer = check_build_limit(&sim, &rules, owner, &query(&row, &rules));
         assert_eq!(i32::from(answer), int(&row["answer"]), "{}", row["name"]);
     }
+}
+
+#[test]
+fn double_owned_opens_a_foreign_factory_only_outside_campaign() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let patch =
+        IniFile::from_str("[E1]\nOwner=Russians\nDoubleOwned=yes\n[GAPILE]\nOwner=Americans\n");
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&patch)
+    else {
+        return;
+    };
+    let rules = retail.rules;
+    let product = rules.object("E1").unwrap();
+    let building = rules.object("GAPILE").unwrap();
+    assert!(product.double_owned);
+    assert!(!building.double_owned);
+    assert_eq!(product.owner_mask(&rules) & building.owner_mask(&rules), 0);
+
+    let mut sim = Simulation::new();
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let owner = sim.interner.intern("Self");
+    let factory = 1;
+    crate::sim::production::tests::spawn_structure(
+        &mut sim, &rules, factory, "Self", "GAPILE", 20, 20,
+    );
+    let query = |sim: &Simulation| find_factory(sim, &rules, owner, product, false, false, false);
+
+    sim.session.set_game_mode(ScenarioGameMode::Campaign);
+    assert_eq!(query(&sim), None);
+    let mode = ScenarioGameMode::Skirmish;
+    sim.session.set_game_mode(mode);
+    assert_eq!(query(&sim), Some(factory));
+    sim.install_session_admission(
+        mode,
+        None,
+        mode.stock_rule_policy(None)
+            .with_double_owned(crate::rules::rule_policy::DoubleOwnedPolicy::OwnerMask),
+    );
+    assert_eq!(query(&sim), None);
 }
 
 /// House4F78E4..4F7925 consults its captured labs before TechLevel,
@@ -549,13 +579,13 @@ fn captured_secret_lab_grants_before_normal_tech_admission_and_retracts_on_loss(
         can_build(&sim, &rules, owner, product, false, true),
         CanBuild::No
     );
-    sim.change_owner_with_rules(lab, owner, &rules, None, Default::default());
+    sim.change_owner_with_rules(lab, owner, &rules, None, &mut Default::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, true),
         CanBuild::Yes,
         "captured lab grant bypasses TechLevel=-1 and the unmet ordinary prerequisite"
     );
-    sim.change_owner_with_rules(lab, other, &rules, None, Default::default());
+    sim.change_owner_with_rules(lab, other, &rules, None, &mut Default::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, true),
         CanBuild::No
@@ -563,7 +593,6 @@ fn captured_secret_lab_grants_before_normal_tech_admission_and_retracts_on_loss(
 }
 
 #[test]
-#[cfg(not(feature = "ares"))]
 fn can_build_after_runtime_tech_level_change_matches_original_current_value_controls() {
     for row in comparable_can_build_rows() {
         let native_tech_level = row["type"]["tech"].as_i64().unwrap_or(1) as i32;
@@ -613,7 +642,7 @@ fn retail_slave_miner_meets_proc_and_docks_limit_harriers() {
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let on_map = |sim: &mut Simulation, house, category, name: &str, count| {
         let type_id = sim.interner.get(name).unwrap();
-        let tracking = sim.houses.get_mut(&house).unwrap().tracking_mut();
+        let tracking = sim.houses.get_mut(&house).unwrap().tracking_mut_for_test();
         tracking.set_active_for_test(category, type_id, count);
         tracking.set_owned_for_test(category, type_id, count);
     };
@@ -647,7 +676,7 @@ fn retail_slave_miner_meets_proc_and_docks_limit_harriers() {
 
     let americans = sim.interner.intern("Americans");
     let mut house = HouseState::new(americans, 0, None, true, 0, 10);
-    house.tracking_mut().add_airport_docks(4);
+    house.add_airport_docks(4);
     sim.houses.register(house);
     let orca = rules.object("ORCA").unwrap();
     assert!(orca.airport_bound);
@@ -663,7 +692,6 @@ fn retail_slave_miner_meets_proc_and_docks_limit_harriers() {
 }
 
 #[test]
-#[cfg(not(feature = "ares"))]
 fn secret_lab_can_build_matches_original_human_ai_limit_and_priority_controls() {
     let native: Value =
         serde_json::from_str(crate::test_fixture::text("tools/can_build_secret_lab.json")).unwrap();
@@ -692,7 +720,6 @@ fn secret_lab_can_build_matches_original_human_ai_limit_and_priority_controls() 
 /// house, even on the computer's limit-only FindFactory route and after a
 /// spy stole the tech.
 #[test]
-#[cfg(not(feature = "ares"))]
 fn retail_room_bans_refuse_the_spy_and_stolen_tech_units() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;

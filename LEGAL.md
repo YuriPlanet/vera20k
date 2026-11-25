@@ -5,9 +5,8 @@
 VERA20K is copyrighted software. You may copy, change and share its code only under the
 [GPLv3](LICENSE-GPL) and the [additional terms](#additional-terms) below.
 
-- If you share a changed version without its full source code, pass it off as VERA20K, or share
-  VERA20K on terms other than these, you infringe our copyright, and your license ends
-  automatically.
+- Distributing code in violation of the GPLv3 can terminate your rights under the license.
+  Section 8 explains when those rights are reinstated.
 - Willful copyright infringement on a commercial scale is a crime in most countries.
 - Forks and paid builds may not use the VERA20K name; see [The VERA20K name](#the-vera20k-name).
 - We report infringing copies to stores and hosts to get them taken down.
@@ -15,6 +14,34 @@ VERA20K is copyrighted software. You may copy, change and share its code only un
   [Online play](#online-play).
 - Official builds come only from the [releases page](https://github.com/YuriPlanet/vera20k/releases)
   and [vera20k.org](https://vera20k.org/). Anything else is unofficial and may contain malware.
+
+## Commercial use of the code
+
+**Do not use VERA20K code to make money or gain a commercial advantage.** We ask this of
+everyone who uses any part of the code, from a single function to the whole engine. It applies
+whether you copy, modify, translate or compile the code, whatever you call your product and
+whoever runs the servers.
+
+- Do not sell or rent a build, fork, library or plugin that contains the code.
+- Do not put the code into a paid product, a commercial service or an internal tool used to
+  run a business. This includes code used on your servers that customers never download.
+- Do not earn money from a product or service built with the code through ads, sponsorships,
+  subscriptions, in-app purchases or paid access, even if the download itself is free.
+
+Voluntary donations and payments for contributions made publicly available to the project
+are welcome. For code licensed under the [GPLv3](LICENSE-GPL), the noncommercial policy
+above is a project request. The GPLv3 permits commercial use and sale under its terms.
+
+If you use VERA20K code commercially, we may decline requests for technical support or
+promotion through official project channels. If you charge for access to our lobby or relays,
+or sell a build or service that connects to them, without our written permission, we may block
+that access under our [online play rules](#online-play).
+
+If you distribute our copyrighted code in violation of the GPLv3, we may demand that you fix
+the violation or stop distributing the infringing version. One example is selling a build
+without making its corresponding source available as section 6 requires. We may ask the
+store or host to remove the infringing copy. Where the law allows, we may ask a court to
+stop the infringement and award damages.
 
 ## The VERA20K name
 
@@ -81,8 +108,31 @@ Parts of the optional Ares support are translated from
 
 This product includes software developed by the Ares Contributors.
 
+## Code from Phobos
+
+Parts of the optional Phobos support are ported from
+[Phobos](https://github.com/Phobos-developers/Phobos), which the
+[Phobos Developers](docs/phobos.md#original-project-and-authors) license under the GPLv3, like
+VERA20K. Keep their credit when you share them.
+
+This product includes software developed by the Phobos Developers.
+
+## Code from Kratos
+
+Parts of the Kratos support are ported from
+[Kratos PP](https://github.com/ChrisLv-CN/KratosPP), which its author
+**双杀步枪 (ChrisLv_CN)** licenses under the LGPLv3. VERA20K conveys the port as part of its
+GPLv3 work, which the LGPLv3 allows; keep the credit and
+[its license](LICENSES/KratosPP.txt) when you share it.
+
+This product includes software developed by the Kratos PP author.
+
 ## Game files
 
-VERA20K contains none of the game's files. They belong to Electronic Arts, and no VERA20K
-license covers them. You need your own copy of Red Alert 2: Yuri's Revenge, and sharing VERA20K
-together with the game's files is piracy.
+VERA20K includes 240 ice and shoreline tiles from Command & Conquer: Tiberian Sun – Firestorm
+with permission. The [bundled ice archive](Terrain/vera_ice.mix) adapts them to the
+Yuri's Revenge tile size and snow palette. Electronic Arts owns the artwork. VERA20K's code
+and art licenses grant no rights to reuse it separately. EA has not endorsed and does not support this product.
+
+Players supply their own copy of Red Alert 2: Yuri's Revenge. Its retail files belong to
+Electronic Arts and are distributed separately from VERA20K.

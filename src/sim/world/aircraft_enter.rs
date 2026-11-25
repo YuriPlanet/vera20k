@@ -3,7 +3,6 @@
 //! dock coordinate and the landing step.
 use super::{FrameEffects, Simulation};
 use crate::map::entities::EntityCategory;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::aircraft::enter_mission::{self, EnterHost, EnterNav};
 use crate::sim::components::{DriveCoord, NavTargetRef};
@@ -24,15 +23,13 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> i32 {
         enter_mission::enter_visit(&mut WorldEnter {
             sim: self,
             id,
             rules,
-            registry,
-            effects,
+            effects: effects.reborrow(),
         })
     }
 }
@@ -42,7 +39,6 @@ struct WorldEnter<'a> {
     sim: &'a mut Simulation,
     id: u64,
     rules: &'a RuleSet,
-    registry: Option<&'a OverlayTypeRegistry>,
     effects: FrameEffects<'a>,
 }
 
@@ -56,7 +52,7 @@ impl WorldEnter<'_> {
     }
 
     fn transmit(&mut self, message: RadioMessage) -> RadioResponse {
-        radio::transmit_to_contact(self.sim, self.id, message, self.rules, self.effects)
+        radio::transmit_to_contact(self.sim, self.id, message, self.rules, &mut self.effects)
     }
 }
 
@@ -141,18 +137,12 @@ impl EnterHost for WorldEnter<'_> {
             self.sim,
             self.rules,
             self.id,
-            self.effects,
+            &mut self.effects,
         )
     }
 
     fn enter_idle_mode(&mut self) {
-        crate::sim::aircraft::enter_idle_mode_for(
-            self.sim,
-            self.id,
-            self.rules,
-            self.registry,
-            self.effects,
-        );
+        crate::sim::aircraft::enter_idle_mode_for(self.sim, self.id, self.rules, &mut self.effects);
     }
 
     /// Mission+0xBC as `Mission_Enter @ 0x00419C80` reads it (`0x00419DA9`).
@@ -176,7 +166,7 @@ impl EnterHost for WorldEnter<'_> {
     }
 
     fn in_radio_contact(&mut self) -> bool {
-        !self.entity().radio_contacts.is_empty()
+        !self.entity().seldom.radio_contacts.is_empty()
     }
 
     /// A missile's Rocket never Enters: no idle arm picks Enter for an
@@ -192,7 +182,7 @@ impl EnterHost for WorldEnter<'_> {
 
     fn clear_destination(&mut self) {
         self.sim
-            .assign_aircraft_destination(self.id, None, self.rules, self.effects);
+            .assign_aircraft_destination(self.id, None, self.rules, &mut self.effects);
     }
 
     /// `Mission_Enter @ 0x00419C80`'s state-7 step: NavCom `+0x5A4` (`0x00419F35`,
@@ -234,8 +224,13 @@ impl EnterHost for WorldEnter<'_> {
             y: here.y.wrapping_add(step(target.y, here.y)),
             z: here.z,
         };
-        self.sim
-            .foot_set_location_marked(self.id, next, self.rules, self.registry, self.effects);
+        self.sim.foot_set_location_marked(
+            self.id,
+            next,
+            self.rules,
+            Some(self.rules.overlay_registry()),
+            &mut self.effects,
+        );
     }
 
     fn dock_now(&mut self) -> i32 {
@@ -268,13 +263,13 @@ impl EnterHost for WorldEnter<'_> {
         if !self.sim.is_carryall(self.id, self.rules) {
             return false;
         }
-        let contact = self.entity().radio_contacts.slot(0);
+        let contact = self.entity().seldom.radio_contacts.slot(0);
         let Some((cargo, size)) = self
             .sim
             .substrate
             .entities
             .get_mut(self.id)
-            .and_then(|entity| entity.passenger_role.cargo_mut())
+            .and_then(|entity| entity.passenger_role_mut().cargo_mut())
             .and_then(|hold| hold.unload_first())
         else {
             return false;
@@ -288,27 +283,43 @@ impl EnterHost for WorldEnter<'_> {
                 RadioMessage::Hello,
                 radio::RadioPayload::default(),
                 self.rules,
-                self.effects,
+                &mut self.effects,
             ) == RadioResponse::Roger
         });
-        let context = crate::sim::world::UninitContext::new(self.rules, self.registry)
-            .with_effects(self.effects);
+        let context =
+            crate::sim::world::UninitContext::new(self.rules).with_effects(&mut self.effects);
         let _ = self
             .sim
             .add_cargo_passenger_chain(self.id, &[(cargo, size)], context);
         if accepted {
-            self.sim
-                .foot_mark_remove(self.id, self.rules, self.registry, self.effects);
-            self.sim
-                .carryall_unload(self.id, self.rules, self.registry, self.effects);
-            self.sim
-                .foot_mark_put(self.id, self.rules, self.registry, self.effects);
+            self.sim.foot_mark_remove(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                &mut self.effects,
+            );
+            self.sim.carryall_unload(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                &mut self.effects,
+            );
+            self.sim.foot_mark_put(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                &mut self.effects,
+            );
         } else {
             let airfield = self
                 .sim
                 .aircraft_nearest_friendly_airfield_cell(self.id, self.rules);
-            self.sim
-                .assign_aircraft_destination(self.id, Some(airfield), self.rules, self.effects);
+            self.sim.assign_aircraft_destination(
+                self.id,
+                Some(airfield),
+                self.rules,
+                &mut self.effects,
+            );
         }
         self.queue(MissionType::Move, false);
         true

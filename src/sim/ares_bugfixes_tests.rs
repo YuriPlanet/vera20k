@@ -152,7 +152,7 @@ fn a_refused_make_infantry_anim_ends_with_its_infantryman() {
     sim.substrate.set_anim_owner_house(anim, russians);
     let before = sim.substrate.entities.keys_sorted();
 
-    assert!(sim.anim_make_infantry(anim, 0, &rules, None, FrameEffects::default()));
+    assert!(sim.anim_make_infantry(anim, 0, &rules, None, &mut FrameEffects::default()));
     let created: Vec<u64> = sim
         .substrate
         .entities
@@ -181,7 +181,7 @@ fn a_sale_that_only_picks_engineers_lets_one_out() {
         shed,
         3,
         &[(10, 10), (11, 10), (10, 11)],
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let crew: Vec<u64> = sim
         .substrate
@@ -203,9 +203,20 @@ fn a_sale_past_its_survivors_leaves_none_for_its_death() {
     let rules = rules();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x44A8A2);
     let shed = spawn(&mut sim, &rules, "SHED", "Russians", 10, 10);
-    crate::sim::production::begin_selling(&mut sim, &rules, shed, false);
+    crate::sim::production::begin_selling(
+        &mut sim,
+        &rules,
+        shed,
+        crate::sim::building_construction::BuildingDown::commenced(0, false),
+    );
     assert!(sim.substrate.entities.get(shed).unwrap().building_down());
-    crate::sim::production::sell_stage_one(&mut sim, &rules, None, shed, FrameEffects::default());
+    crate::sim::production::sell_stage_one(
+        &mut sim,
+        &rules,
+        None,
+        shed,
+        &mut FrameEffects::default(),
+    );
     assert!(
         sim.substrate
             .entities
@@ -333,7 +344,7 @@ fn a_teleporter_forgets_its_marked_cell_in_limbo() {
             z: 0,
         });
     assert!(marked(&sim).is_some());
-    let _ = sim.techno_limbo_with_context(cleg, UninitContext::new(&rules, None));
+    let _ = sim.techno_limbo_with_context(cleg, UninitContext::new(&rules));
     assert_eq!(marked(&sim), None);
 }
 
@@ -353,7 +364,7 @@ fn a_deployed_man_undeploys_with_a_one_frame_delay() {
         .set_infantry_doing_verified(27)
         .unwrap();
     assert_eq!(
-        sim.infantry_mission_unload(gi, &rules, FrameEffects::default()),
+        sim.infantry_mission_unload(gi, &rules, &mut FrameEffects::default()),
         Ok(1)
     );
 }
@@ -457,7 +468,7 @@ fn an_unpowered_teleporter_refuses_a_move() {
         z: 0,
     };
     assert_eq!(
-        sim.teleport_move_to(cleg, to, &rules, false, None, FrameEffects::default()),
+        sim.teleport_move_to(cleg, to, &rules, false, None, &mut FrameEffects::default()),
         Ok(false)
     );
     assert_eq!(

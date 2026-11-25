@@ -36,7 +36,7 @@ fn constructed(control: [i32; 3], origin: i32) -> (Simulation, RuleSet, u64) {
             0,
             PlacementEvidence::EvaluateMark,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .is_some()
     );
@@ -82,7 +82,7 @@ fn construction_completes_within_its_native_object_visit() {
         for frame in row["frames"].as_array().unwrap() {
             let now = frame["frame"].as_u64().unwrap() as u32;
             sim.session.set_binary_frame_for_test(now);
-            sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());
+            sim.object_ai_visit_one(id, Some(&rules), &mut ObjectAiCtx::default());
             let entity = sim.substrate.entities.get(id).unwrap();
             let context = format!("{} frame{now}", input["name"]);
             if crate::sim::building_construction::native_route::assert_frame(
@@ -130,7 +130,13 @@ fn construction_matches_the_original_mission_visits() {
             let now = origin + frame["frame"].as_i64().unwrap() as i32;
             sim.session.set_binary_frame_for_test(now as u32);
             update_animation(&mut sim, id, &rules);
-            dispatch(&mut sim, id, &rules, ObjectAiCtx::default(), &mut false);
+            dispatch(
+                &mut sim,
+                id,
+                &rules,
+                &mut ObjectAiCtx::default(),
+                &mut false,
+            );
             let entity = sim.substrate.entities.get(id).unwrap();
             let context = format!("{} frame{now}", input["name"]);
             assert_eq!(

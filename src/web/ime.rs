@@ -23,6 +23,9 @@ use web_sys::{
 };
 use winit::event::Ime;
 
+// Thread-locals because the textarea's DOM listeners are JS closures with no
+// receiver, and the edit they work on holds `!Send` DOM handles on the
+// browser's main thread; the app drains EVENTS there each frame.
 thread_local! {
     static EDIT: RefCell<Option<Edit>> = const { RefCell::new(None) };
     static EVENTS: RefCell<VecDeque<Ime>> = const { RefCell::new(VecDeque::new()) };

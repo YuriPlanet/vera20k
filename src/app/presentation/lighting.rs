@@ -69,6 +69,8 @@ pub(crate) fn body_extra_light(
                 let height = air_movement::queried_flight_height(entity, Some(cells));
                 if entity.on_bridge() {
                     height >= 0
+                } else if let Some(deck) = ground_pose::corrected_deck_z(cells.terrain(), current) {
+                    ground_pose::object_world_z_leptons(entity, Some(cells.terrain())) >= deck
                 } else {
                     height >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
                 }
@@ -684,7 +686,7 @@ fn effect_light(
 /// BerserkColor while Techno+298 is active, into the caller's colour word.
 /// Composite73C1A5 passes that word to the existing packed blitter owner.
 /// A deactivated Unit (+1C8) then halves intensity, signed toward zero.
-/// Ares replaces that halving (hook73C143 -> UnitClass_DrawVXL_Deactivated
+/// When Ares plays, it replaces that halving (hook73C143 -> UnitClass_DrawVXL_Deactivated
 /// 1004CEA0) for Units: under EMP `[AudioVisual]DeactivateDimEMP`, else when
 /// deactivated DeactivateDimOperator without its operator, otherwise
 /// DeactivateDimPowered; the CRT ftol100772B0 truncates the product.
@@ -734,8 +736,9 @@ pub(crate) fn unit_voxel_effect_light(
         });
         light = light.with_colour_word(light.colour_word() | word);
     }
-    #[cfg(feature = "ares")]
-    if category == crate::map::entities::EntityCategory::Unit {
+    if category == crate::map::entities::EntityCategory::Unit
+        && rules.is_some_and(|rules| rules.ares())
+    {
         use crate::rules::ares_cloak_power::DeactivateDim;
         let kind = if entity.emp_remaining() > 0 {
             DeactivateDim::Emp
@@ -882,8 +885,9 @@ pub(crate) struct MatchLighting {
     /// Replica of the simulation's radiation light sites, kept like `buildings`.
     radiation: BTreeMap<(u16, u16), PointLight>,
     profile: CellRelightProfile,
-    /// Replica of the scenario lighting state (`ScenarioSession::lighting`) as
-    /// last applied, kept like `buildings`.
+    /// The scenario lighting state (`ScenarioSession::lighting`) as the last
+    /// global relight or [`Self::refresh`] applied it. Writes that refresh no
+    /// cell ([`Self::after_pass`]) leave it behind the simulation's.
     scenario: Option<ScenarioLightingState>,
     detail_level: u32,
     /// Free Anim+FC copies, independent of cell refreshes and depth+100.
@@ -1140,18 +1144,33 @@ impl MatchLighting {
         assert!(update.commit_into(&mut self.grid));
     }
 
-    /// Reconcile explicit tool/fixture mutations and the detail option. Normal
-    /// production frames first replay their ordered events via apply_events.
+    /// A pass's work after its frame's ordered events ([`Self::apply_events`]),
+    /// which alone relight cells: retire disposed anims' copies and follow
+    /// the detail option. A scenario write that refreshes no cell natively
+    /// (Execute71/72 at `0x006DF250`/`0x006DF271`, Execute73 at
+    /// `0x006DF292`, the nuke flash going off at `0x0053A738`) publishes no
+    /// event, so cells keep the scalars their last relight gave them.
+    pub(crate) fn after_pass(
+        &mut self,
+        terrain: &ResolvedTerrainGrid,
+        sim: &Simulation,
+        detail_level: u32,
+    ) {
+        self.retire_disposed_anims(sim);
+        self.set_detail_level(terrain, sim, detail_level);
+    }
+
+    /// Install, load and tool/fixture mutations: re-derive the sources and
+    /// the scenario lighting from the simulation, relight what differs, then
+    /// follow the detail option. Match frames never call this
+    /// ([`Self::after_pass`]).
     pub(crate) fn refresh(
         &mut self,
         terrain: &ResolvedTerrainGrid,
         sim: &Simulation,
         detail_level: u32,
     ) {
-        // Retire only at physical disposal, never merely UnInit, detach or
-        // loss of Logic/Display membership. Save uses the same store check.
-        self.anim_intensities
-            .retain(|id, _| sim.anim(*id).is_some());
+        self.retire_disposed_anims(sim);
         let (buildings, radiation) = source_maps(sim);
         let mut events = Vec::new();
         for id in self
@@ -1209,10 +1228,27 @@ impl MatchLighting {
             });
         }
         self.apply_events(terrain, &events);
+        self.set_detail_level(terrain, sim, detail_level);
+    }
+
+    /// Retire an anim's Anim+FC copy only at its physical disposal, never
+    /// merely UnInit, detach or loss of Logic/Display membership. Save uses
+    /// the same store check.
+    fn retire_disposed_anims(&mut self, sim: &Simulation) {
+        self.anim_intensities
+            .retain(|id, _| sim.anim(*id).is_some());
+    }
+
+    /// The detail option: Display4AE450 ->545000 destroys only Cell Converts.
+    /// The synchronous native iterator resample preserves ColorSchemes and
+    /// every already copied Anim+FC.
+    pub(crate) fn set_detail_level(
+        &mut self,
+        terrain: &ResolvedTerrainGrid,
+        sim: &Simulation,
+        detail_level: u32,
+    ) {
         if self.detail_level != detail_level.min(2) {
-            // Display4AE450 ->545000 destroys only Cell Converts. The
-            // synchronous native iterator resample preserves ColorSchemes
-            // and every already copied Anim+FC.
             self.detail_level = detail_level.min(2);
             self.grid.reset_cell_converts(sim.palette_constructor_rgb());
             let mut dirty = self.global_cells.iter().copied().collect();
@@ -1410,27 +1446,27 @@ fn collect_live_building_lights(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "curtain_tint_tests.rs"]
 mod curtain_tint_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "lighting_tint_tests.rs"]
 mod tint_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "anim_lighting_tests.rs"]
 mod anim_lighting_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "unit_light_tests.rs"]
 mod unit_light_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "infantry_light_tests.rs"]
 mod infantry_light_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod palette_producer_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

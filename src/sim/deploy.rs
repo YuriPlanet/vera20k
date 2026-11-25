@@ -16,6 +16,7 @@ use crate::sim::world::FrameChannel;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::util::forked::Forked;
 
 /// Techno `+0x2A4`, a deployed infantryman's crush immunity, which the crush
 /// test reads (`movement::bump_crush`). Construction clears it. The
@@ -73,12 +74,12 @@ pub(crate) fn issue_order(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     if !sim.substrate.entities.get(id).is_some_and(|e| {
         e.lifecycle.object_alive()
             && !e.lifecycle.in_limbo()
-            && e.tether.partner().is_none()
+            && e.seldom.tether.partner().is_none()
             // Event9 has no occupant/cargo gate. Selection730B28 owns the
             // garrison D admission; an accepted Building event may be empty.
             && (matches!(e.category(), EntityCategory::Structure | EntityCategory::Infantry)
@@ -140,8 +141,8 @@ pub(crate) fn issue_order(
         effects,
     );
     // Queue's same-mission guard keeps the handler and timer on a repeated D.
-    sim.assign_null_destination(id, rules, None, effects);
-    let _ = sim.assign_target_represented(id, None, rules, None, effects);
+    sim.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+    let _ = sim.assign_target_represented(id, None, rules, effects);
     sim.mission_queue_exact(
         id,
         MissionId::from_known(MissionType::Unload),
@@ -203,20 +204,14 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> (i32, bool) {
         let mut bridge_changed = false;
         // Native always has a cell; without one VERA fires at nothing rather
         // than at a Target the unit held before.
         let targeted = self.own_map_cell(id).is_some_and(|(rx, ry)| {
-            self.assign_target_represented(
-                id,
-                Some(TargetKind::Cell(rx, ry)),
-                rules,
-                overlay_registry,
-                effects,
-            )
-            .is_ok()
+            self.assign_target_represented(id, Some(TargetKind::Cell(rx, ry)), rules, effects)
+                .is_ok()
         });
         let shot = targeted
             .then(|| self.substrate.entities.get(id))
@@ -227,7 +222,6 @@ impl Simulation {
                 let subject = crate::sim::combat::fire_error_world::FireSubject {
                     world: self,
                     rules,
-                    overlay_registry,
                     fog: None,
                     firer: actor,
                     obj: object,
@@ -277,7 +271,8 @@ impl Simulation {
     ///   and in a building's cell unless the building is a `Bunker=`
     ///   (`0x00701087..0x007010BB`).
     /// - Building: `0x00465D30` always refuses.
-    /// - Infantry: a type with `UndeployDelay=` above -1 (`0x005224F0`) is
+    /// - Infantry: refused while webbed (Firestorm's Is_Immobilized); a type
+    ///   with `UndeployDelay=` above -1 (`0x005224F0`) is
     ///   refused while deployed (Doing 27..30, `0x00522510`), in Doing 31, or
     ///   while its rearm timer runs (`+0x2EC`); then `Deployer=` decides
     ///   (`0x005224E0`).
@@ -299,9 +294,10 @@ impl Simulation {
         let ares = rules.ares_form();
         let (rx, ry) = (entity.position.rx(), entity.position.ry());
         let terrain = self.resolved_terrain.as_ref();
-        if terrain
-            .is_some_and(|terrain| terrain.is_tube_deploy_neighborhood((rx as i16, ry as i16)))
-        {
+        if terrain.is_some_and(|terrain| {
+            let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
+            cells.is_near_tube_northwest(cells.lookup((rx as i16, ry as i16)))
+        }) {
             return false;
         }
         match entity.category() {
@@ -319,7 +315,7 @@ impl Simulation {
                 if ares && (entity.is_falling_down() || entity.is_warping_in()) {
                     return false;
                 }
-                if entity.low_bridge_tube_state.is_some() {
+                if entity.active_tube().is_some() {
                     return false;
                 }
                 let bunkered = entity.bunker.link().installed_in().is_some();
@@ -335,7 +331,7 @@ impl Simulation {
                     && (entity.parasite.eater().is_some()
                         || (crate::sim::mcv_deploy::deploys_into(self, entity, rules)
                             .is_some_and(|yard| yard.construction_yard)
-                            && entity.mind_control.controller().is_some()))
+                            && entity.seldom.mind_control.controller().is_some()))
                 {
                     return false;
                 }
@@ -382,6 +378,12 @@ impl Simulation {
             }
             EntityCategory::Structure => false,
             EntityCategory::Infantry => {
+                // Firestorm 2.0 `Can_Deploy_Now` 0x00631EC0 asks a non-Unit
+                // Is_Immobilized (`0x006320BA`), which holds a webbed
+                // infantryman (`0x004D5B10`).
+                if entity.is_webbed(self.session.binary_frame() as i32) {
+                    return false;
+                }
                 if object.undeploy_delay > -1
                     && (entity.infantry_deploy_doing()
                         || entity
@@ -389,6 +391,7 @@ impl Simulation {
                             .as_infantry()
                             .is_some_and(|leaf| leaf.doing() == 31)
                         || entity
+                            .seldom
                             .rearm_timer
                             .remaining(self.session.binary_frame() as i32)
                             != 0)
@@ -408,11 +411,13 @@ impl Simulation {
     /// it on each admitted updater visit. Every site plays at the actor's own
     /// Location: Infantry `0x0051D94F..0x0051D9CA`, Unit deploy
     /// `0x00739C86..0x00739CB9`, Unit undeploy `0x00739E81..0x00739EB3`.
+    /// The interner and the sound channel are written only by a sound it
+    /// plays (`util::forked`).
     pub(crate) fn emit_deploy_action_sound(
-        interner: &mut StringInterner,
+        interner: &mut Forked<StringInterner>,
         substrate: &ObjectSubstrate,
         terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
+        sound_events: &mut Forked<FrameChannel<SimSoundEvent>>,
         id: u64,
         requested: i32,
         rules: &RuleSet,
@@ -457,7 +462,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
             .substrate
@@ -490,7 +495,7 @@ impl Simulation {
         id: u64,
         completed_doing: i32,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let next = match completed_doing {
             27 => 28,
@@ -515,9 +520,9 @@ impl Simulation {
                 .get_mut(id)
                 .expect("same deployment completion receiver");
             if completed_doing == 27 {
-                actor.native_crush_immunity.grant();
+                actor.seldom.native_crush_immunity.grant();
             } else {
-                actor.native_crush_immunity.revoke();
+                actor.seldom.native_crush_immunity.revoke();
             }
         }
         if completed_doing == 27 {
@@ -533,7 +538,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<i32, String> {
         let actor = self
             .substrate
@@ -607,7 +612,6 @@ impl Simulation {
                         id,
                         Some(TargetKind::Cell(at.0 as u16, at.1 as u16)),
                         rules,
-                        None,
                         effects,
                     )
                     .map_err(|cause| format!("AreaFire Unload target: {cause}"))?;
@@ -624,7 +628,7 @@ impl Simulation {
                 self.session.binary_frame(),
             )
             .map_err(|cause| format!("Infantry Unload Guard: {cause}"))?;
-        self.assign_destination_represented(id, None, rules, None, effects)
+        self.assign_destination_represented(id, None, rules, effects)
             .map_err(|cause| format!("Infantry Unload destination: {cause}"))?;
         Ok(if delay > -1 { delay } else { 450 })
     }

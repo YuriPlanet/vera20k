@@ -188,7 +188,9 @@ pub(super) fn follow_selection_writes(
                 | SuperWeaponKind::SpyPlane
                 | SuperWeaponKind::GeneticConverter
                 | SuperWeaponKind::ForceShield
-                | SuperWeaponKind::PsychicReveal,
+                | SuperWeaponKind::PsychicReveal
+                // Firestorm 2.0 SuperClass::Place case 3 (0x60BE8D).
+                | SuperWeaponKind::IonCannon,
             ) if selected.is_some() => {
                 *targeting = None;
             }
@@ -234,7 +236,7 @@ pub(super) fn hide_placement_anims(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
     use crate::sim::superweapon::chronosphere_tests::{

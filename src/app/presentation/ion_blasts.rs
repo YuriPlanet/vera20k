@@ -17,13 +17,10 @@ use crate::sim::ion_blast_ripple::{FRAME_HEIGHT, FRAME_WIDTH};
 const RIPPLE_DETAIL_LEVEL: u32 = 2;
 /// The rows the clip leaves off the tactical view's bottom (`0x0053D5D7`).
 const CLIP_BOTTOM_ROWS: i32 = 7;
-/// ZBuffer `+0x24`, the row seed the threshold starts from (`0x0053D6AA`).
-/// `ZBuffer::Pan @ 0x007BCB50` moves it with each vertical scroll; every
-/// blitter seeds from it, so VERA's fixed seed gives the same comparisons.
-const ROW_SEED: i32 = crate::render::native_z::DEFAULT_Z;
-
 /// DrawAll's draws for `blasts` (coordinate and frame, in vector order) seen
 /// through `camera` over the tactical `viewport`, both in world pixels.
+/// `seed` is the ZBuffer's row seed (`+0x24`, read at `0x0053D6AA`), as
+/// `native_z::ZSeed` has panned it.
 pub(super) fn ion_blast_draws(
     blasts: impl DoubleEndedIterator<Item = ([i32; 3], i32)>,
     camera: [f32; 2],
@@ -32,6 +29,7 @@ pub(super) fn ion_blast_draws(
     origin: [f32; 2],
     viewport: [f32; 2],
     detail_level: u32,
+    seed: i32,
 ) -> Vec<IonBlastDraw> {
     if detail_level != RIPPLE_DETAIL_LEVEL {
         return Vec::new();
@@ -61,8 +59,7 @@ pub(super) fn ion_blast_draws(
                 ],
                 clip,
                 frame: frame as u32,
-                z_seed: ROW_SEED.wrapping_sub(crate::util::native_x87::adjust_for_z_standard(z))
-                    as u16,
+                z_seed: seed.wrapping_sub(crate::util::native_x87::adjust_for_z_standard(z)) as u16,
             })
         })
         .collect()
@@ -74,8 +71,20 @@ pub(super) fn draws(state: &crate::app::AppState) -> Vec<IonBlastDraw> {
         return Vec::new();
     };
     let input = &state.match_state.input;
-    let (_, _, width, height) = crate::app::input::camera::tactical_viewport_px(state);
-    let origin = crate::app::input::camera::tactical_origin_world(state);
+    let (_, _, width, height) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
+    let origin = crate::app::input::camera::tactical_origin_world(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     ion_blast_draws(
         runtime.view().simulation().ion_blasts(),
         [input.camera_x, input.camera_y],
@@ -89,13 +98,14 @@ pub(super) fn draws(state: &crate::app::AppState) -> Vec<IonBlastDraw> {
             .match_presentation
             .in_game_options
             .detail_level,
+        state.renderer.native_z_seed.seed(),
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "ion_blasts_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "ion_blasts_gpu_tests.rs"]
 mod gpu_tests;

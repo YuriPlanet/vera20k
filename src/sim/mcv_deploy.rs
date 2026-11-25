@@ -109,7 +109,7 @@ pub(crate) fn deploys_into<'r>(
 /// `DeploysInto` is one of `[AI] BuildConst=` (Rules `+0x8AC`, compared by
 /// pointer): a Construction Yard maker.
 fn deploys_into_build_const(sim: &Simulation, entity: &GameEntity, rules: &RuleSet) -> bool {
-    deploys_into(sim, entity, rules).is_some_and(|yard| yard.build_const_eligible)
+    deploys_into(sim, entity, rules).is_some_and(|yard| yard.build_const_eligible())
 }
 
 /// The owner's AutoBaseBuilding latch (House+0x1F3) and that no human
@@ -117,7 +117,7 @@ fn deploys_into_build_const(sim: &Simulation, entity: &GameEntity, rules: &RuleS
 fn owner_builds_its_own_base(sim: &Simulation, entity: &GameEntity) -> bool {
     sim.houses.get(&entity.owner()).is_some_and(|house| {
         house.ai_activation().auto_base_building
-            && !house.is_controlled_by_human(sim.session.game_mode_nonzero())
+            && !house.is_controlled_by_human(sim.session.rule_policy())
     })
 }
 
@@ -131,7 +131,7 @@ pub(crate) fn ai_queue_hunt(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     };
     let hunts = deploys_into_build_const(sim, entity, rules)
         && owner_builds_its_own_base(sim, entity)
-        && sim.session.game_mode_nonzero()
+        && sim.session.rule_policy().uses_managed_ai_base()
         && sim
             .houses
             .get(&entity.owner())
@@ -154,7 +154,7 @@ pub(crate) fn hunt_deploys(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
         return false;
     };
     deploys_into(sim, entity, rules).is_some_and(|yard| {
-        yard.build_const_eligible
+        yard.build_const_eligible()
             || entity.attack_target.target().is_some()
             || sim.owner_is_human(entity.owner())
     })
@@ -170,7 +170,7 @@ pub(crate) fn mission_hunt_deploy(
     id: u64,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     match sim
         .substrate
@@ -188,7 +188,7 @@ pub(crate) fn mission_hunt_deploy(
         }
         Some(1) => {
             if let Some(entity) = sim.substrate.entities.get_mut(id)
-                && !entity.mcv_deploy_pending.is_pending()
+                && !entity.seldom.mcv_deploy_pending.is_pending()
             {
                 entity.mission.set_handler_state(0);
             }
@@ -220,7 +220,7 @@ pub(crate) fn try_to_deploy(
     id: u64,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some((yard, cell, owner)) = sim.substrate.entities.get(id).and_then(|entity| {
         Some((
@@ -348,7 +348,7 @@ pub(crate) fn mission_unload(
     id: u64,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let state = sim
         .substrate
@@ -400,7 +400,7 @@ pub(crate) fn mission_unload(
                 .substrate
                 .entities
                 .get(id)
-                .is_some_and(|e| e.mcv_deploy_pending.is_pending());
+                .is_some_and(|e| e.seldom.mcv_deploy_pending.is_pending());
             if pending {
                 let accepted = sim.deploy_mcv(id, rules, registry, effects);
                 finish_retry(&mut sim.substrate, id, accepted);
@@ -434,7 +434,7 @@ pub(crate) fn finish_initial_attempt(sim: &mut Simulation, id: u64, rules: &Rule
         .get(id)
         .filter(|e| !e.death.is_dying())
     {
-        if e.mcv_deploy_pending.is_pending() {
+        if e.seldom.mcv_deploy_pending.is_pending() {
             sim.substrate
                 .entities
                 .get_mut(id)
@@ -442,9 +442,11 @@ pub(crate) fn finish_initial_attempt(sim: &mut Simulation, id: u64, rules: &Rule
                 .mission
                 .set_handler_state(2);
         } else {
-            let hunt = sim.houses.get(&e.owner()).is_some_and(|house| {
-                !house.is_controlled_by_human(sim.session.game_mode_nonzero())
-            }) && sim.session.game_mode_nonzero();
+            let hunt = sim
+                .houses
+                .get(&e.owner())
+                .is_some_and(|house| !house.is_controlled_by_human(sim.session.rule_policy()))
+                && sim.session.rule_policy().uses_managed_ai_base();
             queue(
                 sim,
                 id,
@@ -466,7 +468,7 @@ pub(crate) fn finish_retry(substrate: &mut ObjectSubstrate, id: u64, accepted: b
         && let Some(e) = substrate.entities.get_mut(id)
         && e.navigation.nav_com().is_some()
     {
-        e.mcv_deploy_pending.clear();
+        e.seldom.mcv_deploy_pending.clear();
     }
 }
 
@@ -475,7 +477,7 @@ pub(crate) fn per_cell_process(
     id: u64,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     // 0x739EEC..0x739EF8 has no current-mission guard. Stop and Move do not
     // erase pending intent; native Deploy decides whether NavCom allows it.
@@ -483,16 +485,16 @@ pub(crate) fn per_cell_process(
         .substrate
         .entities
         .get(id)
-        .is_some_and(|e| !e.death.is_dying() && e.mcv_deploy_pending.is_pending())
+        .is_some_and(|e| !e.death.is_dying() && e.seldom.mcv_deploy_pending.is_pending())
     {
         sim.deploy_mcv(id, rules, registry, effects);
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "mcv_deploy_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "mcv_deploy_retask_retail_tests.rs"]
 mod retail_retask_tests;

@@ -813,13 +813,13 @@ fn foundation_equal(left: &Foundation, right: &Foundation) -> bool {
     }
     match (left, right) {
         (Foundation::Custom(_), Foundation::Custom(_)) => {
-            left.dimensions() == right.dimensions() && left.cell_offsets() == right.cell_offsets()
+            left.dimensions() == right.dimensions() && left.cell_offsets().eq(right.cell_offsets())
         }
         _ => true,
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

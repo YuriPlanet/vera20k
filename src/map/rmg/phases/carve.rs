@@ -47,6 +47,9 @@ pub struct CarveCtx<'a> {
     pub blocks: &'a dyn TileBlocks,
     pub rng: &'a mut RmgRng,
     pub playfield: &'a PlayfieldBounds,
+    /// Ares.dll is loaded for this generation: the game is read the Ares way
+    /// (`GenerationObjects::ares`). Only the low-bridge decks read it.
+    pub ares: bool,
 }
 
 /// The two plateaus a carve joins.
@@ -1285,7 +1288,7 @@ pub fn try_carve_connector_at_cell(
     false
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::rmg::phases::shore::{SubTile, TileBlock};
@@ -1395,6 +1398,7 @@ mod tests {
             blocks: &blocks,
             rng: &mut rng,
             playfield: &playfield,
+            ares: false,
         };
         assert!(carve_straight_ramp_clear_south(
             &mut ctx,
@@ -1434,6 +1438,7 @@ mod tests {
             blocks: &blocks,
             rng: &mut rng,
             playfield: &playfield,
+            ares: false,
         };
         assert!(carve_straight_ramp_clear_south(
             &mut ctx,
@@ -1466,6 +1471,7 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
+                ares: false,
             };
             assert!(carve_straight_ramp_clear_south(
                 &mut ctx,
@@ -1514,6 +1520,7 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
+                ares: false,
             };
             assert!(
                 !carve_straight_ramp_clear_south(&mut ctx, regions(), (40, 50), b),
@@ -1552,6 +1559,7 @@ mod tests {
             blocks: &blocks,
             rng: &mut rng,
             playfield: &playfield,
+            ares: false,
         };
         assert!(carve_straight_ramp_clear_south(
             &mut ctx,
@@ -1587,6 +1595,7 @@ mod tests {
                 blocks: &$blocks,
                 rng: &mut $rng,
                 playfield: &$pf,
+                ares: false,
             }
         };
     }

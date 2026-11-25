@@ -318,10 +318,12 @@ fn opening_view_averages_player_technos_else_takes_the_base() {
             map_height: 33,
             fill_silos: false,
             rules: &rules,
+            construction_rules: crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
             overlay_registry: &registry,
             house_roster: &roster,
             skirmish_session: None,
             campaign_map: None,
+            stage_home_global: None,
         })
         .unwrap();
     assert_eq!(output.opening_view_coord, Some([x, y, 0]));

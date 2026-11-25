@@ -23,33 +23,38 @@ pub mod radiation_test_evidence;
 use std::path::Path;
 
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
+use crate::map::campaign_manifest::{CampaignStage, ManifestError};
 use crate::map::map_file::MapFile;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::theater;
 use crate::map::tile_variant_selector::TileVariantSelectorCache;
 use crate::map::waypoints;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::sim::intern::InternedId;
-use crate::sim::scenario_bootstrap::ScenarioBootstrapRng;
-use crate::sim::scenario_session::ScenarioDescriptor;
+use crate::sim::scenario_bootstrap::{
+    AuthoredCampaignStart, FreshScenarioPrefix, FreshScenarioPrefixError, MatchLaunchDescriptor,
+    ScenarioBootstrapRng,
+};
+use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioGameMode};
 use crate::sim::world::Simulation;
 use crate::skirmish_launch::{AiDifficulty, LaunchCountry, SkirmishLaunchSession};
 
 /// A Battle session on `selected_map_file`: the local player against one
 /// computer house for each of `opponents` (its country and difficulty), every
-/// house on a start the launch draws. The lobby allows seven opponents.
+/// house on a start the launch draws.
 pub fn battle_session(
     selected_map_file: &str,
     opponents: &[(LaunchCountry, AiDifficulty)],
 ) -> SkirmishLaunchSession {
     use crate::skirmish_launch::{
-        BATTLE_MODE_ID, LaunchStartPosition, LaunchTeam, PreFillHouseRoster, SkirmishAiSlot,
-        SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLocalSlot,
+        BATTLE_MODE_ID, LaunchStartPosition, LaunchTeam, SkirmishAiSlot, SkirmishLaunchMode,
+        SkirmishLaunchOptions, SkirmishLocalSlot,
     };
 
-    SkirmishLaunchSession {
-        mode: SkirmishLaunchMode::stock(BATTLE_MODE_ID).expect("stock Battle row"),
-        selected_map_file: Some(selected_map_file.to_string()),
-        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+    SkirmishLaunchSession::from_rows(
+        SkirmishLaunchMode::stock(BATTLE_MODE_ID).expect("stock Battle row"),
+        Some(selected_map_file.to_string()),
+        vec![crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: Some(0),
             name: "Player".to_string(),
             slot: SkirmishLocalSlot {
@@ -62,9 +67,8 @@ pub fn battle_session(
             },
             role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
         }],
-        local_player_index: 0,
-        ai_player_count: opponents.len() as i32,
-        opponents: opponents
+        0,
+        opponents
             .iter()
             .enumerate()
             .map(|(slot, &(country, difficulty))| SkirmishAiSlot {
@@ -78,9 +82,8 @@ pub fn battle_session(
                 difficulty,
             })
             .collect(),
-        pre_fill_house_roster: PreFillHouseRoster::from_compact_skirmish(opponents.len()),
-        options: SkirmishLaunchOptions::default(),
-    }
+        SkirmishLaunchOptions::default(),
+    )
 }
 
 /// A loaded scenario plus the per-tick inputs `advance_tick` needs.
@@ -141,10 +144,11 @@ impl HeadlessScenario {
     }
 }
 
-/// Native logic-frame cadence (66 ms). NOTE: this does NOT match the
-/// client, which steps the sim at `app::types::SIM_TICK_MS` = 22 ms — a
-/// recorded 3x tooling divergence; headless digests are not tick-comparable
-/// to client runs until it is resolved.
+/// Native logic-frame cadence (66 ms), the step headless tools hand each
+/// frame. The client paces its frames at `app::types::SIM_TICK_MS` = 22 ms
+/// instead, and a relay paces them at `1000 / FPS`: a frame is one native
+/// logic frame either way, so frame counts, state hashes and
+/// `scenario_session::ScenarioSession::total_sim_ms` agree across all three.
 pub const SIM_TICK_MS: u32 = 1000 / crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND;
 
 /// Load `map_file_name` from the retail install at `retail_dir` with a pinned seed.
@@ -218,12 +222,174 @@ pub fn load_with_launch_and_ini(
         retail_dir,
         map_file_name,
         seed,
-        launch,
+        HeadlessLaunch::Slots(&launch),
         &mut assets,
         game_mode,
         accepted_native_id_prefix,
         process_rules,
     )
+    .map_err(|error| error.to_string())
+}
+
+/// Load a lockstep campaign from the map's own Houses and the accepted role
+/// roster. The launch is local tooling data and needs no live transport.
+pub fn load_campaign_stage(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    launch: crate::sim::scenario_bootstrap::AuthoredCampaignLaunch<'_>,
+    accepted_native_id_prefix: Option<u32>,
+    game_speed: Option<i32>,
+    logical_map: Option<&str>,
+) -> Result<HeadlessScenario, String> {
+    let mut assets =
+        AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL).map_err(|error| {
+            format!(
+                "open retail MIX archives in {}: {error}",
+                retail_dir.display()
+            )
+        })?;
+    load_with_assets(
+        retail_dir,
+        map_file_name,
+        seed,
+        HeadlessLaunch::Campaign {
+            launch,
+            manifest: None,
+            game_speed,
+            logical_map,
+        },
+        &mut assets,
+        launch.mode,
+        accepted_native_id_prefix,
+        None,
+    )
+    .map_err(|error| error.to_string())
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct CampaignStageCheck {
+    pub stage: String,
+    pub manifest_sha256: String,
+    pub map_sha256: String,
+    pub checked_frames: usize,
+    pub final_state_hash: String,
+}
+
+/// Author command: exercise both the production bootstrap and a separately
+/// reconstructed world loaded from the serialized diagnostic replay.
+pub fn check_campaign_stage(
+    retail_dir: &Path,
+    manifest_path: &Path,
+    stage_id: &str,
+    frames: u32,
+) -> anyhow::Result<CampaignStageCheck> {
+    use crate::map::campaign_manifest::CampaignManifest;
+    use crate::sim::replay::{ReplayLog, ReplayRunner};
+    use anyhow::Context;
+
+    anyhow::ensure!(frames != 0, "campaign-check requires at least one frame");
+    let manifest = CampaignManifest::load(manifest_path)?;
+    let index = manifest
+        .stage_index(stage_id)
+        .with_context(|| format!("no stage '{stage_id}' in {}", manifest_path.display()))?;
+    let stage = &manifest.stages[index];
+    let series = manifest_path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+        .canonicalize()
+        .context("resolve campaign series directory")?;
+    let map = series.join(&stage.map).canonicalize().map_err(|error| {
+        stage.map_error(
+            format!("cannot open '{}': {error}", stage.map),
+            "Set Map to an existing map inside the series directory",
+        )
+    })?;
+    if !map.starts_with(&series) {
+        return Err(stage
+            .map_error(
+                "campaign map resolves outside the series directory",
+                "Set Map to a file contained in the series directory",
+            )
+            .into());
+    }
+    let map_path = map.to_str().ok_or_else(|| {
+        stage.map_error(
+            "campaign map path is not UTF-8",
+            "Use a UTF-8 path inside the series directory",
+        )
+    })?;
+    let start = AuthoredCampaignStart::from_stage(stage, index, 1, Default::default())?;
+    let mut assets = AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL)?;
+    let mut scene = load_with_assets(
+        retail_dir,
+        map_path,
+        1,
+        HeadlessLaunch::Campaign {
+            launch: crate::sim::scenario_bootstrap::AuthoredCampaignLaunch {
+                start: &start,
+                mode: ScenarioGameMode::Lan,
+                local_source: Some(0),
+            },
+            manifest: Some(stage),
+            game_speed: None,
+            logical_map: None,
+        },
+        &mut assets,
+        ScenarioGameMode::Lan,
+        None,
+        None,
+    )
+    .map_err(|error| match error {
+        HeadlessLoadError::Runtime(message) => anyhow::Error::msg(message),
+        HeadlessLoadError::Manifest(error) => anyhow::Error::new(error),
+    })?;
+    let (_, map_sha256) = scene
+        .source
+        .physical_identity()
+        .context("campaign stage does not have an authored map digest")?;
+    let map_sha256 = map_sha256.to_owned();
+    let log = ReplayRunner::record_campaign_stage(&mut scene, &start, frames)?;
+    let mut bytes = Vec::new();
+    log.write_json(&mut bytes)?;
+    let recorded = ReplayLog::decode_json(&bytes)?;
+    let result = ReplayRunner::verify(retail_dir, &recorded, Some(map_path))?;
+    anyhow::ensure!(
+        result.checked_hashes == frames as usize,
+        "campaign replay is missing frame checks"
+    );
+    Ok(CampaignStageCheck {
+        stage: stage.id.clone(),
+        manifest_sha256: manifest.digest,
+        map_sha256,
+        checked_frames: result.checked_hashes,
+        final_state_hash: format!("{:016x}", result.final_state_hash),
+    })
+}
+
+enum HeadlessLaunch<'a> {
+    Slots(&'a MatchLaunchDescriptor),
+    Campaign {
+        launch: crate::sim::scenario_bootstrap::AuthoredCampaignLaunch<'a>,
+        manifest: Option<&'a CampaignStage>,
+        game_speed: Option<i32>,
+        logical_map: Option<&'a str>,
+    },
+}
+
+#[derive(Debug, thiserror::Error)]
+enum HeadlessLoadError {
+    #[error("{0}")]
+    Runtime(String),
+    #[error(transparent)]
+    Manifest(#[from] ManifestError),
+}
+
+impl From<String> for HeadlessLoadError {
+    fn from(message: String) -> Self {
+        Self::Runtime(message)
+    }
 }
 
 /// Reuse the production headless scenario load after retail scenario discovery
@@ -240,28 +406,53 @@ pub(crate) fn load_with_registered_scenario_assets(
         retail_dir,
         map_file_name,
         seed,
-        launch,
+        HeadlessLaunch::Slots(&launch),
         assets,
         crate::sim::scenario_session::ScenarioGameMode::Skirmish,
         None,
         None,
     )
+    .map_err(|error| error.to_string())
 }
 
 fn load_with_assets(
     retail_dir: &Path,
     map_file_name: &str,
     seed: u32,
-    launch: crate::sim::scenario_bootstrap::MatchLaunchDescriptor,
+    launch: HeadlessLaunch<'_>,
     assets: &mut AssetManager,
     game_mode: crate::sim::scenario_session::ScenarioGameMode,
     accepted_native_id_prefix: Option<u32>,
     process_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
-) -> Result<HeadlessScenario, String> {
+) -> Result<HeadlessScenario, HeadlessLoadError> {
+    let (slot_launch, campaign, manifest, campaign_speed, logical_map) = match launch {
+        HeadlessLaunch::Slots(launch) => (Some(launch), None, None, None, None),
+        HeadlessLaunch::Campaign {
+            launch,
+            manifest,
+            game_speed,
+            logical_map,
+        } => (None, Some(launch.start), manifest, game_speed, logical_map),
+    };
     let loaded_map =
         crate::map::source::load_map_by_name_or_path_with_assets(retail_dir, map_file_name, assets)
-            .map_err(|error| format!("load map {map_file_name}: {error}"))?;
+            .map_err(|error| match manifest {
+                Some(stage) => HeadlessLoadError::Manifest(stage.map_error(
+                    format!("cannot decode '{}': {error}", stage.map),
+                    "Set Map to a valid authored scenario",
+                )),
+                None => HeadlessLoadError::Runtime(format!("load map {map_file_name}: {error}")),
+            })?;
     let source = loaded_map.source;
+    if let Some(stage) = manifest {
+        let (_, digest) = source.physical_identity().ok_or_else(|| {
+            stage.map_error(
+                "map has no authored payload digest",
+                "Set Map to a loose authored scenario",
+            )
+        })?;
+        stage.verify_map_digest(digest)?;
+    }
     let mut map = loaded_map.map;
     // Preserve the process-owned cold Rules registry before theater archive
     // priority changes. The same owner then performs the active noncampaign
@@ -281,52 +472,103 @@ fn load_with_assets(
         cold_rules_owner = owner;
         &mut cold_rules_owner
     };
+    if let Some(launch) = slot_launch {
+        if let Some(rules) = launch.personal_rules() {
+            native_rules_owner.use_personal_rules(rules.clone());
+        } else if game_mode.execution_topology().is_lockstep() {
+            native_rules_owner
+                .use_personal_rules(launch.session().options.host_rules.personal_rules()?);
+        }
+    }
+    if game_mode.execution_topology().is_lockstep() {
+        native_rules_owner
+            .reset_for_network_match()
+            .map_err(|error| format!("reset network Rules: {error}"))?;
+    }
     // ThemeClass::ReadINI720590 is process data even without an output device.
     // Keep the existing headless archive stack: THEMEMD.MIX and the preserved
     // RA2 THEME.MIX extension were mounted at startup; this route has no shell
     // neutral-archive activation. Resolve before scenario Rules/theater changes.
     let themes = crate::rules::theme_ini::ThemeCatalog::select(&assets);
-    let scenario_prefix_plan =
-        crate::sim::scenario_bootstrap::prepare_stock_offline_scenario_prefix_plan(
-            &launch,
-            &map,
-            &map.waypoints,
-            seed,
-        )
+    let scenario_prefix_plan = slot_launch
+        .map(|launch| {
+            crate::sim::scenario_bootstrap::prepare_stock_offline_scenario_prefix_plan(
+                launch,
+                &map,
+                &map.waypoints,
+                seed,
+            )
+        })
+        .transpose()
         .map_err(|error| format!("prepare stock-offline scenario prefix: {error}"))?;
     let mode_override = crate::rules::retail_sources::select_mode_ini(
         &assets,
-        Some(&launch.session().mode.override_file),
+        slot_launch.map(|launch| launch.session().mode.override_file.as_str()),
     )?;
+    let rules_prefix = match campaign {
+        Some(_) => crate::rules::process_owner::NativeScenarioRulesPrefix::Campaign(None),
+        None => crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
+            mode_override.as_ref(),
+        ),
+    };
     // This headless entry has no MainMenuTypedCodes owner or THETEAM input.
-    // It shares the process Rules owner (including LANGRULE Digest reads), but
-    // cannot admit Full_Init's mode-5 TMCJ4F route.
+    // It shares the process Rules owner; this no-mod entry skips LANGRULE
+    // and cannot admit Full_Init's mode-5 TMCJ4F route.
     let (mut rules, _, art_ini, native_rules_receipt) = native_rules_owner
-        .load_scenario(
-            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
-                mode_override.as_ref(),
-            ),
-            &map.ini,
-        )
-        .map_err(|error| format!("load native noncampaign rules: {error}"))?
+        .load_scenario(rules_prefix, &map.ini)
+        .map_err(|error| format!("load native scenario rules: {error}"))?
         .into_parts();
     // The game's later readers (ARTMD, the asset closures) follow the way its
     // Rules were read (`ares_switch::ares_way`).
     let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
-    let bound_scenario_prefix = scenario_prefix_plan
-        .bind_native_rules_receipt(native_rules_receipt, &launch, &rules)
-        .map_err(|error| format!("admit rebuilt launch Countries: {error}"))?;
+    let mode_class = slot_launch.map(|launch| launch.session().mode.class);
+    let rule_policy = if let Some(start) = campaign {
+        start.rule_policy()
+    } else {
+        // Slot launches keep their native constructor even with scripted rules.
+        let construction = BootstrapRuleProfile::Multiplayer;
+        slot_launch
+            .and_then(MatchLaunchDescriptor::rule_policy_override)
+            .map(|policy| policy.with_bootstrap(construction))
+            .unwrap_or_else(|| game_mode.stock_rule_policy_for_bootstrap(construction, mode_class))
+    };
     let team_ai_registry =
-        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, true)?;
-    let theater = theater::load_theater(assets, &map.header.theater)
+        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, rule_policy)?;
+    let theater = theater::load_scenario_theater(assets, &map.header.theater, &map.ini, false)
+        .map_err(|error| format!("{error:#}"))?
         .ok_or_else(|| format!("load theater {}", map.header.theater))?;
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
-    let overlay_registry = rules.overlay_registry().clone();
     let house_roster = crate::map::houses::parse_house_roster(
         &map.ini,
         rules.color_schemes.as_slice(),
         Some(&rules),
     );
+    if let Some(stage) = manifest {
+        stage.validate_house_names(house_roster.houses.iter().map(|house| house.name.as_str()))?;
+    }
+    let campaign_options = campaign_speed.map(|game_speed| crate::sim::game_options::GameOptions {
+        game_speed,
+        ..Default::default()
+    });
+    let prefix = match (launch, scenario_prefix_plan) {
+        (HeadlessLaunch::Slots(launch), Some(plan)) => FreshScenarioPrefix::StockOffline(
+            plan.bind_native_rules_receipt(native_rules_receipt, launch, &rules)
+                .map_err(|error| format!("admit rebuilt launch Countries: {error}"))?,
+        ),
+        (HeadlessLaunch::Campaign { launch, .. }, None) => FreshScenarioPrefix::Campaign {
+            native_rules_receipt,
+            rules: &rules,
+            map_data: &map,
+            house_roster: &house_roster,
+            difficulty: launch.start.difficulty(),
+            mission_counter: launch.start.mission_counter(),
+            game_options: campaign_options.as_ref(),
+            campaign_index: 0,
+            restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+            network: Some(launch),
+        },
+        _ => unreachable!("each launch uses its own prepared construction"),
+    };
     let lighting_profiles = crate::map::lighting::parse_lighting_profiles(&map.ini);
     let native_start_bounds =
         crate::sim::scenario_bootstrap::NativeStartBounds::from_map_header(&map.header)
@@ -337,14 +579,9 @@ fn load_with_assets(
         .ok_or_else(|| "fresh cell-array extent overflow".to_string())?;
     let descriptor = ScenarioDescriptor {
         seed,
-        map_name: map_file_name.to_string(),
+        map_name: logical_map.unwrap_or(map_file_name).to_string(),
         theater: map.header.theater.clone(),
-        game_mode_nonzero: true,
-        no_damage: false,
-        // Non-campaign: the session staging word's Harvester Truce byte
-        // (`0x005E7495..0x005E74D4`) replaces the map's bit at
-        // `0x00687C16..0x00687C29`.
-        harvester_immune: launch.session().options.harvester_truce,
+        rule_policy,
         free_radar: map.basic.free_radar.unwrap_or(false),
         ignore_global_ai_triggers: map.basic.ignore_global_ai_triggers.unwrap_or(false),
         timer_inherit: map.basic.timer_inherit.unwrap_or(false),
@@ -354,32 +591,60 @@ fn load_with_assets(
         truck_crate: map.basic.truck_crate.unwrap_or(false),
         ice_growth_enabled: map.basic.ice_growth_enabled,
         vein_growth_enabled: map.basic.vein_growth_enabled,
-        // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
-        // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
-        tiberium_grows_flag: true,
-        tiberium_spreads_flag: true,
         map_width: scenario_cell_extent,
         map_height: scenario_cell_extent,
-        mp_start_waypoints: waypoints::multiplayer_start_waypoints(
-            bound_scenario_prefix
-                .projection()
-                .active_scenario_waypoints(),
-        )
-        .into_iter()
-        .map(|wp| (wp.index, (wp.rx, wp.ry)))
-        .collect(),
+        mp_start_waypoints: match &prefix {
+            FreshScenarioPrefix::StockOffline(bound) => waypoints::multiplayer_start_waypoints(
+                bound.projection().active_scenario_waypoints(),
+            )
+            .into_iter()
+            .map(|wp| (wp.index, (wp.rx, wp.ry)))
+            .collect(),
+            FreshScenarioPrefix::Campaign { .. } => Default::default(),
+        },
         pixel_conversion_bounds: Default::default(),
         lighting: crate::sim::scenario_session::ScenarioLightingState::from_map(&lighting_profiles),
-    };
+        ..Default::default()
+    }
+    .with_authored_special_flags(
+        &map.special_flags,
+        slot_launch.is_some_and(|launch| launch.session().options.harvester_truce),
+    );
     let bootstrap_rng = ScenarioBootstrapRng::new(seed);
     let (mut sim, scenario_prefix_projection) = bootstrap_rng
-        .into_stock_offline_staged_simulation(&descriptor, bound_scenario_prefix)
-        .map_err(|error| format!("stage stock-offline Simulation: {error}"))?;
+        .into_fresh_staged_simulation(&descriptor, prefix)
+        .map_err(|error| match (manifest, &error) {
+            (Some(stage), FreshScenarioPrefixError::DuplicateCampaignHouse(_)) => {
+                HeadlessLoadError::Manifest(stage.map_error(
+                    error.to_string(),
+                    "Give every entry in the map's [Houses] list a distinct name",
+                ))
+            }
+            _ => HeadlessLoadError::Runtime(format!("stage authored Simulation: {error}")),
+        })?;
     // CreateHouses687FCE..688092 gives WOL humans their node name; other
     // modes use "<human player>". The House owner hashes that native identity,
     // so restoring GameMode after construction cannot reconstruct a WOL start.
-    sim.install_session_mode(game_mode);
-    if let Some(checkpoint) = accepted_native_id_prefix {
+    if let Some(launch) = slot_launch {
+        sim.install_session_admission(
+            game_mode,
+            mode_class,
+            launch
+                .rule_policy_override()
+                .unwrap_or_else(|| game_mode.stock_rule_policy(mode_class)),
+        );
+        if let Some(start) = launch.network_start() {
+            if !game_mode.execution_topology().is_lockstep() {
+                return Err("Offline launch has lockstep start settings"
+                    .to_owned()
+                    .into());
+            }
+            start.install(&mut sim);
+        }
+    }
+    if let Some(checkpoint) = accepted_native_id_prefix
+        && campaign.is_none()
+    {
         sim.install_accepted_native_id_prefix(checkpoint)
             .map_err(|error| format!("replay native-ID prefix: {error}"))?;
     }
@@ -406,7 +671,7 @@ fn load_with_assets(
             Some(&theater),
             Some(&assets),
             Some(&rules.terrain_rules),
-            Some(&overlay_registry),
+            Some(rules.overlay_registry()),
             true,
             rules.general.cliff_back_impassability,
             &mut scenario_fill_ranged,
@@ -418,16 +683,13 @@ fn load_with_assets(
     // Pending authored Fill has no eager Tile##Anim list. Bind damage-fire
     // roots now and let the authored host bind each actually reached map Anim
     // synchronously before its native constructor spends an ID.
-    let scheduler_roots =
-        crate::map::resolved_terrain::scheduler_anim_roots(&rules, &overlay_registry, &[]);
-    rules
-        .bind_scheduler_anim_assets(
-            &scheduler_roots,
-            &assets,
-            theater.extension,
-            &map.header.theater,
-        )
-        .map_err(|error| format!("bind authoritative animation assets: {error}"))?;
+    let scheduler_roots = crate::map::resolved_terrain::scheduler_anim_roots(&rules, &[]);
+    rules.bind_scheduler_anim_assets(
+        &scheduler_roots,
+        &assets,
+        theater.extension,
+        &map.header.theater,
+    );
     // Every other AnimClass producer and the building animations: tolerant pass,
     // after the strict one, which rewrites the scheduler-owned set wholesale.
     let tolerant_roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
@@ -462,21 +724,25 @@ fn load_with_assets(
         theater.extension,
         crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
     );
-    rules.bind_alpha_images(&overlay_registry, &assets);
+    rules.bind_alpha_images(&assets);
     let overlay_shp_ids = crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
-        &overlay_registry,
+        rules.overlay_registry(),
         &assets,
         theater.extension,
         &map.header.theater,
     );
     sim.construct_native_map_tubes(&map.ini)
         .map_err(|error| format!("construct native [Tubes]: {error}"))?;
-    let bridge_mode = crate::map::basic::BridgeDestroyabilityMode::SkirmishOrMultiplayer {
-        bridge_destruction: true,
+    let bridge_mode = if campaign.is_some() {
+        crate::map::basic::BridgeDestroyabilityMode::CampaignOrEditor
+    } else {
+        crate::map::basic::BridgeDestroyabilityMode::SkirmishOrMultiplayer {
+            bridge_destruction: true,
+        }
     };
     let signed_new_ini_format = map.basic.new_ini_format.unwrap_or(0);
     let cliff_back_impassability = rules.general.cliff_back_impassability;
-    let output = crate::sim::runtime::finalize_and_populate_staged_authored_scenario(
+    let resolved_terrain = crate::sim::runtime::finalize_and_populate_staged_authored_scenario(
         &mut sim,
         &mut map,
         terrain_fill,
@@ -484,7 +750,6 @@ fn load_with_assets(
         &assets,
         &mut rules,
         native_rules_owner,
-        &overlay_registry,
         &overlay_shp_ids,
         signed_new_ini_format,
         true,
@@ -494,55 +759,81 @@ fn load_with_assets(
         bridge_mode,
         &descriptor,
         |sim, rules| {
-            crate::sim::scenario_bootstrap::initialize_skirmish_launch_houses(
-                sim,
-                &house_roster,
-                rules,
-                &launch,
-            );
+            if let Some(launch) = slot_launch {
+                crate::sim::scenario_bootstrap::initialize_skirmish_launch_houses(
+                    sim,
+                    &house_roster,
+                    rules,
+                    launch,
+                );
+            }
         },
     )
     .map_err(|error| format!("finalize authored headless load: {error}"))?;
-    let resolved_terrain = output.resolved_terrain;
-    let overlay_grid = output.overlay_grid;
     // Match the ordinary app's pre-launch binding: production options need
     // identities for unspawned types too, and snapshots carry this interner.
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.install_team_ai_registry(&team_ai_registry, &rules);
-    let _launch_result = crate::sim::scenario_bootstrap::
-        apply_pre_fill_scenario_prefix_launch_session_with_overlay_registry(
+    if let (Some(launch), Some(projection)) = (slot_launch, scenario_prefix_projection.as_ref()) {
+        crate::sim::scenario_bootstrap::apply_pre_fill_scenario_prefix_launch_session(
             &mut sim,
             &map,
             &house_roster,
             &rules,
             &resolved_terrain,
-            &launch,
-            &overlay_registry,
-            &scenario_prefix_projection,
+            launch,
+            projection,
         );
+    }
     let post_map = crate::sim::runtime::finalize_constructed_scenario(
         &mut sim,
         &map,
         &rules,
-        &overlay_registry,
-        overlay_grid,
         &house_roster,
-        Some(&launch),
+        descriptor.rule_policy,
+        slot_launch,
+        campaign.map(AuthoredCampaignStart::carry_over),
     )
     .map_err(|error| error.to_string())?;
     if !post_map.navigation_published {
-        return Err("publish headless post-map navigation".to_string());
+        return Err("publish headless post-map navigation".to_owned().into());
     }
     if sim.path_grid().is_none() {
-        return Err("headless post-map navigation is unavailable".to_string());
+        return Err("headless post-map navigation is unavailable"
+            .to_owned()
+            .into());
+    }
+    // MapHouses has already spent its House and Super IDs before Resize.
+    // Replay must rebuild that prefix from the same rules, then check it at
+    // the map-read fence rather than replacing the live cursor afterwards.
+    if let Some(checkpoint) = accepted_native_id_prefix
+        && campaign.is_some()
+        && sim.native_identity_prefix_checkpoint() != Some(checkpoint)
+    {
+        return Err(
+            "replay campaign native-ID prefix differs from the reconstructed House roster"
+                .to_owned()
+                .into(),
+        );
+    }
+    if campaign.is_some() {
+        // The author runner dispatches the canonical source roster every
+        // logic frame without waiting for a transport or reserving a lead.
+        let sources: Vec<_> = sim
+            .session
+            .network_sources(sim.houses.len())
+            .map(|(source, _)| source)
+            .collect();
+        sim.install_network_timing(0);
+        sim.network_command_queues()
+            .install_timing(0, std::num::NonZeroU8::MIN, sources);
     }
     sim.session.publish_started();
     Ok(HeadlessScenario {
         runtime: crate::sim::runtime::SimRuntime {
             simulation: sim,
             resources: std::sync::Arc::new(crate::sim::runtime::SimResources {
-                overlay_registry,
                 terrain_template: None,
                 rules,
             }),
@@ -562,13 +853,13 @@ impl HeadlessScenario {
                 &[],
                 SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("simulation frame failed; prior world mutations remain");
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_scenario))]
 mod retail_construction_tests {
     use super::*;
     use crate::sim::rng::SimRng;
@@ -605,7 +896,7 @@ mod retail_construction_tests {
         };
         let mut sim = ScenarioBootstrapRng::new(descriptor.seed).into_simulation(&descriptor);
         // This synthetic fixture omits the production native Rules prefix.
-        sim.native_unique_ids =
+        *sim.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
         let resolved = {
             let (mut scenario_fill_rng, variant_main_rng) = sim.terrain_load_draws();
@@ -637,7 +928,7 @@ mod retail_construction_tests {
             (extent, extent),
             "Fill allocates the extent the descriptor announced"
         );
-        crate::sim::runtime::populate_staged_scenario_with_generated_inits(
+        crate::sim::runtime::populate_staged_fixture(
             &mut sim,
             map,
             &resolved,
@@ -885,18 +1176,8 @@ mod retail_construction_tests {
             baseline.native_unique_id().map(|id| id.wrapping_add(1))
         );
         assert_eq!(signed.sim().rng_state(), control.sim().rng_state());
-        assert_eq!(
-            signed.sim().substrate.raw_cell_occupation.ground_bits(0, 0),
-            0
-        );
-        assert_eq!(
-            signed
-                .sim()
-                .substrate
-                .raw_cell_occupation
-                .ground_bits(u16::MAX, 0),
-            0
-        );
+        assert_eq!(signed.sim().ground_occupation_bits_for_test(0, 0), 0);
+        assert_eq!(signed.sim().ground_occupation_bits_for_test(u16::MAX, 0), 0);
     }
 
     #[test]
@@ -974,8 +1255,7 @@ mod retail_construction_tests {
         assert_eq!(sim.terrain_objects().cell_index().len(), 1);
         use crate::sim::occupancy::CellObjectMember;
         let building = sim
-            .substrate
-            .occupancy
+            .occupancy()
             .first_building_on_layer(
                 26,
                 60,
@@ -1032,14 +1312,14 @@ mod retail_construction_tests {
                 near_center_ic_isolation_eligible: false,
             },
             true,
-            Default::default(),
+            &mut Default::default(),
         );
         assert_eq!(
             loaded.terrain_objects().get(alias_id).unwrap().health(),
             alias.health() - 1
         );
         loaded.dirty_cells.clear_radar_for_test();
-        loaded.uninit_with_context(alias_id, UninitContext::with_rules(rules));
+        loaded.uninit_with_context(alias_id, UninitContext::new(rules));
         assert_eq!(
             loaded
                 .terrain_objects()
@@ -1048,13 +1328,7 @@ mod retail_construction_tests {
             [ordinary_id]
         );
         assert_eq!(loaded.dirty_cells.radar(), [alias.cell()]);
-        loaded.process_pending_delete_with(
-            rules,
-            Some(rules.overlay_registry()),
-            Default::default(),
-            1,
-            true,
-        );
+        loaded.process_pending_delete_with(rules, &mut Default::default(), 1, true);
         assert!(loaded.terrain_objects().get(alias_id).is_none());
         assert!(loaded.terrain_objects().get(ordinary_id).unwrap().is_live());
         assert_eq!(
@@ -1082,7 +1356,7 @@ mod retail_construction_tests {
                 crate::map::resolved_terrain::zone_class::GROUND;
             base.zone_ids_mut_for_test()[index] = cluster;
         }
-        loaded.uninit_with_context(hole_id, UninitContext::with_rules(rules));
+        loaded.uninit_with_context(hole_id, UninitContext::new(rules));
         assert_eq!(
             loaded
                 .zone_grid
@@ -1233,9 +1507,7 @@ mod retail_construction_tests {
         );
         assert_eq!(
             late.sim()
-                .substrate
-                .raw_cell_occupation
-                .ground_bits(source.rx, source.ry)
+                .ground_occupation_bits_for_test(source.rx, source.ry)
                 & 0x1C,
             0
         );
@@ -1466,7 +1738,7 @@ mod retail_construction_tests {
             .sim()
             .houses
             .iter()
-            .filter(|(_, house)| !house.is_controlled_by_human(true) && !house.multiplay_passive())
+            .filter(|(_, house)| !house.is_human() && !house.multiplay_passive())
             .map(|(&id, _)| id)
             .collect();
         assert_eq!(computers.len(), opponents.len());
@@ -1609,8 +1881,7 @@ mod retail_construction_tests {
                     .path_grid()
                     .is_some_and(|grid| grid.is_walkable_for_infantry(rx, ry));
                 let empty = sim
-                    .substrate
-                    .occupancy
+                    .occupancy()
                     .get(rx, ry)
                     .is_none_or(|cell| cell.is_empty_on(MovementLayer::Ground));
                 (walkable && empty).then_some((rx, ry))
@@ -1853,12 +2124,11 @@ mod retail_construction_tests {
             let human = sim
                 .houses
                 .iter()
-                .find(|(_, house)| house.is_controlled_by_human(true))
+                .find(|(_, house)| house.is_human())
                 .map(|(&id, _)| id)
                 .expect("the local house");
             let mcv = sim
-                .substrate
-                .entities
+                .entities()
                 .iter_sorted()
                 .find(|(_, entity)| entity.owner() == human)
                 .map(|(id, _)| id)
@@ -1874,7 +2144,7 @@ mod retail_construction_tests {
                     &[deploy],
                     SIM_TICK_MS,
                     crate::sim::world::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("simulation frame failed; prior world mutations remain");
             for _ in 0..1500 {
@@ -1883,8 +2153,7 @@ mod retail_construction_tests {
             let runtime = &mut scenario.runtime;
             let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
             let yards: Vec<String> = sim
-                .substrate
-                .entities
+                .entities()
                 .iter_sorted()
                 .filter(|(_, entity)| entity.owner() == human)
                 .map(|(_, entity)| sim.interner.resolve(entity.type_ref()).to_string())
@@ -1909,7 +2178,7 @@ mod retail_construction_tests {
                 };
                 sim.path_grid()
                     .is_some_and(|grid| grid.is_walkable_for_infantry(x, y))
-                    && sim.substrate.occupancy.get(x, y).is_none_or(|cell| {
+                    && sim.occupancy().get(x, y).is_none_or(|cell| {
                         cell.is_empty_on(crate::sim::movement::locomotor::MovementLayer::Ground)
                     })
             };
@@ -1961,7 +2230,7 @@ mod retail_construction_tests {
                 let team = sim.team_script_vm.team(team_id);
                 let aboard = infantry.iter().all(|&id| {
                     sim.entities().get(id).is_some_and(|entity| {
-                        entity.passenger_role.inside_transport_id() == Some(transport)
+                        entity.passenger_role().inside_transport_id() == Some(transport)
                     })
                 });
                 if loaded.is_none() && aboard {
@@ -2010,7 +2279,7 @@ mod retail_construction_tests {
                                     None => "out",
                                 },
                                 entity.navigation.nav_com(),
-                                if entity.passenger_role.is_inside_transport() {
+                                if entity.passenger_role().is_inside_transport() {
                                     " aboard"
                                 } else {
                                     ""
@@ -2106,12 +2375,11 @@ mod retail_construction_tests {
             let human = sim
                 .houses
                 .iter()
-                .find(|(_, house)| house.is_controlled_by_human(true))
+                .find(|(_, house)| house.is_human())
                 .map(|(&id, _)| id)
                 .expect("the local house");
             let mcv = sim
-                .substrate
-                .entities
+                .entities()
                 .iter_sorted()
                 .find(|(_, entity)| entity.owner() == human)
                 .map(|(id, _)| id)
@@ -2127,7 +2395,7 @@ mod retail_construction_tests {
                     &[deploy],
                     SIM_TICK_MS,
                     crate::sim::world::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("simulation frame failed; prior world mutations remain");
             for _ in 0..1500 {
@@ -2136,8 +2404,7 @@ mod retail_construction_tests {
             let runtime = &mut scenario.runtime;
             let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
             let yard = sim
-                .substrate
-                .entities
+                .entities()
                 .iter_sorted()
                 .find(|(_, entity)| entity.owner() == human)
                 .map(|(id, _)| id)
@@ -2282,7 +2549,7 @@ mod retail_construction_tests {
             crate::sim::build_site::can_place_building_at(
                 sim,
                 &placing.rules,
-                Some(&placing.overlay_registry),
+                Some(placing.rules.overlay_registry()),
                 natbnk,
                 (x, y),
                 None,
@@ -2296,8 +2563,7 @@ mod retail_construction_tests {
                     sim.path_grid()
                         .is_some_and(|grid| grid.is_walkable_for_infantry(x, y))
                         && sim
-                            .substrate
-                            .occupancy
+                            .occupancy()
                             .get(x, y)
                             .is_none_or(|cell| cell.is_empty_on(MovementLayer::Ground))
                 })
@@ -2342,9 +2608,9 @@ mod retail_construction_tests {
                 seeking = members
                     .iter()
                     .find(|&&id| {
-                        sim.entities()
-                            .get(id)
-                            .is_some_and(|entity| entity.radio_contacts.slot(0) == Some(bunker))
+                        sim.entities().get(id).is_some_and(|entity| {
+                            entity.seldom.radio_contacts.slot(0) == Some(bunker)
+                        })
                     })
                     .map(|&id| (frame, id));
             }
@@ -2416,7 +2682,8 @@ mod retail_construction_tests {
                 on_61 = Some((frame, members));
             } else if line.cursor() >= 2 && on_61.is_some() {
                 let held = sim.entities().get(free).is_none_or(|bunker| {
-                    bunker.bunker.occupant().is_some() || bunker.radio_contacts.slot(0).is_some()
+                    bunker.bunker.occupant().is_some()
+                        || bunker.seldom.radio_contacts.slot(0).is_some()
                 });
                 past = Some((frame, members, held));
                 break;
@@ -2792,7 +3059,7 @@ mod retail_construction_tests {
                         crate::sim::build_site::can_place_building_at(
                             sim,
                             &resources.rules,
-                            Some(&resources.overlay_registry),
+                            Some(resources.rules.overlay_registry()),
                             yard,
                             (x, y),
                             None,
@@ -2889,7 +3156,7 @@ mod retail_construction_tests {
                 &commands,
                 SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("simulation frame failed")
     }
@@ -3035,15 +3302,16 @@ mod retail_construction_tests {
             rhino,
             Some(TargetKind::Entity(gi)),
             rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("the Rhino takes the GI as its target");
         let now = sim.session.binary_frame();
-        sim.substrate
+        sim.substrate_mut_for_test()
             .mission_assign_exact(rhino, MissionId::from_known(MissionType::Attack), now)
             .expect("the Rhino takes Attack");
-        let _ = sim.substrate.mission_commence_exact(rhino, now);
+        let _ = sim
+            .substrate_mut_for_test()
+            .mission_commence_exact(rhino, now);
         let (mut charged, mut died, mut gi_cell, mut crushed) = (None, None, None, false);
         for frame in 1..=600u32 {
             let output = tick_with_due_commands(&mut scenario);
@@ -3221,8 +3489,7 @@ mod retail_construction_tests {
             )
         };
         let mcv = sim
-            .substrate
-            .entities
+            .entities()
             .iter_sorted()
             .find(|(_, entity)| entity.owner() == soviet)
             .map(|(id, _)| id)
@@ -3248,8 +3515,7 @@ mod retail_construction_tests {
         // test, which only DWORD -1 skips (`0x006F7E36`), then rejects every
         // quarry of a spy standing there.
         let american_yard = sim
-            .substrate
-            .entities
+            .entities()
             .iter_sorted()
             .find(|(_, entity)| is_american_yard(entity))
             .map(|(id, _)| id)
@@ -3292,7 +3558,7 @@ mod retail_construction_tests {
                 if capturing.is_none()
                     && entity.mission.current().known() == Some(MissionType::Capture)
                 {
-                    let worn = entity.disguise.as_ref().filter(|d| d.is_disguised());
+                    let worn = entity.seldom.disguise.as_ref().filter(|d| d.is_disguised());
                     capturing = Some((frame, worn.map(|d| (d.type_id(), d.house()))));
                 }
             }
@@ -3363,8 +3629,7 @@ mod retail_construction_tests {
             )
         };
         let mcv_of = |sim: &Simulation, house| {
-            sim.substrate
-                .entities
+            sim.entities()
                 .iter_sorted()
                 .find(|(_, entity)| entity.owner() == house)
                 .map(|(id, _)| id)
@@ -3389,15 +3654,14 @@ mod retail_construction_tests {
             .filter(|&(x, y)| (x - rx).abs().max((y - ry).abs()) >= 6);
         let tanya = spawn_on_free_cells(sim, rules, america, cells, &["TANY"])[0];
         let now = sim.session.binary_frame();
-        sim.substrate
+        sim.substrate_mut_for_test()
             .mission_assign_exact(tanya, MissionId::from_known(MissionType::Attack), now)
             .unwrap();
         sim.assign_target_represented(
             tanya,
             Some(TargetKind::Entity(reactor)),
             rules,
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         let (mut sabotage, mut planted, mut died) = (None, None, None);
@@ -3469,7 +3733,7 @@ mod retail_construction_tests {
                     entity.owner() == soviet
                         && !entity.death.is_dying()
                         && sim.interner.resolve(entity.type_ref()) == "HARV"
-                        && entity.radio_contacts.is_empty()
+                        && entity.seldom.radio_contacts.is_empty()
                         && entity.mission.current() == harvest
                         && entity
                             .miner
@@ -3486,7 +3750,7 @@ mod retail_construction_tests {
         let (sim, rules) = (&mut runtime.simulation, &runtime.resources.rules);
         let strength = rules.object("HARV").expect("retail HARV").strength;
         let at = {
-            let entity = sim.substrate.entities.get_mut(miner).unwrap();
+            let entity = sim.entity_mut_for_test(miner).unwrap();
             entity.health.set_for_test(strength / 2);
             (
                 i32::from(entity.position.rx()),
@@ -3513,7 +3777,7 @@ mod retail_construction_tests {
             tick_with_due_commands(&mut scenario);
             let sim = scenario.sim();
             let entity = sim.entities().get(miner).expect("the miner lives");
-            let refinery = entity.radio_contacts.slot(0).filter(|&dock| {
+            let refinery = entity.seldom.radio_contacts.slot(0).filter(|&dock| {
                 sim.entities().get(dock).is_some_and(|dock| {
                     dock.owner() == soviet && sim.interner.resolve(dock.type_ref()) == "NAREFN"
                 })
@@ -3524,7 +3788,7 @@ mod retail_construction_tests {
             {
                 entered = Some(frame);
             }
-            if entered.is_some() && entity.tether.partner().is_some() {
+            if entered.is_some() && entity.seldom.tether.partner().is_some() {
                 docked = Some(frame);
                 break;
             }
@@ -3683,7 +3947,7 @@ mod retail_construction_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_scenario))]
 mod launch_special_flags_tests {
     use super::*;
 
@@ -3735,7 +3999,7 @@ mod launch_special_flags_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_scenario))]
 mod launch_alliance_tests {
     use super::{battle_session, load_session};
 

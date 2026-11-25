@@ -55,6 +55,19 @@ pub(crate) struct AresTechnoTypeRules {
     prerequisites: AresPrerequisiteRules,
 }
 
+/// VERA's bound on `Prerequisite.Lists=`, the lists after list 0. Ares sizes
+/// the vector by the raw value (`TechnoTypeExt::LoadFromINIFile`, no upper
+/// bound), so a value near `i32::MAX` exhausts memory there. Outside data
+/// never stops the game: the count clamps here, far above any mod's lists.
+const PREREQUISITE_LIST_LIMIT: i32 = 1024;
+
+/// VERA's bound on each `InitialPayload.Nums=` entry. CreateInitialPayload
+/// (10043C10) constructs that many passengers, capped only by the free
+/// `Passengers=`/`MaxNumberOccupants=` slots, which are unbounded too, so a
+/// mod giving both values near `i32::MAX` constructs until the tick hangs.
+/// Only this loop reads the entries; transports carry a handful.
+const INITIAL_PAYLOAD_NUM_LIMIT: i32 = 256;
+
 /// TechnoTypeExt `PrerequisiteLists` (+0x40) past list 0,
 /// `PrerequisiteNegatives` (+0x4C), `PrerequisiteTheaters` (+0x64,
 /// constructor 0xFFFFFFFF) and `RequiredStolenTech` (+0x128, constructor
@@ -107,9 +120,12 @@ impl AresPrerequisiteRules {
         let _ares = crate::rules::ares_switch::ares_reads();
         // `INIClass::ReadInteger("Prerequisite.Lists", size - 1)`, at least
         // 0, plus one: the vector grows with empty lists or is truncated.
-        // Initialize (1003DEC0) sized it to one at the first read.
-        let current = i32::try_from(self.extra_lists.len()).unwrap_or(i32::MAX);
-        let extra = section.read_int("Prerequisite.Lists", current).max(0);
+        // Initialize (1003DEC0) sized it to one at the first read. The upper
+        // clamp is VERA's (`PREREQUISITE_LIST_LIMIT`), so `current` fits.
+        let current = i32::try_from(self.extra_lists.len()).unwrap_or(PREREQUISITE_LIST_LIMIT);
+        let extra = section
+            .read_int("Prerequisite.Lists", current)
+            .clamp(0, PREREQUISITE_LIST_LIMIT);
         self.extra_lists
             .resize(usize::try_from(extra).unwrap_or(0), Vec::new());
         // `Prerequisite` (list 0) and `PrerequisiteOverride` come next; the
@@ -220,6 +236,10 @@ pub(crate) type ResolvedTechno =
 /// unset) and +0x648 `RadialIndicatorRadius` (Nullable<int>, unset).
 #[derive(Debug, Clone, Default, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PresentationTypeRules {
+    /// TechnoTypeExt+0xF0, Valueable<AnimTypeClass*>; constructor 1003C884
+    /// initializes null. An omitted structured field uses that default.
+    #[serde(default)]
+    parachute_anim: Option<String>,
     /// Bound against the fixed sound catalog with the type's other sounds
     /// (`ObjectType::bind_scalar_sound_references`); `Some(None)` is an
     /// explicit silence.
@@ -230,6 +250,12 @@ pub(crate) struct PresentationTypeRules {
 }
 
 impl PresentationTypeRules {
+    /// ObjectClass_SpawnParachuted_Animation (Ares.dll 10047C60,
+    /// hook 0x5F5ADD): the type's canopy precedes its owner's country.
+    pub(crate) fn parachute_anim(&self) -> Option<&str> {
+        self.parachute_anim.as_deref()
+    }
+
     /// The voice an airstrike plays as it starts (`abort` false,
     /// AirstrikeClass_Fire_AirstrikeAttackVoice, Ares.dll 10048D60, hook
     /// 0x41D940) or is called off (`abort` true, AirstrikeClass_PointerGot
@@ -307,7 +333,8 @@ pub(crate) struct ResidualTypeRules {
     /// `Assaulter.Level` (+0x42C, Valueable<int>, 0), consumed through
     /// [`AresTechnoTypeRules::assaulter_level`].
     assaulter_level: i32,
-    /// `NoSelfGuardArea` (+0x4C8, false).
+    /// `NoSelfGuardArea` (+0x4C8, false), consumed through
+    /// [`AresTechnoTypeRules::no_self_guard_area`].
     no_self_guard_area: bool,
     /// `DigInSound`/`DigOutSound` (+0x550/+0x558, NullableIdx<VocClass>),
     /// bound with the type's other sounds. Consumed by the Tunnel
@@ -868,6 +895,16 @@ impl CustomMissileRules {
 }
 
 impl AresTechnoTypeRules {
+    /// LoadFromINIFile1003E385 -> Valueable::Read1000EB20 ->
+    /// detail::read<AnimType*>1000C9C0. This Find-only key also reads in a
+    /// stock-way pass, so its presence can enable the run-time Ares switch.
+    pub(crate) fn read_parachute_anim(&mut self, resolve: impl FnOnce(&str) -> Resolved) {
+        let _ares = crate::rules::ares_switch::ares_reads();
+        if let Some(anim) = resolve("Parachute.Anim") {
+            self.presentation.parachute_anim = anim;
+        }
+    }
+
     /// One reached `LoadFromINIFile` pass. `type_name` is the type's ID,
     /// `aircraft` whether it is an AircraftType, and `resolve` the Find-only
     /// pointer read of a key (called in read order), `resolve_techno` and
@@ -929,6 +966,8 @@ impl AresTechnoTypeRules {
         roles.is_cow = section.read_ares_bool("IsCow", roles.is_cow);
         // After the Spotlight.* keys.
         roles.is_bomb = section.read_ares_bool("IsBomb", roles.is_bomb);
+        // After IsBomb and its sounds, in the DLL's read order.
+        self.read_parachute_anim(|key| resolve(key, TypeRef::Animation));
         // After Operator, InitialPayload.Types (1000EDD0) and .Nums
         // (ValueableVector<int> 1000ED00), then after the Chronoshift.* and
         // CameoPCX keys the reverse-engineering pair.
@@ -937,7 +976,10 @@ impl AresTechnoTypeRules {
             residual.initial_payload_types = types;
         }
         if let Some(nums) = section.read_ares_int_list("InitialPayload.Nums") {
-            residual.initial_payload_nums = nums;
+            residual.initial_payload_nums = nums
+                .into_iter()
+                .map(|num| num.min(INITIAL_PAYLOAD_NUM_LIMIT))
+                .collect();
         }
         residual.can_be_reversed =
             section.read_ares_bool("CanBeReversed", residual.can_be_reversed);
@@ -1279,6 +1321,14 @@ impl AresTechnoTypeRules {
         self.residual.assaulter_level
     }
 
+    /// `NoSelfGuardArea` (+0x4C8): a healer infantryman of this type does not
+    /// answer GuardArea over itself (InfantryClass_GetActionOnObject_NoSelfGuardArea,
+    /// Ares.dll 10049710, hook 0x51E748;
+    /// `Simulation::infantry_healer_guards_itself`).
+    pub(crate) fn no_self_guard_area(&self) -> bool {
+        self.residual.no_self_guard_area
+    }
+
     /// `Unsellable.Get(UnitsUnsellable)`: a unit of this type cannot be sold
     /// on a depot (FootClass_CanBeSold_SellUnit, Ares.dll 10048FD0, hook
     /// 0x4D9EBD).
@@ -1370,7 +1420,7 @@ fn read_promotable<T: Copy>(
     value
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::native_processing::RulesLayerStack;
@@ -1386,6 +1436,21 @@ mod tests {
             .process()
             .unwrap();
         RuleSet::from_processed_rules(&processed).unwrap()
+    }
+
+    /// `Prerequisite.Lists=` clamps at VERA's bound instead of sizing the
+    /// vector by the raw value.
+    #[test]
+    fn prerequisite_lists_clamp_at_the_list_limit() {
+        let ini = IniFile::from_str("[T]\nPrerequisite.Lists=1000000\n");
+        let mut prerequisites = super::AresPrerequisiteRules::default();
+        prerequisites.read_pass(ini.section_or_empty("T"), &mut Vec::new(), |_, prior| {
+            prior.to_vec()
+        });
+        assert_eq!(
+            prerequisites.extra_lists().len(),
+            super::PREREQUISITE_LIST_LIMIT as usize
+        );
     }
 
     /// Initialize's Find-only seeds and the 1003C710 defaults: without
@@ -1467,6 +1532,22 @@ mod tests {
             .self_healing()
             .clone();
         assert_eq!(heal.amount_and_max(2), (1, NativeF64Bits::ONE));
+    }
+
+    /// CreateInitialPayload constructs each entry's count, so a huge entry
+    /// stops at VERA's bound; a negative one stays as read.
+    #[test]
+    fn a_huge_initial_payload_count_stops_at_the_bound() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]\n0=E1\n[E1]\nInitialPayload.Nums=2147483647,-1\n",
+        ))
+        .unwrap();
+        let ext = rules.object("E1").unwrap().techno_combat();
+        assert_eq!(
+            ext.residual.initial_payload_nums,
+            [super::INITIAL_PAYLOAD_NUM_LIMIT, -1]
+        );
     }
 
     /// 1003DFB0's reads of the keys without a consumer and of the

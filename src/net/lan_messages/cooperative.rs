@@ -5,7 +5,19 @@
 //! options `0x32` (`0x0046D4A0`) is 455. The round state and the slot values
 //! belong to their app owners; this module only encodes and reads fields.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use super::{LAN_MESSAGE_LEN, LanMessage, LanMessageError, LanMessageKind};
+use crate::util::read_helpers::array_at;
 
 pub const SIGNAL_LEN: usize = 0x2f;
 pub const OPTIONS_KIND: u32 = 0x32;
@@ -18,7 +30,8 @@ const AI_COLOR_OFFSET: usize = 0xb0;
 const AI_DIFFICULTY_OFFSET: usize = 0xd0;
 const AI_START_OFFSET: usize = 0xf0;
 const AI_TEAM_OFFSET: usize = 0x110;
-const ROWS: usize = 8;
+/// BC6's raw slots: its readiness bytes `0x89E000[8]` and each `0x32` array.
+pub const ROWS: usize = 8;
 
 /// A header-only BC6 record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,26 +65,20 @@ impl CooperativeSignal {
     /// The kind dword, then the narrow name from `+0x04`.
     pub fn encode(self, name: &str) -> Result<[u8; SIGNAL_LEN], LanMessageError> {
         let message = LanMessage::with_name(LanMessageKind::Unknown(self.kind()), name)?;
-        Ok(message.as_bytes()[..SIGNAL_LEN]
-            .try_into()
-            .expect("signal prefix"))
+        Ok(array_at::<0, SIGNAL_LEN, _>(message.as_bytes()))
     }
 
     pub fn decode(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() != SIGNAL_LEN {
-            return None;
-        }
-        Some(
-            match u32::from_le_bytes(bytes[..4].try_into().expect("kind")) {
-                0x23 => Self::Ack,
-                0x24 => Self::Left,
-                0x25 => Self::Waiting,
-                0x26 => Self::Ready,
-                0x31 => Self::Go,
-                0x34 => Self::Begin,
-                _ => return None,
-            },
-        )
+        let signal: &[u8; SIGNAL_LEN] = bytes.try_into().ok()?;
+        Some(match u32::from_le_bytes(array_at::<0, 4, _>(signal)) {
+            0x23 => Self::Ack,
+            0x24 => Self::Left,
+            0x25 => Self::Waiting,
+            0x26 => Self::Ready,
+            0x31 => Self::Go,
+            0x34 => Self::Begin,
+            _ => return None,
+        })
     }
 }
 
@@ -149,7 +156,7 @@ impl CooperativeOptionsRecord {
 
 const _: () = assert!(AI_TEAM_OFFSET + ROWS * 4 <= LAN_MESSAGE_LEN);
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod tests {
     use super::*;
 

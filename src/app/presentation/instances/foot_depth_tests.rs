@@ -25,7 +25,7 @@ fn with_record<R>(
     let store = world.simulation.entities_mut_for_test();
     store.remove(entity.stable_id());
     store.insert(entity.clone());
-    let frame = PresentationFrame::capture(&world, &Default::default());
+    let frame = PresentationFrame::capture(&world, &Default::default(), false);
     let record = frame.object(entity.stable_id()).expect("a record");
     ask(
         DepthWorld {
@@ -292,7 +292,7 @@ fn composite_factory_split_requires_navcom_and_slot_zero_weapons_factory() {
     runtime.simulation.entities_mut_for_test().insert(factory);
     let evaluate =
         |rt: &SimRuntime, e: &GameEntity| unit_bridge_split_in_runtime(Some(rt), e, true);
-    tank.radio_contacts.insert(17);
+    tank.seldom.radio_contacts.insert(17);
     assert!(!evaluate(&runtime, &tank));
     tank.navigation
         .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::cell(3, 3)));
@@ -311,15 +311,13 @@ fn composite_factory_split_requires_navcom_and_slot_zero_weapons_factory() {
     );
     runtime
         .simulation
-        .entities_mut_for_test()
-        .get_mut(17)
+        .entity_mut_for_test(17)
         .unwrap()
         .set_category_for_test(EntityCategory::Unit);
     assert!(!evaluate(&runtime, &tank));
     runtime
         .simulation
-        .entities_mut_for_test()
-        .get_mut(17)
+        .entity_mut_for_test(17)
         .unwrap()
         .set_category_for_test(EntityCategory::Structure);
     runtime.resources_mut().rules = RuleSet::from_ini(&IniFile::from_str(

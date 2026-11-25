@@ -184,6 +184,7 @@ fn attached_speed_native_histories_include_crates_refresh_expiry_and_discard() {
             assert_eq!(
                 serde_json::json!(
                     victim
+                        .seldom
                         .ares
                         .attach_effects
                         .entries
@@ -216,17 +217,18 @@ fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
         },
         &rules,
         None,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     let bullets: Vec<_> = sim.projectiles.iter().map(|(&id, _)| id).collect();
     assert_eq!(bullets.len(), 1);
     for id in bullets {
-        sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());
+        sim.object_ai_visit_one(id, Some(&rules), &mut ObjectAiCtx::default());
     }
     assert_eq!(
         sim.entities()
             .get(target)
             .unwrap()
+            .seldom
             .ares
             .attach_effects
             .entries[0]
@@ -264,8 +266,8 @@ fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
     // owner so passive enemy fire cannot refresh it during the comparison.
     // This is Rust integration, not a native movement-distance golden.
     let (mut ordinary, _, normal_target, normal_source) = scene();
-    sim.techno_limbo_with_rules(source, &rules, None);
-    ordinary.techno_limbo_with_rules(normal_source, &rules, None);
+    sim.techno_limbo_with_rules(source, &rules);
+    ordinary.techno_limbo_with_rules(normal_source, &rules);
     let start = crate::sim::movement::ground_pose::position_world_coord(
         &sim.entities().get(target).unwrap().position,
     );
@@ -296,6 +298,7 @@ fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
                         .entities()
                         .get(id)
                         .unwrap()
+                        .seldom
                         .ares
                         .attach_effects
                         .entries[0]
@@ -322,6 +325,7 @@ fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
         sim.entities()
             .get(target)
             .unwrap()
+            .seldom
             .ares
             .attach_effects
             .entries[0]

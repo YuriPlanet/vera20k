@@ -21,7 +21,7 @@ fn fixture(topology: &Value) -> (Simulation, InternedId, InternedId) {
     let mut sim = Simulation::with_seed(31);
     // The native fixture explicitly seeds all three streams with31;
     // production Simulation::with_seed leaves MapGen at its own default.
-    sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
+    *sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
     let player = sim.interner.intern("Player");
     let other = sim.interner.intern("Other");
     sim.session.set_current_house_for_test(Some(player));
@@ -37,7 +37,7 @@ fn fixture(topology: &Value) -> (Simulation, InternedId, InternedId) {
     }
     let (fog, terrain) = native_map_cell_fixture(topology, player);
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.fog = fog;
+    *sim.fog = fog;
     (sim, player, other)
 }
 
@@ -79,6 +79,7 @@ fn actor(
     // The corpus executes original6F322F before the callback corridor.
     // This is its declared constructor prestate, not an alternative producer.
     entity
+        .seldom
         .discovery
         .set_owned_by_current_house_for_test(Some(owner) == sim.session.current_house());
     sim.substrate.entities.insert(entity)
@@ -101,7 +102,7 @@ fn put(sim: &mut Simulation, id: u64, cell: (u16, u16), upper: bool) {
 }
 
 fn discovery(sim: &Simulation, id: u64) -> Value {
-    let h = sim.substrate.entities.get(id).unwrap().discovery;
+    let h = sim.substrate.entities.get(id).unwrap().seldom.discovery;
     json!([
         u8::from(h.owned_by_current_house()),
         u8::from(h.discovered_by_current_house()),
@@ -242,9 +243,7 @@ fn native_trigger_conceal_circle_and_immediate_two_pass_sweep_match_original() {
         }
         assert_eq!(rng_hashes(&sim), row["rng_before"], "{}", input["name"]);
         let ((returned, trace), draws) = crate::sim::rng::trace_draws(|| {
-            trace_reveal_calls(|| {
-                sim.trigger_conceal_at_waypoint(7, UninitContext::with_rules(&rules))
-            })
+            trace_reveal_calls(|| sim.trigger_conceal_at_waypoint(7, UninitContext::new(&rules)))
         });
         assert_eq!(returned, row["result"] == 1, "{}", input["name"]);
         let expected_walk: Vec<_> = row["conceal_probes"]
@@ -430,10 +429,14 @@ fn native_trigger_reveal_cell_put_then_discovery_matches_original_owner_historie
             false,
         );
         let restored: TechnoDiscoveryHistory = save_codec::deserialize(
-            &save_codec::serialize(&sim.substrate.entities.get(id).unwrap().discovery).unwrap(),
+            &save_codec::serialize(&sim.substrate.entities.get(id).unwrap().seldom.discovery)
+                .unwrap(),
         )
         .unwrap();
-        assert_eq!(restored, sim.substrate.entities.get(id).unwrap().discovery);
+        assert_eq!(
+            restored,
+            sim.substrate.entities.get(id).unwrap().seldom.discovery
+        );
     }
 }
 
@@ -682,10 +685,10 @@ fn discovery_building(sim: &mut Simulation, owner: InternedId, input: &Value) ->
     };
     entity.mission.apply_test_fixture(fixture);
     if let Some(contacts) = input["contacts"].as_array() {
-        entity.radio_contacts.set_capacity(contacts.len());
+        entity.seldom.radio_contacts.set_capacity(contacts.len());
         for (slot, contact) in contacts.iter().enumerate() {
             if contact != &json!(0) {
-                entity.radio_contacts.set_slot(slot, 99);
+                entity.seldom.radio_contacts.set_slot(slot, 99);
             }
         }
     }
@@ -713,7 +716,7 @@ fn native_trigger_reveal_building_owner_entry_and_virtual_override_match_origina
             "[BuildingTypes]\n0=GTGCAN\n[GTGCAN]\nStrength=100\n",
         ))
         .unwrap();
-    let context = UninitContext::with_rules(&rules);
+    let mut context = UninitContext::new(&rules);
     for row in corpus["building_placement_controls"].as_array().unwrap() {
         let input = &row["input"];
         let (mut sim, _, owner) = fixture(&input["topology"]);
@@ -734,7 +737,7 @@ fn native_trigger_reveal_building_owner_entry_and_virtual_override_match_origina
             crate::sim::building_art::trace_grand_opening_calls(|| {
                 sim.with_object_placement_scope(|sim| {
                     sim.with_object_placement_scope(|sim| {
-                        sim.discover_building_owner_after_unlimbo(id, context);
+                        sim.discover_building_owner_after_unlimbo(id, context.reborrow());
                     })
                 });
             })
@@ -754,12 +757,12 @@ fn native_trigger_reveal_building_owner_entry_and_virtual_override_match_origina
                 if history["stage"] == "ai_unlimbo_owner" {
                     sim.with_object_placement_scope(|sim| {
                         sim.with_object_placement_scope(|sim| {
-                            sim.discover_building_owner_after_unlimbo(id, context);
+                            sim.discover_building_owner_after_unlimbo(id, context.reborrow());
                         })
                     });
                     None
                 } else {
-                    Some(sim.discover_techno(id, player, context))
+                    Some(sim.discover_techno(id, player, context.reborrow()))
                 }
             })
         });
@@ -840,7 +843,7 @@ fn native_trigger_reveal_all_fifty_five_startup_actions_match_original_empty_res
             for control in controls {
                 let returned = sim.trigger_reveal_at_waypoint(
                     control["value"].as_i64().unwrap() as i32,
-                    UninitContext::with_rules(&rules),
+                    UninitContext::new(&rules),
                 );
                 assert_eq!(returned, control["returned"] == 1);
             }
@@ -914,7 +917,7 @@ fn reveal_entire_map_walks_the_size_diamond_and_notifies_each_cell() {
         side,
         crate::map::resolved_terrain::test_flat_cell,
     ));
-    sim.fog = crate::sim::vision::FogState::new(side, side);
+    *sim.fog = crate::sim::vision::FogState::new(side, side);
     sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
         theater: "TEMPERATE".to_string(),
         fill: "Clear".to_string(),
@@ -1057,7 +1060,7 @@ impl EdgeScript {
             })
             .collect();
         sim.install_resolved_terrain_for_new_map(terrain);
-        sim.fog = crate::sim::vision::FogState::new(side, side);
+        *sim.fog = crate::sim::vision::FogState::new(side, side);
         sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
             theater: "TEMPERATE".to_string(),
             fill: "Clear".to_string(),
@@ -1170,7 +1173,7 @@ fn scripted_edge_updates() -> Vec<Value> {
     let mut records = Vec::new();
     for round in 0..6u32 {
         if round == 3 {
-            script.sim.fog =
+            *script.sim.fog =
                 save_codec::deserialize(&save_codec::serialize(&script.sim.fog).unwrap()).unwrap();
         }
         script.write(round);
@@ -1244,7 +1247,9 @@ fn edge_updates_with_callbacks() -> Vec<Value> {
         let viewers = script.viewers.clone();
         for (index, &viewer) in viewers.iter().enumerate() {
             let other = viewers[(index + 1) % viewers.len()];
-            let mut callback = |sim: &mut Simulation, change: vision::MapCellNotification| {
+            let mut callback = |sim: &mut Simulation,
+                                change: vision::MapCellNotification,
+                                _: &mut UninitContext<'_>| {
                 count += 1;
                 let seen = |sim: &Simulation, nested: bool| {
                     json!([
@@ -1277,7 +1282,7 @@ fn edge_updates_with_callbacks() -> Vec<Value> {
                         sim.update_shroud_edges_notifying(
                             nested,
                             UninitContext::default(),
-                            &mut |sim, change| {
+                            &mut |sim, change, _| {
                                 log.push(json!([change.cell, change.fresh, true]));
                                 sim.notify_cell_change(
                                     change.cell,
@@ -1445,7 +1450,7 @@ fn a_network_shroud_deselect_probe_leaves_the_shared_dummy_alone() {
             .spawn_object_with_overlay_registry("ENGINEER", "Russians", 2, 2, 0, &rules, &registry)
             .unwrap();
         let entity = sim.substrate.entities.get_mut(enemy).unwrap();
-        entity.selection.set_selected_for_test(true);
+        entity.seldom.selection.set_selected_for_test(true);
         // Level 6 moves IsShrouded's Cell three west and north, to (-1, -1).
         entity.position.set_exact_z_leptons_for_test(Some(
             6 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
@@ -1475,6 +1480,7 @@ fn a_campaign_enemy_jumpjet_is_discovered_flying_over_mapped_ground() {
             .entities
             .get(enemy)
             .unwrap()
+            .seldom
             .discovery
             .discovered_by_current_house()
     };
@@ -1532,6 +1538,93 @@ fn a_campaign_enemy_jumpjet_is_discovered_flying_over_mapped_ground() {
     );
 }
 
+/// A Unit's cell arrival re-reveals its sight ([`Simulation::refresh_object_sight`],
+/// from `0x0073AC74`). The campaign player's first discovery of an enemy runs
+/// the enemy's Tag (event 4 at `0x006F4A18`), whose Create Crate action (108,
+/// `0x006DF69B`) places the crate from the match's overlay types, which the
+/// sight refresh reads from its rules.
+#[test]
+fn a_sight_discovery_runs_the_discovered_tags_create_crate_action() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("Hills.mmx")
+    else {
+        return;
+    };
+    let rules = retail.rules;
+    let mut sim = Simulation::with_seed(0x143);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    sim.fog.set_width_for_test(32);
+    sim.fog.set_height_for_test(32);
+    // A campaign: a noncampaign CellPUT discovers every object as it is placed.
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Campaign);
+    for (index, name, human) in [(0, "Americans", true), (1, "French", false)] {
+        let owner = sim.interner.intern(name);
+        sim.houses.register(HouseState::new(
+            owner,
+            index,
+            Some(owner),
+            human,
+            10_000,
+            10,
+        ));
+    }
+    let player = sim.interner.get("Americans").unwrap();
+    sim.session.set_current_house_for_test(Some(player));
+    let enemy = sim
+        .spawn_object("GTGCAN", "French", 20, 10, 0, &rules)
+        .unwrap();
+    let scout = sim
+        .spawn_object("E1", "Americans", 4, 10, 0, &rules)
+        .unwrap();
+    let map = crate::map::map_file::MapFile::from_bytes(
+        "[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+         [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n[Basic]\nNewINIFormat=4\n\
+         [Triggers]\nFOUND=French,<none>,Found,0,1,1,1,0\n\
+         [Events]\nFOUND=1,4,0,0\n[Tags]\nTAG=0,Found,FOUND\n\
+         [Actions]\nFOUND=1,108,0,0,0,0,0,0,A\n[Waypoints]\n0=14014\n"
+            .as_bytes(),
+    )
+    .unwrap();
+    sim.initialize_trigger_definitions(
+        &map,
+        &crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
+            &crate::rules::ini_parser::IniFile::empty(),
+            &map.ini,
+            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+        ),
+        None,
+        None,
+        None,
+    );
+    sim.classify_map_triggers(&rules);
+    sim.session.install_waypoints(&map.waypoints);
+    sim.attach_object_trigger_tag(enemy, Some("TAG"));
+    let crates = |sim: &Simulation| {
+        let grid = sim.overlay_grid.as_ref().unwrap();
+        (0..32u16)
+            .flat_map(|y| (0..32u16).map(move |x| (x, y)))
+            .filter(|&(x, y)| {
+                grid.cell(x, y).overlay_id.is_some_and(|id| {
+                    rules
+                        .overlay_registry()
+                        .flags(id)
+                        .is_some_and(|flags| flags.crate_type)
+                })
+            })
+            .count()
+    };
+    assert!(!sim.techno_discovered_by_viewer(enemy, player));
+
+    // It arrives four cells from the enemy (E1 Sight=5).
+    let entity = sim.substrate.entities.get_mut(scout).unwrap();
+    entity.position.set_rx_for_test(16);
+    sim.refresh_object_sight(scout, &rules, 0, &mut FrameEffects::default());
+
+    assert!(sim.techno_discovered_by_viewer(enemy, player));
+    assert_eq!(crates(&sim), 1, "the Discovered Tag's crate");
+}
+
 /// A skirmish (or campaign) scene whose player (Americans) has mapped the
 /// west of the map only: the 12-cell radius around (6, 12).
 fn shroud_selection_fixture(
@@ -1558,7 +1651,7 @@ fn shroud_selection_fixture(
     let player = sim.interner.get("Americans").unwrap();
     let enemy = sim.interner.get("Russians").unwrap();
     sim.session.set_current_house_for_test(Some(player));
-    sim.fog = FogState::new(33, 33);
+    *sim.fog = FogState::new(33, 33);
     sim.fog.ensure_viewer(player);
     // MapClass::RevealArea's final0/final1 pair maps the cells with no
     // sustained sight source.
@@ -1585,6 +1678,7 @@ fn selected(sim: &Simulation, id: u64) -> bool {
         .entities
         .get(id)
         .unwrap()
+        .seldom
         .selection
         .is_selected()
 }
@@ -1614,6 +1708,7 @@ fn move_east_selected(
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(true);
     }
@@ -1685,18 +1780,24 @@ fn no_edge_make_enemy_matches_native_human_source_controls() {
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
         let computer = sim.interner.get("Russians").unwrap();
-        sim.fog = vision::FogState::new(64, 64);
+        *sim.fog = vision::FogState::new(64, 64);
         let id = sim
             .spawn_object("SPYP", "Americans", 40, 40, 0, &rules)
             .unwrap();
-        assert!(sim.entities().get(id).unwrap().sight.is_zero());
+        assert!(sim.entities().get(id).unwrap().seldom.sight.is_zero());
         // Supplied native camera cache, before its current position changes.
-        sim.refresh_object_sight(id, &rules, 6, crate::sim::world::FrameEffects::default());
+        sim.refresh_object_sight(
+            id,
+            &rules,
+            6,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
         assert!(sim.fog.sight_is_latched(id, player));
         let input = &row["inputs"];
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         entity.position.set_rx_for_test(41);
         entity
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(input["discovered"].as_bool().unwrap());
         entity
@@ -1712,8 +1813,7 @@ fn no_edge_make_enemy_matches_native_human_source_controls() {
                 computer,
                 player,
                 &rules,
-                None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
                 false,
             );
         });
@@ -1769,7 +1869,7 @@ fn initial_house_sight_matches_original_update_tail() {
         )
         .expect("supplied source rules and art");
         let (rules, mut sim, player) = world_with(rules, 64, &[]);
-        sim.fog = vision::FogState::new(64, 64);
+        *sim.fog = vision::FogState::new(64, 64);
         let other = sim.interner.get("Russians").unwrap();
         sim.houses
             .get_mut(&other)
@@ -1781,19 +1881,20 @@ fn initial_house_sight_matches_original_update_tail() {
         sim.session.set_current_house_for_test(Some(player));
         if !input["pending"].as_bool().unwrap() {
             // Consume the first House visit before the supplied source exists.
-            sim.house_rung(&rules, None, false, FrameEffects::default(), None)
+            sim.house_rung(&rules, None, false, &mut FrameEffects::default(), None)
                 .expect("headless outcome waits complete synchronously");
         }
         let id = sim
             .spawn_object("SCOUT", "Americans", 40, 40, 0, &rules)
             .unwrap_or_else(|| panic!("source placement refused: {input}"));
-        sim.refresh_object_sight(id, &rules, 6, FrameEffects::default());
+        sim.refresh_object_sight(id, &rules, 6, &mut FrameEffects::default());
         if !input["latched"].as_bool().unwrap() {
             sim.fog.clear_sight_latch(id, player);
         }
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         entity.position.set_rx_for_test(41);
         entity
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(input["discovered"].as_bool().unwrap());
         entity
@@ -1819,10 +1920,13 @@ fn initial_house_sight_matches_original_update_tail() {
                         map_height: 64,
                         fill_silos: false,
                         rules: &rules,
+                        construction_rules:
+                            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
                         overlay_registry: &overlays,
                         house_roster: &roster,
                         skirmish_session: None,
                         campaign_map: None,
+                        stage_home_global: None,
                     },
                 )
                 .unwrap();
@@ -1842,7 +1946,7 @@ fn initial_house_sight_matches_original_update_tail() {
         }
         for visit in row["visits"].as_array().unwrap() {
             let (_, calls) = trace_reveal_calls(|| {
-                sim.house_rung(&rules, None, false, FrameEffects::default(), None)
+                sim.house_rung(&rules, None, false, &mut FrameEffects::default(), None)
                     .expect("headless outcome waits complete synchronously");
             });
             let events = visit["events"].as_array().unwrap();
@@ -1918,7 +2022,7 @@ fn initial_house_sight_pending_survives_snapshot_and_current_house_change() {
             .register(HouseState::new(owner, 0, None, true, 0, 10));
     }
     sim.session.set_current_house_for_test(Some(player));
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     for consumed in [false, true] {
         if consumed {
             sim.update_initial_house_sight(player, UninitContext::default());
@@ -1972,12 +2076,12 @@ fn a_rejected_owner_still_enters_the_client_map_once() {
             .register(HouseState::new(owner, 0, None, human, 0, 10));
     }
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     let id = sim
         .spawn_object("TANK", "Enemy", 8, 8, 0, &rules)
         .expect("the computer house's tank");
     let ((), trace) = trace_reveal_calls(|| {
-        sim.reveal_uncached_object_sight(id, false, false, None, UninitContext::with_rules(&rules));
+        sim.reveal_uncached_object_sight(id, false, false, None, UninitContext::new(&rules));
     });
     assert_eq!(trace.map_calls, 1, "the rejected call still happens");
     assert!(trace.notifications.is_empty(), "and writes no cell");
@@ -2011,7 +2115,7 @@ fn arrival_scene() -> (
             .register(HouseState::new(owner, 0, None, human, 0, 10));
     }
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     let theirs = sim
         .spawn_object("TANK", "Enemy", 8, 8, 0, &rules)
         .expect("the computer house's tank");
@@ -2028,7 +2132,7 @@ fn an_arrival_reads_the_reveal_settings_once() {
     let (mut sim, rules, _, theirs, ours) = arrival_scene();
     for id in [theirs, ours] {
         let ((), trace) = trace_reveal_calls(|| {
-            sim.refresh_object_sight(id, &rules, 0, FrameEffects::default());
+            sim.refresh_object_sight(id, &rules, 0, &mut FrameEffects::default());
         });
         assert_eq!(trace.settings_reads, 1);
     }
@@ -2042,7 +2146,7 @@ fn an_arrival_derives_a_footprint_only_for_an_admitting_map() {
     let (mut sim, rules, player, theirs, ours) = arrival_scene();
     for (id, footprints) in [(theirs, 0), (ours, 1)] {
         let ((), trace) = trace_reveal_calls(|| {
-            sim.refresh_object_sight(id, &rules, 0, FrameEffects::default());
+            sim.refresh_object_sight(id, &rules, 0, &mut FrameEffects::default());
         });
         assert_eq!(trace.footprints, footprints);
         let source = sim.fog.source_sight(id, player).expect("a published cache");

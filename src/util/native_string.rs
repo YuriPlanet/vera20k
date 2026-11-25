@@ -52,9 +52,13 @@ pub fn decode_widened_utf8(text: &str) -> Cow<'_, str> {
 }
 
 /// `f` applied to `text` with its ASCII letters upper-cased, as
-/// `str::to_ascii_uppercase` gives, built on the stack when it fits. For keys
+/// `str::to_ascii_uppercase` gives: borrowed when no letters need folding,
+/// otherwise built on the stack when it fits. For keys
 /// folded on every lookup, where a heap key per query showed in profiles.
 pub fn with_ascii_uppercase<R>(text: &str, f: impl FnOnce(&str) -> R) -> R {
+    if !text.bytes().any(|byte| byte.is_ascii_lowercase()) {
+        return f(text);
+    }
     let mut buffer = [0u8; 64];
     match buffer.get_mut(..text.len()) {
         Some(key) => {
@@ -62,6 +66,8 @@ pub fn with_ascii_uppercase<R>(text: &str, f: impl FnOnce(&str) -> R) -> R {
             key.make_ascii_uppercase();
             f(std::str::from_utf8(key).expect("ASCII uppercasing keeps UTF-8"))
         }
+        // A name longer than the buffer is rare in rules data; folding it on
+        // the heap answers the same.
         None => f(&text.to_ascii_uppercase()),
     }
 }
@@ -344,7 +350,7 @@ pub fn crt_wcstoul(units: &[u16], base: u32) -> u32 {
     crt_wcstoxl(units, base, true)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 
@@ -398,6 +404,14 @@ mod tests {
                 with_ascii_uppercase(text, str::to_owned),
                 text.to_ascii_uppercase()
             );
+        }
+    }
+
+    #[test]
+    fn ascii_uppercase_borrows_names_that_need_no_folding() {
+        let long = "T".repeat(65);
+        for text in ["TREE01", long.as_str()] {
+            with_ascii_uppercase(text, |key| assert!(std::ptr::eq(key, text)));
         }
     }
 }

@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::ore_growth::{OreGrowthConfig, OreGrowthState};
 use crate::sim::overlay_grid::OverlayGrid;
@@ -13,6 +14,11 @@ const DRIVE: &str = "{4A582741-9839-11d1-B709-00A024DDAFD1}";
 /// The 32x32 arena with ore rules, TRUCKA/TRUCKB/TANK and the team AI of
 /// `scripts`: TeamType 0 OLDTEAM and 1 NEWTEAM, whose TaskForce takes trucks.
 fn scene(scripts: &str) -> (Simulation, RuleSet, InternedId) {
+    scene_with(scripts, "")
+}
+
+/// [`scene`] with `rules` merged over its rules.
+fn scene_with(scripts: &str, rules: &str) -> (Simulation, RuleSet, InternedId) {
     let unit = format!("Speed=4\nSpeedType=Track\nMovementZone=Normal\nLocomotor={DRIVE}\n");
     let mut ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
         "[Countries]\n0=Americans\n1=Russians\n\
@@ -23,11 +29,12 @@ fn scene(scripts: &str) -> (Simulation, RuleSet, InternedId) {
     ini.merge(&IniFile::from_str(
         &crate::sim::tiberium::test_support::tiberium_rules_text(),
     ));
+    ini.merge(&IniFile::from_str(rules));
     let rules = RuleSet::from_ini(&ini).unwrap();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x6E_9140);
-    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
-    sim.ore_growth_config = OreGrowthConfig::for_test(false, false, false);
-    sim.ore_growth_state = OreGrowthState::new(32, 32);
+    *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    *sim.ore_growth_config = OreGrowthConfig::for_test(false, false, false);
+    *sim.ore_growth_state = OreGrowthState::new(32, 32);
     sim.fog.set_width_for_test(32);
     sim.fog.set_height_for_test(32);
     sim.intern_rule_type_ids(&rules);
@@ -41,7 +48,8 @@ fn scene(scripts: &str) -> (Simulation, RuleSet, InternedId) {
          [OLDTEAM]\nHouse=Americans\nScript=RUN\nTaskForce=TRUCKS\nMax=1\n\
          [NEWTEAM]\nHouse=Americans\nScript=IDLE\nTaskForce=TRUCKS\nMax=0\n"
     ));
-    let registry = TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map, false);
+    let registry =
+        TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map, RulePolicy::stock_campaign());
     sim.install_team_ai_registry(&registry, &rules);
     (sim, rules, owner)
 }
@@ -54,7 +62,7 @@ fn team(sim: &mut Simulation, owner: InternedId, members: &[u64]) -> u64 {
 
 fn run(sim: &mut Simulation, rules: &RuleSet, team: u64) {
     let registry = crate::sim::tiberium::test_support::overlay_registry();
-    sim.team_step_script(team, rules, Some(registry), FrameEffects::empty());
+    sim.team_step_script(team, rules, Some(registry), &mut FrameEffects::empty());
 }
 
 const SCRIPTS: &str = "[ScriptTypes]\n0=RUN\n1=IDLE\n[IDLE]\n0=5,9\n";
@@ -117,7 +125,9 @@ fn script18_keeps_a_team_whose_argument_names_no_team_type() {
 /// Production latch.
 #[test]
 fn script44_swaps_the_truck_type_only_and_script29_starts_production() {
-    let (mut sim, rules, owner) = scene(&format!("{SCRIPTS}[RUN]\n0=44,0\n1=29,0\n"));
+    let (mut sim, mut rules, owner) = scene(&format!("{SCRIPTS}[RUN]\n0=44,0\n1=29,0\n"));
+    let art = IniFile::from_str("[TRUCKB]\nVoxel=yes\n[TRUCKA]\nVoxel=no\n");
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
     let loaded = sim
         .spawn_object("TRUCKB", "Americans", 4, 4, 0, &rules)
         .unwrap();
@@ -131,10 +141,17 @@ fn script44_swaps_the_truck_type_only_and_script29_starts_production() {
         .health
         .set_for_test(77);
     let team = team(&mut sim, owner, &[loaded, tank]);
+    assert!(sim.entities().get(loaded).unwrap().is_voxel());
+    sim.take_looks();
 
     run(&mut sim, &rules, team);
 
+    assert_eq!(
+        sim.take_looks().entities,
+        crate::sim::Touched::Ids(vec![loaded])
+    );
     let truck = sim.entities().get(loaded).unwrap();
+    assert!(!truck.is_voxel());
     assert_eq!(sim.interner.resolve(truck.type_ref()), "TRUCKA");
     assert_eq!(truck.health.current(), 77);
     let tank = sim.entities().get(tank).unwrap();
@@ -144,6 +161,48 @@ fn script44_swaps_the_truck_type_only_and_script29_starts_production() {
     assert!(!sim.houses[&owner].ai_activation().production);
     run(&mut sim, &rules, team);
     assert!(sim.houses[&owner].ai_activation().production);
+}
+
+/// Case 45 stores TRUCKB's Type on TRUCKA Units. Their kept Drives then
+/// path by TRUCKB's MovementZone=, which native locomotors read from the
+/// Type when they use it: across a river TRUCKA cannot cross. The second
+/// truck's Drive waits under a Teleport through the store.
+#[test]
+fn script45_trucks_path_across_water_as_their_new_type() {
+    use crate::rules::locomotor_type::LocomotorKind;
+    use crate::sim::components::DriveCoord;
+    use crate::sim::movement::FindPathResult;
+    use crate::sim::movement::movement_tick::FootPathRequest;
+    let (mut sim, rules, owner) = scene_with(
+        &format!("{SCRIPTS}[RUN]\n0=45,0\n"),
+        "[Water]\nTrack=0%\nAmphibious=100%\n\
+         [TRUCKB]\nSpeedType=Amphibious\nMovementZone=Amphibious\n",
+    );
+    crate::sim::arena_fixture::flood(&mut sim, &rules, 32, (0..32).map(|y| (8, y)));
+    let trucks = [4, 6].map(|y| {
+        sim.spawn_object("TRUCKA", "Americans", 4, y, 0, &rules)
+            .unwrap()
+    });
+    let frame = sim.session.binary_frame();
+    let warped = sim.substrate.entities.get_mut(trucks[1]).unwrap();
+    let drive = warped.locomotor.as_mut().unwrap();
+    assert!(drive.begin_piggyback(LocomotorKind::Teleport, frame));
+    let team = team(&mut sim, owner, &trucks);
+
+    run(&mut sim, &rules, team);
+    let warped = sim.substrate.entities.get_mut(trucks[1]).unwrap();
+    assert!(warped.locomotor.as_mut().unwrap().end_piggyback().is_some());
+
+    let found = trucks.map(|truck| {
+        let goal = DriveCoord::cell(12, 5, 0);
+        let bounds = sim.playfield_bounds();
+        let request = FootPathRequest::track(&sim.substrate.entities, truck, goal, 0, bounds);
+        sim.foot_find_path(&request.unwrap(), &rules, None, &mut FrameEffects::empty())
+    });
+    assert_eq!(
+        found,
+        [Ok(FindPathResult::Route), Ok(FindPathResult::Route)]
+    );
 }
 
 /// Case 28 reduces the ore under each member 109 times (Map 0x0057B790).

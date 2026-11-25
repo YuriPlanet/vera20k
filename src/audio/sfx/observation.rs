@@ -31,7 +31,7 @@ pub(crate) struct PcmObservationConfig {
     pub max_samples_per_event: usize,
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod tests {
     use super::*;
     use crate::audio::arbiter::{EntryFacts, PlayRequest, TestPlayback};
@@ -681,6 +681,10 @@ struct FormatSlot {
     sample_rate: AtomicU32,
 }
 
+/// One observed event's PCM. Atomics, not a lock: the audio output thread
+/// writes samples into it as it plays the event ([`ObservedSource`]), while the
+/// observer on the game thread reads what has arrived through its own `Arc`;
+/// a lock would stall the output thread per sample.
 struct PcmStorage {
     samples: Box<[AtomicU32]>,
     written: AtomicUsize,

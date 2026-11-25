@@ -186,7 +186,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -269,7 +269,7 @@ mod tests {
                 .collect();
             // Startup's global list includes constructed limbo buildings.
             if let Some(&first) = labs.first() {
-                sim.techno_limbo_with_rules(first, &rules, None);
+                sim.techno_limbo_with_rules(first, &rules);
             }
             if let Some(retained) = row["initial_fallback"].as_str() {
                 let id = sim.interner.intern(retained);
@@ -281,22 +281,26 @@ mod tests {
                         .assign_secret_lab_fallback((ObjectCategory::Infantry, id));
                 }
             }
-            sim.scenario_rng = SimRng::from_native_state_hex_for_test(
+            // The loader installs GameMode before post-map runs. A network mode
+            // reseeds MapGen from the match seed (VERA adaptation), so install
+            // it before the native cursors the gate must leave unchanged.
+            if let Some(gate) = row.get("startup_gate") {
+                sim.install_session_mode(
+                    crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
+                        gate["game_mode"].as_i64().unwrap() as i32,
+                    ),
+                );
+            }
+            *sim.scenario_rng = SimRng::from_native_state_hex_for_test(
                 row["rng_before"]["scenario"].as_str().unwrap(),
             );
-            sim.main_rng =
-                SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                    .into();
-            sim.mapgen_rng = SimRng::from_native_state_hex_for_test(
+            *sim.main_rng =
+                SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
+            *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(
                 row["rng_before"]["mapgen"].as_str().unwrap(),
             );
             let (_, draws) = trace_draws(|| {
-                if let Some(gate) = row.get("startup_gate") {
-                    sim.install_session_mode(
-                        crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
-                            gate["game_mode"].as_i64().unwrap() as i32,
-                        ),
-                    );
+                if row.get("startup_gate").is_some() {
                     let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
                         &IniFile::empty(),
                         None,
@@ -311,10 +315,13 @@ mod tests {
                             map_height: 0,
                             fill_silos: false,
                             rules: &rules,
+                            construction_rules:
+                                crate::rules::rule_policy::RulePolicy::stock_campaign(),
                             overlay_registry: &overlays,
                             house_roster: &roster,
                             skirmish_session: None,
                             campaign_map: None,
+                            stage_home_global: None,
                         },
                     )
                     .unwrap();
@@ -437,7 +444,7 @@ mod tests {
                 0,
                 0,
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         sim.substrate
@@ -458,7 +465,7 @@ mod tests {
                 false,
                 rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         })
         .1

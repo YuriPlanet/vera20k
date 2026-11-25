@@ -568,7 +568,7 @@ pub(super) fn spawn_structure(
     ge.set_in_playfield(true);
     ge.finish_building_construction_for_test();
     ge.building_art.set_actually_placed_for_test(true);
-    ge.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(
+    *ge.tracking_facts_mut_for_test() = crate::sim::house_tracking::TrackingFacts::of(
         crate::map::entities::EntityCategory::Structure,
         rules.object(type_id),
         rules,
@@ -577,22 +577,20 @@ pub(super) fn spawn_structure(
     stamp_type_foundation(sim, rules, sid);
     // Use the lifecycle boundary so the fixture is a placed (not factory-held)
     // structure and raw-store consumers see the same Mark state as gameplay.
-    let _ = sim.mark_entity_put(sid, crate::sim::world::UninitContext::with_rules(rules));
+    let _ = sim.mark_entity_put(sid, crate::sim::world::UninitContext::new(rules));
     sim.append_house_base_building_for_test(sid);
     // Its house counts it as tracked and on the map, as CanBuild's
     // prerequisites read them.
-    Simulation::update_house_tracking(
+    crate::sim::house_tracking::HouseTracking::register_object(
         &mut sim.substrate,
         &mut sim.houses,
         sid,
-        crate::sim::house_tracking::HouseTracking::add_tracking,
     );
     sim.house_added_to_game(sid, rules);
-    Simulation::update_house_tracking(
+    crate::sim::house_tracking::HouseTracking::register_factory(
         &mut sim.substrate,
         &mut sim.houses,
         sid,
-        |tracking, entity| tracking.increment_factory_count(entity),
     );
     if sim.next_stable_object_id() <= sid {
         sim.set_next_stable_object_id_for_test(sid + 1);
@@ -619,6 +617,7 @@ pub(super) fn stamp_type_foundation(sim: &mut Simulation, rules: &RuleSet, sid: 
         .entities
         .get_mut(sid)
         .expect("a spawned structure")
+        .seldom
         .type_facts
         .set_foundation_for_test(foundation.into());
 }
@@ -707,7 +706,7 @@ fn war_factory_spawn_contact_is_marked_per_produced_mover() {
         &rules,
         10,
         produced,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         sim.substrate
@@ -730,6 +729,7 @@ fn war_factory_spawn_contact_is_marked_per_produced_mover() {
             .entities
             .get(produced)
             .unwrap()
+            .seldom
             .tether
             .partner(),
         Some(10),
@@ -740,6 +740,7 @@ fn war_factory_spawn_contact_is_marked_per_produced_mover() {
             .entities
             .get(unrelated)
             .unwrap()
+            .seldom
             .tether
             .partner(),
         None,
@@ -758,7 +759,7 @@ fn naval_factory_spawn_uses_water_exit_and_defers_unload_only_without_contacts()
         let terrain = water_terrain_with_yard_exit(32, 32);
         let grid = PathGrid::from_resolved_terrain(&terrain);
         sim.install_fixture_path_grid(Some(&grid));
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 32,
             off_fc: -100,
@@ -782,6 +783,7 @@ fn naval_factory_spawn_uses_water_exit_and_defers_unload_only_without_contacts()
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .radio_contacts
             .set_capacity(2);
         // Stock GAYARD has one slot. This supplied two-slot array tests the
@@ -795,11 +797,12 @@ fn naval_factory_spawn_uses_water_exit_and_defers_unload_only_without_contacts()
                 .entities
                 .get_mut(1)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .set_slot(slot, contact);
         }
         let yard = sim.substrate.entities.get(1).unwrap();
-        let contacts_before = yard.radio_contacts.clone();
+        let contacts_before = yard.seldom.radio_contacts.clone();
         let mission_before = yard.mission.clone();
         let produced = sim
             .construct_object_limbo_at_height(
@@ -810,7 +813,7 @@ fn naval_factory_spawn_uses_water_exit_and_defers_unload_only_without_contacts()
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("construct the original ExitObject receiver");
         assert_eq!(
@@ -821,7 +824,7 @@ fn naval_factory_spawn_uses_water_exit_and_defers_unload_only_without_contacts()
                 produced,
                 (0, 0),
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             crate::sim::ai_base_building::BuildingExit::Placed,
             "naval factory delivers its actual held Unit through shared ExitObject"
@@ -833,7 +836,7 @@ fn naval_factory_spawn_uses_water_exit_and_defers_unload_only_without_contacts()
             "FNPC from the 4x4 yard's centre finds its sole unoccupied exit"
         );
         let yard = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(yard.radio_contacts, contacts_before);
+        assert_eq!(yard.seldom.radio_contacts, contacts_before);
         if occupied_slots.is_empty() {
             assert_eq!(
                 yard.mission.queued(),
@@ -887,7 +890,7 @@ fn mixed_land_and_naval_factories_bind_independent_vehicle_and_ship_slots() {
     land_exit.land_type = crate::rules::terrain_rules::LandType::Clear.as_index();
     let grid = PathGrid::test_all_passable(40, 40);
     sim.install_fixture_path_grid(Some(&grid));
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 40,
         off_fc: -100,
@@ -1008,7 +1011,7 @@ fn mixed_land_and_naval_factories_bind_independent_vehicle_and_ship_slots() {
     );
 
     assert!(super::dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
+        &mut sim, &rules
     ));
     let destroyer = sim
         .substrate
@@ -1061,7 +1064,7 @@ fn naval_delivery_nonzero_canenter_refunds_without_trying_second_producer() {
     }
     let grid = PathGrid::from_resolved_terrain(&terrain);
     sim.install_fixture_path_grid(Some(&grid));
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 40,
         off_fc: -100,
@@ -1129,7 +1132,7 @@ fn naval_delivery_nonzero_canenter_refunds_without_trying_second_producer() {
     let held = super::lifecycle_tests::held_id(&sim, americans, ProductionCategory::Ship);
     let credits = credits_for_owner(&sim, "Americans");
     assert!(
-        !super::dispatch_production_changes_for_tests(&mut sim, &rules, None),
+        !super::dispatch_production_changes_for_tests(&mut sim, &rules),
         "nonzero Unit CanEnter rejects the selected producer's one attempt"
     );
     let selected = sim.substrate.entities.get(1).unwrap();
@@ -1205,7 +1208,7 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
 
     let grid = PathGrid::from_resolved_terrain(&terrain);
     sim.install_fixture_path_grid(Some(&grid));
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 40,
         off_fc: -100,
@@ -1259,7 +1262,7 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
     let credits = credits_for_owner(&sim, "Americans");
     let mut expected = sim.scenario_rng.clone();
     assert!(!super::dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
+        &mut sim, &rules
     ));
     assert_eq!(
         sim.substrate.entities.get(1).unwrap().mission.queued(),
@@ -1297,7 +1300,7 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
     *sim.production.factories_mut() = save_codec::deserialize(&bytes).unwrap();
     // Publishing alone does not invent another PLACE for an unfinished successor.
     assert!(!super::dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
+        &mut sim, &rules
     ));
     assert_eq!(
         super::lifecycle_tests::held_id(&sim, americans, ProductionCategory::Ship),
@@ -1311,14 +1314,14 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
         cell.base_speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::ONE);
     }
     let grid = PathGrid::from_resolved_terrain(sim.resolved_terrain.as_ref().unwrap());
-    sim.path_grid = Some(std::sync::Arc::new(grid));
+    *sim.path_grid = Some(std::sync::Arc::new(grid));
     assert!(
         sim.production
             .factories_mut()
             .test_arm_ready(americans, ProductionCategory::Ship)
     );
     assert!(super::dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
+        &mut sim, &rules
     ));
     let delivered = sim.substrate.entities.get(successor).unwrap();
     assert!(delivered.lifecycle.cell_marked() && !delivered.lifecycle.in_limbo());
@@ -1344,7 +1347,7 @@ fn naval_yard_with_rally(rules: &RuleSet) -> Simulation {
     let terrain = water_terrain(40, 40);
     let grid = PathGrid::from_resolved_terrain(&terrain);
     sim.install_fixture_path_grid(Some(&grid));
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 40,
         off_fc: -100,
@@ -1360,7 +1363,8 @@ fn naval_yard_with_rally(rules: &RuleSet) -> Simulation {
     sim.remove_entity_occupancy(1);
     {
         let yard = sim.substrate.entities.get_mut(1).unwrap();
-        yard.type_facts
+        yard.seldom
+            .type_facts
             .set_foundation_for_test("4x4".to_string().into());
         yard.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(20, 10)));
     }
@@ -1378,9 +1382,7 @@ fn deliver_naval_yard_ship(sim: &mut Simulation, rules: &RuleSet) -> (u16, u16) 
             .factories_mut()
             .test_arm_ready(americans, ProductionCategory::Ship)
     );
-    assert!(super::dispatch_production_changes_for_tests(
-        sim, rules, None
-    ));
+    assert!(super::dispatch_production_changes_for_tests(sim, rules));
     sim.substrate
         .entities
         .values()
@@ -1425,7 +1427,7 @@ fn an_infantry_corpse_in_the_rally_cell_refuses_the_naval_fast_path() {
         50,
         crate::sim::world::InfantryDeathSequence::Die1,
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let corpse = sim.substrate.entities.get(50).unwrap();
     assert_eq!(corpse.mission_leaf.as_infantry().unwrap().doing(), 11);
@@ -1456,7 +1458,7 @@ fn naval_delivery_success_uses_producer_rally_then_move_and_recentres() {
 
     sim.clear_lifecycle_test_events_for_test();
     assert!(super::dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
+        &mut sim, &rules
     ));
     let produced = sim
         .substrate
@@ -1564,7 +1566,7 @@ fn naval_rally_destination_and_move_survive_beyond_the_path_grid() {
     // Ship setter publishes it without a search.
     let grid = PathGrid::test_all_passable(15, 15);
     sim.install_fixture_path_grid(Some(&grid));
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 40,
         off_fc: -100,
@@ -1580,7 +1582,8 @@ fn naval_rally_destination_and_move_survive_beyond_the_path_grid() {
     sim.remove_entity_occupancy(1);
     {
         let yard = sim.substrate.entities.get_mut(1).unwrap();
-        yard.type_facts
+        yard.seldom
+            .type_facts
             .set_foundation_for_test("4x4".to_string().into());
         yard.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(39, 39)));
     }
@@ -1601,7 +1604,7 @@ fn naval_rally_destination_and_move_survive_beyond_the_path_grid() {
     );
 
     assert!(super::dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
+        &mut sim, &rules
     ));
     let produced = sim
         .substrate

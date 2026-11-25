@@ -2,7 +2,8 @@
 //! Simulation's ScenarioSession owns62C/630 and the input-lock transitions.
 //! This leaf supplies no gameplay clock, RNG or competing pause counter.
 use crate::app::AppState;
-use crate::app::match_runtime::sim_host::SimWrite;
+use crate::app::match_diagnostics::MatchDiagnosticsState;
+use crate::app::match_runtime::sim_host::{SimHost, SimWrite};
 use crate::sim::replay::ScenarioServiceInput;
 use crate::sim::timer::CdTimer;
 
@@ -26,7 +27,7 @@ impl ScenarioPauseClock {
         }
     }
 
-    fn elapsed(&self, wall_ms: u64) -> bool {
+    pub(super) fn elapsed(&self, wall_ms: u64) -> bool {
         self.timer.remaining(bucket(wall_ms)) <= 0
     }
 }
@@ -47,13 +48,19 @@ pub(crate) fn blocks_main_tick(mode: super::session::SessionMode, paused: bool) 
         )
 }
 
-pub(crate) fn enter(state: &mut AppState, duration: i32, outermost: bool, wall_ms: u64) {
-    let mode = state.match_state.session_mode();
+pub(crate) fn enter(
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    audio: &mut crate::app::audio_runtime::AppAudioRuntime,
+    duration: i32,
+    outermost: bool,
+    wall_ms: u64,
+) {
+    let mode = match_state.session_mode();
     enter_with_owners(
-        &mut state.match_state.match_presentation.scenario_pause,
-        &mut state.match_state.scenario_elapsed_clock,
+        &mut match_state.match_presentation.scenario_pause,
+        &mut match_state.scenario_elapsed_clock,
         mode,
-        state.audio.sfx_player.as_mut(),
+        audio.sfx_player.as_mut(),
         duration,
         outermost,
         wall_ms,
@@ -87,16 +94,17 @@ pub(crate) fn enter_with_owners(
     }
 }
 
-pub(crate) fn resume(state: &mut AppState, wall_ms: u64) {
-    let elapsed_paused = state
-        .match_state
-        .elapsed_clock_paused(&state.frontend.screen);
-    let audio_paused = state
-        .match_state
-        .presentation_paused(&state.frontend.screen);
+pub(crate) fn resume(
+    screen: &crate::ui::game_screen::GameScreen,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    audio: &mut crate::app::audio_runtime::AppAudioRuntime,
+    wall_ms: u64,
+) {
+    let elapsed_paused = match_state.elapsed_clock_paused(screen);
+    let audio_paused = match_state.presentation_paused(screen);
     resume_with_owners(
-        &mut state.match_state.scenario_elapsed_clock,
-        state.audio.sfx_player.as_mut(),
+        &mut match_state.scenario_elapsed_clock,
+        audio.sfx_player.as_mut(),
         elapsed_paused,
         audio_paused,
         wall_ms,
@@ -142,26 +150,49 @@ pub(crate) fn poll(state: &mut AppState, wall_ms: u64) {
 /// Ordered external service ingress shared by timers, Chrono and Radar.
 /// Record the transition itself, never a wall clock or a second state owner.
 pub(crate) fn apply_service(state: &mut AppState, input: ScenarioServiceInput) {
-    let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Tick) else {
-        return;
+    let effects = apply_live_service(
+        &mut state.match_state.sim_runtime,
+        &mut state.match_state.match_diagnostics,
+        input,
+    );
+    super::sim_tick::apply_trigger_effects(state, &effects);
+}
+
+fn apply_live_service(
+    runtime: &mut SimHost,
+    diagnostics: &mut MatchDiagnosticsState,
+    input: ScenarioServiceInput,
+) -> Vec<crate::sim::trigger_runtime::TriggerEffect> {
+    // The radar movie FIFO still runs for presentation during playback.
+    // Recorded services own the simulation's pause credits in that timeline.
+    if diagnostics.is_replay_playback() {
+        return Vec::new();
+    }
+    let Some(rt) = runtime.write_sim(SimWrite::Tick) else {
+        return Vec::new();
     };
-    let effects = match state.match_state.match_diagnostics.get_or_begin_replay(rt) {
+    match diagnostics.get_or_begin_replay(rt) {
         Some(log) => log.apply_scenario_service(&mut rt.simulation, input),
         None => input.apply(&mut rt.simulation),
-    };
-    super::sim_tick::apply_trigger_effects(state, &effects);
+    }
 }
 
 /// Retire only this world's physical clock. Saved62C/630 remain simulation
 /// state; a failed load cannot release the outgoing world's authoritative hold.
-pub(crate) fn load_clock(state: &mut AppState, wall_ms: u64) {
-    state.match_state.match_presentation.scenario_pause = ScenarioPauseClock::after_load(wall_ms);
+pub(crate) fn load_clock(
+    presentation: &mut crate::app::presentation::state::MatchPresentationState,
+    wall_ms: u64,
+) {
+    presentation.scenario_pause = ScenarioPauseClock::after_load(wall_ms);
 }
 
-pub(crate) fn reset_clock(state: &mut AppState) {
-    state.match_state.match_presentation.scenario_pause = ScenarioPauseClock::default();
+pub(crate) fn reset_clock(
+    presentation: &mut crate::app::presentation::state::MatchPresentationState,
+) {
+    presentation.scenario_pause = ScenarioPauseClock::default();
+    presentation.narrative_sync = Default::default();
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "scenario_pause_tests.rs"]
 mod tests;

@@ -36,7 +36,7 @@ fn frame(scene: &mut HeadlessScenario) -> SimFrameOutput {
             &commands,
             crate::headless_scenario::SIM_TICK_MS,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("ordinary bound-resource frame");
     assert!(output.tick.frame_committed && !output.network_waiting && !output.outcome_waiting);
@@ -285,7 +285,7 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
                 "NATBNK",
                 31,
                 85,
-                Some(&scene.runtime.resources.overlay_registry),
+                Some(scene.runtime.resources.rules.overlay_registry()),
             )
             .expect("real stock NATBNK placement query")
             .valid,
@@ -351,7 +351,7 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
         assert!(!object.infantry_absorb && !object.unit_absorb && !object.gap_generator);
         assert!(object.factory_type().is_none());
         let b = sim.entities().get(bunker).unwrap();
-        assert!(b.bunker.occupant().is_none() && b.passenger_role.occupants().is_empty());
+        assert!(b.bunker.occupant().is_none() && b.passenger_role().occupants().is_empty());
         let terrain = sim.resolved_terrain().unwrap();
         for (x, y) in [(30, 85), (31, 85), (32, 85), (31, 86), (32, 86)] {
             let cell = terrain.cell(x, y).unwrap();
@@ -377,7 +377,7 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
             &hover,
             OrderModifier::Normal,
             false,
-            Some(&scene.runtime.resources.overlay_registry),
+            Some(scene.runtime.resources.rules.overlay_registry()),
         )
         .expect("real stock CAN_LOAD entry action");
         assert!(selected.is_empty());
@@ -425,11 +425,11 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
         assert_eq!(b.bunker.occupant(), Some(tank));
         assert_eq!(t.bunker.link().installed_in(), Some(bunker));
         assert!(
-            b.passenger_role.occupants().is_empty(),
+            b.passenger_role().occupants().is_empty(),
             "tank link is not garrison+694"
         );
         assert!(
-            b.passenger_role
+            b.passenger_role()
                 .cargo()
                 .is_none_or(|cargo| cargo.is_empty())
         );
@@ -437,7 +437,7 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
             serde_json::to_value(b.building.bunker_runtime).unwrap()["state"],
             "Occupied"
         );
-        assert!(!t.in_limbo() && t.in_playfield() && !t.selection.is_selected());
+        assert!(!t.in_limbo() && t.in_playfield() && !t.seldom.selection.is_selected());
     }
     let hover = point_select(&mut scene, bunker, &local);
     let before = query_snapshot(&scene, bunker, tank);
@@ -451,15 +451,16 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
                 Some(bunker),
                 &hover,
                 Some(rules),
-                Some(&scene.runtime.resources.overlay_registry),
+                Some(scene.runtime.resources.rules.overlay_registry()),
                 OrderModifier::Normal,
                 false,
                 false,
+                &mut Default::default(),
             ),
             building_selection_click(
                 sim,
                 rules,
-                &scene.runtime.resources.overlay_registry,
+                scene.runtime.resources.rules.overlay_registry(),
                 &[bunker],
                 &[bunker],
                 owner,
@@ -530,17 +531,18 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
                 Some(tank),
                 &hover,
                 Some(rules),
-                Some(&scene.runtime.resources.overlay_registry),
+                Some(scene.runtime.resources.rules.overlay_registry()),
                 OrderModifier::Normal,
                 false,
-                false
+                false,
+                &mut Default::default()
             ),
             CursorFeedbackKind::Deploy
         );
         self_click_command(
             sim,
             rules,
-            Some(&scene.runtime.resources.overlay_registry),
+            Some(scene.runtime.resources.rules.overlay_registry()),
             owner,
             &[tank],
             Some(&hover),

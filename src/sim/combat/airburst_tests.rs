@@ -4,11 +4,11 @@
 
 use super::*;
 use crate::sim::projectile::{ProjectileCoord, ProjectileDetonationReason};
-#[cfg(not(any(feature = "ares", feature = "phobos")))]
+#[cfg(not(feature = "phobos"))]
 use crate::sim::rng::SimRng;
-#[cfg(not(any(feature = "ares", feature = "phobos")))]
+#[cfg(not(feature = "phobos"))]
 use crate::sim::world::{FrameEffects, UninitContext};
-#[cfg(not(any(feature = "ares", feature = "phobos")))]
+#[cfg(not(feature = "phobos"))]
 use serde_json::Value;
 
 #[cfg(not(feature = "phobos"))]
@@ -89,7 +89,7 @@ fn detonate(world: &mut Simulation, rules: &RuleSet, request: ProjectileDetonati
 }
 
 #[test]
-#[cfg(not(any(feature = "ares", feature = "phobos")))]
+#[cfg(not(feature = "phobos"))]
 fn stock_airburst_tail_matches_native_children_rng_and_cleanup() {
     let rows: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/projectile_oracle/airburst.json",
@@ -97,7 +97,7 @@ fn stock_airburst_tail_matches_native_children_rng_and_cleanup() {
     .unwrap();
     let native = &rows[0];
     let (mut world, rules, source, request) = scene(600);
-    world.scenario_rng =
+    *world.scenario_rng =
         SimRng::from_native_state_hex_for_test(native["rng_before"]["scenario"].as_str().unwrap());
     let main = world.main_rng.native_state_hex();
     let mapgen = world.mapgen_rng.native_state_hex();
@@ -150,9 +150,7 @@ fn stock_airburst_tail_matches_native_children_rng_and_cleanup() {
     assert_eq!(world.main_rng.native_state_hex(), main);
     assert_eq!(world.mapgen_rng.native_state_hex(), mapgen);
     let ids: Vec<_> = children.iter().map(|(id, _)| **id).collect();
-    assert!(
-        world.retire_non_entity_object(request.projectile_id, UninitContext::with_rules(&rules))
-    );
+    assert!(world.retire_non_entity_object(request.projectile_id, UninitContext::new(&rules)));
     // Parent removal must leave the children alive. Each owns its source,
     // cell target, Logic slot and expiry registration through existing owners.
     assert!(ids.iter().all(|id| world.projectiles.get(*id).is_some()));
@@ -162,14 +160,14 @@ fn stock_airburst_tail_matches_native_children_rng_and_cleanup() {
             .all(|id| world.projectiles.get(*id).unwrap().source_id() == 0)
     );
     for id in ids {
-        world.retire_non_entity_object(id, UninitContext::with_rules(&rules));
+        world.retire_non_entity_object(id, UninitContext::new(&rules));
     }
     world.flush_pending_delete();
     assert!(world.projectiles.is_empty());
 }
 
 #[test]
-#[cfg(not(any(feature = "ares", feature = "phobos")))]
+#[cfg(not(feature = "phobos"))]
 fn stock_airburst_children_reach_shared_damage_and_expire() {
     let (mut world, rules, _source, request) = scene(0);
     let victim = world
@@ -190,11 +188,11 @@ fn stock_airburst_children_reach_shared_damage_and_expire() {
         .map(|(id, _)| *id)
         .min()
         .unwrap();
-    world.retire_non_entity_object(request.projectile_id, UninitContext::with_rules(&rules));
+    world.retire_non_entity_object(request.projectile_id, UninitContext::new(&rules));
     let (_, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
         for frame in 101..106 {
             world.session.set_binary_frame_for_test(frame);
-            world.visit_combat_tail(first, &rules, None, FrameEffects::default());
+            world.visit_combat_tail(first, &rules, None, &mut FrameEffects::default());
             world.flush_pending_delete();
         }
     });
@@ -228,12 +226,12 @@ fn stock_airburst_children_reach_shared_damage_and_expire() {
 }
 
 #[test]
-#[cfg(not(any(feature = "ares", feature = "phobos")))]
+#[cfg(not(feature = "phobos"))]
 fn stock_airburst_reads_live_source_and_requires_a_represented_parent() {
     let (mut world, rules, source, request) = scene(600);
     // Keep the old packet's source intentionally stale. The authoritative
     // Bullet pointer expiry must determine every newly constructed child.
-    world.notify_pointer_expired(source, UninitContext::with_rules(&rules));
+    world.notify_pointer_expired(source, UninitContext::new(&rules));
     detonate(&mut world, &rules, request);
     let children: Vec<_> = world
         .projectiles

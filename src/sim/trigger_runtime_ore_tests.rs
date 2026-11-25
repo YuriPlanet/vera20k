@@ -42,7 +42,7 @@ fn run(
         &mut Vec::new(),
         rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
         registry,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -61,9 +61,9 @@ fn scene(rules: &RuleSet) -> Simulation {
     sim.session.set_tiberium_grows_flag_for_test(true);
     sim.session.set_tiberium_spreads_flag_for_test(false);
     sim.install_resolved_terrain_for_new_map(test_grid(16, 16, test_flat_cell));
-    sim.overlay_grid = Some(OverlayGrid::new(16, 16));
-    sim.ore_growth_config = OreGrowthConfig::for_test(true, false, true);
-    sim.ore_growth_state = OreGrowthState::new(16, 16);
+    *sim.overlay_grid = Some(OverlayGrid::new(16, 16));
+    *sim.ore_growth_config = OreGrowthConfig::for_test(true, false, true);
+    *sim.ore_growth_state = OreGrowthState::new(16, 16);
     sim.ore_growth_state.reset_native_tiberium_classes_for_rect(
         (8, 8),
         rules.tiberium_types.len(),
@@ -314,7 +314,7 @@ fn counted_tag_pauses_drivers_preserves_saved_gate_and_reenables_due_timers() {
     sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
     waypoints(&mut sim, &[(0, (8, 9)), (1, (8, 8))]);
     sim.session.publish_started();
-    sim.advance_triggers(&rules, Some(registry), FrameEffects::default());
+    sim.advance_triggers(&rules, Some(registry), &mut FrameEffects::default());
     assert!(!sim.ore_growth_config.grows());
     assert!(sim.trigger_runtime.logic_tags.is_empty());
     assert!(
@@ -334,10 +334,9 @@ fn counted_tag_pauses_drivers_preserves_saved_gate_and_reenables_due_timers() {
         .advance_app_frame(
             &[],
             &rules,
-            Some(registry),
             67,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert!(frame.tick.frame_committed);
@@ -366,10 +365,9 @@ fn counted_tag_pauses_drivers_preserves_saved_gate_and_reenables_due_timers() {
         .advance_app_frame(
             &[],
             &rules,
-            Some(registry),
             134,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert!(frame.tick.frame_committed);

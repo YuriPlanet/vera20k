@@ -370,7 +370,7 @@ fn update_spark(
             )
         {
             let held = rules.particle_type(ext.held_type);
-            let half = (pst.particle_cap as i32).max(0) / 2;
+            let half = pst.particle_cap.max(0) / 2;
             let count = sim
                 .particle_rng()
                 .next_range_i32_inclusive(0, half)
@@ -418,11 +418,10 @@ fn spawn_spark(
     let draws = [x, y, z].map(|draw| X::store_f32_masked_chop(X::load_i32(draw)));
     let [x, y, z] = draws.map(X::load_f32);
     let speed = crt_sqrt(X::add(X::add(X::mul(y, y), X::mul(x, x)), X::mul(z, z)));
-    // VERA keeps SpawnDirection as whole leptons; the DLL adds its floats.
-    let spawn_direction = pst.spawn_direction.to_array();
+    // The DLL adds the type's SpawnDirection floats.
     let mut direction = [0, 1, 2].map(|axis| {
         X::store_f32_masked_chop(X::add(
-            X::load_f32(X::store_f32_masked_chop(X::load_i32(spawn_direction[axis]))),
+            X::load_f32(pst.spawn_direction[axis]),
             X::load_f32(draws[axis]),
         ))
     });
@@ -750,16 +749,20 @@ fn update_smoke(
     rules: &RuleSet,
 ) {
     // 10027966..100279CB: any owner object (Ares tests the Object flag, not
-    // the stock Foot one) moves the system to its GetCoords plus the
-    // constructor's offset.
-    if let Some(owner) = sys
-        .owner_entity
-        .and_then(|owner| sim.substrate.entities.get(owner))
-    {
-        let origin = crate::sim::movement::ground_pose::object_get_coords(
-            owner,
-            sim.resolved_terrain.as_ref(),
-        );
+    // the stock Foot one), a VoxelAnim too, moves the system to its GetCoords
+    // plus the constructor's offset.
+    let cells = sim
+        .resolved_terrain
+        .as_ref()
+        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+    let origin = sys.owner_entity.and_then(|owner| {
+        crate::sim::movement::ground_pose::target_get_coords(
+            crate::sim::combat::TargetKind::Entity(owner),
+            sim,
+            cells.as_ref(),
+        )
+    });
+    if let Some(origin) = origin {
         sys.coords = IVec3::new(
             sys.offset.x.wrapping_add(origin.x),
             sys.offset.y.wrapping_add(origin.y),
@@ -836,8 +839,11 @@ fn update_smoke(
                 sys.coords.z.wrapping_add(10),
             );
             // MapClass::GetCellFloorHeight 578080, raised to the coordinate.
-            let floor = match super::spark_world::constructor_ground_height(sim, coords.x, coords.y)
-            {
+            let floor = match super::spark_world::constructor_ground_height(
+                sim.resolved_terrain.as_ref(),
+                coords.x,
+                coords.y,
+            ) {
                 Ok(floor) => floor.unwrap_or(coords.z),
                 Err(error) => {
                     log::warn!("particles: Ares smoke spawn floor refused: {error}");
@@ -925,6 +931,11 @@ fn smoke_movement(ext: &mut AresParticleSystemExt, sim: &mut Simulation, rules: 
     }
     for smoke in &mut ext.smoke {
         let kind = rules.particle_type(smoke.type_id);
+        // RESIDUAL: stock code reads StartStateAI=, StateAIAdvance= and
+        // EndStateAI= as signed bytes (MOVSX); whether these Ares reads sign-
+        // extend (Ares.dll `0x100280D0`) is unchecked, and VERA takes them
+        // unsigned. Only values of 128 and up differ, which no retail type
+        // sets.
         let end = i32::from(kind.end_state_ai);
         if smoke.state < end {
             // The phase offsets the start and makes the period
@@ -983,9 +994,12 @@ fn smoke_movement(ext: &mut AresParticleSystemExt, sim: &mut Simulation, rules: 
                 .wrapping_add(old[1]),
             new_z,
         ];
-        // 10028270..10028354: the old cell's bridge deck (floor + 0x1A0);
-        // rising from below it to floor + 0x9C or higher dies.
-        match super::spark_world::smoke_bridge_deck(sim, IVec3::from_array(old)) {
+        // Ares 10028270..10028354: rising from below the old cell's deck to
+        // deck minus 0x104 or higher dies. The stock fallback is floor + 0x1A0.
+        match super::spark_world::smoke_bridge_deck(
+            sim.resolved_terrain.as_ref(),
+            IVec3::from_array(old),
+        ) {
             Ok(Some(deck)) => {
                 if old[2] < deck && new_z >= deck.wrapping_sub(0x104) {
                     smoke.dead = true;
@@ -1082,6 +1096,6 @@ fn greater(lhs: MaskedX87Value, rhs: MaskedX87Value) -> bool {
     X::compare(lhs, rhs) == MaskedX87Ordering::Greater
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "ares_system_tests.rs"]
 mod tests;

@@ -99,9 +99,8 @@ fn stock_flat_torpedo_pose_upload_and_surface_replay_match_original_pixels() {
             ];
             let mut uniform = camera(size);
             uniform.camera_pos = cam;
-            // Existing native-shape GPU fixtures transport supplied buffer
-            // baselines through this origin, preserving the producer's bias.
-            uniform.native_z_origin_y = input["depth_baseline"].as_i64().unwrap() as f32 - 32768.0;
+            // The capture's Z buffer seeds at its baseline (`native_z::ZSeed`).
+            uniform.native_z_pan = (32768 - input["depth_baseline"].as_i64().unwrap()) as f32;
             batch.write_camera(&gpu.queue, uniform);
             let fog = crate::render::shroud_buffer::ShroudBuffer::fixture(
                 &gpu.device,
@@ -158,7 +157,7 @@ fn stock_flat_torpedo_pose_upload_and_surface_replay_match_original_pixels() {
                     "{name}"
                 );
                 let before = sim.state_hash();
-                let order = NativeDisplayOrder::from_display(sim.display_layers());
+                let order = NativeDisplayOrder::from_world(&sim, None);
                 let object = projectile_draw_instance(
                     sim.projectiles().get(id).unwrap(),
                     &kind,
@@ -453,10 +452,13 @@ fn kirov_voxel_pose_upload_and_retained_replay_survive_a_changed_second_frame() 
                     "the second frame must demand changed texels"
                 );
             }
-            let order = NativeDisplayOrder::from_display(sim.display_layers());
-            let object = crate::app::presentation::instances::projectile_draw_instance_for_frame(
+            let order = NativeDisplayOrder::from_world(&sim, None);
+            let mut planned = super::super::draw_plan_lowering::PlannedObjects::default();
+            crate::app::presentation::instances::projectile_draw_instance_for_frame(
                 sim.projectiles().get(id).unwrap(),
                 sim.session().binary_frame(),
+                // A voxel bullet takes no SHP frame.
+                false,
                 kind,
                 "BlimpBombP",
                 HouseColorIndex(8),
@@ -469,6 +471,7 @@ fn kirov_voxel_pose_upload_and_retained_replay_survive_a_changed_second_frame() 
                 },
                 DepthAxis::NONE,
                 &order,
+                &mut planned,
                 |image, matrix| {
                     cache.render_matrix(
                         &assets,
@@ -483,6 +486,7 @@ fn kirov_voxel_pose_upload_and_retained_replay_survive_a_changed_second_frame() 
                 },
             )
             .unwrap();
+            let object = planned.into_owned().remove(0);
             let instance = object.pieces[0].instance;
             let reused = cache
                 .render_matrix(
@@ -511,7 +515,7 @@ fn kirov_voxel_pose_upload_and_retained_replay_survive_a_changed_second_frame() 
                 texels, expected.palette_indices,
                 "latest frame's full pose page contents"
             );
-            let layers = lower_object_instances(vec![object]);
+            let layers = lower_object_instances(vec![object].into());
             let layer = &layers[3];
             let mut pool = InstanceBufferPool::new();
             pool.upload_on_device(&gpu.device, &gpu.queue, "kirov", &layer.instances);
@@ -622,7 +626,7 @@ fn kirov_voxel_pose_upload_and_retained_replay_survive_a_changed_second_frame() 
 #[ignore = "requires GPU and retail assets; global UNITSNO selection through ordinary and packed UnitPose replay"]
 fn global_voxel_palette_bypasses_theater_and_house_remap_on_both_replay_routes() {
     use crate::app::presentation::render::draw_plan_lowering::{
-        ObjectPieceInstance, PlannedObjectInstance,
+        ObjectPieceInstance, OwnedPlannedObject,
     };
     use crate::render::tactical_draw_plan::{
         BlitPolicy, ObjectDraw, RenderZPolicy, SpriteEncoding, TacticalLayer,
@@ -705,19 +709,22 @@ fn global_voxel_palette_bypasses_theater_and_house_remap_on_both_replay_routes()
                 instance.source_palette = source_palette;
                 instance.draw_state.remap_row = 1;
                 instance.palette_light = light;
-                let mut layers = lower_object_instances(vec![PlannedObjectInstance::object(
-                    ObjectDraw {
-                        id: 1,
-                        layer: TacticalLayer(3),
-                        display_order: 0,
-                        policy: BlitPolicy::z_read(SpriteEncoding::Voxel),
-                    },
-                    vec![ObjectPieceInstance {
-                        target: ObjectTexture::UnitPosePage(0),
-                        render_z: RenderZPolicy::ReadOnly,
-                        instance,
-                    }],
-                )]);
+                let mut layers = lower_object_instances(
+                    vec![OwnedPlannedObject::object(
+                        ObjectDraw {
+                            id: 1,
+                            layer: TacticalLayer(3),
+                            display_order: 0,
+                            policy: BlitPolicy::z_read(SpriteEncoding::Voxel),
+                        },
+                        vec![ObjectPieceInstance {
+                            target: ObjectTexture::UnitPosePage(0),
+                            render_z: RenderZPolicy::ReadOnly,
+                            instance,
+                        }],
+                    )]
+                    .into(),
+                );
                 let layer = std::mem::take(&mut layers[3]);
                 let mut pool = InstanceBufferPool::new();
                 pool.upload_on_device(&gpu.device, &gpu.queue, "global-voxel", &layer.instances);

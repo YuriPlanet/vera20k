@@ -121,7 +121,7 @@ fn flight(patch: &str, block: Block) -> Option<(Simulation, u64, Option<u32>)> {
                     coord,
                     rules,
                     None,
-                    crate::sim::world::FrameEffects::empty(),
+                    &mut crate::sim::world::FrameEffects::empty(),
                 );
             } else {
                 sim.spawn_object("MTNK", "Americans", LANDING.0, LANDING.1, 0, rules)
@@ -163,8 +163,8 @@ fn land_nearby_lands_beside_a_taken_cell() {
 /// A Nighthawk refused low in its descent is in the landing cell's list
 /// (Update's Mark(DOWN) below two levels, `0x0054D6A6`). Leaving for the
 /// cruise unlinks it, as native's own exits from State 4 do
-/// (`0x0054C5F9..0x0054C610`): the cruise moves it with no Mark pair, so a
-/// link left behind stays in that cell after the Nighthawk is gone.
+/// (`0x0054C5F9..0x0054C610`): the cruise moves it with no Mark pair
+/// (`0x0054D134`), so natively a link left behind stays in that cell.
 #[test]
 fn land_nearby_leaves_the_refused_cell_s_list() {
     let Some((sim, hawk, landed_after)) =

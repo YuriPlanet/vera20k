@@ -9,10 +9,9 @@ fn step(sim: &mut Simulation, rules: &RuleSet) {
     sim.advance_app_frame(
         &commands,
         rules,
-        None,
         33,
         crate::sim::world::TickLane::Ordinary,
-        Default::default(),
+        &mut Default::default(),
     )
     .unwrap();
 }
@@ -76,21 +75,21 @@ fn retail_mcvs_repack_and_follow_the_ground_click_after_deployment() {
         if contact {
             // Supplied existing radio state. The sale owner must retire both
             // sides, rather than requiring an empty link at input time.
-            sim.entities_mut_for_test()
-                .get_mut(yard)
+            sim.entity_mut_for_test(yard)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .insert(peer)
                 .unwrap();
-            sim.entities_mut_for_test()
-                .get_mut(peer)
+            sim.entity_mut_for_test(peer)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .insert(yard)
                 .unwrap();
         }
         let (orders, announce) =
-            building_cell_orders(&sim, &rules, None, &[yard], owner, (23, 20), false, false);
+            building_cell_orders(&sim, &rules, &[yard], owner, (23, 20), false, false);
         assert!(!announce);
         assert!(
             matches!(orders.as_slice(), [Command::SetRally { .. }, Command::SellBuilding { entity_id }]
@@ -142,7 +141,14 @@ fn retail_mcvs_repack_and_follow_the_ground_click_after_deployment() {
             ))
         );
         let converted = converted.expect("MCV must return");
-        assert!(sim.entities().get(peer).unwrap().radio_contacts.is_empty());
+        assert!(
+            sim.entities()
+                .get(peer)
+                .unwrap()
+                .seldom
+                .radio_contacts
+                .is_empty()
+        );
         let unit = sim.entities().get(converted).unwrap();
         assert!(
             [unit.mission.current(), unit.mission.queued()]
@@ -198,9 +204,9 @@ fn construction_yard_ground_orders_match_native_redeploy_admission() {
             .spawn_object("GAPOWR", "Americans", 5, 5, 0, &rules)
             .unwrap();
         if contact {
-            sim.entities_mut_for_test()
-                .get_mut(yard)
+            sim.entity_mut_for_test(yard)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .insert(peer)
                 .unwrap();
@@ -211,9 +217,166 @@ fn construction_yard_ground_orders_match_native_redeploy_admission() {
             "{name}"
         );
         let (orders, _) =
-            building_cell_orders(&sim, &rules, None, &[yard], owner, (23, 20), false, false);
+            building_cell_orders(&sim, &rules, &[yard], owner, (23, 20), false, false);
         assert_eq!(!orders.is_empty(), admitted, "{name}");
     }
+}
+
+#[test]
+fn a_rally_yard_issues_no_ground_orders_when_redeploy_is_disabled() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::world::{CellActionQuery, MoveAction};
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &IniFile::from_str("[GACNST]\nFactory=UnitType\n"),
+    ) else {
+        return;
+    };
+    let rules = retail.rules;
+    let (mut sim, owner) = yard_arena(&rules);
+    sim.session_mut_for_test()
+        .game_options_mut_for_test()
+        .mcv_redeploy = false;
+    let yard = sim
+        .spawn_object("GACNST", "Americans", 12, 12, 0, &rules)
+        .unwrap();
+    let cell = (23, 20);
+    assert_eq!(
+        sim.cell_move_action(
+            owner,
+            yard,
+            cell,
+            CellActionQuery {
+                mouse_over: true,
+                shift: false,
+            },
+            &rules,
+        ),
+        Ok(MoveAction::Move)
+    );
+    assert_eq!(
+        click(&sim, &rules, &[yard], None, cell, OrderModifier::Normal),
+        BuildingClick::Orders(Vec::new(), false)
+    );
+}
+
+#[test]
+fn delegated_ai_yard_uses_the_redeploy_cursor_fallback_and_native_sale_queue() {
+    use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use crate::sim::world::{CellActionQuery, MoveAction};
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let mut rules = retail.rules;
+    rules.set_buildup_control_for_test("GACNST", [0, 29, 1]);
+    let size = 64;
+    let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 0x443A7B, size);
+    crate::sim::arena_fixture::flood(
+        &mut sim,
+        &rules,
+        size,
+        (0..size)
+            .flat_map(|y| (0..size).map(move |x| (x, y)))
+            .filter(|&(x, y)| x >= 16 || y >= 16),
+    );
+    sim.resolve_type_handles(&rules);
+    let player = sim.interner().get("Americans").unwrap();
+    let delegated = sim.interner().get("Russians").unwrap();
+    let session = sim.session_mut_for_test();
+    session.set_current_house_for_test(Some(player));
+    session.set_game_mode(ScenarioGameMode::Lan);
+    session.game_options_mut_for_test().mcv_redeploy = true;
+    session.game_options_mut_for_test().short_game = false;
+    sim.install_network_timing(10);
+    sim.network_command_queues()
+        .install_timing(1, std::num::NonZeroU8::new(5).unwrap(), [1]);
+    sim.spawn_object("GAPOWR", "Americans", 3, 3, 0, &rules)
+        .unwrap();
+    let yard = sim
+        .spawn_object("GACNST", "Russians", 6, 6, 0, &rules)
+        .unwrap();
+    let origin = sim.object_coords_cell(yard).unwrap();
+    assert!(!sim.owner_is_human(delegated));
+
+    let grant = |level| {
+        vec![ControlGrant {
+            source: 1,
+            house: 0,
+            level,
+        }]
+    };
+    let mut tactical = sim.clone();
+    tactical
+        .install_control_grants(grant(ControlGrantLevel::UnitsOnly))
+        .unwrap();
+    assert!(!tactical.local_takes_rally_point(yard, player, &rules));
+    sim.install_control_grants(grant(ControlGrantLevel::FullControl))
+        .unwrap();
+    assert_eq!(
+        sim.cell_move_action(
+            player,
+            yard,
+            (10, 10),
+            CellActionQuery {
+                mouse_over: true,
+                shift: false
+            },
+            &rules
+        )
+        .unwrap(),
+        MoveAction::Move
+    );
+    assert_eq!(
+        sim.factory_rally_cell_input(yard, (56, 56), &rules)
+            .unwrap(),
+        Some(origin)
+    );
+    let (orders, _) = building_cell_orders(&sim, &rules, &[yard], player, (10, 10), false, false);
+    assert!(
+        matches!(orders.as_slice(), [Command::SetRally { .. }, Command::SellBuilding { entity_id }] if *entity_id == yard)
+    );
+    for command in orders {
+        assert!(
+            crate::app::input::commands::schedule_command_in_sim(&mut sim, "Americans", command)
+                .is_some()
+        );
+    }
+    let mut queue = sim.network_command_queues();
+    let records: Vec<_> = queue
+        .local_records()
+        .unwrap()
+        .into_iter()
+        .cloned()
+        .collect();
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| (record.house_id(), record.opcode()))
+            .collect::<Vec<_>>(),
+        [(1, 0x1e), (1, 0x16)]
+    );
+    queue.commit_local_mirrors(&records).unwrap();
+
+    for _ in 0..120 {
+        step(&mut sim, &rules);
+        if sim.entities().get(yard).is_none() {
+            break;
+        }
+    }
+    assert!(
+        sim.entities().get(yard).is_none(),
+        "the queued sale must finish"
+    );
+    assert!(
+        sim.entities().values().any(|entity| {
+            entity.owner() == delegated && sim.interner().resolve(entity.type_ref()) == "AMCV"
+        }),
+        "the AI house gets an MCV instead of a sale refund"
+    );
+    assert!(!sim.owner_is_human(delegated));
 }
 
 /// A retail rival arena where the Americans are the player, in a skirmish
@@ -455,7 +618,6 @@ fn a_yard_neither_archives_nor_packs_up_over_a_cell_it_cannot_stand_on() {
                 shift,
             },
             &rules,
-            None,
         )
         .unwrap()
     };
@@ -511,8 +673,7 @@ fn a_yard_click_whose_rally_search_misses_archives_its_own_cell() {
     let yard = sim
         .spawn_object("GACNST", "Americans", 6, 6, 0, &rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(yard)
+    sim.entity_mut_for_test(yard)
         .unwrap()
         .set_archive_target(Some(TargetKind::Cell(12, 12)));
     let own = sim.object_coords_cell(yard).unwrap();
@@ -624,7 +785,6 @@ fn a_yard_click_past_the_playfield_edge_packs_up_toward_the_clamped_cell() {
                 shift: false,
             },
             &rules,
-            None,
         )
         .unwrap()
     };
@@ -701,6 +861,7 @@ fn an_alt_click_rallies_a_war_factory_only_onto_an_object_it_can_reach() {
             OrderModifier::ForceMove,
             true,
             false,
+            &mut Default::default(),
         )
     };
     let alt = |building, target| {
@@ -840,8 +1001,7 @@ fn an_object_archive_whose_target_is_gone_clears_the_archive() {
     let yard = sim
         .spawn_object("GACNST", "Americans", 12, 12, 0, &rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(yard)
+    sim.entity_mut_for_test(yard)
         .unwrap()
         .set_archive_target(Some(TargetKind::Cell(20, 12)));
     assert!(sim.apply_command(
@@ -1009,8 +1169,7 @@ fn a_ground_click_during_build_up_repacks_and_a_second_redirects_the_mcv() {
     let yard = yard.expect("the MCV deploys");
     assert!(sim.entities().get(yard).unwrap().building_up());
     let click = |sim: &mut Simulation, cell| {
-        let (orders, _) =
-            building_cell_orders(sim, &rules, None, &[yard], owner, cell, false, false);
+        let (orders, _) = building_cell_orders(sim, &rules, &[yard], owner, cell, false, false);
         assert!(
             matches!(
                 orders.as_slice(),

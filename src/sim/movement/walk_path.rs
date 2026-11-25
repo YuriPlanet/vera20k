@@ -38,7 +38,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
             .substrate
@@ -64,7 +64,7 @@ impl Simulation {
         request: &FootPathRequest,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let id = request.entity_id;
         let frame = self.session.binary_frame();
@@ -128,7 +128,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
             .substrate
@@ -155,7 +155,7 @@ impl Simulation {
             actor.body_facing_current(self.session.binary_frame()),
         ));
         let requested = failed_path_requested_action(doing, prone);
-        self.apply_infantry_do_action(id, requested, false, &facts, rules, frame_effects)?;
+        self.apply_infantry_do_action(id, requested, false, false, &facts, rules, frame_effects)?;
 
         let terrain = self
             .resolved_terrain
@@ -178,7 +178,6 @@ impl Simulation {
                 previous_cell: None,
             },
             rules,
-            registry,
         );
         let actor = self
             .substrate
@@ -208,7 +207,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         _registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         //ESI points into the live Walk destination, not a copy retained before
         //FindPath. Infantry+500 can have cleared it, and House can replace it.
@@ -220,7 +219,7 @@ impl Simulation {
             .and_then(|l| l.walk_destination())
             .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
         if !self.foot_path_zone_precheck(id, destination, rules)? {
-            self.assign_null_destination(id, rules, None, frame_effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
         } else {
             //75AFEE..75B083: +4F4 precedes a fresh read of physical+48 and
             //the live destination. CloseEnough is independent from code6's
@@ -242,8 +241,13 @@ impl Simulation {
                 current.y.wrapping_sub(destination.y),
                 current.z.wrapping_sub(destination.z),
             ) < rules.general.close_enough;
-            if close && actor.tether.partner().is_none() {
-                self.assign_null_destination(id, rules, None, frame_effects);
+            if close && actor.seldom.tether.partner().is_none() {
+                self.assign_null_destination(
+                    id,
+                    rules,
+                    Some(rules.overlay_registry()),
+                    frame_effects,
+                );
             } else if actor.navigation.path_runtime().retries_left() != 0 {
                 //The test is before the decrement: 1->0 does not run the
                 //exhaustion tail until a later failed Process invocation.
@@ -283,7 +287,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         Self::play_foot_path_scold(&self.substrate, &mut self.sound_events, id, rules);
         self.substrate
@@ -304,7 +308,7 @@ impl Simulation {
             .and_then(|loco| loco.walk_destination())
             .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
         if actor.in_playfield() && !self.foot_can_reach_navigation_cell(id, destination, rules)? {
-            self.assign_null_destination(id, rules, None, frame_effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
         }
         //75B18A asks a nonnull target's+4C even when3D5 will then be false.
         let target = self
@@ -329,7 +333,7 @@ impl Simulation {
                 && actor.attack_target.target().is_some()
                 && !self.foot_can_reach_navigation_cell(id, coordinate, rules)?
             {
-                self.assign_target_represented(id, None, rules, None, frame_effects)
+                self.assign_target_represented(id, None, rules, frame_effects)
                     .map_err(|error| format!("{error:?}"))?;
             }
         }
@@ -337,7 +341,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
 

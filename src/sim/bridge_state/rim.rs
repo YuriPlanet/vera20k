@@ -12,7 +12,7 @@
 
 use crate::map::bridge_rim_tiles::HighBridgeRimTiles;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "rim_tests.rs"]
 mod tests;
 
@@ -60,6 +60,7 @@ pub(crate) trait HighBridgeRimHost {
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum RimBounds {
     /// 576770: the Size diamond, from MapClass Size width and height.
+    /// 576770 inlines `MapClass::In_Bounds @ 0x00568300`.
     Diamond { width: i32, height: i32 },
     /// 571050: the inclusive MapClass+0x124..+0x130 rectangle
     /// (0x005711D8..0x00571227 and the step test at 0x00571384).
@@ -70,8 +71,7 @@ impl RimBounds {
     fn contains(self, cursor: RimCoord) -> bool {
         match self {
             Self::Diamond { width, height } => {
-                let (x, y) = (i32::from(cursor.0), i32::from(cursor.1));
-                !(x + y <= width || width <= x - y || width <= y - x || width + height * 2 < x + y)
+                crate::map::playfield::size_diamond_contains(width, height, cursor)
             }
             Self::Rect(bounds) => bounds.contains(cursor),
         }

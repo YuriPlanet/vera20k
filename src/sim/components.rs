@@ -100,7 +100,9 @@ impl NavTargetRef {
 pub struct FootPathRuntime {
     /// Foot+640/+648, including the native frame anchor.
     movement_timer: crate::sim::timer::CdTimer,
-    /// Foot+668/+670.
+    /// Foot+668/+670. The path batch also starts it again for a Foot whose
+    /// urgency-2 re-path it stopped at its limit, a sim-scale deviation
+    /// (`movement::path_batch`).
     blocked_timer: crate::sim::timer::CdTimer,
     /// Foot+6B7.
     path_blocked: bool,
@@ -357,13 +359,7 @@ impl FootPathQueue {
         self.reference_cell = Some(reference_cell);
     }
 
-    /// The queue `FootClass::Find_Path @ 0x004D3920` installs from a found
-    /// route (`0x004D393A..0x004D4003`): the directions from `reference`
-    /// through `path` from `first_destination` on, unconsumed. The ordinary
-    /// zero-prefix copy at `0x004D3E82..0x004D3EA1` takes at most
-    /// [`FIND_PATH_WINDOW_WORDS`] words of the whole AStar route; tube jumps
-    /// count as one word. The Vec's end represents a short route's
-    /// terminator without retaining unused native backing words.
+    /// Build a fixture's queue and reference from a coordinate path.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn install(
         &mut self,
@@ -371,29 +367,37 @@ impl FootPathQueue {
         path: &[(u16, u16)],
         first_destination: usize,
     ) {
-        self.install_directions(reference, path, first_destination);
+        let mut from = (reference.0 as i16, reference.1 as i16);
+        let words: Vec<_> = path
+            .iter()
+            .skip(first_destination)
+            .map(|&to| {
+                let direction = direction_from_step(from, to);
+                from = (to.0 as i16, to.1 as i16);
+                i32::from(direction)
+            })
+            .collect();
+        self.install_directions(&words, false);
         self.rebase((reference.0 as i16, reference.1 as i16));
     }
 
     /// Find_Path's direction copy (`0x004D3E82..0x004D3EA1`) precedes
     /// follower callbacks; its separate reference write is at `0x004D4003`.
-    /// Keep the previous reference until that continuation publishes it.
-    pub(crate) fn install_directions(
-        &mut self,
-        reference: (u16, u16),
-        path: &[(u16, u16)],
-        first_destination: usize,
-    ) {
-        let mut from = (reference.0 as i16, reference.1 as i16);
+    /// Copy up to the end of the 24-word window. A train's one retained
+    /// head is the current word after the consumed prefix. The Vec's end
+    /// represents the native terminator.
+    pub(crate) fn install_directions(&mut self, directions: &[i32], retain_head: bool) {
+        let head = self.directions.get(usize::from(self.cursor)).copied();
         self.directions.clear();
-        for &destination in path
-            .iter()
-            .skip(first_destination)
-            .take(FIND_PATH_WINDOW_WORDS)
-        {
-            self.directions.push(direction_from_step(from, destination));
-            from = (destination.0 as i16, destination.1 as i16);
+        if retain_head {
+            self.directions.push(head.unwrap_or(u8::MAX));
         }
+        self.directions.extend(
+            directions
+                .iter()
+                .take(FIND_PATH_WINDOW_WORDS - usize::from(retain_head))
+                .map(|&dir| dir as u8),
+        );
         self.cursor = 0;
     }
 
@@ -573,6 +577,12 @@ pub struct FootSpeedState {
     /// spares every speed query of a game Ares doesn't play in that read.
     #[serde(default)]
     attached: bool,
+    /// Whether the object has Tiberian Sun limpets (`sim::limpet`), which
+    /// live in its seldom part; this byte, in the struct's padding, spares
+    /// the speed, sight and repair queries of every other object that read.
+    /// `sim::limpet` writes it with the limpets, for every category.
+    #[serde(default)]
+    limpeted: bool,
 }
 
 impl Default for FootSpeedState {
@@ -582,6 +592,7 @@ impl Default for FootSpeedState {
             crate_multiplier: crate::util::native_x87::NativeF64Bits::ONE,
             crush_slowdown: false,
             attached: false,
+            limpeted: false,
         }
     }
 }
@@ -619,6 +630,15 @@ impl FootSpeedState {
 
     pub(crate) fn set_attached(&mut self, attached: bool) {
         self.attached = attached;
+    }
+
+    /// Whether `Seldom::limpets` holds limpets; `sim::limpet` keeps it.
+    pub(crate) fn limpeted(&self) -> bool {
+        self.limpeted
+    }
+
+    pub(crate) fn set_limpeted(&mut self, limpeted: bool) {
+        self.limpeted = limpeted;
     }
 
     /// Fixed projection for diagnostics and fixed-input fixture adapters.
@@ -842,7 +862,7 @@ pub struct BunkerWallAnimEvent {
     pub damaged: bool,
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::sim::movement::DriveLocomotionRuntime;

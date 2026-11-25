@@ -14,8 +14,17 @@ are the release page's change list in plain text, the bullets under its first
 "Changes" heading that are more than a link, which the game's update offer
 lists. Its `updater` is the number in `updater-version` at the commit the
 installers were built from (none before that file), and its `update_key` the
-public key that signs it. A retry keeps these fields as the version was first
-published, and none for a version mirrored before manifests had them.
+public key that signs it. Its `build` is the release's multiplayer build
+([build check](../../docs/Networking.md#build-check)), from which the lobby
+tells a game of the release's version that is another build: `downloads.yml`'s
+first job, which holds none of the publisher's secrets, starts the release's
+Linux program with `-h` and reads the `Multiplayer build:` line of its start-up
+log (`src/entry.rs`), which the release's Linux test checks. If the program
+does not start, that job fails and publication waits for a re-run of the failed
+jobs. A release whose program starts but logs no build, from before that line,
+gets none, and so does a version a roll-back (below) mirrors first, since a
+roll-back starts no program. A retry keeps these fields as the version was
+first published, and none for a version mirrored before manifests had them.
 Finally it conditionally replaces `latest.json`, only if this is GitHub's
 latest stable release and the pointer would not move backward, unless it is
 stopping a bad release (below). `latest.json`

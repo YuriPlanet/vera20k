@@ -16,7 +16,6 @@ fn signed(value: &serde_json::Value) -> i32 {
 
 /// Stock only: Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook
 /// `0x0056BC54`) moves the kernel these native rows centre on.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn original_signed_indices_and_all_nine_slot_adjustments() {
     let packet = packet();
@@ -132,7 +131,7 @@ fn invalid_grid_dependencies_fail_before_mutation() {
             .is_err()
     );
     assert_eq!(sim.state_hash(), before);
-    sim.resolved_terrain = map;
+    *sim.resolved_terrain = map;
 }
 
 #[test]
@@ -147,7 +146,7 @@ fn retained_grid_and_initialized_zero_both_affect_simulation_hash() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let initial = sim.state_hash();
@@ -188,7 +187,7 @@ fn foot_coefficient_is_copied_only_after_admitted_unlimbo() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert_eq!(
@@ -221,7 +220,7 @@ fn foot_coefficient_is_copied_only_after_admitted_unlimbo() {
                 0,
                 placement,
                 &rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             None
         );
@@ -244,7 +243,7 @@ fn foot_coefficient_is_copied_only_after_admitted_unlimbo() {
             0,
             PlacementEvidence::EvaluateMark,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         Some(id)
     );
@@ -282,6 +281,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
         Some(7)
     );
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &crate::sim::command::Command::CaptureBuilding {
             engineer_id: passenger,
@@ -289,7 +289,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
         },
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     let grid = sim.path_grid_snapshot().unwrap();
     for _ in 0..64 {
@@ -299,7 +299,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
             .entities
             .get(passenger)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .is_inside_transport()
         {
             break;
@@ -310,7 +310,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
             .entities
             .get(building)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .occupants()
             .count(),
         1
@@ -346,7 +346,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
         Some(&registry),
         building,
         crate::sim::passenger::garrison_eject::GarrisonEjectMode::Release,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -372,7 +372,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
             .entities
             .get(building)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .occupants()
             .count(),
         0
@@ -390,7 +390,6 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
 
 /// Stock only: Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook
 /// `0x0056BC54`) writes row 559 away from the cell read back here.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn large_map_house_threat_keeps_high_coordinate_kernel_and_cleanup() {
     let mut grid = HouseSpatialThreat::default();
@@ -513,4 +512,21 @@ fn the_presentation_copy_leaves_the_threat_grids_with_the_live_world() {
         sim.houses.get(&owner).unwrap().spatial_threat_values(),
         grid
     );
+}
+
+/// The copy holds no base reservations either (CellClass `+0xDC`, read only
+/// by the AI's base planning): a city map's buildings reserve tens of
+/// thousands of cells, which cloned took most of the copy. The live world
+/// keeps its own.
+#[test]
+fn the_presentation_copy_leaves_the_base_reservations_with_the_live_world() {
+    let mut sim = Simulation::new();
+    sim.base_reservations_mut_for_test().reserve(None, 3, 4, 2);
+    let reserved = sim.base_reservations().raw_mask(None, 3, 4);
+    assert_ne!(reserved, 0);
+
+    let copy = sim.presentation_copy(None, None);
+
+    assert_eq!(copy.base_reservations().entries().len(), 0);
+    assert_eq!(sim.base_reservations().raw_mask(None, 3, 4), reserved);
 }

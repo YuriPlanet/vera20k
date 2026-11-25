@@ -252,7 +252,7 @@ impl SlotIndex {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod tests {
     use super::*;
 

@@ -38,7 +38,8 @@ fn fixture(extra: &str) -> (TestDirectory, ProcessAssets) {
         themes += &format!("[{key}]\nSound={key}\nRepeat=yes\n");
     }
     directory.write("thememd.ini", themes.as_bytes());
-    let manager = AssetManager::from_loose_root_for_test(directory.path());
+    // An Ares game: its Rules are read the Ares way.
+    let manager = AssetManager::from_loose_root_with_ares_for_test(directory.path());
     let mut process = ProcessAssets::new(
         crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
         false,

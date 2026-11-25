@@ -4,6 +4,7 @@
 //! coefficient/Team reader/getter controls are pinned in astar_threat_inputs.
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::house_state::HouseState;
 use crate::sim::snapshot::GameSnapshot;
@@ -21,8 +22,7 @@ fn request_move(
         mover,
         Some(crate::sim::components::NavTargetRef::cell(goal.0, goal.1)),
         rules,
-        Some(registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     let destination = DriveCoord::cell(goal.0, goal.1, 0);
@@ -40,7 +40,7 @@ fn request_move(
             &request,
             rules,
             Some(registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert_eq!(
@@ -69,7 +69,6 @@ fn request_move(
 
 /// Stock only: Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook
 /// `0x0056BC54`) writes row 15 away from the cell this search and read take.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn live_avoid_threats_membership_reads_admitted_house_grid_through_search_and_snapshot() {
     let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
@@ -114,11 +113,15 @@ fn live_avoid_threats_membership_reads_admitted_house_grid_through_search_and_sn
     let aimd = IniFile::from_str(
         "[TeamTypes]\n0=AVOID\n[AVOID]\nScript=MOVE\nTaskForce=TANK\nAvoidThreats=yes\n[ScriptTypes]\n0=MOVE\n[MOVE]\n0=0,0\n[TaskForces]\n0=TANK\n[TANK]\n0=1,MTNK\n",
     );
-    let team_registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+    let team_registry = TeamAiIniRegistry::from_sources(
+        &aimd,
+        &IniFile::from_str(""),
+        RulePolicy::stock_multiplayer(),
+    );
     let (vm, diagnostics) =
         TeamScriptVm::from_ini_registry(&team_registry, &mut sim.interner, &rules);
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
-    sim.team_script_vm = vm;
+    *sim.team_script_vm = vm;
     let team_type = sim.interner.get("AVOID").unwrap();
     let team = sim.create_team(team_type, Some(american), &rules).unwrap();
     assert!(sim.team_add_member(
@@ -126,8 +129,7 @@ fn live_avoid_threats_membership_reads_admitted_house_grid_through_search_and_sn
         mover,
         false,
         &rules,
-        Some(&registry),
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     assert!(sim.team_script_vm.member_avoids_threats(mover));
     assert_eq!(
@@ -177,7 +179,7 @@ fn live_avoid_threats_membership_reads_admitted_house_grid_through_search_and_sn
         mover,
         true,
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(!sim.team_script_vm.member_avoids_threats(mover));
     assert_eq!(

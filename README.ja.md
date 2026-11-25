@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K メインビジュアル" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <strong>日本語</strong> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
+  <a href="README.vi.md" lang="vi">Tiếng Việt</a> · <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.zh-TW.md" lang="zh-TW">繁體中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <strong>日本語</strong> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Linux ライブラリテストの最新の実行結果（手動で実行）"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Linux ライブラリテスト" height="23" align="middle"></a>
@@ -13,7 +13,7 @@
 
 # VERA20K
 
-VERA20K は Red Alert 2: Yuri's Revenge の新しいエンジンです。ユニット、マップ、見た目はそのままで、オリジナルと同じように遊べ、Windows、macOS、Linux で動作します。より大きな戦いに向けて作られており、1 つのマップで最大 30 人のプレイヤーと 20,000 ユニットに対応します。
+VERA20K は Red Alert 2: Yuri's Revenge の新しいエンジンです。ユニット、マップ、見た目はそのままで、オリジナルと同じように遊べ、Windows、macOS、Linux で動作します。より大きな戦いに向けて作られており、1 つのマップで最大 20,000 ユニットに対応します。プレイヤー枠はオフラインのスカーミッシュで最大 120、LAN 対戦とオンライン対戦で最大 30 です。
 
 VERA20K はゲーマーによる、ゲーマーのためのプロジェクトです。その方向性を最終的に決めるのもゲーマーです。
 
@@ -27,18 +27,12 @@ VERA20K はゲーマーによる、ゲーマーのためのプロジェクトで
 
 うまくいかないときは[ヘルプページ](https://vera20k.org/help)（英語）をご覧ください。
 
-現在も活発に開発中です。スカーミッシュは Windows、macOS、Linux でプレイでき、キャンペーンは一部が動作し、オンラインマルチプレイ（試験的）も利用できるようになりました。過去のバージョンとそれぞれの変更点は[リリースページ](https://github.com/YuriPlanet/vera20k/releases)にあります。
-
-CnCNet クライアントから YR のシングルプレイ用スカーミッシュやキャンペーンを起動するには、[オフラインクライアントのセットアップ](integrations/cncnet/README.md)を参照してください。
-
 ## プロジェクトの目標
 
 1. オリジナルの Red Alert 2: Yuri's Revenge のゲームプレイ、ビジュアル、雰囲気を守る。
-2. より大規模な戦闘に対応する：500×500 のマップで最大 **30 人のプレイヤー**と **20,000 ユニット**。
+2. 500×500 のマップで最大 **20,000 ユニット**が参加する大規模な戦闘に対応する。プレイヤー枠はオフラインのスカーミッシュで最大 **120**、LAN 対戦とオンライン対戦で最大 **30**。
 3. RTS でおなじみの機能に加え、これまでにない機能も取り入れる。
 4. マルチプレイクライアントの内蔵
-
-現在の優先事項と今後の計画は[ロードマップ](https://github.com/orgs/YuriPlanet/projects/1)をご覧ください。
 
 ## 開発への参加
 
@@ -53,7 +47,7 @@ CnCNet クライアントから YR のシングルプレイ用スカーミッシ
 エンジンは主に 3 つの部分で構成されています。
 
 - **シミュレーション**：ゲームプレイの状態とロジックを管理します。
-- **レンダリング**：オリジナルのゲームアセットを使い、オリジナルの見た目を保つために作られた、まったく新しい GPU レンダリングパイプラインです。
+- **レンダリング**：オリジナルのグラフィック素材を使い、地形やユニット、建物を GPU で描画します。
 - **アプリケーション**：入力、メニュー、オーディオ、プラットフォーム統合を担当し、各システムをつなぎます。
 
 この分離が、決定論的なゲームプレイを支えています。
@@ -83,15 +77,11 @@ cargo run --release --bin vera20k
 
 ## カスタマイズ
 
-VERA20K は、既定ではオリジナルのゲームと同じようにプレイできます。Ares などの MOD に由来する拡張を含め、新しい機能はすべて、次のいずれかで有効にされるまでオフのままでなければなりません。
+VERA20K は標準で Yuri's Revenge オリジナル版のルールを使います。**Options** ではサウンド、グラフィック、操作の設定を変えたり、VERA 独自の機能を有効にしたりできます。設定は `VERA.INI` に保存され、VERA 独自の項目は `[VERA]` セクションにまとまっています。
 
-- **VERA のプレイヤーオプション**：**Options** にあり、`VERA.INI` の `[VERA]` に保存されます。
-- **ビルドオプション**：対応する [Ares 拡張](docs/ares.md)を有効にする `--features ares` など。
-- **INI キー**：MOD またはマップが設定します。
+対戦ルールはロビーの設定、MOD、マップで変更できます。MOD やマップの INI ファイルでは、VERA20K が対応する [Ares](docs/ares.md) や [Phobos](docs/phobos.md) の機能を有効にできます。MOD に `ares.mix` を同梱しても Ares が有効になります。Phobos の一部の機能には、引き続き `--features phobos` を指定したビルドが必要です。
 
-サウンド、グラフィック、操作の設定は `VERA.INI` に保存されます。ゲームプレイのルールは、ロビーの設定、MOD、マップによって決まります。
-
-自分で MOD を作る方法は [MOD 制作ガイド](docs/modding.md)で説明しています。
+自分の MOD を作るには、[MOD 制作ガイド](docs/modding.md)をご覧ください。
 
 ## プロジェクトの支援
 
@@ -107,9 +97,13 @@ VERA20K は、既定ではオリジナルのゲームと同じようにプレイ
 
 OpenRA、XCC Mixer、ModEnc wiki、Project Perfect Mod、EA が GPL で公開した Command & Conquer と Red Alert のソースコード、World-Altering Editor、Final Alert、YRpp、Ares、Phobos、そのほか多くの皆さんに感謝します。
 
-本プロジェクトは[追加条項](LEGAL.md#additional-terms)付きの [GPLv3](LICENSE-GPL) でライセンスされています。このリポジトリにゲームファイルは含まれていません。Command & Conquer および Red Alert は Electronic Arts Inc. の商標です。スクリーンショットとアプリアイコン（Red Alert 2 の赤い星）には、Electronic Arts が所有するゲームアートが含まれています。VERA20K は Electronic Arts と提携関係になく、同社の承認を受けたものでもありません。
+本プロジェクトは[追加条項](LEGAL.md#additional-terms)付きの [GPLv3](LICENSE-GPL) でライセンスされています。
+VERA20K は許可を得て Tiberian Sun: Firestorm の雪と氷の地形タイルを同梱しています。これらのタイルは引き続き Electronic Arts の所有物です。Red Alert 2: Yuri's Revenge のゲームファイルはご自身でご用意ください。
+Command & Conquer および Red Alert は Electronic Arts Inc. の商標です。スクリーンショットとアプリアイコン（Red Alert 2 の赤い星）には、Electronic Arts が所有するゲームアートが含まれています。VERA20K は Electronic Arts と提携関係になく、同社の承認を受けたものでもありません。
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
+This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **VERA20K を共有、販売、またはフォークする前に、[法的通知](LEGAL.md)をお読みください。**
 

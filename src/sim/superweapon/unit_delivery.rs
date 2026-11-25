@@ -21,7 +21,7 @@ use crate::sim::world::Simulation;
 use crate::sim::world::{FrameEffects, SimSoundEvent};
 use std::hash::{Hash, Hasher};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "unit_delivery_tests.rs"]
 mod tests;
 
@@ -52,8 +52,8 @@ impl UnitDeliveryState {
 
     /// Saved pending deliveries load only into a game Ares plays in (`ares`,
     /// [`RuleSet::ares`]), like the entity's delivery base override
-    /// (`GameEntity::validate_ares_build_compatibility`).
-    pub(crate) fn validate_ares_build_compatibility(&self, ares: bool) -> Result<(), &'static str> {
+    /// (`GameEntity::validate_ares_compatibility`).
+    pub(crate) fn validate_ares_compatibility(&self, ares: bool) -> Result<(), &'static str> {
         if !ares && !self.pending.is_empty() {
             return Err("pending deliveries require a game Ares plays in");
         }
@@ -86,7 +86,7 @@ fn a_game_without_ares_rejects_pending_unit_delivery_state() {
             owner, 0, None, true, 0, 10,
         ));
     let mut state = UnitDeliveryState::default();
-    assert!(state.validate_ares_build_compatibility(false).is_ok());
+    assert!(state.validate_ares_compatibility(false).is_ok());
     state.pending.push(PendingDelivery {
         sw_type,
         owner,
@@ -101,10 +101,10 @@ fn a_game_without_ares_rejects_pending_unit_delivery_state() {
         activation_sound: None,
     });
     assert_eq!(
-        state.validate_ares_build_compatibility(false),
+        state.validate_ares_compatibility(false),
         Err("pending deliveries require a game Ares plays in")
     );
-    assert!(state.validate_ares_build_compatibility(true).is_ok());
+    assert!(state.validate_ares_compatibility(true).is_ok());
     assert!(state.validate(&sim).is_ok());
 }
 
@@ -161,7 +161,6 @@ pub(crate) fn configured(
         && !sw.use_charge_drain
         && sw.unit_delivery.as_ref().is_some_and(|delivery| {
             !delivery.types.is_empty()
-                && delivery.deferment >= 0
                 && delivery_owner(sim, rules, owner, delivery.owner).is_some()
                 && delivery
                     .types
@@ -178,7 +177,7 @@ pub(crate) fn launch(
     sw: &SuperWeaponType,
     cell: (u16, u16),
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(config) = sw.unit_delivery.as_ref() else {
         return false;
@@ -186,20 +185,27 @@ pub(crate) fn launch(
     let Some(delivery_owner) = delivery_owner(sim, rules, owner, config.owner) else {
         return false;
     };
+    // SW_UnitDelivery::Activate (Ares 3.0 10075920; Ares source
+    // Misc/SWTypes/UnitDelivery.cpp, `SW_Deferment.Get(-1)`): the common
+    // SW.Deferment Nullable (SWTypeExt +0x254), 20 frames when it is unset
+    // or negative.
+    let deferment = rules
+        .super_weapon_metadata(&sw.id)
+        .and_then(|metadata| metadata.launch().deferment())
+        .filter(|frames| *frames >= 0)
+        .unwrap_or(20);
     let frame = sim.session.binary_frame();
     let request = PendingDelivery {
         sw_type,
         owner: delivery_owner,
         cell,
         issued_frame: frame,
-        // The rules owner resolves the negative sentinel to the 20-frame
-        // fallback. Admission rejects an invalid unnormalized saved value.
-        due_frame: frame.wrapping_add(config.deferment as u32),
+        due_frame: frame.wrapping_add(deferment as u32),
         types: config.types.clone(),
         base_normal: config.base_normal,
         activation_sound: config.activation_sound.clone(),
     };
-    if config.deferment == 0 {
+    if deferment == 0 {
         apply(sim, rules, request, registry, effects);
     } else {
         sim.unit_deliveries.pending.push(request);
@@ -211,7 +217,7 @@ pub(crate) fn tick(
     sim: &mut Simulation,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let pending = std::mem::take(&mut sim.unit_deliveries.pending);
     let mut retained = Vec::new();
@@ -233,7 +239,7 @@ fn apply(
     rules: &RuleSet,
     request: PendingDelivery,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     // Update10075DE0 prints Message.Activate first. Its firer is the
     // Super's owner; the request retains the resolved payload owner, which
@@ -256,7 +262,7 @@ fn apply(
             request.cell.1,
         );
         sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-            sound.clone(),
+            rules.sound_name(sound),
             crate::sim::anim_class::AnimWorldCoord {
                 x: ground.x,
                 y: ground.y,
@@ -275,7 +281,7 @@ fn place(
     request: &PendingDelivery,
     payload: &DeliveryType,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(ty) = rules.object_in_category(payload.category, &payload.id) else {
         return;
@@ -287,10 +293,9 @@ fn place(
     {
         return;
     }
-    let owner_name = sim.interner.resolve(request.owner).to_owned();
     let Some(id) = sim.construct_object_limbo_at_height(
         &payload.id,
-        &owner_name,
+        request.owner,
         request.cell.0,
         request.cell.1,
         0,
@@ -405,7 +410,7 @@ fn place(
     }
     if !building {
         let mission =
-            if sim.houses[&request.owner].is_controlled_by_human(sim.session.game_mode_nonzero()) {
+            if sim.houses[&request.owner].is_controlled_by_human(sim.session.rule_policy()) {
                 MissionType::AreaGuard
             } else {
                 MissionType::Hunt

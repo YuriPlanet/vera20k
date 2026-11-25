@@ -63,7 +63,7 @@ fn charged_super_held_by_low_power_stays_charged_but_cannot_fire() {
     // The House Super AI visit completes the charge (RechargeTime=10 is
     // minutes -> 9000 native frames).
     sim.session.set_binary_frame_for_test(9000);
-    tick_house_superweapon_instances(&mut sim, &rules, owner);
+    tick_house_superweapon_instances(&mut sim, &rules, owner, &mut Default::default());
     let view = nuke_view(&sim, &rules, owner);
     assert!(view.is_ready);
     assert!(view.is_online);
@@ -76,7 +76,7 @@ fn charged_super_held_by_low_power_stays_charged_but_cannot_fire() {
         .get_mut(&owner)
         .unwrap()
         .set_is_low_power_for_test(true);
-    update_owned_supers(&mut sim, &rules, owner);
+    update_owned_supers(&mut sim, &rules, owner, &mut Default::default());
     assert!(sim.super_weapons[&owner][&type_id].is_suspended);
     let view = nuke_view(&sim, &rules, owner);
     assert!(view.is_ready, "the hold keeps the charge");
@@ -91,7 +91,7 @@ fn charged_super_held_by_low_power_stays_charged_but_cannot_fire() {
         .get_mut(&owner)
         .unwrap()
         .set_is_low_power_for_test(false);
-    update_owned_supers(&mut sim, &rules, owner);
+    update_owned_supers(&mut sim, &rules, owner, &mut Default::default());
     assert!(!sim.super_weapons[&owner][&type_id].is_suspended);
     assert!(nuke_view(&sim, &rules, owner).can_fire);
 }
@@ -184,7 +184,7 @@ mod layered_enum_history {
         let owner = sim.interner.get(OWNER).unwrap();
         let sw_type_id = sim.interner.get(REVEAL).unwrap();
         // Ordinary Building Unlimbo requests the real House grant suffix.
-        sim.recheck_house_tech_tree(owner, &rules);
+        sim.recheck_house_tech_tree(owner, &rules, &mut Default::default());
         assert!(sim.super_weapons[&owner][&sw_type_id].is_active());
         assert!(!sim.super_weapons[&owner][&sw_type_id].is_ready());
         let duration = rules.super_weapon(REVEAL).unwrap().recharge_time_frames;
@@ -199,6 +199,7 @@ mod layered_enum_history {
         );
         assert!(!sim.fog.is_cell_revealed(owner, 20, 20));
         assert!(sim.apply_command_with_overlays(
+            None,
             OWNER,
             &Command::LaunchSuperWeapon {
                 sw_type_id,
@@ -207,7 +208,7 @@ mod layered_enum_history {
             },
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ));
         assert!(sim.fog.is_cell_revealed(owner, 20, 20));
         assert!(!sim.super_weapons[&owner][&sw_type_id].is_ready());
@@ -292,6 +293,7 @@ fn initial_unknown_type_keeps_provider_trigger_and_saved_click_lifecycle() {
     }
     fn fire(sim: &mut Simulation, rules: &RuleSet, id: InternedId) {
         assert!(sim.apply_command_with_overlays(
+            None,
             "Americans",
             &Command::LaunchSuperWeapon {
                 sw_type_id: id,
@@ -300,7 +302,7 @@ fn initial_unknown_type_keeps_provider_trigger_and_saved_click_lifecycle() {
             },
             rules,
             None,
-            FrameEffects::default()
+            &mut FrameEffects::default()
         ));
     }
 
@@ -336,7 +338,7 @@ fn initial_unknown_type_keeps_provider_trigger_and_saved_click_lifecycle() {
     sim.assess_power_for_test(&rules);
     for owner in [local, enemy] {
         assert!(!sim.power_states.get(&owner).unwrap().low_power());
-        sim.recheck_house_tech_tree(owner, &rules);
+        sim.recheck_house_tech_tree(owner, &rules, &mut Default::default());
         let instance = &sim.super_weapons[&owner][&id];
         assert!(instance.is_active() && !instance.is_ready() && !instance.is_suspended());
         assert_eq!(
@@ -402,7 +404,7 @@ fn initial_unknown_type_keeps_provider_trigger_and_saved_click_lifecycle() {
     let rules = restored_rules;
     sim.session.set_binary_frame_for_test(5000);
     for owner in [local, enemy] {
-        tick_house_superweapon_instances(&mut sim, &rules, owner);
+        tick_house_superweapon_instances(&mut sim, &rules, owner, &mut Default::default());
     }
     assert!(superweapon_views_for_owner(&sim, &rules, &local)[0].can_fire);
     sim.sound_events.clear_for_test();
@@ -411,7 +413,7 @@ fn initial_unknown_type_keeps_provider_trigger_and_saved_click_lifecycle() {
     computer.set_preferred_super_weapon_target((20, 20));
     let rng = sim.rng_state();
     ai_fire::AI_FIRE_LOG.set(Some(Vec::new()));
-    ai_fire::try_fire(&mut sim, &rules, enemy, None, FrameEffects::default());
+    ai_fire::try_fire(&mut sim, &rules, enemy, None, &mut FrameEffects::default());
     assert_eq!(
         ai_fire::AI_FIRE_LOG.take().unwrap(),
         [ai_fire::AiFireEvent::TryFire]
@@ -435,7 +437,7 @@ fn initial_unknown_type_keeps_provider_trigger_and_saved_click_lifecycle() {
     assert_eq!(sim.substrate.entities.len(), object_count);
     assert_eq!(sim.rng_state(), rng);
     sim.session.set_binary_frame_for_test(5900);
-    tick_house_superweapon_instances(&mut sim, &rules, local);
+    tick_house_superweapon_instances(&mut sim, &rules, local, &mut Default::default());
     assert!(sim.super_weapons[&local][&id].is_ready());
 
     // Original map action33 grants a fresh retained slot once; no provider
@@ -450,7 +452,7 @@ fn initial_unknown_type_keeps_provider_trigger_and_saved_click_lifecycle() {
         None,
     );
     sim.classify_map_triggers(&rules);
-    sim.advance_triggers(&rules, None, FrameEffects::default());
+    sim.advance_triggers(&rules, None, &mut FrameEffects::default());
     let instance = &sim.super_weapons[&local][&id];
     assert!(instance.is_active() && instance.is_ready() && instance.one_time);
     assert_eq!(super_timer_views(&sim, &rules).len(), 1);

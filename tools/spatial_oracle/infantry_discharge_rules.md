@@ -48,9 +48,9 @@ Rust comparison entry points are
 `rules::art_data::tests::native_discharge_art_reader_matches_original_signed_independent_keys`
 (all150 cached-input rows through the production reader, plus75
 constructor-state production registry rows),
-`rules::ruleset::tests::native_discharge_retail_gi_binding_retains_independent_zero_defaults`
+`rules::ruleset::tests::types_tests::native_discharge_retail_gi_binding_retains_independent_zero_defaults`
 (physical retail rules/art binding), and
-`rules::ruleset::tests::native_discharge_signed_art_fields_reach_infantry_type`
+`rules::ruleset::tests::types_tests::native_discharge_signed_art_fields_reach_infantry_type`
 (signed limits survive the ART-to-type projection). Cached-input tests use
 the existing INI storage operation to retain present-empty/raw values supplied
 by the native fixture. Physical loader rows add an unknown `FixtureOnly=1`

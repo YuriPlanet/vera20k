@@ -66,6 +66,10 @@ pub(crate) enum LocomotorReadyState {
     Tunnel {
         state: u8,
     },
+    Mech {
+        turning: bool,
+        advancing: bool,
+    },
 }
 
 impl LocomotorReadyState {
@@ -97,6 +101,7 @@ impl LocomotorReadyState {
                     && native_double_ordered_gt_zero(applied_speed_bits)
                     && destination_nonnull
             }
+            Self::Mech { turning, advancing } => turning || advancing,
             Self::Teleport { state } => state == 1,
             // `0x0054D0D0`: any state but ground (0) and hold (2), the
             // `jumpjet_flight` `STATE_GROUND` and `STATE_HOLD`.
@@ -107,7 +112,7 @@ impl LocomotorReadyState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};

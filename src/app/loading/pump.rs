@@ -10,16 +10,16 @@
 //! in the private `tests` child.
 
 mod render;
-pub(crate) use render::transfer_progress_draws;
+pub(crate) use render::push_progress_meter;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "pump/country_loading_tests.rs"]
 mod country_loading_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "pump/loading_theme_tests.rs"]
 mod loading_theme_tests;
 
@@ -27,8 +27,8 @@ use crate::app::AppState;
 use crate::app::loading::campaign_presentation::CampaignLoadingPresentation;
 use crate::app::loading::composition::{
     LoadingCompositionSnapshot, LoadingParticipantId, LoadingStartAssignment,
-    RANDOM_MAP_PREVIEW_FILE, build_loading_composition, build_random_map_loading_composition,
-    loading_authored_size, loading_screen_scale,
+    build_loading_composition, build_random_map_loading_composition, loading_authored_size,
+    loading_screen_scale,
 };
 use crate::app::loading::fresh_scenario::FreshScenarioLoadContextDescriptor;
 use crate::app::loading::init::{self, MapLoadInitial, MapLoadResult};
@@ -255,6 +255,7 @@ impl<'a> LoadingPhaseProgress<'a> {
     fn select(
         native: Option<&'a mut NativeLoadingScreenState>,
         mismatch: bool,
+        show_progress: bool,
         network: Option<crate::app::lan_service::LoadingNetworkService<'a>>,
         rendering: impl FnOnce(
             &'a mut NativeLoadingScreenState,
@@ -269,7 +270,7 @@ impl<'a> LoadingPhaseProgress<'a> {
             };
         };
         let runtime_color_scheme_count = native.runtime_color_scheme_count;
-        let sink = if native.atlas.is_some() {
+        let sink = if show_progress && native.atlas.is_some() {
             SelectedProgressSink::Rendering(rendering(native, network))
         } else {
             SelectedProgressSink::Gated(GatedProgressSink {
@@ -308,29 +309,41 @@ impl LoadingRequest {
     pub(crate) fn replay(
         startup: &crate::sim::replay::ReplayStartup,
         map_beside: Option<&str>,
-    ) -> Self {
-        let mut session = startup.launch_session().clone();
-        if let Some(map) = map_beside {
-            session.selected_map_file = Some(map.to_owned());
-        }
-        Self {
-            startup: LoadingStartup::Replay {
-                session,
-                game_mode: startup.game_mode(),
-                native_id_prefix: startup
-                    .native_id_prefix()
-                    .expect("validated replay startup"),
-                seed: crate::app::match_bootstrap::MatchSeed {
-                    value: startup.seed(),
-                    source: crate::app::match_bootstrap::MatchSeedSource::SavedScenario,
-                    seed_authority_certifying: false,
-                },
-            },
+    ) -> anyhow::Result<Self> {
+        let map_file = map_beside.unwrap_or(startup.map_name());
+        let seed = crate::app::match_bootstrap::MatchSeed {
+            value: startup.seed(),
+            source: crate::app::match_bootstrap::MatchSeedSource::SavedScenario,
+            seed_authority_certifying: false,
+        };
+        let game_mode = startup.game_mode();
+        let native_id_prefix = startup.native_id_prefix()?;
+        let loading_startup = if let Some(start) = startup.authored_campaign() {
+            LoadingStartup::AuthoredCampaignReplay {
+                start: Box::new(start.clone()),
+                logical_map: startup.map_name().to_owned(),
+                local_map: map_file.to_owned(),
+                map_sha256: startup.map_sha256().to_owned(),
+                game_speed: startup.game_speed(),
+                seed,
+                game_mode,
+                native_id_prefix,
+            }
+        } else {
+            LoadingStartup::Replay {
+                launch: Box::new(startup.launch_descriptor(map_file)?),
+                game_mode,
+                native_id_prefix,
+                seed,
+            }
+        };
+        Ok(Self {
+            startup: loading_startup,
             accepted_rmg_start_staging: None,
             random_map_preview: None,
             skirmish_colors: None,
             the_team_enabled: false,
-        }
+        })
     }
 
     pub(crate) fn campaign(startup: crate::app::match_bootstrap::PreparedCampaignStartup) -> Self {
@@ -416,25 +429,47 @@ impl LoadingRequest {
     /// Run the request's authoritative initial-map entry. The retained random
     /// preview is intentionally not an argument: active retail's `.SED` reader
     /// regenerates gameplay after Start, while the preview remains a loading-
-    /// composition fallback only.
+    /// composition fallback only. VERA: after a network room's checks of the
+    /// map file, the map takes the mod's map additions
+    /// (`MapLoadInitial::with_mod_additions`).
     fn load_initial_with_assets(
         &self,
         ra2_dir: std::path::PathBuf,
         asset_manager: &mut AssetManager,
         native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
         resident: Option<&mut crate::sim::world::Simulation>,
+        map_additions: Option<&crate::app::mod_additions::MapAdditions>,
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<MapLoadInitial> {
+        let replay_map = match self.startup() {
+            LoadingStartup::AuthoredCampaignReplay {
+                logical_map,
+                local_map,
+                map_sha256,
+                ..
+            } if local_map == logical_map => crate::map::source::matching_loose_map_path(
+                &ra2_dir,
+                asset_manager.mod_dir(),
+                logical_map,
+                map_sha256,
+            ),
+            _ => None,
+        };
+        let map_file = replay_map
+            .as_deref()
+            .and_then(Path::to_str)
+            .unwrap_or_else(|| self.startup().physical_map_file());
         let mut loaded = init::load_map_initial_with_assets(
             ra2_dir,
             asset_manager,
             native_rules,
             resident,
-            Some(self.startup().physical_map_file()),
+            Some(map_file),
             self.startup()
                 .launch_session()
                 .map(|launch| launch.mode.override_file.as_str()),
             self.startup().session_mode(),
+            self.startup().ai_file(asset_manager),
             self.the_team_enabled,
             self.startup().match_seed(),
             progress,
@@ -458,6 +493,7 @@ impl LoadingRequest {
                         == Some(
                             crate::map::source::effective_network_map_digest(
                                 &loaded.map_data().ini,
+                                false,
                                 false
                             )
                             .as_str()
@@ -465,6 +501,28 @@ impl LoadingRequest {
                     "network map include files changed after admission"
                 );
             }
+        }
+        // The client applies the code for its mode to the map it launches.
+        // The native mode object and the normal Rules layers still own their
+        // separate setup. Only the imported catalog's own maps take this code.
+        if self.startup().session_mode()
+            == crate::app::match_runtime::session::SessionMode::Skirmish
+            && let Some(session) = self.skirmish_launch_session()
+            && let Some(additions) = crate::app::mod_additions::MapAdditions::client_mode(
+                asset_manager,
+                self.selected_map_file(),
+                &session.mode,
+            )
+            .map_err(anyhow::Error::msg)?
+        {
+            loaded = loaded.with_mod_additions(&additions)?;
+        }
+        let mut loaded = match map_additions {
+            Some(additions) => loaded.with_mod_additions(additions)?,
+            None => loaded,
+        };
+        if !matches!(self.startup(), LoadingStartup::Network(_)) {
+            loaded = loaded.with_ra2_campaign_fixups(map_file)?;
         }
         Ok(loaded)
     }
@@ -539,6 +597,7 @@ impl LoadingRequest {
         ra2_dir: PathBuf,
         assets: &mut AssetManager,
         native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
+        map_additions: Option<&crate::app::mod_additions::MapAdditions>,
         mapgen_retention: &mut crate::app::shell_random_map::RandomMapGenerationRetention,
         mut resident: Option<&mut crate::sim::world::Simulation>,
         progress: &mut dyn LoadingProgressSink,
@@ -548,9 +607,14 @@ impl LoadingRequest {
             assets,
             native_rules,
             resident.as_deref_mut(),
+            map_additions,
             progress,
         )?;
-        initial.retain_process_state(mapgen_retention, resident);
+        initial.retain_process_state(
+            mapgen_retention,
+            resident,
+            self.startup().match_spec().topology(),
+        );
         self.prepare_initial(initial)
     }
 
@@ -560,13 +624,15 @@ impl LoadingRequest {
         ra2_dir: PathBuf,
         assets: &mut AssetManager,
         native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
+        mapgen_retention: &mut crate::app::shell_random_map::RandomMapGenerationRetention,
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<init::RandomMapLaunchSnapshot> {
         let prepared = self.prepare(
             ra2_dir,
             assets,
             native_rules,
-            &mut Default::default(),
+            None,
+            mapgen_retention,
             None,
             progress,
         )?;
@@ -636,7 +702,7 @@ impl PreparedScenarioLoad {
     }
 }
 
-#[allow(
+#[expect(
     clippy::large_enum_variant,
     reason = "one stage per loading session; Prepared carries the Selected request onward"
 )]
@@ -652,7 +718,7 @@ enum LoadingStage {
         wait: NetworkLoadWait,
     },
     /// Complete has been decided and terminal100 submitted to the same reliable
-    /// owner; that is not an ACK. A diagnostic may defer this retained result.
+    /// owner; that is not an ACK. The loaded-screen hold keeps this result here.
     ReadyToInstall {
         result: Box<MapLoadResult>,
     },
@@ -669,19 +735,6 @@ impl LoadingStage {
             | Self::ReadyToInstall { result } => &result.scenario.startup,
         }
     }
-}
-
-/// Borrowed diagnostic facts from this loading attempt. The real wait/cursor
-/// retain authority; observations never service a packet or advance progress.
-pub(crate) struct NetworkLoadingObservation<'a> {
-    pub stage: &'static str,
-    pub startup: &'a LoadingStartup,
-    pub progress: &'a LoadingProgressState,
-    pub rows: &'a LoadingProgressRowSnapshot,
-    pub incomplete: Vec<usize>,
-    pub simulation: Option<&'a crate::sim::world::Simulation>,
-    pub timeout: Option<crate::sim::timer::CdTimer>,
-    pub observed_bucket: i32,
 }
 
 impl LoadingSession {
@@ -707,34 +760,6 @@ impl LoadingSession {
             next_frame: NextLoadingFrame::Later,
             install_after_ms: None,
         }
-    }
-
-    fn network_observation(
-        &self,
-        stage: &'static str,
-        now: i32,
-    ) -> Option<NetworkLoadingObservation<'_>> {
-        if !matches!(self.stage.startup(), LoadingStartup::Network(_)) {
-            return None;
-        }
-        let native = self.native.as_ref()?;
-        let (simulation, timeout) = match &self.stage {
-            LoadingStage::AwaitingPeers { result, wait } => {
-                (result.scenario.simulation.as_ref(), Some(wait.timeout))
-            }
-            LoadingStage::ReadyToInstall { result } => (result.scenario.simulation.as_ref(), None),
-            _ => (None, None),
-        };
-        Some(NetworkLoadingObservation {
-            stage,
-            startup: self.stage.startup(),
-            progress: &native.progress,
-            rows: &native.progress_row,
-            incomplete: native.progress_row.incomplete_remote_indices(),
-            simulation,
-            timeout,
-            observed_bucket: now,
-        })
     }
 }
 
@@ -1098,10 +1123,15 @@ impl LoadingJob {
 fn ordinary_country_loading_index(
     startup: &LoadingStartup,
 ) -> Option<crate::rules::ruleset::CountryIdx> {
-    if matches!(
-        startup,
-        LoadingStartup::Network(_) | LoadingStartup::Campaign(_) | LoadingStartup::Generic { .. }
-    ) || crate::map::rmg::is_seed_selection(startup.selected_map_file())
+    // A replay of a network game has the same cold Rules boundary as a live
+    // match. An ordinary Country prefix would transfer the old world's writes
+    // into that rebuilt registry after the initial map load.
+    if startup.match_spec().topology().is_lockstep()
+        || matches!(
+            startup,
+            LoadingStartup::Campaign(_) | LoadingStartup::Generic { .. }
+        )
+        || crate::map::rmg::is_seed_selection(startup.selected_map_file())
     {
         return None;
     }
@@ -1127,7 +1157,15 @@ fn bind_early_country_loading(
             index.0
         )
     })?;
-    let palette_name = country.files().1.to_owned();
+    // `-ra2`: original game.exe binds one MPLS.PAL for every Country (only
+    // the observer uses MPLSOBS.PAL). The YR per-country MPLSU/MPLSR/... PALs
+    // in the Country table are absent from an RA2 install, so keep them out
+    // of the frozen early observation and let the SHP render with MPLS.PAL.
+    let palette_name = if crate::util::ra2_launch::enabled() {
+        "MPLS.PAL".to_owned()
+    } else {
+        country.files().1.to_owned()
+    };
     let palette = if palette_name.is_empty() {
         None
     } else {
@@ -1194,13 +1232,12 @@ fn prepare_country_loading_prefix(
 /// Admit a peer's loading milestone into the active immutable source roster.
 /// Transport is outside this owner; controlled service input uses this same seam.
 pub(crate) fn accept_network_loading_progress(
-    state: &mut AppState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    session: &crate::app::match_runtime::session::MatchSession,
     source_index: usize,
     percent: i32,
 ) -> bool {
-    let session = &state.match_state.session;
-    state
-        .frontend
+    frontend
         .loading_session
         .as_mut()
         .and_then(|loading| loading.native.as_mut())
@@ -1212,23 +1249,6 @@ pub(crate) fn accept_network_loading_progress(
                 percent,
             )
         })
-}
-
-/// Read-only capture projection of the row already mutated by the native owner.
-/// It has no progress/transport policy and cannot update the held loader.
-pub(crate) fn network_loading_displayed_percent(state: &AppState, source: usize) -> Option<f64> {
-    state
-        .frontend
-        .loading_session
-        .as_ref()?
-        .native
-        .as_ref()?
-        .progress_row
-        .participants
-        .get(source)?
-        .remote_progress
-        .as_ref()
-        .map(LoadingProgressState::current_percent)
 }
 
 /// One source-membership and row mutation owner used while LoadingSession is
@@ -1247,10 +1267,11 @@ pub(crate) fn accept_network_loading_progress_row(
 }
 
 /// True only for the actual active frozen loader, never an old retained world.
-pub(crate) fn network_loading_active(state: &AppState) -> bool {
-    matches!(state.frontend.screen, GameScreen::Loading)
-        && state
-            .frontend
+pub(crate) fn network_loading_active(
+    frontend: &crate::app::frontend::state::FrontendState,
+) -> bool {
+    matches!(frontend.screen, GameScreen::Loading)
+        && frontend
             .loading_session
             .as_ref()
             .is_some_and(|loading| matches!(loading.stage.startup(), LoadingStartup::Network(_)))
@@ -1259,7 +1280,7 @@ pub(crate) fn network_loading_active(state: &AppState) -> bool {
 /// UDP Departure or a definitive HTTPS start/channel/session rejection uses the
 /// same failed-load retirement, asset return and shell reentry as loader errors.
 pub(crate) fn cancel_network_loading(state: &mut AppState, text: &str) -> bool {
-    if !network_loading_active(state) {
+    if !network_loading_active(&state.frontend) {
         return false;
     }
     // No box: the lobby line below is this cancellation's message.
@@ -1322,14 +1343,18 @@ fn service_network_loading_boundary(
     {
         super::super::shell_wol::poll(state);
     }
-    if network_loading_active(state) {
+    if network_loading_active(&state.frontend) {
         super::super::lan_service::poll(
             state,
             crate::app::match_runtime::frame_pacer::wall_clock_ms(),
         );
     }
     if !matches!(state.frontend.screen, GameScreen::Loading) {
-        clear_loading_state(state);
+        clear_loading_state(
+            &mut state.renderer,
+            &mut state.frontend,
+            &mut state.process_assets,
+        );
         return None;
     }
     if state.frontend.shell_exit.is_some() {
@@ -1356,10 +1381,11 @@ fn prepare_session_for_loading(
         // The shell retains the recorded mode until its world is installed;
         // replay never admits a participant table or live connection.
         LoadingStartup::Replay {
-            session: launch,
-            game_mode,
-            ..
-        } => session.begin_replay(*game_mode, launch.local_player().name.clone()),
+            launch, game_mode, ..
+        } => session.begin_replay(*game_mode, launch.session().local_player().name.clone()),
+        LoadingStartup::AuthoredCampaignReplay { game_mode, .. } => {
+            session.begin_replay(*game_mode, String::new())
+        }
         startup => session.begin_offline(
             startup.session_mode(),
             startup
@@ -1369,17 +1395,58 @@ fn prepare_session_for_loading(
     }
 }
 
+/// VERA: a network match plays the switches its room agreed on
+/// ([`MatchSession::network_personal_rules`]); the session holds this start
+/// frozen. A replay applies the exact simulation switches recorded by its
+/// blueprint; an offline game plays the player's own.
+///
+/// [`MatchSession::network_personal_rules`]: crate::app::match_runtime::session::MatchSession::network_personal_rules
+fn play_startup_personal_rules(
+    process_assets: &mut crate::app::process_assets::ProcessAssets,
+    session: &crate::app::match_runtime::session::MatchSession,
+    startup: &LoadingStartup,
+) {
+    let rules = match startup {
+        LoadingStartup::Network(_) => session
+            .network_personal_rules()
+            .unwrap_or_else(|| Err("the start has no room setup".into()))
+            .unwrap_or_else(|error| {
+                // The room's agreement refused these before its start.
+                log::error!("The room's rules do not read: {error}");
+                Default::default()
+            }),
+        LoadingStartup::AuthoredCampaignReplay { .. } => Default::default(),
+        LoadingStartup::Replay { launch, .. } => {
+            launch.personal_rules().cloned().unwrap_or_default()
+        }
+        _ => return process_assets.use_own_personal_rules(),
+    };
+    process_assets.use_personal_rules(rules);
+}
+
 pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
+    // Retiring the Radar FIFO can record an outgoing scenario service.
+    crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
     state
         .frontend
         .multiplayer_shell_runtime
         .begin_fresh_scenario_load();
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
-    crate::app::chrono_screen::retire(state, wall_ms);
+    crate::app::chrono_screen::retire(
+        &state.frontend.screen,
+        &mut state.match_state,
+        &mut state.audio,
+        wall_ms,
+    );
     // The shell writes GameMode before the loading screen (`0x0052E10F`
     // Skirmish, `0x0052E175` campaign); the session owner is live from here.
     prepare_session_for_loading(&mut state.match_state.session, request.startup());
+    play_startup_personal_rules(
+        &mut state.process_assets,
+        &state.match_state.session,
+        request.startup(),
+    );
     let mut request = request.with_skirmish_colors(
         state
             .rules()
@@ -1415,7 +1482,7 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
         native.resolve_player_colors(&rules.color_schemes, &rules.house_color_ramps);
     }
     let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-    reset_loading_presentation(state);
+    reset_loading_presentation(&mut state.renderer, &mut state.frontend);
     // A finished match keeps its presentation at the shell, and its entity
     // atlases are its largest GPU allocations (SHP pages up to the texture
     // limit). Nothing draws them once loading begins and the install replaces
@@ -1423,6 +1490,7 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
     let outgoing = &mut state.match_state.match_presentation;
     outgoing.atlas_growth.cancel();
     outgoing.sprite_atlas = None;
+    outgoing.zshape_skips.get_mut().forget_frames();
     outgoing.unit_atlas = None;
     replace_loading_attempt(
         &mut state.frontend.loading_session,
@@ -1478,9 +1546,7 @@ fn lease_loading_assets_and_play_loading_theme(
     // Ares683C70 needs the selected map INI. When the Rules are read the Ares
     // way its one playback occurs at the consuming Selected->Prepared
     // transition, before the Rules prefix reset.
-    let ares = process_assets
-        .native_rules()
-        .is_some_and(|owner| owner.reads_ares_way());
+    let ares = process_assets.reads_ares_way();
     if !ares && let Some(assets) = audio_service_asset_manager(process_assets, Some(&session)) {
         let _ = audio.play_theme("LOADING", assets, now_ms);
     }
@@ -1552,9 +1618,9 @@ pub(crate) struct NetworkLoadingParticipantPresentation<'a> {
 }
 
 pub(crate) fn network_loading_presentation(
-    state: &AppState,
+    frontend: &crate::app::frontend::state::FrontendState,
 ) -> Option<NetworkLoadingPresentation<'_>> {
-    let session = state.frontend.loading_session.as_ref()?;
+    let session = frontend.loading_session.as_ref()?;
     if !matches!(session.stage.startup(), LoadingStartup::Network(_)) {
         return None;
     }
@@ -1578,9 +1644,10 @@ pub(crate) fn network_loading_presentation(
     })
 }
 
-pub(crate) fn loading_map_name(state: &AppState) -> Option<&str> {
-    state
-        .frontend
+pub(crate) fn loading_map_name(
+    frontend: &crate::app::frontend::state::FrontendState,
+) -> Option<&str> {
+    frontend
         .loading_session
         .as_ref()
         .map(|session| session.stage.startup().selected_map_file())
@@ -1589,10 +1656,9 @@ pub(crate) fn loading_map_name(state: &AppState) -> Option<&str> {
 /// Immutable selected campaign for loading diagnostics; the stage retains
 /// authority over its request through preparation and terminal disposition.
 pub(crate) fn loading_campaign_startup(
-    state: &AppState,
+    frontend: &crate::app::frontend::state::FrontendState,
 ) -> Option<&crate::app::match_bootstrap::PreparedCampaignStartup> {
-    state
-        .frontend
+    frontend
         .loading_session
         .as_ref()?
         .stage
@@ -1600,8 +1666,10 @@ pub(crate) fn loading_campaign_startup(
         .campaign()
 }
 
-pub(crate) fn loading_map_source(state: &AppState) -> Option<&crate::map::source::LoadedMapSource> {
-    match &state.frontend.loading_session.as_ref()?.stage {
+pub(crate) fn loading_map_source(
+    frontend: &crate::app::frontend::state::FrontendState,
+) -> Option<&crate::map::source::LoadedMapSource> {
+    match &frontend.loading_session.as_ref()?.stage {
         LoadingStage::Prepared(prepared) => Some(prepared.initial.map_source()),
         LoadingStage::ConstructingScenario(constructing) => Some(constructing.load.map_source()),
         LoadingStage::Selected(_) => None,
@@ -1611,18 +1679,21 @@ pub(crate) fn loading_map_source(state: &AppState) -> Option<&crate::map::source
     }
 }
 
-pub(crate) fn clear_loading_state(state: &mut AppState) {
-    retire_loading_attempt(
-        &mut state.frontend.loading_session,
-        &mut state.process_assets,
-    );
-    reset_loading_presentation(state);
+pub(crate) fn clear_loading_state(
+    renderer: &mut crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &mut crate::app::process_assets::ProcessAssets,
+) {
+    retire_loading_attempt(&mut frontend.loading_session, process_assets);
+    reset_loading_presentation(renderer, frontend);
 }
 
-fn reset_loading_presentation(state: &mut AppState) {
-    state.renderer.performance_overlay.clear_simulation_rate();
-    state.frontend.loading_screen_atlas = None;
-    state.frontend.loading_progress = LoadingProgressState::standard_skirmish();
+fn reset_loading_presentation(
+    renderer: &mut crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+) {
+    renderer.performance_overlay.clear_simulation_rate();
+    frontend.loading_progress = LoadingProgressState::standard_skirmish();
 }
 
 fn retire_loading_attempt(
@@ -1655,27 +1726,23 @@ fn retire_failed_loading_attempt(
     policy
 }
 
-fn is_native_loading_session(state: &AppState) -> bool {
-    state
-        .frontend
+fn is_native_loading_session(frontend: &crate::app::frontend::state::FrontendState) -> bool {
+    frontend
         .loading_session
         .as_ref()
         .is_some_and(|session| session.native.is_some())
 }
 
-fn loading_failure_policy(state: &AppState) -> LoadingFailurePolicy {
-    state.frontend.loading_session.as_ref().map_or(
+fn loading_failure_policy(
+    frontend: &crate::app::frontend::state::FrontendState,
+) -> LoadingFailurePolicy {
+    frontend.loading_session.as_ref().map_or(
         LoadingFailurePolicy::InstallGenericFallback,
         LoadingSession::failure_policy,
     )
 }
 
-fn pump_loading_after_present(
-    state: &mut AppState,
-    mut observer: Option<
-        &mut crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
-    >,
-) -> anyhow::Result<LoadingPump> {
+fn pump_loading(state: &mut AppState, show_progress: bool) -> anyhow::Result<LoadingPump> {
     let Some(session) = state.frontend.loading_session.take() else {
         return Ok(LoadingPump::Pending);
     };
@@ -1714,16 +1781,16 @@ fn pump_loading_after_present(
         session
     };
     if matches!(session.stage, LoadingStage::ConstructingScenario(_)) {
-        return pump_map_construction(state, session, observer);
+        return pump_map_construction(state, session, show_progress);
     }
     if matches!(session.stage, LoadingStage::PreparingPresentation { .. }) {
-        return pump_presentation(state, session, observer);
+        return pump_presentation(state, session, show_progress);
     }
     if matches!(session.stage, LoadingStage::ReadyToInstall { .. }) {
-        return finish_network_load(state, session, observer);
+        return finish_network_load(state, session);
     }
     if matches!(session.stage, LoadingStage::AwaitingPeers { .. }) {
-        return poll_network_load_wait(state, session, observer);
+        return poll_network_load_wait(state, session);
     }
     let session = if matches!(session.stage.startup(), LoadingStartup::Network(_))
         && !cfg!(all(
@@ -1745,18 +1812,6 @@ fn pump_loading_after_present(
         )));
     }
 
-    if let Some(observer) = observer.as_deref_mut()
-        && let Some(view) = session.network_observation(
-            if matches!(session.stage, LoadingStage::Selected(_)) {
-                "selected"
-            } else {
-                "prepared"
-            },
-            (crate::app::match_runtime::frame_pacer::wall_clock_ms() >> 4) as i32,
-        )
-    {
-        observer.observe(state, view)?;
-    }
     if matches!(session.stage, LoadingStage::Selected(_)) {
         let network = match crate::app::lan_service::LoadingNetworkService::borrow(
             &mut state.match_state.session,
@@ -1847,6 +1902,7 @@ fn pump_loading_after_present(
                 .prepares_scenario_before_first_frame()
         {
             advance_and_present_native_progress(
+                show_progress,
                 &state.renderer.gpu,
                 &state.renderer.shell_surface_presenter,
                 &state.renderer.depth_view,
@@ -1877,12 +1933,14 @@ fn pump_loading_after_present(
             state.process_assets.native_rules_mut_with_tile_cache();
         let native_rules_owner =
             native_rules_owner.expect("native Rules availability checked before split borrow");
-        // The outgoing scene no longer advances. Return its live Type and
-        // ambient Rules writes before Full_Init's optional prefix Process.
+        // The outgoing scene no longer advances. Offline loads return its
+        // live Type and ambient Rules writes before Full_Init's prefix Process.
+        // Network loads already installed a cold registry for the new match.
         // Type reset deletes Types but retains the ambient scalar defaults.
         // Only Rules read the Ares way bind a prefix, which already returned them.
         let should_retire_outgoing = prepared_rules_prefix.is_none();
         if !initial.has_generated_rules()
+            && !startup.session_mode().is_network()
             && should_retire_outgoing
             && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle)
         {
@@ -1905,6 +1963,7 @@ fn pump_loading_after_present(
             let mut progress = LoadingPhaseProgress::select(
                 native.as_mut(),
                 native_theater_cache_mismatch,
+                show_progress,
                 network,
                 |native, network| {
                     RenderingProgressSink::new(
@@ -1980,12 +2039,7 @@ fn pump_loading_after_present(
         match load_result {
             Ok(Some(mut result)) => {
                 if result.pending_atlases.is_none() {
-                    publish_load_complete(
-                        state,
-                        &mut native,
-                        &mut result,
-                        observer.as_deref_mut(),
-                    )?;
+                    publish_load_complete(state, show_progress, &mut native, &mut result)?;
                 }
                 result.asset_manager = job.asset_manager.take();
                 Ok(Some(result))
@@ -2030,7 +2084,7 @@ fn pump_loading_after_present(
             // VERA adaptation: a returning process has nobody to wait for, the
             // others left their own loading long ago and report nothing more.
             if matches!(result.scenario.startup, LoadingStartup::Network(_))
-                && !crate::app::lan_service::online_restore(state)
+                && !crate::app::lan_service::online_restore(&state.match_state)
             {
                 let native = native.expect("network load retains its source progress rows");
                 let now = (crate::app::match_runtime::frame_pacer::wall_clock_ms() >> 4) as i32;
@@ -2050,7 +2104,6 @@ fn pump_loading_after_present(
                         next_frame: NextLoadingFrame::Later,
                         install_after_ms: None,
                     },
-                    observer,
                 );
             } else {
                 LoadingPump::Finished {
@@ -2069,9 +2122,7 @@ fn pump_loading_after_present(
 fn pump_map_construction(
     state: &mut AppState,
     mut session: LoadingSession,
-    observer: Option<
-        &mut crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
-    >,
+    show_progress: bool,
 ) -> anyhow::Result<LoadingPump> {
     let render_size = [
         state.renderer.gpu.config.width,
@@ -2108,6 +2159,7 @@ fn pump_map_construction(
         let mut progress = LoadingPhaseProgress::select(
             session.native.as_mut(),
             constructing.load.theater_cache_mismatch(),
+            show_progress,
             network,
             |native, network| {
                 RenderingProgressSink::new(
@@ -2154,7 +2206,7 @@ fn pump_map_construction(
             }
             if result.pending_atlases.is_none() {
                 if let Err(error) =
-                    publish_load_complete(state, &mut session.native, &mut result, observer)
+                    publish_load_complete(state, show_progress, &mut session.native, &mut result)
                 {
                     session.retire(&mut state.process_assets);
                     return Ok(LoadingPump::Failed(error));
@@ -2189,11 +2241,9 @@ fn pump_map_construction(
 
 fn publish_load_complete(
     state: &mut AppState,
+    show_progress: bool,
     native: &mut Option<NativeLoadingScreenState>,
     result: &mut MapLoadResult,
-    mut observer: Option<
-        &mut crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
-    >,
 ) -> anyhow::Result<()> {
     let render_size = [
         state.renderer.gpu.config.width,
@@ -2203,23 +2253,8 @@ fn publish_load_complete(
     if let Some(native) = native.as_mut() {
         result.scenario.campaign_names = native.campaign_names.take();
         let terminal_raw_percent = native.progress_cadence.terminal_raw_percent();
-        if let Some(observer) = observer.as_deref_mut() {
-            observer.observe(
-                state,
-                NetworkLoadingObservation {
-                    stage: "before_complete",
-                    startup: &result.scenario.startup,
-                    progress: &native.progress,
-                    rows: &native.progress_row,
-                    incomplete: native.progress_row.incomplete_remote_indices(),
-                    simulation: result.scenario.simulation.as_ref(),
-                    timeout: None,
-                    observed_bucket: (crate::app::match_runtime::frame_pacer::wall_clock_ms() >> 4)
-                        as i32,
-                },
-            )?;
-        }
         advance_and_present_native_progress(
+            show_progress,
             &state.renderer.gpu,
             &state.renderer.shell_surface_presenter,
             &state.renderer.depth_view,
@@ -2243,9 +2278,7 @@ fn publish_load_complete(
 fn pump_presentation(
     state: &mut AppState,
     mut session: LoadingSession,
-    observer: Option<
-        &mut crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
-    >,
+    show_progress: bool,
 ) -> anyhow::Result<LoadingPump> {
     let LoadingStage::PreparingPresentation { result } = &mut session.stage else {
         unreachable!()
@@ -2268,7 +2301,7 @@ fn pump_presentation(
             result.pending_atlases = None;
         }
     }
-    if let Err(error) = publish_load_complete(state, &mut session.native, result, observer) {
+    if let Err(error) = publish_load_complete(state, show_progress, &mut session.native, result) {
         session.retire(&mut state.process_assets);
         return Ok(LoadingPump::Failed(error));
     }
@@ -2290,20 +2323,23 @@ fn pump_presentation(
     })
 }
 
-fn ensure_job_asset_manager(state: &mut AppState) -> anyhow::Result<()> {
-    let Some(mut session) = state.frontend.loading_session.take() else {
+fn ensure_job_asset_manager(
+    platform: &crate::app::PlatformState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &mut crate::app::process_assets::ProcessAssets,
+) -> anyhow::Result<()> {
+    let Some(mut session) = frontend.loading_session.take() else {
         return Ok(());
     };
     let result = ensure_session_job_asset_manager(
-        &mut state.process_assets,
+        process_assets,
         &mut session,
-        state
-            .platform
+        platform
             .game_config
             .as_ref()
             .map(|c| c.paths.ra2_dir.clone()),
     );
-    state.frontend.loading_session = Some(session);
+    frontend.loading_session = Some(session);
     result
 }
 
@@ -2342,13 +2378,17 @@ fn ensure_session_job_asset_manager(
                 );
             }
             process_assets.note_lease_ended_without_return();
-            process_assets.reconstruct_manager(
+            let rebuilt = process_assets.reconstruct_manager(
                 session
                     .job
                     .ra2_dir
                     .as_deref()
                     .expect("RA2 directory was initialized above"),
-            )?
+            )?;
+            // The rebuilt manager is the game's from here on, so its answer
+            // is the launch's again, whatever another command published since.
+            rebuilt.open_for_play();
+            rebuilt
         };
         session.job.asset_manager = Some(asset_manager);
     }
@@ -2369,9 +2409,6 @@ fn ensure_session_job_asset_manager(
 fn poll_network_load_wait(
     state: &mut AppState,
     session: LoadingSession,
-    mut observer: Option<
-        &mut crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
-    >,
 ) -> anyhow::Result<LoadingPump> {
     let Some(mut session) = service_network_loading_boundary(state, session) else {
         return Ok(LoadingPump::Pending);
@@ -2382,19 +2419,6 @@ fn poll_network_load_wait(
     let native = session.native.as_ref().expect("network source progress");
     let now = (crate::app::match_runtime::frame_pacer::wall_clock_ms() >> 4) as i32;
     let poll = wait.poll(now, native.progress_row.total_fraction(&native.progress));
-    if let Some(observer) = observer.as_deref_mut()
-        && let Some(view) = session.network_observation(
-            if poll == NetworkLoadPoll::TimedOut {
-                "timed_out"
-            } else {
-                "awaiting_peers"
-            },
-            now,
-        )
-    {
-        observer.observe(state, view)?;
-    }
-    let native = session.native.as_ref().expect("network source progress");
     if matches!(
         poll,
         NetworkLoadPoll::ReportProgress | NetworkLoadPoll::Complete
@@ -2417,10 +2441,21 @@ fn poll_network_load_wait(
                 crate::app::match_runtime::frame_pacer::wall_clock_ms() + NETWORK_LOADED_HOLD_MS,
             );
         }
-        return finish_network_load(state, session, observer);
+        return finish_network_load(state, session);
     }
     if poll == NetworkLoadPoll::TimedOut {
         let timed_out = native.progress_row.incomplete_remote_indices();
+        if state
+            .match_state
+            .session
+            .retire_cooperative_start_on_timeout(&timed_out)
+        {
+            // Retire the held result and its asset lease through the normal
+            // failure path before the world can be installed.
+            state.frontend.loading_session = Some(session);
+            let text = state.csf_text("TXT_SYSTEM_NOT_RESPONDING");
+            return Ok(LoadingPump::Failed(anyhow::anyhow!(text)));
+        }
         let LoadingStage::AwaitingPeers { result, .. } = session.stage else {
             unreachable!()
         };
@@ -2431,30 +2466,17 @@ fn poll_network_load_wait(
     }
 }
 
-/// Consuming handoff after the native wait has completed exactly once. A
-/// deferred diagnostic uses this existing stage on later frames without
+/// Consuming handoff after the native wait has completed exactly once. The
+/// loaded-screen hold uses this existing stage on later frames without
 /// re-polling timers, regenerating the scenario or publishing progress again.
 fn finish_network_load(
     state: &mut AppState,
     session: LoadingSession,
-    observer: Option<
-        &mut crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
-    >,
 ) -> anyhow::Result<LoadingPump> {
     let Some(session) = service_network_loading_boundary(state, session) else {
         return Ok(LoadingPump::Pending);
     };
     if session.holds_loaded_screen(crate::app::match_runtime::frame_pacer::wall_clock_ms()) {
-        state.frontend.loading_session = Some(session);
-        return Ok(LoadingPump::Pending);
-    }
-    if let Some(observer) = observer
-        && let Some(view) = session.network_observation(
-            "ready_to_install",
-            (crate::app::match_runtime::frame_pacer::wall_clock_ms() >> 4) as i32,
-        )
-        && observer.defer_install(state, view)?
-    {
         state.frontend.loading_session = Some(session);
         return Ok(LoadingPump::Pending);
     }
@@ -2527,9 +2549,7 @@ fn prepare_loading_session(
                 // an immutable request, while retained catalog fields update.
                 process_assets.reload_campaigns(assets);
             }
-            let ares = process_assets
-                .native_rules()
-                .is_some_and(|owner| owner.reads_ares_way());
+            let ares = process_assets.reads_ares_way();
             if ares && let Some(native) = native.as_mut() {
                 let early = process_assets
                     .native_rules()
@@ -2544,30 +2564,45 @@ fn prepare_loading_session(
                     return Err(err);
                 }
             }
-            let prepared = if !before_first_frame && let Some(native) = native.as_mut() {
-                let mut sink = GatedProgressSink {
-                    progress: &mut native.progress,
-                    cadence: native.progress_cadence,
-                    progress_row: &mut native.progress_row,
-                    network,
-                };
-                request.prepare(
-                    ra2_dir,
-                    assets,
-                    process_assets.native_rules_mut_with_tile_cache().0,
-                    mapgen_retention,
-                    resident.as_deref_mut(),
-                    &mut sink,
-                )
+            // VERA: the mod's map additions, read once a start, for the
+            // matches they reach.
+            let additions = if crate::app::mod_additions::reach(request.startup()) {
+                process_assets.map_additions(assets)
             } else {
-                request.prepare(
-                    ra2_dir,
-                    assets,
-                    process_assets.native_rules_mut_with_tile_cache().0,
-                    mapgen_retention,
-                    resident.as_deref_mut(),
-                    &mut NoopProgressSink,
-                )
+                Ok(None)
+            };
+            let prepared = match additions {
+                Err(err) => Err(anyhow::anyhow!(err)),
+                Ok(additions) => {
+                    let additions = additions.as_deref();
+                    if !before_first_frame && let Some(native) = native.as_mut() {
+                        let mut sink = GatedProgressSink {
+                            progress: &mut native.progress,
+                            cadence: native.progress_cadence,
+                            progress_row: &mut native.progress_row,
+                            network,
+                        };
+                        request.prepare(
+                            ra2_dir,
+                            assets,
+                            process_assets.native_rules_mut_with_tile_cache().0,
+                            additions,
+                            mapgen_retention,
+                            resident.as_deref_mut(),
+                            &mut sink,
+                        )
+                    } else {
+                        request.prepare(
+                            ra2_dir,
+                            assets,
+                            process_assets.native_rules_mut_with_tile_cache().0,
+                            additions,
+                            mapgen_retention,
+                            resident.as_deref_mut(),
+                            &mut NoopProgressSink,
+                        )
+                    }
+                }
             };
             match prepared {
                 Ok(mut prepared) => {
@@ -2620,9 +2655,14 @@ fn prepare_loading_session(
 /// use `RandMap.img` pixels but still require regenerated header data and the
 /// accepted staged starts. The loader's raw 8 is intentionally swallowed here
 /// and visibly handed off only after the first frame has been presented.
-fn prepare_scenario_initial_before_first_frame(state: &mut AppState) -> anyhow::Result<()> {
-    let should_prepare = state
-        .frontend
+fn prepare_scenario_initial_before_first_frame(
+    platform: &crate::app::PlatformState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    sim_runtime: &mut crate::app::match_runtime::sim_host::SimHost,
+    process_assets: &mut crate::app::process_assets::ProcessAssets,
+    audio: &mut crate::app::audio_runtime::AppAudioRuntime,
+) -> anyhow::Result<()> {
+    let should_prepare = frontend
         .loading_session
         .as_ref()
         .and_then(|session| session.native.as_ref())
@@ -2631,8 +2671,7 @@ fn prepare_scenario_initial_before_first_frame(state: &mut AppState) -> anyhow::
                 .progress_cadence
                 .prepares_scenario_before_first_frame()
         })
-        && state
-            .frontend
+        && frontend
             .loading_session
             .as_ref()
             .is_some_and(|session| matches!(session.stage, LoadingStage::Selected(_)));
@@ -2640,22 +2679,19 @@ fn prepare_scenario_initial_before_first_frame(state: &mut AppState) -> anyhow::
         return Ok(());
     }
 
-    let Some(session) = state.frontend.loading_session.take() else {
+    let Some(session) = frontend.loading_session.take() else {
         return Ok(());
     };
-    state.frontend.loading_session = Some(prepare_loading_session(
-        &mut state.process_assets,
-        &mut state.audio,
-        &mut state.frontend.random_map_retention,
-        state
-            .match_state
-            .sim_runtime
+    frontend.loading_session = Some(prepare_loading_session(
+        process_assets,
+        audio,
+        &mut frontend.random_map_retention,
+        sim_runtime
             .write_sim(SimWrite::Lifecycle)
             .map(|runtime| &mut runtime.simulation),
         session,
         true,
-        state
-            .platform
+        platform
             .game_config
             .as_ref()
             .map(|c| c.paths.ra2_dir.clone()),
@@ -2675,7 +2711,8 @@ fn decode_random_map_loading_preview(
 ) -> Option<DecodedPreview> {
     let path = match source {
         Some(crate::map::source::LoadedMapSource::Loose { path, .. }) => path.clone(),
-        _ => crate::map::source::random_map_dir(ra2_dir).join(RANDOM_MAP_PREVIEW_FILE),
+        _ => crate::map::source::random_map_dir(ra2_dir)
+            .join(crate::map::skirmish_scenarios::RANDMAP_PREVIEW),
     };
     let bytes = match std::fs::read(&path) {
         Ok(bytes) => bytes,
@@ -2774,6 +2811,9 @@ fn ensure_loading_composition_snapshot(state: &mut AppState) {
         let LoadingStage::Prepared(prepared) = &session.stage else {
             return;
         };
+        if prepared.request.startup().authored_campaign().is_some() {
+            return;
+        }
         let context = &prepared.context;
         let initial = &prepared.initial;
         let launch_session = context.stock_offline_launch().session();
@@ -2866,7 +2906,7 @@ pub(crate) fn theater_ramp_changed_values(runtime_color_scheme_count: usize) -> 
 }
 
 pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Result<()> {
-    if !is_native_loading_session(state) {
+    if !is_native_loading_session(&state.frontend) {
         return Ok(());
     }
     if state
@@ -2885,7 +2925,11 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         .and_then(loading_asset_manager)
         .is_none()
     {
-        ensure_job_asset_manager(state)?;
+        ensure_job_asset_manager(
+            &state.platform,
+            &mut state.frontend,
+            &mut state.process_assets,
+        )?;
     }
     let loading_archives_ready = state
         .frontend
@@ -2901,7 +2945,13 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
             "native loading archives LOADMD.MIX and LOAD.MIX are unavailable"
         ));
     }
-    prepare_scenario_initial_before_first_frame(state)?;
+    prepare_scenario_initial_before_first_frame(
+        &state.platform,
+        &mut state.frontend,
+        &mut state.match_state.sim_runtime,
+        &mut state.process_assets,
+        &mut state.audio,
+    )?;
     if state
         .frontend
         .loading_session
@@ -2924,7 +2974,9 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         // Original Full_Init686D46 opens MISSIONMD for the current filename.
         // Missing keys retain SetDefaults' zero/empty values. Missing metadata
         // suppresses DrawLoading552D60 without inventing a generic screen.
-        if let Ok(selected) = crate::rules::retail_sources::select_ini(assets, "MISSIONMD.INI") {
+        if let Ok(selected) =
+            crate::rules::retail_sources::select_ini(assets, assets.ini_roots().mission())
+        {
             log::info!(
                 "Campaign MISSION source: {}",
                 serde_json::json!(selected.source)
@@ -2944,10 +2996,7 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         // 0x642B30 picks AlliedLoad/SovietLoad by Campaign.CD; no scheme of
         // that name keeps the stock colour. Only when the Rules are read the
         // Ares way.
-        let ares = state
-            .process_assets
-            .native_rules()
-            .is_some_and(|owner| owner.reads_ares_way());
+        let ares = state.process_assets.reads_ares_way();
         let ares_text_rgb = if ares {
             state.rules().and_then(|rules| {
                 let schemes = &rules.color_schemes;
@@ -2996,7 +3045,7 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         log::info!("Native campaign loading atlas ready");
         return Ok(());
     }
-    let variant = selected_loading_art_variant(state);
+    let variant = selected_loading_art_variant(&state.frontend);
     ensure_loading_composition_snapshot(state);
     // DrawLoading553311..5533C0 asks the current mode's Cooperative slot,
     // then selects by ScenarioName rather than the active progress record.
@@ -3194,7 +3243,7 @@ pub(crate) fn render_loading_screen(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> LoadingRenderResult {
-    let failure_policy = loading_failure_policy(state);
+    let failure_policy = loading_failure_policy(&state.frontend);
     match encode_loading_screen(state, encoder, destination) {
         Ok(result) => result,
         Err(err) => {
@@ -3209,7 +3258,7 @@ fn encode_loading_screen(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<LoadingRenderResult> {
-    if !is_native_loading_session(state) {
+    if !is_native_loading_session(&state.frontend) {
         return Ok(LoadingRenderResult::GenericFallback);
     }
     if state
@@ -3257,12 +3306,7 @@ fn encode_loading_screen(
 
 /// Called only after the submitted loading frame and its readbacks. Loading
 /// owns acknowledgement, continuation and terminal disposition as one step.
-pub(crate) fn after_loading_frame_presented(
-    state: &mut AppState,
-    mut observer: Option<
-        crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
-    >,
-) -> anyhow::Result<()> {
+pub(crate) fn after_loading_frame_presented(state: &mut AppState) -> anyhow::Result<()> {
     if !matches!(state.frontend.screen, GameScreen::Loading) {
         return Ok(());
     }
@@ -3274,10 +3318,32 @@ pub(crate) fn after_loading_frame_presented(
         state.platform.window.request_redraw();
         return Ok(());
     }
-    loading_screen_presented(state);
-    let policy = loading_failure_policy(state);
-    match pump_loading_after_present(state, observer.as_mut())? {
-        LoadingPump::Pending => state.platform.window.request_redraw(),
+    loading_screen_presented(&mut state.frontend);
+    advance_loading(state, true)
+}
+
+/// An admitted online loader still reads its map and serves peer progress
+/// while the window is covered. Only a presented frame consumes its visual
+/// first-frame state, so uncovering a slow load paints it normally.
+pub(crate) fn advance_hidden_network_loading(state: &mut AppState) {
+    if !network_loading_active(&state.frontend) {
+        return;
+    }
+    if let Err(error) =
+        ensure_native_loading_atlas(state).and_then(|()| advance_loading(state, false))
+    {
+        fail_loading(state, LoadingFailurePolicy::RetryNetworkShell, error);
+    }
+}
+
+fn advance_loading(state: &mut AppState, show_progress: bool) -> anyhow::Result<()> {
+    let policy = loading_failure_policy(&state.frontend);
+    match pump_loading(state, show_progress)? {
+        LoadingPump::Pending => {
+            if show_progress {
+                state.platform.window.request_redraw();
+            }
+        }
         LoadingPump::Finished {
             mut result,
             timed_out,
@@ -3287,19 +3353,8 @@ pub(crate) fn after_loading_frame_presented(
                 &mut result,
                 &timed_out,
             );
-            if let Some(observer) = observer.as_mut()
-                && let Some(sim) = result.scenario.simulation.as_mut()
-            {
-                observer.removed(state, sim, &timed_out)?;
-            }
-            if let Some(observer) = observer.as_mut() {
-                observer.before_install()?;
-            }
-            log::debug!(target: "vera20k::loading_attempt", "install_begin");
+            log::debug!(target: "vera20k::loading_attempt", "install_begin show_progress={show_progress}");
             super::transitions::finish_fresh_scenario_read(state, *result);
-            if let Some(observer) = observer.as_ref() {
-                observer.installed(state)?;
-            }
             for destroyed in disconnected {
                 crate::app::match_runtime::network_match::post_connection_line(state, destroyed);
             }
@@ -3331,7 +3386,7 @@ fn apply_network_loading_disconnects(
     let Some(sim) = result.scenario.simulation.as_mut() else {
         // No House array to consult: the connections still drop.
         for &index in indices {
-            session.disconnect_network_participant(index, 1);
+            session.disconnect_network_participant(index);
         }
         return Vec::new();
     };
@@ -3371,15 +3426,36 @@ fn fail_loading_with(
     notify: bool,
 ) {
     log::warn!("Could not load map: {err:#}");
+    let campaign_room = state.match_state.session.campaign_room().is_some();
+    let campaign_replay = state
+        .frontend
+        .loading_session
+        .as_ref()
+        .is_some_and(|loading| {
+            matches!(
+                loading.stage.startup(),
+                LoadingStartup::AuthoredCampaignReplay { .. }
+            )
+        });
+    let campaign_notice = if campaign_room {
+        Some("VERA:CampaignRoomUnavailable")
+    } else if campaign_replay {
+        Some("VERA:CampaignReplayUnavailable")
+    } else {
+        None
+    };
     let policy = retire_failed_loading_attempt(
         &mut state.frontend.loading_session,
         &mut state.match_state.startup,
         &mut state.process_assets,
         policy,
     );
-    reset_loading_presentation(state);
+    reset_loading_presentation(&mut state.renderer, &mut state.frontend);
     if state.frontend.external_launch {
-        state.frontend.external_launch_error = Some(format!("CnCNet map loading failed: {err:#}"));
+        state.frontend.external_launch_error = Some(campaign_notice.map_or_else(
+            || format!("CnCNet map loading failed: {err:#}"),
+            crate::i18n::tr,
+        ));
         crate::app::App::return_to_main_menu(state);
         return;
     }
@@ -3392,13 +3468,24 @@ fn fail_loading_with(
         // network StartScenario call52E745 follows the same retry at52E75F;
         // GameMode3 re-enters LAN at52DAEF/52E356, so retain its lobby context.
         crate::app::App::return_to_main_menu(state);
-        if notify && let Some(text) = failed_load_notice(policy, &err) {
-            crate::app::App::open_shell_notice(state, text);
+        if notify
+            && let Some(text) = campaign_notice
+                .map(crate::i18n::tr)
+                .or_else(|| failed_load_notice(policy, &err))
+        {
+            crate::app::App::open_shell_notice(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+                text,
+            );
         }
     } else if policy == LoadingFailurePolicy::ReportNativeFailure {
         state.frontend.screen = GameScreen::MissionResult {
             title: crate::i18n::tr("VERA:LoadingFailed"),
-            detail: format!("{err:#}"),
+            detail: campaign_notice.map_or_else(|| format!("{err:#}"), crate::i18n::tr),
         };
     } else {
         super::transitions::apply_map_load_result(
@@ -3419,8 +3506,10 @@ pub(crate) enum NextLoadingFrame {
     Later,
 }
 
-pub(crate) fn next_native_loading_frame(state: &AppState) -> Option<NextLoadingFrame> {
-    let session = state.frontend.loading_session.as_ref()?;
+pub(crate) fn next_native_loading_frame(
+    frontend: &crate::app::frontend::state::FrontendState,
+) -> Option<NextLoadingFrame> {
+    let session = frontend.loading_session.as_ref()?;
     session.native.as_ref()?;
     Some(session.next_frame)
 }
@@ -3432,7 +3521,12 @@ pub(crate) fn next_native_loading_frame(state: &AppState) -> Option<NextLoadingF
 /// The dialog paints no pointer; the window's own stays as the frame owner
 /// last set it, hidden wherever mouse.sha loaded.
 pub(crate) fn present_saved_game_loading(state: &mut AppState) -> anyhow::Result<bool> {
-    if !crate::app::App::ensure_skirmish_shell_chrome(state) {
+    if !crate::app::App::ensure_skirmish_shell_chrome(
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+    ) {
         anyhow::bail!("Saved-game loading dialog has no shell chrome");
     }
     let Some(output) = state
@@ -3482,6 +3576,9 @@ pub(crate) fn present_saved_game_loading(state: &mut AppState) -> anyhow::Result
 /// the first game frame (`0x00683E07..0x00683E1C`, again at
 /// `0x0052EAA1..0x0052EAEB`); the tactical install runs under it.
 pub(crate) fn present_game_mode_blank(state: &AppState) {
+    if crate::app::App::online_start_runs_while_hidden(state) {
+        return;
+    }
     if let Err(err) = render::present_blank(
         &state.renderer.gpu,
         &state.renderer.shell_surface_presenter,
@@ -3493,21 +3590,22 @@ pub(crate) fn present_game_mode_blank(state: &AppState) {
     }
 }
 
-fn loading_screen_presented(state: &mut AppState) {
-    let Some(session) = state.frontend.loading_session.as_mut() else {
-        state.frontend.loading_progress.advance_progress(3);
+fn loading_screen_presented(frontend: &mut crate::app::frontend::state::FrontendState) {
+    let Some(session) = frontend.loading_session.as_mut() else {
+        frontend.loading_progress.advance_progress(3);
         return;
     };
     session.next_frame = NextLoadingFrame::Later;
     log::debug!(target: "vera20k::loading_attempt", "frame_presented native_progress={:?}", session.native.as_ref().map(|n| n.progress.current_value()));
 }
 
-fn selected_loading_art_variant(state: &AppState) -> Option<LoadingArtVariant> {
-    if !matches!(state.frontend.screen, GameScreen::Loading) {
+fn selected_loading_art_variant(
+    frontend: &crate::app::frontend::state::FrontendState,
+) -> Option<LoadingArtVariant> {
+    if !matches!(frontend.screen, GameScreen::Loading) {
         return None;
     }
-    state
-        .frontend
+    frontend
         .loading_session
         .as_ref()
         .and_then(|session| session.native.as_ref())
@@ -3541,7 +3639,8 @@ pub(super) fn loading_art_variant_from_launch_country(
 /// answers each loading row's insignia from that row's own HouseType index, so
 /// an added Country draws its `File.Flag` where the stock chain at `0x4E3579`
 /// has no entry. An observer row is not a Country index and keeps the stock
-/// `-3` insignia; a stock build's rules return `None` and keep the table.
+/// `-3` insignia; a game without Ares (`RuleSet::ares`) answers `None` and
+/// keeps the table.
 fn loading_row_insignia(
     rules: Option<&crate::rules::ruleset::RuleSet>,
     variant: Option<LoadingArtVariant>,
@@ -3566,7 +3665,7 @@ fn normalize_rgb(rgb: [u8; 3]) -> [f32; 3] {
 /// 1:1 art viewport, or that same authored dialog scaled to fit the window.
 fn loading_scale(state: &AppState) -> ShellScale {
     loading_screen_scale(
-        crate::app::frontend::shell_layout::fills_window(state),
+        crate::app::frontend::shell_layout::fills_window(&state.renderer.gpu),
         [
             state.renderer.gpu.config.width,
             state.renderer.gpu.config.height,
@@ -3575,6 +3674,7 @@ fn loading_scale(state: &AppState) -> ShellScale {
 }
 
 fn advance_and_present_native_progress<'a>(
+    show_progress: bool,
     gpu: &'a GpuContext,
     presenter: &'a ShellSurfacePresenter,
     depth_view: &'a wgpu::TextureView,
@@ -3587,8 +3687,12 @@ fn advance_and_present_native_progress<'a>(
     scale: ShellScale,
     network: Option<crate::app::lan_service::LoadingNetworkService<'a>>,
 ) -> anyhow::Result<()> {
-    let mut selected =
-        LoadingPhaseProgress::select(Some(native), false, network, |native, network| {
+    let mut selected = LoadingPhaseProgress::select(
+        Some(native),
+        false,
+        show_progress,
+        network,
+        |native, network| {
             RenderingProgressSink::new(
                 native,
                 network,
@@ -3601,7 +3705,8 @@ fn advance_and_present_native_progress<'a>(
                 render_size,
                 scale,
             )
-        });
+        },
+    );
     selected.sink.milestone(raw_percent)
 }
 

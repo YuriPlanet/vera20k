@@ -832,6 +832,51 @@ fn retail_ifv_models_draw_four_distinct_guns_and_share_body_and_shadow() {
 }
 
 #[test]
+fn stock_count_shrink_keeps_the_loaded_native_turret() {
+    use crate::rules::retail_ini_fixture::{retail_assets, retail_battle_rules_for_map_with_patch};
+    use crate::rules::voxel_frame_catalog::voxel_turret_index;
+
+    let Some(battle) = retail_battle_rules_for_map_with_patch(
+        "Hills.mmx",
+        &IniFile::from_str("[FV]\nTurretCount=1\nRepairTurretWeapon=0\nRepairTurretIndex=3\n"),
+    ) else {
+        return;
+    };
+    let (_, assets) = retail_assets().unwrap();
+    let rules = &battle.rules;
+    let object = rules.object("FV").unwrap();
+    assert!(!rules.ares());
+    assert_eq!(object.turret_count, 1);
+    let physical =
+        crate::rules::voxel_asset_catalog::load_voxel_model(&assets, "FV", Some(rules)).unwrap();
+    assert_eq!(
+        physical.indexed_count(),
+        4,
+        "retail FV loads four native slots first"
+    );
+    let current = object.gunner_turrets.turret_for_weapon(0);
+    assert_eq!(voxel_turret_index("FV", Some(rules), current), 3);
+    let model = UnitModel::load(&assets, "FV", Some(rules)).unwrap();
+    assert_eq!(model.guns.len(), 4);
+    let demand = UnitAtlasDemand {
+        ground: BTreeSet::from(["FV".to_owned()]),
+        ..Default::default()
+    };
+    let (keys, _) = needed_unit_keys(&demand, &assets, Some(rules));
+    let key = UnitSpriteKey {
+        type_id: "FV".into(),
+        turret_index: current,
+        facing: 64,
+        layer: VxlLayer::Turret,
+        frame: 0,
+        slope_type: 0,
+        barrel_pitch: 0,
+    };
+    assert!(keys.contains(&key));
+    assert!(model.render(&key, None, None, &mut None).is_some());
+}
+
+#[test]
 fn indexed_model_loader_requires_turret_pairs_but_allows_absent_barrels() {
     use crate::map::source::test_support::TestDirectory;
     use crate::rules::retail_ini_fixture::retail_assets;
@@ -1118,4 +1163,69 @@ fn tumble_selects_one_physical_section_for_body_and_shadow() {
             .len(),
         1
     );
+}
+
+/// A placed sprite waits for its upload as the resident cache's pixels
+/// themselves, not a second copy of them.
+#[test]
+fn a_placed_sprite_waits_for_its_upload_without_a_copy() {
+    let atlas = UnitAtlas::from_test_sprites(vec![CachedUnitSprite {
+        key: UnitSpriteKey {
+            type_id: "staged".into(),
+            turret_index: 0,
+            facing: 0,
+            layer: VxlLayer::Body,
+            frame: 0,
+            slope_type: 0,
+            barrel_pitch: 0,
+        },
+        pixels: vec![1, 2, 3, 4],
+        width: 2,
+        height: 2,
+        offset_x: 0.,
+        offset_y: 0.,
+        native_draw_bounds: None,
+        shadow_center: None,
+        pool_bytes: 0,
+    }]);
+    let resident = atlas.resident.borrow();
+    let [pending] = resident.uploads.as_slice() else {
+        panic!("one sprite placed, one upload staged");
+    };
+    let staged = pending.texels.bytes(&resident.rendered_cache);
+    assert_eq!(staged, [1, 2, 3, 4]);
+    assert!(std::ptr::eq(
+        staged,
+        resident.rendered_cache[0].pixels.as_slice()
+    ));
+}
+
+/// Phobos `[General] ArtImageSwap=true`: a vehicle's own ART `Image=` names
+/// its VXL, while `Voxel=` and the other flags stay on that own section.
+/// Retail assets prove the renamed `SAPC` files actually load; the naming
+/// assertions run even without a game directory.
+#[test]
+fn phobos_art_image_swap_names_vehicle_voxel_from_art() {
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[General]\nArtImageSwap=true\n\
+             [VehicleTypes]\n0=SAPCX\n\
+             [SAPCX]\nName=Subterranean APC\nStrength=500\nSpeed=6\nTurret=no\n",
+        ),
+        &IniFile::from_str("[SAPCX]\nImage=SAPC\nVoxel=yes\nRemapable=yes\nCameo=sapicon\n"),
+    )
+    .unwrap();
+    assert_eq!(rules.object("SAPCX").unwrap().image, "SAPCX");
+    assert_eq!(
+        rules.object("SAPCX").unwrap().voxel_image_load(),
+        Some("SAPC")
+    );
+    assert_eq!(voxel_image_id("SAPCX", Some(&rules)), "SAPC");
+
+    use crate::rules::retail_ini_fixture::retail_assets;
+    let Some((_, assets)) = retail_assets() else {
+        return;
+    };
+    let model = UnitModel::load(&assets, "SAPCX", Some(&rules)).expect("SAPC.VXL loads");
+    assert_eq!(model.body.unwrap().identity().0, "SAPC");
 }

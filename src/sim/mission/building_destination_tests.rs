@@ -78,6 +78,7 @@ fn fixture(input: &Value, shape: u8) -> Simulation {
         .lifecycle
         .set_object_alive_for_test(input["alive"].as_bool().unwrap_or(true));
     actor
+        .seldom
         .tether
         .set_for_test(input["tethered"].as_bool().unwrap_or(false).then_some(4));
     actor.set_archive_target(target("old", shape).map(TargetKind::from));
@@ -130,8 +131,7 @@ fn building_destination_matches_64_native_mode_one_rows_for_all_target_shapes() 
                 1,
                 target(input["requested"].as_str().unwrap(), shape),
                 &rules,
-                None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             let actor = sim.substrate.entities.get(1).unwrap();

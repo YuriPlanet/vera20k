@@ -84,6 +84,43 @@ fn use_storage_refinery_fills_its_house_storage_in_order() {
     assert_eq!(stored(&sim, cash), 0);
 }
 
+#[test]
+fn ai_refinery_payment_uses_the_admitted_economy_policy() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = rules();
+    let skirmish = ScenarioGameMode::from_game_mode(5);
+    let campaign = ScenarioGameMode::from_game_mode(0);
+    let skirmish_policy = skirmish.stock_rule_policy(None);
+    for (mode, policy, expected) in [
+        (campaign, campaign.stock_rule_policy(None), (4, false)),
+        (skirmish, skirmish_policy, (0, true)),
+        // Campaign economy retains the ore and omits the virtual purifier bonus.
+        (
+            skirmish,
+            skirmish_policy.with_uses_ai_economy(false),
+            (4, false),
+        ),
+    ] {
+        let (mut sim, owner, refinery, _) = scene(&rules, 0);
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_is_human_for_test(false);
+        sim.install_session_admission(mode, None, policy);
+
+        deposit(&mut sim, &rules, refinery, 4);
+        assert_eq!(
+            (
+                stored(&sim, refinery),
+                sim.houses[&owner].economy().credits() > 0,
+            ),
+            expected
+        );
+    }
+}
+
 /// Spending past the balance drains stored units one at a time, 25 each,
 /// from the first building; the last unit's excess becomes the balance.
 #[test]
@@ -122,13 +159,17 @@ fn selling_destroying_or_capturing_a_storage_building_moves_its_share() {
     );
 
     // Mission_Selling's last stage: Limbo, then the store payout.
-    sim.house_removed_from_game(silo, &rules, FrameEffects::default());
+    sim.house_removed_from_game(silo, &rules, &mut FrameEffects::default());
     assert_eq!(house_stored(&sim, owner), 10);
     sim.ares_sale_storage_payout(silo, &rules);
     assert_eq!(stored(&sim, spare), 20);
     assert_eq!(house_stored(&sim, owner), 30);
 
-    sim.ares_destroy_refinery_storage(refinery, &rules, crate::sim::world::FrameEffects::default());
+    sim.ares_destroy_refinery_storage(
+        refinery,
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     assert_eq!(stored(&sim, refinery), 0);
     assert_eq!(house_stored(&sim, owner), 20);
 
@@ -137,7 +178,7 @@ fn selling_destroying_or_capturing_a_storage_building_moves_its_share() {
     let rival = sim.interner.intern("Russians");
     sim.houses
         .register(HouseState::new(rival, 1, Some(rival), false, 0, 10));
-    sim.house_removed_from_game(spare, &rules, FrameEffects::default());
+    sim.house_removed_from_game(spare, &rules, &mut FrameEffects::default());
     sim.substrate
         .entities
         .get_mut(spare)

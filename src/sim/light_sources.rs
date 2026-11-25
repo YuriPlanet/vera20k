@@ -61,8 +61,9 @@ pub enum LightingEvent {
         palette: PaletteUpdate,
         constructor_rgb: Option<[i32; 3]>,
     },
-    /// The profile later full relights read changed with no refresh: cells
-    /// keep the scalars their last refresh gave them.
+    /// The profile later full relights read, or the RGB a new Convert is
+    /// constructed with (`LightConvert555DA0`), changed with no refresh:
+    /// cells keep the scalars their last refresh gave them.
     RelightProfile {
         cell_profile: ScenarioLightingProfile,
         constructor_rgb: Option<[i32; 3]>,
@@ -176,15 +177,20 @@ impl Simulation {
             .publish(LightingEvent::RetainAnimIntensity { anim, cell });
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn rebuild_lighting_sources_for_test(&mut self, rules: &RuleSet) {
+        self.rebuild_lighting_sources_after_load(rules);
+    }
+
     /// VERA-only, as [`LightingSources`] records: the lights of the alive
     /// (`+0x90`), unlimboed (`+0x81`), Marked (`+0x74`), undying buildings
     /// with Health above 0 that have one by now: each that has opened
     /// (`+0x6E4`, [`Self::light_building`] at Grand_Opening) and, in a
     /// campaign, each other, which its Unlimbo lit (`0x00440D4D`). The
     /// outgoing timeline restarts empty.
-    pub fn rebuild_lighting_sources_after_load(&mut self, rules: &RuleSet) {
-        self.lighting_sources = LightingSources::default();
-        let campaign = !self.session.game_mode_nonzero();
+    pub(crate) fn rebuild_lighting_sources_after_load(&mut self, rules: &RuleSet) {
+        *self.lighting_sources = LightingSources::default();
+        let uses_local_shroud = self.session.uses_local_player_shroud();
         let ids: Vec<_> = self
             .entities()
             .values()
@@ -194,7 +200,7 @@ impl Simulation {
                     && entity.lifecycle.cell_marked()
                     && !entity.death.is_dying()
                     && entity.health.current() > 0
-                    && (campaign || entity.building_art.actually_placed())
+                    && (uses_local_shroud || entity.building_art.actually_placed())
             })
             .map(|entity| entity.stable_id())
             .collect();
@@ -262,7 +268,9 @@ impl Simulation {
     }
 
     /// Publish [`LightingEvent::RelightProfile`] after a change of
-    /// [`Self::lighting_cell_profile`] that refreshes no cell.
+    /// [`Self::lighting_cell_profile`] or [`Self::palette_constructor_rgb`]
+    /// that refreshes no cell. Presentation follows only this stream, so
+    /// such a change publishes this itself.
     pub fn publish_relight_profile(&mut self) {
         let cell_profile = self.lighting_cell_profile();
         let constructor_rgb = self.palette_constructor_rgb();
@@ -350,7 +358,7 @@ impl Simulation {
 
     /// User-load685120 ->53AB50 reselects from the incoming effect globals.
     /// The detached client lighting installation consumes this one refresh.
-    pub fn reinitialize_lighting_after_user_load(&mut self) {
+    pub(crate) fn reinitialize_lighting_after_user_load(&mut self) {
         debug_assert!(self.lighting_sources.pending().is_empty());
         self.update_lighting();
         self.lighting_sources.discard_pending();

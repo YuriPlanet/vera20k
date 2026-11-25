@@ -1,6 +1,7 @@
 //! Script22 -> Map580BC0, using the process-current player's shroud.
 
 use super::*;
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::runtime::SimRuntime;
 use crate::sim::team_script_vm::packed_cell_tests::{frame, reload, scene};
 use crate::sim::world::UninitContext;
@@ -15,7 +16,7 @@ fn recruited_scout_keeps_its_selected_shrouded_cell_after_reload_then_finishes()
             scene
                 .runtime
                 .simulation
-                .trigger_reveal_at_waypoint(697, UninitContext::with_rules(rules))
+                .trigger_reveal_at_waypoint(697, UninitContext::new(rules))
         );
     }) else {
         return;
@@ -44,7 +45,7 @@ fn recruited_scout_keeps_its_selected_shrouded_cell_after_reload_then_finishes()
     let rules = &scene.runtime.resources.rules;
     let sim = &mut scene.runtime.simulation;
     let before = sim.scenario_rng.logical_state();
-    sim.team_step_script(team, rules, None, FrameEffects::default());
+    sim.team_step_script(team, rules, None, &mut FrameEffects::default());
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().mission_target,
         Some(target)
@@ -98,7 +99,7 @@ fn a_revealed_player_map_returns_the_scout_to_its_center_without_a_search_draw()
         true,
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         sim.scenario_rng.logical_state(),
@@ -120,6 +121,32 @@ fn a_revealed_player_map_returns_the_scout_to_its_center_without_a_search_draw()
             .lifecycle
             .object_alive()
     );
+}
+
+#[test]
+fn script_22_refuses_the_other_mode_even_with_offline_topology() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let Some((mut scene, team, _)) = scene("0=22,-1", "E2", false, |_| {}) else {
+        return;
+    };
+    let sim = &mut scene.runtime.simulation;
+    sim.session.set_game_mode(ScenarioGameMode::Other);
+    assert!(!sim.session.execution_topology().is_lockstep());
+    let before = sim.scenario_rng.logical_state();
+    sim.team_run_action(
+        team,
+        TeamScriptAction {
+            action_id: 22,
+            argument: -1,
+        },
+        true,
+        &scene.runtime.resources.rules,
+        None,
+        &mut FrameEffects::default(),
+    );
+    assert!(sim.team_script_vm.team(team).unwrap().refusal().is_some());
+    assert_eq!(sim.scenario_rng.logical_state(), before);
 }
 
 pub(super) fn campaign_scene(
@@ -155,7 +182,8 @@ pub(super) fn campaign_scene(
     // The production loader installs fixed ART and binds its action bank
     // before actors; the sequence binder resolves each type through that ART.
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    let teams = TeamAiIniRegistry::load_retail(&assets, &map.ini, false).unwrap();
+    let teams =
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, RulePolicy::stock_campaign()).unwrap();
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let mut sim = Simulation::with_seed(0x580BC0);
@@ -163,7 +191,7 @@ pub(super) fn campaign_scene(
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.session
-        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED)
+        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED, None)
         .unwrap();
     bootstrap::initialize_map_roster_houses(&mut sim, &roster, &rules, Some(&map.ini));
     bootstrap::initialize_campaign_current_house(&mut sim.session, &mut sim.houses, &map.ini);
@@ -174,8 +202,8 @@ pub(super) fn campaign_scene(
     // Full_Init's Fill registers unattached timed Tags after the map actors;
     // definitions alone do not put Event13 into Logic's update list.
     sim.classify_map_triggers(&rules);
-    sim.initialize_scenario_sight(UninitContext::with_rules(&rules));
-    sim.initialize_fog_of_war(UninitContext::with_rules(&rules));
+    sim.initialize_scenario_sight(UninitContext::new(&rules));
+    sim.initialize_fog_of_war(UninitContext::new(&rules));
     let member = sim.entities().values().next().unwrap().stable_id();
     let ty = sim.interner.get("SCOUT-TEAM").unwrap();
     sim.session.publish_started();

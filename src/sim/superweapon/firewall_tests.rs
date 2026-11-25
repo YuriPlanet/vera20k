@@ -30,6 +30,7 @@ fn rules() -> RuleSet {
 fn click(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, sw: InternedId) {
     let name = sim.interner.resolve(owner).to_owned();
     sim.apply_command_with_overlays(
+        None,
         &name,
         &Command::LaunchSuperWeapon {
             sw_type_id: sw,
@@ -38,7 +39,7 @@ fn click(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, sw: InternedI
         },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 }
 
@@ -84,7 +85,7 @@ fn a_firestorm_super_powers_the_walls_while_it_drains_and_hits_shorten_the_drain
         false
     ));
     sim.session.set_binary_frame_for_test(1000);
-    tick_house_superweapon_instances(&mut sim, &rules, owner);
+    tick_house_superweapon_instances(&mut sim, &rules, owner, &mut Default::default());
     assert_eq!(sim.super_weapons[&owner][&sw].charge_drain_state(), 1);
     let wall = sim
         .spawn_object("FSWALL", "Americans", 8, 8, 0, &rules)
@@ -94,6 +95,7 @@ fn a_firestorm_super_powers_the_walls_while_it_drains_and_hits_shorten_the_drain
             .entities
             .get(wall)
             .unwrap()
+            .seldom
             .ares
             .ares_firestorm_wall
             .frame()
@@ -116,7 +118,7 @@ fn a_firestorm_super_powers_the_walls_while_it_drains_and_hits_shorten_the_drain
             arg6: false,
         },
     );
-    sim.commit_direct_damage_receiver(&rules, None, hit, FrameEffects::default());
+    sim.commit_direct_damage_receiver(&rules, None, hit, &mut FrameEffects::default());
     assert_eq!(
         sim.substrate.entities.get(wall).unwrap().health.current(),
         500

@@ -259,7 +259,9 @@ fn lay_spiral(
             point,
             particle_type,
             sim,
-            |sim, x, y| super::spark_world::constructor_ground_height(sim, x, y),
+            |sim, x, y| {
+                super::spark_world::constructor_ground_height(sim.resolved_terrain.as_ref(), x, y)
+            },
         )?;
 
         // 62F658..62F7AF: the drift direction is the ring vector plus three
@@ -329,6 +331,7 @@ fn lay_spiral(
 
         particle.direction = direction;
         Simulation::reveal_particle(&mut sim.substrate, particle.stable_id());
+        sim.unlimbo_particle_alpha_shape(&particle, rules);
         sys.particles.push(particle);
     }
     Ok(())

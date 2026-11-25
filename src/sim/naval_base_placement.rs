@@ -70,6 +70,9 @@ fn first_buildable_shipyard<'a>(
     sim: &Simulation,
     house: &HouseState,
 ) -> Option<&'a ObjectType> {
+    // RESIDUAL (dormant): native reads the HouseType (`house_type_id`), so a
+    // map house with no `Country=` would still get a shipyard; no retail map
+    // has one.
     let country = house.country()?;
     let country_name = sim.interner.resolve(country);
     crate::sim::ai_buildable::first_buildable_from_array(
@@ -103,7 +106,7 @@ fn first_yard_distance_accepts(
         return false;
     };
     if yard.category() != EntityCategory::Structure
-        || !yard.type_facts.build_const_eligible()
+        || !yard.seldom.type_facts.build_const_eligible()
         || !yard.lifecycle.object_alive()
         || yard.lifecycle.in_limbo()
         || !yard.lifecycle.cell_marked()
@@ -127,7 +130,7 @@ fn first_yard_distance_accepts(
     distance <= cap
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::find_naval_base_placement;
     use crate::rules::ini_parser::IniFile;

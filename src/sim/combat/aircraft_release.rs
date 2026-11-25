@@ -13,8 +13,9 @@ use super::*;
 use crate::sim::aircraft::attack_mission::{StrikeFacts, StrikeHost, strike_visit};
 use crate::sim::aircraft::fire_at::{AircraftShot, FireAtHost};
 use crate::sim::projectile::ProjectileVelocity;
+use crate::sim::world::HumanPlayerClients;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[path = "aircraft_release_tests.rs"]
 mod tests;
 
@@ -78,7 +79,6 @@ pub(super) fn visit(
     world: &mut Simulation,
     run: &mut ReceiverRun,
     rules: &RuleSet,
-    overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
     out: &mut CombatEmit,
     under_attack_events: &mut Vec<UnderAttackEvent>,
@@ -113,7 +113,6 @@ pub(super) fn visit(
         world,
         run,
         rules,
-        overlay_registry,
         binary_frame,
         out,
         under_attack_events,
@@ -138,7 +137,6 @@ struct CombatStrike<'w, 'r, 'f> {
     world: &'w mut Simulation,
     run: &'w mut ReceiverRun<'f>,
     rules: &'r RuleSet,
-    overlay_registry: Option<&'w OverlayTypeRegistry>,
     /// GetFireError reads the live fog when the scenario has it.
     fog_enabled: bool,
     binary_frame: u32,
@@ -190,7 +188,6 @@ impl CombatStrike<'_, '_, '_> {
         Some(ask(&fire_error_world::FireSubject {
             world,
             rules: self.rules,
-            overlay_registry: self.overlay_registry,
             fog: self
                 .fog_enabled
                 .then(|| world.fog.fire_view(&world.house_alliances)),
@@ -232,7 +229,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
     /// reads at `0x00415EEE`.
     fn carries_passenger(&mut self) -> bool {
         self.entity()
-            .and_then(|entity| entity.passenger_role.cargo())
+            .and_then(|entity| entity.passenger_role().cargo())
             .is_some_and(|cargo| !cargo.is_empty())
     }
 
@@ -242,7 +239,6 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             strike.world,
             strike.id,
             strike.rules,
-            strike.overlay_registry,
             strike.run.effects(),
         );
     }
@@ -262,7 +258,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
                 shot,
                 strike.binary_frame,
                 strike.out,
-                strike.overlay_registry,
+                Some(strike.rules.overlay_registry()),
                 strike.run.effects(),
             )
             .map(|bullet| (bullet, rot));
@@ -271,7 +267,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             strike.world,
             strike.run,
             strike.rules,
-            strike.overlay_registry,
+            Some(strike.rules.overlay_registry()),
             strike.out,
             strike.under_attack_events,
         );
@@ -354,12 +350,12 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
         }
     }
 
-    /// [`Simulation::human_player_clients`] of the owner: each human house's
-    /// map takes what its own client would, and in a campaign a
+    /// [`Simulation::human_player_client_set`] of the owner: each human
+    /// house's map takes what its own client would, and in a campaign a
     /// `PlayerControl=` house's shot asks the player's map too.
-    fn player_clients(&mut self) -> Vec<InternedId> {
-        self.entity().map_or_else(Vec::new, |entity| {
-            self.strike.world.human_player_clients(entity.owner())
+    fn player_clients(&mut self) -> HumanPlayerClients {
+        self.entity().map_or(HumanPlayerClients::None, |entity| {
+            self.strike.world.human_player_client_set(entity.owner())
         })
     }
 
@@ -438,8 +434,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             Some(&heights),
             final_pass,
             &config,
-            crate::sim::world::UninitContext::new(strike.rules, strike.overlay_registry)
-                .with_effects(strike.run.effects()),
+            crate::sim::world::UninitContext::new(strike.rules).with_effects(strike.run.effects()),
             crate::sim::vision::MapRevealProjection::Transient,
             world.session.current_house(),
         );
@@ -454,8 +449,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
         let strike = &mut *self.strike;
         strike.world.uninit_with_context(
             strike.id,
-            crate::sim::world::UninitContext::new(strike.rules, strike.overlay_registry)
-                .with_effects(strike.run.effects()),
+            crate::sim::world::UninitContext::new(strike.rules).with_effects(strike.run.effects()),
         );
     }
 }
@@ -535,7 +529,7 @@ impl StrikeHost for CombatStrike<'_, '_, '_> {
             id,
             target,
             self.rules,
-            self.overlay_registry,
+            Some(self.rules.overlay_registry()),
             self.run.effects(),
         ) {
             log::debug!("aircraft {id} target cell Scatter failed: {cause}");

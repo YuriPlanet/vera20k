@@ -26,48 +26,52 @@ const MAX_DETAIL_BYTES: usize = 256;
 const PUBLISH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// World replacement starts a new observation window without touching the world.
-pub(crate) fn reset_observation(state: &mut AppState) {
+pub(crate) fn reset_observation(
+    diag: &mut crate::app::diagnostics::state::DiagnosticsState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) {
     #[cfg(feature = "debug-tools")]
-    crate::app::debug_tools::reset_session(state);
-    reset_live_window(state);
-    state.match_state.telemetry_history.clear();
-    state.match_state.report_history.clear();
-    state.diag.render_report_cache = None;
-    state.diag.telemetry_history_generation = 0;
+    crate::app::debug_tools::reset_session(diag, &mut match_state.sim_runtime);
+    reset_live_window(diag, match_state);
+    match_state.telemetry_history.clear();
+    match_state.report_history.clear();
+    diag.render_report_cache = None;
+    diag.telemetry_history_generation = 0;
     // A replaced world has a new elevation grid: drop the cache and force the
     // next publish to resend it, even if the same client stays attached.
-    state.diag.telemetry_terrain = None;
-    state.diag.telemetry_terrain_dirty = true;
+    diag.telemetry_terrain = None;
+    diag.telemetry_terrain_dirty = true;
 }
 
 /// The attach/detach boundary: the live window restarts, but the whole-match
 /// history must survive it — that is exactly the time a late client needs.
-fn reset_live_window(state: &mut AppState) {
-    state.match_state.telemetry_timing.clear();
-    state.match_state.telemetry_tick_rate.clear();
-    state.diag.render_timing = Default::default();
-    state.diag.telemetry_last_publish = None;
+fn reset_live_window(
+    diag: &mut crate::app::diagnostics::state::DiagnosticsState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) {
+    match_state.telemetry_timing.clear();
+    match_state.telemetry_tick_rate.clear();
+    diag.render_timing = Default::default();
+    diag.telemetry_last_publish = None;
 }
 
-pub(crate) fn synchronize_observer(state: &mut AppState) {
+pub(crate) fn synchronize_observer(
+    diag: &mut crate::app::diagnostics::state::DiagnosticsState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) {
     // The observer writes the live world. A tick still on the simulation
     // thread leaves it to the pass that finds the tick back, so the draw
     // never waits for it (docs/sim-thread.md).
-    if state.match_state.sim_runtime.is_lent() {
+    if match_state.sim_runtime.is_lent() {
         return;
     }
-    let active = state.diag.telemetry_active();
-    let simulation = state
-        .match_state
+    let active = diag.telemetry_active();
+    let simulation = match_state
         .sim_runtime
         .write_sim(SimWrite::Debug)
         .map(|rt| &mut rt.simulation);
-    if state
-        .diag
-        .telemetry_observer
-        .synchronize(simulation, active)
-    {
-        reset_live_window(state);
+    if diag.telemetry_observer.synchronize(simulation, active) {
+        reset_live_window(diag, match_state);
     }
 }
 
@@ -80,7 +84,7 @@ fn bounded_text(value: &str, maximum: usize) -> String {
 }
 
 /// Capture one full dashboard snapshot, or `None` when no match is running.
-pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
+pub fn capture_snapshot(state: &mut AppState) -> Option<TelemetrySnapshot> {
     let runtime = state.match_state.sim_runtime.runtime()?;
     let mut snapshot = runtime.simulation.telemetry_snapshot();
     #[cfg(feature = "debug-tools")]
@@ -111,17 +115,12 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
             })
             .map(|name| bounded_text(name, TELEMETRY_MAX_NAME_BYTES));
     }
-    let speed = crate::sim::game_options::clamp_game_speed(
-        runtime.simulation.session().game_options().game_speed,
+    let mut timing = state.match_state.telemetry_timing.summarize(
+        crate::app::match_runtime::network_match::game_frame_ms(
+            &state.platform,
+            &state.match_state,
+        ),
     );
-    let mut timing =
-        state
-            .match_state
-            .telemetry_timing
-            .summarize(state.platform.frame_pacer.budget_ms(
-                speed,
-                crate::app::match_runtime::network_match::frame_budget(state),
-            ));
     // Each rate keeps its own owner: FPS is the render loop's, tick_hz is the
     // committed-tick meter's.
     timing.fps = state.diag.frame_timer.fps();
@@ -146,7 +145,9 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
         map_name: bounded_text(sim.session().map_name(), TELEMETRY_MAX_NAME_BYTES),
         // The app's GameMode holder, not the world's copy read a second way.
         game_mode: state.match_state.session_mode().as_str().to_owned(),
-        game_speed: speed,
+        game_speed: crate::sim::game_options::clamp_game_speed(
+            sim.session().game_options().game_speed,
+        ),
         local_owner: state
             .match_state
             .local_player_owner()
@@ -159,7 +160,11 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
         build_stamp: BUILD_STAMP.to_owned(),
     });
     snapshot.debug = Some(capture_debug(state, &runtime.simulation));
-    snapshot.process = Some(capture_process(state));
+    snapshot.process = Some(capture_process(
+        &state.renderer,
+        &mut state.diag.process_stats,
+        &state.match_state.match_presentation,
+    ));
     // Mean per observed frame, accumulated only while a client is watching.
     // A report point closes the window, so the brief span between that reset
     // and the next frame has nothing to report; fall back to the window the
@@ -215,13 +220,17 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
 /// Process-level resources for the dashboard: the OS counters, plus the
 /// adapter identity and the palette-index texture pages this process keeps
 /// resident. Pure observation — nothing here touches simulation state.
-fn capture_process(state: &AppState) -> ProcessStats {
-    let mut stats = state.diag.process_stats.sample();
+fn capture_process(
+    renderer: &crate::app::renderer_state::RendererState,
+    process_stats: &mut crate::app::process_stats::ProcessStatsSampler,
+    presentation: &crate::app::presentation::state::MatchPresentationState,
+) -> ProcessStats {
+    let mut stats = process_stats.sample();
     stats.gpu_adapter = Some(bounded_text(
-        &state.renderer.gpu.capture_adapter_observation().name,
+        &renderer.gpu.capture_adapter_observation().name,
         MAX_DETAIL_BYTES,
     ));
-    stats.gpu_texture_mb = resident_texture_mib(state);
+    stats.gpu_texture_mb = resident_texture_mib(presentation);
     stats
 }
 
@@ -231,16 +240,18 @@ fn capture_process(state: &AppState) -> ProcessStats {
 /// a page's footprint is exactly its pixel count. This is deliberately the
 /// renderer's own accounting and not a driver query: it is exact for what we
 /// allocate and needs no vendor API.
-fn resident_texture_mib(state: &AppState) -> f64 {
+fn resident_texture_mib(
+    presentation: &crate::app::presentation::state::MatchPresentationState,
+) -> f64 {
     const BYTES_PER_PIXEL: f64 = 1.0;
-    let pixels = (sprite_atlas_bytes(state) + unit_atlas_bytes(state)) as f64;
+    let pixels = (sprite_atlas_bytes(presentation) + unit_atlas_bytes(presentation)) as f64;
     pixels * BYTES_PER_PIXEL / (1024.0 * 1024.0)
 }
 
-fn sprite_atlas_bytes(state: &AppState) -> u64 {
-    state
-        .match_state
-        .match_presentation
+fn sprite_atlas_bytes(
+    presentation: &crate::app::presentation::state::MatchPresentationState,
+) -> u64 {
+    presentation
         .sprite_atlas
         .as_ref()
         .map(|atlas| {
@@ -253,10 +264,8 @@ fn sprite_atlas_bytes(state: &AppState) -> u64 {
         .unwrap_or(0)
 }
 
-fn unit_atlas_bytes(state: &AppState) -> u64 {
-    state
-        .match_state
-        .match_presentation
+fn unit_atlas_bytes(presentation: &crate::app::presentation::state::MatchPresentationState) -> u64 {
+    presentation
         .unit_atlas
         .as_ref()
         .map(|atlas| {
@@ -272,7 +281,7 @@ fn unit_atlas_bytes(state: &AppState) -> u64 {
 /// Render-loop cadence also publishes paused worlds. No snapshot work or
 /// process queries occur without an authenticated subscriber.
 pub fn publish_if_due(state: &mut AppState) {
-    synchronize_observer(state);
+    synchronize_observer(&mut state.diag, &mut state.match_state);
     if !state.diag.telemetry_observer.active() {
         return;
     }
@@ -306,7 +315,11 @@ pub fn publish_if_due(state: &mut AppState) {
             snapshot.report_points = Some(state.match_state.report_history.points());
         }
         if state.diag.telemetry_terrain.is_none() {
-            state.diag.telemetry_terrain = build_terrain_grid(state);
+            state.diag.telemetry_terrain = state
+                .match_state
+                .sim_runtime
+                .runtime()
+                .and_then(|runtime| build_terrain_grid(&runtime.simulation));
         }
         snapshot.terrain = state.diag.telemetry_terrain.clone();
         state.diag.telemetry_terrain_dirty = false;
@@ -324,21 +337,27 @@ pub fn publish_if_due(state: &mut AppState) {
 /// Encode the app's elevation grid for the dashboard, or `None` when no map is
 /// loaded. Row-major, two lowercase hex digits per cell, for each of the four
 /// per-cell grids `TerrainGrid` carries: ground levels, land types, ramp slope
-/// types and bridge deck rises. All four come off the one `ResolvedTerrainCell`
-/// the map resolved, so the dashboard's water, ramps and bridges track the
-/// engine's own terrain rather than a re-derivation. The grid is static for a
+/// types and bridge deck rises. The dashboard samples the resolved ground and
+/// the span's shared deck. The caller treats the result as static for a
 /// loaded map, so the caller caches the result; it is rebuilt only after a
 /// world replacement.
-fn build_terrain_grid(state: &AppState) -> Option<crate::sim::telemetry::TerrainGrid> {
+fn build_terrain_grid(sim: &Simulation) -> Option<crate::sim::telemetry::TerrainGrid> {
+    encode_terrain_grid(
+        sim.session().map_width(),
+        sim.session().map_height(),
+        sim.resolved_terrain(),
+    )
+}
+
+fn encode_terrain_grid(
+    width: u16,
+    height: u16,
+    cells: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+) -> Option<crate::sim::telemetry::TerrainGrid> {
     const HEX: &[u8; 16] = b"0123456789abcdef";
-    let runtime = state.match_state.sim_runtime.runtime()?;
-    let sim = &runtime.simulation;
-    let width = sim.session().map_width();
-    let height = sim.session().map_height();
     if width == 0 || height == 0 {
         return None;
     }
-    let cells = sim.resolved_terrain();
     let stride = usize::from(width) * usize::from(height);
     let mut levels = String::with_capacity(stride * 2);
     let mut land_types = String::with_capacity(stride * 2);
@@ -353,11 +372,15 @@ fn build_terrain_grid(state: &AppState) -> Option<crate::sim::telemetry::Terrain
             let cell = cells.and_then(|grid| grid.cell(rx, ry));
             // Without a resolved cell (no terrain yet) the level stays flat.
             let level = cell.map_or(0, |cell| cell.level);
-            // A structural deck sits `bridge_deck_level` above the cell's own
-            // ground level; a low, ground-level bridge reports no rise.
-            let deck_rise = cell
-                .and_then(|cell| cell.bridge_deck_level_if_any())
-                .map_or(0, |deck| deck.saturating_sub(level));
+            let deck = cells
+                .and_then(|grid| grid.corrected_high_bridge_deck_level((rx, ry)))
+                .or_else(|| {
+                    cell.and_then(|cell| cell.high_bridge_deck_level())
+                        .map(|deck| i16::from(deck as i8))
+                });
+            let deck_rise = deck.map_or(0, |deck| {
+                (deck - i16::from(level as i8)).clamp(0, i16::from(u8::MAX)) as u8
+            });
             hex(&mut levels, level);
             hex(&mut land_types, cell.map_or(0, |cell| cell.land_type));
             hex(&mut slope_types, cell.map_or(0, |cell| cell.slope_type));
@@ -377,7 +400,7 @@ fn build_terrain_grid(state: &AppState) -> Option<crate::sim::telemetry::Terrain
 /// The egui Terrain Debug panel's data, read from live cursor and selection.
 fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
     let (cursor_rx, cursor_ry) = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-        state,
+        &state.match_state,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
@@ -431,7 +454,7 @@ fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
                 TELEMETRY_MAX_NAME_BYTES,
             ),
             hp: entity.health.current(),
-            max_hp: entity_max_hp(state, sim, entity),
+            max_hp: entity_max_hp(&state.frontend, &state.match_state, sim, entity),
         });
     }
     if let Some(rules) = state.rules() {
@@ -504,7 +527,7 @@ fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
 fn capture_selection(sim: &Simulation) -> Vec<SelectedDebug> {
     sim.entities()
         .values()
-        .filter(|entity| entity.selection.is_selected())
+        .filter(|entity| entity.seldom.selection.is_selected())
         .take(MAX_SELECTED)
         .map(|entity| capture_selected(sim, entity, sim.path_grid()))
         .collect()
@@ -520,10 +543,33 @@ fn category_label(category: EntityCategory) -> &'static str {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::sim::combat::Health;
+
+    #[test]
+    fn terrain_capture_reports_the_fixed_deck_rise_over_a_dip() {
+        use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+        use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+
+        let mut terrain = test_grid(16, 16, |rx, ry| {
+            let mut cell = test_flat_cell(rx, ry);
+            if (rx, ry) == (8, 8) {
+                cell.level = 4;
+            }
+            cell
+        });
+        terrain.apply_runtime_bridge_mark_stamp(
+            BridgeFlagStamp::new((8, 8), 0, true),
+            BridgeStampFamily::Nesw,
+        );
+
+        let captured = encode_terrain_grid(16, 16, Some(&terrain)).unwrap();
+        let at = (9 * 16 + 8) * 2;
+        assert_eq!(&captured.levels[at..at + 2], "00");
+        assert_eq!(&captured.deck_rises[at..at + 2], "08");
+    }
 
     #[test]
     fn selection_capture_is_bounded_and_does_not_change_the_world() {
@@ -544,9 +590,9 @@ mod tests {
                 1,
                 true,
             );
-            sim.entities_mut_for_test()
-                .get_mut(id)
+            sim.entity_mut_for_test(id)
                 .unwrap()
+                .seldom
                 .selection
                 .set_selected_for_test(true);
         }
@@ -575,12 +621,12 @@ mod tests {
 
 /// Strength from the entity's object type, or 0 when the rules are not bound.
 fn entity_max_hp(
-    state: &AppState,
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
     sim: &Simulation,
     entity: &crate::sim::game_entity::GameEntity,
 ) -> i32 {
-    state
-        .rules()
+    crate::app::state::active_rules(frontend, match_state)
         .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
         .map_or(0, |obj| obj.strength)
 }

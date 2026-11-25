@@ -83,6 +83,21 @@ fn a_sleeping_building_matches_its_awake_twin_hash_by_hash() {
 }
 
 #[test]
+fn the_admitted_sleep_policy_keeps_an_eligible_skirmish_building_awake() {
+    let rules = rules();
+    let mode = ScenarioGameMode::Skirmish;
+    let stock = mode.stock_rule_policy(None);
+    for (policy, expected) in [(stock, 1), (stock.with_allows_idle_object_sleep(false), 0)] {
+        let (mut sim, grid) = power_plant(&rules, true);
+        sim.session.install_admission(mode, None, policy);
+        for _ in 0..40 {
+            tick(&mut sim, &rules, &grid);
+        }
+        assert_eq!(sim.idle_sleep_counts().0, expected);
+    }
+}
+
+#[test]
 fn every_turn_sleeping_would_skip_changes_only_the_owed_counters() {
     let rules = rules();
     let (mut sim, grid) = power_plant(&rules, true);
@@ -94,7 +109,8 @@ fn every_turn_sleeping_would_skip_changes_only_the_owed_counters() {
 }
 
 #[test]
-fn a_write_wakes_a_sleeper_with_its_owed_visits() {
+fn starting_repair_wakes_the_building_with_its_owed_visits() {
+    use crate::sim::production::{RepairControl, toggle_repair};
     let rules = rules();
     let (mut asleep, grid) = power_plant(&rules, true);
     let (mut awake, awake_grid) = power_plant(&rules, false);
@@ -103,18 +119,16 @@ fn a_write_wakes_a_sleeper_with_its_owed_visits() {
         tick(&mut awake, &rules, &awake_grid);
     }
     assert_eq!(asleep.idle_sleep_counts().0, 1, "the plant is asleep");
+    assert!(toggle_repair(&mut asleep, &rules, 1, RepairControl::Start));
+    assert!(toggle_repair(&mut awake, &rules, 1, RepairControl::Start));
+    assert_eq!(asleep.idle_sleep_counts().0, 0, "repair wakes the building");
     let woken = asleep
         .substrate
         .entities
-        .get_mut(1)
+        .get(1)
         .unwrap()
         .mission
         .ai_counter();
-    assert_eq!(
-        asleep.idle_sleep_counts().0,
-        0,
-        "a mutable hand-out wakes it"
-    );
     assert_eq!(
         woken,
         awake
@@ -188,10 +202,9 @@ fn frame(sim: &mut Simulation, rules: &RuleSet) {
     sim.advance_app_frame(
         &commands,
         rules,
-        None,
         33,
         super::TickLane::Ordinary,
-        super::FrameEffects::default(),
+        &mut super::FrameEffects::default(),
     )
     .expect("an ordinary frame");
 }
@@ -276,12 +289,70 @@ fn a_building_in_a_sleeping_gis_cell_wakes_it() {
                 .entities
                 .get(prop)
                 .unwrap()
+                .seldom
                 .type_facts
                 .building_hidden_occupancy()
                 .is_none_or(|profile| !profile.can_hide_things),
             "the prop hides nothing"
         );
     });
+}
+
+/// An empty garrisonable house (`CanBeOccupied=yes`, a retail city building)
+/// sleeps like any plain building, and a GI garrisoning it wakes it: the
+/// twins stay equal through the admission and the occupied turns after it.
+#[test]
+fn an_empty_garrisonable_house_sleeps_and_wakes_for_its_occupant() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &fixture.rules;
+    assert!(rules.object("CATEXS03").unwrap().can_be_occupied);
+    let twin = |sleep: bool| {
+        let (mut sim, gi) = standing_gi(rules, sleep);
+        let house = sim
+            .spawn_object("CATEXS03", "Americans", 20, 16, 0, rules)
+            .expect("the house spawns");
+        (sim, gi, house)
+    };
+    let (mut asleep, gi, house) = twin(true);
+    let (mut awake, _, _) = twin(false);
+    let mut slept = 0;
+    for n in 0..400 {
+        if n == 100 {
+            for sim in [&mut asleep, &mut awake] {
+                assert!(sim.apply_command(
+                    "Americans",
+                    &crate::sim::command::Command::CaptureBuilding {
+                        engineer_id: gi,
+                        target_building_id: house,
+                    },
+                    Some(rules),
+                ));
+            }
+        }
+        frame(&mut asleep, rules);
+        frame(&mut awake, rules);
+        if n < 100 {
+            slept += u32::from(asleep.substrate.entities.sleeps_until(house).is_some());
+        }
+        assert_eq!(
+            asleep.state_hash(),
+            awake.state_hash(),
+            "the twins differ after frame {n}"
+        );
+    }
+    assert!(slept > 50, "the empty house slept {slept} of 100 frames");
+    for sim in [&asleep, &awake] {
+        let occupants = sim
+            .substrate
+            .entities
+            .get(house)
+            .unwrap()
+            .passenger_role()
+            .occupants();
+        assert_eq!(occupants.ids(), [gi], "the GI garrisoned the house");
+    }
 }
 
 /// Radiation in a sleeping GI's cell is no write to it: the visit on an

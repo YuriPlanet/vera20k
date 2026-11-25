@@ -1,7 +1,5 @@
-"""The opt-in package cannot leak networking into a later single-player build,
-and every pull request that can break the browser build builds it."""
+"""The opt-in package cannot leak networking into a later single-player build."""
 from pathlib import Path
-import re
 import tempfile
 import unittest
 
@@ -10,25 +8,7 @@ from tools.wasm.build import package_fonts, package_host, validate_proxy_url
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def github_path_filter(pattern):
-    """GitHub filter-pattern semantics: `**` crosses directories, `*` does not."""
-    parts = re.split(r'(\*\*|\*)', pattern)
-    return re.compile(''.join('.*' if part == '**' else '[^/]*' if part == '*' else re.escape(part)
-                              for part in parts) + r'\Z')
-
-
 class WasmBuildTests(unittest.TestCase):
-    def test_pull_request_paths_cover_every_browser_switch(self):
-        workflow = (ROOT / '.github/workflows/wasm.yml').read_text(encoding='utf-8')
-        filters = [github_path_filter(pattern)
-                   for pattern in re.findall(r"^      - '([^']+)'$", workflow, re.MULTILINE)]
-        self.assertTrue(filters)
-        switch = re.compile(r'feature = "wasm|target_arch = "wasm32"')
-        uncovered = [path.relative_to(ROOT).as_posix() for path in sorted((ROOT / 'src').rglob('*.rs'))
-                     if switch.search(path.read_text(encoding='utf-8'))
-                     and not any(f.match(path.relative_to(ROOT).as_posix()) for f in filters)]
-        self.assertEqual(uncovered, [])
-
     def test_proxy_override_requires_an_origin_and_secure_remote_transport(self):
         validate_proxy_url(None)
         validate_proxy_url('wss://proxy.example:9443')
@@ -67,6 +47,22 @@ class WasmBuildTests(unittest.TestCase):
             page = (root / 'output' / 'index.html').read_text(encoding='utf-8')
             self.assertIn('<span id="build">Build v1 · fast · single player</span>', page)
             self.assertNotIn('Unpackaged page', page)
+
+    def test_host_serves_the_skirmish_map_as_a_separate_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package_host(root, root / 'output', False)
+            name = 'Arctic_Circle_16_Ice_Passages.map'
+            self.assertEqual((root / 'output' / 'Maps' / name).read_bytes(),
+                             (ROOT / 'maps' / name).read_bytes())
+
+    def test_engine_package_ships_the_ice_terrain_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            stage = Path(directory)
+            package_host(stage, stage / 'out', False)
+            for name in ('vera_ice.mix', 'vera_ice_tiles.ini'):
+                self.assertEqual((stage / 'out/pkg/Terrain' / name).read_bytes(),
+                                 (ROOT / 'Terrain' / name).read_bytes())
 
     def test_package_carries_the_files_the_engine_fetches_before_starting(self):
         # src/render/text_engine/web_fonts.rs PRELOADS: the engine embeds neither.

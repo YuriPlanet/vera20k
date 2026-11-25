@@ -15,7 +15,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::projectile::ProjectileCoord;
 use crate::sim::world::{FrameEffects, Simulation};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "generic_warhead_tests.rs"]
 mod tests;
 
@@ -45,7 +45,7 @@ pub(super) fn launch(
     sw: &SuperWeaponType,
     cell: (u16, u16),
     overlays: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     if !can_launch(sim, rules, sw, cell) {
         return false;

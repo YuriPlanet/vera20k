@@ -46,6 +46,7 @@ fn self_click(
             OrderModifier::Normal,
             false,
             planning,
+            &mut Default::default(),
         ),
         self_click_command(sim, rules, None, owner, &[id], Some(&hover), planning),
     )
@@ -54,9 +55,9 @@ fn self_click(
 /// Ares hook 0x73FD5A (1004CF50): a Deactivated MCV's What_Action over
 /// itself is GetDeactivatedAction's Select, so it neither shows Deploy nor
 /// deploys.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_deactivated_mcv_selects_itself_instead_of_deploying() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
@@ -65,8 +66,7 @@ fn ares_deactivated_mcv_selects_itself_instead_of_deploying() {
     let mcv = sim
         .spawn_object("AMCV", "Americans", 12, 12, 0, rules)
         .expect("mcv");
-    sim.entities_mut_for_test()
-        .get_mut(mcv)
+    sim.entity_mut_for_test(mcv)
         .unwrap()
         .deactivated
         .set_for_test(true);
@@ -189,8 +189,7 @@ fn a_bunkered_unit_offers_deploy_over_itself() {
         (CursorFeedbackKind::NoDeploy, None)
     );
     for id in [tank, ifv] {
-        sim.entities_mut_for_test()
-            .get_mut(id)
+        sim.entity_mut_for_test(id)
             .unwrap()
             .bunker
             .set_bunker_link_for_test(crate::sim::docking::bunker_link::BunkerLink::Installed(
@@ -211,9 +210,9 @@ fn a_bunkered_unit_offers_deploy_over_itself() {
 /// 0x740031): a `NoManualUnload` IFV answers its self click as a tank does
 /// (action 0, ahead of the empty hold's NoDeploy), and still deploys out of
 /// a tank bunker (`0x00740023` precedes the hook).
-#[cfg(feature = "ares")]
 #[test]
 fn a_no_manual_unload_transport_has_no_self_action() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let patch = crate::rules::ini_parser::IniFile::from_str("[FV]\nNoManualUnload=yes\n");
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
         "Hills.mmx",
@@ -238,8 +237,7 @@ fn a_no_manual_unload_transport_has_no_self_action() {
         self_click(&sim, rules, ifv, HoverTargetKind::FriendlyUnit, false),
         tank_click
     );
-    sim.entities_mut_for_test()
-        .get_mut(ifv)
+    sim.entity_mut_for_test(ifv)
         .unwrap()
         .bunker
         .set_bunker_link_for_test(crate::sim::docking::bunker_link::BunkerLink::Installed(

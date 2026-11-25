@@ -185,7 +185,9 @@ pub enum ScanMission {
     /// callsite passes `-1`, and a non-`-1` arg6 rejects any candidate whose
     /// cell is in a different component under the attacker's own
     /// `MovementZone=` (`0x006F7E7E`-`0x006F7E9C`). A hunter reaches the far
-    /// side of the map but not the far side of a river.
+    /// side of the map but not the far side of a river, unless Phobos plays
+    /// and its type's `TargetZoneScanType` lets it
+    /// (`combat::greatest_threat::zone_admits`).
     ///
     /// **Mask 0 is a scan TOPOLOGY, not a radius.** The jump at `0x006F8FE2`
     /// lands past the airborne pre-pass *and* past the expanding-ring cell walk
@@ -283,6 +285,43 @@ pub(crate) fn scan_mission_for(entity: &GameEntity) -> ScanMission {
     }
 }
 
+/// The object's own `Threat_Range` in mode 1, in whole leptons: the range
+/// the Foot missions measure against. Mode 1 doubles `GuardRange=` or the
+/// wider live weapon range (see [`threat_range_leptons`]); the weapon ranges
+/// are read only when the type has no `GuardRange=`, as the native caller
+/// does.
+///
+/// Callers: Mission_Rescue's admission gate (`0x004DE0ED`, whose strict
+/// comparison is distance < range * 1.5) and the Foot Area Guard's leash
+/// (`0x004D6E4B`).
+pub(crate) fn object_threat_range(
+    sim: &crate::sim::world::Simulation,
+    id: u64,
+    rules: &crate::rules::ruleset::RuleSet,
+) -> i32 {
+    let Some(actor) = sim.substrate.entities.get(id) else {
+        return 0;
+    };
+    let Some(object) = sim.object_type(actor.type_ref(), rules) else {
+        return 0;
+    };
+    let ranges = if object.guard_range.is_none_or(|range| range.to_bits() == 0) {
+        std::array::from_fn(|index| {
+            super::combat_weapon::weapon_range(
+                actor,
+                object,
+                index as i32,
+                &sim.substrate.entities,
+                rules,
+                &sim.interner,
+            )
+        })
+    } else {
+        [0, 0]
+    };
+    threat_range_leptons(object, 1, ranges)
+}
+
 /// Acquisition radius for one scanning object. Weapon ranges are the live
 /// `GetWeaponRange(0/1)` results from [`super::combat_weapon::weapon_range`].
 /// The native scalar owns only mode selection, doubling and clamps; it does
@@ -365,7 +404,7 @@ pub(crate) fn threat_range_leptons(obj: &ObjectType, mode: i32, weapon_ranges: [
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -615,7 +654,8 @@ GuardRange=9\n\n\
                     .as_u64()
                     .unwrap();
                 passenger.set_gunner_selection_for_test(current as i32, -1);
-                passenger.passenger_role = PassengerRole::inside_for_test(1, open_topped);
+                passenger
+                    .set_passenger_role_for_test(PassengerRole::inside_for_test(1, open_topped));
                 entities.insert(passenger);
                 cargo.board_forced_chain(&[(id, 1.0)]);
             }
@@ -623,7 +663,7 @@ GuardRange=9\n\n\
             transport
                 .veterancy
                 .set_rank_for_test(veterancy(lookup(input, defaults, "veterancy")));
-            transport.passenger_role = PassengerRole::transport(cargo);
+            transport.set_passenger_role_for_test(PassengerRole::transport(cargo));
             let interner = crate::sim::intern::test_interner();
             let obj = rules.object("TRN").unwrap();
 

@@ -332,11 +332,11 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
         .get(provider_id)
         .expect("spawned provider retained");
     assert!(provider.lifecycle.cell_marked());
-    assert!(provider.in_logic_vector.is_member());
-    assert_eq!(provider.type_facts.foundation().name(), "4x4");
+    assert!(provider.seldom.in_logic_vector.is_member());
+    assert_eq!(provider.seldom.type_facts.foundation().name(), "4x4");
 
     // This placement oracle starts after the yard's construction lifecycle.
-    let provider = sim.entities_mut_for_test().get_mut(provider_id).unwrap();
+    let provider = sim.entity_mut_for_test(provider_id).unwrap();
     provider.finish_building_construction_for_test();
     provider.building_art.set_actually_placed_for_test(true);
     sim.append_house_base_building_for_test(provider_id);
@@ -346,7 +346,7 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
         &rules,
         OWNER,
         POWER_PLANT,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let category = crate::sim::production::category_for_object(
@@ -504,11 +504,11 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
         })
         .expect("accepted command spawned stock GAPOWR");
     assert_eq!(placed.category(), EntityCategory::Structure);
-    assert_eq!(placed.type_facts.foundation().name(), "2x2");
+    assert_eq!(placed.seldom.type_facts.foundation().name(), "2x2");
     assert_eq!(placed.health.current(), 750);
     assert_eq!(rules.object("GAPOWR").unwrap().strength, 750);
     assert!(placed.lifecycle.cell_marked());
-    assert!(placed.in_logic_vector.is_member());
+    assert!(placed.seldom.in_logic_vector.is_member());
     assert!(placed.building_up());
     let placed_id = placed.stable_id();
     assert_eq!(

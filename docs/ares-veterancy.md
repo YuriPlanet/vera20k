@@ -1,11 +1,10 @@
 # Optional Ares veterancy, academies, build time and cloning
 
-Build with `--features ares` to let types choose how they gain experience,
-what a promotion does, how long they take to build and where they are
-cloned. Default builds keep the stock kill award (`0x00702E9D`), promotion
-detector (`0x006FA054`), Time_To_Build (`0x006F47A0`), FactoryPlant factor
-(`0x0050BEB0`) and Cloning Vat loop; INI keys cannot enable the extension
-there.
+When a game plays Ares ([Ares](ares.md)), every build lets types choose how
+they gain experience, what a promotion does, how long they take to build and
+where they are cloned. Other games keep the stock kill award (`0x00702E9D`),
+promotion detector (`0x006FA054`), Time_To_Build (`0x006F47A0`), FactoryPlant
+factor (`0x0050BEB0`) and Cloning Vat loop.
 
 ```ini
 [AudioVisual]

@@ -5,12 +5,15 @@
 //! that same system; Spark and Railgun temporarily take/reinsert their owned
 //! body.
 
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::particle_system_type::ParticleSystemBehavesLike;
-use crate::rules::particle_type::ParticleBehavesLike;
+use crate::rules::particle_type::{ParticleBehavesLike, ParticleType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::particles::ParticleSystem;
+use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
+use crate::util::forked::Forked;
 use thiserror::Error;
 
 use super::spark::{
@@ -110,25 +113,32 @@ where
         // but still reaches the shared RemainingEC decrement at62CE86.
         ParticleBehavesLike::Unknown => {}
         ParticleBehavesLike::Smoke => {
-            super::smoke::tick_particle(p, pt, sim.session.binary_frame(), sim.particle_rng())
+            // Scenario's stream, or a presentation particle's own.
+            let frame = sim.session.binary_frame();
+            tick_smoke_particle(p, pt, frame, sim.particle_stream());
+            return Ok(()); // The Smoke arm's owner runs the lifetime tail.
         }
         // gamemd.exe ParticleClass::AI_Gas (0x0062BD50), 62C2C2..62C2DC:
         // read the parent system's +FC source House regardless of its own
         // BehavesLike. Smoke, Fire and Spark retain that same reference.
+        // RESIDUAL: a Gas, Fire or Web child of a host of another behaviour
+        // (mod data only) damages with the rules-only context below, not the
+        // frame's: its kills' sounds wait for the next flush, and the overlay
+        // table and extension callbacks (bounty text) are absent.
         ParticleBehavesLike::Gas => super::gas::tick_particle(
             p,
             sim,
             rules,
             source_house,
             owner,
-            crate::sim::world::UninitContext::with_rules(rules),
+            crate::sim::world::UninitContext::new(rules),
         )?,
         ParticleBehavesLike::Fire => super::fire::tick_particle(
             p,
             sim,
             rules,
             owner,
-            &mut super::fire::LiveFire(crate::sim::world::UninitContext::with_rules(rules)),
+            &mut super::fire::LiveFire(crate::sim::world::UninitContext::new(rules)),
         ),
         ParticleBehavesLike::Spark => {
             let motion = begin_particle_tick(p, gravity_as_stored_f32(rules.general.gravity)?)?;
@@ -147,9 +157,30 @@ where
             // Dispatch62CE81 -> AI_Railgun62C3A0, then the shared tail.
             super::railgun::tick_particle(p, pt, sim.particle_rng())?;
         }
+        // Firestorm 2.0 0x005A4400 (case 5) -> AI_Web 0x005A4310, then the
+        // same tail (0x005A444C). A Gas or Web system runs its own Web
+        // particles with its frame's context ([`super::gas::tick_system`]).
+        ParticleBehavesLike::Web => {
+            super::web::tick_particle(p, sim, rules, crate::sim::world::UninitContext::new(rules))
+        }
     }
     finish_lifetime(p);
     Ok(())
+}
+
+/// The Smoke arm of `ParticleClass::AI_Dispatch @ 0x0062CE40` with the shared
+/// lifetime tail (`0x0062CE86`). AI_Smoke (`0x0062C540`) reads only the
+/// particle, its type, the frame and the Scenario stream, so a system runs it
+/// on the child where it is stored (VERA-only, same writes and draws). It
+/// draws only on odd frames and takes the stream for writing only then.
+pub(super) fn tick_smoke_particle(
+    p: &mut super::Particle,
+    pt: &ParticleType,
+    frame: u32,
+    rng: &mut Forked<SimRng>,
+) {
+    super::smoke::tick_particle(p, pt, frame, rng);
+    finish_lifetime(p);
 }
 
 /// `ParticleClass::Move_Dispatch @ 0x0062D5E0`, which AI_Gas, AI_Smoke and
@@ -159,22 +190,88 @@ where
 /// where it is and marks it; like a move's own bridge-deck mark, the next
 /// destroy walk removes it.
 pub(super) fn move_dispatch(p: &mut super::Particle, sim: &Simulation, rules: &RuleSet) {
+    let frame = sim.session.binary_frame();
+    if !move_in_place(p, rules, frame, sim.resolved_terrain.as_ref()) {
+        super::fire::move_fire(p, sim);
+    }
+}
+
+/// [`move_dispatch`] for every behavior but Fire: those moves read only the
+/// frame and the terrain, so a system moves the child where it is stored
+/// (VERA-only, same writes). Answers false, with nothing done, for a Fire
+/// particle, whose move the caller gives the whole world.
+pub(super) fn move_in_place(
+    p: &mut super::Particle,
+    rules: &RuleSet,
+    frame: u32,
+    terrain: Option<&ResolvedTerrainGrid>,
+) -> bool {
     let pt = rules.particle_type(p.type_id);
+    let wind = rules.general.wind_direction();
     let moved = match pt.behaves_like {
-        ParticleBehavesLike::Gas => super::gas::move_gas(p, sim, rules),
-        ParticleBehavesLike::Smoke => {
-            super::smoke::move_smoke(p, pt, rules.general.wind_direction(), sim)
-        }
-        ParticleBehavesLike::Fire => {
-            super::fire::move_fire(p, sim);
-            Ok(())
-        }
+        ParticleBehavesLike::Gas => super::gas::move_gas(p, pt, wind, frame, terrain),
+        ParticleBehavesLike::Smoke => super::smoke::move_smoke(p, pt, wind, terrain),
+        ParticleBehavesLike::Fire => return false,
+        // Firestorm 2.0's move dispatch (0x005A4B30) leaves a Web particle
+        // where it is, as it does Spark and Railgun.
         ParticleBehavesLike::Spark
         | ParticleBehavesLike::Railgun
+        | ParticleBehavesLike::Web
         | ParticleBehavesLike::Unknown => Ok(()),
     };
     if let Err(error) = moved {
         retire_refused(p, &error);
+    }
+    true
+}
+
+/// The Move and destroy walk AI_Smoke (`0x0062EDE0`) and AI_Gas
+/// (`0x0062E6D0`) end with: over the first `count` children, last first, an
+/// unmarked child takes [`move_dispatch`] and a marked one `destroy`, which
+/// adds its successors, takes it out of the system and retires it. Children
+/// added during the walk wait for the next visit.
+///
+/// VERA-only, results unchanged: the system is found once for each run of
+/// unmarked children, which move where they are stored. A marked child, and
+/// an unmarked Fire one, takes a copy, and the system is found again after
+/// it.
+pub(super) fn move_or_destroy_children(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    system: u64,
+    count: usize,
+    mut destroy: impl FnMut(&mut Simulation, &super::Particle),
+) {
+    let frame = sim.session.binary_frame();
+    let mut index = count;
+    while index > 0 {
+        let Some(sys) = sim.substrate.particle_systems.get_mut(system) else {
+            return;
+        };
+        let terrain = sim.resolved_terrain.as_ref();
+        while index > 0
+            && let Some(p) = sys.particles.get_mut(index - 1)
+        {
+            if p.marked_for_deletion || !move_in_place(p, rules, frame, terrain) {
+                break;
+            }
+            index -= 1;
+        }
+        if index == 0 {
+            return;
+        }
+        index -= 1;
+        let Some(mut p) = sys.particles.get(index).cloned() else {
+            continue;
+        };
+        if p.marked_for_deletion {
+            destroy(sim, &p);
+        } else {
+            move_dispatch(&mut p, sim, rules);
+            sim.substrate
+                .particle_systems
+                .commit_particle_tick(system, index, p);
+        }
     }
 }
 
@@ -187,15 +284,18 @@ pub(crate) fn tick_particle_system(
     sim: &mut Simulation,
     rules: &RuleSet,
     id: u64,
-    context: crate::sim::world::UninitContext<'_>,
+    mut context: crate::sim::world::UninitContext<'_>,
 ) -> bool {
     let Some(sys) = sim.particle_systems().get(id) else {
         return false;
     };
     let behavior = rules.particle_system_type(sys.type_id).behaves_like;
     let ares = sys.ares.is_some();
-    // AI_Railgun reads the done byte first (`0x0062F242`).
-    apply_fire_link_release(sim, id);
+    // AI_Railgun reads the done byte first (`0x0062F242`). Only a system
+    // FireAt linked has a slot to lose; the others are not handed out.
+    if sys.owner_fire_link {
+        apply_fire_link_release(sim, id);
+    }
     // Ares 3.0 ParticleSystemClass_Update (Ares.dll 100290D0, hook 0x62FD60
     // at the AI's entry, returning to its `ret` at 0x62FE43): ExtData::Update
     // (10026C70) runs Ares' own Spark, Railgun or Smoke update, then the same
@@ -207,14 +307,19 @@ pub(crate) fn tick_particle_system(
         finish_system_visit(sim, id, context);
         return true;
     }
-    if behavior == ParticleSystemBehavesLike::Gas {
+    // Firestorm 2.0 `ParticleSystemClass::AI_Web` 0x005A7170 walks its
+    // particles as the Gas system does (see `super::web`).
+    if matches!(
+        behavior,
+        ParticleSystemBehavesLike::Gas | ParticleSystemBehavesLike::Web
+    ) {
         // Gas damage may synchronously kill another animal and append to this
         // same system. Retain its body in storage through those callbacks.
-        super::gas::tick_system(sim, rules, id, context);
+        super::gas::tick_system(sim, rules, id, context.reborrow());
     } else if behavior == ParticleSystemBehavesLike::Smoke {
         super::smoke::tick_system(sim, rules, id);
     } else if behavior == ParticleSystemBehavesLike::Fire {
-        super::fire::tick_system(sim, rules, id, context);
+        super::fire::tick_system(sim, rules, id, context.reborrow());
     } else {
         let mut sys = sim.substrate.particle_systems.take_for_tick(id).unwrap();
         tick_one_system(&mut sys, sim, rules);
@@ -240,10 +345,11 @@ pub(super) fn finish_system_visit(
     id: u64,
     context: crate::sim::world::UninitContext<'_>,
 ) {
-    apply_fire_link_release(sim, id);
-    let Some(sys) = sim.substrate.particle_systems.get_mut(id) else {
+    let substrate = &mut sim.substrate;
+    let Some(sys) = substrate.particle_systems.get_mut(id) else {
         return;
     };
+    sys.apply_fire_link_release(&substrate.entities);
 
     // `ParticleSystemClass::AI @ 0x0062FD60`: decrement `+0xEC`, and when the
     // decremented value is exactly zero call vtable `+0xF8` — an entry
@@ -268,12 +374,7 @@ pub(super) fn finish_system_visit(
 #[cfg(test)]
 pub fn tick_particle_systems(sim: &mut Simulation, rules: &RuleSet) {
     for id in sim.live_object_order_snapshot() {
-        tick_particle_system(
-            sim,
-            rules,
-            id,
-            crate::sim::world::UninitContext::with_rules(rules),
-        );
+        tick_particle_system(sim, rules, id, crate::sim::world::UninitContext::new(rules));
     }
 }
 
@@ -284,7 +385,9 @@ fn tick_one_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleS
         // then still reaches its lifetime and retirement tail.
         ParticleSystemBehavesLike::Unknown => {}
         ParticleSystemBehavesLike::Smoke => unreachable!("Smoke retains its body during callbacks"),
-        ParticleSystemBehavesLike::Gas => unreachable!("Gas retains its body during callbacks"),
+        ParticleSystemBehavesLike::Gas | ParticleSystemBehavesLike::Web => {
+            unreachable!("Gas and Web retain their body during callbacks")
+        }
         ParticleSystemBehavesLike::Fire => unreachable!("Fire retains its body during callbacks"),
         ParticleSystemBehavesLike::Spark => tick_spark(sys, sim, rules),
         ParticleSystemBehavesLike::Railgun => super::railgun::tick_system(sys, sim, rules),
@@ -379,7 +482,7 @@ where
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 
@@ -409,7 +512,7 @@ mod tests {
             &mut sim,
             &rules,
             system,
-            crate::sim::world::UninitContext::with_rules(&rules),
+            crate::sim::world::UninitContext::new(&rules),
         );
         let child = &sim.particle_systems().get(system).unwrap().particles()[0];
         assert_eq!(child.start_rgb(), [12, 34, 56]);
@@ -437,7 +540,7 @@ mod tests {
             &mut sim,
             &unknown_system_rules,
             system,
-            crate::sim::world::UninitContext::with_rules(&unknown_system_rules),
+            crate::sim::world::UninitContext::new(&unknown_system_rules),
         );
         let system = sim.particle_systems().get(system).unwrap();
         assert_eq!(system.lifetime(), old_lifetime - 1);
@@ -445,13 +548,7 @@ mod tests {
         assert_eq!(sim.main_rng.logical_state(), old_rng);
 
         let unknown_id = rules.p_type_id_by_name("U").unwrap();
-        let mut unknown = Particle::new(
-            unknown_id,
-            origin,
-            origin,
-            rules.particle_type(unknown_id),
-            &mut sim,
-        );
+        let mut unknown = Particle::new(unknown_id, origin, origin, &rules, &mut sim);
         let old_rng = sim.main_rng.logical_state();
         tick_particle(&mut unknown, &mut sim, &rules, None, None);
         assert!(unknown.marked_for_deletion());
@@ -464,7 +561,7 @@ mod tests {
             fire_id,
             origin,
             IVec3::new(128, 1024, 100),
-            rules.particle_type(fire_id),
+            &rules,
             &mut sim,
         );
         assert_eq!(fire.draw_frame(rules.particle_type(fire_id)), 9);
@@ -510,7 +607,7 @@ mod tests {
             kind,
             IVec3::new(5248, 5248, 0),
             IVec3::ZERO,
-            rules.particle_type(kind),
+            &rules,
             &mut sim,
         );
         let system = sim.substrate.particle_systems.get_mut(host).unwrap();
@@ -520,12 +617,78 @@ mod tests {
             &mut sim,
             &rules,
             host,
-            crate::sim::world::UninitContext::with_rules(&rules),
+            crate::sim::world::UninitContext::new(&rules),
         ));
         let target = sim.entities().get(target).unwrap();
         assert_eq!(target.health.current(), 40);
-        assert!(target.damage_smoke_system_id.system().is_some());
+        assert!(target.seldom.damage_smoke_system_id.system().is_some());
         assert_eq!(sim.particle_systems().get(host).unwrap().particles.len(), 1);
+    }
+
+    /// `ParticleClass::AI_Gas` hurts a tree with defenses on (IgnoreDefenses
+    /// 0 at `0x0062C2DC..0x0062C300`): the Wood warhead's Verses apply.
+    #[test]
+    fn gas_damage_to_a_tree_goes_through_the_warhead_verses() {
+        use crate::sim::terrain_object::TerrainObjectState;
+        let ini = crate::sim::arena_fixture::clear_ground_ini(
+            "[Countries]\n0=Americans\n1=Russians\n\
+             [TerrainTypes]\n0=TREE01\n[TREE01]\nStrength=100\nArmor=wood\n\
+             [ParticleSystems]\n0=HOST\n[HOST]\nBehavesLike=Gas\nHoldsWhat=CLOUD\n\
+             [Particles]\n0=CLOUD\n\
+             [CLOUD]\nBehavesLike=Gas\nMaxEC=100\nMaxDC=1\nDamage=60\nWarhead=WOODWH\n\
+             StateAIAdvance=3\nEndStateAI=10\nDeleteOnStateLimit=no\n\
+             [Warheads]\n0=WOODWH\n[WOODWH]\nWood=yes\n\
+             Verses=100%,100%,100%,100%,100%,100%,50%,100%,100%,100%,100%\n",
+        );
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        sim.session.set_binary_frame_for_test(1);
+        let tree = 700;
+        let tree_ref = sim.interner.intern("TREE01");
+        sim.terrain_objects
+            .objects_mut_for_test()
+            .insert(tree, TerrainObjectState::for_test(tree, tree_ref, 20, 20));
+        sim.terrain_objects
+            .cell_index_mut_for_test()
+            .insert((20, 20), tree);
+        let at = sim
+            .terrain_objects
+            .objects()
+            .get(&tree)
+            .unwrap()
+            .world_coord();
+        let host = sim
+            .spawn_particle_system(
+                rules.ps_type_id_by_name("HOST").unwrap(),
+                IVec3::new(at.x, at.y, 0),
+                None,
+                None,
+                IVec3::ZERO,
+                None,
+                &rules,
+            )
+            .unwrap();
+        let kind = rules.p_type_id_by_name("CLOUD").unwrap();
+        let cloud = Particle::new(
+            kind,
+            IVec3::new(at.x, at.y, at.z),
+            IVec3::ZERO,
+            &rules,
+            &mut sim,
+        );
+        let system = sim.substrate.particle_systems.get_mut(host).unwrap();
+        system.done_spawning = true;
+        system.particles.push(cloud);
+        assert!(tick_particle_system(
+            &mut sim,
+            &rules,
+            host,
+            crate::sim::world::UninitContext::new(&rules),
+        ));
+        assert_eq!(
+            sim.terrain_objects.objects().get(&tree).unwrap().health(),
+            70
+        );
     }
     use crate::rules::ini_parser::IniFile;
     use crate::rules::particle_system_type::ParticleSystemTypeId;
@@ -537,16 +700,18 @@ mod tests {
 
     #[test]
     fn mixed_hosts_preserve_gas_source_house_for_allied_and_enemy_receivers() {
-        // Ares runs Smoke and Spark hosts itself (hooks 0x62DF05, 0x62FD60)
-        // and never visits their ParticleClass children.
-        let behaviors: &[&str] = if crate::rules::ARES_BUILD {
-            &["Fire"]
-        } else {
-            &["Smoke", "Fire", "Spark"]
-        };
-        for &behavior in behaviors {
-            let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
-                "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=TARGET\n\
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            // Ares runs Smoke and Spark hosts itself (hooks 0x62DF05, 0x62FD60)
+            // and never visits their ParticleClass children.
+            let behaviors: &[&str] = if ares_way {
+                &["Fire"]
+            } else {
+                &["Smoke", "Fire", "Spark"]
+            };
+            for &behavior in behaviors {
+                let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+                    "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=TARGET\n\
                  [TARGET]\nStrength=100\nArmor=light\n\
                  [ParticleSystems]\n0=HOST\n[HOST]\nBehavesLike={behavior}\n\
                  [Particles]\n0=CLOUD\n[CLOUD]\nBehavesLike=Gas\nMaxEC=100\n\
@@ -554,62 +719,63 @@ mod tests {
                  EndStateAI=10\nDeleteOnStateLimit=no\n[Warheads]\n0=PSYCH\n\
                  [PSYCH]\nPsychedelic=yes\n\
                  Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
-            ));
-            let rules = RuleSet::from_ini(&ini).unwrap();
-            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
-            sim.session.set_binary_frame_for_test(1);
-            let owner = sim.interner.intern("Americans");
-            let host = sim
-                .spawn_particle_system(
-                    rules.ps_type_id_by_name("HOST").unwrap(),
-                    IVec3::ZERO,
-                    None,
-                    None,
-                    IVec3::ZERO,
-                    Some(owner),
-                    &rules,
-                )
-                .unwrap();
-            sim.substrate
-                .particle_systems
-                .get_mut(host)
-                .unwrap()
-                .done_spawning = true;
-            let mut targets = Vec::new();
-            for (country, x) in [("Americans", 20), ("Russians", 24)] {
-                let target = sim
-                    .spawn_object("TARGET", country, x, 20, 0, &rules)
+                ));
+                let rules = RuleSet::from_ini(&ini).unwrap();
+                let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+                sim.session.set_binary_frame_for_test(1);
+                let owner = sim.interner.intern("Americans");
+                let host = sim
+                    .spawn_particle_system(
+                        rules.ps_type_id_by_name("HOST").unwrap(),
+                        IVec3::ZERO,
+                        None,
+                        None,
+                        IVec3::ZERO,
+                        Some(owner),
+                        &rules,
+                    )
                     .unwrap();
-                let kind = rules.p_type_id_by_name("CLOUD").unwrap();
-                let cloud = Particle::new(
-                    kind,
-                    IVec3::new(i32::from(x) * 256 + 128, 5248, 0),
-                    IVec3::ZERO,
-                    rules.particle_type(kind),
-                    &mut sim,
-                );
                 sim.substrate
                     .particle_systems
                     .get_mut(host)
                     .unwrap()
-                    .particles
-                    .push(cloud);
-                targets.push(target);
+                    .done_spawning = true;
+                let mut targets = Vec::new();
+                for (country, x) in [("Americans", 20), ("Russians", 24)] {
+                    let target = sim
+                        .spawn_object("TARGET", country, x, 20, 0, &rules)
+                        .unwrap();
+                    let kind = rules.p_type_id_by_name("CLOUD").unwrap();
+                    let cloud = Particle::new(
+                        kind,
+                        IVec3::new(i32::from(x) * 256 + 128, 5248, 0),
+                        IVec3::ZERO,
+                        &rules,
+                        &mut sim,
+                    );
+                    sim.substrate
+                        .particle_systems
+                        .get_mut(host)
+                        .unwrap()
+                        .particles
+                        .push(cloud);
+                    targets.push(target);
+                }
+                assert!(tick_particle_system(
+                    &mut sim,
+                    &rules,
+                    host,
+                    crate::sim::world::UninitContext::new(&rules),
+                ));
+                assert!(
+                    !sim.entities().get(targets[0]).unwrap().berserk.is_active(),
+                    "{behavior}: the source house protects its ally from Psychedelic"
+                );
+                assert!(
+                    sim.entities().get(targets[1]).unwrap().berserk.is_active(),
+                    "{behavior}: the enemy control must reach the same real damage receiver"
+                );
             }
-            assert!(tick_particle_system(
-                &mut sim,
-                &rules,
-                host,
-                crate::sim::world::UninitContext::with_rules(&rules),
-            ));
-            assert!(
-                !sim.entities().get(targets[0]).unwrap().berserk.is_active(),
-                "{behavior}: the source house protects its ally from Psychedelic"
-            );
-            assert!(
-                sim.entities().get(targets[1]).unwrap().berserk.is_active(),
-                "{behavior}: the enemy control must reach the same real damage receiver"
-            );
         }
     }
 
@@ -635,9 +801,7 @@ mod tests {
         let stable_id = sim.substrate.allocate_stable_id();
         system.stable_id = stable_id;
         sim.substrate.particle_systems.insert(system);
-        assert!(
-            sim.reveal_particle_system(stable_id, crate::rules::ruleset::RuleSet::empty_for_test())
-        );
+        assert!(sim.reveal_particle_system(stable_id));
         stable_id
     }
 
@@ -662,8 +826,7 @@ mod tests {
         SparkCollisionFacts {
             ground_z: 0,
             slope_matrix: Some(crate::map::voxel_slope::slope_matrix(0).unwrap()),
-            old_has_structural_bridge: false,
-            candidate_has_structural_bridge: false,
+            bridge_z: None,
             accepted_building: false,
             wall_overlay_id: None,
         }
@@ -866,6 +1029,66 @@ SpawnSparkPercentage=1
         assert!(smoke_host_retires_with(&rules, particle));
     }
 
+    /// A Smoke host runs its Smoke children where they are stored and any
+    /// other child on a copy. Either way each child takes its AI in vector
+    /// order and its move last first, on the same draws: Smoke and Railgun
+    /// children both draw on an odd frame.
+    #[test]
+    fn smoke_host_runs_mixed_children_in_vector_order() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nWindDirection=1\n[AudioVisual]\nGravity=6\n\
+             [ParticleSystems]\n0=Host\n[Host]\nBehavesLike=Smoke\n\
+             [Particles]\n0=S\n1=R\n\
+             [S]\nBehavesLike=Smoke\nMaxEC=80\nVelocity=9.0\nDeacc=.05\n\
+             EndStateAI=20\nStateAIAdvance=4\nWindEffect=2\n\
+             [R]\nBehavesLike=Railgun\nMaxEC=70\nVelocity=2.0\n\
+             ColorList=(200,200,200),(150,150,150)\nColorSpeed=.03\n",
+        ))
+        .unwrap();
+        let children = |sim: &mut Simulation| -> Vec<Particle> {
+            ["S", "R", "S", "S", "R"]
+                .iter()
+                .enumerate()
+                .map(|(n, name)| {
+                    let kind = rules.p_type_id_by_name(name).unwrap();
+                    let at = IVec3::new(1000 + 300 * n as i32, 2000, 50);
+                    Particle::new(kind, at, IVec3::new(4000, 2000, 50), &rules, sim)
+                })
+                .collect()
+        };
+        let mut sim = Simulation::with_seed(31);
+        let mut system = fake_system(ParticleSystemTypeId(0), -1);
+        system.done_spawning = true;
+        system.particles = children(&mut sim);
+        let host = insert_live_system(&mut sim, system);
+        // Each child through the one-particle owners, on the same seed.
+        let mut alone = Simulation::with_seed(31);
+        let mut expected = children(&mut alone);
+        for frame in 1..=3 {
+            sim.session.set_binary_frame_for_test(frame);
+            alone.session.set_binary_frame_for_test(frame);
+            tick_particle_system(
+                &mut sim,
+                &rules,
+                host,
+                crate::sim::world::UninitContext::new(&rules),
+            );
+            for p in &mut expected {
+                tick_particle(p, &mut alone, &rules, None, None);
+            }
+            for p in expected.iter_mut().rev() {
+                move_dispatch(p, &alone, &rules);
+            }
+        }
+        let held = sim.particle_systems().get(host).unwrap().particles();
+        assert_eq!(held.len(), expected.len());
+        assert_eq!(
+            serde_json::to_value(held).unwrap(),
+            serde_json::to_value(&expected).unwrap()
+        );
+        assert_eq!(sim.rng_state().scenario, alone.rng_state().scenario);
+    }
+
     #[test]
     fn gsi_04_03_spark_shared_dummy_query_order_and_miss_continuation() {
         use super::super::spark_world::{SparkCellSelectionRole, SparkCollisionWorld};
@@ -874,12 +1097,12 @@ SpawnSparkPercentage=1
 
         let rules = spark_rules(0);
         let mut sim = Simulation::with_seed(789);
-        sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
+        *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
             1,
             1,
             vec![super::super::spark_world::tests::terrain_cell(0, 0)],
         ));
-        sim.overlay_grid = None;
+        *sim.overlay_grid = None;
         sim.resolved_terrain
             .as_ref()
             .unwrap()
@@ -912,8 +1135,10 @@ SpawnSparkPercentage=1
                 (SparkCellSelectionRole::Cell, 256, 0),
             ]
         );
-        assert!(facts.candidate_has_structural_bridge);
-        assert!(!facts.old_has_structural_bridge);
+        assert_eq!(
+            facts.bridge_z,
+            Some(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
+        );
         assert!(!facts.accepted_building);
         assert_eq!(facts.wall_overlay_id, None);
         assert!(facts.slope_matrix.is_none());
@@ -938,12 +1163,12 @@ SpawnSparkPercentage=1
         );
 
         let mut collision_sim = Simulation::with_seed(790);
-        collision_sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
+        *collision_sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
             1,
             1,
             vec![super::super::spark_world::tests::terrain_cell(0, 0)],
         ));
-        collision_sim.overlay_grid = None;
+        *collision_sim.overlay_grid = None;
         let mut collision_particle = spark_particle(256, 2);
         collision_particle.coords.z = -1;
         let motion = begin_particle_tick(

@@ -34,6 +34,10 @@ pub enum ParticleBehavesLike {
     Railgun = 4,
     /// Constructor and unrecognized/empty ReadINI result.
     Unknown = -1,
+    /// Firestorm 2.0's sixth name (`0x00707D20`): the webs a Webby warhead
+    /// leaves (docs/ts-webs.md). gamemd's table stops at Railgun. Declared
+    /// last so the saved variant order of the others stays as it was.
+    Web = 5,
 }
 
 impl ParticleBehavesLike {
@@ -45,9 +49,10 @@ impl ParticleBehavesLike {
             Self::Fire,
             Self::Spark,
             Self::Railgun,
+            Self::Web,
         ]
         .into_iter()
-        .zip(["Gas", "Smoke", "Fire", "Spark", "Railgun"])
+        .zip(["Gas", "Smoke", "Fire", "Spark", "Railgun", "Web"])
         .find_map(|(behavior, name)| s.eq_ignore_ascii_case(name).then_some(behavior))
     }
 }
@@ -111,6 +116,10 @@ pub struct ParticleType {
     /// Delete the particle when its animation state hits the limit.
     pub delete_on_state_limit: bool,
     /// Final animation state — particle is marked for deletion at this state.
+    ///
+    /// RESIDUAL: gamemd keeps this and the next three state bytes signed (a
+    /// value of 128 or more reads negative through `MOVSX`); VERA holds them
+    /// unsigned. Only mod data sets a state that high.
     pub end_state_ai: u8,
     /// Initial animation state (start of state machine).
     pub start_state_ai: u8,
@@ -266,7 +275,7 @@ impl ParticleType {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

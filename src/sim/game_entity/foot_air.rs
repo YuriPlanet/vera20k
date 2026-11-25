@@ -226,7 +226,7 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
 
@@ -245,7 +245,7 @@ mod tests {
             ));
             sim.add_entity_occupancy(id);
         }
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         // The native fixture starts with the foreign Foot already tracked and
         // holding Cell12,10; both independent caches are retained at12,10.
         Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, 2);

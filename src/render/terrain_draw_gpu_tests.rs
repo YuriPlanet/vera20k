@@ -430,7 +430,7 @@ pub(crate) fn camera(size: [u32; 2]) -> CameraUniform {
         world_height: 1000.0,
         _pad: 0.0,
         native_z_origin_y: 0.0,
-        _native_z_pad: 0.0,
+        native_z_pan: 0.0,
     }
 }
 pub(crate) fn encoded(word: u16, format: wgpu::TextureFormat) -> [u8; 4] {
@@ -646,7 +646,7 @@ fn production_no_z_mask_exhausts_words_and_preserves_depth() {
         let cv = color.create_view(&Default::default());
         let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
         let dv = depth.create_view(&Default::default());
-        let surface = renderer.create_packed_surface(&gpu.device, &color, &dv, 1);
+        let surface = renderer.create_packed_surface(&gpu.device, &color, &dv, 1.0);
         let offset = [137.25, -31.5];
         let ui = CameraUniform {
             camera_pos: offset,
@@ -772,7 +772,7 @@ fn production_no_z_ui_half_blend_matches_native_controls() {
     let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
     let dv = depth.create_view(&Default::default());
     renderer.prepare(&gpu.device, &color, &dv, camera(size));
-    let surface = renderer.create_packed_surface(&gpu.device, &color, &dv, 1);
+    let surface = renderer.create_packed_surface(&gpu.device, &color, &dv, 1.0);
     let bytes: Vec<_> = rows
         .iter()
         .flat_map(|row| encoded(row["raw"].as_u64().unwrap() as u16, format))
@@ -1223,7 +1223,7 @@ fn production_tree_camera_zoom_matches_unscissored_shp_coverage() {
                 0.0,
                 "frame camera must reset previous origin"
             );
-            batch.update_native_z_origin(&gpu.queue, 7.0 / zoom);
+            batch.update_native_z_origin(&gpu.queue, 7.0 / zoom, 0);
             let cam = batch.camera_uniform();
             assert_eq!(cam.camera_pos, raw_camera.map(f32::round));
             assert_eq!(cam.native_z_origin_y, 7.0 / zoom);

@@ -78,7 +78,7 @@ impl Simulation {
     ///     `ExtraPower=` is positive; any other first hears its HELLO
     ///     (RequestLink); then CargoClass AddPassenger and AbortMotion;
     ///   - a Foot takes the transport's Location (SetLocation vt+0x1B4), an
-    ///     `OpenTopped=` transport makes it a rider (EnteredOpenTopped
+    ///     `OpenTopped=` transport makes it a rider on Guard (EnteredOpenTopped
     ///     `0x00710470`), Transporter is the transport, and AddPassenger
     ///     (vt+0x394, a `Gunner=` transport's gunner included) runs with
     ///     VocClass::VoicesEnabled cleared, so no EnterTransportSound;
@@ -88,8 +88,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         // Native always has the type; a call without its rules (a fixture's
         // empty set) leaves the payload pending rather than spend it.
@@ -105,7 +104,7 @@ impl Simulation {
             .substrate
             .entities
             .get_mut(id)
-            .is_some_and(|entity| entity.ares.ares_initial_payload.take())
+            .is_some_and(|entity| entity.seldom.ares.ares_initial_payload.take())
         {
             return;
         }
@@ -120,19 +119,18 @@ impl Simulation {
         let occupiable = building && object.can_be_occupied;
         let mut free_slots = if occupiable {
             (object.max_number_occupants as i32)
-                .wrapping_sub(entity.passenger_role.occupants().count())
+                .wrapping_sub(entity.passenger_role().occupants().count())
         } else {
             object
                 .passengers
-                .wrapping_sub(entity.passenger_role.passenger_count() as i32)
+                .wrapping_sub(entity.passenger_role().passenger_count() as i32)
         };
         let infantry_absorb = object.infantry_absorb;
         let extra_power = object.extra_power.output() > 0;
         let open_topped = object.open_topped;
         let owner = entity.owner();
-        let owner_name = self.interner.resolve(owner).to_owned();
         let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let mut context = UninitContext::new(rules).with_effects(effects);
         for (index, reference) in types.iter().enumerate() {
             if matches!(
                 reference.category,
@@ -151,26 +149,19 @@ impl Simulation {
             for _ in 0..count {
                 let Some(payload) = self.construct_resolved_object_limbo_at_height(
                     payload_type,
-                    &owner_name,
+                    owner,
                     0,
                     0,
                     0,
                     0,
                     rules,
-                    effects,
+                    context.effects(),
                 ) else {
                     continue;
                 };
                 // Remove (vt+0xD4) finds the new object in limbo already.
                 if occupiable {
-                    if let Some(holder) = self.substrate.entities.get_mut(id) {
-                        holder.passenger_role.occupants_mut().add(payload);
-                    }
-                    if let Some(occupant) = self.substrate.entities.get_mut(payload) {
-                        // VERA's occupant relation, as AddGarrisonOccupant
-                        // gives it.
-                        occupant.passenger_role.set_inside_transport(id, false);
-                    }
+                    self.substrate.attach_garrison_occupant(id, payload);
                     self.refresh_spatial_threat(id, rules, None);
                 } else if building {
                     if infantry_absorb {
@@ -196,17 +187,16 @@ impl Simulation {
                             crate::sim::radio::RadioMessage::Hello,
                             crate::sim::radio::RadioPayload::default(),
                             rules,
-                            effects,
+                            context.effects(),
                         );
                     }
-                    let _ = self.add_cargo_passenger_chain(
+                    // A building's cargo shares VERA's carrier relation.
+                    let _ = self.add_cargo_members(
                         id,
                         &[(payload, payload_type.size)],
-                        context,
+                        context.reborrow(),
                     );
                     if let Some(passenger) = self.substrate.entities.get_mut(payload) {
-                        // A building's cargo shares VERA's carrier relation.
-                        passenger.passenger_role.set_inside_transport(id, false);
                         // AbortMotion (`0x004DF0D0`).
                         passenger.navigation.stop_moving();
                     }
@@ -224,7 +214,7 @@ impl Simulation {
                         payload_type.size,
                         open_topped,
                         false,
-                        context,
+                        context.reborrow(),
                     );
                 }
             }
@@ -233,7 +223,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .get(id)
-                    .is_some_and(|holder| !holder.passenger_role.occupants().is_empty())
+                    .is_some_and(|holder| !holder.passenger_role().occupants().is_empty())
             {
                 self.refresh_spatial_threat(id, rules, None);
             }
@@ -251,7 +241,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if !self
             .substrate
@@ -265,10 +255,9 @@ impl Simulation {
         let _ = crate::sim::passenger::depart_cargo_head(
             self,
             rules,
-            registry,
             id,
             crate::sim::passenger::DepartureRoute::Hospital,
-            |sim, patient| {
+            |sim, patient, effects| {
                 let _ = crate::sim::production::exit_produced_object(
                     sim,
                     rules,
@@ -285,6 +274,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ares_transports_tests.rs"]
 mod tests;

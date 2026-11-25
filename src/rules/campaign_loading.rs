@@ -1,4 +1,5 @@
-//! Scenario-owned campaign loading fields read from `MISSIONMD.INI`.
+//! Scenario-owned campaign loading fields read from the MISSIONMD file the
+//! INI roots name.
 //!
 //! `ScenarioClass::Full_Init @ 0x00687000..0x006873AB` reads the exact
 //! `Scenario.FileName` section on each admitted MISSION pass. Strings are
@@ -230,7 +231,7 @@ impl CampaignLoadingMetadata {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::{CampaignLoadingMetadata, CampaignScenarioNames, restate_briefing_key};
     use crate::rules::ini_parser::IniFile;

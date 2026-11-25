@@ -8,7 +8,7 @@ use crate::assets::csf_file::{CsfArg, format_csf};
 use crate::map::entities::EntityCategory;
 use crate::sim::combat::health_category;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "selection_navigation_tests.rs"]
 mod object_tests;
 
@@ -20,6 +20,10 @@ pub(super) enum ObjectDirection {
 
 /// Display4AA2B0/4AA380 walk retained Ground/Air/Top vectors, reversing
 /// both the layer and member order for Previous. No navigation cache or sort.
+/// Sim-scale deviation: the simulation keeps Ground unordered
+/// (`DisplayLayers::submit`), so the walk visits Ground in that set's order
+/// (submission order until a removal swaps a member) rather than gamemd's
+/// roughly GetYSort-sorted vector.
 fn next_object(
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
@@ -34,18 +38,22 @@ fn next_object(
         .chain(layers.members(DisplayLayer::AIR))
         .chain(layers.members(DisplayLayer::TOP))
         .copied();
+    let control = sim.control_projection();
     let eligible = |id| {
         let Some(entity) = sim.entities().get(id) else {
             return false;
         };
-        crate::app::input::entity_pick::is_local_player_selectable_object(sim, rules, entity)
-            && crate::app::input::entity_pick::selection_dynamic_prefix(
-                entity,
-                sim.entities(),
-                rules,
-                Some(sim.interner()),
-            )
-            && rules.is_some_and(|rules| sim.object_is_selectable(id, rules))
+        crate::app::input::entity_pick::is_local_player_selectable_object(
+            sim.interner(),
+            &control,
+            rules,
+            entity,
+        ) && crate::app::input::entity_pick::selection_dynamic_prefix(
+            entity,
+            sim.entities(),
+            rules,
+            Some(sim.interner()),
+        ) && rules.is_some_and(|rules| sim.object_is_selectable(id, rules))
     };
     match direction {
         ObjectDirection::Next => after_anchor(ids, anchor, eligible),
@@ -75,6 +83,10 @@ fn after_anchor(
 }
 
 pub(super) fn execute_object_navigation(state: &mut AppState, direction: ObjectDirection) {
+    // Next/Previous Object (0x00536610/0x00536A80) first call
+    // SetTogglePowerMode(0) (0x00536617/0x00536A87), then SetWaypointMode,
+    // SetRepairMode(0) and SetSellMode(0).
+    crate::app::input::power_mode::disable(&mut state.match_state);
     let placement = state.armed_building_type().is_some();
     state
         .match_state
@@ -109,7 +121,13 @@ pub(super) fn execute_object_navigation(state: &mut AppState, direction: ObjectD
         },
         super::SelectionVoicePolicy::EveryAdded,
     );
-    crate::app::input::camera::center_view_on_selection(state);
+    crate::app::input::camera::center_view_on_selection(
+        &state.platform,
+        &mut state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+    );
     state.platform.window.request_redraw();
     // No selected-action-line timer start, Scenario draw or Detach in this path.
 }
@@ -143,7 +161,8 @@ fn combatant_selection(
         clear: replace,
         ..Default::default()
     };
-    let player_owned = |owner| sim.house_controls_selection(owner);
+    let control = sim.control_projection();
+    let player_owned = |owner| control.can_select(owner);
     // Tactical6DA770 drops a lone non-player-controlled selection before
     // testing the shared mode. Deselect clears Follow but retains that mode.
     let dropped = selected.first().copied().filter(|id| {
@@ -274,7 +293,10 @@ pub(super) fn execute_combatant_selection(state: &mut AppState) {
         .type_select
         .finish_combatant_selection(outcome, result.across_map);
     crate::app::input::messages::post_type_select_feedback(state, outcome.csf_key());
-    super::apply_selection_action_line_policy(state, super::SelectionActionLinePolicy::Preserve);
+    super::apply_selection_action_line_policy(
+        &mut state.match_state,
+        super::SelectionActionLinePolicy::Preserve,
+    );
 }
 
 #[derive(Debug, Default)]
@@ -423,6 +445,7 @@ fn category_selection(
         .into_iter()
         .filter(|id| sim.entities().contains(*id))
         .collect();
+    let control = sim.control_projection();
     let visible = if !continuing && selected.is_empty() {
         screen_order
             .iter()
@@ -431,7 +454,7 @@ fn category_selection(
                 sim.entities().get(*id).is_some_and(|entity| {
                     entity.lifecycle.object_alive()
                         && entity.category() != EntityCategory::Structure
-                        && sim.house_controls_selection(entity.owner())
+                        && control.can_select(entity.owner())
                 })
             })
             .collect()
@@ -512,7 +535,10 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         super::SelectionVoicePolicy::EveryAdded,
     );
     // The native direct Select calls do not start the mouse action-line timer.
-    super::apply_selection_action_line_policy(state, super::SelectionActionLinePolicy::Preserve);
+    super::apply_selection_action_line_policy(
+        &mut state.match_state,
+        super::SelectionActionLinePolicy::Preserve,
+    );
     let selected = super::selected_stable_ids_in_order(
         state
             .match_state
@@ -529,14 +555,11 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         entity_navigation_category(sim, rules, *id, kind)
             .is_some_and(|category| category != result.category)
     });
-    let label = localized(
-        state,
-        if mixed {
-            "MSG:Mixed"
-        } else {
-            category_key(kind, result.category)
-        },
-    );
+    let label = state.csf_text(if mixed {
+        "MSG:Mixed"
+    } else {
+        category_key(kind, result.category)
+    });
     // Native731E29 sums each object's Cost_Of for its own house
     // (`0x00731E2B..0x00731E42`).
     let worth = selected
@@ -553,9 +576,9 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         selected.len(),
         worth,
         &label,
-        &localized(state, "MSG:NavEmpty"),
-        &localized(state, "MSG:NoUnitsSel"),
-        &localized(state, "MSG:UnitsWorth"),
+        &state.csf_text("MSG:NavEmpty"),
+        &state.csf_text("MSG:NoUnitsSel"),
+        &state.csf_text("MSG:UnitsWorth"),
     );
     crate::app::input::messages::post_selection_navigation_text(state, &text);
     let input = &mut state.match_state.input;
@@ -565,14 +588,6 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
     input
         .type_select
         .finish_category_navigation(kind, result.has_candidates);
-}
-
-fn localized(state: &AppState, key: &str) -> String {
-    state
-        .process_assets
-        .csf
-        .as_ref()
-        .map_or_else(|| key.to_owned(), |csf| csf.text(key).into_owned())
 }
 
 fn navigation_feedback(
@@ -603,7 +618,7 @@ fn navigation_feedback(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
 
@@ -744,10 +759,9 @@ mod tests {
             sim.advance_app_frame(
                 &[],
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                None,
                 67,
                 TickLane::Ordinary,
-                FrameEffects::empty(),
+                &mut FrameEffects::empty(),
             )
             .unwrap();
             let mut input = crate::app::input::state::MatchInputState::new(Default::default());
@@ -769,9 +783,9 @@ mod tests {
             input.type_select.across_map = true;
             input.selection_order = vec![20];
             // Deselect and its normal app reconciliation have no expiry fact.
-            sim.entities_mut_for_test()
-                .get_mut(20)
+            sim.entity_mut_for_test(20)
                 .unwrap()
+                .seldom
                 .selection
                 .set_selected_for_test(false);
             super::super::reconcile_selection_order_for_sim(&mut input, &sim, Some(&rules), &[]);
@@ -780,17 +794,16 @@ mod tests {
             if conceal {
                 assert_eq!(sim.object_conceal(20), ConcealOutcome::Concealed);
             } else {
-                sim.detach_all_pointer_expired(20, &rules, None, FrameEffects::empty());
+                sim.detach_all_pointer_expired(20, &rules, &mut FrameEffects::empty());
             }
             assert!(sim.entities().get(20).unwrap().is_object_alive());
             let frame = sim
                 .advance_app_frame(
                     &[],
                     crate::rules::ruleset::RuleSet::empty_for_test(),
-                    None,
                     67,
                     TickLane::Ordinary,
-                    FrameEffects::empty(),
+                    &mut FrameEffects::empty(),
                 )
                 .unwrap();
             assert_eq!(
@@ -852,10 +865,9 @@ mod tests {
                 .advance_app_frame(
                     &[],
                     crate::rules::ruleset::RuleSet::empty_for_test(),
-                    None,
                     67,
                     TickLane::Ordinary,
-                    FrameEffects::empty(),
+                    &mut FrameEffects::empty(),
                 )
                 .unwrap();
             assert!(

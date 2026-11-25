@@ -20,9 +20,8 @@
 //! launched bullet.
 //!
 //! A game where Ares plays replaces the stock arm (`ares_prism_forwarding`):
-//! its oracle rows run in default builds only, and the `ares_prism_*` tests
+//! its oracle rows run in a stock game only, and the `ares_prism_*` tests
 //! below cover the replacement with the same fixture.
-#![cfg_attr(feature = "ares", allow(dead_code, unused_imports))]
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -32,7 +31,6 @@ use super::*;
 use crate::map::resolved_terrain::test_flat_ground_grid;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
-#[cfg(not(feature = "ares"))]
 use crate::rules::ruleset::PrismSupportRules;
 use crate::sim::combat::TargetKind;
 use crate::sim::combat::receiver_fixture::with_building_fire_stub;
@@ -237,6 +235,7 @@ impl Fixture {
             });
             entity.mission_leaf.set_building_ready_latch(1);
             entity
+                .seldom
                 .rearm_timer
                 .set_for_test(CdTimer::started(FRAME - 100, 0));
         }
@@ -311,6 +310,7 @@ impl Fixture {
                 .as_i64()
                 .map_or(PAUSED_START_FRAME, |relative| FRAME + relative as i32);
             entity
+                .seldom
                 .rearm_timer
                 .set_for_test(CdTimer::started(start, rearm[1].as_i64().unwrap() as i32));
         }
@@ -403,8 +403,8 @@ impl Fixture {
         let rearm = &native["rearm"];
         assert_eq!(
             [
-                entity.rearm_timer.start_frame(),
-                entity.rearm_timer.duration()
+                entity.seldom.rearm_timer.start_frame(),
+                entity.seldom.rearm_timer.duration()
             ],
             [0, 1].map(|index| rearm[index].as_i64().unwrap() as i32),
             "{at} {name} rearm"
@@ -481,9 +481,8 @@ fn slot_anim(sim: &Simulation, id: u64, slot: usize) -> Option<String> {
 /// and weapon-1 range of every tower the walk measures (Sqrt_Approx and ftol,
 /// elite range when elite); and no Scenario draw.
 #[test]
-// The stock PrismType support; Ares builds replace it
+// The stock PrismType support; an Ares game replaces it
 // (`techno_ai::ares_prism_forwarding`).
-#[cfg(not(feature = "ares"))]
 fn prism_recruitment_matches_the_original() {
     let golden = golden();
     let recruit = rows(&golden, "recruit");
@@ -524,7 +523,7 @@ fn prism_recruitment_matches_the_original() {
             target,
             0,
             FireError::Ok,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
             &mut false,
         );
         assert_eq!(
@@ -672,9 +671,8 @@ fn prism_recruitment_matches_the_original() {
 /// is made real: RANGE by the target's distance, REARM by the rearm timer,
 /// CANT by a power outage.
 #[test]
-// The stock PrismType support; Ares builds replace it
+// The stock PrismType support; an Ares game replaces it
 // (`techno_ai::ares_prism_forwarding`).
-#[cfg(not(feature = "ares"))]
 fn prism_support_bonus_matches_the_original() {
     let golden = golden();
     let bonus = rows(&golden, "bonus");
@@ -698,6 +696,7 @@ fn prism_support_bonus_matches_the_original() {
             Some(3) => {
                 let entity = fixture.sim.substrate.entities.get_mut(master).unwrap();
                 entity
+                    .seldom
                     .rearm_timer
                     .set_for_test(CdTimer::started(FRAME, ROF));
             }
@@ -710,7 +709,7 @@ fn prism_support_bonus_matches_the_original() {
                 &mut fixture.sim,
                 master,
                 &fixture.rules,
-                ObjectAiCtx::default(),
+                &mut ObjectAiCtx::default(),
                 &mut false,
             )
         });
@@ -804,9 +803,8 @@ fn prism_bonus_damage_matches_the_original() {
 /// made, with no check of drain, sale or power, no request and no Scenario
 /// draw; a countdown still running only counts down.
 #[test]
-// The stock PrismType support; Ares builds replace it
+// The stock PrismType support; an Ares game replaces it
 // (`techno_ai::ares_prism_forwarding`).
-#[cfg(not(feature = "ares"))]
 fn prism_support_beam_matches_the_original() {
     let golden = golden();
     let beam = rows(&golden, "beam");
@@ -828,7 +826,7 @@ fn prism_support_beam_matches_the_original() {
             &mut fixture.sim,
             supporter,
             &fixture.rules,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
             &mut false,
         );
         assert!(fixture.sim.fire_events.is_empty(), "{name}");
@@ -872,8 +870,7 @@ fn apply_event(fixture: &mut Fixture, action: &str, building: u64) {
                     building,
                     None,
                     &fixture.rules,
-                    None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
         }
@@ -899,9 +896,8 @@ fn apply_event(fixture: &mut Fixture, action: &str, building: u64) {
 /// supporter's Guard cadence decides when a tower with its own target turns
 /// master.
 #[test]
-// The stock PrismType support; Ares builds replace it
+// The stock PrismType support; an Ares game replaces it
 // (`techno_ai::ares_prism_forwarding`).
-#[cfg(not(feature = "ares"))]
 fn prism_cadence_matches_the_original() {
     let golden = golden();
     let cadence = rows(&golden, "cadence");
@@ -952,7 +948,7 @@ fn prism_cadence_matches_the_original() {
                     &mut fixture.sim,
                     id,
                     &fixture.rules,
-                    ObjectAiCtx::default(),
+                    &mut ObjectAiCtx::default(),
                     &mut false,
                 );
                 let entity = fixture.sim.substrate.entities.get_mut(id).unwrap();
@@ -1011,7 +1007,7 @@ fn prism_cadence_matches_the_original() {
                         &mut fixture.sim,
                         id,
                         &fixture.rules,
-                        ObjectAiCtx::default(),
+                        &mut ObjectAiCtx::default(),
                         &mut false,
                     )
                 });
@@ -1061,7 +1057,6 @@ fn prism_cadence_matches_the_original() {
 /// entries is dropped, `rules::ini_parser`), so the replay gives it one key
 /// ReadGeneral does not read.
 #[test]
-#[cfg(not(feature = "ares"))]
 fn prism_general_reader_matches_the_original() {
     let golden = golden();
     let reader = rows(&golden, "reader");
@@ -1159,6 +1154,7 @@ fn ares_prism_modifier_retains_percent_across_map_layers_and_scales_one_shot() {
             .entities
             .get_mut(master)
             .unwrap()
+            .seldom
             .ares
             .ares_prism
             .set_modifier_reserve_for_test(modifier);
@@ -1190,6 +1186,7 @@ fn network(fixture: &Fixture, id: u64) -> crate::sim::world::AresPrismForwarding
         .entities
         .get(id)
         .unwrap()
+        .seldom
         .ares
         .ares_prism
         .clone()
@@ -1205,7 +1202,7 @@ fn ares_attack(fixture: &mut Fixture, id: u64) {
         target,
         0,
         FireError::Ok,
-        ObjectAiCtx::default(),
+        &mut ObjectAiCtx::default(),
         &mut false,
     );
 }
@@ -1217,7 +1214,7 @@ fn ares_visit(fixture: &mut Fixture, ids: &[u64]) {
             &mut fixture.sim,
             id,
             &fixture.rules,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
             &mut false,
         );
     }
@@ -1324,7 +1321,7 @@ fn ares_prism_master_recruits_its_whole_network_in_one_visit() {
         assert!(entity.building.pending_building_fire.pending().is_none());
         let reload = entity.ammo_reload_timer();
         assert_eq!([reload.start_frame(), reload.duration()], [FRAME, 45]);
-        assert_eq!(entity.rearm_timer.remaining(FRAME), 0);
+        assert_eq!(entity.seldom.rearm_timer.remaining(FRAME), 0);
     }
     assert!(network(&fixture, master).senders().is_empty());
     assert_eq!(
@@ -1374,7 +1371,7 @@ fn ares_prism_chains_relay_their_reserves_to_the_master() {
         .sim;
     for id in [master, link, end] {
         let entity = restored.substrate.entities.get(id).unwrap();
-        assert_eq!(entity.ares.ares_prism, network(&fixture, id));
+        assert_eq!(entity.seldom.ares.ares_prism, network(&fixture, id));
     }
     let hash = restored.state_hash();
     restored
@@ -1382,6 +1379,7 @@ fn ares_prism_chains_relay_their_reserves_to_the_master() {
         .entities
         .get_mut(end)
         .unwrap()
+        .seldom
         .ares
         .ares_prism = Default::default();
     assert_ne!(restored.state_hash(), hash);
@@ -1434,15 +1432,7 @@ fn ares_prism_break_support_and_a_sale_break_up_the_network() {
         .attack_target
         .set_for_test(Some(target));
     assert_eq!(
-        fire_error_at(
-            &fixture.sim,
-            &fixture.rules,
-            breaker,
-            Some(target),
-            0,
-            true,
-            None
-        ),
+        fire_error_at(&fixture.sim, &fixture.rules, breaker, Some(target), 0, true,),
         FireError::Ok
     );
     ares_attack(&mut fixture, breaker);
@@ -1463,7 +1453,7 @@ fn ares_prism_break_support_and_a_sale_break_up_the_network() {
         master,
         crate::sim::production::SellOrder::Player,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let entity = fixture.sim.substrate.entities.get(master).unwrap();
     assert!(entity.building.pending_building_fire.pending().is_none());

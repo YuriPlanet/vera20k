@@ -8,11 +8,10 @@
 //! qualify (`TeamScriptState::wants_members`) rests on instruction reading.
 
 use super::*;
-#[cfg(not(feature = "ares"))]
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::ai_team_creation::tests::{Draws, events, index};
 use crate::sim::ai_team_creation::tests::{dword, flag, native_draws, rows};
 use crate::sim::house_state::HouseState;
-#[cfg(not(feature = "ares"))]
 use serde_json::Value;
 
 /// HouseChooseInfantry4FEEE0 counts Foot4DA230's free objects without an HP
@@ -36,7 +35,7 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.resolve_rule_animation_lists(&rules);
@@ -46,7 +45,7 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
     let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
         &assets,
         &crate::rules::ini_parser::IniFile::from_str(""),
-        sim.session.game_mode_nonzero(),
+        sim.session.rule_policy(),
     )
     .unwrap();
     assert!(sim.install_team_ai_registry(&registry, &rules).is_empty());
@@ -84,7 +83,7 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
         },
     );
     assert_eq!(rules.warhead("SA").unwrap().inf_death, 1);
-    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], FrameEffects::default());
+    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], &mut FrameEffects::default());
     let corpse = sim.substrate.entities.get(victim).unwrap();
     assert_eq!(corpse.health.current(), 0);
     assert!(corpse.lifecycle.object_alive());
@@ -95,7 +94,7 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
         corpse.mission.effective(),
         crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard)
     );
-    assert!(corpse.base_defense_response.recruitable_a());
+    assert!(corpse.seldom.base_defense_response.recruitable_a());
     assert!(sim.team_script_vm.team_for_member(victim).is_none());
     crate::sim::ai_base_building::update_production_choices(&mut sim, &rules, owner, None);
     assert_eq!(
@@ -167,7 +166,11 @@ fn a_class_no_team_needs_still_draws_once() {
          [ScriptTypes]\n0=S\n[S]\n0=5,1\n\
          [TaskForces]\n0=F\n[F]\n0=2,E1\n",
     );
-    let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+    let registry = TeamAiIniRegistry::from_sources(
+        &aimd,
+        &IniFile::from_str(""),
+        RulePolicy::stock_multiplayer(),
+    );
     let mut sim = Simulation::with_seed(0x4FF210);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -203,7 +206,6 @@ fn a_class_no_team_needs_still_draws_once() {
 
 // Ares 100216A0 (hooks 0x4FEA60, 0x4FEEE0, 0x4FF210) draws
 // `RandomRanged(0, 99)` first (`ares_the_choice_draws_a_percent`).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn the_choosers_match_the_original() {
     for (number, row) in rows("choosers").iter().enumerate() {
@@ -276,7 +278,6 @@ fn the_choosers_match_the_original() {
 /// The executed gate (`0x004FEE59..0x004FEE89`) at the boundary draws of
 /// each `FillEarliestTeamProbability`, the stock 100 among them: the earliest
 /// team's type exactly when the native compare falls through.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn the_fill_earliest_gate_takes_the_native_draws() {
     let corpus = crate::test_fixture::json("tools/unit_draw_oracle.json");
@@ -327,7 +328,12 @@ fn the_harvester_branch_matches_the_original() {
             current_iq: dword(&row["iq"]),
             iq_harvester: dword(&row["iq_harvester"]),
             no_ore: flag(&row["no_ore"]),
-            human: house.is_controlled_by_human(dword(&row["game_mode"]) != 0),
+            human: house.is_controlled_by_human(
+                crate::sim::scenario_session::ScenarioGameMode::from_game_mode(dword(
+                    &row["game_mode"],
+                ))
+                .stock_rule_policy(None),
+            ),
             tech_level: house.tech_level(),
         };
         for ares in [false, true] {

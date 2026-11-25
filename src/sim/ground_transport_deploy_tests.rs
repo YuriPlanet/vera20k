@@ -59,6 +59,7 @@ fn supplied_fixture(rules: &RuleSet, fixture: &Value, row: &Value) -> (Simulatio
         .set_suspended_nav_com_for_test(nav(&before["suspended_nav"]));
     entity.attack_target.set_for_test(target(&before["target"]));
     entity
+        .seldom
         .suspended_attack_target
         .set_for_test(target(&before["suspended_target"]));
     entity.set_archive_target(target(&before["archive"]));
@@ -66,7 +67,7 @@ fn supplied_fixture(rules: &RuleSet, fixture: &Value, row: &Value) -> (Simulatio
         // The native loaded-admission control also supplies a head sentinel;
         // neither comparison dispatches its passenger handler or placement.
         entity
-            .passenger_role
+            .passenger_role_mut_for_test()
             .cargo_mut()
             .unwrap()
             .board_forced_chain(&[(999, 1.0)]);
@@ -84,7 +85,7 @@ fn supplied_fixture(rules: &RuleSet, fixture: &Value, row: &Value) -> (Simulatio
             }),
         ));
     }
-    sim.scenario_rng =
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(row["scenario_rng_before_hex"].as_str().unwrap());
     (sim, id)
 }
@@ -115,12 +116,12 @@ fn assert_mission_state(sim: &Simulation, id: u64, expected: &Value) {
         nav(&expected["suspended_nav"])
     );
     assert_eq!(
-        entity.suspended_attack_target.target(),
+        entity.seldom.suspended_attack_target.target(),
         target(&expected["suspended_target"])
     );
     assert_eq!(entity.archive_target(), target(&expected["archive"]));
     assert_eq!(
-        u64::from(entity.passenger_role.passenger_count()),
+        u64::from(entity.passenger_role().passenger_count()),
         expected["cargo"].as_u64().unwrap()
     );
     assert_eq!(
@@ -169,8 +170,7 @@ fn ground_transport_deploy_event_and_empty_unload_match_native_state_and_rng() {
                 &mut sim,
                 rules,
                 id,
-                None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(json!(delay), row["unload_returned_delay"]);
             assert_mission_state(&sim, id, &row["after_first_empty_unload"]);

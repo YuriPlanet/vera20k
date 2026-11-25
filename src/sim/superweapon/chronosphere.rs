@@ -181,7 +181,7 @@ pub(super) fn launch_warp(
     sw_type: InternedId,
     target: (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(source) = sim
         .super_weapons
@@ -273,7 +273,7 @@ fn warp_object(
     warp: &ChronoWarpLaunch,
     id: u64,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let in_air = |sim: &Simulation, id: u64| {
         sim.substrate.entities.get(id).is_some_and(|entity| {
@@ -375,7 +375,7 @@ fn arm_chrono_warp(
     warp: &ChronoWarpLaunch,
     id: u64,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -446,15 +446,12 @@ fn arm_chrono_warp(
             z: target.z.wrapping_add(here.z.wrapping_sub(source.z)),
         };
         // `MapClass::GetCellAt(CoordStruct) @ 0x00565730`.
-        if super::cell_grid::cell_has_bridge_flag(
+        destination.z = super::cell_grid::bridge_adjusted_z(
             sim,
             (destination.x / 256) as i16,
             (destination.y / 256) as i16,
-        ) {
-            destination.z = destination
-                .z
-                .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-        }
+            destination.z,
+        );
     }
     let Some(runtime) = sim
         .substrate
@@ -472,13 +469,12 @@ fn arm_chrono_warp(
     crate::sim::radio::broadcast_break(sim, id, rules, frame_effects);
     // `0x006CCC67`: the Super's owner, credited if the warp sinks the object.
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.drop_credit.credit_warp(warp.owner);
+        entity.seldom.drop_credit.credit_warp(warp.owner);
     }
     if let Err(error) = sim.assign_destination_represented(
         id,
         Some(NavTargetRef::cell(cx as u16, cy as u16)),
         rules,
-        overlay_registry,
         frame_effects,
     ) {
         log::debug!("chrono warp {id} destination: {error:?}");
@@ -580,7 +576,7 @@ pub(super) fn ares_launch_warp(
     sw_type: InternedId,
     target: (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     use crate::rules::superweapon_type::SuperWeaponKind;
     let Some((source_name, source_sw)) = super::ares_post_click_source(sim, rules, owner) else {
@@ -605,7 +601,7 @@ pub(super) fn ares_launch_warp(
     };
     let launch = metadata.launch();
     let targeting = metadata.targeting();
-    let chrono = launch.chronosphere().clone();
+    let chrono = launch.chronosphere();
     if launch.radar_event() {
         for (rx, ry) in [source, target] {
             sim.sound_events.emit(SimSoundEvent::RadarEvent {
@@ -617,22 +613,22 @@ pub(super) fn ares_launch_warp(
     let height = source_sw.presentation.height;
     let blasts = [
         (
-            chrono.blast_src.clone(),
+            chrono.blast_src.as_ref(),
             &rules.general.chrono_blast_anim,
             source,
         ),
         (
-            chrono.blast_dest.clone(),
+            chrono.blast_dest.as_ref(),
             &rules.general.chrono_blast_dest_anim,
             target,
         ),
     ];
     for (custom, fallback, cell) in blasts {
-        let Some(animation) = custom.unwrap_or_else(|| Some(fallback.clone())) else {
+        let Some(animation) = custom.map_or(Some(fallback.as_str()), Option::as_deref) else {
             continue;
         };
         let [x, y, z] = deck_coords(sim, cell);
-        super::spawn_super_anim(sim, rules, &animation, [x, y, z.wrapping_add(height)]);
+        super::spawn_super_anim(sim, rules, animation, [x, y, z.wrapping_add(height)]);
     }
     let range = match launch.range() {
         (width, height) if width < 0.0 && height < 0 => (3.0, 3),
@@ -649,7 +645,7 @@ pub(super) fn ares_launch_warp(
             sim,
             rules,
             &warp,
-            &chrono,
+            chrono,
             targeting,
             id,
             overlay_registry,
@@ -702,7 +698,6 @@ struct AresChronoWarp {
 ///   EmptyBunker `0x004595C0`), sends OVER_OUT to each contact, has its
 ///   passengers killed under `KillCargo` and starts its chronoshift
 ///   ([`ares_begin_building_chronoshift`]), joining `buildings`.
-#[allow(clippy::too_many_arguments)]
 fn ares_chronoport(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -711,7 +706,7 @@ fn ares_chronoport(
     targeting: crate::rules::superweapon_targeting::AresSuperWeaponTargetingState,
     id: u64,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
     buildings: &mut Vec<AresChronoWarpBuilding>,
 ) {
     use crate::rules::superweapon_targeting::TargetMask;
@@ -775,7 +770,7 @@ fn ares_chronoport(
         sim.substrate
             .entities
             .get(id)
-            .and_then(|unit| unit.radio_contacts.slot(0))
+            .and_then(|unit| unit.seldom.radio_contacts.slot(0))
             .and_then(|contact| sim.substrate.entities.get(contact))
             .and_then(|building| sim.object_type(building.type_ref(), rules))
             .is_some_and(|building| building.naval)
@@ -850,20 +845,13 @@ fn ares_chronoport(
         crate::sim::radio::broadcast_break(sim, id, rules, frame_effects);
     }
     if chrono.kill_cargo {
-        let context = crate::sim::world::UninitContext::new(rules, overlay_registry)
-            .with_effects(frame_effects);
+        let context = crate::sim::world::UninitContext::new(rules).with_effects(frame_effects);
         sim.ares_kill_cargo(id, context);
     }
     if category == EntityCategory::Structure {
-        if let Some(building) = ares_begin_building_chronoshift(
-            sim,
-            rules,
-            warp,
-            id,
-            is_vehicle,
-            overlay_registry,
-            frame_effects,
-        ) {
+        if let Some(building) =
+            ares_begin_building_chronoshift(sim, rules, warp, id, is_vehicle, frame_effects)
+        {
             buildings.push(building);
         }
         return;
@@ -937,10 +925,9 @@ fn ares_begin_building_chronoshift(
     warp: &AresChronoWarp,
     id: u64,
     is_vehicle: bool,
-    overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Option<AresChronoWarpBuilding> {
-    sim.stop_all_targeting_on_detach(id, rules, overlay_registry, frame_effects);
+    sim.stop_all_targeting_on_detach(id, rules, frame_effects);
     sim.lose_projectile_targets(id, rules);
     let entity = sim.substrate.entities.get_mut(id)?;
     entity.begin_ares_chronoshift();
@@ -974,7 +961,7 @@ pub(super) fn ares_tick_chrono_warps(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let machines = std::mem::take(&mut sim.ares_chrono_warps.machines);
     let mut kept = Vec::with_capacity(machines.len());
@@ -1010,7 +997,7 @@ fn ares_chrono_warp_update(
     rules: &RuleSet,
     machine: &mut AresChronoWarpMachine,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let passed = sim.session.binary_frame().wrapping_sub(machine.start_frame) as i32;
     if passed == 1 {
@@ -1034,10 +1021,9 @@ fn ares_chrono_warp_update(
                 .is_some_and(|entity| entity.lifecycle.object_alive())
         })
         .collect();
-    let context =
-        crate::sim::world::UninitContext::new(rules, overlay_registry).with_effects(frame_effects);
+    let mut context = crate::sim::world::UninitContext::new(rules).with_effects(frame_effects);
     for item in &buildings {
-        sim.techno_limbo_with_context(item.building, context);
+        sim.techno_limbo_with_context(item.building, context.reborrow());
         if let Some(entity) = sim.substrate.entities.get_mut(item.building) {
             entity.building_art.clear_actually_placed();
         }
@@ -1067,7 +1053,7 @@ fn ares_chrono_warp_put_back(
     item: &AresChronoWarpBuilding,
     blow_unplaceable: bool,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     use crate::sim::world::PlacementEvidence;
     let id = item.building;
@@ -1194,20 +1180,23 @@ fn ares_chrono_warp_put_back(
 /// to every contact, the warping House (`+0x42C`) and the destination setter
 /// at the destination cell (vt+0x480(cell, 1)).
 ///
-/// Unlike case 4's, this Force_Track leaves a Drive or Ship heading for its
-/// source: Force_Track (`0x004B0C40`) stores the coordinates as head and
-/// destination, nothing in the Teleport states (`0x007192F0`), their
-/// Update_Position, PostWarpValidation and Stop_Moving, Teleport's END
-/// (`0x00719EE0`) or the Foot AI tail resets the stashed locomotor, and its
-/// next Process (`0x004B0500`, Process_Movement `0x004B2630`) asks Find_Path
-/// for the source cell: the Unit drives back unless it cannot reach it.
+/// Unlike case 4's, this Force_Track leaves a Drive or Ship holding its
+/// source until Teleport's END (`0x00719EE0`) restores it: Force_Track
+/// (`0x004B0C40`, `0x006A2E50`) stores the coordinates as both HeadTo
+/// (`+0x40`, `0x004B0CFE`) and Destination (`+0x34`, `0x004B0D43`), so on
+/// its next Process (`0x004B0500` -> `0x004B2630`) `Find_Path` (`0x004D3920`
+/// -> `Run_AStar` `0x004CBBA0`) starts at `vt+0x4C` (`0x004DBDF0` ->
+/// `Head_To_Coord` `0x004AFCC0`) with `start == goal` (`AStar`
+/// `0x00429BF3..0x00429C0A` -> `NULL`), and `Find_Path`'s failure arm
+/// (`0x004D4044`) calls `Stop_Driver` (`0x004D55C0` -> `Stop_Moving`
+/// `0x004AFE00`), clearing Destination so the Unit stays at its landing.
 fn ares_arm_chrono_warp(
     sim: &mut Simulation,
     rules: &RuleSet,
     warp: &AresChronoWarp,
     id: u64,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -1230,11 +1219,7 @@ fn ares_arm_chrono_warp(
         y: here.y.wrapping_add(dy.wrapping_mul(256)),
         z: here.z,
     };
-    if super::cell_grid::cell_has_bridge_flag(sim, cx, cy) {
-        destination.z = destination
-            .z
-            .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-    }
+    destination.z = super::cell_grid::bridge_adjusted_z(sim, cx, cy, destination.z);
     sim.locomotor_mark_all_occupation_bits(id, false, rules.ares_form());
     let _ = sim.force_track(id, -1, here, rules, overlay_registry, frame_effects);
     Simulation::object_raw_receiver_at(
@@ -1274,13 +1259,12 @@ fn ares_arm_chrono_warp(
     ));
     crate::sim::radio::broadcast_break(sim, id, rules, frame_effects);
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.drop_credit.credit_warp(warp.owner);
+        entity.seldom.drop_credit.credit_warp(warp.owner);
     }
     if let Err(error) = sim.assign_destination_represented(
         id,
         Some(NavTargetRef::cell(cx as u16, cy as u16)),
         rules,
-        overlay_registry,
         frame_effects,
     ) {
         log::debug!("ares chrono warp {id} destination: {error:?}");

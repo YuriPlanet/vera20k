@@ -26,7 +26,7 @@ fn flame_rules() -> Option<RetailBattleRules> {
 /// a target that neither moves nor shoots back.
 fn flame_attack(rules: &RuleSet) -> (Simulation, u64, u64) {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0xF1A3_E000);
-    sim.fog = FogState::new(32, 32);
+    *sim.fog = FogState::new(32, 32);
     let owner = sim.interner.intern("Americans");
     sim.session.set_current_house_for_test(Some(owner));
     sim.intern_rule_type_ids(rules);
@@ -54,6 +54,7 @@ fn fire_link(sim: &Simulation, id: u64) -> Option<u64> {
         .entities
         .get(id)
         .unwrap()
+        .seldom
         .fire_particle_system
         .system()
 }
@@ -167,14 +168,15 @@ fn a_move_order_releases_the_fire_system_link() {
 fn a_destination_releases_the_fire_link_and_a_null_one_keeps_it() {
     use crate::sim::mission::concrete_effects::represented_assign_destination;
     let mut tank = crate::sim::game_entity::GameEntity::test_default(1, "MTNK", "Americans", 4, 4);
-    tank.fire_particle_system.bind(Some(7));
+    let note = tank.note_names();
+    tank.seldom.fire_particle_system.bind(Some(7), note);
     represented_assign_destination(&mut tank, None);
-    assert_eq!(tank.fire_particle_system.system(), Some(7));
+    assert_eq!(tank.seldom.fire_particle_system.system(), Some(7));
     represented_assign_destination(
         &mut tank,
         Some(crate::sim::components::NavTargetRef::cell(5, 5)),
     );
-    assert_eq!(tank.fire_particle_system.system(), None);
+    assert_eq!(tank.seldom.fire_particle_system.system(), None);
 }
 
 /// AI_Fire sweeps toward the owner's FLH while its Target pointer (`+0x2B4`)
@@ -198,7 +200,8 @@ fn a_dying_target_stops_the_fire_sweep() {
         .unwrap();
     let frame = sim.session.binary_frame();
     let tank = sim.substrate.entities.get_mut(owner).unwrap();
-    tank.attack_target.set(Some(TargetKind::Entity(target)));
+    tank.attack_target
+        .set_for_test(Some(TargetKind::Entity(target)));
     tank.body_facing.set(0x8000, frame);
     assert!(tank.body_facing.is_rotating(frame));
     let launch = glam::IVec3::new(2048, 2048, 0);
@@ -218,7 +221,7 @@ fn a_dying_target_stops_the_fire_sweep() {
             sim,
             rules,
             system,
-            crate::sim::world::UninitContext::with_rules(rules),
+            crate::sim::world::UninitContext::new(rules),
         ));
         sim.particle_systems().get(system).unwrap().coords()
     };

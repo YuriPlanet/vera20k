@@ -296,6 +296,12 @@ pub struct WeaponType {
     /// simulated child radiation beam takes the firing House's laser color.
     #[cfg(feature = "phobos")]
     pub phobos_beam_is_house_color: bool,
+    /// Kratos `NoMoneyNoTalk` (`WeaponTypeExt::TypeData`): the shot needs this
+    /// much available money (`can_fire` in `sim::combat::fire_error`); a
+    /// negative value refuses while the house holds more than its magnitude.
+    pub no_money_no_talk: i32,
+    /// Kratos `DontNeedMoney`: this weapon ignores `NoMoneyNoTalk`.
+    pub dont_need_money: bool,
 }
 
 impl WeaponType {
@@ -635,6 +641,12 @@ impl WeaponType {
                 )
             }))
             .filter(|range| range.values > 0),
+            no_money_no_talk: crate::rules::kratos_switch::kratos_read(|| {
+                section.read_int("NoMoneyNoTalk", 0)
+            }),
+            dont_need_money: crate::rules::kratos_switch::kratos_read(|| {
+                section.read_bool("DontNeedMoney", false)
+            }),
         }
     }
 }
@@ -660,7 +672,7 @@ fn sound_list(section: &IniSection, key: &str) -> Vec<String> {
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     #[test]
     fn ares_projectile_range_reads_cells_as_leptons_and_apply_damage_decides_zeroing() {
@@ -686,23 +698,25 @@ mod tests {
     fn weapon_ammo_cost_uses_ares_retained_integer_reader_only_when_enabled() {
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
         use crate::rules::ruleset::RuleSet;
-
-        let mut layers = RulesLayerStack::new(IniFile::from_str(
-            "[InfantryTypes]\n0=PROBE\n[PROBE]\nPrimary=PAIR\nSecondary=FREE\n[PAIR]\nAmmo=2\n[FREE]\nAmmo=0\n",
-        ));
-        layers.push(
-            RulesLayerKind::Scenario,
-            IniFile::from_str("[PAIR]\nAmmo=invalid\n"),
-        );
-        let rules = RuleSet::from_rules_layers(&layers).unwrap();
-        assert_eq!(
-            rules.weapon("PAIR").unwrap().ammo_cost(),
-            if cfg!(feature = "ares") { 2 } else { 1 }
-        );
-        assert_eq!(
-            rules.weapon("FREE").unwrap().ammo_cost(),
-            if cfg!(feature = "ares") { 0 } else { 1 }
-        );
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let mut layers = RulesLayerStack::new(IniFile::from_str(
+                "[InfantryTypes]\n0=PROBE\n[PROBE]\nPrimary=PAIR\nSecondary=FREE\n[PAIR]\nAmmo=2\n[FREE]\nAmmo=0\n",
+            ));
+            layers.push(
+                RulesLayerKind::Scenario,
+                IniFile::from_str("[PAIR]\nAmmo=invalid\n"),
+            );
+            let rules = RuleSet::from_rules_layers(&layers).unwrap();
+            assert_eq!(
+                rules.weapon("PAIR").unwrap().ammo_cost(),
+                if ares_way { 2 } else { 1 }
+            );
+            assert_eq!(
+                rules.weapon("FREE").unwrap().ammo_cost(),
+                if ares_way { 0 } else { 1 }
+            );
+        }
     }
 
     /// Retail `RevealOnFire=` through the production reader: the constructor's

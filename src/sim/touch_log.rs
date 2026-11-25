@@ -3,15 +3,17 @@
 //!
 //! A store that routes every `&mut` to its objects through itself notes each
 //! hand-out, so a product derived from those objects (the movement pass's
-//! blocker plane, the kept Ground display sort keys, the pointer-expiry
-//! listener index) re-derives only what was noted instead of walking the
-//! world. A log records the hand-out, not a
+//! blocker plane, the pointer-expiry listener index) re-derives only what was
+//! noted instead of walking the world. A log records the hand-out, not a
 //! change, so it over-reports, which is harmless. Transient: never saved,
 //! never hashed, and no simulation result reads it.
 //!
 //! A store may also keep a narrower log of the same kind, noted only where
 //! one kind of fact is written: the entity and anim stores' look logs, which
-//! the presentation's atlas check reads (`Simulation::take_looks`).
+//! the presentation's atlas check reads (`Simulation::take_looks`). A reader
+//! whose product reads only some objects may narrow its own log to them
+//! (`TouchLogs::set_narrow`): the blocker plane, while only buildings are its
+//! sources.
 
 /// What a reader takes from a log.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,6 +42,9 @@ struct TouchLog {
     /// Set when ids are not enough: a fresh, cloned or restored store, an
     /// all-object mutable walk, or an overflowed log.
     all: bool,
+    /// Set by a reader that derives nothing from the objects its store calls
+    /// broad ([`TouchLogs::note_kind`]): their hand-outs are not noted.
+    narrow: bool,
 }
 
 impl TouchLog {
@@ -49,12 +54,14 @@ impl TouchLog {
         Self {
             ids: Vec::new(),
             all: true,
+            narrow: false,
         }
     }
 
     /// Note that `id` was handed out mutably; `stored` is the store's size.
-    fn note(&mut self, id: u64, stored: usize) {
-        if self.all || self.ids.last() == Some(&id) {
+    /// A broad id is not noted in a narrow log.
+    fn note(&mut self, id: u64, broad: bool, stored: usize) {
+        if self.all || (broad && self.narrow) || self.ids.last() == Some(&id) {
             return;
         }
         // Nobody is taking the log (nothing moving for a long stretch): stop
@@ -79,6 +86,7 @@ impl TouchLog {
             Self {
                 ids: Vec::new(),
                 all: false,
+                narrow: self.narrow,
             },
         );
         if log.all {
@@ -115,13 +123,29 @@ impl<const N: usize> TouchLogs<N> {
 
     /// Note that `id` was handed out mutably; `stored` is the store's size.
     pub(crate) fn note(&mut self, id: u64, stored: usize) {
+        self.note_kind(id, false, stored);
+    }
+
+    /// [`Self::note`] where the store knows whether `id` is `broad`: an
+    /// object a narrow log's reader derives nothing from
+    /// ([`Self::set_narrow`]), so that log leaves it out. The entity store
+    /// calls every object but a building broad.
+    pub(crate) fn note_kind(&mut self, id: u64, broad: bool, stored: usize) {
         #[cfg(any(test, feature = "test-support"))]
         {
             self.hand_outs += 1;
         }
         for log in &mut self.logs {
-            log.note(id, stored);
+            log.note(id, broad, stored);
         }
+    }
+
+    /// Whether reader `reader`'s log leaves out broad ids from now on. Only
+    /// a reader whose product reads no broad object may narrow its log, and
+    /// it must widen it before deriving from one again: the ids noted while
+    /// narrow name no broad object.
+    pub(crate) fn set_narrow(&mut self, reader: usize, narrow: bool) {
+        self.logs[reader].narrow = narrow;
     }
 
     /// Note that every object may have changed.

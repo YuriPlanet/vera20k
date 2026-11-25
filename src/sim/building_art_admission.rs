@@ -28,7 +28,7 @@ impl Simulation {
         // Ares BuildingClass_DisableThings10016D00 (hook4524A3) updates a
         // sensor array at DisableStuff452480's head.
         if rules.ares_form() && !enabled {
-            self.update_ares_sensor_array(id, rules, None);
+            self.update_ares_sensor_array(id, rules, Some(rules.overlay_registry()));
         }
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
@@ -166,7 +166,7 @@ impl Simulation {
         // UpdateAnimation450B72..450B7F selects the slot from true Cargo
         // total Size, independently of the garrison vector.
         let occupied = entity
-            .passenger_role
+            .passenger_role()
             .cargo()
             .is_some_and(|cargo| cargo.total_size() > 0);
         let (remove, keep) = if occupied { (3, 4) } else { (4, 3) };
@@ -189,13 +189,13 @@ impl Simulation {
                 object.strength,
                 rules.general.condition_yellow,
             );
-            let garrisoned = entity.passenger_role.occupants().count() > 0;
+            let garrisoned = entity.passenger_role().occupants().count() > 0;
             self.set_building_anim_slot(id, keep, damaged, garrisoned, 0, rules);
         }
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
     use crate::map::entities::{EntityCategory, MapEntity};
@@ -287,7 +287,7 @@ mod tests {
             old_owner,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(
             !sim.entities()
@@ -303,7 +303,7 @@ mod tests {
             owner,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(
             sim.entities()
@@ -319,7 +319,7 @@ mod tests {
             tick(&mut sim, &rules);
         }
         assert_ne!(sim.anim(anim).unwrap().runtime().current_frame, frame);
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "", 0);
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .unwrap()
@@ -378,12 +378,14 @@ mod tests {
             .entities
             .get_mut(passenger)
             .unwrap()
-            .passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(id, false);
+            .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+                id, false,
+            ));
         sim.substrate
             .entities
             .get_mut(id)
             .unwrap()
-            .passenger_role
+            .passenger_role_mut_for_test()
             .cargo_mut()
             .unwrap()
             .board_forced_chain(&[(passenger, 1.0)]);
@@ -406,7 +408,7 @@ mod tests {
             sim.interner.resolve(sim.anim(damaged).unwrap().type_id()),
             "MD"
         );
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "", 0);
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .unwrap()
@@ -423,7 +425,7 @@ mod tests {
             .entities
             .get_mut(id)
             .unwrap()
-            .passenger_role
+            .passenger_role_mut_for_test()
             .cargo_mut()
             .unwrap();
         cargo.clear_contents();

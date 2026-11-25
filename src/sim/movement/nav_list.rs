@@ -54,19 +54,21 @@ impl Simulation {
         target: NavTargetRef,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
         };
         let names_self = TargetKind::from(target) == TargetKind::Entity(id);
-        entity.navigation.queue_nav_list(target, names_self);
+        let note = entity.note_names();
+        entity.navigation.queue_nav_list(target, names_self, note);
         if entity.navigation.nav_com().is_some()
             || entity.mission.effective().known() != Some(MissionType::Guard)
         {
             return;
         }
         let factory_contact = entity
+            .seldom
             .radio_contacts
             .slot(0)
             .is_some_and(|contact| self.is_weapons_factory(contact, rules));
@@ -82,8 +84,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -94,7 +95,7 @@ impl Simulation {
         let Some(&head) = entity.navigation.nav_list().first() else {
             return;
         };
-        self.send_to_navigation_head(id, head, rules, registry, effects);
+        self.send_to_navigation_head(id, head, rules, effects);
     }
 
     /// `FootClass::Mission_Area_Guard`'s list head (`0x004D6B23..0x004D6B8D`),
@@ -107,8 +108,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -116,7 +116,7 @@ impl Simulation {
         let computer = self
             .houses
             .get(&entity.owner())
-            .is_some_and(|house| !house.is_controlled_by_human(self.session.game_mode_nonzero()));
+            .is_some_and(|house| !house.is_controlled_by_human(self.session.rule_policy()));
         if !computer || entity.navigation.nav_com().is_some() {
             return;
         }
@@ -126,7 +126,7 @@ impl Simulation {
         if entity.archive_target() != Some(TargetKind::from(head)) {
             return;
         }
-        self.send_to_navigation_head(id, head, rules, registry, effects);
+        self.send_to_navigation_head(id, head, rules, effects);
     }
 
     /// The send both consumers make: vt+0x480(head, 1) (`0x004DA062`,
@@ -139,20 +139,18 @@ impl Simulation {
         id: u64,
         head: NavTargetRef,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
-        if let Err(cause) =
-            self.assign_destination_represented(id, Some(head), rules, registry, effects)
-        {
+        if let Err(cause) = self.assign_destination_represented(id, Some(head), rules, effects) {
             log::debug!("Foot {id} navigation list head: {cause}");
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.navigation.rotate_nav_list(head);
+            let note = entity.note_names();
+            entity.navigation.rotate_nav_list(head, note);
         }
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "nav_list_tests.rs"]
 mod tests;

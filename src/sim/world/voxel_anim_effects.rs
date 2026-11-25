@@ -3,14 +3,15 @@
 //!
 //! The object stays registered during constructors and damage callbacks.
 //! Bounce owns physics; Object.Location advances only at the flight tail.
-//! Remaining native paths: StartSound749F43 maintenance, Trailer74A70E's
-//! distinct height conversion and AttachedSystem construction. No retail
-//! [VoxelAnims] type authors StartSound, TrailerAnim or AttachedSystem;
-//! authored types which do still miss those effects.
+//! Remaining native paths: `StartSound=`, which the constructor plays into
+//! the anim's sound handle (`0x00749838`, +0x114) and the AI keeps at the
+//! anim's position (`0x00749F43`), and Trailer74A70E's distinct height
+//! conversion. No retail [VoxelAnims] type authors StartSound or
+//! TrailerAnim; authored types which do still miss those effects.
 
 use glam::IVec3;
 
-use super::{FrameEffects, Simulation, UninitContext};
+use super::{FrameEffects, SimSoundEvent, Simulation, UninitContext};
 use crate::rules::ruleset::RuleSet;
 use crate::rules::voxel_anim_type::VoxelAnimTypeId;
 use crate::sim::anim_class::AnimWorldCoord;
@@ -106,6 +107,7 @@ impl Simulation {
             IVec3::new(x, y, z),
             true,
             &mut Vec::new(),
+            rules,
         ) {
             log::warn!("trigger voxel anim {type_index} left the supported launch domain: {error}");
         }
@@ -119,7 +121,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, RuntimeOverlayError> {
         let Some(debris) = self.substrate.voxel_anims.get_mut(id) else {
             return Ok(false);
@@ -129,8 +131,7 @@ impl Simulation {
         }
         let step = debris.begin_ai_visit();
         let type_id = debris.type_id();
-        let context =
-            UninitContext::new(rules, Some(rules.overlay_registry())).with_effects(effects);
+        let mut context = UninitContext::new(rules).with_effects(effects);
         match step {
             VoxelAnimAiStep::Delete => {
                 self.uninit_with_context(id, context);
@@ -140,7 +141,7 @@ impl Simulation {
                 // Native expiry always reaches UnInit (`0x0074A700`). Ore
                 // VERA cannot place is the expiry's last step: log it, keep
                 // the area damage's bridge notice and retire the piece.
-                let changed = self.voxel_anim_expiry(id, rules, effects);
+                let changed = self.voxel_anim_expiry(id, rules, context.effects());
                 self.uninit_with_context(id, context);
                 return Ok(changed);
             }
@@ -200,6 +201,25 @@ impl Simulation {
                     if let Some(name) = kind.bounce_anim.as_deref() {
                         self.spawn_named_anim(rules, name, anim_coord(old_location), 0, 0x600, 0);
                     }
+                    // Tiberian Sun's BounceSound= at the same Location, with
+                    // or without a BounceAnim=: Firestorm 2.0 VoxelAnimClass
+                    // AI 0x0065EC59..0x0065EC86. gamemd has no such sound.
+                    if let Some(sound) = kind.bounce_sound.as_deref() {
+                        self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
+                            rules.sound_name(sound),
+                            anim_coord(old_location),
+                        ));
+                    }
+                    // RESIDUAL: native walks the cell's objects within
+                    // DamageRadius (X+Y distance) with no `Warhead=` too,
+                    // handing ReceiveDamage the type's own Damage and a null
+                    // warhead (`0x0074A884..0x0074A92E`); VERA skips the walk.
+                    // Every retail VoxelAnim with `Damage=` names a
+                    // `Warhead=`, but retail TIRE sets neither (Damage 0,
+                    // DamageRadius 0): a bounce on an object's exact XY
+                    // reaches TechnoClass::ReceiveDamage, which raises the
+                    // type's Damage to 1 (`0x00701900`), and a building there
+                    // loses 1 HP. It needs an exact-lepton hit.
                     if let Some(name) = kind.warhead.as_deref() {
                         let warhead = self.interner.intern(name);
                         // 1005D640: a negative DamageRadius or a Damage of
@@ -236,20 +256,19 @@ impl Simulation {
     /// Natural Voxel expiry749FA2..74A6FC. The land/deck query reads the
     /// retained Location; the dry Anim, area, light, children and ore read
     /// Bounce coords. A water landing below the deck ends at its splash.
-    fn voxel_anim_expiry(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) -> bool {
+    fn voxel_anim_expiry(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> bool {
         let debris = self.substrate.voxel_anims.get(id).unwrap();
         let type_id = debris.type_id();
         let location = debris.world_coord();
         let impact = debris.bounce().position_leptons();
         let kind = rules.voxel_anim_type(type_id);
         let water = self.bounce_cell_is_water(location, rules);
-        let ground = crate::sim::projectile::projectile_ground_z(
-            self.resolved_terrain.as_ref(),
-            &self.effective_shared_cell_dummy(),
-            ProjectileCoord::new(location.x, location.y, location.z),
-        );
-        let above =
-            location.z >= ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+        let above = location.z >= self.bounce_landing_deck_z(location);
         if water && !above {
             if kind.is_meteor {
                 //74A035..099: the last SplashList entry at Location+5.
@@ -292,6 +311,15 @@ impl Simulation {
             return false;
         }
         let changed = self.voxel_anim_expire_damage(type_id, impact, rules, effects);
+        // Tiberian Sun's ExpireSound= at the retained Location on every dry
+        // expiry, with or without an ExpireAnim=: Firestorm 2.0 VoxelAnimClass
+        // AI 0x0065E482..0x0065E4AF. gamemd has no such sound.
+        if let Some(sound) = kind.expire_sound.as_deref() {
+            self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
+                rules.sound_name(sound),
+                anim_coord(location),
+            ));
+        }
         let mut ore = Ok(());
         if kind.is_meteor {
             //74A288..301: two RandomRanged(0, SpawnCount) draws, then that
@@ -314,12 +342,18 @@ impl Simulation {
                             impact,
                             true,
                             &mut Vec::new(),
+                            rules,
                         ) {
                             log::warn!("meteor child {child} left the launch domain: {error}");
                             break;
                         }
                     }
                 }
+            }
+            // Firestorm's meteor craters (Firestorm 2.0 0x65E58D), VERA's
+            // terrain deformation.
+            if !above {
+                self.dig_meteor_craters(impact, rules, effects);
             }
             //74A303..572: ore in the eight neighbours of the impact cell,
             // AdjacentCell89F688 order, never the impact cell itself; each
@@ -352,7 +386,7 @@ impl Simulation {
         type_id: VoxelAnimTypeId,
         impact: IVec3,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let kind = rules.voxel_anim_type(type_id);
         let Some(expire) = kind.expire_anim.as_deref() else {
@@ -401,7 +435,7 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         cells: &[(u16, u16)],
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), RuntimeOverlayError> {
         use crate::sim::tiberium::{NewTiberiumAdmission, TiberiumPlacementObjectContext};
 
@@ -464,7 +498,7 @@ impl Simulation {
         source: BounceContactDamage,
         warhead_ref: InternedId,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(cell) = Self::map_coord_cell(&self.resolved_terrain, position.x, position.y)
         else {

@@ -88,7 +88,7 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
             gravity: kind.gravity(),
         }),
         rules.general.gravity,
-        launch::fireat_launch_distance(origin, target),
+        launch::fireat_launch_distance(origin, target, false),
     );
     assert_eq!(
         i64::from(launch_speed),
@@ -270,17 +270,17 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
         terrain.shared_cell_dummy().stamp_coord(123, -44);
         let state_before = sim.state_hash();
         let dummy_before = terrain.shared_cell_dummy().snapshot();
-        let (ground, structural) =
+        let (ground, deck) =
             floor_probe(terrain, projectile.position().x, projectile.position().y).unwrap();
         assert_eq!(
-            structural,
+            deck.is_some(),
             flags & 0x100 != 0,
             "tick {tick} live structural flag"
         );
         let actual = geometry(
             projectile.position(),
             ground,
-            structural,
+            deck,
             projectile.on_bridge(),
             kind.shadow,
         );
@@ -324,7 +324,7 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
                 "tick {tick} draw Z-adjust"
             );
             assert_eq!(
-                u64::from(projectile_shp_frame(projectile, kind, 0)),
+                u64::from(projectile_shp_frame(projectile, kind, 0, rules.ares_form())),
                 draw["frame"].as_u64().unwrap()
             );
         }
@@ -410,7 +410,12 @@ fn original_ifv_dragon_frame_getter_matches_retained_flights_and_all_directions(
             bits(&row["velocity"]["bits"]).map(NativeF64Bits::from_bits),
         ));
         let before = sim.state_hash();
-        let frame = projectile_shp_frame(sim.projectiles().get(id).unwrap(), kind, 0);
+        let frame = projectile_shp_frame(
+            sim.projectiles().get(id).unwrap(),
+            kind,
+            0,
+            rules.ares_form(),
+        );
         assert_eq!(
             u64::from(frame),
             row["native_frame"].as_u64().unwrap(),

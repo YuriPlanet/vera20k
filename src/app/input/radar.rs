@@ -74,6 +74,9 @@ pub(crate) enum RadarAction {
     /// Ares: the armed superweapon's `Cursor` or `NoCursor` (hook `0x653B3A`),
     /// which launches only where it may fire.
     AresSuperWeapon { cursor: i32, launch: bool },
+    /// VERA minimap beacons ([`with_minimap_beacon`]): the tactical
+    /// release's PlaceBeacon (0x3C), which gamemd's radar never answers.
+    PlaceBeacon,
 }
 
 impl RadarAction {
@@ -91,21 +94,24 @@ impl RadarAction {
             Kind::Demolish => Self::Sabotage,
             Kind::GuardArea => Self::GuardArea,
             // Action0 and AttackSupport (0x3B), Self (4), Select (7),
-            // ToggleSelect (8), Grind (0xB), Tote (0x11), Damage (0x1C), GRepair (0x1D),
-            // NoDeploy (0x1E), NoEnter (0x1F), NoGRepair (0x20), IvanBomb
-            // (0x35), NoIvanBomb (0x36), Detonate (0x37), DisarmBomb (0x39),
-            // Demolish (0x40) and Airstrike (0x47).
+            // ToggleSelect (8), Grind (0xB), Tote (0x11), Heal (0x1B),
+            // Damage (0x1C), GRepair (0x1D), NoDeploy (0x1E), NoEnter
+            // (0x1F), NoGRepair (0x20), IvanBomb (0x35), NoIvanBomb (0x36),
+            // Detonate (0x37), DisarmBomb (0x39), Demolish (0x40) and
+            // Airstrike (0x47).
             Kind::Default
             | Kind::Deploy
             | Kind::Select
             | Kind::FriendlyUnit
             | Kind::FriendlyStructure
             | Kind::Grind
+            | Kind::EnterTunnel
             | Kind::EngineerDamage
             | Kind::RepairAction(_)
             | Kind::NoDeploy
             | Kind::NoEnter
             | Kind::Tote
+            | Kind::Heal
             | Kind::IvanBomb
             | Kind::NoIvanBomb
             | Kind::DisarmBomb
@@ -122,6 +128,7 @@ impl RadarAction {
             | Kind::Minimap(_)
             | Kind::RepairMode(_)
             | Kind::SellMode(_)
+            | Kind::TogglePower(_)
             | Kind::PlaceBeacon
             | Kind::SuperWeaponTarget(_)
             | Kind::AresAction(_)
@@ -167,6 +174,8 @@ impl RadarAction {
             Self::AresSuperWeapon { cursor, .. } => {
                 crate::app::input::ares_cursor::cursor_id(cursor, true)
             }
+            // Row 78 has no mini set of its own; VERA draws the main one.
+            Self::PlaceBeacon => CursorId::Beacon,
         }
     }
 }
@@ -277,11 +286,19 @@ pub(crate) fn action(
         Armed::Kept(super_weapon) => Some(RadarAction::SuperWeapon(super_weapon)),
         Armed::Dropped => None,
         Armed::Unlisted if query.selected.is_empty() => None,
-        Armed::Unlisted => query.selection_action(cell, object).and_then(|kind| {
-            // Ares RadarClass_GetMouseAction_AllowMinimap 100583F0 (hook
-            // 0x653CA6).
-            crate::app::input::ares_cursor::radar_action(query, kind, RadarAction::kept(kind))
-        }),
+        Armed::Unlisted => {
+            let (kind, overrides) = query.selection_action(cell, object);
+            kind.and_then(|kind| {
+                // Ares RadarClass_GetMouseAction_AllowMinimap 100583F0 (hook
+                // 0x653CA6).
+                crate::app::input::ares_cursor::radar_action(
+                    query,
+                    kind,
+                    &overrides,
+                    RadarAction::kept(kind),
+                )
+            })
+        }
     };
     // Planning Mode (`0x00637AA0`) wants every selected object to take
     // waypoints (`0x00639DA0`).
@@ -294,6 +311,34 @@ pub(crate) fn action(
         return None;
     }
     action
+}
+
+/// VERA minimap beacons (`[VERA] MinimapBeacons=`, `docs/minimap-beacons.md`).
+/// With nothing selected and no superweapon armed, gamemd's radar answers no
+/// action (`0x00653C6A` asks only the selection), so a press in Place Beacon
+/// mode just recentres the view. With the option on, that click answers the
+/// beacon action the tactical release places (`0x006929AF`, `0x004AC033`).
+/// Any action gamemd's radar does answer keeps priority.
+pub(crate) fn with_minimap_beacon(
+    native: Option<RadarAction>,
+    enabled: bool,
+    beacon_mode: bool,
+    nothing_selected: bool,
+    super_weapon_armed: bool,
+) -> Option<RadarAction> {
+    native.or(
+        (enabled && beacon_mode && nothing_selected && !super_weapon_armed)
+            .then_some(RadarAction::PlaceBeacon),
+    )
+}
+
+/// Whether the radar pixel under the cursor answers the beacon action
+/// ([`with_minimap_beacon`]), which VERA's right-click scheme otherwise
+/// leaves the left press to the camera for.
+pub(crate) fn minimap_beacon_armed(state: &AppState) -> bool {
+    state.persistence.options_profile.minimap_beacons
+        && crate::app::input::beacon::mode_active(&state.match_state.match_presentation)
+        && hover(state).is_some_and(|hover| hover.action == Some(RadarAction::PlaceBeacon))
 }
 
 /// The radar action for the pixel under the cursor, as [`begin_context_press`],
@@ -318,7 +363,7 @@ fn hover(state: &AppState) -> Option<Hover> {
         return None;
     }
     let sim = &state.match_state.sim_runtime.runtime()?.simulation;
-    let owner = crate::app::input::commands::preferred_local_owner_name(state)?;
+    let owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state)?;
     let object = target
         .tracker_hit
         .and_then(|id| crate::app::input::entity_pick::hover_object_by_id(sim, id, &owner));
@@ -328,14 +373,29 @@ fn hover(state: &AppState) -> Option<Hover> {
         &state.match_state.input.selection_order,
         state.match_state.input.selection_order_pending,
     );
+    let selected = crate::app::input::context_order::projected_order_selection(
+        sim,
+        state.rules(),
+        &selected,
+        object
+            .and_then(crate::app::input::entity_pick::HoverObject::techno)
+            .map(|target| target.stable_id),
+    );
     // The Cell's What_Action without mouse-over (`0x00653C9A`).
-    let query = ActionQuery::new(state, sim, &selected, false);
+    let query = ActionQuery::new(&state.frontend, &state.match_state, sim, &selected, false);
     let armed = state
         .armed_super_weapon_type()
         .and_then(|section| state.rules()?.super_weapon_index(section));
+    let action = with_minimap_beacon(
+        action(&query, armed, target.cell, object),
+        state.persistence.options_profile.minimap_beacons,
+        crate::app::input::beacon::mode_active(&state.match_state.match_presentation),
+        selected.is_empty(),
+        state.armed_super_weapon_type().is_some(),
+    );
     Some(Hover {
         target,
-        action: action(&query, armed, target.cell, object),
+        action,
         shrouded: query.cell_shrouded(target.cell),
         lead_moves_to_shroud: query.lead_moves_to_shroud(),
     })
@@ -365,7 +425,7 @@ pub(crate) fn cursor(state: &AppState) -> Option<RadarCursor> {
     }
     Some(written_cursor(
         state.match_state.input.tactical_mouse.left_held(),
-        sidebar::minimap_shown(state),
+        sidebar::minimap_shown(&state.match_state.match_presentation),
         sidebar::is_cursor_over_minimap(state),
         || {
             hover(state).map(|hover| {
@@ -455,6 +515,7 @@ pub(crate) fn finish_order_press(state: &mut AppState, button: MouseButton) {
         LeftUp::Radar {
             target,
             super_weapon,
+            beacon: action == RadarAction::PlaceBeacon,
         },
     );
 }
@@ -476,8 +537,10 @@ fn centre_view_on_pick(state: &mut AppState) {
         return;
     }
     crate::app::presentation::sidebar_render::update_camera_from_minimap_cursor(state);
+    // A complete redraw, and the Z seed back to DEFAULT_Z (`0x00653EA5..0x00653EBA`).
+    state.renderer.native_z_seed.reset();
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "radar_tests.rs"]
 mod tests;

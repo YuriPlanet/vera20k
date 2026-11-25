@@ -61,7 +61,7 @@ fn award_kill_experience(
     };
     // Branch 1: a passenger firing from an OpenTopped transport pays its
     // transporter (the `+0x82`/`+0x11C` pair).
-    let open_transporter = killer.passenger_role.open_transport_id();
+    let open_transporter = killer.passenger_role().open_transport_id();
     let recipient = if let Some(transporter) = open_transporter.and_then(trainable_cost) {
         Some(transporter)
     } else if killer_type.trainable {
@@ -69,7 +69,11 @@ fn award_kill_experience(
         Some((killer_id, cost_of(killer_type)))
     } else if killer_type.missile_spawn {
         // Branch 3: a spawned missile pays its launcher.
-        killer.spawn_owner_id.owner().and_then(trainable_cost)
+        killer
+            .seldom
+            .spawn_owner_id
+            .owner()
+            .and_then(trainable_cost)
     } else {
         // Branch 4: an occupied building pays the occupant at its fire index.
         combat_weapon::firing_occupant_id(killer, killer_type).and_then(|occupant| {
@@ -172,7 +176,7 @@ fn award_ares_kill_experience(
     let killer_ext = killer_type.ares_veterancy();
     let killer_house = killer.owner();
     let mut promote_now = false;
-    let recipient = if let Some(transporter_id) = killer.passenger_role.open_transport_id() {
+    let recipient = if let Some(transporter_id) = killer.passenger_role().open_transport_id() {
         let transporter = entities.get(transporter_id)?;
         let transporter_type = interner.object_type(transporter.type_ref(), rules)?;
         let transporter_ext = transporter_type.ares_veterancy();
@@ -194,7 +198,7 @@ fn award_ares_kill_experience(
         }
     } else if killer_type.gunner {
         let gunner = killer
-            .passenger_role
+            .passenger_role()
             .cargo()
             .and_then(|cargo| cargo.passengers().first().copied());
         if killer_type.trainable
@@ -217,6 +221,7 @@ fn award_ares_kill_experience(
         Some(killer_id)
     } else if killer_type.missile_spawn {
         killer
+            .seldom
             .spawn_owner_id
             .owner()
             .filter(|&owner| trainable(entities, owner))
@@ -237,7 +242,7 @@ fn award_ares_kill_experience(
     let mut spawn = None;
     let mut spawn_factor = NativeF64Bits::ONE;
     let mut owner_factor = NativeF64Bits::ONE;
-    if let Some(spawner) = entities.get(recipient)?.spawn_owner_id.owner()
+    if let Some(spawner) = entities.get(recipient)?.seldom.spawn_owner_id.owner()
         && let Some(spawner_type) = techno_type(entities, interner, rules, spawner)
         && !spawner_type.missile_spawn
         && spawner_type.trainable
@@ -277,7 +282,7 @@ fn award_ares_kill_experience(
         .map(crate::sim::game_entity::GameEntity::owner);
     if let Some(controller) = entities
         .get(recipient)
-        .and_then(|entity| entity.mind_control.controller())
+        .and_then(|entity| entity.seldom.mind_control.controller())
         && let Some(controller_owner) = entities
             .get(controller)
             .map(crate::sim::game_entity::GameEntity::owner)
@@ -378,7 +383,7 @@ fn record_the_kill(
     // Stock sets
     // it on `SLAV`, `V3ROCKET`, `DMISL` and `CMISL`: without it every missile
     // shot down would promote its interceptor.
-    if matches!(source, KillSource::Techno(_)) && victim.tracking_facts.dont_score() {
+    if matches!(source, KillSource::Techno(_)) && victim.tracking_facts().dont_score() {
         return None;
     }
     if rules.ares()
@@ -447,7 +452,7 @@ fn record_the_kill(
     };
     // 702FF0 awards experience before 703003..7031DC book the House fields.
     if let Some(victim) = entities.get_mut(victim_id) {
-        let count_killer = !victim.tracking_facts.dont_score();
+        let count_killer = !victim.tracking_facts().dont_score();
         record_kill_credit(
             victim,
             houses,
@@ -473,7 +478,7 @@ impl crate::sim::world::Simulation {
         victim_id: u64,
         source: KillSource,
         callback: KillCallback,
-        context: crate::sim::world::UninitContext<'_>,
+        mut context: crate::sim::world::UninitContext<'_>,
     ) {
         let rules = context.rules();
         if matches!(source, KillSource::Techno(_))
@@ -495,7 +500,7 @@ impl crate::sim::world::Simulation {
                 .substrate
                 .entities
                 .get(victim_id)
-                .is_some_and(|victim| victim.capture_infantry_type_index.get() != -1)
+                .is_some_and(|victim| victim.seldom.capture_infantry_type_index.get() != -1)
                 && self.trigger_runtime.object_tag_is_transferable(victim_id);
             if !captor_has_tag {
                 for kind in [7, 48, 29] {
@@ -507,7 +512,11 @@ impl crate::sim::world::Simulation {
                         && kind == 7
                         && let KillSource::Techno(Some(destroyer)) = source
                     {
-                        self.raise_ares_destroyed_by_house(victim_id, destroyer, context);
+                        self.raise_ares_destroyed_by_house(
+                            victim_id,
+                            destroyer,
+                            context.reborrow(),
+                        );
                     }
                     if kind != 7 || source.is_present() {
                         self.dispatch_object_tag_event(
@@ -515,7 +524,7 @@ impl crate::sim::world::Simulation {
                             kind,
                             Some(victim_id),
                             None,
-                            context,
+                            context.reborrow(),
                         );
                     }
                 }
@@ -534,7 +543,7 @@ impl crate::sim::world::Simulation {
             .interner
             .object_type(victim.type_ref(), rules)
             .map_or(0, |object| rules.cost_of(object, victim_house.as_ref()));
-        self.record_kill_tag_prefix(victim_id, source, context);
+        self.record_kill_tag_prefix(victim_id, source, context.reborrow());
         let promote_now = record_the_kill(
             &mut self.substrate.entities,
             &mut self.houses,
@@ -568,7 +577,7 @@ impl crate::sim::world::Simulation {
         &mut self,
         victim: u64,
         source: KillSource,
-        context: crate::sim::world::UninitContext<'_>,
+        mut context: crate::sim::world::UninitContext<'_>,
     ) {
         if source.is_present() {
             for kind in [6, 4] {
@@ -578,7 +587,13 @@ impl crate::sim::world::Simulation {
                     .get(victim)
                     .is_some_and(|victim| victim.lifecycle.object_alive())
                 {
-                    self.dispatch_object_tag_event(victim, kind, Some(victim), None, context);
+                    self.dispatch_object_tag_event(
+                        victim,
+                        kind,
+                        Some(victim),
+                        None,
+                        context.reborrow(),
+                    );
                 }
             }
         }
@@ -597,7 +612,7 @@ impl crate::sim::world::Simulation {
                 victim,
                 85,
                 Some(crate::sim::trigger_runtime::AresEventSource::House(house)),
-                context,
+                context.reborrow(),
             );
         }
         //702DCE/7032BE query WhatAmI once: Unit1 skips7/48/29,
@@ -616,7 +631,7 @@ impl crate::sim::world::Simulation {
         if context.rules().ares()
             && let KillSource::Techno(Some(destroyer)) = source
         {
-            self.raise_ares_destroyed_by_house(victim, destroyer, context);
+            self.raise_ares_destroyed_by_house(victim, destroyer, context.reborrow());
         }
         for kind in [7, 48, 29] {
             if kind == 7 && !source.is_present() {
@@ -628,7 +643,13 @@ impl crate::sim::world::Simulation {
                 .get(victim)
                 .is_some_and(|victim| victim.lifecycle.object_alive())
             {
-                self.dispatch_object_tag_event(victim, kind, Some(victim), None, context);
+                self.dispatch_object_tag_event(
+                    victim,
+                    kind,
+                    Some(victim),
+                    None,
+                    context.reborrow(),
+                );
             }
         }
     }
@@ -736,13 +757,13 @@ fn record_kill_credit(
     count_killer: bool,
     callback: KillCallback,
 ) {
-    victim.kill_record.killed_by = killer_owner;
+    victim.seldom.kill_record.killed_by = killer_owner;
     if callback == KillCallback::Terminal
         || victim.health.current() == 0
         || killer_owner.is_some()
         || victim.crash.is_crashing()
     {
-        victim.kill_record.destruction_recorded = true;
+        victim.seldom.kill_record.destruction_recorded = true;
     }
     // Score is added before the Building Insignificant branch703045.
     if let Some(killer) = killer_owner
@@ -756,14 +777,11 @@ fn record_kill_credit(
         {
             house.stats_mut().record_loss(victim.category());
         }
-        let victim_house = houses.index_of(victim.owner());
         if count_killer
             && let Some(killer) = killer_owner
             && let Some(house) = houses.get_mut(&killer)
         {
-            house
-                .stats_mut()
-                .record_kill(victim.category(), victim_house);
+            house.stats_mut().record_kill(victim.category());
         }
     }
 }

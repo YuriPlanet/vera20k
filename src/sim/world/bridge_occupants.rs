@@ -167,9 +167,9 @@ impl BridgeOccupantHost for Occupants<'_, '_> {
                 );
                 self.live.sim.commit_direct_damage_receiver(
                     self.live.rules,
-                    self.live.registry,
+                    Some(self.live.rules.overlay_registry()),
                     event,
-                    self.live.frame_effects,
+                    &mut self.live.frame_effects,
                 );
             }
             CellObjectMember::Terrain(id) => {
@@ -185,10 +185,10 @@ impl BridgeOccupantHost for Occupants<'_, '_> {
                 };
                 self.live.sim.commit_direct_terrain_damage_receiver(
                     self.live.rules,
-                    self.live.registry,
+                    Some(self.live.rules.overlay_registry()),
                     event,
                     true,
-                    self.live.frame_effects,
+                    &mut self.live.frame_effects,
                 );
             }
         }

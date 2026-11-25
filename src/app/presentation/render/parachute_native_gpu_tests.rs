@@ -8,7 +8,7 @@
 //! in tools/spatial_oracle/parachute_canopy.json.
 
 use super::draw_plan_lowering::{
-    NativeDisplayOrder, ObjectTexture, PlannedObjectInstance, lower_object_instances,
+    NativeDisplayOrder, ObjectTexture, OwnedPlannedObject, PlannedObjects, lower_object_instances,
 };
 use super::merge_passes::{ObjectDrawPhase, draw_native_object_pass};
 use crate::app::presentation::detail::DetailState;
@@ -19,7 +19,7 @@ use crate::assets::shp_file::ShpFile;
 use crate::map::houses::HouseColorMap;
 use crate::map::lighting::{CellLightGrid, LightingConfig, build_cell_light_grid_from_heights};
 use crate::render::batch::{BatchRenderer, DepthAxis, InstanceBufferPool};
-use crate::render::native_z::{ZGradient, pack_z_gradient, stored_z};
+use crate::render::native_z::{ZGradient, pack_z_gradient, shp_frame_flag, stored_z};
 use crate::render::palette_light::PaletteLight;
 use crate::render::shroud_buffer::ShroudBuffer;
 use crate::render::sprite_atlas::{
@@ -100,8 +100,7 @@ impl Scene {
         // than measuring Infantry Unlimbo's subcell choice. Match that input
         // boundary through the Location owner; the complete ordinary producer
         // and its subcell admission remain covered by the lifecycle test.
-        sim.entities_mut_for_test()
-            .get_mut(body)
+        sim.entity_mut_for_test(body)
             .unwrap()
             .position
             .put_location(DriveCoord {
@@ -180,7 +179,7 @@ impl Scene {
                     self.canopy,
                     &self.runtime.resources.rules,
                     None,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
         }
@@ -214,15 +213,17 @@ impl Scene {
         light: &CellLightGrid,
         colors: &HouseColorMap,
         frame: u16,
-    ) -> PlannedObjectInstance {
+    ) -> OwnedPlannedObject {
         let sim = &self.runtime.simulation;
         let presented = crate::app::presentation::frame::PresentationFrame::capture(
             &self.runtime,
             &Default::default(),
+            false,
         );
-        let order = NativeDisplayOrder::from_display(sim.display_layers());
+        let order = NativeDisplayOrder::from_world(&sim, None);
         let voxel_images = RefCell::new(VoxelImageCache::default());
-        let mut parents = Vec::new();
+        let zshape_skips = std::cell::RefCell::default();
+        let mut parents = PlannedObjects::default();
         build_shp_instances_from_inputs(
             &ShpInputs {
                 runtime: &self.runtime,
@@ -231,6 +232,7 @@ impl Scene {
                 overlay_atlas: None,
                 unit_atlas: None,
                 voxel_images: &voxel_images,
+                zshape_skips: &zshape_skips,
                 depth_tested_images: None,
                 camera: vera_camera(),
                 render_size: SIZE,
@@ -245,11 +247,12 @@ impl Scene {
                 ignore_visibility: true,
                 lighting: light,
                 house_colors: colors,
-                building_zshape: false,
+                building_zshape: None,
             },
             &mut parents,
             &order,
         );
+        let parents = parents.into_owned();
         assert!(
             parents
                 .iter()
@@ -272,6 +275,7 @@ impl Scene {
             tactical: CLIP,
             zoom: 1.,
             axis: DepthAxis::NONE,
+            z_seed: crate::render::native_z::DEFAULT_Z,
             atlas: Some(atlas),
             detail: &detail,
             detail_level: 2,
@@ -283,7 +287,9 @@ impl Scene {
             local_owner: Some(sim.interner().get(OWNER).unwrap()),
             observe_particles: false,
         };
+        let mut parents = PlannedObjects::from(parents);
         build_display_effect_instances(&input, &mut parents, &order, Default::default());
+        let parents = parents.into_owned();
         let key = ShpSpriteKey {
             palette_context: ShpPaletteContext::AnimScheme,
             type_id: "PARACH".into(),
@@ -296,6 +302,7 @@ impl Scene {
             .expect("actual selected-scheme PARACH frame");
         let mut selected = Vec::new();
         for parent in parents {
+            let draw = parent.parent;
             for piece in parent.pieces {
                 if piece.target == ObjectTexture::ShpPage(entry.page as usize)
                     && piece.instance.uv_origin == entry.uv_origin
@@ -303,7 +310,7 @@ impl Scene {
                 {
                     // Component-only replay: preserve the emitted parent and all
                     // piece fields, omit body/shadow pixels not in this oracle.
-                    selected.push(PlannedObjectInstance::object(parent.parent, vec![piece]));
+                    selected.push(OwnedPlannedObject::object(draw, vec![piece]));
                 }
             }
         }
@@ -476,14 +483,16 @@ fn retail_parachute_actual_emitter_matches_original_component_planes() {
                 if actual_position != wanted_position
                     || piece.render_z != RenderZPolicy::ReadOnly
                     || sprite.z_adjust != integer(&call["z_adjust"]) as f32
-                    || sprite.z_gradient != pack_z_gradient(ZGradient::Vertical, false)
+                    || sprite.z_gradient
+                        != pack_z_gradient(ZGradient::Vertical, false)
+                            | shp_frame_flag(raw.format & 2 != 0)
                     || sprite.palette_light
                         != PaletteLight::color_scheme([1000; 3], integer(&call["intensity"]))
                 {
                     transports.push(format!("{name}/{format:?}: pos {actual_position:?}/{wanted_position:?}, policy {:?}, z {} / {}, gradient {}, light {:?}",
                         piece.render_z, sprite.z_adjust, call["z_adjust"], sprite.z_gradient, sprite.palette_light));
                 }
-                let layers = lower_object_instances(vec![parent]);
+                let layers = lower_object_instances(vec![parent].into());
                 let layer = &layers[layer_index];
                 assert_eq!(layer.instances.len(), 1);
                 let mut pool = InstanceBufferPool::new();

@@ -49,8 +49,8 @@ fn build_sim() -> (Simulation, RuleSet) {
     let rules = bridge_repair_test_rules();
     sim.resolve_type_handles(&rules);
     let terrain = dummy_resolved_terrain();
-    sim.overlay_grid = Some(OverlayGrid::new(terrain.width(), terrain.height()));
-    sim.resolved_terrain = Some(terrain);
+    *sim.overlay_grid = Some(OverlayGrid::new(terrain.width(), terrain.height()));
+    *sim.resolved_terrain = Some(terrain);
     (sim, rules)
 }
 
@@ -78,7 +78,7 @@ fn build_ordinary_c4_sim(
             .unwrap()
             .place_overlay(17, y, overlay, 0);
     }
-    sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
+    *sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
         sim.resolved_terrain.as_ref().unwrap(),
         true,
         300,
@@ -169,7 +169,7 @@ fn seed_destroyed_bridge(sim: &mut Simulation) {
     for &(rx, ry) in BRIDGE_CELLS {
         overlays.cell_mut_for_test(rx, ry).overlay_id = Some(0xE7);
     }
-    sim.bridge_state = Some(BridgeRuntimeState::default());
+    *sim.bridge_state = Some(BridgeRuntimeState::default());
 }
 
 /// Make `cell` the fallback's ramp: a concrete BridgeMiddle1 tile at sub-tile
@@ -197,7 +197,7 @@ fn fallback_anchor_state(sim: &Simulation) -> u8 {
 }
 
 fn seed_hut_fallback_bridgehead_layout(sim: &mut Simulation) {
-    sim.bridge_state = Some(BridgeRuntimeState::default());
+    *sim.bridge_state = Some(BridgeRuntimeState::default());
     let terrain = sim
         .resolved_terrain
         .as_mut()
@@ -370,6 +370,7 @@ fn ordinary_friendly_repair_uses_capture_event_without_hut_exception() {
         assert_eq!(sim.state_hash(), before, "object-action query is read-only");
         assert!(
             sim.apply_command_with_overlays(
+                None,
                 "Americans",
                 &Command::CaptureBuilding {
                     engineer_id: engineer,
@@ -377,7 +378,7 @@ fn ordinary_friendly_repair_uses_capture_event_without_hut_exception() {
                 },
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             "target_owner={target_owner}"
         );
@@ -462,11 +463,12 @@ fn queued_hut_capture_survives_repair_before_event_execution() {
         );
         assert!(
             sim.apply_command_with_overlays(
+                None,
                 "Americans",
                 &due[0].payload,
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             "relation={relation}"
         );
@@ -606,13 +608,12 @@ fn c4_on_cabhut_collapses_bridge_and_hut_survives() {
 /// `seal`'s C4 charge on `target`, planted this frame.
 fn plant_c4(sim: &mut Simulation, rules: &RuleSet, target: u64, seal: u64) {
     let frame = sim.session.binary_frame() as i32;
-    sim.substrate
-        .entities
-        .get_mut(target)
-        .unwrap()
+    let entity = sim.substrate.entities.get_mut(target).unwrap();
+    let note = entity.note_names();
+    entity
         .building
         .pending_c4_detonation
-        .plant(frame, rules.c4_delay_frames(), seal);
+        .plant(frame, rules.c4_delay_frames(), seal, note);
 }
 
 /// C4 on a CABHUT with nothing for its bridge sweep to drop clears the charge
@@ -624,7 +625,7 @@ fn plant_c4(sim: &mut Simulation, rules: &RuleSet, target: u64, seal: u64) {
 fn c4_on_cabhut_without_a_collapsible_bridge_changes_nothing() {
     let cases: [(&str, &dyn Fn(&mut Simulation)); 4] = [
         ("no bridge", &|sim: &mut Simulation| {
-            sim.bridge_state = Some(BridgeRuntimeState::default());
+            *sim.bridge_state = Some(BridgeRuntimeState::default());
         }),
         (
             "anchor or direction flags alone",
@@ -815,7 +816,7 @@ fn assert_live_repair_strip(sim: &Simulation, engineer: u64, expected_overlay: u
 
 #[test]
 fn ordinary_engineer_repair_consumes_mapgen_only_and_preserves_overlay_metadata() {
-    let (mut sim, rules, registry, engineer) = live_repair_fixture();
+    let (mut sim, rules, _registry, engineer) = live_repair_fixture();
     let scenario_before = sim.scenario_rng.logical_state();
     let main_before = sim.main_rng.logical_state();
     let mut expected_mapgen = crate::sim::rng::SimRng::new(0);
@@ -825,9 +826,8 @@ fn ordinary_engineer_repair_consumes_mapgen_only_and_preserves_overlay_metadata(
         crate::sim::world::bridge_orchestrator::repair_from_engineer(
             &mut sim,
             &rules,
-            Some(&registry),
             engineer,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("live repair must complete its Recalc and navigation callbacks")
     );
@@ -859,8 +859,8 @@ fn generated_map_bridge_repair_continues_post_rmg_mapgen_stream() {
     };
     let mut expected = crate::sim::rng::SimRng::from_mapgen_continuation(continuation());
     let expected_variant = expected.next_high_two_bits();
-    let (mut sim, rules, registry, engineer) = live_repair_fixture();
-    sim.mapgen_rng = crate::sim::rng::SimRng::from_mapgen_continuation(continuation());
+    let (mut sim, rules, _registry, engineer) = live_repair_fixture();
+    *sim.mapgen_rng = crate::sim::rng::SimRng::from_mapgen_continuation(continuation());
     let scenario_before = sim.scenario_rng.logical_state();
     let main_before = sim.main_rng.logical_state();
 
@@ -868,9 +868,8 @@ fn generated_map_bridge_repair_continues_post_rmg_mapgen_stream() {
         crate::sim::world::bridge_orchestrator::repair_from_engineer(
             &mut sim,
             &rules,
-            Some(&registry),
             engineer,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("live repair must retain the installed MapGen continuation")
     );
@@ -885,7 +884,7 @@ fn generated_map_bridge_repair_continues_post_rmg_mapgen_stream() {
 fn two_identical_sims_repair_with_identical_hash_and_streams() {
     let (mut sim_a, rules_a, registry_a, engineer_a) = live_repair_fixture();
     let (mut sim_b, rules_b, registry_b, engineer_b) = live_repair_fixture();
-    for (sim, rules, registry, engineer) in [
+    for (sim, rules, _registry, engineer) in [
         (&mut sim_a, &rules_a, &registry_a, engineer_a),
         (&mut sim_b, &rules_b, &registry_b, engineer_b),
     ] {
@@ -893,9 +892,8 @@ fn two_identical_sims_repair_with_identical_hash_and_streams() {
             crate::sim::world::bridge_orchestrator::repair_from_engineer(
                 sim,
                 rules,
-                Some(registry),
                 engineer,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("live repair must complete")
         );

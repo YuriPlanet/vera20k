@@ -77,7 +77,7 @@ pub enum DebugToolsError {
     NoLocalHouse,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct DebugToolsState {
     context: DebugSessionContext,
     flags: CheatFlags,
@@ -113,7 +113,7 @@ impl Simulation {
         let modified = self.debug_tools.modified;
         let replay_locked = self.debug_tools.replay_locked;
         let logged = std::mem::take(&mut self.debug_tools.logged_entities);
-        self.debug_tools = DebugToolsState {
+        *self.debug_tools = DebugToolsState {
             modified,
             replay_locked,
             context: if replay_locked {
@@ -143,8 +143,7 @@ impl Simulation {
     fn debug_local_owner(&self) -> Option<InternedId> {
         self.session.current_house().filter(|owner| {
             self.houses.get(owner).is_some_and(|house| {
-                !house.is_defeated()
-                    && house.is_controlled_by_human(self.session.game_mode_nonzero())
+                !house.is_defeated() && house.is_controlled_by_human(self.session.rule_policy())
             })
         })
     }
@@ -350,7 +349,7 @@ impl Simulation {
             substrate
                 .entities
                 .values()
-                .filter(|e| e.selection.is_selected())
+                .filter(|e| e.seldom.selection.is_selected())
                 .take(crate::sim::debug_event_log::DEBUG_EVENT_ENTITY_LIMIT)
                 .map(|e| e.stable_id())
                 .collect()
@@ -376,7 +375,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::sim::game_entity::GameEntity;
@@ -522,7 +521,7 @@ mod tests {
             1,
             false,
         );
-        entity.selection.set_selected_for_test(true);
+        entity.seldom.selection.set_selected_for_test(true);
         sim.substrate.entities.insert(entity);
         let hash = sim.state_hash();
         let before = crate::util::save_codec::serialize(&sim).unwrap();
@@ -558,7 +557,7 @@ mod tests {
                 1,
                 false,
             );
-            entity.selection.set_selected_for_test(true);
+            entity.seldom.selection.set_selected_for_test(true);
             sim.substrate.entities.insert(entity);
         }
         sim.set_debug_event_logging(true);
@@ -573,6 +572,7 @@ mod tests {
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(false);
         sim.set_debug_event_logging(true);
@@ -650,7 +650,7 @@ mod tests {
             &rules,
             None,
             hit(1, 2, other, 10),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sim.entities().get(1).unwrap().health.current(), 100);
         assert!(sim.entities().get(1).unwrap().invulnerability.is_none());
@@ -658,7 +658,7 @@ mod tests {
             &rules,
             None,
             hit(2, 1, owner, 10),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sim.entities().get(2).unwrap().health.current(), 70);
         let entity = sim.substrate.entities.get_mut(1).unwrap();

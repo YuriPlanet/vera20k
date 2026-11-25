@@ -41,7 +41,6 @@ use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::ui::game_screen::GameScreen;
-use crate::ui::shell::controller::ShellKey;
 use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarTab};
 use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedMode};
 use crate::util::config::GameConfig;
@@ -67,6 +66,8 @@ pub(crate) mod display_target;
 mod frame;
 pub mod frontend;
 mod game_data_check;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+mod graphics_lost;
 mod handler;
 mod hidden_run;
 mod in_game;
@@ -74,14 +75,21 @@ mod initialize;
 pub(crate) mod input;
 pub(crate) mod lan_service;
 pub(crate) mod loading;
+#[cfg(target_os = "macos")]
+mod mac_title_bar;
 pub(crate) mod map_library;
 pub mod map_picture;
 pub(crate) mod match_audio;
 pub mod match_bootstrap;
 pub(crate) mod match_diagnostics;
 pub(crate) mod match_runtime;
+pub(crate) mod mod_additions;
+pub(crate) mod mod_files;
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+mod mod_import_picker;
 pub(crate) mod mods;
 pub(crate) mod movie_playback;
+pub(crate) mod new_mod;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 mod network_goodbye;
 pub(crate) mod movie_subtitles;
@@ -91,19 +99,23 @@ pub(crate) mod os_clipboard;
 pub(crate) mod phobos_version;
 pub(crate) mod presentation;
 pub(crate) mod process_assets;
-#[cfg(feature = "telemetry-dashboard")]
+#[cfg(any(feature = "telemetry-dashboard", feature = "perf"))]
 pub(crate) mod process_stats;
 pub(crate) mod radar_movie;
-#[cfg(test)]
+pub(crate) mod random_map_file;
+#[cfg(all(test, tests_app))]
 mod random_map_lifecycle_tests;
 pub(crate) mod renderer_state;
 pub(crate) mod restart;
+pub(crate) mod rules_parts;
 pub(crate) mod scenario_catalog;
 mod shell_campaign;
 pub(crate) mod shell_lan;
 mod shell_load_saved_game;
 mod shell_main_menu;
 mod shell_menu;
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+mod shell_mod_import;
 mod shell_mods;
 mod shell_movies_credits;
 pub(crate) mod shell_network_setup;
@@ -112,10 +124,13 @@ pub(crate) mod shell_route;
 mod shell_saved_games;
 mod shell_saved_seeds;
 mod shell_skirmish;
+mod shell_skirmish_setups;
+mod shell_skirmish_team_menus;
 mod shell_wol;
 pub(crate) mod sidebar_projection;
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod sidebar_projection_tests;
+pub(crate) mod spawn_frame_cost;
 pub(crate) mod spawn_probe;
 mod state;
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -131,32 +146,24 @@ pub(crate) mod types;
 pub(crate) mod updater;
 pub(crate) mod web_link;
 mod window_icon;
+pub(crate) mod worker;
 
 /// Main window title. The single-instance gate finds a running copy's window by
 /// this exact title, so `main` hands the same constant to
 /// `util::single_instance::acquire`.
 pub const WINDOW_TITLE: &str = match (
-    crate::rules::ARES_BUILD,
     crate::rules::PHOBOS_ENABLED,
     crate::rules::NPATCH_ENABLED,
     crate::rules::NPBUG_ENABLED,
 ) {
-    (true, true, true, false) => "VERA20K [Ares+Phobos+NPatch]",
-    (true, true, false, false) => "VERA20K [Ares+Phobos]",
-    (true, false, true, false) => "VERA20K [Ares+NPatch]",
-    (true, false, false, false) => "VERA20K [Ares]",
-    (false, true, true, false) => "VERA20K [Phobos+NPatch]",
-    (false, true, false, false) => "VERA20K [Phobos]",
-    (false, false, true, false) => "VERA20K [NPatch]",
-    (false, false, false, false) => "VERA20K",
-    (true, true, true, true) => "VERA20K [Ares+Phobos+NPatch+NPBug]",
-    (true, true, false, true) => "VERA20K [Ares+Phobos+NPBug]",
-    (true, false, true, true) => "VERA20K [Ares+NPatch+NPBug]",
-    (false, true, true, true) => "VERA20K [Phobos+NPatch+NPBug]",
-    (true, false, false, true) => "VERA20K [Ares+NPBug]",
-    (false, true, false, true) => "VERA20K [Phobos+NPBug]",
-    (false, false, true, true) => "VERA20K [NPatch+NPBug]",
-    (false, false, false, true) => "VERA20K [NPBug]",
+    (true, true, false) => "VERA20K [Phobos+NPatch]",
+    (true, false, false) => "VERA20K [Phobos]",
+    (false, true, false) => "VERA20K [NPatch]",
+    (false, false, false) => "VERA20K",
+    (true, true, true) => "VERA20K [Phobos+NPatch+NPBug]",
+    (true, false, true) => "VERA20K [Phobos+NPBug]",
+    (false, true, true) => "VERA20K [NPatch+NPBug]",
+    (false, false, true) => "VERA20K [NPBug]",
 };
 
 /// Identity stamp shared by the status screen and the telemetry capture. Not a
@@ -183,6 +190,9 @@ pub struct App {
     spawn_request: Option<crate::app::frontend::cncnet_spawn::SpawnRequest>,
     /// `-SPAWN`: where the launch result is written (docs/spawn.md).
     spawn_result_path: Option<std::path::PathBuf>,
+    /// `-SPAWN` refused for its `ExpectedRulesDigest`: this game's rules
+    /// parts, which the launch result names.
+    spawn_rules_mismatch: Option<crate::app::rules_parts::RulesParts>,
     replay_request: Option<crate::app::frontend::launch::ReplayLaunchRequest>,
     startup_failure: Option<String>,
     /// `--mod <folder>` or `--no-mod`, in place of config.toml's choice.
@@ -250,6 +260,7 @@ impl App {
             startup_options,
             spawn_request: None,
             spawn_result_path: None,
+            spawn_rules_mismatch: None,
             replay_request: None,
             startup_failure: None,
             mod_switch: None,
@@ -275,6 +286,7 @@ impl App {
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
             spawn_request: None,
             spawn_result_path: None,
+            spawn_rules_mismatch: None,
             replay_request: None,
             startup_failure: None,
             mod_switch: None,
@@ -302,6 +314,7 @@ impl App {
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
             spawn_request: None,
             spawn_result_path: None,
+            spawn_rules_mismatch: None,
             replay_request: None,
             startup_failure: None,
             mod_switch: None,
@@ -329,6 +342,7 @@ impl App {
             },
             spawn_request: None,
             spawn_result_path: None,
+            spawn_rules_mismatch: None,
             replay_request: None,
             startup_failure: None,
             mod_switch: None,
@@ -377,22 +391,6 @@ impl App {
                     }
                 }));
         }
-        // The same wake for the hand-off thread, once it has the window's
-        // next picture (`GpuContext::screen_busy`).
-        #[cfg(not(target_arch = "wasm32"))]
-        if let (Some(state), Some(proxy)) = (self.state.as_ref(), self.sim_wake.as_ref())
-            && !state.renderer.gpu.has_present_wake()
-        {
-            let proxy = std::sync::Mutex::new(proxy.clone());
-            state
-                .renderer
-                .gpu
-                .set_present_wake(std::sync::Arc::new(move || {
-                    if let Ok(proxy) = proxy.lock() {
-                        let _ = proxy.send_event(());
-                    }
-                }));
-        }
     }
 
     pub fn new_replay(request: crate::app::frontend::launch::ReplayLaunchRequest) -> Self {
@@ -422,12 +420,14 @@ impl App {
     /// skips. The panic hook has already written the log and `except.txt`.
     pub fn save_replay_after_panic(&mut self) {
         if let Some(state) = self.state.as_mut() {
-            crate::app::match_runtime::sim_tick::flush_replay_log(state);
+            crate::app::match_runtime::sim_tick::preserve_replay_after_panic(
+                &mut state.match_state,
+            );
         }
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

@@ -94,6 +94,7 @@ pub(super) fn candidate_admitted(
     candidate_object: &ObjectType,
     victim: &GameEntity,
     attacker_id: u64,
+    requires_recruitable_mission: bool,
 ) -> bool {
     if !candidate.is_object_alive()
         || candidate.owner() != victim.owner()
@@ -101,8 +102,8 @@ pub(super) fn candidate_admitted(
             .team_script_vm
             .team_for_member(candidate.stable_id())
             .is_some_and(|(_, is_base_defense)| !is_base_defense)
-        || !candidate.base_defense_response.recruitable_a
-        || !candidate.base_defense_response.recruitable_b
+        || !candidate.seldom.base_defense_response.recruitable_a
+        || !candidate.seldom.base_defense_response.recruitable_b
         || !is_armed(
             candidate,
             candidate_object,
@@ -110,7 +111,7 @@ pub(super) fn candidate_admitted(
             rules,
             &sim.interner,
         )
-        || (!sim.session.game_mode_nonzero()
+        || (requires_recruitable_mission
             && !crate::sim::mission::control::current_control(rules, &candidate.mission)
                 .is_some_and(|entry| entry.recruitable))
     {
@@ -121,7 +122,6 @@ pub(super) fn candidate_admitted(
     let peek = FireSubject {
         world: sim,
         rules,
-        overlay_registry: None,
         fog: Some(sim.fog.fire_view(&sim.house_alliances)),
         firer: candidate,
         obj: candidate_object,

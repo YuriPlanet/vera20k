@@ -15,6 +15,15 @@ use crate::sim::house_state::HouseDifficulty;
 use crate::sim::rng::SimRng;
 use crate::sim::world::TypeTechLevels;
 
+/// VERA's bound on the nodes one count inserts into a base plan: the extra
+/// refineries (`AIExtraRefineries=`/`AISlaveMinerNumber=`), Ares'
+/// `AIBuildCounts=`/`AIExtraCounts=` copies and the base defenses
+/// (`*BaseDefenseCounts=`). Each insertion draws once and shifts the list, so
+/// a count near `i32::MAX` hangs the AI's base planning; the bound applies
+/// only to these loops, and retail counts are far below it (every count
+/// below it draws as before).
+const BASE_PLAN_INSERT_LIMIT: i32 = 256;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RecalcPreflightError {
     UnknownCountry,
@@ -119,7 +128,7 @@ pub(crate) fn recalc_base_plan(
 
     if let Some(build_const) = first_buildable_from_array(
         rules,
-        &rules.build_const_types,
+        rules.build_const_types(),
         country_name,
         side_index,
         super_weapons,
@@ -170,30 +179,29 @@ pub(crate) fn recalc_base_plan(
     while remaining > 0 {
         let pass_start_len = priority.len();
         let mut progressed = false;
-        let mut last_unselected = None;
+        // Only an unselected GAPLUG is the stuck pass's fallback: the index
+        // resets each pass (0x00505890) and only the GAPLUG name match writes
+        // it (0x005058C1..0x005058CD). With none, the loop ends
+        // (0x00505951..0x00505954) and buildings whose prerequisites never
+        // come are left out of the plan. The pass runs to the list's end even
+        // past remaining 0 (0x00505935..0x00505947); 0x005059B7 then ends it.
+        let mut gaplug_fallback = None;
         for index in 0..eligible.len() {
             if selected[index] {
                 continue;
             }
-            last_unselected = Some(index);
             let candidate = eligible[index];
-            if !candidate.id.eq_ignore_ascii_case("GAPLUG")
-                && prerequisites_satisfied(candidate, &priority[..pass_start_len], rules)
-            {
+            if candidate.id.eq_ignore_ascii_case("GAPLUG") {
+                gaplug_fallback = Some(index);
+            } else if prerequisites_satisfied(candidate, &priority[..pass_start_len], rules) {
                 priority.push(candidate);
                 selected[index] = true;
                 remaining = remaining.wrapping_sub(1);
                 progressed = true;
-                if remaining == 0 {
-                    break;
-                }
             }
         }
-        if remaining == 0 {
-            break;
-        }
         if !progressed {
-            let Some(index) = last_unselected else {
+            let Some(index) = gaplug_fallback else {
                 break;
             };
             priority.push(eligible[index]);
@@ -224,7 +232,7 @@ pub(crate) fn recalc_base_plan(
             .take(priority.len().saturating_sub(1))
             .position(|candidate| candidate.base_plan_type_index == refinery.base_plan_type_index)
     {
-        for _ in 0..duplicate_count.max(0) {
+        for _ in 0..duplicate_count.clamp(0, BASE_PLAN_INSERT_LIMIT) {
             let insert_after = scenario_rng.next_range_u32_inclusive(
                 refinery_index as u32,
                 priority.len().wrapping_sub(1) as u32,
@@ -252,7 +260,7 @@ pub(crate) fn recalc_base_plan(
                     .ai_extra_copies(difficulty.table_index(), |low, high| {
                         scenario_rng.next_range_i32_inclusive(low, high)
                     });
-                for _ in 0..copies {
+                for _ in 0..copies.min(BASE_PLAN_INSERT_LIMIT) {
                     let at = scenario_rng
                         .next_range_i32_inclusive(index as i32 + 1, priority.len() as i32)
                         as usize;
@@ -310,7 +318,7 @@ pub(crate) fn recalc_base_plan(
             defense_count = defense_count.wrapping_sub(1);
         }
     }
-    for _ in 0..defense_count.max(0) {
+    for _ in 0..defense_count.clamp(0, BASE_PLAN_INSERT_LIMIT) {
         let insert_after = scenario_rng
             .next_range_u32_inclusive(3, final_values.len().wrapping_sub(1) as u32)
             as usize;
@@ -432,11 +440,11 @@ pub(crate) fn prerequisites_satisfied(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "base_plan_generation_ares_tests.rs"]
 mod ares_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -475,10 +483,11 @@ mod tests {
              [BAR]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=yes\nTechLevel=1\nFoundation=1x1\n\
              [WEAP]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=yes\nTechLevel=1\nFoundation=1x1\n\
              [RAD]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=no\nFoundation=1x1\n\
-             [TECH]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=no\nFoundation=1x1\n\
-             {extra_sections}"
+             [TECH]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=no\nFoundation=1x1"
         );
-        RuleSet::from_ini(&IniFile::from_str(&text)).expect("planner fixture")
+        let mut ini = IniFile::from_str(&text);
+        ini.merge(&IniFile::from_str(extra_sections));
+        RuleSet::from_ini(&ini).expect("planner fixture")
     }
 
     fn basic_rules(extra_registry: &str, extra_sections: &str) -> RuleSet {
@@ -530,6 +539,30 @@ mod tests {
             .iter()
             .map(|node| node.type_or_control)
             .collect()
+    }
+
+    /// A defense count past VERA's bound inserts only the bound: one more
+    /// than the bound plans the same nodes as the bound itself.
+    #[test]
+    fn a_huge_base_defense_count_inserts_only_the_bound() {
+        let defenses = |count: i32| {
+            let counts = format!("{count},{count},{count}");
+            let rules = planner_rules(
+                "HARV",
+                "Americans,Russians,YuriCountry",
+                "0,0,0",
+                "1,1,1",
+                &counts,
+                "0,0,0",
+                "0,0,0",
+                "",
+                "",
+            );
+            let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Normal, 7);
+            values(&plan).iter().filter(|&&value| value == -1).count()
+        };
+        let limit = BASE_PLAN_INSERT_LIMIT;
+        assert_eq!(defenses(limit + 1), limit as usize);
     }
 
     #[test]
@@ -641,17 +674,14 @@ mod tests {
     /// construction-yard seed marks its first entry selected (505714).
     #[test]
     fn ai_planning_count_keeps_counted_seed_candidates() {
-        let mut rules = basic_rules(
+        let rules = basic_rules(
             "7=COUNTED\n",
-            "[COUNTED]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nAIPlanningCount=2\n",
+            "[COUNTED]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nAIPlanningCount=2\n[AI]\nBuildConst=COUNTED\n",
         );
         assert_eq!(
             rules.object("COUNTED").unwrap().ai_planning_count,
             if crate::rules::NPATCH_ENABLED { 2 } else { 0 }
         );
-        // Exercise the existing BuildConst selector with this reader-created
-        // type, without relying on a duplicate physical [CON] INI section.
-        rules.build_const_types = vec!["COUNTED".to_owned()];
         let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Normal, 17);
         let index = rules.object("COUNTED").unwrap().base_plan_type_index;
         assert_eq!(
@@ -784,17 +814,30 @@ mod tests {
     }
 
     #[test]
-    fn recalc_withholds_gaplug_and_breaks_cycle_with_last_unselected() {
+    fn recalc_falls_back_only_to_gaplug_and_drops_an_unmeetable_building() {
         // BLOCK waits on a BuildingType the planner never selects; a name no
         // BuildingType has would be dropped by the parser and block nothing.
+        // GAPLUG skips the prerequisite test and enters only as the first
+        // stuck pass's fallback; the next has no GAPLUG and ends, so BLOCK
+        // never enters the plan (0x00505951..0x00505954).
         let rules = basic_rules(
             "7=BLOCK\n8=GAPLUG\n9=NEVER",
             "[BLOCK]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nPrerequisite=NEVER\nFoundation=1x1\n\
-             [GAPLUG]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nFoundation=1x1\n\
+             [GAPLUG]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nPrerequisite=NEVER\nFoundation=1x1\n\
              [NEVER]\nOwner=Americans\nTechLevel=1\nFoundation=1x1\n",
         );
         let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Hard, 11);
-        assert_eq!(&values(&plan)[6..], [8, 7]);
+        assert_eq!(&values(&plan)[6..], [8]);
+    }
+
+    /// With no eligible yard to preselect (0x0050571D..0x00505731), the count
+    /// runs out one candidate early; the pass still reaches the list's end
+    /// and plans that last one, the second POW.
+    #[test]
+    fn recalc_pass_continues_past_remaining_zero() {
+        let rules = basic_rules("", "[AI]\nBuildConst=RAD\n");
+        let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Hard, 9);
+        assert_eq!(values(&plan), [1, 3, 4, 2, 0, 1]);
     }
 
     #[test]
@@ -937,7 +980,6 @@ mod tests {
     /// No building passes the House TechLevel, so the list is the power plant
     /// alone: shorter than the three seeds, with base defenses to insert.
     /// (Ares pads such a list to four with defense nodes instead.)
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn recalc_survives_a_list_shorter_than_its_three_seeds() {
         let rules = planner_rules(

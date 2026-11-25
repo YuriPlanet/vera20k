@@ -109,6 +109,7 @@ fn building(sim: &mut Simulation, rules: &RuleSet, kind: &str, cell: (u16, u16))
 fn launch(sim: &mut Simulation, rules: &RuleSet, sw: &str, cell: (u16, u16)) -> bool {
     let sw_type_id = sim.interner.intern(sw);
     sim.apply_command_with_overlays(
+        None,
         "Russians",
         &Command::LaunchSuperWeapon {
             sw_type_id,
@@ -117,7 +118,7 @@ fn launch(sim: &mut Simulation, rules: &RuleSet, sw: &str, cell: (u16, u16)) -> 
         },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -233,7 +234,7 @@ fn ares_emp_cannon_pulses_then_fires_its_shell_at_the_cell() {
     assert!(velocity[0] > 0.0 && velocity[1] > 0.0 && velocity[2] > 0.0);
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
-        SimSoundEvent::VocAt { sound_id, .. } if sound_id == "PulseSound"
+        SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "PulseSound"
     )));
     for _ in 0..3 {
         step(&mut sim, &rules);
@@ -312,4 +313,123 @@ fn ares_drop_pod_reads_its_handler_keys() {
         metadata.targeting().mode(),
         crate::rules::superweapon_targeting::AiTargetingMode::DropPod
     );
+}
+
+/// A self-guarding super: an auto-firing, self-targeting EMPulse
+/// whose cannon's warhead curtains its House's nearby units.
+const SELF_GUARD: &str = "\
+[VehicleTypes]
+0=TANK
+[TANK]
+Strength=300
+[BuildingTypes]
+0=GUARD
+1=TOWER
+2=COIL
+[GUARD]
+Strength=700
+EMPulseCannon=yes
+Primary=GuardWeapon
+SuperWeapon=GuardSpecial
+[TOWER]
+Strength=700
+EMPulseCannon=yes
+Primary=GuardWeapon
+Upgrades=1
+[COIL]
+Strength=100
+PowersUpBuilding=TOWER
+PowersUpToLevel=1
+SuperWeapon=GuardSpecial
+[SuperWeaponTypes]
+0=GuardSpecial
+[GuardSpecial]
+Type=EMPulse
+IsPowered=no
+RechargeTime=1
+SW.InitialReady=yes
+SW.AutoFire=yes
+SW.ManualFire=no
+SW.AITargeting=Self
+EMPulse.TargetSelf=yes
+[WeaponTypes]
+0=GuardWeapon
+[GuardWeapon]
+Damage=-1
+Warhead=GuardWH
+[Warheads]
+0=GuardWH
+[GuardWH]
+CellSpread=3
+IronCurtain.Duration=125
+";
+
+/// `SW.AITargeting=Self` picks the providing building's own cell
+/// (PickTarget 100389C9), so the human House's automatic launch fires the
+/// guard and its warhead curtains the tank beside it.
+#[test]
+fn ares_self_targeting_auto_fire_curtains_the_tank_beside_its_building() {
+    assert_self_guard_protects("GUARD", None);
+}
+
+/// HasSuperWeapon, the House grant pass and IsLaunchSite all admit the
+/// installed upgrade when the cannon's base type has no Super of its own.
+#[test]
+fn ares_self_targeting_auto_fire_uses_a_super_from_an_installed_upgrade() {
+    assert_self_guard_protects("TOWER", Some("COIL"));
+}
+
+fn assert_self_guard_protects(building: &str, upgrade: Option<&str>) {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let ini = crate::sim::arena_fixture::clear_ground_ini(SELF_GUARD);
+    let art = IniFile::from_str("[GUARD]\nFoundation=1x1\n[TOWER]\nFoundation=1x1\n");
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let owner = sim.interner.intern("Americans");
+    super::construct_house_supers(&mut sim, &rules, owner, false);
+    let sw = sim.interner.intern("GuardSpecial");
+    let host = sim
+        .spawn_object_at_height(building, "Americans", 12, 15, 0, 0, &rules)
+        .unwrap();
+    let tank = sim
+        .spawn_object_at_height("TANK", "Americans", 14, 15, 0, 0, &rules)
+        .unwrap();
+    if let Some(upgrade) = upgrade {
+        assert!(!sim.super_weapons[&owner][&sw].is_active());
+        let temporary = sim
+            .construct_object_limbo_at_height(
+                upgrade,
+                "Americans",
+                12,
+                15,
+                0,
+                0,
+                &rules,
+                &mut FrameEffects::default(),
+            )
+            .unwrap();
+        assert!(sim.try_install_building_upgrade(
+            temporary,
+            host,
+            &rules,
+            crate::sim::world::UninitContext::new(&rules),
+        ));
+    } else {
+        super::grant_provided_supers(&mut sim, &rules, owner);
+    }
+    assert!(sim.super_weapons[&owner][&sw].is_ready());
+    crate::sim::house_strategy::update_strategy(
+        &mut sim,
+        &rules,
+        owner,
+        None,
+        &mut FrameEffects::default(),
+    );
+    let tank = sim.substrate.entities.get(tank).unwrap();
+    assert!(crate::sim::superweapon::invulnerability::is_invulnerable(
+        tank.invulnerability.as_ref(),
+        sim.session.binary_frame(),
+    ));
 }

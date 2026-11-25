@@ -48,7 +48,15 @@ fn in_limbo(sim: &Simulation, id: u64) -> bool {
 
 fn enter(sim: &mut Simulation, rules: &RuleSet, foot: u64, tunnel: u64) -> bool {
     let owner = americans(sim);
-    sim.ares_can_enter_tunnel(foot, tunnel, owner, 0, rules, None, FrameEffects::default())
+    sim.ares_can_enter_tunnel(
+        foot,
+        tunnel,
+        owner,
+        0,
+        rules,
+        None,
+        &mut FrameEffects::default(),
+    )
 }
 
 /// `Tunnel=` resolves case-insensitively against `[TunnelTypes]` (an
@@ -80,7 +88,7 @@ fn a_foot_enters_one_tunnel_and_leaves_from_another() {
         RadioMessage::CanEnter,
         RadioPayload::default(),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_ne!(third, RadioResponse::Roger);
     assert!(!in_limbo(&sim, feet[2]));
@@ -91,8 +99,7 @@ fn a_foot_enters_one_tunnel_and_leaves_from_another() {
             &mut sim,
             &rules,
             east,
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .is_some()
     );
@@ -132,7 +139,7 @@ fn a_unit_ordered_into_a_tunnel_enters_on_arrival() {
         &mut sim,
         &rules,
         tank,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     sim.foot_set_location_marked(
         tank,
@@ -143,14 +150,14 @@ fn a_unit_ordered_into_a_tunnel_enters_on_arrival() {
         },
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     sim.per_cell_process(
         tank,
         crate::sim::movement::PerCellReason::Arrival,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
 
@@ -172,12 +179,12 @@ fn only_the_last_entrance_kills_its_network() {
     for foot in feet {
         assert!(enter(&mut sim, &rules, foot, west));
     }
-    let context = UninitContext::new(&rules, None);
-    sim.ares_sell_tunnel(west, &rules, None, FrameEffects::default());
-    sim.ares_kill_tunnel_feet_if_last(west, None, context);
+    let mut context = UninitContext::new(&rules);
+    sim.ares_sell_tunnel(west, &rules, None, &mut FrameEffects::default());
+    sim.ares_kill_tunnel_feet_if_last(west, None, context.reborrow());
     assert_eq!(sim.ares_tunnels.members(owner, 0), feet);
 
-    sim.techno_limbo_with_context(west, context);
+    sim.techno_limbo_with_context(west, context.reborrow());
     sim.ares_kill_tunnel_feet_if_last(east, None, context);
     assert!(sim.ares_tunnels.members(owner, 0).is_empty());
     for foot in feet {
@@ -201,7 +208,7 @@ fn a_sold_last_entrance_puts_its_network_out() {
     let foot = spawn(&mut sim, &rules, "E1", 9, 10);
     assert!(enter(&mut sim, &rules, foot, tunnel));
 
-    sim.ares_sell_tunnel(tunnel, &rules, None, FrameEffects::default());
+    sim.ares_sell_tunnel(tunnel, &rules, None, &mut FrameEffects::default());
 
     assert!(!in_limbo(&sim, foot));
     assert!(sim.ares_tunnels.members(owner, 0).is_empty());

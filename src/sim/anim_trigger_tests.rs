@@ -104,7 +104,17 @@ fn rules_for_history(retail: &IniFile, physical_art: &IniFile, row: &Value) -> R
             row["next_art"]["name"].as_str().unwrap(),
         );
     }
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(retail, &art).unwrap();
+    // Retail SOUNDMD knows every sound the tested art names.
+    let sounds: Vec<&str> = [&row["art"], &row["next_art"]]
+        .into_iter()
+        .filter_map(|native| art.section(native["name"].as_str()?))
+        .flat_map(|section| {
+            ["StartSound", "Report", "StopSound"].map(|key| section.get_for_test(key))
+        })
+        .flatten()
+        .collect();
+    let mut rules =
+        RuleSet::from_ini_with_fixed_art_and_sounds_for_test(retail, &art, &sounds).unwrap();
     let mut registry = crate::rules::retail_ini_fixture::art_registry(&art);
     for native in [&row["art"], &row["next_art"]]
         .into_iter()
@@ -207,7 +217,7 @@ pub(in crate::sim) fn assert_state(sim: &Simulation, id: AnimId, expected: &Valu
     );
 }
 
-fn assert_sound_calls(sim: &Simulation, calls: &Value, context: &str) {
+fn assert_sound_calls(rules: &RuleSet, sim: &Simulation, calls: &Value, context: &str) {
     let expected: Vec<(String, String)> = calls
         .as_array()
         .unwrap()
@@ -227,7 +237,7 @@ fn assert_sound_calls(sim: &Simulation, calls: &Value, context: &str) {
         .iter()
         .filter_map(|event| match event {
             SimSoundEvent::AnimationStarted { sound_id, .. } => {
-                Some(("start".into(), sound_id.to_ascii_uppercase()))
+                Some(("start".into(), sound_id.name_in(rules).to_ascii_uppercase()))
             }
             SimSoundEvent::AnimationStopped {
                 stop_sound_id: None,
@@ -266,12 +276,12 @@ fn retail_trigger_anim_and_retained_no_effects_next_match_original_until_cleanup
             row["read"]["value"].as_i64().unwrap() as i32,
             row["read"]["waypoint"].as_i64().unwrap() as i32,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ));
         let id = *sim.anims().next().unwrap().0;
         let label = row["input"]["name"].as_str().unwrap();
         assert_state(&sim, id, &row["initial"], label);
-        assert_sound_calls(&sim, &row["constructor_calls"], label);
+        assert_sound_calls(&rules, &sim, &row["constructor_calls"], label);
         assert_eq!(
             sim.anim_display_layer(id, &rules),
             Some(crate::sim::world::display_layers::DisplayLayer::TOP)
@@ -290,10 +300,10 @@ fn retail_trigger_anim_and_retained_no_effects_next_match_original_until_cleanup
                 current.session.set_binary_frame_for_test(frame);
                 current.sound_events.clear_for_test();
                 current
-                    .visit_anim(id, &rules, None, FrameEffects::default())
+                    .visit_anim(id, &rules, None, &mut FrameEffects::default())
                     .unwrap();
                 assert_state(current, id, &visit["state"], label);
-                assert_sound_calls(current, &visit["calls"], label);
+                assert_sound_calls(&rules, current, &visit["calls"], label);
                 assert_eq!(
                     current.scenario_rng.logical_state(),
                     before_rng,
@@ -370,13 +380,11 @@ fn a_network_drop_zone_flare_reveals_for_every_human_whoever_is_local() {
         return;
     };
     let mut rules = retail.rules;
-    rules
-        .bind_scheduler_anim_assets(&["BEACON".to_owned()], &assets, "TEM", "TEMPERATE")
-        .unwrap();
+    rules.bind_scheduler_anim_assets(&["BEACON".to_owned()], &assets, "TEM", "TEMPERATE");
     let flare = |local: &str| {
         let mut sim = Simulation::with_seed(31);
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        *sim.fog = crate::sim::vision::FogState::new(32, 32);
         for name in ["Russians", "Americans"] {
             let id = sim.interner.intern(name);
             sim.houses

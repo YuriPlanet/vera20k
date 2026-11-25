@@ -1,0 +1,1059 @@
+//! Pace replays: modelled PCs against the real relay.
+//!
+//! The relay is the real one, and so is the rule a player judges its pace by
+//! (`PaceLag`, as the game's pace meter does). Every 100 ms the clock seals
+//! what is due, and each modelled PC runs the frames waiting for it, up to
+//! what it can in that time. A PC runs no faster while it catches up unless
+//! its model says so: the game's catch-up mostly cannot skip drawing (the
+//! simulation runs beside the picture), so a slow PC catches up as slowly as
+//! it plays. Each PC reports its pace and tick cost once a second and its
+//! sampled checksums as it runs them, as the game does.
+//!
+//! The pacing contract ([`Limits`]) is judged on what the clock did and on
+//! the "Catching up with the match" line as the game shows it: while more
+//! than half a second of frames waits (`catching_up_frames` in the game's
+//! `net/live_commands/sequenced.rs`). The pace meter reports a backlog of an
+//! eighth of that after `PACE_BACKLOG_MS`, so the relay hears every backlog
+//! the line shows.
+//!
+//! Matches behind the scenarios:
+//! - 2026-11-21, 1e9fac21 (2 players, 12 AI, 60 Hz): a GT 1030 ran about 55
+//!   frames a second at 8 ms ticks. The relay read 8 ms as "holds 100 Hz,
+//!   only draws slowly", never slowed, and the player fell 3560 frames
+//!   behind in 828 seconds.
+//! - 2026-11-21, 785b3c9b (28 AI): about 35 frames a second at 15 ms ticks;
+//!   the clock stopped one row down.
+//! - 2026-11-22: after the measured-shortfall fix, a dip of a few seconds
+//!   held the whole room slow for five minutes.
+//! - 2026-11-24, continuous pacing: a PC drawing 2588 units ran about 36
+//!   frames a second. The clock settled at 95% of that, where the standing
+//!   backlog rule judged "it drains itself", and the player's catching-up
+//!   line stayed on for minutes.
+
+use super::*;
+
+/// A value of a match second: capacity in frames a second, a tick cost in
+/// microseconds, or (above zero) a hidden window.
+type Curve = Box<dyn Fn(f64) -> f64>;
+
+/// A modelled PC.
+pub(super) struct Pc {
+    /// Frames it runs in a second at a match second.
+    capacity: Curve,
+    /// Frames it runs in a second while frames wait on it, given its
+    /// capacity: the same unless catch-up skips drawing.
+    catch_up: fn(f64) -> f64,
+    /// The 90th-percentile tick cost it reports, in microseconds.
+    tick_micros: Curve,
+    /// Whether its window is hidden (the game then counts no backlog).
+    hidden: Curve,
+    /// Each second's capacity is scaled by a factor within this share.
+    jitter: f64,
+}
+
+impl Pc {
+    /// A PC limited by drawing: its ticks are quick, whatever it runs.
+    fn drawing(capacity: impl Fn(f64) -> f64 + 'static, tick_micros: u32) -> Self {
+        Self {
+            capacity: Box::new(capacity),
+            catch_up: |capacity| capacity,
+            tick_micros: Box::new(move |_| f64::from(tick_micros)),
+            hidden: Box::new(|_| 0.0),
+            jitter: 0.0,
+        }
+    }
+
+    /// A PC limited by its simulation: ticks take nine tenths of each second
+    /// it runs, so its tick cost tells what it runs (and holds a little less
+    /// at `SUSTAIN_PERCENT`).
+    fn simulating(capacity: impl Fn(f64) -> f64 + 'static) -> Self {
+        let capacity: Curve = Box::new(capacity);
+        let shared = std::rc::Rc::new(capacity);
+        let ticks = shared.clone();
+        Self {
+            capacity: Box::new(move |second| shared(second)),
+            catch_up: |capacity| capacity,
+            tick_micros: Box::new(move |second| 900_000.0 / ticks(second).max(1.0)),
+            hidden: Box::new(|_| 0.0),
+            jitter: 0.0,
+        }
+    }
+
+    fn fast() -> Self {
+        Self::drawing(|_| 400.0, 4_500)
+    }
+
+    fn jitter(mut self, share: f64) -> Self {
+        self.jitter = share;
+        self
+    }
+
+    fn hidden(mut self, hidden: impl Fn(f64) -> bool + 'static) -> Self {
+        self.hidden = Box::new(move |second| if hidden(second) { 1.0 } else { 0.0 });
+        self
+    }
+
+    fn catch_up(mut self, catch_up: fn(f64) -> f64) -> Self {
+        self.catch_up = catch_up;
+        self
+    }
+}
+
+/// A match to replay: the fast host first, then `pcs`.
+pub(super) struct Match {
+    tick_hz: u16,
+    pacing: CertificatePacing,
+    seconds: u64,
+    pcs: Vec<Pc>,
+    seed: u64,
+}
+
+impl Match {
+    fn new(tick_hz: u16, seconds: u64, pcs: Vec<Pc>) -> Self {
+        Self {
+            tick_hz,
+            pacing: CertificatePacing::Continuous,
+            seconds,
+            pcs,
+            seed: 7,
+        }
+    }
+
+    fn paced(mut self, pacing: CertificatePacing) -> Self {
+        self.pacing = pacing;
+        self
+    }
+}
+
+/// What a replay saw of one modelled PC (not the fast host).
+#[derive(Debug, Default, Clone)]
+pub(super) struct Seen {
+    /// Seconds the PC takes to run what waits on it: how late its player's
+    /// orders and everyone else's reach its screen.
+    max_backlog_s: f64,
+    /// The second it was furthest behind.
+    max_backlog_at: u64,
+    final_backlog_s: f64,
+    /// The longest unbroken run of the catching-up line, in seconds.
+    longest_line_s: f64,
+    /// Seconds the catching-up line was on.
+    line_s: f64,
+}
+
+#[derive(Debug, Default)]
+pub(super) struct Outcome {
+    seen: Vec<Seen>,
+    slowdowns: u64,
+    raises: u64,
+    /// `(second, rate)` at each change, starting with the certificate's.
+    rates: Vec<(u64, u16)>,
+    /// The clock's mean rate over the replay's last fifth.
+    late_rate: f64,
+    /// Frames the clock sealed over what the slowest visible PC could run,
+    /// each second the least it ran within a minute either side (no more
+    /// than the certificate's rate, no less than the floor): how much of
+    /// what the room could play it played. The room is paced at a PC's low
+    /// points of the last two minutes (`PROBE_AFTER_MAX_MS`): a PC that slows
+    /// for eight seconds of every forty-five is paced for the eight.
+    efficiency: f64,
+}
+
+impl Outcome {
+    fn slow(&self) -> &Seen {
+        &self.seen[0]
+    }
+
+    /// The rate in force at `second`.
+    fn rate_at(&self, second: u64) -> u16 {
+        self.rates
+            .iter()
+            .take_while(|&&(at, _)| at <= second)
+            .last()
+            .map_or(0, |&(_, rate)| rate)
+    }
+}
+
+struct Player {
+    client: ClientSession,
+    lag: PaceLag,
+    done: u32,
+    budget: f64,
+    ran: u32,
+    line_since: Option<u64>,
+    seen: Seen,
+    factor: f64,
+}
+
+/// Replays `game`: the host (a fast PC) is source 0, `game.pcs` follow.
+pub(super) fn replay(game: &Match) -> Outcome {
+    let key = SecretKey::new([73; 32]);
+    let sources = game.pcs.len() + 1;
+    let certificate = OrderingCertificate {
+        room: [5; 16],
+        sources_mask: (1 << sources) - 1,
+        tick_hz: game.tick_hz,
+        expires: 3000,
+        pacing: game.pacing,
+        ordered_alone: false,
+    };
+    let cert = certificate.sign(&key).unwrap();
+    let mut server = RelayServer::new(key.clone(), 2);
+    let host = Pc::fast();
+    let pcs: Vec<&Pc> = std::iter::once(&host).chain(&game.pcs).collect();
+    let mut players: Vec<Player> = (0..sources)
+        .map(|source| {
+            let mut client = client(&key, source as u8);
+            connect(&mut server, &mut client, 0);
+            configure(&mut server, &mut client, &cert, 0);
+            Player {
+                client,
+                lag: PaceLag::default(),
+                done: 0,
+                budget: 0.0,
+                ran: 0,
+                line_since: None,
+                seen: Seen::default(),
+                factor: 1.0,
+            }
+        })
+        .collect();
+    let start = ordering(&server).starts_at.unwrap();
+    let mut random = game.seed.max(1);
+    let mut next = move || {
+        // xorshift64: the same jitter for the same seed.
+        random ^= random << 13;
+        random ^= random >> 7;
+        random ^= random << 17;
+        (random >> 11) as f64 / (1u64 << 53) as f64
+    };
+    let mut outcome = Outcome::default();
+    let mut last_rate = ordering(&server).pace.rate;
+    outcome.rates.push((0, last_rate));
+    let (mut sealed_frames, mut late_frames) = (0.0, 0u64);
+    let mut slowest_by_second = vec![f64::from(game.tick_hz); game.seconds as usize];
+    let floor = CONTINUOUS_FLOOR.min(game.tick_hz);
+    for step in 1..=game.seconds * 10 {
+        let at = start + step * 100;
+        let second = (step - 1) / 10;
+        let time = (step - 1) as f64 / 10.0;
+        if step % 1000 == 0 {
+            for player in &mut players {
+                renew(&mut server, &mut player.client, at);
+            }
+        }
+        server.advance_clock(at, unix(at));
+        let head = ordering(&server).head;
+        let rate = ordering(&server).pace.rate;
+        let turn = turn_frames(rate);
+        let mut slowest = f64::from(game.tick_hz);
+        for (index, (player, pc)) in players.iter_mut().zip(&pcs).enumerate() {
+            if step % 10 == 1 {
+                player.factor = 1.0 + pc.jitter * (2.0 * next() - 1.0);
+            }
+            let capacity = (pc.capacity)(time).max(0.0) * player.factor;
+            let hidden = (pc.hidden)(time) > 0.0;
+            if index > 0 && !hidden {
+                slowest = slowest.min(capacity);
+            }
+            let waiting = head - player.done;
+            let speed = if waiting > turn {
+                (pc.catch_up)(capacity)
+            } else {
+                capacity
+            };
+            // Unused time does not carry over: a PC cannot run frames the
+            // clock has not sealed.
+            player.budget = (player.budget + speed / 10.0).min(speed / 10.0 + 1.0);
+            let ran = (player.budget as u32).min(waiting);
+            player.budget -= f64::from(ran);
+            let before = player.done;
+            player.done += ran;
+            player.ran += ran;
+            let sampled = player.done / CHECKSUM_INTERVAL * CHECKSUM_INTERVAL;
+            if sampled > before && sampled > 0 {
+                let checksum = |frame: u32| frame.wrapping_mul(2_654_435_761);
+                let mut samples = vec![(sampled, checksum(sampled))];
+                if sampled > CHECKSUM_INTERVAL {
+                    let previous = sampled - CHECKSUM_INTERVAL;
+                    samples.insert(0, (previous, checksum(previous)));
+                }
+                player
+                    .client
+                    .queue_ordering_checksums(&samples, at)
+                    .unwrap();
+            }
+            let backlog = head - player.done;
+            let counted = if hidden { 0 } else { backlog as usize };
+            player.lag.observe(at as u32, counted, rate);
+            if step % 10 == 0 {
+                let pace = player.lag.classify(at as u32, player.ran as u16, rate);
+                let tick = (pc.tick_micros)(time).max(1.0) as u32;
+                player
+                    .client
+                    .queue_ordering_pace(pace, player.ran as u16, Some(tick));
+                player.ran = 0;
+            }
+            let mut bytes = Vec::new();
+            player.client.test_uplink(None, at, &mut bytes).unwrap();
+            // Entries the relay pushes back are not this replay's concern.
+            server
+                .process_at(endpoint(&player.client), &bytes, unix(at), at)
+                .unwrap();
+            // The game's line: more than half a second of frames waiting.
+            let line = !hidden && backlog > u32::from(rate) / 2;
+            if index == 0 {
+                continue;
+            }
+            let seen = &mut player.seen;
+            // Orders wait behind the backlog for as long as the PC takes to
+            // run it; a stalled PC's grows as the clock seals.
+            let runs = if speed >= 1.0 { speed } else { f64::from(rate) };
+            let backlog_s = f64::from(backlog) / runs;
+            if backlog_s > seen.max_backlog_s {
+                seen.max_backlog_s = backlog_s;
+                seen.max_backlog_at = second;
+            }
+            seen.final_backlog_s = backlog_s;
+            if line {
+                seen.line_s += 0.1;
+                let from = *player.line_since.get_or_insert(step);
+                seen.longest_line_s = seen.longest_line_s.max((step - from + 1) as f64 / 10.0);
+            } else {
+                player.line_since = None;
+            }
+        }
+        let rate = ordering(&server).pace.rate;
+        sealed_frames += f64::from(rate) / 10.0;
+        let least = &mut slowest_by_second[second as usize];
+        *least = least.min(slowest);
+        if step % 10 == 0 {
+            if second >= game.seconds * 4 / 5 {
+                late_frames += u64::from(rate);
+            }
+            if rate != last_rate {
+                outcome.rates.push((second + 1, rate));
+                last_rate = rate;
+            }
+        }
+    }
+    let counts = server.take_ordering_counts();
+    outcome.slowdowns = counts.slowdowns;
+    outcome.raises = counts.raises;
+    outcome.late_rate = late_frames as f64 / (game.seconds - game.seconds * 4 / 5) as f64;
+    let possible: f64 = (0..slowest_by_second.len())
+        .map(|second| {
+            let window = second.saturating_sub(60)..(second + 61).min(slowest_by_second.len());
+            slowest_by_second[window]
+                .iter()
+                .copied()
+                .fold(f64::MAX, f64::min)
+                .clamp(f64::from(floor), f64::from(game.tick_hz))
+        })
+        .sum();
+    outcome.efficiency = sealed_frames / possible;
+    outcome.seen = players
+        .into_iter()
+        .skip(1)
+        .map(|player| player.seen)
+        .collect();
+    outcome
+}
+
+/// The pacing contract for a match: what no visible player may see.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Limits {
+    /// The catching-up line's longest unbroken run, in seconds.
+    longest_line_s: f64,
+    /// Its share of the match.
+    line_share: f64,
+    /// The most a player falls behind, in seconds of frames.
+    max_backlog_s: f64,
+    /// The least share of what the slowest PC could run that the room plays.
+    efficiency: f64,
+    /// The most swings a minute for each slow PC, on average: the game's
+    /// speed must not go up and down. A swing is a slowdown after a raise;
+    /// raises come in small steps a player does not see, and a slowdown may
+    /// take two steps. Each PC's speed moves on its own, and finding where
+    /// it went takes trying, so the room may swing for each.
+    swings_per_minute: f64,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            longest_line_s: 30.0,
+            line_share: 0.10,
+            max_backlog_s: 3.0,
+            efficiency: 0.85,
+            swings_per_minute: 1.0,
+        }
+    }
+}
+
+/// How long the relay takes, at worst, to answer a PC that falls behind at
+/// once: the pace meter's `PACE_BACKLOG_MS`, the wait for the next report
+/// (`PACE_INTERVAL_MS`), and the wait for the next step
+/// (`CONTINUOUS_STEP_MS`).
+const REACTION_S: f64 =
+    (PACE_BACKLOG_MS as u64 + crate::link::PACE_INTERVAL_MS + CONTINUOUS_STEP_MS) as f64 / 1000.0;
+
+impl Limits {
+    /// The contract for a PC whose capacity falls at once from over `rate`
+    /// to `low` frames a second, for good or for a hitch: for the relay's
+    /// reaction the clock seals more than it runs, so it may fall behind by
+    /// what that excess takes it to run, and a second more, and must catch
+    /// up within 45 seconds (a fight builds up over seconds in a real
+    /// match). A PC that stops (`low` 0) for `stall_s` falls that far behind.
+    /// One event: its share of a match says nothing.
+    fn sudden(rate: f64, low: f64, stall_s: f64) -> Self {
+        let behind = if low > 0.0 {
+            REACTION_S * (rate / low - 1.0).max(0.0)
+        } else {
+            stall_s
+        };
+        Self {
+            max_backlog_s: behind + 1.0,
+            longest_line_s: 45.0,
+            line_share: 1.0,
+            ..Self::default()
+        }
+    }
+}
+
+/// Every breach of `limits` in `outcome`, for one assertion message.
+pub(super) fn breaches(outcome: &Outcome, seconds: u64, limits: Limits) -> Vec<String> {
+    let mut found = Vec::new();
+    for (index, seen) in outcome.seen.iter().enumerate() {
+        let pc = index + 1;
+        if seen.longest_line_s > limits.longest_line_s {
+            found.push(format!(
+                "pc {pc}: catching up {:.1}s without a break",
+                seen.longest_line_s
+            ));
+        }
+        if seen.line_s > limits.line_share * seconds as f64 {
+            found.push(format!(
+                "pc {pc}: catching up {:.0}s of {seconds}s",
+                seen.line_s
+            ));
+        }
+        if seen.max_backlog_s > limits.max_backlog_s {
+            found.push(format!(
+                "pc {pc}: {:.1}s behind at {}s",
+                seen.max_backlog_s, seen.max_backlog_at
+            ));
+        }
+    }
+    let swings = outcome
+        .rates
+        .windows(3)
+        .filter(|w| w[1].1 > w[0].1 && w[2].1 < w[1].1)
+        .count() as f64
+        / (seconds as f64 / 60.0);
+    if swings > limits.swings_per_minute * outcome.seen.len() as f64 {
+        found.push(format!("swung {swings:.1} times a minute"));
+    }
+    if outcome.efficiency < limits.efficiency {
+        found.push(format!(
+            "the room played {:.0}% of what it could",
+            outcome.efficiency * 100.0
+        ));
+    }
+    found
+}
+
+fn assert_contract(name: &str, game: &Match, limits: Limits) -> Outcome {
+    let outcome = replay(game);
+    let found = breaches(&outcome, game.seconds, limits);
+    assert!(
+        found.is_empty(),
+        "{name}: {}\nrates {:?}\n{outcome:?}",
+        found.join("; "),
+        outcome.rates
+    );
+    outcome
+}
+
+/// A match's first minute is light: a PC runs the certificate's rate at the
+/// start and reaches `capacity` 45 seconds in.
+fn settling(tick_hz: u16, capacity: impl Fn(f64) -> f64) -> impl Fn(f64) -> f64 {
+    let start = ramp(0.0, 45.0, f64::from(tick_hz), 0.0);
+    move |second| {
+        if second < 45.0 {
+            let share = second / 45.0;
+            start(second) + capacity(second) * share
+        } else {
+            capacity(second)
+        }
+    }
+}
+
+/// A capacity that goes from `from` to `to` frames a second between
+/// `start` and `end` seconds, linearly.
+fn ramp(start: f64, end: f64, from: f64, to: f64) -> impl Fn(f64) -> f64 {
+    move |second| {
+        let share = ((second - start) / (end - start)).clamp(0.0, 1.0);
+        from + (to - from) * share
+    }
+}
+
+/// Match 1e9fac21: about 55 frames a second at 8 ms ticks, for 828 seconds.
+#[test]
+fn a_pc_that_runs_below_the_rate_though_its_ticks_are_quick_slows_the_clock() {
+    let pc = || Pc::drawing(settling(60, |_| 55.0), 8_000);
+    let rows = replay(&Match::new(60, 828, vec![pc()]).paced(CertificatePacing::On));
+    assert!(rows.slowdowns >= 1, "{rows:?}");
+    assert!(rows.slow().max_backlog_s <= 5.0, "{rows:?}");
+    assert_contract(
+        "1e9fac21",
+        &Match::new(60, 828, vec![pc()]),
+        Limits::default(),
+    );
+}
+
+/// Match 785b3c9b: modelled as a PC that runs about 35 frames a second at
+/// 15 ms ticks. Rows must settle at 30, trying a faster rate again at most
+/// every five minutes; continuous pacing just under 35.
+#[test]
+fn the_clock_settles_at_a_rate_a_slow_pc_holds() {
+    let pc = || Pc::drawing(settling(60, |_| 35.0), 15_000);
+    let rows = replay(&Match::new(60, 972, vec![pc()]).paced(CertificatePacing::On));
+    assert!(rows.slow().max_backlog_s <= 5.0, "{rows:?}");
+    assert!(rows.slow().line_s <= 972.0 / 10.0, "{rows:?}");
+    assert!(rows.raises <= 972 / 300 + 1, "{rows:?}");
+    let game = Match::new(60, 972, vec![pc()]);
+    assert_contract("785b3c9b", &game, Limits::default());
+}
+
+/// The 2026-11-24 report: a PC drawing a big battle runs about 36 frames a
+/// second, a third less for eight seconds of every forty-five (fights), its
+/// ticks saying 40. The catching-up line must not stay on.
+#[test]
+fn continuous_pacing_drains_a_pc_that_runs_just_over_the_clock() {
+    let battle = |second: f64| if second % 45.0 < 8.0 { 26.0 } else { 36.0 };
+    let game = Match::new(
+        60,
+        900,
+        vec![Pc::drawing(settling(60, battle), 20_000).jitter(0.05)],
+    );
+    assert_contract("2026-11-24", &game, Limits::default());
+}
+
+/// A PC that slows as the match grows, catching up no faster than it plays:
+/// 60 frames a second down to 20 over fifteen minutes, then back up to 60
+/// over five, both when its ticks tell and when only what it runs does.
+#[test]
+fn continuous_pacing_follows_a_pc_that_slows_and_recovers() {
+    let curve = |second: f64| {
+        if second < 960.0 {
+            ramp(60.0, 960.0, 60.0, 20.0)(second)
+        } else {
+            ramp(960.0, 1260.0, 20.0, 60.0)(second)
+        }
+    };
+    for (name, pc) in [
+        ("drawing", Pc::drawing(curve, 8_000)),
+        ("simulating", Pc::simulating(curve)),
+    ] {
+        let game = Match::new(60, 1500, vec![pc.jitter(0.05)]);
+        assert_contract(name, &game, Limits::default());
+    }
+}
+
+/// The same within two minutes: 60 down to 25.
+#[test]
+fn continuous_pacing_follows_a_fast_decline() {
+    let game = Match::new(
+        60,
+        400,
+        vec![Pc::drawing(ramp(30.0, 150.0, 60.0, 25.0), 8_000).jitter(0.05)],
+    );
+    assert_contract("fast decline", &game, Limits::default());
+}
+
+/// Every steady PC, at every certified rate, limited by drawing or by its
+/// simulation, from a third of the rate to a tenth over it: the boundaries
+/// each rule drew (95% hold, a twentieth over the clock, the rate itself)
+/// lie inside the sweep.
+#[test]
+fn continuous_pacing_holds_its_contract_across_steady_pcs() {
+    let shares = [
+        0.35, 0.5, 0.7, 0.8, 0.9, 0.93, 0.95, 0.97, 1.0, 1.03, 1.05, 1.053, 1.06, 1.1,
+    ];
+    let mut found = Vec::new();
+    for tick_hz in [90u16, 60, 45, 30] {
+        for share in shares {
+            let capacity = f64::from(tick_hz) * share;
+            // Below the floor and a little over it the clock cannot leave a
+            // margin: `continuous_pacing_stops_at_its_floor`.
+            if capacity < f64::from(CONTINUOUS_FLOOR) * 1.15 {
+                continue;
+            }
+            for (kind, pc) in [
+                (
+                    "drawing",
+                    Pc::drawing(settling(tick_hz, move |_| capacity), 4_000),
+                ),
+                (
+                    "simulating",
+                    Pc::simulating(settling(tick_hz, move |_| capacity)),
+                ),
+            ] {
+                let game = Match::new(tick_hz, 600, vec![pc.jitter(0.03)]);
+                let outcome = replay(&game);
+                let breached = breaches(&outcome, game.seconds, Limits::default());
+                if !breached.is_empty() {
+                    found.push(format!(
+                        "{tick_hz} Hz, {kind} PC at {capacity:.1}: {} (rates {:?})",
+                        breached.join("; "),
+                        outcome.rates.iter().rev().take(4).collect::<Vec<_>>()
+                    ));
+                }
+            }
+        }
+    }
+    assert!(found.is_empty(), "{}", found.join("\n"));
+}
+
+/// A PC whose capacity swings a sixth either way around just over the rate.
+#[test]
+fn continuous_pacing_rides_a_noisy_pc() {
+    let game = Match::new(60, 900, vec![Pc::drawing(|_| 66.0, 6_000).jitter(0.17)]);
+    assert_contract("noisy", &game, Limits::default());
+}
+
+/// Two slow PCs, one slowing as the other recovers.
+#[test]
+fn continuous_pacing_follows_the_slowest_of_two() {
+    let game = Match::new(
+        60,
+        900,
+        vec![
+            Pc::drawing(settling(60, ramp(100.0, 500.0, 50.0, 30.0)), 8_000).jitter(0.05),
+            Pc::drawing(settling(60, ramp(100.0, 500.0, 35.0, 58.0)), 8_000).jitter(0.05),
+        ],
+    );
+    assert_contract("two slow", &game, Limits::default());
+}
+
+/// Every PC runs well over the rate: the clock never slows.
+#[test]
+fn continuous_pacing_leaves_quick_pcs_alone() {
+    for tick_hz in [90u16, 60, 30] {
+        let game = Match::new(
+            tick_hz,
+            600,
+            vec![
+                Pc::drawing(move |_| f64::from(tick_hz) * 1.25, 4_000).jitter(0.1),
+                Pc::fast(),
+            ],
+        );
+        let outcome = replay(&game);
+        assert_eq!(outcome.slowdowns, 0, "{tick_hz} Hz: {outcome:?}");
+    }
+}
+
+/// A minimised window counts no backlog, so it slows nobody, however far it
+/// falls behind; once shown it catches up under the contract.
+#[test]
+fn a_hidden_window_slows_nobody() {
+    let game = Match::new(
+        60,
+        600,
+        vec![Pc::drawing(|_| 50.0, 8_000).hidden(|second| second < 200.0)],
+    );
+    let outcome = replay(&game);
+    assert_eq!(outcome.rate_at(199), 60, "{outcome:?}");
+    assert!(outcome.slow().final_backlog_s <= 1.0, "{outcome:?}");
+}
+
+/// Hitches: a PC that ran well stops or slows for a while. The room's first
+/// step slows it half at most, and it is back at its own rate within a minute
+/// and a half (2026-11-22: a dip held the room slow for five minutes); the
+/// player's backlog drains within the contract's run.
+#[test]
+fn continuous_pacing_recovers_from_hitches() {
+    type Shape = fn(f64) -> f64;
+    // Name, capacity, the hitch's end, what it runs in the hitch and for how
+    // long.
+    let hitches: [(&str, Shape, f64, f64, f64); 6] = [
+        (
+            "6s stall, quick PC",
+            |s| if (6.0..12.0).contains(&s) { 0.0 } else { 400.0 },
+            12.0,
+            0.0,
+            6.0,
+        ),
+        (
+            "6s stall, PC 10% over",
+            |s| if (6.0..12.0).contains(&s) { 0.0 } else { 66.0 },
+            12.0,
+            0.0,
+            6.0,
+        ),
+        (
+            "8s at 16",
+            |s| {
+                if (4.0..12.0).contains(&s) {
+                    16.0
+                } else {
+                    400.0
+                }
+            },
+            12.0,
+            16.0,
+            8.0,
+        ),
+        (
+            "10s at 40",
+            |s| {
+                if (60.0..70.0).contains(&s) {
+                    40.0
+                } else {
+                    70.0
+                }
+            },
+            70.0,
+            40.0,
+            10.0,
+        ),
+        (
+            "20s at 40",
+            |s| {
+                if (60.0..80.0).contains(&s) {
+                    40.0
+                } else {
+                    70.0
+                }
+            },
+            80.0,
+            40.0,
+            20.0,
+        ),
+        (
+            "two 10s dips 2 min apart",
+            |s| {
+                if (60.0..70.0).contains(&s) || (180.0..190.0).contains(&s) {
+                    40.0
+                } else {
+                    70.0
+                }
+            },
+            190.0,
+            40.0,
+            10.0,
+        ),
+    ];
+    for (name, shape, over, low, stall_s) in hitches {
+        let game = Match::new(60, 400, vec![Pc::drawing(shape, 8_000)]);
+        let outcome = assert_contract(name, &game, Limits::sudden(60.0, low, stall_s));
+        let back = over as u64 + 90;
+        assert!(
+            outcome.rate_at(back) >= 57,
+            "{name}: still at {} {back}s in: {:?}",
+            outcome.rate_at(back),
+            outcome.rates
+        );
+        assert!(
+            outcome.rates.get(1).is_none_or(|&(_, rate)| rate >= 30),
+            "{name}: first slowed more than half: {:?}",
+            outcome.rates
+        );
+    }
+}
+
+/// A PC whose catch-up skips drawing runs half again as fast while behind:
+/// the clock still settles where its play keeps up.
+#[test]
+fn continuous_pacing_settles_for_a_pc_whose_catch_up_is_quicker() {
+    let game = Match::new(
+        60,
+        900,
+        vec![
+            Pc::drawing(|_| 40.0, 8_000)
+                .catch_up(|capacity| capacity * 1.5)
+                .jitter(0.05),
+        ],
+    );
+    assert_contract("quick catch-up", &game, Limits::default());
+}
+
+/// A PC that runs well, then suddenly a fraction of the rate
+/// ([`Limits::sudden`]).
+#[test]
+fn continuous_pacing_catches_a_sudden_drop() {
+    let mut found = Vec::new();
+    for tick_hz in [90u16, 60, 45] {
+        for share in [0.3, 0.5, 0.7, 0.9] {
+            let low = f64::from(tick_hz) * share;
+            let shape = move |second: f64| {
+                if second < 120.0 {
+                    f64::from(tick_hz) * 1.2
+                } else {
+                    low
+                }
+            };
+            let game = Match::new(tick_hz, 400, vec![Pc::drawing(shape, 4_000)]);
+            let outcome = replay(&game);
+            let breached = breaches(
+                &outcome,
+                game.seconds,
+                Limits::sudden(f64::from(tick_hz), low, 0.0),
+            );
+            if !breached.is_empty() {
+                found.push(format!(
+                    "{tick_hz} Hz to {low:.0}: {} (rates {:?})",
+                    breached.join("; "),
+                    outcome.rates
+                ));
+            }
+        }
+    }
+    assert!(found.is_empty(), "{}", found.join("\n"));
+}
+
+/// Matches no one wrote down: seeded random PCs, each a slow drift, fights
+/// that cut it by up to two fifths for a few seconds at a time, and jitter,
+/// one to three of them, drawing or simulating, at every certified rate.
+/// Each match is judged by the same contract, with a fight's drop judged as
+/// a drop at once ([`Limits::sudden`]).
+#[test]
+fn continuous_pacing_holds_its_contract_in_random_matches() {
+    let mut found = Vec::new();
+    for seed in 1..=200u64 {
+        let mut random = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+        let mut next = move || {
+            random ^= random << 13;
+            random ^= random >> 7;
+            random ^= random << 17;
+            (random >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let tick_hz = [90u16, 60, 45, 30][(next() * 4.0) as usize];
+        let rate = f64::from(tick_hz);
+        let floor = f64::from(CONTINUOUS_FLOOR) * 1.15;
+        let mut pcs = Vec::new();
+        let mut deepest: f64 = 1.0;
+        for _ in 0..1 + (next() * 3.0) as usize {
+            // Capacity at 0, 300 and 600 seconds, a drift between them.
+            let points: [f64; 3] =
+                std::array::from_fn(|_| (rate * (0.35 + next() * 0.9)).max(floor));
+            let fight_every = 30.0 + next() * 90.0;
+            let fight_for = 3.0 + next() * 12.0;
+            let fight_cut = next() * 0.4;
+            deepest = deepest.min(1.0 - fight_cut);
+            let curve = move |second: f64| {
+                let drift = if second < 300.0 {
+                    ramp(0.0, 300.0, points[0], points[1])(second)
+                } else {
+                    ramp(300.0, 600.0, points[1], points[2])(second)
+                };
+                let fighting = second > 60.0 && second % fight_every < fight_for;
+                (if fighting {
+                    drift * (1.0 - fight_cut)
+                } else {
+                    drift
+                })
+                .max(floor)
+            };
+            let curve = settling(tick_hz, curve);
+            let pc = if next() < 0.5 {
+                Pc::drawing(curve, 4_000)
+            } else {
+                Pc::simulating(curve)
+            };
+            pcs.push(pc.jitter(next() * 0.1));
+        }
+        let game = Match {
+            seed,
+            ..Match::new(tick_hz, 600, pcs)
+        };
+        let outcome = replay(&game);
+        let sudden = Limits::sudden(1.0, deepest, 0.0);
+        let limits = Limits {
+            max_backlog_s: sudden.max_backlog_s.max(Limits::default().max_backlog_s),
+            longest_line_s: sudden.longest_line_s,
+            ..Limits::default()
+        };
+        let breached = breaches(&outcome, game.seconds, limits);
+        if !breached.is_empty() {
+            found.push(format!(
+                "seed {seed} ({tick_hz} Hz, {} PCs): {} rates {:?}",
+                game.pcs.len(),
+                breached.join("; "),
+                outcome.rates
+            ));
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "{} of 200:\n{}",
+        found.len(),
+        found.join("\n")
+    );
+}
+
+/// A capacity around `base` that moves without a pattern, within `share` of
+/// it either way, for `seconds`: jumping to a new level every one to twenty
+/// seconds, or (`smooth`) wandering there a little each second.
+fn irregular(
+    base: f64,
+    share: f64,
+    smooth: bool,
+    seed: u64,
+    seconds: usize,
+) -> impl Fn(f64) -> f64 {
+    let mut random = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+    let mut next = move || {
+        random ^= random << 13;
+        random ^= random >> 7;
+        random ^= random << 17;
+        (random >> 11) as f64 / (1u64 << 53) as f64
+    };
+    let mut levels = Vec::with_capacity(seconds + 1);
+    let mut level = 0.0f64;
+    while levels.len() <= seconds {
+        if smooth {
+            level = (level + (next() * 2.0 - 1.0) * 0.15).clamp(-1.0, 1.0);
+            levels.push(level);
+        } else {
+            level = next() * 2.0 - 1.0;
+            let hold = 1 + (next() * 20.0) as usize;
+            levels.extend(std::iter::repeat_n(level, hold));
+        }
+    }
+    move |second: f64| base * (1.0 + share * levels[(second as usize).min(seconds)])
+}
+
+/// A slow PC whose frame rate moves without a pattern, now quicker, now
+/// slower, at every certified rate: the clock settles near what it runs at
+/// its low points (lagging costs late orders, which hurt more than a slower
+/// match) and does not follow each swing. Its deepest jump down is judged
+/// as a drop at once ([`Limits::sudden`]).
+#[test]
+fn continuous_pacing_settles_under_an_irregular_pc() {
+    let mut found = Vec::new();
+    let mut seed = 0;
+    for tick_hz in [90u16, 60, 45, 30] {
+        for base_share in [0.4, 0.6, 0.8, 1.0] {
+            for share in [0.1, 0.2, 0.3, 0.5] {
+                for smooth in [false, true] {
+                    seed += 1;
+                    let base = f64::from(tick_hz) * base_share;
+                    if base * (1.0 - share) < f64::from(CONTINUOUS_FLOOR) * 1.15 {
+                        continue;
+                    }
+                    let curve = settling(tick_hz, irregular(base, share, smooth, seed, 900));
+                    let pc = if seed % 2 == 0 {
+                        Pc::drawing(curve, 4_000)
+                    } else {
+                        Pc::simulating(curve)
+                    };
+                    let game = Match::new(tick_hz, 900, vec![pc]);
+                    let outcome = replay(&game);
+                    let sudden = Limits::sudden(1.0 + share, 1.0 - share, 0.0);
+                    let limits = Limits {
+                        max_backlog_s: sudden.max_backlog_s.max(Limits::default().max_backlog_s),
+                        longest_line_s: sudden.longest_line_s,
+                        ..Limits::default()
+                    };
+                    let breached = breaches(&outcome, game.seconds, limits);
+                    if !breached.is_empty() {
+                        found.push(format!(
+                            "{tick_hz} Hz, {} around {base:.0} by {:.0}%: {} (late rate {:.1})",
+                            if smooth { "wandering" } else { "jumping" },
+                            share * 100.0,
+                            breached.join("; "),
+                            outcome.late_rate
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "{} matches:\n{}",
+        found.len(),
+        found.join("\n")
+    );
+}
+
+/// A PC below the floor: the clock waits at the floor and does not swing.
+#[test]
+fn continuous_pacing_stops_at_its_floor() {
+    let game = Match::new(60, 600, vec![Pc::drawing(|_| 8.0, 8_000)]);
+    let outcome = replay(&game);
+    assert_eq!(
+        outcome.late_rate,
+        f64::from(CONTINUOUS_FLOOR),
+        "{outcome:?}"
+    );
+    assert!(outcome.raises <= 3, "{outcome:?}");
+}
+
+/// VO2C flags bit 2 certifies continuous pacing; with bit 0 (pacing off) it
+/// is malformed. Under it any whole rate from the certificate's down to the
+/// floor is admitted; Game Speed rows stay the only rates otherwise.
+#[test]
+fn a_continuous_certificate_admits_whole_rates_down_to_the_floor() {
+    let key = SecretKey::new([73; 32]);
+    let certificate = OrderingCertificate {
+        room: [5; 16],
+        sources_mask: 3,
+        tick_hz: 60,
+        expires: 1400,
+        pacing: CertificatePacing::Continuous,
+        ordered_alone: false,
+    };
+    let mut signed = certificate.sign(&key).unwrap();
+    assert_eq!(signed[34], 4);
+    assert_eq!(OrderingCertificate::parse(&signed).unwrap(), certificate);
+    signed[34] = 5;
+    assert_eq!(
+        OrderingCertificate::parse(&signed),
+        Err(RelayError::Malformed)
+    );
+    // The lobby's signer (nakama/vera/internal/relay, ordered alone and
+    // continuous) gives the same bytes for key 0x00..0x1f, room 0x10..0x1f.
+    let mut lobby_key = [0; 32];
+    lobby_key
+        .iter_mut()
+        .enumerate()
+        .for_each(|(i, b)| *b = i as u8);
+    let mut room = [0; 16];
+    room.iter_mut()
+        .enumerate()
+        .for_each(|(i, b)| *b = 0x10 + i as u8);
+    let lobby = OrderingCertificate {
+        room,
+        sources_mask: 1,
+        tick_hz: 45,
+        expires: 87_400,
+        pacing: CertificatePacing::Continuous,
+        ordered_alone: true,
+    };
+    let hex = |bytes: &[u8]| bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    assert_eq!(
+        hex(&lobby.sign(&SecretKey::new(lobby_key)).unwrap()),
+        "564f3243101112131415161718191a1b1c1d1e1f010000002d006855010000000000063c7300e29e35ee711fd08ee08af60c2a82bb1aa5695132d2ff938130151516ab"
+    );
+    use CertificatePacing::*;
+    assert!(admits_rate(60, Continuous, 53) && admits_rate(60, Continuous, 10));
+    assert!(!admits_rate(60, Continuous, 9) && !admits_rate(60, Continuous, 61));
+    assert!(!admits_rate(60, On, 53) && admits_rate(60, On, 45));
+    assert!(admits_rate(60, Off, 60) && !admits_rate(60, Off, 45));
+}
+
+/// A step down halves the rate at most, and rounds to whole rates.
+#[test]
+fn continuous_pacing_keeps_an_odd_rate_within_the_half_step() {
+    let game = Match::new(60, 30, vec![Pc::drawing(|_| 15.0, 8_000)]);
+    let outcome = replay(&game);
+    let first: Vec<_> = outcome
+        .rates
+        .iter()
+        .take(3)
+        .map(|&(_, rate)| rate)
+        .collect();
+    assert_eq!(first, [60, 30, 15]);
+}

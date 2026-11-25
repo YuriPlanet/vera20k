@@ -4,6 +4,12 @@
 //! We preserve the raw field list and also expose normalized action entries so
 //! runtime code can stop guessing at the original payload shape.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
+
 use std::collections::{BTreeSet, HashMap};
 
 use crate::rules::ini_parser::IniFile;
@@ -302,7 +308,7 @@ pub fn trigger_anim_class_roots(rules: &RuleSet, actions: &ActionMap) -> Vec<Str
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 
@@ -490,9 +496,7 @@ mod tests {
         assert_eq!(roots, ["BEACON"]);
         // Same strict owner used by both app load roots and saved resources.
         // Native BEACON controls read its physical ten-frame SHP and ART.
-        rules
-            .bind_scheduler_anim_assets(&roots, &assets, "TEM", "TEMPERATE")
-            .unwrap();
+        rules.bind_scheduler_anim_assets(&roots, &assets, "TEM", "TEMPERATE");
         let mut sim = crate::sim::world::Simulation::with_seed(31);
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         sim.session
@@ -512,8 +516,9 @@ mod tests {
 
     #[test]
     fn retail_map_whose_action_41_names_unbindable_art_still_loads() {
-        // Retail GAWEAP_3's LoopEnd passes its frames, so VERA cannot bind it.
-        // Native never fails a scenario on anim art; neither may the load.
+        // Retail GAWEAP_3's LoopEnd passes its frames; it binds as written
+        // (`0x00427FE8`). Native never fails a scenario on anim art; neither
+        // may the load.
         use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
         let Some((root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;

@@ -1,8 +1,8 @@
 //! CSF string table parser — localized text for RA2/YR UI, EVA, and menus.
 //!
 //! Active Yuri's Revenge initializes only `ra2md.csf` from the retail language
-//! archive stack. Optional Ares builds compose its supplemental tables through
-//! [`CsfFile::load_active`]. Each entry maps a label name (e.g., `"NAME:MTNK"`) to a
+//! archive stack. A game that ships `ares.mix` composes its supplemental tables
+//! through [`CsfFile::load_active`]. Each entry maps a label name (e.g., `"NAME:MTNK"`) to a
 //! Unicode display string (e.g., `"Grizzly Battle Tank"`).
 //!
 //! ## Binary format
@@ -12,6 +12,12 @@
 //!
 //! ## Dependency rules
 //! - Part of assets/ — no dependencies on game modules.
+
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 
 use std::borrow::Cow;
 
@@ -74,7 +80,21 @@ struct CsfText {
 impl CsfFile {
     /// Parse a CSF file from raw bytes.
     pub fn from_bytes(data: &[u8]) -> Result<Self, AssetError> {
-        if data.len() < MIN_FILE_SIZE {
+        // +0x10 is reserved.
+        let (
+            Some(magic),
+            Some(version),
+            Some(label_count),
+            Some(string_count),
+            Some(stored_language),
+        ) = (
+            read_u32_le(data, 0),
+            read_u32_le(data, 4),
+            read_u32_le(data, 8),
+            read_u32_le(data, 12),
+            read_u32_le(data, 20),
+        )
+        else {
             return Err(AssetError::ParseError {
                 format: "CSF".to_string(),
                 detail: format!(
@@ -83,9 +103,8 @@ impl CsfFile {
                     MIN_FILE_SIZE
                 ),
             });
-        }
+        };
 
-        let magic: u32 = read_u32_le(data, 0);
         if magic != HEADER_MAGIC {
             return Err(AssetError::ParseError {
                 format: "CSF".to_string(),
@@ -96,22 +115,15 @@ impl CsfFile {
             });
         }
 
-        let version: u32 = read_u32_le(data, 4);
-        let label_count: u32 = read_u32_le(data, 8);
-        let string_count = read_u32_le(data, 12);
         if label_count == 0 || string_count == 0 {
             return Err(AssetError::ParseError {
                 format: "CSF".to_string(),
                 detail: "header label and string counts must both be nonzero".to_string(),
             });
         }
-        // +0x10 is reserved. Version 2+
-        // stores the language DWORD at +0x14; older tables force language 0.
-        let language = if version >= 2 {
-            read_u32_le(data, 20)
-        } else {
-            0
-        };
+        // Version 2+ stores the language DWORD at +0x14; older tables force
+        // language 0.
+        let language = if version >= 2 { stored_language } else { 0 };
 
         // The header counts are validated but are not the loop bound: retail
         // walks records until the next read/magic check fails. Bound the map
@@ -152,17 +164,56 @@ impl CsfFile {
     /// The process string table used by both the game and asset diagnostics.
     /// Stock YR loads the md table alone. Installed Ares6BD886->10060DF0
     /// appends its fixed candidates, for a game whose files take Ares' forms
-    /// (`ares`, `AssetManager::ares_form`); native controls:
+    /// (`ares`, `AssetManager::ships_ares`); native controls:
     /// tools/rules_oracle/ares_csf.
+    /// The base CSF this process uses. YR reads `ra2md.csf`; `-ra2` reads the
+    /// original RA2 `ra2.csf` shipped inside `language.mix`.
+    pub fn active_csf_name() -> &'static str {
+        if crate::util::ra2_launch::enabled() {
+            "ra2.csf"
+        } else {
+            "ra2md.csf"
+        }
+    }
+
     pub fn load_active<'a>(
         ares: bool,
         mut lookup: impl FnMut(&str) -> Option<&'a [u8]>,
     ) -> Result<(Self, Vec<String>), AssetError> {
-        let bytes = lookup("ra2md.csf").ok_or_else(|| AssetError::AssetNotFound {
-            name: "ra2md.csf".to_string(),
+        let csf_name = Self::active_csf_name();
+        let bytes = lookup(csf_name).ok_or_else(|| AssetError::AssetNotFound {
+            name: csf_name.to_string(),
         })?;
         let mut table = Self::from_bytes(bytes)?;
         let mut admitted = Vec::new();
+        // `-ra2` reads the original ra2.csf. The YR table is installed beside
+        // it and carries labels the base table does not (e.g. UI strings added
+        // for the expansion). Adopt those as fallbacks: a label ra2.csf has
+        // keeps its original value, missing ones answer from ra2md.csf.
+        if crate::util::ra2_launch::enabled()
+            && let Some(md_bytes) = lookup("ra2md.csf")
+            && let Ok(md_table) = Self::from_bytes(md_bytes)
+        {
+            // Absorb missing labels into the base table itself, not into the
+            // localization fallbacks: `i18n::apply` clears those right after
+            // this load, while entries survive. A label ra2.csf already has
+            // keeps its original value.
+            let mut added = 0usize;
+            if let (CsfEntries::Raw(base), CsfEntries::Raw(md)) =
+                (&mut table.entries, md_table.entries)
+            {
+                for (key, value) in md {
+                    if !base.contains_key(&key) {
+                        base.insert(key, value);
+                        added += 1;
+                    }
+                }
+            }
+            if added > 0 {
+                log::info!("RA2 CSF fallback: adopted {added} labels from ra2md.csf");
+                admitted.push("ra2md.csf".to_string());
+            }
+        }
         if !ares {
             return Ok((table, admitted));
         }
@@ -209,10 +260,16 @@ impl CsfFile {
     ///100608C0's admission is distinct from LoadFile's base-header checks:
     /// supplemental zero counts are valid, and the base language never changes.
     fn append_ares(&mut self, data: &[u8], ignore_language: bool) -> bool {
-        if data.len() < MIN_FILE_SIZE
-            || read_u32_le(data, 0) != HEADER_MAGIC
-            || (read_u32_le(data, 4) as i32) < 2
-            || (!ignore_language && ![self.language, u32::MAX].contains(&read_u32_le(data, 20)))
+        let (Some(magic), Some(version), Some(language)) = (
+            read_u32_le(data, 0),
+            read_u32_le(data, 4),
+            read_u32_le(data, 20),
+        ) else {
+            return false;
+        };
+        if magic != HEADER_MAGIC
+            || (version as i32) < 2
+            || (!ignore_language && ![self.language, u32::MAX].contains(&language))
         {
             return false;
         }
@@ -247,9 +304,22 @@ impl CsfFile {
         true
     }
 
-    /// Look up a string by label name (case-insensitive).
-    pub fn get(&self, key: &str) -> Option<&str> {
-        self.lookup_text(key).map(|text| text.value.as_str())
+    /// Look up a string by label name (case-insensitive). With Ares, a
+    /// `NOSTR:` label answers with its own text ([`Self::ares_literal`]).
+    pub fn get<'a>(&'a self, key: &'a str) -> Option<&'a str> {
+        self.ares_literal(key)
+            .or_else(|| self.lookup_text(key).map(|text| text.value.as_str()))
+    }
+
+    /// Ares 3.0 CSF_LoadString_1 (Ares.dll `10060E80`, hook `0x00734E83`):
+    /// before LoadString (`0x00734E60`) searches the table, a label that
+    /// starts with `NOSTR:` (case-sensitive `strncmp`) is answered with the
+    /// rest of itself, even when the table has that label.
+    fn ares_literal<'k>(&self, key: &'k str) -> Option<&'k str> {
+        match self.entries {
+            CsfEntries::Ares(_) => key.strip_prefix("NOSTR:").map(ares_dynamic_text),
+            CsfEntries::Raw(_) => None,
+        }
     }
 
     /// Stored key spelling and unnormalized text for the very same selected slot.
@@ -300,10 +370,21 @@ impl CsfFile {
 
     /// Native initialized-table lookup. Missing labels are visible, not an
     /// invitation for each caller to substitute its own English fallback.
+    /// With Ares, CSF_LoadString_2 (Ares.dll `10060EC0`, hook `0x00734EC2`)
+    /// formats the missing text as a dynamic string, which caps it like a
+    /// `NOSTR:` text.
     pub fn text<'a>(&'a self, key: &str) -> Cow<'a, str> {
-        self.get(key)
-            .map(Cow::Borrowed)
-            .unwrap_or_else(|| Cow::Owned(format!("MISSING:'{key}'")))
+        if let Some(literal) = self.ares_literal(key) {
+            return Cow::Owned(literal.to_owned());
+        }
+        if let Some(text) = self.lookup_text(key) {
+            return Cow::Borrowed(text.value.as_str());
+        }
+        let missing = format!("MISSING:'{key}'");
+        Cow::Owned(match self.entries {
+            CsfEntries::Ares(_) => ares_dynamic_text(&missing).to_owned(),
+            CsfEntries::Raw(_) => missing,
+        })
     }
 
     /// Number of entries in the string table.
@@ -342,6 +423,18 @@ fn localized(key: &str, value: &str) -> CsfText {
         raw: value.to_owned(),
         stored_key: key.to_ascii_uppercase(),
     }
+}
+
+/// Ares' CSFLoader::GetDynamicString (Ares.dll `100607C0`) formats a text
+/// into a 0x66-character buffer with `_TRUNCATE`: at most 101 characters
+/// show. `%hs` widens each label byte to one character, as the INI reader
+/// does.
+const ARES_DYNAMIC_TEXT_CHARS: usize = 0x66 - 1;
+
+fn ares_dynamic_text(text: &str) -> &str {
+    text.char_indices()
+        .nth(ARES_DYNAMIC_TEXT_CHARS)
+        .map_or(text, |(end, _)| &text[..end])
 }
 
 /// AbstractTypeClass's visible type name (`+0x60`): the constructor leaves
@@ -432,12 +525,17 @@ pub fn format_csf(fmt: &str, args: &[CsfArg]) -> String {
 /// (`%02d` in `TXT_TIME_FORMAT_HOURS`). Anything else in the flag run is
 /// ignored, matching how the retail formats actually use it.
 fn push_padded_int(out: &mut String, flags: &[char], value: i64) {
+    /// Retail formats pad to two digits; a string table is outside data, and
+    /// `%0999999999999d` would otherwise push a terabyte of zeros.
+    const MAX_PAD_WIDTH: usize = 64;
     let zero_pad = flags.first() == Some(&'0');
     let width: usize = flags
         .iter()
         .skip(usize::from(zero_pad))
         .take_while(|c| c.is_ascii_digit())
-        .fold(0usize, |acc, c| acc * 10 + (*c as usize - '0' as usize));
+        .fold(0usize, |acc, c| {
+            (acc * 10 + (*c as usize - '0' as usize)).min(MAX_PAD_WIDTH)
+        });
     let digits = value.to_string();
     if digits.len() < width {
         let pad = if zero_pad { '0' } else { ' ' };
@@ -477,65 +575,47 @@ fn parse_label_entry(data: &[u8], offset: usize) -> Result<(String, CsfText, usi
 
 /// One header/value decoder serves base tables and in-place Ares overrides.
 fn parse_label_header(data: &[u8], offset: usize) -> Result<(String, u32, usize), ()> {
-    // Need at least 12 bytes: 4 (LBL magic) + 4 (pair count) + 4 (name length).
-    if offset + 12 > data.len() {
-        return Err(());
-    }
-
-    let magic: u32 = read_u32_le(data, offset);
-    if magic != LABEL_MAGIC {
-        return Err(());
-    }
-
-    let pair_count: u32 = read_u32_le(data, offset + 4);
-    let name_len: u32 = read_u32_le(data, offset + 8);
-    let name_start: usize = offset + 12;
-    let name_end: usize = name_start + name_len as usize;
-
-    if name_end > data.len() {
-        return Err(());
-    }
-
-    let label_name = crate::util::native_string::widen_bytes(&data[name_start..name_end]);
-
-    Ok((label_name, pair_count, name_end))
+    // 12 bytes, 4 (LBL magic) + 4 (pair count) + 4 (name length), then the
+    // name. A header or name the buffer does not hold is an error.
+    let header = || {
+        let rest = data.get(offset..)?;
+        if read_u32_le(rest, 0)? != LABEL_MAGIC {
+            return None;
+        }
+        let pair_count: u32 = read_u32_le(rest, 4)?;
+        let name_len = read_u32_le(rest, 8)? as usize;
+        let name = rest.get(12..)?.get(..name_len)?;
+        let label_name = crate::util::native_string::widen_bytes(name);
+        Some((label_name, pair_count, offset + 12 + name_len))
+    };
+    header().ok_or(())
 }
 
-fn parse_value(data: &[u8], mut pos: usize, stored_key: &str) -> Result<(CsfText, usize), ()> {
-    if pos + 8 > data.len() {
-        return Err(());
-    }
-
-    let str_magic: u32 = read_u32_le(data, pos);
-    let has_extra = str_magic == STRING_EXTRA_MAGIC;
-
-    if str_magic != STRING_MAGIC && str_magic != STRING_EXTRA_MAGIC {
-        return Err(());
-    }
-
-    let char_count: u32 = read_u32_le(data, pos + 4);
-    let byte_count: usize = char_count as usize * 2; // UTF-16-LE: 2 bytes per char.
-    pos += 8;
-
-    if pos + byte_count > data.len() {
-        return Err(());
-    }
-
-    let value = decode_csf_string(&data[pos..pos + byte_count], stored_key);
-    pos += byte_count;
-
-    // Skip the extra value if present (used for audio cue names, not display text).
-    if has_extra {
-        if pos + 4 > data.len() {
-            return Err(());
+fn parse_value(data: &[u8], pos: usize, stored_key: &str) -> Result<(CsfText, usize), ()> {
+    let value = || {
+        let rest = data.get(pos..)?;
+        let str_magic: u32 = read_u32_le(rest, 0)?;
+        let has_extra = str_magic == STRING_EXTRA_MAGIC;
+        if str_magic != STRING_MAGIC && str_magic != STRING_EXTRA_MAGIC {
+            return None;
         }
-        let extra_len: u32 = read_u32_le(data, pos);
-        pos += 4 + extra_len as usize;
-        if pos > data.len() {
-            return Err(());
+
+        // UTF-16-LE: 2 bytes per char.
+        let byte_count = (read_u32_le(rest, 4)? as usize).checked_mul(2)?;
+        let text = rest.get(8..)?.get(..byte_count)?;
+        let mut next = pos + 8 + byte_count;
+
+        // Skip the extra value if present (used for audio cue names, not display text).
+        if has_extra {
+            let extra_len = read_u32_le(data, next)? as usize;
+            next = next.checked_add(4)?.checked_add(extra_len)?;
+            if next > data.len() {
+                return None;
+            }
         }
-    }
-    Ok((value, pos))
+        Some((decode_csf_string(text, stored_key), next))
+    };
+    value().ok_or(())
 }
 
 /// Decode a CSF-encoded string: bitwise-NOT each byte, interpret as UTF-16-LE,
@@ -639,6 +719,13 @@ fn build_test_csf(label: &str, value: &str) -> Vec<u8> {
 }
 
 /// Authored localization fixture using the CSF owner's binary encoder.
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::unwrap_used,
+        reason = "a test fixture: a bad fixture is a bug in the test that built it"
+    )
+)]
 #[cfg(any(test, feature = "test-support"))]
 pub fn test_csf(entries: &[(&str, &str)]) -> CsfFile {
     assert!(!entries.is_empty());
@@ -652,7 +739,7 @@ pub fn test_csf(entries: &[(&str, &str)]) -> CsfFile {
     CsfFile::from_bytes(&data).unwrap()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::*;
     use std::collections::HashMap;
@@ -716,6 +803,42 @@ mod tests {
                 "base table is required in both profiles"
             );
         }
+    }
+
+    /// Ares' CSF_LoadString_1 (`0x00734E83`) answers a `NOSTR:` label with its
+    /// own text before the table search (`strncmp`, so case-sensitive); stock
+    /// YR searches the table and shows any other label missing.
+    #[test]
+    fn ares_nostr_labels_answer_with_their_own_text() {
+        let base = build_test_csf("NOSTR:Table", "from the table");
+        for ares in [false, true] {
+            let (table, _) = CsfFile::load_active(ares, |name| {
+                (name == "ra2md.csf").then_some(base.as_slice())
+            })
+            .unwrap();
+            if ares {
+                assert_eq!(table.get("NOSTR:Table"), Some("Table"));
+                assert_eq!(table.text("NOSTR:My Tank"), "My Tank");
+                assert_eq!(table.text("nostr:My Tank"), "MISSING:'nostr:My Tank'");
+            } else {
+                assert_eq!(table.get("NOSTR:Table"), Some("from the table"));
+                assert_eq!(table.text("NOSTR:My Tank"), "MISSING:'NOSTR:My Tank'");
+            }
+        }
+    }
+
+    /// Ares' GetDynamicString (`100607C0`) keeps 101 characters of a
+    /// `NOSTR:` text and of a missing label's text (`0x00734EC2`).
+    #[test]
+    fn ares_dynamic_texts_keep_101_characters() {
+        let base = build_test_csf("A", "a");
+        let (table, _) = CsfFile::load_active(true, |name| {
+            (name == "ra2md.csf").then_some(base.as_slice())
+        })
+        .unwrap();
+        let long = "x".repeat(150);
+        assert_eq!(table.text(&format!("NOSTR:{long}")), long[..101]);
+        assert_eq!(table.text(&long), format!("MISSING:'{}", &long[..92]));
     }
 
     #[test]
@@ -874,6 +997,13 @@ mod tests {
         // The engine's wide call sites carry %hs / %ls.
         assert_eq!(format_csf("%hs", &[CsfArg::Str("ok")]), "ok");
         assert_eq!(format_csf("%ls", &[CsfArg::Str("ok")]), "ok");
+    }
+
+    #[test]
+    fn format_csf_caps_a_hostile_pad_width() {
+        let out = format_csf("%0999999999999d", &[CsfArg::Int(5)]);
+        assert_eq!(out.len(), 64, "{out}");
+        assert!(out.ends_with('5') && out.starts_with("000"), "{out}");
     }
 
     #[test]

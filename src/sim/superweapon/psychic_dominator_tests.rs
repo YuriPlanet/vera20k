@@ -176,7 +176,6 @@ fn status_two_fires_from_the_native_stage() {
 // Stock PsyDom Start/Process (0x0053AE50, 0x0053AF40); installed Ares runs
 // SW_PsychicDominator's state machine (10070BA0) and Fire hook (10037840)
 // instead. Ares coverage: `ares_stock_types_tests`.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_process_steps_match_native() {
     let Some(rules) = retail_rules() else {
@@ -223,7 +222,7 @@ fn retail_process_steps_match_native() {
                 .current_frame = stage;
             anim
         });
-        sim.psychic_dominator =
+        *sim.psychic_dominator =
             PsychicDominatorState::for_test(status, ORACLE_CELL, Some(americans), anim);
         let (target, current) = pair(&row["ambient"]);
         sim.session
@@ -239,10 +238,10 @@ fn retail_process_steps_match_native() {
             &mut sim,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
-        let state = sim.psychic_dominator;
+        let state = *sim.psychic_dominator;
         assert_eq!(i32::from(state.status_number()), status_after, "{row}");
         let (x, y) = pair(&row["coords_after"]);
         assert_eq!(state.cell(), (x as i16, y as i16), "{row}");
@@ -319,7 +318,7 @@ fn retail_start_matches_native() {
         };
         rules.general.dominator_first_anim = set(&anims.0, &row["first"]);
         rules.general.dominator_second_anim = set(&anims.1, &row["second"]);
-        sim.psychic_dominator = PsychicDominatorState::default();
+        *sim.psychic_dominator = PsychicDominatorState::default();
         sim.session
             .set_binary_frame_for_test(u32::try_from(int(&row["frame"])).unwrap());
         sim.session
@@ -334,7 +333,7 @@ fn retail_start_matches_native() {
             &mut sim, &rules, americans, sw_type, cell
         ));
 
-        let state = sim.psychic_dominator;
+        let state = *sim.psychic_dominator;
         assert_eq!(
             i32::from(state.status_number()),
             int(&row["status"]),
@@ -431,12 +430,12 @@ fn update_lighting_matches_native() {
         sim.session
             .lighting_mut()
             .set_nuke_flash_for_test(int(&row["nuke"]), 0, 30);
-        sim.lightning_storm = if row["storm"].as_bool().unwrap() {
+        *sim.lightning_storm = if row["storm"].as_bool().unwrap() {
             LightningStorm::raging_for_test(owner, (10, 10))
         } else {
             LightningStorm::default()
         };
-        sim.psychic_dominator =
+        *sim.psychic_dominator =
             PsychicDominatorState::for_test(psydom, ORACLE_CELL, Some(owner), None);
         let lighting_before = global_lighting_events(&sim);
 
@@ -500,7 +499,7 @@ fn ambient_step_matches_native() {
         let (start, duration) = pair(&row["timer"]);
         lighting.set_transition_timer_for_test(CdTimer::from_raw(start, duration));
         let psydom = u8::try_from(int(&row["psydom"])).unwrap();
-        sim.psychic_dominator =
+        *sim.psychic_dominator =
             PsychicDominatorState::for_test(psydom, ORACLE_CELL, Some(owner), None);
         let lighting_before = global_lighting_events(&sim);
 
@@ -589,7 +588,6 @@ fn dominator_lighting_read_matches_native() {
 // Stock PsyDom Start/Process (0x0053AE50, 0x0053AF40); installed Ares runs
 // SW_PsychicDominator's state machine (10070BA0) and Fire hook (10037840)
 // instead. Ares coverage: `ares_stock_types_tests`.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_dominator_strike_captures_the_block() {
     let Some(rules) = retail_rules() else {
@@ -676,7 +674,7 @@ fn retail_dominator_strike_captures_the_block() {
     let struck_at = frames;
     for id in [tank, conscript, squad[0], squad[1], own] {
         assert_eq!(owner_name(&sim, id), "Americans");
-        let link = &sim.substrate.entities.get(id).unwrap().mind_control;
+        let link = &sim.substrate.entities.get(id).unwrap().seldom.mind_control;
         assert!(link.is_mind_controlled() && link.controller().is_none());
         assert!(attached_anim(&sim, id, "MINDANIMR"), "{id} ringed");
     }
@@ -687,6 +685,7 @@ fn retail_dominator_strike_captures_the_block() {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .mind_control
                 .is_mind_controlled()
         );
@@ -716,17 +715,18 @@ fn retail_dominator_strike_captures_the_block() {
     loaded
         .restore_after_snapshot_load()
         .expect("mind-control links resolve");
-    assert_eq!(loaded.psychic_dominator, sim.psychic_dominator);
+    assert_eq!(*loaded.psychic_dominator, *sim.psychic_dominator);
     // Native saves no IonBlast.
     assert_eq!(loaded.ion_blasts().count(), 0);
     for id in [tank, conscript] {
         let entity = loaded.substrate.entities.get(id).unwrap();
         assert_eq!(
-            entity.mind_control,
-            sim.substrate.entities.get(id).unwrap().mind_control
+            entity.seldom.mind_control,
+            sim.substrate.entities.get(id).unwrap().seldom.mind_control
         );
         assert!(
-            entity.mind_control.is_mind_controlled() && entity.mind_control.controller().is_none()
+            entity.seldom.mind_control.is_mind_controlled()
+                && entity.seldom.mind_control.controller().is_none()
         );
     }
 
@@ -787,6 +787,7 @@ fn retail_dominator_strike_captures_the_block() {
             .entities
             .get(tank)
             .unwrap()
+            .seldom
             .mind_control
             .is_mind_controlled()
     );
@@ -812,7 +813,7 @@ fn retail_computer_dominator_sends_its_captives_hunting() {
         sw_type,
         TARGET,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         true,
     ));
     let mut frames = 0;
@@ -861,7 +862,7 @@ fn retail_computer_aims_its_dominator_at_the_group() {
         &rules,
         russians,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(sim.psychic_dominator.status_number(), 1);
@@ -878,7 +879,7 @@ fn retail_computer_aims_its_dominator_at_the_group() {
         &rules,
         russians,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(sim.super_weapons[&russians][&sw_type].is_ready);
     assert_eq!(sim.psychic_dominator.cell(), cell);
@@ -921,7 +922,7 @@ fn retail_dominator_takes_a_captive_from_its_controller() {
         tank,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_eq!(owner_name(&sim, tank), "YuriCountry");
     assert!(attached_anim(&sim, tank, "MINDANIM"));
@@ -934,7 +935,13 @@ fn retail_dominator_takes_a_captive_from_its_controller() {
         assert!(frames < 200, "no strike");
     }
     assert_eq!(owner_name(&sim, tank), "Americans");
-    let link = &sim.substrate.entities.get(tank).unwrap().mind_control;
+    let link = &sim
+        .substrate
+        .entities
+        .get(tank)
+        .unwrap()
+        .seldom
+        .mind_control;
     assert!(link.is_mind_controlled() && link.controller().is_none());
     let manager = sim
         .substrate

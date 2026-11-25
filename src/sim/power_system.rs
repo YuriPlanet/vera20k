@@ -88,8 +88,8 @@ pub struct PowerState {
     power_dirty: bool,
     radar_dirty: bool,
     /// House+2B0/+2B8, the radar outage `CreateRadarOutage @ 0x0050BCD0`
-    /// starts (the Lightning Storm; the trigger action RadarBlackout
-    /// `0x006E3B56` is not ported). The constructor seeds it like the
+    /// starts (the Lightning Storm, and trigger action 139 RadarBlackout
+    /// `0x006E3B40` in `sim::trigger_runtime`). The constructor seeds it like the
     /// blackout timer (`0x004F5843..0x004F584F`).
     radar_outage_timer: crate::sim::timer::CdTimer,
     /// VERA-derived per-owner projection of508DF0's client-local radar
@@ -101,6 +101,12 @@ pub struct PowerState {
     /// Ares HouseExt power the Battery super weapon lends.
     #[serde(default)]
     ares: AresHousePower,
+    /// The drain Phobos last worked the spare power out from, kept only
+    /// while the spare power scales with drain ([`Self::power_surplus`]).
+    /// Zero is the House constructor's drain (`0x004F59A4`), which Phobos'
+    /// constructor hook (`0x004F6532`) works from.
+    #[serde(default)]
+    surplus_drain: i32,
 }
 
 /// Ares HouseExt's battery fields (`src/Ext/House/Body.h`): AuxPower
@@ -137,6 +143,7 @@ impl Default for PowerState {
             radar_outage_timer: crate::sim::timer::CdTimer::started(0, 0),
             radar_available: false,
             ares: AresHousePower::default(),
+            surplus_drain: 0,
         }
     }
 }
@@ -163,6 +170,29 @@ impl PowerState {
     /// House+577B.
     pub fn has_drained_power_source(&self) -> bool {
         self.has_drained_power_source
+    }
+
+    /// House+0x160B4, the spare power `AI_Choose_Building` keeps before it
+    /// puts a power plant first (`0x004FE6FC..0x004FE71D`). Stock only
+    /// zeroes it, in the constructor (`0x004F5DC6`). Under `[AI]
+    /// EnablePowerSurplus=yes`, Phobos' `HouseExt::CalculatePowerSurplus`
+    /// (src/Ext/House/Body.cpp at c783774a) writes `[AI] PowerSurplus` there
+    /// when the house is made (hook `0x004F6532`) and after each count of its
+    /// buildings (hook `0x00508D8D`); with `PowerSurplus.ScaleToDrainAmount`
+    /// above 0, that times the counted drain over the amount.
+    pub(crate) fn power_surplus(&self, rules: &RuleSet) -> i32 {
+        let general = &rules.general;
+        if !rules.phobos() || !general.enable_power_surplus {
+            return 0;
+        }
+        let Some(scale) = surplus_drain_scale(rules) else {
+            return general.power_surplus;
+        };
+        // One IEEE double divide and multiply, as Phobos' SSE2 build
+        // (`Phobos.props`) does them, so every platform gets its bits; `as`
+        // truncates and saturates like its clamp to int and `static_cast<int>`.
+        let factor = f64::from(self.surplus_drain) / f64::from(scale);
+        (f64::from(general.power_surplus) * factor) as i32
     }
 
     /// The retained low-power flag, without the trainer's override
@@ -295,6 +325,11 @@ impl PowerState {
             b"ares-house-power-v1".hash(hasher);
             self.ares.hash(hasher);
         }
+        // And one whose spare power never scaled with its drain.
+        if self.surplus_drain != 0 {
+            b"phobos-surplus-drain-v1".hash(hasher);
+            self.surplus_drain.hash(hasher);
+        }
     }
 
     /// SW_Battery::Activate1006EBD0's House writes, then RecheckPower.
@@ -386,6 +421,17 @@ impl PowerState {
             return (self.total_output.max(self.total_drain), self.total_drain);
         }
         (self.total_output, self.total_drain)
+    }
+
+    /// YRpp's inline `HouseClass::HasLowPower`, `PowerOutput < PowerDrain &&
+    /// PowerDrain`, which Ares compiles into each of its callers: the degrade
+    /// (`HouseClass_Update_DamageDelay @ 100247A0`), the computer's power
+    /// balancing (`UpdateTogglePower @ 100228A0`) and a spy's superweapon
+    /// grant (`InfiltratedBy @ 10012000`). It reads the live totals, not the
+    /// retained [`Self::is_low_power`] flag.
+    pub(crate) fn has_low_power(&self) -> bool {
+        let (output, drain) = self.effective_totals();
+        output < drain && drain != 0
     }
 
     pub fn low_power(&self) -> bool {
@@ -655,7 +701,7 @@ fn enhanced_power(
 #[cfg(feature = "phobos")]
 fn power_plant_enhancer_distance(enhancer: &GameEntity, plant: &GameEntity) -> i32 {
     use crate::sim::movement::ground_pose::object_center_xy;
-    let (width, height) = plant.type_facts.foundation().dimensions();
+    let (width, height) = plant.seldom.type_facts.foundation().dimensions();
     crate::util::native_x87::object_planar_distance(
         object_center_xy(enhancer),
         object_center_xy(plant),
@@ -752,7 +798,7 @@ fn recalculate_power_for_owner(
         };
         if entity.lifecycle.in_limbo()
             || !entity.lifecycle.cell_marked()
-            || (require_discovery && !entity.discovery.discovered_by_current_house())
+            || (require_discovery && !entity.seldom.discovery.discovered_by_current_house())
         {
             continue;
         }
@@ -785,7 +831,7 @@ fn recalculate_power_for_owner(
         let mut output_contribution: i32 = obj.power.max(0);
         let extra_output = obj.extra_power.output();
         if obj.absorbs_passengers() && extra_output > 0 {
-            let occupants = entity.passenger_role.cargo().map_or(0, |c| c.count()) as i32;
+            let occupants = entity.passenger_role().cargo().map_or(0, |c| c.count()) as i32;
             if occupants > 0 {
                 output_contribution =
                     output_contribution.wrapping_add(extra_output.wrapping_mul(occupants));
@@ -916,6 +962,21 @@ fn recalculate_power_for_owner(
     state.total_output = produced;
     state.total_drain = drained;
     state.is_low_power = !state.retained_full_power();
+    // Phobos `HouseClass_UpdatePower_AfterBuildings` (hook 0x00508D8D, past
+    // the zeroing at 0x00508D79) works the spare power out again from this
+    // drain. Without Phobos' `AI.Power` and unit power keys, which VERA does
+    // not port, its `UpdateAIPower` drain is this one.
+    if surplus_drain_scale(rules).is_some() {
+        state.surplus_drain = drained;
+    }
+}
+
+/// `PowerSurplus.ScaleToDrainAmount` when Phobos' spare power scales with
+/// the house's drain in this game ([`PowerState::power_surplus`]).
+fn surplus_drain_scale(rules: &RuleSet) -> Option<i32> {
+    let general = &rules.general;
+    let scale = general.power_surplus_scale_to_drain_amount;
+    (rules.phobos() && general.enable_power_surplus && scale > 0).then_some(scale)
 }
 
 /// Fixture-only assessment of supplied buildings. Production visits each
@@ -1047,9 +1108,11 @@ fn radar_provider_available(
         if entity.owner() != owner
             || entity.lifecycle.in_limbo()
             || !entity.lifecycle.cell_marked()
+            // VERA-only: 508E9D..508F06 has no dying test. Invisible: UnInit
+            // already puts a dead building in limbo.
             || entity.death.is_dying()
             || !entity.building_online()
-            || (require_discovery && !entity.discovery.discovered_by_current_house())
+            || (require_discovery && !entity.seldom.discovery.discovered_by_current_house())
             || entity.mission.current().known() == Some(crate::sim::mission::MissionType::Selling)
             || entity.mission.queued().known() == Some(crate::sim::mission::MissionType::Selling)
             || !interner
@@ -1062,7 +1125,7 @@ fn radar_provider_available(
         // jammed or EMPed (+504 > 0) radar to the next one; a remaining
         // nonzero counter still ends the scan as508F12 does.
         if ares {
-            if entity.ares.radar_jam.is_jammed() || entity.emp_remaining() > 0 {
+            if entity.seldom.ares.radar_jam.is_jammed() || entity.emp_remaining() > 0 {
                 continue;
             }
             if entity.emp_remaining() != 0 {
@@ -1150,7 +1213,7 @@ pub fn has_active_radar(
         .is_some_and(|state| state.radar_available)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -1255,6 +1318,35 @@ mod tests {
             assert_eq!(states[&owner].total_output, output, "Drain.Amount={amount}");
             assert!(!states[&owner].has_drained_power_source);
         }
+    }
+
+    /// Phobos `PowerSurplus.ScaleToDrainAmount`: the spare power is
+    /// `PowerSurplus` times the drain the house's last count found over the
+    /// amount (`HouseExt::CalculatePowerSurplus` from hook 0x00508D8D), not
+    /// the drain a placement added since (`0x005018DD`). A house no count has
+    /// reached keeps none (hook 0x004F6532, drain 0).
+    #[test]
+    fn phobos_spare_power_scales_with_the_counted_drain() {
+        let rules = rules_from_ini(
+            "[BuildingTypes]\n0=C\n[C]\nPower=-100\n[AI]\nEnablePowerSurplus=yes\n\
+             PowerSurplus=50\nPowerSurplus.ScaleToDrainAmount=200\n",
+        );
+        let consumer = make_building(1, "C", "A", 100);
+        let owner = consumer.owner();
+        let mut entities = EntityStore::default();
+        entities.insert(consumer);
+        let mut states =
+            PowerStates::from_map_for_test(BTreeMap::from([(owner, PowerState::default())]));
+        assert_eq!(states[&owner].power_surplus(&rules), 0);
+        tick_power_states(&mut states, &mut entities, &rules, &test_interner(), 0);
+        assert_eq!(states[&owner].power_surplus(&rules), 25);
+        states.house_mut(owner).add_building_drain(100);
+        assert_eq!(states[&owner].total_drain(), 200);
+        assert_eq!(
+            states[&owner].power_surplus(&rules),
+            25,
+            "until the next count"
+        );
     }
 
     /// The radar outage (`House+0x2B0`) against
@@ -1421,7 +1513,9 @@ BuildSpeed=0.02
             let mut cargo = crate::sim::passenger::PassengerCargo::new(occupants, 0.0);
             cargo.set_passengers_for_test((0..occupants).map(|i| 100 + u64::from(i)).collect());
             cargo.set_passenger_sizes_for_test(vec![1.0; occupants as usize]);
-            building.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+            building.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(
+                cargo,
+            ));
             store.insert(building);
             // Supply existing aggregate output with a signed-HP Power=1 source.
             store.insert(make_building(2, "PRIOR", "Owner", value("prior_output")));

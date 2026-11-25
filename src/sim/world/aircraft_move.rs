@@ -4,14 +4,13 @@
 //! live objects and NavCom reservations; the search and the Rate epilogue
 //! draw Scenario RNG. Executable witnesses: tools/spatial_oracle/aircraft_move.*.
 use super::{FrameEffects, Simulation};
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::aircraft::{enter_idle_mode_for, move_mission};
 use crate::sim::components::NavTargetRef;
 use crate::sim::mission::MissionType;
 use crate::sim::movement::{ground_pose, motion_query, nav_target_coordinate};
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "aircraft_move_tests.rs"]
 pub(crate) mod tests;
 
@@ -28,8 +27,7 @@ impl Simulation {
         id: u64,
         state: u8,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> (u8, i32) {
         move_mission::move_visit(
             state,
@@ -37,8 +35,7 @@ impl Simulation {
                 sim: self,
                 id,
                 rules,
-                registry,
-                effects,
+                effects: effects.reborrow(),
             },
         )
     }
@@ -51,8 +48,7 @@ impl Simulation {
         id: u64,
         state: u8,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> (u8, i32) {
         crate::sim::aircraft::carryall::move_visit(
             state,
@@ -60,8 +56,7 @@ impl Simulation {
                 sim: self,
                 id,
                 rules,
-                registry,
-                effects,
+                effects: effects.reborrow(),
             },
         )
     }
@@ -91,7 +86,14 @@ impl Simulation {
             return Some(target);
         }
         let mut claims = None;
-        if self.foot_land_zone_clear(id, target, rules) {
+        // The search asks the land zone about every candidate cell, and the
+        // live aircraft hold the same reservations throughout it: the search
+        // changes nothing, so the set it reads once answers them all.
+        let aircraft_claims = self
+            .resolved_terrain
+            .as_ref()
+            .map(|terrain| self.aircraft_nav_claims(id, terrain));
+        if self.foot_land_zone_clear(id, target, rules, aircraft_claims.as_ref()) {
             let coord = nav_target_coordinate(
                 target,
                 None,
@@ -124,7 +126,7 @@ impl Simulation {
                 let candidate = (x as i16, y as i16);
                 if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                     (i32::from(candidate.0), i32::from(candidate.1)),
-                    self.playfield_bounds,
+                    *self.playfield_bounds,
                     self.resolved_terrain.as_ref(),
                 ) {
                     continue;
@@ -134,7 +136,7 @@ impl Simulation {
                         t.native_cell_coord(t.native_cell_identity(candidate))
                     });
                     let cell = NavTargetRef::cell(cell.0 as u16, cell.1 as u16);
-                    if self.foot_land_zone_clear(id, cell, rules)
+                    if self.foot_land_zone_clear(id, cell, rules, aircraft_claims.as_ref())
                         && self.aircraft_cell_free_for_landing(
                             id,
                             candidate,
@@ -191,7 +193,6 @@ struct WorldMove<'a> {
     sim: &'a mut Simulation,
     id: u64,
     rules: &'a RuleSet,
-    registry: Option<&'a OverlayTypeRegistry>,
     effects: FrameEffects<'a>,
 }
 
@@ -215,7 +216,7 @@ impl move_mission::MoveHost for WorldMove<'_> {
     }
 
     fn enter_idle_mode(&mut self) {
-        enter_idle_mode_for(self.sim, self.id, self.rules, self.registry, self.effects);
+        enter_idle_mode_for(self.sim, self.id, self.rules, &mut self.effects);
     }
 
     fn assign_attack_cell(&mut self) {
@@ -223,7 +224,7 @@ impl move_mission::MoveHost for WorldMove<'_> {
             .sim
             .aircraft_find_attack_cell(self.id, self.nav(), self.rules);
         self.sim
-            .assign_aircraft_destination(self.id, cell, self.rules, self.effects);
+            .assign_aircraft_destination(self.id, cell, self.rules, &mut self.effects);
     }
 
     fn move_to_nav_com(&mut self) {
@@ -276,7 +277,7 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
     }
 
     fn enter_idle_mode(&mut self) {
-        enter_idle_mode_for(self.sim, self.id, self.rules, self.registry, self.effects);
+        enter_idle_mode_for(self.sim, self.id, self.rules, &mut self.effects);
     }
 
     fn tote_target(&mut self) -> Option<u64> {
@@ -288,14 +289,20 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
             .substrate
             .entities
             .get(self.id)
-            .and_then(|entity| entity.radio_contacts.slot(0))
+            .and_then(|entity| entity.seldom.radio_contacts.slot(0))
     }
 
     fn transmit_to_contact(
         &mut self,
         message: crate::sim::radio::RadioMessage,
     ) -> crate::sim::radio::RadioResponse {
-        crate::sim::radio::transmit_to_contact(self.sim, self.id, message, self.rules, self.effects)
+        crate::sim::radio::transmit_to_contact(
+            self.sim,
+            self.id,
+            message,
+            self.rules,
+            &mut self.effects,
+        )
     }
 
     fn transmit(
@@ -310,30 +317,25 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
             message,
             crate::sim::radio::RadioPayload::default(),
             self.rules,
-            self.effects,
+            &mut self.effects,
         )
     }
 
     fn clear_destination(&mut self) {
         self.sim
-            .assign_aircraft_destination(self.id, None, self.rules, self.effects);
+            .assign_aircraft_destination(self.id, None, self.rules, &mut self.effects);
     }
 
     fn assign_attack_cell(&mut self) {
         move_mission::MoveHost::assign_attack_cell(self);
         // `0x00416EE4..0x00416EF5` rereads the team and the NavCom after the
         // destination setter.
-        if let Some((team, _)) = self.sim.team_script_vm.team_for_member(self.id) {
+        if let Some(team) = self.sim.team_script_vm.team_of(self.id) {
             let target = self
                 .nav()
                 .map(|nav| crate::sim::combat::TargetKind::from(nav).into());
-            self.sim.team_assign_mission_target(
-                team,
-                target,
-                self.rules,
-                self.registry,
-                self.effects,
-            );
+            self.sim
+                .team_assign_mission_target(team, target, self.rules, &mut self.effects);
         }
     }
 
@@ -349,7 +351,8 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
 
     fn land_zone_clear(&mut self) -> bool {
         let nav = self.nav().expect("asked with a Cell NavCom");
-        self.sim.foot_land_zone_clear(self.id, nav, self.rules)
+        self.sim
+            .foot_land_zone_clear(self.id, nav, self.rules, None)
     }
 
     fn descending(&mut self) -> bool {
@@ -389,7 +392,7 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
             .substrate
             .entities
             .get(self.id)
-            .is_some_and(|entity| entity.passenger_role.passenger_count() != 0)
+            .is_some_and(|entity| entity.passenger_role().passenger_count() != 0)
     }
 
     fn pending_entry(&mut self) -> bool {
@@ -402,17 +405,29 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
 
     fn mark(&mut self, down: bool) {
         if down {
-            self.sim
-                .foot_mark_put(self.id, self.rules, self.registry, self.effects);
+            self.sim.foot_mark_put(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                &mut self.effects,
+            );
         } else {
-            self.sim
-                .foot_mark_remove(self.id, self.rules, self.registry, self.effects);
+            self.sim.foot_mark_remove(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                &mut self.effects,
+            );
         }
     }
 
     fn unload(&mut self) {
-        self.sim
-            .carryall_unload(self.id, self.rules, self.registry, self.effects);
+        self.sim.carryall_unload(
+            self.id,
+            self.rules,
+            Some(self.rules.overlay_registry()),
+            &mut self.effects,
+        );
     }
 
     fn unit_below(&mut self) -> Option<u64> {
@@ -438,7 +453,7 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
 
     fn pick_up(&mut self, unit: u64) {
         self.sim
-            .carryall_pick_up(self.id, unit, self.rules, self.registry, self.effects);
+            .carryall_pick_up(self.id, unit, self.rules, &mut self.effects);
     }
 
     fn epilogue(&mut self) -> i32 {

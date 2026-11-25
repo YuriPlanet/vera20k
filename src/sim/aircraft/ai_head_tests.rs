@@ -59,8 +59,7 @@ fn a_latch_left_by_a_restore_clears_at_the_next_ai_head() {
         plane,
         attacker,
         &rules,
-        Some(&registry),
-        FrameEffects::default()
+        &mut FrameEffects::default(),
     ));
     // Mission_Attack's strike latches it (`0x004184DC`).
     let entity = sim.substrate.entities.get_mut(plane).unwrap();
@@ -69,7 +68,7 @@ fn a_latch_left_by_a_restore_clears_at_the_next_ai_head() {
         MissionId::from_known(MissionType::Attack)
     );
     entity.mission_leaf.set_aircraft_action_latch(true);
-    sim.mission_restore_represented(plane, &rules, Some(&registry), FrameEffects::default())
+    sim.mission_restore_represented(plane, &rules, &mut FrameEffects::default())
         .unwrap();
     let entity = sim.substrate.entities.get(plane).unwrap();
     assert_eq!(
@@ -79,11 +78,11 @@ fn a_latch_left_by_a_restore_clears_at_the_next_ai_head() {
     assert_eq!(latch(&sim, plane), 1, "Restore leaves the latch");
     assert!(!sim.mission_ready_to_commence(plane, &rules));
 
-    let ctx = ObjectAiCtx {
+    let mut ctx = ObjectAiCtx {
         overlay_registry: Some(&registry),
         ..ObjectAiCtx::default()
     };
-    sim.object_ai_visit_one(plane, Some(&rules), ctx);
+    sim.object_ai_visit_one(plane, Some(&rules), &mut ctx);
     assert_eq!(latch(&sim, plane), 0, "the AI head clears it");
     assert!(sim.mission_ready_to_commence(plane, &rules));
 }
@@ -122,7 +121,7 @@ fn the_ai_head_keeps_the_latch_only_on_the_tables_four_missions() {
 /// (`0x0070D513..0x0070D532`).
 #[test]
 fn the_detach_sweep_restarts_a_restored_aircraft_patrol() {
-    let (mut sim, rules, registry, plane, target) = two_hornets();
+    let (mut sim, rules, _registry, plane, target) = two_hornets();
     let entity = sim.substrate.entities.get_mut(plane).unwrap();
     entity
         .mission
@@ -141,7 +140,7 @@ fn the_detach_sweep_restarts_a_restored_aircraft_patrol() {
         .attack_target
         .set_for_test(Some(TargetKind::Entity(target)));
 
-    sim.stop_all_targeting_on_detach(target, &rules, Some(&registry), FrameEffects::default());
+    sim.stop_all_targeting_on_detach(target, &rules, &mut FrameEffects::default());
     let entity = sim.substrate.entities.get(plane).unwrap();
     assert_eq!(
         entity.mission.current(),

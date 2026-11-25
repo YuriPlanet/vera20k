@@ -3,7 +3,6 @@
 //! 41BEA0, 50E470 and virtual F8=6301E0. Creation controls declare type
 //! arrays and observe Ground578080 / constructor62DC50 as argument sinks;
 //! the Rust lifecycle checks below are not a full native scene comparison.
-#![cfg_attr(feature = "ares", allow(dead_code, unused_imports))]
 use super::*;
 use crate::map::resolved_terrain::{test_flat_cell, test_grid};
 use crate::map::waypoints::Waypoint;
@@ -34,7 +33,7 @@ fn run(sim: &mut Simulation, action: &RuntimeAction, rules: Option<&RuleSet>) ->
         &mut Vec::new(),
         rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -200,7 +199,6 @@ fn all_five_original_stop_controls_only_mark_alive_same_cell_systems() {
 
 // Ares simulates retail BigGreySmokeSys itself (hooks 0x62DF05, 0x62FD60) and
 // builds no ParticleClass children.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_smoke_stop_keeps_existing_children_and_saved_flag_until_their_shared_retirement() {
     let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
@@ -218,7 +216,7 @@ fn retail_smoke_stop_keeps_existing_children_and_saved_flag_until_their_shared_r
         &mut sim,
         &rules,
         id,
-        crate::sim::world::UninitContext::with_rules(&rules)
+        crate::sim::world::UninitContext::new(&rules)
     ));
     let system = sim.particle_systems().get(id).unwrap();
     assert!(!system.done_spawning());
@@ -241,7 +239,7 @@ fn retail_smoke_stop_keeps_existing_children_and_saved_flag_until_their_shared_r
     // The existing loader reseeds Scenario. Supply the same continuation
     // RNG boundary as the established Smoke snapshot test; do not claim a
     // whole-load RNG parity result or change that independent load policy.
-    restored.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+    *restored.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
         &sim.scenario_rng.native_state_hex(),
     );
     let mut retired = false;
@@ -252,7 +250,7 @@ fn retail_smoke_stop_keeps_existing_children_and_saved_flag_until_their_shared_r
                 world,
                 &rules,
                 id,
-                crate::sim::world::UninitContext::with_rules(&rules),
+                crate::sim::world::UninitContext::new(&rules),
             );
             world.process_pending_delete();
         }

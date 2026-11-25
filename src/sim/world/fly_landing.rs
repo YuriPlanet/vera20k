@@ -3,7 +3,8 @@
 //! Native executable corpus: tools/spatial_oracle/fly_landing_phase.*.
 use super::{Simulation, display_layers::DisplayLayer};
 use crate::map::entities::EntityCategory;
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::intern::StringInterner;
@@ -74,8 +75,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::mission::{MissionId, MissionType};
         let has_target = |sim: &Self| {
@@ -87,7 +87,7 @@ impl Simulation {
         if has_target(self) {
             return;
         }
-        self.acquire_hunter_seeker_target(id, rules, registry, frame_effects);
+        self.acquire_hunter_seeker_target(id, rules, frame_effects);
         if !has_target(self) {
             return;
         }
@@ -121,12 +121,42 @@ impl Simulation {
         let _ = self.substrate.mission_commence_exact(id, frame);
     }
 
+    /// Fly takeoff (`0x004CE696..0x004CE6DF`) and landing (`0x004CE8AF`)
+    /// use height over the structural deck when the aircraft has reached it.
+    /// The stock landing branch also subtracts the rise for OnBridge owners.
+    /// GetHeight already uses the fixed deck for those owners.
+    pub(super) fn fly_bridge_relative_height(
+        entity: &crate::sim::game_entity::GameEntity,
+        terrain: Option<&ResolvedTerrainGrid>,
+        landing: bool,
+    ) -> i32 {
+        let mut height = air_movement::current_fly_height(entity, terrain);
+        if entity.on_bridge() && !landing {
+            return height;
+        }
+        let Some(terrain) = terrain else { return height };
+        let coord = ground_pose::position_world_coord(&entity.position);
+        let cells = NativeCellQuery::canonical(terrain);
+        let cell = cells.lookup_world(coord.x, coord.y);
+        if cells.flags(cell) & BRIDGE_FLAG_STRUCTURAL == 0 {
+            return height;
+        }
+        let rise = match ground_pose::corrected_deck_z(terrain, cell) {
+            Some(_) if entity.on_bridge() => return height,
+            Some(deck) => deck.wrapping_sub(ground_pose::query_ground_height(&cells, coord).unwrap_or(0)),
+            None => crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS,
+        };
+        if height >= rise {
+            height = height.wrapping_sub(rise);
+        }
+        height
+    }
+
     pub(super) fn apply_fly_landing_callback(
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if rules.ares()
             && self
@@ -136,7 +166,7 @@ impl Simulation {
                 .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
                 .is_some_and(|object| object.hunter_seeker)
         {
-            self.ares_hunter_seeker_reacquire(id, rules, registry, frame_effects);
+            self.ares_hunter_seeker_reacquire(id, rules, frame_effects);
             return;
         }
         let entity = self
@@ -144,17 +174,7 @@ impl Simulation {
             .entities
             .get(id)
             .expect("admitted Fly landing");
-        let coord = ground_pose::position_world_coord(&entity.position);
-        let mut height = air_movement::current_fly_height(entity, self.resolved_terrain.as_ref());
-        let bridge = self.resolved_terrain.as_ref().is_some_and(|terrain| {
-            let cell =
-                terrain.native_cell_identity(((coord.x / 256) as i16, (coord.y / 256) as i16));
-            terrain.native_cell_flags(cell) & 0x100 != 0
-        });
-        // Unlike takeoff,4CE8AF does not test the owner's OnBridge flag.
-        if bridge && height >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS {
-            height = height.wrapping_sub(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-        }
+        let height = Self::fly_bridge_relative_height(entity, self.resolved_terrain.as_ref(), true);
         let object = self.interner.object_type(entity.type_ref(), rules);
         let dropship = object.is_some_and(|o| o.is_dropship);
         let carryall =
@@ -197,6 +217,7 @@ impl Simulation {
                     .entities
                     .get(id)
                     .unwrap()
+                    .seldom
                     .radio_contacts
                     .contains(building)
             })
@@ -270,20 +291,16 @@ impl Simulation {
         }
         let coord = ground_pose::position_world_coord(&entity.position);
         //4CECAF queries the CURRENT cell again after refusal/effect callbacks.
-        let bridge = self.resolved_terrain.as_ref().is_some_and(|terrain| {
-            let cell =
-                terrain.native_cell_identity(((coord.x / 256) as i16, (coord.y / 256) as i16));
-            terrain.native_cell_flags(cell) & 0x100 != 0
-        });
-        if bridge {
-            let ground = ground_pose::ground_surface_z_at(
-                [coord.x, coord.y],
-                false,
-                self.resolved_terrain.as_ref(),
-                None,
-            )
-            .unwrap_or(0);
-            if coord.z >= ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS) {
+        if let Some(terrain) = self.resolved_terrain.as_ref() {
+            let cells = NativeCellQuery::canonical(terrain);
+            let cell = cells.lookup_world(coord.x, coord.y);
+            if cells.flags(cell) & BRIDGE_FLAG_STRUCTURAL != 0
+                && coord.z >= ground_pose::deck_surface_z(
+                    &cells,
+                    cell,
+                    ground_pose::query_ground_height(&cells, coord).unwrap_or(0),
+                )
+            {
                 self.substrate
                     .entities
                     .get_mut(id)
@@ -292,7 +309,7 @@ impl Simulation {
                     .store(true);
             }
         }
-        self.set_object_height(id, base, rules, registry, frame_effects);
+        self.set_object_height(id, base, rules, frame_effects);
         self.substrate.aircraft_tracker_remove(id);
         let entity = self.substrate.entities.get_mut(id).unwrap();
         let fly = entity
@@ -321,7 +338,7 @@ impl Simulation {
         let current = ground_pose::position_world_coord(&entity.position);
         let same = ((destination.x / 256) as i16, (destination.y / 256) as i16)
             == ((current.x / 256) as i16, (current.y / 256) as i16);
-        if same || self.fly_building_at(destination) == entity.radio_contacts.slot(0) {
+        if same || self.fly_building_at(destination) == entity.seldom.radio_contacts.slot(0) {
             self.substrate
                 .entities
                 .get_mut(id)
@@ -342,7 +359,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let entity = self.substrate.entities.get(id).unwrap();
         if !air_movement::fly_coordinate_admitted(entity) {
@@ -375,9 +392,9 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
-        self.assign_null_destination(id, rules, None, frame_effects);
+        self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
     }
 
     /// `FootClass::IsLandZoneClear @ 0x004DDC60` (vt+0x550) for `destination`:
@@ -387,11 +404,17 @@ impl Simulation {
     /// compares pointers: the same cell, or the same object). Fly's landing
     /// callback asks for the cell under the aircraft (`0x004CD3B6`);
     /// Find_Attack_Cell for its parameter and each candidate cell.
+    ///
+    /// `aircraft_claims` is the set of the live aircraft's NavCom
+    /// reservations a search reads once for all its candidate cells; a
+    /// caller that asks about one cell only passes `None` and the live
+    /// objects are read here.
     pub(super) fn foot_land_zone_clear(
         &self,
         id: u64,
         destination: NavTargetRef,
         rules: &RuleSet,
+        aircraft_claims: Option<&super::aircraft_fire_location::AircraftNavClaims>,
     ) -> bool {
         use crate::rules::locomotor_type::{MovementZone, SpeedType};
         use crate::sim::cell_rect::{
@@ -423,7 +446,7 @@ impl Simulation {
             .map_or(requested, |t| t.native_cell_coord(identity.unwrap()));
         if !cell_is_in_playfield_height_aware(
             (i32::from(cell.0), i32::from(cell.1)),
-            self.playfield_bounds,
+            *self.playfield_bounds,
             self.resolved_terrain.as_ref(),
         ) {
             return false;
@@ -434,7 +457,7 @@ impl Simulation {
             None,
         ) {
             return other == id
-                || e.radio_contacts.slot(0) == Some(other)
+                || e.seldom.radio_contacts.slot(0) == Some(other)
                 || self
                     .interner
                     .object_type(e.type_ref(), rules)
@@ -469,30 +492,40 @@ impl Simulation {
         {
             return false;
         }
-        !self.substrate.entities.values().any(|other| {
-            other.stable_id() != id
-                && other.category() == EntityCategory::Aircraft
-                && other.lifecycle.object_alive()
-                && !other.lifecycle.in_limbo()
-                && match (object, other.navigation.nav_com()) {
-                    (None, Some(NavTargetRef::Cell { rx, ry })) => {
-                        self.resolved_terrain.as_ref().map_or(
-                            (rx, ry) == (cell.0 as u16, cell.1 as u16),
-                            |t| {
-                                use crate::map::cell_index::NativeCellIdentity;
-                                //4DDDBF compares retained pointers. Do not
-                                // restamp the shared Dummy while comparing.
-                                let reserved = t
-                                    .native_fixed_cell_index(rx as i16, ry as i16)
-                                    .map_or(NativeCellIdentity::Dummy, NativeCellIdentity::Real);
-                                Some(reserved) == identity
-                            },
-                        )
+        // 0x004DDDBF..0x004DDDC7: another live aircraft holds the zone when
+        // its NavCom names the same cell, or the same object. The search
+        // that asks about every candidate cell reads the live aircraft once
+        // and answers from the set; a single-cell caller reads them here.
+        let held = match aircraft_claims {
+            Some(claims) => claims.holds(object, retained),
+            None => self.substrate.entities.values().any(|other| {
+                other.stable_id() != id
+                    && other.category() == EntityCategory::Aircraft
+                    && other.lifecycle.object_alive()
+                    && !other.lifecycle.in_limbo()
+                    && match (object, other.navigation.nav_com()) {
+                        (None, Some(NavTargetRef::Cell { rx, ry })) => {
+                            self.resolved_terrain.as_ref().map_or(
+                                (rx, ry) == (cell.0 as u16, cell.1 as u16),
+                                |t| {
+                                    use crate::map::cell_index::NativeCellIdentity;
+                                    //4DDDBF compares retained pointers. Do not
+                                    // restamp the shared Dummy while comparing.
+                                    let reserved =
+                                        t.native_fixed_cell_index(rx as i16, ry as i16).map_or(
+                                            NativeCellIdentity::Dummy,
+                                            NativeCellIdentity::Real,
+                                        );
+                                    Some(reserved) == identity
+                                },
+                            )
+                        }
+                        (Some(object), Some(NavTargetRef::Object { id: nav })) => nav == object,
+                        _ => false,
                     }
-                    (Some(object), Some(NavTargetRef::Object { id: nav })) => nav == object,
-                    _ => false,
-                }
-        })
+            }),
+        };
+        !held
     }
 
     pub(super) fn finish_fly_layer_transition(
@@ -500,7 +533,7 @@ impl Simulation {
         id: u64,
         layer: Option<DisplayLayer>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::radio::{self, RadioMessage};
         if layer == Some(DisplayLayer::GROUND) {
@@ -513,10 +546,12 @@ impl Simulation {
         } else {
             radio::broadcast(self, id, RadioMessage::Untether, rules, frame_effects);
             if self.substrate.entities.get(id).is_some_and(|e| {
-                !e.radio_contacts.is_empty()
+                !e.seldom.radio_contacts.is_empty()
                     && e.navigation.nav_com().is_some()
                     && match e.navigation.nav_com() {
-                        Some(NavTargetRef::Object { id }) => e.radio_contacts.slot(0) != Some(id),
+                        Some(NavTargetRef::Object { id }) => {
+                            e.seldom.radio_contacts.slot(0) != Some(id)
+                        }
                         Some(NavTargetRef::Cell { .. }) => true,
                         None => false,
                     }
@@ -530,7 +565,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         use crate::rules::locomotor_type::{MovementZone, SpeedType};
         use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
@@ -573,10 +608,9 @@ impl Simulation {
             .unwrap_or(0);
             if let Some(terrain) = self.resolved_terrain.as_ref() {
                 let identity = terrain.native_cell_identity((cell.0 as i16, cell.1 as i16));
-                if terrain.native_cell_flags(identity) & 0x100 != 0 {
-                    coord.z = coord
-                        .z
-                        .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+                let cells = NativeCellQuery::canonical(terrain);
+                if cells.flags(identity) & BRIDGE_FLAG_STRUCTURAL != 0 {
+                    coord.z = ground_pose::deck_surface_z(&cells, identity, coord.z);
                 }
             }
             Self::move_air_coordinate(
@@ -592,7 +626,7 @@ impl Simulation {
             );
             true
         } else {
-            self.receive_own_health_c4(id, rules, None, frame_effects);
+            self.receive_own_health_c4(id, rules, Some(rules.overlay_registry()), frame_effects);
             if let Some(state) = self
                 .substrate
                 .entities
@@ -622,7 +656,7 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -647,10 +681,10 @@ mod tests {
         let mut sim = Simulation::with_seed(31);
         sim.session.set_map_width_for_test(128);
         sim.session.set_map_height_for_test(128);
-        sim.playfield_bounds = Some(
+        *sim.playfield_bounds = Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(64, 0, 0, 64, 64),
         );
-        sim.playfield_size_height = Some(64);
+        *sim.playfield_size_height = Some(64);
         install_common_raw_terrain(
             &mut sim,
             128,
@@ -669,7 +703,7 @@ mod tests {
             .unwrap();
         cell.level = input["level"].as_u64().unwrap_or(0) as u8;
         cell.slope_type = input["slope"].as_u64().unwrap_or(0) as u8;
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
         sim.overlay_grid
             .as_mut()
             .unwrap()
@@ -713,7 +747,6 @@ mod tests {
         sim.add_entity_occupancy(id);
         Simulation::submit_entity_display(
             &sim.interner,
-            &sim.terrain_objects,
             &mut sim.substrate,
             &sim.resolved_terrain,
             id,
@@ -893,10 +926,11 @@ mod tests {
                 ),
             );
             let e = sim.substrate.entities.get_mut(1).unwrap();
-            e.discovery
+            e.seldom
+                .discovery
                 .set_owned_by_current_house_for_test(input["owned"].as_bool().unwrap_or(true));
             if input["mission_only"].as_bool().unwrap_or(false) {
-                e.mission_only.mark();
+                e.seldom.mission_only.mark();
             }
             let owner = e.owner();
             let visibility = serde_json::to_value(OwnerVisibility::new(128, 128)).unwrap();
@@ -1041,6 +1075,7 @@ mod tests {
                     .entities
                     .get_mut(1)
                     .unwrap()
+                    .seldom
                     .radio_contacts
                     .insert(2);
             }
@@ -1082,7 +1117,8 @@ mod tests {
                         query[0].as_u64().unwrap() as u16,
                         query[1].as_u64().unwrap() as u16
                     ),
-                    &rules
+                    &rules,
+                    None,
                 ),
                 row["result"].as_bool().unwrap(),
                 "{input}"
@@ -1124,15 +1160,40 @@ mod tests {
                 .clone()
         };
         let (mut sim, rules) = fixture(row);
-        sim.apply_fly_landing_callback(
-            1,
-            &hunter,
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
+        sim.apply_fly_landing_callback(1, &hunter, &mut crate::sim::world::FrameEffects::default());
         assert!(fly(&sim).landing() && !fly(&sim).target_speed_is_zero());
-        sim.apply_fly_landing_callback(1, &rules, None, crate::sim::world::FrameEffects::default());
+        sim.apply_fly_landing_callback(1, &rules, &mut crate::sim::world::FrameEffects::default());
         assert!(fly(&sim).target_speed_is_zero());
+    }
+
+    #[test]
+    fn fly_descent_and_landing_use_the_fixed_deck_below_the_legacy_estimate() {
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/fly_landing_phase.json",
+        ))
+        .unwrap();
+        let mut row = rows
+            .into_iter()
+            .find(|row| row["input"]["name"] == "new_bridge_attachment")
+            .unwrap();
+        let deck_z = 8 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
+        row["input"]["level"] = serde_json::json!(6);
+        row["before"]["coordinates"][2] = serde_json::json!(deck_z + 1);
+        let (mut sim, rules) = fixture(&row);
+        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        let cell = terrain.native_cell_identity((64, 64));
+        terrain.set_authored_high_bridge_deck(cell, 8);
+
+        let aircraft = sim.substrate.entities.get_mut(1).unwrap();
+        air_movement::update_fly_height(aircraft, Some(terrain), Some((&rules, &sim.interner)));
+        assert_eq!(aircraft.position.exact_z_leptons(), Some(deck_z));
+        assert!(aircraft.on_bridge());
+
+        sim.complete_fly_phase(1, &rules, None, &mut FrameEffects::default());
+        let aircraft = sim.substrate.entities.get(1).unwrap();
+        let fly = aircraft.locomotor.as_ref().unwrap().fly_runtime().unwrap();
+        assert!(!fly.landing());
+        assert_eq!(aircraft.position.exact_z_leptons(), Some(deck_z));
     }
 
     #[test]
@@ -1145,7 +1206,12 @@ mod tests {
         for row in rows {
             let (mut sim, rules) = fixture(&row);
             let rng = sim.scenario_rng.logical_state();
-            sim.complete_fly_phase(1, &rules, None, crate::sim::world::FrameEffects::default());
+            sim.complete_fly_phase(
+                1,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
             let e = sim.substrate.entities.get(1).unwrap();
             let l = e.locomotor.as_ref().unwrap();
             let f = l.fly_runtime().unwrap();
@@ -1260,7 +1326,7 @@ mod tests {
             1,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let e = sim.substrate.entities.get(1).unwrap();
@@ -1275,11 +1341,11 @@ mod tests {
         );
         // Native Scenario Load deliberately reseeds its RNG to0. Normalize
         // both branches at this checkpoint so unrelated load policy is equal.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = GameSnapshot::save(&sim, 0, 0, "Fly landing continuation", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
         restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
-        restored.resolved_terrain = sim.resolved_terrain.clone();
+        *restored.resolved_terrain = (*sim.resolved_terrain).clone();
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(sim.state_hash(), restored.state_hash());
         for frame in 101..126 {
@@ -1289,7 +1355,7 @@ mod tests {
                     1,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             }

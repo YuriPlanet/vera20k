@@ -130,7 +130,7 @@ impl InfantryDeathPostlude {
         world: &mut Simulation,
         rules: &RuleSet,
         effects: &mut crate::sim::combat::DeathEffects,
-        uninit: Option<super::UninitContext<'_>>,
+        mut uninit: Option<super::UninitContext<'_>>,
     ) {
         use crate::sim::combat::destruction_effects::{
             AresMakeInfTail, DeathAnimFollowUp, DeathAnimSpawn,
@@ -161,14 +161,14 @@ impl InfantryDeathPostlude {
             // A grounded object's Crash refuses; at height1..10 it can retain
             // the object instead of UnInit, alive at Health 0 and falling.
             // Reuse FootClass's one Crash owner.
-            if let Some(context) = uninit
+            if let Some(context) = uninit.as_mut()
                 && world
                     .substrate
                     .entities
                     .get(self.id)
                     .and_then(|entity| world.object_type(entity.type_ref(), rules))
                     .is_some_and(|object| object.crashable)
-                && world.foot_crash(self.id, None, rules, context.registry(), context.effects())
+                && world.foot_crash(self.id, None, rules, context.effects())
             {
                 return;
             }
@@ -386,7 +386,12 @@ impl Simulation {
     /// on retail. An ignoreDefenses kill of a `Cyborg=` (`+0xEAC`)
     /// type raises a flag (`0x0051815B`) that takes the Die1, Die2,
     /// NotHuman and refused InfDeath 9 arms on to UnInit (`0x005185E5`); a
-    /// prone Cyborg builds InfantryExplode (`0x005182B4`). Retail sets no
+    /// prone Cyborg builds InfantryExplode (`0x005182B4`), and so does one
+    /// dropped as a bomb (`+0x8F`, `0x00518155..0x005181B0`). A Cyborg's
+    /// first lethal hit without ignoreDefenses never reaches here:
+    /// `ObjectClass::ReceiveDamage` (`0x005F5509..0x005F55E8`) builds
+    /// InfantryExplode, sets its health to a quarter of `Strength=` (at least
+    /// 1) and leaves it crawling with its legs gone (`+0x6DB`). Retail sets no
     /// `Cyborg=`. The preceding low DropAsBomb water arm is ported here
     /// (`0x005181B5..0x005182AF`; original `tools.native_inspect` instructions).
     ///
@@ -441,7 +446,7 @@ impl Simulation {
     /// `superweapon::genetic_converter_tests`.
     fn infantry_mutation_admits(
         interner: &StringInterner,
-        scenario_rng: &mut SimRng,
+        scenario_rng: &mut crate::util::forked::Forked<SimRng>,
         substrate: &mut ObjectSubstrate,
         path_grid: &Option<Arc<PathGrid>>,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
@@ -557,7 +562,7 @@ impl Simulation {
         inf_death_anim: Option<&str>,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: super::FrameEffects<'_>,
+        effects: &mut super::FrameEffects<'_>,
     ) -> InfantryDeathPostlude {
         if self
             .substrate
@@ -568,10 +573,7 @@ impl Simulation {
             if let Err(cause) = self.infantry_stop_driver(id, rules, overlay_registry, effects) {
                 log::debug!("infantry {id} death Stop_Driver: {cause}");
             }
-            self.stun(
-                id,
-                super::UninitContext::new(rules, overlay_registry).with_effects(effects),
-            );
+            self.stun(id, super::UninitContext::new(rules).with_effects(effects));
         }
         // `InfantryClass::ReceiveDamage 0x0051810E..0x0051812E`, before the
         // death ladder: Queue_Mission(-1) (refused), Queue_Mission(Guard),
@@ -623,7 +625,7 @@ impl Simulation {
                 ReceiverDeathRecipe::WaterSplash
             }
             InfantryDeathArm::JumpJetExplode { crashable } => {
-                if crashable && self.foot_crash(id, None, rules, overlay_registry, effects) {
+                if crashable && self.foot_crash(id, None, rules, effects) {
                     ReceiverDeathRecipe::CrashExplode
                 } else {
                     ReceiverDeathRecipe::ExternalAnim(INFANTRY_EXPLODE_INF_DEATH)
@@ -695,7 +697,7 @@ impl Simulation {
         id: u64,
         sequence: InfantryDeathSequence,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let action = i32::from(crate::rules::infantry_sequence::action_id(
             sequence.animation(),
@@ -754,7 +756,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod corpse_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -796,7 +798,7 @@ mod corpse_tests {
             id,
             InfantryDeathSequence::Die1,
             rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     }
 
@@ -913,7 +915,7 @@ mod corpse_tests {
                     arg6: false,
                 },
             );
-            sim.commit_noncombat_aoe_hits(&rules, None, &[hit], FrameEffects::default());
+            sim.commit_noncombat_aoe_hits(&rules, None, &[hit], &mut FrameEffects::default());
             let entity = sim.substrate.entities.get(id).unwrap();
             assert_eq!(entity.health.current(), 0, "{warhead}");
             assert_eq!(sim.anims().count(), 0, "{warhead}: no InfDeath anim");
@@ -960,7 +962,7 @@ mod corpse_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod dead_body_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

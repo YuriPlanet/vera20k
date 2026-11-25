@@ -51,7 +51,7 @@ fn stock_scene() -> (HeadlessScenario, InternedId, InternedId) {
     let computer = computers[0];
     let country = sim.houses[&computer].country().unwrap();
     assert_eq!(sim.interner.resolve(country), "Russians");
-    assert!(!sim.houses[&computer].is_controlled_by_human(true));
+    assert!(!sim.houses[&computer].is_human());
     // This explicit AI prior prevents an unrelated base rollout or no-factory
     // fire sale. It changes none of the human/player/passive capture-sale gates.
     // Both actual starting MCVs remain alive, so neither House is eliminated.
@@ -87,7 +87,7 @@ fn place_plant(scene: &mut HeadlessScenario, owner: InternedId) -> u64 {
     assert!(crate::sim::build_site::can_place_building_at(
         &runtime.simulation,
         rules,
-        Some(&runtime.resources.overlay_registry),
+        Some(runtime.resources.rules.overlay_registry()),
         rules.object("GAPOWR").unwrap(),
         (PLANT_CELL.0 as i16, PLANT_CELL.1 as i16),
         Some(owner),
@@ -104,7 +104,7 @@ fn place_plant(scene: &mut HeadlessScenario, owner: InternedId) -> u64 {
             PLANT_CELL.1,
             0,
             rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("ordinary constructor/Unlimbo at a clear stock map site");
     let entity = runtime.simulation.entities().get(plant).unwrap();
@@ -131,7 +131,7 @@ fn capture_by_walking(scene: &mut HeadlessScenario, owner: InternedId, plant: u6
             ENGINEER_CELL.1,
             0,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("stock Engineer constructor and Walk Unlimbo");
     let command = if human {
@@ -161,11 +161,12 @@ fn capture_by_walking(scene: &mut HeadlessScenario, owner: InternedId, plant: u6
         // Execute_DoList skips an AI House without PlayerControl; drive the
         // existing class/mission receiver at this setup boundary instead.
         assert!(runtime.simulation.apply_command_with_overlays(
+            None,
             &name,
             &command,
             &runtime.resources.rules,
-            Some(&runtime.resources.overlay_registry),
-            crate::sim::world::FrameEffects::default(),
+            Some(runtime.resources.rules.overlay_registry()),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
     }
     let mut walked = false;
@@ -301,7 +302,11 @@ fn stock_computer_recapture_after_load_keeps_its_original_building() {
         rules,
     );
     restored
-        .restore_map_authority_after_snapshot_load(rules, &runtime.resources.overlay_registry, None)
+        .restore_map_authority_after_snapshot_load(
+            rules,
+            runtime.resources.rules.overlay_registry(),
+            None,
+        )
         .unwrap();
     restored.intern_rule_type_ids(rules);
     restored.resolve_type_handles(rules);
@@ -311,7 +316,8 @@ fn stock_computer_recapture_after_load_keeps_its_original_building() {
     let live_dummy = runtime.simulation.effective_shared_cell_dummy();
     live_dummy.adopt_prepared_load_state(&restored.effective_shared_cell_dummy());
     restored.bind_shared_cell_dummy(live_dummy);
-    restored.install_fresh_process_main(runtime.simulation.main_rng());
+    // No app process cell here: the install writes a stand-in nothing reads.
+    restored.install_fresh_process_main(&crate::sim::rng::MainRng::new(0));
     restored.publish_scenario_started();
     let plant_after_load = restored.entities().get(plant).unwrap();
     assert_eq!(

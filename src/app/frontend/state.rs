@@ -18,6 +18,9 @@ pub(crate) struct FrontendState {
     /// External offline launch: returning from the session closes the process for its client.
     pub(crate) external_launch: bool,
     pub(crate) external_launch_error: Option<String>,
+    /// The external launch's `ExpectedRulesDigest` refused it: this game's
+    /// rules parts, which the launch report names.
+    pub(crate) external_rules_mismatch: Option<crate::app::rules_parts::RulesParts>,
     /// The external launch's or online lobby match's local result, first
     /// decided wins (docs/spawn.md); see `App::record_match_result`.
     pub(crate) match_result: Option<crate::app::cncnet::ExternalMatchResult>,
@@ -32,6 +35,10 @@ pub(crate) struct FrontendState {
     /// The game is closing and waits until this for its network goodbyes
     /// (`App::poll_network_goodbye`).
     pub(crate) network_goodbye_deadline: Option<crate::util::time::Instant>,
+    /// A lost graphics device closed the game; the player hears it as the
+    /// game exits (`App::close_after_graphics_loss`).
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    pub(crate) graphics_lost: Option<crate::app::system_dialog::GraphicsLost>,
     /// Browser launch is closing its network owners before engine exit.
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     pub(crate) browser_exit_pending: bool,
@@ -58,12 +65,14 @@ pub(crate) struct FrontendState {
     /// its press/hover state is mirrored back into the per-shell structs above for
     /// the render path (substrate Slice 2).
     pub(crate) shell_controller: crate::ui::shell::controller::DialogController,
+    /// Built at startup, dropped while a match runs and built again for the
+    /// first shell screen after it (`App::ensure_main_menu_shell_chrome`).
     pub(crate) main_menu_shell_chrome:
         Option<crate::render::main_menu_shell_chrome::MainMenuShellChromeAtlas>,
     pub(crate) main_menu_movie: Option<crate::render::bink_movie::BinkMovieSurface>,
     pub(crate) main_menu_movie_identity:
         Option<crate::app::frontend::main_menu_shell_render::Ra2tsMovieSessionIdentity>,
-    pub(crate) main_menu_movie_last_step: Instant,
+    pub(crate) main_menu_movie_clock: super::main_menu_shell_render::MenuMovieClock,
     /// Terminal menu failure; retained for the error screen and input gate.
     pub(crate) main_menu_shell_error: Option<String>,
     /// The config and settings files the error screen names (`initialize`).
@@ -81,21 +90,28 @@ pub(crate) struct FrontendState {
     /// cancelled on leaving all of them.
     pub(crate) shell_slide_active_shell:
         Option<crate::app::frontend::shell_transition::ShellSlideKind>,
-    /// Monotonic identity for each newly armed exact Main Menu `0xE2` instance.
-    pub(crate) shell_slide_generation: u64,
     /// Static `0x71C` of the showing main-menu family dialog (`0xE2`, `0x100`,
     /// `0x101`, `0x129`). Reset for every new dialog instance by the shell
-    /// lifecycle reducer; drawn by the family renderers and committed after
+    /// slide driver; drawn by the family renderers and committed after
     /// present.
     pub(crate) shell_monitor: crate::ui::shell::warning_monitor::WarningMonitor,
-    /// Heading static `0x694` of the showing menu page (`0x100`, `0x101`,
-    /// `0x129`): hidden until the page's first-paint slide completes, then a
-    /// kind-1 reveal. Main menu `0xE2` keeps its own presented-entry reveal.
+    /// Heading static `0x694` of the showing family dialog (`0xE2`, `0x100`,
+    /// `0x101`, `0x129`, …): hidden until its first-paint slide completes,
+    /// then a kind-1 reveal.
     pub(crate) shell_page_title: crate::ui::shell::static_reveal::PresentedKind1Static,
     /// Status line `0x695` of the showing main-menu family dialog (`0xE2`,
     /// `0x100`, `0x101`, `0x129`): hover help, hidden until the dialog's SHOW
     /// completion, then a kind-1 reveal that restarts on every text change.
     pub(crate) shell_status_line: crate::ui::shell::static_reveal::PresentedKind1Static,
+    /// The heading and the status line as widgets, which the family pages,
+    /// the online pages and Options paint from
+    /// ([`crate::app::frontend::menu_page_render::paint_panel_statics`]).
+    pub(crate) panel_statics:
+        std::cell::RefCell<crate::app::frontend::menu_page_render::PanelStatics>,
+    /// The saved-game loading box `0xF0`'s widgets: it takes no input, so
+    /// no other controller holds it
+    /// ([`crate::app::frontend::skirmish_shell_render::render_saved_game_loading`]).
+    pub(crate) loading_box: crate::ui::shell::controller::DialogController,
     /// The showing family dialog's teardown slide-out while it runs; its
     /// continuation commits the route change when the slide ends.
     pub(crate) shell_exit: Option<crate::app::frontend::shell_transition::ShellExit>,
@@ -129,6 +145,9 @@ pub(crate) struct FrontendState {
     /// The "import game files" dialog on the startup-failure card: what step it
     /// is on, and therefore which buttons the card shows.
     pub(crate) asset_import: crate::ui::asset_import::AssetImport,
+    /// The utility card's buttons as gui nodes: hover, press and the
+    /// Enter/Escape keys run there (`status_screen::CardUi`).
+    pub(crate) status_card: crate::app::frontend::status_screen::CardUi,
     /// Show_Credits session.
     pub(crate) credits_roll: Option<crate::app::frontend::credits_roll::CreditsRollSession>,
     /// Campaign selection `0x94` instance while its route shows.
@@ -151,6 +170,9 @@ pub(crate) struct FrontendState {
     /// `0x10E` and full controls instead of opening at the online sign-in,
     /// and a LAN guest's BD keeps Accept (`SetupDialog::modern`).
     pub(crate) native_shell_ui: bool,
+    /// A shell capture's WOL provider, which its Internet visit opens with.
+    /// Outside captures it is `None` and every visit opens online.
+    pub(crate) wol_capture_provider: Option<crate::app::shell_wol::WolProvider>,
     /// LAN lobby interaction/discovery; admitted participants belong to MatchSession.
     pub(crate) lan: Option<crate::app::shell_lan::LanShellRuntime>,
     pub(crate) network_setup_protocol:
@@ -165,24 +187,15 @@ pub(crate) struct FrontendState {
     /// The host unticked Ranked game at its last Create Game in VERA's
     /// online lobby, which its next Create Game shows.
     pub(crate) wol_room_unranked: bool,
-    /// VERA: how this player returns to its LAN room after the match.
-    pub(crate) lan_rematch: Option<crate::app::shell_lan::LanRematch>,
-    /// `0x10E`'s background and icon art (`0x0072C7E0`).
-    pub(crate) wol_welcome_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    /// `0x10F`'s background art (`0x0072C600`), freed with the dialog
-    /// (`0x0072C650`).
-    pub(crate) wol_login_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    /// `0x113`'s background and list art (`0x0072CD60`).
-    pub(crate) wol_lobby_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    /// WOL Options `0x2BC`'s art (`0x0072BAC0`) and its Sound Options
-    /// `0xD6`'s (`0x0072B8E0`).
-    pub(crate) wol_options_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    /// `0x0072BCA0`: AutoLoginQuery.shp through its PAL while `0x112` runs.
-    pub(crate) wol_auto_login_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    /// The Buddy List `0x116`'s art (`0x0072C060`).
-    pub(crate) wol_buddy_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    /// `0x117`'s quickmatch.shp/.PAL (`0x0072BE80`).
-    pub(crate) wol_quick_match_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
+    /// The host's Watching at its last Create Game in VERA's online lobby,
+    /// which its next Create Game shows and its room publishes.
+    pub(crate) wol_room_watching: crate::ui::wol_lobby::RoomWatching,
+    /// The WOL pages' loaded art by dialog (`shell_wol::leaf::open_art`),
+    /// each freed with its page.
+    pub(crate) wol_art: Vec<(
+        crate::ui::shell::descriptor::DialogResourceId,
+        crate::render::main_menu_shell_chrome::WolPageArt,
+    )>,
     /// The buddy mirror and its queues (process globals `0xB73AA8`..).
     pub(crate) wol_buddies: crate::app::shell_wol::buddies::WolBuddies,
     /// The offline WOL test service's buddy list, standing in for the
@@ -190,9 +203,6 @@ pub(crate) struct FrontendState {
     pub(crate) wol_test_buddies: Vec<String>,
     /// The offline WOL test service's stand-in guest of a created game.
     pub(crate) wol_test_guest: crate::app::shell_wol::WolTestGuest,
-    /// My Information `0x114`'s art (`0x0072C9C0`).
-    pub(crate) wol_my_info_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    pub(crate) wol_sound_options_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     /// The custom lobby's process globals (sorts, lobby number, filters).
     pub(crate) wol_lobby_globals: crate::app::shell_wol::lobby::WolLobbyGlobals,
     /// The live `[WOnline]` globals (`[0xB76234]`..`[0xB73AD0]`): each WOL
@@ -220,8 +230,7 @@ pub(crate) struct FrontendState {
     /// Number of matches finished this session — the score screen's `Game: n`.
     /// gamemd increments the same counter as it tears the scenario down.
     pub(crate) finished_game_count: u32,
-    /// Which shell surface owns the MainMenu screen (F11): structural
-    /// exclusivity replaces the old boolean triple.
+    /// Which shell surface owns the MainMenu screen.
     pub(crate) shell_route: crate::app::shell_route::ShellRoute,
     /// Which screen is currently active (MainMenu, Loading, InGame).
     pub(crate) screen: GameScreen,
@@ -255,9 +264,6 @@ pub(crate) struct FrontendState {
         Option<crate::app::frontend::skirmish_shell_render::SkirmishPreviewTexture>,
     /// VERA's enlarged map preview, while it shows.
     pub(crate) preview_zoom: Option<crate::app::frontend::preview_zoom::PreviewZoom>,
-    /// Minimap renderer — created at map load time.
-    pub(crate) loading_screen_atlas:
-        Option<crate::render::loading_screen_chrome::LoadingScreenAtlas>,
     pub(crate) loading_progress: crate::app::loading::pump::LoadingProgressState,
     /// Game data from rules.ini — needed by combat system for weapon/warhead lookups.
     /// Startup-shell rules loaded at boot for menu presentation; match paths
@@ -267,13 +273,16 @@ pub(crate) struct FrontendState {
     /// last-loaded match registry across scenario exit, matching the pre-F07
     /// persistence of the old app field. Match paths read the runtime-bound
     /// copy via `overlay_registry()`.
-    pub(crate) shell_preview_overlay_registry: Option<OverlayTypeRegistry>,
+    pub(crate) shell_preview_overlay_registry: Option<std::sync::Arc<OverlayTypeRegistry>>,
     /// The online map library's catalog and Choose Map's map download.
     pub(crate) map_library: crate::app::map_library::MapLibrary,
     /// The online login page's lobby counts.
     pub(crate) login_info: crate::app::shell_wol::login_info::LoginInfo,
     /// VERA's own map pictures for the setup screens' previews.
     pub(crate) map_pictures: crate::app::map_picture::MapPictures,
+    /// The language files the String Keys reload last saw
+    /// (`App::poll_language_files`).
+    pub(crate) language_files: crate::i18n::LanguageFileWatch,
     /// The mod this run reads on top of the game folder (`app::mods`).
     pub(crate) mods: crate::app::mods::Mods,
     /// The release check, its main-menu offer and the download (desktop only).
@@ -281,23 +290,43 @@ pub(crate) struct FrontendState {
     pub(crate) updater: crate::app::updater::Updater,
 }
 
+impl FrontendState {
+    /// Whether any main-menu modal dialog (exit confirm, options, keyboard)
+    /// is currently open.
+    pub(crate) fn main_menu_dialog_open(&self) -> bool {
+        self.shell_message_box.is_some()
+            || self.options_dialog.is_some()
+            || self.keyboard_dialog.is_some()
+    }
+}
+
 /// One open shell message box `0x120` and the caller its result returns to.
 #[derive(Debug)]
 pub(crate) struct ShellMessageBox {
-    pub(crate) labels: crate::ui::main_menu_dialogs::ShellMessageBoxLabels,
+    pub(crate) shell_box: crate::ui::shell::modal::ShellBox,
     pub(crate) purpose: ShellMessageBoxPurpose,
 }
 
 impl ShellMessageBox {
-    /// VERA's Esc menu and the Mods page's restart question ask over the
-    /// page that is showing, so an answer that changes nothing leaves the
+    /// VERA's Esc menu and the Mods page's boxes ask over the page that is
+    /// showing, so an answer that changes nothing leaves the
     /// page as it was. gamemd's callers destroy their dialog first and ask
     /// over the empty backdrop.
     pub(crate) fn keeps_page(&self) -> bool {
         matches!(
             self.purpose,
-            ShellMessageBoxPurpose::ShellMenu(_) | ShellMessageBoxPurpose::ModRestart(_)
-        )
+            ShellMessageBoxPurpose::ShellMenu(_)
+                | ShellMessageBoxPurpose::ModRestart(_)
+                | ShellMessageBoxPurpose::ModFiles(_)
+                | ShellMessageBoxPurpose::ModMade(_)
+        ) || self.is_mod_import()
+    }
+
+    pub(crate) fn is_mod_import(&self) -> bool {
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        return matches!(self.purpose, ShellMessageBoxPurpose::ModImport(_));
+        #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+        false
     }
 
     /// The settings VERA's Esc menu shows.
@@ -332,6 +361,8 @@ pub(crate) enum ShellMessageBoxPurpose {
     CampaignReplay(Option<Box<crate::app::match_bootstrap::PreparedCampaignStartup>>),
     /// MapSelect's failed Init message returns to the victory continuation.
     CampaignVictory(Box<crate::app::campaign_victory::CampaignVictory>),
+    /// The displayed choice is a projection of MatchSession's stage ballot.
+    AuthoredCampaignResult(Option<usize>),
     /// The updater's offer (`0x121`): Update, Skip Version or Later, over
     /// the release's change list.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -349,4 +380,24 @@ pub(crate) enum ShellMessageBoxPurpose {
     /// The Mods page's Use This Mod: Restart keeps this folder, or the
     /// original game, for the next start and starts the game again.
     ModRestart(Option<String>),
+    /// ZIPs or extracted parts selected for Add Mod, or their import in progress.
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    ModImport(Box<crate::app::shell_mod_import::Dialog>),
+    /// The Mods page's Check Files (`App::check_picked_mod`).
+    ModFiles(ModFilesBox),
+    /// The Mods page's New Mod made this folder: Open Folder shows it, Close
+    /// closes.
+    ModMade(std::path::PathBuf),
+}
+
+/// The boxes of the Mods page's Check Files, in the order they come.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModFilesBox {
+    /// The mod's files are being read; the button stops the wait.
+    Reading,
+    /// What the check found, or what came of writing the list: OK.
+    Found,
+    /// The mod has no list, or differs from it: the first button writes the
+    /// folder's files as the mod's list, the second closes.
+    Offer,
 }

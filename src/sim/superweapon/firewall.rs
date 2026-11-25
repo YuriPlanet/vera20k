@@ -28,7 +28,7 @@ pub(super) fn activate(
     owner: InternedId,
     is_player: bool,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     sim.ares_set_firestorm_state(owner, true, rules, registry, effects);
     if is_player {
@@ -42,9 +42,9 @@ pub(super) fn deactivate(
     rules: &RuleSet,
     owner: InternedId,
     is_player: bool,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
-    sim.ares_set_firestorm_state(owner, false, rules, effects.overlay_registry(), effects);
+    sim.ares_set_firestorm_state(owner, false, rules, Some(rules.overlay_registry()), effects);
     if is_player {
         sim.houses.request_house_tech_tree_recheck(owner);
     }

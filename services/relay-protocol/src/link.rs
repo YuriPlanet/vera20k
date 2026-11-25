@@ -17,15 +17,16 @@ mod uplink;
 pub(crate) use codec::Uplink;
 pub(crate) use codec::{
     FEEDBACK_LEN, FLAG_PROBE, FLAG_PUSH, FLAG_RESTORING, LINK_DELAYED, LINK_JITTERY, PaceSegment,
-    Reader, UPLINK_REQUEST, append_feedback, decode_uplink, read_feedback,
+    Reader, UPLINK_REQUEST, append_feedback, array_at, decode_uplink, field, read_feedback,
+    read_u32, read_u64,
 };
 pub(crate) use measure::{
-    JitterMeter, LossCursor, LossStats, RttEstimator, StateClock, link_state, pto, reader_rtt,
+    JitterMeter, LossCursor, LossStats, RttEstimator, StateClock, ack_interval, link_state, pto,
+    reader_rtt,
 };
 
 use crate::{
-    ClientSession, OrderError, OrderEvent, OrderPace, OrderStatus, RelayError, RelayServer,
-    ServerEvent,
+    ClientSession, OrderError, OrderEvent, OrderStatus, RelayError, ReplayWindow, ServerEvent,
 };
 
 /// A direction's link state (spec §5.2), first match wins: offline, then
@@ -55,7 +56,7 @@ impl LinkState {
     }
 }
 
-/// The receive window of one hop (spec §4.1): the highest authenticated hop
+/// A snapshot of one hop's replay window (spec §4.1): the highest authenticated hop
 /// sequence received, and a bitmap where bit `i` set means `high - i` was
 /// received. `high == 0` (with `bits == 0`) means nothing counted yet.
 ///
@@ -94,6 +95,50 @@ pub enum OrderingGap {
     /// `turn_ms` (a status heartbeat can overtake the same round's PACK).
     BehindStatus,
 }
+
+impl OrderingGap {
+    /// The gap of a reader at watermark `recv_next`, whose newest STATUS
+    /// named `status_next` and whose reorder buffer starts at
+    /// `first_buffered`; `None` when it has read all it knows of.
+    pub fn of(recv_next: u64, status_next: u64, first_buffered: Option<u64>) -> Option<Self> {
+        if first_buffered.is_some_and(|seq| seq > recv_next) {
+            Some(Self::Reordered)
+        } else if status_next > recv_next {
+            Some(Self::BehindStatus)
+        } else {
+            None
+        }
+    }
+}
+
+/// A player's reorder buffer keeps records `recv_next <= seq < recv_next +
+/// REORDER_WINDOW`, the first copy of each (spec §3.5).
+pub const REORDER_WINDOW: u64 = 256;
+
+// The cadences at which a client drives its `ClientSession`, in ms of the
+// session clock. The game's transport (`LanUdpTransport` and
+// `SequencedSession` in src/net) and the netsim's client both use these.
+
+/// READY_REQUEST resends until a STATUS with `started = 1` (spec §6.0).
+pub const READY_REQUEST_INTERVAL_MS: u64 = 125;
+/// PULLs while RESTORING, only while a gap remains (spec §6.7 item 7).
+pub const RESTORE_PULL_INTERVAL_MS: u64 = 100;
+/// One pace measurement a second (spec §6.3, pace segment).
+pub const PACE_INTERVAL_MS: u64 = 1_000;
+/// The hop keepalive PING of a ready hop that is not renewing (spec
+/// appendix A.4), which a hop trading traffic both ways skips
+/// (`ClientSession::busy_both_ways`).
+pub const HOP_PING_INTERVAL_MS: u64 = 2_000;
+/// HELLO retries before readiness, and both hops' probes while renewing:
+/// about a second, 62 of the game's 16 ms service buckets.
+pub const HOP_HANDSHAKE_INTERVAL_MS: u64 = 992;
+/// A hop that has heard nothing from its relay for longer than this
+/// handshakes again (`forget_readiness`).
+pub const HOP_READINESS_TIMEOUT_MS: u64 = 10_000;
+/// The terminal LEAVE resends this often until its LEAVE_ACK, and gives up
+/// after `LEAVE_ATTEMPTS` sends (about a minute).
+pub const LEAVE_INTERVAL_MS: u64 = 256;
+pub const LEAVE_ATTEMPTS: u16 = 235;
 
 /// A snapshot of one client hop's uplink measurement and scheduler, and of
 /// its downlink receipt (spec §4, §5, §10.1). Durations are milliseconds of
@@ -189,6 +234,7 @@ pub struct ClientLinkStats {
 /// the newest admitted hop of that source. Counters are per hop: a renewed
 /// hop is a new `Peer` whose counters start from zero, while it keeps the
 /// measured loss, the state and their hold timers (spec §4.7).
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ReaderLinkStats {
     /// Whether this hop holds a push subscription (an UPLINK with PUSH within
@@ -239,6 +285,22 @@ impl ClientSession {
         self.probe(out)
     }
 
+    /// Whether this hop traded traffic both ways within
+    /// `HOP_PING_INTERVAL_MS` of `now_ms`: it sent a datagram other than a
+    /// probe, and `receive_at` returned an event other than a READY or
+    /// CHALLENGE. An established hop that did needs no keepalive PING at
+    /// that interval: the relay treats every authenticated datagram of a hop
+    /// as it does a PING (`RelayServer::process_at`: the hop's receipt and
+    /// endpoint, its reader's state, its source's silence), and every such
+    /// event counts as the relay's answer to the game. The keepalive
+    /// exchange is not traffic, so a hop with nothing else to say pings
+    /// every interval, and one that falls quiet within two.
+    pub fn busy_both_ways(&self, now_ms: u64) -> bool {
+        let recent =
+            |at: Option<u64>| at.is_some_and(|at| now_ms.saturating_sub(at) < HOP_PING_INTERVAL_MS);
+        recent(self.hop.traffic_sent_ms) && recent(self.hop.traffic_heard_ms)
+    }
+
     /// CONFIRM at `now_ms`: returns the CHALLENGE's 40-byte `cookie`, with a
     /// federated match's roster. The relay's `up` window for this hop starts
     /// with this datagram (spec §4.1).
@@ -267,8 +329,8 @@ impl ClientSession {
 
     /// READY_REQUEST (request 0, spec §6.0) at `now_ms`: the lobby-signed
     /// `certificate` and the start `agreement`, which must match any earlier
-    /// call. Before `started` the caller resends it every 125 ms, with no
-    /// PULL beside it; its
+    /// call. Before `started` the caller resends it every
+    /// [`READY_REQUEST_INTERVAL_MS`], with no PULL beside it; its
     /// STATUS replies give RTT samples and uplink loss feedback. Also sets
     /// `turn_ms` to [`crate::turn_ms`] of the certificate's rate until
     /// `set_ordering_turn_ms` changes it.
@@ -339,6 +401,9 @@ impl ClientSession {
     ) -> Result<ServerEvent<'a>, RelayError> {
         self.clock_ms = now_ms;
         let event = self.receive(bytes)?;
+        if !matches!(&event, ServerEvent::Ready | ServerEvent::Challenge(_)) {
+            self.hop.traffic_heard_ms = Some(now_ms);
+        }
         self.note_ordering_receipt(
             matches!(
                 &event,
@@ -385,149 +450,13 @@ impl ClientSession {
         Ok(event)
     }
 
-    // --- Content from the sequencing layer (spec §6.7). None of these
-    // encodes or sends; `poll_uplink` decides when it goes out. ---
-
-    /// Seals `plaintext` as the next batch (spec §6.1) and returns its ID:
-    /// consecutive from 1 for this match, carried across hop renewals. The
-    /// bytes stay fixed until the batch is acknowledged. The batch goes
-    /// out with the next UPLINK (§6.2, §6.3 row 1).
-    ///
-    /// Errors: `Unregistered` before ordering is configured, before a STATUS
-    /// with `started = 1` arrived, while restoring, or after Leave (spec §6.0:
-    /// no batches before the start); `Malformed` for an empty plaintext or one
-    /// over `ORDERING_BATCH_CAPACITY` bytes; `Full` while
-    /// `ORDERING_SUBMISSION_WINDOW` (4) batches are unacknowledged.
-    pub fn seal_ordering_batch(&mut self, plaintext: &[u8]) -> Result<u64, RelayError> {
-        self.seal_next_batch(plaintext)
-    }
-
-    /// Hands over this PC's post-Logic checksums of sampled frames as
-    /// `(frame, checksum)`, oldest first: the newest sample and the one
-    /// before it (one when only one exists). They replace any samples not
-    /// yet sent and ride the next UPLINK (spec §6.3, checksum segment). If no
-    /// UPLINK has gone out 100 ms after `now_ms`, `poll_uplink` sends one for
-    /// them alone, like row 3. `Malformed` for zero or more than two samples.
-    pub fn queue_ordering_checksums(
-        &mut self,
-        samples: &[(u32, u32)],
-        now_ms: u64,
-    ) -> Result<(), RelayError> {
-        self.queue_checksums(samples, now_ms)
-    }
-
-    /// Hands over one pace measurement (about once a second): `pace`, the
-    /// frames run in the last second, and the 90th-percentile tick cost in
-    /// microseconds (`None`, or `Some(0)`, means none; the wire carries 0).
-    /// It rides only the next UPLINK, once, with flags bit1 PACE (spec §6.3,
-    /// pace segment); a later measurement replaces one not yet sent.
-    pub fn queue_ordering_pace(
-        &mut self,
-        pace: OrderPace,
-        frames_per_second: u16,
-        tick_micros: Option<u32>,
-    ) {
-        self.queue_pace(PaceSegment {
-            pace: pace as u8,
-            frames_per_second,
-            tick_micros: tick_micros.unwrap_or(0),
-        });
-    }
-
-    /// Sets the contiguous watermark `recv_next` (spec §2): every record
-    /// before it is received. Never decreases (a lower value is ignored);
-    /// must be at least 1. An advance makes an acknowledgement due after the
-    /// state's interval (spec §6.3 row 3: 100 ms good, `turn_ms` lossy,
-    /// 200 ms congested).
-    pub fn set_ordering_received_next(&mut self, recv_next: u64) {
-        if let Some(ordering) = self.ordering.as_mut() {
-            let schedule = &mut ordering.link.schedule;
-            schedule.recv_next = schedule.recv_next.max(recv_next);
-        }
-    }
-
-    /// Reports the current gap state; call it whenever it changes, observed
-    /// at `now_ms`. Repeating the same value changes nothing; `None` reports
-    /// the gap closed. A new gap makes `poll_uplink` send an UPLINK once at
-    /// least 16 ms passed since the previous one (spec §6.3 row 2; after the
-    /// `turn_ms` grace for [`OrderingGap::BehindStatus`]), and starts the
-    /// fallback PULL grace of `poll_repair_pull` (spec §7.7).
-    pub fn set_ordering_gap(&mut self, gap: Option<OrderingGap>, now_ms: u64) {
-        self.report_gap(gap, now_ms);
-    }
-
-    /// Sets the turn duration `turn_ms` in whole milliseconds (spec §2), the
-    /// lossy acknowledgement interval (§6.3 row 3) and the `BehindStatus`
-    /// grace. Pass [`crate::turn_ms`] of the current sealing rate; call again
-    /// when a RATE record changes it.
-    pub fn set_ordering_turn_ms(&mut self, turn_ms: u32) {
-        if let Some(ordering) = self.ordering.as_mut() {
-            ordering.link.schedule.turn_ms = turn_ms;
-        }
-    }
-
-    // --- Scheduling: the state machine decides when to send. ---
-
-    /// Encodes one UPLINK (request 8, spec §3.2) into `out` if §6.3 says one
-    /// is due at `now_ms`, returning true; otherwise leaves `out` alone and
-    /// returns false. Covers rows 1-7 of §6.3, the standalone checksum send,
-    /// the first UPLINK once a STATUS with `started = 1` arrived and the
-    /// subscription resends until this hop's first PACK (§6.0), and the
-    /// immediate UPLINK on a renewed hop (§4.7); while offline the only
-    /// UPLINK is the 250 ms PROBE. Every UPLINK but a probe carries all
-    /// unacknowledged batches that fit from `accepted_through + 1` (§6.2).
-    ///
-    /// At most one UPLINK per service, with no exception (spec §6.3): call it
-    /// once each service (about 16 ms); calling again at the same `now_ms`
-    /// returns false and is harmless. When two lossy copies are due at once
-    /// only one goes, and the next is due 16 ms after it.
-    /// Returns false before the start, after Leave, when the hop is not
-    /// ready, or if the hop counter is exhausted.
-    pub fn poll_uplink(&mut self, now_ms: u64, out: &mut Vec<u8>) -> bool {
-        self.poll_uplink_at(now_ms, out)
-    }
-
-    /// The earliest `now_ms` at which `poll_uplink` could return true without
-    /// any further input (receive, content or gap report); it may already be
-    /// past. `None` before the start or after Leave.
-    pub fn next_uplink_deadline(&self) -> Option<u64> {
-        self.uplink_deadline()
-    }
-
-    /// The transport's IO-thread heartbeat (spec §6.6). If no UPLINK went out
-    /// on this hop for 250 ms by `now_ms`, re-encodes the most recent
-    /// UPLINK into `out` with a new hop sequence and the current
-    /// `down_high` / `down_bits`: its checksum segment repeats, its pace
-    /// segment is dropped, and the batches are packed again by §6.2 from the
-    /// current `accepted_through + 1`. While the uplink is offline it sends
-    /// the probe instead (PROBE set, no batches or checksums). Returns true
-    /// if it encoded one; false when not due, when this hop has sent no
-    /// UPLINK yet, or after Leave. A heartbeat counts as an UPLINK for every
-    /// later interval.
-    pub fn heartbeat_uplink(&mut self, now_ms: u64, out: &mut Vec<u8>) -> bool {
-        self.heartbeat_uplink_at(now_ms, out)
-    }
-
-    /// Encodes the fallback PULL (request 2, `next_seq = recv_next`) into
-    /// `out` when a gap reported through `set_ordering_gap` has lasted
-    /// `G = clamp(srtt + 4 * rttvar + turn_ms, 100, 1000)` ms without the
-    /// watermark advancing, then again after each further `G` multiple, at
-    /// most 1000 ms apart (spec §7.7). Before any RTT sample `G` uses srtt
-    /// 100 and rttvar 50. While the newest STATUS `next_seq` is more than 64
-    /// past `recv_next` it pulls at once and then every `G` instead. Never
-    /// before the start or while RESTORING, where the sequencing layer pulls
-    /// itself. Returns whether it encoded one.
-    pub fn poll_repair_pull(&mut self, now_ms: u64, out: &mut Vec<u8>) -> bool {
-        self.poll_repair(now_ms, out)
-    }
-
     // --- Observation ---
 
     /// A snapshot of this hop's link measurement and the match's §10.1
     /// counters; see [`ClientLinkStats`].
     pub fn link_stats(&self) -> ClientLinkStats {
         let mut stats = ClientLinkStats {
-            down: self.hop.down,
+            down: self.hop.down.feedback_window(),
             datagrams_received: self.hop.received,
             ..ClientLinkStats::default()
         };
@@ -588,7 +517,7 @@ impl ClientSession {
 }
 
 #[cfg(any(test, feature = "test-support"))]
-impl RelayServer {
+impl crate::RelayServer {
     /// Test support only, for tests that must start from a good downlink,
     /// such as the replay of spec appendix A: presets the downlink of
     /// `source`'s hop in `room` as measured, one fold done at 0‰, so the
@@ -609,9 +538,7 @@ impl RelayServer {
         peer.evaluate_reader(heard);
         true
     }
-}
 
-impl RelayServer {
     /// A snapshot of the downlink of `source`'s newest admitted hop in
     /// `room`; see [`ReaderLinkStats`]. `None` when the relay holds no such
     /// room or no admitted hop for that source.
@@ -630,7 +557,7 @@ impl RelayServer {
             severe: link.loss.severe,
             packets_by_kind: link.packets_by_kind,
             bytes_by_kind: link.bytes_by_kind,
-            up: link.up,
+            up: link.up.feedback_window(),
             jittery: link.jittery,
             ..ReaderLinkStats::default()
         };
@@ -672,7 +599,7 @@ struct ClientSend {
 /// 1-3, §4.4 steps 1-2). A renewed hop starts with a fresh one (§4.7).
 #[derive(Debug)]
 pub(crate) struct HopLink {
-    pub(crate) down: RecvWindow,
+    down: ReplayWindow,
     log: Vec<ClientSend>,
     cursor: LossCursor,
     // The `up_high` of the last reply that gave an RTT sample.
@@ -686,12 +613,17 @@ pub(crate) struct HopLink {
     // The last `poll_uplink` send on this hop: one UPLINK per service. A
     // renewed hop's first UPLINK is its own (spec §4.7).
     pub(crate) last_service_ms: Option<u64>,
+    // The hop's latest traffic each way (`ClientSession::busy_both_ways`):
+    // a datagram sent other than a probe, and an event `receive_at` returned
+    // other than a READY or CHALLENGE.
+    traffic_sent_ms: Option<u64>,
+    traffic_heard_ms: Option<u64>,
 }
 
 impl Default for HopLink {
     fn default() -> Self {
         Self {
-            down: RecvWindow::default(),
+            down: ReplayWindow::default(),
             log: vec![ClientSend::default(); SENDLOG_CLIENT],
             cursor: LossCursor::default(),
             rtt_high: 0,
@@ -700,11 +632,22 @@ impl Default for HopLink {
             uplinks: 0,
             first_pack: false,
             last_service_ms: None,
+            traffic_sent_ms: None,
+            traffic_heard_ms: None,
         }
     }
 }
 
 impl HopLink {
+    /// READY, CONTROL and DATA use this hop's relay sequence. CHALLENGE
+    /// and LEAVE_ACK echo a client sequence and never reach here (§4.1).
+    pub(super) fn heard(&mut self, sequence: u64, now_ms: u64) -> Result<(), RelayError> {
+        self.down.accept(sequence)?;
+        self.last_heard_ms = Some(now_ms);
+        self.received += 1;
+        Ok(())
+    }
+
     pub(crate) fn record_send(&mut self, sequence: u64, now_ms: u64) {
         self.log[(sequence % SENDLOG_CLIENT as u64) as usize] = ClientSend {
             sequence,
@@ -784,7 +727,7 @@ pub(crate) struct SendRecord {
 /// over the path measurement with `carry_path` (§4.7).
 #[derive(Debug)]
 pub(crate) struct ReaderLink {
-    pub(crate) up: RecvWindow,
+    up: ReplayWindow,
     up_high_at_ms: u64,
     log: Vec<SendRecord>,
     cursor: LossCursor,
@@ -797,8 +740,10 @@ pub(crate) struct ReaderLink {
     pub(crate) congested_at: Option<u64>,
     pub(crate) last_heard_ms: u64,
     pub(crate) clock: StateClock,
-    pub(crate) packets_by_kind: [u64; 5],
-    pub(crate) bytes_by_kind: [u64; 5],
+    #[cfg(any(test, feature = "test-support"))]
+    packets_by_kind: [u64; 5],
+    #[cfg(any(test, feature = "test-support"))]
+    bytes_by_kind: [u64; 5],
 }
 
 impl ReaderLink {
@@ -806,7 +751,7 @@ impl ReaderLink {
         let mut clock = StateClock::default();
         clock.enter(LinkState::Good, false, now_ms);
         Self {
-            up: RecvWindow::default(),
+            up: ReplayWindow::default(),
             up_high_at_ms: now_ms,
             log: vec![SendRecord::default(); SENDLOG_READER],
             cursor: LossCursor::default(),
@@ -818,7 +763,9 @@ impl ReaderLink {
             congested_at: None,
             last_heard_ms: now_ms,
             clock,
+            #[cfg(any(test, feature = "test-support"))]
             packets_by_kind: [0; 5],
+            #[cfg(any(test, feature = "test-support"))]
             bytes_by_kind: [0; 5],
         }
     }
@@ -837,12 +784,17 @@ impl ReaderLink {
         self.rttvar_c = previous.rttvar_c;
     }
 
-    /// An authenticated datagram of this hop (spec §4.1, §5.1).
-    pub(crate) fn heard(&mut self, sequence: u64, now_ms: u64) {
-        if self.up.record(sequence) {
+    pub(super) fn highest_received(&self) -> u64 {
+        self.up.maximum
+    }
+
+    /// Accepts an authenticated datagram once and timestamps its receipt (§4.1, §5.1).
+    pub(super) fn heard(&mut self, sequence: u64, now_ms: u64) -> Result<(), RelayError> {
+        if self.up.accept(sequence)? {
             self.up_high_at_ms = now_ms;
         }
         self.last_heard_ms = self.last_heard_ms.max(now_ms);
+        Ok(())
     }
 
     /// Judges nothing sent before hop sequence `next` (spec §5.5).
@@ -853,7 +805,7 @@ impl ReaderLink {
     /// The ACK and STATUS tail, read when the reply is encoded (spec §4.1).
     pub(crate) fn feedback(&self, now_ms: u64) -> HopFeedback {
         HopFeedback {
-            up: self.up,
+            up: self.up.feedback_window(),
             echo_delay_ms: now_ms
                 .saturating_sub(self.up_high_at_ms)
                 .min(u64::from(u16::MAX)) as u16,
@@ -861,17 +813,16 @@ impl ReaderLink {
     }
 
     /// Logs one datagram sent on this hop (spec §4.2): `pack` is the control
-    /// payload when it is a PACK, `bytes` the whole datagram length.
+    /// payload when it is a PACK.
     pub(crate) fn record_send(
         &mut self,
         sequence: u64,
         pack: Option<&[u8]>,
         kind: u8,
-        bytes: usize,
         now_ms: u64,
     ) {
         let (first, count) = pack.map_or((0, 0), |pack| {
-            crate::sequenced::pack::pack_v2_range(pack).expect("a pack this relay wrote")
+            crate::sequenced::pack::pack_range(pack).expect("a pack this relay wrote")
         });
         self.log[(sequence % SENDLOG_READER as u64) as usize] = SendRecord {
             sequence,
@@ -881,6 +832,11 @@ impl ReaderLink {
             kind,
             lost: false,
         };
+    }
+
+    /// Counts one datagram of `bytes` sent as `kind`, for `reader_link_stats`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn count_send(&mut self, kind: u8, bytes: usize) {
         self.packets_by_kind[usize::from(kind)] += 1;
         self.bytes_by_kind[usize::from(kind)] += bytes as u64;
     }
@@ -984,18 +940,13 @@ impl ReaderLink {
 }
 
 impl ClientSession {
-    /// Counts an authenticated datagram of this hop at `clock_ms` (spec
-    /// §4.1, §5.1). CHALLENGE and LEAVE_ACK never reach here.
-    pub(crate) fn hop_heard(&mut self, sequence: u64) {
-        self.hop.down.record(sequence);
-        self.hop.last_heard_ms = Some(self.clock_ms);
-        self.hop.received += 1;
-    }
-
     /// Logs a datagram this hop sends (spec §4.2); HELLO is not counted by
-    /// the relay's window and is never logged.
-    pub(crate) fn hop_sent(&mut self, sequence: u64) {
+    /// the relay's window and is never logged. `traffic`: it is no PING.
+    pub(crate) fn hop_sent(&mut self, sequence: u64, traffic: bool) {
         self.hop.record_send(sequence, self.clock_ms);
+        if traffic {
+            self.hop.traffic_sent_ms = Some(self.clock_ms);
+        }
     }
 
     /// One PACK's part in the downlink jitter (spec §4.8): a pack bringing a
@@ -1074,10 +1025,8 @@ impl ClientSession {
         let Some(ordering) = self.ordering.as_mut() else {
             return;
         };
-        let rtt = &ordering.link.rtt;
-        let wait = rtt
-            .srtt
-            .map_or(300, |srtt| u64::from(srtt) + 4 * u64::from(rtt.rttvar));
+        let (srtt, rttvar) = ordering.link.rtt.rtt_or_default();
+        let wait = srtt + 4 * rttvar;
         let hop = &mut self.hop;
         let log = &hop.log;
         let sent = |sequence: u64| {

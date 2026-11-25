@@ -224,7 +224,7 @@ fn cross_repaired_road(scene: &mut HeadlessScenario) {
             55,
             0,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("ordinary FV on the north road");
     let command = CommandEnvelope::new(
@@ -356,7 +356,7 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
             59,
             64,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("ordinary AEGIS placement in the untouched water lane");
     let ship_type = runtime.simulation.entities().get(ship).unwrap().type_ref();
@@ -485,7 +485,7 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
                 envelope.as_slice(),
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let lifetime = &scene.sim().lifecycle_test_events_for_test()[lifetime_start..];
@@ -706,7 +706,7 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
                     &[],
                     SIM_TICK_MS,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             assert!(
@@ -764,7 +764,7 @@ fn assert_retained_naval_ship(
     assert_eq!(actor.lifecycle.cell_marked(), native["marked"] == 1);
     assert_eq!(actor.sinking.is_active(), native["sinking"] == 1);
     assert_eq!(
-        actor.in_logic_vector.is_member(),
+        actor.seldom.in_logic_vector.is_member(),
         native["logic_registered"] == 1
     );
     assert_eq!(

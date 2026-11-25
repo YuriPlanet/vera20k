@@ -5,7 +5,7 @@ use super::*;
 /// it past the ceiling copies more than drawing needs.
 #[cfg(all(
     target_pointer_width = "64",
-    not(any(feature = "ares", feature = "phobos", feature = "debug-tools"))
+    not(any(feature = "phobos", feature = "debug-tools"))
 ))]
 #[test]
 fn the_draw_record_stays_under_its_ceiling() {
@@ -15,14 +15,16 @@ fn the_draw_record_stays_under_its_ceiling() {
 
 #[cfg(all(
     target_pointer_width = "64",
-    not(any(feature = "ares", feature = "phobos", feature = "debug-tools"))
+    not(any(feature = "phobos", feature = "debug-tools"))
 ))]
-const CEILING: usize = 816;
+// 824 since an SHP Unit's draw reads three more of its fields: the body's
+// current facing (`shp_body_facing`), the Foot occupation enable and
+// IsOnCarryall. Four bytes of state, one alignment step of the record.
+const CEILING: usize = 824;
 
-/// A record is found by its stable id and a missing id is not, and the
-/// frame's Display order is built once: a second ask returns the first.
+/// A record is found by its stable id and a missing id is not.
 #[test]
-fn a_frame_finds_records_by_id_and_keeps_one_display_order() {
+fn a_frame_finds_records_by_id() {
     use crate::map::entities::EntityCategory;
     use crate::sim::{combat::Health, game_entity::GameEntity};
 
@@ -51,11 +53,22 @@ fn a_frame_finds_records_by_id_and_keeps_one_display_order() {
         assert_eq!(frame.object(id).map(|record| record.stable_id()), Some(id));
     }
     assert!(frame.object(8).is_none() && frame.object(21).is_none());
-    let order = frame.display_order(sim.display_layers());
-    assert!(std::ptr::eq(
-        order,
-        frame.display_order(sim.display_layers())
-    ));
+}
+
+/// The slot index answers as a search of every id does: for ids in a dense
+/// run and far apart, and for ids before, between and past them.
+#[test]
+fn the_slot_index_answers_as_a_search_of_every_id() {
+    let ids = [5, 6, 7, 8, 300, 301, 4_000, 1_000_000];
+    let index = SlotIndex::of(&ids);
+    for id in [
+        0, 4, 5, 8, 9, 300, 302, 4_000, 999_999, 1_000_000, 1_000_001,
+    ] {
+        assert_eq!(index.slot(&ids, id), ids.binary_search(&id).ok(), "id {id}");
+    }
+    assert_eq!(index.slot(&ids, u64::MAX), None);
+    assert_eq!(SlotIndex::of(&[]).slot(&[], 5), None);
+    assert_eq!(SlotIndex::of(&[9]).slot(&[9], 9), Some(0));
 }
 
 /// The building walk lists exactly the Structure records, in stable-id
@@ -129,7 +142,7 @@ fn a_frame_lists_the_objects_that_can_draw_a_line() {
             false,
         );
         match id {
-            7 => entity.selection.set_selected_for_test(true),
+            7 => entity.seldom.selection.set_selected_for_test(true),
             12 => {
                 entity.capture_manager = Some(Box::new(CaptureManagerState::with_victims_for_test(
                     1,
@@ -137,7 +150,7 @@ fn a_frame_lists_the_objects_that_can_draw_a_line() {
                     &[25],
                 )))
             }
-            25 => entity.mind_control = MindControlLink::controlled_by_for_test(12),
+            25 => entity.seldom.mind_control = MindControlLink::controlled_by_for_test(12),
             _ => {}
         }
         sim.entities_mut_for_test().insert(entity);
@@ -161,4 +174,32 @@ fn a_frame_lists_the_objects_that_can_draw_a_line() {
         color: [0; 3],
     });
     assert!(designating.may_draw_a_line());
+}
+
+/// An SHP Unit's body reads PrimaryFacing at the committed frame through
+/// gamemd's Current (called at `0x0073C636`), or under Ares through its own
+/// copy (`0x10048064..0x10048102`): on the first frame of a ROT 5 turn from
+/// 0x4000 to 0 they answer 0x3FFC and 0x4000
+/// (`tools/spatial_oracle/facing_class_ares.json`).
+#[test]
+fn an_shp_body_reads_primary_facing_through_the_games_current() {
+    use crate::map::entities::EntityCategory;
+    use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+    use crate::sim::{game_entity::GameEntity, movement::FacingClass};
+
+    let ares = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=TANK\n[TANK]\nImmuneToAbduction=yes\n",
+    ))
+    .unwrap();
+    assert!(ares.ares());
+    let mut entity =
+        GameEntity::test_default_of_category(1, "TANK", "Americans", 0, 0, EntityCategory::Unit);
+    entity.body_facing = FacingClass::new(0, 5);
+    entity.body_facing.snap(0x4000, 0);
+    entity.body_facing.set(0, 0);
+    assert_eq!(
+        [RuleSet::empty_for_test(), &ares]
+            .map(|rules| ObjectRecord::of_test_in(&entity, None, rules).shp_body_facing),
+        [0x3FFC, 0x4000]
+    );
 }

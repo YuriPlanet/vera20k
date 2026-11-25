@@ -110,12 +110,13 @@ impl Simulation {
     /// Command producers and cursor feedback share this read-only action.
     pub fn ares_vehicle_capture_action(
         &self,
+        control: &crate::sim::world::ControlProjection<'_>,
         actor_id: u64,
         target_id: u64,
         rules: &RuleSet,
     ) -> bool {
         self.substrate.entities.get(actor_id).is_some_and(|actor| {
-            self.house_is_human_player(actor.owner())
+            control.can_order(actor.owner())
                 && self
                     .ares_vehicle_capture_mode(actor_id, target_id, rules)
                     .is_some()
@@ -128,8 +129,7 @@ impl Simulation {
         &mut self,
         actor_id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> bool {
         use crate::sim::components::NavTargetRef;
         use crate::sim::movement::ground_pose::position_world_coord;
@@ -178,9 +178,14 @@ impl Simulation {
             return false;
         };
         actor
+            .seldom
             .building_entry
             .set_nearest_occupiable_seek(best.is_some());
-        actor.ares.vehicle_driver.set_vehicle_seek(best.is_some());
+        actor
+            .seldom
+            .ares
+            .vehicle_driver
+            .set_vehicle_seek(best.is_some());
         let Some((_, _, target)) = best else {
             return false;
         };
@@ -193,7 +198,6 @@ impl Simulation {
             actor_id,
             Some(NavTargetRef::object(target)),
             rules,
-            registry,
             effects,
         );
         let _ = self.mission_queue_exact(
@@ -215,7 +219,7 @@ impl Simulation {
         target_id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<crate::sim::world::VehicleCaptureOutcome, String> {
         use crate::sim::world::{UninitContext, VehicleCaptureOutcome};
         let Some(actor) = self
@@ -236,10 +240,12 @@ impl Simulation {
                 &actor_type.id,
             )
             .ok_or("capture actor has no InfantryType array index")?;
-        let enter_sound = actor_type.vehicle_thief_sound(false).map(str::to_owned);
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let enter_sound = actor_type
+            .vehicle_thief_sound(false)
+            .map(|sound| rules.sound_name(sound));
+        let mut context = UninitContext::new(rules).with_effects(effects);
         let Some(mode) = self.ares_vehicle_capture_mode(actor_id, target_id, rules) else {
-            self.assign_destination_represented(actor_id, None, rules, registry, effects)
+            self.assign_destination_represented(actor_id, None, rules, effects)
                 .map_err(|e| format!("refused vehicle capture destination: {e}"))?;
             let from = self.substrate.entities.get(target_id).map(|target| {
                 crate::sim::movement::ground_pose::object_get_coords(
@@ -264,9 +270,9 @@ impl Simulation {
             .substrate
             .entities
             .get(target_id)
-            .and_then(|target| target.mind_control.controller())
+            .and_then(|target| target.seldom.mind_control.controller())
         {
-            self.free_unit(controller, target_id, rules, registry, effects);
+            self.free_unit(controller, target_id, rules, registry, context.effects());
         }
         self.clear_permanent_control_and_ring(target_id, rules);
         let board_driver = mode == VehicleCaptureMode::Drive
@@ -283,7 +289,7 @@ impl Simulation {
             if board_driver { 1 } else { 48 },
             Some(actor_id),
             None,
-            context,
+            context.reborrow(),
         );
         if !board_driver {
             if let Some(owner) = self
@@ -302,10 +308,10 @@ impl Simulation {
             .substrate
             .entities
             .get(actor_id)
-            .and_then(|actor| actor.mind_control.controller());
+            .and_then(|actor| actor.seldom.mind_control.controller());
         if let Some(controller) = controller {
             self.with_object_placement_scope(|sim| {
-                sim.free_unit(controller, actor_id, rules, registry, effects);
+                sim.free_unit(controller, actor_id, rules, registry, context.effects());
             });
         }
         let owner = self
@@ -314,7 +320,7 @@ impl Simulation {
             .get(actor_id)
             .map(|actor| actor.owner())
             .ok_or("vehicle captor retired during capture callbacks")?;
-        self.change_owner_with_rules(target_id, owner, rules, registry, effects);
+        self.change_owner_with_rules(target_id, owner, rules, registry, context.effects());
         // Unit/Aircraft+2E0=70D980 is a no-op; Building+2E0=4576F0
         // scatters infantry synchronously through its existing owner.
         let changed = if self
@@ -323,7 +329,7 @@ impl Simulation {
             .get(target_id)
             .is_some_and(|target| target.category() == EntityCategory::Structure)
         {
-            self.scatter_building_infantry(target_id, rules, registry, effects)
+            self.scatter_building_infantry(target_id, rules, registry, context.effects())
                 .map_err(|e| format!("captured building evacuation: {e}"))?
         } else {
             false
@@ -339,7 +345,7 @@ impl Simulation {
                     coordinate,
                     flags: 0,
                 });
-            effects.flush_sound(self, rules);
+            context.effects().flush_sound(self, rules);
         }
         let captor = self
             .substrate
@@ -348,10 +354,14 @@ impl Simulation {
             .map(|actor| (actor.owner(), actor.health.current(), actor.veterancy.raw()))
             .ok_or("vehicle captor retired before metadata commit")?;
         if let Some(target) = self.substrate.entities.get_mut(target_id) {
-            target.ares.vehicle_driver.restore_driver();
+            target.seldom.ares.vehicle_driver.restore_driver();
             if mode == VehicleCaptureMode::Hijack {
-                target.capture_infantry_type_index.record(captor_index);
                 target
+                    .seldom
+                    .capture_infantry_type_index
+                    .record(captor_index);
+                target
+                    .seldom
                     .ares
                     .vehicle_driver
                     .record_captor(captor.0, captor.1, captor.2);
@@ -359,7 +369,7 @@ impl Simulation {
         }
         if let Some(controller) = controller {
             self.with_object_placement_scope(|sim| {
-                sim.capture_unit(controller, target_id, rules, registry, effects);
+                sim.capture_unit(controller, target_id, rules, registry, context.effects());
             });
         }
         let frame = self.session.binary_frame();
@@ -378,7 +388,8 @@ impl Simulation {
                 .get(actor_id)
                 .and_then(|actor| self.entity_object_type(actor, rules))
                 .map_or(1.0, |ty| ty.size);
-            if !self.add_passenger_with_context(target_id, &[(actor_id, size)], context) {
+            if !self.add_passenger_with_context(target_id, &[(actor_id, size)], context.reborrow())
+            {
                 return Err("captured vehicle retired during driver boarding".into());
             }
             if let Some(actor) = self.substrate.entities.get_mut(actor_id) {
@@ -394,7 +405,7 @@ impl Simulation {
         let human = self
             .houses
             .get(&owner)
-            .is_some_and(|house| house.is_controlled_by_human(self.session.game_mode_nonzero()));
+            .is_some_and(|house| house.is_controlled_by_human(self.session.rule_policy()));
         self.mission_queue_exact(
             target_id,
             crate::sim::mission::MissionId::from_known(if human {
@@ -408,7 +419,13 @@ impl Simulation {
         )
         .map_err(|e| format!("captured vehicle mission: {e}"))?;
         // Tag6E53A0 arguments: affected vehicle, then distinct live source.
-        self.dispatch_object_tag_event(target_id, 70, Some(target_id), Some(actor_id), context);
+        self.dispatch_object_tag_event(
+            target_id,
+            70,
+            Some(target_id),
+            Some(actor_id),
+            context.reborrow(),
+        );
         if self
             .substrate
             .entities
@@ -433,7 +450,7 @@ impl Simulation {
         let Some(ty) = self.entity_object_type(actor, rules) else {
             return false;
         };
-        let cargo = actor.passenger_role.cargo();
+        let cargo = actor.passenger_role().cargo();
         match ty.driver_rules().operator() {
             OperatorRequirement::None => true,
             OperatorRequirement::Any => cargo.is_some_and(|cargo| !cargo.passengers().is_empty()),
@@ -526,7 +543,7 @@ impl Simulation {
                 self.session.binary_frame(),
             )
             || actor_type.vehicle_thief
-                && target.mind_control.is_mind_controlled()
+                && target.seldom.mind_control.is_mind_controlled()
                 && !driver.break_mind_control()
         {
             return None;
@@ -560,7 +577,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::*;
     use crate::sim::{house_state::HouseState, world::FrameEffects};
@@ -613,10 +630,10 @@ mod tests {
         );
         assert_eq!(sim.ares_vehicle_capture_mode(driver, host, &rules), None);
         assert_eq!(sim.scenario_rng.state(), rng);
-        sim.change_owner_with_rules(host, owner, &rules, None, FrameEffects::default());
+        sim.change_owner_with_rules(host, owner, &rules, None, &mut FrameEffects::default());
         assert_eq!(sim.ares_vehicle_capture_mode(hijacker, host, &rules), None);
-        sim.change_owner_with_rules(host, neutral, &rules, None, FrameEffects::default());
-        sim.change_owner_with_rules(locked, neutral, &rules, None, FrameEffects::default());
+        sim.change_owner_with_rules(host, neutral, &rules, None, &mut FrameEffects::default());
+        sim.change_owner_with_rules(locked, neutral, &rules, None, &mut FrameEffects::default());
         assert_eq!(
             sim.ares_vehicle_capture_mode(hijacker, host, &rules),
             Some(VehicleCaptureMode::Drive)
@@ -626,15 +643,20 @@ mod tests {
             Some(VehicleCaptureMode::Drive)
         );
         assert_eq!(sim.ares_vehicle_capture_mode(driver, locked, &rules), None);
-        assert!(sim.ares_enter_nearest_vehicle(driver, &rules, None, FrameEffects::default()));
+        assert!(sim.ares_enter_nearest_vehicle(driver, &rules, &mut FrameEffects::default()));
         let seeking = sim.substrate.entities.get(driver).unwrap();
         assert_eq!(
             seeking.navigation.nav_com(),
             Some(crate::sim::components::NavTargetRef::object(host))
         );
-        assert!(seeking.building_entry.should_enter_nearest_occupiable());
-        assert!(seeking.ares.vehicle_driver.vehicle_seek());
-        sim.change_owner_with_rules(host, no_drive, &rules, None, FrameEffects::default());
+        assert!(
+            seeking
+                .seldom
+                .building_entry
+                .should_enter_nearest_occupiable()
+        );
+        assert!(seeking.seldom.ares.vehicle_driver.vehicle_seek());
+        sim.change_owner_with_rules(host, no_drive, &rules, None, &mut FrameEffects::default());
         assert_eq!(sim.ares_vehicle_capture_mode(driver, host, &rules), None);
         assert_eq!(
             sim.ares_vehicle_capture_mode(hijacker, host, &rules),
@@ -647,9 +669,14 @@ mod tests {
             .lifecycle
             .set_object_alive_for_test(false);
         assert_eq!(sim.ares_vehicle_capture_mode(driver, host, &rules), None);
-        assert!(!sim.ares_enter_nearest_vehicle(driver, &rules, None, FrameEffects::default()));
+        assert!(!sim.ares_enter_nearest_vehicle(driver, &rules, &mut FrameEffects::default()));
         let stopped = sim.substrate.entities.get(driver).unwrap();
-        assert!(!stopped.building_entry.should_enter_nearest_occupiable());
-        assert!(!stopped.ares.vehicle_driver.vehicle_seek());
+        assert!(
+            !stopped
+                .seldom
+                .building_entry
+                .should_enter_nearest_occupiable()
+        );
+        assert!(!stopped.seldom.ares.vehicle_driver.vehicle_seek());
     }
 }

@@ -6,9 +6,8 @@ Keep each PR small: one fix, one to three regression tests that fail without it,
 native function address cited next to the code, no native-execution corpora, and a PR
 description of about 15 lines. Leave code marked as a sim-scale deviation as it is: it
 differs from gamemd on purpose, so VERA can run 20,000 units. If it plays visibly wrong,
-open an issue. Don't put game code behind a build feature such as
-`cfg(feature = "ares")`: Ares code checks the game's switch, `rules.ares()`. The rest is
-the contract for the maintainer's own agents:
+open an issue. Don't put game code behind a build feature: Ares code checks the game's
+switch, `rules.ares()`. The rest is the contract for the maintainer's own agents:
 its build runner, retail-data checks, critic reviews, checkpoints and native comparisons
 don't apply to you. Where the two differ, the README wins.
 
@@ -36,10 +35,6 @@ This contract governs Codex and Claude. Specific user instructions override work
 defaults.
 
 ## Intent and autonomy
-
-The user often thinks aloud. Follow intent, keep exact technical values literal,
-and treat proposed causes as hypotheses. Investigate contradictory observations.
-Push back briefly with evidence; respect informed decisions.
 
 Complete authorized work without routine approval. Resolve discoverable questions;
 ask only for missing authority or consequential, undiscoverable preferences.
@@ -120,15 +115,14 @@ what they can do, not only in the log.
 
 Stock play stays as gamemd plays it, and game behavior never goes behind a build
 feature: what only some games use is switched on at run time, never by
-`cfg(feature = "...")`, `cfg!` or a build constant such as `ARES_BUILD`. Platform and
-tool features (`wasm`, `dev-overlays`, `test-support` and the like) stay build features.
+`cfg(feature = "...")`, `cfg!` or a build constant such as `PHOBOS_ENABLED`. Platform
+and tool features (`wasm`, `dev-overlays`, `test-support` and the like) stay build features.
 An engine extension (Ares, Phobos, NPatch, VeraX) is in every build, the release build
 too, and switches on from the game's data: its keys in the rules or map, or a mod that
 ships it. With retail data the game plays as gamemd. Ares has its switch
-(`RuleSet::ares`): Ares code reads its own keys or the switch, and all of it still
-behind the `ares` feature moves to the switch before that feature is deleted. Phobos,
-NPatch and VeraX get their switches the same way; until then their wrapped code stays
-as it is, and the first PR that adds code for one of them adds its switch. A VERA
+(`RuleSet::ares`): Ares code reads its own keys or the switch. Phobos, NPatch and VeraX
+get their switches the same way; until then their wrapped code stays as it is, and the
+first PR that adds code for one of them adds its switch. A VERA
 feature stays off until a player option or an INI key turns it on; a bug gamemd itself
 has stays unless the maintainer asks for an opt-in fix (`npbug`). A change in or beside
 a [capability](docs/capabilities.md) compiles with it on as well as off
@@ -148,6 +142,15 @@ Online play reaches players on other versions. A change to what game, relay and 
 exchange keeps [Networking](docs/Networking.md) current and says in its PR what a
 released game, a mixed room and a rollback do with it: the older side is refused with
 a message or the feature stays off, and nothing hangs or crashes.
+
+Multiplayer rules: whatever a player's game can set that changes what a match plays (a
+file, an Options switch such as `PersonalRules`, an Ares or mod setting, a resource
+selection) enters the rules digest (`ProcessAssets::multiplayer_rules_digest`) and,
+in the same PR, the rules parts (`app::rules_parts`, docs/spawn.md "Rules parts"),
+named for players, so a refused start says what differs and not only that something
+does. A new part or setting keeps the parts' old form for a game without it (left
+out while off), and its PR says what the launcher's `src/lib/rulesDiff.ts` must add
+to name it; `every_personal_rules_switch_is_a_setting` holds `PersonalRules` to this.
 
 ## Architecture and delivery
 
@@ -191,6 +194,16 @@ state or decision logic, find existing writers and name the owner in the PR. Kee
 authoritative state private to its owning module and expose mutations through the
 owner. Extend or fix that owner instead of introducing competing state or duplicated
 decision logic, or widening visibility to reach its state or raw data.
+
+Write Rust, not C++ or Java in Rust syntax. When the borrow checker refuses code, fix
+who borrows what (split the borrow, pass a reference or an index, end a borrow sooner,
+reorder the writes) before reaching for `.clone()`, `Rc`, `RefCell`, `Arc` or a lock.
+Clone only where an owned copy is the intent, never per entity in a hot loop. Shared
+state gets an owner, not `Arc<Mutex<_>>`; parallel simulation work splits data by
+owner instead of sharing it behind a lock. Owners offer operations, not a `get_`/`set_`
+pair per field. Model gamemd's class tree with enums and data, not trait hierarchies.
+Loop with iterators; index where the index is itself the data (handles, slots,
+parallel arrays).
 
 Before porting a native function, search the code for its address (e.g. `703850`) and
 native name. Each native function has one Rust port, and new callers call it. Never
@@ -287,12 +300,17 @@ fix: write it first, or run it once with the fix reverted, and say so in the PR.
 Skip `cargo check` when a planned test answers the same question. A test run does not
 show that the game builds, though: tests switch on core's `test-support` code. When
 production code touches anything behind `test-support` or `#[cfg(test)]`, also run
-`python -m tools.cargo_run -- check -p vera20k --lib --bins`; for a file listed in
-`.github/workflows/wasm.yml`, the wasm check in the [Wasm guide](docs/wasm.md#checks).
+`python -m tools.cargo_run -- check -p vera20k --lib --bins`; for a file holding a
+browser switch (`feature = "wasm"` or `target_arch = "wasm32"`), the wasm check in the
+[Wasm guide](docs/wasm.md#checks). No pull request builds the browser package.
 
 - Working Rust: start with focused
   `python -m tools.cargo_run -- test -p <crate> --lib <module_path>::`, where `<crate>`
-  is the module's crate from the split above (`vera20k-core` or `vera20k`).
+  is the module's crate from the split above (`vera20k-core` or `vera20k`). Write the
+  module path from the crate root (`sim::combat::`, not a bare test name): the runner
+  then compiles only that [test group](tools/README.md#test-groups), and a rebuild
+  after an edit takes about half the time. A run in which no test matched fails.
+  `python -m tools.group_tests tag` gives a new test module its group.
 - Rust PR readiness: after any critic fixes, focused tests for the modules the change
   touches and their direct consumers, with retail `ini/`, `RA2_DIR` set,
   `VERA20K_REQUIRE_RETAIL_INI=1` and `VERA20K_REQUIRE_RETAIL_ASSETS=1`; no baseline

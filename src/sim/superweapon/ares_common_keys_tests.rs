@@ -54,7 +54,7 @@ fn grant(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, sw: InternedI
 
 fn at(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, frame: u32) {
     sim.session.set_binary_frame_for_test(frame);
-    tick_house_superweapon_instances(sim, rules, owner);
+    tick_house_superweapon_instances(sim, rules, owner, &mut Default::default());
 }
 
 fn fire(
@@ -66,6 +66,7 @@ fn fire(
 ) -> bool {
     let name = sim.interner.resolve(owner).to_owned();
     sim.apply_command_with_overlays(
+        None,
         &name,
         &Command::LaunchSuperWeapon {
             sw_type_id: sw,
@@ -74,7 +75,7 @@ fn fire(
         },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -174,13 +175,40 @@ fn always_granted_needs_no_provider_but_keeps_availability_gates() {
     let computer = sim.interner.get("Russians").unwrap();
     for house in [owner, computer] {
         grant_provided_supers(&mut sim, &rules, house);
-        update_owned_supers(&mut sim, &rules, house);
+        update_owned_supers(&mut sim, &rules, house, &mut Default::default());
     }
     assert!(sim.super_weapons[&owner][&strike].is_active());
     assert!(!sim.super_weapons[&owner][&plain].is_active());
     assert!(
         !sim.super_weapons[&computer][&strike].is_active(),
         "IsAvailable's SW.AllowAI still applies"
+    );
+}
+
+/// Ares's UpdateSuperWeaponsUnavailable (hook `0x0050B1D0`,
+/// `0x10039617..0x1003965F`) keeps an `SW.AutoFire=yes`, `SW.ShowCameo=no`
+/// super off the strip; without `SW.AutoFire` the cameo still shows.
+#[test]
+fn show_cameo_hides_only_an_auto_fire_super_from_the_strip() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = rules(
+        "[SuperWeaponTypes]\n0=Guard\n1=Manual\n\
+         [Guard]\nType=GenericWarhead\nSW.Warhead=Payload\nSW.AlwaysGranted=yes\n\
+         IsPowered=no\nSW.AutoFire=yes\nSW.ShowCameo=no\n\
+         [Manual]\nType=GenericWarhead\nSW.Warhead=Payload\nSW.AlwaysGranted=yes\n\
+         IsPowered=no\nSW.ShowCameo=no\n",
+    );
+    let (mut sim, owner, _) = scene(&rules, "Guard");
+    grant_provided_supers(&mut sim, &rules, owner);
+    update_owned_supers(&mut sim, &rules, owner, &mut Default::default());
+    let mut shown: Vec<_> = superweapon_views_for_owner(&sim, &rules, &owner)
+        .into_iter()
+        .map(|view| (view.display_name, view.ares_show_cameo))
+        .collect();
+    shown.sort();
+    assert_eq!(
+        shown,
+        [("Guard".to_string(), false), ("Manual".to_string(), true)]
     );
 }
 
@@ -276,6 +304,7 @@ fn sonar_pulse_marks_affected_enemies_in_range_and_whole_map_pulses_need_no_targ
             .entities
             .get(id)
             .unwrap()
+            .seldom
             .ares
             .sonar_timer
             .remaining(500)

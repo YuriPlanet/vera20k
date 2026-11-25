@@ -3,13 +3,15 @@
 //! server's OnGameStart complete later, never the Start click.
 
 use super::*;
+use crate::app::match_runtime::session::MatchSession;
 use crate::assets::csf_file::CsfArg;
 use crate::skirmish_modes::ModeStartEffect;
 
 use super::super::chat_notice as message;
 
 pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
-    let wol = super::super::dialog(state).wol();
+    let dialog = super::super::dialog(&state.frontend, &state.match_state);
+    let wol = dialog.wol();
     anyhow::ensure!(
         state.match_state.session.host(),
         "only the host starts a network game"
@@ -23,15 +25,13 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         "setup is locked"
     );
     // C2 ignores Start while its StartGame request is pending (00B77DEC).
-    if state
-        .frontend
-        .network_setup_protocol
-        .as_ref()
-        .is_some_and(|protocol| protocol.start_in_progress())
-    {
+    if super::super::start_phase(state.frontend.network_setup_protocol.as_ref()).in_progress() {
         return Ok(());
     }
-    super::super::remember_setup(state);
+    if state.match_state.session.campaign_room().is_some() {
+        return request_campaign_start(state);
+    }
+    super::super::remember_setup(&mut state.frontend, &state.match_state);
     let launch = state
         .match_state
         .session
@@ -43,24 +43,18 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .iter()
         .filter(|human| !human.is_observer())
         .count() as i32;
-    if !has_minimum_players(&launch) {
+    let watch_ai = state.match_state.session.network_several_observers();
+    if !has_minimum_players(&launch, watch_ai) {
         message(state, "TXT_ONLY_ONE", &[]);
         return Ok(());
     }
-    // VERA's room waits for a balance of Balance automatically.
-    if wol && super::super::teams::balance_waiting(state) {
-        let text = crate::i18n::tr("VERA:BalanceWaiting");
-        crate::app::shell_lan::append_chat(
-            state,
-            crate::ui::lan_shell::LanChatLine {
-                text: text.encode_utf16().collect(),
-                color: u32::MAX,
-            },
-        );
-        return Ok(());
-    }
-    // C2 0x790698: WOL forbids AI players in a game with observers.
-    if wol && humans < launch.humans.len() as i32 && launch.ai_player_count != 0 {
+    // C2 0x790698: WOL forbids AI players in a game with observers. VERA's
+    // own room lets them play while people watch.
+    if wol
+        && !state.match_state.session.network_several_observers()
+        && humans < launch.humans.len() as i32
+        && launch.ai_player_count != 0
+    {
         message(state, "TXT_NO_AI_OBSERVATION", &[]);
         return Ok(());
     }
@@ -74,9 +68,12 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
                 .unwrap_or(0)
                 == 0
         {
-            let map_name = super::super::map_display_name(state)
-                .unwrap_or_default()
-                .to_owned();
+            let map_name = super::super::map_display_name(
+                &state.frontend.scenario_catalog,
+                &state.match_state.session,
+            )
+            .unwrap_or_default()
+            .to_owned();
             message(
                 state,
                 "GUI:HostNoMap",
@@ -99,18 +96,20 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .session
         .network_setup_capacity()
         .unwrap_or(0);
+    let shares = state.match_state.session.network_shares_bases();
+    let needed = super::super::teams::starts_needed(&launch, shares, dialog.flavor);
     if wol {
         // C2 0x79071E..0x7908D5: allies, readiness, then capacity. VERA's
         // explicit AI rows share the map with human players, even though
         // only humans belong to the network/relay roster.
-        if all_allied(state) {
+        if all_allied(&state.match_state.session) {
             message(state, "TXT_CANNOT_ALLY", &[]);
             return Ok(());
         }
         if !all_ready(state) {
             return Ok(());
         }
-        if capacity < humans + launch.opponents.len() as i32 {
+        if capacity < needed {
             message(
                 state,
                 "TXT_SCENARIO_TOO_SMALL",
@@ -141,13 +140,16 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
                         .find(|human| human.raw_slot_index == Some(row) && human.is_observer())
                 })
                 .map(|human| human.name.clone());
-            if !crate::app::shell_wol::lobby::clan_teams_even(state, observer.as_deref()) {
+            if !crate::app::shell_wol::lobby::clan_teams_even(
+                state.frontend.wol.as_ref(),
+                observer.as_deref(),
+            ) {
                 message(state, "TXT_CLAN_NOSTART", &[]);
                 return Ok(());
             }
         }
     } else {
-        let capacity_ok = capacity >= humans + launch.ai_player_count;
+        let capacity_ok = capacity >= needed;
         if !capacity_ok {
             message(
                 state,
@@ -161,7 +163,7 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         if !capacity_ok || !mode_ok {
             return Ok(());
         }
-        if all_allied(state) {
+        if all_allied(&state.match_state.session) {
             message(state, "TXT_CANNOT_ALLY", &[]);
             return Ok(());
         }
@@ -176,7 +178,7 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .expect("validated setup")
         .clone();
     if !wol {
-        crate::app::lan_service::prepare_host_timing(state)?;
+        crate::app::lan_service::prepare_host_timing(&mut state.match_state)?;
     }
     let max_ahead_frames = if wol {
         // Start Game Now derives WOL timing after OnGameStart.
@@ -216,15 +218,24 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .apply_network_ai_preparation(preparation.declared_count, preparation.opponents)?;
     // VERA's room with Teams set gives each player still on a Random start
     // one by team before the assignment's farthest free start would.
-    super::super::teams::team_starts(state, true)?;
+    super::super::teams::team_starts(
+        state.platform.game_config.as_ref(),
+        &state.frontend,
+        &mut state.match_state.session,
+        &mut state.process_assets,
+        true,
+    )?;
     let launch = state
         .match_state
         .session
         .network_setup()
         .expect("mode callback retains setup")
         .clone();
-    let banned =
-        crate::app::shell_network_setup::bans::banned_countries(state, launch.options.bans);
+    let banned = crate::app::shell_network_setup::bans::banned_countries(
+        &state.frontend,
+        &state.match_state,
+        launch.options.bans,
+    );
     let resolved = state
         .frontend
         .multiplayer_shell_runtime
@@ -235,14 +246,28 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .accept_network_assignments(resolved)?;
     if wol {
         // C2: slot names 77DB90 before options 5E32D0(1,1).
-        queue(state, NetworkSetupRequest::PublishRoster);
-        queue(state, NetworkSetupRequest::PublishOptions);
+        queue(
+            &mut state.frontend.network_setup_protocol,
+            NetworkSetupRequest::PublishRoster,
+        );
+        queue(
+            &mut state.frontend.network_setup_protocol,
+            NetworkSetupRequest::PublishOptions,
+        );
     } else {
-        queue(state, NetworkSetupRequest::PublishOptions);
-        queue(state, NetworkSetupRequest::PublishRoster);
+        queue(
+            &mut state.frontend.network_setup_protocol,
+            NetworkSetupRequest::PublishOptions,
+        );
+        queue(
+            &mut state.frontend.network_setup_protocol,
+            NetworkSetupRequest::PublishRoster,
+        );
     }
     // Native mode+64 follows the resolved options/name publication, before
     // preview disposal and GO. Only Cooperative consumes Scenario RNG here.
+    // RESIDUAL: its C1 (0x005C2710) is not sent; nothing reads the later
+    // rounds, so guests keep their own.
     // C2 then calls mode+0x24 (0x790B62), a no-op except MPCooperative's
     // 5C1CB0 flag for its later 5C2680 save step: not ported.
     let launch = state
@@ -259,23 +284,9 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .iter()
         .map(|human| human.name.clone())
         .collect();
-    if launch.mode.class.uses_cooperative_setup() {
-        let rounds = state
-            .frontend
-            .multiplayer_shell_runtime
-            .cooperative_round_assignments()
-            .to_vec();
-        queue(
-            state,
-            NetworkSetupRequest::PublishCooperativeAssignments(rounds),
-        );
-    }
     let Some(max_ahead_frames) = max_ahead_frames else {
-        // C2 0x790BB9: API+0x48 StartGame with every channel user, then
-        // 00B77E28/00B77DEC until OnGameStart answers.
-        queue(state, NetworkSetupRequest::StartGame { users });
         if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
-            protocol.wol_start_pending = true;
+            protocol.submit_start(users);
         }
         return Ok(());
     };
@@ -284,35 +295,129 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .session
         .network_start_seed()
         .ok_or_else(|| anyhow::anyhow!("host setup has no proposed seed"))?;
-    queue(
-        state,
-        NetworkSetupRequest::Go {
-            agreed_seed,
-            max_ahead_frames,
-        },
-    );
-    let go_pending = state
+    let launch = state
         .match_state
         .session
         .network_setup()
-        .map_or_else(Vec::new, |launch| {
-            (0..launch.humans.len())
-                .filter(|source| *source != launch.local_player_index)
-                .collect()
-        });
+        .ok_or_else(|| anyhow::anyhow!("no setup"))?;
     if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
-        protocol.locked = true;
-        // The transport starts the native drain only after all GO packets
-        // have entered its existing global send queue.
-        protocol.lan_go = Some(super::super::LanGoWait::HostSending {
-            pending: go_pending,
-        });
-        // Native's offer blocks the dialog until it ends, so Start cannot
-        // follow a pending one; GO drops it.
-        protocol.drop_preview_offer();
+        queue_lan_go(protocol, launch, agreed_seed, max_ahead_frames);
     }
     state.frontend.skirmish_preview_texture = None;
     Ok(())
+}
+
+pub(in crate::app::shell_network_setup) fn request_campaign_start(
+    state: &mut AppState,
+) -> anyhow::Result<()> {
+    use super::super::campaign_room;
+    let wol = super::super::dialog(&state.frontend, &state.match_state).wol();
+    if wol && !crate::app::shell_wol::lobby_campaign_rooms(state.frontend.wol.as_ref()) {
+        message(state, "VERA:CampaignRoomOnlineUnsupported", &[]);
+        return Ok(());
+    }
+    let room = match campaign_room::publication(
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+    ) {
+        Ok(Some(room)) => room,
+        Ok(None) => return Ok(()),
+        Err(error) => {
+            log::warn!("Campaign room publication refused: {error:#}");
+            message(state, "VERA:CampaignRoomUnavailable", &[]);
+            return Ok(());
+        }
+    };
+    let launch = state
+        .match_state
+        .session
+        .network_setup()
+        .ok_or_else(|| anyhow::anyhow!("no setup"))?
+        .clone();
+    if launch.humans.iter().any(|human| human.is_observer()) {
+        message(state, "VERA:CampaignRoomObservers", &[]);
+        return Ok(());
+    }
+    if !wol && let Some(notice) = campaign_file_notice(&state.match_state.session, &launch) {
+        super::super::room_notice(state, &notice);
+        return Ok(());
+    }
+    if let Err(error) = campaign_room::prepare_current(
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+        &state.process_assets,
+        &room,
+    ) {
+        log::warn!("Campaign start refused: {error:#}");
+        message(state, "VERA:CampaignRoomRoster", &[]);
+        return Ok(());
+    }
+    state
+        .match_state
+        .session
+        .accept_campaign_room(Some(room), launch.options.game_speed)?;
+    if wol {
+        let users = launch
+            .humans
+            .iter()
+            .map(|human| human.name.clone())
+            .collect();
+        if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+            protocol.submit_start(users);
+        }
+    } else {
+        if !all_ready(state) {
+            return Ok(());
+        }
+        crate::app::lan_service::prepare_host_timing(&mut state.match_state)?;
+        let session = &state.match_state.session;
+        let seed = session
+            .network_start_seed()
+            .ok_or_else(|| anyhow::anyhow!("host campaign has no seed"))?;
+        let max_ahead = session
+            .network_max_ahead_frames()
+            .ok_or_else(|| anyhow::anyhow!("host campaign has no timing"))?;
+        if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+            queue_lan_go(protocol, &launch, seed, max_ahead);
+        }
+    }
+    state.frontend.skirmish_preview_texture = None;
+    Ok(())
+}
+
+fn campaign_file_notice(session: &MatchSession, launch: &SkirmishLaunchSession) -> Option<String> {
+    let names = launch
+        .humans
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| session.network_map_status(*index) != Some(1))
+        .map(|(_, human)| human.name.as_str())
+        .collect::<Vec<_>>();
+    (!names.is_empty()).then(|| {
+        crate::i18n::tr_fill(
+            "VERA:CampaignRoomPeerFiles",
+            &[("players", &names.join(", "))],
+        )
+    })
+}
+
+fn queue_lan_go(
+    protocol: &mut NetworkSetupProtocol,
+    launch: &SkirmishLaunchSession,
+    agreed_seed: u32,
+    max_ahead_frames: i32,
+) {
+    let pending = (0..launch.humans.len())
+        .filter(|source| *source != launch.local_player_index)
+        .collect();
+    protocol.requests.push(NetworkSetupRequest::Go {
+        agreed_seed,
+        max_ahead_frames,
+    });
+    protocol.locked = true;
+    // The transport starts the native drain only after all GO packets
+    // have entered its existing global send queue.
+    protocol.lan_go = Some(super::super::LanGoWait::HostSending { pending });
 }
 
 /// A direct spawn host's start (docs/spawn.md): the launcher already
@@ -321,7 +426,8 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
 /// completion are the ordinary LAN owners'.
 pub(crate) fn begin_external_lan_go(state: &mut AppState) -> anyhow::Result<()> {
     anyhow::ensure!(
-        super::super::external(state) && !super::super::dialog(state).wol(),
+        super::super::external(state.frontend.network_setup_protocol.as_ref())
+            && !super::super::dialog(&state.frontend, &state.match_state).wol(),
         "no direct spawn setup"
     );
     anyhow::ensure!(
@@ -336,7 +442,7 @@ pub(crate) fn begin_external_lan_go(state: &mut AppState) -> anyhow::Result<()> 
             .is_some_and(|protocol| !protocol.locked),
         "setup is locked"
     );
-    crate::app::lan_service::prepare_host_timing(state)?;
+    crate::app::lan_service::prepare_host_timing(&mut state.match_state)?;
     let max_ahead_frames = state
         .match_state
         .session
@@ -352,46 +458,33 @@ pub(crate) fn begin_external_lan_go(state: &mut AppState) -> anyhow::Result<()> 
         .session
         .network_setup()
         .ok_or_else(|| anyhow::anyhow!("no setup"))?;
-    let go_pending = (0..launch.humans.len())
-        .filter(|source| *source != launch.local_player_index)
-        .collect();
     log::info!(
         "Direct spawn: every guest answered; GO with MaxAhead {max_ahead_frames}, seed {agreed_seed}"
-    );
-    queue(
-        state,
-        NetworkSetupRequest::Go {
-            agreed_seed,
-            max_ahead_frames,
-        },
     );
     let protocol = state
         .frontend
         .network_setup_protocol
         .as_mut()
         .expect("checked setup");
-    protocol.locked = true;
-    protocol.lan_go = Some(super::super::LanGoWait::HostSending {
-        pending: go_pending,
-    });
+    queue_lan_go(protocol, launch, agreed_seed, max_ahead_frames);
     Ok(())
 }
 
 /// VERA's shared LAN/online admission allows a human to play the ordinary
 /// skirmish AI without creating another network participant. Observers and
 /// a stale declared AI count cannot stand in for an actual opponent slot,
-/// and players sharing a House count once.
-fn has_minimum_players(launch: &SkirmishLaunchSession) -> bool {
-    let houses = (0..launch.humans.len())
-        .filter(|&index| !launch.humans[index].is_observer() && launch.house_leader(index) == index)
+/// and players sharing a House count once. VERA's own room (`watch_ai`)
+/// also starts with everyone watching while two or more AI play.
+fn has_minimum_players(launch: &SkirmishLaunchSession, watch_ai: bool) -> bool {
+    let houses = launch
+        .humans_with_house_leaders()
+        .filter(|(index, human, leader)| index == leader && !human.is_observer())
         .count();
-    houses >= 1 && houses + launch.opponents.len() >= 2
+    (houses >= 1 || watch_ai) && houses + launch.opponents.len() >= 2
 }
 
-fn all_allied(state: &AppState) -> bool {
-    state
-        .match_state
-        .session
+fn all_allied(session: &MatchSession) -> bool {
+    session
         .network_setup()
         .expect("validated setup")
         .all_allied()
@@ -410,7 +503,10 @@ fn all_ready(state: &mut AppState) -> bool {
     if (0..count).all(|index| state.match_state.session.network_player_ready(index)) {
         return true;
     }
-    queue(state, NetworkSetupRequest::RequestAcceptance);
+    queue(
+        &mut state.frontend.network_setup_protocol,
+        NetworkSetupRequest::RequestAcceptance,
+    );
     message(state, "GUI:HostGameStartHost", &[]);
     false
 }
@@ -460,7 +556,7 @@ fn mode_start(
     Ok(true)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -470,16 +566,39 @@ mod tests {
     }
 
     #[test]
+    fn lan_campaign_start_reports_which_player_lacks_matching_files() {
+        let mut launch = fixture();
+        launch.humans[0].name = "Host".into();
+        let mut guest = launch.humans[0].clone();
+        guest.name = "GuestWithoutFiles".into();
+        guest.raw_slot_index = Some(2);
+        launch.humans.push(guest);
+        let mut session = MatchSession::default();
+        session.enter_network(crate::app::match_runtime::session::NetworkReturnContext::LanLobby);
+        session
+            .accept_network_setup(launch.clone(), true, None, false)
+            .unwrap();
+        session.set_network_map_status(0, 1).unwrap();
+        session.set_network_map_status(1, 2).unwrap();
+        let notice =
+            campaign_file_notice(&session, &launch).expect("failed file proof is reported");
+        assert!(notice.contains("GuestWithoutFiles"));
+        assert!(!notice.contains("{players}"));
+        session.set_network_map_status(1, 1).unwrap();
+        assert_eq!(campaign_file_notice(&session, &launch), None);
+    }
+
+    #[test]
     fn one_human_can_start_against_an_actual_ai_slot() {
         let mut launch = fixture();
         assert_eq!(launch.humans.len(), 1);
         assert_eq!(launch.opponents.len(), 1);
-        assert!(has_minimum_players(&launch));
+        assert!(has_minimum_players(&launch, false));
 
         launch.opponents.clear();
         assert_eq!(launch.ai_player_count, 1);
         assert!(
-            !has_minimum_players(&launch),
+            !has_minimum_players(&launch, false),
             "a declared count without an AI House is not an opponent"
         );
     }
@@ -488,17 +607,24 @@ mod tests {
     fn observers_do_not_replace_playing_humans_or_opponents() {
         let mut launch = fixture();
         launch.humans[0].set_observer(true);
-        assert!(!has_minimum_players(&launch));
+        assert!(!has_minimum_players(&launch, false));
+        // VERA's room starts with everyone watching two or more AI.
+        assert!(!has_minimum_players(&launch, true));
+        let mut second = launch.opponents[0].clone();
+        second.raw_slot_index += 1;
+        launch.opponents.push(second);
+        assert!(!has_minimum_players(&launch, false));
+        assert!(has_minimum_players(&launch, true));
 
         let mut player = fixture().local_player().clone();
         player.name = "Guest".into();
         player.raw_slot_index = Some(2);
         launch.humans.push(player);
         launch.opponents.clear();
-        assert!(!has_minimum_players(&launch));
+        assert!(!has_minimum_players(&launch, false));
 
         // VERA shared control: two players on one start are one House.
         launch.humans[0].set_observer(false);
-        assert!(!has_minimum_players(&launch));
+        assert!(!has_minimum_players(&launch, false));
     }
 }

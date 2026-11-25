@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K 横幅" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <strong>简体中文</strong> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
+  <a href="README.vi.md" lang="vi">Tiếng Việt</a> · <a href="README.sv.md" lang="sv">Svenska</a> · <strong>简体中文</strong> · <a href="README.zh-TW.md" lang="zh-TW">繁體中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="最近一次手动运行的 Linux 库测试"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Linux 库测试" height="23" align="middle"></a>
@@ -13,7 +13,7 @@
 
 # VERA20K
 
-VERA20K 是《红色警戒2：尤里的复仇》的全新引擎。玩起来和原版一样，单位、地图和画面都相同，可在 Windows、macOS 和 Linux 上运行。它支持更大规模的战斗：一张地图最多 30 名玩家、20,000 个单位。
+VERA20K 是《红色警戒2：尤里的复仇》的全新引擎。玩起来和原版一样，单位、地图和画面都相同，可在 Windows、macOS 和 Linux 上运行。它支持更大规模的战斗，一张地图最多可容纳 20,000 个单位。离线遭遇战最多有 120 个玩家席位，局域网和在线对战最多有 30 个。
 
 VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 
@@ -27,18 +27,12 @@ VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 
 遇到问题？请看[帮助页面](https://vera20k.org/zh/help)。
 
-项目正在积极开发中：遭遇战已可在 Windows、macOS 和 Linux 上游玩，战役已部分可用，现已支持在线联机游玩（实验性）。以往版本及各版本的更改，请见[发布页面](https://github.com/YuriPlanet/vera20k/releases)。
-
-如需通过 CnCNet 客户端启动 YR 单人遭遇战或战役，请参阅[离线客户端设置](integrations/cncnet/README.md)。
-
 ## 项目目标
 
 1. 保留原版《红色警戒2：尤里的复仇》的玩法、画面和氛围。
-2. 支持更大规模的战斗：在 500×500 的地图上，容纳最多 **30 名玩家**和 **20,000 个单位**。
+2. 支持在 500×500 的地图上进行更大规模的战斗，最多容纳 **20,000 个单位**。离线遭遇战最多有 **120 个玩家席位**，局域网和在线对战最多有 **30 个**。
 3. 加入 RTS 游戏中已有的功能，以及一些前所未见的功能。
 4. 内置多人游戏客户端
-
-当前优先事项和未来计划请查看[路线图](https://github.com/orgs/YuriPlanet/projects/1)。
 
 ## 参与贡献
 
@@ -53,7 +47,7 @@ VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 引擎分为三个主要部分：
 
 - **模拟层：** 负责游戏状态和逻辑。
-- **渲染层：** 为保留原版画面风格而构建的全新 GPU 渲染管线，使用原版游戏资源。
+- **渲染层：** 使用原版游戏的美术素材，在 GPU 上绘制地形、单位和建筑。
 - **应用层：** 处理输入、菜单、音频和平台集成，并连接各个系统。
 
 这种分离有助于保持游戏行为的确定性。
@@ -95,16 +89,11 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 
 ## 自定义
 
-默认情况下，VERA20K 的玩法与原版游戏一致。新功能（包括 Ares 等模组的扩展）都必须默认关闭，
-只能通过以下方式之一开启：
+VERA20K 默认使用《尤里的复仇》原版规则。你可以在 **Options** 菜单中调整声音、画面和操作设置，也可以开启 VERA 专属功能。游戏会将设置保存在 `VERA.INI` 中，其中 VERA 专属选项位于 `[VERA]` 节。
 
-- **VERA 玩家选项**，位于 **Options**，保存在 `VERA.INI` 的 `[VERA]` 节下。
-- **构建选项**，例如用 `--features ares` 编译受支持的 [Ares 扩展](docs/ares.md)。
-- **INI 键**，由模组或地图设置。
+大厅设置、模组和地图都能改变对局规则。模组和地图可以通过 INI 文件启用 VERA20K 支持的 [Ares](docs/ares.md) 和 [Phobos](docs/phobos.md) 功能。模组也可以通过附带 `ares.mix` 来启用 Ares。部分 Phobos 功能仍需在编译时加上 `--features phobos`。
 
-声音、画面和操作设置保存在 `VERA.INI` 中。游戏规则由大厅设置、模组或地图决定。
-
-[模组制作指南](docs/modding.md)介绍了如何制作自己的模组。
+想制作自己的模组，可以从[模组制作指南](docs/modding.md)开始。
 
 ## 支持项目
 
@@ -123,11 +112,16 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 《命令与征服》和《红色警戒》源码、World-Altering Editor、Final Alert、YRpp、Ares、Phobos，
 以及其他为此做出贡献的项目和社区。
 
-版权所有 © 2026 Halvor Nikolai Rusten 及 VERA20K 贡献者。本项目采用 [GPLv3](LICENSE-GPL) 许可证，并附有[附加条款](LEGAL.md#additional-terms)。本仓库不包含游戏文件。
+版权所有 © 2026 Halvor Nikolai Rusten 及 VERA20K 贡献者。本项目采用 [GPLv3](LICENSE-GPL) 许可证，并附有[附加条款](LEGAL.md#additional-terms)。
+VERA20K 经许可随附《Tiberian Sun: Firestorm》的雪地和冰面地块，这些地块仍归 Electronic Arts 所有。玩家需自行提供《红色警戒2：尤里的复仇》的游戏文件。
 Command & Conquer 和 Red Alert 是 Electronic Arts Inc. 的商标，截图和应用图标（《红色警戒2》的红星）中的游戏美术资源归 Electronic Arts 所有。
 VERA20K 与 Electronic Arts 无隶属关系，也未获其认可。
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
+This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
+
+This product includes software developed by the [Kratos PP author](docs/zh-CN/kratos.md).
 
 **在分享、出售或复刻（fork）VERA20K 之前，请先阅读[法律声明](LEGAL.md)。**
 
@@ -136,7 +130,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 - [WebAssembly 预览版](docs/wasm.zh-CN.md)：在浏览器中运行的可选单人版本。
 - [模组制作指南](docs/modding.md)：模组能做什么、不能做什么，以及 VERA20K 与原版游戏的区别。
 - [INI 配置方案](docs/ini-roots.md)：选择规则、美术和 AI 文件。
-- [Ares](docs/ares.md)、[Phobos](docs/phobos.md) 和 [NPatch](docs/npatch.md)：扩展的支持情况与限制。
+- [Ares](docs/ares.md)、[Phobos](docs/phobos.md)、[Kratos](docs/zh-CN/kratos.md) 和 [NPatch](docs/npatch.md)：扩展的支持情况与限制。
 - [引擎概览](docs/index.md)：代码结构以及引擎各部分如何协同工作。
 - [开发者工具](tools/README.md)：构建、测试和资源检查。
 - [地图测试](tools/map_observation.md)：脚本化场景、截图和对局观察。

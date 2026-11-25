@@ -49,10 +49,10 @@ fn fixture(relative_z: i32) -> (Simulation, RuleSet, u64) {
         id,
         crate::sim::combat::KillSource::Techno(None),
         crate::sim::combat::KillCallback::Terminal,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
     Simulation::close_kill_record(&mut sim.substrate, id);
-    sim.begin_ship_sinking(id, &rules, crate::sim::world::FrameEffects::default());
+    sim.begin_ship_sinking(id, &rules, &mut crate::sim::world::FrameEffects::default());
     (sim, rules, id)
 }
 
@@ -70,13 +70,17 @@ fn native_sink_suffix_preserves_cadence_coordinates_and_complete_rng_states() {
         sim.session
             .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
         let seed = input["seed"].as_u64().unwrap_or(1);
-        sim.main_rng = SimRng::new(seed).into();
-        sim.scenario_rng = SimRng::new(seed);
-        sim.mapgen_rng = SimRng::new(seed);
+        *sim.main_rng = SimRng::new(seed);
+        *sim.scenario_rng = SimRng::new(seed);
+        *sim.mapgen_rng = SimRng::new(seed);
         sim.substrate.entities.get_mut(id).unwrap().sinking.active =
             input["sinking"].as_u64().unwrap_or(1) != 0;
-        let terminal =
-            sim.tick_ship_sinking(id, &rules, None, crate::sim::world::FrameEffects::default());
+        let terminal = sim.tick_ship_sinking(
+            id,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
         let entity = sim.substrate.entities.get(id).unwrap();
         let coord = position_world_coord(&entity.position);
         assert_eq!(
@@ -148,7 +152,7 @@ fn sinking_state_is_hashed_and_survives_snapshot() {
     sim.resolve_type_handles(&rules);
     // Native load restarts Scenario from Seed0. Begin both compared futures
     // at that same cursor; this test does not assert saved Scenario retention.
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     let active_hash = sim.state_hash();
     Simulation::sinking_edge_sounds(
         &sim.interner,
@@ -170,7 +174,7 @@ fn sinking_state_is_hashed_and_survives_snapshot() {
     // Production keeps Main/MapGen as process state, outside serialized sim.
     loaded.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
     // Map-derived floor data is supplied by the ordinary map reload.
-    loaded.resolved_terrain = sim.resolved_terrain.clone();
+    *loaded.resolved_terrain = (*sim.resolved_terrain).clone();
     loaded.restore_after_snapshot_load().unwrap();
     loaded.resolve_type_handles(&rules);
     assert_eq!(loaded.state_hash(), expected_hash);
@@ -186,10 +190,19 @@ fn sinking_state_is_hashed_and_survives_snapshot() {
     for frame in 1..=60 {
         sim.session.set_binary_frame_for_test(frame);
         loaded.session.set_binary_frame_for_test(frame);
-        let terminal =
-            sim.tick_ship_sinking(id, &rules, None, crate::sim::world::FrameEffects::default());
+        let terminal = sim.tick_ship_sinking(
+            id,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
         assert_eq!(
-            loaded.tick_ship_sinking(id, &rules, None, crate::sim::world::FrameEffects::default()),
+            loaded.tick_ship_sinking(
+                id,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default()
+            ),
             terminal
         );
         assert_eq!(loaded.state_hash(), sim.state_hash(), "frame {frame}");
@@ -300,9 +313,9 @@ fn native_sinking_sound_readers_and_reachable_edges_match() {
             input["move_sound"].as_u64().unwrap_or(0) != 0,
             0,
         );
-        sim.main_rng = SimRng::new(1).into();
-        sim.scenario_rng = SimRng::new(1);
-        sim.mapgen_rng = SimRng::new(1);
+        *sim.main_rng = SimRng::new(1);
+        *sim.scenario_rng = SimRng::new(1);
+        *sim.mapgen_rng = SimRng::new(1);
         sim.sound_events.clear_for_test();
         Simulation::sinking_edge_sounds(
             &sim.interner,
@@ -321,7 +334,7 @@ fn native_sinking_sound_readers_and_reachable_edges_match() {
                     world,
                 } => {
                     assert_eq!(*anim_id, id);
-                    assert_eq!(sound_id, sound_name);
+                    assert_eq!(sound_id.name_in(&rules), sound_name);
                     serde_json::json!(["sound_boundary", "Foot+544", [world.x, world.y, world.z]])
                 }
                 SimSoundEvent::VocAt {
@@ -330,7 +343,7 @@ fn native_sinking_sound_readers_and_reachable_edges_match() {
                     world_z_leptons,
                     ..
                 } => {
-                    assert_eq!(sound_id, sound_name);
+                    assert_eq!(sound_id.name_in(&rules), sound_name);
                     assert!(audible_to.is_none(), "VoiceSinking has no human-owner gate");
                     serde_json::json!(["sound_boundary", "0x0", [29056, 15232, world_z_leptons]])
                 }
@@ -471,7 +484,6 @@ fn retained_health_one_ship_is_illegal_as_firer_and_target() {
         FireSubject {
             world: sim,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer: sim.substrate.entities.get(firer_id).unwrap(),
             obj: rules.object("TEST").unwrap(),
@@ -540,8 +552,8 @@ fn retained_ship_skips_process_but_keeps_its_head_and_runs_sinking_ai() {
     let slope_before = *slope_transition::state_for_entity(hull).unwrap();
     // A second Stun (Unit setter, Path[0] = -1, Stop_Driver) clears the
     // destination, retaining the committed head.
-    sim.stun(id, UninitContext::with_rules(&rules));
-    sim.advance_live_object_turn(id, &rules, ObjectAiCtx::default())
+    sim.stun(id, UninitContext::new(&rules));
+    sim.advance_live_object_turn(id, &rules, &mut ObjectAiCtx::default())
         .unwrap();
     let hull = sim.substrate.entities.get(id).unwrap();
     assert_eq!(

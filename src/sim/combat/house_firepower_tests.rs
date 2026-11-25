@@ -35,7 +35,7 @@ fn scene(damage: i32, firepower: u64) -> (Simulation, RuleSet) {
             HouseDifficulty::Normal,
             &general,
             CountryDifficultyBiases::default(),
-            false,
+            crate::rules::rule_policy::RulePolicy::stock_campaign(),
             index as i32,
             0,
         );
@@ -48,6 +48,7 @@ fn scene(damage: i32, firepower: u64) -> (Simulation, RuleSet) {
         // The estimator fixture's retained raw rank is2.0 (40000000).
         entity.veterancy.set_rank_for_test(200);
         entity
+            .seldom
             .crate_multipliers
             .set_firepower_multiplier_for_test(NativeF64Bits::from_bits(if id == 1 {
                 1f64.to_bits()
@@ -55,6 +56,7 @@ fn scene(damage: i32, firepower: u64) -> (Simulation, RuleSet) {
                 19f64.to_bits()
             }));
         entity
+            .seldom
             .crate_multipliers
             .set_armor_multiplier_for_test(NativeF64Bits::from_bits(if id == 1 {
                 1f64.to_bits()

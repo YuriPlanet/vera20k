@@ -1,6 +1,17 @@
 //! The ordering owner's full-match archive. Sequence offsets stay on
 //! disk; the in-memory deque is only a bounded cache of this same stream.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use super::sequenced::{DEPARTURE_EVENT, FRAME_END_EVENT};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
@@ -260,9 +271,22 @@ impl JournalDirectory {
         journal.pending = 0;
     }
 
+    /// Tries one room at once and queues a failed removal for `retry`. Only
+    /// the room that just ended is tried here: a relay that ends rooms often
+    /// must not repeat the earlier removals that already failed, since each
+    /// of those costs disk work on the relay's own thread.
     fn retire(&mut self, room: [u8; 16]) {
-        self.retiring.insert(room);
-        self.remove_retiring();
+        let path = self.path(&room);
+        let removed = present(fs::remove_file(path.join("stream.data")))
+            .and_then(|()| present(fs::remove_file(path.join("stream.index"))))
+            .and_then(|()| present(fs::remove_dir(&path)));
+        if removed.is_ok() {
+            if let Some(bytes) = self.reserved.remove(&room) {
+                self.total -= bytes;
+            }
+        } else {
+            self.retiring.insert(room);
+        }
     }
 
     /// Retries removals that failed, such as a transient disk error, at most
@@ -272,22 +296,9 @@ impl JournalDirectory {
             return;
         }
         self.retry_at = now_ms.saturating_add(1000);
-        self.remove_retiring();
-    }
-
-    fn remove_retiring(&mut self) {
-        for room in std::mem::take(&mut self.retiring) {
-            let path = self.path(&room);
-            let removed = present(fs::remove_file(path.join("stream.data")))
-                .and_then(|()| present(fs::remove_file(path.join("stream.index"))))
-                .and_then(|()| present(fs::remove_dir(&path)));
-            if removed.is_ok() {
-                if let Some(bytes) = self.reserved.remove(&room) {
-                    self.total -= bytes;
-                }
-            } else {
-                self.retiring.insert(room);
-            }
+        let pending = std::mem::take(&mut self.retiring);
+        for room in pending {
+            self.retire(room);
         }
     }
 }
@@ -486,11 +497,10 @@ impl Journal {
         let mut offsets = vec![0; (count + usize::from(bounded)) * 8];
         self.index.seek(SeekFrom::Start((sequence - 1) * 8))?;
         self.index.read_exact(&mut offsets)?;
-        let offset =
-            |index: usize| u64::from_le_bytes(offsets[index * 8..][..8].try_into().unwrap());
-        let start = offset(0);
+        let (offsets, _) = offsets.as_chunks::<8>();
+        let start = u64::from_le_bytes(offsets[0]);
         let end = if bounded {
-            offset(count)
+            u64::from_le_bytes(offsets[count])
         } else {
             self.data.seek(SeekFrom::End(0))?
         };
@@ -510,7 +520,7 @@ impl Journal {
                 return Err(invalid());
             }
             let (bytes, tail) = tail.split_at(length);
-            if u64::from_le_bytes(bytes[1..9].try_into().unwrap()) != sequence + index as u64 {
+            if crate::link::read_u64(bytes, 1).map_err(|_| invalid())? != sequence + index as u64 {
                 return Err(invalid());
             }
             output.push(bytes.to_vec());

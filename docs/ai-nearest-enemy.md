@@ -8,8 +8,7 @@ enemy as in the original game.
 AINearestEnemy=yes   ; default no
 ```
 
-A mod, a map or your [personal rules](personal-rules.md) (`VERARULES.INI`) can
-set it. In an online game every player needs the same rules, which the rules
+A mod's `rulesmd.ini` or a map can set it. In an online game every player needs the same rules, which the rules
 compatibility check compares.
 
 ## What the original does
@@ -27,12 +26,12 @@ frames down to one, and equal anger again goes to the earlier house
 (`HouseClass::UpdateAngerNodes`, `0x00504790`). The computer players rarely
 turn on each other, and the human who shoots back keeps the lead.
 
-Where the mode allows alliances (`AlliesAllowed=yes`, as in Battle) and no
-computer player was given a team, there is more: each time a computer player
-deploys its Construction Yard, and when one is defeated, every computer
-player allies with every other and takes an anger point against each human
-(`HouseClass::Computer_Paranoid`, `0x00501640`). The computer players then
-fight the humans only.
+Where the mode allows alliances (`AlliesAllowed=yes`, as in Battle), or in
+Cooperative, and no computer player was given a team, there is more: each
+time a computer player deploys its Construction Yard, and when one is
+defeated, every computer player allies with every other and takes an anger
+point against each human (`HouseClass::Computer_Paranoid`, `0x00501640`).
+The computer players then fight the humans only.
 
 ## What the option changes
 

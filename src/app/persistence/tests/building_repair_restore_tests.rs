@@ -9,7 +9,7 @@ use crate::sim::world::{FrameEffects, TickLane};
 
 fn step(runtime: &mut SimRuntime) {
     let output = runtime
-        .advance_frame(&[], 67, TickLane::Ordinary, FrameEffects::default())
+        .advance_frame(&[], 67, TickLane::Ordinary, &mut FrameEffects::default())
         .expect("ordinary repair frame");
     assert!(output.tick.frame_committed);
 }
@@ -55,8 +55,7 @@ fn player_load_restarts_the_paid_depot_repair_interval() {
     let tank = sim
         .spawn_object("MTNK", "Americans", 13, 16, 0, &rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .health
         .set_for_test(strength / 2);
@@ -103,7 +102,6 @@ fn player_load_restarts_the_paid_depot_repair_interval() {
         Some(LOAD_FIXTURE_MAP_HASH),
         Some(&runtime.resources.rules),
         runtime.resources.terrain_template.as_ref(),
-        Some(&runtime.resources.overlay_registry),
     )
     .expect("prepare the real mid-repair state");
     prepared.commit_into(&mut runtime);

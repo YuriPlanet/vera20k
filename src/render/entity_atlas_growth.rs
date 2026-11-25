@@ -182,7 +182,7 @@ impl EntityAtlasGrowth {
             sprite_atlas,
             sim.entities(),
             source.house_colors,
-            &coverage.extra_buildings,
+            &coverage.extra_types,
             &coverage.anim_remap_keys,
             Some(sim.interner()),
         ) && sprite_atlas::atlas_covers_sprite_keys(
@@ -212,7 +212,7 @@ impl EntityAtlasGrowth {
             source.rules,
             source.rules.map(|rules| rules.art()),
             source.house_colors,
-            &coverage.extra_buildings,
+            &coverage.extra_types,
             &coverage.anim_remap_keys,
             &coverage.cell_drawer_type_ids,
             &coverage.frozen_keys,
@@ -220,10 +220,13 @@ impl EntityAtlasGrowth {
             sprite_atlas,
             Some(sim.interner()),
         );
-        let PreparedSpriteAtlas::Raster(work, upload) = prepared else {
-            return;
-        };
-        self.grow_sprites(work, upload, began);
+        match prepared {
+            PreparedSpriteAtlas::Unchanged => {}
+            PreparedSpriteAtlas::Abandoned(failure) => {
+                log::warn!("{failure}; keeping the previous valid sprite atlas");
+            }
+            PreparedSpriteAtlas::Raster(work, upload) => self.grow_sprites(work, upload, began),
+        }
     }
 
     /// Hand a prepared SHP raster to a worker as the sprite atlas's growth.

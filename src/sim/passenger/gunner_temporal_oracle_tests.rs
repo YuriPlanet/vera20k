@@ -215,11 +215,11 @@ fn install_actor_boundary(sim: &mut Simulation, id: u64, native: &Value) {
     let actor = sim.substrate.entities.get_mut(id).unwrap();
     // The declared initial burst, including signed overflow controls, is a
     // native saved-state boundary. Do not simulate extra shots to obtain it.
-    actor.weapon_burst = serde_json::from_value(json!({
+    actor.seldom.weapon_burst = serde_json::from_value(json!({
         "index": signed(&native["burst_index"]), "radial_index": 0
     }))
     .unwrap();
-    actor.rearm_timer.set_for_test(CdTimer::from_raw(
+    actor.seldom.rearm_timer.set_for_test(CdTimer::from_raw(
         signed(&native["rearm"][0]),
         signed(&native["rearm"][1]),
     ));
@@ -263,14 +263,14 @@ fn assert_state(sim: &Simulation, actors: &Actors, native: &Value, label: &str) 
         let actor = entity(sim, actors.id(role));
         let expected = &native[role];
         assert_eq!(
-            actor.weapon_burst.index(),
+            actor.seldom.weapon_burst.index(),
             signed(&expected["burst_index"]),
             "{label} {role} burst"
         );
         assert_eq!(
             [
-                actor.rearm_timer.start_frame(),
-                actor.rearm_timer.duration()
+                actor.seldom.rearm_timer.start_frame(),
+                actor.seldom.rearm_timer.duration()
             ],
             [signed(&expected["rearm"][0]), signed(&expected["rearm"][1])],
             "{label} {role} rearm"
@@ -344,7 +344,8 @@ fn prepare_case(rules: &RuleSet, row: &Value) -> (Simulation, Actors) {
             HouseDifficulty::from_native(signed(&house["difficulty"])).unwrap(),
             &rules.general,
             rules.country_difficulty_biases(country),
-            signed(&house["mode"]) != 0,
+            crate::sim::scenario_session::ScenarioGameMode::from_game_mode(signed(&house["mode"]))
+                .stock_rule_policy(None),
             index as i32,
             frame,
         );
@@ -405,7 +406,7 @@ fn prepare_case(rules: &RuleSet, row: &Value) -> (Simulation, Actors) {
         );
     install_temporal_boundary(&mut sim, &actors, &row["initial"]);
     sim.session.set_binary_frame_for_test(frame as u32);
-    sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
+    *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
     assert_eq!(
         sim.scenario_rng.native_state_hex(),
         row["rng_initial"]["scenario"],
@@ -474,7 +475,7 @@ fn native_temporal_gunner_callbacks_match_retained_histories() {
                             &operation["after"][role],
                         );
                     }
-                    sim.scenario_rng = SimRng::from_native_state_hex_for_test(
+                    *sim.scenario_rng = SimRng::from_native_state_hex_for_test(
                         operation["rng_after"]["scenario"].as_str().unwrap(),
                     );
                     imported_fire_boundaries += 1;

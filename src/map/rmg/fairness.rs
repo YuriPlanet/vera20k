@@ -16,9 +16,10 @@
 
 use std::collections::VecDeque;
 
+use crate::map::playfield::PlayfieldBounds;
+
 use super::grid::RmgGrid;
 use super::phases::tiberium::{DENSITY_LEVELS, GEM_BASE, ORE_BASE};
-use super::phases::zones::diamond_frame_contains;
 use super::rng::RmgRng;
 use super::scratch::RmgScratch;
 use super::tiles::TileIds;
@@ -175,21 +176,15 @@ pub struct FairCtx<'a> {
     pub grid: &'a mut RmgGrid,
     pub scratch: &'a RmgScratch,
     pub ids: &'a TileIds,
-    pub map_w: i32,
-    pub local_rect: [i32; 4],
+    /// The generated map's playfield.
+    pub playfield: PlayfieldBounds,
 }
 
 impl FairCtx<'_> {
     pub(super) fn in_play(&self, x: i32, y: i32) -> bool {
         self.grid.get(x, y).is_some_and(|cell| {
-            diamond_frame_contains(
-                self.map_w,
-                self.local_rect,
-                x,
-                y,
-                cell.level,
-                cell.slope != 0,
-            )
+            self.playfield
+                .contains_height_aware_packed(x, y, cell.level as i8, cell.slope)
         })
     }
 

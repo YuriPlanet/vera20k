@@ -41,7 +41,7 @@ fn drive_stop_retains_speed_until_an_eligible_process_rest_tail() {
             .is_empty()
     );
     let rng = rng_streams(&sim);
-    sim.locomotor_stop_moving(id, &rules, None, FrameEffects::default())
+    sim.locomotor_stop_moving(id, &rules, None, &mut FrameEffects::default())
         .unwrap();
     assert_eq!(
         sim.substrate
@@ -101,7 +101,7 @@ fn ship_rules() -> crate::rules::ruleset::RuleSet {
 fn ship_stop_retains_speed_until_the_process_rest_tail() {
     let rules = ship_rules();
     let (mut sim, id) = rolling_ship(&rules, None);
-    sim.locomotor_stop_moving(id, &rules, None, FrameEffects::default())
+    sim.locomotor_stop_moving(id, &rules, None, &mut FrameEffects::default())
         .unwrap();
     let speed = |sim: &crate::sim::world::Simulation| {
         let entity = sim.substrate.entities.get(id).unwrap();
@@ -120,7 +120,7 @@ fn a_ship_halted_mid_track_rests_when_its_head_is_gone() {
     let rules = ship_rules();
     let head = crate::sim::components::DriveCoord::cell(11, 10, 0);
     let (mut sim, id) = rolling_ship(&rules, Some(head));
-    sim.locomotor_stop_moving(id, &rules, None, FrameEffects::default())
+    sim.locomotor_stop_moving(id, &rules, None, &mut FrameEffects::default())
         .unwrap();
     let entity = sim.substrate.entities.get_mut(id).unwrap();
     let loco = entity.locomotor.as_mut().unwrap();
@@ -260,7 +260,7 @@ fn drive_stop_rest_and_immediate_reorder_match_native_departure_frames() {
             Some(crate::sim::components::DriveCoord::cell(11, 10, 0)),
         );
         let rng = rng_streams(&sim);
-        sim.locomotor_stop_moving(id, &rules, None, FrameEffects::default())
+        sim.locomotor_stop_moving(id, &rules, None, &mut FrameEffects::default())
             .unwrap();
         if row["rest"] == true {
             sim.process_ground_locomotor_stats_for_test(id, Some(&rules), None)
@@ -270,8 +270,7 @@ fn drive_stop_rest_and_immediate_reorder_match_native_departure_frames() {
             id,
             Some(NavTargetRef::cell(11, 10)),
             &rules,
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         sim.substrate
@@ -331,7 +330,7 @@ fn native_stop_and_null_destination_histories_preserve_frame_order() {
             .store_track_destination(TrackFamily::Drive, Some(DriveCoord::cell(11, 10, 0)));
         let rng = rng_streams(&sim);
         if row["input"]["stop"] == "locomotor" {
-            sim.locomotor_stop_moving(id, &rules, None, FrameEffects::default())
+            sim.locomotor_stop_moving(id, &rules, None, &mut FrameEffects::default())
                 .unwrap();
         } else {
             sim.substrate
@@ -340,9 +339,9 @@ fn native_stop_and_null_destination_histories_preserve_frame_order() {
                 .unwrap()
                 .navigation
                 .set_nav_com_for_test(Some(NavTargetRef::cell(11, 10)));
-            sim.assign_destination_represented(id, None, &rules, None, FrameEffects::default())
+            sim.assign_destination_represented(id, None, &rules, &mut FrameEffects::default())
                 .unwrap();
-            sim.complete_pending_order(id, &rules, None, FrameEffects::default());
+            sim.complete_pending_order(id, &rules, &mut FrameEffects::default());
         }
         for state in row["states"].as_array().unwrap().iter().skip(1) {
             match state["stage"].as_str().unwrap() {
@@ -356,8 +355,7 @@ fn native_stop_and_null_destination_histories_preserve_frame_order() {
                         id,
                         Some(NavTargetRef::cell(11, 10)),
                         &rules,
-                        None,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     )
                     .unwrap();
                     sim.substrate
@@ -401,7 +399,7 @@ fn a_callback_destination_is_published_before_the_drive_rest_decision() {
         .navigation
         .set_nav_com_for_test(Some(NavTargetRef::cell(11, 10)));
     entity.navigation.owe_destination_setter();
-    sim.track_process_rest_tail(id, &rules, None, FrameEffects::default());
+    sim.track_process_rest_tail(id, &rules, &mut FrameEffects::default());
     let entity = sim.substrate.entities.get(id).unwrap();
     assert!(
         entity
@@ -426,14 +424,14 @@ fn drive_stop_rest_and_departure_survive_production_snapshot_restore() {
     for wait in [false, true] {
         let (mut original, id) = scene(&rules);
         original.substrate.entities.get_mut(id).unwrap().body_facing = FacingClass::new(0x4000, 5);
-        original.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        *original.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
         original
             .restore_map_authority_after_snapshot_load(&rules, &overlays, None)
             .unwrap();
         // Native load resets Scenario from Seed0; compare that documented cursor.
-        original.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *original.scenario_rng = crate::sim::rng::SimRng::new(0);
         original
-            .locomotor_stop_moving(id, &rules, None, FrameEffects::default())
+            .locomotor_stop_moving(id, &rules, None, &mut FrameEffects::default())
             .unwrap();
         let bytes = GameSnapshot::save(&original, 0, 0, "drive-rest", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
@@ -458,8 +456,7 @@ fn drive_stop_rest_and_departure_survive_production_snapshot_restore() {
                 id,
                 Some(NavTargetRef::cell(11, 10)),
                 &rules,
-                None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
             sim.substrate

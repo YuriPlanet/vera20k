@@ -37,7 +37,8 @@ impl Houses {
     /// Append a constructed House to the array under its own name.
     ///
     /// Panics when a House of that name is already registered: scenario
-    /// construction admits distinct House names only.
+    /// construction admits distinct House names only (the map's `[Houses]`
+    /// reader, `parse_house_roster`, drops a repeated name).
     #[track_caller]
     pub fn register(&mut self, mut house: HouseState) -> &mut HouseState {
         house.configure_spatial_threat_grid(self.cell_grid);
@@ -104,19 +105,19 @@ impl Houses {
         self.order.iter().map(|name| &self.states[name])
     }
 
-    /// Houses in native registration order, mutably.
-    pub fn in_order_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut HouseState> {
-        let order = &self.order;
-        let mut slots: Vec<(usize, &mut HouseState)> = self
-            .states
-            .iter_mut()
-            .map(|(name, house)| {
-                let index = order.iter().position(|registered| registered == name);
-                (index.expect("every House is registered"), house)
-            })
-            .collect();
-        slots.sort_unstable_by_key(|&(index, _)| index);
-        slots.into_iter().map(|(_, house)| house)
+    /// Request the House+0x1FC tech-tree recheck for a registered house.
+    pub(super) fn request_house_tech_tree_recheck(&mut self, owner: InternedId) {
+        if let Some(house) = self.get_mut(&owner) {
+            house.request_tech_recheck();
+        }
+    }
+
+    /// Execute106 (0x006DF64F..0x006DF661) marks every registered House,
+    /// from the last native House index to the first.
+    pub(super) fn request_tech_tree_recheck_for_all(&mut self) {
+        for index in (0..self.order.len()).rev() {
+            self.request_house_tech_tree_recheck(self.order[index]);
+        }
     }
 
     /// One House, mutably, beside the registration order.

@@ -17,6 +17,8 @@ use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::retail_ini_fixture::retail_rules_and_art;
+use crate::rules::rule_policy::RulePolicy;
+use crate::rules::rule_policy::TeamLimitScope;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::rules::terrain_rules::TerrainRules;
@@ -35,7 +37,8 @@ fn player_at_thirtieth_slot_resolves_team_owner_through_start_mapping() {
         "[TeamTypes]\n0=TT\n[TT]\nHouse=<Player @ AD>\nScript=S\nTaskForce=F\nMax=-1\n\
          [ScriptTypes]\n0=S\n[S]\n0=5,0\n[TaskForces]\n0=F\n",
     );
-    let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, false);
+    let registry =
+        TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, RulePolicy::stock_campaign());
     let mut sim = Simulation::new();
     let owner = sim.interner.intern("LastPlayer");
     sim.session
@@ -43,7 +46,7 @@ fn player_at_thirtieth_slot_resolves_team_owner_through_start_mapping() {
         .insert(29, owner);
     let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut sim.interner, &rules);
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
-    sim.team_script_vm = vm;
+    *sim.team_script_vm = vm;
     let team_type = sim.interner.get("TT").unwrap();
     assert_eq!(sim.house_by_trigger_selector(0x1198, &rules), Some(owner));
     assert_eq!(sim.house_by_trigger_selector(0x1199, &rules), None);
@@ -53,6 +56,39 @@ fn player_at_thirtieth_slot_resolves_team_owner_through_start_mapping() {
     assert_eq!(sim.team_script_vm.team(team).unwrap().owner(), owner);
     sim.session.start_slot_houses_mut_for_test().remove(&29);
     assert!(sim.create_team(team_type, None, &rules).is_none());
+}
+
+#[test]
+fn team_limit_scope_can_be_overridden_in_the_same_skirmish() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let mode = ScenarioGameMode::Skirmish;
+    let stock = mode.stock_rule_policy(None);
+    let rules = RuleSet::from_ini(&IniFile::from_str("[Countries]\n0=Americans\n")).unwrap();
+    let map = IniFile::from_str(
+        "[TeamTypes]\n0=TT\n[TT]\nHouse=Americans\nScript=S\nTaskForce=F\nMax=1\n\
+         [ScriptTypes]\n0=S\n[S]\n0=5,0\n[TaskForces]\n0=F\n",
+    );
+    let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, stock);
+    let mut sim = Simulation::new();
+    let first = sim.interner.intern("First");
+    let second = sim.interner.intern("Second");
+    for (index, house) in [first, second].into_iter().enumerate() {
+        sim.register_house(HouseState::new(house, index as u8, None, true, 0, 1));
+    }
+    sim.install_team_ai_registry(&registry, &rules);
+    let team_type = sim.interner.get("TT").unwrap();
+
+    sim.install_session_admission(
+        mode,
+        None,
+        stock.with_team_creation_limit_scope(TeamLimitScope::AllHouses),
+    );
+    assert!(sim.create_team(team_type, Some(first), &rules).is_some());
+    assert!(sim.create_team(team_type, Some(second), &rules).is_none());
+
+    sim.install_session_admission(mode, None, stock);
+    assert!(sim.create_team(team_type, Some(second), &rules).is_some());
 }
 
 fn rows(kind: &str, count: usize) -> Vec<Value> {
@@ -107,7 +143,11 @@ fn on_trans_only_retained_reader_matches_original_and_survives_save() {
         if let Some(value) = visit["value"].as_str() {
             map.push_str(&format!("{}={value}\n", visit["key"].as_str().unwrap()));
         }
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(&map), false);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(&map),
+            RulePolicy::stock_campaign(),
+        );
         let mut interner = crate::sim::intern::StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
         assert!(diagnostics.is_empty(), "{diagnostics:?}");
@@ -133,7 +173,7 @@ fn on_trans_only_retained_reader_matches_original_and_survives_save() {
             };
             let mut live = vm.clone();
             let owner = interner.intern("OWNER");
-            live.construct_team(id, owner, false, 0, false, None)
+            live.construct_team(id, owner, TeamLimitScope::AllHouses, 0, false, None)
                 .unwrap();
             let saved: TeamScriptVm =
                 save_codec::deserialize(&save_codec::serialize(&live).unwrap()).unwrap();
@@ -163,7 +203,8 @@ fn on_trans_only_retained_reader_matches_original_and_survives_save() {
     let map = IniFile::from_bytes(&map_bytes).unwrap();
     // The selected retail Carrier Team is a map addition. An empty fixed pass
     // isolates its native B3 field without requiring unrelated AI definitions.
-    let registry = TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map, false);
+    let registry =
+        TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map, RulePolicy::stock_campaign());
     let Some((retail, art)) = retail_rules_and_art() else {
         return;
     };
@@ -389,7 +430,7 @@ fn script50_uses_the_existing_signed_flash_owner_and_original_countdown() {
             state.cursor = -1;
             state.advance_pending = true;
         }
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
         let counters = |sim: &Simulation| {
             members
                 .iter()
@@ -598,7 +639,7 @@ pub(crate) fn reinforcement_world(
     let registry = TeamAiIniRegistry::from_sources(
         &IniFile::from_str(&definitions),
         &IniFile::from_str(""),
-        true,
+        RulePolicy::stock_multiplayer(),
     );
     sim.install_team_ai_registry(&registry, rules);
     let mut waypoints = HashMap::from([(
@@ -670,7 +711,7 @@ fn all_infantry_reinforcement_refinery_refusal_deletes_members_and_skips_review_
         -1,
         &rules,
         Some(&overlay),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 
     assert!(!returned, "no member leaves the refinery's refused exit");
@@ -714,7 +755,7 @@ fn refinery_exit_scatters_a_fresh_limbo_infantryman_before_caller_cleanup() {
             0,
             0,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     let mut expected_rng = sim.scenario_rng.clone();
@@ -728,7 +769,7 @@ fn refinery_exit_scatters_a_fresh_limbo_infantryman_before_caller_cleanup() {
             member,
             (85, 50),
             Some(&overlay),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ),
         crate::sim::ai_base_building::BuildingExit::Failed
     );
@@ -812,7 +853,7 @@ fn infantry_reinforcement_building_exits_release_contacts_and_skip_the_review_ri
             -1,
             &rules,
             Some(&overlay),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert!(returned, "{kind}: one successful ExitObject");
         assert_eq!(review, None, "{kind}: no ordinary placement review");
@@ -823,11 +864,15 @@ fn infantry_reinforcement_building_exits_release_contacts_and_skip_the_review_ri
             .find(|entity| entity.category() == EntityCategory::Infantry)
             .unwrap();
         assert!(!member.lifecycle.in_limbo(), "{kind}");
-        assert!(member.radio_contacts.is_empty(), "{kind}: member BREAK");
+        assert!(
+            member.seldom.radio_contacts.is_empty(),
+            "{kind}: member BREAK"
+        );
         assert!(
             sim.entities()
                 .get(building)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .is_empty(),
             "{kind}: producer BREAK"
@@ -881,7 +926,7 @@ fn reinforcement_exit_breaks_slot_zero_instead_of_the_new_members_contact() {
             crate::sim::radio::RadioMessage::Hello,
             crate::sim::radio::RadioPayload::default(),
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ),
         crate::sim::radio::RadioResponse::Roger
     );
@@ -892,25 +937,32 @@ fn reinforcement_exit_breaks_slot_zero_instead_of_the_new_members_contact() {
             -1,
             &rules,
             Some(&overlay),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ),
         (true, None)
     );
     let producer = sim.entities().get(building).unwrap();
-    assert_eq!(producer.radio_contacts.slot(0), None);
+    assert_eq!(producer.seldom.radio_contacts.slot(0), None);
     let retained = producer
+        .seldom
         .radio_contacts
         .slot(1)
         .expect("the first new member retains its slot1 contact");
     assert_ne!(retained, old_contact);
     assert_eq!(
-        sim.entities().get(retained).unwrap().radio_contacts.slot(0),
+        sim.entities()
+            .get(retained)
+            .unwrap()
+            .seldom
+            .radio_contacts
+            .slot(0),
         Some(building)
     );
     assert!(
         sim.entities()
             .get(old_contact)
             .unwrap()
+            .seldom
             .radio_contacts
             .is_empty()
     );
@@ -927,7 +979,7 @@ fn reinforcement_exit_breaks_slot_zero_instead_of_the_new_members_contact() {
         members
             .iter()
             .filter(|member| member.stable_id() != retained)
-            .all(|member| member.radio_contacts.is_empty())
+            .all(|member| member.seldom.radio_contacts.is_empty())
     );
 }
 
@@ -951,7 +1003,7 @@ fn mixed_reinforcements_bypass_the_building_exit_branch() {
         -1,
         &rules,
         Some(&overlay),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(returned);
     assert_eq!(review, Some((85, 50)));
@@ -998,7 +1050,7 @@ fn reinforcement_receiver_is_the_last_healthy_building_with_a_free_exit() {
             -1,
             &rules,
             Some(&overlay),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert!(returned);
         assert_eq!(review, None);
@@ -1035,11 +1087,23 @@ fn reinforcement_busy_exit_deletes_the_member_without_breaking_the_existing_cont
         crate::sim::radio::RadioMessage::Hello,
         crate::sim::radio::RadioPayload::default(),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let before = sim.entities().len();
-    let producer_contacts = sim.entities().get(building).unwrap().radio_contacts.clone();
-    let member_contacts = sim.entities().get(contact).unwrap().radio_contacts.clone();
+    let producer_contacts = sim
+        .entities()
+        .get(building)
+        .unwrap()
+        .seldom
+        .radio_contacts
+        .clone();
+    let member_contacts = sim
+        .entities()
+        .get(contact)
+        .unwrap()
+        .seldom
+        .radio_contacts
+        .clone();
     assert!(producer_contacts.first_free().is_none());
     let team_type = sim.interner.get("TT").unwrap();
     let (returned, review) = sim.spawn_team_reinforcements(
@@ -1047,7 +1111,7 @@ fn reinforcement_busy_exit_deletes_the_member_without_breaking_the_existing_cont
         -1,
         &rules,
         Some(&overlay),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(
         !returned,
@@ -1056,11 +1120,11 @@ fn reinforcement_busy_exit_deletes_the_member_without_breaking_the_existing_cont
     assert_eq!(review, None);
     assert_eq!(sim.entities().len(), before);
     assert_eq!(
-        sim.entities().get(building).unwrap().radio_contacts,
+        sim.entities().get(building).unwrap().seldom.radio_contacts,
         producer_contacts
     );
     assert_eq!(
-        sim.entities().get(contact).unwrap().radio_contacts,
+        sim.entities().get(contact).unwrap().seldom.radio_contacts,
         member_contacts
     );
 }
@@ -1101,7 +1165,7 @@ fn a_building_without_a_clear_foundation_exit_keeps_ordinary_reinforcement_place
         -1,
         &rules,
         Some(&overlay),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(returned);
     assert_eq!(review, Some((85, 50)), "no qualifying building receiver");
@@ -1142,7 +1206,7 @@ fn droppod_reinforcements_bypass_a_nearby_refinery() {
                 -1,
                 &rules,
                 Some(&overlay),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .0
         );
@@ -1197,7 +1261,7 @@ fn ares_droppod_reinforcement_carrier_is_the_countrys_paradrop_plane() {
             -1,
             &rules,
             Some(&overlay),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .0
     );
@@ -1237,16 +1301,15 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
     for row in rows {
         let input = &row["input"];
         let mut sim = reinforcement_world(&rules, &terrain_rules, input);
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
             &row["id_before"],
         )
             as u32));
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
-        sim.mapgen_rng =
+        *sim.main_rng =
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let team_type = sim.interner.get("TT").unwrap();
         let (returned, review) = sim.spawn_team_reinforcements(
@@ -1254,7 +1317,7 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
             -1,
             &rules,
             Some(&overlay),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(i32::from(returned), int(&row["returned"]), "{input}");
         let created: Vec<_> = sim
@@ -1332,7 +1395,7 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
         );
         assert_eq!(
             plane
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .unwrap()
                 .passengers()
@@ -1436,7 +1499,7 @@ fn transport_origin_fields_match_original_retained_reads_and_survive_save_hash()
         let registry = TeamAiIniRegistry::from_sources(
             &IniFile::from_str(&fixed),
             &IniFile::from_str(&map),
-            false,
+            RulePolicy::stock_campaign(),
         );
         let mut interner = crate::sim::intern::StringInterner::new();
         let (mut vm, diagnostics) =
@@ -1459,7 +1522,8 @@ fn transport_origin_fields_match_original_retained_reads_and_survive_save_hash()
             "native input reads draw nothing"
         );
         let owner = interner.intern("OWNER");
-        vm.construct_team(id, owner, false, 0, false, None).unwrap();
+        vm.construct_team(id, owner, TeamLimitScope::AllHouses, 0, false, None)
+            .unwrap();
         let restored: TeamScriptVm =
             save_codec::deserialize(&save_codec::serialize(&vm).unwrap()).unwrap();
         assert_eq!(restored.team_type_ini[&id], vm.team_type_ini[&id]);
@@ -1507,7 +1571,8 @@ fn all01_full_transport_inputs_fit_the_selected_retail_cargo_chain() {
         .into_parts();
     let aimd = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")
         .expect("retail fixed team definitions");
-    let registry = TeamAiIniRegistry::from_sources(&aimd.ini, &map.ini, false);
+    let registry =
+        TeamAiIniRegistry::from_sources(&aimd.ini, &map.ini, RulePolicy::stock_campaign());
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -1613,25 +1678,19 @@ fn full_reinforcement_members_cargo_and_scalar_cleanup_match_original() {
     for row in rows {
         let input = &row["input"];
         let mut sim = reinforcement_world(&rules, &terrain_rules, input);
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
             &row["id_before"],
         )
             as u32));
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
-        sim.mapgen_rng =
+        *sim.main_rng =
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let team_type = sim.interner.get("TT").unwrap();
         let placement_members = sim
-            .create_reinforcement_members(
-                team_type,
-                &rules,
-                Some(&overlay),
-                FrameEffects::default(),
-            )
+            .create_reinforcement_members(team_type, &rules, &mut FrameEffects::default())
             .expect("original Full constructor result");
         let created: Vec<_> = sim
             .entities()
@@ -1670,7 +1729,7 @@ fn full_reinforcement_members_cargo_and_scalar_cleanup_match_original() {
             .entities()
             .get(head)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap();
         assert_eq!(
@@ -1708,14 +1767,18 @@ fn full_reinforcement_members_cargo_and_scalar_cleanup_match_original() {
                     false,
                     &rules,
                     Some(&overlay),
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 );
                 assert_eq!(i32::from(placed), int(&row["returned"]), "{input}");
             }
             "scalar_scope1" => {
                 sim.with_object_placement_scope(|sim| {
                     assert!(sim.object_placement_scope_active());
-                    assert!(sim.discard_constructed_limbo(head, &rules, FrameEffects::default()));
+                    assert!(sim.discard_constructed_limbo(
+                        head,
+                        &rules,
+                        &mut FrameEffects::default()
+                    ));
                 });
                 // Native row supplies the retained1 prior. The Rust caller's
                 // existing RAII scope restores its own prior after the call.
@@ -1782,16 +1845,15 @@ fn action7_real_members_match_original_identity_rng_placement_and_cleanup() {
     for row in rows("reinforcement", 10) {
         let input = &row["input"];
         let mut sim = reinforcement_world(&rules, &terrain_rules, input);
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
             &row["id_before"],
         )
             as u32));
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
-        sim.mapgen_rng =
+        *sim.main_rng =
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let team_type = sim.interner.get("TT").unwrap();
         let (spawned, review) = sim.spawn_team_reinforcements(
@@ -1799,7 +1861,7 @@ fn action7_real_members_match_original_identity_rng_placement_and_cleanup() {
             -1,
             &rules,
             Some(&overlay),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(spawned, int(&row["returned"]) != 0, "{input}");
         let expected_review = (int(&row["recent_counter"]) != 0).then(|| {
@@ -1963,7 +2025,7 @@ fn shared_leader_matches_original_script3_signed_ratings_and_live_joined_gates()
                         0,
                         0,
                         &rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
                 let entity = sim.substrate.entities.get_mut(id).unwrap();
@@ -2028,7 +2090,7 @@ fn script3_real_members_match_original_outside_move_and_rng_continuation() {
         .map(|member| int(&member["native_id"]))
         .min()
         .unwrap();
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
         first_id.wrapping_sub(1) as u32,
     ));
     let team_type = sim.interner.get("TT").unwrap();
@@ -2038,7 +2100,7 @@ fn script3_real_members_match_original_outside_move_and_rng_continuation() {
             -1,
             &rules,
             Some(&overlay),
-            FrameEffects::default()
+            &mut FrameEffects::default()
         )
         .0
     );
@@ -2073,13 +2135,13 @@ fn script3_real_members_match_original_outside_move_and_rng_continuation() {
     );
     assert_eq!(prior.cursor, int(&native_prior["cursor"]));
     waypoint(&mut sim, 4, (127, 127));
-    sim.scenario_rng =
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-    sim.main_rng =
-        SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap()).into();
-    sim.mapgen_rng =
+    *sim.main_rng =
+        SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
+    *sim.mapgen_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
-    sim.run_team_ai_pass(&rules, Some(&overlay), FrameEffects::default());
+    sim.run_team_ai_pass(&rules, Some(&overlay), &mut FrameEffects::default());
     assert_eq!(
         sim.team_script_vm.teams[&team].formed,
         row["dispatch"]["formed"].as_bool().unwrap()
@@ -2135,6 +2197,55 @@ fn script3_real_members_match_original_outside_move_and_rng_continuation() {
 }
 
 #[test]
+fn ordinary_team_limit_and_empty_timeout_follow_stock_rules() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let terrain = TerrainRules::from_ini(&retail.processed_rules);
+    let rules = retail.rules;
+    let delay = u32::try_from(rules.general.dissolve_unfilled_team_delay).unwrap();
+    let input = serde_json::json!({"entries":[["MTNK",1]],"origin":[87,50],"max":1});
+
+    for (mode, per_house_limit, empty_team_expires) in [
+        (ScenarioGameMode::Campaign, false, false),
+        (ScenarioGameMode::Skirmish, true, true),
+    ] {
+        let mut sim = reinforcement_world(&rules, &terrain, &input);
+        sim.session.set_game_mode(mode);
+        let team_type = sim.interner.get("TT").unwrap();
+        let first_house = sim.interner.get("Americans").unwrap();
+        let second_house = sim.interner.get("ENEMY").unwrap();
+        let start = sim.session.binary_frame();
+        let team = sim
+            .create_team(team_type, Some(first_house), &rules)
+            .unwrap();
+        assert!(
+            sim.create_team(team_type, Some(first_house), &rules)
+                .is_none()
+        );
+        assert_eq!(
+            sim.create_team(team_type, Some(second_house), &rules)
+                .is_some(),
+            per_house_limit,
+        );
+
+        sim.session.set_binary_frame_for_test(start + delay);
+        sim.run_team_ai_pass(&rules, None, &mut FrameEffects::default());
+        assert!(sim.team_script_vm.team(team).is_some());
+        sim.session.set_binary_frame_for_test(start + delay + 1);
+        sim.run_team_ai_pass(&rules, None, &mut FrameEffects::default());
+        assert_eq!(sim.team_script_vm.team(team).is_none(), empty_team_expires);
+        assert_eq!(
+            sim.create_team(team_type, Some(first_house), &rules)
+                .is_some(),
+            empty_team_expires,
+        );
+    }
+}
+
+#[test]
 fn action4_recruits_real_released_members_then_script50_and_cleanup_share_owners() {
     let Some((ini, art)) = retail_rules_and_art() else {
         return;
@@ -2161,14 +2272,14 @@ fn action4_recruits_real_released_members_then_script50_and_cleanup_share_owners
             -1,
             &rules,
             Some(&overlay),
-            FrameEffects::default()
+            &mut FrameEffects::default()
         )
         .0
     );
     let reinforcement = *sim.team_script_vm.teams.keys().next().unwrap();
     let mut original_members: Vec<_> = sim.team_script_vm.teams[&reinforcement].members().collect();
     original_members.sort_unstable();
-    sim.destroy_team(reinforcement, &rules, FrameEffects::default());
+    sim.destroy_team(reinforcement, &rules, &mut FrameEffects::default());
     let rng_before = [
         sim.scenario_rng.native_state_hex(),
         sim.main_rng.native_state_hex(),
@@ -2179,7 +2290,12 @@ fn action4_recruits_real_released_members_then_script50_and_cleanup_share_owners
         "Max=0 rejects ordinary CreateTeam"
     );
     let team = sim
-        .trigger_create_team(team_type, &rules, Some(&overlay), FrameEffects::default())
+        .trigger_create_team(
+            team_type,
+            &rules,
+            Some(&overlay),
+            &mut FrameEffects::default(),
+        )
         .expect("original Trigger4 creation scope bypasses Max=0");
     assert!(
         !sim.object_placement_scope_active(),
@@ -2189,7 +2305,7 @@ fn action4_recruits_real_released_members_then_script50_and_cleanup_share_owners
     // recruitment and Script50 goldens each have their own native corpora;
     // it does not claim an original execution of this artificial whole chain.
     for _ in 0..8 {
-        sim.run_team_ai_pass(&rules, Some(&overlay), FrameEffects::default());
+        sim.run_team_ai_pass(&rules, Some(&overlay), &mut FrameEffects::default());
         if sim
             .team_script_vm
             .teams
@@ -2222,7 +2338,7 @@ fn action4_recruits_real_released_members_then_script50_and_cleanup_share_owners
             int(&native_flash["stored"][0])
         );
     }
-    sim.run_team_ai_pass(&rules, Some(&overlay), FrameEffects::default());
+    sim.run_team_ai_pass(&rules, Some(&overlay), &mut FrameEffects::default());
     assert!(
         sim.team_script_vm.team(team).is_none(),
         "the ordinary script-end destructor removes the Team"
@@ -2254,7 +2370,7 @@ fn place_full_team(
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let owner = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(owner, 0, Some(owner), true, 0, 10));
@@ -2270,7 +2386,8 @@ fn place_full_team(
         [Events]\nARRIVAL=1,13,0,0\n[Actions]\nARRIVAL=1,80,1,FULL_MINER,0,0,0,0,E\n\
         [Tags]\nARRIVAL_TAG=0,Full arrival,ARRIVAL\n").as_bytes()).unwrap();
     let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
-    let teams = TeamAiIniRegistry::load_retail(&assets, &map.ini, true).unwrap();
+    let teams =
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, RulePolicy::stock_multiplayer()).unwrap();
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     sim.install_team_ai_registry(&teams, rules);
     sim.session.install_waypoints(&map.waypoints);
@@ -2281,10 +2398,9 @@ fn place_full_team(
             .advance_app_frame(
                 &[],
                 rules,
-                Some(rules.overlay_registry()),
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary frame");
         assert!(result.tick.frame_committed);
@@ -2365,4 +2481,126 @@ fn full_slave_miner_reinforcement_fills_the_miner_and_slave_holds() {
             );
         }
     }
+}
+
+/// 65E010's Tunnel arm (`0x0065E2D3`): a team of Tunnel units arrives under
+/// its cell at -256, burrowed and off the cell, and digs out there instead
+/// of appearing on the surface.
+#[test]
+fn a_tunnel_team_arrives_underground_and_digs_out_at_its_cell() {
+    use crate::sim::movement::tunnel_movement::{TUNNEL_DEPTH_Z, TunnelState};
+    let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[VehicleTypes]\n0=DRIL\n[DRIL]\nStrength=240\nSpeed=4\nROT=4\nSpeedType=Track\n\
+         MovementZone=Subterannean\nLocomotor={4A582743-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let member = sim
+        .construct_object_limbo_at_height(
+            "DRIL",
+            "Americans",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            &mut FrameEffects::default(),
+        )
+        .unwrap();
+    let owner = sim.interner.intern("Americans");
+    assert!(sim.place_reinforcement_members(
+        &[member],
+        owner,
+        (15, 15),
+        false,
+        &rules,
+        Some(&registry),
+        &mut FrameEffects::default(),
+    ));
+    let state = |sim: &Simulation| {
+        sim.entities()
+            .get(member)
+            .and_then(|actor| actor.locomotor.as_ref()?.tunnel_runtime())
+            .map(|runtime| runtime.state())
+    };
+    let location = |sim: &Simulation| {
+        crate::sim::movement::ground_pose::object_location(
+            sim.entities().get(member).unwrap(),
+            sim.resolved_terrain.as_ref(),
+        )
+    };
+    let actor = sim.entities().get(member).unwrap();
+    assert_eq!(state(&sim), Some(TunnelState::Digging));
+    assert_eq!(location(&sim).z, TUNNEL_DEPTH_Z);
+    assert!(!actor.lifecycle.in_limbo() && !actor.lifecycle.cell_marked());
+    let mut rose = false;
+    for frame in 1..600 {
+        sim.session.set_binary_frame_for_test(frame);
+        sim.process_tunnel_locomotor(
+            member,
+            &rules,
+            Some(&registry),
+            &mut FrameEffects::default(),
+        );
+        rose |= state(&sim) == Some(TunnelState::PreDigOut);
+        if state(&sim) == Some(TunnelState::Idle) {
+            break;
+        }
+    }
+    assert!(rose, "it digs out rather than appearing");
+    assert_eq!(state(&sim), Some(TunnelState::Idle));
+    assert!(sim.entities().get(member).unwrap().lifecycle.cell_marked());
+    let location = location(&sim);
+    assert_eq!(
+        (location.x / 256, location.y / 256, location.z),
+        (15, 15, 0)
+    );
+}
+
+/// #4974: action 107 placed a Team whose only member is a Unit with a Jumpjet
+/// locomotor and no `Speed=` (its type speed stays 0). The specific Foot
+/// constructor still creates the instance (`0x007354CE..0x00735566`), so
+/// 65EC30 can begin its Teleport piggyback and Move_To instead of panicking.
+#[test]
+fn chrono_reinforcement_places_a_zero_speed_jumpjet_unit() {
+    use crate::rules::locomotor_type::LocomotorKind;
+
+    let ini = IniFile::from_str(
+        "[Countries]\n0=Americans\n[VehicleTypes]\n0=YANH\n\
+         [YANH]\nStrength=100\nImage=MTNK\nMovementZone=Fly\n\
+         Locomotor={92612C46-F71F-11d1-AC9F-006008055BB5}\n",
+    );
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let terrain_rules = TerrainRules::from_ini(&ini);
+    let input = serde_json::json!({"entries": [["YANH", 1]], "origin": [40, 20]});
+    let mut sim = reinforcement_world(&rules, &terrain_rules, &input);
+    let team_type = sim.interner.get("TT").unwrap();
+    let (placed, _) = sim.spawn_chrono_team_reinforcements(
+        team_type,
+        4,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
+    assert!(placed, "65EC30 places the zero-speed Jumpjet Unit");
+    let member = sim
+        .entities()
+        .values()
+        .find(|entity| sim.interner.resolve(entity.type_ref()) == "YANH")
+        .map(|entity| entity.stable_id())
+        .expect("the placed member");
+    let (speed, kind) = {
+        let entity = sim.substrate.entities.get(member).unwrap();
+        (
+            sim.object_type(entity.type_ref(), &rules).unwrap().speed,
+            entity
+                .locomotor
+                .as_ref()
+                .map(|locomotor| locomotor.effective_kind()),
+        )
+    };
+    assert_eq!(speed, 0);
+    assert_eq!(
+        kind,
+        Some(LocomotorKind::Jumpjet),
+        "the Foot keeps its constructed Jumpjet under the Teleport piggyback"
+    );
 }

@@ -2,7 +2,7 @@
 //! Component admission and pixels through the actual lowerer, BUILDNGZ, SHP
 //! dispatcher and wheel-zoom pass. This is not a native whole-Display capture.
 
-use super::draw_plan_lowering::{NativeDisplayOrder, lower_object_instances};
+use super::draw_plan_lowering::{NativeDisplayOrder, PlannedObjects, lower_object_instances};
 use super::merge_passes::{ObjectDrawPhase, draw_native_object_pass};
 use crate::app::presentation::instances::{ShpInputs, build_shp_instances_from_inputs};
 use crate::map::{houses::HouseColorMap, lighting::CellLightGrid};
@@ -38,7 +38,7 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
         building.health.current(),
         rules.object("CANEWY06").unwrap().strength
     );
-    assert!(building.passenger_role.occupants().is_empty());
+    assert!(building.passenger_role().occupants().is_empty());
     let pose = crate::app::presentation::render_pose::RenderPose::read(
         building,
         sim.session().binary_frame(),
@@ -106,8 +106,11 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
         .load_file_from_mix(crate::render::building_zshape::BUILDNGZ_FILE)
         .expect("native Building z-shape source");
     let zshape = crate::assets::shp_file::ShpFile::from_bytes(&zfile.bytes).unwrap();
-    let (width, height, texels) =
-        crate::render::building_zshape::decode_zshape_canvas(&zshape).unwrap();
+    let crate::render::building_zshape::ZShapeFrame {
+        size: [width, height],
+        texels,
+        ..
+    } = crate::render::building_zshape::decode_zshape_frame(&zfile.bytes, &zshape).unwrap();
     let zview = crate::render::batch::create_unorm_texture_view_on_device(
         &gpu.device,
         &gpu.queue,
@@ -120,20 +123,23 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
     let zbind = batch.create_zshape_bind_group_on_device(&gpu.device, &zview);
     let lighting = CellLightGrid::new();
     let voxel_images = RefCell::new(VoxelImageCache::default());
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let zshape_skips = std::cell::RefCell::default();
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let before = (sim.state_hash(), sim.rng_state());
-    let mut parents = Vec::new();
+    let mut parents = PlannedObjects::default();
     build_shp_instances_from_inputs(
         &ShpInputs {
             runtime: &scene.runtime,
             frame: &crate::app::presentation::frame::PresentationFrame::capture(
                 &scene.runtime,
                 &Default::default(),
+                false,
             ),
             atlas: Some(&atlas),
             overlay_atlas: None,
             unit_atlas: None,
             voxel_images: &voxel_images,
+            zshape_skips: &zshape_skips,
             depth_tested_images: None,
             camera: [1160., 2502.],
             render_size: [1024, 768],
@@ -148,11 +154,12 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
             ignore_visibility: true,
             lighting: &lighting,
             house_colors: &colors,
-            building_zshape: true,
+            building_zshape: Some((0, 0)),
         },
         &mut parents,
         &order,
     );
+    let parents = parents.into_owned();
     let parent = parents
         .into_iter()
         .find(|parent| parent.parent.id == building.stable_id())
@@ -176,7 +183,7 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
     );
     batch.bind_shroud(&gpu.device, Some(&fog));
     let layer_index = parent.parent.layer.0 as usize;
-    let layers = lower_object_instances(vec![parent]);
+    let layers = lower_object_instances(vec![parent].into());
     let layer = &layers[layer_index];
     let mut pool = InstanceBufferPool::new();
     pool.upload_on_device(&gpu.device, &gpu.queue, "roof", &layer.instances);

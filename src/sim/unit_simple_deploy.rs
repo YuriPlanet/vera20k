@@ -33,7 +33,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<i32, String> {
         let deployed = self
             .substrate
@@ -106,7 +106,7 @@ impl Simulation {
         id: u64,
         deploying: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let entity = self
             .substrate
@@ -137,7 +137,7 @@ impl Simulation {
             return Ok(());
         }
         let deploy_to_land = object.deploy_to_land;
-        let configured_anim = object.deploying_anim.clone();
+        let configured_anim = object.deploying_anim.as_deref();
         let object_has_deploying_anim = configured_anim.is_some();
         let active = if deploying {
             leaf.deploy_begin_active()
@@ -191,7 +191,6 @@ impl Simulation {
                             id,
                             Some(NavTargetRef::cell(rx as u16, ry as u16)),
                             rules,
-                            None,
                             effects,
                         )
                         .map_err(|error| error.to_string())?;
@@ -212,7 +211,7 @@ impl Simulation {
                 let anim_id = if let Some(anim_id) = retained {
                     anim_id
                 } else {
-                    self.start_unit_deploy_anim(id, &name, !deploying, rules)?
+                    self.start_unit_deploy_anim(id, name, !deploying, rules)?
                 };
                 let anim = self
                     .anim(anim_id)
@@ -245,7 +244,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get_mut(id)
-                .and_then(|e| e.disguise.as_mut())
+                .and_then(|e| e.seldom.disguise.as_mut())
             && disguise.is_disguised()
         {
             disguise.clear_unit();
@@ -319,6 +318,7 @@ impl Simulation {
         // GetRemapColour705D70 freezes the owner's current/disguised palette
         // at this producer, rather than following later owner/disguise changes.
         let remap_house = entity
+            .seldom
             .disguise
             .as_ref()
             .filter(|state| state.is_disguised())
@@ -359,10 +359,10 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "unit_simple_deploy_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "unit_simple_deploy_retail_tests.rs"]
 mod retail_tests;

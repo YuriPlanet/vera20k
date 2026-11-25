@@ -19,6 +19,17 @@
 //!
 //! `tools/language_assets.py` writes it.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -86,7 +97,7 @@ pub(crate) fn parse(file: &[u8]) -> Option<HashMap<String, Arc<CameoLabel>>> {
     Some(labels)
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_root, tests_render_s_z)))]
 pub(crate) mod test_support {
     use super::*;
 
@@ -114,7 +125,7 @@ pub(crate) mod test_support {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_root))]
 mod tests {
     use super::test_support::label_file;
     use super::*;

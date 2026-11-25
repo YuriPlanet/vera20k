@@ -42,11 +42,11 @@ pub enum VxlLayer {
 pub const NO_SPAWN_ALT_SUFFIX: &str = "WO";
 
 /// Every voxel model an object of `type_id` can select at presentation time:
-/// its own, its `UnloadingClass=` and its `%sWO`.
+/// its own, its `UnloadingClass=`, Ares `WaterImage=` and its `%sWO`.
 ///
 /// Initial atlas construction and incremental coverage checks must enumerate
 /// the same set. Otherwise an already-valid base model can hide a missing
-/// UnloadingClass or `%sWO` auxiliary model until the draw lookup fails.
+/// UnloadingClass, WaterImage or `%sWO` model until the draw lookup fails.
 pub fn unit_atlas_variants(type_id: &str, rules: Option<&RuleSet>) -> Vec<String> {
     let object = rules.and_then(|rules| rules.object(type_id));
     let mut variants = vec![type_id.to_string()];
@@ -58,7 +58,7 @@ pub fn unit_atlas_variants(type_id: &str, rules: Option<&RuleSet>) -> Vec<String
         variants.push(unloading_type.to_string());
     }
 
-    if object.is_some_and(|object| object.no_spawn_alt) {
+    if object.is_some_and(ObjectType::no_spawn_alt) {
         // Native stores the `%sWO` pair in the same AuxVoxel slot used by
         // turrets. Stock NoSpawnAlt types therefore render it as one
         // composite body and cannot also own a turret. Ares gives the pair
@@ -66,6 +66,22 @@ pub fn unit_atlas_variants(type_id: &str, rules: Option<&RuleSet>) -> Vec<String
         // (UnitClass_DrawVXL_NoSpawnAlt 10041460, hook 0x73B6E3), so a
         // Turret=yes type keeps its turret there; this composite omits it.
         variants.push(format!("{type_id}{NO_SPAWN_ALT_SUFFIX}"));
+    }
+
+    if rules.is_some_and(RuleSet::ares) {
+        // DrawIt73D29C temporarily makes a dock-unloading harvester's
+        // UnloadingClass its actual type before Ares10045340 asks WaterImage.
+        let unloading = object
+            .filter(|object| object.harvester)
+            .and_then(|object| object.unloading_class.as_deref())
+            .and_then(|id| rules?.object(id));
+        for model in [object, unloading].into_iter().flatten() {
+            if let Some(image) = model.water_image()
+                && !variants.iter().any(|variant| variant == image)
+            {
+                variants.push(image.to_owned());
+            }
+        }
     }
 
     variants
@@ -76,17 +92,27 @@ pub fn unit_atlas_variants(type_id: &str, rules: Option<&RuleSet>) -> Vec<String
 /// (`0x005F724F..0x005F7276`), `ObjectTypeClass::ReadINI` reads `Image=` over
 /// it (`0x005F9335`), and the voxel loader `0x005F8110` formats every model
 /// name from that field. Retain its entry name when a later SHP call mutates
-/// ImageFile (saved Infantry5249AD/B4). An art `Image=` does not redirect it: gamemd reads
-/// that art key for buildings (`0x0045F93A`), not for vehicles or aircraft. A
-/// name that is not a rules type is its own image.
+/// ImageFile (saved Infantry5249AD/B4). Native art `Image=` does not redirect
+/// it: gamemd reads that art key for buildings (`0x0045F93A`), not for
+/// vehicles or aircraft. Phobos `[General] ArtImageSwap=true` adds that
+/// TechnoType visual redirect; this function follows it only while on.
 pub fn voxel_image_id(type_id: &str, rules: Option<&RuleSet>) -> String {
-    rules
-        .and_then(|rules| rules.object(type_id))
-        .map_or(type_id, |object| {
-            object.voxel_image_load().unwrap_or(&object.image)
-        })
-        .trim()
-        .to_uppercase()
+    let Some(rules) = rules else {
+        return type_id.trim().to_uppercase();
+    };
+    let object = rules.object(type_id);
+    let image = match object.and_then(ObjectType::voxel_image_load) {
+        Some(retained) => retained.to_owned(),
+        None => {
+            let rules_image = object.map_or(type_id, |object| object.image.as_str());
+            if rules.general.art_image_swap {
+                rules.art().resolve_effective_image_id(type_id, rules_image)
+            } else {
+                rules_image.to_owned()
+            }
+        }
+    };
+    image.trim().to_uppercase()
 }
 
 /// Unit draw's indexed count: `TurretCount > 0 && !IsGattling` (73B8D9).
@@ -122,9 +148,10 @@ pub fn object_voxel_turret_index(object: Option<&ObjectType>, current: i32) -> i
     }
 }
 
-/// Unit DrawVoxelBody73B7A3..73B7C5 admits its gun arm on the drawn type's
-/// `Turret=` or on `TurretCount > 0` with a current index other than -1.
-/// The type may be UnloadingClass or a disguise. Aircraft draw only their
+/// Gun admission for a model drawn as its own type. Unit73B7A3 tests the
+/// selected type's Turret, and 70DC60/717880 tests the actual type's TurretCount
+/// with a current index other than -1. Mixed actual/selected indexed modes
+/// remain a presentation residual in unit_body_draw. Aircraft draw their
 /// main voxel (4144B0), and building voxel turrets have their own loader.
 pub fn draws_turret_parts(type_id: &str, rules: Option<&RuleSet>, current: i32) -> bool {
     object_draws_turret_parts(rules.and_then(|rules| rules.object(type_id)), current)
@@ -204,16 +231,15 @@ pub(crate) fn building_voxel_pair_names(
     }
 }
 
-/// Ares ObjectTypeClass_Load3DArt_Turrets/_Barrels (10042220, 10042090;
-/// hooks 0x5F865F, 0x5F887B), UnloadTurretArt (100423B0, hook 0x5F8084) and
-/// the UnitClass_DrawVXL_Turrets/_Barrels1..3 reads (10042650, 100425D0,
-/// 10042610, 10042630; hooks 0x73BD15, 0x73B90E, 0x73BCCD, 0x73BD6A) lift the
-/// eighteen-slot bound on these voxels; this enumeration never had one.
+/// Unit73B8D9/70DCF0 uses a positive TurretCount to select indexed mode,
+/// then reads the current slot without comparing it to that count. The
+/// ObjectType5F865F/5F887B loads retain earlier native slots when a later
+/// read shrinks the count. Enumerate their physically retained libraries.
 /// Layers and gun indices the model can draw. Body and shadow storage stay
 /// independent of the selected gun, while every indexed gun has its own HVA.
-/// Missing optional barrels never create atlas work. A missing indexed turret
-/// ends enumeration, matching the loader's bounded prefix walk; UnitModel
-/// rejects the entire invalid model, as native's failure cleanup does.
+/// Missing optional barrels never create atlas work. The shared physical
+/// loader handles indexed-pair failure through ObjectType5F8ACB's cleanup
+/// before this enumeration.
 pub fn seed_layers_for(
     asset_manager: &AssetManager,
     type_id: &str,
@@ -247,13 +273,13 @@ pub fn seed_layers_for(
     }
     let count = indexed_turret_count(type_id, rules);
     if count > 0 {
-        for i in 0..count.min(18) {
-            let (t, b) = model.indexed_parts(i as usize);
+        for i in 0..model.indexed_count() {
+            let (t, b) = model.indexed_parts(i);
             if t.is_some() {
-                layers.push((VxlLayer::Turret, i));
+                layers.push((VxlLayer::Turret, i as i32));
             }
             if b.is_some() {
-                layers.push((VxlLayer::Barrel, i));
+                layers.push((VxlLayer::Barrel, i as i32));
             }
         }
     } else {

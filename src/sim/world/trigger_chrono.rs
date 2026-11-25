@@ -19,7 +19,7 @@ impl Simulation {
         target: (i16, i16),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         if target == (0, 0) {
             return Ok(());
@@ -51,7 +51,7 @@ impl Simulation {
                     actor.category(),
                     EntityCategory::Unit | EntityCategory::Infantry
                 )
-                || actor.passenger_role.transporter().is_some()
+                || actor.passenger_role().transporter().is_some()
             {
                 continue;
             }
@@ -67,7 +67,6 @@ impl Simulation {
                     InfantryEntryArgs::REPAIR,
                     EntryQueryMode::CheckLocomotor,
                     rules,
-                    registry,
                 )? == 0
                 {
                     break cell;

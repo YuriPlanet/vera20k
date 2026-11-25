@@ -1,6 +1,6 @@
 [package]
 name = "vera20k"
-version = "0.3.4"
+version = "0.4.2"
 edition = "2024"
 description = "Vera20k Engine — a from-scratch Rust engine for Red Alert 2: Yuri's Revenge"
 autobins = false
@@ -13,7 +13,7 @@ publish = false
 # asset tools and the game binary). The core manifest sits in `src/`, so rustc
 # still names every source file `src/...`.
 [workspace]
-members = ["src", "services/relay-protocol", "services/relay", "android"]
+members = ["src", "gui", "services/relay-protocol", "services/relay", "android"]
 # Plain `cargo build`/`cargo test --lib` cover both crates.
 default-members = [".", "src"]
 
@@ -37,6 +37,28 @@ name = "telemetry-serve"
 path = "src/bin/telemetry-serve.rs"
 required-features = ["telemetry-dashboard"]
 
+# Test groups: the module path prefixes each one owns; the longest prefix
+# decides. `python -m tools.group_tests check` holds the test modules to it.
+[package.metadata.test-groups]
+app = ["app"]
+app-frontend = ["app::frontend"]
+app-input-a-c = ["app::input::a", "app::input::b", "app::input::c"]
+app-input-d-z = ["app::input"]
+app-match = ["app::match_runtime"]
+app-presentation = ["app::presentation"]
+app-presentation-instances = ["app::presentation::instances"]
+app-presentation-render = ["app::presentation::render"]
+asset-tools = ["asset_tools"]
+audio = ["audio"]
+render-a-r = [
+    "render::a", "render::b", "render::c", "render::d", "render::e", "render::f", "render::g",
+    "render::h", "render::i", "render::j", "render::k", "render::l", "render::m", "render::n",
+    "render::o", "render::p", "render::q", "render::r",
+]
+render-s-z = ["render"]
+root = ["i18n", "web", "entry", "architecture_guards", "browser_"]
+ui = ["ui"]
+
 [features]
 # Browser host support; target selection still controls every platform implementation.
 wasm = ["vera20k-core/wasm", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:web-sys", "dep:console_log", "dep:console_error_panic_hook", "getrandom/wasm_js", "sys-locale/js"]
@@ -50,10 +72,8 @@ wasm-threads = ["wasm", "vera20k-core/wasm-threads", "dep:wasm-bindgen-rayon", "
 # Development builds carry the Ctrl+Shift dev chord. The release workflow builds
 # with `--no-default-features`, so shipped binaries do not.
 default = ["dev-overlays"]
-# Optional gameplay extensions. Neither default nor shipping builds enable this.
-ares = ["vera20k-core/ares"]
-# Optional Phobos extensions, independent of the Ares capability; neither
-# default nor shipping builds enable this either.
+# Optional Phobos extensions; neither default nor shipping builds enable this.
+# Ares needs no feature: it switches on from a game's data in every build.
 phobos = ["vera20k-core/phobos"]
 # Placeholder for the NPatch capability; no chain reads it yet.
 npatch = ["vera20k-core/npatch"]
@@ -71,10 +91,35 @@ telemetry-dashboard = ["vera20k-core/telemetry", "dep:sha1"]
 # Explicit offline trainer and per-unit event hooks. Never enabled by the
 # dashboard alone or the default/shipping feature set.
 debug-tools = ["telemetry-dashboard", "dev-overlays", "vera20k-core/debug-tools"]
+# Offline performance-recording build: writes a per-frame CSV of every SIM and
+# render phase plus path/process/GPU counters to ./perf/. A tool feature (never
+# shipped, PC-only): the recorder is on for the whole run, with no runtime
+# toggle. Enables the derived timing ledgers it reads.
+perf = ["vera20k-core/telemetry"]
+# A focused test build (tools/README.md, "Test groups"): with `test-focus` only
+# the test groups whose `tests-*` feature is on compile. Without it every test
+# compiles, so a plain `cargo test` is always the full suite. Neither reaches
+# `vera20k-core`, whose own tests have their own groups.
+test-focus = []
+tests-app = []
+tests-app-frontend = []
+tests-app-input-a-c = []
+tests-app-input-d-z = []
+tests-app-match = []
+tests-app-presentation = []
+tests-app-presentation-instances = []
+tests-app-presentation-render = []
+tests-asset-tools = []
+tests-audio = []
+tests-render-a-r = []
+tests-render-s-z = []
+tests-root = []
+tests-ui = []
 
 [dependencies]
 # The GPU-free engine. Its dev features follow this package's.
 vera20k-core = { path = "src" }
+vera20k-gui = { path = "gui" }
 
 # Background HTTPS lobby I/O; verified TLS is independent of simulation.
 base64 = "0.22"
@@ -99,8 +144,10 @@ winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "
 # off the taskbar), and VERA hides the OS arrow whenever it draws mouse.shp, so the
 # grab mode pins the pointer in place ("mouse won't move").
 raw-window-handle = "0.6"
-# `Win32_UI_WindowsAndMessaging` covers ClipCursor/GetClipCursor/GetClientRect;
-# `Win32_Graphics_Gdi` adds ClientToScreen (maps the client rect into screen coords).
+# `Win32_UI_WindowsAndMessaging` covers ClipCursor/GetClipCursor/GetClientRect
+# and the startup window's black background (SetClassLongPtrW);
+# `Win32_Graphics_Gdi` adds ClientToScreen (maps the client rect into screen
+# coords) and the stock black brush.
 windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }
 # Atlas keys carry an object type name. Already built through winit.
 smol_str = "0.2"
@@ -153,6 +200,8 @@ image = { version = "0.25", default-features = false, features = ["png", "ico"] 
 rodio = { version = "0.22", default-features = false, features = ["playback"] }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+# Identify a selected save even through a hard link or symlink.
+same-file = "1.0.6"
 # platform-verifier: the updater trusts the system's certificates first
 # (src/app/updater/fetch.rs); the lobby's agents keep ureq's webpki roots.
 ureq = { version = "3.5", default-features = false, features = ["rustls", "json", "platform-verifier"] }
@@ -197,13 +246,14 @@ winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "
 
 # --- macOS application icon and game folder chooser ---
 # macOS has no per-window icon; the Dock shows NSApplication's icon image, which
-# `app::window_icon` sets at startup. The app bundle's first launch asks for the
-# game folder with NSAlert and NSOpenPanel (`app::app_bundle`). objc2 0.6 and Foundation 0.3
+# `app::window_icon` sets at startup. The title bar is near black with VERA's logo
+# after the window buttons (`app::mac_title_bar`). The app bundle's first launch asks for
+# the game folder with NSAlert and NSOpenPanel (`app::app_bundle`). objc2 0.6 and Foundation 0.3
 # are the versions already in the lock (via cpal), and AppKit 0.3 matches them;
 # default features are off because they enable every AppKit framework class.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAlert", "NSApplication", "NSButton", "NSControl", "NSCursor", "NSImage", "NSOpenPanel", "NSPanel", "NSResponder", "NSSavePanel", "NSView", "NSWindow"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAlert", "NSApplication", "NSBitmapImageRep", "NSButton", "NSColor", "NSControl", "NSCursor", "NSFont", "NSImage", "NSImageRep", "NSImageView", "NSOpenPanel", "NSPanel", "NSResponder", "NSSavePanel", "NSTextField", "NSView", "NSWindow", "objc2-core-foundation"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSGeometry", "NSLocale", "NSString", "NSURL", "objc2-core-foundation"] }
 
 # --- Clipboard ---
@@ -222,6 +272,18 @@ arboard = { version = "3.7", default-features = false }
 # A trial for slow Windows machines; the gain has not been measured there yet.
 [target.'cfg(windows)'.dependencies]
 mimalloc = { version = "0.1.52", default-features = false }
+
+# Use wgpu-hal's Windows bindings for the device removal reason and the
+# Shell COM file chooser.
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62"
+features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_Dxgi",
+    "Win32_System_Com",
+    "Win32_UI_Shell_Common",
+]
 
 # --- Windows program icon and version details ---
 # build.rs compiles them into vera20k.exe with the Windows SDK's resource
@@ -261,6 +323,22 @@ debug_assert_with_mut_call = "deny"
 # Native ports keep gamemd's inputs explicit (the object, its rules and the
 # world state the body reads) instead of bundling them into one-use structs.
 too_many_arguments = "allow"
+# Every `unsafe` block and `unsafe impl` says in a `// SAFETY:` comment why
+# its contract holds, and every public `unsafe fn` documents it in `# Safety`.
+undocumented_unsafe_blocks = "deny"
+missing_safety_doc = "deny"
+# A lint silenced with `#[allow]` says why; one that always fires there takes
+# `#[expect(lint, reason = ..)]`, which warns once the lint stops firing.
+allow_attributes_without_reason = "deny"
+
+[workspace.lints.rust]
+# A dropped `Result` or `#[must_use]` value hides a failure or a lost value.
+unused_must_use = "deny"
+# Each unsafe operation inside an `unsafe fn` sits in its own `unsafe` block
+# with its own SAFETY comment, rather than the whole body being unsafe.
+unsafe_op_in_unsafe_fn = "deny"
+# A lifetime parameter equal to another (or to `'static`) is noise to read.
+redundant_lifetimes = "deny"
 
 # --- Build speed ---
 # Optimize all code at opt-level 1 in dev builds. The game rebuilds sprite

@@ -42,9 +42,8 @@ MyTeal=123,255,145
 - Rules whose `[Colors]` has fewer than the 15 entries the original eight need get
   none of VERA20k's own colours; names their `[Colors]` defines still work.
 
-Put the section in a mod's `rulesmd.ini` or in your own
-[`VERARULES.INI`](personal-rules.md). In a network game every player needs the same
-list, as for any other rules change.
+Put the section in a mod's `rulesmd.ini`. In a network game every player needs the
+same list, and a room's setup screens read it from each player's own rules.
 
 ## VERA20k's own colours
 
@@ -83,15 +82,19 @@ for the original eight, 8 for an observer, and 9 to 30 for the list above in ord
 gamemd passes a number from 9 up straight through as a colour-scheme index; VERA20k
 reads 9 to 30 as its list instead and leaves any higher number as gamemd has it.
 
-## Team Colors in game rooms
+## Team Colors
 
-In a LAN or online game room with Teams set, the host's Team Colors button gives each
-team its own range of the list. The colours are sorted by their `[Colors]` hue and the
+Quick Team Setup's Team Colors, in Skirmish with two teams or more and in a LAN or online
+game room with Teams set, gives each team its own range of the list. The colours are sorted by their `[Colors]` hue and the
 circle is cut into one range per team, the same number of colours in each, the first
 team's centred on red, so two teams get warm against cool. Each team's players get
 colours spread across its range. While every team fits in its range of the original
 eight, only the eight are used. Every player still gets a different colour while the
 list has enough, and anyone can change theirs afterwards.
+
+A game room writes each team's name in its players' colour: the colour family most of
+them share or, when none has a majority (as after Team Colors), the mix of all their
+colours. A team with no chosen colour keeps the plain text colour.
 
 ## Older versions and online play
 
@@ -112,8 +115,9 @@ list has enough, and anyone can change theirs afterwards.
 - `skirmish_launch.rs`: the Random colour draw (`draw_collision_free_color`).
 - `ui/skirmish_shell/state/combos.rs`: the list every colour box shows
   (`available_color_choices`).
-- `app/frontend/skirmish_shell_render/controls.rs`: the swatches (`house_color_tint`).
-- `app/shell_network_setup/teams.rs`: Team Colors in game rooms (`colors_by_team`).
+- `app/frontend/skirmish_shell_render/controls.rs`: the swatches (`house_color_tint`)
+  and a team name's colour (`team_caption_tint`).
+- `ui/team_tools.rs`: Team Colors' ranges (`colors_by_team`), which Skirmish and game rooms use.
 - `app/frontend/cncnet_spawn.rs`: the colours a `spawn.ini` may name (`color`), and
   `app/spawn_probe.rs` the list `--probe` reports (`color_names`).
 

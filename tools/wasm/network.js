@@ -159,13 +159,13 @@
     };
     ws.onmessage = ({data, at}) => {
       if (!current()) return;
-      if (!(data instanceof ArrayBuffer) || data.byteLength === 0
-        || data.byteLength > state.maxDatagram || state.packets.length >= MAX_PACKETS
-        || state.bytes + data.byteLength > MAX_QUEUED_BYTES) {
+      if (!(data instanceof ArrayBuffer) || data.byteLength === 0 || data.byteLength > state.maxDatagram) {
         reconnect(state);
         return;
       }
       state.retryDelay = 250;
+      // A full receive queue loses the datagram, as a full UDP buffer would.
+      if (state.packets.length >= MAX_PACKETS || state.bytes + data.byteLength > MAX_QUEUED_BYTES) return;
       // Arrival time: Rust reads the queue only when the game loop next
       // services it. The Worker timed the message on its own thread.
       state.packets.push({bytes: new Uint8Array(data), at: at ?? performance.now()});
@@ -176,16 +176,17 @@
     };
   }
 
-  globalThis.veraSocketOpen = (origin, channel, maxDatagram) => {
+  // `relay` is the grant's IPv4:port; the gateway forwards there if it lists it.
+  globalThis.veraSocketOpen = (origin, channel, relay, maxDatagram) => {
     const url = new URL(origin);
     const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-    if (!['primary', 'alternate'].includes(channel)
+    if (!['primary', 'alternate'].includes(channel) || !/^\d{1,3}(\.\d{1,3}){3}:\d{1,5}$/.test(relay)
       || !(url.protocol === 'wss:' || (url.protocol === 'ws:' && local))
       || url.username || url.password || url.pathname !== '/' || url.search || url.hash
       || !Number.isInteger(maxDatagram) || maxDatagram < 1 || maxDatagram > 2048) {
-      throw new Error('Invalid WebSocket proxy origin');
+      throw new Error('Invalid WebSocket proxy origin or relay');
     }
-    url.pathname = `/game/${channel}`;
+    url.pathname = `/game/${channel}/${relay}`;
     const state = {
       url: url.href, maxDatagram, ws: null, packets: [], bytes: 0,
       retryTimer: undefined, connectTimer: undefined, retryDelay: 250,

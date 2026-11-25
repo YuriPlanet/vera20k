@@ -15,6 +15,17 @@
 //! a datagram must carry, the replay window, rate limits and the per-kind
 //! payloads (§6.1 table) belong to `ClientSession` and `RelayServer`.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use hmac::Mac;
 
 use crate::{RelayError, SecretKey};
@@ -44,20 +55,13 @@ pub const OVERHEAD: usize = HEADER_LEN + HOP_TAG_LEN;
 /// 699 bytes). PACKs keep their own smaller limit, `PACK_LIMIT`.
 pub const MAX_PAYLOAD: usize = 720;
 
-/// The packing limit of a PACK payload: 681 bytes (§5.3 rule 5, §5.4),
-/// unchanged so the packing makes the same number of packs.
+/// The packing limit of PACK and UPLINK payloads: 681 bytes (§5.3 rule 5,
+/// §5.4).
 pub const PACK_LIMIT: usize = 681;
 
 /// The largest envelope v3 datagram: `OVERHEAD + MAX_PAYLOAD`. A receive
 /// buffer of this size holds any valid datagram.
 pub const MAX_DATAGRAM: usize = OVERHEAD + MAX_PAYLOAD;
-
-/// The hop sequence at which a client starts a renewal: 2³² − 2¹⁶
-/// (§11 case 7). It keeps sending until `u32::MAX`; past that it refuses
-/// with `RelayError::CounterExhausted` (§6.1). The relay cannot renew: if
-/// its sequence on a hop ever runs out, it stops sending on that hop and
-/// the client renews by its disconnect path (§6.1).
-pub const RENEWAL_SEQUENCE: u32 = u32::MAX - 0xFFFF;
 
 /// Client to relay kinds (§6.1).
 pub const HELLO: u8 = 0;
@@ -167,8 +171,8 @@ pub fn peek(direction: Direction, bytes: &[u8]) -> Result<Header, RelayError> {
     }
     Ok(Header {
         kind,
-        session: u32::from_le_bytes(bytes[1..5].try_into().expect("checked length")),
-        sequence: u32::from_le_bytes(bytes[5..9].try_into().expect("checked length")),
+        session: crate::link::read_u32(bytes, 1)?,
+        sequence: crate::link::read_u32(bytes, 5)?,
     })
 }
 

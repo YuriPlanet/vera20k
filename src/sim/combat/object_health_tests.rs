@@ -87,72 +87,75 @@ fn observe_virtual(
 
 #[test]
 fn actual_signed_object_commit_matches_original_packet_results_and_callbacks() {
-    let corpus = corpus();
-    let rows = corpus["receiver"].as_array().unwrap();
-    assert_eq!(rows.len(), 718);
-    for row in rows {
-        let input = &row["input"];
-        let output = &row["output"];
-        let mut entity = GameEntity::test_default(1, "X", "Americans", 2, 2);
-        entity
-            .health
-            .set_for_test(input["current"].as_i64().unwrap() as i32);
-        entity
-            .lifecycle
-            .set_object_alive_for_test(input["alive"] == 1);
-        entity.estimated_health =
-            crate::sim::estimated_health::EstimatedHealth::from_raw(-987654321);
-        let mut packet = input["damage"].as_i64().unwrap() as i32;
-        let admitted = packet != 0;
-        let mut callbacks = Vec::new();
-        let strength = Cell::new(input["strength"].as_i64().unwrap() as i32);
-        let callback = |entity: &mut GameEntity, callback: HealthCallback| {
-            observe_virtual(
-                entity,
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let corpus = corpus();
+        let rows = corpus["receiver"].as_array().unwrap();
+        assert_eq!(rows.len(), 718);
+        for row in rows {
+            let input = &row["input"];
+            let output = &row["output"];
+            let mut entity = GameEntity::test_default(1, "X", "Americans", 2, 2);
+            entity
+                .health
+                .set_for_test(input["current"].as_i64().unwrap() as i32);
+            entity
+                .lifecycle
+                .set_object_alive_for_test(input["alive"] == 1);
+            entity.estimated_health =
+                crate::sim::estimated_health::EstimatedHealth::from_raw(-987654321);
+            let mut packet = input["damage"].as_i64().unwrap() as i32;
+            let admitted = packet != 0;
+            let mut callbacks = Vec::new();
+            let strength = Cell::new(input["strength"].as_i64().unwrap() as i32);
+            let callback = |entity: &mut GameEntity, callback: HealthCallback| {
+                observe_virtual(
+                    entity,
+                    callback,
+                    input["callback"].as_str().unwrap(),
+                    0,
+                    &mut callbacks,
+                );
+            };
+            let mut host = LocalHealthHost {
+                entity: &mut entity,
+                strength: &strength,
                 callback,
-                input["callback"].as_str().unwrap(),
-                0,
-                &mut callbacks,
+            };
+            let result = commit(
+                &mut host,
+                &mut packet,
+                strength.get(),
+                admitted,
+                input["kind"] == "building" && input["can_c4"] == false,
+                0.25,
+                false,
+                ares_way,
             );
-        };
-        let mut host = LocalHealthHost {
-            entity: &mut entity,
-            strength: &strength,
-            callback,
-        };
-        let result = commit(
-            &mut host,
-            &mut packet,
-            strength.get(),
-            admitted,
-            input["kind"] == "building" && input["can_c4"] == false,
-            0.25,
-            false,
-            crate::rules::ARES_BUILD,
-        );
-        drop(host);
-        assert_eq!(
-            entity.health.current(),
-            output["actual"].as_i64().unwrap() as i32,
-            "{input}"
-        );
-        assert_eq!(entity.estimated_health.get(), -987654321, "{input}");
-        assert_eq!(
-            packet,
-            output["damage_packet"].as_i64().unwrap() as i32,
-            "{input}"
-        );
-        assert_eq!(
-            result as i32,
-            output["result"].as_i64().unwrap() as i32,
-            "{input}"
-        );
-        assert_eq!(
-            u8::from(entity.lifecycle.object_alive()),
-            output["alive"].as_u64().unwrap() as u8,
-            "{input}"
-        );
-        assert_eq!(json!(callbacks), output["callbacks"], "{input}");
+            drop(host);
+            assert_eq!(
+                entity.health.current(),
+                output["actual"].as_i64().unwrap() as i32,
+                "{input}"
+            );
+            assert_eq!(entity.estimated_health.get(), -987654321, "{input}");
+            assert_eq!(
+                packet,
+                output["damage_packet"].as_i64().unwrap() as i32,
+                "{input}"
+            );
+            assert_eq!(
+                result as i32,
+                output["result"].as_i64().unwrap() as i32,
+                "{input}"
+            );
+            assert_eq!(
+                u8::from(entity.lifecycle.object_alive()),
+                output["alive"].as_u64().unwrap() as u8,
+                "{input}"
+            );
+            assert_eq!(json!(callbacks), output["callbacks"], "{input}");
+        }
     }
 }
 
@@ -189,7 +192,7 @@ fn receiver_commit_keeps_negative_heal_on_exact_zero_techno_tail_and_wide_hits()
         entity.health.set_for_test(hp);
         entity.lifecycle.set_object_alive_for_test(alive);
         entity.estimated_health = crate::sim::estimated_health::EstimatedHealth::from_raw(-123);
-        world.interner = interner.clone();
+        *world.interner = interner.clone();
         world.substrate.entities.insert(entity);
         let event =
             EntityDamageEvent::area(1, damage, 0, super::super::RAD_NO_ATTACKER, None, warhead);
@@ -208,11 +211,14 @@ fn receiver_commit_keeps_negative_heal_on_exact_zero_techno_tail_and_wide_hits()
         };
         let receipt = super::super::receiver_health::commit_receiver_health(
             &event,
+            &mut crate::sim::combat::receiver_call::ReceiverDamage::new(
+                event.damage,
+                event.damage_writeback,
+            ),
             &mut world,
             &rules,
-            None,
             Some(resolved),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         )
         .unwrap();

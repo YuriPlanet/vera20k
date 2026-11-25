@@ -104,7 +104,7 @@ impl Simulation {
         mut coord: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let actor = self
             .substrate
@@ -159,7 +159,6 @@ impl Simulation {
                     cell.1 as u16,
                 )),
                 rules,
-                registry,
                 effects,
             )
             .map_err(|error| error.to_string())?;
@@ -170,10 +169,9 @@ impl Simulation {
             .as_ref()
             .ok_or("ChronoWarpTo needs map cells")?;
         let cells = NativeCellQuery::canonical(terrain);
-        if cells.flags(cells.lookup_world(coord.x, coord.y)) & CELL_FLAG_BRIDGE != 0 {
-            coord.z = coord
-                .z
-                .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+        let cell_at_coord = cells.lookup_world(coord.x, coord.y);
+        if cells.flags(cell_at_coord) & CELL_FLAG_BRIDGE != 0 {
+            coord.z = super::ground_pose::deck_surface_z(&cells, cell_at_coord, coord.z);
         }
         if category == EntityCategory::Unit {
             self.locomotor_mark_all_occupation_bits(id, false, rules.ares_form());
@@ -198,11 +196,10 @@ impl Simulation {
                     cell.1 as u16,
                 )),
                 rules,
-                registry,
                 effects,
             )
             .map_err(|error| error.to_string())?;
-            self.assign_destination_represented(id, None, rules, registry, effects)
+            self.assign_destination_represented(id, None, rules, effects)
                 .map_err(|error| error.to_string())?;
         }
         let frame = self.session.binary_frame();
@@ -226,7 +223,6 @@ impl Simulation {
                 cell.1 as u16,
             )),
             rules,
-            registry,
             effects,
         )
         .map_err(|error| error.to_string())?;
@@ -263,16 +259,18 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        ctx: ObjectAiCtx<'_>,
+        ctx: &mut ObjectAiCtx<'_>,
     ) -> Result<bool, FrameAdvanceError> {
         let registry = ctx.overlay_registry;
         let mut bridge_state_changed = false;
+        // The warp as this visit read it: the arms below write the live one
+        // (`chrono_warp_mut`, the timer check) through `&mut self`.
         let Some(warp) = self
             .substrate
             .entities
             .get(id)
             .and_then(|entity| entity.chrono_warp())
-            .cloned()
+            .copied()
         else {
             return Ok(bridge_state_changed);
         };
@@ -303,7 +301,7 @@ impl Simulation {
             }
             2 => {
                 self.teleport_warp_out(id, rules);
-                self.foot_mark_remove(id, rules, registry, ctx.effects);
+                self.foot_mark_remove(id, rules, registry, &mut ctx.effects);
                 Self::teleport_warp_sound(
                     &mut self.interner,
                     &self.substrate,
@@ -329,7 +327,7 @@ impl Simulation {
                     false,
                     rules,
                     registry,
-                    ctx.effects,
+                    &mut ctx.effects,
                 );
                 if let Some(warp) = self.substrate.chrono_warp_mut(id) {
                     warp.set_state(if landed { 4 } else { 3 });
@@ -342,13 +340,16 @@ impl Simulation {
                     false,
                     rules,
                     registry,
-                    ctx.effects,
+                    &mut ctx.effects,
                 );
                 if landed && let Some(warp) = self.substrate.chrono_warp_mut(id) {
                     warp.set_state(4);
                 }
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
-                    entity.chrono_warp_delay.store(rules.general.chrono_delay);
+                    entity
+                        .seldom
+                        .chrono_warp_delay
+                        .store(rules.general.chrono_delay);
                 }
             }
             4 => {
@@ -358,15 +359,15 @@ impl Simulation {
                     true,
                     rules,
                     registry,
-                    ctx.effects,
+                    &mut ctx.effects,
                 );
-                self.chrono_settle(id, rules, registry, ctx.effects);
+                self.chrono_settle(id, rules, registry, &mut ctx.effects);
                 if let Some(warp) = self.substrate.chrono_warp_mut(id) {
                     warp.set_state(5);
                 }
             }
             5 => {
-                let marked = self.chrono_settle(id, rules, registry, ctx.effects);
+                let marked = self.chrono_settle(id, rules, registry, &mut ctx.effects);
                 Self::teleport_warp_sound(
                     &mut self.interner,
                     &self.substrate,
@@ -380,7 +381,7 @@ impl Simulation {
                 //719AA3..719AC9: a newly reinforced member skips the
                 //Chronosphere's terrain kill/sink/transform validation.
                 if warp.pending_state() == 0 {
-                    self.chrono_post_warp_validation(id, marked, rules, registry, ctx.effects);
+                    self.chrono_post_warp_validation(id, marked, rules, registry, &mut ctx.effects);
                 }
                 if !self.chrono_owner_alive(id) {
                     return Ok(bridge_state_changed);
@@ -390,15 +391,15 @@ impl Simulation {
                     super::PerCellReason::Arrival,
                     rules,
                     registry,
-                    ctx.effects,
+                    &mut ctx.effects,
                 )?;
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
                     super::teleport_movement::teleport_stop_moving(entity);
                     // `0x00719AEE`/`0x00719AF7`: the drop and warp credits go.
-                    entity.drop_credit.forget();
+                    entity.seldom.drop_credit.forget();
                     entity.set_archive_target(None);
                 }
-                self.assign_null_destination(id, rules, registry, ctx.effects);
+                self.assign_null_destination(id, rules, registry, &mut ctx.effects);
                 let delay = self
                     .substrate
                     .entities
@@ -419,7 +420,7 @@ impl Simulation {
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
                     entity.set_archive_target(None);
                 }
-                self.assign_null_destination(id, rules, registry, ctx.effects);
+                self.assign_null_destination(id, rules, registry, &mut ctx.effects);
                 if let Some(runtime) = self
                     .substrate
                     .entities
@@ -443,7 +444,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> DriveCoord {
         let marked = self
             .substrate
@@ -454,7 +455,7 @@ impl Simulation {
             .and_then(|runtime| runtime.resolved_destination())
             .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
         self.foot_set_location_marked(id, marked, rules, registry, effects);
-        self.set_object_height(id, 0, rules, registry, effects);
+        self.set_object_height(id, 0, rules, effects);
         self.foot_mark_put(id, rules, registry, effects);
         marked
     }
@@ -517,7 +518,7 @@ impl Simulation {
         place: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -539,26 +540,25 @@ impl Simulation {
                 false,
                 rules.ares_form(),
             );
-            let (ground, bridge) = self
+            let (ground, deck) = self
                 .resolved_terrain
                 .as_ref()
-                .map_or((0, false), |terrain| {
+                .map_or((0, None), |terrain| {
                     let cells = NativeCellQuery::canonical(terrain);
                     let ground =
                         super::ground_pose::query_ground_height(&cells, coord).unwrap_or(0);
                     let cell = cells.lookup_world(coord.x, coord.y);
-                    (ground, cells.flags(cell) & CELL_FLAG_BRIDGE != 0)
+                    let deck = (cells.flags(cell) & CELL_FLAG_BRIDGE != 0)
+                        .then(|| super::ground_pose::deck_surface_z(&cells, cell, ground));
+                    (ground, deck)
                 });
             let Some(entity) = self.substrate.entities.get_mut(id) else {
                 return false;
             };
-            let on_bridge = bridge && !entity.on_bridge();
+            let deck = if entity.on_bridge() { None } else { deck };
+            let on_bridge = deck.is_some();
             entity.on_bridge.store(on_bridge);
-            let z = if on_bridge {
-                ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
-            } else {
-                ground
-            };
+            let z = deck.unwrap_or(ground);
             let marked = DriveCoord {
                 x: coord.x,
                 y: coord.y,
@@ -661,7 +661,6 @@ impl Simulation {
     /// unprotected Foot dies, and anything else sends the arrival to
     /// another cell. Every kill is the victim's Strength as `C4Warhead=`,
     /// ignoring defenses, with no attacker or house.
-    #[allow(clippy::too_many_arguments)]
     fn ares_chrono_make_room(
         &mut self,
         id: u64,
@@ -671,7 +670,7 @@ impl Simulation {
         blocked: &mut bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let crush_infantry = rules.ares_chrono_infantry_crush();
         // A TerrainClass is no infantry, no Techno and never curtained.
@@ -728,7 +727,7 @@ impl Simulation {
         blocked: &mut bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let CellObjectMember::Entity(other) = member else {
             // A TerrainClass is no Foot and never under the Iron Curtain.
@@ -765,7 +764,7 @@ impl Simulation {
         victim: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(strength) = self
             .substrate
@@ -885,7 +884,7 @@ impl Simulation {
         coord: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return;
@@ -977,7 +976,7 @@ impl Simulation {
             self.record_manipulated_kill(
                 id,
                 id,
-                crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+                crate::sim::world::UninitContext::new(rules).with_effects(effects),
             );
             return;
         }
@@ -992,7 +991,6 @@ impl Simulation {
                 },
                 EntryQueryMode::CheckLocomotor,
                 rules,
-                registry,
             )
             .unwrap_or_else(|error| {
                 log::debug!("chrono warp {id} entry at ({cx}, {cy}): {error}");
@@ -1016,7 +1014,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         self.begin_living_ship_sinking(
             id,
@@ -1026,8 +1024,8 @@ impl Simulation {
         );
         let Some((killer, house)) = self.substrate.entities.get(id).map(|entity| {
             (
-                entity.drop_credit.manipulated_by(),
-                entity.drop_credit.warped_by_house(),
+                entity.seldom.drop_credit.manipulated_by(),
+                entity.seldom.drop_credit.warped_by_house(),
             )
         }) else {
             return;

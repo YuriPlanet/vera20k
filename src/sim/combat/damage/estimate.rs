@@ -75,7 +75,7 @@ pub(crate) fn estimated_damage(inputs: &EstimateInputs) -> i32 {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
     use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};

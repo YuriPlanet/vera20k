@@ -554,10 +554,10 @@ impl TacticalCaptureProfile {
     }
 
     pub(crate) fn launch_session(&self) -> SkirmishLaunchSession {
-        SkirmishLaunchSession {
-            mode: self.launch.mode.clone(),
-            selected_map_file: Some(self.fixture.logical_map_name.clone()),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+        SkirmishLaunchSession::from_rows(
+            self.launch.mode.clone(),
+            Some(self.fixture.logical_map_name.clone()),
+            vec![crate::skirmish_launch::SkirmishHumanSlot {
                 raw_slot_index: Some(0),
                 name: self.launch.player_name.clone(),
                 slot: SkirmishLocalSlot {
@@ -570,10 +570,8 @@ impl TacticalCaptureProfile {
                 },
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
             }],
-            local_player_index: 0,
-            ai_player_count: self.launch.opponents.len() as i32,
-            opponents: self
-                .launch
+            0,
+            self.launch
                 .opponents
                 .iter()
                 .enumerate()
@@ -588,12 +586,8 @@ impl TacticalCaptureProfile {
                     difficulty: AiDifficulty::Easy,
                 })
                 .collect(),
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(
-                    self.launch.opponents.len(),
-                ),
-            options: self.launch.options.to_launch_options(),
-        }
+            self.launch.options.to_launch_options(),
+        )
     }
 }
 
@@ -622,6 +616,7 @@ impl TacticalOptions {
             teams: None,
             auto_balance: false,
             queue: Vec::new(),
+            host_rules: Default::default(),
         }
     }
 }
@@ -754,7 +749,7 @@ fn validate_options(options: &TacticalOptions) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use std::path::PathBuf;
@@ -791,8 +786,7 @@ mod tests {
     #[test]
     fn current_profiles_match_compiled_native_geometry_and_reject_old_scale() {
         use crate::ui::sidebar::{
-            SidebarChromeLayoutSpec, SidebarTheme, compute_layout_with_spec,
-            radar_minimap_rect_with_spec,
+            SidebarChromeLayoutSpec, SidebarPart, SidebarTheme, compute_layout_with_spec,
         };
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         for (side, theme) in [
@@ -814,11 +808,14 @@ mod tests {
             .value;
             assert_eq!(profile.capture.app_ui_scale, 1.0);
             let spec = SidebarChromeLayoutSpec::for_theme(theme);
-            let layout = compute_layout_with_spec(spec, 800.0, 600.0, 0);
+            let layout = compute_layout_with_spec(
+                spec,
+                crate::ui::sidebar::SidebarFrame::for_layout(800, 600, 100, &spec),
+            );
             assert_eq!(
                 (
                     layout.sidebar_x,
-                    layout.side1_y,
+                    layout.origin(&spec, SidebarPart::Middle)[1],
                     layout.cameo_grid_top,
                     layout.side3_y,
                     layout.side2_tile_count
@@ -827,7 +824,7 @@ mod tests {
             );
             // The NOD position table moves the top buttons, not the radar
             // aperture (MapAreaX 16 in both Init_For_House arms).
-            let aperture = radar_minimap_rect_with_spec(800.0, spec);
+            let aperture = layout.minimap_rect(&spec);
             assert_eq!(
                 (aperture.x, aperture.y, aperture.w, aperture.h),
                 (648.0, 49.0, 140.0, 108.0)

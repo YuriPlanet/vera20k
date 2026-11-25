@@ -5,7 +5,6 @@
 //! previous autosave through the repository's staged rename. The Load page
 //! lists it like any save. Network matches are left alone.
 
-use std::cell::RefCell;
 use std::time::{Duration, Instant};
 
 use crate::app::AppState;
@@ -13,16 +12,13 @@ use crate::ui::game_screen::GameScreen;
 
 pub(crate) const FILE_NAME: &str = "autosave.sav";
 
-#[derive(Default)]
-struct Autosave {
+/// The autosave schedule, held by [`super::PersistenceState`].
+#[derive(Debug, Default)]
+pub(crate) struct Autosave {
     /// When the running match was first seen or last saved.
     since: Option<Instant>,
     /// The frame of the last save: a match that stands still is not saved again.
     frame: Option<u32>,
-}
-
-thread_local! {
-    static AUTOSAVE: RefCell<Autosave> = RefCell::new(Autosave::default());
 }
 
 /// Every event-loop turn.
@@ -34,22 +30,21 @@ pub(crate) fn poll(state: &mut AppState) {
         .runtime()
         .map(|runtime| runtime.simulation.session().binary_frame());
     let in_match = state.frontend.screen == GameScreen::InGame && frame.is_some();
+    let single_player = state.match_state.session_mode().is_single_player();
     let now = Instant::now();
-    let due = AUTOSAVE.with_borrow_mut(|autosave| {
-        if !in_match {
-            *autosave = Autosave::default();
-            return false;
-        }
-        let since = *autosave.since.get_or_insert(now);
-        is_due(
-            minutes,
-            now.duration_since(since),
-            state.match_state.session_mode().is_single_player(),
-            frame,
-            autosave.frame,
-        )
-    });
-    if !due {
+    let autosave = &mut state.persistence.autosave;
+    if !in_match {
+        *autosave = Autosave::default();
+        return;
+    }
+    let since = *autosave.since.get_or_insert(now);
+    if !is_due(
+        minutes,
+        now.duration_since(since),
+        single_player,
+        frame,
+        autosave.frame,
+    ) {
         return;
     }
     let map = state
@@ -63,10 +58,10 @@ pub(crate) fn poll(state: &mut AppState) {
         Ok(path) => log::info!("Autosave: {}", path.display()),
         Err(error) => log::warn!("Autosave failed: {error}"),
     }
-    AUTOSAVE.with_borrow_mut(|autosave| {
-        autosave.since = Some(Instant::now());
-        autosave.frame = frame;
-    });
+    state.persistence.autosave = Autosave {
+        since: Some(Instant::now()),
+        frame,
+    };
 }
 
 /// Whether an offline match that ran `elapsed` since its last save is saved
@@ -85,7 +80,7 @@ fn is_due(
         && frame != saved_frame
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

@@ -402,7 +402,7 @@ pub(crate) fn beyond_cell_diagonal(from: DriveCoord, to: DriveCoord) -> bool {
     X87Chop53::compare(diagonal, X87Chop53::load_i32(distance)) == X87Ordering::Less
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
 

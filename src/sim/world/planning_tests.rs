@@ -103,8 +103,8 @@ fn edit_append_commit_preserves_missions_and_shares_same_frame_nodes() {
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     apply(&mut sim, &rules, commit);
     assert!(sim.planning_paths(owner).iter().all(|view| !view.editing));
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+    let session = &mut *sim.session;
+    session.set_binary_frame_for_test(session.binary_frame() + 1);
     append(&mut sim, &rules, owner, 1, (16, 15));
     assert_eq!(sim.planning.paths[&1].pending, 1);
     assert_eq!(sim.planning_paths(owner)[0].cells, vec![(12, 15), (16, 15)]);
@@ -188,7 +188,7 @@ fn fixture() -> (Simulation, RuleSet, InternedId) {
         );
         let entity = sim.substrate.entities.get_mut(actor).unwrap();
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.in_logic_vector.set_for_test(true);
+        entity.seldom.in_logic_vector.set_for_test(true);
         entity.locomotor = Some(
             crate::sim::movement::locomotor::LocomotorState::from_object_type(
                 rules.object("TEST").unwrap(),
@@ -224,6 +224,258 @@ fn append(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, actor: u64, 
     apply(sim, rules, record);
 }
 
+fn shared_plan_world() -> (Simulation, RuleSet, InternedId) {
+    use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+    use crate::sim::house_state::HouseState;
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use std::num::NonZeroU8;
+
+    let (mut sim, rules, primary) = fixture();
+    let beta = sim.intern("Beta");
+    let gamma = sim.intern("Gamma");
+    sim.houses
+        .register(HouseState::new(beta, 1, None, false, 0, 10));
+    sim.houses
+        .register(HouseState::new(gamma, 2, None, false, 0, 10));
+    sim.change_owner(1, beta);
+    sim.change_owner(2, beta);
+    sim.change_owner(3, gamma);
+    sim.session.set_game_mode(ScenarioGameMode::Lan);
+    sim.session.install_network_timing(10);
+    sim.session
+        .install_shared_house_sources(vec![0, 0], Some(0));
+    sim.network_command_queues()
+        .install_timing(0, NonZeroU8::new(5).unwrap(), [0, 1]);
+    sim.install_control_grants(vec![
+        ControlGrant {
+            source: 0,
+            house: 1,
+            level: ControlGrantLevel::FullControl,
+        },
+        ControlGrant {
+            source: 1,
+            house: 1,
+            level: ControlGrantLevel::UnitsOnly,
+        },
+        ControlGrant {
+            source: 0,
+            house: 2,
+            level: ControlGrantLevel::UnitsOnly,
+        },
+    ])
+    .unwrap();
+    (sim, rules, primary)
+}
+
+fn execute_shared_plan(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    sender: i8,
+    mut record: CommandRecord,
+) {
+    record.set_issue_header(record.opcode(), i32::from(sender), record.frame_stamp());
+    assert!(sim.admit_native_command_record(record));
+    sim.apply_due_commands(
+        &[],
+        rules,
+        sim.session.tick(),
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+}
+
+fn append_shared(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    primary: InternedId,
+    sender: i8,
+    actor: u64,
+    cell: (u16, u16),
+) {
+    let record = sim
+        .encode_planning_order_record(
+            primary,
+            &Command::Move {
+                entity_id: actor,
+                target_rx: cell.0,
+                target_ry: cell.1,
+            },
+            None,
+        )
+        .unwrap();
+    execute_shared_plan(sim, rules, sender, record);
+}
+
+#[test]
+fn custom_snapshot_resumes_a_shared_plan_through_source_scoped_commands() {
+    use crate::sim::mission::{MissionId, MissionType};
+    use crate::sim::snapshot::GameSnapshot;
+
+    let (mut sim, rules, primary) = shared_plan_world();
+    for actor in [1, 2] {
+        sim.substrate
+            .entities
+            .get_mut(actor)
+            .unwrap()
+            .mission
+            .set_current_for_test(MissionId::from_known(MissionType::Guard), 0);
+    }
+    append_shared(&mut sim, &rules, primary, 0, 1, (12, 15));
+    append_shared(&mut sim, &rules, primary, 1, 2, (12, 15));
+
+    let bytes = GameSnapshot::save_validated(&sim, 17, 19, "shared plan", 0);
+    let snapshot = GameSnapshot::load_validated(&bytes, 17, 19, sim.session.map_name()).unwrap();
+    let mut restored = snapshot.restore_references_for_test().unwrap();
+    assert_eq!(restored.state_hash(), sim.state_hash());
+
+    let commit = sim.encode_plan_commit_record(primary).unwrap();
+    execute_shared_plan(&mut restored, &rules, 1, commit.clone());
+    execute_shared_plan(&mut sim, &rules, 1, commit);
+    assert!(restored.planning.paths[&1].executing && restored.planning.paths[&2].executing);
+    assert_eq!(restored.state_hash(), sim.state_hash());
+}
+
+#[test]
+fn shared_plan_commit_and_delete_use_source_scope_and_live_actor_charges() {
+    use crate::sim::command::MegaMissionRecord;
+    use crate::sim::mission::{MissionId, MissionType};
+
+    let (mut sim, rules, primary) = shared_plan_world();
+    append_shared(&mut sim, &rules, primary, 0, 1, (12, 15));
+    append_shared(&mut sim, &rules, primary, 1, 2, (12, 15));
+    append_shared(&mut sim, &rules, primary, 1, 3, (16, 15));
+    assert!(!sim.planning.paths.contains_key(&3));
+    append_shared(&mut sim, &rules, primary, 0, 3, (16, 15));
+    assert_eq!(sim.planning.paths[&1].nodes, sim.planning.paths[&2].nodes);
+    assert_eq!(&sim.planning.house_charges[..3], &[0, 2, 1]);
+
+    let node = sim.planning.paths[&3].nodes[0];
+    let delete = sim
+        .encode_plan_node_delete_record_for_node(primary, node)
+        .unwrap();
+    execute_shared_plan(&mut sim, &rules, 1, delete);
+    assert!(sim.planning_node_exists(node));
+
+    for actor in [1, 2, 3] {
+        sim.substrate
+            .entities
+            .get_mut(actor)
+            .unwrap()
+            .mission
+            .set_current_for_test(MissionId::from_known(MissionType::Guard), 0);
+    }
+    let commit = sim.encode_plan_commit_record(primary).unwrap();
+    execute_shared_plan(&mut sim, &rules, 1, commit);
+    assert!(sim.planning.paths[&1].executing && sim.planning.paths[&2].executing);
+    assert!(!sim.planning.paths[&3].executing);
+    assert_eq!(sim.planning.paths[&3].pending, 0);
+    assert_eq!(&sim.planning.house_charges[..3], &[0, 0, 1]);
+    let generated: Vec<_> = sim
+        .planning
+        .pending_publication
+        .iter()
+        .map(|record| {
+            let (order, flag) = MegaMissionRecord::decode_planned(record).unwrap();
+            (order.source_id, record.house_id(), flag)
+        })
+        .collect();
+    assert_eq!(generated, [(1, 0, 2), (2, 1, 2)]);
+}
+
+#[test]
+fn shared_plan_connect_copies_its_sender_and_protects_mixed_nodes() {
+    let (mut sim, rules, primary) = shared_plan_world();
+    append_shared(&mut sim, &rules, primary, 0, 1, (12, 15));
+    let node = sim.planning.paths[&1].nodes[0];
+    let connect = sim
+        .planning_connect_record_to_node(primary, 2, node)
+        .unwrap();
+    execute_shared_plan(&mut sim, &rules, 1, connect);
+    let shared = &sim.planning.nodes[&node];
+    assert_eq!(shared.order(1).unwrap().house_id(), 0);
+    assert_eq!(shared.order(2).unwrap().house_id(), 1);
+
+    let connect = sim
+        .planning_connect_record_to_node(primary, 3, node)
+        .unwrap();
+    execute_shared_plan(&mut sim, &rules, 0, connect);
+    assert_eq!(sim.planning_connect_actors(&[1]), [1, 2, 3]);
+    append_shared(&mut sim, &rules, primary, 1, 1, (16, 15));
+    assert_eq!(sim.planning.nodes.len(), 1);
+    let delete = sim
+        .encode_plan_node_delete_record_for_node(primary, node)
+        .unwrap();
+    execute_shared_plan(&mut sim, &rules, 1, delete.clone());
+    assert_eq!(sim.planning_connect_actors(&[1]), [1, 2, 3]);
+    execute_shared_plan(&mut sim, &rules, 0, delete);
+    assert!(!sim.planning_node_exists(node));
+    assert!(
+        sim.planning
+            .paths
+            .values()
+            .all(|path| path.nodes.is_empty())
+    );
+}
+
+#[test]
+fn retired_planning_sources_acknowledge_in_flight_orders_and_skip_unstarted_work() {
+    use crate::sim::command::{MegaMissionOrder, MegaMissionRecord};
+    use crate::sim::mission::{MissionId, MissionType};
+
+    let (mut sim, rules, primary) = shared_plan_world();
+    append_shared(&mut sim, &rules, primary, 1, 1, (12, 15));
+    append_shared(&mut sim, &rules, primary, 1, 1, (14, 15));
+    append_shared(&mut sim, &rules, primary, 1, 2, (18, 15));
+    append_shared(&mut sim, &rules, primary, 0, 2, (19, 15));
+    for (actor, mission) in [(1, MissionType::Guard), (2, MissionType::Sleep)] {
+        sim.substrate
+            .entities
+            .get_mut(actor)
+            .unwrap()
+            .mission
+            .set_current_for_test(MissionId::from_known(mission), 0);
+    }
+    let commit = sim.encode_plan_commit_record(primary).unwrap();
+    execute_shared_plan(&mut sim, &rules, 1, commit);
+    assert!(sim.planning.paths[&1].executing);
+    assert!(!sim.planning.paths[&2].executing);
+
+    let mut generated = sim.planning.pending_publication.pop().unwrap();
+    let mission = sim.substrate.entities.get(1).unwrap().mission.clone();
+    sim.session.retire_network_command_source(1);
+    let mut wrong_sender = generated.clone();
+    wrong_sender.set_issue_header(generated.opcode(), 0, generated.frame_stamp());
+    assert!(!sim.planning_acknowledge_generated(1, &wrong_sender));
+    assert!(sim.planning.paths[&1].executing);
+
+    generated.set_frame_stamp(generated.frame_stamp() + 5);
+    assert!(!sim.apply_command_with_overlays(
+        Some(1),
+        "Americans",
+        &Command::PlanningRecord { record: generated },
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    ));
+    assert!(!sim.planning.paths[&1].executing);
+    assert!(!sim.planning_start_actor(1, &rules));
+    assert!(sim.planning.paths[&1].nodes.is_empty());
+    assert_eq!(sim.substrate.entities.get(1).unwrap().mission, mission);
+    assert!(sim.planning.pending_publication.is_empty());
+
+    assert!(sim.planning_start_actor(2, &rules));
+    let record = &sim.planning.pending_publication[0];
+    let (order, flag) = MegaMissionRecord::decode_planned(record).unwrap();
+    assert_eq!((order.source_id, record.house_id(), flag), (2, 0, 2));
+    assert_eq!(
+        order.order,
+        MegaMissionOrder::Move {
+            target_x: 19,
+            target_y: 15
+        }
+    );
+    assert_eq!(sim.planning.house_charges[1], 0);
+}
+
 #[test]
 fn stop_repair_sale_or_uninit_detaches_only_its_actor_from_shared_nodes() {
     for action in ["stop", "repair_dead", "sale_dead", "uninit"] {
@@ -237,7 +489,7 @@ fn stop_repair_sale_or_uninit_detaches_only_its_actor_from_shared_nodes() {
                 sim.planning_has_remaining_nodes(1),
                 "UnInit retains +514 until destruction"
             );
-            sim.process_pending_delete_with(&rules, None, Default::default(), 1, false);
+            sim.process_pending_delete_with(&rules, &mut Default::default(), 1, false);
         } else if action == "repair_dead" || action == "sale_dead" {
             sim.substrate
                 .entities
@@ -333,11 +585,12 @@ fn special_ordinary_retask_cancels_shared_route(kind: &str) {
     };
     assert!(
         sim.apply_command_with_overlays(
+            None,
             "Americans",
             &command,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         "accepted {kind} order"
     );
@@ -471,9 +724,9 @@ fn guard_commit_consumes_first_node_stages_deliberate_and_retains_next_node() {
     );
     assert_eq!(mission.queued(), crate::sim::mission::MissionId::NONE);
     assert!(sim.take_due_commands().is_empty());
-    sim.session.set_tick_for_test(sim.session.tick() + 1);
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let session = &mut *sim.session;
+    session.set_tick_for_test(session.tick() + 1);
+    session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
     let due = sim.take_frame_commands_for_test();
     assert_eq!(due.len(), 1);
     assert_eq!(due[0].execute_tick, sim.session.tick() + 1);
@@ -486,7 +739,7 @@ fn planning_internal_checkpoint_restores_shared_nodes_loops_current_records_and_
     use crate::sim::snapshot::GameSnapshot;
     let (mut sim, rules, owner) = fixture();
     // Snapshot loading intentionally reseeds the unsaved Scenario RNG to zero.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let empty_hash = sim.state_hash();
     for actor in [1, 2] {
         append(&mut sim, &rules, owner, actor, (12, 15));
@@ -519,7 +772,7 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
     use crate::sim::mission::{MissionId, MissionType};
     use crate::sim::snapshot::GameSnapshot;
     let (mut sim, rules, owner) = fixture();
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     for cell in [(12, 15), (16, 15), (20, 15)] {
         append(&mut sim, &rules, owner, 1, cell);
     }
@@ -576,17 +829,16 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
     assert_eq!(restored.pending_command_snapshot(), generated);
     assert!(sim.planning.pending_publication.is_empty());
     assert_eq!(restored.state_hash(), sim.state_hash());
-    sim.session.set_tick_for_test(sim.session.tick() + 1);
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let session = &mut *sim.session;
+    session.set_tick_for_test(session.tick() + 1);
+    session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
     let due = sim.take_frame_commands_for_test();
     assert_eq!(due, generated);
     sim.apply_due_commands(
         &due,
         &rules,
         sim.session.tick() + 1,
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate.entities.get(1).unwrap().navigation.nav_com(),
@@ -627,7 +879,7 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     let batch = [edit, commit]
         .map(|record| CommandEnvelope::new(owner, 1, Command::PlanningRecord { record }));
-    sim.apply_due_commands(&batch, &rules, 1, None, FrameEffects::default());
+    sim.apply_due_commands(&batch, &rules, 1, &mut FrameEffects::default());
     sim.publish_planning_commands();
     assert_eq!(
         sim.planning.paths[&1].pending, 0,
@@ -642,14 +894,14 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
         Command::PlanningRecord { record: commit },
     )];
     sim.session.set_tick_for_test(1);
-    sim.apply_due_commands(&batch, &rules, 2, None, FrameEffects::default());
+    sim.apply_due_commands(&batch, &rules, 2, &mut FrameEffects::default());
     sim.publish_planning_commands();
     assert_eq!(sim.planning.paths[&1].pending, -1);
     assert!(sim.planning.paths[&1].executing);
     assert!(sim.take_due_commands().is_empty());
-    sim.session.set_tick_for_test(sim.session.tick() + 1);
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let session = &mut *sim.session;
+    session.set_tick_for_test(session.tick() + 1);
+    session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
     let due = sim.take_frame_commands_for_test();
     assert_eq!(due.len(), 1);
     assert!(
@@ -746,7 +998,7 @@ fn planning_restore_retains_stale_encounter_entries_after_member_detach() {
     sim.planning_detach_actor(1);
     assert_eq!(sim.planning.nodes[&0].member_order, vec![1, 2]);
     let bytes = save_codec::serialize(&sim.planning).unwrap();
-    sim.planning = save_codec::deserialize(&bytes).unwrap();
+    *sim.planning = save_codec::deserialize(&bytes).unwrap();
     let connect = sim.encode_plan_connect_record(owner, 3, (12, 15)).unwrap();
     apply(&mut sim, &rules, connect);
     assert_eq!(sim.planning.paths[&3].nodes, sim.planning.paths[&2].nodes);
@@ -1007,7 +1259,8 @@ fn planning_append_rejects_exact_sixteen_and_any_loop() {
         )
         .unwrap();
     assert!(!sim.apply_planning_record(
-        "Americans",
+        None,
+        "Americans".into(),
         &record,
         crate::rules::ruleset::RuleSet::empty_for_test()
     ));
@@ -1035,7 +1288,8 @@ fn planning_append_rejects_exact_sixteen_and_any_loop() {
         )
         .unwrap();
     assert!(!sim.apply_planning_record(
-        "Americans",
+        None,
+        "Americans".into(),
         &record,
         crate::rules::ruleset::RuleSet::empty_for_test()
     ));
@@ -1085,7 +1339,7 @@ fn connect_rotates_source_loop_suffix_and_preserves_auxiliary_provenance() {
             "connect rewrites only source, preserving native auxiliary provenance"
         );
         let bytes = save_codec::serialize(&sim.planning).unwrap();
-        sim.planning = save_codec::deserialize(&bytes).unwrap();
+        *sim.planning = save_codec::deserialize(&bytes).unwrap();
     }
 }
 
@@ -1156,7 +1410,8 @@ fn cell_attack_and_area_guard_tails_are_terminal_for_append() {
             .unwrap();
         sim.lifecycle_outputs.clear_for_test();
         assert!(!sim.apply_planning_record(
-            "Americans",
+            None,
+            "Americans".into(),
             &record,
             crate::rules::ruleset::RuleSet::empty_for_test()
         ));
@@ -1216,7 +1471,7 @@ fn enter_tail_refuses_append_with_post_terminating_command() {
             None,
         )
         .unwrap();
-    assert!(!sim.apply_planning_record("Americans", &record, &rules));
+    assert!(!sim.apply_planning_record(None, "Americans".into(), &record, &rules));
     assert_eq!(sim.planning.paths[&1].nodes.len(), 1);
     assert_eq!(
         sim.lifecycle_outputs.as_slice(),
@@ -1258,9 +1513,9 @@ fn planned_force_attack_preserves_admitted_friendly_target_through_native_dispat
     sim.session.set_binary_frame_for_test(4);
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     apply(&mut sim, &rules, commit);
-    sim.session.set_tick_for_test(sim.session.tick() + 1);
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let session = &mut *sim.session;
+    session.set_tick_for_test(session.tick() + 1);
+    session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
     let due = sim.take_frame_commands_for_test();
     assert_eq!(due.len(), 1);
     assert!(
@@ -1339,11 +1594,11 @@ fn captured_actor_path_commits_for_current_house_and_preserves_original_issuer()
         matches!(&generated[0].payload, Command::PlanningRecord { record } if record.house_id() == 0)
     );
     let bytes = save_codec::serialize(&sim.planning).unwrap();
-    sim.planning = save_codec::deserialize(&bytes).unwrap();
+    *sim.planning = save_codec::deserialize(&bytes).unwrap();
     sim.validate_planning_references().unwrap();
-    sim.session.set_tick_for_test(sim.session.tick() + 1);
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let session = &mut *sim.session;
+    session.set_tick_for_test(session.tick() + 1);
+    session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
     let due = sim.take_frame_commands_for_test();
     assert!(sim.apply_command("Americans", &due[0].payload, Some(&rules)));
     assert_eq!(
@@ -1363,7 +1618,7 @@ fn append_and_connect_receivers_defer_actor_owner_and_lifetime_admission() {
         append(&mut sim, &rules, owner, 1, (12, 15));
         assert_eq!(sim.planning.paths[&1].nodes.len(), 1);
         let bytes = save_codec::serialize(&sim.planning).unwrap();
-        sim.planning = save_codec::deserialize(&bytes).unwrap();
+        *sim.planning = save_codec::deserialize(&bytes).unwrap();
         sim.validate_planning_references().unwrap();
     }
     {
@@ -1398,7 +1653,7 @@ fn overlapping_connect_delete_removes_each_occurrence_and_restores_graph() {
     apply(&mut sim, &rules, delete);
     assert_eq!(sim.planning.paths[&1].nodes, vec![0, 2]);
     let bytes = save_codec::serialize(&sim.planning).unwrap();
-    sim.planning = save_codec::deserialize(&bytes).unwrap();
+    *sim.planning = save_codec::deserialize(&bytes).unwrap();
 }
 
 #[test]
@@ -1452,7 +1707,7 @@ fn overlapping_connect_consumption_preserves_occurrences_and_loop_first_record()
                 );
             }
             let bytes = save_codec::serialize(&sim.planning).unwrap();
-            sim.planning = save_codec::deserialize(&bytes).unwrap();
+            *sim.planning = save_codec::deserialize(&bytes).unwrap();
             sim.planning_acknowledge(1);
         }
         if looped {
@@ -1743,7 +1998,7 @@ fn draw_graph_current_destination_uses_attack_target_and_mega_resume_latch() {
         entity
             .attack_target
             .set_for_test(Some(TargetKind::Entity(2)));
-        entity.mega_mission =
+        entity.seldom.mega_mission =
             MegaMission::for_test(true, Some(TargetKind::Cell(16, 15)), None, true);
     }
     let graph = sim.planning_draw_graph(owner, None, None);
@@ -1778,8 +2033,12 @@ fn draw_graph_current_destination_uses_attack_target_and_mega_resume_latch() {
                 .collect(),
         ),
     );
-    sim.substrate.entities.get_mut(1).unwrap().mega_mission =
-        MegaMission::for_test(true, Some(TargetKind::Cell(5, 600)), None, true);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .seldom
+        .mega_mission = MegaMission::for_test(true, Some(TargetKind::Cell(5, 600)), None, true);
     let dummy = sim.effective_shared_cell_dummy().snapshot();
     let graph = sim.planning_draw_graph(owner, None, None);
     assert!(graph.actors[0].mega_leg.is_some());
@@ -1968,7 +2227,7 @@ fn an_aircraft_starts_its_planned_node_only_with_its_arrival_byte_set() {
     );
     let jet = sim.substrate.entities.get_mut(4).unwrap();
     jet.lifecycle.set_in_limbo_for_test(false);
-    jet.in_logic_vector.set_for_test(true);
+    jet.seldom.in_logic_vector.set_for_test(true);
     append(&mut sim, &rules, owner, 4, (12, 15));
     append(&mut sim, &rules, owner, 4, (16, 15));
     let path = sim.planning.paths.get_mut(&4).unwrap();
@@ -1985,7 +2244,7 @@ struct PlanningMode;
 
 impl crate::sim::world::LocalPlanningBoundary for PlanningMode {
     fn leave_planning(
-        &self,
+        &mut self,
         _: &Simulation,
         _: &RuleSet,
     ) -> Option<crate::sim::command::CommandEnvelope> {
@@ -2026,23 +2285,28 @@ fn a_tail_node_enemy_passes_the_select_gate_and_unselects_all() {
             .entities
             .get_mut(2)
             .unwrap()
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(discovered);
         sim.lifecycle_outputs.clear_for_test();
 
-        assert!(sim.techno_select(
-            1,
-            false,
-            crate::sim::world::UninitContext::new(&rules, None).with_effects(
-                crate::sim::world::FrameEffects::default().with_local_planning(&PlanningMode)
-            ),
-        ));
+        assert!(
+            sim.techno_select(
+                1,
+                crate::sim::world::UninitContext::new(&rules).with_effects(
+                    &mut crate::sim::world::FrameEffects::default()
+                        .with_local_planning(&mut PlanningMode)
+                        .without_selection_voice()
+                ),
+            )
+        );
         let selected: Vec<u64> = (1..=3)
             .filter(|&id| {
                 sim.substrate
                     .entities
                     .get(id)
                     .unwrap()
+                    .seldom
                     .selection
                     .is_selected()
             })
@@ -2120,9 +2384,9 @@ fn finalized_target_pruning_retains_the_empty_token_and_its_house_charge() {
         "the retired target remains registered until actual destruction"
     );
     let frame = sim.session.binary_frame();
-    let inputs =
+    let mut inputs =
         crate::sim::world::master_frame::FrameInputs::new(&rules, None, 33, Default::default());
-    assert!(sim.commit_frame_tail(inputs, sim.session.tick() + 1));
+    assert!(sim.commit_frame_tail(&mut inputs, sim.session.tick() + 1));
     assert_eq!(sim.session.binary_frame(), frame.wrapping_add(1));
     assert!(!sim.substrate.entities.contains(3));
     assert!(!sim.planning_has_remaining_nodes(1));

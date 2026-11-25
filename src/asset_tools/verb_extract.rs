@@ -173,7 +173,7 @@ fn extract_dir(out: &Path) -> PathBuf {
     root.join(EXTRACT_SUBDIR)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 

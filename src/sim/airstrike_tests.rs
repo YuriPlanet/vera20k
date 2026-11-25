@@ -118,6 +118,7 @@ fn retail_boris_building_attack_enters_designation_pose_and_starts_sortie() {
         .health
         .current();
     assert!(f.sim.apply_command_with_overlays(
+        None,
         "Americans",
         &crate::sim::command::Command::Attack {
             attacker_id: f.boris,
@@ -125,7 +126,7 @@ fn retail_boris_building_attack_enters_designation_pose_and_starts_sortie() {
         },
         &f.rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     f.sim.advance_tick(&[], Some(&f.rules), None, None, 67);
     let boris = f.sim.substrate.entities.get(f.boris).unwrap();
@@ -159,7 +160,7 @@ fn retail_boris_building_attack_enters_designation_pose_and_starts_sortie() {
         health
     );
     f.sim
-        .airstrike_clear_target(f.boris, &f.rules, FrameEffects::default());
+        .airstrike_clear_target(f.boris, &f.rules, &mut FrameEffects::default());
     assert!(
         f.sim
             .airstrike_designation_coordinates(f.boris, &f.rules)
@@ -327,7 +328,7 @@ fn marker_restoration_uses_last_other_manager_even_after_its_sortie_finished() {
         );
     }
     f.sim
-        .airstrike_clear_target(second, &f.rules, FrameEffects::default());
+        .airstrike_clear_target(second, &f.rules, &mut FrameEffects::default());
     assert_eq!(
         f.sim
             .substrate
@@ -345,7 +346,7 @@ fn live_target_expiry_preserves_strike_dead_target_expiry_cancels_it() {
     let Some(mut f) = Fixture::new() else { return };
     f.hit(f.boris, f.target);
     f.sim
-        .airstrike_pointer_expired(f.boris, f.target, &f.rules, FrameEffects::default());
+        .airstrike_pointer_expired(f.boris, f.target, &f.rules, &mut FrameEffects::default());
     assert_eq!(
         f.sim.substrate.airstrike_manager(f.boris).unwrap().target,
         Some(f.target)
@@ -358,7 +359,7 @@ fn live_target_expiry_preserves_strike_dead_target_expiry_cancels_it() {
         .health
         .set(0);
     f.sim
-        .airstrike_pointer_expired(f.boris, f.target, &f.rules, FrameEffects::default());
+        .airstrike_pointer_expired(f.boris, f.target, &f.rules, &mut FrameEffects::default());
     assert_eq!(
         f.sim.substrate.airstrike_manager(f.boris).unwrap().target,
         None
@@ -374,13 +375,12 @@ fn owner_target_change_cancels_but_leaves_planes_until_their_departure() {
             f.boris,
             Some(TargetKind::Entity(f.target)),
             &f.rules,
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     f.hit(f.boris, f.target);
     f.sim
-        .assign_target_represented(f.boris, None, &f.rules, None, FrameEffects::default())
+        .assign_target_represented(f.boris, None, &f.rules, &mut FrameEffects::default())
         .unwrap();
     let m = f.sim.substrate.airstrike_manager(f.boris).unwrap();
     assert!(m.busy);
@@ -443,10 +443,10 @@ fn a_campaign_player_control_designators_abort_voice_plays() {
     state.set_player_control_for_test(true);
     f.hit(f.boris, f.target);
     f.sim
-        .airstrike_pointer_expired(f.boris, f.boris, &f.rules, FrameEffects::default());
+        .airstrike_pointer_expired(f.boris, f.boris, &f.rules, &mut FrameEffects::default());
     assert!(f.sim.sound_events.iter().any(|event| matches!(event,
         SimSoundEvent::VocAt { sound_id, audible_to: Some(houses), .. }
-            if sound_id == "MIGMissionAborted" && *houses == [house, house]
+            if sound_id.name_in(&f.rules) == "MIGMissionAborted" && *houses == [house, house]
     )));
 }
 
@@ -463,11 +463,11 @@ fn owner_expiry_unlinks_surviving_planes_and_clears_the_designation() {
         .aircraft
         .clone();
     f.sim
-        .airstrike_pointer_expired(f.boris, f.boris, &f.rules, FrameEffects::default());
+        .airstrike_pointer_expired(f.boris, f.boris, &f.rules, &mut FrameEffects::default());
     let house = f.sim.substrate.entities.get(f.boris).unwrap().owner();
     assert!(f.sim.sound_events.iter().any(|event| matches!(event,
         SimSoundEvent::VocAt { sound_id, audible_to: Some(houses), .. }
-            if sound_id == "MIGMissionAborted" && *houses == [house, house]
+            if sound_id.name_in(&f.rules) == "MIGMissionAborted" && *houses == [house, house]
     )));
     let m = f.sim.substrate.airstrike_manager(f.boris).unwrap();
     assert!(m.aircraft.is_empty());
@@ -496,7 +496,7 @@ fn snapshot_preserves_cancelled_sortie_and_rejects_unresolved_manager_references
     let Some(mut f) = Fixture::new() else { return };
     f.hit(f.boris, f.target);
     f.sim
-        .airstrike_clear_target(f.boris, &f.rules, FrameEffects::default());
+        .airstrike_clear_target(f.boris, &f.rules, &mut FrameEffects::default());
     // Scenario RNG intentionally reseeds on native-shaped load; compare the
     // manager's retained state, not the whole pre-load simulation hash.
     let before = f
@@ -505,13 +505,20 @@ fn snapshot_preserves_cancelled_sortie_and_rejects_unresolved_manager_references
         .entities
         .get(f.boris)
         .unwrap()
+        .seldom
         .airstrike
         .clone();
     let bytes = GameSnapshot::save(&f.sim, 0, 0, "airstrike", 0);
     let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
     loaded.restore_after_snapshot_load().unwrap();
     assert_eq!(
-        loaded.substrate.entities.get(f.boris).unwrap().airstrike,
+        loaded
+            .substrate
+            .entities
+            .get(f.boris)
+            .unwrap()
+            .seldom
+            .airstrike,
         before
     );
     let m = loaded.substrate.airstrike_manager(f.boris).unwrap();
@@ -550,13 +557,12 @@ fn live_detach_keeps_designator_and_aircraft_aimed_at_the_strike_target() {
             f.boris,
             Some(TargetKind::Entity(f.target)),
             &f.rules,
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     f.hit(f.boris, f.target);
     f.sim
-        .stop_all_targeting_on_detach(f.target, &f.rules, None, FrameEffects::default());
+        .stop_all_targeting_on_detach(f.target, &f.rules, &mut FrameEffects::default());
     assert_eq!(
         f.sim
             .substrate
@@ -729,7 +735,7 @@ fn designation_coordinates_follow_the_existing_sortie_target_through_departure_a
         first[1]
     );
     f.sim
-        .airstrike_clear_target(f.boris, &f.rules, FrameEffects::default());
+        .airstrike_clear_target(f.boris, &f.rules, &mut FrameEffects::default());
     assert!(
         f.sim
             .airstrike_designation_coordinates(f.boris, &f.rules)

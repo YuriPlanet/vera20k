@@ -9,7 +9,8 @@
 //! events through [`super::commands::queue_build_by_type`], so other players,
 //! replays and the sync hash see nothing but repeated clicks, and the
 //! factory's own `[General] MaximumQueuedObjects=` and build-limit checks still
-//! decide every copy.
+//! decide every copy. A new world clears the repeats; the player's ShiftQueue
+//! option stays selected.
 
 use crate::app::AppState;
 use crate::sim::production::{BuildQueueState, ProductionCategory, QueueItemView};
@@ -124,7 +125,7 @@ pub(crate) fn top_up(state: &mut AppState) {
     else {
         return;
     };
-    let queue = super::dispatch::local_queue_view(state);
+    let queue = super::dispatch::local_queue_view(&state.frontend, &state.match_state);
     let due = {
         let sim = state
             .match_state
@@ -141,10 +142,31 @@ pub(crate) fn top_up(state: &mut AppState) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod tests {
     use super::*;
     use crate::sim::intern::InternedId;
+
+    #[test]
+    fn a_previous_worlds_repeat_cannot_produce_units_in_a_fresh_world() {
+        let gi = InternedId::from_index(7);
+        let interned = |name: &str| (name == "E1").then_some(gi);
+        let mut input = crate::app::input::state::MatchInputState::new(Default::default());
+        assert!(input.build_repeat.toggle("E1"));
+        assert_eq!(input.build_repeat.due(100, &[], interned), ["E1"]);
+
+        input.reset_targeting_for_new_world();
+        assert!(
+            input.build_repeat.due(1000, &[], interned).is_empty(),
+            "a prior match's repeat must not request PRODUCE in the next world"
+        );
+        assert!(input.build_repeat.toggle("E1"));
+        assert_eq!(
+            input.build_repeat.due(1000, &[], interned),
+            ["E1"],
+            "an explicit new-world repeat still works"
+        );
+    }
 
     fn item(type_id: InternedId, state: BuildQueueState) -> QueueItemView {
         QueueItemView {

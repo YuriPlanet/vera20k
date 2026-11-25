@@ -482,7 +482,7 @@ pub fn expand_dictionary_from_ini(dict: &mut Vec<(String, i32)>, asset_manager: 
     );
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 

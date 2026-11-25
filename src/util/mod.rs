@@ -8,7 +8,9 @@
 //! - Any module may depend on util/.
 
 pub mod ares_launch;
+pub mod archive_names;
 pub mod base64;
+pub mod kratos_launch;
 #[cfg(target_os = "android")]
 pub mod app_icon;
 #[cfg(target_os = "android")]
@@ -18,19 +20,24 @@ pub mod case_insensitive_path;
 pub mod config;
 pub mod direction;
 pub mod direction_tables;
+pub mod display_insets;
 pub mod device_identity;
 pub mod fixed_math;
 pub mod flh_transform;
 pub mod fnv;
 pub mod folder_picker;
+pub mod forked;
 pub mod import_status;
 pub mod ini_roots;
 pub mod ini_writer;
+pub mod ra2_launch;
 pub mod lcw;
 pub mod legacy_crt_rng;
 pub mod lepton;
 pub mod logging;
 pub mod lookup_hash;
+pub mod mod_definition;
+pub mod mod_package;
 pub mod lzo;
 pub(crate) mod native_ballistics;
 pub mod native_color;
@@ -42,6 +49,7 @@ pub mod native_string;
 pub mod native_trig;
 pub mod native_x87;
 pub mod pixel_conversion;
+pub mod prefetch;
 pub mod platform_dir;
 pub mod read_helpers;
 pub mod rect;

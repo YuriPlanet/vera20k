@@ -56,7 +56,7 @@ fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
                 input["mode"].as_u64().unwrap() != 0,
             ),
         );
-        sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+        *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
             base: 16,
             off_fc: if input["rim"].as_bool().unwrap() {
                 0
@@ -151,9 +151,9 @@ fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
         } else {
             sim.substrate.raw_cell_occupation.mark_ground(11, 10, bits);
         }
-        sim.scenario_rng = SimRng::new(31);
-        sim.main_rng = SimRng::new(37).into();
-        sim.mapgen_rng = SimRng::new(41);
+        *sim.scenario_rng = SimRng::new(31);
+        *sim.main_rng = SimRng::new(37);
+        *sim.mapgen_rng = SimRng::new(41);
         let cell = sim
             .resolved_terrain
             .as_ref()
@@ -163,7 +163,7 @@ fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
         let probe = |sim: &mut Simulation| {
             let kept = EntryFacts::fitted(sim);
             let [world, batched] = [None, Some(&kept)].map(|facts| {
-                sim.foot_entry_receiver(90, &rules, None, facts)
+                sim.foot_entry_receiver(90, &rules, facts)
                     .unwrap()
                     .can_enter(cell, InfantryEntryArgs::REPAIR)
                     .unwrap()
@@ -265,14 +265,14 @@ fn a_tethered_enter_mover_may_take_its_warped_out_navcom() {
         CellListInsertion::from_category(EntityCategory::Structure),
     );
     let entry = |sim: &mut Simulation| {
-        sim.foot_entry_receiver(90, &rules, None, None)
+        sim.foot_entry_receiver(90, &rules, None)
             .unwrap()
             .can_enter(cell, InfantryEntryArgs::REPAIR)
             .unwrap()
     };
     assert_eq!(entry(&mut sim), 7);
     let mover = sim.substrate.entities.get_mut(90).unwrap();
-    mover.tether.set_for_test(Some(91));
+    mover.seldom.tether.set_for_test(Some(91));
     assert_eq!(entry(&mut sim), 0);
 }
 
@@ -294,7 +294,7 @@ fn an_engineer_patrolling_to_a_tree_cell_is_not_refused_by_the_tree() {
             &rules,
             false,
         );
-        sim.foot_entry_receiver(90, &rules, None, None)
+        sim.foot_entry_receiver(90, &rules, None)
             .unwrap()
             .can_enter(cell, InfantryEntryArgs::REPAIR)
             .unwrap()

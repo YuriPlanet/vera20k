@@ -163,7 +163,7 @@ pub fn native_sin_cos_by_step(step: i32) -> Option<(f32, f32)> {
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

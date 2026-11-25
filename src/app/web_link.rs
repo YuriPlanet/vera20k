@@ -3,9 +3,14 @@
 //! profile on vera20k.org. Also a folder in the system's file manager: the
 //! Mods page's Open Mods Folder.
 
-/// VERA20k's website: the download page for a release that needs a newer
-/// updater, the online login page's news, and the players' profiles.
+/// VERA20k's website: the download page, the online login page's news, and
+/// the players' profiles.
 pub(crate) const WEBSITE: &str = "https://vera20k.org/";
+
+/// Where every text sends a player for a newer VERA20k: the website, which
+/// links the stable releases. The texts that name it in their own words say
+/// vera20k.org.
+pub(crate) const DOWNLOAD_PAGE: &str = WEBSITE;
 
 /// The player's ranked profile on the website, for a lobby player name
 /// ([`crate::ui::wol_account::valid_name`], so the path needs no escapes),
@@ -104,7 +109,7 @@ pub(crate) fn open_in_browser(url: &str) {
     log::warn!("Cannot open {url}");
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

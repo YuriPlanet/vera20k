@@ -9,7 +9,6 @@ pub(super) fn impassable(
     crate::sim::world::object_entry::classify_object(
         live.sim,
         live.rules,
-        live.registry,
         object,
         cell,
         crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,

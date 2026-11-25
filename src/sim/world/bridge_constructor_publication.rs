@@ -14,7 +14,7 @@ use crate::map::overlay_mark::{
 use crate::rules::locomotor_type::SpeedType;
 use crate::sim::world::load_object_lifecycle::LoadOverlayHandle;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "bridge_constructor_publication_tests.rs"]
 mod tests;
 
@@ -30,9 +30,7 @@ impl LivePublication<'_> {
                 "bridge reconstruction requires native type24/25/237/238 and frame-1".into(),
             );
         }
-        let registry = self
-            .registry
-            .ok_or("missing live bridge OverlayType registry")?;
+        let registry = self.rules.overlay_registry();
         let flags = registry
             .flags(overlay)
             .ok_or("missing bridge OverlayType")?;
@@ -157,6 +155,19 @@ impl OverlayMarkHost for BridgeMarkHost<'_, '_> {
         self.publication.terrain().native_cell_ground_fields(cell).1
     }
 
+    fn admits_authored_bridge_grade(&self, anchor: Cell) -> bool {
+        let Cell::Real(index) = anchor else {
+            return false;
+        };
+        // Reuse the authored exception at Mark's 0x005FC5CD slope gate.
+        // A collapsed anchor keeps its fixed height after its flags are cleared.
+        self.publication
+            .terrain()
+            .cells()
+            .get(index)
+            .is_some_and(|cell| cell.retained_high_bridge_base_level().is_some())
+    }
+
     fn identity(&self, cell: Cell) -> i32 {
         self.publication
             .sim
@@ -253,7 +264,7 @@ impl OverlayMarkHost for BridgeMarkHost<'_, '_> {
             request,
             ground,
             crate::sim::anim_class::AnimConstructorInput::Runtime,
-            self.publication.frame_effects,
+            &mut self.publication.frame_effects,
         )
         .map_err(|error| error.to_string())
     }

@@ -266,7 +266,7 @@ fn scene() -> (Simulation, RuleSet, u64) {
         plane,
         Some(NavTargetRef::cell(20, 10)),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     (sim, rules, plane)
 }
@@ -295,16 +295,19 @@ fn patrol_scan_preserves_the_aircraft_class_mask_and_clears_empty_scan_latch() {
         let entity = sim.substrate.entities.get_mut(plane).unwrap();
         entity.mission.set_handler_state(2);
         if narrow {
-            entity.foot_retarget_after_stop.mark_stopped_cannot_fire();
+            entity
+                .seldom
+                .foot_retarget_after_stop
+                .mark_stopped_cannot_fire();
         }
-        super::super::dispatch_mission(&mut sim, plane, &rules, ObjectAiCtx::default());
+        super::super::dispatch_mission(&mut sim, plane, &rules, &mut ObjectAiCtx::default());
         let entity = sim.substrate.entities.get(plane).unwrap();
         assert_eq!(entity.mission.current().known(), Some(MissionType::Patrol));
         assert_eq!(entity.mission.suspended(), MissionId::NONE);
         assert_eq!(entity.attack_target.target(), None);
         assert_eq!(entity.navigation.nav_com(), destination);
         assert!(
-            !entity.foot_retarget_after_stop.get(),
+            !entity.seldom.foot_retarget_after_stop.get(),
             "completed empty Foot scan clears688"
         );
     }
@@ -330,7 +333,7 @@ fn spent_patrol_overrides_enter_and_preserves_suspended_leg() {
         .ammo_mut()
         .unwrap()
         .set_current_for_test(0);
-    super::super::dispatch_mission(&mut sim, plane, &rules, ObjectAiCtx::default());
+    super::super::dispatch_mission(&mut sim, plane, &rules, &mut ObjectAiCtx::default());
     let entity = sim.substrate.entities.get(plane).unwrap();
     assert_eq!(entity.mission.current().known(), Some(MissionType::Enter));
     assert_eq!(
@@ -342,7 +345,7 @@ fn spent_patrol_overrides_enter_and_preserves_suspended_leg() {
         Some(NavTargetRef::object(dock))
     );
     assert_eq!(entity.mission.handler_state(), 0);
-    super::super::enter_idle_mode_for(&mut sim, plane, &rules, None, FrameEffects::default());
+    super::super::enter_idle_mode_for(&mut sim, plane, &rules, &mut FrameEffects::default());
     let entity = sim.substrate.entities.get(plane).unwrap();
     assert_eq!(entity.mission.current().known(), Some(MissionType::Patrol));
     assert_eq!(entity.navigation.nav_com(), destination);
@@ -379,12 +382,13 @@ fn spent_patrol_flies_home_lands_reloads_and_guards() {
         }
         entered |= entity.mission.current().known() == Some(MissionType::Enter);
         landed_linked |= crate::sim::movement::air_movement::current_fly_height(entity, None) == 0
-            && entity.radio_contacts.contains(dock)
+            && entity.seldom.radio_contacts.contains(dock)
             && sim
                 .substrate
                 .entities
                 .get(dock)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .contains(plane);
         if landed_linked
@@ -419,19 +423,18 @@ fn patrol_initialization_updates_the_team_through_its_target_owner() {
         .team_script_vm
         .create_team(owner, script, vec![plane, wing], 0);
     let old = TeamTarget::Cell { x: 18, y: 10 };
-    sim.team_assign_mission_target(team, Some(old), &rules, None, FrameEffects::default());
+    sim.team_assign_mission_target(team, Some(old), &rules, &mut FrameEffects::default());
     sim.assign_aircraft_destination(
         wing,
         Some(NavTargetRef::cell(18, 10)),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     sim.assign_target_represented(
         wing,
         Some(old.target_kind()),
         &rules,
-        None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     sim.substrate
@@ -440,7 +443,7 @@ fn patrol_initialization_updates_the_team_through_its_target_owner() {
         .unwrap()
         .mission
         .set_handler_state(0);
-    super::super::dispatch_mission(&mut sim, plane, &rules, ObjectAiCtx::default());
+    super::super::dispatch_mission(&mut sim, plane, &rules, &mut ObjectAiCtx::default());
     let wing = sim.substrate.entities.get(wing).unwrap();
     assert_eq!(
         wing.navigation.nav_com(),
@@ -462,7 +465,7 @@ fn team_do_mission_25_reaches_patrol_dispatch_and_enters_idle() {
     use crate::rules::team_ai_ini::TeamAiDefinitionSource;
     use crate::sim::team_script_vm::{TeamScriptAction, TeamScriptDefinition};
     let (mut sim, rules, plane) = scene();
-    sim.assign_aircraft_destination(plane, None, &rules, FrameEffects::default());
+    sim.assign_aircraft_destination(plane, None, &rules, &mut FrameEffects::default());
     sim.substrate
         .mission_assign_exact(plane, MissionId::from_known(MissionType::Guard), 0)
         .unwrap();
@@ -478,7 +481,7 @@ fn team_do_mission_25_reaches_patrol_dispatch_and_enters_idle() {
     });
     sim.team_script_vm
         .create_team(owner, script, vec![plane], 0);
-    sim.run_team_ai_pass(&rules, None, FrameEffects::default());
+    sim.run_team_ai_pass(&rules, None, &mut FrameEffects::default());
     // Queue may already commence through its synchronous readiness call.
     sim.substrate.mission_commence_exact(plane, 0).unwrap();
     assert_eq!(
@@ -491,7 +494,7 @@ fn team_do_mission_25_reaches_patrol_dispatch_and_enters_idle() {
             .known(),
         Some(MissionType::Patrol)
     );
-    super::super::dispatch_mission(&mut sim, plane, &rules, ObjectAiCtx::default());
+    super::super::dispatch_mission(&mut sim, plane, &rules, &mut ObjectAiCtx::default());
     assert_ne!(
         sim.substrate
             .entities
@@ -552,7 +555,7 @@ fn authored_retail_harrier_patrol_reaches_dispatch_without_a_destination() {
             .nav_com(),
         None
     );
-    sim.object_ai_visit_one(plane, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(plane, Some(&rules), &mut ObjectAiCtx::default());
     let entity = sim.substrate.entities.get(plane).unwrap();
     assert_ne!(entity.mission.current().known(), Some(MissionType::Patrol));
     assert!(

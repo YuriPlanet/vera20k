@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K huvudbild" width="100%">
 
 <p align="center" dir="ltr">
-  <strong>Svenska</strong> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
+  <a href="README.vi.md" lang="vi">Tiếng Việt</a> · <strong>Svenska</strong> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.zh-TW.md" lang="zh-TW">繁體中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Senaste körningen av bibliotekstesterna för Linux (startas manuellt)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Bibliotekstester för Linux" height="23" align="middle"></a>
@@ -15,7 +15,8 @@
 
 VERA20K är en ny motor för Red Alert 2: Yuri's Revenge. Den spelar som originalet, med samma
 enheter, kartor och utseende, och körs på Windows, macOS och Linux. Den är byggd för större
-strider, med upp till 30 spelare och 20 000 enheter på en karta.
+strider med upp till 20 000 enheter på en karta. Skirmish offline har upp till 120 spelarplatser.
+Matcher över LAN eller internet har upp till 30.
 
 VERA20K görs av spelare, för spelare, och det är spelarna som har sista ordet om vart projektet
 ska gå.
@@ -30,22 +31,12 @@ ska gå.
 
 Fastnat? Läs [hjälpsidan](https://vera20k.org/sv/help).
 
-Projektet är under aktiv utveckling: skirmish går att spela på Windows, macOS och Linux, kampanjer
-fungerar delvis och flerspelarläget online (experimentellt) är nu tillgängligt. Tidigare versioner
-och vad som ändrades i varje finns på
-[releasesidan](https://github.com/YuriPlanet/vera20k/releases).
-
-För att starta skirmish-matcher eller kampanjer i YR för en spelare från en CnCNet-klient, se
-[installationen av offlineklienten](integrations/cncnet/README.md).
-
 ## Projektets mål
 
 1. Bevara spelmekaniken, utseendet och stämningen i originalversionen av Red Alert 2: Yuri's Revenge.
-2. Stödja större slag: upp till **30 spelare** och **20 000 enheter** på 500×500-kartor.
+2. Stödja större slag på 500×500-kartor med upp till **20 000 enheter**, **120 spelarplatser** i skirmish offline och **30** i matcher över LAN eller internet.
 3. Integrera kända RTS-funktioner och några som aldrig setts förut.
 4. Integrerad flerspelarklient
-
-Se [färdplanen](https://github.com/orgs/YuriPlanet/projects/1) för aktuella prioriteringar och framtida planer.
 
 ## Bidra
 
@@ -62,8 +53,7 @@ Diskussionen sker på [Discord](https://discord.gg/kmjRUn5m5F) och i QQ-gruppen 
 Motorn har tre huvuddelar:
 
 - **Simulering:** Ansvarar för speltillstånd och spellogik.
-- **Rendering:** En helt ny GPU-renderingspipeline som använder originalets spelresurser,
-  byggd för att bevara originalets utseende.
+- **Rendering:** Ritar upp terräng, enheter och byggnader med originalspelets grafik på GPU:n.
 - **Applikation:** Hanterar inmatning, menyer, ljud och plattformsintegration och kopplar ihop systemen.
 
 Denna uppdelning stöder deterministiskt spel.
@@ -99,17 +89,16 @@ portar sedan dess beteende till Rust och kontrollerar det med
 
 ## Anpassning
 
-VERA20K fungerar som standard precis som originalspelet. Varje ny funktion, även tillägg från
-moddar som Ares, måste vara avstängd tills den slås på med något av följande:
+VERA20K använder som standard samma spelregler som Yuri's Revenge. Under **Options** kan du
+ändra inställningarna för ljud, grafik och kontroller eller slå på VERA-funktioner. Spelet
+sparar dina inställningar i `VERA.INI`, med VERA:s egna alternativ i avsnittet `[VERA]`.
 
-- **En spelarinställning i VERA**, under **Options**, som sparas i avsnittet `[VERA]` i `VERA.INI`.
-- **Ett byggalternativ**, till exempel `--features ares` för de [Ares-tillägg](docs/ares.md) som stöds.
-- **En INI-nyckel**, som sätts av en mod eller en karta.
+Lobbyinställningar, moddar och kartor kan ändra reglerna för en match. Via sina INI-filer kan
+moddar och kartor aktivera de funktioner i [Ares](docs/ares.md) och [Phobos](docs/phobos.md)
+som VERA20K stöder. En modd kan också aktivera Ares genom att inkludera `ares.mix`. Vissa
+Phobos-funktioner kräver fortfarande en version som byggts med `--features phobos`.
 
-Inställningar för ljud, grafik och kontroller sparas i `VERA.INI`. Spelreglerna kommer från
-lobbyinställningar, moddar eller kartor.
-
-[Moddningsguiden](docs/modding.md) förklarar hur man gör egna moddar.
+Vill du skapa en egen modd kan du börja med [moddningsguiden](docs/modding.md).
 
 ## Stöd projektet
 
@@ -130,12 +119,16 @@ många andra.
 
 Copyright © 2026 Halvor Nikolai Rusten och VERA20K:s bidragsgivare.
 Licensierat under [GPLv3](LICENSE-GPL) med [ytterligare villkor](LEGAL.md#additional-terms).
-Det här repot innehåller inga spelfiler. Command &
-Conquer och Red Alert är varumärken som tillhör Electronic Arts Inc., och skärmbilderna och
+VERA20K innehåller med tillstånd snö- och isrutor från Tiberian Sun: Firestorm.
+Rutorna tillhör fortfarande Electronic Arts. Du behöver spelfilerna från ditt eget exemplar av
+Red Alert 2: Yuri's Revenge.
+Command & Conquer och Red Alert är varumärken som tillhör Electronic Arts Inc., och skärmbilderna och
 appikonen, Red Alert 2:s röda stjärna, visar spelgrafik som ägs av Electronic Arts. VERA20K har
 ingen koppling till och stöds inte av Electronic Arts.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
+This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **Läs [den juridiska informationen](LEGAL.md) innan du delar, säljer eller forkar VERA20K.**
 

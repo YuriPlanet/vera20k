@@ -179,7 +179,7 @@ fn one_cell_undeploy_navcom_stays_at_the_separate_conversion_boundary() {
             INFANTRY,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .unwrap()
         .bridge_state_changed

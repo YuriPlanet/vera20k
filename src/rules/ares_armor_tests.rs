@@ -391,9 +391,8 @@ fn malformed_saved_catalog_bound_indices_and_record_vectors_are_rejected() {
     }
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
-fn disabled_feature_ignores_custom_catalog_and_preserves_native_numeric_gates() {
+fn stock_way_ignores_custom_catalog_and_preserves_native_numeric_gates() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[ArmorTypes]\npaper=steel\n[VehicleTypes]\n0=TARGET\n[TARGET]\nArmor=paper\n\
          [Warheads]\n0=TestWH\n[TestWH]\nVersus.none=0%\n\
@@ -408,7 +407,6 @@ fn disabled_feature_ignores_custom_catalog_and_preserves_native_numeric_gates() 
     assert!(!wh.interaction(armor_index("plate")).can_fire());
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_layered_object_binding_retains_live_armor_and_terrain_constructor_default() {
     let mut layers = RulesLayerStack::new(IniFile::from_str(

@@ -221,6 +221,7 @@ pub(super) fn dress_cmin(s: &mut Scene, input: &Value) {
         .navigation
         .set_nav_com_for_test(nav.map(|(x, y)| NavTargetRef::cell(x, y)));
     entity
+        .seldom
         .setter_force_reassign
         .set_for_test(input["force_reassign"] == true);
     entity
@@ -243,7 +244,10 @@ pub(super) fn dress_cmin(s: &mut Scene, input: &Value) {
         // Techno+0x27C, which only the Chronosphere's warp writes in VERA:
         // its payload on the active Teleport.
         let owner = entity.owner();
-        entity.drop_credit.set_warped_by_house_for_test(Some(owner));
+        entity
+            .seldom
+            .drop_credit
+            .set_warped_by_house_for_test(Some(owner));
         entity
             .locomotor
             .as_mut()
@@ -282,7 +286,7 @@ fn compare_cmin(s: &Scene, state: &Value, context: &str, mission_body_executed: 
     };
     assert_eq!(nav, state["nav"], "{context}: NavCom");
     assert_eq!(
-        u64::from(entity.setter_force_reassign.is_raised()),
+        u64::from(entity.seldom.setter_force_reassign.is_raised()),
         state["force_reassign"].as_u64().unwrap(),
         "{context}: +0x1F8"
     );
@@ -346,6 +350,7 @@ fn compare_cmin(s: &Scene, state: &Value, context: &str, mission_body_executed: 
     }
     assert_eq!(
         entity
+            .seldom
             .radio_contacts
             .slot(0)
             .map_or(Value::Null, |id| s.name(id)),
@@ -353,7 +358,7 @@ fn compare_cmin(s: &Scene, state: &Value, context: &str, mission_body_executed: 
         "{context}: miner contact"
     );
     assert_eq!(
-        u64::from(entity.tether.partner().is_some()),
+        u64::from(entity.seldom.tether.partner().is_some()),
         state["miner_tether"].as_u64().unwrap(),
         "{context}: miner tether"
     );
@@ -602,7 +607,7 @@ fn unit_setter_teleporter_arm_matches_the_original_assign_destination() {
                     },
                     &s.rules,
                     true,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 );
             }
             None => {
@@ -610,7 +615,7 @@ fn unit_setter_teleporter_arm_matches_the_original_assign_destination() {
                     s.miner,
                     &s.rules,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 );
             }
         }
@@ -662,7 +667,7 @@ fn a_teleport_unit_retarget_releases_or_rearms_its_prior_marked() {
             NavTargetRef::cell(x, y),
             &s.rules,
             true,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     };
     let (pad, other) = ((9, 10), (14, 12));
@@ -714,7 +719,7 @@ fn teleport_move_to_guards_match_the_original_refusals() {
                     &s.rules,
                     true,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap(),
             "{context}: refused"
@@ -750,7 +755,7 @@ fn teleport_warp_matches_the_original_process() {
                     &s.rules,
                     harvester,
                     None,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 )
                 .unwrap()
         );
@@ -773,7 +778,7 @@ fn teleport_warp_matches_the_original_process() {
             s.sim.session.set_binary_frame_for_test(now);
             let sounds_before = s.sim.sound_events.len();
             s.sim
-                .advance_live_object_turn(s.miner, &s.rules, ObjectAiCtx::default())
+                .advance_live_object_turn(s.miner, &s.rules, &mut ObjectAiCtx::default())
                 .unwrap();
             let Some(tick) = checked.next_if(|t| t["frame"].as_u64() == Some(u64::from(now)))
             else {
@@ -921,7 +926,7 @@ fn mission_harvest_teleporter_arms_match_the_original_dispatch() {
             &mut s.sim,
             s.miner,
             &s.rules,
-            crate::sim::world::ObjectAiCtx {
+            &mut crate::sim::world::ObjectAiCtx {
                 overlay_registry: Some(crate::sim::tiberium::test_support::overlay_registry()),
                 ..Default::default()
             },
@@ -984,7 +989,7 @@ fn mission_enter_teleporter_arms_match_the_original_dispatch() {
             &s.rules,
             None,
             s.miner,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
         compare_delay(&s, row, delay, &mut stream, &context);
@@ -1014,7 +1019,7 @@ fn mission_unload_turns_a_teleporter_like_the_original() {
             &mut s.sim,
             &s.rules,
             s.miner,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
         compare_delay(&s, row, delay, &mut stream, &context);
@@ -1034,7 +1039,7 @@ fn per_cell_dock_now_waits_for_the_tether_after_a_warp() {
             s.miner,
             &s.rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
         compare_cmin(&s, &row["state"], &context, true);

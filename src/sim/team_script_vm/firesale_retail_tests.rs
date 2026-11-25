@@ -6,6 +6,7 @@
 
 use crate::headless_scenario::{SIM_TICK_MS, battle_session, load_session};
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::mission::MissionType;
 use crate::sim::world::{FrameEffects, SimSoundEvent, TickLane};
@@ -142,7 +143,7 @@ fn authored_team_sets_then_clears_global_to_finish_the_battle() {
                 &commands,
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let sim = scene.sim();
@@ -198,8 +199,12 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
     let stock = String::from_utf8(physical.bytes.to_vec()).unwrap();
     // Census through the production fixed-AIMD/scenario reader, not grep.
     // It bounds this fixture to authored reachability; other maps remain open.
-    let stock_registry =
-        TeamAiIniRegistry::load_retail(&assets, &IniFile::from_str(&stock), true).unwrap();
+    let stock_registry = TeamAiIniRegistry::load_retail(
+        &assets,
+        &IniFile::from_str(&stock),
+        RulePolicy::stock_multiplayer(),
+    )
+    .unwrap();
     assert!(!stock_registry.scripts.is_empty() && !stock_registry.team_types.is_empty());
     assert!(
         stock_registry
@@ -280,7 +285,7 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
                     &commands,
                     SIM_TICK_MS,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             sold_events += frame.sound_events.iter().filter(|event| {

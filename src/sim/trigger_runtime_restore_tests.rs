@@ -57,8 +57,17 @@ fn spawn(
 
 fn construct(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, kind: &str) -> u64 {
     let name = sim.interner.resolve(owner).to_owned();
-    sim.construct_object_limbo_at_height(kind, &name, 0, 0, 0, 0, rules, FrameEffects::default())
-        .unwrap()
+    sim.construct_object_limbo_at_height(
+        kind,
+        &name,
+        0,
+        0,
+        0,
+        0,
+        rules,
+        &mut FrameEffects::default(),
+    )
+    .unwrap()
 }
 
 fn active(sim: &Simulation) -> Vec<(u64, String, InternedId, (i16, i16))> {
@@ -111,7 +120,7 @@ fn apply(
         &mut Vec::new(),
         rules,
         Some(registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -135,7 +144,7 @@ fn live126_recreates_all_four_initial_categories_after_real_cleanup_in_record_or
         );
         assert_eq!(sim.houses[&houses[0]].initial_techno_record_count(), 4);
         for &id in &ids {
-            sim.uninit_with_context(id, UninitContext::new(&rules, Some(&registry)));
+            sim.uninit_with_context(id, UninitContext::new(&rules));
         }
         sim.flush_pending_delete();
         assert!(active(&sim).is_empty());
@@ -146,7 +155,12 @@ fn live126_recreates_all_four_initial_categories_after_real_cleanup_in_record_or
         }
         install(&mut sim, &rules, 0);
         sim.session.set_binary_frame_for_test(16);
-        sim.raise_house_tags(houses[0], &rules, Some(&registry), FrameEffects::default());
+        sim.raise_house_tags(
+            houses[0],
+            &rules,
+            Some(&registry),
+            &mut FrameEffects::default(),
+        );
         let restored = active(&sim);
         assert_eq!(restored.len(), 4);
         for ((id, kind, owner, cell), (expected, at)) in restored.iter().zip(original) {
@@ -216,7 +230,12 @@ fn refused_placement_continues_with_next_record_and_following_trigger_action() {
     record(&mut sim, houses[0], "TAGUNIT", (15, 15));
     install(&mut sim, &rules, 0);
     sim.session.set_binary_frame_for_test(8);
-    sim.raise_house_tags(houses[0], &rules, Some(&registry), FrameEffects::default());
+    sim.raise_house_tags(
+        houses[0],
+        &rules,
+        Some(&registry),
+        &mut FrameEffects::default(),
+    );
     let restored = active(&sim);
     assert_eq!(restored.len(), 2);
     assert!(restored.iter().any(|row| row.0 == block));
@@ -251,7 +270,12 @@ fn restore126_always_constructs_a_new_unit_even_when_the_original_is_present() {
     crate::sim::world::Simulation::retain_initial_house_technos(&sim.substrate, &mut sim.houses);
     install(&mut sim, &rules, 0);
     sim.session.set_binary_frame_for_test(8);
-    sim.raise_house_tags(houses[0], &rules, Some(&registry), FrameEffects::default());
+    sim.raise_house_tags(
+        houses[0],
+        &rules,
+        Some(&registry),
+        &mut FrameEffects::default(),
+    );
     let restored = active(&sim);
     assert_eq!(restored.len(), 2);
     let new = restored.iter().find(|row| row.0 != old).unwrap();
@@ -336,7 +360,7 @@ fn foot_and_building_clearance_submit_the_same_native_nearby_arguments() {
                 0,
                 &rules,
                 Some(&registry),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
         } else {
             sim.place_foot_with_cleared_cell(
@@ -345,7 +369,7 @@ fn foot_and_building_clearance_submit_the_same_native_nearby_arguments() {
                 0,
                 &rules,
                 Some(&registry),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
         };
         let (records, unused) = fresh_oracle_seam::finish();
@@ -410,6 +434,7 @@ fn failed_foot_unlimbo_retires_new_object_and_restores_old_raw_location() {
         .entities
         .get_mut(created)
         .unwrap()
+        .seldom
         .discovery
         .set_owned_by_current_house_for_test(true);
     assert!(!sim.fog.is_cell_revealed(houses[0], 15, 15));
@@ -420,7 +445,7 @@ fn failed_foot_unlimbo_retires_new_object_and_restores_old_raw_location() {
             0,
             &rules,
             Some(&registry),
-            FrameEffects::default()
+            &mut FrameEffects::default()
         )
         .is_none()
     );

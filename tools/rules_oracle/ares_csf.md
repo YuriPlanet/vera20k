@@ -1,10 +1,12 @@
 # Supplemental string tables
 
-The optional `ares` feature composes the process string table after loading
-`ra2md.csf`. Feature-off builds load only that required base table. The game
+A game that ships `ares.mix` (`AssetManager::ships_ares`,
+[Ares](../../docs/ares.md)) composes the process string table after loading
+`ra2md.csf`, in every build. Any other game loads only that required base table. The game
 and the default `asset csf-get` / `csf-grep` route use the same
-`assets::csf_file::CsfFile::load_active` owner. An explicit `--source` reads
-one raw table. There is no fallback to `ra2.csf` in the active-table route.
+`assets::csf_file::CsfFile::load_active` owner; `asset --ares On` opens the
+installation as an Ares game, as the game's Ares setting does. An explicit
+`--source` reads one raw table. There is no fallback to `ra2.csf` in the active-table route.
 
 Installed Ares 3.0 hook `6BD886 -> 10060DF0` tries `ares.csf`, then
 `ares_<language-short>.csf`, then `stringtable00.csf` through

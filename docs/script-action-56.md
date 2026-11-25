@@ -56,4 +56,4 @@ ScriptType reader and its 50 numbered slots are unchanged.
   original null-object fault, as in VERA's existing action 57.
 - Authored Rust regressions exercise production readers, VM dispatch,
   target selection, charge and Fire_SW. They are not native-execution
-  goldens, a retail campaign playtest or full Mental Omega certification.
+  goldens, a retail campaign playtest or a playtest in an Ares mod.

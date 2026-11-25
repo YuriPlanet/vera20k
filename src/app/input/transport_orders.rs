@@ -15,25 +15,41 @@ use crate::sim::intern::InternedId;
 /// Unit transport D is handled by dispatch's separate Event9 route.
 /// Structures unload their actual occupants or an InfantryAbsorb Cargo;
 /// mobile transports retain their passenger-count gate.
-/// Production callers provide the local owner so an enemy building cannot
-/// advertise an unload.
+/// The same projection authorizes the transport for the cursor and the key.
 pub(crate) fn unload_command(
+    sim: &crate::sim::world::Simulation,
     entity: &GameEntity,
     obj: Option<&ObjectType>,
     local_owner: Option<InternedId>,
 ) -> Option<Command> {
-    if local_owner.is_some_and(|owner| owner != entity.owner()) {
+    unload_command_with(sim, &sim.control_projection(), entity, obj, local_owner)
+}
+
+pub(super) fn unload_command_with(
+    sim: &crate::sim::world::Simulation,
+    control: &crate::sim::world::ControlProjection<'_>,
+    entity: &GameEntity,
+    obj: Option<&ObjectType>,
+    local_owner: Option<InternedId>,
+) -> Option<Command> {
+    let can_order = match local_owner {
+        Some(owner) => control.can_order_from(entity.owner(), owner),
+        None if sim.session().has_custom_control_grants() => control.can_order(entity.owner()),
+        None => true,
+    };
+    if !can_order {
         return None;
     }
     let obj = obj?;
     let has_passengers = entity
-        .passenger_role
+        .passenger_role()
         .cargo()
         .is_some_and(|cargo| !cargo.is_empty());
     let can_unload = match entity.category() {
         // Building44731C..447358 reads independent Cargo+114 and Occupants+694.
         EntityCategory::Structure => {
-            !entity.passenger_role.occupants().is_empty() || (obj.infantry_absorb && has_passengers)
+            !entity.passenger_role().occupants().is_empty()
+                || (obj.infantry_absorb && has_passengers)
         }
         EntityCategory::Unit => obj.passengers > 0 && has_passengers,
         // Aircraft417DCD..417DDA keeps Self while the hold (+0x114) holds

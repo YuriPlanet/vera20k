@@ -24,6 +24,9 @@ mod platform {
 
     thread_local! {
         /// Opened on first use and kept, so a selection outlives the call.
+        /// A thread-local because the text fields reach it through these free
+        /// functions with no owner in reach, and only the main thread, which
+        /// runs the event loop, copies and pastes.
         static CLIPBOARD: RefCell<Option<arboard::Clipboard>> = const { RefCell::new(None) };
     }
 

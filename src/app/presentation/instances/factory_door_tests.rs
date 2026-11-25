@@ -76,7 +76,7 @@ fn unloading_factory(rules: &RuleSet, product: &str, unload: bool) -> (Simulatio
         rules,
         factory,
         product,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     if unload {
         sim.queue_order_mission(factory, MissionType::Unload, rules);
@@ -169,8 +169,7 @@ fn the_under_door_draws_its_damage_frame_and_shadow_after_the_bib() {
     let object = rules.object("GAWEAP").unwrap();
     for (health, frame) in [(object.strength, 0), (object.strength / 2, 1)] {
         let (mut sim, factory) = unloading_factory(rules, "MTNK", true);
-        sim.entities_mut_for_test()
-            .get_mut(factory)
+        sim.entity_mut_for_test(factory)
             .unwrap()
             .health
             .set_for_test(health);
@@ -248,8 +247,7 @@ fn a_damaged_factory_draws_its_damaged_bib_and_its_shadow() {
     atlas.set_object_shp_frame_count_for_test("GAWEAPBB", 4);
     for (health, frame) in [(object.strength, 0), (object.strength / 2, 1)] {
         let (mut sim, factory) = unloading_factory(rules, "MTNK", false);
-        sim.entities_mut_for_test()
-            .get_mut(factory)
+        sim.entity_mut_for_test(factory)
             .unwrap()
             .health
             .set_for_test(health);
@@ -315,7 +313,7 @@ fn a_damaged_factory_draws_its_damaged_bib_and_its_shadow() {
 /// factory in another mission does neither.
 #[test]
 fn an_unloading_factory_takes_over_its_products_draw() {
-    use crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance;
+    use crate::app::presentation::render::draw_plan_lowering::PlannedObjects;
     use crate::render::tactical_draw_plan::{
         BlitPolicy, ObjectDraw, SpriteEncoding, TacticalLayer,
     };
@@ -329,6 +327,7 @@ fn an_unloading_factory_takes_over_its_products_draw() {
             .entities()
             .get(factory)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0)
             .expect("the product stays in contact");
@@ -338,12 +337,12 @@ fn an_unloading_factory_takes_over_its_products_draw() {
             display_order: 0,
             policy: BlitPolicy::z_read(SpriteEncoding::Voxel),
         };
-        let mut planned = vec![
-            PlannedObjectInstance::building(parent(factory), Vec::new()),
-            PlannedObjectInstance::object(parent(product), Vec::new()),
-        ];
+        let mut planned = PlannedObjects::default();
+        planned.building(parent(factory), []);
+        planned.object(parent(product), []);
         let frame = crate::app::presentation::frame::PresentationFrame::of_test(&sim, rules);
         crate::app::presentation::instances::assign_tether_redraws(&frame, &mut planned);
+        let planned = planned.into_owned();
         let expected: Vec<u64> = if unload { vec![product] } else { Vec::new() };
         assert_eq!(planned[0].tether_redraws, expected, "unload {unload}");
         assert_eq!(planned[1].drawn_by_tether, unload, "unload {unload}");

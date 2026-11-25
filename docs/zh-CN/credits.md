@@ -8,10 +8,12 @@ lang: zh-CN
 
 [English](../) · **简体中文**
 
-VERA20K 用 Rust 独立重写游戏行为，不加载 `Ares.dll`、`Phobos.dll` 或
+VERA20K 用 Rust 独立重写游戏行为，不加载 `Ares.dll`、`Phobos.dll`、`Kratos.dll` 或
 NPatch 补丁，也不重新分发其二进制。除可选的 Ares 支持外，不导入它们的源码：
 Ares 支持的部分代码译自 Ares 源码（包括从 Ares 3.0 DLL 还原的源码），并保留
-Ares 的版权声明和[许可证](https://github.com/YuriPlanet/vera20k/blob/main/LICENSES/Ares.txt)。
+Ares 的版权声明和[许可证](https://github.com/YuriPlanet/vera20k/blob/main/LICENSES/Ares.txt)；
+Kratos 支持已移植的部分按 Kratos 源码的行为翻译，保留其署名和
+[许可证](https://github.com/YuriPlanet/vera20k/blob/main/LICENSES/KratosPP.txt)。
 下面按扩展列出已支持的实现及其原作者；技术细节和原生地址见对应的英文文档。
 
 ## Ares
@@ -41,7 +43,19 @@ Ares 官方没有按 INI key 公布单个功能的作者，因此这里只署名
 
 技术细节：[Phobos 扩展支持](../phobos.md)
 
-Phobos 由 Phobos Developers 开发。VERA20K 已移植功能对应的原作者：
+This product includes software developed by the Phobos Developers.
+
+Phobos 由 **Belonit**（Gluk-v48）与 **Kerbiter**（Metadorius）于 2020 年创立，现由
+[Phobos Developers](https://github.com/Phobos-developers/Phobos#credits) 开发：
+
+- 维护者：**Kerbiter**（负责人）、**Starkku**（联合负责人）、**CrimRecya**、
+  **ZivDero**、**Ollerus**、**NetsuNegi**、**TaranDahl**、**Noble_Fish**
+  （兼文档与问题分类）。
+- 问题分类：**FlyStar**、**Fryone**。
+- 暂不活跃的维护者：**Belonit**（前负责人）、**Uranusian**（兼中文社区大使）、
+  **secsome**、**Otamaa**、**FS-21**、**Morton**、**Trsdy**。
+
+VERA20K 已移植功能对应的原作者：
 
 - 自定义辐射类型 — **Otamaa**（移植并修正 **Ares developers** 未完成的
   RadTypes 代码）。
@@ -77,6 +91,7 @@ Phobos 由 Phobos Developers 开发。VERA20K 已移植功能对应的原作者�
 - 遭遇战 AI 去硬编码（残局变卖/全体出击、MCV 部署集结）— **TaranDahl**。
 - 并行 AI 生产队列限制 — **Trsdy**、**NetsuNegi**（按类别）、
   **Starkku**（按 TechnoType）。
+- 目标评估的地图区域检查（`TargetZoneScanType`）— **Starkku**。
 - 遭遇战无限颜色 — **Morton**。
 - AttachEffect — **Starkku**（目标过滤 — **Flactine**，附加事件 606 — **FS-21**）。
 - 暴击系统 — **Starkku**（逻辑）、**AutoGavy**（弹头暴击）、**Trsdy**
@@ -87,12 +102,33 @@ Phobos 由 Phobos Developers 开发。VERA20K 已移植功能对应的原作者�
 VERA 的 include/inheritance 遍历还改编自 baixiong443 的 ra2-mono `IniFile`，
 见 [INI 指令文档](../ini-directives.md#source-mapping)。
 
+## Kratos PP
+
+技术细节：[Kratos 扩展支持](kratos.md)
+
+This product includes software developed by the Kratos PP author.
+
+Kratos PP 是 **DPKratos** 的 C++ 移植版，作者 **双杀步枪（ChrisLv_CN）**，策划
+**艾木魁（M.Kenosis）**，测试 **冲冲冲14782**。它构建在 **Xkein** 的
+[DynamicPatcher](https://github.com/Xkein/YRDynamicPatcher) 之上，并鸣谢 Ares 与
+Phobos 的开发者。Kratos PP 以 LGPLv3 授权
+（[许可证](https://github.com/YuriPlanet/vera20k/blob/main/LICENSES/KratosPP.txt)），
+VERA20K 的 GPLv3 组合作品保留该署名与许可证。
+
+VERA20K 用 Rust 独立实现行为，不加载 `Kratos.dll`，也不分发 Kratos 二进制；已移植的
+每个功能都按 Kratos 源码翻译，原生地址与源码路径写在对应代码旁。
+
+已移植功能对应的原作者：
+
+- 卧倒射击点（`CrawlingFLH`）— **双杀步枪（ChrisLv_CN）**，
+  `src/Ext/TechnoType/CrawlingFLH.cpp` 与 `CrawlingFLHData.h`。
+
 ## VERA20K 移植署名
 
 各扩展功能的 Rust 移植由 VERA20K 贡献者以合并的 pull request 完成；下面用
 GitHub 用户名标注每个链条对应的合并 PR 作者：
 
-- **1372704087** — Phobos 侧的全部功能：护盾、自定义辐射类型、三条矿石
+- **1372704087** — 以下 Phobos 功能：护盾、自定义辐射类型、三条矿石
   链、超武科技门槛、数字显示、放置预览、侧边栏 GDI/NOD 坐标、步兵自动
   部署、`FlyNoWobbles`、暂停界面居中、建筑生产队列、遭遇战 AI 去硬编码、
   并行 AI 队列限制、遭遇战无限颜色、超武侧边栏、匍匐速度、建筑类型选择、
@@ -100,7 +136,7 @@ GitHub 用户名标注每个链条对应的合并 PR 作者：
   闪烁、`AllowDamageOnSelf`、`DecloakDamagedTargets`、抛射体重力、空袭
   标记颜色、AttachEffect 与暴击链、`$Include`/`$Inherits` 原生钩子；以及
   Ares 的第四 Side 默认值（SideExt）、国家展示、国家空投覆盖与国家 AI
-  电厂。
+  电厂。Kratos 的逐局开关与卧倒射击点（`CrawlingFLH`）也由他移植。
 - **zzzzzzh123** — Ares 的 opt-in 构建能力本身、EMP、水陆类型转换与
   脚本 68、自定义装甲、补充字符串表、按类型 SHP 建筑调色板、EVA 语音
   标签、通用生产前置、`FactoryOwners`、载具驾驶员与 KillDriver、扩展 IFV
@@ -129,10 +165,13 @@ GitHub 用户名标注每个链条对应的合并 PR 作者：
 
 技术细节：[VeraX 扩展](../verax.md)
 
-VeraX 当前编译自动装车（AutoLoad）与遭遇战地图热重载两个功能。下面的半透明
+VeraX 当前仅编译遭遇战地图热重载。下面的半透明
 迷雾与寻路步骤显示是相关自有功能，不属于 `verax` 特性。
 
-- **自动装车（AutoLoad）**：思路参考 Bilibili UP 主
+- **快捷指令（Ctrl+D，原自动装车）**：已从 VeraX 转正为所有构建都有的
+  单机便利功能，扩展为九种情境操作（装载、驻扎、工程师修复/占领、C4 爆破、
+  间谍渗透、伊文炸药、磁暴充能、坦克进碉堡、步兵进反应炉），实现见
+  `src/app/input/smart_command.rs`。自动装车最初的思路参考 Bilibili UP 主
   [335956233](https://space.bilibili.com/335956233) 的视频。VERA 自行实现
   分配、距离与命令策略，没有使用对方的二进制或源码。
 - **半透明迷雾**：VERA 自有的客户端图形选项

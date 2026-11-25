@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::house_state::HouseState;
 use crate::sim::rng::SimRng;
 use crate::sim::snapshot::GameSnapshot;
@@ -23,24 +24,45 @@ fn scout_marks_a_house_without_buildings_then_completes() {
         argument: 0,
     };
     let unmarked_hash = sim.state_hash();
-    sim.team_run_action(team, action, true, &rules, None, FrameEffects::default());
+    sim.team_run_action(
+        team,
+        action,
+        true,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     assert!(!sim.team_script_vm.team(team).unwrap().advance_pending());
     assert!(sim.houses[&owner].has_scouted_house(peer));
     assert!(!sim.houses[&peer].has_scouted_house(owner));
     assert_ne!(sim.state_hash(), unmarked_hash);
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     let hash = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "scout", 0);
     sim = GameSnapshot::load(&bytes).unwrap().sim;
     assert_eq!(sim.state_hash(), hash);
-    sim.team_run_action(team, action, false, &rules, None, FrameEffects::default());
+    sim.team_run_action(
+        team,
+        action,
+        false,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     let state = sim.team_script_vm.team(team).unwrap();
     assert!(state.refusal().is_none());
     assert!(state.advance_pending(), "all peer houses have been scouted");
     let late = sim.interner.intern("Late");
     sim.houses
         .register(HouseState::new(late, 0, None, true, 0, 10));
-    sim.team_run_action(team, action, false, &rules, None, FrameEffects::default());
+    sim.team_run_action(
+        team,
+        action,
+        false,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     assert!(sim.houses[&owner].has_scouted_house(late));
     assert!(!sim.team_script_vm.team(team).unwrap().advance_pending());
 }
@@ -76,7 +98,7 @@ fn scout_draws_from_the_global_building_array_including_dead_and_limbo_entries()
     let team = sim
         .team_script_vm
         .create_team(owner, script, vec![member], 0);
-    sim.scenario_rng = SimRng::answering(0, 1, 0);
+    *sim.scenario_rng = SimRng::answering(0, 1, 0);
     let mut expected = sim.scenario_rng.clone();
     expected.next_range_i32_inclusive(0, 1); // two unmarked Houses
     expected.next_range_i32_inclusive(0, 1); // both registered Buildings
@@ -89,7 +111,7 @@ fn scout_draws_from_the_global_building_array_including_dead_and_limbo_entries()
         false,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let state = sim.team_script_vm.team(team).unwrap();
     assert_eq!(state.scout_house, Some(peer));
@@ -111,7 +133,8 @@ fn retail_coop_scout_action_moves_after_reload_and_releases_its_team_slot() {
     };
     let map =
         IniFile::from_bytes(assets.get_ref("C2S01MD.MAP").expect("retail co-op map")).unwrap();
-    let registry = TeamAiIniRegistry::load_retail(&assets, &map, true).unwrap();
+    let registry =
+        TeamAiIniRegistry::load_retail(&assets, &map, RulePolicy::stock_multiplayer()).unwrap();
     let script = registry
         .scripts
         .iter()

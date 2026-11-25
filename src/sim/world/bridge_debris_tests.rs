@@ -159,13 +159,13 @@ fn fixture(rules: &RuleSet, input: &Value) -> (Simulation, BTreeSet<(u16, u16)>)
     let mut sim = Simulation::with_seed(input["seed"].as_u64().unwrap());
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.metallic_debris = rules
+    *sim.metallic_debris = rules
         .general
         .metallic_debris
         .iter()
         .map(|name| sim.interner.intern(name))
         .collect();
-    sim.bridge_explosions = rules
+    *sim.bridge_explosions = rules
         .bridge_rules
         .explosions
         .iter()
@@ -219,7 +219,7 @@ fn retail_bridge_debris_matches_original_producer_and_constructor_rng() {
             sim.scenario_rng.native_state_hex(),
             row["rng_before"].as_str().unwrap()
         );
-        spawn_bridge_debris(&mut sim, &rules, &cells);
+        spawn_bridge_debris(&mut sim, &rules, &cells, None);
         assert_eq!(
             sim.scenario_rng.native_state_hex(),
             row["rng_after"].as_str().unwrap(),
@@ -252,8 +252,8 @@ fn retail_bridge_debris_matches_original_producer_and_constructor_rng() {
                 "{input}"
             );
             assert_eq!(
-                u64::from(anim.runtime().delay_remaining),
-                constructor["delay"].as_u64().unwrap(),
+                i64::from(anim.runtime().delay_remaining),
+                constructor["delay"].as_i64().unwrap(),
                 "{input}"
             );
             assert_eq!(

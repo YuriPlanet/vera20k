@@ -22,15 +22,14 @@ and a weapon `Rad_Type` pointer, but the 3.0 DLL never reads any of them:
   `65B73A`, `65B843`, `65B8B9`, `487CB0`) is commented out and absent from
   the 3.0 hook table.
 
-So a `--features ares` build keeps the retail radiation owner
+So a game that plays Ares keeps the retail radiation owner
 (`sim::radiation`, Rules `Rad*` keys) and reads neither `[RadiationTypes]`
-nor weapon `RadType=`. `ares,phobos` keeps the Phobos owner
-(`rules::phobos_radiation`, `docs/phobos-custom-radiation.md`) exactly as the
-`phobos` build does; there is no second catalog to merge. The default build
-is unchanged.
+nor weapon `RadType=`. A `phobos` build keeps the Phobos owner
+(`rules::phobos_radiation`, `docs/phobos-custom-radiation.md`) in it exactly as
+in any other game; there is no second catalog to merge.
 
 | gamemd hook | Ares.dll | name | disposition |
 | --- | --- | --- | --- |
-| `0x65B5FB` | `10056DB0` | RadSiteClass_Radiate_UnhardcodeSnow | ported: `RadSite::activate_light` skips the snow-theater red/blue -128 substitution under `ares` |
+| `0x65B5FB` | `10056DB0` | RadSiteClass_Radiate_UnhardcodeSnow | ported: `RadSite::activate_light` skips the snow-theater red/blue -128 substitution when the game plays Ares |
 
 Residuals: none in scope. The listed keys have no effect in Ares 3.0.

@@ -80,7 +80,7 @@ pub(crate) fn version_description() -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

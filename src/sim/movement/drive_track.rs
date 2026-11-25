@@ -3587,6 +3587,6 @@ pub struct DriveTrackSelection {
 // Tests
 // ---------------------------------------------------------------------------
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "drive_track_tests.rs"]
 mod drive_track_tests;

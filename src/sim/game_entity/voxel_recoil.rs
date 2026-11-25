@@ -129,6 +129,6 @@ impl GameEntity {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "voxel_recoil_tests.rs"]
 mod tests;

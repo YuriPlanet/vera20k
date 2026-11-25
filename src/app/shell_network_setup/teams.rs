@@ -1,195 +1,158 @@
-//! VERA's room Teams: the host's Teams count, Team Starts, Team Colors and,
-//! online, the balance. The session keeps every seated player on one of the
-//! room's teams (`MatchSession::set_network_teams`); Team Starts seats each
-//! team's players next to each other, as it does in skirmish
+//! VERA's room Teams: the host's Teams count, and the Quick Team Setup and
+//! Bulk Seat Actions lists in its team bar ([`super::team_menus`]). With
+//! Teams set the session keeps every seated player on one of the room's
+//! teams (`MatchSession::set_network_teams`); with it Off the room is one
+//! free-for-all box. Team Starts seats each team's players next to each
+//! other, as it does in skirmish
 //! ([`crate::ui::skirmish_shell::starts_by_team`]), and Team Colors gives
-//! each team its own range of hues ([`colors_by_team`]). The lobby weighs
-//! the players and answers a balance with each one's team
-//! (`wol::balance_teams`).
+//! each team its own range of hues
+//! ([`crate::ui::team_tools::colors_by_team`]). The lobby weighs the players
+//! and answers a balance with each one's team (`wol::balance_teams`).
 
 use super::*;
-use crate::app::match_runtime::session::SeatPick;
-use crate::rules::ruleset::RuleSet;
-use crate::rules::skirmish_colors::RETAIL_COLOR_COUNT;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::session::{MatchSession, SeatPick};
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::shell_network_setup::NetworkSetupProtocol;
 use crate::skirmish_launch::{
     LaunchStartPosition, LaunchTeam, NETWORK_PLAYER_SLOT_COUNT, SkirmishLaunchSession,
 };
-
-/// How long Balance automatically waits after who plays last changed, so a
-/// room filling up is balanced once it settles, not after every join.
-const BALANCE_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+use crate::util::config::GameConfig;
 
 /// The host sets the room's Teams, Off or a count, and the options carry it.
-/// Online, setting a count where Teams was Off turns Balance automatically
-/// on, so the new teams start out even.
-pub(super) fn set_teams(state: &mut AppState, teams: Option<u8>) -> anyhow::Result<()> {
-    let was_off = state.match_state.session.network_teams().is_none();
-    state.match_state.session.set_network_teams(teams)?;
-    if was_off && teams.is_some() && dialog(state).wol() {
-        state.match_state.session.set_network_auto_balance(true)?;
-    }
-    actions::queue(state, NetworkSetupRequest::PublishOptions);
+pub(super) fn set_teams(
+    protocol: &mut Option<NetworkSetupProtocol>,
+    session: &mut MatchSession,
+    teams: Option<u8>,
+) -> anyhow::Result<()> {
+    session.set_network_teams(teams)?;
+    actions::queue(protocol, NetworkSetupRequest::PublishOptions);
     Ok(())
 }
 
-/// The host turns Balance automatically on or off, and the options carry it.
-pub(super) fn set_auto_balance(state: &mut AppState, on: bool) -> anyhow::Result<()> {
-    state.match_state.session.set_network_auto_balance(on)?;
-    actions::queue(state, NetworkSetupRequest::PublishOptions);
-    Ok(())
-}
-
-/// A lobby that cannot take the host's options refuses them while they carry
-/// a field it does not know: the room goes on without the newest one it
-/// carries, the join queue before Balance automatically before Teams, and
-/// publishes again. Returns the line telling the host so, or `None` when
-/// none was set.
-pub(crate) fn lobby_refused_option(state: &mut AppState) -> Option<&'static str> {
-    if !state.match_state.session.network_queue().is_empty() {
-        // The room stops queueing, and its spectators keep watching.
-        state.match_state.session.stop_network_queue().ok()?;
-        actions::queue(state, NetworkSetupRequest::PublishOptions);
-        return Some("VERA:QueueNotTaken");
+/// Only a lobby known to predate watching may need a room rule omitted.
+pub(crate) fn lobby_refused_option(
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
+) -> Option<&'static str> {
+    let lobby_watches = crate::app::shell_wol::lobby_watches(frontend.wol.as_ref());
+    if lobby_watches == Some(false)
+        && super::maps::generated_selection(session)
+        && frontend.multiplayer_shell_runtime.start_staging().count
+            > crate::map::preview::NATIVE_START_STAGING_SLOTS as i32
+    {
+        return Some("VERA:BigRandomMapNotTaken");
     }
-    let session = &state.match_state.session;
-    if session.network_auto_balance() {
-        return set_auto_balance(state, false)
-            .is_ok()
-            .then_some("VERA:AutoBalanceNotTaken");
+    let line = refused_room_rule(session, lobby_watches)?;
+    actions::queue(
+        &mut frontend.network_setup_protocol,
+        NetworkSetupRequest::PublishOptions,
+    );
+    Some(line)
+}
+
+/// A lobby from before the room's Building Production Queue refuses options
+/// that carry it, whether or not it lists matches: the host turns the queue
+/// off and sends its options again. `None` when the refused options did not
+/// carry it, so the refusal stands.
+pub(crate) fn lobby_refused_building_queue(
+    protocol: &mut Option<NetworkSetupProtocol>,
+    session: &mut MatchSession,
+) -> Option<&'static str> {
+    let line = refused_building_queue(session)?;
+    actions::queue(protocol, NetworkSetupRequest::PublishOptions);
+    Some(line)
+}
+
+fn refused_building_queue(session: &mut MatchSession) -> Option<&'static str> {
+    if !session.host() {
+        return None;
     }
-    let set = session
-        .network_setup()
-        .is_some_and(|launch| launch.options.teams.is_some());
-    (set && set_teams(state, None).is_ok()).then_some("VERA:TeamsNotTaken")
+    let mut options = session.network_setup()?.options.clone();
+    if !options.host_rules.building_production_queue {
+        return None;
+    }
+    options.host_rules.building_production_queue = false;
+    session.set_network_options(options).ok()?;
+    Some("VERA:BuildingQueueNotTaken")
 }
 
-/// The host's Balance in the Teams box: `/balance` in the room's chat, as
-/// if typed.
-pub(super) fn balance(state: &mut AppState) {
-    actions::queue(state, NetworkSetupRequest::Balance { automatic: false });
-}
-
-/// Balance automatically in the host's game: who plays in a room that
-/// balances itself, for [`NetworkSetupProtocol::time_balance`]. Returns when
-/// the next balance is due.
-pub(super) fn poll_balance(state: &mut AppState) -> Option<Instant> {
-    let automatic = state.match_state.session.host()
-        && state.match_state.session.network_auto_balance()
-        && dialog(state).wol()
-        && !quick_match(state)
-        && !external(state);
-    let session = &state.match_state.session;
-    let roster = session.network_setup().filter(|_| automatic).map(|launch| {
-        let playing: Vec<&str> = launch
-            .humans
-            .iter()
-            .filter(|human| human.raw_slot_index.is_some() && !human.is_observer())
-            .map(|human| human.name.as_str())
-            .collect();
-        let balanceable = launch.opponents.is_empty() && playing.len() >= 2;
-        (
-            session.network_teams().unwrap_or_default(),
-            playing,
-            balanceable,
-        )
-    });
-    state
-        .frontend
-        .network_setup_protocol
-        .as_mut()?
-        .time_balance(roster, Instant::now())
-}
-
-/// Whether a balance of Balance automatically is due or waits for the
-/// lobby's answer: the host's Start Game waits for it.
-pub(super) fn balance_waiting(state: &AppState) -> bool {
-    state
-        .frontend
-        .network_setup_protocol
-        .as_ref()
-        .is_some_and(NetworkSetupProtocol::balance_waiting)
-}
-
-impl NetworkSetupProtocol {
-    /// Balance automatically's timer. `roster` is the Teams count, the
-    /// playing humans by name and whether the room has anything to balance
-    /// (two or more players and no AI), or `None` while the room does not
-    /// balance itself. A change starts the 5 seconds again; when they are
-    /// up, the lobby's quiet `balance` command goes out, which says nothing
-    /// when nothing moves. Returns when the next balance is due.
-    fn time_balance(
-        &mut self,
-        roster: Option<(u8, Vec<&str>, bool)>,
-        now: Instant,
-    ) -> Option<Instant> {
-        let Some((teams, playing, balanceable)) = roster else {
-            self.balance_roster = None;
-            self.balance_due = None;
-            return None;
-        };
-        let same = self
-            .balance_roster
-            .as_ref()
-            .is_some_and(|(count, names, was)| {
-                (*count, *was) == (teams, balanceable)
-                    && names.iter().map(String::as_str).eq(playing.iter().copied())
-            });
-        if !same {
-            let names = playing.into_iter().map(str::to_owned).collect();
-            self.balance_roster = Some((teams, names, balanceable));
-            self.balance_due = balanceable.then(|| now + BALANCE_DELAY);
-        }
-        let due = self.balance_due?;
-        if now < due {
-            return Some(due);
-        }
-        // The lobby's answer or the start's end wakes the room again.
-        if self.balance_sent || self.wol_start_pending || self.locked {
-            return None;
-        }
-        self.balance_due = None;
-        self.balance_sent = true;
-        self.requests
-            .push(NetworkSetupRequest::Balance { automatic: true });
+fn refused_room_rule(
+    session: &mut MatchSession,
+    lobby_watches: Option<bool>,
+) -> Option<&'static str> {
+    // All these keys predate watching. An unknown capability is rechecked
+    // before retry; an ordinary refusal from a current lobby keeps the room.
+    if lobby_watches != Some(false) || !session.host() {
+        return None;
+    }
+    let mut options = session.network_setup()?.options.clone();
+    if options.host_rules.superweapon_limit != 0 {
+        options.host_rules.superweapon_limit = 0;
+        session.set_network_options(options).ok()?;
+        Some("VERA:SuperweaponLimitNotTaken")
+    } else if !options.host_rules.is_empty() {
+        options.host_rules = Default::default();
+        session.set_network_options(options).ok()?;
+        Some("VERA:HostRulesNotTaken")
+    } else if !session.network_queue().is_empty() {
+        session.stop_network_queue().ok()?;
+        Some("VERA:QueueNotTaken")
+    } else if options.teams.is_some() {
+        session.set_network_teams(None).ok()?;
+        Some("VERA:TeamsNotTaken")
+    } else {
         None
     }
-
-    fn balance_waiting(&self) -> bool {
-        self.balance_due.is_some() || self.balance_sent
-    }
 }
 
-/// The lobby answered the host's automatic balance: its `balance` event,
-/// if any, came before.
-pub(crate) fn balance_answered(state: &mut AppState) {
-    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
-        protocol.balance_sent = false;
-    }
+/// The host's Balance Teams in Quick Team Setup, online: `/balance` in the
+/// room's chat, as if typed.
+pub(super) fn balance(protocol: &mut Option<NetworkSetupProtocol>) {
+    actions::queue(protocol, NetworkSetupRequest::Balance);
 }
 
 /// Team Starts in a room with Teams set: each player's start by team, on
 /// the room's map. With `keep_picks`, as the host's Start Game does, a
 /// player keeps the start they picked and only those on Random get one, in
 /// place of gamemd's farthest free start (`0x005D6890`); the Team Starts
-/// button gives everyone one. Returns whether it gave any out.
-pub(super) fn team_starts(state: &mut AppState, keep_picks: bool) -> anyhow::Result<bool> {
-    if state.match_state.session.network_teams().is_none() {
+/// item gives everyone one. Where the room seats more players than the
+/// map has starts, a team's people share its bases ([`shared_bases`]) and
+/// everyone gets one. Returns whether it gave any out.
+pub(super) fn team_starts(
+    game_config: Option<&GameConfig>,
+    frontend: &FrontendState,
+    session: &mut MatchSession,
+    process_assets: &mut ProcessAssets,
+    keep_picks: bool,
+) -> anyhow::Result<bool> {
+    if session.network_teams().is_none() {
         return Ok(false);
     }
-    let Some(map) = view::local_map_index(state) else {
+    let Some(map) = view::local_map_index(frontend, session) else {
         return Ok(false);
     };
-    let starts = App::map_start_cells(state, map);
+    let starts = App::map_start_cells(frontend, map);
     if starts.len() < 2 {
         return Ok(false);
     }
-    let launch = state
-        .match_state
-        .session
+    let launch = session
         .network_setup()
         .ok_or_else(|| anyhow::anyhow!("no setup"))?;
+    let all = seats(launch);
+    // Where bases are shared, a start a later team change left to players
+    // of two teams is dealt again with every other: each team shares only
+    // its own.
+    let mixed = all.iter().enumerate().any(|(index, &(_, team, start))| {
+        matches!(start, LaunchStartPosition::Position(_))
+            && all[..index].iter().any(|&(_, other, held)| {
+                held == start && (other != team || team == LaunchTeam::None)
+            })
+    });
+    let keep_picks = keep_picks && !(mixed && session.network_shares_bases());
     // A pick Team Starts cannot place stays out of its seating.
-    let seats: Vec<(u8, LaunchTeam, LaunchStartPosition)> = seats(launch)
+    let seats: Vec<(u8, LaunchTeam, LaunchStartPosition)> = all
         .into_iter()
         .filter(|&(_, _, start)| {
             !keep_picks
@@ -210,13 +173,33 @@ pub(super) fn team_starts(state: &mut AppState, keep_picks: bool) -> anyhow::Res
     // -2 is the Team list's no team, which plays alone.
     let teams: Vec<i32> = seats
         .iter()
-        .map(|&(_, team, _)| match team {
-            LaunchTeam::Team(team) => i32::from(team),
-            LaunchTeam::None => -2,
-        })
+        .map(|&(_, team, _)| team.shell_value())
         .collect();
-    let drive = App::map_drive_distances(state, map, &starts);
-    let given = crate::ui::skirmish_shell::starts_by_team(&starts, drive.as_deref(), &teams, &kept);
+    let bases = starts
+        .len()
+        .min(session.network_setup_capacity().unwrap_or(0).max(0) as usize);
+    let shared = (session.network_shares_bases() && seats.len() > bases)
+        .then(|| shared_bases(&teams, bases))
+        .flatten();
+    let drive = App::map_drive_distances(
+        game_config,
+        &frontend.scenario_catalog,
+        process_assets,
+        map,
+        &starts,
+    );
+    let given = if let Some((base_of, base_teams)) = shared {
+        let free = vec![None; base_teams.len()];
+        let given = crate::ui::skirmish_shell::starts_by_team(
+            &starts,
+            drive.as_deref(),
+            &base_teams,
+            &free,
+        );
+        base_of.into_iter().map(|base| given[base]).collect()
+    } else {
+        crate::ui::skirmish_shell::starts_by_team(&starts, drive.as_deref(), &teams, &kept)
+    };
     let picks: Vec<(u8, SeatPick)> = seats
         .iter()
         .zip(given)
@@ -226,13 +209,108 @@ pub(super) fn team_starts(state: &mut AppState, keep_picks: bool) -> anyhow::Res
             (row, SeatPick::Start(start))
         })
         .collect();
-    state.match_state.session.set_network_seat_picks(&picks)?;
+    session.set_network_seat_picks(&picks)?;
     Ok(true)
+}
+
+/// A room sharing bases (`MatchSession::network_shares_bases`) that seats
+/// more players than its map's `starts`: each player on no team (-2) needs
+/// a base of its own, each team at least one, and every start left over
+/// goes to the team with the most players for each base, the first on a
+/// tie. A team's players are dealt over its bases in row order. The people
+/// on one start share its House
+/// ([`crate::skirmish_launch::SkirmishLaunchSession::house_leader`]), and
+/// an AI there starts beside them in its own. Takes each seat's team;
+/// returns each seat's base and each base's team, or `None` when the map
+/// has too few starts even for that.
+fn shared_bases(seats: &[i32], starts: usize) -> Option<(Vec<usize>, Vec<i32>)> {
+    // Each team with players and how many, in the order they first sit.
+    let mut teams: Vec<(i32, usize)> = Vec::new();
+    let mut alone = 0;
+    for &team in seats {
+        match teams.iter_mut().find(|(on, _)| *on == team) {
+            _ if team < 0 => alone += 1,
+            Some((_, players)) => *players += 1,
+            None => teams.push((team, 1)),
+        }
+    }
+    let mut spare = starts.checked_sub(alone + teams.len())?;
+    let mut bases = vec![1; teams.len()];
+    while spare > 0 {
+        // a/b players for each base is more than c/d when a*d > c*b.
+        let crowded = (0..teams.len())
+            .filter(|&team| bases[team] < teams[team].1)
+            .max_by(|&a, &b| {
+                (teams[a].1 * bases[b])
+                    .cmp(&(teams[b].1 * bases[a]))
+                    .then(b.cmp(&a))
+            });
+        let Some(team) = crowded else {
+            break;
+        };
+        bases[team] += 1;
+        spare -= 1;
+    }
+    let mut base_teams = Vec::new();
+    let mut first = Vec::with_capacity(teams.len());
+    for (&(team, _), &count) in teams.iter().zip(&bases) {
+        first.push(base_teams.len());
+        base_teams.extend(std::iter::repeat_n(team, count));
+    }
+    let mut dealt = vec![0; teams.len()];
+    let base_of = seats
+        .iter()
+        .map(|&team| match teams.iter().position(|(on, _)| *on == team) {
+            Some(index) => {
+                dealt[index] += 1;
+                first[index] + (dealt[index] - 1) % bases[index]
+            }
+            None => {
+                base_teams.push(team);
+                base_teams.len() - 1
+            }
+        })
+        .collect();
+    Some((base_of, base_teams))
+}
+
+/// A room needs a start per playing participant, or one per playing team
+/// plus a start per unteamed participant when the room shares bases.
+pub(crate) fn starts_needed(
+    launch: &SkirmishLaunchSession,
+    shared: bool,
+    flavor: SetupFlavor,
+) -> i32 {
+    let people = launch.humans.iter().filter(|human| !human.is_observer());
+    if !shared {
+        let ai = match flavor {
+            SetupFlavor::Wol => launch.opponents.len() as i32,
+            SetupFlavor::Lan => launch.ai_player_count,
+        };
+        return people.count() as i32 + ai;
+    }
+    // Online the lobby counts every published player. LAN shares bases among
+    // the people bound to rows; a node awaiting its row occupies no base yet.
+    let people =
+        people.filter(|human| flavor == SetupFlavor::Wol || human.raw_slot_index.is_some());
+    let mut teams = Vec::new();
+    let mut alone = 0;
+    for team in people
+        .map(|human| human.slot.team)
+        .chain(launch.opponents.iter().map(|ai| ai.team))
+    {
+        match team {
+            LaunchTeam::Team(team) if !teams.contains(&team) => teams.push(team),
+            LaunchTeam::Team(_) => {}
+            LaunchTeam::None => alone += 1,
+        }
+    }
+    (teams.len() + alone) as i32
 }
 
 /// The rows that play, in row order, with their teams and starts: the
 /// seated people and the AI.
-fn seats(launch: &SkirmishLaunchSession) -> Vec<(u8, LaunchTeam, LaunchStartPosition)> {
+pub(super) fn seats(launch: &SkirmishLaunchSession) -> Vec<(u8, LaunchTeam, LaunchStartPosition)> {
     (0..NETWORK_PLAYER_SLOT_COUNT as u8)
         .filter_map(|row| {
             let human = launch
@@ -252,19 +330,21 @@ fn seats(launch: &SkirmishLaunchSession) -> Vec<(u8, LaunchTeam, LaunchStartPosi
 }
 
 /// Team Colors in a room with Teams set: every seated player's colour by
-/// team ([`colors_by_team`]), from the room's colour list and the loaded
-/// rules' `[Colors]`. Players can still change theirs. Returns whether it
-/// gave any out.
-pub(super) fn team_colors(state: &mut AppState) -> anyhow::Result<bool> {
-    let Some(count) = state.match_state.session.network_teams() else {
+/// team ([`crate::ui::team_tools::colors_by_team`]), from the room's colour
+/// list and the loaded rules' `[Colors]`. Players can still change theirs.
+/// Returns whether it gave any out.
+pub(super) fn team_colors(
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+) -> anyhow::Result<bool> {
+    let Some(count) = match_state.session.network_teams() else {
         return Ok(false);
     };
-    let Some(rules) = state.rules() else {
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return Ok(false);
     };
-    let listed = listed_hues(rules);
-    let launch = state
-        .match_state
+    let listed = crate::ui::team_tools::listed_hues(rules);
+    let launch = match_state
         .session
         .network_setup()
         .ok_or_else(|| anyhow::anyhow!("no setup"))?;
@@ -279,311 +359,93 @@ pub(super) fn team_colors(state: &mut AppState) -> anyhow::Result<bool> {
     let teams: Vec<u8> = seats.iter().map(|&(_, team)| team).collect();
     let picks: Vec<(u8, SeatPick)> = seats
         .iter()
-        .zip(colors_by_team(&listed, &teams, count))
+        .zip(crate::ui::team_tools::colors_by_team(
+            &listed, &teams, count,
+        ))
         .filter_map(|(&(row, _), color)| Some((row, SeatPick::Color(color?))))
         .collect();
     if picks.is_empty() {
         return Ok(false);
     }
-    state.match_state.session.set_network_seat_picks(&picks)?;
+    match_state.session.set_network_seat_picks(&picks)?;
     Ok(true)
 }
 
-/// The colours a room lists ([`crate::rules::skirmish_colors::SkirmishColorMode`]),
-/// YR's eight first, each with the hue of its `[Colors]` entry.
-fn listed_hues(rules: &RuleSet) -> Vec<(u8, u8)> {
-    let colors = rules.skirmish_colors();
-    colors
-        .lobby_priorities()
-        .filter_map(|color| {
-            let entry = colors.entry_for_priority(i32::from(color));
-            Some((color, rules.color_schemes.get(entry)?.hsv[0]))
-        })
-        .collect()
-}
-
-/// `[Colors]` hues run 0..=254 round the circle, and 255 is red again, as
-/// `HSV_To_RGB` (`0x00517440`, [`crate::rules::color_scheme::hsv_to_rgb`])
-/// reads them.
-const HUES: i32 = 255;
-
-/// Team Colors: each seat's colour, given each seat's team in row order and
-/// the room's colours with their hues (`listed`, YR's eight first). The
-/// colours, sorted round the hue circle, are cut into one range per team
-/// ([`HueCircle`]), and each team's players get colours spread across its
-/// range. While every team fits in its range of YR's eight, only the eight
-/// are used, as a Random colour prefers them; a bigger room uses the whole
-/// list. A team with more players than its range takes the free colours
-/// nearest it, and once none is free, teammates share. `None` is a seat on
-/// none of the `count` teams, or a room without colours.
-fn colors_by_team(listed: &[(u8, u8)], teams: &[u8], count: u8) -> Vec<Option<u8>> {
-    let count = usize::from(count);
-    let mut players = vec![0; count];
-    for &team in teams {
-        if let Some(players) = players.get_mut(usize::from(team)) {
-            *players += 1;
-        }
-    }
-    let fits = |circle: &HueCircle| {
-        circle.ranges.len() == count
-            && circle
-                .ranges
-                .iter()
-                .zip(&players)
-                .all(|(&(_, len), &players)| players <= len)
-    };
-    let eight: Vec<(u8, u8)> = listed
-        .iter()
-        .copied()
-        .filter(|&(color, _)| usize::from(color) < RETAIL_COLOR_COUNT)
-        .collect();
-    let circle = Some(HueCircle::new(&eight, count))
-        .filter(fits)
-        .unwrap_or_else(|| HueCircle::new(listed, count));
-    let given = circle.hand_out(&players);
-    let mut next = vec![0; count];
-    teams
-        .iter()
-        .map(|&team| {
-            let team = usize::from(team);
-            let place = *given.get(team)?.get(next[team])?;
-            next[team] += 1;
-            Some(circle.colors[place].0)
-        })
-        .collect()
-}
-
-/// A room's colours sorted round the hue circle, with each team's range of
-/// them: its first place and how many it holds. The ranges hold the same
-/// number of colours, the first teams one more while they do not divide
-/// evenly, and follow each other round the circle from the first team's,
-/// whose middle is nearest red: two teams get warm against cool.
-struct HueCircle {
-    colors: Vec<(u8, i32)>,
-    ranges: Vec<(usize, usize)>,
-}
-
-impl HueCircle {
-    fn new(listed: &[(u8, u8)], count: usize) -> Self {
-        let mut colors: Vec<(u8, i32)> = listed
-            .iter()
-            .map(|&(color, hue)| (color, i32::from(hue) % HUES))
-            .collect();
-        colors.sort_by_key(|&(_, hue)| hue);
-        let mut circle = Self {
-            colors,
-            ranges: Vec::new(),
-        };
-        let places = circle.colors.len();
-        if places == 0 || count == 0 {
-            return circle;
-        }
-        let lengths: Vec<usize> = (0..count)
-            .map(|team| places / count + usize::from(team < places % count))
-            .collect();
-        let first = lengths.first().copied().unwrap_or_default();
-        let start = (0..places)
-            .min_by_key(|&start| hue_gap(circle.middle(start, first), 0))
-            .unwrap_or_default();
-        let mut place = start;
-        circle.ranges = lengths
-            .into_iter()
-            .map(|len| {
-                let range = (place, len);
-                place = (place + len) % places;
-                range
-            })
-            .collect();
-        circle
-    }
-
-    /// The middle hue of the `len` colours round the circle from `start`,
-    /// in half hue steps.
-    fn middle(&self, start: usize, len: usize) -> i32 {
-        let hue = |place: usize| self.colors[place % self.colors.len()].1;
-        let first = hue(start);
-        let last = hue(start + len.max(1) - 1);
-        2 * first + (last - first).rem_euclid(HUES)
-    }
-
-    /// Each team's places on the circle, one per player: spread across its
-    /// range, then the free places nearest its range, then its own again.
-    fn hand_out(&self, players: &[usize]) -> Vec<Vec<usize>> {
-        let places = self.colors.len();
-        let mut taken = vec![false; places];
-        let mut given = vec![Vec::new(); self.ranges.len()];
-        let teams = || self.ranges.iter().zip(players);
-        for (own, (&(start, len), &players)) in given.iter_mut().zip(teams()) {
-            let wanted = players.min(len);
-            for player in 0..wanted {
-                let place = (start + (2 * player + 1) * len / (2 * wanted)) % places;
-                taken[place] = true;
-                own.push(place);
-            }
-        }
-        for (own, (&(start, len), &players)) in given.iter_mut().zip(teams()) {
-            let middle = self.middle(start, len);
-            while own.len() < players {
-                let Some(place) = (0..places)
-                    .filter(|&place| !taken[place])
-                    .min_by_key(|&place| hue_gap(2 * self.colors[place].1, middle))
-                else {
-                    break;
-                };
-                taken[place] = true;
-                own.push(place);
-            }
-        }
-        for (own, (&(start, len), &players)) in given.iter_mut().zip(teams()) {
-            let distinct = own.len();
-            for player in distinct..players {
-                let place = match distinct {
-                    0 => (start + len / 2) % places,
-                    _ => own[player % distinct],
-                };
-                own.push(place);
-            }
-        }
-        given
-    }
-}
-
-/// How far apart two hues lie round the circle, both in half hue steps.
-fn hue_gap(a: i32, b: i32) -> i32 {
-    let gap = (a - b).rem_euclid(2 * HUES);
-    gap.min(2 * HUES - gap)
-}
-
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
-    use crate::rules::skirmish_colors::FIRST_EXTRA_PRIORITY;
 
-    /// Balance automatically asks the lobby 5 seconds after who plays last
-    /// changed, and the host's Start waits until the lobby answers. A room
-    /// with AI has nothing to balance and does not wait.
+    /// Any lobby that refuses options carrying the building queue may be
+    /// from before it, so the host drops the queue and keeps its other rules;
+    /// a refusal of options without it stands.
     #[test]
-    fn balance_automatically_waits_five_seconds_and_holds_start_for_the_answer() {
-        let mut room = NetworkSetupProtocol::new(
-            SetupDialog {
-                host: true,
-                flavor: SetupFlavor::Wol,
-                modern: true,
-            },
-            false,
-        );
-        room.take_service_requests();
-        let two = || Some((2, vec!["Host", "Guest"], true));
-        let three = || Some((2, vec!["Host", "Guest", "Third"], true));
-        let opened = Instant::now();
+    fn a_refused_building_queue_is_dropped_and_the_other_rules_kept() {
+        use crate::app::match_runtime::session::NetworkReturnContext;
+        let rooms = crate::test_fixture::json("tests/fixtures/lobby/options.json");
+        let mut launch: SkirmishLaunchSession =
+            serde_json::from_value(rooms["rooms"]["generated_map_for_thirty"]["launch"].clone())
+                .unwrap();
+        launch.options.host_rules.building_production_queue = true;
+        launch.options.host_rules.superweapon_limit = 7;
+        let mut room = MatchSession::default();
+        room.enter_network(NetworkReturnContext::Wol);
+        room.accept_network_setup(launch, true, None, true).unwrap();
         assert_eq!(
-            room.time_balance(two(), opened),
-            Some(opened + BALANCE_DELAY)
+            refused_building_queue(&mut room),
+            Some("VERA:BuildingQueueNotTaken")
         );
-        // A join 3 seconds in starts the wait again.
-        let join = opened + std::time::Duration::from_secs(3);
-        assert_eq!(room.time_balance(three(), join), Some(join + BALANCE_DELAY));
-        assert!(room.balance_waiting() && room.take_service_requests().is_empty());
-
-        let due = join + BALANCE_DELAY;
-        assert_eq!(room.time_balance(three(), due), None);
-        assert_eq!(
-            room.take_service_requests(),
-            vec![NetworkSetupRequest::Balance { automatic: true }]
-        );
-        assert!(room.balance_waiting(), "Start waits for the lobby's answer");
-        room.balance_sent = false;
-        assert_eq!(room.time_balance(three(), due + BALANCE_DELAY), None);
-        assert!(!room.balance_waiting() && room.take_service_requests().is_empty());
-
-        let with_ai = Some((2, vec!["Host", "Guest", "Third"], false));
-        assert_eq!(room.time_balance(with_ai, due), None);
-        assert!(!room.balance_waiting());
+        let rules = &room.network_setup().unwrap().options.host_rules;
+        assert!(!rules.building_production_queue);
+        assert_eq!(rules.superweapon_limit, 7);
+        assert_eq!(refused_building_queue(&mut room), None);
     }
 
-    /// The `[Colors]` names of the colours Team Colors gives seats on
-    /// `teams`.
-    fn team_color_names(
-        rules: &RuleSet,
-        listed: &[(u8, u8)],
-        teams: &[u8],
-        count: u8,
-    ) -> Vec<String> {
-        let colors = rules.skirmish_colors();
-        colors_by_team(listed, teams, count)
-            .into_iter()
-            .map(|color| {
-                let entry = colors.entry_for_priority(i32::from(color.expect("a team's colour")));
-                rules.color_schemes[entry].name.clone()
-            })
-            .collect()
-    }
-
-    /// Two teams of four get YR's eight, warm against cool, as a Random
-    /// colour prefers them. Five a side take the whole list: every player
-    /// apart, each team's hues nearer its own end of the circle.
     #[test]
-    fn team_colors_give_two_teams_warm_against_cool() {
-        let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
-            return;
-        };
-        let listed = listed_hues(&rules);
-        let four = team_color_names(&rules, &listed, &[0, 1, 0, 1, 0, 1, 0, 1], 2);
-        let team = |names: &[String], team: usize| -> Vec<String> {
-            names.iter().skip(team).step_by(2).cloned().collect()
-        };
-        assert_eq!(team(&four, 0), ["Magenta", "DarkRed", "Orange", "Gold"]);
+    fn only_a_confirmed_legacy_lobby_can_drop_a_host_rule() {
+        use crate::app::match_runtime::session::NetworkReturnContext;
+        let rooms = crate::test_fixture::json("tests/fixtures/lobby/options.json");
+        let mut launch: SkirmishLaunchSession =
+            serde_json::from_value(rooms["rooms"]["generated_map_for_thirty"]["launch"].clone())
+                .unwrap();
+        launch.options.host_rules.superweapon_limit = 7;
+        let mut room = MatchSession::default();
+        room.enter_network(NetworkReturnContext::Wol);
+        room.accept_network_setup(launch, true, None, true).unwrap();
+        assert_eq!(refused_room_rule(&mut room, None), None);
+        assert_eq!(refused_room_rule(&mut room, Some(true)), None);
         assert_eq!(
-            team(&four, 1),
-            ["DarkGreen", "DarkSky", "DarkBlue", "Purple"]
+            room.network_setup()
+                .unwrap()
+                .options
+                .host_rules
+                .superweapon_limit,
+            7
         );
-
-        let teams = [0, 1, 0, 1, 0, 1, 0, 1, 0, 1];
-        let five: Vec<u8> = colors_by_team(&listed, &teams, 2)
-            .into_iter()
-            .flatten()
-            .collect();
-        let distinct: std::collections::BTreeSet<u8> = five.iter().copied().collect();
-        assert_eq!(distinct.len(), 10);
-        assert!(five.iter().any(|&color| color >= FIRST_EXTRA_PRIORITY));
-        for (&team, color) in teams.iter().zip(five) {
-            let (_, hue) = listed.iter().find(|(listed, _)| *listed == color).unwrap();
-            // Red is 0, cyan half the circle away, in half hue steps.
-            let hue = 2 * i32::from(*hue);
-            let warm = hue_gap(hue, 0) < hue_gap(hue, HUES);
-            assert_eq!(warm, team == 0, "colour {color} on Team {team}");
-        }
+        assert_eq!(
+            refused_room_rule(&mut room, Some(false)),
+            Some("VERA:SuperweaponLimitNotTaken")
+        );
+        assert_eq!(
+            room.network_setup()
+                .unwrap()
+                .options
+                .host_rules
+                .superweapon_limit,
+            0
+        );
     }
 
-    /// A full room of four teams keeps all 30 players apart, though one
-    /// team has a player more than its range holds. With more players than
-    /// colours, as with a mod that lists only the eight, only allies share.
+    /// Four players on Team A, three on B and one on no team on a
+    /// four-start map: the lone player keeps a base of its own, each team
+    /// gets one, and the spare start goes to A, with more players for each
+    /// base. Three teams on two starts get none.
     #[test]
-    fn team_colors_keep_players_apart_and_share_only_with_allies() {
-        let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
-            return;
-        };
-        let listed = listed_hues(&rules);
-        assert_eq!(listed.len(), 30);
-        let teams: Vec<u8> = [(0, 8), (1, 8), (2, 8), (3, 6)]
-            .into_iter()
-            .flat_map(|(team, players)| std::iter::repeat_n(team, players))
-            .collect();
-        let full = team_color_names(&rules, &listed, &teams, 4);
-        let distinct: std::collections::BTreeSet<&String> = full.iter().collect();
-        assert_eq!(distinct.len(), 30);
-
-        let teams = [0, 1, 0, 1, 0, 1, 0, 1, 0, 1];
-        let shared = colors_by_team(&listed[..RETAIL_COLOR_COUNT], &teams, 2);
-        let team = |team: u8| -> std::collections::BTreeSet<u8> {
-            teams
-                .iter()
-                .zip(&shared)
-                .filter(|(on, _)| **on == team)
-                .map(|(_, color)| color.expect("a team's colour"))
-                .collect()
-        };
-        assert_eq!((team(0).len(), team(1).len()), (4, 4));
-        assert!(team(0).is_disjoint(&team(1)));
+    fn shared_bases_give_the_spare_start_to_the_crowded_team() {
+        // Rows: A, B, A, B, none, A, B, A.
+        let seats = [0, 1, 0, 1, -2, 0, 1, 0];
+        let (base_of, base_teams) = shared_bases(&seats, 4).unwrap();
+        assert_eq!(base_teams, [0, 0, 1, -2]);
+        assert_eq!(base_of, [0, 2, 1, 2, 3, 0, 2, 1]);
+        assert_eq!(shared_bases(&[0, 1, 2], 2), None);
     }
 }

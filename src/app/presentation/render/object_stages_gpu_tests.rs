@@ -4,7 +4,7 @@
 //! strict parent order. Renderer controls, not native scenes.
 
 use super::draw_plan_lowering::{
-    ObjectBodyDraw, ObjectPieceInstance, PlannedObjectInstance, lower_object_instances,
+    ObjectBodyDraw, ObjectPieceInstance, OwnedPlannedObject, lower_object_instances,
 };
 use super::merge_passes::{ObjectDrawPhase, draw_native_object_pass};
 use super::object_stages::SERIAL;
@@ -26,8 +26,8 @@ const SIZE: [u32; 2] = [1024, 768];
 const GROUPS: usize = 24;
 const CHAIN_LINKS: usize = 12;
 
-fn parent(id: u64, pieces: Vec<ObjectPieceInstance>) -> PlannedObjectInstance {
-    PlannedObjectInstance::object(
+fn parent(id: u64, pieces: Vec<ObjectPieceInstance>) -> OwnedPlannedObject {
+    OwnedPlannedObject::object(
         ObjectDraw {
             id,
             layer: TacticalLayer(2),
@@ -54,7 +54,7 @@ fn piece(
 /// body (25, 50 or 75% by group) and its shadow, both Z-tested on even
 /// groups and no-Z on odd. A last sprite lands on the first Anim and must
 /// stay above it.
-fn base_scene() -> Vec<PlannedObjectInstance> {
+fn base_scene() -> Vec<OwnedPlannedObject> {
     let mut parents = Vec::new();
     for group in 0..GROUPS {
         let x = 20.0 + (group % 8) as f32 * 120.0;
@@ -120,7 +120,7 @@ fn animated_base_replays_in_fixed_passes_with_strict_order_pixels() {
         page(&[240, 200, 40, 255, 200, 40, 40, 255], &[3, 4]),
         page(&[0, 0, 0, 255, 0, 0, 0, 255], &[1, 0]),
     ]);
-    let layers = lower_object_instances(base_scene());
+    let layers = lower_object_instances(base_scene().into());
     let layer = &layers[2];
     let mut pool = InstanceBufferPool::new();
     pool.upload_on_device(&gpu.device, &gpu.queue, "base", &layer.instances);
@@ -203,7 +203,7 @@ fn animated_base_replays_in_fixed_passes_with_strict_order_pixels() {
 /// only tests Z, and every fourth is a Z-writing edit, as a tree. Two adjacent
 /// bodies follow the second link, and one translucent body mid-row has to
 /// keep its own pass.
-fn overlap_chain_scene() -> Vec<PlannedObjectInstance> {
+fn overlap_chain_scene() -> Vec<OwnedPlannedObject> {
     let mut parents = Vec::new();
     let mut add = |pieces| parents.push(parent(parents.len() as u64, pieces));
     for link in 0..CHAIN_LINKS {
@@ -271,7 +271,7 @@ fn overlapping_bodies_and_shadows_share_passes_with_strict_order_pixels() {
         page(&[0, 0, 0, 255, 0, 0, 0, 255], &[1, 0]),
         page(&[180, 120, 60, 255, 0, 0, 0, 0], &[5, 0]),
     ]);
-    let layers = lower_object_instances(overlap_chain_scene());
+    let layers = lower_object_instances(overlap_chain_scene().into());
     let layer = &layers[2];
     let mut pool = InstanceBufferPool::new();
     pool.upload_on_device(&gpu.device, &gpu.queue, "chain", &layer.instances);
@@ -348,7 +348,7 @@ fn light_at(center: [i32; 2], surface_index: i32) -> CombatLightDrawRecord {
     }
 }
 
-fn effect_parent(id: u64, body: ObjectBodyDraw) -> PlannedObjectInstance {
+fn effect_parent(id: u64, body: ObjectBodyDraw) -> OwnedPlannedObject {
     let mut parent = parent(id, Vec::new());
     parent.body_draw = Some(body);
     parent
@@ -357,7 +357,7 @@ fn effect_parent(id: u64, body: ObjectBodyDraw) -> PlannedObjectInstance {
 /// Twelve disjoint groups: a Z-writing building, a combat light over it, a
 /// surface store over both and a later sprite above the light. Then an
 /// offscreen light and an unsupported native index, neither visible.
-fn effect_scene() -> Vec<PlannedObjectInstance> {
+fn effect_scene() -> Vec<OwnedPlannedObject> {
     let mut parents = Vec::new();
     for group in 0..12 {
         let [cx, cy] = [150 + (group % 3) * 350, 90 + (group / 3) * 190];
@@ -410,7 +410,7 @@ fn effects_between_sprites_replay_in_fixed_passes_with_strict_order_pixels() {
     let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
     batch.write_camera(&gpu.queue, camera(SIZE));
     let mut lights = CombatLightRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-    let mut layers = lower_object_instances(effect_scene());
+    let mut layers = lower_object_instances(effect_scene().into());
     let layer = &mut layers[2];
     assert_eq!(layer.light_records.len(), 14);
     lights.prepare_with_device(

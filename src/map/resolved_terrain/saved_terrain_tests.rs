@@ -171,6 +171,25 @@ fn saved_terrain_rejects_malformed_planes_coordinates_and_references() {
     }
 }
 
+/// A damaged save's slope past the 21-record tables is refused at load, before
+/// a shot or threat scan reads its Cell coordinate (issue 4502).
+#[test]
+fn saved_terrain_refuses_a_slope_past_the_tables() {
+    let good =
+        serde_json::to_value(test_flat_ground_grid(2).capture_saved_template().unwrap()).unwrap();
+    for (slope, admitted) in [(20, true), (21, false)] {
+        let mut saved = good.clone();
+        saved["cells"][3]["slope_type"] = serde_json::json!(slope);
+        let saved: SavedTerrainTemplate = serde_json::from_value(saved).unwrap();
+        assert_eq!(saved.validate().is_ok(), admitted, "slope {slope}");
+        assert_eq!(
+            saved.restore_values(SharedCellDummy::fresh()).is_ok(),
+            admitted,
+            "slope {slope}"
+        );
+    }
+}
+
 #[test]
 fn saved_terrain_load_selector_matches_executed_native_cells_and_main_continuation() {
     use crate::map::tile_variant_selector::TileVariantSelectorCache;

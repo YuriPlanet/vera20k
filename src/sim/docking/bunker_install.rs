@@ -100,7 +100,7 @@ pub(crate) fn update_bunker(
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
     building_id: u64,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(state) = sim
         .substrate
@@ -186,7 +186,7 @@ fn bunker_partner(sim: &Simulation, building_id: u64) -> Option<u64> {
     let partner = building
         .bunker
         .occupant()
-        .or(building.radio_contacts.slot(0))?;
+        .or(building.seldom.radio_contacts.slot(0))?;
     sim.substrate
         .entities
         .get(partner)
@@ -277,7 +277,7 @@ fn scatter_occupy_cell_objects(
     registry: Option<&OverlayTypeRegistry>,
     building_id: u64,
     unit_id: u64,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(building) = sim.substrate.entities.get(building_id) else {
         return;
@@ -326,7 +326,7 @@ fn start_install_force_track(
     registry: Option<&OverlayTypeRegistry>,
     building_id: u64,
     unit_id: u64,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(building) = sim.substrate.entities.get(building_id) else {
         return;
@@ -351,7 +351,7 @@ fn start_install_force_track(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::sim::combat::Health;
@@ -443,12 +443,14 @@ mod tests {
             .entities
             .get_mut(building)
             .unwrap()
+            .seldom
             .radio_contacts
             .set_slot(0, 1);
         substrate
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .radio_contacts
             .set_slot(0, building);
         set_state(substrate, building, state);
@@ -469,6 +471,7 @@ mod tests {
             .entities
             .get_mut(2)
             .unwrap()
+            .seldom
             .type_facts
             .set_foundation_for_test("2x2".into());
         assert!(matches!(sim.reveal(2), RevealOutcome::Revealed { .. }));
@@ -483,7 +486,7 @@ mod tests {
         loco.store_track_progress(TrackFamily::Drive, TrackProgress::for_test(-1, 0, false, 0));
         prepare_install(&mut sim.substrate, 2, BunkerState::TrackStep);
 
-        update_bunker(&mut sim, &rules, None, 2, FrameEffects::default());
+        update_bunker(&mut sim, &rules, None, 2, &mut FrameEffects::default());
         assert_eq!(rt(&sim, 2).state(), BunkerState::TrackStep);
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(object_get_coords(unit, None), centre);
@@ -577,7 +580,7 @@ mod tests {
         {
             let (mut sim, bunker, tank) = retail_bunker_entry(&rules, start);
             if batched {
-                sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+                *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
                 sim.batch_path_searches();
             }
             let case = format!("{start:?}, {}", if batched { "batched" } else { "serial" });
@@ -1216,6 +1219,7 @@ mod tests {
             None,
             &rules,
             None,
+            &mut Vec::new(),
         );
 
         let building = sim.substrate.entities.get(bunker).unwrap();
@@ -1301,12 +1305,13 @@ mod tests {
                     })
                 })
                 .collect();
-            sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(32, 32, cells));
+            *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(32, 32, cells));
             sim.session.set_binary_frame_for_test(100);
             spawn_bunker(&mut sim, 2);
             spawn_tank_on(&mut sim, 1, 10, 10);
             let building = sim.substrate.entities.get_mut(2).unwrap();
             building
+                .seldom
                 .type_facts
                 .set_foundation_for_test(rules.object("NATBNK").unwrap().foundation.clone().into());
             building
@@ -1320,7 +1325,7 @@ mod tests {
             );
             assert!(matches!(sim.reveal(1), RevealOutcome::Revealed { .. }));
             prepare_install(&mut sim.substrate, 2, BunkerState::ClearWait);
-            update_bunker(&mut sim, &rules, None, 2, FrameEffects::default());
+            update_bunker(&mut sim, &rules, None, 2, &mut FrameEffects::default());
             let unit = sim.substrate.entities.get(1).unwrap();
             assert_eq!(
                 unit.body_facing.destination(),
@@ -1340,7 +1345,7 @@ mod tests {
             assert_eq!(rt(&sim, 2).state, BunkerState::TurnToBuilding, "{name}");
             assert_eq!(expected["state_after_facing"], 2, "{name}");
             if expected["waited_for_turn"].as_bool().unwrap() {
-                update_bunker(&mut sim, &rules, None, 2, FrameEffects::default());
+                update_bunker(&mut sim, &rules, None, 2, &mut FrameEffects::default());
                 assert_eq!(rt(&sim, 2).state, BunkerState::TurnToBuilding, "{name}");
                 assert!(
                     movement::track_head::committed_track_head(
@@ -1352,7 +1357,7 @@ mod tests {
             }
             sim.session
                 .set_binary_frame_for_test(integer(&expected["completed_frame"]) as u32);
-            update_bunker(&mut sim, &rules, None, 2, FrameEffects::default());
+            update_bunker(&mut sim, &rules, None, 2, &mut FrameEffects::default());
             let unit = sim.substrate.entities.get(1).unwrap();
             assert_eq!(
                 unit.body_facing_current(sim.session.binary_frame()),
@@ -1399,6 +1404,7 @@ mod tests {
             .entities
             .get_mut(2)
             .unwrap()
+            .seldom
             .type_facts
             .set_foundation_for_test(
                 retail
@@ -1426,7 +1432,7 @@ mod tests {
             None,
             2,
             1,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let drive = sim
             .substrate
@@ -1465,7 +1471,7 @@ mod tests {
             None,
             2,
             1,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let unit = sim.substrate.entities.get(1).unwrap();
         let exact_head = crate::sim::components::DriveCoord {
@@ -1512,7 +1518,7 @@ mod tests {
             &rules,
             None,
             2,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(rt(&sim, 2).state, BunkerState::ClearWait);
 
@@ -1522,13 +1528,14 @@ mod tests {
             &rules,
             None,
             2,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(rt(&sim, 2).state, BunkerState::TurnToBuilding);
 
         // Let the facing owner finish, then enter TrackStep even at the centre.
-        sim.session.set_binary_frame_for_test(
-            sim.session.binary_frame()
+        let session = &mut *sim.session;
+        session.set_binary_frame_for_test(
+            session.binary_frame()
                 + u32::from(
                     sim.substrate
                         .entities
@@ -1543,7 +1550,7 @@ mod tests {
             &rules,
             None,
             2,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(rt(&sim, 2).state, BunkerState::TrackStep);
 
@@ -1558,7 +1565,7 @@ mod tests {
             &rules,
             None,
             2,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(rt(&sim, 2).state, BunkerState::TurnSouth);
         assert_eq!(
@@ -1587,7 +1594,7 @@ mod tests {
             &rules,
             None,
             2,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(rt(&sim, 2).state, BunkerState::WallsUp);
         assert_eq!(
@@ -1602,7 +1609,7 @@ mod tests {
             &rules,
             None,
             2,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(rt(&sim, 2).state, BunkerState::Occupied);
         assert_eq!(
@@ -1618,6 +1625,7 @@ mod tests {
                 .entities
                 .get(1)
                 .unwrap()
+                .seldom
                 .in_logic_vector
                 .is_member(),
             "installed unit remains in LogicVector"
@@ -1657,7 +1665,7 @@ mod tests {
                     &rules,
                     None,
                     2,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
             };
 
@@ -1706,13 +1714,14 @@ mod tests {
         assert!(matches!(sim.reveal(1), RevealOutcome::Revealed { .. }));
         // No radio contact and no installed occupant.
         set_state(&mut sim.substrate, 2, BunkerState::Idle);
-        update_bunker(&mut sim, &rules, None, 2, FrameEffects::default());
+        update_bunker(&mut sim, &rules, None, 2, &mut FrameEffects::default());
         assert_eq!(rt(&sim, 2).state, BunkerState::Idle);
         assert_eq!(
             sim.substrate
                 .entities
                 .get(2)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .slot(0),
             None
@@ -1737,6 +1746,7 @@ mod tests {
             .entities
             .get_mut(2)
             .unwrap()
+            .seldom
             .type_facts
             .set_foundation_for_test("2x2".into());
         spawn_tank_on(&mut sim, 1, 10, 10); // installer on the anchor
@@ -1746,7 +1756,7 @@ mod tests {
         assert!(matches!(sim.reveal(3), RevealOutcome::Revealed { .. }));
         prepare_install(&mut sim.substrate, 2, BunkerState::Idle);
 
-        update_bunker(&mut sim, &rules, None, 2, FrameEffects::default());
+        update_bunker(&mut sim, &rules, None, 2, &mut FrameEffects::default());
         assert_eq!(rt(&sim, 2).state, BunkerState::ClearWait);
         assert!(
             sim.substrate
@@ -1775,7 +1785,7 @@ mod tests {
             .unwrap()
             .navigation
             .set_nav_com_for_test(None);
-        update_bunker(&mut sim, &rules, None, 2, FrameEffects::default());
+        update_bunker(&mut sim, &rules, None, 2, &mut FrameEffects::default());
         assert_eq!(
             rt(&sim, 2).state,
             BunkerState::ClearWait,
@@ -1794,7 +1804,7 @@ mod tests {
 
         // The blocker leaves the cell's object list.
         sim.substrate.occupancy.remove(11, 11, 3);
-        update_bunker(&mut sim, &rules, None, 2, FrameEffects::default());
+        update_bunker(&mut sim, &rules, None, 2, &mut FrameEffects::default());
         assert_eq!(rt(&sim, 2).state, BunkerState::TurnToBuilding);
     }
 }

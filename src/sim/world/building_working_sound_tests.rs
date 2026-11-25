@@ -30,7 +30,7 @@ fn retail_patriot_updates_its_working_sound_before_c4_destructor_release() {
         calls: RefCell<Vec<(&'static str, Option<AnimWorldCoord>)>>,
     }
     impl SoundBoundary for Heard {
-        fn consume(&self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, _: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
             for event in &events[self.delivered.get()..] {
                 let kind = match event {
                     SimSoundEvent::ObjectSoundDetached { owner } if *owner == self.owner => {
@@ -38,7 +38,9 @@ fn retail_patriot_updates_its_working_sound_before_c4_destructor_release() {
                     }
                     SimSoundEvent::AnimationStarted {
                         anim_id, sound_id, ..
-                    } if *anim_id == self.owner && sound_id == "PowerOn" => "PowerOn",
+                    } if *anim_id == self.owner && sound_id.name_in(rules) == "PowerOn" => {
+                        "PowerOn"
+                    }
                     SimSoundEvent::ObjectSoundReleased { owner } if *owner == self.owner => {
                         "release"
                     }
@@ -51,7 +53,7 @@ fn retail_patriot_updates_its_working_sound_before_c4_destructor_release() {
         fn delivered(&self) -> usize {
             self.delivered.get()
         }
-        fn update_looping_sound(&self, _: &Simulation, owner: u64, world: AnimWorldCoord) {
+        fn update_looping_sound(&mut self, _: &Simulation, owner: u64, world: AnimWorldCoord) {
             if owner == self.owner {
                 self.calls.borrow_mut().push(("position", Some(world)));
             }
@@ -89,7 +91,7 @@ fn retail_patriot_updates_its_working_sound_before_c4_destructor_release() {
     let tanya = sim
         .spawn_object("TANY", "Americans", 7, 10, 0, &rules)
         .unwrap();
-    let heard = Heard {
+    let mut heard = Heard {
         owner: working_sound_owner(patriot),
         delivered: Cell::new(0),
         calls: RefCell::default(),
@@ -101,10 +103,9 @@ fn retail_patriot_updates_its_working_sound_before_c4_destructor_release() {
             .advance_app_frame(
                 &[],
                 &rules,
-                None,
                 64,
                 TickLane::Ordinary,
-                FrameEffects::for_sound(&heard),
+                &mut FrameEffects::for_sound(&mut heard),
             )
             .unwrap();
         heard.consume(&sim, &rules, &output.sound_events);
@@ -138,10 +139,9 @@ fn retail_patriot_updates_its_working_sound_before_c4_destructor_release() {
             .advance_app_frame(
                 &[],
                 &rules,
-                None,
                 64,
                 TickLane::Ordinary,
-                FrameEffects::for_sound(&heard),
+                &mut FrameEffects::for_sound(&mut heard),
             )
             .unwrap();
         // Destructors publish the undelivered suffix after their owner is
@@ -226,7 +226,7 @@ fn scene(rules: &RuleSet, type_name: &str) -> (Simulation, u64, u64) {
 }
 
 /// The ordered effects this building's `+0x6B4` handle received.
-fn working_events(sim: &Simulation, id: u64) -> Vec<String> {
+fn working_events(rules: &RuleSet, sim: &Simulation, id: u64) -> Vec<String> {
     let owner = working_sound_owner(id);
     sim.sound_events
         .iter()
@@ -236,7 +236,7 @@ fn working_events(sim: &Simulation, id: u64) -> Vec<String> {
             }
             SimSoundEvent::AnimationStarted {
                 anim_id, sound_id, ..
-            } if *anim_id == owner => Some(format!("start {sound_id}")),
+            } if *anim_id == owner => Some(format!("start {}", sound_id.name_in(rules))),
             SimSoundEvent::ObjectSoundReleased { owner: held } if *held == owner => {
                 Some("release".to_string())
             }
@@ -254,7 +254,7 @@ fn tick(sim: &mut Simulation, rules: &RuleSet) {
 fn next_edge(sim: &mut Simulation, rules: &RuleSet, id: u64, frames: usize) -> Vec<String> {
     for _ in 0..frames {
         tick(sim, rules);
-        let events = working_events(sim, id);
+        let events = working_events(&rules, sim, id);
         if !events.is_empty() {
             return events;
         }
@@ -285,17 +285,16 @@ fn limbo_keeps_the_handle_and_the_destructor_releases_it() {
     sim.sound_events.clear_for_test();
     sim.uninit_with_rules(id, &rules);
     assert!(
-        working_events(&sim, id).is_empty(),
+        working_events(&rules, &sim, id).is_empty(),
         "Limbo leaves +0x6B4 alone"
     );
     sim.process_pending_delete_with(
         &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         1,
         sim.session.started(),
     );
-    assert_eq!(working_events(&sim, id), ["release"]);
+    assert_eq!(working_events(&rules, &sim, id), ["release"]);
     assert_eq!(sim.looping_sound_owner_coord(working_sound_owner(id)), None);
 }
 

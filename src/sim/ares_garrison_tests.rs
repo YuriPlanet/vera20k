@@ -113,7 +113,7 @@ fn an_occupier_raids_an_empty_raidable_building_until_it_empties() {
             gi,
             bunker,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap()
     );
@@ -123,7 +123,7 @@ fn an_occupier_raids_an_empty_raidable_building_until_it_empties() {
         &mut sim,
         bunker,
         None,
-        UninitContext::new(&rules, None),
+        UninitContext::new(&rules),
     );
     assert_eq!(owner(&sim, bunker), "Russians", "returned when empty");
 }
@@ -145,7 +145,7 @@ fn a_shot_passes_through_to_an_occupant() {
             gi,
             bunker,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap()
     );
@@ -172,6 +172,19 @@ fn a_shot_passes_through_to_an_occupant() {
     assert_eq!(health(&sim, bunker), 1000);
 }
 
+fn trench_rules() -> RuleSet {
+    let text = RULES.replace("0=BNK\n", "0=BNK\n1=TRN\n2=TRX\n")
+        + "[TRN]\nStrength=500\nTechLevel=1\nCanBeOccupied=yes\nMaxNumberOccupants=2\n\
+           IsTrench=Sand\nBunker.Raidable=yes\n\
+           [TRX]\nStrength=500\nTechLevel=1\nCanBeOccupied=yes\nMaxNumberOccupants=2\n\
+           IsTrench=Wood\n";
+    RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(&text),
+        &IniFile::from_str("[TRN]\nFoundation=1x1\n[TRX]\nFoundation=1x1\n"),
+    )
+    .expect("trench rules")
+}
+
 /// Trench traversal (#666): `canTraverseTo` (`10011690`) admits only a
 /// trench of the same kind whose Location lies within 256 leptons, with
 /// room; the TrenchRedirectClick event (0x60, `1006A170`) round-trips its
@@ -181,16 +194,7 @@ fn a_shot_passes_through_to_an_occupant() {
 #[test]
 fn trench_redirect_moves_heads_into_a_neighbour_and_returns_a_raided_trench() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
-    let text = RULES.replace("0=BNK\n", "0=BNK\n1=TRN\n2=TRX\n")
-        + "[TRN]\nStrength=500\nTechLevel=1\nCanBeOccupied=yes\nMaxNumberOccupants=2\n\
-           IsTrench=Sand\nBunker.Raidable=yes\n\
-           [TRX]\nStrength=500\nTechLevel=1\nCanBeOccupied=yes\nMaxNumberOccupants=2\n\
-           IsTrench=Wood\n";
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(
-        &crate::sim::arena_fixture::clear_ground_ini(&text),
-        &IniFile::from_str("[TRN]\nFoundation=1x1\n[TRX]\nFoundation=1x1\n"),
-    )
-    .expect("trench rules");
+    let rules = trench_rules();
     let (mut sim, _grid) = arena(&rules);
     let raided = spawn(&mut sim, &rules, "TRN", "Russians", 10, 10);
     let east = spawn(&mut sim, &rules, "TRN", "Americans", 11, 10);
@@ -207,7 +211,7 @@ fn trench_redirect_moves_heads_into_a_neighbour_and_returns_a_raided_trench() {
                 gi,
                 building,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap()
         );
@@ -235,6 +239,12 @@ fn trench_redirect_moves_heads_into_a_neighbour_and_returns_a_raided_trench() {
         let sender = sim.interner.resolve(envelope.owner).to_owned();
         sim.apply_command(&sender, &envelope.payload, Some(&rules))
     };
+    // The second occupant cannot receive orders. It stays behind when only
+    // the head fits, and blocks a transfer that would include both.
+    sim.entity_mut_for_test(gis[1]).unwrap().seldom.slave =
+        crate::sim::slave_manager::SlaveLink::for_test(Some(raided), Vec::new());
+    assert!(!sim.ares_can_traverse_to(raided, south, &rules));
+    assert!(!redirect(&mut sim, south));
     // One free slot east: only the head moves.
     assert!(redirect(&mut sim, east));
     let occupants = |sim: &Simulation, id| {
@@ -242,7 +252,7 @@ fn trench_redirect_moves_heads_into_a_neighbour_and_returns_a_raided_trench() {
             .entities
             .get(id)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .occupants()
             .ids()
             .to_vec()
@@ -254,15 +264,93 @@ fn trench_redirect_moves_heads_into_a_neighbour_and_returns_a_raided_trench() {
             .entities
             .get(gis[0])
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id(),
         Some(east)
     );
     assert!(!redirect(&mut sim, east), "full");
     assert_eq!(owner(&sim, raided), "Americans");
+    sim.entity_mut_for_test(gis[1]).unwrap().seldom.slave = Default::default();
     // The last occupant leaves south; the empty trench is returned.
     assert!(redirect(&mut sim, south));
     assert_eq!(occupants(&sim, south), [gis[1]]);
     assert!(occupants(&sim, raided).is_empty());
     assert_eq!(owner(&sim, raided), "Russians", "returned when empty");
+}
+
+#[test]
+fn delegated_trench_redirect_only_checks_occupants_that_would_move() {
+    use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = trench_rules();
+    let (mut sim, _grid) = arena(&rules);
+    let alpha = sim.interner.get("Americans").unwrap();
+    let gamma = sim.interner.intern("Gamma");
+    sim.houses
+        .register(HouseState::new(gamma, 2, None, false, 0, 10));
+    sim.session.set_game_mode(ScenarioGameMode::Lan);
+    sim.session.set_current_house_for_test(Some(alpha));
+    sim.session
+        .install_shared_house_sources_for_test(vec![0, 0], Some(0));
+    sim.install_control_grants(vec![ControlGrant {
+        source: 0,
+        house: 1,
+        level: ControlGrantLevel::UnitsOnly,
+    }])
+    .unwrap();
+
+    let source = spawn(&mut sim, &rules, "TRN", "Russians", 10, 10);
+    let one_slot = spawn(&mut sim, &rules, "TRN", "Gamma", 11, 10);
+    let two_slots = spawn(&mut sim, &rules, "TRN", "Gamma", 10, 11);
+    let authorized = spawn(&mut sim, &rules, "GI", "Russians", 14, 10);
+    let unauthorized = spawn(&mut sim, &rules, "GI", "Gamma", 14, 12);
+    let resident = spawn(&mut sim, &rules, "GI", "Gamma", 14, 14);
+    for (rider, building) in [
+        (authorized, source),
+        (unauthorized, source),
+        (resident, one_slot),
+    ] {
+        sim.techno_limbo_with_context(rider, UninitContext::new(&rules));
+        assert!(
+            sim.substrate
+                .attach_garrison_occupant(building, rider)
+                .is_some()
+        );
+    }
+    let occupants = |sim: &Simulation, id| {
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .passenger_role()
+            .occupants()
+            .ids()
+            .to_vec()
+    };
+    let redirect = |sim: &mut Simulation, target| {
+        let cell = sim.object_coords_cell(target).unwrap();
+        let record = sim
+            .encode_ares_trench_redirect_record(source, cell)
+            .unwrap();
+        assert_eq!(record.house_id(), 0);
+        let envelope = sim.decode_native_command_record(&record, 0).unwrap();
+        assert_eq!(envelope.owner, alpha);
+        sim.apply_command_with_overlays(
+            Some(record.house_id()),
+            "Americans",
+            &envelope.payload,
+            &rules,
+            Some(rules.overlay_registry()),
+            &mut FrameEffects::default(),
+        )
+    };
+
+    assert!(!redirect(&mut sim, two_slots));
+    assert_eq!(occupants(&sim, source), [authorized, unauthorized]);
+    assert!(occupants(&sim, two_slots).is_empty());
+    assert!(redirect(&mut sim, one_slot));
+    assert_eq!(occupants(&sim, source), [unauthorized]);
+    assert_eq!(occupants(&sim, one_slot), [resident, authorized]);
 }

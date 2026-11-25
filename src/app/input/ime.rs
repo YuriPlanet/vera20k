@@ -1,4 +1,4 @@
-//! OS input-method (IME) text entry for the chat edits.
+//! OS input-method (IME) text entry for chat and chooser edits.
 //!
 //! gamemd removes its main window's input context when it creates the window
 //! (CreateMainWindow `0x00777D80`: ImmGetContext, then
@@ -14,10 +14,11 @@
 //! paints the open composition (`0x00777EA0`) at its caret (`0x00623880`).
 //!
 //! VERA20k takes the composition and the finished text from winit's `Ime`
-//! events, and asks for an input method only while a chat edit takes keys:
+//! events, and asks for an input method only while an edit takes keys:
 //! the in-game line, the WOL lobby (`0x10F`), the WOL game room and LAN setup
-//! (C2/C9, BC/BD) and the LAN lobby (BB). Finished text goes through each
-//! screen's own text path, as WM_IME_CHAR does.
+//! (C2/C9, BC/BD), the LAN lobby (BB), Choose Map's search line, and VERA's
+//! converted-save name edit. Finished text goes through each screen's own
+//! text path, as WM_IME_CHAR does.
 //!
 //! Player-name edits take no input method: NewEdit `0x00614B30` drops units at
 //! or above 0x100 from them (`0x00615226..0x0061527A`, the byte-only filter),
@@ -38,7 +39,10 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use crate::app::AppState;
+use crate::app::input::precedence::{InputLayer, ScreenPage};
+use crate::app::{App, AppState, GameScreen};
+use crate::render::shell_text::{ScissorRect, TextRect};
+use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::geom::RectPx;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::Ime;
@@ -47,13 +51,16 @@ use winit::event::Ime;
 /// ShellDialog__SubclassChildByClass `0x0060F9A0` sets.
 pub(crate) const COMPOSITION_RGB: [u8; 3] = [0x9F, 0x9F, 0x00];
 
-/// The chat edit that takes IME input.
+/// An edit that takes IME input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ImeTarget {
     InGameChat,
-    WolLobbyChat,
+    WolLobbyEdit,
     SetupChat,
     LanLobbyChat,
+    ChooseMapSearch,
+    MainMenuConversionName,
+    InGameConversionName,
 }
 
 /// Process-local input-method state. Presentation-only: never serialized or
@@ -78,6 +85,13 @@ impl ImeState {
             .then_some((self.composition.as_slice(), self.cursor))
     }
 
+    /// The open composition and its cursor, whichever edit owns it (the
+    /// focused edit of the screen that routed the input method).
+    pub(crate) fn open_composition(&self) -> Option<(&[u16], usize)> {
+        let target = self.target?;
+        self.composition(target)
+    }
+
     /// While a composition is open, keys go to the input method (Windows
     /// delivers them as VK_PROCESSKEY), not to the edit.
     pub(crate) fn composing(&self) -> bool {
@@ -91,19 +105,72 @@ impl ImeState {
     }
 }
 
-/// The chat edit that takes keys now, with its rectangle in window pixels.
+/// The edit that takes keys now, with its rectangle in window pixels.
 /// The dialogs the key dispatch serves first leave none.
 fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
     if state.main_menu_dialog_open()
-        || crate::app::input::coop_score::active(state)
-        || crate::app::frontend::preview_zoom::is_open(state)
+        || crate::app::input::coop_score::active(&state.frontend)
+        || crate::app::frontend::preview_zoom::is_open(&state.frontend.preview_zoom)
     {
         return None;
+    }
+    // The conversion edit owns the keys when a battlefield chat edit is
+    // underneath it; a prompt over the name keeps the IME closed.
+    let saved_browser = match state.frontend.screen {
+        GameScreen::MainMenu => state.frontend.load_saved_game.as_ref(),
+        GameScreen::InGame => state
+            .match_state
+            .match_presentation
+            .saved_game_browser
+            .as_ref(),
+        _ => None,
+    };
+    if let Some(browser) = saved_browser.filter(|browser| browser.is_naming_conversion()) {
+        if !browser.edit().focused {
+            return None;
+        }
+        let (target, layout) = match crate::app::input::precedence::input_layer(state) {
+            InputLayer::Screen(ScreenPage::LoadSavedGame) => (
+                ImeTarget::MainMenuConversionName,
+                crate::app::frontend::shell_layout::load_saved_game_layout(
+                    &state.renderer.gpu,
+                    &state.frontend,
+                )
+                .browser,
+            ),
+            InputLayer::Screen(ScreenPage::InGameShell(InGameMenuState::SavedGame(_))) => (
+                ImeTarget::InGameConversionName,
+                App::saved_game_layout(state, browser.mode)?,
+            ),
+            _ => return None,
+        };
+        let rect = layout.name_edit?;
+        // The launcher is in window pixels. An active-game shell's edit
+        // shares the text's sidebar and match zoom before it reaches them.
+        let rect = match crate::app::presentation::window_ui::shell_raster(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+            true,
+        ) {
+            Some(raster) => {
+                let at = ScissorRect::of(TextRect::of(rect), raster);
+                RectPx::new(at.x as i32, at.y as i32, at.w as i32, at.h as i32)
+            }
+            None => rect,
+        };
+        return Some((target, rect));
     }
     [
         (
             ImeTarget::InGameChat,
-            crate::app::input::messages::ime_edit_rect(state),
+            crate::app::input::messages::ime_edit_rect(
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state.match_presentation,
+            ),
         ),
         (
             ImeTarget::LanLobbyChat,
@@ -114,15 +181,19 @@ fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
             crate::app::input::multiplayer_setup::ime_chat_rect(state),
         ),
         (
-            ImeTarget::WolLobbyChat,
-            crate::app::shell_wol::lobby::ime_chat_rect(state),
+            ImeTarget::WolLobbyEdit,
+            crate::app::shell_wol::lobby::ime_edit_rect(state),
+        ),
+        (
+            ImeTarget::ChooseMapSearch,
+            crate::app::App::choose_map_search_ime_rect(state),
         ),
     ]
     .into_iter()
     .find_map(|(target, rect)| rect.map(|rect| (target, rect)))
 }
 
-/// Ask for an input method exactly while a chat edit takes keys
+/// Ask for an input method exactly while a supported edit takes keys
 /// (`0x00778180` / `0x007781A0`), and keep the system's candidate window at
 /// that edit.
 pub(crate) fn sync(state: &mut AppState) {
@@ -174,6 +245,9 @@ pub(crate) fn event(state: &mut AppState, event: Ime) {
                 .map_or(ime.composition.len(), |prefix| {
                     prefix.encode_utf16().count()
                 });
+            if target(state).is_some_and(|(target, _)| target == ImeTarget::InGameChat) {
+                crate::app::input::chat::composition_changed(state);
+            }
         }
         Ime::Commit(text) => {
             state.platform.ime.cancel();
@@ -185,8 +259,7 @@ pub(crate) fn event(state: &mut AppState, event: Ime) {
     state.platform.window.request_redraw();
 }
 
-/// WM_IME_CHAR's consumers: the in-game queue and NewEdit's WM_CHAR insertion,
-/// here each screen's own text path.
+/// WM_IME_CHAR's consumers: each screen's own text path.
 fn commit(state: &mut AppState, text: &str) {
     match target(state).map(|(target, _)| target) {
         Some(ImeTarget::InGameChat) => crate::app::input::chat::commit_text(state, text),
@@ -194,9 +267,16 @@ fn commit(state: &mut AppState, text: &str) {
         Some(ImeTarget::SetupChat) => {
             crate::app::input::multiplayer_setup::key_press(state, None, Some(text))
         }
-        Some(ImeTarget::WolLobbyChat) => {
+        Some(ImeTarget::WolLobbyEdit) => {
             crate::app::shell_wol::lobby::key_press(state, None, Some(text))
         }
+        Some(ImeTarget::ChooseMapSearch) => {
+            crate::app::App::choose_map_search_text(state, text);
+        }
+        Some(ImeTarget::MainMenuConversionName) => {
+            App::handle_load_saved_game_key(state, None, Some(text));
+        }
+        Some(ImeTarget::InGameConversionName) => App::saved_game_key(state, None, Some(text)),
         None => {}
     }
 }

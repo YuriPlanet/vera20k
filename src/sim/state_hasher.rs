@@ -28,7 +28,7 @@ pub(crate) fn digests<T: Sync>(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::digests;
     use crate::util::state_hasher::StateHasher;

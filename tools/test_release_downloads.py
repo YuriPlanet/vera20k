@@ -35,9 +35,9 @@ class ReleaseDownloadsTests(unittest.TestCase):
         self.config = {"tag": "v0.2.2", "commit": "a" * 40, "updater_version": f"{UPDATER}\n",
                        "release": {"id": 10, "tag_name": "v0.2.2", "draft": False, "prerelease": False, "assets": assets}}
 
-    def run_publisher(self, tag="v0.2.2", signing_key=None, roll_back=False):
+    def run_publisher(self, tag="v0.2.2", signing_key=None, roll_back=False, build=None):
         return self.publisher.run(tag, self.config, self.signing_key if signing_key is None else signing_key,
-                                  *(["--roll-back"] if roll_back else []))
+                                  *(["--roll-back"] if roll_back else []), build=build)
 
     def calls(self):
         path = self.root / "calls.jsonl"
@@ -65,6 +65,8 @@ class ReleaseDownloadsTests(unittest.TestCase):
         self.assertEqual(set(data["files"]), {"windows", "macos", "linux"})
         # What an older game needs to offer a release it cannot install.
         self.assertEqual((data["updater"], data["update_key"]), (UPDATER, self.public_key))
+        # A release whose program logs no multiplayer build names none.
+        self.assertNotIn("build", data)
         for entry in data["files"].values():
             contents = (self.root / "objects" / entry["key"]).read_bytes()
             self.assertEqual(len(contents), entry["size"])
@@ -149,6 +151,22 @@ class ReleaseDownloadsTests(unittest.TestCase):
         data = json.loads((self.root / "objects/releases/v0.2.2/manifest.json").read_text())
         self.assertNotIn("updater", data)
         self.assertEqual(data["update_key"], self.public_key)
+
+    def test_the_manifest_names_the_release_build_and_a_retry_keeps_it(self):
+        build = "0.2.2:" + "d" * 64
+        result = self.run_publisher(build=build)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads((self.root / "objects/latest.json").read_text())["build"], build)
+        # Like the other fields, the build first published stays.
+        result = self.run_publisher(build="0.2.2:" + "e" * 64)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads((self.root / "objects/latest.json").read_text())["build"], build)
+
+    def test_a_build_of_another_version_or_form_stops_before_remote_calls(self):
+        for build in ("0.2.3:" + "d" * 64, "0.2.2:" + "d" * 63, "0.2.2:" + "D" * 64, "0.2.2:" + "d" * 64 + ":0000"):
+            with self.subTest(build=build):
+                self.assertNotEqual(self.run_publisher(build=build).returncode, 0)
+                self.assertEqual(self.calls(), [])
 
     def test_signing_key_must_match_the_trusted_public_key(self):
         old_pointer = self.prior_pointer()

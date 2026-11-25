@@ -64,17 +64,21 @@ pub(super) fn on_launch(
     // SW_GeneticMutator::GetSound10072000 falls back to `[AudioVisual]
     // GeneticMutatorActivateSound=`.
     let sound = match &presentation.sound {
-        Some(sound) => sound.clone(),
+        Some(sound) => sound.as_deref(),
+        // SW_PsychicReveal::GetSound100752B0.
+        None if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::PsychicReveal => {
+            rules.general.psychic_reveal_activate_sound.as_deref()
+        }
         None if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::GeneticConverter => {
-            rules.general.genetic_mutator_activate_sound.clone()
+            rules.general.genetic_mutator_activate_sound.as_deref()
         }
         None => None,
     };
     if !flags.has(F::NO_SOUND)
-        && let Some(sound) = &sound
+        && let Some(sound) = sound
     {
         sim.sound_events.emit(SimSoundEvent::VocAtCoord {
-            sound_id: sound.clone(),
+            sound_id: rules.sound_name(sound),
             coordinate: DriveCoord {
                 x: coord[0],
                 y: coord[1],

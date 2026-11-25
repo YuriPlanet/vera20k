@@ -77,8 +77,9 @@ impl FrameClock {
 
 thread_local! {
     /// The running object pass's clock. Only that pass installs one, so an
-    /// unprofiled frame or a worker thread finds nothing here: the main
-    /// thread's wait for its workers is what the slot shows.
+    /// unprofiled frame or a worker thread finds nothing here: a slot shows
+    /// the simulation thread's own share of pooled work and its wait for the
+    /// workers.
     static AREAS: RefCell<Option<AreaClock>> = const { RefCell::new(None) };
 }
 
@@ -130,9 +131,10 @@ pub(crate) fn area(slot: usize) -> Area {
 
 /// Slots in the per-frame ledger, in the order `advance_master_frame` runs
 /// them, except that `TEAM_AI` runs between the two stretches `BOMBS` folds
-/// (Kamikaze, then the Disk walk), and that `UNIT_AI` through `EFFECTS` are
-/// parts of the one object pass. Names are stable keys: the dashboard's i18n
-/// table is indexed by them.
+/// (Kamikaze, then the Disk walk), that `UNIT_AI` through `EFFECTS` are
+/// parts of the one object pass, and that `EFFECTS` also takes the
+/// presentation effects' step after `COMBAT`. Names are stable keys: the
+/// dashboard's i18n table is indexed by them.
 pub mod phase {
     pub const COMMANDS_INGRESS: usize = 0;
     pub const COMMANDS_ADMIT: usize = 1;
@@ -285,6 +287,11 @@ pub struct FrameProfile {
     /// The measured span of the whole simulation frame, for the residual check.
     total_ns: u128,
     peak_frame_ns: u128,
+    /// The most recently completed frame's spans, for a per-frame reader.
+    /// Derived timing only: never folded into the totals twice, never hashed.
+    last_phases: Option<FramePhases>,
+    /// The most recently completed frame's whole span.
+    last_total: Duration,
 }
 
 impl FrameProfile {
@@ -296,6 +303,8 @@ impl FrameProfile {
         }
         self.total_ns += total.as_nanos();
         self.peak_frame_ns = self.peak_frame_ns.max(total.as_nanos());
+        self.last_phases = Some(phases);
+        self.last_total = total;
     }
 
     /// Start a fresh match's accounting.
@@ -306,6 +315,13 @@ impl FrameProfile {
     /// Completed frame calls measured so far, including a terminal frame.
     pub fn frames(&self) -> u64 {
         self.frames
+    }
+
+    /// The most recently completed frame's spans and whole span. A per-frame
+    /// reader (the perf recorder) pulls this instead of diffing the totals;
+    /// `None` until the first measured frame. Derived timing only.
+    pub fn last_frame(&self) -> Option<(FramePhases, Duration)> {
+        self.last_phases.zip(Some(self.last_total))
     }
 
     /// Per-phase nanoseconds and frames since the last reset. A reader that
@@ -393,9 +409,34 @@ impl Default for FrameProfileReport {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn last_frame_is_the_most_recently_recorded_frame() {
+        let mut profile = FrameProfile::default();
+        assert!(profile.last_frame().is_none());
+        let first = spread(
+            Duration::from_millis(1),
+            Duration::from_millis(2),
+            Duration::from_millis(3),
+            Duration::from_millis(4),
+        );
+        profile.record(first, Duration::from_millis(10));
+        assert_eq!(profile.last_frame().unwrap().0, first);
+        assert_eq!(profile.last_frame().unwrap().1, Duration::from_millis(10));
+        let second = spread(
+            Duration::from_millis(5),
+            Duration::from_millis(5),
+            Duration::from_millis(5),
+            Duration::from_millis(5),
+        );
+        profile.record(second, Duration::from_millis(20));
+        // The per-frame reader sees the second frame, not a sum of both.
+        assert_eq!(profile.last_frame().unwrap().0, second);
+        assert_eq!(profile.last_frame().unwrap().1, Duration::from_millis(20));
+    }
 
     /// Spread `total` evenly over a slice, putting the division remainder on the
     /// slice's first slot so the sum stays exact.

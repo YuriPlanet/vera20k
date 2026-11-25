@@ -16,7 +16,7 @@ impl Simulation {
         team_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(team) = self.team_script_vm.team(team_id) else {
             return;
@@ -57,7 +57,7 @@ impl Simulation {
                 self.team_script_vm
                     .teams
                     .get_mut(&team_id)
-                    .unwrap()
+                    .expect("the scouting Team is live")
                     .scout_house = Some(peer);
                 // 6EE8CD..6EE935 reads BuildingClass::Array, filtering only
                 // owner. Dead and limbo entries still belong to this pool.
@@ -80,7 +80,7 @@ impl Simulation {
                         .substrate
                         .entities
                         .get(buildings[index as usize])
-                        .unwrap();
+                        .expect("the pool keeps only Buildings that exist");
                     // 6EE9E1..6EEA21 uses Location, signed /256 (not GetCoords).
                     let location = position_world_coord(&building.position);
                     let seed = (
@@ -109,7 +109,7 @@ impl Simulation {
                     let target = cell
                         .filter(|&cell| cell != (0, 0))
                         .map(|(x, y)| self.canonical_team_cell((x as i16, y as i16)));
-                    self.team_assign_mission_target(team_id, target, rules, registry, effects);
+                    self.team_assign_mission_target(team_id, target, rules, effects);
                 }
             }
         }
@@ -120,7 +120,7 @@ impl Simulation {
             self.team_script_vm
                 .teams
                 .get_mut(&team_id)
-                .unwrap()
+                .expect("the scouting Team is live")
                 .scout_house = None;
         }
         self.team_coordinate_move(team_id, rules, registry, effects);

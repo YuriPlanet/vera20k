@@ -5,7 +5,7 @@
 //! `zh-CN` or `pt-BR`. VERA ships the files beside this module (build.rs lists
 //! them, so shipping a language is adding its file). They are compiled in,
 //! except in the installers' builds: those compile in only English, and each
-//! installer puts the rest in a folder of its own ([`packaged_language_dir`]),
+//! installer puts the rest in a folder of its own ([`installed_language_dir`]),
 //! so a language can be removed after the build by deleting its files. A file
 //! of that name in the settings folder adds a language, or replaces a shipped
 //! one while it is being written. `vera20k --check-language <file>` lists what
@@ -19,9 +19,9 @@
 //! Name=Deutsch
 //!
 //! [Strings]
-//! VERA:SaveSetup=Setup speichern
-//! VERA:CatchingUp[one]=Holt auf - {count} Frame zurück
-//! VERA:CatchingUp[other]=Holt auf - {count} Frames zurück
+//! VERA:ChooseMap=Karte wählen
+//! VERA:LobbyInGameRooms[one]={count} in einem Raum
+//! VERA:LobbyInGameRooms[other]={count} in Räumen
 //! ; One of the game's own labels.
 //! GUI:Ok=OK
 //! ```
@@ -33,7 +33,7 @@
 //! (`zero`, `one`, `two`, `few`, `many`, `other`); `{count}` is the count.
 //!
 //! A language whose texts mostly start with a right-to-left letter (Arabic,
-//! Hebrew) reads right to left ([`right_to_left`]): there a text holding
+//! Hebrew) reads right to left ([`interface_language`]): there a text holding
 //! such a letter reads from the right even when it starts with a name or a
 //! number. VERA keeps gamemd's layouts unmirrored, so text stays on its
 //! box's side.
@@ -62,13 +62,19 @@
 //! keys. While that box is ticked, a language file added or rewritten in the
 //! settings folder — or in a checkout's `src/i18n`, which then replaces the
 //! shipped files by tag — is loaded again within a second
-//! ([`poll_language_files`]), so its texts follow without a restart.
+//! ([`LanguageFileWatch::poll`]), so its texts follow without a restart.
+
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)
+)]
 
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::{self, Display, Write as _};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, LazyLock, Mutex, PoisonError, RwLock};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock, PoisonError, RwLock};
 
 use crate::util::time::{Duration, Instant};
 
@@ -309,11 +315,35 @@ impl Catalog {
     }
 }
 
+/// The languages in use. Process-global because its readers are the free
+/// functions [`tr`], [`label`], [`find`] and their kin, called from some 340
+/// places in the shell, loading, match and render code, none of which has an
+/// owner of the text in reach; a `static` must be `Sync`, so it sits behind a
+/// lock. In the game only the main thread reads or replaces it; parallel tests
+/// share it. The simulation never reads it.
 static CATALOG: LazyLock<RwLock<Catalog>> =
     LazyLock::new(|| RwLock::new(Catalog::new(languages(None))));
 
+/// Bumped at each change of the catalog ([`init`], [`select`], a reload of
+/// the language files), so the fonts read the language in use again
+/// ([`interface_language`]). Beside [`CATALOG`] for its reason, and an
+/// atomic so a text engine can compare it without taking the lock.
+static CATALOG_REVISION: AtomicU64 = AtomicU64::new(0);
+
+/// Put `next` in use ([`CATALOG_REVISION`]).
+fn install_catalog(next: Catalog) {
+    let mut catalog = CATALOG.write().unwrap_or_else(PoisonError::into_inner);
+    *catalog = next;
+    CATALOG_REVISION.fetch_add(1, Ordering::Relaxed);
+}
+
 /// Whether every label displays its own string-table key instead of its text
 /// (Options' Developer page), VERA's own `VERA:` labels included.
+///
+/// This and [`STRING_KEYS_VALUES`] copy the Options profile's String Keys
+/// box (`set_show_string_keys` at startup and on each tick) into globals
+/// because [`tr`], [`label`] and [`apply`] answer from them, and those free
+/// functions are called with no Options in reach, beside [`CATALOG`].
 static SHOW_STRING_KEYS: AtomicBool = AtomicBool::new(false);
 /// Set by the every-screen hotkey: while the box is ticked, show the texts
 /// again without unticking it, so the two views compare in place.
@@ -350,52 +380,46 @@ pub fn toggle_string_keys() -> bool {
     STRING_KEYS_VALUES.fetch_xor(true, Ordering::Relaxed)
 }
 
-/// How often [`poll_language_files`] looks at the settings folder.
+/// How often [`LanguageFileWatch::poll`] looks at the settings folder.
 const LANGUAGE_FILE_POLL: Duration = Duration::from_secs(1);
 
 /// The settings folder's language files as the last poll saw them: name,
-/// size and modified time, sorted by name.
-struct LanguageFiles {
+/// size and modified time, sorted by name. The app's frontend owns one and
+/// lends it to each poll.
+#[derive(Default)]
+pub struct LanguageFileWatch {
     stamped: Vec<(String, u64, u128)>,
     last_poll: Option<Instant>,
 }
 
-static LANGUAGE_FILES: LazyLock<Mutex<LanguageFiles>> = LazyLock::new(|| {
-    Mutex::new(LanguageFiles {
-        stamped: Vec::new(),
-        last_poll: None,
-    })
-});
-
-/// While the Developer page's String Keys box is ticked, notice a language
-/// file added, removed or rewritten in `settings_dir` — or in the checkout's
-/// `src/i18n` when the game runs from one — and load the languages again,
-/// keeping the selected tag where it still exists. Checked at most once a
-/// second. The first poll of a session reloads too, so a checkout's files
-/// answer as soon as the box is ticked. True when the catalog was rebuilt, so
-/// the caller re-applies it to the loaded string table.
-pub fn poll_language_files(settings_dir: Option<&Path>) -> bool {
-    let mut watch = LANGUAGE_FILES
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    let now = Instant::now();
-    if watch
-        .last_poll
-        .is_some_and(|last| now.saturating_duration_since(last) < LANGUAGE_FILE_POLL)
-    {
-        return false;
+impl LanguageFileWatch {
+    /// While the Developer page's String Keys box is ticked, notice a
+    /// language file added, removed or rewritten in `settings_dir` — or in
+    /// the checkout's `src/i18n` when the game runs from one — and load the
+    /// languages again, keeping the selected tag where it still exists.
+    /// Checked at most once a second. The first poll of a watch reloads too,
+    /// so a checkout's files answer as soon as the box is ticked. True when
+    /// the catalog was rebuilt, so the caller re-applies it to the loaded
+    /// string table.
+    pub fn poll(&mut self, settings_dir: Option<&Path>) -> bool {
+        let now = Instant::now();
+        if self
+            .last_poll
+            .is_some_and(|last| now.saturating_duration_since(last) < LANGUAGE_FILE_POLL)
+        {
+            return false;
+        }
+        let first = self.last_poll.is_none();
+        self.last_poll = Some(now);
+        let source_dir = source_language_dir();
+        let stamped = language_file_stamp(settings_dir, source_dir.as_deref());
+        if !first && stamped == self.stamped {
+            return false;
+        }
+        self.stamped = stamped;
+        reload_languages(settings_dir, source_dir.as_deref());
+        true
     }
-    let first = watch.last_poll.is_none();
-    watch.last_poll = Some(now);
-    let source_dir = source_language_dir();
-    let stamped = language_file_stamp(settings_dir, source_dir.as_deref());
-    if !first && stamped == watch.stamped {
-        return false;
-    }
-    watch.stamped = stamped;
-    drop(watch);
-    reload_languages(settings_dir, source_dir.as_deref());
-    true
 }
 
 /// The checkout's language files, `src/i18n` beside the working directory,
@@ -453,7 +477,7 @@ fn reload_languages(settings_dir: Option<&Path>, source_dir: Option<&Path>) {
         None => next.languages[0].clone(),
     };
     let tag = next.selected.tag.clone();
-    *CATALOG.write().unwrap_or_else(PoisonError::into_inner) = next;
+    install_catalog(next);
     log::info!("Interface language reloaded: {tag}");
 }
 
@@ -491,22 +515,10 @@ fn languages(settings_dir: Option<&Path>) -> Vec<Arc<Language>> {
 
 /// The folder of languages and fonts an installer put with the running game.
 pub(crate) fn installed_language_dir() -> Option<PathBuf> {
-    packaged_language_dir(std::env::current_exe().ok()?.parent()?)
-}
-
-/// Where each installer puts the languages that are not compiled in, from the
-/// folder holding the game's program: beside it on Windows, in the app bundle's
-/// Resources on macOS, in the AppImage's `usr/share/vera20k` on Linux. The
-/// last two are sealed, so there a language is removed before packaging.
-fn packaged_language_dir(program_dir: &Path) -> Option<PathBuf> {
-    [
+    crate::util::platform_dir::packaged_resource_dir(
+        std::env::current_exe().ok()?.parent()?,
         "languages",
-        "../Resources/languages",
-        "../share/vera20k/languages",
-    ]
-    .into_iter()
-    .map(|place| program_dir.join(place))
-    .find(|dir| dir.is_dir())
+    )
 }
 
 /// [`languages`], from `installed_dir` and `settings_dir`. A file in a later
@@ -613,12 +625,12 @@ fn settings_files(dir: &Path) -> Vec<(String, PathBuf)> {
 
 /// The tag in a language file's name, `vera20k.<tag>.ini`.
 fn file_tag(name: &str) -> Option<&str> {
-    let lower = name.to_ascii_lowercase();
-    if !lower.starts_with("vera20k.") || !lower.ends_with(".ini") {
-        return None;
-    }
-    let tag = &name["vera20k.".len()..name.len() - ".ini".len()];
-    (!tag.is_empty()).then_some(tag)
+    let (prefix, rest) = name.split_at_checked("vera20k.".len())?;
+    let (tag, suffix) = rest.split_at_checked(rest.len().checked_sub(".ini".len())?)?;
+    (prefix.eq_ignore_ascii_case("vera20k.")
+        && suffix.eq_ignore_ascii_case(".ini")
+        && !tag.is_empty())
+    .then_some(tag)
 }
 
 /// Load the shipped languages and those in `settings_dir`, and use `chosen`
@@ -647,7 +659,7 @@ pub fn init(settings_dir: Option<&Path>, chosen: Option<&str>) -> String {
     });
     let tag = catalog.selected.tag.clone();
     log::info!("Interface language: {tag} ({})", catalog.selected.name);
-    *CATALOG.write().unwrap_or_else(PoisonError::into_inner) = catalog;
+    install_catalog(catalog);
     tag
 }
 
@@ -660,6 +672,7 @@ pub fn select(tag: &str) -> bool {
             return false;
         };
         catalog.selected = language.clone();
+        CATALOG_REVISION.fetch_add(1, Ordering::Relaxed);
         language
     };
     // Logged after the lock is released: a panic while logging reports
@@ -689,14 +702,24 @@ pub fn cameo_label(file: &str) -> Option<Arc<CameoLabel>> {
         .cloned()
 }
 
-/// Whether the language `tag` reads right to left: most of its file's texts
-/// start with a right-to-left letter. A text holding one then reads from
-/// the right whatever it starts with, as a sentence that opens with a name
-/// does; text without one, such as the game's English, keeps its own order.
-pub fn right_to_left(tag: &str) -> bool {
-    catalog()
-        .find(tag)
-        .is_some_and(|language| language.right_to_left)
+/// The catalog's revision: it changes whenever [`interface_language`] may.
+pub fn catalog_revision() -> u64 {
+    CATALOG_REVISION.load(Ordering::Relaxed)
+}
+
+/// The language in use as the fonts draw it, with the [`catalog_revision`]
+/// it belongs to: its tag, for region-specific CJK letter forms, and whether
+/// it reads right to left: most of its file's texts start with a
+/// right-to-left letter. A text holding one then reads from the right
+/// whatever it starts with, as a sentence that opens with a name does; text
+/// without one, such as the game's English, keeps its own order.
+pub fn interface_language() -> (u64, String, bool) {
+    let catalog = catalog();
+    (
+        CATALOG_REVISION.load(Ordering::Relaxed),
+        catalog.selected.tag.clone(),
+        catalog.selected.right_to_left,
+    )
 }
 
 /// A language the player can choose.
@@ -750,7 +773,10 @@ pub fn choices() -> Vec<LanguageChoice> {
 /// The index in `available` of the best language for `preferred` (most
 /// preferred first): the first preference any language shares a language
 /// with, and among those the one that also shares its script, then region.
-fn best_match<'a>(available: &[&str], preferred: impl Iterator<Item = &'a str>) -> Option<usize> {
+pub(crate) fn best_match<'a>(
+    available: &[&str],
+    preferred: impl Iterator<Item = &'a str>,
+) -> Option<usize> {
     let available: Vec<Option<Subtags>> = available.iter().map(|tag| Subtags::of(tag)).collect();
     preferred.filter_map(Subtags::of).find_map(|wanted| {
         available
@@ -923,13 +949,27 @@ fn missing(key: &str) -> String {
 /// a value is never read for names itself: a player called `{count}` stays
 /// `{count}`. A `{name}` with no value stays as it is.
 pub fn fill(text: &str, values: &[(&str, &dyn Display)]) -> String {
+    filled(text, values).0
+}
+
+/// [`fill`], or `None` when `text` names a value `values` lacks: for text
+/// whose values come from outside VERA, such as the lobby's lines, whose
+/// sender's own text stands in for a line this game cannot fill.
+pub fn fill_all(text: &str, values: &[(&str, &dyn Display)]) -> Option<String> {
+    let (out, complete) = filled(text, values);
+    complete.then_some(out)
+}
+
+/// [`fill`]'s text, and whether every `{name}` in `text` had a value.
+fn filled(text: &str, values: &[(&str, &dyn Display)]) -> (String, bool) {
     let mut out = String::with_capacity(text.len());
+    let mut complete = true;
     let mut rest = text;
     while let Some(open) = rest.find('{') {
         out.push_str(&rest[..open]);
         let after = &rest[open + 1..];
-        let value = after.find('}').and_then(|close| {
-            let name = &after[..close];
+        let name = after.find('}').map(|close| (close, &after[..close]));
+        let value = name.and_then(|(close, name)| {
             let value = values.iter().find(|(key, _)| *key == name)?.1;
             Some((close, value))
         });
@@ -939,13 +979,14 @@ pub fn fill(text: &str, values: &[(&str, &dyn Display)]) -> String {
                 rest = &after[close + 1..];
             }
             None => {
+                complete &= name.is_none();
                 out.push('{');
                 rest = after;
             }
         }
     }
     out.push_str(rest);
-    out
+    (out, complete)
 }
 
 /// `text` in the pseudo-language: letters swapped for accented look-alikes,
@@ -1347,7 +1388,7 @@ pub fn check(file_name: &str, text: &str) -> CheckReport {
     report
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_root))]
 mod tests {
     use super::*;
     use crate::assets::csf_file::test_csf;
@@ -1361,6 +1402,62 @@ mod tests {
         let mut catalog = Catalog::new(vec![english, language(selected, file)]);
         catalog.selected = catalog.languages[1].clone();
         catalog
+    }
+
+    /// The AutoLoad result line ships in English with a `{count}` slot so the
+    /// hotkey's issued-order count can be shown without a type lookup.
+    #[test]
+    fn autoload_result_line_ships_with_a_count_slot() {
+        let english = language("en", shipped::FILES[0].1);
+        let template = english
+            .strings
+            .get("VERA:EVAAUTOLOADED")
+            .map(String::as_str)
+            .expect("the AutoLoad result line is in the English file");
+        let filled = fill(template, &[("count", &3usize)]);
+        assert!(filled.contains('3'));
+        assert!(!filled.contains("{count}"));
+    }
+
+    /// The text-only detailed EVA alerts all ship in English. They carry no
+    /// `{name}` slot because their sim/app events have no subject type.
+    #[test]
+    fn text_only_eva_alert_lines_ship_without_a_name_slot() {
+        let english = language("en", shipped::FILES[0].1);
+        for key in [
+            "VERA:EVABASEUNDERATTACK",
+            "VERA:EVAHARVESTERUNDERATTACK",
+            "VERA:EVAALLYUNDERATTACK",
+            "VERA:EVACASHSTOLEN",
+            "VERA:EVANEWCONSTRUCTION",
+        ] {
+            let text = english
+                .strings
+                .get(key)
+                .map(String::as_str)
+                .unwrap_or_else(|| panic!("{key} is missing from the English file"));
+            assert!(!text.is_empty(), "{key} is empty");
+            assert!(!text.contains("{name}"), "{key} must not need a subject");
+        }
+    }
+
+    /// The detailed object status lines ship in English with the slots their
+    /// capture-time fillers provide.
+    #[test]
+    fn info_status_lines_ship_with_their_slots() {
+        let english = language("en", shipped::FILES[0].1);
+        for (key, slot) in [
+            ("VERA:INFORELOAD", "{time}"),
+            ("VERA:INFOBUILDINGREPAIR", "{time}"),
+            ("VERA:INFOBUILDINGREPAIR", "{cost}"),
+        ] {
+            let text = english
+                .strings
+                .get(key)
+                .map(String::as_str)
+                .unwrap_or_else(|| panic!("{key} is missing from the English file"));
+            assert!(text.contains(slot), "{key} must contain {slot}");
+        }
     }
 
     /// A language's subtitles and cameo names load from the files beside its
@@ -1433,13 +1530,18 @@ mod tests {
                 "VERA20K.app/Contents/Resources/languages",
             ),
             ("AppDir/usr/bin", "AppDir/usr/share/vera20k/languages"),
+            ("Launcher/usr/bin", "Launcher/usr/lib/VERA20K/languages"),
         ] {
             let program = root.join(program);
             let folder = root.join(folder);
             std::fs::create_dir_all(&program).unwrap();
-            assert_eq!(packaged_language_dir(&program), None);
+            assert_eq!(
+                crate::util::platform_dir::packaged_resource_dir(&program, "languages"),
+                None
+            );
             std::fs::create_dir_all(&folder).unwrap();
-            let found = packaged_language_dir(&program).expect("the folder");
+            let found = crate::util::platform_dir::packaged_resource_dir(&program, "languages")
+                .expect("the folder");
             assert_eq!(
                 found.canonicalize().unwrap(),
                 folder.canonicalize().unwrap()
@@ -1449,13 +1551,19 @@ mod tests {
     }
 
     /// A value is never read for names: a player called `{count}` keeps the
-    /// name, and a name with no value stays as it is.
+    /// name, and a name with no value stays as it is, or leaves no text where
+    /// every name needs one. A `{` with no `}` is text.
     #[test]
     fn fill_puts_each_value_in_once() {
         let values: [(&str, &dyn Display); 2] = [("name", &"{count}"), ("count", &3)];
         assert_eq!(
             fill("{name} has {count} {rest}", &values),
             "{count} has 3 {rest}"
+        );
+        assert_eq!(fill_all("{name} has {count} {rest}", &values), None);
+        assert_eq!(
+            fill_all("{name} has {count} {", &values).as_deref(),
+            Some("{count} has 3 {")
         );
     }
 
@@ -1491,7 +1599,7 @@ mod tests {
         // A rewrite does.
         std::fs::write(
             &file,
-            "[Language]\nName=Test\n[Strings]\nVERA:SaveSetup=S\n",
+            "[Language]\nName=Test\n[Strings]\nVERA:ChooseMap=S\n",
         )
         .unwrap();
         assert_ne!(language_file_stamp(Some(&dir), None), before);
@@ -1509,12 +1617,12 @@ mod tests {
         std::fs::create_dir_all(&source).unwrap();
         std::fs::write(
             settings.join("vera20k.xx.ini"),
-            "[Language]\nName=Settings\n[Strings]\nVERA:SaveSetup=Settings\n",
+            "[Language]\nName=Settings\n[Strings]\nVERA:ChooseMap=Settings\n",
         )
         .unwrap();
         std::fs::write(
             source.join("vera20k.xx.ini"),
-            "[Language]\nName=Source\n[Strings]\nVERA:SaveSetup=Source\n",
+            "[Language]\nName=Source\n[Strings]\nVERA:ChooseMap=Source\n",
         )
         .unwrap();
         let languages = languages_with_source(Some(&settings), Some(&source));
@@ -1523,7 +1631,7 @@ mod tests {
             .find(|language| language.tag == "xx")
             .unwrap();
         assert_eq!(
-            xx.strings.get("VERA:SAVESETUP").map(String::as_str),
+            xx.strings.get("VERA:CHOOSEMAP").map(String::as_str),
             Some("Source")
         );
         std::fs::remove_dir_all(&root).unwrap();
@@ -1582,9 +1690,18 @@ mod tests {
         assert_eq!(pseudo(" "), " ");
     }
 
+    /// A file named only `vera20k.ini` has no tag between the two affixes,
+    /// which overlap; it is not a language file and must not stop startup.
+    #[test]
+    fn a_language_file_name_without_a_tag_has_none() {
+        assert_eq!(check("vera20k.ini", "").tag, None);
+        assert_eq!(check("VERA20K.INI", "").tag, None);
+        assert_eq!(check("VERA20K.de.INI", "").tag.as_deref(), Some("de"));
+    }
+
     #[test]
     fn the_check_lists_untranslated_texts_missing_forms_and_values() {
-        let file = "[Language]\nName=Русский\n[Strings]\nVERA:CatchingUp[one]=Догоняем\nVERA:PlayersOnline=Игроки\nVERA:Bogus=?\nNoEquals\n";
+        let file = "[Language]\nName=Русский\n[Strings]\nVERA:LobbyInGameRooms[one]={count} в комнате\nVERA:PlayersOnline=Игроки\nVERA:Bogus=?\nNoEquals\n";
         assert!(!check("russian.ini", file).complete());
         let report = check("vera20k.ru.ini", file);
         assert!(!report.complete());
@@ -1597,7 +1714,7 @@ mod tests {
         assert!(
             report
                 .missing_forms
-                .contains(&"VERA:CatchingUp[few]".to_owned())
+                .contains(&"VERA:LobbyInGameRooms[few]".to_owned())
         );
         assert!(
             report

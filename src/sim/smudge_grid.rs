@@ -660,7 +660,7 @@ pub(crate) fn pick_smudge_candidate(
             if force_big {
                 w >= 2 && h >= 2
             } else {
-                (w == 1 && h == 1) || (0x3C < width && 0x32 < height)
+                (w == 1 && h == 1) || crate::rules::art_data::smudge_frame_is_large(width, height)
             }
         })
         .map(|&(id, _, _)| id)
@@ -685,7 +685,7 @@ pub struct SimCoord {
 /// `tools/spatial_oracle/smudge_can_place.json`: native CanPlace, placer and
 /// DestructionEffects step 7 rows over a synthetic MapClass cell table, and
 /// that table rebuilt in the Rust owners.
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_p_s, tests_sim_combat_d_z)))]
 pub(crate) mod oracle_fixture {
     use super::*;
     use crate::map::playfield::size_diamond_contains;
@@ -949,7 +949,7 @@ impl SmudgeGrid {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::ResolvedTerrainCell;

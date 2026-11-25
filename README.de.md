@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K Titelbild" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <strong>Deutsch</strong> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
+  <a href="README.vi.md" lang="vi">Tiếng Việt</a> · <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.zh-TW.md" lang="zh-TW">繁體中文</a> · <strong>Deutsch</strong> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter Linux (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Bibliothekstests unter Linux" height="23" align="middle"></a>
@@ -15,7 +15,8 @@
 
 VERA20K ist eine neue Engine für Red Alert 2: Yuri's Revenge. Sie spielt sich wie das Original, mit
 denselben Einheiten, Karten und demselben Aussehen, und läuft unter Windows, macOS und Linux. Sie
-ist für größere Schlachten gebaut, mit bis zu 30 Spielern und 20.000 Einheiten auf einer Karte.
+ist für größere Schlachten mit bis zu 20.000 Einheiten auf einer Karte gebaut. Offline-Gefechte bieten
+bis zu 120 Spielerplätze, LAN- und Online-Partien bis zu 30.
 
 VERA20K wird von Spielern für Spieler gemacht, und die Spieler haben das letzte Wort, wohin sich
 das Projekt entwickelt.
@@ -31,22 +32,12 @@ das Projekt entwickelt.
 
 Kommst du nicht weiter? Schau auf der [Hilfeseite](https://vera20k.org/de/help) nach.
 
-Das Projekt ist in aktiver Entwicklung: Gefechte sind unter Windows, macOS und Linux spielbar,
-Kampagnen funktionieren teilweise, und der Online-Mehrspielermodus (experimentell) ist jetzt
-verfügbar. Frühere Versionen und was sich in jeder geändert hat, stehen auf der
-[Release-Seite](https://github.com/YuriPlanet/vera20k/releases).
-
-Wie du Einzelspieler-Gefechte oder Kampagnen von YR über einen CnCNet-Client startest, steht in der
-[Offline-Client-Einrichtung](integrations/cncnet/README.md).
-
 ## Projektziele
 
 1. Spielmechanik, Grafik und Atmosphäre des ursprünglichen Red Alert 2: Yuri's Revenge bewahren.
-2. Größere Schlachten ermöglichen: bis zu **30 Spieler** und **20.000 Einheiten** auf 500×500-Karten.
+2. Größere Schlachten auf 500×500-Karten ermöglichen, mit bis zu **20.000 Einheiten**, **120 Spielerplätzen** in Offline-Gefechten und **30** in LAN- und Online-Partien.
 3. Bekannte RTS-Funktionen integrieren und einige, die es noch nie gab.
 4. Integrierter Mehrspieler-Client
-
-Die [Roadmap](https://github.com/orgs/YuriPlanet/projects/1) zeigt die aktuellen Prioritäten und zukünftigen Pläne.
 
 ## Mitmachen
 
@@ -63,8 +54,7 @@ Diskutiert wird auf [Discord](https://discord.gg/kmjRUn5m5F) und in der QQ-Grupp
 Die Engine besteht aus drei Hauptteilen:
 
 - **Simulation:** Verwaltet Spielzustand und Spiellogik.
-- **Rendering:** Eine völlig neue GPU-Rendering-Pipeline mit den ursprünglichen Spieldaten,
-  gebaut, um das ursprüngliche Erscheinungsbild zu bewahren.
+- **Rendering:** Zeichnet Gelände, Einheiten und Gebäude mit den Originalgrafiken auf der GPU.
 - **Anwendung:** Übernimmt Eingaben, Menüs, Audio und Plattformintegration und verbindet die Systeme.
 
 Diese Trennung unterstützt einen deterministischen Spielablauf.
@@ -100,17 +90,16 @@ ursprüngliche Engine mit Ghidra, übertragen dann ihr Verhalten nach Rust und p
 
 ## Anpassung
 
-VERA20K spielt sich standardmäßig wie das Originalspiel. Jede neue Funktion, auch Erweiterungen
-aus Mods wie Ares, muss ausgeschaltet bleiben, bis sie auf einem dieser Wege aktiviert wird:
+VERA20K verwendet standardmäßig die Spielregeln von Yuri's Revenge. Unter **Options** kannst du
+Ton, Grafik und Steuerung anpassen oder VERA-Funktionen einschalten. Das Spiel speichert deine
+Einstellungen in `VERA.INI`. Die VERA-spezifischen Optionen stehen im Abschnitt `[VERA]`.
 
-- **Eine VERA-Spieleroption** unter **Options**, gespeichert im Abschnitt `[VERA]` in `VERA.INI`.
-- **Eine Build-Option**, z. B. `--features ares` für die unterstützten [Ares-Erweiterungen](docs/ares.md).
-- **Ein INI-Schlüssel**, den eine Mod oder eine Karte setzt.
+Lobby-Einstellungen, Mods und Karten können die Regeln einer Partie ändern. Mods und Karten können
+über ihre INI-Dateien unterstützte Funktionen von [Ares](docs/ares.md) und [Phobos](docs/phobos.md)
+aktivieren. Eine Mod kann Ares auch aktivieren, indem sie `ares.mix` mitliefert. Einige
+Phobos-Funktionen erfordern weiterhin eine mit `--features phobos` kompilierte Spielversion.
 
-Einstellungen für Ton, Grafik und Steuerung werden in `VERA.INI` gespeichert. Die Spielregeln
-stammen aus den Lobby-Einstellungen, Mods oder Karten.
-
-Die [Modding-Anleitung](docs/modding.md) erklärt, wie man eigene Mods erstellt.
+Wie du deine eigene Mod erstellst, zeigt die [Modding-Anleitung](docs/modding.md).
 
 ## Unterstützen
 
@@ -132,13 +121,17 @@ Final Alert, YRpp, Ares, Phobos und viele andere.
 
 Copyright © 2026 Halvor Nikolai Rusten und die Mitwirkenden an VERA20K.
 Lizenziert unter der [GPLv3](LICENSE-GPL) mit [zusätzlichen Bedingungen](LEGAL.md#additional-terms).
-Dieses Repository enthält keine Spieldateien.
+VERA20K enthält mit Genehmigung Schnee- und Eiskacheln aus Tiberian Sun: Firestorm.
+Sie bleiben Eigentum von Electronic Arts. Die Spieldateien für Red Alert 2: Yuri's Revenge
+stammen aus deiner eigenen Installation.
 Command & Conquer und Red Alert sind Marken von Electronic Arts Inc. Die Screenshots und das
 App-Symbol, der rote Stern aus Red Alert 2, zeigen Spielgrafiken, die Electronic Arts gehören.
 VERA20K steht in keiner Verbindung zu Electronic Arts und wird nicht von Electronic Arts
 unterstützt.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
+This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **Lies den [rechtlichen Hinweis](LEGAL.md), bevor du VERA20K weitergibst, verkaufst oder forkst.**
 

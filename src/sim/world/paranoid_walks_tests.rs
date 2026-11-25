@@ -27,8 +27,9 @@ fn walks(setup: impl Fn(&RuleSet, &mut Simulation)) -> Option<(usize, usize)> {
         let (rules, mut sim) = world()?;
         setup(&rules, &mut sim);
         WALK_EVERY_MAP.set(every);
-        let ((), calls) =
-            trace_reveal_calls(|| sim.computer_paranoid(&rules, None, FrameEffects::default()));
+        let ((), calls) = trace_reveal_calls(|| {
+            sim.computer_paranoid(&rules, None, &mut FrameEffects::default())
+        });
         WALK_EVERY_MAP.set(false);
         assert_eq!(
             sim.house_alliances().as_map().len(),

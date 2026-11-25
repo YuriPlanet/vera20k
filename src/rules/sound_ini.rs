@@ -32,6 +32,46 @@
 //! - Part of rules/ — depends on rules/ini_parser and the assets audio index
 //!   (`Sounds=` admission). No sim/render dependencies.
 
+/// A map's playback operand, independent of the local audio catalog. Network
+/// triggers retain names or literal slots until the audio owner consumes them;
+/// gameplay operands still use Read6DD5B0's resolved numeric value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum SoundReference {
+    Name(String),
+    Index(i32),
+}
+
+impl SoundReference {
+    pub fn sound<'a>(&'a self, registry: &'a SoundRegistry) -> Option<&'a str> {
+        match self {
+            Self::Name(name) => registry.get(name),
+            Self::Index(index) => registry.entry_by_index(*index),
+        }
+        .map(|entry| entry.id.as_str())
+    }
+
+    pub fn eva_index(&self, registry: &EvaRegistry) -> Option<i32> {
+        match self {
+            Self::Name(name) => registry.index_of(name),
+            Self::Index(index) => registry.entry_by_index(*index).map(|_| *index),
+        }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn name(&self) -> Option<&str> {
+        match self {
+            Self::Name(name) => Some(name),
+            Self::Index(_) => None,
+        }
+    }
+}
+
+impl From<String> for SoundReference {
+    fn from(name: String) -> Self {
+        Self::Name(name)
+    }
+}
+
 use std::collections::HashMap;
 
 use crate::assets::audio_bag::AudioIndex;
@@ -313,10 +353,12 @@ impl SoundEntry {
     }
 
     /// Body sample index range `attack .. count - decay` (may be empty).
+    /// `LoadSamples` (`0x004048B0`) subtracts as a wrapping dword
+    /// (`0x0040496E SUB ECX,EDX`), so a `Decay=` of `i32::MIN` wraps too.
     pub fn body_range(&self) -> std::ops::Range<usize> {
         let count = self.sounds.len() as i32;
         let start = self.attack.clamp(0, count);
-        let end = (count - self.decay).clamp(start, count);
+        let end = count.wrapping_sub(self.decay).clamp(start, count);
         start as usize..end as usize
     }
 }
@@ -1150,7 +1192,7 @@ impl EvaRegistry {
     /// (TActionExt::Execute 100396C0).
     pub fn voice_count(&self) -> i32 {
         i32::try_from(self.extra_tags.len())
-            .expect("EVA voice registry exceeds native i32 count")
+            .expect("an INI cannot list 2^31 EVA voices")
             .saturating_add(3)
     }
 
@@ -1171,9 +1213,9 @@ impl EvaRegistry {
             .position(|name| name.eq_ignore_ascii_case(tag))
             .map(|index| {
                 i32::try_from(index)
-                    .expect("EVA voice registry exceeds native i32 count")
+                    .expect("an INI cannot list 2^31 EVA voices")
                     .checked_add(3)
-                    .expect("EVA voice registry exceeds native i32 count")
+                    .expect("an INI cannot list 2^31 EVA voices")
             })
     }
 
@@ -1188,7 +1230,7 @@ impl EvaRegistry {
     pub fn index_of(&self, event_name: &str) -> Option<i32> {
         self.names
             .get(&event_name.to_ascii_uppercase())
-            .map(|&index| i32::try_from(index).expect("EVA registry exceeds native i32 count"))
+            .map(|&index| i32::try_from(index).expect("an INI cannot list 2^31 EVA events"))
     }
 
     /// QueueVoice752480 accepts only 0 <= index < the registered count.
@@ -1268,11 +1310,11 @@ fn parse_sound_priority(raw: &str) -> u8 {
         .map_or(SOUND_PRIORITY_DEFAULT, |&(_, value)| value)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "sound_ini_ares_eva_tests.rs"]
 mod ares_eva_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
 
@@ -1448,6 +1490,16 @@ mod tests {
         assert_eq!(reg.get("Bogus").unwrap().control, RANDOM);
         assert_eq!(parse_control_token("INTERRUPT"), 0x10);
         assert_eq!(parse_control_token("predelay"), 0x08);
+    }
+
+    /// `LoadSamples`'s `count - decay` wraps: `Decay=-2147483648` leaves no
+    /// body sample instead of overflowing.
+    #[test]
+    fn a_minimum_decay_wraps_to_an_empty_body() {
+        let reg = registry("[Min]\nSounds=a b c\nControl=decay\nDecay=-2147483648\n");
+        let min = reg.get("Min").expect("listed id registers");
+        assert_eq!(min.decay, i32::MIN);
+        assert_eq!(min.body_range(), 0..0);
     }
 
     /// `Delay=`/`FShift=` one-or-two token rule and the `VShift=` clamp. Key

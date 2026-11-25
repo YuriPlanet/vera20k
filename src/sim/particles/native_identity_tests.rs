@@ -1,8 +1,7 @@
 //! Original constructor/Logic continuation, bounded to the flat Spark controls
 //! in `procedural_drawing_oracle/electric_bolt` and the retained save envelope.
 // Ares simulates this Spark system itself (hooks 0x62DF05, 0x62FD60), so the
-// stock control runs without the feature.
-#![cfg_attr(feature = "ares", allow(dead_code, unused_imports))]
+// stock control holds in a stock game only.
 
 use super::{Particle, ParticleSystem};
 use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
@@ -157,7 +156,6 @@ fn assert_state(sim: &Simulation, id: u64, expected: &Value) {
     }
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn original_spark_birth_and_first_live_visit_preserve_ids_rng_and_particle_state() {
     let corpus = corpus();
@@ -178,23 +176,23 @@ fn original_spark_birth_and_first_live_visit_preserve_ids_rng_and_particle_state
             .iter()
             .find(|event| event["pc"] == "0x62dc50")
             .unwrap();
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             system_entry["native_id_before"].as_u64().unwrap() as u32,
         ));
         // EBolt Init's Main draw precedes the system constructor. Adopt that
         // executed boundary; this test covers the actual system/particle path.
         let rng = &case["birth"]["rng_after"];
-        sim.main_rng = SimRng::from_native_state_hex_for_test(rng["main"].as_str().unwrap()).into();
-        sim.scenario_rng =
+        *sim.main_rng = SimRng::from_native_state_hex_for_test(rng["main"].as_str().unwrap());
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(rng["scenario"].as_str().unwrap());
-        sim.mapgen_rng = SimRng::from_native_state_hex_for_test(rng["mapgen"].as_str().unwrap());
+        *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(rng["mapgen"].as_str().unwrap());
         let position: [i32; 3] =
             serde_json::from_value(case["endpoint"]["target"].clone()).unwrap();
         let cells = (43..=47)
             .flat_map(|x| (47..=51).map(move |y| test_flat_cell(x, y)))
             .collect();
-        sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(64, 64, cells));
-        sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+        *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(64, 64, cells));
+        *sim.overlay_grid = Some(OverlayGrid::new(64, 64));
         let id = sim
             .spawn_particle_system(
                 ParticleSystemTypeId(0),

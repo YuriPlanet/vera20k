@@ -73,6 +73,7 @@ fn charge(sim: &mut Simulation, rules: &RuleSet, owner: &str) -> InternedId {
 fn fire(sim: &mut Simulation, rules: &RuleSet, cell: (u16, u16)) {
     let sw = charge(sim, rules, "Americans");
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &Command::LaunchSuperWeapon {
             sw_type_id: sw,
@@ -81,7 +82,7 @@ fn fire(sim: &mut Simulation, rules: &RuleSet, cell: (u16, u16)) {
         },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
 }
 
@@ -218,7 +219,13 @@ fn drop_pod_ai_targets_a_cell_in_a_zone_around_its_base() {
     house.retain_base_geometry(Some((16, 16)), 0x300);
     house.set_enemy_house_for_test(Some(americans));
     charge(&mut sim, &rules, "Russians");
-    super::ai_fire::try_fire(&mut sim, &rules, russians, None, FrameEffects::default());
+    super::ai_fire::try_fire(
+        &mut sim,
+        &rules,
+        russians,
+        None,
+        &mut FrameEffects::default(),
+    );
     let ids = pods(&sim, "Russians");
     assert_eq!(ids.len(), 2);
     assert!(ids.iter().any(|&id| {

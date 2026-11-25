@@ -54,9 +54,10 @@ fn rules(extra: &str) -> RuleSet {
     ini.merge(&IniFile::from_str(extra));
     let mut rules = RuleSet::from_ini(&ini).expect("iron curtain fixture rules");
     let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
-        "[IRONBLST]\nRate=450\nReport=IronCurtainBlast\nTranslucent=yes\n",
+        "[IRONBLST]\nRate=450\nTranslucent=yes\n",
     ));
     art.bind_anim_frame_count_for_test("IRONBLST", 12);
+    art.set_anim_sounds_for_test("IRONBLST", Some("IronCurtainBlast"), None);
     rules.replace_art_registry_for_test(art);
     rules
 }
@@ -113,7 +114,7 @@ fn waypoint_curtain_uses_ground_spread_order_including_warped_foot() {
             &rules,
             1,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         let called: Vec<_> = OBSERVED
             .take()
@@ -154,6 +155,35 @@ fn waypoint_curtain_uses_ground_spread_order_including_warped_foot() {
     }
 }
 
+/// A saved slope byte past the 21-record table reads Z 0 at the waypoint, as
+/// every cell looked up by coordinate does, instead of stopping the game.
+#[test]
+fn waypoint_curtain_on_a_slope_past_the_table_plays_at_ground_zero() {
+    let (rules, mut sim, _) = world_with(rules(""), 64, &[]);
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    let index = terrain.index(40, 40).unwrap();
+    terrain.cells_mut_for_test()[index].slope_type = 21;
+    sim.session
+        .install_waypoints(&std::collections::HashMap::from([(
+            1,
+            crate::map::waypoints::Waypoint {
+                index: 1,
+                rx: 40,
+                ry: 40,
+            },
+        )]));
+    assert!(super::at_waypoint(
+        &mut sim,
+        &rules,
+        1,
+        None,
+        &mut crate::sim::world::FrameEffects::default()
+    ));
+    let anim = sim.substrate.anims.iter().next().unwrap().1;
+    let coord = anim.world_coord();
+    assert_eq!([coord.x, coord.y, coord.z], [10368, 10368, 5]);
+}
+
 #[test]
 fn waypoint_curtain_calls_existing_infantry_and_organic_receivers_with_null_house() {
     let (rules, mut sim, _) = world_with(rules(""), 64, &[]);
@@ -175,7 +205,7 @@ fn waypoint_curtain_calls_existing_infantry_and_organic_receivers_with_null_hous
         &rules,
         1,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let damage: Vec<_> = OBSERVED
         .take()
@@ -246,7 +276,7 @@ fn observed_launch(
         cell.1,
         sw_type,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     (launched, OBSERVED.take().unwrap())
 }
@@ -552,14 +582,14 @@ fn the_overrides_match_native() {
                     0,
                     0,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             sim.parasite_attach(
                 drone,
                 Some(victim),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
                 sim.substrate.entities.get(victim).unwrap().parasite.eater(),
@@ -656,12 +686,12 @@ fn the_invoke_anim_plays_its_report() {
         10,
         sw_type,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
         SimSoundEvent::AnimationStarted { sound_id, .. }
-            if sound_id.eq_ignore_ascii_case("IronCurtainBlast")
+            if sound_id.name_in(&rules).eq_ignore_ascii_case("IronCurtainBlast")
     )));
 }
 
@@ -686,7 +716,7 @@ fn a_curtained_tank_draws_its_tint_number_in_its_own_ai() {
                 10,
                 sw_type,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
         }
         let mut drawn = Vec::new();
@@ -736,7 +766,7 @@ fn curtained_infantry_die_and_announce_each_loss() {
         10,
         sw_type,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     let lost: Vec<InternedId> = sim
@@ -799,7 +829,7 @@ fn iron_curtain_effect_on_organics_selects_kill_invulnerable_or_ignore() {
             10,
             sw_type,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         for id in [infantry, dolphin] {
             let entity = sim.substrate.entities.get(id).unwrap();

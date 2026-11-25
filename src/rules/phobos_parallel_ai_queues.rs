@@ -5,8 +5,14 @@
 //! constructor default of true (`src/Ext/Rules/Body.h`), and Ares documents
 //! `=no` as the switch that stops AI cloning, so the gate defaults on. Phobos
 //! adds per-category and per-TechnoType forbids that only narrow it; with the
-//! gate off they do nothing. VERA has no Ares serial mode, so `=no` keeps
-//! stock parallel production.
+//! gate off they do nothing. With `=no` an Ares game produces one factory
+//! building per category at a time (`RuleSet::serial_ai_queues_act`); any
+//! other game keeps stock parallel production.
+//!
+//! They play only when Phobos does (`RuleSet::phobos`): a
+//! `ForbidParallelAIQueues` key turns Phobos on (`rules::phobos_switch`);
+//! `AllowParallelAIQueues`, which Ares reads too, turns neither extension
+//! on.
 //!
 //! Sources: `RulesExt::ForbidParallelAIQueues_*` reads in
 //! `src/Ext/Rules/Body.cpp`, `TechnoTypeExt::ForbidParallelAIQueues` in
@@ -15,6 +21,7 @@
 
 use crate::rules::ini_parser::IniFile;
 use crate::rules::object_type::ObjectCategory;
+use crate::rules::phobos_switch::phobos_read;
 
 /// Ares-Phobos parallel AI queue switches: the gate defaults on, every forbid
 /// off.
@@ -47,8 +54,9 @@ impl ParallelAiQueueRules {
         let Some(controls) = ini.section("GlobalControls") else {
             return defaults;
         };
-        let forbid = |key: &str| controls.read_bool(key, false);
+        let forbid = |key: &str| phobos_read(|| controls.read_bool(key, false));
         Self {
+            // Read as a stock key: both extensions read it.
             allow: controls.read_bool("AllowParallelAIQueues", defaults.allow),
             forbid_infantry: forbid("ForbidParallelAIQueues.Infantry"),
             forbid_vehicle: forbid("ForbidParallelAIQueues.Vehicle"),
@@ -58,7 +66,8 @@ impl ParallelAiQueueRules {
         }
     }
 
-    /// Whether the Ares gate enables the Phobos restrictions at all.
+    /// The `AllowParallelAIQueues=` gate: on, the Phobos restrictions may
+    /// act; off, Ares' serial queues do.
     pub const fn allows_parallel(&self) -> bool {
         self.allow
     }
@@ -74,7 +83,6 @@ impl ParallelAiQueueRules {
         }
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn hash_into<H: std::hash::Hasher>(&self, hasher: &mut H) {
         use std::hash::Hash;
         b"phobos-parallel-ai-queues-v1".hash(hasher);

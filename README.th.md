@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="ภาพหน้าปก VERA20K" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <strong>ไทย</strong> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
+  <a href="README.vi.md" lang="vi">Tiếng Việt</a> · <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.zh-TW.md" lang="zh-TW">繁體中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <strong>ไทย</strong> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="การทดสอบไลบรารีบน Linux ครั้งล่าสุด (สั่งรันด้วยตนเอง)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="การทดสอบไลบรารีบน Linux" height="23" align="middle"></a>
@@ -14,8 +14,8 @@
 # VERA20K
 
 VERA20K คือเอนจินใหม่สำหรับ Red Alert 2: Yuri's Revenge เล่นได้เหมือนต้นฉบับ ทั้งยูนิต แผนที่
-และหน้าตา และรันได้บน Windows, macOS และ Linux สร้างมาเพื่อการรบที่ใหญ่ขึ้น รองรับผู้เล่นสูงสุด 30
-คนและยูนิต 20,000 ตัวบนแผนที่เดียว
+และหน้าตา และรันได้บน Windows, macOS และ Linux สร้างมาเพื่อการรบที่ใหญ่ขึ้น รองรับยูนิตสูงสุด 20,000 ตัวบนแผนที่เดียว
+โหมด Skirmish แบบออฟไลน์มีช่องผู้เล่นสูงสุด 120 ช่อง ส่วนการเล่นผ่าน LAN หรือออนไลน์มีสูงสุด 30 ช่อง
 
 VERA20K สร้างโดยเกมเมอร์ เพื่อเกมเมอร์ และเกมเมอร์คือผู้ตัดสินใจขั้นสุดท้ายว่าโครงการจะไปในทิศทางใด
 
@@ -29,21 +29,12 @@ VERA20K สร้างโดยเกมเมอร์ เพื่อเก�
 
 ติดปัญหาอยู่ใช่ไหม ดูที่[หน้าช่วยเหลือ](https://vera20k.org/th/help)
 
-ขณะนี้กำลังพัฒนาอย่างต่อเนื่อง การต่อสู้ภายในเครื่องเล่นได้บน Windows, macOS และ Linux
-แคมเปญใช้งานได้บางส่วน และตอนนี้มีโหมดผู้เล่นหลายคนออนไลน์ (ทดลอง) แล้ว
-ดูเวอร์ชันก่อนหน้าและสิ่งที่เปลี่ยนในแต่ละเวอร์ชันได้ใน[หน้ารุ่นที่เผยแพร่](https://github.com/YuriPlanet/vera20k/releases)
-
-หากต้องการเริ่มการต่อสู้ภายในเครื่องหรือแคมเปญของ YR แบบผู้เล่นคนเดียวผ่านไคลเอนต์ CnCNet
-โปรดดู[การตั้งค่าไคลเอนต์แบบออฟไลน์](integrations/cncnet/README.md)
-
 ## เป้าหมายของโครงการ
 
 1. คงรูปแบบการเล่น ภาพ และบรรยากาศของ Red Alert 2: Yuri's Revenge ต้นฉบับไว้
-2. รองรับการต่อสู้ที่ใหญ่ขึ้น: สูงสุด **30 ผู้เล่น** และ **20,000 ยูนิต** บนแผนที่ขนาด 500×500
+2. รองรับการต่อสู้ที่ใหญ่ขึ้นบนแผนที่ขนาด 500×500 ด้วยยูนิตสูงสุด **20,000 ตัว** โดยโหมด Skirmish แบบออฟไลน์มีช่องผู้เล่นสูงสุด **120 ช่อง** ส่วนการเล่นผ่าน LAN หรือออนไลน์มีสูงสุด **30 ช่อง**
 3. เพิ่มฟีเจอร์ RTS ที่เป็นที่รู้จัก รวมถึงฟีเจอร์ที่ไม่เคยมีมาก่อน
 4. ไคลเอนต์ผู้เล่นหลายคนในตัว
-
-ดูงานที่ให้ความสำคัญในตอนนี้และแผนในอนาคตได้ใน[แผนการพัฒนา](https://github.com/orgs/YuriPlanet/projects/1)
 
 ## ร่วมพัฒนา
 
@@ -58,8 +49,7 @@ VERA20K สร้างโดยเกมเมอร์ เพื่อเก�
 เอนจินแบ่งเป็นสามส่วนหลัก:
 
 - **การจำลอง:** ดูแลสถานะและตรรกะของเกม
-- **การเรนเดอร์:** ไปป์ไลน์การเรนเดอร์ด้วย GPU ที่สร้างขึ้นใหม่ทั้งหมด ใช้ทรัพยากรเกมต้นฉบับ
-  และสร้างขึ้นเพื่อคงรูปลักษณ์เดิมไว้
+- **การเรนเดอร์:** ใช้ GPU วาดภูมิประเทศ ยูนิต และสิ่งปลูกสร้างด้วยภาพจากเกมต้นฉบับ
 - **แอปพลิเคชัน:** จัดการอินพุต เมนู เสียง และการทำงานร่วมกับแพลตฟอร์ม พร้อมเชื่อมระบบต่าง ๆ เข้าด้วยกัน
 
 การแยกส่วนนี้ช่วยให้ผลการจำลองเกมคงที่เมื่อเริ่มจากสถานะและอินพุตเดียวกัน
@@ -92,17 +82,11 @@ cargo run --release --bin vera20k
 
 ## การปรับแต่ง
 
-โดยค่าเริ่มต้น VERA20K จะเล่นได้เหมือนเกมต้นฉบับ ฟีเจอร์ใหม่ รวมถึงส่วนขยายจากม็อดอย่าง Ares
-ต้องปิดไว้จนกว่าจะเปิดด้วยวิธีใดวิธีหนึ่งต่อไปนี้:
+VERA20K ใช้กติกาของ Yuri's Revenge ภาคต้นฉบับเป็นค่าเริ่มต้น คุณปรับเสียง กราฟิก และการควบคุม หรือเปิดฟีเจอร์ของ VERA ได้ในเมนู **Options** เกมจะบันทึกการตั้งค่าไว้ใน `VERA.INI` โดยเก็บตัวเลือกเฉพาะของ VERA ไว้ในส่วน `[VERA]`
 
-- **ตัวเลือกของผู้เล่นใน VERA** อยู่ใน **Options** และบันทึกในส่วน `[VERA]` ของ `VERA.INI`
-- **ตัวเลือกตอนบิลด์** เช่น `--features ares` สำหรับ[ส่วนขยาย Ares](docs/ares.md)ที่รองรับ
-- **คีย์ INI** ที่ม็อดหรือแผนที่กำหนด
+การตั้งค่าล็อบบี้ ม็อด และแผนที่สามารถเปลี่ยนกติกาของแต่ละแมตช์ได้ ม็อดและแผนที่เปิดใช้ฟีเจอร์ของ [Ares](docs/ares.md) และ [Phobos](docs/phobos.md) ที่ VERA20K รองรับได้ผ่านไฟล์ INI ม็อดยังเปิดใช้ Ares ได้โดยใส่ไฟล์ `ares.mix` มาด้วย ฟีเจอร์บางอย่างของ Phobos ยังต้องใช้เกมที่บิลด์ด้วย `--features phobos`
 
-การตั้งค่าเสียง กราฟิก และการควบคุมจะบันทึกไว้ใน `VERA.INI` กฎการเล่นมาจากการตั้งค่าล็อบบี้
-ม็อด หรือแผนที่
-
-[คู่มือการทำม็อด](docs/modding.md)อธิบายวิธีสร้างม็อดของคุณเอง
+ถ้าอยากสร้างม็อดเอง เริ่มได้จาก[คู่มือการทำม็อด](docs/modding.md)
 
 ## สนับสนุนโครงการ
 
@@ -122,12 +106,16 @@ Command & Conquer และ Red Alert ภายใต้ GPL, World-Altering Edi
 และอีกหลายโครงการ
 
 ลิขสิทธิ์ © 2026 Halvor Nikolai Rusten และผู้ร่วมพัฒนา VERA20K
-เผยแพร่ภายใต้สัญญาอนุญาต [GPLv3](LICENSE-GPL) พร้อม[ข้อกำหนดเพิ่มเติม](LEGAL.md#additional-terms) ที่เก็บโค้ดนี้ไม่มีไฟล์เกม
+เผยแพร่ภายใต้สัญญาอนุญาต [GPLv3](LICENSE-GPL) พร้อม[ข้อกำหนดเพิ่มเติม](LEGAL.md#additional-terms)
+VERA20K ได้รับอนุญาตให้รวมไทล์แผนที่หิมะและน้ำแข็งจาก Tiberian Sun: Firestorm ไว้ในชุดติดตั้ง ไทล์เหล่านี้ยังคงเป็นทรัพย์สินของ Electronic Arts
+ผู้เล่นต้องใช้ไฟล์เกมจาก Red Alert 2: Yuri's Revenge ฉบับที่ตนเป็นเจ้าของ
 Command & Conquer และ Red Alert เป็นเครื่องหมายการค้าของ Electronic Arts Inc.
 ภาพหน้าจอและไอคอนแอป (ดาวแดงของ Red Alert 2) แสดงงานภาพจากเกมที่เป็นของ Electronic Arts
 VERA20K ไม่มีความเกี่ยวข้องกับ Electronic Arts และไม่ได้รับการรับรองจาก Electronic Arts
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
+This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **โปรดอ่าน[ประกาศทางกฎหมาย](LEGAL.md)ก่อนแชร์ ขาย หรือ fork VERA20K**
 

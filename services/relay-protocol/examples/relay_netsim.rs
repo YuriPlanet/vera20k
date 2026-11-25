@@ -1,9 +1,7 @@
 //! Runs network-simulation scenarios against the in-process relay and
-//! prints one JSON report per scenario, one per line
-//! (services/relay/adaptive-transport/e2e-plan.md §1, §2.4). Nothing
-//! touches a socket or the wall clock. Clients are the production
-//! `ClientSession` scheduler; the old protocol's baseline is this runner at
-//! commit 720f12400 on the same files. `--clients` adds every client's row.
+//! prints one JSON report per scenario, one per line. Nothing touches a
+//! socket or the wall clock. Clients are the production `ClientSession`
+//! scheduler. `--clients` adds every client's row.
 //!
 //! ```sh
 //! cargo build --release -p vera20k-relay-protocol --features test-support \

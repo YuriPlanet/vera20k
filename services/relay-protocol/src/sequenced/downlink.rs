@@ -6,14 +6,10 @@ use std::collections::VecDeque;
 
 use super::*;
 use crate::link::{
-    LinkState, SEND_FRESH, SEND_OTHER, SEND_PROBE, SEND_REPEAT, SEND_RETRANSMIT, SendRecord, pto,
+    LinkState, SEND_FRESH, SEND_OTHER, SEND_PROBE, SEND_REPEAT, SEND_RETRANSMIT, SendRecord,
+    ack_interval, pto, reader_rtt,
 };
 
-/// The acknowledgement interval of a congested reader (spec §6.3 row 3).
-const CONGESTED_ACK_DELAY_MS: u64 = 200;
-const GOOD_ACK_DELAY_MS: u64 = 100;
-/// `srtt_c` until a reader reports one (spec §4.6, §7.3).
-const DEFAULT_SRTT_MS: u64 = 100;
 /// Records the retransmission queue may owe a reader at most; the rest is
 /// left to the fallback PULL (spec §7.3, §7.7).
 const RETRANSMIT_QUEUE_RECORDS: u64 = PUSH_WINDOW + ORDERING_PULL_LIMIT as u64;
@@ -66,23 +62,23 @@ pub(super) fn piggyback_packs(
     new: &[Vec<u8>],
     datagrams: usize,
 ) -> (Vec<(Vec<u8>, usize)>, usize, usize) {
-    let fresh = super::pack::encode_pack_v2(new, datagrams);
+    let fresh = super::pack::encode_pack(new, datagrams);
     let count: usize = fresh.iter().map(|(_, entries)| entries).sum();
     if fresh.is_empty() || old.is_empty() {
         return (fresh, count, 0);
     }
     let limit = fresh.len();
-    // The fewest old records to drop, counted as PACK v2 packs, with
+    // The fewest old records to drop, counted in packs, with
     // one copy for the packs that go out.
     let new = &new[..count];
     let all: Vec<&[u8]> = old.iter().chain(new).map(Vec::as_slice).collect();
-    let Some(skip) = (0..old.len()).find(|&skip| super::pack::fits_packs_v2(&all[skip..], limit))
+    let Some(skip) = (0..old.len()).find(|&skip| super::pack::fits_packs(&all[skip..], limit))
     else {
         return (fresh, count, 0);
     };
     let records: Vec<Vec<u8>> = old[skip..].iter().chain(new).cloned().collect();
     (
-        super::pack::encode_pack_v2(&records, usize::MAX),
+        super::pack::encode_pack(&records, usize::MAX),
         count,
         old.len() - skip,
     )
@@ -125,13 +121,13 @@ impl PushSubscription {
 
     /// Queues what a lost send still owes (spec §7.3 steps 1-4): its range,
     /// less the acknowledged records, what later sends not judged lost
-    /// cover, and what went as a retransmission within `srtt_c`. Returns
-    /// the records queued.
+    /// cover, and what went as a retransmission within the reader's `srtt`
+    /// ms (`reader_rtt`). Returns the records queued.
     pub(super) fn enqueue_lost<'a>(
         &mut self,
         lost: &SendRecord,
         later: impl Iterator<Item = &'a SendRecord>,
-        srtt_c: u16,
+        srtt: u64,
         now_ms: u64,
     ) -> u64 {
         let end = lost.first + u64::from(lost.count);
@@ -139,11 +135,6 @@ impl PushSubscription {
         for send in later.filter(|send| send.count > 0 && !send.lost) {
             owed = subtract(&owed, (send.first, send.first + u64::from(send.count)));
         }
-        let srtt = if srtt_c == 0 {
-            DEFAULT_SRTT_MS
-        } else {
-            u64::from(srtt_c)
-        };
         self.retransmitted
             .retain(|&(_, _, at)| now_ms.saturating_sub(at) < srtt);
         for &(from, to, _) in &self.retransmitted {
@@ -181,7 +172,7 @@ impl Peer {
                 push.enqueue_lost(
                     send,
                     self.link.sent_after(send.sequence),
-                    self.link.srtt_c,
+                    reader_rtt(self.link.srtt_c, self.link.rttvar_c).0,
                     now_ms,
                 );
             }
@@ -230,7 +221,7 @@ impl RelayServer {
     /// repeats and a tail probe from the repeat budget; an offline reader
     /// gets nothing.
     pub fn drain_ordering_push(&mut self, now_ms: u64, now: u64) -> Vec<ForwardDatagram> {
-        self.prune(now);
+        self.prune(now, now_ms);
         let mut recipients = Vec::new();
         for (id, room) in &mut self.rooms {
             for peer in &mut room.peers {
@@ -344,6 +335,9 @@ impl RelayServer {
         let state = peer.evaluate_reader(now_ms);
         self.ordering_counts.reader_states[state.index()] += 1;
         let ordering = room.ordering.as_mut()?;
+        if ordering.federation_failed() {
+            return None; // Every UPLINK/PULL answers the terminal error after durable handoff.
+        }
         let push = peer.push.as_mut()?;
         if state == LinkState::Offline {
             // About one new pack per new head the reader misses.
@@ -370,6 +364,13 @@ impl RelayServer {
         if status_due {
             plan.first.push(ordering.status(now_ms));
         }
+        // The tails `ordering_reply` adds to the STATUS as it sends it.
+        let status_tail = crate::link::FEEDBACK_LEN
+            + if status_due && ordering.silent_sources(room.federation.as_ref(), now_ms) != 0 {
+                std::mem::size_of::<u32>()
+            } else {
+                0
+            };
         let mut datagrams = limit - usize::from(status_due);
         if !push.restoring {
             // Item 2: retransmissions, oldest range first (§7.3).
@@ -384,7 +385,7 @@ impl RelayServer {
                 else {
                     break;
                 };
-                let packs = super::pack::encode_pack_v2(&records, datagrams);
+                let packs = super::pack::encode_pack(&records, datagrams);
                 let entries: usize = packs.iter().map(|(_, entries)| entries).sum();
                 datagrams -= packs.len();
                 plan.first.extend(packs.into_iter().map(|(pack, _)| pack));
@@ -436,7 +437,7 @@ impl RelayServer {
                 envelope::OVERHEAD
                     + payload.len()
                     + if payload[0] == STATUS_EVENT {
-                        crate::link::FEEDBACK_LEN
+                        status_tail
                     } else {
                         0
                     }
@@ -580,8 +581,7 @@ impl RelayServer {
             'segments: for (start, end) in segments.into_iter().filter(|(a, b)| a < b) {
                 let records = ordering.hot_page(start, (end - start) as usize);
                 let mut next = start;
-                for (pack, entries) in
-                    super::pack::encode_pack_v2(&records, capacity - repeats.len())
+                for (pack, entries) in super::pack::encode_pack(&records, capacity - repeats.len())
                 {
                     repeats.push(pack);
                     next += entries as u64;
@@ -596,11 +596,7 @@ impl RelayServer {
         // Item 5: a tail probe of the newest new pack (§7.6).
         let mut probes = Vec::new();
         if repeats.len() < capacity && acked < push.sent_next {
-            let ack_delay = match state {
-                LinkState::Lossy => u64::from(turn_ms(ordering.pace.rate)),
-                LinkState::Congested => CONGESTED_ACK_DELAY_MS,
-                _ => GOOD_ACK_DELAY_MS,
-            };
+            let ack_delay = ack_interval(state, turn_ms(ordering.pace.rate));
             let timeout = pto(
                 peer.link.srtt_c,
                 peer.link.rttvar_c,
@@ -621,7 +617,7 @@ impl RelayServer {
                 let end = newest.first + u64::from(newest.count);
                 if from < end {
                     let records = ordering.hot_page(from, (end - from) as usize);
-                    probes = super::pack::encode_pack_v2(&records, capacity - repeats.len())
+                    probes = super::pack::encode_pack(&records, capacity - repeats.len())
                         .into_iter()
                         .map(|(pack, _)| pack)
                         .collect();
@@ -707,7 +703,7 @@ mod tests {
         // Overlapping losses merge.
         push.enqueue_lost(&lost_send(13, 7, 4), [].iter(), 40, 100);
         assert_eq!(push.retransmit, [(5, 12)]);
-        // Retransmitted at 100: within srtt_c 40 it is not queued again.
+        // Retransmitted at 100: within srtt 40 it is not queued again.
         push.retransmit.clear();
         push.retransmitted.push_back((5, 12, 100));
         assert_eq!(
@@ -787,9 +783,9 @@ mod tests {
     fn packs(packets: &[ForwardDatagram]) -> Vec<(u64, u8)> {
         packets
             .iter()
-            .map(|packet| &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN])
+            .map(|packet| &packet.bytes[HEADER_LEN..packet.bytes.len() - HOP_TAG_LEN])
             .filter(|payload| payload[0] == PACK_EVENT)
-            .map(|payload| super::super::pack::pack_v2_range(payload).unwrap())
+            .map(|payload| super::super::pack::pack_range(payload).unwrap())
             .collect()
     }
 
@@ -948,8 +944,8 @@ mod tests {
         merge(&mut peer.push.as_mut().unwrap().retransmit, (1, 3));
         server.advance_clock(310, unix(310));
         let packets = server.drain_ordering_push(310, unix(310));
-        let pack = &packets[0].bytes[SERVER_HEADER..packets[0].bytes.len() - HOP_TAG_LEN];
-        assert_eq!(super::super::pack::pack_v2_range(pack), Some((1, 2)));
+        let pack = &packets[0].bytes[HEADER_LEN..packets[0].bytes.len() - HOP_TAG_LEN];
+        assert_eq!(super::super::pack::pack_range(pack), Some((1, 2)));
         assert_eq!(stats(&server).packets_by_kind[3], 1);
         assert_eq!(stats(&server).retransmit_ranges, 0);
     }
@@ -1003,10 +999,10 @@ mod tests {
         let packets = server.drain_ordering_push(1600, unix(1600));
         let first_pack = packets
             .iter()
-            .map(|packet| &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN])
+            .map(|packet| &packet.bytes[HEADER_LEN..packet.bytes.len() - HOP_TAG_LEN])
             .find(|payload| payload[0] == PACK_EVENT)
             .unwrap();
-        assert_eq!(super::super::pack::pack_v2_range(first_pack).unwrap().0, 1);
+        assert_eq!(super::super::pack::pack_range(first_pack).unwrap().0, 1);
     }
 
     #[test]
@@ -1031,8 +1027,8 @@ mod tests {
         let new = vec![frame_end(5)];
         let (packs, entries, piggybacked) = piggyback_packs(&old, &new, 8);
         assert_eq!((packs.len(), entries, piggybacked), (1, 1, 4));
-        assert_eq!(super::super::pack::pack_v2_range(&packs[0].0), Some((1, 5)));
-        // PACK v2: a full batch (517 B) and 159 frame ends (1 B each) fill
+        assert_eq!(super::super::pack::pack_range(&packs[0].0), Some((1, 5)));
+        // A full batch (517 B) and 159 frame ends (1 B each) fill
         // 680 of 681 bytes with its 4 B header: one more frame end fits, two
         // would add a pack.
         let mut opaque = vec![0; 9];
@@ -1042,10 +1038,7 @@ mod tests {
         let (packs, entries, piggybacked) = piggyback_packs(&old, &busy, 8);
         assert_eq!((packs.len(), entries, piggybacked), (1, 160, 1));
         assert_eq!(packs[0].0.len(), 681);
-        assert_eq!(
-            super::super::pack::pack_v2_range(&packs[0].0),
-            Some((4, 161))
-        );
+        assert_eq!(super::super::pack::pack_range(&packs[0].0), Some((4, 161)));
         busy.push(frame_end(165));
         let (packs, _, piggybacked) = piggyback_packs(&old, &busy, 8);
         assert_eq!((packs.len(), piggybacked), (1, 0));

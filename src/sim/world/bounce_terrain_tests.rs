@@ -83,8 +83,8 @@ fn fixture(case: &Value) -> Simulation {
         .set_bridge_flags_0x1180(case["dummy_flags"].as_u64().unwrap() as u32);
     grid.shared_cell_dummy().stamp_coord(1234, -2345);
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(grid);
-    sim.overlay_grid = Some(overlays);
+    *sim.resolved_terrain = Some(grid);
+    *sim.overlay_grid = Some(overlays);
     if let Some(objects) = case["objects"].as_array() {
         for kind in objects {
             let name = kind.as_str().unwrap();
@@ -359,8 +359,16 @@ fn voxel_anim_logic_visit_delivers_native_deck_height_and_low_bridge_selection()
             .find(|c| c["name"] == name)
             .unwrap();
         let mut sim = fixture(case);
-        sim.emit_debris_voxel(type_id, kind, None, IVec3::ZERO, true, &mut Vec::new())
-            .unwrap();
+        sim.emit_debris_voxel(
+            type_id,
+            kind,
+            None,
+            IVec3::ZERO,
+            true,
+            &mut Vec::new(),
+            &rules,
+        )
+        .unwrap();
         let id = sim.substrate.voxel_anims.ids()[0];
         // This terrain-consumer fixture supplies the independently captured
         // Bounce body after the ordinary constructor has admitted the object.
@@ -371,12 +379,11 @@ fn voxel_anim_logic_visit_delivers_native_deck_height_and_low_bridge_selection()
             .set_bounce_for_test(body(case));
         assert!(sim.live_object_order_snapshot().contains(&id));
         let before = sim.state_hash();
-        sim.visit_voxel_anim(id, &rules, crate::sim::world::FrameEffects::default())
+        sim.visit_voxel_anim(id, &rules, &mut crate::sim::world::FrameEffects::default())
             .unwrap();
         sim.process_pending_delete_with(
             &rules,
-            Some(rules.overlay_registry()),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             1,
             sim.session().started(),
         );
@@ -434,8 +441,8 @@ fn flight_sim(terrain_name: &str, center: i32) -> Simulation {
     grid.test_set_native_allocated_cells(&allocated);
     grid.test_set_dummy_cell_level_slope(0, 0);
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(grid);
-    sim.overlay_grid = Some(OverlayGrid::new(size, size));
+    *sim.resolved_terrain = Some(grid);
+    *sim.overlay_grid = Some(OverlayGrid::new(size, size));
     sim
 }
 

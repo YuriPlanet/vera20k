@@ -772,45 +772,52 @@ fn ini_directives_inheritance_fan_out_within_budget_copies_missing_keys() {
 fn ini_directives_production_selection_obeys_build_capability() {
     use crate::map::source::test_support::TestDirectory;
     use crate::rules::retail_sources::select_ini;
-
-    // VERA has no -Include launch switch: a combined build keeps [#include]
-    // for documents without [$Include].
-    let options = DirectiveOptions::production();
-    assert_eq!(options.phobos, crate::rules::PHOBOS_ENABLED);
-    assert_eq!(options.ares, crate::rules::ARES_BUILD);
-    for (directive, expected) in [
-        ("#include", crate::rules::ARES_BUILD),
-        ("$Include", crate::rules::PHOBOS_ENABLED),
-    ] {
-        let dir = TestDirectory::new("ini-directives-capability");
-        let root = format!(
-            "[{directive}]\n0=child.ini\n[Child]\n$Inherits=Base\nOwn=root\n[Base]\nInherited=parent\n"
-        );
-        dir.write("root.ini", root.as_bytes());
-        dir.write("child.ini", b"[Included]\nValue=child\n");
-        let assets =
-            crate::assets::asset_manager::AssetManager::from_loose_root_for_test(dir.path());
-        let selected = select_ini(&assets, "root.ini").unwrap();
-        assert!(selected.directive_diagnostics.is_empty());
-        assert_eq!(selected.included_sources.len(), usize::from(expected));
-        assert_eq!(
-            text(&selected.ini, "Included", "Value").as_deref(),
-            expected.then_some("child")
-        );
-        // `[Base]` is authored in the root document, so inheritance resolves
-        // even when the included file is not read. A build with neither
-        // capability never enters the directive owner.
-        let any_capability = crate::rules::ARES_BUILD || crate::rules::PHOBOS_ENABLED;
-        assert_eq!(
-            text(&selected.ini, "Child", "Inherited").as_deref(),
-            any_capability.then_some("parent")
-        );
-        assert_eq!(text(&selected.ini, "Child", "Own").as_deref(), Some("root"));
-        if !crate::rules::ARES_BUILD && !crate::rules::PHOBOS_ENABLED {
-            assert_eq!(
-                selected.ini.content_hash(),
-                IniFile::from_str(&root).content_hash()
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        // VERA has no -Include launch switch: read the Ares way with Phobos, a
+        // game keeps [#include] for documents without [$Include].
+        let options = DirectiveOptions::production();
+        assert_eq!(options.phobos, crate::rules::PHOBOS_ENABLED);
+        assert_eq!(options.ares, ares_way);
+        for (directive, expected) in [
+            ("#include", ares_way),
+            ("$Include", crate::rules::PHOBOS_ENABLED),
+        ] {
+            let dir = TestDirectory::new("ini-directives-capability");
+            let root = format!(
+                "[{directive}]\n0=child.ini\n[Child]\n$Inherits=Base\nOwn=root\n[Base]\nInherited=parent\n"
             );
+            dir.write("root.ini", root.as_bytes());
+            dir.write("child.ini", b"[Included]\nValue=child\n");
+            let assets = if ares_way {
+                crate::assets::asset_manager::AssetManager::from_loose_root_with_ares_for_test(
+                    dir.path(),
+                )
+            } else {
+                crate::assets::asset_manager::AssetManager::from_loose_root_for_test(dir.path())
+            };
+            let selected = select_ini(&assets, "root.ini").unwrap();
+            assert!(selected.directive_diagnostics.is_empty());
+            assert_eq!(selected.included_sources.len(), usize::from(expected));
+            assert_eq!(
+                text(&selected.ini, "Included", "Value").as_deref(),
+                expected.then_some("child")
+            );
+            // `[Base]` is authored in the root document, so inheritance resolves
+            // even when the included file is not read. Read the stock way
+            // without Phobos, a game never enters the directive owner.
+            let any_capability = ares_way || crate::rules::PHOBOS_ENABLED;
+            assert_eq!(
+                text(&selected.ini, "Child", "Inherited").as_deref(),
+                any_capability.then_some("parent")
+            );
+            assert_eq!(text(&selected.ini, "Child", "Own").as_deref(), Some("root"));
+            if !ares_way && !crate::rules::PHOBOS_ENABLED {
+                assert_eq!(
+                    selected.ini.content_hash(),
+                    IniFile::from_str(&root).content_hash()
+                );
+            }
         }
     }
 }
@@ -960,47 +967,56 @@ fn ini_directives_strict_missing_parent_and_independent_valid_cycle_branch() {
 fn ini_directives_reach_the_existing_ordered_type_processor_and_fixed_art() {
     use crate::map::source::test_support::TestDirectory;
     use crate::rules::retail_sources::{load_startup_rules, select_mode_ini};
-    let dir = TestDirectory::new("ini-directives-typed-rules");
-    dir.write(
-        "rulesmd.ini",
-        b"[#include]\n0=types.ini\n[General]\nBuildSpeed=.7\n[TEST]\nStrength=250\n",
-    );
-    dir.write(
-        "types.ini",
-        b"[VehicleTypes]\n0=TEST\n[TEST]\nStrength=100\n",
-    );
-    dir.write(
-        "artmd.ini",
-        b"[#include]\n0=art-extra.ini\n[TEST]\nVoxel=no\n",
-    );
-    dir.write("art-extra.ini", b"[TEST]\nVoxel=yes\n");
-    dir.write("mode.ini", b"[#include]\n0=mode-extra.ini\n");
-    dir.write("mode-extra.ini", b"[General]\nBuildSpeed=.9\n");
-    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(dir.path());
-    let (_, _, mut owner) = load_startup_rules(&assets, Default::default(), Default::default())
-        .unwrap()
-        .into_parts();
-    let mode = select_mode_ini(&assets, Some("mode.ini")).unwrap();
-    let loaded = owner
-        .load_scenario(
-            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(mode.as_ref()),
-            &IniFile::empty(),
-        )
-        .unwrap();
-    let (rules, _, art, _) = loaded.into_parts();
-    // This fixture uses `[#include]` only, so the Ares capability expands it.
-    let ares_include = crate::rules::ARES_BUILD;
-    if ares_include {
-        assert_eq!(rules.object("TEST").unwrap().strength, 100);
-    } else {
-        assert!(rules.object("TEST").is_none());
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let dir = TestDirectory::new("ini-directives-typed-rules");
+        dir.write(
+            "rulesmd.ini",
+            b"[#include]\n0=types.ini\n[General]\nBuildSpeed=.7\n[TEST]\nStrength=250\n",
+        );
+        dir.write(
+            "types.ini",
+            b"[VehicleTypes]\n0=TEST\n[TEST]\nStrength=100\n",
+        );
+        dir.write(
+            "artmd.ini",
+            b"[#include]\n0=art-extra.ini\n[TEST]\nVoxel=no\n",
+        );
+        dir.write("art-extra.ini", b"[TEST]\nVoxel=yes\n");
+        dir.write("mode.ini", b"[#include]\n0=mode-extra.ini\n");
+        dir.write("mode-extra.ini", b"[General]\nBuildSpeed=.9\n");
+        let assets = if ares_way {
+            crate::assets::asset_manager::AssetManager::from_loose_root_with_ares_for_test(
+                dir.path(),
+            )
+        } else {
+            crate::assets::asset_manager::AssetManager::from_loose_root_for_test(dir.path())
+        };
+        let (_, _, mut owner) = load_startup_rules(&assets, Default::default(), Default::default())
+            .unwrap()
+            .into_parts();
+        let mode = select_mode_ini(&assets, Some("mode.ini")).unwrap();
+        let loaded = owner
+            .load_scenario(
+                crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(mode.as_ref()),
+                &IniFile::empty(),
+            )
+            .unwrap();
+        let (rules, _, art, _) = loaded.into_parts();
+        // This fixture uses `[#include]` only, so only the Ares way expands it.
+        let ares_include = ares_way;
+        if ares_include {
+            assert_eq!(rules.object("TEST").unwrap().strength, 100);
+        } else {
+            assert!(rules.object("TEST").is_none());
+        }
+        assert_eq!(
+            rules.production.build_speed.bits(),
+            f64::from(if ares_include { 0.9_f32 } else { 0.7_f32 }).to_bits()
+        );
+        assert_eq!(
+            art.section_or_empty("TEST").read_bool("Voxel", false),
+            ares_include
+        );
     }
-    assert_eq!(
-        rules.production.build_speed.bits(),
-        f64::from(if ares_include { 0.9_f32 } else { 0.7_f32 }).to_bits()
-    );
-    assert_eq!(
-        art.section_or_empty("TEST").read_bool("Voxel", false),
-        ares_include
-    );
 }

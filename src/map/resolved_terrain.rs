@@ -56,6 +56,7 @@ mod build;
 mod cell_recalc;
 mod cliffs;
 mod deformation;
+mod ice;
 mod mutation;
 mod native_cell;
 mod pavement;
@@ -64,9 +65,9 @@ mod saved_terrain;
 mod terrain_cells;
 mod tubes;
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod damaged_radar_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod pavement_catalog_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod tests;
@@ -75,6 +76,7 @@ pub(crate) use allocated_order::{AllocatedCellOrder, ROW_NEIGHBORS};
 pub(crate) use bridge_flags::RealCellBridgeFlags0x1180;
 pub use build::OverlayLoadSource;
 pub(crate) use build::cliff_back_normal_reclass_applies;
+pub use build::map_tiles_exist;
 pub use build::{AuthoredTerrainFill, RadarColorMetadata, current_tile_permissions};
 use build::{presentation_tile_parts, wheel_speed_at_or_below_one_percent};
 pub(crate) use cell_recalc::{
@@ -82,6 +84,8 @@ pub(crate) use cell_recalc::{
     LoadCellRecalcOutcome, LoadCellRecalcState, is_behind_cliff,
 };
 use cliffs::DestroyableCliffCatalog;
+pub(crate) use ice::IceTiles;
+pub(crate) use native_cell::SavedSharedCellDummy;
 pub(crate) use native_cell::{
     CellClassProjectionView, NativeAllocatedCellCursor, NativeLocalCellCursor,
 };
@@ -92,8 +96,9 @@ pub use saved_terrain::{SavedCellLandValues, SavedTerrainError, SavedTerrainTemp
 #[cfg(any(test, feature = "test-support"))]
 pub use tests::{
     bridge_constructor_terrain, install_bridge_batch_test_catalog,
-    install_bridge_query_test_catalog, install_no_registered_tiles_test_catalog,
-    install_ordinary_repair_test_catalog, install_tunnel_repair_test_catalog,
+    install_bridge_query_test_catalog, install_clear_test_catalog,
+    install_no_registered_tiles_test_catalog, install_ordinary_repair_test_catalog,
+    install_tunnel_repair_test_catalog, install_water_repair_test_catalog,
 };
 pub(crate) use tubes::NativeTubeRegistryBindError;
 
@@ -253,7 +258,7 @@ impl BridgeLayer {
         let direction = BridgeDirection::from_overlay_id(overlay_id);
         let deck_level = match direction {
             BridgeDirection::Low => level,
-            BridgeDirection::EastWest | BridgeDirection::NorthSouth => level.saturating_add(4),
+            BridgeDirection::EastWest | BridgeDirection::NorthSouth => level.wrapping_add(4),
         };
         Self {
             deck_level,
@@ -373,7 +378,8 @@ pub struct ResolvedTerrainCell {
 
 impl ResolvedTerrainCell {
     /// Refresh byte-encoded height views of the current Cell, independently of
-    /// its Recalc-owned class, flags and cached topology. Preserve the encoded
+    /// its Recalc-owned class, flags and cached topology. The retained span
+    /// elevation lives on the anchor's bridge facts. Preserve the encoded
     /// signed-level +4 result: raw252 (-4) has a structural deck at level0.
     /// Native47B3A0/5F5FA0: tools/ramp_height_{oracle.py,vectors.json}; this
     /// byte projection does not establish signed world-coordinate consumers.
@@ -394,6 +400,19 @@ impl ResolvedTerrainCell {
         } else {
             self.level
         };
+    }
+
+    pub(crate) fn retained_high_bridge_base_level(&self) -> Option<u8> {
+        let lift = crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as i16;
+        let base = self.bridge_facts.fixed_deck_level?.checked_sub(lift)?;
+        i8::try_from(base).ok().map(|base| base as u8)
+    }
+
+    /// Projection base for a live high-bridge overlay on this anchor. Damaged
+    /// art can outlive the structural flags, so the retained height applies
+    /// until the overlay is removed. The art provides its own four-level lift.
+    pub fn high_bridge_art_base_level(&self) -> u8 {
+        self.retained_high_bridge_base_level().unwrap_or(self.level)
     }
 
     pub fn bridge_deck_level_if_any(&self) -> Option<u8> {
@@ -454,9 +473,9 @@ pub struct TerrainTileAnimation {
 /// names take the same path without a WA/TUNTOP name table in Rust.
 pub fn scheduler_anim_roots(
     rules: &RuleSet,
-    overlay_registry: &OverlayTypeRegistry,
     tile_animations: &[TerrainTileAnimation],
 ) -> Vec<String> {
+    let overlay_registry = rules.overlay_registry();
     let mut roots = BTreeSet::new();
     roots.extend(
         rules
@@ -749,6 +768,20 @@ impl LevelSpan {
         span
     }
 
+    fn of_terrain(
+        cells: impl IntoIterator<Item = impl std::borrow::Borrow<ResolvedTerrainCell>>,
+    ) -> Self {
+        let mut span = Self::default();
+        for cell in cells {
+            let cell = cell.borrow();
+            span.widen(cell.level);
+            if let Some(base) = cell.retained_high_bridge_base_level() {
+                span.widen(base);
+            }
+        }
+        span
+    }
+
     fn widen(&mut self, level: u8) {
         self.min = self.min.min(level as i8);
         self.max = self.max.max(level as i8);
@@ -845,6 +878,7 @@ pub struct ResolvedTerrainGrid {
     bridge_set_start: Option<u16>,
     /// Immutable signed ReadTheater545150 identities for high-rim selection.
     high_bridge_rim_tiles: Option<super::bridge_rim_tiles::HighBridgeRimTiles>,
+    wood_bridge_rim_tiles: super::bridge_rim_tiles::WoodBridgeRimTiles,
     /// First flat tile id of the active theater's wooden high-bridge set.
     wood_bridge_set_start: Option<u16>,
     /// Terrain animations the load resolved, in the native anti-diagonal cell
@@ -856,6 +890,8 @@ pub struct ResolvedTerrainGrid {
     /// Immutable active-theater clear and ramp stamps for terrain
     /// deformation.
     deformation_catalog: Option<deformation::DeformationCatalog>,
+    /// Immutable active-theater Firestorm ice tiles; None runs no ice.
+    ice_catalog: Option<ice::IceCatalog>,
     /// Whether the scenario's rules switched terrain deformation on
     /// (`[CombatDamage] TerrainDeformation=`); see
     /// [`Self::set_terrain_deformation`].
@@ -1214,7 +1250,7 @@ impl ResolvedTerrainGrid {
         Self {
             width,
             height,
-            level_span: LevelSpan::of(cells.iter().map(|cell| cell.level)),
+            level_span: LevelSpan::of_terrain(&cells),
             cells: terrain_cells::TerrainCells::new(cells),
             land_speed_costs: land_speed_cost_profiles(None),
             overlay_passability: Default::default(),
@@ -1234,10 +1270,12 @@ impl ResolvedTerrainGrid {
             dummy_accepts_smudge: false,
             bridge_set_start: None,
             high_bridge_rim_tiles: None,
+            wood_bridge_rim_tiles: Default::default(),
             wood_bridge_set_start: None,
             tile_animations: Vec::new(),
             destroyable_cliff_catalog: None,
             deformation_catalog: None,
+            ice_catalog: None,
             deformation_enabled: false,
             bridge_recalc_catalog: None,
             allocation_caches: Default::default(),
@@ -1554,8 +1592,8 @@ impl ResolvedTerrainGrid {
         self.level_span.widen(level);
     }
 
-    /// A signed range holding every stored cell's level and 0. It only widens
-    /// while the grid lives, so it can be wider than the current levels.
+    /// Signed bounds for ground and retained bridge projection bases, including
+    /// zero. They only widen while the grid lives.
     pub fn level_span(&self) -> LevelSpan {
         debug_assert!(
             self.cells
@@ -1599,6 +1637,9 @@ impl ResolvedTerrainGrid {
             .then(|| self.cells[index].clone());
         state.apply(&mut self.cells[index]);
         self.set_cell_level(index, state.level);
+        if let Some(base) = self.cells[index].retained_high_bridge_base_level() {
+            self.level_span.widen(base);
+        }
         if !same_entry {
             if let Some(before) = before {
                 if let Err(error) = self.refresh_saved_cell_presentation(index) {
@@ -1669,6 +1710,10 @@ impl crate::map::terrain::TacticalCellLookup for ResolvedTerrainGrid {
         self.cell(rx, ry).map(|cell| cell.level)
     }
 
+    fn corrected_bridge_base_level(&self, rx: u16, ry: u16) -> Option<u8> {
+        self.corrected_high_bridge_base_level((rx, ry))
+    }
+
     fn bridge_cell(&self, rx: u16, ry: u16) -> Option<crate::map::terrain::TacticalBridgeCell> {
         let facts = &self.cell(rx, ry)?.bridge_facts;
         // Original6D6760/6D6793 reads raw100/800, independent of inferred
@@ -1702,7 +1747,7 @@ impl ResolvedTerrainCell {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod mutation_epoch_tests {
     use super::*;
 
@@ -1733,7 +1778,7 @@ mod mutation_epoch_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod level_span_tests {
     use super::*;
 

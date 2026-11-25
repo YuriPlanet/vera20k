@@ -9,20 +9,25 @@
 //! skirmish the world is frozen under the dialog, and in LAN/WOL a frame-rate
 //! refresh shows the same values up to 250 ms earlier.
 
+use super::dialog_page::InGameDialog;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::SessionMode;
+use crate::app::match_runtime::sim_host::SimHost;
 use crate::app::match_runtime::sim_host::SimWrite;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::presentation::house_ui::HouseUiSources;
 use crate::app::{App, AppState};
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
+use crate::sim::scenario_session::ExecutionTopology;
 use crate::sim::world::Simulation;
-use crate::skirmish_modes::MpModeClass;
 use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::diplomacy::{
-    DIPLOMACY_ROWS, DiplomacyAlliesBox, DiplomacyButton, DiplomacyChatBox, DiplomacyControl,
-    DiplomacyLayout, DiplomacyRow, DiplomacyView, diplomacy_layout,
+    self, DIPLOMACY_ROWS, DiplomacyAlliesBox, DiplomacyChatBox, DiplomacyControl, DiplomacyLayout,
+    DiplomacyRow, DiplomacyView, diplomacy_layout,
 };
-use winit::event::MouseButton;
+use crate::ui::shell::page::PageEvent;
 
 /// Which control asked for the dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,16 +53,18 @@ pub(crate) enum RequestedState {
 /// whenever GameMode is not 0, co-op included, and nothing in campaign.
 pub(crate) fn requested_state(
     request: DiplomacyRequest,
-    mode: SessionMode,
-    mode_class: Option<MpModeClass>,
+    topology: ExecutionTopology,
+    rule_policy: RulePolicy,
 ) -> RequestedState {
     match request {
-        DiplomacyRequest::Hotkey if mode.is_nonzero() => RequestedState::Diplomacy,
-        DiplomacyRequest::Hotkey => RequestedState::Nothing,
+        DiplomacyRequest::Hotkey if rule_policy.uses_campaign_diplomacy() => {
+            RequestedState::Nothing
+        }
+        DiplomacyRequest::Hotkey => RequestedState::Diplomacy,
         DiplomacyRequest::SidebarButton
-            if !mode.is_nonzero()
-                || (mode.is_network()
-                    && mode_class.is_some_and(MpModeClass::restates_mission_for_diplomacy)) =>
+            if rule_policy.uses_campaign_diplomacy()
+                || (topology.is_lockstep()
+                    && rule_policy.restates_mission_for_network_diplomacy()) =>
         {
             RequestedState::MissionBriefing
         }
@@ -67,12 +74,22 @@ pub(crate) fn requested_state(
 
 /// Write the requested state; `State_Machine` admits it on the way in.
 pub(crate) fn open(state: &mut AppState, request: DiplomacyRequest) {
-    let mode_class = state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .and_then(|runtime| runtime.simulation.session().multiplayer_mode_class());
-    match requested_state(request, state.match_state.session_mode(), mode_class) {
+    let mode = state.match_state.session_mode();
+    let (topology, rule_policy) = state.match_state.sim_runtime.runtime().map_or_else(
+        || (mode.execution_topology(), mode.stock_rule_policy(None)),
+        |runtime| {
+            let session = runtime.simulation.session();
+            (session.execution_topology(), session.rule_policy())
+        },
+    );
+    if request == DiplomacyRequest::SidebarButton
+        && topology.is_lockstep()
+        && rule_policy.restates_mission_for_network_diplomacy()
+        && crate::app::input::briefing_diplomacy::open(state)
+    {
+        return;
+    }
+    match requested_state(request, topology, rule_policy) {
         RequestedState::Nothing => {}
         RequestedState::Diplomacy => {
             App::enter_in_game_menu_state(state, InGameMenuState::Diplomacy);
@@ -90,8 +107,6 @@ pub(crate) struct DiplomacyRules<'a> {
     pub quick_coop: bool,
     /// `[0xA8B538]`: the local player is defeated (or observing).
     pub local_inactive: bool,
-    /// GameMode is not 0: `IsControlledByHuman` reads only `+0x1EC`.
-    pub game_mode_nonzero: bool,
     /// The chat mask `0xA8D108`, by House array index.
     pub listeners: &'a [bool],
 }
@@ -129,6 +144,7 @@ pub(crate) fn resolve_rows(
         chat_header: false,
     };
     let order = sim.houses().order();
+    let rule_policy = sim.session().rule_policy();
     let Some(local) = sim.session().current_house() else {
         return empty;
     };
@@ -164,7 +180,7 @@ pub(crate) fn resolve_rows(
             if !multiplay(house) {
                 return None;
             }
-            let human = state.is_controlled_by_human(switches.game_mode_nonzero);
+            let human = state.is_controlled_by_human(rule_policy);
             let allies = (row > 0 && allies_shown).then(|| {
                 allies_header = true;
                 DiplomacyAlliesBox {
@@ -239,8 +255,8 @@ pub(crate) fn resolve_rows(
                 insignia,
                 name: sources.ui_name(sim, house, state.country(), &country_name),
                 rgb,
-                // Σ of the two 20-entry per-victim kill tables (+0x53E4,
-                // +0x5438), `%d`.
+                // The Kills total (`0x00658330`), `%d`. VERA counts every
+                // victim House, including those past native's 20-entry tables.
                 kills: Some(state.stats().kills() as i32),
                 // 0x00658330 hides a defeated House's box; nothing re-shows it.
                 allies: allies.filter(|_| !state.is_defeated()),
@@ -274,7 +290,7 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
     ) else {
         return view;
     };
-    let computer = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER");
+    let computer = state.csf_text("TXT_COMPUTER");
     let listeners: Vec<_> = (0..sim.houses().order().len())
         .map(|index| state.match_state.match_presentation.chat.listens(index))
         .collect();
@@ -287,17 +303,29 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
                 .network_wol_start()
                 .is_some_and(|terms| terms.quick_coop),
         local_inactive: sim.local_player_defeated(),
-        game_mode_nonzero: mode.is_nonzero(),
         listeners: &listeners,
     };
     let resolved = resolve_rows(
         sim,
         rules,
         switches,
-        &HouseUiSources::from_state(state, &computer),
-        |country| crate::app::presentation::house_ui::country_display_name(state, sim, country),
+        &HouseUiSources::from_state(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets.csf,
+            &computer,
+        ),
+        |country| {
+            crate::app::presentation::house_ui::country_display_name(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets.csf,
+                sim,
+                country,
+            )
+        },
     );
-    let paging = state.match_state.match_presentation.diplomacy.page;
+    let paging = state.match_state.match_presentation.diplomacy_page;
     let range = paging.range(resolved.rows.len(), DIPLOMACY_ROWS);
     view.first_row = range.start;
     view.page_index = paging.index(resolved.rows.len(), DIPLOMACY_ROWS);
@@ -306,7 +334,7 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
         std::array::from_fn(|slot| resolved.rows.get(range.start + slot).cloned().flatten());
     view.allies_header = resolved.allies_header;
     view.chat_header = resolved.chat_header;
-    if mode.is_network() {
+    if mode.execution_topology().is_lockstep() {
         // 0x00658126: the MPGameMode title.
         view.mode_name = state
             .match_state
@@ -315,102 +343,89 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
             .and_then(|launch| {
                 crate::skirmish_modes::mode_by_id(&state.frontend.skirmish_modes, launch.mode.id)
             })
-            .map(|mode| {
-                crate::app::frontend::shell_pass::resolve_csf(state, &mode.ui_name_key).into_owned()
-            });
+            .map(|mode| state.csf_text(&mode.ui_name_key));
     }
     // 0x006580E0..0x0065810C: TauntsOn shows in LAN/WOL with LANTaunts /
     // WOLTaunts; the 250 ms refresh never touches it.
     view.taunts = state.frontend.multiplayer_shell_runtime.taunts_on(mode);
-    view.map_name = if mode.is_network() {
-        crate::app::shell_network_setup::map_display_name(state)
+    view.map_name = if mode.execution_topology().is_lockstep() {
+        crate::app::shell_network_setup::map_display_name(
+            &state.frontend.scenario_catalog,
+            &state.match_state.session,
+        )
     } else {
-        crate::app::frontend::skirmish_shell_render::skirmish_selected_map_name(state)
+        crate::app::frontend::skirmish_shell_render::skirmish_selected_map_name(&state.frontend)
     }
     .unwrap_or_default()
     .to_string();
     view
 }
 
+/// 0x73: title 0x694 and Return as the lower right-panel button.
+pub(crate) const DIALOG: InGameDialog = InGameDialog {
+    id: diplomacy::DIALOG,
+    title: Some(diplomacy::TITLE_LABEL),
+    lower: (0x423, diplomacy::RETURN_LABEL),
+    label: "Active Diplomacy Shell 73",
+    ui: super::dialog_page::shared_ui,
+    ui_mut: super::dialog_page::shared_ui_mut,
+    // The boxes play GUICheckboxSound where their proc cases do, below.
+    own_checkbox_sound: true,
+    help_under_held: false,
+    help_fallback: |_| "",
+};
+
 pub(crate) fn layout(state: &AppState) -> Option<DiplomacyLayout> {
-    let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
-    Some(diplomacy_layout(
-        shell.width,
-        shell.height,
-        shell.layout,
-        shell.button_size,
-    ))
+    super::dialog_page::layout(state, diplomacy_layout)
 }
 
-fn control_under_pointer(state: &AppState) -> Option<DiplomacyControl> {
+/// Makes 0x73's nodes current without input (rects, the hidden children,
+/// the rows): its renderer's call every drawn frame before it paints from
+/// them. Returns the geometry and the rows it put on them.
+pub(crate) fn sync(state: &mut AppState) -> Option<(DiplomacyLayout, DiplomacyView)> {
     let layout = layout(state)?;
-    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
-    view(state).control_at(&layout, x, y)
+    let view = view(state);
+    let rect = |id| view.rect(&layout, id);
+    let sync = |gui: &mut vera20k_gui::Gui, root| view.sync(&layout, gui, root);
+    DIALOG.sync(
+        &mut state.match_state.match_presentation,
+        diplomacy::spec,
+        rect,
+        sync,
+    );
+    Some((layout, view))
 }
 
-fn return_under(control: Option<DiplomacyControl>) -> Option<DiplomacyButton> {
-    match control {
-        Some(DiplomacyControl::Return) => Some(DiplomacyButton::Return),
-        Some(DiplomacyControl::PreviousPage) => Some(DiplomacyButton::PreviousPage),
-        Some(DiplomacyControl::NextPage) => Some(DiplomacyButton::NextPage),
-        _ => None,
-    }
-}
-
-pub(crate) fn cursor_moved(state: &mut AppState) {
-    let over = control_under_pointer(state);
-    let interaction = &mut state.match_state.match_presentation.diplomacy;
-    interaction.hovered = over;
-    interaction.button.hovered = return_under(over);
-}
-
-pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    if button != MouseButton::Left {
+/// One pointer message on 0x73 (`down`: `None` moves), over the rows as
+/// they stand now.
+pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
+    let Some(layout) = layout(state) else {
         return;
-    }
-    let over = control_under_pointer(state);
-    state.match_state.match_presentation.diplomacy.hovered = over;
-    let target = return_under(over);
-    if pressed {
-        state
-            .match_state
-            .match_presentation
-            .diplomacy
-            .button
-            .press(target);
-        if target.is_some() {
-            // Owner-draw button-down: GUIMainButtonSound (Rules+0x188,
-            // 0x0061374B..0x00613771).
-            App::play_main_menu_button_sound(state);
-        }
-        match over {
-            Some(DiplomacyControl::Chat(row)) => toggle_chat_box(state, row),
-            Some(DiplomacyControl::Allies(row)) => press_allies_box(state, row),
-            Some(DiplomacyControl::Taunts) => toggle_taunts_box(state),
-            _ => {}
-        }
-    } else {
-        match state
-            .match_state
-            .match_presentation
-            .diplomacy
-            .button
-            .release(target)
-        {
-            Some(DiplomacyButton::Return) => {
-                // 0x006581AD: Return ends the modal; State_Machine leaves state 8.
+    };
+    let view = view(state);
+    let rect = |id| view.rect(&layout, id);
+    let sync = |gui: &mut vera20k_gui::Gui, root| view.sync(&layout, gui, root);
+    for event in DIALOG.route(state, down, diplomacy::spec, rect, sync) {
+        let (PageEvent::Activated(id) | PageEvent::Toggled(id, _)) = event else {
+            continue;
+        };
+        match DiplomacyControl::from_id(id) {
+            // 0x006581AD: Return ends the modal; State_Machine leaves state 8.
+            Some(DiplomacyControl::Return) => {
                 App::enter_in_game_menu_state(state, InGameMenuState::Closed);
             }
-            Some(button @ (DiplomacyButton::PreviousPage | DiplomacyButton::NextPage)) => {
-                let count = view(state).page_count * DIPLOMACY_ROWS;
-                state.match_state.match_presentation.diplomacy.page.change(
-                    button == DiplomacyButton::NextPage,
-                    count,
+            Some(control @ (DiplomacyControl::PreviousPage | DiplomacyControl::NextPage)) => {
+                state.match_state.match_presentation.diplomacy_page.change(
+                    control == DiplomacyControl::NextPage,
+                    view.page_count * DIPLOMACY_ROWS,
                     DIPLOMACY_ROWS,
                 );
                 state.platform.window.request_redraw();
             }
-            None => {}
+            Some(DiplomacyControl::Chat(row)) => toggle_chat_box(state, &view, row),
+            Some(DiplomacyControl::Allies(row)) => press_allies_box(state, &view, row),
+            Some(DiplomacyControl::Taunts) => toggle_taunts_box(state),
+            _ => {}
         }
     }
 }
@@ -421,15 +436,8 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
 /// (`0x00658269`). The box shows the sim's mask again at the next refresh,
 /// so VERA, which draws the box from the mask, keeps no box state. A hidden
 /// or disabled box takes no click.
-fn press_allies_box(state: &mut AppState, row: usize) {
-    let view = view(state);
+fn press_allies_box(state: &mut AppState, view: &DiplomacyView, row: usize) {
     let logical_row = view.first_row + row;
-    let Some(allies) = view.rows.get(row).and_then(|row| row.as_ref()?.allies) else {
-        return;
-    };
-    if !allies.enabled {
-        return;
-    }
     let Some(house) = state.match_state.sim_runtime.runtime().and_then(|runtime| {
         let sim = &runtime.simulation;
         let player = sim.houses().index_of(sim.session().current_house()?)?;
@@ -440,11 +448,18 @@ fn press_allies_box(state: &mut AppState, row: usize) {
     }) else {
         return;
     };
-    let sound = state
-        .rules()
-        .and_then(|rules| rules.general.gui_checkbox_sound.clone());
-    App::play_shell_ui_sound_by_id(state, sound.as_deref());
-    ally(state, house);
+    play_checkbox_sound(state);
+    ally(&mut state.match_state.sim_runtime, house);
+}
+
+fn play_checkbox_sound(state: &mut AppState) {
+    App::play_shell_rules_sound(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        |rules| rules.general.gui_checkbox_sound.as_deref(),
+    );
 }
 
 /// `Ally 0x00731840`: queue EVENT_ALLY toward `house` for the player's
@@ -457,21 +472,16 @@ fn press_allies_box(state: &mut AppState, row: usize) {
 /// clears it.
 /// Sim-scale deviation: a full OutList (128 records, `[0xA802C8]`) drops the
 /// event natively; VERA's far larger queue refuses the click instead.
-pub(crate) fn ally(state: &mut AppState, house: InternedId) {
-    let Some(local) = crate::app::input::commands::preferred_local_owner_name(state) else {
+pub(crate) fn ally(sim_runtime: &mut SimHost, house: InternedId) {
+    let Some(local) = crate::app::input::commands::preferred_command_owner(sim_runtime) else {
         return;
     };
-    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
+    let Some(runtime) = sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     let rules = &runtime.resources.rules;
     let sim = &mut runtime.simulation;
-    if !sim.session().game_mode_nonzero()
-        || sim.session().fixed_alliance()
-        || !rules.general.allies_allowed
-        || !rules.general.ally_change_allowed
-        || !sim.session().game_options().ally_change_allowed
-    {
+    if !alliance_change_allowed(sim.session(), rules) {
         return;
     }
     let Some(index) = sim.houses().index_of(house) else {
@@ -486,23 +496,33 @@ pub(crate) fn ally(state: &mut AppState, house: InternedId) {
     );
 }
 
+fn alliance_change_allowed(
+    session: &crate::sim::scenario_session::ScenarioSession,
+    rules: &RuleSet,
+) -> bool {
+    session.rule_policy().allows_manual_alliances()
+        && !session.fixed_alliance()
+        && rules.general.allies_allowed
+        && rules.general.ally_change_allowed
+        && session.game_options().ally_change_allowed
+}
+
 /// `AllianceCommandClass::Execute 0x00536F20` → `0x007318F0`: toggle the
 /// alliance with the owner of the first selected object, when the player is
 /// not defeated and that owner is another human House; then `Ally`'s gates.
-pub(crate) fn toggle_alliance_hotkey(state: &mut AppState) {
+pub(crate) fn toggle_alliance_hotkey(frontend: &FrontendState, match_state: &mut MatchState) {
     let first = crate::app::input::dispatch::selected_stable_ids_in_order(
-        state
-            .match_state
+        match_state
             .sim_runtime
             .runtime()
             .map(|runtime| &runtime.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     )
     .first()
     .copied();
-    let Some(owner) = state.match_state.sim_runtime.runtime().and_then(|runtime| {
+    let Some(owner) = match_state.sim_runtime.runtime().and_then(|runtime| {
         let sim = &runtime.simulation;
         let local = sim.session().current_house()?;
         if sim.houses().get(&local)?.is_defeated() {
@@ -513,22 +533,18 @@ pub(crate) fn toggle_alliance_hotkey(state: &mut AppState) {
     }) else {
         return;
     };
-    ally(state, owner);
+    ally(&mut match_state.sim_runtime, owner);
 }
 
 /// A press on an enabled chat box: the checkbox proc flips its state, plays
 /// GUICheckboxSound and notifies the dialog with the new state
 /// (`0x0061670E..0x0061678B`); 0x73 writes it to the mask byte of the row's
 /// House (`0x0065827A..0x006582C3`). A hidden or disabled box takes no click.
-fn toggle_chat_box(state: &mut AppState, row: usize) {
-    let view = view(state);
+fn toggle_chat_box(state: &mut AppState, view: &DiplomacyView, row: usize) {
     let logical_row = view.first_row + row;
     let Some(chat) = view.rows.get(row).and_then(|row| row.as_ref()?.chat) else {
         return;
     };
-    if !chat.enabled {
-        return;
-    }
     let Some(index) = state.match_state.sim_runtime.runtime().and_then(|runtime| {
         let sim = &runtime.simulation;
         let player = sim.houses().index_of(sim.session().current_house()?)?;
@@ -542,10 +558,7 @@ fn toggle_chat_box(state: &mut AppState, row: usize) {
         .match_presentation
         .chat
         .set_listens(index, !chat.checked);
-    let sound = state
-        .rules()
-        .and_then(|rules| rules.general.gui_checkbox_sound.clone());
-    App::play_shell_ui_sound_by_id(state, sound.as_deref());
+    play_checkbox_sound(state);
 }
 
 /// A press on the TauntsOn box: the checkbox proc flips it only for a press
@@ -554,30 +567,15 @@ fn toggle_chat_box(state: &mut AppState, row: usize) {
 /// the mode's byte (`0x006582F9` LANTaunts, `0x00658313` WOLTaunts), live
 /// for both send and receive. It is never disabled.
 fn toggle_taunts_box(state: &mut AppState) {
-    let Some(layout) = layout(state) else {
-        return;
-    };
-    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
-    if !crate::ui::skirmish_shell::checkbox_icon_rect(
-        layout.taunts,
-        crate::ui::shell::geom::ShellScale::RETAIL,
-    )
-    .contains(x, y)
-    {
-        return;
-    }
     let mode = state.match_state.session_mode();
     let runtime = &mut state.frontend.multiplayer_shell_runtime;
     let Some(on) = runtime.taunts_on(mode) else {
         return;
     };
     runtime.set_taunts_on(mode, !on);
-    let sound = state
-        .rules()
-        .and_then(|rules| rules.general.gui_checkbox_sound.clone());
-    App::play_shell_ui_sound_by_id(state, sound.as_deref());
+    play_checkbox_sound(state);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "diplomacy_tests.rs"]
 mod tests;

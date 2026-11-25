@@ -167,7 +167,12 @@ fn place(sim: &mut Simulation, rules: &RuleSet, id: u64, (x, y): (i32, i32)) {
             rules.ares_form()
         ));
     }
-    assert!(sim.foot_mark_remove(id, rules, None, crate::sim::world::FrameEffects::default()));
+    assert!(sim.foot_mark_remove(
+        id,
+        rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default()
+    ));
     let coord = crate::sim::components::DriveCoord { x, y, z: 0 };
     crate::sim::movement::ground_pose::foot_set_location(
         &mut sim.substrate.entities,
@@ -176,7 +181,12 @@ fn place(sim: &mut Simulation, rules: &RuleSet, id: u64, (x, y): (i32, i32)) {
         rules,
         &sim.interner,
     );
-    assert!(sim.foot_mark_put(id, rules, None, crate::sim::world::FrameEffects::default()));
+    assert!(sim.foot_mark_put(
+        id,
+        rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default()
+    ));
     if infantry {
         assert!(crate::sim::world::Simulation::object_raw_receiver_at(
             &mut sim.substrate,
@@ -206,7 +216,12 @@ fn kill(sim: &mut Simulation, rules: &RuleSet, id: u64) {
             arg6: false,
         },
     );
-    sim.commit_direct_damage_receiver(rules, None, hit, crate::sim::world::FrameEffects::default());
+    sim.commit_direct_damage_receiver(
+        rules,
+        None,
+        hit,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     assert_eq!(entity(sim, id).health.current(), 0);
 }
 
@@ -394,7 +409,6 @@ fn native_fire_error_corpus() {
         let code = crate::sim::combat::fire_error_world::FireSubject {
             world: &sim,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer: entity(&sim, firer),
             obj: rules.object(firer_type).unwrap(),
@@ -646,7 +660,7 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
                 carrier,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             let detonated = had && bomb(&sim, carrier).is_none();
             let native = case.events.iter().any(|event| event[0] == "detonate");
@@ -867,7 +881,7 @@ fn retail_fire_once_ivan_releases_target_on_attach() {
     restored.resolve_type_handles(rules);
     // Snapshot loading has its own Scenario reseed policy; compare retained
     // gameplay after aligning that unrelated owner.
-    restored.scenario_rng = sim.scenario_rng.clone();
+    *restored.scenario_rng = (*sim.scenario_rng).clone();
     assert_eq!(restored.state_hash(), sim.state_hash());
     assert!(entity(&restored, ivan).attack_target.target().is_none());
     assert_eq!(bomb(&restored, tank), bomb(&sim, tank));
@@ -959,11 +973,33 @@ fn a_bomb_outlives_its_planter_and_credits_no_one() {
         tank,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let tank = entity(&sim, tank);
     assert_eq!(tank.health.current(), 0, "450 kills the 300-strength tank");
-    assert!(tank.kill_record.killer().is_none(), "no kill credit");
+    assert!(tank.seldom.kill_record.killer().is_none(), "no kill credit");
+}
+
+/// Every object's expiry reaches the bomb list (`0x00725961`), and only a
+/// bomb the expiring object planted is written: the carrier of any other
+/// bomb is read, not handed out.
+#[test]
+fn an_expiry_hands_out_only_the_carriers_of_the_bombs_its_object_planted() {
+    let rules = rules();
+    let mut sim = sim(27);
+    let tank = spawn(&mut sim, &rules, "LTNK", "Americans", 12, 10);
+    let other = spawn(&mut sim, &rules, "HTNK", "Americans", 14, 10);
+    let ivan = spawn(&mut sim, &rules, "IVAN", "Russians", 11, 10);
+    let second = spawn(&mut sim, &rules, "IVAN", "Russians", 13, 10);
+    sim.bomb_attach_for_test(ivan, Some(tank), &rules);
+    sim.bomb_attach_for_test(second, Some(other), &rules);
+    assert_eq!(sim.bomb_carriers().len(), 2);
+
+    let handed_out = sim.substrate.entities.hand_outs();
+    Simulation::bomb_planter_expired(&mut sim.substrate, &sim.bombs, ivan);
+    assert_eq!(sim.substrate.entities.hand_outs() - handed_out, 1);
+    assert_eq!(bomb(&sim, tank).unwrap().planter, None);
+    assert_eq!(bomb(&sim, other).unwrap().planter, Some(second));
 }
 
 /// UnInit defuses silently (`0x005F65F3`); a building changing hands loses
@@ -990,7 +1026,7 @@ fn removal_and_capture_defuse_silently() {
         russians,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     // Ares hook 0x448277 (100163B0) resumes past the defuse.
     assert_eq!(
@@ -1003,7 +1039,7 @@ fn removal_and_capture_defuse_silently() {
         russians,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         bomb(&sim, garrison).is_some(),
@@ -1014,7 +1050,7 @@ fn removal_and_capture_defuse_silently() {
         russians,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(bomb(&sim, tank).is_some(), "a unit changing hands keeps it");
     let mut carriers = vec![garrison, tank];
@@ -1051,7 +1087,10 @@ fn a_dying_crazy_ivan_explodes() {
     assert_eq!(entity(&sim, tank).health.current(), 1000 - 450);
     let engineer = entity(&sim, engineer);
     assert_eq!(engineer.health.current(), 0);
-    assert_eq!(engineer.kill_record.killer(), sim.interner.get("Russians"));
+    assert_eq!(
+        engineer.seldom.kill_record.killer(),
+        sim.interner.get("Russians")
+    );
 }
 
 /// A bombed Crazy Ivan who dies blows up once: his death weapon cannot plant
@@ -1074,7 +1113,10 @@ fn a_bombed_crazy_ivan_blows_up_once() {
     assert_eq!(entity(&sim, tank).health.current(), 1000 - 450, "one blast");
     let engineer = entity(&sim, engineer);
     assert_eq!(engineer.health.current(), 0);
-    assert_eq!(engineer.kill_record.killer(), sim.interner.get("Americans"));
+    assert_eq!(
+        engineer.seldom.kill_record.killer(),
+        sim.interner.get("Americans")
+    );
 }
 
 /// A blast that kills another carrier sets that bomb off in its death
@@ -1099,7 +1141,7 @@ fn a_blast_sets_off_the_bombs_it_kills() {
         first,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(entity(&sim, second).health.current(), 0);
     assert!(sim.bomb_carriers().is_empty(), "both went off");
@@ -1202,7 +1244,7 @@ fn a_bomb_survives_a_snapshot() {
         .sim;
     restored.restore_after_snapshot_load().unwrap();
     // The envelope reseeds Scenario RNG; that policy is not under test here.
-    restored.scenario_rng = sim.scenario_rng.clone();
+    *restored.scenario_rng = (*sim.scenario_rng).clone();
     assert_eq!(
         bomb(&restored, tank),
         bomb(&sim, tank),
@@ -1275,7 +1317,7 @@ fn ticking_cues_survive_rule_changes_and_load_without_changing_gameplay_ids() {
             SimSoundEvent::VocAt { sound_id, .. },
         ] if *retired == ticking_sound_owner(old)
             && *fresh == ticking_sound_owner(old)
-            && sound_id == "CrazyIvanAttack"));
+            && sound_id.name_in(replacement) == "CrazyIvanAttack"));
     }
 }
 
@@ -1555,7 +1597,7 @@ fn ares_death_bombs_wait_for_their_carrier_and_resist_engineers() {
         enemy,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(bomb(&sim, enemy).is_some(), "a death bomb has no fuse");
 
@@ -1563,7 +1605,6 @@ fn ares_death_bombs_wait_for_their_carrier_and_resist_engineers() {
     let code = crate::sim::combat::fire_error_world::FireSubject {
         world: &sim,
         rules: &rules,
-        overlay_registry: None,
         fog: None,
         firer: entity(&sim, engineer),
         obj: rules.object("ENGINEER").unwrap(),

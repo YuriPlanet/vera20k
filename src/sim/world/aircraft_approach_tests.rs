@@ -54,7 +54,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     let state = input["state"].as_u64().unwrap_or(3) as u8;
     entity.mission.set_handler_state(u32::from(state));
     entity.mission_leaf = crate::sim::mission::MissionLeafState::aircraft_raw_for_test(1, state);
-    entity.airstrike.set_test_link(Some(999));
+    entity.seldom.airstrike.set_test_link(Some(999));
     entity
         .navigation
         .set_nav_com_for_test(input["nav"].as_array().map(|xy| {
@@ -72,7 +72,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     let mut fly = serde_json::to_value(loco.fly_runtime().unwrap()).unwrap();
     fly["moving"] = json!(input["moving"].as_bool().unwrap_or(true));
     *loco.fly_runtime_mut().unwrap() = serde_json::from_value(fly).unwrap();
-    entity.weapon_burst = serde_json::from_value(json!({
+    entity.seldom.weapon_burst = serde_json::from_value(json!({
         "index": input["burst_index"].as_i64().unwrap_or(0),
     }))
     .unwrap();
@@ -98,7 +98,7 @@ fn assert_flh(sim: &Simulation, rules: &RuleSet, row: &Value) {
         &fire_coord::FireSource::from(&snapshot),
         rules.object("TEST").unwrap(),
         0,
-        entity.weapon_burst.index() as u8,
+        entity.seldom.weapon_burst.index() as u8,
         Default::default(),
     )
     .coord;
@@ -148,7 +148,7 @@ fn aircraft_approach_matches_original_dispatch_and_restored_continuation() {
         let mut restored = GameSnapshot::load(&saved).unwrap().sim;
         restored.restore_after_snapshot_load().unwrap();
         // Snapshot-envelope seed policy is separate from persisted mission inputs.
-        restored.scenario_rng = sim.scenario_rng.clone();
+        *restored.scenario_rng = (*sim.scenario_rng).clone();
         assert_eq!(sim.state_hash(), restored.state_hash());
         for world in [&mut sim, &mut restored] {
             // GetFLH reads the headings before this visit changes SecondaryFacing.
@@ -185,7 +185,7 @@ fn aircraft_initial_attack_reaches_live_search_on_the_next_due_visit() {
     let saved = GameSnapshot::save(&sim, 0, 0, "initial attack before search", 0);
     let mut restored = GameSnapshot::load(&saved).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
-    restored.scenario_rng = sim.scenario_rng.clone();
+    *restored.scenario_rng = (*sim.scenario_rng).clone();
     for world in [&mut sim, &mut restored] {
         let before = world.state_hash();
         crate::sim::aircraft::tick_aircraft_missions(world, &rules);

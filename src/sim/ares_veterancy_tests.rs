@@ -27,7 +27,7 @@ fn board(sim: &mut Simulation, transport: u64, passengers: Vec<u64>) {
         .entities
         .get_mut(transport)
         .unwrap()
-        .passenger_role
+        .passenger_role_mut_for_test()
         .cargo_mut()
         .unwrap()
         .set_passengers_for_test(passengers);
@@ -116,13 +116,14 @@ fn airstrike_kill_credits_the_designator_scaled() {
             .entities
             .get_mut(drone)
             .unwrap()
+            .seldom
             .airstrike
             .set_test_link(Some(boris));
         sim.record_the_kill(
             victim,
             KillSource::Techno(Some(drone)),
             KillCallback::Terminal,
-            UninitContext::with_rules(&rules),
+            UninitContext::new(&rules),
         );
         // 3000 x 50% over 1000 x VeteranRatio 3 is half a rank.
         let expected = if from_airstrike { 0.5 } else { 0.0 };
@@ -178,7 +179,7 @@ fn elite_ifv_kill_promotes_its_gunner_immediately() {
         victim,
         KillSource::Techno(Some(ifv)),
         KillCallback::Terminal,
-        UninitContext::with_rules(&rules),
+        UninitContext::new(&rules),
     );
     // 150 x 200% over 100 x VeteranRatio 3 is exactly one rank.
     let gunner = sim.substrate.entities.get(gunner).unwrap();
@@ -225,9 +226,9 @@ fn academy_bonus_follows_placement_capture_and_limbo() {
     assert_eq!(raw(&mut sim, "E2", "Americans"), 0.0, "Academy.Ignore");
     assert_eq!(raw(&mut sim, "E1", "Russians"), 0.0);
     let russians = sim.interner.intern("Russians");
-    sim.change_owner_with_rules(academy, russians, &rules, None, Default::default());
+    sim.change_owner_with_rules(academy, russians, &rules, None, &mut Default::default());
     assert_eq!(raw(&mut sim, "E1", "Americans"), 0.0);
     assert_eq!(raw(&mut sim, "E1", "Russians"), 1.5);
-    sim.techno_limbo_with_rules(academy, &rules, None);
+    sim.techno_limbo_with_rules(academy, &rules);
     assert_eq!(raw(&mut sim, "E1", "Russians"), 0.0);
 }

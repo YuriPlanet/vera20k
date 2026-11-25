@@ -353,7 +353,7 @@ fn draw_amplitude(step: i32) -> f32 {
     f32::from_bits(X87Chop53::store_f32_masked_chop(value).bits())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::warp_rows;
 

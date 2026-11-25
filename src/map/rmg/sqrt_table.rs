@@ -22,7 +22,7 @@ const TABLE_VA: u32 = 0x0086_50BC;
 /// Entries, one `u32` each — the top 14 bits of a significand.
 const TABLE_LEN: usize = 16384;
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::util::native_x87::sqrt_approx_table_entry;

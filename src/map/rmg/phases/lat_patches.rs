@@ -80,9 +80,8 @@ fn prob_setup_temperate(ctx: &mut PatchCtx<'_>, vegetation: i32) {
     let veg = t(f64::from(vegetation)).mul(t(VEG_SCALE));
     let rough = veg.mul(t(ROUGH_FACTOR)).to_f64();
     let shore_rough = veg.mul(t(ROUGH_FACTOR)).mul(t(SHORE_ROUGH_MULT)).to_f64();
-    for (x, y) in ctx.grid.native_cells().collect::<Vec<_>>() {
-        let tile = ctx.grid.get(x, y).expect("native cell").tile;
-        if ctx.ids.is_shore_piece(tile) && any_5x5_in_diamond(ctx.scratch, x, y) {
+    for ((x, y), cell) in ctx.grid.cells_in_native_order() {
+        if ctx.ids.is_shore_piece(cell.tile) && any_5x5_in_diamond(ctx.scratch, x, y) {
             let record = ctx.scratch.get_mut(x, y);
             record.p_sand = SAND_PROB;
             record.p_green = 0.0;
@@ -279,7 +278,7 @@ fn place_patch(ctx: &mut PatchCtx<'_>, origin: (i32, i32), tile: i32, size: i32,
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::rmg::tiles::TILE_UNASSIGNED;

@@ -64,6 +64,24 @@ fn super_weapon_index(object: &ObjectType, rules: &RuleSet) -> Option<i32> {
         .map(|index| index as i32)
 }
 
+/// VERA's Superweapon Limit: the frames left on `building`'s own shot of the
+/// Super its `SuperWeapon=` names. `None` when the type keeps gamemd's one
+/// charge per house, so the stock pass below answers (a Battle Lab shares the
+/// house's charge). Each such building opens and closes its own anims on its
+/// own timer instead of all of them on the first building's.
+fn own_charge_remaining(
+    sim: &Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &ObjectType,
+) -> Option<i32> {
+    if !object.super_weapon_per_building {
+        return None;
+    }
+    let id = sim.interner.get(object.super_weapon.as_deref()?)?;
+    let instance = sim.super_weapons.get(&entity.owner())?.get(&id)?;
+    instance.building_charge_remaining(entity.stable_id(), sim.session.binary_frame() as i32)
+}
+
 impl Simulation {
     /// `BuildingClass::OnConstructionComplete @ 0x00445F80`'s first-opening
     /// block `0x004463F0..0x00446580`: for each of the owner's Supers
@@ -86,9 +104,17 @@ impl Simulation {
             // Installed Ares4463F0 ->10034A60 replaces the retail Type-vs-
             // definition-index scan. No eligible Super still creates14 when
             // the primary definition exists (10034A91..10034ACD).
-            let selected =
-                crate::sim::superweapon::first_available_building_super(self, rules, entity)
-                    .map(|instance| instance.charge_remaining(self.session.binary_frame() as i32));
+            let selected = crate::sim::superweapon::first_available_building_super(
+                self, rules, entity,
+            )
+            .map(|instance| {
+                let frame = self.session.binary_frame() as i32;
+                // The building's own shot under the Superweapon Limit, else
+                // the House's one charge ([`own_charge_remaining`]).
+                instance
+                    .building_charge_remaining(id, frame)
+                    .unwrap_or_else(|| instance.charge_remaining(frame))
+            });
             if let Some(remaining) = selected {
                 vec![remaining]
             } else {
@@ -103,13 +129,18 @@ impl Simulation {
             }
         } else {
             let owner = entity.owner();
-            let Some(index) = self
-                .object_type(entity.type_ref(), rules)
-                .and_then(|object| super_weapon_index(object, rules))
-            else {
+            let Some(object) = self.object_type(entity.type_ref(), rules) else {
                 return;
             };
-            crate::sim::superweapon::supers_of_kind_remaining(self, rules, owner, index)
+            let Some(index) = super_weapon_index(object, rules) else {
+                return;
+            };
+            match own_charge_remaining(self, entity, object) {
+                Some(remaining) => vec![remaining],
+                None => {
+                    crate::sim::superweapon::supers_of_kind_remaining(self, rules, owner, index)
+                }
+            }
         };
         for remaining in remaining {
             let slot = if opens_charged(remaining) {
@@ -169,12 +200,24 @@ impl Simulation {
             else {
                 return;
             };
-            vec![instance.charge_remaining(self.session.binary_frame() as i32)]
+            let frame = self.session.binary_frame() as i32;
+            vec![
+                object
+                    .super_weapon_per_building
+                    .then(|| instance.building_charge_remaining(id, frame))
+                    .flatten()
+                    .unwrap_or_else(|| instance.charge_remaining(frame)),
+            ]
         } else {
             let Some(index) = index else {
                 return;
             };
-            crate::sim::superweapon::supers_of_kind_remaining(self, rules, owner, index)
+            match own_charge_remaining(self, entity, object) {
+                Some(remaining) => vec![remaining],
+                None => {
+                    crate::sim::superweapon::supers_of_kind_remaining(self, rules, owner, index)
+                }
+            }
         };
         for remaining in remaining {
             let (occupied, replacement) = if near_charged(remaining, charged_anim_time) {
@@ -196,7 +239,7 @@ impl Simulation {
     }
 }
 
-#[cfg(all(test, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     //! Native comparisons (`tools/superweapon_oracle.py` sections
     //! `super_anim` and `opening_super_anim`; `--check` regenerates them).
@@ -310,7 +353,7 @@ mod tests {
         let owner = sim.interner.intern("Russians");
         sim.houses
             .register(HouseState::new(owner, 1, None, true, 0, 10));
-        sim.resolved_terrain = Some(test_grid(16, 16, test_flat_cell));
+        *sim.resolved_terrain = Some(test_grid(16, 16, test_flat_cell));
         crate::sim::arena_fixture::supply_native_map(&mut sim);
         let id = sim
             .spawn_object_at_height("SUPERB", "Russians", 5, 5, 0, 0, &rules)

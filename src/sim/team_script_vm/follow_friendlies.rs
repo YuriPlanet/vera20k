@@ -65,8 +65,7 @@ impl Simulation {
             return (None, None);
         };
         let zone = friendly
-            .low_bridge_tube_state
-            .as_ref()
+            .active_tube()
             .and_then(|state| self.resolved_terrain.as_ref()?.tube(state.tube_id()))
             .map_or(TeamTarget::Object(friendly.stable_id()), |tube| {
                 // CalcCenter's Script10 arm resolves the exit at6EB17E.
@@ -86,9 +85,9 @@ impl Simulation {
         team_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
-        self.team_calc_center(team_id, rules, registry);
+        self.team_calc_center(team_id, rules);
         let Some(team) = self.team_script_vm.teams.get_mut(&team_id) else {
             return;
         };
@@ -109,19 +108,19 @@ impl Simulation {
             .teams
             .get(&team_id)
             .and_then(|team| team.members().next());
+        // Where the walk meets each member, while the list stays as it is.
+        let mut position = 0;
         while let Some(id) = member {
             let Some(team) = self.team_script_vm.teams.get(&team_id) else {
                 return;
             };
             member = team.next_member_after(id);
+            let initiated = team.member_initiated(position, id);
+            position += 1;
             let Some(entity) = self.substrate.entities.get(id) else {
                 continue;
             };
-            if !member_is_live_joined(
-                entity,
-                self.team_member_initiated(team_id, id),
-                self.object_placement_scope_active(),
-            ) {
+            if !member_is_live_joined(entity, initiated, self.object_placement_scope_active()) {
                 continue;
             }
             let Some(followed) = self.substrate.entities.get(friendly) else {
@@ -165,7 +164,7 @@ impl Simulation {
                 // Queue only, not Commence: the ordinary mission owner
                 // decides when this queued Attack becomes current.
                 self.team_member_queue_mission(id, MissionType::Attack, rules);
-                self.team_member_assign_target(id, target.into(), rules, registry, frame_effects);
+                self.team_member_assign_target(id, target.into(), rules, frame_effects);
             }
         }
         // Coordinate_Move6EBF25..6EBF45 may already have marked +80 on

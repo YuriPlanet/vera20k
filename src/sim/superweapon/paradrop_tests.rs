@@ -157,7 +157,7 @@ fn cargo(sim: &Simulation, plane: u64) -> Vec<u64> {
         .entities
         .get(plane)
         .unwrap()
-        .passenger_role
+        .passenger_role()
         .cargo()
         .map_or_else(Vec::new, |cargo| cargo.passengers().to_vec())
 }
@@ -176,7 +176,7 @@ fn plane_at(sim: &mut Simulation, rules: &RuleSet, at: (u16, u16), passengers: u
                 0,
                 0,
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         })
         .unwrap();
@@ -184,6 +184,7 @@ fn plane_at(sim: &mut Simulation, rules: &RuleSet, at: (u16, u16), passengers: u
         .entities
         .get_mut(id)
         .unwrap()
+        .seldom
         .mission_only
         .mark();
     sim.with_object_placement_scope(|sim| {
@@ -195,7 +196,7 @@ fn plane_at(sim: &mut Simulation, rules: &RuleSet, at: (u16, u16), passengers: u
             0,
             PlacementEvidence::MarkSucceeded,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     })
     .unwrap();
@@ -207,7 +208,7 @@ fn plane_at(sim: &mut Simulation, rules: &RuleSet, at: (u16, u16), passengers: u
         crate::rules::object_type::ObjectCategory::Infantry,
         "E1",
         passengers,
-        Default::default(),
+        &mut Default::default(),
     );
     sim.substrate
         .entities
@@ -367,7 +368,7 @@ fn launch_cases_five_and_six_match_native() {
                 cell.1,
                 kind,
                 sw_type,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             charged,
             "{row}"
@@ -491,7 +492,7 @@ fn a_water_click_sends_the_plane_to_land_beside_it() {
         TARGET.1,
         ParaDropKind::Generic,
         sw_type,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     let [plane] = planes(&sim)[..] else {
@@ -609,7 +610,7 @@ fn send_paradrop_planes_matches_native() {
             MissionType::ParadropApproach,
             TARGET,
             Payload::Infantry(infantry, num),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
 
         let [plane] = planes(&sim)[..] else {
@@ -651,7 +652,10 @@ fn send_paradrop_planes_matches_native() {
         for &passenger in &infantry {
             let passenger = sim.substrate.entities.get(passenger).unwrap();
             assert!(passenger.lifecycle.in_limbo());
-            assert_eq!(passenger.passenger_role.inside_transport_id(), Some(plane));
+            assert_eq!(
+                passenger.passenger_role().inside_transport_id(),
+                Some(plane)
+            );
         }
         replayed += 1;
     }
@@ -679,7 +683,7 @@ fn mission_plane(sim: &mut Simulation, rules: &RuleSet, row: &Value, target: (u1
             id,
             Some(nav),
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     let distance = int(&row["distance"]);
@@ -765,7 +769,7 @@ fn paradrop_missions_match_native() {
         let now = sim.session.binary_frame();
 
         let (observed, records) = observe(7, || {
-            crate::sim::aircraft::dispatch_mission(&mut sim, id, &rules, Default::default());
+            crate::sim::aircraft::dispatch_mission(&mut sim, id, &rules, &mut Default::default());
         });
 
         let dropped = events(row, "drop_payload").next().is_some();
@@ -841,7 +845,7 @@ fn drop_payload_matches_native() {
             .set_current_for_test(int(&row["ammo"]));
         let passes = i8::try_from(int(&row["passes"])).unwrap();
         entity.mission_leaf.set_paradrop_passes_for_test(passes);
-        let rearm = entity.rearm_timer.timer();
+        let rearm = entity.seldom.rearm_timer.timer();
         if flag(row, "team") {
             crate::sim::team_script_vm::join_team_for_test(&mut sim, &[plane], false, false);
         }
@@ -877,8 +881,7 @@ fn drop_payload_matches_native() {
                 &mut sim,
                 plane,
                 &rules,
-                None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         });
 
@@ -971,7 +974,7 @@ fn drop_payload_matches_native() {
         } else {
             rearm
         };
-        assert_eq!(entity.rearm_timer.timer(), rearm, "{row}");
+        assert_eq!(entity.seldom.rearm_timer.timer(), rearm, "{row}");
         let chain: Vec<u64> = row["cargo"][1]
             .as_array()
             .unwrap()
@@ -1037,8 +1040,7 @@ fn spawn_parachuted_matches_native() {
                 &mut sim,
                 plane,
                 &rules,
-                None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         });
 
@@ -1227,7 +1229,7 @@ fn retail_computer_paradrops_conscripts_past_the_enemy_base() {
         &rules,
         russians,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert!(!sim.super_weapons[&russians][&sw_type].is_ready);
@@ -1271,7 +1273,7 @@ fn ares_launch(
         sw_type,
         rules.super_weapon(&name).unwrap(),
         TARGET,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
 }
 
@@ -1454,4 +1456,14 @@ fn ares_country_types_without_counts_send_nothing() {
         planes(&sim).is_empty(),
         "no side fallback after a false resolver"
     );
+}
+
+/// A passenger count past VERA's own bound boards only the bound: the loop
+/// that constructs them stops there instead of running a mod's huge count.
+#[test]
+fn a_huge_passenger_count_boards_only_the_bound() {
+    let limit = super::PARADROP_PASSENGER_LIMIT;
+    let (rules, mut sim, _) = paradrop_world(retail_list_rules(1024));
+    let plane = plane_at(&mut sim, &rules, TARGET, limit + 1);
+    assert_eq!(cargo(&sim, plane).len(), limit as usize);
 }

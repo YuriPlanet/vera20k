@@ -32,7 +32,7 @@
 //!   util/native_x87.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "force_shield_tests.rs"]
 mod tests;
 
@@ -57,7 +57,7 @@ pub fn launch(
     target_rx: u16,
     target_ry: u16,
     sw_type: InternedId,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let general = &rules.general;
     let frame = sim.session.binary_frame();

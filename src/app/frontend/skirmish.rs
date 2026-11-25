@@ -13,11 +13,10 @@ use crate::map::overlay::{OverlayEntry, TerrainObject};
 use crate::render::batch::BatchRenderer;
 use crate::render::bridge_atlas::{self, BridgeAtlas};
 use crate::render::gpu::GpuContext;
-use crate::render::overlay_assets::{render_overlay_names, resolve_overlay_name_for_render};
+use crate::render::overlay_assets::render_overlay_names;
 use crate::render::overlay_atlas::{self, OverlayAtlas};
 use crate::rules::color_scheme::{ColorSchemeEntry, scheme_entry_by_name};
 use crate::rules::house_colors::{DEFAULT_SCHEME_ENTRY, HouseColorIndex};
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::skirmish_colors::SkirmishColorMode;
 use crate::sim::scenario_bootstrap::normalized_launch_slots;
@@ -87,54 +86,13 @@ pub(crate) fn build_overlay_presentation(
     theater_ext: &str,
     theater_name: &str,
     rules: &RuleSet,
-    overlay_registry: &OverlayTypeRegistry,
     theater_iso_palette: Option<&Palette>,
     theater_unit_palette: Option<&Palette>,
     theater_tiberium_palette: Option<&Palette>,
 ) -> OverlayPresentationAssets {
-    let force_tib_remap_enabled: bool = std::env::var("RA2_FORCE_TIB3_TO_TIB01")
-        .ok()
-        .map(|v| {
-            let n = v.trim().to_ascii_lowercase();
-            n == "1" || n == "true" || n == "yes" || n == "on"
-        })
-        .unwrap_or(false);
-    if force_tib_remap_enabled {
-        log::warn!("Debug overlay remap enabled: TIB3_20 -> TIB01");
-    }
-    let tib_id_offset: isize = std::env::var("RA2_TIB_ID_OFFSET")
-        .ok()
-        .and_then(|s| s.parse::<isize>().ok())
-        .unwrap_or(0);
-    if tib_id_offset != 0 {
-        log::warn!(
-            "Debug resource ID offset enabled: RA2_TIB_ID_OFFSET={}",
-            tib_id_offset
-        );
-    }
-
+    let overlay_registry = rules.overlay_registry();
     let art_registry = rules.art();
     let rubble_arts: Vec<_> = rules.building_rubble_arts().cloned().collect();
-
-    // Log first 20 overlay types for diagnostic verification.
-    let max_diag: usize = 20.min(overlay_registry.len());
-    for i in 0..max_diag {
-        if let Some(name) = overlay_registry.name(i as u8) {
-            let mapped = resolve_overlay_name_for_render(overlay_registry, i as u8)
-                .unwrap_or_else(|| name.to_string());
-            let flags = overlay_registry.flags(i as u8);
-            let tib: bool = flags.map(|f| f.tiberium).unwrap_or(false);
-            let wall: bool = flags.map(|f| f.wall).unwrap_or(false);
-            log::info!(
-                "  OverlayType[{:3}] = {:20} mapped={:20} tib={} wall={}",
-                i,
-                name,
-                mapped,
-                tib,
-                wall
-            );
-        }
-    }
 
     // Every registered type is named: a cell draws whichever identity it holds,
     // whether the map authored it or the simulation wrote it after load.
@@ -153,39 +111,21 @@ pub(crate) fn build_overlay_presentation(
         );
     }
 
-    // Log resource overlays for diagnostic visibility.
-    for (id, name) in &overlay_names {
-        let flags = overlay_registry.flags(*id);
-        let tib: bool = flags.map(|f| f.tiberium).unwrap_or(false);
-        if tib {
-            log::info!("  Resource overlay: id={} name={}", id, name);
-        }
-    }
-
     // Use theater-provided palettes if available, otherwise fall back to search.
-    let theater_palette: Option<Palette> = theater_iso_palette.cloned().or_else(|| {
-        let pal_names: &[&str] = &["isotem.pal", "isosno.pal", "isourb.pal", "temperat.pal"];
-        pal_names.iter().find_map(|name| {
-            let data: Vec<u8> = asset_manager.get(name)?;
-            Palette::from_bytes(&data).ok()
-        })
-    });
-    let unit_palette: Option<Palette> = theater_unit_palette.cloned().or_else(|| {
-        let pal_names: &[&str] = &["unittem.pal", "unitsno.pal", "uniturb.pal", "unit.pal"];
-        pal_names.iter().find_map(|name| {
-            let data: Vec<u8> = asset_manager.get(name)?;
-            Palette::from_bytes(&data).ok()
-        })
-    });
+    let first_palette = |names: &[&str]| {
+        (names.iter()).find_map(|name| Palette::from_bytes(asset_manager.get_ref(name)?).ok())
+    };
+    let theater_palette = theater_iso_palette
+        .cloned()
+        .or_else(|| first_palette(&["isotem.pal", "isosno.pal", "isourb.pal", "temperat.pal"]));
+    let unit_palette = theater_unit_palette
+        .cloned()
+        .or_else(|| first_palette(&["unittem.pal", "unitsno.pal", "uniturb.pal", "unit.pal"]));
     // Tiberium palette: the original engine uses a dedicated palette (e.g., temperat.pal) for
     // ore/gem overlays, distinct from both the iso palette and the unit palette.
-    let tiberium_palette: Option<Palette> = theater_tiberium_palette.cloned().or_else(|| {
-        let pal_names: &[&str] = &["temperat.pal", "snow.pal", "urban.pal"];
-        pal_names.iter().find_map(|name| {
-            let data: Vec<u8> = asset_manager.get(name)?;
-            Palette::from_bytes(&data).ok()
-        })
-    });
+    let tiberium_palette = theater_tiberium_palette
+        .cloned()
+        .or_else(|| first_palette(&["temperat.pal", "snow.pal", "urban.pal"]));
 
     let overlay_radar_colors: HashMap<(u8, u8), [u8; 3]> =
         overlay_atlas::compute_overlay_radar_colors(
@@ -246,7 +186,7 @@ pub(crate) fn build_overlay_presentation(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
@@ -272,10 +212,10 @@ mod tests {
     }
 
     fn test_session() -> SkirmishLaunchSession {
-        SkirmishLaunchSession {
-            mode: test_battle_mode(),
-            selected_map_file: Some("test.mmx".to_string()),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+        SkirmishLaunchSession::from_rows(
+            test_battle_mode(),
+            Some("test.mmx".to_string()),
+            vec![crate::skirmish_launch::SkirmishHumanSlot {
                 raw_slot_index: Some(0),
                 name: "Player".to_string(),
                 slot: SkirmishLocalSlot {
@@ -288,9 +228,8 @@ mod tests {
                 },
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
             }],
-            local_player_index: 0,
-            ai_player_count: 1,
-            opponents: vec![SkirmishAiSlot {
+            0,
+            vec![SkirmishAiSlot {
                 raw_slot_index: 1,
                 country: LaunchCountry::Russia,
                 country_random: false,
@@ -300,10 +239,8 @@ mod tests {
                 team: LaunchTeam::None,
                 difficulty: Default::default(),
             }],
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
-            options: SkirmishLaunchOptions::default(),
-        }
+            SkirmishLaunchOptions::default(),
+        )
     }
 
     #[test]
@@ -331,10 +268,7 @@ mod tests {
 
         apply_launch_shroud_option(
             &mut sim,
-            crate::sim::world::UninitContext::new(
-                crate::rules::ruleset::RuleSet::empty_for_test(),
-                None,
-            ),
+            crate::sim::world::UninitContext::new(crate::rules::ruleset::RuleSet::empty_for_test()),
         );
 
         for (rx, ry) in [(0, 0), (7, 0), (0, 5), (7, 5), (3, 2)] {
@@ -357,11 +291,10 @@ mod tests {
         shrouded
             .houses_mut_for_test()
             .register(HouseState::new(human, 0, None, true, 10_000, 10));
-        let context = crate::sim::world::UninitContext::new(
-            crate::rules::ruleset::RuleSet::empty_for_test(),
-            None,
-        );
-        apply_launch_shroud_option(&mut shrouded, context);
+        let context = || {
+            crate::sim::world::UninitContext::new(crate::rules::ruleset::RuleSet::empty_for_test())
+        };
+        apply_launch_shroud_option(&mut shrouded, context());
         assert!(!shrouded.fog().is_cell_revealed(human, 7, 5));
 
         // RevealEntireMap(NULL) reveals to PlayerPtr alone.
@@ -369,7 +302,7 @@ mod tests {
             .session_mut_for_test()
             .game_options_mut_for_test()
             .shroud = false;
-        apply_launch_shroud_option(&mut shrouded, context);
+        apply_launch_shroud_option(&mut shrouded, context());
         assert!(!shrouded.fog().is_cell_revealed(human, 7, 5));
         assert!(!shrouded.fog().whole_map_revealed_for_owner(human));
     }
@@ -1481,7 +1414,9 @@ mod tests {
             difficulty: Default::default(),
         });
         let slots = normalized_launch_slots(&session);
-        let alliances = launch_alliance_map(&slots, &session.mode);
+        let policy = crate::sim::scenario_session::ScenarioGameMode::Skirmish
+            .stock_rule_policy(Some(session.mode.class));
+        let alliances = launch_alliance_map(&slots, policy);
 
         assert!(
             alliances
@@ -1516,7 +1451,9 @@ mod tests {
         });
         let slots = normalized_launch_slots(&session);
 
-        let alliances = launch_alliance_map(&slots, &session.mode);
+        let policy = crate::sim::scenario_session::ScenarioGameMode::Lan
+            .stock_rule_policy(Some(session.mode.class));
+        let alliances = launch_alliance_map(&slots, policy);
 
         assert!(
             alliances
@@ -1810,6 +1747,27 @@ mod tests {
 
         assert_eq!(assignment.placements, vec![(0, starts[1]), (1, starts[0])]);
         assert_eq!(assignment.start_table, vec![Some(1), Some(0), None]);
+        assert_eq!(rng.logical_state(), before);
+    }
+
+    /// VERA: where players share bases, as in a room with Teams set, a House
+    /// whose start a later House also asked for starts there too, beside
+    /// it, with no draw. The table keeps the last owner.
+    #[test]
+    fn a_house_sharing_bases_starts_beside_the_later_one() {
+        let mut session = test_session();
+        session.options.teams = Some(2);
+        session.local_slot_mut().start_position = LaunchStartPosition::Position(0);
+        session.opponents[0].start_position = LaunchStartPosition::Position(0);
+        let all_starts = test_launch_starts();
+        let starts = &all_starts[..3];
+        let mut rng = SimRng::new(8);
+        let before = rng.logical_state();
+
+        let assignment = native_assign_launch_starts(&session, starts, &mut rng);
+
+        assert_eq!(assignment.placements, vec![(0, starts[0]), (1, starts[0])]);
+        assert_eq!(assignment.start_table, vec![Some(1), None, None]);
         assert_eq!(rng.logical_state(), before);
     }
 
@@ -2235,7 +2193,6 @@ mod tests {
 
     // The stock budget: Ares 3.0 MPGameModeClass_CreateStartingUnits_UnitCost
     // (1001EE10, hook 0x5D6D9A) averages a type set without BaseUnit.
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn skirmish_positive_unit_count_spawns_extra_starting_units() {
         let mut sim = Simulation::new();
@@ -2390,7 +2347,6 @@ mod tests {
     /// balance that already includes the credited leftover budget.
     // The stock budget: Ares 3.0 MPGameModeClass_CreateStartingUnits_UnitCost
     // (1001EE10, hook 0x5D6D9A) averages a type set without BaseUnit.
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn gsi_09_01_ai_grant_multiplies_post_leftover_balance() {
         let mut sim = Simulation::new();
@@ -2552,7 +2508,6 @@ mod tests {
             let mut session = test_session();
             session.opponents.clear();
             session.ai_player_count = 0;
-            session.rebuild_house_roster();
             session.local_slot_mut().start_position = LaunchStartPosition::Position(0);
             session.options.bases = true;
             session.options.unit_count = 0;

@@ -3,7 +3,7 @@
 //! supplied native state; producer/lift admission is tested by its sim owner.
 
 use crate::app::presentation::render::draw_plan_lowering::{
-    NativeDisplayOrder, ObjectBodyDraw, PlannedObjectInstance, lower_object_instances,
+    NativeDisplayOrder, ObjectBodyDraw, OwnedPlannedObject, lower_object_instances,
 };
 use crate::app::presentation::render::merge_passes::draw_native_object_pass;
 use crate::render::batch::BatchRenderer;
@@ -80,6 +80,7 @@ fn draw(value: &Value) -> WaveDraw {
             other => panic!("unknown native clip branch {other}"),
         },
         blend: crate::render::wave_geometry::WaveBlend::Native,
+        ares: false,
     }
 }
 
@@ -218,6 +219,7 @@ fn original_pixel_linear_aliases_and_initialized_adjacent_window_are_consumed() 
             direction: integer(&input["direction"]).try_into().unwrap(),
             clip_path: WaveClipPath::Fast,
             blend: crate::render::wave_geometry::WaveBlend::Native,
+            ares: false,
         };
         let pixel = wave
             .pixel_operation(
@@ -440,14 +442,14 @@ fn wave_pixels_reach_retained_display_and_shared_gpu_with_immutable_z_and_a() {
                 // Opposite storage/ID order cannot replace native Air append order.
                 let ids = (1..=waves.len() as u64).rev().collect::<Vec<_>>();
                 for &id in &ids {
-                    assert!(display.submit(id, Some(DisplayLayer::AIR), &|_| 0));
+                    assert!(display.submit(id, Some(DisplayLayer::AIR)));
                 }
                 let order = NativeDisplayOrder::from_display(&display);
                 let mut parents = waves
                     .iter()
                     .zip(&ids)
                     .map(|(&wave, &id)| {
-                        let mut parent = PlannedObjectInstance::object(
+                        let mut parent = OwnedPlannedObject::object(
                             order.object_draw(id, SpriteEncoding::Plain).unwrap(),
                             Vec::new(),
                         );
@@ -456,7 +458,7 @@ fn wave_pixels_reach_retained_display_and_shared_gpu_with_immutable_z_and_a() {
                     })
                     .collect::<Vec<_>>();
                 parents.reverse();
-                let mut layers = lower_object_instances(parents);
+                let mut layers = lower_object_instances(parents.into());
                 let air = &mut layers[3];
                 for draws in &air.surface_draws {
                     air.line_batches.push(terrain.prepare_surface_lines(

@@ -19,7 +19,7 @@ struct Beam {
     active: bool,
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "radiation_beams_tests.rs"]
 mod tests;
 

@@ -17,7 +17,9 @@
 
 use crate::rules::ini_parser::IniSection;
 
-/// VERA's `DeformLowestLevel=` default.
+/// VERA's `DeformLowestLevel=` default. Firestorm's floor is Level 0
+/// (Firestorm 2.0 0x5F9AB0 keeps corners within `0..=0x90`), where most YR
+/// ground lies, so VERA's default lets a dent sink below it.
 const DEFORM_LOWEST_LEVEL: i32 = -4;
 
 /// Default particle-system fallbacks read from `[CombatDamage]`.
@@ -46,12 +48,12 @@ pub struct CombatDamageDefaults {
     /// ground they explode on (see `docs/terrain-deformation.md`). gamemd
     /// still reads `Deform=` and `DeformThreshhold=` but nothing uses them,
     /// so retail warheads that set them stay inert unless this is on.
-    /// Default no; the Options page's Terrain Deformation box switches it on
+    /// Default no; the skirmish Game Options' Terrain Deformation box switches it on
     /// in each new scenario's root (`PersonalRules::scenario_root`).
     pub terrain_deformation: bool,
     /// VERA's `DeformLowestLevel=`: the lowest Level deformation lowers a
     /// corner to, a signed int clamped to a cell Level's `-128..=127`.
-    /// Default -4.
+    /// Default -4; 0 is Firestorm's floor.
     pub deform_lowest_level: i32,
     /// `RailgunDamageRadius=`: the most a Techno may sit from a railgun line
     /// and still be hit. `RulesClass::Constructor` writes 0x80
@@ -186,12 +188,12 @@ impl CombatDamageDefaults {
     }
 
     /// Parse the scalars from a `[CombatDamage]` `IniSection`. The Type
-    /// references keep the constructor's nulls: only the ordered Process
-    /// owner reads them.
+    /// references and the two crate/resource explosion damages keep the
+    /// constructor's values: only the ordered Process owner reads them.
     pub fn from_ini_section(section: &IniSection) -> Self {
         Self {
-            ammo_crate_damage: section.read_int("AmmoCrateDamage", 100),
-            tiberium_explosion_damage: section.read_int("TiberiumExplosionDamage", 100),
+            ammo_crate_damage: 100,
+            tiberium_explosion_damage: 100,
             max_damage: section.read_int("MaxDamage", 1000),
             collapse_chance: section.read_int("CollapseChance", 100),
             terrain_deformation: section.read_bool("TerrainDeformation", false),
@@ -274,7 +276,7 @@ impl Default for CombatDamageDefaults {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

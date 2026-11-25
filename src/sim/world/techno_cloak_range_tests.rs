@@ -21,7 +21,7 @@ fn placed_sub_with_attack(
     assert!(!rules.weapon("SubTorpedo").unwrap().decloak_to_fire);
 
     let mut sim = crate::sim::arena_fixture::rival_water_arena(rules, 0xC10A_0028, 64);
-    sim.fog = FogState::new(64, 64);
+    *sim.fog = FogState::new(64, 64);
     let owner = sim.interner.intern("Americans");
     sim.session.set_current_house_for_test(Some(owner));
     sim.intern_rule_type_ids(rules);
@@ -42,7 +42,7 @@ fn placed_sub_with_attack(
     assert_eq!(actor.health.current(), sub_type.strength);
     assert_eq!(actor.cloak.as_ref().unwrap().state(), 0);
     let frame = sim.session.binary_frame() as i32;
-    assert!(actor.rearm_timer.timer().expired(frame));
+    assert!(actor.seldom.rearm_timer.timer().expired(frame));
     assert!(actor.cloak.as_ref().unwrap().recloak_delay().expired(frame));
     assert!(sim.houses[&owner].is_human());
     assert!(sim.apply_command(

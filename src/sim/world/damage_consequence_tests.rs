@@ -29,11 +29,11 @@ fn consequence_rules() -> RuleSet {
     ))
     .unwrap();
     let mut art = ArtRegistry::from_ini(&IniFile::from_str(
-        "[DEATHFX]\nReport=DeathReport\nEnd=80\n\
-         [DESTROYFX]\nReport=DestroyReport\nEnd=80\n",
+        "[DEATHFX]\nEnd=80\n[DESTROYFX]\nEnd=80\n",
     ));
-    for name in ["DEATHFX", "DESTROYFX"] {
+    for (name, report) in [("DEATHFX", "DeathReport"), ("DESTROYFX", "DestroyReport")] {
         art.bind_anim_frame_count_for_test(name, 80);
+        art.set_anim_sounds_for_test(name, Some(report), None);
     }
     rules.replace_art_registry_for_test(art);
     rules
@@ -41,7 +41,7 @@ fn consequence_rules() -> RuleSet {
 
 fn consequence_world() -> (Simulation, u64, u64) {
     let mut sim = Simulation::with_seed(17);
-    sim.input_delay_ticks = 0;
+    *sim.input_delay_ticks = 0;
     let attacker = sim.substrate.allocate_stable_id();
     let victim = sim.substrate.allocate_stable_id();
     for (id, kind, owner, rx, hp) in [
@@ -52,7 +52,7 @@ fn consequence_world() -> (Simulation, u64, u64) {
         entity.health.set_for_test(hp);
         sim.substrate.entities.insert(entity);
     }
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     for id in [attacker, victim] {
         assert!(matches!(sim.reveal(id), RevealOutcome::Revealed { .. }));
     }
@@ -82,7 +82,7 @@ fn delivered_ids(sim: &Simulation) -> Vec<u64> {
 
 /// Techno ReceiveDamage7021FB submits DieSound before debris and the later
 /// Unit death animation constructors. Each AnimClass owns its Report request.
-fn delivery_sounds(sim: &Simulation) -> Vec<String> {
+fn delivery_sounds(rules: &RuleSet, sim: &Simulation) -> Vec<String> {
     sim.sound_events
         .iter()
         .filter_map(|event| match event {
@@ -92,7 +92,9 @@ fn delivery_sounds(sim: &Simulation) -> Vec<String> {
                 die_sound_id: sound_id,
                 ..
             }
-            | SimSoundEvent::AnimationStarted { sound_id, .. } => Some(sound_id.clone()),
+            | SimSoundEvent::AnimationStarted { sound_id, .. } => {
+                Some(sound_id.name_in(rules).to_string())
+            }
             _ => None,
         })
         .collect()
@@ -121,8 +123,8 @@ fn advance_lethal_shot(sim: &mut Simulation, rules: &RuleSet, attacker: u64, vic
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, and
 // Ares simulates the SparkSys itself (hooks 0x62DF05, 0x62FD60) with its own
-// draws, so this stock golden only holds without either capability.
-#[cfg(not(any(feature = "phobos", feature = "ares")))]
+// draws, so this stock golden holds only in a stock game without Phobos.
+#[cfg(not(feature = "phobos"))]
 #[test]
 fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
     let rules = consequence_rules();
@@ -143,7 +145,7 @@ fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
         [vec![attacker, spark], ids[..3].to_vec()].concat()
     );
     assert_eq!(
-        delivery_sounds(&sim),
+        delivery_sounds(&rules, &sim),
         ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
     assert!(sim.substrate.entities.get(victim).is_none());
@@ -174,7 +176,7 @@ fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
     sim.advance_tick(&[], Some(&rules), Some(&grid), None, 100);
     assert_eq!(delivered_ids(&sim), ids[..3]);
     assert_eq!(
-        delivery_sounds(&sim),
+        delivery_sounds(&rules, &sim),
         ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
     // No second spark system. This world has no terrain, so the first one's
@@ -190,7 +192,7 @@ fn ordinary_fatal_transport_finishes_cargo_lifecycle_before_consequence_admissio
     let (mut sim, attacker, carrier) = consequence_world();
     let passenger = sim.substrate.allocate_stable_id();
     let mut entity = GameEntity::test_default(passenger, "TARGET", "Soviet", 8, 5);
-    entity.passenger_role = PassengerRole::inside_for_test(carrier, false);
+    entity.set_passenger_role_for_test(PassengerRole::inside_for_test(carrier, false));
     sim.substrate.entities.insert(entity);
     let mut cargo = PassengerCargo::new(1, 1.0);
     cargo.board_forced_chain(&[(passenger, 1.0)]);
@@ -198,7 +200,7 @@ fn ordinary_fatal_transport_finishes_cargo_lifecycle_before_consequence_admissio
         .entities
         .get_mut(carrier)
         .unwrap()
-        .passenger_role = PassengerRole::transport(cargo);
+        .set_passenger_role_for_test(PassengerRole::transport(cargo));
     sim.lifecycle_test_events.clear();
     advance_lethal_shot(&mut sim, &rules, attacker, carrier);
     assert!(sim.substrate.entities.get(passenger).is_none());
@@ -220,7 +222,7 @@ fn ordinary_fatal_transport_finishes_cargo_lifecycle_before_consequence_admissio
         vec![passenger + 3, passenger + 4, passenger + 5]
     );
     assert_eq!(
-        delivery_sounds(&sim),
+        delivery_sounds(&rules, &sim),
         ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
 }
@@ -243,7 +245,7 @@ fn immediate_bullet_commits_before_return_with_its_original_sound_order() {
         .get_mut(projectile)
         .unwrap()
         .set_position_for_test(impact);
-    assert!(sim.object_ai_visit_one(projectile, Some(&rules), ObjectAiCtx::default()));
+    assert!(sim.object_ai_visit_one(projectile, Some(&rules), &mut ObjectAiCtx::default()));
     let ids = delivered_ids(&sim);
     assert_eq!(ids, vec![projectile + 1, projectile + 2, projectile + 3]);
     assert_eq!(
@@ -263,7 +265,7 @@ fn immediate_bullet_commits_before_return_with_its_original_sound_order() {
             .object_alive()
     );
     assert_eq!(
-        delivery_sounds(&sim),
+        delivery_sounds(&rules, &sim),
         ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
     assert!(sim.particle_systems().is_empty());
@@ -272,9 +274,9 @@ fn immediate_bullet_commits_before_return_with_its_original_sound_order() {
     assert_eq!(sim.main_rng.state(), 6706932826526710953);
     // Retired objects remain physically resolvable until the shared drain.
     // Visiting again must not deliver another death transaction.
-    let _ = sim.object_ai_visit_one(projectile, Some(&rules), ObjectAiCtx::default());
+    let _ = sim.object_ai_visit_one(projectile, Some(&rules), &mut ObjectAiCtx::default());
     assert_eq!(
-        delivery_sounds(&sim),
+        delivery_sounds(&rules, &sim),
         ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
     assert_eq!(delivered_ids(&sim), ids);

@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::headless_scenario::{battle_session, load_session};
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::{Command, CommandEnvelope};
@@ -21,7 +22,8 @@ fn retail_soviet_tank_team_completes_its_stock_attack_script() {
     let stock = assets.resolve_ref("XMP03T4.MAP").unwrap();
     let stock = std::str::from_utf8(&stock.bytes).unwrap();
     let map = crate::map::map_file::MapFile::from_bytes(stock.as_bytes()).unwrap();
-    let ai = TeamAiIniRegistry::load_retail(&assets, &map.ini, true).unwrap();
+    let ai =
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, RulePolicy::stock_multiplayer()).unwrap();
     let trigger = ai
         .ai_triggers
         .iter()
@@ -215,7 +217,7 @@ fn retail_soviet_tank_team_completes_its_stock_attack_script() {
                         "GAPOWR",
                         rx,
                         ry,
-                        Some(&scene.runtime.resources.overlay_registry),
+                        Some(scene.runtime.resources.rules.overlay_registry()),
                     )
                     .is_some_and(|preview| preview.valid)
                 })
@@ -232,7 +234,12 @@ fn retail_soviet_tank_team_completes_its_stock_attack_script() {
         }
         let output = scene
             .runtime
-            .advance_frame(&commands, 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &commands,
+                22,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
             .unwrap();
         let sim = &scene.runtime.simulation;
         if step == 700 {

@@ -12,7 +12,9 @@
 //! Nothing is asked during a match, and a check that fails, offline
 //! included, stays silent. Vera Options' Check for Updates checks when the
 //! player asks, offers a skipped version too, and says what it found, a
-//! failure included.
+//! failure included. When the online lobby says this version is behind, the
+//! game checks again and offers a newer release at the next idle main menu,
+//! a skipped version too ([`lobby_outdated`]).
 //! Publication: `.github/release/downloads.md`.
 
 mod fetch;
@@ -26,11 +28,10 @@ use std::sync::atomic::Ordering;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
 use crate::app::App;
-use crate::app::frontend::state::{ShellMessageBox, ShellMessageBoxPurpose};
+use crate::app::frontend::state::ShellMessageBoxPurpose;
 use crate::app::state::AppState;
-use crate::app::web_link::{WEBSITE, open_in_browser};
-use crate::ui::main_menu_dialogs::ShellMessageBoxLabels;
-use crate::ui::shell::modal::ModalResult;
+use crate::app::web_link::{DOWNLOAD_PAGE, open_in_browser};
+use crate::ui::shell::modal::ShellBox;
 use crate::util::time::{Duration, Instant};
 
 use fetch::Progress;
@@ -45,10 +46,44 @@ const POLL_INTERVAL: Duration = Duration::from_millis(100);
 /// test build updates as soon as it finds a release it can install.
 const UNATTENDED: bool = option_env!("VERA20K_UPDATE_UNATTENDED").is_some();
 
+/// Where [`Offer::NewKey`] sends the player: not vera20k.org, whose download
+/// links follow the download server's `latest.json`.
+const GITHUB_RELEASES: &str = "https://github.com/YuriPlanet/vera20k/releases";
+
 /// The updater's single owner of its progress through one run of the game.
 #[derive(Default)]
 pub(crate) struct Updater {
     phase: Phase,
+    /// The online lobby said this version is behind ([`lobby_outdated`]): a
+    /// newer release waits for the idle main menu even when it was skipped.
+    lobby_outdated: bool,
+}
+
+impl Updater {
+    /// The lobby says this version is behind: a check that ended (nothing
+    /// newer then, Later, Skip, a failure) runs again with `check`, and a
+    /// check under way or a release waiting for the menu goes on.
+    fn lobby_outdated(&mut self, check: impl FnOnce() -> Result<Phase, &'static str>) {
+        self.lobby_outdated = true;
+        if matches!(self.phase, Phase::Finished)
+            && let Ok(phase) = check()
+        {
+            log::info!("Updater: the lobby says this version is behind; checking again");
+            self.phase = phase;
+        }
+    }
+
+    /// A newer release from a check that no box waits for: it waits for an
+    /// idle main menu, unless the player skipped it and the lobby has not
+    /// said this version is behind.
+    fn found(&mut self, package: Package, offer: Offer, skipped: Option<Version>) {
+        self.phase = if skipped == Some(offer.version()) && !self.lobby_outdated {
+            log::info!("Updater: VERA20k {} was skipped", offer.version());
+            Phase::Finished
+        } else {
+            Phase::Found { package, offer }
+        };
+    }
 }
 
 #[derive(Default)]
@@ -72,7 +107,8 @@ enum Phase {
         progress: Arc<Progress>,
         result: Receiver<anyhow::Result<Command>>,
     },
-    /// Nothing more this run: no release, declined, failed or restarting.
+    /// No release, declined, failed or restarting: nothing more this run
+    /// unless the lobby says this version is behind ([`lobby_outdated`]).
     Finished,
 }
 
@@ -107,18 +143,13 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
                     state.frontend.updater.phase = Phase::Offered { package, offer };
                     // The checking box gives way to the offer.
                     if state.frontend.shell_message_box.is_some() {
-                        App::close_shell_message_box_from_controller(state);
+                        App::close_shell_message_box_from_controller(&mut state.frontend);
                     }
                     open_offer(state);
                     return None;
                 }
                 let skipped = Version::parse(&state.persistence.options_profile.skipped_update);
-                if skipped == Some(offer.version()) {
-                    log::info!("Updater: VERA20k {} was skipped", offer.version());
-                    state.frontend.updater.phase = Phase::Finished;
-                    return None;
-                }
-                state.frontend.updater.phase = Phase::Found { package, offer };
+                state.frontend.updater.found(package, offer, skipped);
                 poll(state)
             }
             Ok(Ok(None)) => {
@@ -167,7 +198,8 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
                 state.frontend.updater.phase = Phase::Offered { package, offer };
                 App::leave_shell_dialog(
                     state,
-                    crate::app::frontend::shell_transition::ShellExitThen::UpdateOffer,
+                    crate::app::frontend::shell_transition::ShellSlideKind::MainMenu,
+                    crate::app::updater::open_offer,
                 );
             } else {
                 state.frontend.updater.phase = Phase::Found { package, offer };
@@ -199,7 +231,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
                 if let Some(message_box) = state.frontend.shell_message_box.as_mut()
                     && matches!(message_box.purpose, ShellMessageBoxPurpose::UpdateProgress)
                 {
-                    message_box.labels.title = progress_text(
+                    message_box.shell_box.body = progress_text(
                         release.version,
                         progress.received.load(Ordering::Relaxed),
                         release.size,
@@ -261,8 +293,7 @@ const CHECK_FAILED: &str = "VERA:UpdateCheckFailed";
 /// under way, or a new one) answers in a box, offering a skipped version too.
 pub(crate) fn open_check(state: &mut AppState) {
     // Over the empty shell backdrop, as the offer asks.
-    crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
-    crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
+    App::destroy_current_shell_dialog(state);
     match std::mem::take(&mut state.frontend.updater.phase) {
         Phase::Found { package, offer } => {
             state.frontend.updater.phase = Phase::Offered { package, offer };
@@ -296,29 +327,38 @@ pub(crate) fn open_check(state: &mut AppState) {
 }
 
 fn open_checking(state: &mut AppState) {
-    let cancel = App::csf_label(state, "TXT_CANCEL", "Cancel");
+    let cancel = state.csf_label("TXT_CANCEL", "Cancel");
     App::open_shell_message_box(
-        state,
-        ShellMessageBox {
-            labels: ShellMessageBoxLabels {
-                title: crate::i18n::tr("VERA:UpdateChecking"),
-                confirm: cancel,
-                third: String::new(),
-                cancel: String::new(),
-            },
-            purpose: ShellMessageBoxPurpose::UpdateCheck,
-        },
+        &state.platform.window,
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+        ShellBox::notice(crate::i18n::tr("VERA:UpdateChecking"), cancel),
+        ShellMessageBoxPurpose::UpdateCheck,
     );
 }
 
 /// The checking box's button, Esc or Enter: stop waiting. The check still
 /// ends as the one at startup does, offering a newer release at the idle
-/// main menu unless it was skipped.
-pub(crate) fn cancel_check(state: &mut AppState) {
-    if let Phase::Checking { asked, .. } = &mut state.frontend.updater.phase {
+/// main menu unless it was skipped and the lobby has not said this version
+/// is behind.
+pub(crate) fn cancel_check(frontend: &mut crate::app::frontend::state::FrontendState) {
+    if let Phase::Checking { asked, .. } = &mut frontend.updater.phase {
         *asked = false;
     }
-    state.platform.window.request_redraw();
+}
+
+/// The online lobby says this version is behind the newest release: its 426
+/// at sign-in or to a signed-in request, or its new-release line. The lobby
+/// lists only rooms of the player's own version and Quick Match pairs only
+/// equal ones, so the game checks as Check for Updates does: a newer release
+/// is offered at the next idle main menu, even a skipped one. A
+/// CnCNet-launched match has no main menu to ask at.
+pub(crate) fn lobby_outdated(frontend: &mut crate::app::frontend::state::FrontendState) {
+    if !frontend.external_launch {
+        frontend.updater.lobby_outdated(|| start(false));
+    }
 }
 
 /// The menu has slid out: ask over the empty shell backdrop, as Exit Game
@@ -344,8 +384,8 @@ pub(crate) fn open_offer(state: &mut AppState) {
         // Unverified: its version is not one to skip.
         Offer::NewKey { .. } => ("VERA:UpdateNewKey", "VERA:Download", None, &[][..]),
     };
-    let labels = ShellMessageBoxLabels {
-        title: tr_fill(
+    let shell_box = ShellBox::message(
+        tr_fill(
             "VERA:UpdateAvailable",
             &[
                 ("version", &offer.version()),
@@ -353,37 +393,36 @@ pub(crate) fn open_offer(state: &mut AppState) {
                 ("question", &tr(question)),
             ],
         ),
-        confirm: tr(confirm),
-        third: skip.map(tr).unwrap_or_default(),
-        cancel: tr("VERA:Later"),
-    };
+        tr(confirm),
+        tr("VERA:Later"),
+        skip.map(tr).unwrap_or_default(),
+    );
     let notes = notes::ReleaseNotes::new(&state.renderer.bit_font, changes);
-    crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
-    crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
+    App::destroy_current_shell_dialog(state);
     App::open_shell_message_box(
-        state,
-        ShellMessageBox {
-            labels,
-            purpose: ShellMessageBoxPurpose::UpdateOffer(notes),
-        },
+        &state.platform.window,
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+        shell_box,
+        ShellMessageBoxPurpose::UpdateOffer(notes),
     );
 }
 
 /// The offer's answer: 0 Update (or Download), 2 Skip This Version, 1 (or
 /// Esc/Enter) Later.
-pub(crate) fn answer_offer(state: &mut AppState, result: ModalResult) {
+pub(crate) fn answer_offer(state: &mut AppState, answer: usize) {
     let Phase::Offered { package, offer } = std::mem::take(&mut state.frontend.updater.phase)
     else {
         return;
     };
     state.frontend.updater.phase = Phase::Finished;
-    match (result, offer) {
-        (ModalResult::MessageBox(0), Offer::Update(release)) => download(state, package, release),
-        (ModalResult::MessageBox(0), Offer::Manual { .. }) => open_in_browser(WEBSITE),
-        (ModalResult::MessageBox(0), Offer::NewKey { .. }) => {
-            open_in_browser(crate::app::shell_wol::RELEASES_URL)
-        }
-        (ModalResult::MessageBox(2), offer @ (Offer::Update(_) | Offer::Manual { .. })) => {
+    match (answer, offer) {
+        (0, Offer::Update(release)) => download(state, package, release),
+        (0, Offer::Manual { .. }) => open_in_browser(DOWNLOAD_PAGE),
+        (0, Offer::NewKey { .. }) => open_in_browser(GITHUB_RELEASES),
+        (2, offer @ (Offer::Update(_) | Offer::Manual { .. })) => {
             let profile = &mut state.persistence.options_profile;
             profile.skipped_update = offer.version().to_string();
             if let Some(config) = state.platform.game_config.as_ref()
@@ -394,7 +433,6 @@ pub(crate) fn answer_offer(state: &mut AppState, result: ModalResult) {
         }
         _ => {}
     }
-    state.platform.window.request_redraw();
 }
 
 fn download(state: &mut AppState, package: Package, release: Release) {
@@ -434,18 +472,18 @@ fn download(state: &mut AppState, package: Package, release: Release) {
 }
 
 fn open_progress(state: &mut AppState, release: &Release, received: u64) {
-    let cancel = App::csf_label(state, "TXT_CANCEL", "Cancel");
+    let cancel = state.csf_label("TXT_CANCEL", "Cancel");
     App::open_shell_message_box(
-        state,
-        ShellMessageBox {
-            labels: ShellMessageBoxLabels {
-                title: progress_text(release.version, received, release.size),
-                confirm: cancel,
-                third: String::new(),
-                cancel: String::new(),
-            },
-            purpose: ShellMessageBoxPurpose::UpdateProgress,
-        },
+        &state.platform.window,
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+        ShellBox::notice(
+            progress_text(release.version, received, release.size),
+            cancel,
+        ),
+        ShellMessageBoxPurpose::UpdateProgress,
     );
 }
 
@@ -467,7 +505,6 @@ pub(crate) fn cancel_download(state: &mut AppState) {
     }
     progress.cancel.store(true, Ordering::Relaxed);
     log::info!("Updater: download cancelled");
-    state.platform.window.request_redraw();
 }
 
 fn progress_text(version: Version, received: u64, size: u64) -> String {
@@ -521,5 +558,53 @@ fn show_failure(state: &mut AppState, version: Version, error: &anyhow::Error) {
 /// An OK box in place of the updater's open one: a failure, or what Check
 /// for Updates found.
 fn show_notice(state: &mut AppState, text: String) {
-    App::open_shell_notice(state, text);
+    App::open_shell_notice(
+        &state.platform.window,
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+        text,
+    );
+}
+
+#[cfg(all(test, tests_app))]
+mod tests {
+    use super::*;
+
+    fn skipped_release() -> (Package, Offer, Option<Version>) {
+        let version = Version::parse("99.0.0").unwrap();
+        let offer = Offer::Manual {
+            version,
+            notes: Vec::new(),
+        };
+        (Package::AppImage(Default::default()), offer, Some(version))
+    }
+
+    /// The lobby's word that this version is behind checks again after the
+    /// startup check ended, and its release is offered at the main menu
+    /// although the player skipped it; without that word a skipped release
+    /// stays silent.
+    #[test]
+    fn a_lobby_outdated_checks_again_and_offers_a_skipped_release() {
+        let (package, offer, skipped) = skipped_release();
+        let mut startup = Updater::default();
+        startup.found(package.clone(), offer.clone(), skipped);
+        assert!(matches!(startup.phase, Phase::Finished));
+
+        let (_sender, result) = mpsc::channel();
+        startup.lobby_outdated(|| {
+            Ok(Phase::Checking {
+                package: package.clone(),
+                result,
+                asked: false,
+            })
+        });
+        assert!(matches!(
+            startup.phase,
+            Phase::Checking { asked: false, .. }
+        ));
+        startup.found(package, offer, skipped);
+        assert!(matches!(startup.phase, Phase::Found { .. }));
+    }
 }

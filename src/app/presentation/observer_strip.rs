@@ -8,8 +8,14 @@
 //! observer sees this strip, and the list leaves out every observer's House
 //! where native leaves out `[0xAC1198]` alone. With one observer the two
 //! agree; the maintainer chose to keep this for several (2026-11-15).
+//!
+//! A VERA watcher on its observer step (Tab after the last player) sees it
+//! too, with the time counter, in the place of the player it last followed,
+//! who stays listed ([`shows_observer_sidebar`]).
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
 use crate::assets::csf_file::{CsfArg, format_csf};
 use crate::sim::intern::InternedId;
 use crate::sim::scenario_session::ScenarioGameMode;
@@ -24,7 +30,7 @@ const OBSERVER_HOUSES: usize = 8;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ObserverHouse {
     pub(crate) house: InternedId,
-    /// Both 20-entry kill tables (`+0x53E4`, `+0x5438`).
+    /// The Kills total (`0x00658330`), counting every victim House.
     pub(crate) kills: i32,
     /// [`crate::sim::house_tracking::HouseTracking::observer_units`].
     pub(crate) units: i32,
@@ -34,15 +40,24 @@ pub(crate) struct ObserverHouse {
     pub(crate) defeated: bool,
 }
 
-/// The observer strip's Houses while `local` is an observer's House, `None`
-/// for a player. `SidebarClass::Init @ 0x006A5310` lists, only in a LAN or
+/// Whether the local player, whose House is `local`, is shown the observer's
+/// sidebar: that House is an observer's, or this process watches on its
+/// observer step (`ScenarioSession::watcher_observes`). The rest of what a
+/// watcher sees and hears stays the followed player's.
+pub(crate) fn shows_observer_sidebar(sim: &Simulation, local: InternedId) -> bool {
+    let session = sim.session();
+    session.is_observer_house(local) || session.watcher_observes()
+}
+
+/// The observer strip's Houses while the local player, whose House is
+/// `local`, is shown the observer's sidebar, `None` otherwise. `SidebarClass::Init @ 0x006A5310` lists, only in a LAN or
 /// online game, the human Houses in House-array order that are neither
 /// MultiplayPassive nor the observer, at most eight (`0x006A55B7..`). Init
 /// runs at every scenario start and load; nothing it reads changes during a
 /// match, so the list is read again each frame.
 pub(crate) fn observer_houses(sim: &Simulation, local: InternedId) -> Option<Vec<ObserverHouse>> {
     let session = sim.session();
-    if !session.is_observer_house(local) {
+    if !shows_observer_sidebar(sim, local) {
         return None;
     }
     if !matches!(
@@ -83,16 +98,23 @@ pub(crate) fn observer_houses(sim: &Simulation, local: InternedId) -> Option<Vec
 /// only online and VERA keeps no ladder rank, so it is always
 /// `TXT_UNRANKED`.
 pub(crate) fn observer_entries(
-    state: &AppState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     sim: &Simulation,
     houses: &[ObserverHouse],
 ) -> Vec<ObserverEntry> {
-    let Some(rules) = state.rules() else {
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return Vec::new();
     };
-    let computer = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER");
-    let sources = crate::app::presentation::house_ui::HouseUiSources::from_state(state, &computer);
-    let text = |key| crate::app::frontend::shell_pass::resolve_csf(state, key);
+    let computer = process_assets.csf_text("TXT_COMPUTER");
+    let sources = crate::app::presentation::house_ui::HouseUiSources::from_state(
+        frontend,
+        match_state,
+        &process_assets.csf,
+        &computer,
+    );
+    let text = |key| process_assets.csf_text(key);
     let online = sim.session().game_mode() == ScenarioGameMode::Wol;
     houses
         .iter()
@@ -102,7 +124,7 @@ pub(crate) fn observer_entries(
             let country_name = country.map_or("", |id| sim.interner().resolve(id));
             let mut lines = Vec::with_capacity(4);
             if online {
-                lines.push(text("TXT_UNRANKED").into_owned());
+                lines.push(text("TXT_UNRANKED"));
             }
             for (key, value) in [
                 ("GUI:ObsKills", listed.kills),
@@ -118,7 +140,13 @@ pub(crate) fn observer_entries(
                     .country_index(country_name)
                     .map_or(-1, |index| i32::from(index.0)),
                 name: sources.ui_name(sim, listed.house, country, |country| {
-                    crate::app::presentation::house_ui::country_display_name(state, sim, country)
+                    crate::app::presentation::house_ui::country_display_name(
+                        frontend,
+                        match_state,
+                        &process_assets.csf,
+                        sim,
+                        country,
+                    )
                 }),
                 rgb: if listed.defeated {
                     sources.named_scheme_rgb("Grey").unwrap_or([0xFF; 3])
@@ -131,7 +159,7 @@ pub(crate) fn observer_entries(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 

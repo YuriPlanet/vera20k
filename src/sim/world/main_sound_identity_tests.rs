@@ -90,8 +90,7 @@ fn scene(rules: &RuleSet) -> (Simulation, [u64; 2], u64, u64) {
         gun,
         Some(TargetKind::Entity(target)),
         rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert!(sim.interner.get("LateGun").is_none());
@@ -99,11 +98,13 @@ fn scene(rules: &RuleSet) -> (Simulation, [u64; 2], u64, u64) {
     (sim, squids, gun, target)
 }
 
-fn started_names(sim: &Simulation) -> Vec<String> {
+fn started_names(rules: &RuleSet, sim: &Simulation) -> Vec<String> {
     sim.sound_events
         .iter()
         .filter_map(|event| match event {
-            SimSoundEvent::AnimationStarted { sound_id, .. } => Some(sound_id.clone()),
+            SimSoundEvent::AnimationStarted { sound_id, .. } => {
+                Some(sound_id.name_in(rules).to_string())
+            }
             _ => None,
         })
         .collect()
@@ -120,7 +121,7 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
         Simulation::tick_move_sound_after_process(
             &quiet.interner,
             &quiet.session,
-            &quiet.main_rng,
+            &mut quiet.main_rng,
             &mut quiet.substrate,
             &mut quiet.sound_events,
             &quiet.houses,
@@ -131,7 +132,7 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
         Simulation::tick_move_sound_after_process(
             &quiet.interner,
             &quiet.session,
-            &quiet.main_rng,
+            &mut quiet.main_rng,
             &mut quiet.substrate,
             &mut quiet.sound_events,
             &quiet.houses,
@@ -144,7 +145,7 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
         Simulation::tick_move_sound_after_process(
             &serviced.interner,
             &serviced.session,
-            &serviced.main_rng,
+            &mut serviced.main_rng,
             &mut serviced.substrate,
             &mut serviced.sound_events,
             &serviced.houses,
@@ -152,13 +153,13 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
             0,
             &rules,
         );
-        // One ordinary inclusive presentation draw between otherwise identical
-        // paid Foot visits. No Scenario or MapGen capability is lent.
-        let _ = serviced.presentation_main_draws().ranged(0, 1);
+        // One ordinary inclusive draw on the same Main between otherwise
+        // identical paid Foot visits. No Scenario or MapGen is drawn.
+        let _ = serviced.main_rng.next_range_i32_inclusive(0, 1);
         Simulation::tick_move_sound_after_process(
             &serviced.interner,
             &serviced.session,
-            &serviced.main_rng,
+            &mut serviced.main_rng,
             &mut serviced.substrate,
             &mut serviced.sound_events,
             &serviced.houses,
@@ -194,8 +195,8 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
             "the existing native Main corpus pins the interleaved raw prefix"
         );
     }
-    let quiet_names = started_names(&quiet);
-    let serviced_names = started_names(&serviced);
+    let quiet_names = started_names(&rules, &quiet);
+    let serviced_names = started_names(&rules, &serviced);
     assert_eq!(quiet_names.len(), 2);
     assert_eq!(serviced_names.len(), 2);
     assert_eq!(quiet_names[0], serviced_names[0]);
@@ -232,7 +233,7 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
             },
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             sim.projectiles.iter().count(),

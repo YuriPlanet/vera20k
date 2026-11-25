@@ -1,8 +1,15 @@
+#[path = "src/app/shell_network_setup/network_build.rs"]
+mod network_build;
+#[path = "src/ice_build.rs"]
+mod ice_build;
 #[path = "src/util/sha256.rs"]
 mod sha256;
+#[path = "src/test_group_cfgs.rs"]
+mod test_group_cfgs;
 
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");
+    test_group_cfgs::emit();
     multiplayer_build_identity();
     source_location();
     shipped_languages();
@@ -21,10 +28,14 @@ fn main() {
     }
 }
 
-/// A package version alone cannot identify two different development builds.
-/// Hash portable source inputs, never paths on the build machine, retail data,
-/// credentials or timestamps. The same source and gameplay features therefore
-/// advertise the same compatibility identity on macOS and Linux.
+/// `VERA20K_NETWORK_BUILD`, which decides with the package version which
+/// builds play together (docs/Networking.md, "Build check"). A package version
+/// alone cannot identify two different development builds. Hash portable
+/// source inputs (`network_build::add_source`), never paths on the build
+/// machine, retail data, credentials or timestamps, and every enabled Cargo
+/// feature but the test groups and the browser's thread pool
+/// (`network_build::add_features`). The same source and features therefore
+/// give the same hash on every platform.
 fn multiplayer_build_identity() {
     use std::path::{Path, PathBuf};
     fn sources(directory: &Path, files: &mut Vec<PathBuf>) {
@@ -60,26 +71,23 @@ fn multiplayer_build_identity() {
     files.sort();
     let mut input = b"VERA20k multiplayer build v1\0".to_vec();
     for file in files {
-        input.extend_from_slice(
-            file.strip_prefix(&root)
+        network_build::add_source(
+            &mut input,
+            &file
+                .strip_prefix(&root)
                 .expect("source below root")
-                .to_string_lossy()
-                .replace('\\', "/")
-                .as_bytes(),
+                .to_string_lossy(),
+            &std::fs::read(&file).expect("read multiplayer build source"),
         );
-        input.push(0);
-        let bytes = std::fs::read(&file).expect("read multiplayer build source");
-        input.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
-        input.extend_from_slice(&bytes);
     }
-    let mut features: Vec<_> = std::env::vars()
-        .filter_map(|(key, _)| key.starts_with("CARGO_FEATURE_").then_some(key))
-        .collect();
-    features.sort();
-    for feature in features {
+    // The MIX is binary; hash its raw identity instead of normalizing CRLF
+    // as the source walk does. The runtime checks these exact release bytes.
+    for (name, _, digest) in ice_build::identities(&root.join("Terrain")) {
+        network_build::add_source(&mut input, &format!("Terrain/{name}"), sha256::digest_hex(digest).as_bytes());
+    }
+    let variables = std::env::vars().map(|(name, _)| name);
+    for feature in network_build::add_features(&mut input, variables) {
         println!("cargo::rerun-if-env-changed={feature}");
-        input.extend_from_slice(feature.as_bytes());
-        input.push(0);
     }
     println!(
         "cargo::rustc-env=VERA20K_NETWORK_BUILD={}",
@@ -89,14 +97,22 @@ fn multiplayer_build_identity() {
 
 /// Where the startup splash's license notice says this build's source is: the
 /// commit a release build was made from (`VERA20K_COMMIT`, which the Release
-/// workflow sets), otherwise the repository.
+/// workflow and a launcher's engine build set), otherwise the repository. The
+/// commit is also `VERA20K_BUILD_COMMIT`, which `--version` reports (empty
+/// when unset). Neither is in the network build: the sources are.
 fn source_location() {
     println!("cargo::rerun-if-env-changed=VERA20K_COMMIT");
-    let source = match std::env::var("VERA20K_COMMIT") {
-        Ok(commit) if !commit.is_empty() => format!("github.com/YuriPlanet/vera20k/tree/{commit}"),
-        _ => "github.com/YuriPlanet/vera20k".to_owned(),
+    let commit = std::env::var("VERA20K_COMMIT")
+        .unwrap_or_default()
+        .trim()
+        .to_owned();
+    let source = if commit.is_empty() {
+        "github.com/YuriPlanet/vera20k".to_owned()
+    } else {
+        format!("github.com/YuriPlanet/vera20k/tree/{commit}")
     };
     println!("cargo::rustc-env=VERA20K_SOURCE={source}");
+    println!("cargo::rustc-env=VERA20K_BUILD_COMMIT={commit}");
 }
 
 /// The language files VERA ships (`src/i18n/vera20k.<tag>.ini`), which

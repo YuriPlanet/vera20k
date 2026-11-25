@@ -1,15 +1,14 @@
-//! PACK v2 of the bandwidth compaction
-//! (`services/relay/bandwidth-compaction/spec.md` §5): the relay's wire
-//! form of consecutive canonical records. It changes only the wire; every
-//! client rebuilds byte for byte the canonical records PACK v1 carries, and
-//! each pack decodes alone, whatever arrived before it (§5.1).
+//! PACK (`services/relay/bandwidth-compaction/spec.md` §5): the relay's
+//! wire form of consecutive canonical records. The client rebuilds each
+//! canonical record byte for byte, and each pack decodes alone, whatever
+//! arrived before it (§5.1).
 //!
 //! ```text
 //! [12][base_seq varint][base_frame varint][count u8] {entry} × count
 //! ```
 //!
-//! Canonical records, the input of `encode_pack_v2` and the output of
-//! `decode_pack_v2`, are the unchanged layouts (little-endian):
+//! Canonical records, the input of `encode_pack` and the output of
+//! `decode_pack`, are these layouts (little-endian):
 //!
 //! | kind | canonical record |
 //! |---|---|
@@ -20,15 +19,20 @@
 //! | RATE 10 | `[10][seq u64][frame u32][fps u16][source u8]` |
 //! | DESYNC 11 | `[11][seq u64][frame u32][sample_frame u32][outlier u8][checksum u32][other u8][checksum u32]` |
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)
+)]
+
 use super::{
-    BATCH_EVENT, DEPARTURE_EVENT, DESYNC_EVENT, FRAME_END_EVENT, ORDERING_BATCH_CAPACITY,
-    PACK_EVENT, PAUSE_EVENT, RATE_EVENT,
+    BATCH_EVENT, CANONICAL_HEAD, DEPARTURE_EVENT, DESYNC_EVENT, DESYNC_TAIL, FRAME_END_EVENT,
+    ORDERING_BATCH_CAPACITY, PACK_EVENT, PAUSE_EVENT, RATE_EVENT, RATE_TAIL,
 };
 use crate::envelope::PACK_LIMIT;
+use crate::link::Reader;
 use crate::{RelayError, varint};
 
-/// The canonical prefix: kind, sequence, frame.
-const CANONICAL_HEAD: usize = 13;
 const SAME_FRAME: u8 = 0;
 const NEXT_FRAME: u8 = 1 << 4;
 const FRAME_DELTA: u8 = 2 << 4;
@@ -157,13 +161,13 @@ fn write_entry(record: &[u8], context: &mut Context, out: &mut Vec<u8>) -> Undo 
     undo
 }
 
-/// Packs consecutive canonical records into PACK v2 payloads (§5.2, §5.4),
+/// Packs consecutive canonical records into PACK payloads (§5.2, §5.4),
 /// at most `datagrams` of them. Returns each payload with the number of
 /// records it carries, in order; their counts sum to the records packed,
 /// a prefix of `records`. Empty when `records` is empty or `datagrams` is 0.
 ///
 /// The packing is greedy, each payload filled while
-/// the next record's v2 size fits `envelope::PACK_LIMIT` (681 bytes) and
+/// the next record's entry fits `envelope::PACK_LIMIT` (681 bytes) and
 /// `count` stays at most 255. Every record fits a pack alone.
 ///
 /// The encoding is the shortest and only one (§5.4), so tests may compare
@@ -177,20 +181,20 @@ fn write_entry(record: &[u8], context: &mut Context, out: &mut Vec<u8>) -> Undo 
 /// frames non-decreasing, kinds and layouts as in the module table with
 /// `P` of 1..=`ORDERING_BATCH_CAPACITY` bytes. The relay's history only
 /// holds such records; anything else is a caller bug (debug assertion).
-pub fn encode_pack_v2(records: &[Vec<u8>], datagrams: usize) -> Vec<(Vec<u8>, usize)> {
+pub(crate) fn encode_pack(records: &[Vec<u8>], datagrams: usize) -> Vec<(Vec<u8>, usize)> {
     let records: Vec<&[u8]> = records.iter().map(Vec::as_slice).collect();
     pack(&records, datagrams, true)
 }
 
-/// Whether `encode_pack_v2` packs all of `records` into at most `limit`
+/// Whether `encode_pack` packs all of `records` into at most `limit`
 /// PACKs, found without building them and stopping past `limit` (the
 /// piggyback's packet count, transport spec §7.4).
-pub(crate) fn fits_packs_v2(records: &[&[u8]], limit: usize) -> bool {
+pub(crate) fn fits_packs(records: &[&[u8]], limit: usize) -> bool {
     let packs = pack(records, limit.saturating_add(1), false);
     packs.len() <= limit
 }
 
-/// The greedy packing of `encode_pack_v2`; unless `build`, every pack
+/// The greedy packing of `encode_pack`; unless `build`, every pack
 /// comes back empty with only its record count.
 fn pack(records: &[&[u8]], datagrams: usize, build: bool) -> Vec<(Vec<u8>, usize)> {
     let mut packs = Vec::new();
@@ -236,22 +240,19 @@ fn pack(records: &[&[u8]], datagrams: usize, build: bool) -> Vec<(Vec<u8>, usize
     packs
 }
 
-/// The first sequence and record count of a PACK v2 this relay wrote,
+/// The first sequence and record count of a PACK this relay wrote,
 /// from its header alone (spec §5.2); `None` if the header is malformed.
-pub(crate) fn pack_v2_range(pack: &[u8]) -> Option<(u64, u8)> {
+pub(crate) fn pack_range(pack: &[u8]) -> Option<(u64, u8)> {
     if pack.first() != Some(&PACK_EVENT) {
         return None;
     }
-    let mut reader = Reader {
-        bytes: pack,
-        offset: 1,
-    };
+    let mut reader = Reader(&pack[1..]);
     let base = reader.varint().ok()?;
     reader.varint().ok()?;
-    Some((base, reader.byte().ok()?))
+    Some((base, reader.u8().ok()?))
 }
 
-/// Reads one PACK v2 payload (from its `12` byte) into its canonical
+/// Reads one PACK payload (from its `12` byte) into its canonical
 /// records, in order: record `i` has sequence `base_seq + i` (§5.2). It
 /// reads nothing but `payload` (§5.1).
 ///
@@ -275,26 +276,23 @@ pub(crate) fn pack_v2_range(pack: &[u8]) -> Option<(u64, u8)> {
 /// 3, 4, 5, 9, 10, 11, tag bit7 set, or DEPARTURE `lost` other than 0 or
 /// 1 (§5.2).
 ///
-/// So every accepted pack is exactly what `encode_pack_v2` writes for its
+/// So every accepted pack is exactly what `encode_pack` writes for its
 /// records.
-pub fn decode_pack_v2(payload: &[u8]) -> Result<Vec<Vec<u8>>, RelayError> {
+pub(crate) fn decode_pack(payload: &[u8]) -> Result<Vec<Vec<u8>>, RelayError> {
     if payload.first() != Some(&PACK_EVENT) || payload.len() > PACK_LIMIT {
         return Err(RelayError::Malformed);
     }
-    let mut reader = Reader {
-        bytes: payload,
-        offset: 1,
-    };
+    let mut reader = Reader(&payload[1..]);
     let base_seq = reader.varint()?;
-    let base_frame = u32::try_from(reader.varint()?).map_err(|_| RelayError::Malformed)?;
-    let count = reader.byte()?;
+    let base_frame = reader.varint_u32()?;
+    let count = reader.u8()?;
     if count == 0 {
         return Err(RelayError::Malformed);
     }
     let mut context = Context::new(base_frame);
     let mut records = Vec::with_capacity(usize::from(count));
     for index in 0..u64::from(count) {
-        let tag = reader.byte()?;
+        let tag = reader.u8()?;
         let kind = tag & 0x0F;
         let next_id = tag & NEXT_BATCH_ID != 0;
         if tag & RESERVED != 0 || (next_id && kind != BATCH_EVENT) {
@@ -315,14 +313,14 @@ pub fn decode_pack_v2(payload: &[u8]) -> Result<Vec<Vec<u8>>, RelayError> {
         .ok_or(RelayError::Malformed)?;
         context.frame = frame;
         let sequence = base_seq.checked_add(index).ok_or(RelayError::Malformed)?;
-        // The longest tail but a batch's: DESYNC's 14 bytes.
-        let mut record = Vec::with_capacity(CANONICAL_HEAD + 14);
+        // The longest tail but a batch's.
+        let mut record = Vec::with_capacity(CANONICAL_HEAD + DESYNC_TAIL);
         record.push(kind);
         record.extend_from_slice(&sequence.to_le_bytes());
         record.extend_from_slice(&frame.to_le_bytes());
         match kind {
             BATCH_EVENT => {
-                let source = reader.byte()?;
+                let source = reader.u8()?;
                 let id = if next_id {
                     context
                         .last_id(source)
@@ -349,8 +347,8 @@ pub fn decode_pack_v2(payload: &[u8]) -> Result<Vec<Vec<u8>>, RelayError> {
             }
             FRAME_END_EVENT => {}
             DEPARTURE_EVENT => {
-                let source = reader.byte()?;
-                match reader.byte()? {
+                let source = reader.u8()?;
+                match reader.u8()? {
                     0 => record.push(source),
                     1 => record.extend_from_slice(&[source, 1]),
                     _ => return Err(RelayError::Malformed),
@@ -360,42 +358,16 @@ pub fn decode_pack_v2(payload: &[u8]) -> Result<Vec<Vec<u8>>, RelayError> {
                 record.extend_from_slice(&reader.varint()?.to_le_bytes());
                 record.extend_from_slice(reader.take(2)?);
             }
-            RATE_EVENT => record.extend_from_slice(reader.take(3)?),
-            DESYNC_EVENT => record.extend_from_slice(reader.take(14)?),
+            RATE_EVENT => record.extend_from_slice(reader.take(RATE_TAIL)?),
+            DESYNC_EVENT => record.extend_from_slice(reader.take(DESYNC_TAIL)?),
             _ => return Err(RelayError::Malformed),
         }
         records.push(record);
     }
-    if reader.offset != payload.len() {
+    if !reader.is_empty() {
         return Err(RelayError::Malformed);
     }
     Ok(records)
-}
-
-struct Reader<'a> {
-    bytes: &'a [u8],
-    offset: usize,
-}
-
-impl<'a> Reader<'a> {
-    fn take(&mut self, length: usize) -> Result<&'a [u8], RelayError> {
-        let bytes = self
-            .bytes
-            .get(self.offset..self.offset + length)
-            .ok_or(RelayError::Malformed)?;
-        self.offset += length;
-        Ok(bytes)
-    }
-
-    fn byte(&mut self) -> Result<u8, RelayError> {
-        Ok(self.take(1)?[0])
-    }
-
-    fn varint(&mut self) -> Result<u64, RelayError> {
-        let (value, length) = varint::read(&self.bytes[self.offset..])?;
-        self.offset += length;
-        Ok(value)
-    }
 }
 
 #[cfg(test)]
@@ -440,7 +412,7 @@ mod tests {
     #[test]
     fn writes_the_shortest_encoding_and_decodes_it_back_byte_for_byte() {
         let records = mixed();
-        let packs = encode_pack_v2(&records, 4);
+        let packs = encode_pack(&records, 4);
         assert_eq!(packs.len(), 1);
         let (pack, count) = &packs[0];
         assert_eq!(*count, records.len());
@@ -458,7 +430,7 @@ mod tests {
             0x0B, 15, 0, 0, 0, 1, 1, 2, 3, 4, 2, 5, 6, 7, 8,
         ];
         assert_eq!(pack[..], expected);
-        assert_eq!(decode_pack_v2(pack), Ok(records));
+        assert_eq!(decode_pack(pack), Ok(records));
     }
 
     #[test]
@@ -466,7 +438,7 @@ mod tests {
         let records: Vec<_> = (0..3)
             .map(|index| batch(1 + index, 7, 1, 20 + index, &[0x55; 300]))
             .collect();
-        let packs = encode_pack_v2(&records, 8);
+        let packs = encode_pack(&records, 8);
         assert_eq!(
             packs.iter().map(|(_, count)| *count).collect::<Vec<_>>(),
             [2, 1]
@@ -476,10 +448,10 @@ mod tests {
         assert_eq!(packs[1].0[..7], [PACK_EVENT, 3, 7, 1, 0x03, 1, 22]);
         let decoded: Vec<_> = packs
             .iter()
-            .flat_map(|(pack, _)| decode_pack_v2(pack).unwrap())
+            .flat_map(|(pack, _)| decode_pack(pack).unwrap())
             .collect();
         assert_eq!(decoded, records);
-        assert_eq!(encode_pack_v2(&records, 1).len(), 1);
+        assert_eq!(encode_pack(&records, 1).len(), 1);
     }
 
     #[test]
@@ -488,11 +460,11 @@ mod tests {
             .map(|index| batch(1 + index, 7, 1, 20 + index, &[0x55; 300]))
             .collect();
         let refs: Vec<&[u8]> = records.iter().map(Vec::as_slice).collect();
-        let packs = encode_pack_v2(&records, usize::MAX).len();
+        let packs = encode_pack(&records, usize::MAX).len();
         assert_eq!(packs, 3);
-        assert!(fits_packs_v2(&refs, packs));
-        assert!(!fits_packs_v2(&refs, packs - 1));
-        assert!(fits_packs_v2(&refs[1..], 2));
+        assert!(fits_packs(&refs, packs));
+        assert!(!fits_packs(&refs, packs - 1));
+        assert!(fits_packs(&refs[1..], 2));
     }
 
     #[test]
@@ -536,20 +508,13 @@ mod tests {
                 ],
             ),
         ] {
-            assert_eq!(decode_pack_v2(&bytes), Err(RelayError::Malformed), "{rule}");
+            assert_eq!(decode_pack(&bytes), Err(RelayError::Malformed), "{rule}");
         }
         let mut oversized = pack(&[1, 0x03, 2, 4, 0x80, 0x04]);
         oversized.extend_from_slice(&[0; 512]);
-        assert_eq!(
-            decode_pack_v2(&oversized).map(|records| records.len()),
-            Ok(1)
-        );
+        assert_eq!(decode_pack(&oversized).map(|records| records.len()), Ok(1));
         oversized[7] = 0x81;
         oversized.push(0);
-        assert_eq!(
-            decode_pack_v2(&oversized),
-            Err(RelayError::Malformed),
-            "P 513"
-        );
+        assert_eq!(decode_pack(&oversized), Err(RelayError::Malformed), "P 513");
     }
 }

@@ -151,7 +151,7 @@ fn production_raw_frame_gates_begin_then_hold_resume_and_cancel_share_the_held_i
     sim.session.set_binary_frame_for_test(9);
     let envelope = CommandEnvelope::synchronized(begin, 0);
     assert_eq!(
-        sim.apply_due_commands(&[envelope], &rules, 1, None, FrameEffects::default())
+        sim.apply_due_commands(&[envelope], &rules, 1, &mut FrameEffects::default())
             .0,
         0
     );
@@ -163,7 +163,7 @@ fn production_raw_frame_gates_begin_then_hold_resume_and_cancel_share_the_held_i
     );
     sim.session.set_binary_frame_for_test(10);
     assert_eq!(
-        sim.apply_due_commands(&[], &rules, 1, None, FrameEffects::default())
+        sim.apply_due_commands(&[], &rules, 1, &mut FrameEffects::default())
             .0,
         1
     );
@@ -325,7 +325,7 @@ fn place_uses_the_current_held_type_and_retains_original_selector_for_settlement
     );
     let envelope = CommandEnvelope::synchronized(record, u64::MAX);
     let (count, changed) =
-        sim.apply_due_commands(&[envelope], &rules, 1, None, FrameEffects::default());
+        sim.apply_due_commands(&[envelope], &rules, 1, &mut FrameEffects::default());
     assert_eq!(count, 1);
     assert!(
         changed,

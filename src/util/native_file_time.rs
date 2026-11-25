@@ -166,6 +166,7 @@ struct TimeLocale(libc::locale_t);
 // it, and POSIX allows a locale object to be used from any thread.
 #[cfg(unix)]
 unsafe impl Send for TimeLocale {}
+// SAFETY: as for `Send`: every user only reads the handle.
 #[cfg(unix)]
 unsafe impl Sync for TimeLocale {}
 
@@ -250,7 +251,7 @@ pub fn local_hour_minute(_unix_seconds: u64) -> Option<(u8, u8)> {
     None
 }
 
-#[cfg(all(test, unix))]
+#[cfg(all(test, tests_util, unix))]
 mod unix_tests {
     use super::{TICKS_PER_SECOND, WINDOWS_EPOCH_SECONDS, format_file_time_parts};
 
@@ -265,7 +266,7 @@ mod unix_tests {
     }
 }
 
-#[cfg(all(test, windows))]
+#[cfg(all(test, tests_util, windows))]
 mod tests {
     use super::{NativeSystemTime, format_local_system_time};
 

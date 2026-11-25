@@ -5,8 +5,19 @@
 //! humans while the local House is not defeated, otherwise hidden. The
 //! ordinary question uses60B7A0.
 
+use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
+
+use super::descriptor::DialogResourceId;
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
+
+pub const DIALOG: DialogResourceId = DialogResourceId(0xB6);
+
+/// The question static's node: the resource's id-less static (`0xFFFF`).
+pub const QUESTION: u16 = 0xFFFF;
+
+/// The question's caption.
+pub const QUESTION_LABEL: (&str, &str) = ("GUI:AskAbortMission", "What would you like to do?");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AbortButton {
@@ -17,6 +28,21 @@ pub enum AbortButton {
 }
 
 impl AbortButton {
+    pub const ALL: [Self; 3] = [Self::Leave, Self::Secondary, Self::Resume];
+
+    /// Resource ids 6C9, 712 and Resume 686.
+    pub const fn id(self) -> u16 {
+        match self {
+            Self::Leave => 0x6C9,
+            Self::Secondary => 0x712,
+            Self::Resume => 0x686,
+        }
+    }
+
+    pub fn from_id(id: u16) -> Option<Self> {
+        Self::ALL.into_iter().find(|button| button.id() == id)
+    }
+
     pub fn label(self, secondary: AbortSecondary) -> (&'static str, &'static str) {
         match (self, secondary) {
             (Self::Leave, _) => ("GUI:Leave", "Quit"),
@@ -105,20 +131,41 @@ impl AbortLayout {
 
     /// The shown buttons in resource order: 6C9, 712, then Resume686.
     pub fn buttons(self) -> impl Iterator<Item = (AbortButton, RectPx)> {
-        [
-            AbortButton::Leave,
-            AbortButton::Secondary,
-            AbortButton::Resume,
-        ]
-        .into_iter()
-        .filter_map(move |button| Some((button, self.button(button)?)))
+        AbortButton::ALL
+            .into_iter()
+            .filter_map(move |button| Some((button, self.button(button)?)))
     }
 
-    pub fn hit(self, x: i32, y: i32) -> Option<AbortButton> {
-        self.buttons()
-            .find(|(_, rect)| rect.contains(x, y))
-            .map(|(button, _)| button)
+    /// Control `id`'s rect, `None` for the hidden 712.
+    pub fn rect(self, id: u16) -> Option<RectPx> {
+        match id {
+            QUESTION => return Some(self.question),
+            in_game_shell::FOOTER => return Some(self.footer),
+            _ => {}
+        }
+        self.button(AbortButton::from_id(id)?)
     }
+}
+
+/// B6's buttons in resource order, each with the help its stored result
+/// keys (`0x006040B0`), then the question. Plain static `0x00615A81`
+/// takes its style's horizontal centring but not `SS_CENTERIMAGE`'s
+/// vertical one; it has no help, so the pointer passes it by. Then the
+/// status line (B6 has no title).
+pub fn spec(secondary: AbortSecondary) -> NodeSpec {
+    let buttons = AbortButton::ALL.map(|button| {
+        NodeSpec::new(NodeKind::Button)
+            .id(button.id().into())
+            .tooltip(button.help(secondary).0)
+    });
+    let align = crate::ui::shell::geom::ShellAlign::H_CENTER;
+    let question = NodeSpec::new(NodeKind::Text)
+        .id(QUESTION.into())
+        .with(Prop::Align, Value::Int(i32::from(align.0)));
+    NodeSpec::new(NodeKind::Dialog)
+        .children(buttons)
+        .child(question)
+        .children(in_game_shell::panel_statics())
 }
 
 pub fn abort_layout(
@@ -146,7 +193,7 @@ fn question_rect(width: i32, height: i32) -> RectPx {
     in_game_shell::ordinary_child_rect(geom::dlu_rect(99, 165, 230, 19), width, height)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 
@@ -287,11 +334,19 @@ mod tests {
         assert_eq!(network.secondary, campaign.secondary);
 
         let center = (restart.x + restart.w / 2, restart.y + restart.h / 2);
+        let hit = |layout: AbortLayout, x, y| {
+            let mut gui = vera20k_gui::Gui::new(16);
+            let root = gui.create(NodeKind::Dialog, None).unwrap();
+            crate::ui::shell::page::ensure_built(&mut gui, root, || spec(layout.secondary_kind));
+            crate::ui::shell::page::sync_rects(&mut gui, root, |id| layout.rect(id));
+            let node = gui.hit_at(root, x, y, false)?;
+            AbortButton::from_id(gui.id_of(node)? as u16)
+        };
         assert_eq!(
-            campaign.hit(center.0, center.1),
+            hit(campaign, center.0, center.1),
             Some(AbortButton::Secondary)
         );
-        assert_eq!(skirmish.hit(center.0, center.1), None);
+        assert_eq!(hit(skirmish, center.0, center.1), None);
         assert_eq!(
             campaign.buttons().map(|(b, _)| b).collect::<Vec<_>>(),
             [

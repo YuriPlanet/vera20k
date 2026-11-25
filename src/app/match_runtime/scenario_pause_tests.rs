@@ -94,6 +94,39 @@ fn original_pause_histories_pin_overflow_rearm_nesting_and_world_branch() {
 }
 
 #[test]
+fn radar_movie_service_cannot_add_or_release_a_recorded_pause() {
+    use crate::sim::replay::{REPLAY_VERSION, ReplayHeader, ReplayLog};
+    use crate::sim::runtime::SimRuntime;
+    use crate::sim::world::Simulation;
+
+    let mut runtime = SimHost::default();
+    runtime.install(Some(SimRuntime::from_simulation(Simulation::with_seed(7))));
+    let mut diagnostics = MatchDiagnosticsState::default();
+
+    apply_live_service(&mut runtime, &mut diagnostics, ScenarioServiceInput::Pause);
+    let sim = &runtime.runtime().unwrap().simulation;
+    assert!(sim.session().scenario_paused());
+    let paused_hash = sim.state_hash();
+
+    let log = ReplayLog::new(ReplayHeader {
+        version: REPLAY_VERSION,
+        tick_hz: 15,
+        seed: 7,
+        map_name: String::new(),
+        rules_hash: 0,
+        pixel_conversion_bounds: Default::default(),
+    });
+    diagnostics.begin_playback(std::sync::Arc::new(log), None, "0".repeat(64));
+    for input in [ScenarioServiceInput::Resume, ScenarioServiceInput::Pause] {
+        assert!(apply_live_service(&mut runtime, &mut diagnostics, input).is_empty());
+        assert_eq!(
+            runtime.runtime().unwrap().simulation.state_hash(),
+            paused_hash
+        );
+    }
+}
+
+#[test]
 fn saved_timed_hold_rearms_zero_without_losing_an_untimed_hold() {
     let mut sim = crate::sim::world::Simulation::with_seed(0);
     sim.pause_scenario_for_test(0);
@@ -101,8 +134,8 @@ fn saved_timed_hold_rearms_zero_without_losing_an_untimed_hold() {
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .unwrap()
-        .sim;
-    restored.restore_after_snapshot_load().unwrap();
+        .restore_references_for_test()
+        .unwrap();
     assert!(restored.session().scenario_paused());
     assert!(restored.session().scenario_pause_timed());
     let clock = ScenarioPauseClock::after_load(999_000); // PostRead starts now, duration0.

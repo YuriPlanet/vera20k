@@ -37,7 +37,7 @@ use crate::map::entities::EntityCategory;
 #[cfg(any(test, feature = "test-support"))]
 use crate::map::houses::HouseAllianceMap;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
-use crate::rules::locomotor_type::{MovementZone, SpeedType};
+use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
 use crate::sim::cell_rect::PlayfieldBounds;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::entity_store::EntityStore;
@@ -59,14 +59,14 @@ mod foot_approach;
 mod foot_coordinate;
 pub(crate) mod foot_mark;
 mod foot_path;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod foot_path_window_tests;
 pub(crate) use drive_locomotion::drive_do_turn;
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 pub(crate) mod approach_oracle_seam;
+pub(crate) use foot_path::Code2Chain;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use foot_path::FindPathResult;
-pub(crate) use foot_path::Code2Chain;
 pub(crate) use foot_path::FootPathOutcome;
 pub(crate) use foot_path::coord_cell;
 pub(crate) use track_fresh::{BlockingObject, ProcessMovementArgs};
@@ -75,11 +75,13 @@ mod foot_speed;
 pub mod ground_pose;
 pub(crate) mod infantry_action;
 pub(crate) mod infantry_entry;
+mod infantry_jumpjet_destination;
 mod infantry_scatter;
 pub(crate) mod locomotor_owner;
 pub(crate) mod locomotor_ready;
 mod locomotor_turn;
 pub(crate) use locomotor_turn::locomotor_do_turn;
+mod mech;
 pub mod motion_query;
 pub(crate) mod movement_bridge;
 mod movement_commands;
@@ -91,7 +93,7 @@ pub(crate) mod navcom;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use navcom::set_walk_destination_coord;
 pub(crate) use navcom::{building_dock_cell, building_dock_coordinate, nav_target_coordinate};
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 pub(crate) mod fresh_oracle_seam;
 pub(crate) mod path_batch;
 pub use path_batch::PathBatchStats;
@@ -106,7 +108,7 @@ mod scatter;
 pub(crate) use infantry_scatter::answered_process;
 pub(crate) use scatter::{DamageRetaliation, ScatterFlags};
 mod burrowing;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod burrowing_tests;
 mod scatter_cell;
 pub mod slope_transition;
@@ -118,12 +120,12 @@ mod track_host;
 mod track_path;
 pub(crate) use track_path::SetterForceReassign;
 pub mod track_process;
-pub mod tunnel_movement;
-mod tunnel_process;
-#[cfg(test)]
-mod tunnel_tests;
 mod track_speed;
 pub(crate) mod track_turn;
+pub mod tunnel_movement;
+mod tunnel_process;
+#[cfg(all(test, tests_sim_movement))]
+mod tunnel_tests;
 mod walk_admission;
 pub(crate) mod walk_head;
 mod walk_host;
@@ -158,9 +160,13 @@ pub use foot_speed::owner_speed_bonus;
 pub use foot_speed::{SpeedRules, owner_current_speed};
 
 pub use movement_commands::DestinationTiming;
+pub(crate) use movement_commands::can_accept_destination;
 pub use movement_commands::movement_goal_cell;
-pub(crate) use movement_commands::{can_accept_destination, prepare_walk_destination};
-pub(crate) use navcom::{target_cell_coord, track_stop_moving};
+#[cfg(test)]
+pub(crate) use movement_commands::prepare_walk_destination;
+pub(crate) use navcom::target_cell_coord;
+#[cfg(test)]
+pub(crate) use navcom::track_stop_moving;
 // Legacy batch tick used by focused movement fixtures.
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use movement_tick::tick_movement_with_grids;
@@ -189,7 +195,8 @@ pub(super) struct MoverSnapshot {
     pub movement_zone: MovementZone,
     pub omni_crusher: bool,
     pub regular_crusher: bool,
-    pub locomotor: Option<locomotor::LocomotorState>,
+    /// The installed locomotor's active kind.
+    pub locomotor_kind: Option<LocomotorKind>,
     /// Native AStar hierarchy admission reads the stored TechnoClass+0x3D5
     /// byte. False under live MapClass authority bypasses hierarchy and runs
     /// the plain cell A*; headless fixtures without authority retain hierarchy.
@@ -275,22 +282,22 @@ pub(crate) fn tick_movement_with_grid(
 // Internal helpers — shared across movement submodules
 // ---------------------------------------------------------------------------
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod balloon_hover_tests;
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_movement, tests_sim_h_o, tests_sim_combat_a_c)))]
 pub(crate) mod bridge_layer_oracle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod ground_pose_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod movement_bridge_retail_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod movement_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod foot_timer_migration_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod drop_as_bomb_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod paratrooper_crush_tests;

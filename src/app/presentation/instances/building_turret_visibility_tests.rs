@@ -112,10 +112,12 @@ impl Patriot {
     fn turret_drawn(&self) -> bool {
         let lighting = CellLightGrid::new();
         let voxel_images = RefCell::new(VoxelImageCache::default());
+        let zshape_skips = std::cell::RefCell::default();
         let colors = HouseColorMap::default();
         let frame = crate::app::presentation::frame::PresentationFrame::capture(
             &self.runtime,
             &Default::default(),
+            false,
         );
         let input = ShpInputs {
             runtime: &self.runtime,
@@ -124,6 +126,7 @@ impl Patriot {
             overlay_atlas: None,
             unit_atlas: Some(&self.voxel),
             voxel_images: &voxel_images,
+            zshape_skips: &zshape_skips,
             depth_tested_images: None,
             camera: [-1000.0; 2],
             render_size: [5000; 2],
@@ -138,11 +141,12 @@ impl Patriot {
             ignore_visibility: true,
             lighting: &lighting,
             house_colors: &colors,
-            building_zshape: false,
+            building_zshape: None,
         };
-        let order = NativeDisplayOrder::from_display(self.runtime.simulation.display_layers());
-        let mut planned = Vec::new();
+        let order = NativeDisplayOrder::from_world(&self.runtime.simulation, None);
+        let mut planned = PlannedObjects::default();
         build_shp_instances_from_inputs(&input, &mut planned, &order);
+        let planned = planned.into_owned();
         planned
             .iter()
             .find(|object| object.parent.id == self.id)
@@ -175,7 +179,8 @@ fn retail_patriot_turret_appears_on_the_last_buildup_frame() {
         building_voxel_turret_visible(
             crate::app::presentation::frame::PresentationFrame::capture(
                 &scene.runtime,
-                &Default::default()
+                &Default::default(),
+                false
             )
             .object(scene.id)
             .unwrap(),
@@ -187,16 +192,14 @@ fn retail_patriot_turret_appears_on_the_last_buildup_frame() {
     scene
         .runtime
         .simulation
-        .entities_mut_for_test()
-        .get_mut(scene.id)
+        .entity_mut_for_test(scene.id)
         .unwrap()
         .set_native_stage_value(last - 1);
     assert!(!scene.turret_drawn(), "penultimate buildup frame");
     scene
         .runtime
         .simulation
-        .entities_mut_for_test()
-        .get_mut(scene.id)
+        .entity_mut_for_test(scene.id)
         .unwrap()
         .set_native_stage_value(last);
     assert!(scene.turret_drawn(), "last buildup frame");

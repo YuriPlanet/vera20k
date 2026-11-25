@@ -13,7 +13,7 @@ use crate::sim::timer::CdTimer;
 
 /// Techno+1A8 outer timer, +1B4 phase timer and +1C0 phase. Separate from
 /// Iron Curtain: both advance in native Techno AI, Iron first, on one stream.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AirstrikeTintState {
     timer: CdTimer,
     tint_timer: CdTimer,
@@ -111,6 +111,6 @@ impl AirstrikeTintState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "airstrike_tint_tests.rs"]
 mod tests;

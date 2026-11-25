@@ -272,7 +272,7 @@ fn cropped(lit: &HashSet<(i32, i32)>, rows: usize, blank_width: usize) -> FntGly
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use std::collections::{BTreeSet, HashMap};
 
@@ -369,7 +369,11 @@ mod tests {
         assert_eq!(rows, ink_rows(fnt.glyph(0x4E2D).expect("中")));
         assert!(!fnt.draws(0x4EEC) && fill_ins.contains_key(&0x4EEC), "们");
 
-        let undrawn: BTreeSet<char> = crate::i18n::shipped_texts(|_| true)
+        // macOS draws this one in its own file chooser
+        // (`app::mod_import_picker`), Command-key sign included; the game's
+        // font never does.
+        let system_drawn = |label: &str| label.eq_ignore_ascii_case("VERA:ModImportMacMultiSelect");
+        let undrawn: BTreeSet<char> = crate::i18n::shipped_texts(|label| !system_drawn(label))
             .into_iter()
             .filter(|(tag, _, _)| !matches!(tag.as_str(), "ar" | "th"))
             .flat_map(|(_, _, text)| text.chars().collect::<Vec<_>>())

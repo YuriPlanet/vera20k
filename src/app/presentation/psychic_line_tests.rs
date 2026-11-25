@@ -68,8 +68,7 @@ fn an_enemy_tank_sensed_by_a_psychic_sensor_draws_its_detection_line() {
     house.set_is_human_for_test(false);
     house.set_player_control_for_test(false);
 
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .attack_target
         .set_for_test(Some(crate::sim::combat::TargetKind::Cell(30, 30)));

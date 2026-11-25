@@ -98,6 +98,7 @@ pub fn run(
         rules_image.trim(),
         theater_ext,
         theater_name,
+        asset_manager.ships_ares(),
         &mut resolve,
     ))
 }
@@ -162,13 +163,15 @@ struct CandidateNames {
 ///
 /// The resolver returns the candidate row plus an optional warning, so a hit in
 /// a catalogued-but-unreachable archive is reported rather than passed off as a
-/// normal lookup.
+/// normal lookup. `ares` is whether the game is an Ares game, whose sidebar
+/// draws a declared PCX cameo first.
 fn assemble(
     art_registry: &ArtRegistry,
     type_id: &str,
     rules_image: &str,
     theater_ext: &str,
     theater_name: &str,
+    ares: bool,
     resolve: &mut dyn FnMut(&str) -> (ArtCandidate, Option<String>),
 ) -> ArtForReport {
     // Retail ids are uppercase everywhere in art.ini; normalise once so the
@@ -180,22 +183,18 @@ fn assemble(
         .unwrap_or_else(|| PLACEHOLDER_CAMEO.to_owned());
     let declared_palette = art_registry.resolve_declared_palette_id(type_id, rules_image);
 
-    let names = candidate_names(
+    let mut names = candidate_names(
         art_registry,
         &effective_image_id,
         &cameo_id,
         theater_ext,
         theater_name,
     );
-    #[cfg(feature = "ares")]
-    let names = {
-        let mut names = names;
-        if let [Some(filename), _] = art_registry.resolve_declared_pcx_cameos(type_id, rules_image)
-        {
-            names.cameo.insert(0, filename.to_owned());
-        }
-        names
-    };
+    if ares
+        && let [Some(filename), _] = art_registry.resolve_declared_pcx_cameos(type_id, rules_image)
+    {
+        names.cameo.insert(0, filename.to_owned());
+    }
 
     let mut warnings: Vec<String> = Vec::new();
     // Registry state first: it changes how every id below must be read.
@@ -391,7 +390,7 @@ fn resolve_candidate(asset_manager: &AssetManager, name: &str) -> (ArtCandidate,
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
     use crate::map::theater::theater_extension;
@@ -509,15 +508,32 @@ mod tests {
         assert_eq!(names.shp, vec!["E1.SHP", "E1.TEM"]);
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn report_puts_the_authored_pcx_ahead_of_the_placeholder() {
         let registry = ArtRegistry::from_ini(&crate::rules::ini_parser::IniFile::from_str(
             "[IMAGE]\nImage=BODY\nCameoPCX=Normal.PCX\n[BODY]\nCameoPCX=wrong.pcx\n",
         ));
-        let report = assemble(&registry, "TYPE", "IMAGE", "tem", "TEMPERATE", &mut miss());
+        let report = assemble(
+            &registry,
+            "TYPE",
+            "IMAGE",
+            "tem",
+            "TEMPERATE",
+            true,
+            &mut miss(),
+        );
         assert_eq!(report.cameo_candidates[0].name, "normal.pcx");
         assert_eq!(report.cameo_candidates[1].name, "XXICON.SHP");
+        let stock = assemble(
+            &registry,
+            "TYPE",
+            "IMAGE",
+            "tem",
+            "TEMPERATE",
+            false,
+            &mut miss(),
+        );
+        assert_eq!(stock.cameo_candidates[0].name, "XXICON.SHP");
     }
 
     #[test]
@@ -539,6 +555,7 @@ mod tests {
             "GAPOWR",
             "tem",
             "TEMPERATE",
+            false,
             &mut miss(),
         );
 
@@ -557,7 +574,15 @@ mod tests {
     #[test]
     fn a_missing_rules_image_is_warned_about() {
         let registry = ArtRegistry::empty();
-        let report = assemble(&registry, "GAPOWR", "", "tem", "TEMPERATE", &mut miss());
+        let report = assemble(
+            &registry,
+            "GAPOWR",
+            "",
+            "tem",
+            "TEMPERATE",
+            false,
+            &mut miss(),
+        );
         assert!(
             report.warnings.iter().any(|w| w == NO_RULES_IMAGE_WARNING),
             "{:?}",
@@ -571,7 +596,15 @@ mod tests {
     #[test]
     fn nothing_resolving_is_warned_about_with_the_verbs_that_help() {
         let registry = ArtRegistry::empty();
-        let report = assemble(&registry, "GAPOWR", "GAPOWR", "lun", "LUNAR", &mut miss());
+        let report = assemble(
+            &registry,
+            "GAPOWR",
+            "GAPOWR",
+            "lun",
+            "LUNAR",
+            false,
+            &mut miss(),
+        );
         let warning = report
             .warnings
             .last()
@@ -590,6 +623,7 @@ mod tests {
             "GAPOWR",
             "tem",
             "TEMPERATE",
+            false,
             &mut hit_only("GAPOWR.SHP"),
         );
 

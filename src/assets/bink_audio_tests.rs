@@ -52,8 +52,7 @@ fn zero_run_and_overlap_pcm_match_ffmpeg_in_both_transforms_and_layouts() {
     }
 }
 
-#[test]
-fn retail_stereo_and_mono_headers_and_packets_match_ffmpeg() {
+fn retail_movie_archive() -> Option<MixArchive> {
     let Some(root) = std::env::var_os("RA2_DIR") else {
         assert_ne!(
             std::env::var("VERA20K_REQUIRE_RETAIL_ASSETS").as_deref(),
@@ -61,9 +60,31 @@ fn retail_stereo_and_mono_headers_and_packets_match_ffmpeg() {
             "RA2_DIR required"
         );
         eprintln!("SKIPPED: Bink retail audio controls need RA2_DIR");
+        return None;
+    };
+    Some(MixArchive::load(&Path::new(&root).join("MOVIES01.MIX")).unwrap())
+}
+
+#[test]
+fn retail_final_packet_plays_only_its_declared_audio() {
+    let Some(archive) = retail_movie_archive() else {
         return;
     };
-    let archive = MixArchive::load(&Path::new(&root).join("MOVIES01.MIX")).unwrap();
+    let clip = archive.get_by_name("A02_P01E.BIK").unwrap();
+    let file = BinkFile::parse(clip.to_vec().into()).unwrap();
+    let mut decoder = BinkAudioDecoder::new(file.header.audio_tracks[0]).unwrap();
+    let packets = file.audio_packets(93).unwrap();
+    let tail = &packets[0];
+    // Retail frame 93 contains a 960-sample transform with 480 valid PCM bytes.
+    assert_eq!(tail.decoded_bytes, 480);
+    assert_eq!(decoder.decode_packet(tail.bytes).unwrap().len(), 240);
+}
+
+#[test]
+fn retail_stereo_and_mono_headers_and_packets_match_ffmpeg() {
+    let Some(archive) = retail_movie_archive() else {
+        return;
+    };
     let corpus = crate::test_fixture::json("tools/bink_audio_oracle.json");
     for case in corpus["retail"].as_array().unwrap() {
         let name = case["name"].as_str().unwrap();

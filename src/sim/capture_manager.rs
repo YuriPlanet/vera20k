@@ -219,6 +219,7 @@ impl CaptureManagerState {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn with_victims_for_test(max_control: i32, infinite: bool, victims: &[u64]) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         let mut state = Self::constructed(max_control, infinite);
         state.nodes = victims
             .iter()
@@ -239,6 +240,7 @@ impl CaptureManagerState {
     /// A manager holding these `(victim, original owner)` nodes in order.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_nodes_for_test(nodes: &[(u64, InternedId)]) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         let mut state = Self::constructed(3, false);
         state.nodes = nodes
             .iter()
@@ -289,7 +291,7 @@ impl Simulation {
         let Some(object) = self.object_type(controller.type_ref(), rules) else {
             return Vec::new();
         };
-        let selected = controller.selection.is_selected();
+        let selected = controller.seldom.selection.is_selected();
         #[cfg(feature = "phobos")]
         let visible_to = rules.mind_control_link_visible_to_house_for(object);
         // Rendering queries isolate the canonical fallback CellClass.
@@ -302,7 +304,7 @@ impl Simulation {
                 .filter_map(|(index, node)| {
                     let victim = self.substrate.entities.get(node.victim)?;
                     if !selected
-                        && !victim.selection.is_selected()
+                        && !victim.seldom.selection.is_selected()
                         && node
                             .line_timer
                             .remaining(self.session.binary_frame() as i32)
@@ -319,7 +321,7 @@ impl Simulation {
                         &FireSource::of_entity(controller),
                         object,
                         -1 - (index % 5) as i32,
-                        controller.weapon_burst.index() as u8,
+                        controller.seldom.weapon_burst.index() as u8,
                         Flh::default(),
                     )
                     .coord;
@@ -463,7 +465,6 @@ pub(crate) struct CaptureVictimFacts {
     owner: InternedId,
     capturable: bool,
     /// Phobos `MindControlSize=`; 1 in non-Phobos builds.
-    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
     mind_control_size: i32,
 }
 
@@ -477,8 +478,8 @@ impl CaptureVictimFacts {
         let refused = target_obj.immune_to_psionics
             || (target.category() == EntityCategory::Unit
                 && target.bunker.link().installed_in().is_some())
-            || target.mind_control.is_mind_controlled()
-            || target.mind_control.house_controller.is_some()
+            || target.seldom.mind_control.is_mind_controlled()
+            || target.seldom.mind_control.house_controller.is_some()
             || crate::sim::superweapon::invulnerability::is_invulnerable(
                 target.invulnerability.as_ref(),
                 frame,
@@ -511,14 +512,10 @@ impl CaptureVictimFacts {
 pub(crate) struct CaptureControllerFacts {
     owner: InternedId,
     max_control: i32,
-    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
     count: i32,
-    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
     total_size: i32,
     infinite: bool,
-    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
     ignore_size: bool,
-    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
     release_victim: bool,
 }
 
@@ -614,9 +611,18 @@ pub(crate) fn init_capture_manager(
         crate::sim::combat::combat_weapon::weapon_for_index(object_type, 0, 0)?.weapon_id?;
     let weapon = rules.weapon(weapon_name)?;
     let warhead = rules.weapon_warhead(weapon)?;
-    warhead
-        .mind_control
-        .then(|| CaptureManagerState::constructed(weapon.damage, weapon.infinite_mind_control))
+    warhead.mind_control.then(|| {
+        if rules.ra2() {
+            // Original RA2 reads MindControl.Damage only as the "considered
+            // offensive" flag (rules.ini Damage=10); link capacity is
+            // hardcoded 1 for both MindControl and SuperMindControl. Only YR
+            // reinterpreted Damage as the number of links (rulesmd.ini=1).
+            // Always one link on the RA2 profile, never infinite.
+            CaptureManagerState::constructed(1, false)
+        } else {
+            CaptureManagerState::constructed(weapon.damage, weapon.infinite_mind_control)
+        }
+    })
 }
 
 impl Simulation {
@@ -631,7 +637,7 @@ impl Simulation {
         restore: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let source = if restore { incoming } else { selected };
         let destination = if restore { selected } else { incoming };
@@ -650,11 +656,9 @@ impl Simulation {
                 continue;
             };
             if restore
-                && self
-                    .substrate
-                    .entities
-                    .get(id)
-                    .is_none_or(|entity| entity.mind_control.house_original_owner != Some(selected))
+                && self.substrate.entities.get(id).is_none_or(|entity| {
+                    entity.seldom.mind_control.house_original_owner != Some(selected)
+                })
             {
                 continue;
             }
@@ -662,8 +666,8 @@ impl Simulation {
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 // Native writes AFTER the entire virtual ChangeOwner. The
                 // shared Techno half has already cleared its old +2E0.
-                entity.mind_control.house_original_owner = (!restore).then_some(selected);
-                entity.mind_control.house_controller = (!restore).then_some(incoming);
+                entity.seldom.mind_control.house_original_owner = (!restore).then_some(selected);
+                entity.seldom.mind_control.house_controller = (!restore).then_some(incoming);
             }
         }
     }
@@ -730,13 +734,13 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(controller_id) = self
             .substrate
             .entities
             .get(id)
-            .and_then(|victim| victim.mind_control.controller)
+            .and_then(|victim| victim.seldom.mind_control.controller)
         else {
             return;
         };
@@ -813,7 +817,7 @@ impl Simulation {
         target_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         self.capture_unit_with_ring(
             controller_id,
@@ -838,7 +842,7 @@ impl Simulation {
         target_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(controller) = self.substrate.entities.get(controller_id) else {
             return false;
@@ -906,7 +910,7 @@ impl Simulation {
         ring_anim: Option<&str>,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !self.can_capture(controller_id, target_id, rules) {
             return false;
@@ -953,12 +957,12 @@ impl Simulation {
         // unchanged house, which CanCapture already excluded.
         self.announce_controlled_building(target_id, controller_owner, rules);
         self.change_owner_with_rules(target_id, controller_owner, rules, registry, frame_effects);
-        if let Some(manager) = self
-            .substrate
-            .entities
-            .get_mut(controller_id)
-            .and_then(|controller| controller.capture_manager.as_mut())
-        {
+        let controller = self.substrate.entities.get_mut(controller_id);
+        // A node's victim is a name the pointer-expiry index reads.
+        if let Some(manager) = controller.and_then(|controller| {
+            let _ = controller.note_names();
+            controller.capture_manager.as_mut()
+        }) {
             manager.nodes.push(ControlNode {
                 victim: target_id,
                 original_owner,
@@ -969,10 +973,10 @@ impl Simulation {
             });
         }
         if let Some(target) = self.substrate.entities.get_mut(target_id) {
-            target.mind_control.controller = Some(controller_id);
+            target.seldom.mind_control.controller = Some(controller_id);
         }
         self.reset_captured_orders(target_id, rules, frame_effects);
-        self.decide_unit_fate(controller_id, target_id, rules, registry, frame_effects);
+        self.decide_unit_fate(controller_id, target_id, rules, frame_effects);
         let ring = ring_anim
             .filter(|name| {
                 let upper = name.to_ascii_uppercase();
@@ -1029,19 +1033,19 @@ impl Simulation {
         house: InternedId,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if let Some(controller) = self
             .substrate
             .entities
             .get(id)
-            .and_then(|object| object.mind_control.controller)
+            .and_then(|object| object.seldom.mind_control.controller)
         {
             self.free_unit(controller, id, rules, registry, frame_effects);
         }
         self.change_owner_with_rules(id, house, rules, registry, frame_effects);
         if let Some(object) = self.substrate.entities.get_mut(id) {
-            object.mind_control.permanent = true;
+            object.seldom.mind_control.permanent = true;
         }
         if let Some(ring) = rules.mind_control.perma_controlled_anim.as_deref() {
             self.attach_control_ring(id, ring, rules);
@@ -1063,7 +1067,7 @@ impl Simulation {
         house: InternedId,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(object) = self.substrate.entities.get(id) else {
             return false;
@@ -1078,17 +1082,17 @@ impl Simulation {
         {
             return false;
         }
-        if let Some(controller) = object.mind_control.controller {
+        if let Some(controller) = object.seldom.mind_control.controller {
             self.free_unit(controller, id, rules, registry, frame_effects);
         }
         self.change_owner_with_rules(id, house, rules, registry, frame_effects);
         let ring = self.substrate.entities.get_mut(id).and_then(|object| {
-            object.mind_control.permanent = true;
+            object.seldom.mind_control.permanent = true;
             crate::sim::mission::authority::queue_entity_mission_deferred(
                 object,
                 MissionId::from_known(MissionType::Guard),
             );
-            object.mind_control.ring_anim.take()
+            object.seldom.mind_control.ring_anim.take()
         });
         if let Some(ring) = ring {
             self.destroy_anim(ring, rules);
@@ -1114,20 +1118,20 @@ impl Simulation {
         ring: Option<&str>,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if let Some(controller) = self
             .substrate
             .entities
             .get(id)
-            .and_then(|object| object.mind_control.controller)
+            .and_then(|object| object.seldom.mind_control.controller)
         {
             self.free_unit(controller, id, rules, registry, frame_effects);
         }
         self.change_owner_with_rules(id, house, rules, registry, frame_effects);
         let old_ring = self.substrate.entities.get_mut(id).and_then(|object| {
-            object.mind_control.permanent = permanent;
-            object.mind_control.ring_anim.take()
+            object.seldom.mind_control.permanent = permanent;
+            object.seldom.mind_control.ring_anim.take()
         });
         if let Some(old_ring) = old_ring {
             self.destroy_anim(old_ring, rules);
@@ -1141,8 +1145,8 @@ impl Simulation {
     /// and UnInit's the ring after any controller's FreeUnit has finished.
     pub(crate) fn clear_permanent_control_and_ring(&mut self, id: u64, rules: &RuleSet) {
         let ring = self.substrate.entities.get_mut(id).and_then(|object| {
-            object.mind_control.permanent = false;
-            object.mind_control.ring_anim.take()
+            object.seldom.mind_control.permanent = false;
+            object.seldom.mind_control.ring_anim.take()
         });
         if let Some(ring) = ring {
             self.destroy_anim(ring, rules);
@@ -1164,7 +1168,7 @@ impl Simulation {
         detonation: ProjectileDetonation,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let initial = self.projectiles.current_detonation(detonation);
         let Some(firer) = self.substrate.entities.get(initial.source_id) else {
@@ -1197,14 +1201,14 @@ impl Simulation {
         // 46927A reads Object+90, not HP. EDI retains this original actor;
         // neither a changed bullet target nor an Alive reread replaces it.
         if let Some((actor, true)) = actor {
-            let context =
-                crate::sim::world::UninitContext::new(rules, registry).with_effects(frame_effects);
+            let mut context =
+                crate::sim::world::UninitContext::new(rules).with_effects(frame_effects);
             if self.dispatch_object_tag_event(
                 actor,
                 6,
                 Some(actor),
                 Some(initial.source_id),
-                context,
+                context.reborrow(),
             ) {
                 // 4692A2 rereads Bullet+B0 after event 6. PointerExpired
                 // may have cleared it; the dispatcher also rereads the Tag.
@@ -1245,7 +1249,7 @@ impl Simulation {
         ) {
             return;
         }
-        let Some(sound) = rules.mind_control.mind_control_sound.clone() else {
+        let Some(sound) = rules.mind_control.mind_control_sound.as_deref() else {
             return;
         };
         // 4692F0 rereads the bullet source after CaptureUnit's callbacks.
@@ -1291,7 +1295,7 @@ impl Simulation {
         };
         let (rx, ry, sub_x, sub_y, _) = location.to_cell_sub_z();
         self.sound_events.emit(SimSoundEvent::VocAt {
-            sound_id: sound,
+            sound_id: rules.sound_name(sound),
             audible_to: Some([firer_owner, target_owner.unwrap_or(firer_owner)]),
             rx,
             ry,
@@ -1308,7 +1312,7 @@ impl Simulation {
         &mut self,
         target_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(target) = self.substrate.entities.get(target_id) else {
             return;
@@ -1381,7 +1385,7 @@ impl Simulation {
             }
         };
         if let Some(target) = self.substrate.entities.get_mut(target_id) {
-            target.mind_control.ring_anim = Some(anim_id);
+            target.seldom.mind_control.ring_anim = Some(anim_id);
         }
         if building {
             self.substrate
@@ -1398,12 +1402,16 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        let Some(ring) = entity.mind_control.ring_anim else {
+        let Some(ring) = entity.seldom.mind_control.ring_anim else {
             return;
         };
         let owner = entity.owner();
-        let disguised = entity.disguise.as_ref().is_some_and(|d| d.is_disguised());
-        if disguised && self.session.game_mode().is_network() {
+        let disguised = entity
+            .seldom
+            .disguise
+            .as_ref()
+            .is_some_and(|d| d.is_disguised());
+        if disguised && self.session.execution_topology().is_lockstep() {
             self.substrate
                 .set_anim_viewer_hidden(ring, vec![(owner, false)], true);
             return;
@@ -1420,7 +1428,7 @@ impl Simulation {
         victim_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(manager) = self
             .substrate
@@ -1445,17 +1453,17 @@ impl Simulation {
                 .substrate
                 .entities
                 .get_mut(victim_id)
-                .and_then(|victim| victim.mind_control.ring_anim.take())
+                .and_then(|victim| victim.seldom.mind_control.ring_anim.take())
             {
                 self.destroy_anim(ring, rules);
             }
             if let Some(victim) = self.substrate.entities.get(victim_id) {
                 let sound = self
                     .object_type(victim.type_ref(), rules)
-                    .and_then(|object| object.mind_cleared_sound.clone())
-                    .or_else(|| rules.mind_control.mind_cleared_sound.clone());
+                    .and_then(|object| object.mind_cleared_sound.as_deref())
+                    .or(rules.mind_control.mind_cleared_sound.as_deref());
                 if let Some(sound) = sound {
-                    let event = SimSoundEvent::voc_at(sound, &victim.position);
+                    let event = SimSoundEvent::voc_at(rules.sound_name(sound), &victim.position);
                     self.sound_events.emit(event);
                 }
             }
@@ -1463,11 +1471,9 @@ impl Simulation {
             self.announce_controlled_building(victim_id, original_owner, rules);
             self.change_owner_with_rules(victim_id, original_owner, rules, registry, frame_effects);
             // DecideUnitFate runs while `+0x2C0` still names the controller.
-            // Back with its own house, the unit cannot join the controller's
-            // team, so its fate needs no map overlays.
-            self.decide_unit_fate(controller_id, victim_id, rules, None, frame_effects);
+            self.decide_unit_fate(controller_id, victim_id, rules, frame_effects);
             if let Some(victim) = self.substrate.entities.get_mut(victim_id) {
-                victim.mind_control.controller = None;
+                victim.seldom.mind_control.controller = None;
             }
             if let Some(manager) = self
                 .substrate
@@ -1489,7 +1495,7 @@ impl Simulation {
         controller_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let victims: Vec<u64> = self
             .substrate
@@ -1519,8 +1525,7 @@ impl Simulation {
         controller_id: u64,
         unit_id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(unit) = self.substrate.entities.get(unit_id) else {
             return;
@@ -1546,7 +1551,7 @@ impl Simulation {
         let strength = object.strength;
         // 0x00472405: an OpenTopped unit's passengers drop their targets
         // (`0x00710550(unit, 0)`).
-        self.open_topped_passengers_take_target(unit_id, None, rules, registry, frame_effects);
+        self.open_topped_passengers_take_target(unit_id, None, rules, frame_effects);
         let Some(unit) = self.substrate.entities.get(unit_id) else {
             return;
         };
@@ -1591,10 +1596,7 @@ impl Simulation {
             return;
         };
         let mut choice = i32::from(choice);
-        let controller_team = self
-            .team_script_vm
-            .team_for_member(controller_id)
-            .map(|(team_id, _)| team_id);
+        let controller_team = self.team_script_vm.team_of(controller_id);
         if let Some(decision) = controller_team
             .and_then(|team_id| self.team_script_vm.mind_control_decision(team_id))
             .filter(|&decision| decision != 0)
@@ -1609,24 +1611,19 @@ impl Simulation {
             && !changed_house
             && unit_is_foot
             && let Some(team_id) = controller_team
-            && self.team_add_member(team_id, unit_id, true, rules, registry, frame_effects)
+            && self.team_add_member(team_id, unit_id, true, rules, frame_effects)
         {
             return;
         }
         // 47260E..47261D ->4725E5: preserve PutInGrinder's Eaten and
         // destination on success; only a failed seek falls through to Hunt.
-        if choice == 2
-            && unit_is_foot
-            && self.foot_enter_grinder(unit_id, rules, registry, frame_effects)
-        {
+        if choice == 2 && unit_is_foot && self.foot_enter_grinder(unit_id, rules, frame_effects) {
             return;
         }
         // `0x0047261F..0x0047262E` -> `0x004725E5`: 3 "Put in Bio Reactor"
         // keeps the seek's orders when it found one (a building's vt+0x340
         // is the `0x00459E00` stub, false); otherwise the unit hunts.
-        if choice == 3
-            && unit_is_foot
-            && self.foot_enter_bio_reactor(unit_id, rules, registry, frame_effects)
+        if choice == 3 && unit_is_foot && self.foot_enter_bio_reactor(unit_id, rules, frame_effects)
         {
             return;
         }
@@ -1693,7 +1690,7 @@ impl Simulation {
         controller_id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let table = &rules.mind_control;
         // Only an infinite manager overloads; checking it before the
@@ -1771,9 +1768,9 @@ impl Simulation {
         );
         self.commit_direct_damage_receiver(rules, overlay_registry, event, frame_effects);
         if !sound_played {
-            if let Some(sound) = rules.mind_control.overload_sound.clone() {
+            if let Some(sound) = rules.mind_control.overload_sound.as_deref() {
                 self.sound_events
-                    .emit(SimSoundEvent::voc_at(sound, &position));
+                    .emit(SimSoundEvent::voc_at(rules.sound_name(sound), &position));
             }
             if let Some(manager) = self
                 .substrate
@@ -1856,6 +1853,6 @@ fn capture_decision(table: &[i32], roll: i32) -> Option<u8> {
     None
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "capture_manager_tests.rs"]
 mod tests;

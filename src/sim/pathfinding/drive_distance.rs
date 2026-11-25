@@ -151,7 +151,7 @@ pub fn drive_distances(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::{test_clear_cell, test_grid, zone_class};

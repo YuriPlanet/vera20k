@@ -26,7 +26,7 @@ fn update_all_matches_native() {
         sim.update_ion_blasts(
             &RuleSet::from_ini(&crate::rules::ini_parser::IniFile::empty()).unwrap(),
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         let left: Vec<[i64; 2]> = row["left"]
             .as_array()
@@ -102,7 +102,7 @@ fn counted_action94_uses_ground_then_real_frame_damage_and_cleanup() {
     );
     sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
     sim.session.publish_started();
-    sim.advance_triggers(&rules, None, FrameEffects::default());
+    sim.advance_triggers(&rules, None, &mut FrameEffects::default());
     assert!(sim.trigger_local_is_set_for_test(0));
     assert_eq!(
         sim.ion_blasts().collect::<Vec<_>>(),
@@ -164,7 +164,7 @@ fn water_selects_last_splash_and_only_raw100_adds_a_deck_area() {
         terrain.write_native_cell_flags(cell, flags);
         assert!(sim.trigger_ion_blast(1));
         let (_, areas) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
-            sim.update_ion_blasts(&rules, None, FrameEffects::default())
+            sim.update_ion_blasts(&rules, None, &mut FrameEffects::default())
         });
         assert_eq!(areas.len(), area_count);
         let names: Vec<_> = sim
@@ -230,9 +230,7 @@ fn retail_loaded_tank_uses_the_shared_numeric_kernel_and_frame_table() {
     assert!(ion_roots.iter().all(|name| roots.contains(name)));
     // Exercise the production binder, including its native constructor-only
     // type admission. Successful binding need not imply a physical SHP.
-    rules
-        .bind_scheduler_anim_assets(&ion_roots, &assets, "TEM", "TEMPERATE")
-        .expect("retail IonBlast/IonBeam roots bind through the production owner");
+    rules.bind_scheduler_anim_assets(&ion_roots, &assets, "TEM", "TEMPERATE");
     rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
     rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
     assert_eq!(rules.general.ion_cannon_damage, 751);
@@ -300,8 +298,8 @@ fn pending_damaging_blasts_survive_save_and_hash_while_visual_blasts_do_not() {
         [([128, 128, 0], 8)]
     );
     let rules = rules();
-    sim.update_ion_blasts(&rules, None, FrameEffects::default());
-    restored.update_ion_blasts(&rules, None, FrameEffects::default());
+    sim.update_ion_blasts(&rules, None, &mut FrameEffects::default());
+    restored.update_ion_blasts(&rules, None, &mut FrameEffects::default());
     assert_eq!(sim.state_hash(), restored.state_hash());
     let mut entity =
         crate::sim::game_entity::GameEntity::test_default(1, "TANK", "Americans", 20, 20);
@@ -414,7 +412,7 @@ fn ares_ion_cannon_warhead_replaces_the_blast_and_its_lifetime() {
     sim.ares_apply_ripples([5248, 5248, 0], rules.warhead("ICWH").unwrap());
     sim.ares_apply_ripples([1000, 1000, 0], rules.warhead("RIPPLE").unwrap());
     let (_, areas) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
-        sim.update_ion_blasts(&rules, None, FrameEffects::default())
+        sim.update_ion_blasts(&rules, None, &mut FrameEffects::default())
     });
     assert_eq!(
         areas
@@ -429,13 +427,13 @@ fn ares_ion_cannon_warhead_replaces_the_blast_and_its_lifetime() {
         .collect();
     assert_eq!(names, ["ALTBEAM"]);
     for _ in 0..3 {
-        sim.update_ion_blasts(&rules, None, FrameEffects::default());
+        sim.update_ion_blasts(&rules, None, &mut FrameEffects::default());
     }
     assert_eq!(
         sim.ion_blasts().collect::<Vec<_>>(),
         [([5248, 5248, 0], 4), ([1000, 1000, 0], 4)]
     );
-    sim.update_ion_blasts(&rules, None, FrameEffects::default());
+    sim.update_ion_blasts(&rules, None, &mut FrameEffects::default());
     assert_eq!(
         sim.ion_blasts().collect::<Vec<_>>(),
         [([1000, 1000, 0], 5)],

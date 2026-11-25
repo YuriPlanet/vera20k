@@ -32,6 +32,16 @@ impl CoreLoadSampler {
     }
 }
 
+/// The logical cores this process may run on, then the system's, from the
+/// process affinity mask: a launcher, a tool or a compatibility setting can
+/// leave a game fewer than the PC has. Windows only; `None` elsewhere.
+pub(crate) fn allowed_cores() -> Option<(u32, u32)> {
+    #[cfg(windows)]
+    return platform::allowed_cores();
+    #[cfg(not(windows))]
+    None
+}
+
 fn core_loads(previous: &[CoreTicks], now: &[CoreTicks]) -> Option<Vec<f32>> {
     if now.is_empty() || previous.len() != now.len() {
         return None;
@@ -114,6 +124,29 @@ mod platform {
             length: u32,
             returned: *mut u32,
         ) -> i32;
+    }
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetCurrentProcess() -> isize;
+        fn GetProcessAffinityMask(
+            process: isize,
+            process_mask: *mut usize,
+            system_mask: *mut usize,
+        ) -> i32;
+    }
+
+    /// The set bits of the process's affinity mask and of the system's. A
+    /// process in several processor groups reads zero masks: no answer.
+    /// https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getprocessaffinitymask
+    pub(super) fn allowed_cores() -> Option<(u32, u32)> {
+        let (mut process, mut system) = (0usize, 0usize);
+        // SAFETY: the pseudo-handle needs no closing, and both out-pointers
+        // are live locals of DWORD_PTR's size.
+        let read =
+            unsafe { GetProcessAffinityMask(GetCurrentProcess(), &mut process, &mut system) };
+        (read != 0 && process != 0 && system != 0)
+            .then(|| (process.count_ones(), system.count_ones()))
     }
 
     pub(super) fn core_ticks() -> Option<Vec<super::CoreTicks>> {
@@ -221,7 +254,7 @@ mod platform {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::{CoreTicks, core_loads, core_ticks_from_proc_stat};
 

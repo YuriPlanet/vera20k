@@ -127,7 +127,7 @@ fn airstrike_primary_fire_keeps_the_existing_secondary_action() {
     }) {
         let mut store = pair();
         let firer = store.get_mut(1).unwrap();
-        firer.airstrike.set_test_link(Some(1));
+        firer.seldom.airstrike.set_test_link(Some(1));
         firer
             .mission_leaf
             .set_infantry_doing_verified(row["current_doing"].as_i64().unwrap() as i32)
@@ -175,6 +175,7 @@ fn infantry_refused_or_reloading_does_not_snap() {
             store
                 .get_mut(1)
                 .unwrap()
+                .seldom
                 .rearm_timer
                 .set_for_test(crate::sim::timer::CdTimer::started(100, 20));
         }
@@ -305,7 +306,7 @@ fn jumpjet_fire_precedes_airstrike_retained_action() {
     use crate::sim::movement::infantry_action::DO_FIRE_FLY;
     let (mut store, rules) = rocketeer_pair();
     let firer = store.get_mut(1).unwrap();
-    firer.airstrike.set_test_link(Some(1));
+    firer.seldom.airstrike.set_test_link(Some(1));
     firer.mission_leaf.set_infantry_doing_verified(40).unwrap();
     firer
         .attack_target
@@ -503,7 +504,7 @@ fn production_zero_delay_shot_and_restore_use_new_heading() {
     // Body FacingClass is already serialized/hashed; no second stored heading.
     let mut restored = restore_production_pair(&sim, &rules);
     // Native Scenario load reseeds its RNG; compare against that load state.
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     assert_eq!(sim.state_hash(), restored.state_hash());
     for _ in 0..4 {
         sim.advance_tick(&[], Some(&rules), None, None, 67);
@@ -537,6 +538,7 @@ fn cell_and_building_fire_headings_match_original_coordinate_getters() {
                 let mut target = make_structure_entity(2, "TARGET", 8, 5, 125, 125);
                 // Construction stamps the type's `Foundation=2x3`.
                 target
+                    .seldom
                     .type_facts
                     .set_foundation_for_test("2x3".to_string().into());
                 store.insert(target);
@@ -566,7 +568,7 @@ fn production_firing_latch_restores_heading_and_reaches_emission() {
     let body = entity.body_facing;
     assert!(sim.fire_events.is_empty());
     let mut restored = restore_production_pair(&sim, &rules);
-    sim.scenario_rng = SimRng::new(0); // Native Scenario load reseed.
+    *sim.scenario_rng = SimRng::new(0); // Native Scenario load reseed.
     assert_eq!(sim.state_hash(), restored.state_hash());
     for _ in 0..24 {
         sim.advance_tick(&[], Some(&rules), None, None, 67);
@@ -617,11 +619,12 @@ fn production_attack_during_paid_walk_step_case(boosted: bool) {
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let command = |sim: &mut Simulation, command: Command| {
         assert!(sim.apply_command_with_overlays(
+            None,
             "Americans",
             &command,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
     };
     let frame = |sim: &mut Simulation| {
@@ -692,7 +695,7 @@ fn production_attack_during_paid_walk_step_case(boosted: bool) {
     assert!(!entity.move_sound.is_active());
     assert_eq!(entity.move_sound.countdown(), 3);
     let mut resumed = restore_production_pair(&sim, &rules);
-    sim.scenario_rng = SimRng::new(0); // Native Scenario load reseeds this stream.
+    *sim.scenario_rng = SimRng::new(0); // Native Scenario load reseeds this stream.
     let loaded_sound = resumed.substrate.entities.get(firer).unwrap().move_sound;
     assert!(!loaded_sound.is_active());
     assert_eq!(loaded_sound.countdown(), 0);

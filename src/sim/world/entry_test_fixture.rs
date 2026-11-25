@@ -52,16 +52,16 @@ pub(crate) fn fixture_with_rules_and_fixed_art(
     // building the derived table, including types first spawned after load.
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.playfield_bounds = Some(parts.bounds);
+    *sim.playfield_bounds = Some(parts.bounds);
     // Map Size height, which map load installs with the bounds
     // (`install_playfield_from_map_header`).
-    sim.playfield_size_height = Some(16);
+    *sim.playfield_size_height = Some(16);
     sim.session.set_map_width_for_test(33);
     sim.session.set_map_height_for_test(33);
-    sim.overlay_grid = Some(OverlayGrid::new(33, 33));
-    sim.bridge_state = Some(parts.bridges.clone());
-    sim.zone_grid = Some(parts.zones.clone().into());
-    sim.path_grid = Some(Arc::new(parts.path.clone()));
+    *sim.overlay_grid = Some(OverlayGrid::new(33, 33));
+    *sim.bridge_state = Some(parts.bridges.clone());
+    *sim.zone_grid = Some(parts.zones.clone().into());
+    *sim.path_grid = Some(Arc::new(parts.path.clone()));
     sim.install_resolved_terrain_for_new_map(terrain);
     // Map load also sizes the ore queue stores from the same `[Map] Size`
     // rect (`initialize_native_tiberium_queues`); this map holds no ore.
@@ -74,17 +74,16 @@ pub(crate) fn fixture_with_rules_and_fixed_art(
     for p in [(15, 15), (16, 15), (17, 14), (17, 15), (17, 16)] {
         assert!(crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             (p.0, p.1),
-            sim.playfield_bounds,
+            *sim.playfield_bounds,
             sim.resolved_terrain.as_ref()
         ));
     }
-    (sim, rules, parts.registry.clone())
+    (sim, rules, parts.rules.overlay_registry().clone())
 }
 
-/// The rules, overlay registry and map of one entry fixture.
+/// The rules and map of one entry fixture.
 struct FixtureParts {
     rules: RuleSet,
-    registry: crate::rules::overlay_types::OverlayTypeRegistry,
     bounds: crate::map::playfield::PlayfieldBounds,
     terrain: ResolvedTerrainGrid,
     bridges: BridgeRuntimeState,
@@ -113,7 +112,6 @@ impl FixtureParts {
         ini.merge(&IniFile::from_str(extra));
         let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, art).unwrap();
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(art));
-        let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(art));
         let mut terrain = ResolvedTerrainGrid::from_cells(
             33,
             33,
@@ -154,7 +152,6 @@ impl FixtureParts {
         assert!(zones.hierarchy_for(MovementZone::Normal).is_some());
         Self {
             rules,
-            registry,
             bounds,
             terrain,
             bridges,

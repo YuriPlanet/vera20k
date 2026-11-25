@@ -8,7 +8,7 @@ struct Camera {
     world_height: f32,
     pad0: f32,
     native_z_origin_y: f32,
-    native_z_pad: f32,
+    native_z_pan: f32,
 };
 @group(0) @binding(0) var<uniform> camera: Camera;
 
@@ -96,7 +96,9 @@ fn vs_main(@builtin(vertex_index) idx: u32, instance: Instance) -> VertexOutput 
 fn vs_depth(@builtin(vertex_index) idx: u32, instance: Instance) -> VertexOutput {
     var output = vertex_impl(idx, instance);
     output.position.z = compatibility_depth_on_native_axis(
-        instance.depth, camera.camera_pos.y + camera.native_z_origin_y, camera.world_origin_y, camera.world_height);
+        instance.depth,
+        native_z_origin_row(camera.camera_pos.y + camera.native_z_origin_y, camera.native_z_pan),
+        camera.world_origin_y, camera.world_height);
     return output;
 }
 

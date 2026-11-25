@@ -5,7 +5,7 @@
 use super::GameEntity;
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::LocomotorKind;
-use crate::rules::object_type::ObjectCategory;
+use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::DeliveryType;
 use crate::sim::components::DriveCoord;
@@ -14,6 +14,9 @@ use crate::sim::house_tracking::HouseTracking;
 use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::movement::{FacingClass, ground_pose};
 use crate::sim::world::{FrameEffects, Simulation, UninitContext};
+
+/// Only the live type store can request a fresh projection for a registered actor.
+pub(in crate::sim) struct LiveTypeStore(());
 
 impl Simulation {
     /// Installed Ares TechnoClass_Update1004B320..1004B39C, hooked at6F9E50:
@@ -24,7 +27,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
@@ -64,23 +67,34 @@ impl Simulation {
     /// team script actions 44 and 45 (`0x006E94AA`, `0x006E9511`) write
     /// nothing else, and Ares' visceroid merge
     /// (`UnitClass_UpdatePosition_Visceroid @ 1004C530`) only Health besides.
-    /// The Type facts VERA caches, which native reads from the Type, follow;
-    /// house tracking and Health are left as native leaves them.
-    pub(crate) fn store_techno_type(
+    /// The Type facts VERA caches, which native reads from the Type, follow
+    /// ([`Self::replace_live_type`]), the locomotor's included; the locomotor
+    /// object itself, house tracking and Health are left as native leaves
+    /// them.
+    pub(crate) fn store_techno_type(&mut self, id: u64, destination: &ObjectType, rules: &RuleSet) {
+        self.replace_live_type(id, destination, rules);
+    }
+
+    /// Publish a registered actor's new type and refresh the facts read from
+    /// it, the locomotor's type caches included
+    /// ([`LocomotorState::rebind_type_caches`]).
+    fn replace_live_type(
         &mut self,
         id: u64,
-        destination: &crate::rules::object_type::ObjectType,
+        destination: &ObjectType,
         rules: &RuleSet,
-    ) {
+    ) -> Option<&mut GameEntity> {
         let new_type = self.interner.intern(&destination.id);
         // The new type is a new look for the presentation's atlas check.
         self.substrate.entities.note_look(id);
-        let Some(actor) = self.substrate.entities.get_mut(id) else {
-            return;
-        };
+        let actor = self.substrate.entities.get_mut(id)?;
         actor.type_ref = new_type;
         actor.is_voxel = GameEntity::object_uses_voxel(&destination.id, destination, rules);
-        actor.refresh_type_projection(Some(destination), rules);
+        actor.refresh_after_type_store(LiveTypeStore(()), destination, rules);
+        if let Some(locomotor) = actor.locomotor.as_mut() {
+            locomotor.rebind_type_caches(destination);
+        }
+        Some(actor)
     }
 
     pub(crate) fn convert_techno_type(
@@ -88,7 +102,7 @@ impl Simulation {
         id: u64,
         target: &DeliveryType,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
@@ -121,29 +135,15 @@ impl Simulation {
         {
             self.house_removed_from_game(id, rules, effects);
         }
-        Self::update_house_tracking(
-            &mut self.substrate,
-            &mut self.houses,
-            id,
-            HouseTracking::remove_tracking,
-        );
+        HouseTracking::unregister_object(&mut self.substrate, &mut self.houses, id);
 
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
         let health = ConversionHealth::capture_in_place(actor, source, destination);
-        let new_type = self.interner.intern(&destination.id);
-        // Native draw readers follow the new Type pointer at once; the
-        // presentation's atlas check reads the look log for the new model.
-        self.substrate.entities.note_look(id);
         let actor = self
-            .substrate
-            .entities
-            .get_mut(id)
+            .replace_live_type(id, destination, rules)
             .expect("retained conversion actor");
-        actor.type_ref = new_type;
-        actor.is_voxel = GameEntity::object_uses_voxel(&destination.id, destination, rules);
-        actor.refresh_type_projection(Some(destination), rules);
         // RESIDUAL: construction alone builds some Type-derived state, and
         // nothing here refreshes it: passenger capacity (PassengerCargo from
         // Passengers=/SizeLimit=), the SHP vehicle Animation component, the
@@ -154,12 +154,7 @@ impl Simulation {
         // converting a transport is the visible case, keeping its old capacity.
         crate::sim::miner::Miner::change_type_binding(&mut actor.miner, destination);
         health.apply(actor);
-        Self::update_house_tracking(
-            &mut self.substrate,
-            &mut self.houses,
-            id,
-            HouseTracking::add_tracking,
-        );
+        HouseTracking::register_object(&mut self.substrate, &mut self.houses, id);
         if self
             .substrate
             .entities
@@ -180,10 +175,7 @@ impl Simulation {
         if let Some(actor) = self.substrate.entities.get_mut(id) {
             actor.recompute_ares_attached_stats(rules, &self.interner);
         }
-        self.destroy_spotlight_for_parent(
-            id,
-            UninitContext::with_rules(rules).with_effects(effects),
-        );
+        self.destroy_spotlight_for_parent(id, UninitContext::new(rules).with_effects(effects));
         self.construct_spotlight(id, rules);
         let frame = self.session.binary_frame();
         let Some(actor) = self.substrate.entities.get_mut(id) else {

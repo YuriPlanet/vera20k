@@ -73,7 +73,7 @@ fn check_fill(row: &serde_json::Value, rules: &RuleSet) {
         for id in 10..10 + count {
             cargo.board_forced_chain(&[(id, 1.0)]);
         }
-        entity.passenger_role = PassengerRole::transport(cargo);
+        entity.set_passenger_role_for_test(PassengerRole::transport(cargo));
     }
     if let Some(slots) = input["storage"].as_array() {
         let total = int(&row["arithmetic"]["storage_total"]);
@@ -105,7 +105,7 @@ fn check_fill(row: &serde_json::Value, rules: &RuleSet) {
         // complete SLAV draw/lifecycle comparison or inventing new goldens.
         let mut slave_storage = entity.clone();
         slave_storage.miner = None;
-        slave_storage.slave = SlaveLink::for_test(None, bales);
+        slave_storage.seldom.slave = SlaveLink::for_test(None, bales);
         assert_eq!(
             slave_storage.techno_pip_fill_level(object, rules, None),
             int(&row["result"]),

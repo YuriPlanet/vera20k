@@ -132,15 +132,14 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
     for _ in 0..3_000 {
         let due = sim.take_due_commands();
         let visits = sim.production.factories().strip_visits_for_test(owner);
-        let effects = super::FrameEffects::default().with_production_strip(&visits, &|_| {});
+        let mut effects = super::FrameEffects::default().with_production_strip(&visits);
         let output = sim
             .advance_app_frame(
                 &due,
                 &rules,
-                Some(&registry),
                 TICK_MS,
                 super::TickLane::Ordinary,
-                effects,
+                &mut effects,
             )
             .expect("the ordinary app frame completes");
         let frame = sim.session.binary_frame();
@@ -163,7 +162,7 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
             match event {
                 super::SimSoundEvent::AnimationStarted {
                     anim_id, sound_id, ..
-                } if sound_id == "RocketeerMoveLoop" => {
+                } if sound_id.name_in(&rules) == "RocketeerMoveLoop" => {
                     if let Some(p) = products.iter_mut().find(|p| p.id == *anim_id) {
                         p.sound_starts += 1;
                     }
@@ -186,8 +185,11 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
             if product.placed_frame.is_none() {
                 product.placed_frame = Some(frame);
                 assert_eq!(json!(transmissions), golden["delivery_radio"], "{context}");
-                assert!(entity.tether.partner().is_some(), "{context}: tethered");
-                assert_eq!(entity.radio_contacts.slot(0), Some(producer));
+                assert!(
+                    entity.seldom.tether.partner().is_some(),
+                    "{context}: tethered"
+                );
+                assert_eq!(entity.seldom.radio_contacts.slot(0), Some(producer));
                 // 444CA3 skips the exit move and the Archive restore, so the
                 // Unlimbo idle handoff (Foot4D8472..852A) leaves a rally as
                 // the NavCom the Jumpjet already flies to; without one there is
@@ -211,7 +213,7 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
             if product.lift_off_frame.is_none() && runtime.phase() == STATE_ASCEND {
                 product.lift_off_frame = Some(frame);
                 assert!(
-                    entity.tether.partner().is_some(),
+                    entity.seldom.tether.partner().is_some(),
                     "{context}: still tethered when he leaves the ground"
                 );
             }
@@ -227,12 +229,16 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
                     golden["arrival_radio"],
                     "{context}"
                 );
-                assert!(entity.radio_contacts.is_empty() && entity.tether.partner().is_none());
+                assert!(
+                    entity.seldom.radio_contacts.is_empty()
+                        && entity.seldom.tether.partner().is_none()
+                );
                 assert!(
                     sim.substrate
                         .entities
                         .get(producer)
                         .unwrap()
+                        .seldom
                         .radio_contacts
                         .is_empty(),
                     "{context}: the barracks slot is free again"

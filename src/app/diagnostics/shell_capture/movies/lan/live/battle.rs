@@ -297,7 +297,7 @@ impl BattleOpening {
                 if simulation(state)?
                     .entities()
                     .get(id)
-                    .is_some_and(|e| e.selection.is_selected())
+                    .is_some_and(|e| e.seldom.selection.is_selected())
                 {
                     if host {
                         chat_key(state, KeyCode::KeyD, &Key::Character("d".into()), Some("d"));
@@ -817,15 +817,8 @@ impl BattleOpening {
                         .iter()
                         .copied()
                         .find(|&cell| {
-                            commands::ordinary_cell_move_goal(
-                                sim,
-                                rules,
-                                state.overlay_registry(),
-                                owner,
-                                id,
-                                cell,
-                                false,
-                            ) == Some(cell)
+                            commands::ordinary_cell_move_goal(sim, rules, owner, id, cell, false)
+                                == Some(cell)
                         })
                         .context("no legal ordinary GI Move into the former GAPILE foundation")?;
                     ground_order_with_mouse(state, id, goal)?;
@@ -911,8 +904,8 @@ impl BattleOpening {
         let actor = sim.entities().get(actor).context("firing paid GI")?;
         let target = sim.entities().get(target).context("shot paid GI")?;
         if target.health.current() < self.attack_health.context("Attack health baseline")?
-            && actor.rearm_timer.start_frame() >= admitted as i32
-            && actor.rearm_timer.duration() > 0
+            && actor.seldom.rearm_timer.start_frame() >= admitted as i32
+            && actor.seldom.rearm_timer.duration() > 0
         {
             ensure!(
                 actor.attack_target.target() == Some(TargetKind::Entity(target.stable_id())),
@@ -1040,7 +1033,7 @@ impl BattleOpening {
                     entity.attack_target.target().is_none()
                         && entity.navigation.nav_com().is_none()
                         && entity.navigation.suspended_nav_com().is_none()
-                        && entity.suspended_attack_target.target().is_none()
+                        && entity.seldom.suspended_attack_target.target().is_none()
                         && entity.navigation.nav_queue().is_empty(),
                     "executed raw Stop did not clear the ordinary GI's target/navigation references"
                 );
@@ -1130,8 +1123,8 @@ impl BattleOpening {
                 && observation
                     .attack_health
                     .is_some_and(|health| current.health < health)
-                && gi.rearm_timer.start_frame() >= attack_due as i32
-                && gi.rearm_timer.duration() > 0
+                && gi.seldom.rearm_timer.start_frame() >= attack_due as i32
+                && gi.seldom.rearm_timer.duration() > 0
             {
                 ensure!(
                     gi.attack_target.target() == Some(TargetKind::Entity(producer)),
@@ -1157,7 +1150,7 @@ impl BattleOpening {
                     );
                     ensure!(
                         gi.attack_target.target().is_none()
-                            && gi.suspended_attack_target.target().is_none()
+                            && gi.seldom.suspended_attack_target.target().is_none()
                             && gi.navigation.nav_com().is_none()
                             && gi.navigation.suspended_nav_com().is_none()
                             && gi.navigation.nav_queue().is_empty(),
@@ -1653,13 +1646,13 @@ impl BattleOpening {
                         .match_state
                         .match_presentation
                         .sidebar_projection
-                        .cameo_factory(sim, owner, e1)
+                        .model.cameo_factory(sim, owner, e1)
                         .is_some();
                     let cameo_present = state
                         .match_state
                         .match_presentation
                         .sidebar_projection
-                        .cameo_strips()
+                        .model.cameo_strips()
                         .items(crate::ui::sidebar::SidebarTab::for_category(
                             ProductionCategory::Infantry,
                         ))
@@ -2717,10 +2710,10 @@ fn combat_snapshot(state: &AppState, ids: [u64; 2], frame: u32) -> Result<Value>
             "deployed":entity.is_deployed(),"deploying":entity.infantry_deploy_doing(),
             "mission":entity.mission.current().raw(),"queued_mission":entity.mission.queued().raw(),
             "target":entity.attack_target.target(),"destination":entity.navigation.nav_com(),
-            "suspended_target":entity.suspended_attack_target.target(),
+            "suspended_target":entity.seldom.suspended_attack_target.target(),
             "suspended_destination":entity.navigation.suspended_nav_com(),
             "nav_queue":entity.navigation.nav_queue(),
-            "rearm_start":entity.rearm_timer.start_frame(),"rearm_duration":entity.rearm_timer.duration()}));
+            "rearm_start":entity.seldom.rearm_timer.start_frame(),"rearm_duration":entity.seldom.rearm_timer.duration()}));
     }
     Ok(json!({"native_frame":frame,"entities":entities}))
 }
@@ -2730,7 +2723,7 @@ fn gi_rally_snapshot(entity: &crate::sim::game_entity::GameEntity, frame: u32) -
     json!({"native_frame":frame,"id":entity.stable_id(),"position":entity.position,
         "archive":entity.archive_target(),"destination":entity.navigation.nav_com(),
         "mission":entity.mission.current().raw(),"queued_mission":entity.mission.queued().raw(),
-        "tether":entity.tether.partner(),"radio_partner":entity.radio_contacts.slot(0),
+        "tether":entity.seldom.tether.partner(),"radio_partner":entity.seldom.radio_contacts.slot(0),
         "walk_moving":walk.and_then(|walk| walk.walk_is_moving()),
         "walk_destination":walk.and_then(|walk| walk.walk_destination()),
         "step_head":walk.and_then(|walk| walk.step_head())})
@@ -2883,15 +2876,9 @@ fn legal_move_cell(state: &AppState, actor: u64, desired: (u16, u16)) -> Result<
         ) else {
             continue;
         };
-        if let Some(cell) = commands::ordinary_cell_move_goal(
-            sim,
-            rules,
-            state.overlay_registry(),
-            owner,
-            actor,
-            (x, y),
-            false,
-        ) && cell == (x, y)
+        if let Some(cell) =
+            commands::ordinary_cell_move_goal(sim, rules, owner, actor, (x, y), false)
+            && cell == (x, y)
         {
             return Ok(cell);
         }
@@ -3025,7 +3012,15 @@ pub(super) fn prepare_latency_view(state: &mut AppState) -> Result<(u64, (u16, u
     let id = entity.stable_id();
     let from = (entity.position.rx(), entity.position.ry());
     select_entity(state, id)?;
-    crate::app::input::camera::center_camera_on_cell(state, from.0, from.1);
+    crate::app::input::camera::center_camera_on_cell(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state,
+        &state.persistence,
+        from.0,
+        from.1,
+    );
     let world = ground_world_point(state, from)?;
     point_at_world(state, world);
     Ok((id, from))
@@ -3053,7 +3048,13 @@ pub(super) fn latency_move_with_mouse(
     let input = &state.match_state.input;
     let camera = (input.camera_x, input.camera_y);
     let zoom = input.zoom_level;
-    let viewport = crate::app::input::camera::tactical_viewport_px(state);
+    let viewport = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let offsets = [(6, 0), (-6, 0), (0, 6), (0, -6)];
     let to = offsets
         .into_iter()
@@ -3093,7 +3094,13 @@ pub(super) fn latency_move_with_mouse(
         world,
         (input.camera_x, input.camera_y),
         input.zoom_level,
-        crate::app::input::camera::tactical_viewport_px(state),
+        crate::app::input::camera::tactical_viewport_px(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+        ),
     )?;
     point_at_cursor(state, cursor);
     let before = simulation(state)?.pending_local_command_count();
@@ -3304,9 +3311,7 @@ pub(super) fn selected_move_with_mouse(
         }
     }
     point_at_ground(state, chosen.context("empty ground for mass Move")?)?;
-    for edge in [ElementState::Pressed, ElementState::Released] {
-        dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-    }
+    left_click_timed(state);
     Ok(())
 }
 
@@ -3507,7 +3512,15 @@ fn planning_rally_with_mouse(state: &mut AppState, id: u64, cell: (u16, u16)) ->
 
 fn point_at_ground(state: &mut AppState, cell: (u16, u16)) -> Result<()> {
     let world = ground_world_point(state, cell)?;
-    crate::app::input::camera::center_camera_on_cell(state, cell.0, cell.1);
+    crate::app::input::camera::center_camera_on_cell(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state,
+        &state.persistence,
+        cell.0,
+        cell.1,
+    );
     point_at_world(state, world);
     Ok(())
 }
@@ -3666,7 +3679,7 @@ fn cameo(state: &mut AppState, type_id: &str, right: bool) -> Result<()> {
             .match_state
             .match_presentation
             .sidebar_projection
-            .cameo_strips()
+            .model.cameo_strips()
             .items(*tab)
             .iter()
             .any(|cameo| cameo.id == CameoId::Object(id))),
@@ -3696,9 +3709,7 @@ fn click_entity(state: &mut AppState, id: u64) -> Result<()> {
             .get(id)
             .map(|entity| entity.position)
     );
-    for edge in [ElementState::Pressed, ElementState::Released] {
-        dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-    }
+    left_click_timed(state);
     Ok(())
 }
 
@@ -3710,7 +3721,15 @@ fn point_at_entity(state: &mut AppState, id: u64) -> Result<Option<u64>> {
     let cell = (entity.position.rx(), entity.position.ry());
     let world = crate::app::input::entity_pick::presented(state, simulation(state)?)
         .screen_position(entity);
-    crate::app::input::camera::center_camera_on_cell(state, cell.0, cell.1);
+    crate::app::input::camera::center_camera_on_cell(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state,
+        &state.persistence,
+        cell.0,
+        cell.1,
+    );
     point_at_world(state, world);
     let sim = simulation(state)?;
     Ok(crate::app::input::entity_pick::hover_object_at_point(
@@ -3758,7 +3777,7 @@ fn placement_cursor(state: &AppState, yard: u64, type_id: &str) -> Result<(u16, 
     anyhow::bail!("no legal {type_id} placement near deployed yard")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod identity_tests {
     use super::*;
     use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext};

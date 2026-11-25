@@ -148,8 +148,7 @@ fn the_players_apocalypse_marks_its_target_for_fourteen_frames() {
     assert_eq!(lit(shot + 14), second, "the 14th render");
     assert!(at(shot + 15).is_empty(), "the timer ran out");
 
-    sim.entities_mut_for_test()
-        .get_mut(apoc)
+    sim.entity_mut_for_test(apoc)
         .unwrap()
         .attack_target
         .set_for_test(None);

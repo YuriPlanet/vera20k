@@ -144,7 +144,7 @@ fn techno_curtain_scales_by_the_type_modifier() {
         EntityCategory::Unit,
         None,
         101,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(curtain_left(&sim, target), 151);
 }
@@ -160,7 +160,7 @@ fn permanent_mind_control_captures_and_skips_the_area_damage() {
     shoot(&mut sim, &rules, firer, target, 100);
     let captured = sim.entities().get(target).unwrap();
     assert_eq!(captured.owner(), sim.entities().get(firer).unwrap().owner());
-    assert!(captured.mind_control.permanent());
+    assert!(captured.seldom.mind_control.permanent());
     assert_eq!(captured.health.current(), 1000);
 
     let immune = self::rules("MindControl.Permanent=yes\n", "ImmuneToPsionics=yes\n", "");
@@ -184,7 +184,6 @@ fn disable_weapons_duration_holds_fire_with_rearm() {
         super::fire_error_world::FireSubject {
             world: sim,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer: actor,
             obj: rules.object("TARGET").unwrap(),
@@ -206,12 +205,13 @@ fn disable_weapons_duration_holds_fire_with_rearm() {
             arg6: false,
         },
     );
-    let _ = sim.commit_direct_damage_receiver(&rules, None, event, FrameEffects::default());
+    let _ = sim.commit_direct_damage_receiver(&rules, None, event, &mut FrameEffects::default());
     assert_eq!(fire_error(&sim), FireError::Rearm);
     let timer = sim
         .entities()
         .get(target)
         .unwrap()
+        .seldom
         .ares
         .ares_disable_weapons;
     assert_eq!(timer.remaining(sim.session.binary_frame() as i32), 40);
@@ -238,13 +238,15 @@ fn sonar_duration_extends_the_sonar_timer() {
                 arg6: false,
             },
         );
-        let _ = sim.commit_direct_damage_receiver(&rules, None, event, FrameEffects::default());
+        let _ =
+            sim.commit_direct_damage_receiver(&rules, None, event, &mut FrameEffects::default());
     };
     let left = |sim: &Simulation| {
         let frame = sim.session.binary_frame() as i32;
         sim.entities()
             .get(target)
             .unwrap()
+            .seldom
             .ares
             .sonar_timer
             .remaining(frame)
@@ -255,6 +257,7 @@ fn sonar_duration_extends_the_sonar_timer() {
         .entities
         .get_mut(target)
         .unwrap()
+        .seldom
         .ares
         .sonar_timer
         .start(sim.session.binary_frame() as i32, 90);
@@ -296,7 +299,7 @@ fn inf_death_anim_replaces_the_table_and_takes_the_invoker_house() {
             arg6: false,
         },
     );
-    let _ = sim.commit_direct_damage_receiver(&rules, None, event, FrameEffects::default());
+    let _ = sim.commit_direct_damage_receiver(&rules, None, event, &mut FrameEffects::default());
     let goo = sim.interner.get("GOO").expect("anim type interned");
     let anims: Vec<_> = sim
         .substrate
@@ -357,7 +360,8 @@ fn inf_death_table_anim_takes_its_make_infantry_owner() {
                 arg6: false,
             },
         );
-        let _ = sim.commit_direct_damage_receiver(&rules, None, event, FrameEffects::default());
+        let _ =
+            sim.commit_direct_damage_receiver(&rules, None, event, &mut FrameEffects::default());
         let flame = sim.interner.get("FLAME").expect("anim type interned");
         let anims: Vec<_> = sim
             .substrate
@@ -394,7 +398,6 @@ fn immune_to_berserk_overrides_the_psychedelic_fire_error() {
         let code = super::fire_error_world::FireSubject {
             world: &sim,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer: sim.entities().get(firer).unwrap(),
             obj: rules.object("FIRER").unwrap(),

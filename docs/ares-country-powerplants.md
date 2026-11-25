@@ -1,8 +1,9 @@
 # Ares country AI power plants
 
-Build with `--features ares`. Ares replaces how a computer house picks the
-power plant it splices into its base plan when it runs short of power, and
-`[Country] AI.PowerPlants=` lists that house's candidates.
+Ares replaces how a computer house picks the power plant it splices into its
+base plan when it runs short of power, and `[Country] AI.PowerPlants=` lists
+that house's candidates. Every build does this in a game that ships `ares.mix`
+([Ares](ares.md)); other games keep the stock pick.
 
 | Key | Resolution |
 | --- | --- |
