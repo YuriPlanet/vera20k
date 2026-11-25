@@ -9,6 +9,9 @@ import android.view.RoundedCorner
 import android.view.WindowInsets
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.ShortcutInfo
+import android.content.pm.ShortcutManager
+import android.graphics.drawable.Icon
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.ConnectivityManager
@@ -36,6 +39,12 @@ class VeraActivity : NativeActivity() {
     private companion object {
         /** Unique within this activity; "VR" in ASCII. */
         const val REQUEST_PICK_FOLDER = 0x5652
+
+        /** The Mods page's system file manager pickers. */
+        const val REQUEST_IMPORT_MOD = 0x5653
+        const val REQUEST_EXPORT_MOD = 0x5654
+        const val REQUEST_MOD_ZIP = 0x5655
+        const val REQUEST_MOD_FOLDER = 0x5656
 
         /** A retail installation is about 1.5 GB; leave headroom for the copy. */
         const val REQUIRED_BYTES = 1700L shl 20
@@ -99,6 +108,116 @@ class VeraActivity : NativeActivity() {
 
     /** JNI: the top inset. */
     fun displayInsetTop(): Int = displayInsetTop
+    /** The folder an export picker is waiting for; empty when none is. */
+    private var pendingExport = ""
+
+    /** A mod part a picker copied in, waiting for the engine to take it. */
+    @Volatile
+    private var pickedModPart = ""
+
+    /** Lets the player pick a mod ZIP; the copy lands in `tmp/`. */
+    fun pickModZip(): Boolean {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/zip"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/zip", "application/x-zip-compressed"))
+        }
+        return try {
+            startActivityForResult(intent, REQUEST_MOD_ZIP)
+            true
+        } catch (error: Throwable) {
+            android.util.Log.w("Vera20k", "no picker for a mod zip: $error")
+            false
+        }
+    }
+
+    /** Lets the player pick a mod folder; the copy lands in `tmp/`. */
+    fun pickModFolder(): Boolean {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+            )
+        }
+        return try {
+            startActivityForResult(intent, REQUEST_MOD_FOLDER)
+            true
+        } catch (error: Throwable) {
+            android.util.Log.w("Vera20k", "no picker for a mod folder: $error")
+            false
+        }
+    }
+
+    /** The part a picker copied in, once; `app::shell_mod_import` takes it. */
+    fun takePickedModPart(): String {
+        val part = pickedModPart
+        pickedModPart = ""
+        return part
+    }
+
+    /**
+     * Imports a mod: the system picker chooses a folder, which is copied into
+     * the app's own `Mods` folder. The activity owns that storage, so the copy
+     * runs here and reports with a toast.
+     */
+    fun importMod(): Boolean {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+            )
+        }
+        return try {
+            startActivityForResult(intent, REQUEST_IMPORT_MOD)
+            true
+        } catch (error: Throwable) {
+            android.util.Log.w("Vera20k", "no folder picker for import: $error")
+            false
+        }
+    }
+
+    /** Exports `folder` from the app's `Mods` into a picked folder. */
+    fun exportMod(folder: String): Boolean {
+        pendingExport = folder
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+            )
+        }
+        return try {
+            startActivityForResult(intent, REQUEST_EXPORT_MOD)
+            true
+        } catch (error: Throwable) {
+            android.util.Log.w("Vera20k", "no folder picker for export: $error")
+            false
+        }
+    }
+
+    /** Adds a home-screen shortcut that starts this activity on `folder`. */
+    fun pinMod(folder: String): Boolean {
+        val manager = getSystemService(ShortcutManager::class.java) ?: return false
+        if (!manager.isRequestPinShortcutSupported) return false
+        val launch = Intent(this, VeraActivity::class.java).apply {
+            action = Intent.ACTION_MAIN
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            putExtra(EXTRA_ENTRY, "mod:$folder")
+        }
+        val shortcut = ShortcutInfo.Builder(this, "mod:$folder")
+            .setShortLabel(folder.take(10))
+            .setLongLabel(folder)
+            .setIcon(Icon.createWithResource(this, R.mipmap.ic_launcher_retail))
+            .setIntent(launch)
+            .build()
+        return try {
+            manager.requestPinShortcut(shortcut, null)
+            true
+        } catch (error: Throwable) {
+            android.util.Log.w("Vera20k", "could not pin $folder: $error")
+            false
+        }
+    }
 
     /**
      * The entry a launcher shortcut asked for (`mod:<folder>`), read once.
@@ -153,11 +272,184 @@ class VeraActivity : NativeActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQUEST_PICK_FOLDER) return
-        val tree = if (resultCode == Activity.RESULT_OK) data?.data else null
-        // An empty string, not null: the native side reads it as "cancelled"
-        // without needing a second callback shape.
-        nativeOnFolderPicked(tree?.toString() ?: "")
+        when (requestCode) {
+            REQUEST_PICK_FOLDER -> {
+                val tree = if (resultCode == Activity.RESULT_OK) data?.data else null
+                // An empty string, not null: the native side reads it as
+                // "cancelled" without needing a second callback shape.
+                nativeOnFolderPicked(tree?.toString() ?: "")
+            }
+            REQUEST_IMPORT_MOD -> {
+                val tree = if (resultCode == Activity.RESULT_OK) data?.data else null
+                if (tree != null) importModTree(tree)
+            }
+            REQUEST_EXPORT_MOD -> {
+                val tree = if (resultCode == Activity.RESULT_OK) data?.data else null
+                val folder = pendingExport
+                pendingExport = ""
+                if (tree != null && folder.isNotEmpty()) exportModTree(tree, folder)
+            }
+            REQUEST_MOD_ZIP -> {
+                val uri = if (resultCode == Activity.RESULT_OK) data?.data else null
+                if (uri != null) pickModZipInto(uri)
+            }
+            REQUEST_MOD_FOLDER -> {
+                val tree = if (resultCode == Activity.RESULT_OK) data?.data else null
+                if (tree != null) pickModFolderInto(tree)
+            }
+        }
+    }
+
+    private fun toast(text: String) {
+        android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    private fun treeName(tree: Uri): String {
+        val id = DocumentsContract.getTreeDocumentId(tree)
+        return id.substringAfterLast('/').substringAfterLast(':').ifBlank { "Mod" }
+    }
+
+    /** Copies the picked tree into `filesDir/Mods/<name>`, off the UI thread. */
+    private fun importModTree(tree: Uri) {
+        Thread {
+            val ok = try {
+                val mods = File(filesDir, "Mods").apply { mkdirs() }
+                var name = treeName(tree)
+                var dest = File(mods, name)
+                var suffix = 2
+                while (dest.exists()) {
+                    dest = File(mods, "$name $suffix")
+                    suffix += 1
+                }
+                copyTreeTo(tree, dest)
+                true
+            } catch (error: Throwable) {
+                android.util.Log.w("Vera20k", "mod import failed: $error")
+                false
+            }
+            runOnUiThread { toast(if (ok) "Mod imported" else "Mod import failed") }
+        }.start()
+    }
+
+    private fun tmpPart(name: String): File =
+        File(filesDir, "tmp").apply { mkdirs() }.let { File(it, name) }
+
+    private fun pickModZipInto(uri: Uri) {
+        Thread {
+            val ok = try {
+                val target = tmpPart("mod-import-${System.currentTimeMillis()}.zip")
+                contentResolver.openInputStream(uri)?.use { input ->
+                    target.outputStream().use { input.copyTo(it) }
+                } ?: error("no stream")
+                pickedModPart = target.absolutePath
+                true
+            } catch (error: Throwable) {
+                android.util.Log.w("Vera20k", "mod zip pick failed: $error")
+                false
+            }
+            runOnUiThread { toast(if (ok) "Mod ZIP picked" else "Mod ZIP failed") }
+        }.start()
+    }
+
+    private fun pickModFolderInto(tree: Uri) {
+        Thread {
+            val ok = try {
+                val target = tmpPart("mod-import-${System.currentTimeMillis()}")
+                copyTreeTo(tree, target)
+                pickedModPart = target.absolutePath
+                true
+            } catch (error: Throwable) {
+                android.util.Log.w("Vera20k", "mod folder pick failed: $error")
+                false
+            }
+            runOnUiThread { toast(if (ok) "Mod folder picked" else "Mod folder failed") }
+        }.start()
+    }
+
+    private fun copyTreeTo(tree: Uri, dest: File) {
+        dest.mkdirs()
+        val rootId = DocumentsContract.getTreeDocumentId(tree)
+        copyTreeChildren(tree, rootId, dest)
+    }
+
+    private fun copyTreeChildren(tree: Uri, documentId: String, dir: File) {
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, documentId)
+        contentResolver.query(
+            children,
+            arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+            ),
+            null,
+            null,
+            null,
+        )?.use { cursor ->
+            while (cursor.moveToNext()) {
+                val id = cursor.getString(0)
+                val name = cursor.getString(1)
+                val mime = cursor.getString(2)
+                if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                    val sub = File(dir, name)
+                    sub.mkdirs()
+                    copyTreeChildren(tree, id, sub)
+                } else {
+                    val source = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                    contentResolver.openInputStream(source)?.use { input ->
+                        File(dir, name).outputStream().use { input.copyTo(it) }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Copies `filesDir/Mods/<folder>` into the picked tree, off the UI thread. */
+    private fun exportModTree(tree: Uri, folder: String) {
+        Thread {
+            val ok = try {
+                val source = File(File(filesDir, "Mods"), folder)
+                require(source.isDirectory) { "no such mod: $folder" }
+                val parentId = DocumentsContract.getTreeDocumentId(tree)
+                val parent = DocumentsContract.buildDocumentUriUsingTree(tree, parentId)
+                val created = DocumentsContract.createDocument(
+                    contentResolver,
+                    parent,
+                    DocumentsContract.Document.MIME_TYPE_DIR,
+                    folder,
+                ) ?: error("the picker made no folder")
+                copyDirTo(source, tree, DocumentsContract.getDocumentId(created))
+                true
+            } catch (error: Throwable) {
+                android.util.Log.w("Vera20k", "mod export failed: $error")
+                false
+            }
+            runOnUiThread { toast(if (ok) "Mod exported" else "Mod export failed") }
+        }.start()
+    }
+
+    private fun copyDirTo(source: File, tree: Uri, parentId: String) {
+        val parent = DocumentsContract.buildDocumentUriUsingTree(tree, parentId)
+        for (child in source.listFiles().orEmpty()) {
+            if (child.isDirectory) {
+                val made = DocumentsContract.createDocument(
+                    contentResolver,
+                    parent,
+                    DocumentsContract.Document.MIME_TYPE_DIR,
+                    child.name,
+                ) ?: continue
+                copyDirTo(child, tree, DocumentsContract.getDocumentId(made))
+            } else {
+                val made = DocumentsContract.createDocument(
+                    contentResolver,
+                    parent,
+                    "application/octet-stream",
+                    child.name,
+                ) ?: continue
+                contentResolver.openOutputStream(made)?.use { output ->
+                    child.inputStream().use { it.copyTo(output) }
+                }
+            }
+        }
     }
 
     /** Implemented in `android/src/lib.rs`; the import flow's entry. */

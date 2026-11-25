@@ -1422,7 +1422,7 @@ impl App {
         if Self::shell_menu_pointer(state, Some(down)) && down {
             return;
         }
-        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        #[cfg(any(windows, target_os = "macos", target_os = "linux", target_os = "android"))]
         super::shell_mod_import::sync(state);
         let parts = shell_layout::shell_box_parts(&state.renderer.gpu, &shell_box);
         let id = Self::shell_box_pointer(
@@ -1435,7 +1435,7 @@ impl App {
             Some(down),
         );
         // Add Mod's More and reorder buttons act inside the box.
-        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        #[cfg(any(windows, target_os = "macos", target_os = "linux", target_os = "android"))]
         if let Some(id) = id
             && super::shell_mod_import::is_preview_button(id)
         {
@@ -1446,7 +1446,7 @@ impl App {
             Self::resolve_shell_message_box(state, answer);
             return;
         }
-        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        #[cfg(any(windows, target_os = "macos", target_os = "linux", target_os = "android"))]
         super::shell_mod_import::follow_list(state);
     }
 
@@ -1553,7 +1553,7 @@ impl App {
                 &dir,
                 yes,
             ),
-            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            #[cfg(any(windows, target_os = "macos", target_os = "linux", target_os = "android"))]
             Purpose::ModImport(dialog) => Self::answer_mod_import(state, *dialog, answer),
         }
     }
@@ -2017,7 +2017,7 @@ impl App {
         Self::raise_shell_message_box(&mut state.frontend);
         // Add Mod's boxes keep Enter from cancelling the choice or a running
         // import: it answers OK, or nothing while the import prepares.
-        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        #[cfg(any(windows, target_os = "macos", target_os = "linux", target_os = "android"))]
         if key == vera20k_gui::Key::Enter
             && let Some(activate) =
                 super::shell_mod_import::enter(state.frontend.shell_message_box.as_ref())

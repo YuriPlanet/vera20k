@@ -174,6 +174,12 @@ impl App {
         let enabled = [
             (mods_shell::USE, mods.switch_to(selected).is_some()),
             (mods_shell::CHECK, mods.picked_is_mod(selected)),
+            #[cfg(target_os = "android")]
+            (mods_shell::DELETE, Self::picked_folder(state).is_some()),
+            #[cfg(target_os = "android")]
+            (mods_shell::OPEN_FOLDER, Self::picked_folder(state).is_some()),
+            #[cfg(target_os = "android")]
+            (mods_shell::PIN, Self::picked_folder(state).is_some()),
         ];
         let rect_of = |id| layout.rect_of(id);
         let nodes = mods_shell::nodes;
@@ -195,8 +201,15 @@ impl App {
                 &state.process_assets,
                 &state.persistence.options_profile,
             ),
-            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            #[cfg(any(windows, target_os = "macos", target_os = "linux", target_os = "android"))]
             Some(mods_shell::ADD) => Self::open_add_mod(state),
+            #[cfg(target_os = "android")]
+            Some(mods_shell::DELETE) => Self::delete_picked_mod(state),
+            #[cfg(target_os = "android")]
+            Some(mods_shell::PIN) => Self::pin_picked_mod(state),
+            #[cfg(target_os = "android")]
+            Some(mods_shell::OPEN_FOLDER) => Self::export_picked_mod(state),
+            #[cfg(not(target_os = "android"))]
             Some(mods_shell::OPEN_FOLDER) => Self::open_mods_folder(
                 &state.platform,
                 &state.renderer,
@@ -220,6 +233,100 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    /// The folder of the row the list has selected, if it is a mod.
+    #[cfg(target_os = "android")]
+    fn picked_folder(state: &AppState) -> Option<String> {
+        let selected = Self::mods_selected(&state.frontend.shell_controller)?;
+        state
+            .frontend
+            .mods
+            .page
+            .as_ref()?
+            .get(selected)?
+            .folder
+            .clone()
+    }
+
+    /// Android: Delete Mod. The app owns the folder, so it removes it here and
+    /// says what came of it; the page stays on the list it now shows.
+    #[cfg(target_os = "android")]
+    pub(super) fn delete_picked_mod(state: &mut AppState) {
+        let Some(folder) = Self::picked_folder(state) else {
+            return;
+        };
+        let dir = state
+            .platform
+            .game_config
+            .as_ref()
+            .map(|config| config.paths.mods_dir().join(&folder));
+        let text = match dir.map(|dir| (std::fs::remove_dir_all(&dir), dir)) {
+            Some((Ok(()), dir)) => {
+                log::info!("Mods: deleted {}", dir.display());
+                tr_fill("VERA:ModDeleted", &[("mod", &folder)])
+            }
+            Some((Err(error), dir)) => {
+                log::warn!("Mods: could not delete {}: {error}", dir.display());
+                tr("VERA:ModActionFailed").to_string()
+            }
+            None => tr("VERA:ModActionFailed").to_string(),
+        };
+        Self::refresh_mods_page(state);
+        Self::open_shell_notice(
+            &state.platform.window,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+            text,
+        );
+    }
+
+    /// Android: Export Mod, through the system file manager.
+    #[cfg(target_os = "android")]
+    pub(super) fn export_picked_mod(state: &mut AppState) {
+        let Some(folder) = Self::picked_folder(state) else {
+            return;
+        };
+        if !crate::util::mod_actions::export(&folder) {
+            log::warn!("Mods: no export hook for {folder}");
+            Self::mod_action_failed(state);
+        }
+    }
+
+    /// Android: Add Desktop Entry, a home-screen shortcut for this folder.
+    #[cfg(target_os = "android")]
+    pub(super) fn pin_picked_mod(state: &mut AppState) {
+        let Some(folder) = Self::picked_folder(state) else {
+            return;
+        };
+        if !crate::util::mod_actions::pin(&folder) {
+            log::warn!("Mods: no shortcut hook for {folder}");
+            Self::mod_action_failed(state);
+        }
+    }
+
+    /// Android: Import Mod, a folder the system file manager copies in.
+    #[cfg(target_os = "android")]
+    pub(super) fn import_mod(state: &mut AppState) {
+        if !crate::util::mod_actions::import() {
+            log::warn!("Mods: no import hook");
+            Self::mod_action_failed(state);
+        }
+    }
+
+    /// The one line a failed platform action shows.
+    #[cfg(target_os = "android")]
+    fn mod_action_failed(state: &mut AppState) {
+        Self::open_shell_notice(
+            &state.platform.window,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+            tr("VERA:ModActionFailed").to_string(),
+        );
     }
 
     /// Open Mods Folder. Where no file manager starts, say where the folder
@@ -566,7 +673,18 @@ impl App {
         Self::select_installed_mod(state, &made.folder);
         let files = made.copied.join(", ");
         let text = tr_fill("VERA:ModMade", &[("mod", &made.folder), ("files", &files)]);
-        let (open, close) = (tr("VERA:ModOpenItsFolder"), tr("VERA:Close"));
+        // Android has no file manager path into the app's folder, so the box
+        // only reports the folder it made.
+        #[cfg(target_os = "android")]
+        Self::open_shell_notice(
+            &state.platform.window,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+            text,
+        );
+        #[cfg(not(target_os = "android"))]
         Self::open_mods_box(
             &state.platform.window,
             &state.renderer,
@@ -574,8 +692,8 @@ impl App {
             &state.process_assets,
             &state.persistence.options_profile,
             text,
-            open,
-            close,
+            tr("VERA:ModOpenItsFolder"),
+            tr("VERA:Close"),
             ShellMessageBoxPurpose::ModMade(made.dir),
         );
     }
@@ -601,7 +719,11 @@ impl App {
         dir: &std::path::Path,
         open: bool,
     ) {
-        if open && !crate::app::web_link::open_folder(dir) {
+        if !open {
+            return;
+        }
+        #[cfg(not(target_os = "android"))]
+        if !crate::app::web_link::open_folder(dir) {
             Self::show_folder_is_here(
                 window,
                 renderer,
@@ -611,6 +733,8 @@ impl App {
                 dir,
             );
         }
+        #[cfg(target_os = "android")]
+        let _ = (window, renderer, frontend, process_assets, options_profile, dir);
     }
 
     /// The page is gone and the route is the main menu's again. Back builds

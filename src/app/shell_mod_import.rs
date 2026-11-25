@@ -82,7 +82,7 @@ impl Selection {
             listed: None,
             selected: None,
             top: 0,
-            can_browse: mod_import_picker::available(),
+            can_browse: mod_import_picker::available() || crate::util::mod_actions::picker_available(),
             choosing_kind: false,
             error: None,
         }
@@ -325,6 +325,8 @@ pub(crate) fn node(state: &AppState) -> Option<NodeId> {
 /// row and top, the selected row in view; keeps it on its rect and its
 /// rows' text cut to the row.
 pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
+    #[cfg(target_os = "android")]
+    App::drain_picked_part(state);
     let (selection, layout, dialog) = preview_box(state)?;
     let rect = list_rect(&layout);
     let (rows, selected, top) = (selection.rows.len(), selection.selected, selection.top);
@@ -536,7 +538,28 @@ impl App {
         Self::show_import_selection(state, Selection::new());
     }
 
-    fn show_import_selection(state: &mut AppState, selection: Selection) {
+    /// Android: a ZIP or folder the system file manager copied in joins the
+/// selection, and its box is rebuilt with the preview's buttons.
+#[cfg(target_os = "android")]
+fn drain_picked_part(state: &mut AppState) {
+    let Some(path) = crate::util::mod_actions::take_picked() else {
+        return;
+    };
+    let Some(shell) = state.frontend.shell_message_box.take() else {
+        return;
+    };
+    let crate::app::frontend::state::ShellMessageBoxPurpose::ModImport(dialog) = shell.purpose else {
+        state.frontend.shell_message_box = Some(shell);
+        return;
+    };
+    let Dialog::Select(mut selection) = *dialog else {
+        return;
+    };
+    selection.add(vec![path]);
+    Self::show_import_selection(state, selection);
+}
+
+fn show_import_selection(state: &mut AppState, selection: Selection) {
         let shell_box = selection.shell_box();
         Self::show_import_box(
             &state.platform.window,
@@ -686,24 +709,43 @@ impl App {
     fn browse_mod_parts(state: &mut AppState, mut selection: Selection, folders: bool) {
         crate::app::input::hardware_cursor::give_back_arrow(&mut state.platform);
         crate::app::input::cursor::release_cursor_confinement(&mut state.platform);
-        let window = &state.platform.window;
-        #[cfg(not(target_os = "macos"))]
-        let picked = if folders {
-            mod_import_picker::pick_folders(window, &tr("VERA:ModImportFolders"))
-        } else {
-            mod_import_picker::pick(window, &tr("VERA:ModAdd"))
-        };
-        #[cfg(target_os = "macos")]
-        let picked = {
-            let _ = folders;
-            mod_import_picker::pick(window, &tr("VERA:ModAdd"))
-        };
-        selection.choosing_kind = false;
-        match picked {
-            Ok(paths) => selection.add(paths),
-            Err(error) => selection.selection_error(error),
+        // Android picks through the system file manager, which answers later:
+        // the part arrives in [`drain_picked_part`] and joins the selection then.
+        #[cfg(target_os = "android")]
+        {
+            let opened = if folders {
+                crate::util::mod_actions::pick_folder()
+            } else {
+                crate::util::mod_actions::pick_zip()
+            };
+            if !opened {
+                selection.selection_error(std::io::Error::other("no file manager"));
+            }
+            selection.choosing_kind = false;
+            Self::show_import_selection(state, selection);
+            return;
         }
-        Self::show_import_selection(state, selection);
+        #[cfg(not(target_os = "android"))]
+        {
+            let window = &state.platform.window;
+            #[cfg(not(target_os = "macos"))]
+            let picked = if folders {
+                mod_import_picker::pick_folders(window, &tr("VERA:ModImportFolders"))
+            } else {
+                mod_import_picker::pick(window, &tr("VERA:ModAdd"))
+            };
+            #[cfg(target_os = "macos")]
+            let picked = {
+                let _ = folders;
+                mod_import_picker::pick(window, &tr("VERA:ModAdd"))
+            };
+            selection.choosing_kind = false;
+            match picked {
+                Ok(paths) => selection.add(paths),
+                Err(error) => selection.selection_error(error),
+            }
+            Self::show_import_selection(state, selection);
+        }
     }
 
     fn prepare_mod_import(

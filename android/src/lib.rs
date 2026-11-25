@@ -59,6 +59,69 @@ fn display_insets() -> vera20k::util::display_insets::Insets {
         }
     })
     .unwrap_or_default()
+    }
+
+/// Runs one of the activity's boolean folder actions (`()Z` or
+/// `(Ljava/lang/String;)Z`), false when it cannot.
+fn activity_flag(method: &str, arg: Option<&str>) -> bool {
+    with_activity(|env, activity| {
+        let result = match arg {
+            Some(value) => match env.new_string(value) {
+                Ok(value) => env.call_method(
+                    activity,
+                    method,
+                    "(Ljava/lang/String;)Z",
+                    &[(&value).into()],
+                ),
+                Err(_) => return false,
+            },
+            None => env.call_method(activity, method, "()Z", &[]),
+        };
+        result.and_then(|value| value.z()).unwrap_or(false)
+    })
+    .unwrap_or(false)
+}
+
+/// Mods page: export `folder` through the system file manager.
+fn mod_export(folder: &str) -> bool {
+    activity_flag("exportMod", Some(folder))
+}
+
+/// Mods page: import a folder the player picks.
+fn mod_import() -> bool {
+    activity_flag("importMod", None)
+}
+
+/// Mods page: pick a mod ZIP in the system file manager.
+fn mod_pick_zip() -> bool {
+    activity_flag("pickModZip", None)
+}
+
+/// Mods page: pick a mod folder in the system file manager.
+fn mod_pick_folder() -> bool {
+    activity_flag("pickModFolder", None)
+}
+
+/// The mod part a picker copied in, once.
+fn mod_take_picked() -> Option<String> {
+    with_activity(|env, activity| {
+        let value = env
+            .call_method(activity, "takePickedModPart", "()Ljava/lang/String;", &[])
+            .ok()?
+            .l()
+            .ok()?;
+        env.get_string(&JString::from(value))
+            .ok()
+            .map(|text| text.to_string_lossy().into_owned())
+    })
+    .flatten()
+    .filter(|part| !part.is_empty())
+}
+
+/// Mods page: add a home-screen shortcut for `folder`.
+fn mod_pin(folder: &str) -> bool {
+    activity_flag("pinMod", Some(folder))
+}
 
 /// The entry a launcher shortcut handed over (`VeraActivity.takeLaunchEntry`),
 /// read once: `mod:<folder>` picks that mod for this launch.
@@ -387,6 +450,16 @@ fn android_main(app: AndroidApp) {
     // draws there; the activity measures them and the engine moves in by them.
     vera20k::util::display_insets::install(vera20k::util::display_insets::Hooks {
         insets: display_insets,
+    });
+    // The Mods page cannot hand a path to a file manager on Android: export,
+    // import and the shortcut pin run in the activity.
+    vera20k::util::mod_actions::install(vera20k::util::mod_actions::Hooks {
+        export: mod_export,
+        import: mod_import,
+        pin: mod_pin,
+        pick_zip: mod_pick_zip,
+        pick_folder: mod_pick_folder,
+        take_picked: mod_take_picked,
     });
     // The launcher icon is a compiled resource, so the VERA Icon box's choice
     // reaches the two activity aliases only through PackageManager.

@@ -19,7 +19,10 @@ pub(crate) const OPEN_FOLDER: u16 = 0x7E32;
 pub(crate) const BACK: u16 = 0x7E33;
 pub(crate) const CHECK: u16 = 0x7E34;
 pub(crate) const NEW: u16 = 0x7E35;
-#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+/// Android: remove the selected mod's folder (the app owns it).
+pub(crate) const DELETE: u16 = 0x7E37;
+/// Android: add a home-screen shortcut for the selected mod.
+pub(crate) const PIN: u16 = 0x7E38;
 pub(crate) const ADD: u16 = 0x7E36;
 
 /// The Options button's caption and the page's heading.
@@ -54,22 +57,41 @@ pub(crate) fn nodes() -> NodeSpec {
 }
 
 /// The mod actions in the right column, Back on the bottom row.
+///
+/// Android has no file manager path into the app's storage: `ADD`'s desktop
+/// drag-and-drop is replaced by Import Mod inside New Mod, Open Folder becomes
+/// Export Mod through the system picker, and Delete and Add Desktop Entry join
+/// the column (`docs/android.md`).
+#[cfg(target_os = "android")]
+pub(crate) const ACTIONS: &[MenuPageButtonSpec] = &[
+    MenuPageButtonSpec::new(USE, 122, "VERA:ModUse", "VERA:ModUseHelp"),
+    MenuPageButtonSpec::new(CHECK, 149, "VERA:ModCheck", "VERA:ModCheckHelp"),
+    MenuPageButtonSpec::new(NEW, 176, "VERA:ModNew", "VERA:ModNewHelp"),
+    MenuPageButtonSpec::new(ADD, 203, "VERA:ModAdd", "VERA:ModAddHelp"),
+    MenuPageButtonSpec::new(OPEN_FOLDER, 230, "VERA:ModExport", "VERA:ModExportHelp"),
+    MenuPageButtonSpec::new(DELETE, 257, "VERA:ModDelete", "VERA:ModDeleteHelp"),
+    MenuPageButtonSpec::new(PIN, 284, "VERA:ModPin", "VERA:ModPinHelp"),
+];
+
+#[cfg(not(target_os = "android"))]
+pub(crate) const ACTIONS: &[MenuPageButtonSpec] = &[
+    MenuPageButtonSpec::new(USE, 122, "VERA:ModUse", "VERA:ModUseHelp"),
+    MenuPageButtonSpec::new(CHECK, 149, "VERA:ModCheck", "VERA:ModCheckHelp"),
+    MenuPageButtonSpec::new(NEW, 176, "VERA:ModNew", "VERA:ModNewHelp"),
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    MenuPageButtonSpec::new(ADD, 203, "VERA:ModAdd", "VERA:ModAddHelp"),
+    MenuPageButtonSpec::new(
+        OPEN_FOLDER,
+        230,
+        "VERA:ModsOpenFolder",
+        "VERA:ModsOpenFolderHelp",
+    ),
+];
+
 pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DIALOG,
     title_key: TITLE_KEY,
-    stacked: &[
-        MenuPageButtonSpec::new(USE, 122, "VERA:ModUse", "VERA:ModUseHelp"),
-        MenuPageButtonSpec::new(CHECK, 149, "VERA:ModCheck", "VERA:ModCheckHelp"),
-        MenuPageButtonSpec::new(NEW, 176, "VERA:ModNew", "VERA:ModNewHelp"),
-        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-        MenuPageButtonSpec::new(ADD, 203, "VERA:ModAdd", "VERA:ModAddHelp"),
-        MenuPageButtonSpec::new(
-            OPEN_FOLDER,
-            230,
-            "VERA:ModsOpenFolder",
-            "VERA:ModsOpenFolderHelp",
-        ),
-    ],
+    stacked: ACTIONS,
     back: MenuPageButtonSpec::new(BACK, 346, "GUI:Back", "STT:MsnDltButtonBack").returning(-1),
 };
 

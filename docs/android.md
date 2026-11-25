@@ -65,6 +65,25 @@ and add `-t x86_64` when you need it. Drop it for releases. On macOS/Linux, use
 for `CARGO_PROFILE_SHIPPING_STRIP`, and
 `./android/gradlew -p android :app:assembleDebug`.
 
+## The Mods page on Android
+
+The app owns its storage, so the Mods page's desktop actions do not apply: no
+file manager can open `files/Mods`, and drag-and-drop into the page is a desktop
+idea. The page keeps its list and Use This Mod / Check Files / New Mod, and the
+right column's remaining rows become Android's own:
+
+| Row | Action |
+|---|---|
+| Delete Mod | Removes the selected mod's folder with `std::fs::remove_dir_all`, which only the app can do, then refreshes the list and says so. Hint: "delete the selected mod folder". |
+| Export Mod | Hands the selected folder to the system file manager's folder picker (`VeraActivity.exportMod`), which copies it out as a new folder. Hint: "export the selected mod folder". |
+| Add Desktop Entry | `ShortcutManager.requestPinShortcut` pins a home-screen shortcut whose intent carries `mod:<folder>`, the entry the launch path already reads (`VeraActivity.pinMod`). Hint: "add a shortcut for the selected mod to the home screen". |
+
+New Mod's box offers Import Mod instead of Open Folder: the folder picker's
+result is copied into `files/Mods/<name>` (`VeraActivity.importMod`), and the box
+keeps Close. Import, export and pin all show a toast with their outcome; the
+engine reaches them through `util::mod_actions`, whose hooks only the Android
+crate installs.
+
 ## Launching a mod from a shortcut
 
 A launcher shortcut can start the game on one mod, without changing the

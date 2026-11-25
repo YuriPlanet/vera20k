@@ -5,6 +5,25 @@ use std::{io, path::PathBuf};
 
 use winit::window::Window;
 
+#[cfg(target_os = "android")]
+pub(super) const fn available() -> bool {
+    false
+}
+
+#[cfg(target_os = "android")]
+pub(super) fn pick(_window: &Window, _title: &str) -> io::Result<Vec<PathBuf>> {
+    Err(io::Error::other(
+        "the Android Add Mod dialog picks through the system file manager",
+    ))
+}
+
+#[cfg(target_os = "android")]
+pub(super) fn pick_folders(_window: &Window, _title: &str) -> io::Result<Vec<PathBuf>> {
+    Err(io::Error::other(
+        "the Android Add Mod dialog picks through the system file manager",
+    ))
+}
+
 #[cfg(any(windows, target_os = "macos"))]
 pub(super) const fn available() -> bool {
     true

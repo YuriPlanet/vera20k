@@ -323,7 +323,7 @@ impl ShellMessageBox {
     }
 
     pub(crate) fn is_mod_import(&self) -> bool {
-        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        #[cfg(any(windows, target_os = "macos", target_os = "linux", target_os = "android"))]
         return matches!(self.purpose, ShellMessageBoxPurpose::ModImport(_));
         #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
         false
@@ -381,7 +381,7 @@ pub(crate) enum ShellMessageBoxPurpose {
     /// original game, for the next start and starts the game again.
     ModRestart(Option<String>),
     /// ZIPs or extracted parts selected for Add Mod, or their import in progress.
-    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    #[cfg(any(windows, target_os = "macos", target_os = "linux", target_os = "android"))]
     ModImport(Box<crate::app::shell_mod_import::Dialog>),
     /// The Mods page's Check Files (`App::check_picked_mod`).
     ModFiles(ModFilesBox),

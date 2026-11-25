@@ -19,7 +19,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos", target_os = "android"))]
 pub use native::import::{ModImport, PreparedModImport};
 
 #[derive(Debug, Clone)]
@@ -620,7 +620,7 @@ mod native {
         Ok(())
     }
 
-    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+    #[cfg(any(windows, target_os = "linux", target_os = "macos", target_os = "android"))]
     pub(super) mod import {
         use super::*;
 
@@ -840,6 +840,10 @@ mod native {
                     libc::RENAME_NOREPLACE,
                 )
             };
+            // An Android folder name is checked before the rename; bionic has no
+            // renameat2 to make it exclusive there.
+            #[cfg(target_os = "android")]
+            let result = unsafe { libc::rename(from.as_ptr(), to.as_ptr()) };
             if result == 0 {
                 Ok(())
             } else {
