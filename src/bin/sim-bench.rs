@@ -111,7 +111,10 @@
 //! and updates each team on its own turns; `--serial-paths` searches in
 //! native order instead, and `--serial-scans` scans in native order, has
 //! every patrolling team scan on the same frame and updates every team every
-//! frame. The `path_batch` line sums the batch's passes over the
+//! frame. Each object's turn draws from its own random stream as in a real
+//! match (`sim::world::turn_streams`); `--shared-stream` draws every turn
+//! from the Scenario stream in Logic order, as gamemd does.
+//! The `path_batch` line sums the batch's passes over the
 //! measured frames ([`PathBatchStats`]): registrations waiting and answered,
 //! the ones the cap, a re-path budget or the urgency-2 limit left for a later
 //! pass (`capped` counts the limit's), and the cells the searches expanded,
@@ -209,6 +212,7 @@ struct Args {
     csv: Option<PathBuf>,
     serial_paths: bool,
     serial_scans: bool,
+    shared_stream: bool,
     no_sleep: bool,
     sleep_check: bool,
     frame_profile: bool,
@@ -260,6 +264,7 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
         csv: None,
         serial_paths: false,
         serial_scans: false,
+        shared_stream: false,
         no_sleep: false,
         sleep_check: false,
         frame_profile: false,
@@ -330,6 +335,7 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
             "--frame-hashes" => args.frame_hashes = Some(PathBuf::from(value()?)),
             "--client-timing" => args.client_timing = true,
             "--serial-scans" => args.serial_scans = true,
+            "--shared-stream" => args.shared_stream = true,
             "--no-sleep" => args.no_sleep = true,
             "--sleep-check" => args.sleep_check = true,
             "--presentation-frame" => args.presentation_frame = true,
@@ -1086,7 +1092,7 @@ fn main() -> Result<(), String> {
                  [--ticks 300 (match: 1800, skirmish: 9000, battle: 3000)] \
                  [--types E1,E2,MTNK,HTNK] [--order-spread 30] [--return-at T] (march) \
                  [--hash-every N] [--frame-hash-every 15] [--csv <path>] [--serial-paths] [--serial-scans] \
-                 [--frame-profile] [--lan] [--watchers N (skirmish)] [--frame-hashes <path>] \
+                 [--shared-stream] [--frame-profile] [--lan] [--watchers N (skirmish)] [--frame-hashes <path>] \
                  [--client-timing] [--threads N] [--battle-units 20000 (battle)] \
                  [--state-isolation-report <new.json> --prior-map <map> \
                  --isolation-mode lan|wol --isolation-humans 1|2]"
@@ -1148,6 +1154,10 @@ fn main() -> Result<(), String> {
     }
     // As a real match's handoff does (`app::loading::transitions`).
     scenario.runtime.simulation.present_effect_anims();
+    scenario
+        .runtime
+        .simulation
+        .separate_turn_streams(!args.shared_stream);
     scenario
         .runtime
         .simulation

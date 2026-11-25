@@ -66,6 +66,9 @@ mod steady_ai_tests;
 mod terrain_deformation;
 mod time_warp;
 mod trigger_chrono;
+mod turn_streams;
+#[cfg(all(test, tests_sim_world_t_z))]
+mod turn_streams_tests;
 mod type_tech_levels;
 mod voxel_anim_effects;
 pub(crate) use voxel_anim_effects::BounceContactDamage;
@@ -674,7 +677,9 @@ pub struct Simulation {
     /// wall/overlay damage, bridge collapse/destruction presentation, ore growth/spread, TIBTRE,
     /// anim scorch/50-50, miner-dock jitter, and the terminal score projection.
     /// The snapshot load policy decides whether to resume this cursor or apply
-    /// the native player-load reset. It is always hashed while live.
+    /// the native player-load reset. It is always hashed while live. With
+    /// turn streams on, a Logic slot's turn draws from its own generator,
+    /// held in this value while the turn runs (`turn_streams`).
     pub(crate) scenario_rng: Forked<SimRng>,
     /// Main/global RNG — gamemd `g_MainRng` (0x00886B88). This is a
     /// process-global cursor: it is neither part of ScenarioClass saves nor
@@ -880,6 +885,11 @@ pub struct Simulation {
     /// presentation anim (`anim_class::EffectAnims`); a new world makes every
     /// anim in native order. A save carries the setting.
     pub(crate) effect_anims: Forked<crate::sim::anim_class::EffectAnims>,
+    /// Whether each Logic slot's turn draws from its own stream
+    /// (`turn_streams`); a new world draws every turn from the Scenario
+    /// stream. A runtime setting: never saved, and a load turns it on again.
+    #[serde(skip)]
+    turn_streams: Forked<bool>,
     /// Retained native navigation base plane/raw movement rows plus the live
     /// derived hierarchy. ZoneGrid saves only its own retained base state;
     /// LoadContent67E8CD rebuilds hierarchy after bound Cell/object restoration.
