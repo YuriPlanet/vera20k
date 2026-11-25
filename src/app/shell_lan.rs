@@ -1195,7 +1195,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     // chat box sends the line.
     #[cfg(target_os = "android")]
     if pressed
-        && layout(state)
+        && layout(&state.renderer.gpu)
             .chat_send()
             .is_some_and(|rect| rect.contains(x, y))
     {
