@@ -74,6 +74,7 @@ class ScaleBenchTests(unittest.TestCase):
             spawn = (folder / 'spawn.ini').read_text(encoding='ascii')
             self.assertEqual((folder / 'spawnmap.ini').read_text(encoding='ascii'), '[Basic]\nName=Battle\n')
             self.assertIn('ra2_dir = "/retail \\"yr\\""', (folder / 'config.toml').read_text(encoding='utf-8'))
+            self.assertEqual((folder / 'VERA.INI').read_bytes(), b'')
         self.assertIn('PlayerCount=1\nAIPlayers=29\n', spawn)
         self.assertIn('Scenario=spawnmap.ini\n', spawn)
         for section in ('[HouseHandicaps]', '[HouseCountries]', '[HouseColors]'):

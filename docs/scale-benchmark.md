@@ -75,7 +75,9 @@ Both programs are built with the `shipping` profile, as released games are
   costs, and what the match service of one simulation frame costs (the tick's
   tail and the frame and world copy the next tick leaves for drawing, without
   the tick itself). Their sum is the client frame: one picture of one
-  simulation frame, whatever the picture and tick rates were.
+  simulation frame, whatever the picture and tick rates were. The picture is
+  1024x768 at the default zoom: the hidden window opens at VERA's launch size
+  (`VERA_LAUNCH_WINDOW_SIZE`), and a match draws at its window's size.
 
 Each figure is taken three times, each run under the build lock
 `tools.cargo_run` uses, so no cooperating Cargo build runs beside it. The
