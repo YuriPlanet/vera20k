@@ -104,9 +104,9 @@ fn rows(lines: &[LanChatLine]) -> HostRows {
 /// nodes ([`crate::app::input::surrender::sync`]).
 fn paint_surrender_box(state: &AppState) -> WolLobbyPaint {
     use crate::app::input::surrender::{self, BODY, SurrenderButton};
-    let layout = surrender::layout(state);
+    let layout = surrender::layout(&state.renderer, &state.frontend.screen);
     let mut paint = paint_box(state, layout.dialog);
-    let Some(root) = surrender::root(state) else {
+    let Some(root) = surrender::root(&state.match_state.match_presentation) else {
         return paint;
     };
     let text_of = |id: i32| -> Option<String> {
@@ -119,8 +119,14 @@ fn paint_surrender_box(state: &AppState) -> WolLobbyPaint {
         Some(state.csf_text(key))
     };
     let pressed_of = |id: i32| match id {
-        0x5AE => Some(surrender::pressed(state, SurrenderButton::Ok)),
-        2 => Some(surrender::pressed(state, SurrenderButton::Cancel)),
+        0x5AE => Some(surrender::pressed(
+            &state.match_state.match_presentation,
+            SurrenderButton::Ok,
+        )),
+        2 => Some(surrender::pressed(
+            &state.match_state.match_presentation,
+            SurrenderButton::Cancel,
+        )),
         _ => None,
     };
     let style = GuiStyle {

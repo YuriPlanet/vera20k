@@ -2,6 +2,7 @@
 //! actions.
 
 use super::*;
+use crate::app::presentation::state::MatchPresentationState;
 
 /// Where the command bar's twelve buttons take the pointer, in frame pixels
 /// (none: no button), and the thumb's id.
@@ -179,8 +180,8 @@ pub(super) fn apply(state: &mut AppState, id: u16, right: bool) -> bool {
 /// The bar's pushed looks. The PlanningMode button's look (slot 9) is the
 /// PlanMgr owner's mode, written every frame by
 /// `sidebar_gadgets::update_sidebar_gadget_state`.
-pub(super) fn publish(state: &mut AppState, pressed: [bool; 12]) {
-    let out = &mut state.match_state.match_presentation.sidebar_gadget_state;
+pub(super) fn publish(presentation: &mut MatchPresentationState, pressed: [bool; 12]) {
+    let out = &mut presentation.sidebar_gadget_state;
     out.command_pressed[..9].copy_from_slice(&pressed[..9]);
     out.command_pressed[10] = pressed[10];
     out.command_thumb_pressed = pressed[11];

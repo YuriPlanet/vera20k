@@ -83,7 +83,7 @@ pub(crate) fn advance_sidebar_credits(state: &mut AppState, visits: u64) {
     if visits == 0 {
         return;
     }
-    let Some(owner_name) = preferred_local_owner_name(state) else {
+    let Some(owner_name) = preferred_local_owner_name(&state.match_state) else {
         return;
     };
     let Some(sim) = state
@@ -339,7 +339,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     // The sidebar lays out on its own surface (`ui::sidebar::SidebarFrame`).
     let sidebar_frame = state.sidebar_frame();
     let visible_rows = sidebar::compute_layout_with_spec(spec, sidebar_frame).side2_tile_count;
-    let Some(owner_name) = preferred_local_owner_name(state) else {
+    let Some(owner_name) = preferred_local_owner_name(&state.match_state) else {
         state
             .match_state
             .match_presentation
@@ -495,7 +495,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     }
     if reconciled.build_inserted() {
         crate::app::input::dispatch::push_local_eva(
-            state,
+            &mut state.match_state.match_audio,
             crate::app::input::sidebar_eva::EVA_NEW_CONSTRUCTION_OPTIONS,
         );
         crate::app::input::messages::post_eva_new_construction(state);
@@ -784,7 +784,7 @@ fn build_view(
 /// RepaintSidebarFor2Frames 6A60E0 only set redraw flags and RedrawUntilFrame;
 /// VERA draws the sidebar every frame, so they have no port.
 pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
-    let Some(owner_name) = preferred_local_owner_name(state) else {
+    let Some(owner_name) = preferred_local_owner_name(&state.match_state) else {
         return;
     };
     // The entries' availability is the frame's (`presentation::frame`).
@@ -940,7 +940,13 @@ pub(crate) fn minimap_camera_target(
             view.simulation().map_size_diamond()?,
         ))
     });
-    let (tactical_w, tactical_h) = crate::app::input::camera::tactical_viewport_size(state);
+    let (tactical_w, tactical_h) = crate::app::input::camera::tactical_viewport_size(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     native_facts.and_then(|(terrain, map_size)| {
         minimap.native_click_target_in_rect(
             cursor_x,
@@ -1019,7 +1025,16 @@ pub(crate) fn update_camera_from_minimap_cursor(state: &mut AppState) {
         // together from the complete CellClass center XYZ. The camera owner
         // discards any pending scroll request when setting the absolute view.
         let (x, y, z) = target.world_leptons;
-        crate::app::input::camera::center_camera_on_lepton_point(state, x, y, z);
+        crate::app::input::camera::center_camera_on_lepton_point(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state,
+            &state.persistence,
+            x,
+            y,
+            z,
+        );
         return;
     }
     let rect = active_minimap_screen_rect(state);
@@ -1043,7 +1058,13 @@ pub(crate) fn update_camera_from_minimap_cursor(state: &mut AppState) {
     let sw = state.render_width() as f32;
     let sh = state.render_height() as f32;
     // A view centre becomes a camera position through the centring size.
-    let (tactical_w, tactical_h) = crate::app::input::camera::tactical_centring_size(state);
+    let (tactical_w, tactical_h) = crate::app::input::camera::tactical_centring_size(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let z = state.match_state.input.zoom_level;
     let (cx, cy) = minimap.camera_top_left_for_screen_point_in_rect(
         cursor_x,
@@ -1056,7 +1077,14 @@ pub(crate) fn update_camera_from_minimap_cursor(state: &mut AppState) {
         rect.h,
     );
     crate::app::input::camera::set_camera_position(&mut state.match_state.input, (cx, cy));
-    crate::app::input::camera::clamp_camera_to_playable_area(state, sw, sh);
+    crate::app::input::camera::clamp_camera_to_playable_area(
+        &state.platform,
+        &state.renderer,
+        &mut state.match_state,
+        &state.persistence,
+        sw,
+        sh,
+    );
 }
 
 /// Live generated-primary screen rectangle used by the retained input region.
@@ -1219,7 +1247,7 @@ pub(crate) fn current_sidebar_side(state: &AppState) -> i32 {
     let owner = if ares {
         None
     } else {
-        preferred_local_owner_name(state)
+        preferred_local_owner_name(&state.match_state)
     };
     project_sidebar_side(sim, owner.as_deref(), ares)
 }

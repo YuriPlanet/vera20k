@@ -55,7 +55,7 @@ impl App {
     /// Folder showed: list what `Mods` holds now. The picked row stays
     /// picked while its folder is there.
     pub(super) fn refresh_mods_page(state: &mut AppState) {
-        if crate::app::input::precedence::route_page(state)
+        if crate::app::input::precedence::route_page(&state.frontend)
             != crate::app::input::precedence::ScreenPage::Mods
         {
             return;

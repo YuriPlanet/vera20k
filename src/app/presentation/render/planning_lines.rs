@@ -51,7 +51,13 @@ pub(super) fn build(
         return (out, highlights);
     };
     let node = |id: Option<u64>| id.and_then(|id| graph.nodes.iter().find(|node| node.id == id));
-    let hovered = node(crate::app::input::planning_mode::hover_node(state));
+    let hovered = node(crate::app::input::planning_mode::hover_node(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ));
     let highlighted = node(state.match_state.input.planning.highlighted_node());
     let phase = stroke_phase(wall_ms);
     let color = |owner, bright| {

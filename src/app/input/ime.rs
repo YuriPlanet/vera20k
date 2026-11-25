@@ -109,7 +109,7 @@ impl ImeState {
 /// The dialogs the key dispatch serves first leave none.
 fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
     if state.main_menu_dialog_open()
-        || crate::app::input::coop_score::active(state)
+        || crate::app::input::coop_score::active(&state.frontend)
         || crate::app::frontend::preview_zoom::is_open(&state.frontend.preview_zoom)
     {
         return None;
@@ -166,7 +166,11 @@ fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
     [
         (
             ImeTarget::InGameChat,
-            crate::app::input::messages::ime_edit_rect(state),
+            crate::app::input::messages::ime_edit_rect(
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state.match_presentation,
+            ),
         ),
         (
             ImeTarget::LanLobbyChat,

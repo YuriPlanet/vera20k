@@ -551,7 +551,11 @@ impl TacticalCaptureSession {
         owner: &str,
         command: Command,
     ) -> Result<()> {
-        let execute_tick = crate::app::input::commands::try_schedule_command(state, owner, command);
+        let execute_tick = crate::app::input::commands::try_schedule_command(
+            &mut state.match_state,
+            owner,
+            command,
+        );
         let script = self
             .controller
             .script_mut()

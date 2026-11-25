@@ -380,7 +380,16 @@ pub(crate) fn draw_battlefield(
             }
         }
         // The timers keep the tactical view's clip.
-        let tactical = window_rect(zoom, crate::app::input::camera::tactical_viewport_px(state));
+        let tactical = window_rect(
+            zoom,
+            crate::app::input::camera::tactical_viewport_px(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state.match_presentation,
+                &state.persistence,
+            ),
+        );
         layer(&mut pass, white, "super_timer_fill", tactical);
         layer(&mut pass, Some(atlas), "super_timer_text", tactical);
         for (texture, key) in [

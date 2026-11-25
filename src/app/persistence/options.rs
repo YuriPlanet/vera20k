@@ -84,7 +84,7 @@ pub(crate) fn apply_presentation_option_gates(
 /// through this too.
 pub(crate) fn apply_in_game_speed(state: &mut AppState) {
     if state.match_state.sim_runtime.is_installed() {
-        let owner = crate::app::input::commands::preferred_local_owner_name(state);
+        let owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state);
         let speed = u8::try_from(
             state
                 .match_state
@@ -103,7 +103,11 @@ pub(crate) fn apply_in_game_speed(state: &mut AppState) {
             && owner
                 .as_deref()
                 .and_then(|owner| {
-                    crate::app::input::commands::try_schedule_command(state, owner, command)
+                    crate::app::input::commands::try_schedule_command(
+                        &mut state.match_state,
+                        owner,
+                        command,
+                    )
                 })
                 .is_none()
         {

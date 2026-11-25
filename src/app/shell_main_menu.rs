@@ -49,7 +49,7 @@ impl AppState {
             );
         }
         crate::app::loading::transitions::resolve_status_texts(self);
-        crate::app::input::keyboard::refresh_title(self);
+        crate::app::input::keyboard::refresh_title(&mut self.frontend, &self.process_assets);
         // The login form keeps its status line as resolved text; the rest of
         // that page resolves every frame.
         if let Some(visit) = self.frontend.wol.as_mut()
@@ -1576,7 +1576,7 @@ impl App {
         crate::app::input::keyboard::prepare_terminal_exit(state);
         Self::close_launcher_options_terminal(state);
         crate::app::input::pause_menu::on_match_end(state);
-        if crate::app::input::precedence::route_page(state)
+        if crate::app::input::precedence::route_page(&state.frontend)
             == crate::app::input::precedence::ScreenPage::Skirmish
         {
             // A terminal exit has no Start/Back transaction, so pack the

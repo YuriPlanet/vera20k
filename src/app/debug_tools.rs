@@ -227,17 +227,22 @@ fn apply(state: &mut crate::app::AppState, command: DebugCommand) {
             }
         }
         DebugCommand::Toggle { switch } => match switch {
-            DebugSwitch::TerrainCosts => dispatch::toggle_pathgrid_overlay(state),
-            DebugSwitch::Heightmap => dispatch::toggle_heightmap_overlay(state),
-            DebugSwitch::CellGrid => dispatch::toggle_cell_grid_overlay(state),
-            DebugSwitch::FootPath => dispatch::toggle_foot_path_overlay(state),
-            DebugSwitch::DebugPause => dispatch::toggle_debug_pause(state),
+            DebugSwitch::TerrainCosts => dispatch::toggle_pathgrid_overlay(&mut state.diag),
+            DebugSwitch::Heightmap => dispatch::toggle_heightmap_overlay(&mut state.diag),
+            DebugSwitch::CellGrid => dispatch::toggle_cell_grid_overlay(&mut state.diag),
+            DebugSwitch::FootPath => dispatch::toggle_foot_path_overlay(&mut state.diag),
+            DebugSwitch::DebugPause => dispatch::toggle_debug_pause(
+                &mut state.platform.frame_pacer,
+                &mut state.match_state,
+            ),
             DebugSwitch::UnitInspector => toggle_inspector(&mut state.match_state.sim_runtime),
         },
         DebugCommand::CycleSpeedType { forward } => {
             dispatch::cycle_terrain_cost_speed_type(state, forward);
         }
-        DebugCommand::FrameStep {} => dispatch::request_debug_frame_step(state),
+        DebugCommand::FrameStep {} => {
+            dispatch::request_debug_frame_step(&mut state.diag, &state.match_state)
+        }
     }
 }
 

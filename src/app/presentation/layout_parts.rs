@@ -198,7 +198,13 @@ pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
     }
     let font = &state.renderer.bit_font;
     let side = state.sidebar_frame().side_area();
-    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let field = [x as i32, y as i32, width as i32, height as i32];
     let art = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
         .map(|atlas| &atlas.layout_art);
@@ -207,7 +213,10 @@ pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
         .iter()
         .enumerate()
         .map(|(index, part)| {
-            let pressed = crate::app::input::chrome_input::layout_button_pressed(state, index);
+            let pressed = crate::app::input::chrome_input::layout_button_pressed(
+                &state.match_state.match_presentation,
+                index,
+            );
             let (text, button, picture) = match &part.kind {
                 AddedKind::Button {
                     label, art: name, ..

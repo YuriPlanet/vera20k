@@ -229,10 +229,16 @@ fn apply_box(state: &mut AppState, id: C, on: bool) {
                 &state.persistence.options_profile,
             );
         }
-        C::MouseWheelZoom if !on => crate::app::input::camera::reset_view_distance(state),
+        C::MouseWheelZoom if !on => crate::app::input::camera::reset_view_distance(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state,
+            &state.persistence,
+        ),
         C::LockCursor => {
             state.platform.cursor_confined = on;
-            crate::app::input::cursor::apply_cursor_confinement(state);
+            crate::app::input::cursor::apply_cursor_confinement(&mut state.platform);
         }
         C::VeraIcon => show_vera_icon(&state.platform, &state.persistence.options_profile, on),
         C::VSync => App::sync_present_mode(state),

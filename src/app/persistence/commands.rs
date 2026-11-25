@@ -187,7 +187,13 @@ fn prepare_save<'a>(
         .sidebar_projection
         .model.saved_order()
         .map(|order| order.with_active_tab(active_tab));
-    let tactical_view = crate::app::input::camera::saved_tactical_view(state);
+    let tactical_view = crate::app::input::camera::saved_tactical_view(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     let rules_owner = rules_owner.ok_or(SaveCommandError::MissingResources("process rules"))?;
     let processed =
         rules_owner

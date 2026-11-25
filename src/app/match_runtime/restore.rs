@@ -170,7 +170,14 @@ pub(crate) fn commit_prepared_load(
     // Load_Game's Set_View_Dimensions (`0x0067E7F9`): Init `0x005D3A60`
     // deletes every row and an open edit, and SetWidth `0x005D4AD0` leaves
     // the list tactical_w − 8 wide.
-    let tactical_w = crate::app::input::camera::tactical_viewport_size(state).0 as i32;
+    let tactical_w = crate::app::input::camera::tactical_viewport_size(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    )
+    .0 as i32;
     let message_list = &mut state.match_state.match_presentation.message_list;
     *message_list = crate::ui::messages::MessageList::scenario();
     message_list.set_width(tactical_w);
@@ -288,7 +295,14 @@ pub(crate) fn commit_prepared_load(
         &mut state.match_state.input,
         &mut state.match_state.match_presentation.sidebar_gadget_state,
     );
-    crate::app::input::camera::restore_tactical_view(state, committed.details.tactical_view);
+    crate::app::input::camera::restore_tactical_view(
+        &state.platform,
+        &mut state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state,
+        &state.persistence,
+        committed.details.tactical_view,
+    );
 
     // Reset pacing, not saved simulation input delay or elapsed score time.
     state.platform.frame_pacer.reset_for_new_world();

@@ -1009,8 +1009,9 @@ impl WolCapture {
                         WolPhase::Settle(2)
                     } else if matches!(self.target, WolTarget::InternetMenu) {
                         ensure!(
-                            crate::app::input::pause_menu::current_template(state)
-                                == crate::ui::shell::pause_menu::PauseMenuTemplate::Internet,
+                            crate::app::input::pause_menu::current_template(
+                                &state.match_state.match_presentation
+                            ) == crate::ui::shell::pause_menu::PauseMenuTemplate::Internet,
                             "a WOL match did not open FF"
                         );
                         WolPhase::Settle(2)

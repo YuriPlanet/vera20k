@@ -561,7 +561,7 @@ pub(crate) fn unit_visitor<'a>(
         state.render_height() as f32 / z,
     );
     let admission = super::helpers::TacticalAdmission::of_state(state);
-    let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+    let local_owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state);
     let local_owner_id = local_owner.as_deref().and_then(|o| sim.interner().get(o));
     let ignore_visibility = state.match_state.sandbox_full_visibility;
     let art_reg: Option<&crate::rules::art_data::ArtRegistry> =
@@ -2684,7 +2684,13 @@ fn composite_draw_state(state: &AppState, mut draw_state: DrawState) -> DrawStat
     // Only voxel body draws use this otherwise unused parameter. Shadows keep
     // their own state and depth. The shader needs the actual tactical scissor
     // to seed each native Bit_Blit from its clipped rectangle, split or not.
-    draw_state.fx_params[3] = crate::app::input::camera::tactical_view_height(state);
+    draw_state.fx_params[3] = crate::app::input::camera::tactical_view_height(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     draw_state
 }
 

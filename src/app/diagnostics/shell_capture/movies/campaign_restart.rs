@@ -227,7 +227,7 @@ impl RestartCapture {
         // Controlled reachable counter lag; the wallet is unchanged. Preserve
         // this display through warm and cold ordinary saved-game admission.
         let saved_counter = if target == RestartTarget::SavedVictory {
-            let owner = crate::app::input::commands::preferred_local_owner_name(state)
+            let owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state)
                 .context("campaign credits owner")?;
             let actual = before.money.context("campaign wallet")?[0].max(0);
             let projection = &mut state
@@ -690,7 +690,7 @@ impl RestartCapture {
                     Self::simulation_tick(state)? == pause.paused_tick,
                     "B5 advanced the campaign simulation"
                 );
-                let now = crate::app::input::tooltips::now_ms(state);
+                let now = crate::app::input::tooltips::now_ms(&state.diag, &state.match_state);
                 if now > pause.deadline_ms + 64 {
                     ensure!(
                         state
@@ -1117,7 +1117,7 @@ impl RestartCapture {
                             );
                         }
                         self.opening_view = Some(
-                            json!({"incoming_global0":true,"bookmarks":views.saved_cells(),"tactical_view":crate::app::input::camera::saved_tactical_view(state)}),
+                            json!({"incoming_global0":true,"bookmarks":views.saved_cells(),"tactical_view":crate::app::input::camera::saved_tactical_view(&state.platform, &state.renderer, &state.frontend.screen, &state.match_state, &state.persistence)}),
                         );
                     }
                     if self.target == RestartTarget::InheritedTimerVictory {
@@ -1174,7 +1174,7 @@ impl RestartCapture {
 
     fn observe_objective(&mut self, state: &AppState, phase: &str) {
         self.objective_observations.push(json!({"phase": phase,
-            "wall_ms": crate::app::input::tooltips::now_ms(state), "tick": Self::simulation_tick(state).ok(),
+            "wall_ms": crate::app::input::tooltips::now_ms(&state.diag, &state.match_state), "tick": Self::simulation_tick(state).ok(),
             "rows": state.match_state.match_presentation.message_list.messages().iter()
                 .map(|row| json!({"text": row.text, "deadline_ms": row.deadline_ms})).collect::<Vec<_>>() }));
     }

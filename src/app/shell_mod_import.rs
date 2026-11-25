@@ -684,8 +684,8 @@ impl App {
     }
 
     fn browse_mod_parts(state: &mut AppState, mut selection: Selection, folders: bool) {
-        crate::app::input::hardware_cursor::give_back_arrow(state);
-        crate::app::input::cursor::release_cursor_confinement(state);
+        crate::app::input::hardware_cursor::give_back_arrow(&mut state.platform);
+        crate::app::input::cursor::release_cursor_confinement(&mut state.platform);
         let window = &state.platform.window;
         #[cfg(not(target_os = "macos"))]
         let picked = if folders {

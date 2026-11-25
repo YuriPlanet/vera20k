@@ -589,7 +589,8 @@ impl MapCommandBarThumbState {
     pub(super) fn capture(state: &AppState, handle: vera20k_gui::NodeId) -> Result<Self> {
         let presentation = &state.match_state.match_presentation;
         let (gui, nodes) =
-            crate::app::input::chrome_input::chrome(state).context("thumb control disappeared")?;
+            crate::app::input::chrome_input::chrome(&state.match_state.match_presentation)
+                .context("thumb control disappeared")?;
         let control = ChromeControl::read(gui, handle).context("thumb control disappeared")?;
         let sim = &state
             .match_state
@@ -716,8 +717,9 @@ impl MapCommandBarGestureReceipt {
         let (layout, slots) =
             crate::app::presentation::sidebar_build::command_bar::layout_and_slots(state)
                 .context("command-bar layout is absent")?;
-        let (gui, nodes) = crate::app::input::chrome_input::chrome(state)
-            .context("command-bar controls are absent")?;
+        let (gui, nodes) =
+            crate::app::input::chrome_input::chrome(&state.match_state.match_presentation)
+                .context("command-bar controls are absent")?;
         let (mut receipt, handle) = Self::resolve(
             command,
             layout,

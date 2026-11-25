@@ -72,7 +72,10 @@ pub(crate) fn top_software_cursor(
             .software_cursor_frame_index(crate::app::types::CursorId::Default, sequence)?,
     )?;
     if crate::app::input::hardware_cursor::takes_cursor(
-        state,
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.input,
         crate::app::types::CursorId::Default,
         0,
     ) {

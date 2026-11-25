@@ -1832,7 +1832,7 @@ impl LanCapture {
                         "trackbar did not change canonical options"
                     );
                     ensure!(
-                        !setup_input::slider_held(state),
+                        !setup_input::slider_held(&state.frontend.shell_controller),
                         "trackbar capture survived mouse release"
                     );
                     ensure!(
@@ -2746,7 +2746,7 @@ impl LanCapture {
                 self.phase = LanPhase::Settle(2);
             }
             LanPhase::CoopOutcome => {
-                if !crate::app::input::coop_score::active(state) {
+                if !crate::app::input::coop_score::active(&state.frontend) {
                     return Ok(());
                 }
                 ensure!(
@@ -3377,7 +3377,13 @@ impl LanCapture {
                 self.phase = LanPhase::Taunt(1);
             }
             1 => {
-                crate::app::input::taunt::receive(state, 0x82);
+                crate::app::input::taunt::receive(
+                    &state.frontend.multiplayer_shell_runtime,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    0x82,
+                );
                 let received = playing(state);
                 ensure!(received != Some(false), "the received taunt is not playing");
                 super::super::skirmish::press_diplomacy_tab(state)?;
@@ -3413,7 +3419,13 @@ impl LanCapture {
                 if let Some(sfx) = state.audio.sfx_player.as_mut() {
                     sfx.stop_all();
                 }
-                crate::app::input::taunt::receive(state, 0x83);
+                crate::app::input::taunt::receive(
+                    &state.frontend.multiplayer_shell_runtime,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    0x83,
+                );
                 ensure!(
                     playing(state) != Some(true),
                     "a taunt played with TauntsOn cleared"
@@ -3421,7 +3433,10 @@ impl LanCapture {
                 // A send past the 5 s clock is refused by the player's own
                 // TauntsOn.
                 crate::app::input::taunt::execute(
-                    state,
+                    &mut state.frontend.multiplayer_shell_runtime,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
                     2,
                     crate::app::match_runtime::frame_pacer::wall_clock_ms() + 60_000,
                 );

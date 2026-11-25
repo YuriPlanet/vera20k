@@ -126,7 +126,7 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
     let Some(rules) = state.rules() else {
         return;
     };
-    let Some(owner) = preferred_local_owner_name(state) else {
+    let Some(owner) = preferred_local_owner_name(&state.match_state) else {
         return;
     };
     let owner_iid = sim.interner().get(&owner).unwrap_or_default();

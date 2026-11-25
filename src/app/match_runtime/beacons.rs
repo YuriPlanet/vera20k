@@ -415,7 +415,10 @@ pub(crate) fn place_beacon(
             use crate::app::input::messages::{HudMessage, post_hud_message};
             post_hud_message(state, HudMessage::BeaconHelp("TXT_BEACON_HELP1"));
             post_hud_message(state, HudMessage::BeaconHelp("TXT_BEACON_HELP2"));
-            crate::app::input::dispatch::push_local_eva(state, EVA_BEACON_PLACED);
+            crate::app::input::dispatch::push_local_eva(
+                &mut state.match_state.match_audio,
+                EVA_BEACON_PLACED,
+            );
             if let Some(sound_id) = state.rules().and_then(|rules| {
                 Some(rules.sound_name(rules.general.place_beacon_sound.as_deref()?))
             }) {
@@ -436,7 +439,10 @@ pub(crate) fn place_beacon(
         }
         PlacementFeedback::Detected => {
             if admit_radar_event(&mut state.match_state, coord) {
-                crate::app::input::dispatch::push_local_eva(state, EVA_BEACON_DETECTED);
+                crate::app::input::dispatch::push_local_eva(
+                    &mut state.match_state.match_audio,
+                    EVA_BEACON_DETECTED,
+                );
             }
         }
     }

@@ -3012,7 +3012,15 @@ pub(super) fn prepare_latency_view(state: &mut AppState) -> Result<(u64, (u16, u
     let id = entity.stable_id();
     let from = (entity.position.rx(), entity.position.ry());
     select_entity(state, id)?;
-    crate::app::input::camera::center_camera_on_cell(state, from.0, from.1);
+    crate::app::input::camera::center_camera_on_cell(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state,
+        &state.persistence,
+        from.0,
+        from.1,
+    );
     let world = ground_world_point(state, from)?;
     point_at_world(state, world);
     Ok((id, from))
@@ -3040,7 +3048,13 @@ pub(super) fn latency_move_with_mouse(
     let input = &state.match_state.input;
     let camera = (input.camera_x, input.camera_y);
     let zoom = input.zoom_level;
-    let viewport = crate::app::input::camera::tactical_viewport_px(state);
+    let viewport = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let offsets = [(6, 0), (-6, 0), (0, 6), (0, -6)];
     let to = offsets
         .into_iter()
@@ -3080,7 +3094,13 @@ pub(super) fn latency_move_with_mouse(
         world,
         (input.camera_x, input.camera_y),
         input.zoom_level,
-        crate::app::input::camera::tactical_viewport_px(state),
+        crate::app::input::camera::tactical_viewport_px(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+        ),
     )?;
     point_at_cursor(state, cursor);
     let before = simulation(state)?.pending_local_command_count();
@@ -3492,7 +3512,15 @@ fn planning_rally_with_mouse(state: &mut AppState, id: u64, cell: (u16, u16)) ->
 
 fn point_at_ground(state: &mut AppState, cell: (u16, u16)) -> Result<()> {
     let world = ground_world_point(state, cell)?;
-    crate::app::input::camera::center_camera_on_cell(state, cell.0, cell.1);
+    crate::app::input::camera::center_camera_on_cell(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state,
+        &state.persistence,
+        cell.0,
+        cell.1,
+    );
     point_at_world(state, world);
     Ok(())
 }
@@ -3693,7 +3721,15 @@ fn point_at_entity(state: &mut AppState, id: u64) -> Result<Option<u64>> {
     let cell = (entity.position.rx(), entity.position.ry());
     let world = crate::app::input::entity_pick::presented(state, simulation(state)?)
         .screen_position(entity);
-    crate::app::input::camera::center_camera_on_cell(state, cell.0, cell.1);
+    crate::app::input::camera::center_camera_on_cell(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state,
+        &state.persistence,
+        cell.0,
+        cell.1,
+    );
     point_at_world(state, world);
     let sim = simulation(state)?;
     Ok(crate::app::input::entity_pick::hover_object_at_point(

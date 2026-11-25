@@ -632,7 +632,7 @@ pub(crate) fn update_super_timers(state: &mut AppState) {
         })
         .collect();
     let blink_rgb = blink_rgb(rules);
-    let now_ms = crate::app::input::tooltips::now_ms(state);
+    let now_ms = crate::app::input::tooltips::now_ms(&state.diag, &state.match_state);
     // The dock stacks up from the bottom right of its box, the battlefield
     // in the original interface, and works in the box's own pixels.
     let [_, _, view_w, view_h] = field_parts::rect(state, FieldPart::Timers);
@@ -786,7 +786,9 @@ pub(crate) fn blink_due(state: &AppState) -> bool {
         .match_state
         .match_presentation
         .super_timer_next_flip_ms
-        .is_some_and(|next| crate::app::input::tooltips::now_ms(state) >= next)
+        .is_some_and(|next| {
+            crate::app::input::tooltips::now_ms(&state.diag, &state.match_state) >= next
+        })
 }
 
 #[cfg(all(test, tests_app_presentation))]

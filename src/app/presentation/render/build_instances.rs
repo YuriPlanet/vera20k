@@ -349,7 +349,8 @@ pub(super) fn build_world_instances(
         state.match_state.sim_runtime.presentation(),
         state.match_state.sim_runtime.frame(),
     ) {
-        let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+        let local_owner =
+            crate::app::input::commands::preferred_local_owner_name(&state.match_state);
         let shp_inputs = instances::shp_inputs(state, local_owner.as_deref());
         let mut units = instances::unit_visitor(state, display_order);
         let mut debris = instances::voxel_anim_visitor(state, display_order);
@@ -431,9 +432,16 @@ pub(super) fn build_world_instances(
         .zip(state.match_state.sim_runtime.frame())
         .map(|(runtime, frame)| {
             let presentation = &state.match_state.match_presentation;
-            let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
-            let local_owner = crate::app::input::commands::preferred_local_owner_name(state)
-                .and_then(|name| runtime.simulation.interner().get(&name));
+            let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state.match_presentation,
+                &state.persistence,
+            );
+            let local_owner =
+                crate::app::input::commands::preferred_local_owner_name(&state.match_state)
+                    .and_then(|name| runtime.simulation.interner().get(&name));
             instances::DisplayEffectInputs {
                 sim: &runtime.simulation,
                 frame,
@@ -503,7 +511,7 @@ pub(super) fn build_world_instances(
     // storage order and atlas identity never determine their submission order.
     // The frame's cursor pick serves the group labels and every health bar:
     // both read the hover flag the cursor's action target sets.
-    let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+    let local_owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state);
     let hovered = crate::app::presentation::ui_overlays::health_hover_target(hover);
     let mut group_labels =
         build_control_group_status_instances(state, local_owner.as_deref(), hovered, sw, sh);
@@ -760,7 +768,13 @@ pub(super) fn build_world_instances(
     // Bit_Blit seeds a raw frame, and a Unit composite, from its rect clipped
     // to the view (`native_z::Z_GRADIENT_RAW_FRAME_FLAG`,
     // `native_z::unit_composite`), which ends this far down.
-    let view_height = crate::app::input::camera::tactical_view_height(state);
+    let view_height = crate::app::input::camera::tactical_view_height(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     for instance in object_layers
         .iter_mut()
         .flat_map(|layer| &mut layer.instances)
@@ -873,7 +887,8 @@ fn build_pixel_fx_sparkle_instances(state: &AppState, sw: f32, sh: f32) -> Vec<S
                 .detail_level,
         );
 
-    let local_owner_name = crate::app::input::commands::preferred_local_owner_name(state);
+    let local_owner_name =
+        crate::app::input::commands::preferred_local_owner_name(&state.match_state);
     let local_owner_id = match (state.match_state.sandbox_full_visibility, &local_owner_name) {
         (false, Some(owner)) => sim.interner().get(owner),
         _ => None,
@@ -1027,7 +1042,7 @@ pub(super) fn build_debug_instances(state: &AppState, sw: f32, sh: f32) -> Debug
 /// Update minimap unit dots for the current frame.
 pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>) {
     let (playfield_bounds, playfield_revision) =
-        crate::app::input::camera::playfield_presentation_authority(state);
+        crate::app::input::camera::playfield_presentation_authority(&state.match_state.sim_runtime);
     let needs_playfield_reconcile = state
         .match_state
         .match_presentation
@@ -1256,7 +1271,7 @@ pub(super) fn build_ui_instances(
             state.rules(),
             &cursor.selected,
             &state.match_state.match_presentation.house_color_map,
-            preferred_local_owner(state).as_deref(),
+            preferred_local_owner(&state.match_state).as_deref(),
             view,
         );
 
@@ -1283,7 +1298,13 @@ pub(crate) fn tactical_world_view(
     state: &AppState,
 ) -> crate::app::presentation::target_lines::TacticalViewport {
     let input = &state.match_state.input;
-    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     tactical_world_viewport(
         [input.camera_x, input.camera_y],
         [x, y, width, height],
@@ -1352,7 +1373,13 @@ fn build_placement_preview(state: &AppState) -> PlacementPreviewInstances {
         ghost: Vec::new(),
     };
     let current = state.match_state.input.building_placement_preview.as_ref();
-    let cursor_in = crate::app::input::camera::cursor_over_battlefield(state);
+    let cursor_in = crate::app::input::camera::cursor_over_battlefield(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     let draws = crate::render::selection_overlay::placement_cell_draws(
         current,
         state.match_state.input.pending_building_placement_preview(),
@@ -1425,7 +1452,7 @@ fn build_placement_ghost(
     let Some(assets) = state.process_assets.manager() else {
         return Vec::new();
     };
-    let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+    let local_owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state);
     // The placement ghost is a building of the local player's, so it follows
     // the relation colours like the finished building will.
     let remap_house = local_owner
@@ -1481,8 +1508,20 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             .view_revision()
     });
     let minimap_rect = active_minimap_screen_rect(state);
-    let (tactical_w, tactical_h) = crate::app::input::camera::tactical_viewport_size(state);
-    let tactical_center_cell = crate::app::input::camera::tactical_centre_cell(state);
+    let (tactical_w, tactical_h) = crate::app::input::camera::tactical_viewport_size(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
+    let tactical_center_cell = crate::app::input::camera::tactical_centre_cell(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     // The side text colour the layout gives (`[Money] Color=`).
     let sidebar_color = crate::render::sidebar_text::native_outline_from(
         state

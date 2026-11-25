@@ -24,7 +24,13 @@ pub(crate) fn shows(presentation: &MatchPresentationState, part: FieldPart) -> b
 /// A piece's box in frame pixels (`x, y, width, height`): the whole
 /// battlefield in the original interface.
 pub(crate) fn rect(state: &AppState, part: FieldPart) -> [i32; 4] {
-    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     layout(&state.match_state.match_presentation)
         .part_rect(part, [x as i32, y as i32, width as i32, height as i32])
 }

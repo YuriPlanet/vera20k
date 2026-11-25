@@ -351,7 +351,14 @@ pub(crate) fn render_game(
     // around the view (ALL06, SOV03) or jump the camera in the same trigger
     // (SOV01 SP3.6, action 112); only SOV01's SP4.5b and base-gained shrinks
     // can leave the view outside, until the player scrolls. VERA moves it at once.
-    crate::app::input::camera::clamp_camera_to_playable_area(state, sw, sh);
+    crate::app::input::camera::clamp_camera_to_playable_area(
+        &state.platform,
+        &state.renderer,
+        &mut state.match_state,
+        &state.persistence,
+        sw,
+        sh,
+    );
     // Publish the final view once: world instances, CPU A admission and GPU
     // palette sampling must use this frame's clamped camera and zoom.
     state.renderer.batch_renderer.update_camera(
@@ -365,7 +372,7 @@ pub(crate) fn render_game(
     );
     update_native_z_origin(state);
 
-    let local_owner = preferred_local_owner_name(state);
+    let local_owner = preferred_local_owner_name(&state.match_state);
     let translucent_fog = state.translucent_fog_enabled();
     let sandbox = state.match_state.sandbox_full_visibility;
     // Effective viewport in world pixels — zoom shrinks what's visible.
@@ -1017,7 +1024,13 @@ pub(crate) fn render_game(
 /// target pixels. Native zoom1 is exact, and scaled views preserve that unit
 /// frame.
 fn update_native_z_origin(state: &mut AppState) {
-    let (_, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+    let (_, y, width, height) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let zoom = state.match_state.input.zoom_level;
     let origin_y = (y as f32 / zoom).floor();
     let camera = state.renderer.batch_renderer.camera_uniform().camera_pos;
@@ -1051,7 +1064,13 @@ pub(crate) fn tactical_surface_line_viewport(
     state: &AppState,
 ) -> crate::render::surface_line::SurfaceLineViewport {
     let z = state.match_state.input.zoom_level;
-    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(state);
+    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let clip = [x, y, w, h].map(|v| (v as f32 / z) as i32);
     crate::render::surface_line::SurfaceLineViewport {
         camera: surface_line_camera(
@@ -1237,7 +1256,13 @@ fn upload_to_gpu(
         if presentation.chrono_screen.overrides_tactical_draw() {
             Vec::new()
         } else {
-            let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+            let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state.match_presentation,
+                &state.persistence,
+            );
             presentation.flying_credits.borrow().build_instances(
                 &state.renderer.bit_font,
                 [

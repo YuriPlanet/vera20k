@@ -282,7 +282,7 @@ fn build_model(state: &AppState, can_continue: bool, elapsed: i32) -> Option<Coo
         &time_model,
         &state.csf_text("TXT_TIME_FORMAT_HOURS"),
     );
-    let side = crate::app::input::commands::preferred_local_owner_name(state)
+    let side = crate::app::input::commands::preferred_local_owner_name(&state.match_state)
         .as_deref()
         .and_then(|owner| sim.interner().get(owner))
         .and_then(|owner| sim.houses().get(&owner))

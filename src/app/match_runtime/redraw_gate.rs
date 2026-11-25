@@ -187,7 +187,7 @@ pub(crate) fn still_frame(
         ScreenPage::Battlefield => {
             let detail = presentation.detail.borrow();
             let moving = state.match_state.paused()
-                || !crate::app::input::camera::zoom_settled(state)
+                || !crate::app::input::camera::zoom_settled(&state.match_state.input)
                 || presentation
                     .radar_anim
                     .as_ref()
