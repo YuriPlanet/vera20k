@@ -295,6 +295,7 @@ fn test_composite_layers_depth_correct() {
         height: 2,
         offset_x: 0.0,
         offset_y: 0.0,
+        hd: None,
     };
     // Turret: 1x1 at (1,1), depth 2.0 (closer), palette index 200 — overwrites body.
     let turret = VxlSprite {
@@ -304,6 +305,7 @@ fn test_composite_layers_depth_correct() {
         height: 1,
         offset_x: 1.0,
         offset_y: 1.0,
+        hd: None,
     };
     let out = composite_vxl_layers(&[body.clone(), turret]);
     assert_eq!(out.width, 2);
@@ -319,6 +321,7 @@ fn test_composite_layers_depth_correct() {
         height: 1,
         offset_x: 1.0,
         offset_y: 1.0,
+        hd: None,
     };
     let out2 = composite_vxl_layers(&[body, turret_behind]);
     let idx2 = (out2.width + 1) as usize;
@@ -336,6 +339,7 @@ fn test_pad_layer_to_union_bounds() {
         height: 2,
         offset_x: 0.0,
         offset_y: 0.0,
+        hd: None,
     };
     // Turret at offset (5,3), 1x1, palette index 200 — different origin from body.
     let turret = VxlSprite {
@@ -345,6 +349,7 @@ fn test_pad_layer_to_union_bounds() {
         height: 1,
         offset_x: 5.0,
         offset_y: 3.0,
+        hd: None,
     };
 
     let all_layers: Vec<&VxlSprite> = vec![&body, &turret];
@@ -1187,6 +1192,7 @@ fn a_placed_sprite_waits_for_its_upload_without_a_copy() {
         native_draw_bounds: None,
         shadow_center: None,
         pool_bytes: 0,
+        hd: None,
     }]);
     let resident = atlas.resident.borrow();
     let [pending] = resident.uploads.as_slice() else {

@@ -148,6 +148,7 @@ check a mod's terms before you use it here. VERA20k doesn't support such mods.
 | Only INI files the game doesn't read, such as an AI another author made | Adds them to the map of every Skirmish and online match. See [Add to every map](#add-to-every-map). |
 | `veraui.ini` | Lays out the match screen: which edge the sidebar and the command bar sit on, where the sidebar's parts sit, which it has, and how big it is. See [interface layout](interface-layout.md). |
 | `mod.ini` | Supplies display information, resource filenames and extension requirements. Optional. |
+| An `hd_art` folder | An HD-2D art pack: 2x pictures the game draws instead of the original art when HD-2D is on. Players need not share it. See [HD-2D](hd-2d.md). |
 | `mod-files.txt` | Lists the mod's files, so players can check their copy. The game writes it for you: see [Check a mod's files](#check-a-mods-files). Optional. |
 
 #### Mods distributed in parts

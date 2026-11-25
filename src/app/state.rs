@@ -110,6 +110,13 @@ impl AppState {
         )
     }
 
+    /// Whether HD-2D is on (`render::hd2d`), and whether its debug tint is:
+    /// the `VERA20K_HD2D` capture override, else `[VERA] Hd2d=`, which the
+    /// Options list and the HD-2D key (Page Up) set.
+    pub(crate) fn hd_2d(&self) -> (bool, bool) {
+        hd_2d(&self.persistence)
+    }
+
     pub(crate) fn hd_radar(&self) -> bool {
         self.persistence.hd_radar(self.platform.capture_choices())
     }
@@ -282,10 +289,24 @@ pub(crate) fn sidebar_frame(
         .map_or(100, |pass| pass.geometry().percent);
     let capture = platform.capture_choices();
     let (width, height) = renderer.render_size(screen);
-    sidebar_frame_for(platform, persistence, spec, width, height).in_window(
+    let frame = sidebar_frame_for(platform, persistence, spec, width, height).in_window(
         zoom,
         persistence.hd_radar(capture) || persistence.smooth_sidebar(capture),
-    )
+    );
+    // VERA's HD sidebar draws Normal at 2 and Large at 3 and halves them: its
+    // pictures need a whole scale of 2 or more (`render::sidebar_smoothing`).
+    if hd_2d(persistence).0 {
+        frame.with_whole_draw_scale()
+    } else {
+        frame
+    }
+}
+
+/// Whether HD-2D is on (`render::hd2d`), and whether its debug tint is: the
+/// `VERA20K_HD2D` capture override, else `[VERA] Hd2d=`, which the Options
+/// list and the HD-2D key (Page Up) set.
+pub(crate) fn hd_2d(persistence: &crate::app::persistence::PersistenceState) -> (bool, bool) {
+    crate::render::hd2d::env_override().unwrap_or((persistence.options_profile.hd_2d, false))
 }
 
 /// [`sidebar_frame`] for a frame of `width` x `height`. Captures take their

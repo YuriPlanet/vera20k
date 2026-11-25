@@ -1008,6 +1008,7 @@ mod tests {
             height: h,
             offset_x: 0.0,
             offset_y: 0.0,
+            hd: None,
         }
     }
 

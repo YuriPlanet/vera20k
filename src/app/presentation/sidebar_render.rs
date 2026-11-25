@@ -1203,9 +1203,9 @@ pub(crate) fn ensure_current_sidebar_chrome(state: &mut AppState) {
 /// Keep VERA's smooth sidebar (`render::sidebar_smoothing`) at this frame's
 /// draw scale, or drop its copies when the option is off, the sidebar draws
 /// at its own pixels, or the scale is not a whole one (xBR has no 1.5x).
+/// HD-2D (`render::hd2d`) turns it on too: its HD pictures come through it.
 pub(crate) fn prepare_smooth_sidebar(state: &mut AppState) {
-    let scale = state
-        .smooth_sidebar()
+    let scale = (state.smooth_sidebar() || state.hd_2d().0)
         .then(|| state.sidebar_frame().draw_scale())
         .filter(|scale| *scale >= 2.0 && scale.fract() == 0.0)
         .map(|scale| scale as u32);

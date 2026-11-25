@@ -615,6 +615,42 @@ impl HealthBarMode {
     }
 }
 
+/// The HD-2D list (`render::hd2d`, `[VERA] Hd2d=`): Off, the original
+/// picture, or On, the HD art over the world and the HD sidebar. The HD-2D
+/// key (Page Up) flips the same setting in a match. Presentation only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum HdLook {
+    #[default]
+    Off,
+    On,
+}
+
+impl HdLook {
+    const ALL: [Self; 2] = [Self::Off, Self::On];
+
+    /// The list's rows, top to bottom; the first is the default.
+    pub(crate) fn choices() -> Vec<Self> {
+        Self::ALL.to_vec()
+    }
+
+    /// Whether the row turns HD-2D on.
+    pub(crate) const fn is_on(self) -> bool {
+        matches!(self, Self::On)
+    }
+
+    /// The row for the switch's state.
+    pub(crate) const fn from_on(on: bool) -> Self {
+        if on { Self::On } else { Self::Off }
+    }
+
+    pub(crate) fn label(self) -> String {
+        crate::i18n::tr(match self {
+            Self::Off => "VERA:HdLookOff",
+            Self::On => "VERA:HdLookOn",
+        })
+    }
+}
+
 /// VERA's `[VERA] ColorVisionMode=` whole-viewport colour-vision filter.
 ///
 /// gamemd has no equivalent: this is a presentation-only final-frame pass
@@ -764,6 +800,8 @@ pub(crate) enum LauncherComboId {
     HealthBars,
     /// The whole-viewport colour filter.
     ColorVision,
+    /// HD-2D, Off or On (`[VERA] Hd2d=`).
+    HdLook,
     /// VERA's interface language. Its rows are each language's own name for
     /// itself, so they need no translation.
     Language,
@@ -1177,6 +1215,8 @@ pub(crate) const ROWS: &[Row] = {
         row!(Controls, Checkbox(MouseWheelZoom), "MouseWheelZoom"),
         row!(Controls, Checkbox(LockCursor), "LockCursor"),
         row!(General, List(Language), "Language"),
+        // VERA's HD-2D switch; Display is full at 640x480.
+        row!(General, List(HdLook), "HdLook"),
         row!(General, Checkbox(YrOriginalStyle), "YrOriginalStyle"),
         row!(General, Checkbox(SmoothOnlineMenus), "SmoothOnlineMenus"),
         row!(General, Checkbox(HdMapPreviews), "HdMapPreviews"),
@@ -1307,6 +1347,8 @@ pub(crate) enum LauncherOptionsEvent {
     /// The `[VERA] GraphicsAPI=` list's pick, read at the next start.
     GraphicsApiSelected(GraphicsApi),
     ColorVisionModeSelected(ColorVisionMode),
+    /// The HD-2D list's pick, applied to the next frame.
+    HdLookSelected(HdLook),
     DisplaySelected(DisplayTarget),
     /// A language tag.
     LanguageSelected(String),
@@ -1370,6 +1412,8 @@ pub(crate) struct LauncherOptionsValues {
     /// The Graphics API list's choice; it applies from the next start.
     pub(crate) graphics_api: GraphicsApi,
     pub(crate) color_vision: ColorVisionMode,
+    /// Whether HD-2D is on.
+    pub(crate) hd_look: HdLook,
 }
 
 impl Default for LauncherOptionsValues {
@@ -1395,6 +1439,7 @@ impl Default for LauncherOptionsValues {
             kratos: Default::default(),
             graphics_api: GraphicsApi::default(),
             color_vision: ColorVisionMode::default(),
+            hd_look: HdLook::default(),
         }
     }
 }
@@ -1742,6 +1787,7 @@ impl OptionsDialogState {
             E::KratosSelected(setting) => v.kratos = *setting,
             E::GraphicsApiSelected(api) => v.graphics_api = *api,
             E::ColorVisionModeSelected(mode) => v.color_vision = *mode,
+            E::HdLookSelected(look) => v.hd_look = *look,
             E::DisplaySelected(display) if *display == self.display => return,
             E::DisplaySelected(display) => self.display = display.clone(),
             E::LanguageSelected(tag) if *tag == self.language => return,
@@ -2524,7 +2570,8 @@ mod tests {
         );
         assert_eq!(
             count(|s| matches!(s, Setting::List(_))),
-            8 + usize::from(HAS_GRAPHICS_API)
+            // HD-2D's list included.
+            10 + usize::from(HAS_GRAPHICS_API)
         );
         for (index, setting) in placed.iter().enumerate() {
             assert!(!placed[index + 1..].contains(setting), "{setting:?}");

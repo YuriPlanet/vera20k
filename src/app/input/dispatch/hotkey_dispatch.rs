@@ -564,6 +564,19 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
             presentation.relation_colors = !presentation.relation_colors;
             state.match_state.refresh_relation_colors();
         }
+        // VERA: turn HD-2D on or off at once (the HD art over the world and
+        // the HD sidebar). The same setting as the Options list, saved like
+        // Convenience Help's key, so the next match keeps it. The zoom stays
+        // as it is either way, for comparing. Pure presentation.
+        HotkeyCommand::ToggleHd2d => {
+            let on = !state.persistence.options_profile.hd_2d;
+            state.persistence.options_profile.hd_2d = on;
+            crate::app::persistence::options::persist_options_profile(
+                &state.platform,
+                &state.persistence.options_profile,
+            );
+            log::info!("HD-2D: {}", if on { "on" } else { "off" });
+        }
     }
 }
 

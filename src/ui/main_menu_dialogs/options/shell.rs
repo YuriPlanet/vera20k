@@ -945,6 +945,12 @@ impl OptionsDialogState {
                 |m| m.label(),
                 E::ColorVisionModeSelected,
             ),
+            LauncherComboId::HdLook => LauncherList::new(
+                super::HdLook::choices(),
+                &v.hd_look,
+                |look| look.label(),
+                E::HdLookSelected,
+            ),
             LauncherComboId::Ares => LauncherList::new(
                 super::ares_choices(),
                 &v.ares,
