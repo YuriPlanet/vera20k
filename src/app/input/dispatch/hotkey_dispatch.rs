@@ -569,12 +569,19 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         // Convenience Help's key, so the next match keeps it. The zoom stays
         // as it is either way, for comparing. Pure presentation.
         HotkeyCommand::ToggleHd2d => {
-            let on = !state.persistence.options_profile.hd_2d;
+            // Without an HD art pack there is nothing to show: say what it
+            // needs and change nothing.
+            if !crate::render::hd_art::pack_available() {
+                crate::app::input::messages::post_hd_2d(state, None);
+                return;
+            }
+            let on = !crate::app::state::hd_2d(&state.persistence).0;
             state.persistence.options_profile.hd_2d = on;
             crate::app::persistence::options::persist_options_profile(
                 &state.platform,
                 &state.persistence.options_profile,
             );
+            crate::app::input::messages::post_hd_2d(state, Some(on));
             log::info!("HD-2D: {}", if on { "on" } else { "off" });
         }
     }

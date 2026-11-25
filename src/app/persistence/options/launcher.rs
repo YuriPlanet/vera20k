@@ -70,7 +70,11 @@ pub(crate) fn launcher_values_from_profile(
         kratos: profile.kratos,
         graphics_api: profile.graphics_api,
         color_vision: profile.color_vision,
-        hd_look: crate::ui::main_menu_dialogs::options::HdLook::from_on(profile.hd_2d),
+        // Without an HD art pack the list shows Off whatever was saved.
+        hd_look: crate::ui::main_menu_dialogs::options::HdLook::from_on(
+            profile.hd_2d && crate::render::hd_art::pack_available(),
+        ),
+        hd_look_available: crate::render::hd_art::pack_available(),
         ..Default::default()
     };
     let mut stored = profile.clone();

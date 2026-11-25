@@ -649,6 +649,11 @@ impl HdLook {
             Self::On => "VERA:HdLookOn",
         })
     }
+
+    /// The rows while no HD art pack runs: Off alone.
+    pub(crate) fn choices_without_pack() -> Vec<Self> {
+        vec![Self::Off]
+    }
 }
 
 /// VERA's `[VERA] ColorVisionMode=` whole-viewport colour-vision filter.
@@ -1414,6 +1419,9 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) color_vision: ColorVisionMode,
     /// Whether HD-2D is on.
     pub(crate) hd_look: HdLook,
+    /// Whether the running mod brings an HD art pack: without one the list
+    /// offers only Off and its help names what it needs.
+    pub(crate) hd_look_available: bool,
 }
 
 impl Default for LauncherOptionsValues {
@@ -1440,6 +1448,7 @@ impl Default for LauncherOptionsValues {
             graphics_api: GraphicsApi::default(),
             color_vision: ColorVisionMode::default(),
             hd_look: HdLook::default(),
+            hd_look_available: false,
         }
     }
 }
@@ -2548,6 +2557,18 @@ mod tests {
     /// Every control is on exactly one page of the column: one the table
     /// leaves out could not be reached, and one listed twice would show
     /// twice. The in-game Game Controls page repeats rows of the column,
+
+    /// HD-2D is Off or On, and Off alone while no HD art pack runs, so it
+    /// cannot be turned on without one; the list starts Off.
+    #[test]
+    fn hd_look_offers_on_only_with_a_pack() {
+        assert_eq!(HdLook::choices(), [HdLook::Off, HdLook::On]);
+        assert_eq!(HdLook::choices_without_pack(), [HdLook::Off]);
+        assert_eq!(HdLook::from_on(true), HdLook::On);
+        let values = LauncherOptionsValues::default();
+        assert_eq!(values.hd_look, HdLook::Off);
+        assert!(!values.hd_look_available);
+    }
     /// Game Speed aside.
     #[test]
     fn every_control_is_on_exactly_one_page() {

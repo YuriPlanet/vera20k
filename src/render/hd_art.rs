@@ -61,20 +61,31 @@ pub(crate) fn frame_hash(width: u32, height: u32, indices: &[u8]) -> u64 {
     hash
 }
 
-/// The pack folder: `VERA20K_HD_ART_PACK`; else the selected mod's
-/// `hd_art/pack` (`Mods/<mod>/hd_art/pack`, docs/hd-2d.md), so an HD pack
-/// installs like any mod; else `hd_art/pack` beside the executable.
+/// The pack folder: `VERA20K_HD_ART_PACK`, else the selected mod's
+/// `hd_art/pack` (`Mods/<mod>/hd_art/pack`, docs/hd-2d.md): an HD pack
+/// installs like any mod. None without either.
 pub(crate) fn pack_dir() -> Option<PathBuf> {
     if let Ok(dir) = std::env::var("VERA20K_HD_ART_PACK") {
         return Some(PathBuf::from(dir));
     }
-    if let Some(dir) = crate::map::source::mod_dir()
+    crate::map::source::mod_dir()
         .map(|mod_dir| mod_dir.join("hd_art").join("pack"))
         .filter(|dir| dir.is_dir())
-    {
-        return Some(dir);
-    }
-    Some(std::env::current_exe().ok()?.parent()?.join("hd_art").join("pack"))
+}
+
+static PACK_AVAILABLE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Look for the pack again: once a start has chosen its mod
+/// (`app::initialize`), and in tests.
+pub(crate) fn refresh_pack_available() {
+    let found = pack_dir().is_some_and(|dir| dir.is_dir());
+    PACK_AVAILABLE.store(found, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether this start has an HD art pack ([`refresh_pack_available`]):
+/// HD-2D can be on only with one.
+pub(crate) fn pack_available() -> bool {
+    PACK_AVAILABLE.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// A folder of the pack (`terrain`, `sidebar`).
@@ -613,11 +624,10 @@ mod tests {
         assert_ne!(frame_hash(2, 1, &[5, 6]), frame_hash(2, 1, &[6, 5]));
     }
 
-    /// An HD pack installs as a mod: the selected mod's `hd_art/pack` is
-    /// read before the one beside the executable, and a mod without one
-    /// leaves the executable's.
+    /// An HD pack installs as a mod: the selected mod's `hd_art/pack` is the
+    /// pack, and a mod without one, or no mod, leaves none.
     #[test]
-    fn the_selected_mods_pack_comes_first() {
+    fn the_selected_mods_pack_is_the_pack() {
         if std::env::var_os("VERA20K_HD_ART_PACK").is_some() {
             return;
         }
@@ -626,23 +636,23 @@ mod tests {
         std::fs::create_dir_all(with_pack.join("hd_art").join("pack")).unwrap();
         let without = root.join("Mods").join("Gameplay");
         std::fs::create_dir_all(&without).unwrap();
-        let beside_exe = std::env::current_exe()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("hd_art")
-            .join("pack");
 
         crate::map::source::set_mod_dir(Some(with_pack.clone()));
+        refresh_pack_available();
+        assert!(pack_available());
         assert_eq!(pack_dir(), Some(with_pack.join("hd_art").join("pack")));
         assert_eq!(
             pack_subdir("terrain"),
             Some(with_pack.join("hd_art").join("pack").join("terrain"))
         );
         crate::map::source::set_mod_dir(Some(without));
-        assert_eq!(pack_dir(), Some(beside_exe.clone()));
+        refresh_pack_available();
+        assert!(!pack_available());
+        assert_eq!(pack_dir(), None);
         crate::map::source::set_mod_dir(None);
-        assert_eq!(pack_dir(), Some(beside_exe));
+        refresh_pack_available();
+        assert!(!pack_available());
+        assert_eq!(pack_dir(), None);
         let _ = std::fs::remove_dir_all(root);
     }
 }

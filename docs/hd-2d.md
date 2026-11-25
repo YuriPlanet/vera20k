@@ -32,8 +32,13 @@ Mods/
 
 Pick it in the Mods menu, or import its ZIP with Add Mod. A gameplay mod can
 ship its own `hd_art/pack` the same way, for its own art. The selected mod's
-pack is read first; `VERA20K_HD_ART_PACK=<folder>` replaces it for one
-process, and without either the game looks beside the executable.
+pack is the one drawn; `VERA20K_HD_ART_PACK=<folder>` replaces it for one
+process.
+
+HD-2D can be on only while the running mod brings a pack. Without one the
+Options list offers Off alone and its help says an HD art pack mod is needed,
+Page Up in a match says the same and changes nothing, and a saved `Hd2d=yes`
+is kept but draws nothing until a pack runs.
 
 The pre-match check of a mod's files leaves `hd_art` out (`app::mod_files`):
 players with and without a pack play together, and the pictures are not read

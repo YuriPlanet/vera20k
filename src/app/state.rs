@@ -304,8 +304,13 @@ pub(crate) fn sidebar_frame(
 
 /// Whether HD-2D is on (`render::hd2d`), and whether its debug tint is: the
 /// `VERA20K_HD2D` capture override, else `[VERA] Hd2d=`, which the Options
-/// list and the HD-2D key (Page Up) set.
+/// list and the HD-2D key (Page Up) set. Either way only with an HD art pack
+/// (`render::hd_art::pack_available`): without one the setting is kept but
+/// draws nothing.
 pub(crate) fn hd_2d(persistence: &crate::app::persistence::PersistenceState) -> (bool, bool) {
+    if !crate::render::hd_art::pack_available() {
+        return (false, false);
+    }
     crate::render::hd2d::env_override().unwrap_or((persistence.options_profile.hd_2d, false))
 }
 
