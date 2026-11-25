@@ -71,7 +71,8 @@ checks it keeps running with no trigger refused; `--nocapture` prints the module
 These tests need `RA2_DIR` (the retail install) or they return early and pass
 without running.
 The benchmark mod `sdk/examples/control-bench` reaches nearly every phase-1 control
-point in one module (marks in a rules stage, four areas and a finale) and runs
+point in one module (222 marks in a rules stage, four areas and a finale, all by
+frame ~2900) and runs
 through `control_bench_reaches_every_mark` (`VERA20K_TEST_CONTROL_BENCH` the built
 module, `VERA20K_TEST_CONTROL_BENCH_FRAMES` the frames, 6000 by default): the test
 makes a mod folder as a modder ships it (`rules.wasm`; the retail `rulesmd.ini`
@@ -81,7 +82,7 @@ loads the Battle against one computer house through that mod
 (`headless_scenario::load_with_mod_folder`), so `vera_init` and `on_rules` run
 at the rules stage. It needs `DEMO-OK bench.all`, which the bench logs after its
 finale (`SuspendProduction`, `Defeat` veto then defeat, `EndFor`; it starts when the areas are done or at frame 4800); a failure names
-the marks of its latest `BENCH-MISSING` lines. Its `README.zh-CN.md` lists what
+the marks of its latest `BENCH-MISSING` lines that never arrived. Its `README.zh-CN.md` lists what
 it leaves out and why. The examples' `.cargo/config.toml` is ignored by the root
 `.gitignore`; add a new one with `git add -f`.
 
