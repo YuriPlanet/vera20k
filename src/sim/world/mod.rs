@@ -124,6 +124,8 @@ mod fly_landing;
 mod fly_orders;
 mod fly_process;
 mod frame_error;
+#[cfg(all(test, tests_sim_world_c_o))]
+mod kratos_wreck_tests;
 mod lifecycle;
 mod master_frame;
 #[cfg(any(test, feature = "test-support"))]

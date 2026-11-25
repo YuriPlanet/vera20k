@@ -775,6 +775,24 @@ fn waypoint_cue_random_sound_matches_original_selection_and_rng_without_terrain(
 }
 
 #[test]
+fn random_waypoint_sound_can_select_the_last_extended_slot() {
+    let mut sim = Simulation::with_seed(0);
+    let ini = IniFile::from_str("[Waypoints]\n18277=17012\n");
+    sim.install_waypoints(&crate::map::waypoints::parse_waypoints(&ini));
+    let sound = crate::rules::sound_ini::SoundReference::Name("TestAmbient".into());
+    assert!(sim.trigger_play_sound_at_random_waypoint(
+        Some(&sound),
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        &mut FrameEffects::default(),
+    ));
+    assert!(matches!(
+        sim.sound_events.as_slice(),
+        [SimSoundEvent::VocAtCoord { coordinate, .. }]
+            if (coordinate.x, coordinate.y, coordinate.z) == (3200, 4480, 0)
+    ));
+}
+
+#[test]
 fn waypoint_cue_sound_actions_share_literal_and_named_catalog_through_live_tags() {
     for kind in [19, 98, 99] {
         for (parameter, token) in [(0, "1"), (11, "1"), (7, "cowambient")] {

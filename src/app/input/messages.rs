@@ -1298,11 +1298,21 @@ fn sync_view(state: &mut AppState) {
         &state.persistence,
     );
     let top = state.renderer.performance_overlay.message_top();
-    state.match_state.match_presentation.message_list.set_view(
-        x,
-        y.max(tactical_y as i32 + top),
-        width,
-    );
+    // Android: the battle view fills the window, so the screen's rounded
+    // corner and its cutout sit over the lane's first rows. Move the lane in
+    // by what they hide, from screen pixels to the render frame's own units.
+    #[cfg(target_os = "android")]
+    let (x, y) = {
+        let window = state.platform.window.inner_size();
+        let (dx, dy) = crate::util::display_insets::frame_offset(
+            (state.render_width(), state.render_height()),
+            (window.width, window.height),
+        );
+        (x + dx, y.max(tactical_y as i32 + top + dy))
+    };
+    #[cfg(not(target_os = "android"))]
+    let y = y.max(tactical_y as i32 + top);
+    state.match_state.match_presentation.message_list.set_view(x, y, width);
 }
 
 /// Prepare one successful offline TextLabel paint, using raw wall time for

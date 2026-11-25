@@ -2,8 +2,8 @@
 
 use crate::map::scenario_menu::MapMenuEntry;
 use crate::skirmish_launch::{
-    LaunchStartPosition, LaunchTeam, LaunchValidationError, SKIRMISH_MAX_SLOT_COUNT,
-    SkirmishAiSlot, SkirmishLaunchMode, SkirmishLaunchSession, SkirmishLocalSlot,
+    LaunchStartPosition, LaunchTeam, LaunchValidationError, SkirmishAiSlot, SkirmishLaunchMode,
+    SkirmishLaunchSession, SkirmishLocalSlot,
 };
 use crate::skirmish_modes::SkirmishGameMode;
 
@@ -16,14 +16,20 @@ fn launch_start_position(
     match start_position {
         LaunchStartPosition::Auto => Ok(LaunchStartPosition::Auto),
         // VERA's maps with more than eight starts list them up to
-        // SKIRMISH_MAX_SLOT_COUNT.
-        LaunchStartPosition::Position(position) if position < SKIRMISH_MAX_SLOT_COUNT as u8 => {
-            Ok(LaunchStartPosition::Position(position))
-        }
+        // SKIRMISH_MAX_SLOT_COUNT, the domain the start reader owns.
         LaunchStartPosition::Position(position) => {
-            Err(LaunchValidationError::InvalidStartPosition { slot, position })
+            LaunchStartPosition::from_shell_value(i32::from(position))
+                .ok_or(LaunchValidationError::InvalidStartPosition { slot, position })
         }
     }
+}
+
+/// The shell's own Team list offers -2 (no team) and the native teams
+/// (0..=[`NATIVE_TEAMS`](crate::skirmish_launch::NATIVE_TEAMS)-1), so every
+/// team the shell holds is inside the team domain; a value outside it is no
+/// team.
+pub(super) fn shell_team(value: i32) -> LaunchTeam {
+    LaunchTeam::from_shell_value(value).unwrap_or(LaunchTeam::None)
 }
 
 /// A picked colour has to be one the lobby lists. A Random row's stored
@@ -100,9 +106,7 @@ pub fn launch_session(
             .opponents
             .iter()
             .filter(|opponent| opponent.is_active())
-            .all(|opponent| {
-                LaunchTeam::from_shell_value(opponent.team) == LaunchTeam::Team(local_team)
-            });
+            .all(|opponent| shell_team(opponent.team) == LaunchTeam::Team(local_team));
         if all_active_ai_same_team {
             return Err(LaunchValidationError::SameExplicitTeam { team: local_team });
         }
@@ -145,7 +149,7 @@ pub fn pack_launch_session_without_start_validation(
         )?,
         color_random: !state.player_color_claimed,
         start_position: launch_start_position(0, state.player_start_position)?,
-        team: LaunchTeam::from_shell_value(state.player_team),
+        team: shell_team(state.player_team),
     };
 
     let mut opponents = Vec::new();
@@ -166,7 +170,7 @@ pub fn pack_launch_session_without_start_validation(
             )?,
             color_random: !opponent.color_claimed,
             start_position: launch_start_position(slot, opponent.start_position)?,
-            team: LaunchTeam::from_shell_value(opponent.team),
+            team: shell_team(opponent.team),
             difficulty,
         });
     }

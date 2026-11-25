@@ -40,7 +40,7 @@ const MESSAGE_EDIT_WIDTH_MARGIN_PX: i32 = 10;
 /// Set_View_Dimensions (`0x004A8B9B..0x004A8BB8`) pass them: X = tactical
 /// x + 3, Y = tactical y, Width = tactical w − 6, of which Init `0x005D3A60`
 /// keeps Width − 8.
-const MESSAGE_X_INSET: i32 = 3;
+pub(crate) const MESSAGE_X_INSET: i32 = 3;
 const MESSAGE_INIT_WIDTH_INSET: i32 = 6 + 8;
 /// SetWidth `0x005D4AD0` keeps its argument − 8; Set_View_Dimensions
 /// passes the whole tactical width (`0x004A8BBD..0x004A8BC9`).

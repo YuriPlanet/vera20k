@@ -54,7 +54,11 @@ use common_body::techno_after_acquisition;
 use common_body::techno_common_post;
 use common_body::techno_common_steps;
 use common_body::unit_techno_bracket;
-pub(super) use common_body::{behind_indicator_cell, behind_indicator_coord, stage_step};
+pub(super) use common_body::{
+    allied_target_drops, behind_indicator_cell, behind_indicator_coord, combat_damage_heals,
+    house_heal_frame, house_heals, illegal_target_drop_frame, off_mission_clear_drops, stage_step,
+    target_reach_asks,
+};
 pub(crate) use foot_patrol::PatrolPost;
 mod mission_handlers;
 mod scan_batch;

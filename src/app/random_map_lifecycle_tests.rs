@@ -110,7 +110,7 @@ fn receive_production_generation(
             .expect("production random-map worker receipt")
         {
             RandomMapUpdate::Started => entries += 1,
-            RandomMapUpdate::Progress(_) => {}
+            RandomMapUpdate::Progress { .. } => {}
             RandomMapUpdate::Finished(generated) => {
                 assert_eq!(entries, 1, "each production worker enters generation once");
                 return (entries, *generated);
