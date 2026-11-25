@@ -127,7 +127,8 @@ the source tree). Its Wasm verbs need no game install:
   answer in `on_decide!` (`FireAllowedDecision::set_result(0)` vetoes a shot). They are
   `preview` and may change. `MISSION_CHANGED` is numbered but deferred (not raised);
   check with `has_kind`. A `SpeedMultiplier` modifier also slows or speeds up
-  aircraft, jumpjets and rockets. An `ImmunityFlags` override (preview; `Override`
+  aircraft, jumpjets and rockets. A `ROTMultiplier` modifier (preview) scales how
+  fast a vehicle's or building's body turns (not turrets or aircraft). An `ImmunityFlags` override (preview; `Override`
   only, bits 0..6) grants or removes immunity to mind control, radiation, poison,
   psychic damage, chrono, EMP and berserk. `FatalDamageDecision::TIBERIUM_REMAINS`
   leaves Riparius where the object died.

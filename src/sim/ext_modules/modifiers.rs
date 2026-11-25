@@ -70,6 +70,26 @@
 //!   `ImmuneToPsionics=` natively and Ares' `ImmuneToBerserk=`). The read
 //!   value starts from the type's flags ([`GameEntity::immunity_flags`]);
 //!   `DamageIncoming` honours the mask where it pre-checks the gates.
+//! - `ROTMultiplier` (preview): the body facing's rate (`+0x388`
+//!   PrimaryFacing, the rate word `FacingClass::Set_ROT @ 0x004C9680`
+//!   writes), by which Drive, Ship, Hover, Mech, Tunnel and Teleport turn
+//!   and a turretless building aims. Event-driven, never read while turning:
+//!   when a modifier on the property starts, is replaced, removed or
+//!   expires, [`ModifierStore::refresh`] writes the native rate word scaled
+//!   by the module factor (base 1.0, truncated toward zero, at least 1, at
+//!   most `0x7FFF`; an instant rate, signed word <= 0, stays instant), and
+//!   restores the exact native word when the last such modifier goes. The
+//!   store keeps that native word while the property holds (`native_rots`,
+//!   saved), and the engine's later type-rate writes on the body
+//!   (conversion, a Carryall's drop) go through
+//!   [`Simulation::set_body_rot`], which updates it. A rate change during a
+//!   turn is native `Set_ROT`: the turn keeps its start and its frame count,
+//!   so it still ends when it would have, and the heading in between is
+//!   resampled at the new rate (it jumps; a rate above the remaining arc
+//!   shows the destination at once). Not reached: the turret
+//!   (SecondaryFacing, whose rate `Facing_Update` rewrites from `ROT=` on
+//!   each aim), Fly's turns (SecondaryFacing), Hover's steering facing,
+//!   Jumpjet's flight facing and Walk's snapped body.
 //!
 //! Each stage starts from the Phobos AttachEffect product (1.0 without
 //! Phobos), scales it by `1 + sum of additions` (an additive property:
@@ -154,6 +174,7 @@ pub enum Stat {
     ForceDecloak,
     DisableWeapons,
     Immunity,
+    Rot,
 }
 
 /// `ImmunityFlags` bits (appendix 7.2).
@@ -187,7 +208,7 @@ enum Unit {
 }
 
 impl Stat {
-    const COUNT: usize = 13;
+    const COUNT: usize = 14;
 
     pub(super) fn from_property(name: &str) -> Option<Self> {
         Some(match name {
@@ -204,6 +225,7 @@ impl Stat {
             "ForceDecloak" => Self::ForceDecloak,
             "DisableWeapons" => Self::DisableWeapons,
             "ImmunityFlags" => Self::Immunity,
+            "ROTMultiplier" => Self::Rot,
             _ => return None,
         })
     }
@@ -228,6 +250,7 @@ impl Stat {
             Self::ForceDecloak => "ForceDecloak",
             Self::DisableWeapons => "DisableWeapons",
             Self::Immunity => "ImmunityFlags",
+            Self::Rot => "ROTMultiplier",
         }
     }
 
@@ -253,7 +276,8 @@ impl Stat {
             | Self::Speed
             | Self::Rof
             | Self::RangeMultiplier
-            | Self::CritMultiplier => Unit::Factor,
+            | Self::CritMultiplier
+            | Self::Rot => Unit::Factor,
             Self::CritExtraChance => Unit::Fixed,
             Self::RangeExtra => Unit::Leptons,
             Self::Unkillable | Self::Cloakable | Self::ForceDecloak | Self::DisableWeapons => {
@@ -303,7 +327,8 @@ impl Stat {
             Self::Armor => entity.phobos_armor_multiplier(),
             Self::Speed => entity.phobos_speed_multiplier(),
             Self::Rof => entity.phobos_rof_multiplier(),
-            Self::RangeMultiplier | Self::CritMultiplier => 1.0,
+            // Phobos has no turn-rate effect.
+            Self::RangeMultiplier | Self::CritMultiplier | Self::Rot => 1.0,
             Self::RangeExtra | Self::CritExtraChance | Self::DisableWeapons => 0.0,
             // Read through `GameEntity::immunity_flags`, which knows the type.
             Self::Immunity => 0.0,
@@ -342,6 +367,22 @@ pub struct Modifier {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ModifierStore {
     modifiers: BTreeMap<u64, Modifier>,
+    /// The native body rate word of each object a `ROTMultiplier` modifier
+    /// holds, by creation serial: what its body facing returns to when the
+    /// last one goes (see the module documentation).
+    #[serde(default)]
+    native_rots: BTreeMap<u64, u16>,
+}
+
+/// `native`, a body rate word, scaled by a `ROTMultiplier` `factor`:
+/// truncated toward zero into `1..=0x7FFF`; an instant word (signed <= 0)
+/// and the factor 1.0 keep it bit for bit.
+fn scaled_rate(native: u16, factor: f64) -> u16 {
+    let signed = native as i16;
+    if factor == 1.0 || signed <= 0 {
+        return native;
+    }
+    ((f64::from(signed) * factor) as i32).clamp(1, i32::from(i16::MAX)) as u16
 }
 
 /// One stat's module terms, folded onto the Phobos value.
@@ -710,10 +751,12 @@ impl ModifierStore {
     /// Drops a removed object's modifiers.
     pub(super) fn forget_object(&mut self, target: u64) {
         self.modifiers.retain(|_, m| m.target != target);
+        self.native_rots.remove(&target);
     }
 
-    /// Rebuilds every object's cache, after a load.
-    pub(super) fn refresh_all(&self, entities: &mut EntityStore) {
+    /// Rebuilds every object's cache, after a load. The body rates it
+    /// writes are the saved ones: the saved native word scaled again.
+    pub(super) fn refresh_all(&mut self, entities: &mut EntityStore) {
         let mut targets: Vec<u64> = self.modifiers.values().map(|m| m.target).collect();
         targets.sort_unstable();
         targets.dedup();
@@ -722,8 +765,9 @@ impl ModifierStore {
         }
     }
 
-    /// Recomputes `target`'s cache from its modifiers.
-    fn refresh(&self, entities: &mut EntityStore, target: u64) {
+    /// Recomputes `target`'s cache from its modifiers, then its body rate
+    /// ([`Self::apply_rot`]).
+    fn refresh(&mut self, entities: &mut EntityStore, target: u64) {
         let Some(entity) = entities.get_mut(target) else {
             return;
         };
@@ -747,12 +791,50 @@ impl ModifierStore {
         for ((terms, added), scale) in stats.iter_mut().zip(added).zip(ALL_STATS.map(Stat::scale)) {
             terms.added = added as f64 / scale;
         }
+        let rot_held = !stats[Stat::Rot as usize].is_none();
         entity.seldom.module_modifiers = (!group_counts.is_empty()).then(|| {
             Box::new(ModifierTerms {
                 stats,
                 group_counts,
             })
         });
+        self.apply_rot(entity, target, rot_held);
+    }
+
+    /// The `ROTMultiplier` write after `target`'s terms changed: while the
+    /// property holds, the native word (taken from the body the first time)
+    /// scaled; when it stops, the native word back.
+    fn apply_rot(&mut self, entity: &mut GameEntity, target: u64, rot_held: bool) {
+        if !rot_held {
+            if let Some(native) = self.native_rots.remove(&target) {
+                entity.body_facing.set_rate_word(native);
+            }
+            return;
+        }
+        let native = *self
+            .native_rots
+            .entry(target)
+            .or_insert_with(|| entity.body_facing.rot_per_frame());
+        let factor = entity.with_module_modifiers(Stat::Rot, 1.0);
+        entity
+            .body_facing
+            .set_rate_word(scaled_rate(native, factor));
+    }
+
+    /// `Set_ROT` from a type `ROT=` on `id`'s body facing, through the
+    /// module `ROTMultiplier`: the native word without one.
+    fn set_body_rot(&mut self, entities: &mut EntityStore, id: u64, rot: i32) {
+        let Some(entity) = entities.get_mut(id) else {
+            return;
+        };
+        entity.body_facing.set_rot(rot);
+        if let Some(native) = self.native_rots.get_mut(&id) {
+            *native = entity.body_facing.rot_per_frame();
+            let factor = entity.with_module_modifiers(Stat::Rot, 1.0);
+            entity
+                .body_facing
+                .set_rate_word(scaled_rate(*native, factor));
+        }
     }
 }
 
@@ -771,6 +853,7 @@ const ALL_STATS: [Stat; Stat::COUNT] = [
     Stat::ForceDecloak,
     Stat::DisableWeapons,
     Stat::Immunity,
+    Stat::Rot,
 ];
 
 impl Modifier {
@@ -804,6 +887,19 @@ impl Modifier {
 }
 
 impl Simulation {
+    /// The engine's type-rate write on an object's body facing after
+    /// construction (`Set_ROT @ 0x004C9680` with a type's `ROT=`): Ares'
+    /// type conversion and a Carryall's drop. A module `ROTMultiplier` on
+    /// the object scales the new native rate; without one this is
+    /// `set_rot` itself. The class constructor's write
+    /// ([`GameEntity::set_body_facing_rot`]) needs no module: a new object
+    /// holds no modifier.
+    pub(crate) fn set_body_rot(&mut self, id: u64, rot: i32) {
+        self.ext_modules
+            .modifiers
+            .set_body_rot(&mut self.substrate.entities, id, rot);
+    }
+
     /// `ModifierExpire` for each modifier in `removed`, in handle order.
     pub(super) fn raise_modifiers_expired(
         &mut self,

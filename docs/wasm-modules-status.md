@@ -598,6 +598,15 @@ modules, external modders, freeze), and the later items (peer calls,
   the path batch stays on (the decision is at the adoption, in the Foot's turn).
   SDK `MoveFrameDecision`, `PathFoundDecision`, `Action::push`,
   `Action::set_facing`. Tests `ext_modules_movement_tests.rs`.
+- `ROTMultiplier` (MOV-S14, preview), the body facing's turn rate:
+  `src/sim/ext_modules/modifiers.rs` (`ModifierStore::apply_rot`,
+  `Simulation::set_body_rot`). Event-driven: written to the body's
+  `FacingClass` when the object's modifiers change (start, replacement,
+  removal, expiry, load) and at the engine's later type-rate writes (Ares
+  conversion, Carryall drop); the turning code never reads modifiers. The
+  native word is kept in the modifier store while the property holds (save
+  field `native_rots`) and restored exactly. Test in
+  `ext_modules_movement_tests.rs`.
 
 ## Residuals
 
@@ -632,8 +641,12 @@ modules, external modders, freeze), and the later items (peer calls,
   leaves a bridge deck and keeps an infantryman's sub-cell spot; a taken frame
   skips the native Process's own draws (Walk's sub-cell choice); a standing
   infantryman asleep when the first `MoveFrame` decider appears is asked from its
-  next full turn; Scatter's immediate Walk Process may ask twice in a frame. No
-  `ROT` modifier; `Push` does not launch into the air. `PathFound` answers the
+  next full turn; Scatter's immediate Walk Process may ask twice in a frame.
+  `ROTMultiplier` scales the body (PrimaryFacing) only: not the turret, whose
+  rate `Facing_Update` rewrites from `ROT=` on each aim, nor Fly's turns
+  (SecondaryFacing), Hover's steering facing, Jumpjet's flight facing or
+  Walk's snapped body; a Carryall's copied rate on its cargo is overwritten by
+  a modifier change while carried. `Push` does not launch into the air. `PathFound` answers the
   route's first window only, is not asked for a train's queued extension or a
   route with a tube step, and is asked while the Foot is lifted (Mark0).
 - Actions unsupported: `RemovePassenger`, team and projectile actions,

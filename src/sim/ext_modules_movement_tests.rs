@@ -2,8 +2,9 @@
 //! `MoveFrame` step moves a Grizzly within its cell and into the next one,
 //! a held step keeps it from its move order, a `Push` spreads its distance
 //! over its frames (saved and hashed while it runs), `SetFacing` turns it,
-//! and a `PathFound` refusal keeps it from leaving its cell; plus what
-//! `has_kind` lists and the push arithmetic.
+//! a `PathFound` refusal keeps it from leaving its cell, and a
+//! `ROTMultiplier` scales its body rate; plus what `has_kind` lists and the
+//! push arithmetic.
 
 use vera20k_wasm_ext::Status;
 use vera20k_wasm_ext::decide::{EVENT_MOVE_FRAME, EVENT_PATH_FOUND, MoveStep};
@@ -360,4 +361,68 @@ fn push_arithmetic() {
     let steps = tests_support::push_steps([5, 0], 8);
     assert_eq!(steps.len(), 8);
     assert_eq!(steps.iter().map(|s| s[0]).sum::<i32>(), 5);
+}
+
+/// Puts a `ROTMultiplier` multiply of `factor` (raw `fixed`) on `target`:
+/// its handle.
+fn rot_modifier(scene: &mut HeadlessScenario, target: u64, factor: i64) -> u64 {
+    use super::modifiers::{Modifier, ModifierOp, Stat};
+    let sim = &mut scene.runtime.simulation;
+    let handle = sim.substrate.allocate_stable_id();
+    let modifier = Modifier {
+        target,
+        stat: Stat::Rot,
+        op: ModifierOp::Multiply,
+        value: factor,
+        expires: None,
+        source: 0,
+        group: 0,
+        origin: ModuleSource::Map,
+    };
+    sim.ext_modules
+        .modifiers
+        .insert(&mut sim.substrate.entities, handle, modifier)
+        .expect("the modifier fits");
+    handle
+}
+
+fn body_rate(scene: &HeadlessScenario, tank: u64) -> u16 {
+    scene
+        .sim()
+        .entities()
+        .get(tank)
+        .expect("tank")
+        .body_facing
+        .rot_per_frame()
+}
+
+/// A `ROTMultiplier` of 0.5 halves the Grizzly's body rate word, a second
+/// one of 4.0 makes it double the native word, a save keeps the scaled word,
+/// and removing both brings back the native word bit for bit.
+#[test]
+fn a_rot_multiplier_scales_the_body_rate() {
+    let Some((mut scene, tank, _)) = tank_scene() else {
+        return;
+    };
+    let native = body_rate(&scene, tank);
+    assert!(native as i16 > 1, "the Grizzly turns at a rate");
+    let half = rot_modifier(&mut scene, tank, 1 << 15);
+    assert_eq!(body_rate(&scene, tank), native / 2);
+    let quadruple = rot_modifier(&mut scene, tank, 4 << 16);
+    assert_eq!(body_rate(&scene, tank), native * 2);
+    let loaded = super::tests::saved_and_loaded(&scene);
+    assert_eq!(body_rate(&loaded, tank), native * 2);
+    assert_eq!(
+        loaded.sim().ext_modules.modifiers,
+        scene.sim().ext_modules.modifiers
+    );
+    let sim = &mut scene.runtime.simulation;
+    for handle in [half, quadruple] {
+        sim.ext_modules
+            .modifiers
+            .remove(&mut sim.substrate.entities, handle)
+            .expect("the modifier is held");
+    }
+    assert_eq!(body_rate(&scene, tank), native);
+    assert!(scene.sim().ext_modules.modifiers.is_empty());
 }

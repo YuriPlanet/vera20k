@@ -1148,6 +1148,7 @@ AI 文档的读写层次见 [RFC 6d](0001-wasm-extension-modules.zh-CN.md#6d-ai)
 | `TargetArmor` | id（`Armor`） | 类型的护甲 | 覆盖 | 选目标、威胁评分、选武器和开火许可使用的护甲；不改变伤害结算 | — | preview |
 | `FirepowerMultiplier` | fixed | 1.0 | 加、乘、覆盖 | 火力倍率 | `FirepowerMultiplier` | v1 |
 | `SpeedMultiplier` | fixed | 1.0 | 加、乘、覆盖 | 速度倍率；飞行、喷气背包和火箭移动读类型速度，只按模块修饰器缩放它 | `SpeedMultiplier` | v1 |
+| `ROTMultiplier` | fixed | 1.0 | 加、乘、覆盖 | 车辆、船只和建筑车体的转向速度（主朝向的 `ROT=`）。在对象的修饰器变化时生效，正在进行的转向仍在原定的帧结束。不影响炮塔、飞机和喷气背包 | — | preview |
 | `ROFMultiplier` | fixed | 1.0 | 加、乘、覆盖 | 射速倍率 | `ROFMultiplier`、`ROFMultiplier.ApplyOnCurrentTimer` | v1 |
 | `WeaponRangeMultiplier` | fixed | 1.0 | 加、乘、覆盖 | 射程 | `WeaponRange.Multiplier` | v1 |
 | `WeaponRangeExtra` | lepton | 0 | 加、乘、覆盖 | 射程 | `WeaponRange.ExtraRange` | v1 |

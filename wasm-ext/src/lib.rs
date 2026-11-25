@@ -275,6 +275,8 @@ pub const PROPERTIES: &[&str] = &[
     "Obstructed",
     // 7.8 global
     "AutomationAllowed",
+    // RFC 0001 0.0.23: 7.2 modifiable properties
+    "ROTMultiplier",
 ];
 
 /// `Domain` (appendix 8.3, enum 25): the bits of a house's `ControlDomains`.

@@ -1148,6 +1148,7 @@ Base values come from the type or a default. Modifiers determine the effective v
 | `TargetArmor` | id (`Armor`) | Type's armor | Override | Armor used for target selection, threat scoring, weapon selection and fire permission. Does not affect damage settlement. | — | preview |
 | `FirepowerMultiplier` | fixed | 1.0 | Add, multiply, override | Firepower multiplier | `FirepowerMultiplier` | v1 |
 | `SpeedMultiplier` | fixed | 1.0 | Add, multiply, override | Speed multiplier. Flying, jumpjet and rocket movement, which read their type speed, scale it by the module modifiers alone | `SpeedMultiplier` | v1 |
+| `ROTMultiplier` | fixed | 1.0 | Add, multiply, override | Body turn rate (`ROT=` of the PrimaryFacing) of vehicles, ships and buildings. Applied when the object's modifiers change, so a turn in progress keeps its end frame. Not turrets, aircraft or jumpjets | — | preview |
 | `ROFMultiplier` | fixed | 1.0 | Add, multiply, override | Rate-of-fire multiplier | `ROFMultiplier`, `ROFMultiplier.ApplyOnCurrentTimer` | v1 |
 | `WeaponRangeMultiplier` | fixed | 1.0 | Add, multiply, override | Range | `WeaponRange.Multiplier` | v1 |
 | `WeaponRangeExtra` | lepton | 0 | Add, multiply, override | Range | `WeaponRange.ExtraRange` | v1 |
