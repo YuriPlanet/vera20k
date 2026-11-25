@@ -1373,7 +1373,7 @@ impl Simulation {
 
     /// Script16 / Team6ECCE0..6ECE51, dispatched at6E962A. First takes
     /// the waypoint's Cell; an empty focus does so again only when the
-    /// current script argument is unsigned-below702. On the global
+    /// current script argument is in range (A..ZZ in gamemd, A..ZZZ in VERA). On the global
     /// frame modulo ftol([AI]PatrolScan*900), the shared LeadershipRating
     /// leader asks GreatestThreat(1, its Location, false). A found object
     /// replaces the mission target. An empty scan clears a non-waypoint
@@ -1425,7 +1425,9 @@ impl Simulation {
                     self.team_script_vm.scripts.get(&team.script_id),
                     team.cursor,
                 )
-                .is_some_and(|action| (action.argument as u32) < 702)
+                .is_some_and(|action| {
+                    crate::map::waypoints::waypoint_slot(action.argument).is_some()
+                })
         }) {
             self.team_assign_mission_target(team_id, Some(waypoint_target), rules, effects);
         }
