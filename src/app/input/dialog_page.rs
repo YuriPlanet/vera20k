@@ -7,8 +7,16 @@
 
 use vera20k_gui::{Gui, InputEvent, MouseButton, NodeId, NodeKind, NodeSpec};
 
+use crate::app::PlatformState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::{App, AppState};
+use crate::audio::sfx::SfxPlayer;
+use crate::ui::game_screen::GameScreen;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
@@ -25,13 +33,20 @@ pub(crate) fn event_at(x: i32, y: i32, down: Option<bool>) -> InputEvent {
 }
 
 /// [`event_at`] the active-game shell's cursor.
-pub(crate) fn shell_event(state: &AppState, down: Option<bool>) -> InputEvent {
+pub(crate) fn shell_event(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+    down: Option<bool>,
+) -> InputEvent {
     let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        screen,
+        match_state,
+        persistence,
     );
     event_at(x, y, down)
 }
@@ -132,21 +147,34 @@ impl InGameDialog {
     /// rest.
     pub(crate) fn route(
         &self,
-        state: &mut AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
+        persistence: &PersistenceState,
         down: Option<bool>,
         nodes: impl FnOnce() -> NodeSpec,
         rect_of: impl Fn(u16) -> Option<RectPx>,
         sync: impl FnOnce(&mut Gui, NodeId),
     ) -> Vec<PageEvent> {
-        let event = shell_event(state, down);
-        let Some(ui) = (self.ui_mut)(&mut state.match_state.match_presentation) else {
+        let event = shell_event(
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence,
+            down,
+        );
+        let Some(ui) = (self.ui_mut)(&mut match_state.match_presentation) else {
             return Vec::new();
         };
         let mut events = route(ui, self.id, nodes, rect_of, sync, event);
         if self.own_checkbox_sound {
             events.retain(|event| *event != PageEvent::Cue(page::PageCue::Checkbox));
         }
-        play_cues(state, events)
+        play_cues(frontend, match_state, process_assets, sfx_player, events)
     }
 }
 
@@ -193,17 +221,19 @@ pub(crate) fn in_game_pointer(
 
 /// Plays the cues among `events` (an enabled button's GUIMainButtonSound at
 /// mouse down, `0x0061374B`) and returns the rest.
-pub(crate) fn play_cues(state: &mut AppState, events: Vec<PageEvent>) -> Vec<PageEvent> {
+pub(crate) fn play_cues(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    events: Vec<PageEvent>,
+) -> Vec<PageEvent> {
     let mut rest = Vec::with_capacity(events.len());
     for event in events {
         match event {
-            PageEvent::Cue(cue) => App::play_page_cue(
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
-                cue,
-            ),
+            PageEvent::Cue(cue) => {
+                App::play_page_cue(frontend, match_state, process_assets, sfx_player, cue)
+            }
             event => rest.push(event),
         }
     }

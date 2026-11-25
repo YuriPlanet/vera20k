@@ -501,7 +501,15 @@ impl App {
         if next == InGameMenuState::Menu {
             state.match_state.match_presentation.pause_menu_has_saves =
                 state.persistence.repository.has_browser_entry();
-            crate::app::input::pause_menu::on_open(state);
+            crate::app::input::pause_menu::on_open(
+                &state.platform,
+                &state.renderer.performance_overlay,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                state.audio.launcher_audio_available,
+                &state.persistence.options_profile,
+            );
         }
         if next == InGameMenuState::AbortConfirm {
             crate::app::input::abort::on_open(&mut state.match_state);

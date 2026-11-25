@@ -14,6 +14,7 @@
 use winit::event::{ElementState, MouseButton};
 
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::{place_ready_building_at_cell, preferred_local_owner_name};
 use crate::app::input::context_order::{ContextClick, ContextOrderTarget, try_queue_context_order};
 use crate::app::input::entity_pick::{
@@ -26,6 +27,7 @@ use crate::app::input::entity_pick::{
 };
 use crate::app::input::precedence::{ModalPage, modal_page};
 use crate::app::input::state::MatchInputState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::types::OrderMode;
 #[cfg(test)]
@@ -384,7 +386,7 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                 }
                 // VERA formation line: with its key held and a group
                 // selected, the drag draws a line and no band box.
-                if begin_formation_line(state) {
+                if begin_formation_line(&state.frontend, &mut state.match_state) {
                     return;
                 }
                 state.match_state.input.selection_state.begin_drag(
@@ -465,24 +467,22 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
 /// when its key is held and at least two units that take a point are
 /// selected ([`crate::app::input::context_order::formation_unit_count`]). Fewer leave
 /// the press to the band box, so the key alone never blocks selecting.
-fn begin_formation_line(state: &mut AppState) -> bool {
-    if !state.match_state.input.formation_line.key_held() {
+fn begin_formation_line(frontend: &FrontendState, match_state: &mut MatchState) -> bool {
+    if !match_state.input.formation_line.key_held() {
         return false;
     }
-    let selected =
-        crate::app::input::context_order::formation_unit_count(&state.frontend, &state.match_state);
+    let selected = crate::app::input::context_order::formation_unit_count(frontend, match_state);
     if selected < 2 {
         return false;
     }
     let world = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        &state.match_state.input,
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
+        &match_state.input,
+        match_state.input.cursor_x,
+        match_state.input.cursor_y,
     );
     // Shift held as well: the drag is a block's front row.
-    let block = state.match_state.input.hotkey_modifiers.shift_key();
-    state
-        .match_state
+    let block = match_state.input.hotkey_modifiers.shift_key();
+    match_state
         .input
         .formation_line
         .begin(world, selected, block);
@@ -614,7 +614,7 @@ fn tactical_left_up(state: &mut AppState) {
     }
     // VERA ferry: the armed click sets the selected transports' route, a
     // left-button tool in both control schemes like the ones around it.
-    if crate::app::input::ferry::drop_click(state) {
+    if crate::app::input::ferry::drop_click(&mut state.match_state) {
         return;
     }
     // Planning-node editing stays a left-button tool in both control schemes,

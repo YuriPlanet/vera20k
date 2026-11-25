@@ -1770,7 +1770,9 @@ impl LanCapture {
                         );
                         setup_click(state, arrow);
                         ensure!(
-                            setup_input::open_list(state).map(|(id, _)| id) == Some(control),
+                            setup_input::open_list(&state.frontend, &state.match_state)
+                                .map(|(id, _)| id)
+                                == Some(control),
                             "actual combo arrow did not open its popup"
                         );
                         self.route
@@ -1862,7 +1864,11 @@ impl LanCapture {
                         .context("BC chat")?
                         .chat;
                     ensure!(
-                        crate::app::input::multiplayer_setup::chat_text(state).is_empty(),
+                        crate::app::input::multiplayer_setup::chat_text(
+                            &state.frontend,
+                            &state.match_state
+                        )
+                        .is_empty(),
                         "chat Enter did not clear NewEdit"
                     );
                     ensure!(
@@ -1883,7 +1889,7 @@ impl LanCapture {
             } if rendered == PresentedShell::NetworkSetup => {
                 use crate::ui::multiplayer_setup::SetupColumn;
                 let view = setup::view(state).context("presented settings popup")?;
-                let open = setup_input::open_list(state);
+                let open = setup_input::open_list(&state.frontend, &state.match_state);
                 ensure!(
                     open.map(|(id, _)| id) == Some(control),
                     "settings popup changed before presentation"
@@ -1899,7 +1905,7 @@ impl LanCapture {
                 let row_rect = popup.row_rect(index).context("visible popup choice")?;
                 setup_click(state, row_rect);
                 ensure!(
-                    setup_input::open_list(state).is_none(),
+                    setup_input::open_list(&state.frontend, &state.match_state).is_none(),
                     "choice click did not close popup"
                 );
                 let (column, row) =
@@ -2549,7 +2555,11 @@ impl LanCapture {
                 }
                 if self.target == LanTarget::HostDiplomacy {
                     super::super::skirmish::press_diplomacy_tab(state)?;
-                    let view = crate::app::input::diplomacy::view(state);
+                    let view = crate::app::input::diplomacy::view(
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    );
                     let names: Vec<String> = view
                         .rows
                         .iter()
@@ -2729,7 +2739,11 @@ impl LanCapture {
                 );
                 let ticked = sim.session().tick();
                 super::super::skirmish::press_diplomacy_tab(state)?;
-                let view = crate::app::input::diplomacy::view(state);
+                let view = crate::app::input::diplomacy::view(
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                );
                 let peer_row = view
                     .rows
                     .iter()
@@ -2812,7 +2826,7 @@ impl LanCapture {
                 use crate::app::match_runtime::session::CooperativeRoundEvent;
                 match step {
                     0 => {
-                        let layout = crate::app::input::coop_score::layout(state);
+                        let layout = crate::app::input::coop_score::layout(&state.renderer.gpu);
                         let rect = layout
                             .control_rect(crate::ui::coop_score_shell::CONTINUE)
                             .context("Continue rect")?;
@@ -3053,7 +3067,7 @@ impl LanCapture {
             ))
         };
         let row = |state: &AppState| {
-            diplomacy::view(state).rows[1]
+            diplomacy::view(&state.frontend, &state.match_state, &state.process_assets).rows[1]
                 .as_ref()
                 .and_then(|row| row.allies)
         };
@@ -3204,10 +3218,11 @@ impl LanCapture {
             1 => {
                 let layout = diplomacy::layout(state).context("0x73 has no hit geometry")?;
                 let checked = |state: &AppState| {
-                    diplomacy::view(state).rows[1]
-                        .as_ref()
-                        .and_then(|row| row.chat)
-                        .map(|chat| chat.checked)
+                    diplomacy::view(&state.frontend, &state.match_state, &state.process_assets).rows
+                        [1]
+                    .as_ref()
+                    .and_then(|row| row.chat)
+                    .map(|chat| chat.checked)
                 };
                 ensure!(checked(state) == Some(true), "peer chat box not checked");
                 let point = click_in_game(state, layout.control_rect(DiplomacyControl::Chat(1)));
@@ -3394,7 +3409,9 @@ impl LanCapture {
             }
             2 => {
                 ensure!(
-                    diplomacy::view(state).taunts == Some(true),
+                    diplomacy::view(&state.frontend, &state.match_state, &state.process_assets)
+                        .taunts
+                        == Some(true),
                     "TauntsOn is not shown checked"
                 );
                 let layout = diplomacy::layout(state).context("0x73 has no hit geometry")?;
@@ -3402,7 +3419,9 @@ impl LanCapture {
                 let rect = layout.control_rect(DiplomacyControl::Taunts);
                 click_in_game(state, RectPx::new(rect.x + 40, rect.y, rect.w - 40, rect.h));
                 ensure!(
-                    diplomacy::view(state).taunts == Some(true),
+                    diplomacy::view(&state.frontend, &state.match_state, &state.process_assets)
+                        .taunts
+                        == Some(true),
                     "a caption press toggled TauntsOn"
                 );
                 let point = click_in_game(
@@ -3413,7 +3432,9 @@ impl LanCapture {
                     ),
                 );
                 ensure!(
-                    diplomacy::view(state).taunts == Some(false),
+                    diplomacy::view(&state.frontend, &state.match_state, &state.process_assets)
+                        .taunts
+                        == Some(false),
                     "the TauntsOn icon press left it checked"
                 );
                 if let Some(sfx) = state.audio.sfx_player.as_mut() {

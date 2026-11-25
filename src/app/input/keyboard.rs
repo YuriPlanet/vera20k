@@ -523,7 +523,13 @@ fn activate(state: &mut AppState, id: KeyboardButton) {
 /// A3's control events, after their cues: a button's action, a command
 /// row's selection, a category pick.
 fn apply(state: &mut AppState, events: Vec<PageEvent>) {
-    for event in super::dialog_page::play_cues(state, events) {
+    for event in super::dialog_page::play_cues(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        events,
+    ) {
         match event {
             PageEvent::Activated(CANCEL) => close(state, KeyboardExit::Cancel),
             PageEvent::Activated(id) => {

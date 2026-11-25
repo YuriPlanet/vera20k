@@ -4,8 +4,11 @@
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::input::state::MatchInputState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
 use crate::app::shell_route::ShellRoute;
 use crate::app::{App, AppState};
+use crate::render::gpu::GpuContext;
 use crate::ui::multiplayer_setup::*;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::page::{PageCue, PageEvent};
@@ -14,13 +17,17 @@ use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
 /// The room's page in the window, before VERA's roster is placed in it.
-pub(in crate::app) fn page_layout(state: &AppState) -> MultiplayerSetupLayout {
-    let (w, h) = shell_layout::shell_screen_size(&state.renderer.gpu);
+pub(in crate::app) fn page_layout(
+    gpu: &GpuContext,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+) -> MultiplayerSetupLayout {
+    let (w, h) = shell_layout::shell_screen_size(gpu);
     MultiplayerSetupLayout::new(
-        crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state),
+        crate::app::shell_network_setup::dialog(frontend, match_state),
         w as i32,
         h as i32,
-        shell_layout::fills_window(&state.renderer.gpu),
+        shell_layout::fills_window(gpu),
     )
 }
 
@@ -28,13 +35,15 @@ pub(in crate::app) fn page_layout(state: &AppState) -> MultiplayerSetupLayout {
 /// which holds the Teams count in a room with teams and the host's Room
 /// size, and two groups abreast on a wide one.
 pub(crate) fn roster_frame(
-    state: &AppState,
+    gpu: &GpuContext,
+    frontend: &FrontendState,
+    match_state: &MatchState,
     teams: bool,
     room_size: bool,
 ) -> crate::ui::multiplayer_setup::RosterFrame {
-    let mut layout = page_layout(state);
+    let mut layout = page_layout(gpu, frontend, match_state);
     layout.fit_team_bar(
-        crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state),
+        crate::app::shell_network_setup::dialog(frontend, match_state),
         teams,
         room_size,
     );
@@ -43,16 +52,26 @@ pub(crate) fn roster_frame(
 
 pub(crate) fn layout(state: &AppState) -> MultiplayerSetupLayout {
     match crate::app::shell_network_setup::view(state) {
-        Some(view) => layout_of(state, &view),
-        None => page_layout(state),
+        Some(view) => layout_of(
+            &state.renderer.gpu,
+            &state.frontend,
+            &state.match_state,
+            &view,
+        ),
+        None => page_layout(&state.renderer.gpu, &state.frontend, &state.match_state),
     }
 }
 
 /// The room's layout for `view`: VERA's roster placed with its team bar,
 /// or the rows of a native roster of several pages moved up for Previous
 /// and Next.
-pub(crate) fn layout_of(state: &AppState, view: &SetupView) -> MultiplayerSetupLayout {
-    let mut layout = page_layout(state);
+pub(crate) fn layout_of(
+    gpu: &GpuContext,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    view: &SetupView,
+) -> MultiplayerSetupLayout {
+    let mut layout = page_layout(gpu, frontend, match_state);
     if view.dialog.modern {
         layout.arrange_roster(&view.places);
         let shown = |id| view.trackbars.iter().any(|bar| bar.id == id && bar.visible);
@@ -64,7 +83,7 @@ pub(crate) fn layout_of(state: &AppState, view: &SetupView) -> MultiplayerSetupL
 }
 
 pub(crate) fn update_geometry(state: &mut AppState) {
-    let layout = page_layout(state);
+    let layout = page_layout(&state.renderer.gpu, &state.frontend, &state.match_state);
     let page = crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state)
         .page()
         .dialog;
@@ -104,11 +123,11 @@ pub(crate) fn update_geometry(state: &mut AppState) {
 
 /// The room hides behind the lobby and its dialog goes: its chat draft and
 /// log view park on the room's state ([`unpark_chat`]).
-pub(crate) fn park_chat(state: &mut AppState) {
-    let page = crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state)
+pub(crate) fn park_chat(frontend: &mut FrontendState, match_state: &MatchState) {
+    let page = crate::app::shell_network_setup::dialog(frontend, match_state)
         .page()
         .dialog;
-    let controller = &state.frontend.shell_controller;
+    let controller = &frontend.shell_controller;
     let (Some(edit), Some(log)) = (
         controller.control(page, CHAT),
         controller.control(page, CHAT_LOG),
@@ -127,7 +146,7 @@ pub(crate) fn park_chat(state: &mut AppState) {
         .control(page, ROSTER_SCROLL)
         .and_then(|scroll| gui.list_view(scroll))
         .map(|view| view.top);
-    if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+    if let Some(ui) = frontend.multiplayer_setup.as_mut() {
         ui.parked_chat = Some(parked);
         ui.parked_roster_top = roster_top;
     }
@@ -175,20 +194,20 @@ pub(crate) fn unpark_chat(state: &mut AppState) {
 }
 
 /// The room's chat edit `0x540`'s text, as its widget holds it.
-pub(crate) fn chat_text(state: &AppState) -> String {
-    let page = crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state)
+pub(crate) fn chat_text(frontend: &FrontendState, match_state: &MatchState) -> String {
+    let page = crate::app::shell_network_setup::dialog(frontend, match_state)
         .page()
         .dialog;
-    state.frontend.shell_controller.text(page, CHAT)
+    frontend.shell_controller.text(page, CHAT)
 }
 
 /// Whether the room's map thumbnail shows a picture with nothing over it: no
 /// combo list, box (Game Options, the missing-map offer, a notice).
-fn preview_box_shows(state: &AppState, view: &SetupView) -> bool {
-    state.frontend.shell_controller.top_id() == Some(view.page().dialog)
-        && state.frontend.skirmish_preview_texture.is_some()
-        && state.frontend.multiplayer_setup.is_some()
-        && open_list(state).is_none()
+fn preview_box_shows(frontend: &FrontendState, match_state: &MatchState, view: &SetupView) -> bool {
+    frontend.shell_controller.top_id() == Some(view.page().dialog)
+        && frontend.skirmish_preview_texture.is_some()
+        && frontend.multiplayer_setup.is_some()
+        && open_list(frontend, match_state).is_none()
 }
 
 fn notice_active(frontend: &FrontendState) -> bool {
@@ -250,7 +269,7 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
         .multiplayer_setup
         .as_ref()
         .filter(|ui| routed && !ui.game_options && ui.map_offer.is_none())
-        .map(|_| page_layout(state).chat)
+        .map(|_| page_layout(&state.renderer.gpu, &state.frontend, &state.match_state).chat)
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
@@ -306,7 +325,12 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
 /// `activate`, input routed to the room makes its page the active dialog.
 fn synced(state: &mut AppState, activate: bool) -> Option<(SetupView, MultiplayerSetupLayout)> {
     let view = crate::app::shell_network_setup::view(state)?;
-    let layout = layout_of(state, &view);
+    let layout = layout_of(
+        &state.renderer.gpu,
+        &state.frontend,
+        &state.match_state,
+        &view,
+    );
     let ui = state.frontend.multiplayer_setup.as_ref()?;
     sync(
         &mut state.frontend.shell_controller,
@@ -316,7 +340,7 @@ fn synced(state: &mut AppState, activate: bool) -> Option<(SetupView, Multiplaye
         activate,
     )?;
     // The preview box `0x468` is there only while it shows a picture.
-    let shows = preview_box_shows(state, &view);
+    let shows = preview_box_shows(&state.frontend, &state.match_state, &view);
     let page = view.page().dialog;
     let controller = &mut state.frontend.shell_controller;
     controller.set_prop(
@@ -329,9 +353,12 @@ fn synced(state: &mut AppState, activate: bool) -> Option<(SetupView, Multiplaye
 }
 
 /// The open list over the room: its combo and the list as it paints.
-pub(crate) fn open_list(state: &AppState) -> Option<(u16, vera20k_gui::ComboDropDown)> {
-    let controller = &state.frontend.shell_controller;
-    let page = crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state)
+pub(crate) fn open_list(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+) -> Option<(u16, vera20k_gui::ComboDropDown)> {
+    let controller = &frontend.shell_controller;
+    let page = crate::app::shell_network_setup::dialog(frontend, match_state)
         .page()
         .dialog;
     (controller.top_id() == Some(page))
@@ -383,11 +410,15 @@ fn pointer_target(
 /// The room loses the pointer: a box over it, a page of its roster or the
 /// missing-map offer takes it, or the window loses the focus. Its open list
 /// closes too, but for the focus.
-pub(crate) fn drop_pointer(state: &mut AppState, close_list: bool) {
-    let page = crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state)
+pub(crate) fn drop_pointer(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    close_list: bool,
+) {
+    let page = crate::app::shell_network_setup::dialog(frontend, match_state)
         .page()
         .dialog;
-    let controller = &mut state.frontend.shell_controller;
+    let controller = &mut frontend.shell_controller;
     if close_list && controller.top_id() == Some(page) {
         controller.gui_mut().close_popup();
     }
@@ -478,9 +509,14 @@ fn handle_events(state: &mut AppState, view: &SetupView) {
 }
 
 /// The status help of the control under the pointer at `x`, `y`.
-fn hovered_help(state: &AppState, view: &SetupView) -> String {
-    let (x, y) = state.match_state.input.cursor_px();
-    let controller = &state.frontend.shell_controller;
+fn hovered_help(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    view: &SetupView,
+) -> String {
+    let (x, y) = match_state.input.cursor_px();
+    let controller = &frontend.shell_controller;
     let gui = controller.gui();
     let hit = controller
         .top_id()
@@ -501,9 +537,9 @@ fn hovered_help(state: &AppState, view: &SetupView) -> String {
     });
     let player = badge.or(over).and_then(|id| {
         crate::app::shell_network_setup::view::player_help(
-            &state.frontend.wol_lobby_globals,
-            &state.match_state.session,
-            &state.process_assets,
+            &frontend.wol_lobby_globals,
+            &match_state.session,
+            process_assets,
             view,
             id,
         )
@@ -513,8 +549,7 @@ fn hovered_help(state: &AppState, view: &SetupView) -> String {
             over.or(over_preview.then_some(MAP_PREVIEW))
                 .and_then(|id| tooltip_key(view.dialog, id))
                 .and_then(|key| {
-                    state
-                        .process_assets
+                    process_assets
                         .csf
                         .as_ref()
                         .and_then(|csf| csf.get(&key))
@@ -523,7 +558,7 @@ fn hovered_help(state: &AppState, view: &SetupView) -> String {
         })
         .unwrap_or_default();
     if over_preview {
-        crate::app::frontend::preview_zoom::box_help(&state.frontend.skirmish_preview_texture, help)
+        crate::app::frontend::preview_zoom::box_help(&frontend.skirmish_preview_texture, help)
     } else {
         help
     }
@@ -548,7 +583,12 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     let held = slider_held(&state.frontend.shell_controller) || notice_active(&state.frontend);
     state.frontend.shell_controller.on_pointer_move(x, y);
     if !held {
-        let help = hovered_help(state, &view);
+        let help = hovered_help(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &view,
+        );
         let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
             return;
         };
@@ -588,7 +628,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
             false,
         )
         .is_none()
-            && preview_box_shows(state, &view)
+            && preview_box_shows(&state.frontend, &state.match_state, &view)
             && crate::app::frontend::preview_zoom::press_on_box(
                 &mut state.frontend,
                 &state.match_state.input,

@@ -609,7 +609,11 @@ impl WolCapture {
                 )]
                 && setup_chat_has(state, &format!("{NICKNAME} waves"))?
                 && state.frontend.multiplayer_setup.is_some()
-                && crate::app::input::multiplayer_setup::chat_text(state).is_empty(),
+                && crate::app::input::multiplayer_setup::chat_text(
+                    &state.frontend,
+                    &state.match_state
+                )
+                .is_empty(),
             "the emote was not sent or echoed: {requests:?}"
         );
         // C2 in the stack passes the language gate: with both display

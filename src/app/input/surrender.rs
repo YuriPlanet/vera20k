@@ -125,7 +125,13 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
     let rect = |id| rect_of(&layout, id);
     let events =
         super::dialog_page::route(ui, DIALOG, nodes, rect, super::dialog_page::no_sync, event);
-    for event in super::dialog_page::play_cues(state, events) {
+    for event in super::dialog_page::play_cues(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        events,
+    ) {
         match event {
             PageEvent::Activated(0x5AE) => activate(state, SurrenderButton::Ok),
             PageEvent::Activated(2) => activate(state, SurrenderButton::Cancel),

@@ -28,7 +28,7 @@ pub(crate) fn render_coop_score(
         return Ok(false);
     };
     crate::app::input::coop_score::update_geometry(state);
-    let layout = crate::app::input::coop_score::layout(state);
+    let layout = crate::app::input::coop_score::layout(&state.renderer.gpu);
     let scale = layout.page.scale;
     let (width, height) = (state.render_width(), state.render_height());
     let fills = crate::app::frontend::shell_layout::fills_window(&state.renderer.gpu);

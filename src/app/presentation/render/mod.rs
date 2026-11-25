@@ -1160,10 +1160,21 @@ fn upload_to_gpu(
     // tooltip (O10). Prepare once: nonsilent TextLabel72A4A0 advances its
     // raw-wall reveal and requests typing audio once per successful paint.
     // Keep the row's existing opaque black background behind its glyphs.
-    crate::app::input::messages::advance_messages(state);
+    crate::app::input::messages::advance_messages(
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+    );
     let mut message_hud = std::mem::take(&mut state.match_state.match_presentation.message_hud);
-    let (message_fill, message_text) =
-        crate::app::input::messages::build_message_instances(state, &mut message_hud);
+    let (message_fill, message_text) = crate::app::input::messages::build_message_instances(
+        &state.platform.ime,
+        &state.renderer.bit_font,
+        &state.frontend.screen,
+        &state.match_state,
+        &mut message_hud,
+    );
     state.match_state.match_presentation.message_hud = message_hud;
     let verdict = crate::app::presentation::outcome_banner::visible_verdict(&state.match_state);
     let mut banner_huds =

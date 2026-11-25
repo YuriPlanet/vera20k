@@ -257,7 +257,9 @@ pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
         // A room with teams, or with the host's Room size, keeps its team
         // bar under the roster.
         let frame = crate::app::input::multiplayer_setup::roster_frame(
-            state,
+            &state.renderer.gpu,
+            &state.frontend,
+            &state.match_state,
             grouped,
             room_size_shown(
                 state.frontend.network_setup_protocol.as_ref(),

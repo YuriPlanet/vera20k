@@ -151,7 +151,7 @@ impl SetupComboInput {
     ) -> Result<bool> {
         if let Some((control, index, expected)) = self.popup.take() {
             let view = setup::view(state).context("presented setup combo")?;
-            let open = setup_input::open_list(state);
+            let open = setup_input::open_list(&state.frontend, &state.match_state);
             ensure!(
                 expected == value
                     && open.map(|(id, _)| id) == Some(control)
@@ -180,14 +180,16 @@ impl SetupComboInput {
                     RectPx::new(x, y, bar.w - 2, geometry.metrics.arrow_h),
                 );
                 ensure!(
-                    setup_input::open_list(state).is_some_and(|(id, list)| {
-                        id == control
-                            && if down {
-                                list.popup.first > popup.first
-                            } else {
-                                list.popup.first < popup.first
-                            }
-                    }),
+                    setup_input::open_list(&state.frontend, &state.match_state).is_some_and(
+                        |(id, list)| {
+                            id == control
+                                && if down {
+                                    list.popup.first > popup.first
+                                } else {
+                                    list.popup.first < popup.first
+                                }
+                        }
+                    ),
                     "setup popup scrollbar did not advance toward the retained item"
                 );
                 self.popup = Some((control, index, value));
@@ -195,7 +197,7 @@ impl SetupComboInput {
             };
             setup_click(state, rect);
             ensure!(
-                setup_input::open_list(state).is_none(),
+                setup_input::open_list(&state.frontend, &state.match_state).is_none(),
                 "setup combo input did not close popup"
             );
             return Ok(true);
@@ -219,7 +221,8 @@ impl SetupComboInput {
             crate::ui::skirmish_shell::combo_arrow_hit_rect(face, layout.page.scale),
         );
         ensure!(
-            setup_input::open_list(state).map(|(id, _)| id) == Some(control),
+            setup_input::open_list(&state.frontend, &state.match_state).map(|(id, _)| id)
+                == Some(control),
             "actual setup combo arrow did not open"
         );
         self.popup = Some((control, index, value));
