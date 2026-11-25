@@ -1121,6 +1121,12 @@ impl Simulation {
         self.substrate
             .particle_systems
             .expire_gas_cloud_system(expired_id);
+        // VERA-only: the presentation particle systems that name the object,
+        // which the listener index leaves out, run the same callback a shared
+        // one's entry does. Nothing in the simulation reads them.
+        self.substrate
+            .particle_systems
+            .presented_pointer_expired(expired_id);
         // `DispatchPointerExpiredCleanup @ 0x007258D0` calls
         // `BombListClass::PointerGotInvalid @ 0x00439150` after its listener
         // loop (0x00725961) whatever the control, so a cloaking planter loses

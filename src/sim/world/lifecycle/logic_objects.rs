@@ -334,8 +334,13 @@ impl Simulation {
 
     /// Particle62BB0E calls ObjectUnlimbo5F4EC0; GetLayer62D770 returns
     /// AIR (3), so Display4A9720 reaches the existing append owner5519B0.
-    /// A particle is owned by its system and never joins global Logic.
+    /// A particle is owned by its system and never joins global Logic. A
+    /// presentation particle takes no Display slot: the picture draws it at
+    /// its `presentation_order` (`Simulation::picture_draw_order`).
     pub(crate) fn reveal_particle(substrate: &mut ObjectSubstrate, stable_id: u64) {
+        if crate::sim::particles::is_presented_particle_id(stable_id) {
+            return;
+        }
         Self::submit_object_display(substrate, stable_id, DisplayLayer::AIR);
     }
 
@@ -349,6 +354,11 @@ impl Simulation {
         particle: crate::sim::particles::Particle,
         rules: &RuleSet,
     ) {
+        // A presentation particle ends here: nothing lists it, and no
+        // Display or pending-delete slot holds it.
+        if crate::sim::particles::is_presented_particle_id(particle.stable_id()) {
+            return;
+        }
         let id = self
             .substrate
             .particle_systems

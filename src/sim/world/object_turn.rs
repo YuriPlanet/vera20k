@@ -976,6 +976,9 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: &mut super::FrameEffects<'_>,
     ) -> Result<LiveObjectPassOutcome, super::FrameAdvanceError> {
+        // The pass's key for its turns' own streams, drawn on every frame
+        // alike (`world::turn_streams`, sim-scale).
+        self.begin_turn_streams();
         self.answer_batched_work(rules, overlay_registry);
         let mut object_ctx = techno_ai::ObjectAiCtx {
             effects: effects.reborrow(),
@@ -1010,7 +1013,7 @@ impl Simulation {
         // visits find their types through handles (VERA-only, answers
         // unchanged).
         self.interner.cover_types(rules);
-        let walked = self.try_for_each_live_object::<super::FrameAdvanceError>(|sim, stable_id| {
+        let mut visit = |sim: &mut Self, stable_id: u64| -> Result<(), super::FrameAdvanceError> {
             #[cfg(feature = "debug-tools")]
             let debug_before = sim
                 .substrate
@@ -1029,6 +1032,7 @@ impl Simulation {
             }
             sim.sleep_after_turn(stable_id, rules);
             sim.quiet_after_turn(stable_id, rules);
+            sim.steady_after_turn(stable_id, rules);
             #[cfg(feature = "debug-tools")]
             if let Some(before) = debug_before
                 && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
@@ -1042,12 +1046,21 @@ impl Simulation {
             outcome.bridge_state_changed |= turn.bridge_state_changed;
             outcome.ownership_changed |= turn.ownership_changed;
             Ok(())
+        };
+        let walked = self.try_for_each_live_object::<super::FrameAdvanceError>(|sim, stable_id| {
+            // The slot's visit, and everything it calls, draws from its
+            // object's own stream (`world::turn_streams`).
+            sim.enter_turn_stream(stable_id);
+            let visited = visit(sim, stable_id);
+            sim.leave_turn_stream(stable_id);
+            visited
         });
         self.fog.settle_plane_writes();
         self.reveal_viewers.end();
         self.civilian_house_memo.end();
         self.finish_batched_path_searches();
         self.finish_batched_scans();
+        self.end_turn_streams();
         walked?;
         Ok(outcome)
     }
@@ -1090,7 +1103,8 @@ impl Simulation {
         }
         let _building_area = was_structure
             .then(|| crate::sim::frame_profile::area(crate::sim::frame_profile::phase::BUILDINGS));
-        let mut ai = sim.object_ai_visit_one_with_effects(stable_id, rules, object_ctx);
+        // A steady object's visit may be counted (`world::steady_ai`).
+        let mut ai = sim.steady_ai_visit(stable_id, rules, object_ctx);
         if let Some(error) = ai.frame_error.take() {
             return Err(error);
         }

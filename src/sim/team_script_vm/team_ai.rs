@@ -35,6 +35,10 @@ use crate::sim::intern::StringInterner;
 /// instead of `+0x171C`) for Regroup and Coordinate_Move.
 const RELAXED_STRAY_ACTIONS: [i32; 2] = [0x35, 0x36];
 
+/// With batched target scans, the frames between a team's own turns
+/// ([`Simulation::team_update_period`]).
+const TEAM_UPDATE_PERIOD: u32 = 4;
+
 #[cfg(all(test, tests_sim_t_z))]
 #[path = "guard_slower_tests.rs"]
 mod guard_slower_tests;
@@ -42,6 +46,10 @@ mod guard_slower_tests;
 #[cfg(all(test, tests_sim_t_z))]
 #[path = "retreat_tests.rs"]
 mod retreat_tests;
+
+#[cfg(all(test, tests_sim_t_z))]
+#[path = "cadence_tests.rs"]
+mod cadence_tests;
 
 /// The team code's live-member test (`0x006EF9E0`, inlined throughout):
 /// active (`+0x90`), with Health (`+0x6C`), out of limbo (`+0x81`;
@@ -178,6 +186,19 @@ impl TeamScriptState {
             rules.general.stray
         }
     }
+
+    /// `0x006E9149..0x006E9174`: the team is suspended (`+0x83`) and its
+    /// timer (`+0x64`) has time left at `frame`, so its update returns at
+    /// once.
+    pub(super) fn waits_out_suspension(&self, frame: i32) -> bool {
+        self.suspended && self.suspend_timer.remaining(frame) != 0
+    }
+
+    /// Script action 5's end test (`0x006E97CE`): its guard timer (`+0x58`)
+    /// has run out at `frame`.
+    pub(super) fn guard_over(&self, frame: i32) -> bool {
+        self.guard_timer.remaining(frame) == 0
+    }
 }
 
 impl Simulation {
@@ -186,6 +207,37 @@ impl Simulation {
     /// later in the frame waits for the next one). With batched target scans
     /// the scans of the leaders whose patrol scan is due are answered side by
     /// side first (`techno_ai::scan_batch`).
+    ///
+    /// Sim-scale deviation from native order (update order and same-frame
+    /// effects), on only with batched target scans, pending side-by-side
+    /// play: a team updates on its own turn, one frame in
+    /// [`Self::team_update_period`] ([`Self::team_own_turn`]), and on any
+    /// other frame only when its update cannot wait
+    /// ([`Self::team_update_can_wait`]). Natively every team updates every
+    /// frame. A skipped update would have changed nothing that cannot wait:
+    /// what it would have done, the team's next update does, up to three
+    /// frames later. That update gives the members their next orders, sees
+    /// them arrive, run out of ammunition or warp in, turns them on the
+    /// attacker Ares' `TeamRetaliate=` made the team's target, draws what its
+    /// action draws (action 48's house and building picks) and finds the
+    /// team's centre (`Calc_Center`). The centre is read by the team's own
+    /// update, which finds it first, by `Add_Member` only to find one when
+    /// there is none, and by Ares' `TeamRetaliate=` range check. Its
+    /// frame-gated checks, the patrol scan ([`Self::patrol_scan_due`]) and
+    /// `Coordinate_Attack`'s leader check ([`Self::team_attack_check_due`]),
+    /// run on its own turn after their frame, so each still runs once per its
+    /// period, but for a patrol scan whose `PatrolScan=` period is shorter
+    /// than the turns, which runs on every own turn.
+    ///
+    /// Residual: two member missions set the team's mission target outside
+    /// its update, a `Carryall=` aircraft's Move (`0x00416EE4`) and an
+    /// aircraft's Patrol (`0x0041738D`), which a team gives its members only
+    /// through action 11. `Assign_Mission_Target` (`0x006E9050`) then sends
+    /// the members bound for the old target to Guard, and the team's next
+    /// update sends them on, here up to three frames later instead of on the
+    /// next frame, so they can act on Guard in between. No aircraft type the
+    /// retail rules list is `Carryall=` and no retail AI script gives Patrol;
+    /// an ordinary aircraft's Move (`0x004166E0`) leaves its team alone.
     pub(crate) fn run_team_ai_pass(
         &mut self,
         rules: &RuleSet,
@@ -202,7 +254,10 @@ impl Simulation {
             self.answer_batched_direct_scans(&leaders, ScanMission::Guard, rules, registry);
         }
         for team_id in teams {
-            if self.team_script_vm.teams.contains_key(&team_id) {
+            let Some(team) = self.team_script_vm.teams.get(&team_id) else {
+                continue;
+            };
+            if self.team_own_turn(team_id) || !self.team_update_can_wait(team) {
                 self.team_ai(
                     team_id,
                     rules,
@@ -215,14 +270,88 @@ impl Simulation {
         self.finish_batched_scans();
     }
 
+    /// The frames between a team's own turns ([`Self::run_team_ai_pass`]):
+    /// `None`, every frame as natively, unless target scans are batched.
+    pub(super) fn team_update_period(&self) -> Option<u32> {
+        self.target_scans_batched().then_some(TEAM_UPDATE_PERIOD)
+    }
+
+    /// Whether this frame is team `team_id`'s own turn: the frame plus its
+    /// phase, its id modulo the period, is a multiple of the period; every
+    /// frame is without one. Team ids rise with construction and are saved,
+    /// so the phase keeps no state of its own.
+    pub(super) fn team_own_turn(&self, team_id: u64) -> bool {
+        self.team_update_period().is_none_or(|period| {
+            (u64::from(self.session.binary_frame()) + team_id % u64::from(period))
+                % u64::from(period)
+                == 0
+        })
+    }
+
+    /// Whether `team`'s update may wait for its own turn this frame
+    /// ([`Self::run_team_ai_pass`]); false runs it now, as natively. What
+    /// changes the team outside its update or at its end, and what a timer
+    /// ends, runs on the next frame; an action that counts its work in
+    /// updates, or that is not listed here, runs every frame. Natively
+    /// (`TeamClass::AI @ 0x006E9140`):
+    /// - a suspended team's update returns at once until its timer
+    ///   (`+0x64`) runs out ([`TeamScriptState::waits_out_suspension`]): it
+    ///   waits while time is left and runs on the frame it runs out;
+    /// - a team that is forming (`+0x7F` clear) gathers its members
+    ///   (`Coordinate_Move`) every update, and one that recruits
+    ///   ([`Self::team_recruits`]), forming or a formed `Reinforce=` team
+    ///   below full strength, recruits a member per short TaskForce entry
+    ///   per update: both run every frame;
+    /// - membership changes (`+0x7D`, `Recalc`, and the destruction or the
+    ///   under-strength retreat it leads to; an empty team that has never been
+    ///   full keeps `+0x7D`, so in a multiplayer game it dissolves on the
+    ///   frame its age passes `DissolveUnfilledTeamDelay=`,
+    ///   `0x006E929B..0x006E92D8`), regrouping (`+0x7B`,
+    ///   `0x006E9339..0x006E935B`), a finished action (`+0x80`: the next one
+    ///   starts on the next update) and `Coordinate_Attack`'s restart
+    ///   (`+0x81`) run at once;
+    /// - action 5 runs on the frame its guard timer (`+0x58`) runs out
+    ///   ([`TeamScriptState::guard_over`]);
+    /// - the actions that move or attack (0, 1, 3, 4, 15, 16, 22, 46, 47, 48,
+    ///   53, 54, 58, 59), whose updates order the members by their state,
+    ///   wait while the team has a target (`+0x40`); without one the update
+    ///   takes up the mission target (`+0x3C`, `0x006E9402..0x006E940C`),
+    ///   finds a target or finishes, at once. So when a target goes
+    ///   (`PointerExpired`) while the mission target stays, as the object
+    ///   `Coordinate_Attack` aims at on its cell or an Ares `TeamRetaliate=`
+    ///   attacker can, the mission target is taken up again on the next
+    ///   frame. Action 11 orders its members by their state and never
+    ///   finishes, and action 2 does nothing; both wait.
+    fn team_update_can_wait(&self, team: &TeamScriptState) -> bool {
+        let frame = self.session.binary_frame() as i32;
+        if team.suspended {
+            return team.waits_out_suspension(frame);
+        }
+        if !team.formed
+            || self.team_recruits(team)
+            || team.altered
+            || team.reforming
+            || team.advance_pending
+            || team.retarget
+        {
+            return false;
+        }
+        match team.current_action(&self.team_script_vm) {
+            5 => !team.guard_over(frame),
+            0 | 1 | 3 | 4 | 15 | 16 | 22 | 46 | 47 | 48 | 53 | 54 | 58 | 59 => team.focus.is_some(),
+            2 | 11 => true,
+            _ => false,
+        }
+    }
+
     /// The leaders whose patrol scan (Script16's, mask 1) this step reaches
     /// as the teams stand before its first update: of a formed team neither
     /// reforming nor under strength nor waiting out a suspension, which
     /// [`Self::team_ai`] lets reach its script, on action 16 with no step
-    /// pending, whose scan is due ([`Self::patrol_scan_remainder`]). An
-    /// earlier update can still change that; an answer no scan takes is
-    /// dropped.
-    fn due_patrol_leaders(&self, rules: &RuleSet) -> Vec<u64> {
+    /// pending, whose scan is due ([`Self::patrol_scan_due`]): only on the
+    /// team's own turn, which always runs. An earlier update can still
+    /// change that; an answer no scan takes is dropped.
+    pub(super) fn due_patrol_leaders(&self, rules: &RuleSet) -> Vec<u64> {
         let frame = self.session.binary_frame() as i32;
         let vm = &self.team_script_vm;
         vm.teams
@@ -231,10 +360,10 @@ impl Simulation {
                 team.formed
                     && !team.reforming
                     && !team.under_strength
-                    && !(team.suspended && team.suspend_timer.remaining(frame) != 0)
+                    && !team.waits_out_suspension(frame)
                     && !team.advance_pending
                     && team.current_action(vm) == 16
-                    && self.patrol_scan_remainder(id, rules) == Some(0)
+                    && self.patrol_scan_due(id, rules) == Some(true)
             })
             .filter_map(|(&id, _)| self.team_leader(id, rules))
             .collect()
@@ -254,12 +383,10 @@ impl Simulation {
             return;
         };
         // `0x006E9149..0x006E9174`: a suspended team waits out its timer.
-        if team.suspended {
-            if team.suspend_timer.remaining(current_frame) != 0 {
-                return;
-            }
-            team.suspended = false;
+        if team.waits_out_suspension(current_frame) {
+            return;
         }
+        team.suspended = false;
         // `0x006E917B`: a changed membership is recounted; an emptied team
         // that has been full is destroyed there.
         if team.altered && !self.team_recalc(team_id, rules, registry, frame_effects) {
@@ -334,24 +461,31 @@ impl Simulation {
         self.team_step_script(team_id, rules, registry, frame_effects);
     }
 
-    /// `0x006E9227..0x006E9299`: a team still forming, or a `Reinforce=`
-    /// team below full strength, recruits for each short TaskForce entry,
-    /// unless its house is human and it has been full.
+    /// `0x006E9227..0x006E9299`: whether `team`'s update recruits
+    /// ([`Self::team_recruit_short_entries`]): it is still forming, or a
+    /// `Reinforce=` team below full strength, and its house is not human with
+    /// the team having been full.
+    pub(super) fn team_recruits(&self, team: &TeamScriptState) -> bool {
+        let reinforce = team
+            .team_type_id
+            .is_some_and(|team_type| self.team_script_vm.reinforce(team_type));
+        (!team.formed || (!team.full_strength && reinforce))
+            && !(self.owner_is_human(team.owner) && team.has_been_full)
+    }
+
+    /// `0x006E9227..0x006E9299`: a team that recruits
+    /// ([`Self::team_recruits`]) does so for each short TaskForce entry.
     pub(super) fn team_recruit_short_entries(
         &mut self,
         team_id: u64,
         rules: &RuleSet,
         frame_effects: &mut FrameEffects<'_>,
     ) {
-        let vm = &self.team_script_vm;
-        let Some(team) = vm.teams.get(&team_id) else {
-            return;
-        };
-        let reinforce = team
-            .team_type_id
-            .is_some_and(|team_type| vm.reinforce(team_type));
-        if !(!team.formed || (!team.full_strength && reinforce))
-            || (self.owner_is_human(team.owner) && team.has_been_full)
+        if !self
+            .team_script_vm
+            .teams
+            .get(&team_id)
+            .is_some_and(|team| self.team_recruits(team))
         {
             return;
         }

@@ -73,7 +73,9 @@ pub(crate) enum FrameStep {
     TerrainNavigation,
     /// The local anims' AI (`0x0055B61B..0x0055B649`, AnimClass vt+0x5C):
     /// gamemd walks its local list (`0x00A83E00`) after the LogicClass
-    /// vector in LAN and online games, the only ones that fill it.
+    /// vector in LAN and online games, the only ones that fill it. VERA's
+    /// presentation particle systems, which no Logic slot holds, run here
+    /// too (`Simulation::advance_presented_particle_systems`).
     LocalAnims,
     /// `IonBlastClass::UpdateAll @ 0x0053D310` (`0x0055B64B`), then
     /// `AlphaShapeClass::PurgeDisabled @ 0x00420E90` (`0x0055B650`).
@@ -128,7 +130,10 @@ impl FrameStep {
             Self::Shroud => phase::SHROUD,
             Self::Lighting => phase::LIGHTING,
             Self::IceGrowth | Self::OreGrowth | Self::IceSolidify => phase::ORE_GROWTH,
-            Self::BombList | Self::LocalAnims => return None,
+            Self::BombList => return None,
+            // The presentation anims and particle systems, timed with the
+            // shared effects the object pass runs.
+            Self::LocalAnims => phase::EFFECTS,
             Self::Kamikaze | Self::DiskLasers => phase::BOMBS,
             Self::TeamScript => phase::TEAM_AI,
             Self::LightningStorm => phase::SUPERWEAPONS,
@@ -505,6 +510,9 @@ impl Simulation {
                             })?;
                     }
                 }
+                // The presentation particle systems, which no Logic slot
+                // holds, run after it as the presentation anims do.
+                self.advance_presented_particle_systems(rules);
             }
             // Follows the object loop.
             FrameStep::IonBlasts => {

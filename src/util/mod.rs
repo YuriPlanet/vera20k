@@ -48,6 +48,7 @@ pub mod native_string;
 pub mod native_trig;
 pub mod native_x87;
 pub mod pixel_conversion;
+pub mod prefetch;
 pub mod platform_dir;
 pub mod read_helpers;
 pub mod rect;

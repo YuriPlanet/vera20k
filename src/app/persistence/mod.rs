@@ -411,6 +411,9 @@ impl PreparedLoad {
         // Original successful LoadGame67E6C4 publishes A8ED5C=1 after the
         // fallible content/read tail. Failed preparation never changes it.
         self.simulation.publish_scenario_started();
+        // A loaded match draws its turns as a new match does
+        // (`world::turn_streams`): a save does not carry the switch.
+        self.simulation.separate_turn_streams(true);
         (
             self.simulation,
             CommittedLoadPresentation {
@@ -1321,6 +1324,10 @@ mod tests {
             Some((122, 135))
         );
         let simulation = &mut runtime.simulation;
+        assert!(
+            simulation.turn_streams_separate(),
+            "a loaded match draws its turns from their own streams, as a new one does"
+        );
         let restored_dummy = simulation.effective_shared_cell_dummy();
         assert!(restored_dummy.same_identity(&live_dummy));
         assert_eq!(
