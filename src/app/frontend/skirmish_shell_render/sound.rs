@@ -14,7 +14,14 @@ pub(crate) fn render_sound_shell(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    crate::app::input::sound::sync(state).expect("active B8 geometry");
+    crate::app::input::sound::sync(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+    )
+    .expect("active B8 geometry");
     super::in_game_shell::paint_dialog(state, encoder, destination, &DIALOG, |paint, ui| {
         let state = paint.state;
         let text_of = |id: i32| -> Option<String> {

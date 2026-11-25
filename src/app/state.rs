@@ -169,7 +169,13 @@ impl AppState {
     /// over it), past the splash, with no dialog.
     pub(crate) fn main_menu_at_rest(&self) -> bool {
         use crate::app::input::precedence::{InputLayer, ScreenPage, input_layer};
-        input_layer(self) == InputLayer::Screen(ScreenPage::MainMenu)
+        input_layer(
+            &self.platform,
+            &self.renderer,
+            &self.frontend,
+            &self.match_state,
+            &self.persistence,
+        ) == InputLayer::Screen(ScreenPage::MainMenu)
             && self.frontend.shell_route == ShellRoute::MainMenu
             && self.frontend.startup_splash.is_none()
             && !self.frontend.main_menu_dialog_open()

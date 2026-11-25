@@ -53,13 +53,17 @@ mod command_bar;
 pub(crate) use command_bar::{places as command_bar_places, tooltips as command_bar_tooltips};
 
 use crate::app::AppState;
+use crate::app::PlatformState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::sidebar_render::current_sidebar_view;
 use crate::app::presentation::state::MatchPresentationState;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::audio::sfx::SfxPlayer;
 use crate::render::retained_hud::PICTURE;
+use crate::ui::game_screen::GameScreen;
 use crate::ui::sidebar::{self, SidebarAction, SidebarPart, SidebarTab, SidebarView};
 
 /// gamemd sidebar button IDs (study §2.5 live-population table).
@@ -485,8 +489,21 @@ fn cursor_rect(r: sidebar::Rect) -> Rect {
     )
 }
 
-fn places(state: &AppState, view: &SidebarView) -> Places {
-    let frame = state.sidebar_frame();
+fn places(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+    view: &SidebarView,
+) -> Places {
+    let frame = crate::app::state::sidebar_frame(
+        platform,
+        persistence,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation.sidebar_layout_spec,
+    );
     let tab = |i: usize| {
         view.tabs
             .get(i)
@@ -502,24 +519,24 @@ fn places(state: &AppState, view: &SidebarView) -> Places {
     // have no in-game map editor (gamemd registers it only when
     // !g_IsMapEditor).
     let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
     );
     // Minimap region rect = the live minimap screen rect; off when the radar
     // is offline or the minimap is absent (the gate `is_cursor_over_minimap`
     // uses, `presentation::sidebar_render`).
-    let minimap = minimap_available(&state.match_state.match_presentation).then(|| {
+    let minimap = minimap_available(&match_state.match_presentation).then(|| {
         rect_px(
             frame,
             crate::app::presentation::sidebar_render::active_minimap_content_screen_rect(
-                &state.platform,
-                &state.renderer,
-                &state.frontend,
-                &state.match_state,
-                &state.persistence,
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
             ),
         )
     });
@@ -543,8 +560,14 @@ fn places(state: &AppState, view: &SidebarView) -> Places {
             .iter()
             .map(|item| rect_px(frame, item.rect))
             .collect(),
-        command_bar: command_bar::places(state),
-        timer: timer_rect(state),
+        command_bar: command_bar::places(platform, renderer, frontend, match_state, persistence),
+        timer: timer_rect(
+            platform,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation,
+            persistence,
+        ),
     }
 }
 
@@ -557,18 +580,20 @@ fn minimap_available(presentation: &MatchPresentationState) -> bool {
 /// timers' box, the battlefield's own in the original interface. A tiny
 /// control before the full-tactical catcher, without catching timer text or
 /// transparent space; no tooltip is registered for it.
-fn timer_rect(state: &AppState) -> Option<Rect> {
-    let rect = state
-        .match_state
-        .match_presentation
-        .super_timer_dock
-        .toggle_rect()?;
+fn timer_rect(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    presentation: &MatchPresentationState,
+    persistence: &PersistenceState,
+) -> Option<Rect> {
+    let rect = presentation.super_timer_dock.toggle_rect()?;
     let [left, top, _, _] = crate::app::presentation::field_parts::rect(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation,
-        &state.persistence,
+        platform,
+        renderer,
+        screen,
+        presentation,
+        persistence,
         crate::ui::field_layout::FieldPart::Timers,
     );
     Some(Rect::new(rect.x + left, rect.y + top, rect.w, rect.h))
@@ -576,25 +601,32 @@ fn timer_rect(state: &AppState) -> Option<Rect> {
 
 /// The buttons the side's layout adds take clicks where they are drawn: a
 /// rect per added part, `None` for a part that takes no click.
-fn layout_rects(state: &AppState) -> Vec<Option<Rect>> {
+fn layout_rects(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> Vec<Option<Rect>> {
     crate::app::presentation::layout_parts::placed(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
     )
     .iter()
     .take(LAYOUT_BUTTONS_MAX)
     .map(|part| {
         part.button.then(|| {
             let [x, y, w, h] = crate::app::presentation::layout_parts::click_rect(
-                &state.platform,
-                &state.renderer,
-                &state.frontend.screen,
-                &state.match_state.match_presentation,
-                &state.persistence,
+                platform,
+                renderer,
+                &frontend.screen,
+                &match_state.match_presentation,
+                persistence,
                 part,
             );
             Rect::new(x, y, w, h)
@@ -603,41 +635,77 @@ fn layout_rects(state: &AppState) -> Vec<Option<Rect>> {
     .collect()
 }
 
-fn sync_key(state: &AppState) -> SyncKey {
-    let presentation = &state.match_state.match_presentation;
+fn sync_key(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> SyncKey {
+    let presentation = &match_state.match_presentation;
     SyncKey {
-        sw: sw_places(&state.match_state.match_presentation),
+        sw: sw_places(&match_state.match_presentation),
         placement_revision: presentation.sidebar_projection.placement_revision(),
-        frame: state.sidebar_frame(),
+        frame: crate::app::state::sidebar_frame(
+            platform,
+            persistence,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation.sidebar_layout_spec,
+        ),
         command_bar_closed: presentation.sidebar_gadget_state.command_bar_closed,
-        minimap: minimap_available(&state.match_state.match_presentation),
-        timer: timer_rect(state),
-        layout: layout_rects(state),
+        minimap: minimap_available(&match_state.match_presentation),
+        timer: timer_rect(
+            platform,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation,
+            persistence,
+        ),
+        layout: layout_rects(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+        ),
     }
 }
 
 /// Builds the chrome when the controller has none and, when `force` or
 /// what places it changed, puts its nodes where the match draws them.
 /// False without a sidebar view: the chrome takes nothing then.
-fn sync(state: &mut AppState, force: bool) -> bool {
-    let Some(view) = state
-        .match_state
-        .match_presentation
-        .sidebar_projection
-        .view()
-    else {
+fn sync(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    force: bool,
+) -> bool {
+    let Some(view) = match_state.match_presentation.sidebar_projection.view() else {
         return false;
     };
-    let presentation = &state.match_state.match_presentation;
+    let presentation = &match_state.match_presentation;
     let built = presentation
         .in_game_chrome
         .nodes(presentation.dialog_ui.gui())
         .is_some();
-    let key = sync_key(state);
+    let key = sync_key(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+    );
     let changed = !built || presentation.in_game_chrome.key.as_ref() != Some(&key);
     if changed || force {
-        let places = places(state, view);
-        let presentation = &mut state.match_state.match_presentation;
+        let places = places(platform, renderer, frontend, match_state, persistence, view);
+        let presentation = &mut match_state.match_presentation;
         let gui = presentation.dialog_ui.gui_mut();
         let Some(nodes) = ensure(&mut presentation.in_game_chrome, gui) else {
             return false;
@@ -645,17 +713,17 @@ fn sync(state: &mut AppState, force: bool) -> bool {
         write_places(gui, nodes, &places, &key);
         presentation.in_game_chrome.key = Some(key);
     }
-    let point = state.match_state.input.cursor_px();
-    let presentation = &mut state.match_state.match_presentation;
+    let point = match_state.input.cursor_px();
+    let presentation = &mut match_state.match_presentation;
     if let Some((hovered, held)) = presentation.in_game_chrome.refresh_hover(
         &mut presentation.dialog_ui,
         point,
         changed || force,
     ) {
         if held.is_some() {
-            publish_pressed_visuals(&mut state.match_state.match_presentation);
+            publish_pressed_visuals(&mut match_state.match_presentation);
         }
-        apply_cameo_hover_tooltip(&mut state.match_state.match_presentation, hovered);
+        apply_cameo_hover_tooltip(&mut match_state.match_presentation, hovered);
     }
     true
 }
@@ -826,7 +894,15 @@ pub(crate) fn mouse_button(
     {
         return ChromeRoute::Consumed;
     }
-    if !sync(state, true) {
+    if !sync(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &state.persistence,
+        true,
+    ) {
         return ChromeRoute::NotConsumed;
     }
     let button = match button {
@@ -864,7 +940,18 @@ pub(crate) fn mouse_button(
     kept.last_fired = fired;
     let routed = classify(&state.match_state.match_presentation, result);
     if let Some((node, right)) = fired
-        && !apply_sw(state, node, right)
+        && !apply_sw(
+            &mut state.platform,
+            &state.renderer,
+            &state.diag,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            node,
+            right,
+        )
         && let Some(id) =
             chrome(&state.match_state.match_presentation).and_then(|(gui, _)| gui.id_of(node))
     {
@@ -877,14 +964,44 @@ pub(crate) fn mouse_button(
 
 /// Builds the chrome if needed and puts its nodes where the match draws them
 /// now, for a reader outside the pointer path (a diagnostic receipt).
-pub(crate) fn refresh(state: &mut AppState) -> bool {
-    sync(state, true)
+pub(crate) fn refresh(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> bool {
+    sync(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        true,
+    )
 }
 
 /// Reconcile the hit regions and pointer when either may have changed.
-pub(crate) fn refresh_pointer(state: &mut AppState) {
-    if !crate::app::input::campaign_input::is_locked(&state.match_state) {
-        sync(state, false);
+pub(crate) fn refresh_pointer(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) {
+    if !crate::app::input::campaign_input::is_locked(match_state) {
+        sync(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            false,
+        );
     }
 }
 
@@ -1060,7 +1177,17 @@ fn apply_result(state: &mut AppState, id: u16, right: bool) {
         }
         _ if (ID_TAB_BASE..ID_TAB_BASE + 4).contains(&id) => {
             let tab = SidebarTab::all()[(id - ID_TAB_BASE) as usize];
-            crate::app::input::dispatch::apply_sidebar_action(state, SidebarAction::SelectTab(tab));
+            crate::app::input::dispatch::apply_sidebar_action(
+                &mut state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                SidebarAction::SelectTab(tab),
+            );
             play_gui_tab_sound(
                 &state.frontend,
                 &state.match_state,
@@ -1069,14 +1196,41 @@ fn apply_result(state: &mut AppState, id: u16, right: bool) {
             );
         }
         ID_DIPLOMACY => {
-            crate::app::input::dispatch::apply_sidebar_action(state, SidebarAction::OpenDiplomacy);
+            crate::app::input::dispatch::apply_sidebar_action(
+                &mut state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                SidebarAction::OpenDiplomacy,
+            );
         }
         ID_OPTIONS => {
-            crate::app::input::dispatch::apply_sidebar_action(state, SidebarAction::OpenPauseMenu);
+            crate::app::input::dispatch::apply_sidebar_action(
+                &mut state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                SidebarAction::OpenPauseMenu,
+            );
         }
         ID_REPAIR => {
             crate::app::input::dispatch::apply_sidebar_action(
-                state,
+                &mut state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
                 SidebarAction::ToggleRepairMode,
             );
             play_gui_main_button_sound(
@@ -1087,7 +1241,17 @@ fn apply_result(state: &mut AppState, id: u16, right: bool) {
             );
         }
         ID_SELL => {
-            crate::app::input::dispatch::apply_sidebar_action(state, SidebarAction::ToggleSellMode);
+            crate::app::input::dispatch::apply_sidebar_action(
+                &mut state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                SidebarAction::ToggleSellMode,
+            );
             play_gui_main_button_sound(
                 &state.frontend,
                 &state.match_state,
@@ -1133,7 +1297,17 @@ fn apply_result(state: &mut AppState, id: u16, right: bool) {
                 .and_then(|view| view.items.get(slot))
                 .map(|item| crate::ui::sidebar::hit_test_item(item, right, shift));
             if let Some(action) = action {
-                crate::app::input::dispatch::apply_sidebar_action(state, action);
+                crate::app::input::dispatch::apply_sidebar_action(
+                    &mut state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence,
+                    action,
+                );
             }
         }
         _ => {}
@@ -1145,18 +1319,29 @@ fn apply_result(state: &mut AppState, id: u16, right: bool) {
 /// `apply_sidebar_action` path as the vanilla cameo. False when `node` is none
 /// of the column's.
 #[cfg(feature = "phobos")]
-fn apply_sw(state: &mut AppState, node: NodeId, right: bool) -> bool {
-    let Some((_, nodes)) = chrome(&state.match_state.match_presentation) else {
+fn apply_sw(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    diag: &crate::app::diagnostics::state::DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut crate::app::audio_runtime::AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    node: NodeId,
+    right: bool,
+) -> bool {
+    let Some((_, nodes)) = chrome(&match_state.match_presentation) else {
         return false;
     };
     if node == nodes.sw_toggle {
         if !right {
-            crate::app::presentation::sw_sidebar::toggle(&mut state.match_state.match_presentation);
+            crate::app::presentation::sw_sidebar::toggle(&mut match_state.match_presentation);
             play_gui_main_button_sound(
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
+                frontend,
+                match_state,
+                process_assets,
+                &mut audio.sfx_player,
             );
         }
         return true;
@@ -1164,8 +1349,7 @@ fn apply_sw(state: &mut AppState, node: NodeId, right: bool) -> bool {
     let Some(index) = nodes.sw_index(node) else {
         return false;
     };
-    let section = state
-        .match_state
+    let section = match_state
         .match_presentation
         .sw_sidebar
         .entries
@@ -1173,7 +1357,14 @@ fn apply_sw(state: &mut AppState, node: NodeId, right: bool) -> bool {
         .map(|entry| entry.type_id.clone());
     if let Some(section) = section {
         crate::app::input::dispatch::apply_sidebar_action(
-            state,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             SidebarAction::SuperWeaponPress { section, right },
         );
     }
@@ -1181,7 +1372,18 @@ fn apply_sw(state: &mut AppState, node: NodeId, right: bool) -> bool {
 }
 
 #[cfg(not(feature = "phobos"))]
-fn apply_sw(_: &mut AppState, _: NodeId, _: bool) -> bool {
+fn apply_sw(
+    _: &mut PlatformState,
+    _: &RendererState,
+    _: &crate::app::diagnostics::state::DiagnosticsState,
+    _: &mut FrontendState,
+    _: &mut MatchState,
+    _: &ProcessAssets,
+    _: &mut crate::app::audio_runtime::AppAudioRuntime,
+    _: &mut PersistenceState,
+    _: NodeId,
+    _: bool,
+) -> bool {
     false
 }
 

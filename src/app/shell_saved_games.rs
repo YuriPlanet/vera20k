@@ -53,7 +53,16 @@ impl App {
         browser.statics = true;
         // The child replaces its hidden parent and owns all subsequent input.
         state.match_state.match_presentation.saved_game_browser = Some(browser);
-        Self::enter_in_game_menu_state(state, InGameMenuState::SavedGame(mode));
+        Self::enter_in_game_menu_state(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            InGameMenuState::SavedGame(mode),
+        );
     }
 
     fn saved_game_browser_slot<'a>(
@@ -129,7 +138,16 @@ impl App {
             });
         } else {
             state.match_state.match_presentation.saved_game_browser = None;
-            Self::enter_in_game_menu_state(state, InGameMenuState::Menu);
+            Self::enter_in_game_menu_state(
+                &mut state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                InGameMenuState::Menu,
+            );
         }
     }
 
@@ -378,7 +396,16 @@ impl App {
         match result {
             Ok(()) => {
                 state.match_state.match_presentation.saved_game_browser = None;
-                Self::enter_in_game_menu_state(state, InGameMenuState::Closed);
+                Self::enter_in_game_menu_state(
+                    &mut state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence,
+                    InGameMenuState::Closed,
+                );
             }
             Err(error) => Self::report_saved_game_load_error(
                 &mut state.frontend,

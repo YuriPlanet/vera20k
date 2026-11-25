@@ -721,7 +721,14 @@ pub(crate) fn render_shell_message_box_over_page(
             // Over the online client's pages the box matches the page.
             smooth_art: state.smooth_online_menus()
                 && matches!(
-                    crate::app::input::precedence::presented(state).1,
+                    crate::app::input::precedence::presented(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence
+                    )
+                    .1,
                     crate::app::input::precedence::ScreenPage::Wol
                         | crate::app::input::precedence::ScreenPage::NetworkSetup
                 ),

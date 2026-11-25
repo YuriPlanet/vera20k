@@ -107,7 +107,13 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         &state.persistence,
     ) {
         if matches!(button, MouseButton::Left | MouseButton::Right) {
-            crate::app::input::radar::centre_view_at_cursor(state);
+            crate::app::input::radar::centre_view_at_cursor(
+                &state.platform,
+                &mut state.renderer,
+                &state.frontend,
+                &mut state.match_state,
+                &state.persistence,
+            );
         }
         return;
     }

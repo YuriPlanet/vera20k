@@ -106,7 +106,17 @@ pub(crate) fn mission_ended(state: &mut AppState, elapsed_ticks: i32) {
             .multiplayer_shell_runtime
             .record_cooperative_win(rows, elapsed_ticks, house)
         {
-            crate::app::input::messages::post_cooperative_save_result(state, saved);
+            crate::app::input::messages::post_cooperative_save_result(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                saved,
+            );
         }
     }
     let next = state

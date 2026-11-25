@@ -1,8 +1,8 @@
 //! Local PlanningMode edges; world::planning owns synchronized path state.
 //! Native PlanMgr6379C0/637A10, command536750 and connect63AD50.
 
-use crate::app::AppState;
 use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::input::dispatch::selected_in_order;
 use crate::app::input::hotkeys::{HotkeyCommand, HotkeyResolution};
@@ -11,8 +11,10 @@ use crate::app::match_audio::MatchAudioState;
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::audio::events::{GameSoundEvent, SoundEventQueue};
+use crate::audio::sfx::SfxPlayer;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::CommandEnvelope;
 use crate::sim::selection::SelectionState;
@@ -255,7 +257,13 @@ impl PlanningInputState {
 }
 
 pub(crate) fn key_edge(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     resolution: HotkeyResolution,
     key: KeyCode,
     edge: ElementState,
@@ -263,8 +271,7 @@ pub(crate) fn key_edge(
 ) -> bool {
     let planning = resolution == HotkeyResolution::Command(HotkeyCommand::PlanningMode);
     let Some(active) =
-        state
-            .match_state
+        match_state
             .input
             .planning
             .key_transition(planning, key, edge.is_pressed(), repeat)
@@ -272,15 +279,44 @@ pub(crate) fn key_edge(
         return false;
     };
     // PlanningModeCommandClass::Execute 0x00536750 passes CL=0 (keyboard).
-    set_active(state, active, (!repeat).then_some(false));
+    set_active(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        active,
+        (!repeat).then_some(false),
+    );
     true
 }
 
 /// TabClass::Action 0x006D07B4/0x006D07BE passes CL=1 (the command-bar
 /// button); the retail hotkey route is the keyboard's.
-pub(crate) fn toggle(state: &mut AppState, button: bool) {
-    let active = !state.match_state.input.planning.active();
-    set_active(state, active, Some(button));
+pub(crate) fn toggle(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    button: bool,
+) {
+    let active = !match_state.input.planning.active();
+    set_active(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        active,
+        Some(button),
+    );
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -327,18 +363,35 @@ impl PlanningRefusal {
 /// AC4C08, silent730A90 duration1E0, and Rules+700 ScoldSound.
 /// ClickedEvent6FFE00 ->639FD0 shares them too and scolds once more:
 /// [`refuse_clicked_event`].
-pub(crate) fn refuse(state: &mut AppState, action: PlanningRefusal) {
+pub(crate) fn refuse(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    action: PlanningRefusal,
+) {
     let Some(csf_key) = action.csf_key() else {
         return;
     };
-    if !state.match_state.input.planning.admit_refusal() {
+    if !match_state.input.planning.admit_refusal() {
         return;
     }
-    crate::app::input::messages::post_planning_message(state, csf_key);
-    let sound = state
-        .rules()
+    crate::app::input::messages::post_planning_message(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        csf_key,
+    );
+    let sound = crate::app::state::active_rules(frontend, match_state)
         .and_then(|rules| Some(rules.sound_name(rules.general.scold_sound.as_deref()?)));
-    ui_sound(&mut state.match_state.match_audio, sound);
+    ui_sound(&mut match_state.match_audio, sound);
 }
 
 /// ClickedEvent6FFE00 ->639FD0 for the Stop, Scatter and Deploy keys: the
@@ -346,30 +399,50 @@ pub(crate) fn refuse(state: &mut AppState, action: PlanningRefusal) {
 /// call. The Stop and Scatter walks end at their first refusal
 /// (`0x00730EF5`, ScatterSelectedObjects `0x00730FE0`), one call; the Deploy
 /// walk goes on (`0x00730D1D`), one call per object it admits.
-pub(crate) fn refuse_clicked_event(state: &mut AppState, action: PlanningRefusal, calls: usize) {
+pub(crate) fn refuse_clicked_event(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    action: PlanningRefusal,
+    calls: usize,
+) {
     let Some(csf_key) = action.csf_key() else {
         return;
     };
-    let (posts, scolds) = state
-        .match_state
-        .input
-        .planning
-        .clicked_event_refusal(calls);
+    let (posts, scolds) = match_state.input.planning.clicked_event_refusal(calls);
     if posts {
-        crate::app::input::messages::post_planning_message(state, csf_key);
+        crate::app::input::messages::post_planning_message(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            csf_key,
+        );
     }
-    let sound = state
-        .rules()
+    let sound = crate::app::state::active_rules(frontend, match_state)
         .and_then(|rules| Some(rules.sound_name(rules.general.scold_sound.as_deref()?)));
     for _ in 0..scolds {
-        ui_sound(&mut state.match_state.match_audio, sound.clone());
+        ui_sound(&mut match_state.match_audio, sound.clone());
     }
 }
 
 /// A sim lifecycle output of the append 0x00638120 for `owner`; only the
 /// local house's are shown (event house == PlayerPtr, 0x0063814C).
 pub(crate) fn append_output(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     local: bool,
     message: PlanningAppendMessage,
     frame_pass: bool,
@@ -378,9 +451,18 @@ pub(crate) fn append_output(
         return;
     }
     if frame_pass {
-        state.match_state.input.planning.frame_pass_message = Some(message);
+        match_state.input.planning.frame_pass_message = Some(message);
     } else {
-        refuse(state, PlanningRefusal::Append(message));
+        refuse(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            PlanningRefusal::Append(message),
+        );
     }
 }
 
@@ -393,29 +475,92 @@ pub(crate) fn append_output(
 /// VERA's shared unselect owner (0x0048DC90) also runs. Trigger: a selected
 /// beacon when a planned terminal order or fifteenth node executes. Effect:
 /// the beacon is deselected too. Frequency: rare.
-pub(crate) fn frame_pass(state: &mut AppState) {
-    let empty = selected_planning_actors(&state.frontend, &state.match_state).is_empty();
-    if let Some(message) = state.match_state.input.planning.begin_frame_pass(empty) {
-        crate::app::input::dispatch::unselect_all(state);
-        refuse(state, PlanningRefusal::Append(message));
+pub(crate) fn frame_pass(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    let empty = selected_planning_actors(frontend, match_state).is_empty();
+    if let Some(message) = match_state.input.planning.begin_frame_pass(empty) {
+        crate::app::input::dispatch::unselect_all(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+        );
+        refuse(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            PlanningRefusal::Append(message),
+        );
     }
-    state.match_state.input.planning.end_frame_pass();
+    match_state.input.planning.end_frame_pass();
 }
 
 /// 0x0063A120/0x0063A1B0's help: a silent 730A90 post with duration 1E0,
 /// no latch and no sound.
-fn post_help(state: &mut AppState, csf_key: Option<&str>) {
+fn post_help(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    csf_key: Option<&str>,
+) {
     if let Some(csf_key) = csf_key {
-        crate::app::input::messages::post_planning_message(state, csf_key);
+        crate::app::input::messages::post_planning_message(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            csf_key,
+        );
     }
 }
 
 /// Host adaptation: a lost release must not leave the local mode latched.
 /// Commit the streamed plan once before dropping the physical-key owner;
 /// native WM_ACTIVATEAPP planning equivalence is not established here.
-pub(crate) fn release_on_focus_change(state: &mut AppState) {
-    state.match_state.input.planning.key = None;
-    set_active(state, false, None);
+pub(crate) fn release_on_focus_change(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) {
+    match_state.input.planning.key = None;
+    set_active(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        false,
+        None,
+    );
 }
 
 fn ui_sound(match_audio: &mut MatchAudioState, sound: Option<crate::rules::ruleset::SoundName>) {
@@ -428,22 +573,31 @@ fn ui_sound(match_audio: &mut MatchAudioState, sound: Option<crate::rules::rules
 
 /// `intro_source` is the OnPress/OnRelease CL source (true for the button);
 /// None for the host focus release, which has no native command.
-fn set_active(state: &mut AppState, active: bool, intro_source: Option<bool>) {
+fn set_active(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    active: bool,
+    intro_source: Option<bool>,
+) {
     // 0x00731A50/0x00731A78 test Session+300 before 63A120.
-    let defeated = state
-        .match_state
+    let defeated = match_state
         .sim_runtime
         .runtime()
         .is_some_and(|rt| rt.simulation.local_player_defeated());
-    let rt = state.match_state.sim_runtime.write_sim(SimWrite::Command);
-    let command = state.match_state.input.planning.set_active(
+    let rt = match_state.sim_runtime.write_sim(SimWrite::Command);
+    let command = match_state.input.planning.set_active(
         active,
         rt.as_ref().map(|rt| &rt.simulation),
         rt.as_ref()
             .map(|rt| &rt.resources.rules)
-            .or(state.frontend.frontend_rules.as_ref()),
-        &mut state.match_state.input.selection_state,
-        &mut state.match_state.match_audio.sound_events,
+            .or(frontend.frontend_rules.as_ref()),
+        &mut match_state.input.selection_state,
+        &mut match_state.match_audio.sound_events,
     );
     if let (Some(rt), Some(command)) = (rt, command) {
         rt.simulation.issue_local_command(command);
@@ -451,8 +605,17 @@ fn set_active(state: &mut AppState, active: bool, intro_source: Option<bool>) {
     if let Some(button) = intro_source
         && !defeated
     {
-        let message = state.match_state.input.planning.intro(button, active);
-        post_help(state, message);
+        let message = match_state.input.planning.intro(button, active);
+        post_help(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            message,
+        );
     }
 }
 
@@ -460,12 +623,18 @@ fn set_active(state: &mut AppState, active: bool, intro_source: Option<bool>) {
 /// selection keeps its ordinary Event17 route; unsupported actions are
 /// consumed, never downgraded to immediate orders.
 pub(crate) fn queue_orders(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     selected: &[u64],
     orders: Vec<CommandEnvelope>,
     clicked_cell: Option<(u16, u16)>,
 ) -> bool {
-    let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
+    let Some(rt) = match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return false;
     };
     let Some(owner) = rt.simulation.control_projection().local_command_house() else {
@@ -474,7 +643,16 @@ pub(crate) fn queue_orders(
     match queue_orders_in_sim(&mut rt.simulation, owner, selected, orders, clicked_cell) {
         Ok(_) => true,
         Err(refusal) => {
-            refuse(state, refusal);
+            refuse(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                persistence,
+                refusal,
+            );
             false
         }
     }
@@ -626,26 +804,42 @@ pub(crate) fn node_at_cursor(
 /// takes the capture. A refusal consumes the press, even while the AC4C08
 /// latch keeps its message and ScoldSound back, so the press arms nothing
 /// and its release finds no capture (0x00693232).
-pub(crate) fn refuse_press_at_cursor(state: &mut AppState) -> bool {
+pub(crate) fn refuse_press_at_cursor(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> bool {
     let Some(point) = hover_native_screen(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
     ) else {
         return false;
     };
-    let selected = selected_planning_actors(&state.frontend, &state.match_state);
-    let Some(refusal) = state
-        .match_state
+    let selected = selected_planning_actors(frontend, match_state);
+    let Some(refusal) = match_state
         .sim_runtime
         .runtime()
         .and_then(|rt| rt.simulation.planning_press_refusal(&selected, point))
     else {
         return false;
     };
-    refuse(state, PlanningRefusal::Press(refusal));
+    refuse(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        PlanningRefusal::Press(refusal),
+    );
     true
 }
 
@@ -701,38 +895,48 @@ fn input_native_screen(input: &crate::app::input::state::MatchInputState) -> [i3
 /// release over different nodes, or a left click while the right button is
 /// held. Effect: the connect or highlight lands on the release's node.
 /// Frequency: rare.
-pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
-    let selected = selected_planning_actors(&state.frontend, &state.match_state);
-    let Some(node) = live_hover_node(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
-    ) else {
+pub(crate) fn connect_at_cursor(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> bool {
+    let selected = selected_planning_actors(frontend, match_state);
+    let Some(node) = live_hover_node(platform, renderer, frontend, match_state, persistence) else {
         return hover_native_screen(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence,
         )
         .is_some_and(|point| {
-            state
-                .match_state
+            match_state
                 .sim_runtime
                 .runtime()
                 .is_some_and(|rt| rt.simulation.planning_release_refused(&selected, point))
         });
     };
     if selected.is_empty() {
-        let message = state.match_state.input.planning.retain_clicked_node(node);
-        post_help(state, message);
+        let message = match_state.input.planning.retain_clicked_node(node);
+        post_help(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            message,
+        );
         return true;
     }
-    let point = cursor_native_screen(&state.match_state.input);
+    let point = cursor_native_screen(&match_state.input);
     let mut collected = false;
-    if let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
+    if let Some(rt) = match_state.sim_runtime.write_sim(SimWrite::Command)
         && let Some(owner) = rt.simulation.control_projection().local_command_house()
     {
         for actor in rt.simulation.planning_connect_actors(&selected) {
@@ -746,8 +950,17 @@ pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
             collected |= !rt.simulation.session().has_custom_control_grants();
         }
     }
-    if collected && state.match_state.input.planning.admit_help(3, 1) {
-        post_help(state, Some("MSG:PlanningModeLoopHelp"));
+    if collected && match_state.input.planning.admit_help(3, 1) {
+        post_help(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            Some("MSG:PlanningModeLoopHelp"),
+        );
     }
     true
 }

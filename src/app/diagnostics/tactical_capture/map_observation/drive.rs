@@ -568,7 +568,14 @@ impl TacticalCaptureSession {
                     MapGesture::CommandBar { command } => {
                         // The chrome places its nodes at a pointer message;
                         // the receipt reads them as they stand now.
-                        crate::app::input::chrome_input::refresh(state);
+                        crate::app::input::chrome_input::refresh(
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &state.persistence,
+                        );
                         Some(MapCommandBarGestureReceipt::capture(
                             &state.platform,
                             &state.renderer,
@@ -619,7 +626,15 @@ impl TacticalCaptureSession {
                     // OS window/upscale conversion is not a second input source.
                     state.match_state.input.cursor_x = x as f32;
                     state.match_state.input.cursor_y = y as f32;
-                    crate::app::input::tooltips::on_mouse_move(state);
+                    crate::app::input::tooltips::on_mouse_move(
+                        &state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.persistence,
+                    );
                     crate::app::input::dispatch::handle_cursor_moved_in_game(state);
                 };
                 let mouse_button = if right {

@@ -489,7 +489,16 @@ pub(in crate::app::shell_wol) fn net_status(state: &mut AppState, status: u32) {
             lobby.pending = None;
             lobby.members.clear();
         }
-        crate::app::input::messages::post_wol_connection_lost(state);
+        crate::app::input::messages::post_wol_connection_lost(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            &state.persistence,
+        );
         return;
     }
     visit.connected = false;
@@ -732,7 +741,18 @@ pub(in crate::app::shell_wol) fn page_received(
     };
     if in_game {
         let row = String::from_utf16_lossy(&line.text);
-        crate::app::input::messages::post_wol_page_rows(state, &row, ansi);
+        crate::app::input::messages::post_wol_page_rows(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            &state.persistence,
+            &row,
+            ansi,
+        );
         super::page::append_page_line(&mut state.frontend, &state.renderer, line);
         if ansi {
             let now = crate::ui::wol_page::reply_window_now(

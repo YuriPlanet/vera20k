@@ -426,7 +426,18 @@ impl BattleOpening {
                         self.yard.context("yard")?,
                         "GAPOWR",
                     )?;
-                    commands::place_ready_building_at_cell(state, "GAPOWR", cursor);
+                    commands::place_ready_building_at_cell(
+                        &state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                        &state.persistence,
+                        "GAPOWR",
+                        cursor,
+                    );
                     action = Some("complete GAPOWR cameo and tactical PLACE");
                     self.step = Step::Placing;
                 }
@@ -480,7 +491,18 @@ impl BattleOpening {
                         self.yard.context("yard")?,
                         "GAPILE",
                     )?;
-                    commands::place_ready_building_at_cell(state, "GAPILE", cursor);
+                    commands::place_ready_building_at_cell(
+                        &state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                        &state.persistence,
+                        "GAPILE",
+                        cursor,
+                    );
                     self.step = Step::BarracksPlacing;
                     action = Some("ready GAPILE cameo and tactical PLACE");
                 }
@@ -2833,7 +2855,12 @@ fn rally_click(state: &AppState, producer: u64) -> Result<((u16, u16), (u16, u16
         };
         let world = crate::app::input::camera::cell_centre_world_point(x, y, cell.level);
         if crate::app::input::entity_pick::hover_object_at_point(
-            crate::app::input::entity_pick::presented(state, sim),
+            crate::app::input::entity_pick::presented(
+                &state.platform,
+                &state.frontend,
+                &state.match_state,
+                sim,
+            ),
             world.0,
             world.1,
             &local_owner(&state.match_state.session)?,
@@ -2948,7 +2975,12 @@ fn legal_move_cell(
 fn mouse_can_pick(state: &AppState, id: u64) -> Result<bool> {
     let sim = simulation(&state.match_state.sim_runtime)?;
     let entity = sim.entities().get(id).context("opposing GI")?;
-    let presented = crate::app::input::entity_pick::presented(state, sim);
+    let presented = crate::app::input::entity_pick::presented(
+        &state.platform,
+        &state.frontend,
+        &state.match_state,
+        sim,
+    );
     let world = presented.screen_position(entity);
     Ok(crate::app::input::entity_pick::hover_object_at_point(
         presented,
@@ -3139,7 +3171,12 @@ pub(super) fn latency_move_with_mouse(
                             );
                             fixed_view_cursor(world, camera, zoom, viewport).is_ok()
                                 && empty_ground_point(
-                                    crate::app::input::entity_pick::presented(state, sim),
+                                    crate::app::input::entity_pick::presented(
+                                        &state.platform,
+                                        &state.frontend,
+                                        &state.match_state,
+                                        sim,
+                                    ),
                                     world,
                                     &owner_name,
                                 )
@@ -3245,7 +3282,12 @@ fn clicks_own_cell(state: &AppState, cell: (u16, u16)) -> bool {
         crate::app::match_runtime::sim_tick::tactical_cells(sim),
     ) == cell
         && empty_ground_point(
-            crate::app::input::entity_pick::presented(state, sim),
+            crate::app::input::entity_pick::presented(
+                &state.platform,
+                &state.frontend,
+                &state.match_state,
+                sim,
+            ),
             world,
             &owner,
         )
@@ -3358,7 +3400,12 @@ pub(super) fn selected_move_with_mouse(
             let world =
                 crate::app::input::camera::cell_centre_world_point(cell.0, cell.1, terrain.level);
             if empty_ground_point(
-                crate::app::input::entity_pick::presented(state, sim),
+                crate::app::input::entity_pick::presented(
+                    &state.platform,
+                    &state.frontend,
+                    &state.match_state,
+                    sim,
+                ),
                 world,
                 &local_owner(&state.match_state.session)?,
             ) {
@@ -3750,7 +3797,14 @@ fn cameo(state: &mut AppState, type_id: &str, right: bool) -> Result<()> {
         "{type_id} is absent from the actual retained local sidebar"
     );
     dispatch::apply_sidebar_action(
-        state,
+        &mut state.platform,
+        &state.renderer,
+        &state.diag,
+        &mut state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &mut state.persistence,
         SidebarAction::CameoPress {
             type_id: type_id.into(),
             right,
@@ -3784,7 +3838,9 @@ fn point_at_entity(state: &mut AppState, id: u64) -> Result<Option<u64>> {
         .context("mouse actor")?;
     let cell = (entity.position.rx(), entity.position.ry());
     let world = crate::app::input::entity_pick::presented(
-        state,
+        &state.platform,
+        &state.frontend,
+        &state.match_state,
         simulation(&state.match_state.sim_runtime)?,
     )
     .screen_position(entity);
@@ -3800,7 +3856,12 @@ fn point_at_entity(state: &mut AppState, id: u64) -> Result<Option<u64>> {
     point_at_world(state, world);
     let sim = simulation(&state.match_state.sim_runtime)?;
     Ok(crate::app::input::entity_pick::hover_object_at_point(
-        crate::app::input::entity_pick::presented(state, sim),
+        crate::app::input::entity_pick::presented(
+            &state.platform,
+            &state.frontend,
+            &state.match_state,
+            sim,
+        ),
         world.0,
         world.1,
         &local_owner(&state.match_state.session)?,

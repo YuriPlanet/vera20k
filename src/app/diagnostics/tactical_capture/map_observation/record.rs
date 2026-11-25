@@ -689,8 +689,16 @@ impl TacticalCaptureSession {
             ready && static_default_cursor && camera_input_idle,
             "map observation requires every draw ready with a static cursor and idle camera input: ready={ready}, static_cursor={static_default_cursor}, camera_idle={camera_input_idle}, cursor_feedback={:?}, cursor_position={cursor_position:?}",
             crate::app::input::cursor::current_cursor_feedback_kind(
-                state,
-                &crate::app::input::cursor::CursorTargets::read(state),
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.persistence,
+                &crate::app::input::cursor::CursorTargets::read(
+                    &state.platform,
+                    &state.frontend,
+                    &state.match_state
+                ),
             )
         );
         let profile = &self

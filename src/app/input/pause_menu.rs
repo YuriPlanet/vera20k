@@ -3,15 +3,20 @@
 //! (72FC60,60B000,60B350,60B7A0).
 
 use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::diagnostics::performance_overlay::PerformanceOverlay;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::{PauseEventLimiters, SessionMode, WallBucketTimer};
 use crate::app::match_runtime::sim_host::SimHost;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::presentation::state::MatchPresentationState;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::{App, AppState};
+use crate::audio::sfx::SfxPlayer;
 use crate::ui::main_menu_dialogs::OptionsDialogState;
 use crate::ui::main_menu_dialogs::options::shell::{IN_GAME_KEYBOARD_HELP, LauncherOptionsLayout};
 use crate::ui::main_menu_dialogs::options::{
@@ -133,26 +138,31 @@ fn select_template(match_state: &MatchState) -> PauseMenuTemplate {
     )
 }
 
-pub(crate) fn current_layout(state: &AppState) -> Option<PauseMenuLayout> {
+pub(crate) fn current_layout(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<PauseMenuLayout> {
     let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
     )?;
     let mut layout = pause_menu_layout(
         shell.width,
         shell.height,
         shell.layout,
         shell.button_size,
-        current_template(&state.match_state.match_presentation),
+        current_template(&match_state.match_presentation),
     );
-    if multiplayer_control(&state.match_state).is_some() {
+    if multiplayer_control(match_state).is_some() {
         layout.enable_shared_pause();
     }
-    let category = state
-        .match_state
+    let category = match_state
         .match_presentation
         .options_page
         .as_ref()
@@ -173,33 +183,32 @@ pub(crate) fn current_layout(state: &AppState) -> Option<PauseMenuLayout> {
 }
 
 /// The Options page showing on the open in-game menu, in the shell's pixels.
-pub(crate) fn options_page_layout(state: &AppState) -> Option<LauncherOptionsLayout> {
-    let page = state.match_state.match_presentation.options_page.as_ref()?;
+pub(crate) fn options_page_layout(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<LauncherOptionsLayout> {
+    let page = match_state.match_presentation.options_page.as_ref()?;
     let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
     )?;
-    let battle = App::match_zoom_geometry(
-        &state.platform,
-        &state.renderer.gpu,
-        &state.persistence.options_profile,
-    );
-    let menu = current_layout(state)?;
+    let battle = App::match_zoom_geometry(platform, &renderer.gpu, &persistence.options_profile);
+    let menu = current_layout(platform, renderer, frontend, match_state, persistence)?;
     Some(
         LauncherOptionsLayout::in_game(
             (shell.width, shell.height),
             menu.page_column(),
             page.dialog.category(),
-            current_template(&state.match_state.match_presentation) == PauseMenuTemplate::Internet,
+            current_template(&match_state.match_presentation) == PauseMenuTemplate::Internet,
             page.game_speed_shown,
             menu.button(PauseMenuButton::Keyboard).is_none(),
-            (
-                state.renderer.gpu.config.width,
-                state.renderer.gpu.config.height,
-            ),
+            (renderer.gpu.config.width, renderer.gpu.config.height),
         )
         .with_battle_frame((battle.src_width, battle.src_height)),
     )
@@ -256,17 +265,40 @@ fn run_options_page(state: &mut AppState) {
     // and commits its page on the way, and come back to it.
     match child {
         Some(InGameMenuState::Keyboard) => crate::app::input::keyboard::open(
-            state,
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
             crate::ui::shell::keyboard::KeyboardParent::GameControls,
         ),
-        Some(InGameMenuState::Sound) => crate::app::input::sound::open(state),
+        Some(InGameMenuState::Sound) => crate::app::input::sound::open(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+        ),
         _ => {}
     }
     // The match ignores the mouse while the menu is open, so Edit Layout
     // closes it as Resume does before the mode takes the mouse.
     if edit_layout {
         activate(state, PauseMenuButton::Resume);
-        crate::app::input::layout_edit::start(state);
+        crate::app::input::layout_edit::start(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            &state.persistence,
+        );
     }
 }
 
@@ -274,7 +306,13 @@ fn run_options_page(state: &mut AppState) {
 /// state, `None` a move. True when the menu's other controls don't get to see
 /// it: an open list or a held slider has the pointer, or the page has gone.
 fn options_page_pointer(state: &mut AppState, pressed: Option<bool>) -> bool {
-    let Some(layout) = options_page_layout(state) else {
+    let Some(layout) = options_page_layout(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) else {
         return false;
     };
     let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(
@@ -419,13 +457,33 @@ fn chat_command_for(
 
 /// VERA: `/pause` and `/resume` typed in match chat (`input::chat`) ask for
 /// the Pause key's shared pause and answer with a message row.
-pub(crate) fn chat_command(state: &mut AppState, want: bool) {
-    let paused = live_pause(&state.match_state).is_some_and(|pause| pause.paused);
-    let (ask, answer) = chat_command_for(multiplayer_control(&state.match_state), paused, want);
+pub(crate) fn chat_command(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    want: bool,
+) {
+    let paused = live_pause(match_state).is_some_and(|pause| pause.paused);
+    let (ask, answer) = chat_command_for(multiplayer_control(match_state), paused, want);
     if let Some(label) = answer
-        && (!ask || request_multiplayer_pause(&state.platform.window, &mut state.match_state, want))
+        && (!ask || request_multiplayer_pause(&platform.window, match_state, want))
     {
-        crate::app::input::messages::post_chat_command_answer(state, &crate::i18n::tr(label));
+        crate::app::input::messages::post_chat_command_answer(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            &crate::i18n::tr(label),
+        );
     }
 }
 
@@ -495,35 +553,88 @@ pub(crate) fn on_open(
 
 /// The menu is closing: what its page holds applies and is saved before the
 /// next page reads those values.
-pub(crate) fn on_close(state: &mut AppState) {
-    close_page(state, true);
+pub(crate) fn on_close(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+) {
+    close_page(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        true,
+    );
 }
 
 /// The match is ending, or the program quitting, with the menu open. The
 /// page's settings are still saved, but a moved Game Speed is dropped: only
 /// BBB's Back result (1) applies and writes it through 4E1DE0, its result 2
 /// does neither, and a speed command would reach a session that is over.
-pub(crate) fn on_match_end(state: &mut AppState) {
-    close_page(state, false);
+pub(crate) fn on_match_end(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+) {
+    close_page(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        false,
+    );
 }
 
-fn close_page(state: &mut AppState, apply_speed: bool) {
-    let Some(page) = state.match_state.match_presentation.options_page.take() else {
+fn close_page(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    apply_speed: bool,
+) {
+    let Some(page) = match_state.match_presentation.options_page.take() else {
         return;
     };
-    state.match_state.match_presentation.options_page_category = Some(page.dialog.category());
+    match_state.match_presentation.options_page_category = Some(page.dialog.category());
     // A moved Game Speed is BBB's accepted speed (4E1DE0): the profile and
     // the match take it, and the commit below writes the profile once.
     let speed = page.moved_speed_position().filter(|_| apply_speed);
     if let Some(position) = speed {
-        let options = &mut state.match_state.match_presentation.in_game_options;
+        let options = &mut match_state.match_presentation.in_game_options;
         let stored = options.speed_context.stored_speed(i32::from(position));
         options.game_speed = u32::try_from(stored).unwrap_or(0);
-        state.persistence.options_profile.game_speed = stored;
-        crate::app::persistence::options::apply_in_game_speed(&mut state.match_state);
+        persistence.options_profile.game_speed = stored;
+        crate::app::persistence::options::apply_in_game_speed(match_state);
     }
-    if speed.is_some() || !page.untouched(&state.persistence.options_profile) {
-        App::commit_in_game_options_page(state, page.dialog, page.opened);
+    if speed.is_some() || !page.untouched(&persistence.options_profile) {
+        App::commit_in_game_options_page(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            page.dialog,
+            page.opened,
+        );
     }
 }
 
@@ -599,25 +710,25 @@ fn sync_values(
 /// hover nor take a press. The open Options page's tree is brought in line
 /// with its layout too, which it returns.
 pub(crate) fn sync(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
     states: &[PauseMenuButtonState; 8],
 ) -> Option<(PauseMenuLayout, Option<LauncherOptionsLayout>)> {
-    let layout = current_layout(state)?;
-    let page_layout = options_page_layout(state);
+    let layout = current_layout(platform, renderer, frontend, match_state, persistence)?;
+    let page_layout = options_page_layout(platform, renderer, frontend, match_state, persistence);
     if let (Some(page_layout), Some(page)) = (
         &page_layout,
-        state.match_state.match_presentation.options_page.as_mut(),
+        match_state.match_presentation.options_page.as_mut(),
     ) {
         page.dialog.shell_sync(page_layout);
     }
     let template = layout.template;
-    let positions = state
-        .match_state
-        .match_presentation
-        .internet_pause
-        .positions;
+    let positions = match_state.match_presentation.internet_pause.positions;
     super::dialog_page::sync_dialog(
-        &mut state.match_state.match_presentation.dialog_ui,
+        &mut match_state.match_presentation.dialog_ui,
         template.dialog(),
         || pause_menu::spec(template, positions, IN_GAME_KEYBOARD_HELP),
         |id| layout.rect(id),
@@ -629,7 +740,13 @@ pub(crate) fn sync(
 /// One pointer message on the menu (`down`: `None` moves). The Options page
 /// sees it first; a disabled button neither hovers nor takes a press.
 pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
-    let Some(layout) = current_layout(state) else {
+    let Some(layout) = current_layout(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) else {
         return;
     };
     if options_page_pointer(state, down) {
@@ -717,8 +834,26 @@ fn activate(state: &mut AppState, button: PauseMenuButton) {
             }
         }
         PauseMenuButton::Resume => {
-            resume_internet_events(state);
-            App::enter_in_game_menu_state(state, InGameMenuState::Closed)
+            resume_internet_events(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+            );
+            App::enter_in_game_menu_state(
+                &mut state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                InGameMenuState::Closed,
+            )
         }
         // 0x522 (`0x004F16C0..0x004F16EA`): GameMode 4 writes state 2 while
         // `[0xB779C4]` is set, every other game state 3.
@@ -731,7 +866,16 @@ fn activate(state: &mut AppState, button: PauseMenuButton) {
             {
                 crate::app::input::surrender::open(state);
             } else {
-                App::enter_in_game_menu_state(state, InGameMenuState::AbortConfirm)
+                App::enter_in_game_menu_state(
+                    &mut state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence,
+                    InGameMenuState::AbortConfirm,
+                )
             }
         }
         PauseMenuButton::Load => App::open_saved_game_browser(state, SavedSeedMode::Load),
@@ -742,7 +886,13 @@ fn activate(state: &mut AppState, button: PauseMenuButton) {
         }
         // BBB's 0x52C: A3 opens over the menu and comes back to it.
         PauseMenuButton::Keyboard => crate::app::input::keyboard::open(
-            state,
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
             crate::ui::shell::keyboard::KeyboardParent::GameControls,
         ),
     }
@@ -801,24 +951,31 @@ pub(crate) fn internet_resume(
 
 /// Resume re-reads GameMode and Session+0x300 (4F1527..4F153B): a defeat
 /// while FF is open drops both events. Only FF holds the trackbars.
-fn resume_internet_events(state: &mut AppState) {
-    let local_defeated = state
-        .match_state
+fn resume_internet_events(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    let local_defeated = match_state
         .sim_runtime
         .runtime()
         .is_some_and(|runtime| runtime.simulation.local_player_defeated());
-    if current_template(&state.match_state.match_presentation) != PauseMenuTemplate::Internet
-        || state.match_state.session_mode() != SessionMode::Wol
+    if current_template(&match_state.match_presentation) != PauseMenuTemplate::Internet
+        || match_state.session_mode() != SessionMode::Wol
         || local_defeated
     {
         return;
     }
-    let controls = state.match_state.match_presentation.internet_pause;
-    let latency_fudge = state.match_state.session.latency_fudge();
-    let game_speed = current_game_speed(&state.match_state.sim_runtime);
+    let controls = match_state.match_presentation.internet_pause;
+    let latency_fudge = match_state.session.latency_fudge();
+    let game_speed = current_game_speed(&match_state.sim_runtime);
     let now_bucket = crate::app::match_runtime::frame_pacer::wall_clock_bucket();
-    let relay_paced = state
-        .match_state
+    let relay_paced = match_state
         .live_network
         .as_ref()
         .is_some_and(|live| live.relay_frames_per_second().is_some());
@@ -826,25 +983,39 @@ fn resume_internet_events(state: &mut AppState) {
         &controls,
         latency_fudge,
         game_speed,
-        state.match_state.session.pause_event_limiters_mut(),
+        match_state.session.pause_event_limiters_mut(),
         now_bucket,
         relay_paced,
     );
-    let Some(owner) = crate::app::input::commands::preferred_local_owner(&state.match_state) else {
+    let Some(owner) = crate::app::input::commands::preferred_local_owner(match_state) else {
         return;
     };
     // Resume4F1595..4F167A emits latency first, then speed. The limiters above
     // have already advanced even when OutList refuses either event.
     if let Some(value) = resume.latency_fudge {
         crate::app::input::commands::schedule_command(
-            state,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
             &owner,
             crate::sim::command::Command::SetLatencyFudge { value },
         );
     }
     if let Some(speed) = resume.game_speed {
         crate::app::input::commands::schedule_command(
-            state,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
             &owner,
             crate::sim::command::Command::LiveGameSpeed { speed: speed as u8 },
         );

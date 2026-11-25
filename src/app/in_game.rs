@@ -1,7 +1,14 @@
 //! Match-session focus, modal, return, quit and scenario-exit control.
 
 use super::{App, AppState, GameScreen, Instant, ModifiersState};
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::sim_host::SimWrite;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 
 impl App {
     /// Return the live Scenario cursor and header to the multiplayer shell.
@@ -125,7 +132,15 @@ impl App {
         }
         state.match_state.scenario_restart_requested = false;
         state.match_state.debug_pause = false;
-        crate::app::input::pause_menu::on_match_end(state);
+        crate::app::input::pause_menu::on_match_end(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+        );
         state.match_state.match_presentation.options_page_category = None;
         state.match_state.match_presentation.in_game_menu =
             crate::ui::pause_menu::InGameMenuState::Closed;
@@ -301,7 +316,15 @@ impl App {
         state.platform.live_modifiers = ModifiersState::empty();
         state.platform.held_modifier_keys.clear();
         state.match_state.input.type_select.clear_held();
-        crate::app::input::planning_mode::release_on_focus_change(state);
+        crate::app::input::planning_mode::release_on_focus_change(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.persistence,
+        );
         // gamemd-derived: the `WM_ACTIVATEAPP` changed edge at 0x007778AC
         // stops/restores the primary DirectSound output through 0x00407020 /
         // 0x00407040 while secondary playback cursors continue. Native guards
@@ -391,7 +414,16 @@ impl App {
         {
             return;
         }
-        Self::enter_in_game_menu_state(state, current.on_escape());
+        Self::enter_in_game_menu_state(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            current.on_escape(),
+        );
     }
 
     /// Commit an in-scenario modal transition and the app-layer effects that
@@ -404,28 +436,39 @@ impl App {
     /// stops advancing and resumes from the same number, so the tick stream is
     /// unchanged and a replay of the match still reproduces.
     pub(crate) fn enter_in_game_menu_state(
-        state: &mut AppState,
+        platform: &mut PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &mut PersistenceState,
         next: crate::ui::pause_menu::InGameMenuState,
     ) {
         use crate::ui::pause_menu::InGameMenuState;
 
-        let previous = state.match_state.match_presentation.in_game_menu;
+        let previous = match_state.match_presentation.in_game_menu;
         if previous == next {
             return;
         }
-        if !previous.is_open()
-            && next.is_open()
-            && !Self::state_machine_admits_modal(&mut state.match_state)
-        {
+        if !previous.is_open() && next.is_open() && !Self::state_machine_admits_modal(match_state) {
             return;
         }
         if previous == InGameMenuState::Menu {
-            crate::app::input::pause_menu::on_close(state);
+            crate::app::input::pause_menu::on_close(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+            );
         }
         if !next.is_open() {
             // Back in play by any route (Resume, or a cancelled Abort or
             // Surrender): the next Escape opens on Game Controls again.
-            state.match_state.match_presentation.options_page_category = None;
+            match_state.match_presentation.options_page_category = None;
         }
         let was_open = previous.is_open();
         let will_be_open = next.is_open();
@@ -435,15 +478,15 @@ impl App {
             // (`native_in_game_shell_active`), so it is back before anything
             // in this frame reads the open state.
             Self::ensure_skirmish_shell_chrome(
-                &state.renderer,
-                &mut state.frontend,
-                &state.process_assets,
-                &state.persistence.options_profile,
+                renderer,
+                frontend,
+                process_assets,
+                &persistence.options_profile,
             );
         }
         if was_open != will_be_open {
-            let locked = crate::app::input::campaign_input::is_locked(&state.match_state);
-            let cursor = &mut state.match_state.input.cursor_visibility;
+            let locked = crate::app::input::campaign_input::is_locked(match_state);
+            let cursor = &mut match_state.input.cursor_visibility;
             if will_be_open {
                 cursor.show_for_menus();
             } else {
@@ -454,41 +497,37 @@ impl App {
             // StateMachine__EnterPause 0x683EB0 / ExitPause 0x683FB0 bracket
             // every in-game modal in every game mode.
             if will_be_open {
-                state.audio.enter_state_machine_pause();
+                audio.enter_state_machine_pause();
             } else {
-                state.audio.exit_state_machine_pause();
+                audio.exit_state_machine_pause();
             }
         }
-        if was_open != will_be_open && !state.match_state.session_mode().is_network() {
+        if was_open != will_be_open && !match_state.session_mode().is_network() {
             let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
             if will_be_open
-                || state
-                    .match_state
+                || match_state
                     .match_presentation
                     .radar_anim
                     .as_ref()
                     .is_some_and(|radar| radar.movie_pause())
             {
-                state.match_state.scenario_elapsed_clock.pause(now_ms);
+                match_state.scenario_elapsed_clock.pause(now_ms);
             } else {
-                state.match_state.scenario_elapsed_clock.resume(now_ms);
+                match_state.scenario_elapsed_clock.resume(now_ms);
             }
         }
-        state.match_state.match_presentation.in_game_menu = next;
-        let movie_active = crate::app::radar_movie::playback_active(
-            &state.platform,
-            &state.match_state.match_presentation,
-        );
-        state
-            .match_state
+        match_state.match_presentation.in_game_menu = next;
+        let movie_active =
+            crate::app::radar_movie::playback_active(platform, &match_state.match_presentation);
+        match_state
             .match_presentation
             .radar_movies
             .set_active(movie_active);
         // The menus' dialogs go; the chrome under them (the sidebar's and
         // the command bar's nodes) stays.
-        state.match_state.match_presentation.dialog_ui.close_all();
-        state.match_state.match_presentation.diplomacy_page = Default::default();
-        state.match_state.match_presentation.sound_dialog = None;
+        match_state.match_presentation.dialog_ui.close_all();
+        match_state.match_presentation.diplomacy_page = Default::default();
+        match_state.match_presentation.sound_dialog = None;
         if will_be_open {
             // Deactivate683EB0/4AEAD0 tears down drag/capture on the way into
             // the modal — WITHOUT dropping a pending building placement or
@@ -499,34 +538,34 @@ impl App {
             // and an active minimap press swallows every cursor move. The
             // chrome's capture went with `dialog_ui.close_all` above; its
             // pushed looks go here.
-            state.match_state.input.cancel_tactical_drag();
-            crate::app::input::chrome_input::cancel(&mut state.match_state.match_presentation);
+            match_state.input.cancel_tactical_drag();
+            crate::app::input::chrome_input::cancel(&mut match_state.match_presentation);
         }
         if next == InGameMenuState::Menu {
-            state.match_state.match_presentation.pause_menu_has_saves =
-                state.persistence.repository.has_browser_entry();
+            match_state.match_presentation.pause_menu_has_saves =
+                persistence.repository.has_browser_entry();
             crate::app::input::pause_menu::on_open(
-                &state.platform,
-                &state.renderer.performance_overlay,
-                &state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                state.audio.launcher_audio_available,
-                &state.persistence.options_profile,
+                platform,
+                &renderer.performance_overlay,
+                frontend,
+                match_state,
+                process_assets,
+                audio.launcher_audio_available,
+                &persistence.options_profile,
             );
         }
         if next == InGameMenuState::AbortConfirm {
-            crate::app::input::abort::on_open(&mut state.match_state);
+            crate::app::input::abort::on_open(match_state);
         }
 
         // An open modal is the pause (`MatchState::paused`); any transition
         // ends the debug pause.
-        state.match_state.debug_pause = false;
+        match_state.debug_pause = false;
         if !next.is_open() {
             // Elapsed modal time must not cause a catch-up frame.
-            state.platform.frame_pacer.reset_for_immediate_frame();
+            platform.frame_pacer.reset_for_immediate_frame();
         }
-        state.platform.window.request_redraw();
+        platform.window.request_redraw();
     }
 
     /// `State_Machine @ 0x0048C8B0`'s admission of a requested modal
@@ -594,7 +633,16 @@ impl App {
         use crate::ui::pause_menu::ModalOutcome;
         match outcome {
             ModalOutcome::Stay => {}
-            ModalOutcome::Enter(next) => Self::enter_in_game_menu_state(state, next),
+            ModalOutcome::Enter(next) => Self::enter_in_game_menu_state(
+                &mut state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                next,
+            ),
             ModalOutcome::LeaveMatch { destruct } => {
                 if destruct {
                     Self::queue_local_destruct(&mut state.match_state);
@@ -608,7 +656,13 @@ impl App {
                 Self::queue_local_destruct(&mut state.match_state);
                 state.match_state.match_presentation.modal_latch = false;
                 Self::enter_in_game_menu_state(
-                    state,
+                    &mut state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence,
                     crate::ui::pause_menu::InGameMenuState::Closed,
                 );
             }
@@ -617,7 +671,13 @@ impl App {
                 // returns to 0; the router consumes it on the next pass.
                 state.match_state.scenario_restart_requested = true;
                 Self::enter_in_game_menu_state(
-                    state,
+                    &mut state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence,
                     crate::ui::pause_menu::InGameMenuState::Closed,
                 );
             }
@@ -664,7 +724,16 @@ impl App {
         ) {
             let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
             crate::app::commander_feedback::skip_verdict_clip(state, wall_ms);
-            Self::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Closed);
+            Self::enter_in_game_menu_state(
+                &mut state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                crate::ui::pause_menu::InGameMenuState::Closed,
+            );
             return;
         }
         log::info!("Abort Mission confirmed — queueing EXIT event");
@@ -695,7 +764,16 @@ impl App {
             // through any pending pause request so this event can execute.
             live.keep_running_for_exit();
         }
-        Self::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Closed);
+        Self::enter_in_game_menu_state(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            crate::ui::pause_menu::InGameMenuState::Closed,
+        );
     }
 
     /// Consume EventClass opcode `0x13`'s executed edge and enter the existing

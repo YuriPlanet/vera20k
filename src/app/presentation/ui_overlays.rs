@@ -3026,7 +3026,14 @@ fn active_cursor_sequence<'a>(
         .match_presentation
         .software_cursor
         .as_ref()?;
-    let kind = current_cursor_feedback_kind(state, targets);
+    let kind = current_cursor_feedback_kind(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+        targets,
+    );
     state.match_state.input.note_shown_cursor(kind);
     let id: CursorId = kind
         .and_then(cursor_id_for_feedback)
@@ -3037,15 +3044,22 @@ fn active_cursor_sequence<'a>(
 /// The cursor id the production draw shows now. Like a draw, it notes the
 /// shown cursor, so a held button over the sidebar keeps it.
 pub(crate) fn shown_cursor_id(state: &AppState) -> Option<CursorId> {
-    active_cursor_sequence(state, &CursorTargets::read(state)).map(|(id, _)| id)
+    active_cursor_sequence(
+        state,
+        &CursorTargets::read(&state.platform, &state.frontend, &state.match_state),
+    )
+    .map(|(id, _)| id)
 }
 
 /// Observation of the same cursor selection used by the production draw.
 /// Map captures admit only a static arrow, so cursor wall time cannot alter it.
 pub(crate) fn static_default_cursor(state: &AppState) -> bool {
     state.use_software_cursor()
-        && active_cursor_sequence(state, &CursorTargets::read(state))
-            .is_some_and(|(id, sequence)| id == CursorId::Default && sequence.interval_ms == 0)
+        && active_cursor_sequence(
+            state,
+            &CursorTargets::read(&state.platform, &state.frontend, &state.match_state),
+        )
+        .is_some_and(|(id, sequence)| id == CursorId::Default && sequence.interval_ms == 0)
 }
 
 /// The software cursor frame a draw shows. Its sprite and its texture come

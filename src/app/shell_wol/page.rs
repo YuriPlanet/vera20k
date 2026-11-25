@@ -245,7 +245,16 @@ pub(crate) fn open_in_match(state: &mut AppState) {
     if state.frontend.wol.is_none() {
         return;
     }
-    App::enter_in_game_menu_state(state, InGameMenuState::Page);
+    App::enter_in_game_menu_state(
+        &mut state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &mut state.persistence,
+        InGameMenuState::Page,
+    );
     if state.match_state.match_presentation.in_game_menu == InGameMenuState::Page {
         // KeyboardClear 0x0054F720 at 0x0077D861 (and 0x0077D895 on close).
         state.match_state.input.clear_command_latches();
@@ -261,7 +270,16 @@ pub(crate) fn close_page_dialog(state: &mut AppState) {
     close_stale(&mut state.frontend);
     if state.match_state.match_presentation.in_game_menu == InGameMenuState::Page {
         state.match_state.input.clear_command_latches();
-        App::enter_in_game_menu_state(state, InGameMenuState::Closed);
+        App::enter_in_game_menu_state(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            InGameMenuState::Closed,
+        );
     }
 }
 
@@ -355,7 +373,17 @@ pub(super) fn current_window_line(state: &mut AppState, line: LanChatLine) -> bo
     };
     if in_game {
         let text = String::from_utf16_lossy(&line.text);
-        crate::app::input::messages::post_wol_result_row(state, &text);
+        crate::app::input::messages::post_wol_result_row(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            &state.persistence,
+            &text,
+        );
         return true;
     }
     if state.frontend.shell_route == ShellRoute::NetworkSetup
