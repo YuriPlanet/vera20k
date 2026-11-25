@@ -217,16 +217,9 @@ fn run_options_page(state: &mut AppState) {
                 )
         )
     });
-    let language = App::run_launcher_options_events(state, output.cues, output.events);
+    App::run_launcher_options_events(state, output.cues, output.events);
     if refit {
         refit_match(state);
-    }
-    if language {
-        let labels =
-            App::launcher_options_labels(state.frontend.shell_route, &state.process_assets);
-        if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
-            page.dialog.set_labels(labels);
-        }
     }
     // BBB's 0x52C and 0x52D: the dialogs open over the menu, which closes
     // and commits its page on the way, and come back to it.
@@ -435,12 +428,6 @@ pub(crate) fn on_open(state: &mut AppState) {
     let options = &state.match_state.match_presentation.in_game_options;
     let (context, game_speed_shown) = (options.speed_context, !options.game_speed_hidden);
     let speed_position = u8::try_from(options.game_speed_position()).unwrap_or(0);
-    let label = |key: &str, fallback: &str| state.csf_label(key, fallback);
-    let speed_names = (0..=crate::ui::shell::game_speed::MAX_POSITION)
-        .map(|position| label(context.label_key(context.stored_speed(position)), ""))
-        .collect();
-    let speed_caption = label("GUI:GameSpeed", "Game Speed");
-    let sound_label = label("GUI:Sound", "Sound");
     let mut dialog = App::launcher_options_from_state(
         &state.platform,
         &state.renderer.performance_overlay,
@@ -449,7 +436,7 @@ pub(crate) fn on_open(state: &mut AppState) {
         state.audio.launcher_audio_available,
         &state.persistence.options_profile,
     );
-    dialog.set_in_game_controls(speed_caption, speed_names, speed_position, sound_label);
+    dialog.set_in_game_controls(context, speed_position);
     dialog.select_category(category);
     let opened = dialog.pack();
     let opened_profile = state.persistence.options_profile.clone();
@@ -837,14 +824,12 @@ mod tests {
         assert_eq!(page.moved_speed_position(), None);
 
         // A moved Game Speed applies on close, unless BBB's init hid the row.
-        page.dialog
-            .set_in_game_controls(String::new(), Vec::new(), 6, String::new());
+        page.dialog.set_in_game_controls(Default::default(), 6);
         assert_eq!(page.moved_speed_position(), Some(6));
         page.game_speed_shown = false;
         assert_eq!(page.moved_speed_position(), None);
         page.game_speed_shown = true;
-        page.dialog
-            .set_in_game_controls(String::new(), Vec::new(), 0, String::new());
+        page.dialog.set_in_game_controls(Default::default(), 0);
 
         page.dialog.select_category(Category::Display);
         assert!(page.untouched(&profile), "a page only shows other controls");

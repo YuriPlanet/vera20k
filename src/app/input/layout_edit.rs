@@ -34,7 +34,7 @@ use crate::render::batch::SpriteInstance;
 use crate::ui::added_parts::{AddedKind, Holder};
 use crate::ui::field_layout::{Along, FieldPart, Hold};
 use crate::ui::game_screen::GameScreen;
-use crate::ui::sidebar::{ArtKey, PartKind, Rect};
+use crate::ui::sidebar::{ArtKey, PartKind, Rect, SidebarPart};
 
 /// The mode's state while it is on.
 #[derive(Debug, Default)]
@@ -108,6 +108,8 @@ struct Grab {
 pub(crate) struct Target {
     /// The part's name: its section is `[<layout>.<name>]`.
     pub name: String,
+    /// Stock parts have translated captions. A part added by a mod keeps its name.
+    caption_key: Option<&'static str>,
     /// Where it shows, in frame pixels.
     pub rect: [i32; 4],
     /// Its `X` and `Y` now.
@@ -152,10 +154,6 @@ pub(crate) fn start(state: &mut AppState) {
         .match_presentation
         .dialog_ui
         .push_modal(EDIT_DIALOG);
-    crate::app::input::messages::post_layout_edit(
-        state,
-        crate::app::input::messages::LayoutEditLine::On,
-    );
 }
 
 /// Esc while the mode is on: leave it without saving.
@@ -181,14 +179,7 @@ fn finish(state: &mut AppState, save: bool) {
         // The parts go back where the mode found them.
         relayout(state);
     }
-    crate::app::input::messages::post_layout_edit(
-        state,
-        if save {
-            crate::app::input::messages::LayoutEditLine::Saved
-        } else {
-            crate::app::input::messages::LayoutEditLine::Cancelled
-        },
-    );
+    crate::app::input::messages::post_layout_edit_finished(state, save);
 }
 
 /// Reset: the side's layout leaves the player's file, so its parts stand as
@@ -277,8 +268,29 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
             PartKind::Text | PartKind::Panel => None,
         };
         if let Some([x, y, w, h]) = rect.filter(|&[.., w, h]| w > 0.0 && h > 0.0) {
+            let caption_key = match part {
+                SidebarPart::Credits => "VERA:LayoutPartCredits",
+                SidebarPart::Top => "VERA:LayoutPartTop",
+                SidebarPart::Diplomacy => "GUI:DiplomacyMenu",
+                SidebarPart::Options => "GUI:Options",
+                SidebarPart::Radar => "VERA:LayoutPartRadar",
+                SidebarPart::Minimap => "GUI:GameMap",
+                SidebarPart::Middle => "VERA:LayoutPartMiddle",
+                SidebarPart::Repair => "TXT_REPAIR_MODE",
+                SidebarPart::Sell => "TXT_SELL_MODE",
+                SidebarPart::Buildings => "TXT_STRUCTURE_TAB",
+                SidebarPart::Defenses => "TXT_DEFENSE_TAB",
+                SidebarPart::Infantry => "TXT_INFANTRY_TAB",
+                SidebarPart::Vehicles => "TXT_UNIT_TAB",
+                SidebarPart::Cameos => "VERA:LayoutPartCameos",
+                SidebarPart::ScrollDown => "TXT_SIDEBAR_DOWN",
+                SidebarPart::ScrollUp => "TXT_SIDEBAR_UP",
+                SidebarPart::Power => "VERA:LayoutPartPower",
+                SidebarPart::Money | SidebarPart::Tabs => continue,
+            };
             out.push(Target {
                 name: part.name().to_owned(),
+                caption_key: Some(caption_key),
                 rect: to_frame(x, y, w, h),
                 xy: spec.place(part).map(|v| v.round() as i32),
                 per_pixel: [1.0 / scale; 2],
@@ -289,10 +301,14 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
     // The battlefield's pieces have a box each, most often the whole
     // battlefield: a handle shows where the piece sits in it.
     let field = field_parts::layout(&state.match_state.match_presentation);
-    for (part, part_box) in [
-        (FieldPart::Messages, field.messages),
-        (FieldPart::Timers, field.timers),
-        (FieldPart::Banner, field.banner),
+    for (part, caption_key, part_box) in [
+        (
+            FieldPart::Messages,
+            "VERA:LayoutPartMessages",
+            field.messages,
+        ),
+        (FieldPart::Timers, "VERA:LayoutPartTimers", field.timers),
+        (FieldPart::Banner, "VERA:LayoutPartBanner", field.banner),
     ] {
         if !field.shows(part) {
             continue;
@@ -316,6 +332,7 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
         };
         out.push(Target {
             name: part.name().to_owned(),
+            caption_key: Some(caption_key),
             rect,
             xy: [part_box.x, part_box.y],
             per_pixel: per_pixel(part_box.hold, 1.0),
@@ -357,6 +374,7 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
             .map_or(part.section.as_str(), |(_, name)| name);
         out.push(Target {
             name: name.to_owned(),
+            caption_key: None,
             rect,
             xy: [part.place.x, part.place.y],
             per_pixel: per_pixel(part.place.hold, part_scale),
@@ -658,25 +676,27 @@ fn pieces(state: &AppState) -> Vec<EditPiece> {
             at[1] += line;
         }
         named.push(at);
+        let label = target
+            .caption_key
+            .map(|key| state.csf_label(key, &target.name))
+            .unwrap_or(target.name);
         out.push(EditPiece::Box([
             at[0],
             at[1],
-            font.text_width(&target.name) as f32 + 4.0,
+            font.text_width(&label) as f32 + 4.0,
             line,
         ]));
-        out.push(EditPiece::Text(
-            target.name.clone(),
-            [at[0] + 2.0, at[1] + 1.0],
-            colour,
-        ));
+        out.push(EditPiece::Text(label, [at[0] + 2.0, at[1] + 1.0], colour));
     }
-    for (button, label, rect) in buttons(
+    let buttons = buttons(
         &state.platform,
         &state.renderer,
         &state.frontend.screen,
         &state.match_state.match_presentation,
         &state.persistence,
-    ) {
+    );
+    let [_, button_y, _, button_h] = buttons[0].2;
+    for (button, label, rect) in buttons {
         let [x, y, w, h] = rect.map(|v| v as f32);
         let colour = if pressed_button(&state.match_state.match_presentation) == Some(button) {
             [1.0; 3]
@@ -693,6 +713,34 @@ fn pieces(state: &AppState) -> Vec<EditPiece> {
             ],
             colour,
         ));
+    }
+    // Keep the instructions beside the editing controls, clear of the
+    // Messages handle. Resolve them at draw time just like the buttons.
+    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
+    let hint = crate::i18n::tr("VERA:LayoutEditHint");
+    let wrapped = font.wrap_layout(&hint, width.saturating_sub(12).max(1));
+    let mut top = ((button_y + button_h + 6) as f32)
+        .min((y + height).saturating_sub(wrapped.height + 2) as f32);
+    for span in wrapped.lines {
+        let left = x as f32 + (width as f32 - span.width as f32) * 0.5;
+        out.push(EditPiece::Box([
+            left - 2.0,
+            top,
+            span.width as f32 + 4.0,
+            line,
+        ]));
+        out.push(EditPiece::Text(
+            hint[span.start_byte..span.end_byte].to_owned(),
+            [left, top + 1.0],
+            tint,
+        ));
+        top += font.cell_height();
     }
     out
 }

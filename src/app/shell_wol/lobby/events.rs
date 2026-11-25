@@ -369,7 +369,6 @@ pub(in crate::app::shell_wol) fn located(state: &mut AppState, result: Result<Wo
     if super::page::located(
         state.frontend.wol.as_mut(),
         &state.platform.window,
-        &state.process_assets,
         &result,
     ) {
         return;
@@ -428,15 +427,20 @@ pub(in crate::app::shell_wol) fn page_result(state: &mut AppState, result: Resul
         Err(0x0004_0133) => "TXT_PAGEUSERGONE",
         Err(_) => "TXT_PAGEFAILED",
     };
+    if result.is_ok() || super::page::page_dialog(state.frontend.wol.as_ref()).is_some() {
+        super::page::notice(
+            &mut state.frontend,
+            &state.renderer,
+            &state.process_assets,
+            key,
+        );
+        return;
+    }
     let line = LanChatLine {
         text: units(&state.process_assets, key),
         color: u32::MAX,
     };
-    if result.is_ok() {
-        super::page::append_page_line(&mut state.frontend, &state.renderer, line);
-    } else {
-        super::page::current_window_line(state, line);
-    }
+    super::page::current_window_line(state, line);
 }
 
 /// The NetStatus sink `0x007AA6D0` outside the server-list wait: only

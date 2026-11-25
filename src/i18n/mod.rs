@@ -40,8 +40,8 @@
 //!
 //! English holds every VERA label and answers any label the chosen language
 //! lacks. A label that is not VERA's own (`GUI:Ok`, `NAME:MTNK`) translates
-//! the game's string table: the chosen language's text replaces the game
-//! files' ([`apply`]), for players whose game files are in another language.
+//! the game's string table. Standard menu captions follow the interface
+//! language; mod-specific captions keep their names ([`apply`]).
 //!
 //! A language can also bring its movie subtitles and the names drawn on its
 //! cameos, in files beside its text: `vera20k.<tag>.subtitles.txt`, in the
@@ -92,6 +92,17 @@ mod shipped {
 }
 
 pub const DEFAULT_LANGUAGE: &str = "en";
+
+/// Retail menu keys shared by all shipped interface languages. Derive this
+/// from the bundled English catalog even when a player replaces English.
+static STANDARD_MENU: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+    parse(shipped::FILES[0].1)
+        .entries
+        .into_iter()
+        .map(|entry| (entry.key(), entry.text))
+        .filter(|(key, _)| !key.starts_with("VERA:"))
+        .collect()
+});
 
 /// The pseudo-language: every text with its letters swapped for accented
 /// look-alikes, lengthened and bracketed. A screen in it shows untranslated
@@ -832,14 +843,17 @@ impl Subtags {
     }
 }
 
-/// Put the language in use over a loaded string table: its texts answer
-/// ahead of the game's, and English answers labels neither has. Called by the
-/// one CSF loader and after a language change.
+/// Apply the interface language to a loaded string table with no mod language
+/// file. Standard menu buttons keep a mod's own CSF name across language changes.
 pub fn apply(csf: &mut CsfFile) {
-    apply_catalog(&catalog(), csf, show_string_keys());
+    apply_for_mod(csf, None);
 }
 
-fn apply_catalog(catalog: &Catalog, csf: &mut CsfFile, show_keys: bool) {
+pub(crate) fn apply_for_mod(csf: &mut CsfFile, mod_dir: Option<&Path>) {
+    apply_catalog(&catalog(), csf, mod_dir, show_string_keys());
+}
+
+fn apply_catalog(catalog: &Catalog, csf: &mut CsfFile, mod_dir: Option<&Path>, show_keys: bool) {
     csf.clear_localization();
     let single = |(key, _): &(&String, &String)| !key.ends_with(']');
     for (key, text) in catalog.english().strings.iter().filter(single) {
@@ -855,7 +869,19 @@ fn apply_catalog(catalog: &Catalog, csf: &mut CsfFile, show_keys: bool) {
         }
     }
     for (key, text) in catalog.selected.strings.iter().filter(single) {
-        csf.set_override(key, text);
+        if !STANDARD_MENU.contains_key(key) && (key.starts_with("VERA:") || !csf.is_mod_text(key)) {
+            csf.set_override(key, text);
+        }
+    }
+    // Partial player language files still get an English button when the
+    // installation's language differs. Explicit mod names stay in the CSF.
+    for (key, english) in STANDARD_MENU.iter() {
+        if !csf.is_mod_text(key) {
+            csf.set_override(key, catalog.text(key).unwrap_or(english));
+        }
+    }
+    if let Some(dir) = mod_dir {
+        apply_mod_menu_file(csf, dir, catalog);
     }
     if show_keys {
         // Every label reads as its own key. The catalog's labels are in the
@@ -867,6 +893,7 @@ fn apply_catalog(catalog: &Catalog, csf: &mut CsfFile, show_keys: bool) {
             .strings
             .keys()
             .chain(catalog.selected.strings.keys())
+            .chain(STANDARD_MENU.keys())
             .filter(|key| !key.ends_with(']'));
         let keys: Vec<String> = csf
             .entries()
@@ -877,6 +904,39 @@ fn apply_catalog(catalog: &Catalog, csf: &mut CsfFile, show_keys: bool) {
         for key in keys {
             csf.set_override(&key, &key);
         }
+    }
+}
+
+/// A mod can translate just the buttons it renames. Its language file lives
+/// under Resources so it can ship beside map additions without becoming one.
+fn apply_mod_menu_file(csf: &mut CsfFile, dir: &Path, catalog: &Catalog) {
+    use crate::util::{case_insensitive_path::find, file_system};
+
+    let tag = &catalog.selected.tag;
+    let Some(path) = find(dir, "Resources")
+        .and_then(|resources| find(&resources, &format!("vera20k.{tag}.ini")))
+    else {
+        return;
+    };
+    if !file_system::metadata(&path).is_ok_and(|file| file.is_file() && file.len() <= 1024 * 1024) {
+        log::warn!(
+            "Skipping unreadable or oversized mod menu file {}",
+            path.display()
+        );
+        return;
+    }
+    match file_system::read_to_string(&path) {
+        Ok(text) => {
+            for entry in parse(&text).entries {
+                let key = entry.key();
+                if STANDARD_MENU.contains_key(&key)
+                    || (!key.starts_with("VERA:") && csf.is_mod_text(&key))
+                {
+                    csf.set_override(&key, &entry.text);
+                }
+            }
+        }
+        Err(error) => log::warn!("Could not read {}: {error}", path.display()),
     }
 }
 
@@ -1571,8 +1631,8 @@ mod tests {
     fn the_chosen_language_translates_the_game_and_english_fills_gaps() {
         let file = "[Strings]\nGUI:Ok=确定\nVERA:Pausing=正在暂停...\n";
         let catalog = catalog_with("zh-CN", file);
-        let mut csf = test_csf(&[("GUI:Ok", "OK"), ("GUI:Cancel", "Cancel")]);
-        apply_catalog(&catalog, &mut csf, false);
+        let mut csf = test_csf(&[("GUI:Ok", "OK"), ("GUI:Cancel", "取消")]);
+        apply_catalog(&catalog, &mut csf, None, false);
         // The chosen language replaces the game's own text...
         assert_eq!(csf.text("GUI:Ok"), "确定");
         assert_eq!(csf.text("GUI:Cancel"), "Cancel");
@@ -1580,6 +1640,145 @@ mod tests {
         // ...and English answers what it lacks.
         assert_eq!(csf.text("VERA:Resuming"), "Resuming...");
         assert_eq!(catalog.text("VERA:Resuming"), Some("Resuming..."));
+    }
+
+    #[test]
+    fn shipped_languages_relabel_the_same_retail_menu_after_each_switch() {
+        use crate::ui::main_menu_shell::MAIN_MENU_PAGE;
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let (mut csf, _) = CsfFile::load_for_interface(&assets).unwrap();
+        for &(tag, file) in shipped::FILES {
+            let catalog = catalog_with(tag, file);
+            apply_catalog(&catalog, &mut csf, None, false);
+            for key in MAIN_MENU_PAGE
+                .buttons()
+                .map(|button| button.csf_key)
+                .chain(STANDARD_MENU.keys().map(String::as_str))
+            {
+                let expected = catalog
+                    .selected
+                    .strings
+                    .get(&key.to_ascii_uppercase())
+                    .filter(|text| !text.is_empty())
+                    .unwrap_or_else(|| panic!("missing {tag} menu caption {key}"));
+                assert_eq!(csf.get(key), Some(expected.as_str()), "{tag}: {key}");
+            }
+        }
+    }
+
+    #[test]
+    fn menu_language_changes_keep_a_mods_renamed_buttons() {
+        use crate::assets::asset_manager::{AssetManager, MediaArchiveMode, test_support::*};
+        use crate::assets::csf_file::test_csf_bytes;
+        let install = audio_test_install("menu-labels");
+        let game_mod = TestDirectory::new("menu-label-mod");
+        // Some localized installs keep the English language ID in a loose
+        // CSF over their English MIX. The loose translation is the baseline.
+        install.write_mix(
+            "langmd.mix",
+            "ra2md.csf",
+            &test_csf_bytes(&[("GUI:Back", "Back"), ("GUI:Skirmish", "Skirmish")]),
+        );
+        let base = [
+            ("GUI:Back", "上一頁"),
+            ("GUI:Skirmish", "遭遇戰"),
+            ("TXT_OK", "OK"),
+        ];
+        std::fs::write(install.path().join("ra2md.csf"), test_csf_bytes(&base)).unwrap();
+        let renamed = [
+            ("GUI:Back", "Back"),
+            ("GUI:Skirmish", "Frontline"),
+            ("GUI:ModSound", "Dawn Audio"),
+            base[2],
+        ];
+        game_mod.write_mix("expandmd01.mix", "ra2md.csf", &test_csf_bytes(&renamed));
+        game_mod.write_mix(
+            "ares.mix",
+            "stringtable00.csf",
+            &test_csf_bytes(&[("TXT_OK", "Deploy")]),
+        );
+        // A loose installation CSF wins over an expansion archive, even with
+        // a mod selected. A loose mod CSF then wins over the installation.
+        let load = || {
+            let assets = AssetManager::with_mod(
+                install.path(),
+                Some(game_mod.path()),
+                MediaArchiveMode::STOCK_DIGITAL,
+            )
+            .unwrap();
+            crate::app::loading::init::load_csf(&assets).unwrap()
+        };
+        let de = catalog_with(
+            "de",
+            "[Strings]\nGUI:Back=Zurück\nGUI:Skirmish=Gefecht\nGUI:ModSound=Ton\nTXT_OK=Bestätigen\n",
+        );
+        let mut csf = load();
+        apply_catalog(&de, &mut csf, None, false);
+        assert_eq!(csf.get("GUI:Skirmish"), Some("Gefecht"));
+        std::fs::write(game_mod.path().join("ra2md.csf"), test_csf_bytes(&renamed)).unwrap();
+        let mut csf = load();
+        apply_catalog(&de, &mut csf, None, false);
+        assert_eq!(csf.get("GUI:Back"), Some("Zurück"));
+        assert_eq!(csf.get("GUI:Skirmish"), Some("Frontline"));
+        assert_eq!(csf.get("GUI:ModSound"), Some("Dawn Audio"));
+        assert_eq!(csf.get("TXT_OK"), Some("Deploy"));
+        let es = catalog_with(
+            "es",
+            "[Strings]\nGUI:Back=Atrás\nGUI:Skirmish=Escaramuza\nTXT_OK=Aceptar\n",
+        );
+        let resources = game_mod.path().join("Resources");
+        std::fs::create_dir(&resources).unwrap();
+        std::fs::write(
+            resources.join("vera20k.es.ini"),
+            "[Strings]\nGUI:Skirmish=Primera línea\nGUI:ModSound=Radio del alba\n",
+        )
+        .unwrap();
+        apply_catalog(&es, &mut csf, Some(game_mod.path()), false);
+        assert_eq!(csf.get("GUI:Back"), Some("Atrás"));
+        assert_eq!(csf.get("GUI:Skirmish"), Some("Primera línea"));
+        assert_eq!(csf.get("GUI:ModSound"), Some("Radio del alba"));
+        assert_eq!(csf.get("TXT_OK"), Some("Deploy"));
+        apply_catalog(&de, &mut csf, Some(game_mod.path()), false);
+        assert_eq!(csf.get("GUI:Skirmish"), Some("Frontline"));
+        assert_eq!(csf.get("GUI:ModSound"), Some("Dawn Audio"));
+    }
+
+    #[test]
+    fn a_replaced_language_archive_uses_a_same_language_installation_reference() {
+        use crate::assets::asset_manager::{AssetManager, MediaArchiveMode, test_support::*};
+        use crate::assets::csf_file::test_csf_bytes;
+        let install = audio_test_install("stock-menu-archive");
+        let game_mod = TestDirectory::new("mod-menu-archive");
+        let mut stock = test_csf_bytes(&[("GUI:Back", "Back"), ("GUI:Skirmish", "Skirmish")]);
+        game_mod.write_mix(
+            "langmd.mix",
+            "ra2md.csf",
+            &test_csf_bytes(&[("GUI:Back", "Back"), ("GUI:Skirmish", "Frontline")]),
+        );
+        let de = catalog_with("de", "[Strings]\nGUI:Back=Zurück\nGUI:Skirmish=Gefecht\n");
+        let load = |stock: &[u8]| {
+            install.write_mix("langmd.mix", "ra2md.csf", stock);
+            let assets = AssetManager::with_mod(
+                install.path(),
+                Some(game_mod.path()),
+                MediaArchiveMode::STOCK_DIGITAL,
+            )
+            .unwrap();
+            let mut csf = crate::app::loading::init::load_csf(&assets).unwrap();
+            apply_catalog(&de, &mut csf, None, false);
+            csf
+        };
+        let csf = load(&stock);
+        assert_eq!(csf.get("GUI:Back"), Some("Zurück"));
+        assert_eq!(csf.get("GUI:Skirmish"), Some("Frontline"));
+        // In another language even an identical word is not a reliable
+        // indication that the mod meant to use the stock caption.
+        stock[20..24].copy_from_slice(&3u32.to_le_bytes());
+        let csf = load(&stock);
+        assert_eq!(csf.get("GUI:Back"), Some("Back"));
+        assert_eq!(csf.get("GUI:Skirmish"), Some("Frontline"));
     }
 
     /// The watch sees a language file added or rewritten, and ignores files
@@ -1644,7 +1843,7 @@ mod tests {
         let file = "[Strings]\nGUI:Ok=确定\nVERA:Pausing=正在暂停...\n";
         let catalog = catalog_with("zh-CN", file);
         let mut csf = test_csf(&[("GUI:Ok", "OK"), ("TXT_MONEY_FORMAT", "%s $%d")]);
-        apply_catalog(&catalog, &mut csf, true);
+        apply_catalog(&catalog, &mut csf, None, true);
         assert_eq!(csf.text("GUI:Ok"), "GUI:OK");
         assert_eq!(csf.text("TXT_MONEY_FORMAT"), "TXT_MONEY_FORMAT");
         assert_eq!(csf.text("VERA:Pausing"), "VERA:PAUSING");

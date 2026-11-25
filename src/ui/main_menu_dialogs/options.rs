@@ -18,9 +18,7 @@ use std::ops::{Index, IndexMut};
 /// template's slider captions (`GUI:HigherDetail`, `GUI:Harder`,
 /// `GUI:Faster`) never show: the init renames them by position. The combo's
 /// own caption, `GUI:SetResolution`, left with the resolution list: the combo
-/// is VERA's [`Zoom`] list now. The last four are captions `0xD5` itself never
-/// shows: the in-game menu's Back and Game Controls page, and the Yes and No
-/// beside the boxes of VERA's Esc menu.
+/// is VERA's [`Zoom`] list now. The final captions belong to the in-game menu.
 pub(crate) const LAUNCHER_LABEL_SPECS: &[(&str, &str)] = &[
     ("GUI:OptionsMenu", "Options"),
     ("GUI:MainMenu", "Main Menu"),
@@ -55,6 +53,8 @@ pub(crate) const LAUNCHER_LABEL_SPECS: &[(&str, &str)] = &[
     ("GUI:GameControls", "Game Controls"),
     ("GUI:Yes", "Yes"),
     ("GUI:No", "No"),
+    ("GUI:GameSpeed", "Game Speed"),
+    ("GUI:Sound", "Sound"),
 ];
 
 const BROWSER: bool = cfg!(all(target_arch = "wasm32", target_os = "unknown"));
@@ -1475,14 +1475,8 @@ pub(crate) struct OptionsDialogState {
     /// The size this launch opened the window at, which the Esc menu's Set
     /// Window Size button names.
     launch_window_size: (u32, u32),
-    /// The in-game menu's Game Speed caption and one value name per
-    /// position, and its Sound button caption.
-    game_speed_caption: String,
-    game_speed_names: Vec<String>,
-    in_game_sound_label: String,
-    /// Whether the dialog is the in-game menu's: a running match greys what
-    /// it keeps as it began.
-    in_match: bool,
+    /// The running match determines which speed each slider position denotes.
+    match_speed: Option<crate::ui::shell::game_speed::SpeedContext>,
     launcher_audio_available: bool,
     pending_cues: Vec<PageCue>,
     pending_events: Vec<LauncherOptionsEvent>,
@@ -1547,10 +1541,7 @@ impl OptionsDialogState {
             languages: Vec::new(),
             language: String::new(),
             launch_window_size: (0, 0),
-            game_speed_caption: String::new(),
-            game_speed_names: Vec::new(),
-            in_game_sound_label: String::new(),
-            in_match: false,
+            match_speed: None,
             launcher_audio_available,
             pending_cues: Vec::new(),
             pending_events: Vec::new(),
@@ -1597,7 +1588,8 @@ impl OptionsDialogState {
     /// output device (`Audio__HasOutputDevice @ 0x00407000`). VERA's in-game
     /// menu also greys the ones a match keeps as it began.
     pub(crate) const fn trackbar_enabled(&self, id: LauncherTrackbarId) -> bool {
-        (!id.is_audio() || self.launcher_audio_available) && !(self.in_match && id.fixed_in_match())
+        (!id.is_audio() || self.launcher_audio_available)
+            && !(self.match_speed.is_some() && id.fixed_in_match())
     }
 
     /// Whether a button window is enabled: BBB's init disables its Sound
@@ -1608,8 +1600,8 @@ impl OptionsDialogState {
     pub(crate) const fn button_enabled(&self, id: LauncherButton) -> bool {
         match id {
             LauncherButton::InGameSound => self.launcher_audio_available,
-            LauncherButton::CheckForUpdates => !self.in_match,
-            LauncherButton::EditLayout => self.in_match,
+            LauncherButton::CheckForUpdates => self.match_speed.is_none(),
+            LauncherButton::EditLayout => self.match_speed.is_some(),
             _ => true,
         }
     }
@@ -1634,23 +1626,16 @@ impl OptionsDialogState {
         }
     }
 
-    /// Make this the in-game menu's dialog: give its Game Speed slider its
-    /// caption, the name of each position's speed and where it stands, and
-    /// the Sound button its caption. A position past the slider's end shows
-    /// as its first.
+    /// Set the in-game speed scale and its initial position. A position past
+    /// the slider's end shows as its first.
     pub(crate) fn set_in_game_controls(
         &mut self,
-        speed_caption: String,
-        speed_names: Vec<String>,
+        speed_context: crate::ui::shell::game_speed::SpeedContext,
         speed_position: u8,
-        sound_label: String,
     ) {
         let speed = LauncherTrackbarId::GameSpeed;
-        self.game_speed_caption = speed_caption;
-        self.game_speed_names = speed_names;
+        self.match_speed = Some(speed_context);
         self.values[speed] = admitted_initial_position(speed_position.into(), speed.maximum());
-        self.in_game_sound_label = sound_label;
-        self.in_match = true;
     }
 
     pub(crate) fn trackbar_position(&self, id: LauncherTrackbarId) -> u8 {
@@ -2013,10 +1998,7 @@ mod tests {
         let y = rect.y + rect.h - 1;
         state.shell_mouse_down(rect.x + left + 5, y, &layout);
         assert_eq!(state.trackbar_position(id), before);
-        assert_eq!(
-            state.shell_trackbar_hold(),
-            Some((id, true))
-        );
+        assert_eq!(state.shell_trackbar_hold(), Some((id, true)));
         state.shell_mouse_move(rect.x + rect.w - 1, y - 400, &layout);
         assert_eq!(state.trackbar_position(id), 2);
         state.shell_mouse_up(rect.x + rect.w - 1, y - 400, &layout);
@@ -2068,7 +2050,7 @@ mod tests {
     fn a_match_greys_what_it_keeps_and_ignores_presses_on_it() {
         let mut main_menu = state(true);
         let mut in_match = state(true);
-        in_match.set_in_game_controls(String::new(), Vec::new(), 0, String::new());
+        in_match.set_in_game_controls(Default::default(), 0);
         let before = in_match.values;
         for (category, id) in [
             (Category::Gameplay, LauncherTrackbarId::Difficulty),
@@ -2516,7 +2498,7 @@ mod tests {
         assert_eq!(count(|s| matches!(s, Setting::Checkbox(_))), boxes);
         // Every slider but Game Speed and Sidebar Columns, whose slider only
         // the launcher's Enhancements page shows (`shell::launcher_pages`);
-        // these pages keep its list. All eight lists, and Graphics API where
+        // these pages keep its list. All nine lists, and Graphics API where
         // the build has it.
         assert_eq!(
             count(|s| matches!(s, Setting::Slider(_))),
@@ -2524,7 +2506,7 @@ mod tests {
         );
         assert_eq!(
             count(|s| matches!(s, Setting::List(_))),
-            8 + usize::from(HAS_GRAPHICS_API)
+            9 + usize::from(HAS_GRAPHICS_API)
         );
         for (index, setting) in placed.iter().enumerate() {
             assert!(!placed[index + 1..].contains(setting), "{setting:?}");

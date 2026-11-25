@@ -356,7 +356,7 @@ pub(crate) fn chat_wrap_width(rect: RectPx, scale: ShellScale, text: f32) -> i32
 }
 
 /// `0x005E29A0` keeps at most 501 rows.
-const CHAT_ROWS: usize = 501;
+pub(crate) const CHAT_ROWS: usize = 501;
 
 /// The shell list line adder `0x005E2820` -> `0x005E29A0`: wrap the text to
 /// the list's width and append each row, keeping at most 501 (delete only

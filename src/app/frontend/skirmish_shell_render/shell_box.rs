@@ -131,19 +131,20 @@ fn paint_box_into(
         return;
     };
     let pressed_of = |id: i32| Some(u16::try_from(id).is_ok_and(pressed));
-    let style = GuiStyle {
-        buttons: ButtonArt::ModalBox,
-        pressed_of: Some(&pressed_of),
-        rgb: SHELL_TEXT_RGB_ENABLED,
-        shell_box: Some(BoxStyle {
-            depths: look.depths,
-            body_depth: look.body_depth,
-            disabled_rgb: look.disabled_rgb,
-        }),
-        ..GuiStyle::default()
-    };
-    let (scale, covered) = (parts.scale, look.covered);
-    if let Some(body) = body_node(gui, root) {
+    let csf = process_assets.csf.as_ref();
+    let mut paint_node = |node, caption: &str| {
+        let style = GuiStyle {
+            buttons: ButtonArt::ModalBox,
+            pressed_of: Some(&pressed_of),
+            rgb: SHELL_TEXT_RGB_ENABLED,
+            shell_box: Some(BoxStyle {
+                depths: look.depths,
+                body_depth: look.body_depth,
+                disabled_rgb: look.disabled_rgb,
+                caption,
+            }),
+            ..GuiStyle::default()
+        };
         paint_gui_into(
             paint,
             ime,
@@ -153,11 +154,14 @@ fn paint_box_into(
             process_assets,
             atlas,
             gui,
-            body,
-            scale,
-            covered,
+            node,
+            parts.scale,
+            look.covered,
             style,
         );
+    };
+    if let Some(body) = body_node(gui, root) {
+        paint_node(body, &shell_box.body_in(csf));
     }
     // Only the box's own buttons, each once: a host's dialog may hold more
     // (a list, the verify's boxes), and the hidden IDOK may share an id.
@@ -165,25 +169,13 @@ fn paint_box_into(
     for &node in gui.tree().children(root).unwrap_or_default() {
         let id = gui.id_of(node).and_then(|id| u16::try_from(id).ok());
         let index = id.and_then(|id| shell_box.buttons.iter().position(|b| b.id == id));
-        let Some(bit) = index.and_then(|index| 1u64.checked_shl(index as u32)) else {
+        let Some(index) = index else { continue };
+        let Some(bit) = 1u64.checked_shl(index as u32) else {
             continue;
         };
         if painted & bit == 0 {
             painted |= bit;
-            paint_gui_into(
-                paint,
-                ime,
-                bit_font,
-                frontend,
-                match_state,
-                process_assets,
-                atlas,
-                gui,
-                node,
-                scale,
-                covered,
-                style,
-            );
+            paint_node(node, &shell_box.buttons[index].caption_in(csf));
         }
     }
 }

@@ -793,7 +793,7 @@ impl OptionsDialogState {
             PageLabel::Heading => self.text(layout.category.heading()),
             PageLabel::Section(category) => self.text(category.heading()),
             PageLabel::Caption(Setting::Slider(LauncherTrackbarId::GameSpeed)) => {
-                self.game_speed_caption.as_str().into()
+                self.text("GUI:GameSpeed")
             }
             PageLabel::Caption(setting) => self.text(setting.text().0),
             PageLabel::Localized(key) => tr(key).into(),
@@ -810,10 +810,12 @@ impl OptionsDialogState {
     pub(super) fn slider_step(&self, id: LauncherTrackbarId) -> Cow<'_, str> {
         let position = usize::from(self.trackbar_position(id));
         Cow::Borrowed(match id {
-            LauncherTrackbarId::GameSpeed => self
-                .game_speed_names
-                .get(position)
-                .map_or("", String::as_str),
+            LauncherTrackbarId::GameSpeed => {
+                let Some(context) = self.match_speed else {
+                    return Cow::Borrowed("");
+                };
+                return self.text(context.label_key(context.stored_speed(position as i32)));
+            }
             LauncherTrackbarId::HouseColorStrength => {
                 return Cow::Owned(self.house_color_strength().to_string());
             }
@@ -858,7 +860,7 @@ impl OptionsDialogState {
                 let (width, height) = self.launch_window_size;
                 return Cow::Owned(format!("{width}x{height}"));
             }
-            LauncherButton::InGameSound => return Cow::Borrowed(&self.in_game_sound_label),
+            LauncherButton::InGameSound => "GUI:Sound",
         })
     }
 
@@ -1013,7 +1015,9 @@ impl OptionsDialogState {
         let id = match control {
             Control::Label(_) => return None,
             // A slider greyed for want of sound keeps its own help.
-            Control::Setting(Setting::Slider(id)) if self.in_match && id.fixed_in_match() => {
+            Control::Setting(Setting::Slider(id))
+                if self.match_speed.is_some() && id.fixed_in_match() =>
+            {
                 return Some(NOT_IN_MATCH_HELP);
             }
             Control::Setting(setting) => return Some(setting.text().1),
@@ -1865,12 +1869,7 @@ mod tests {
         );
 
         let mut dialog = state();
-        dialog.set_in_game_controls(
-            "Game Speed".to_owned(),
-            (0..8).map(|speed| format!("speed {speed}")).collect(),
-            3,
-            "Sound".to_owned(),
-        );
+        dialog.set_in_game_controls(crate::ui::shell::game_speed::SpeedContext::Offline, 3);
         dialog.select_category(Category::GameControls);
         assert!(!dialog.shell_button_selected(LauncherButton::Category(Category::Gameplay)));
         let packed = dialog.pack();
@@ -1889,7 +1888,10 @@ mod tests {
         let speed_events = drag_to_end(&mut dialog, Slider::GameSpeed);
         assert_eq!(dialog.trackbar_position(Slider::GameSpeed), 7);
         assert!(speed_events.is_empty());
-        assert_eq!(dialog.slider_step(Slider::GameSpeed), "speed 7");
+        assert_eq!(
+            dialog.slider_step(Slider::GameSpeed),
+            crate::i18n::tr("VERA:Unlimited")
+        );
         assert_eq!(
             crate::ui::main_menu_dialogs::options::LauncherOptionsPacked {
                 sound_volume: packed.sound_volume,
@@ -1917,6 +1919,27 @@ mod tests {
         assert_eq!(
             dialog.shell_button_label(LauncherButton::InGameSound),
             "Sound"
+        );
+        dialog.set_labels(LauncherOptionsLabels::resolve(&|key| match key {
+            "GUI:GameSpeed" => Some("Tempo".to_owned()),
+            "GUI:Sound" => Some("Ton".to_owned()),
+            "TXT_FASTER" => Some("Schneller".to_owned()),
+            _ => None,
+        }));
+        dialog.set_trackbar_position(Slider::GameSpeed, 5);
+        assert_eq!(
+            dialog
+                .page_label(
+                    &layout,
+                    PageLabel::Caption(Setting::Slider(Slider::GameSpeed))
+                )
+                .0,
+            "Tempo"
+        );
+        assert_eq!(dialog.slider_step(Slider::GameSpeed), "Schneller");
+        assert_eq!(
+            dialog.shell_button_label(LauncherButton::InGameSound),
+            "Ton"
         );
         assert_eq!(
             layout.button_rect(LauncherButton::SetWindowSize).is_some(),
@@ -2362,7 +2385,7 @@ mod tests {
 
         // The in-game menu shows it greyed, saying why, and a press asks
         // nothing.
-        state.set_in_game_controls(String::new(), Vec::new(), 0, String::new());
+        state.set_in_game_controls(Default::default(), 0);
         let layout = in_game((800, 600), Category::General, false);
         let check = button(&layout, LauncherButton::CheckForUpdates);
         assert_eq!(
@@ -2408,7 +2431,7 @@ mod tests {
         assert_eq!(state.shell_button_label(edit), "Edit Layout");
         assert!(!press(&mut state, &layout), "the main menu has no match");
 
-        state.set_in_game_controls(String::new(), Vec::new(), 0, String::new());
+        state.set_in_game_controls(Default::default(), 0);
         let layout = in_game((800, 600), Category::Interface, false);
         let rect = button(&layout, edit);
         assert_eq!(

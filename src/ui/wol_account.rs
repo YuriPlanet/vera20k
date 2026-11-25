@@ -8,11 +8,11 @@
 
 use vera20k_gui::{InputEvent, Key, NodeKind, NodeSpec, Prop, Value};
 
-use crate::i18n::tr_fill;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::geom::ShellAlign;
+use crate::ui::shell::modal::ShellText as StatusText;
 use crate::ui::shell::modal::WolAccountFormLayout;
 use crate::ui::shell::page;
 use crate::ui::wol_login::{DIALOG, typed};
@@ -301,44 +301,6 @@ impl std::fmt::Debug for WolAccountForm {
             .field("name", &self.name)
             .field("busy", &self.busy)
             .finish_non_exhaustive()
-    }
-}
-
-/// One status line VERA draws itself: its language-file key and the values
-/// filled into it. Kept beside the resolved text so a language reload can
-/// resolve it again without losing a lobby message, which is stored as
-/// written instead.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct StatusText {
-    key: &'static str,
-    values: Vec<(&'static str, String)>,
-}
-
-impl StatusText {
-    fn new(key: &'static str) -> Self {
-        Self {
-            key,
-            values: Vec::new(),
-        }
-    }
-
-    fn with(key: &'static str, values: &[(&'static str, &str)]) -> Self {
-        Self {
-            key,
-            values: values
-                .iter()
-                .map(|(name, value)| (*name, (*value).to_owned()))
-                .collect(),
-        }
-    }
-
-    fn resolve(&self) -> String {
-        let values: Vec<(&str, &dyn std::fmt::Display)> = self
-            .values
-            .iter()
-            .map(|(name, value)| (*name, value as &dyn std::fmt::Display))
-            .collect();
-        tr_fill(self.key, &values)
     }
 }
 
@@ -892,7 +854,7 @@ mod tests {
         let mut form = WolAccountForm::sign_in(&mut ui, "Tanya", Some("Tanya"));
         assert!(form.remembered);
         assert_eq!(
-            form.status_text.as_ref().map(|status| status.key),
+            form.status_text.as_ref().map(|status| status.key.as_str()),
             Some("VERA:SignInRemembered")
         );
         assert_eq!(form.status, crate::i18n::tr("VERA:SignInRemembered"));

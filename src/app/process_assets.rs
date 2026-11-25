@@ -1414,6 +1414,12 @@ impl ProcessAssets {
         self.manager.as_ref()
     }
 
+    pub(crate) fn refresh_csf_language(&mut self) -> Option<&crate::assets::csf_file::CsfFile> {
+        let csf = self.csf.as_mut()?;
+        crate::i18n::apply_for_mod(csf, self.resources.mod_folder.as_deref());
+        Some(csf)
+    }
+
     /// Field-level split borrow for a scenario rescan: the scan registers loose
     /// YRO archives, and its PKT titles resolve through the process CSF. Both
     /// fields live on this owner, so the pair is borrowed together.

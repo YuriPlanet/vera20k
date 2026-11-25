@@ -310,6 +310,36 @@ fn localized(process_assets: &ProcessAssets, key: &str, parameter: Option<u8>) -
         None => text,
     }
 }
+
+fn command_row(
+    process_assets: &ProcessAssets,
+    index: usize,
+    metadata: &hotkeys::catalog::CommandMetadata,
+) -> KeyboardCommandRow {
+    KeyboardCommandRow {
+        command_index: index,
+        name: localized(process_assets, metadata.name_key, metadata.parameter),
+        category: localized(process_assets, metadata.category_key, None),
+        description: localized(process_assets, metadata.description_key, metadata.parameter),
+    }
+}
+
+pub(crate) fn refresh_labels(frontend: &mut FrontendState, process_assets: &ProcessAssets) {
+    let Some(dialog) = frontend.keyboard_dialog.as_mut() else {
+        return;
+    };
+    let catalog = registered_commands();
+    dialog.refresh_labels(
+        |index| {
+            catalog
+                .get(index)
+                .map(|metadata| command_row(process_assets, index, metadata))
+        },
+        &localized(process_assets, hotkeys::catalog::VERA_CATEGORY_KEY, None),
+    );
+    refresh_title(frontend, process_assets);
+}
+
 pub(crate) fn open(state: &mut AppState, parent: KeyboardParent) {
     if parent == KeyboardParent::GameControls {
         // BBB52C sets state4/result1;4E1D9A applies+writes before dispatcher48CA03.
@@ -345,16 +375,7 @@ pub(crate) fn open(state: &mut AppState, parent: KeyboardParent) {
                 true
             }
         })
-        .map(|(index, metadata)| KeyboardCommandRow {
-            command_index: index,
-            name: localized(&state.process_assets, metadata.name_key, metadata.parameter),
-            category: localized(&state.process_assets, metadata.category_key, None),
-            description: localized(
-                &state.process_assets,
-                metadata.description_key,
-                metadata.parameter,
-            ),
-        })
+        .map(|(index, metadata)| command_row(&state.process_assets, index, metadata))
         .collect();
     state.frontend.keyboard_dialog = Some(KeyboardState::new(
         parent,

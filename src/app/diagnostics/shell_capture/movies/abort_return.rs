@@ -241,7 +241,8 @@ impl AbortReturnInput {
                         let point = click_in_game(state, target);
                         let pause = state.match_state.match_presentation.internet_pause;
                         ensure!(
-                            pause.positions[InternetSlider::Speed as usize] == 6,
+                            pause.positions[InternetSlider::Speed as usize]
+                                == InternetSlider::Speed.range().max,
                             "physical FF speed jump did not reach the fastest position"
                         );
                         route.push(json!({"frame": frame, "action": "speed trackbar jump",

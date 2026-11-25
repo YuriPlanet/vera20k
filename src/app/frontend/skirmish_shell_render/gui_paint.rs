@@ -465,16 +465,18 @@ pub(crate) struct GuiStyle<'a> {
     pub(crate) shadowed_texts: bool,
     /// A message box's depths and greyed caption colour
     /// ([`ButtonArt::ModalBox`]); its body `Text` paints at its own depth.
-    pub(crate) shell_box: Option<BoxStyle>,
+    pub(crate) shell_box: Option<BoxStyle<'a>>,
 }
 
 /// What a message box's widgets take from the box ([`GuiStyle::shell_box`]).
 #[derive(Clone, Copy)]
-pub(crate) struct BoxStyle {
+pub(crate) struct BoxStyle<'a> {
     /// Its buttons' art (`button`) and captions (`text`).
     pub(crate) depths: ModalDepths,
     /// Its body's.
     pub(crate) body_depth: f32,
+    /// The body or button's text in the selected language.
+    pub(crate) caption: &'a str,
     /// A greyed button's caption colour.
     pub(crate) disabled_rgb: [f32; 3],
 }
@@ -854,13 +856,14 @@ pub(crate) fn paint_gui_into(
     let held = crate::ui::shell::page::held_in(gui, dialog_root);
     let captured = crate::ui::shell::page::captured_in(gui, dialog_root);
     let id = |node| gui.id_of(node);
-    let caption = |node| match style
-        .text_of
-        .zip(id(node))
-        .and_then(|(text_of, id)| text_of(id))
-    {
-        Some(text) => Some(Cow::Owned(text)),
-        None => label_of(process_assets, gui, node),
+    let caption = |node| {
+        if node == root && let Some(look) = style.shell_box {
+            return Some(Cow::Borrowed(look.caption));
+        }
+        match style.text_of.zip(id(node)).and_then(|(text_of, id)| text_of(id)) {
+            Some(text) => Some(Cow::Owned(text)),
+            None => label_of(process_assets, gui, node),
+        }
     };
     // Each visible node in paint order, its sprites before its text.
     gui.tree().walk_visible(root, |node| {
@@ -974,6 +977,7 @@ pub(crate) fn paint_gui_into(
                                 text: depth,
                             },
                             body_depth: depth,
+                            caption: "",
                             disabled_rgb: SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
                         });
                         if let Some(atlas) = atlas {
@@ -998,13 +1002,8 @@ pub(crate) fn paint_gui_into(
                                 r, pressed,
                             )
                         });
-                        // The box's own caption (`ShellBox::sync`) over a
-                        // host spec's `Label`.
-                        let own = match gui.get(node, Prop::Text) {
-                            Ok(Some(Value::Text(own))) => Some(Cow::Borrowed(own.as_str())),
-                            _ => caption(node),
-                        };
-                        let shown = own.filter(|_| !super::text_covered_by_overlay(at, overlays));
+                        let shown =
+                            caption(node).filter(|_| !super::text_covered_by_overlay(at, overlays));
                         if let Some(label) = shown {
                             let rgb = if enabled {
                                 style.rgb

@@ -558,7 +558,6 @@ fn build_campaign_score_screen_model(
         &match_state.map_ranking,
         houses.unwrap_or_default(),
         side,
-        |key| resolve_campaign_score_label(process_assets, key),
     );
     model.theme = process_assets
         .side_score_theme(
@@ -577,7 +576,6 @@ fn build_campaign_score_screen_model_from_sources(
     ranking: &crate::map::ranking::RankingSection,
     houses: impl IntoIterator<Item = (bool, u32)>,
     side: i32,
-    mut resolve_label: impl FnMut(&str) -> String,
 ) -> crate::ui::campaign_score_shell::CampaignScoreScreenModel {
     let mut model = crate::ui::campaign_score_shell::CampaignScoreScreenModel {
         side,
@@ -596,8 +594,10 @@ fn build_campaign_score_screen_model_from_sources(
     } else {
         (&ranking.over_par_title, &ranking.over_par_message)
     };
-    model.rank = resolve_label(rank_key);
-    model.commendation = resolve_label(commendation_key);
+    model.awards = crate::ui::campaign_score_shell::CampaignAwards::Labels([
+        rank_key.clone(),
+        commendation_key.clone(),
+    ]);
     // Native 0x6C92C1 sums all four Killed*Types arrays for every HouseClass
     // with PlayerControl set. MatchStatistics is the existing per-house total
     // owner; `player_control` is the matching +0x1ED bit.
@@ -612,10 +612,6 @@ fn build_campaign_score_screen_model_from_sources(
         });
     model.enemies_destroyed = enemies_destroyed.to_string();
     model
-}
-
-fn resolve_campaign_score_label(process_assets: &ProcessAssets, native_key: &str) -> String {
-    process_assets.csf_text(native_key)
 }
 
 fn format_campaign_score_time(total_seconds: i32) -> String {
@@ -654,25 +650,31 @@ mod campaign_score_model_tests {
             (true, player_b.kills()),
             (false, computer.kills()),
         ];
-        let resolve = |key: &str| csf.text(key).into_owned();
+        use crate::ui::campaign_score_shell::{
+            COMMENDATION_STATIC, CampaignScorePage, RANK_STATIC,
+        };
+        let awards = |model| {
+            let page = CampaignScorePage::open(
+                model,
+                |key| csf.text(key).into_owned(),
+                crate::util::time::Instant::now(),
+            );
+            [RANK_STATIC, COMMENDATION_STATIC].map(|id| page.statics.text(id).unwrap().to_owned())
+        };
 
         // Scenario+0x60C raw 2 selects ParTimeHard. Elapsed=959 and Par=900
         // both divide to the same native 60-tick bucket, so this is UnderPar.
         let equal_bucket =
-            build_campaign_score_screen_model_from_sources(959, 2, &ranking, houses, 0, resolve);
+            build_campaign_score_screen_model_from_sources(959, 2, &ranking, houses, 0);
         assert_eq!(equal_bucket.par_time, "00:00:15");
         assert_eq!(equal_bucket.your_time, "00:00:15");
-        assert_eq!(equal_bucket.rank, "Gold");
-        assert_eq!(equal_bucket.commendation, "Under par");
+        assert_eq!(awards(&equal_bucket), ["Gold", "Under par"]);
         assert_eq!(equal_bucket.enemies_destroyed, "10");
 
         let over_bucket =
-            build_campaign_score_screen_model_from_sources(960, 2, &ranking, houses, 0, |key| {
-                csf.text(key).into_owned()
-            });
+            build_campaign_score_screen_model_from_sources(960, 2, &ranking, houses, 0);
         assert_eq!(over_bucket.your_time, "00:00:16");
-        assert_eq!(over_bucket.rank, "Silver");
-        assert_eq!(over_bucket.commendation, "Over par");
+        assert_eq!(awards(&over_bucket), ["Silver", "Over par"]);
         assert_eq!(over_bucket.enemies_destroyed, "10");
     }
 }
@@ -689,6 +691,10 @@ fn resolve_score_rows(
         .iter()
         .map(|raw| crate::ui::score_shell::ScoreRow {
             name: sources.ui_name(sim, raw.owner, raw.country, &country_name),
+            computer_name: matches!(
+                sim.houses().get(&raw.owner).map(|house| house.ui_name()),
+                Some(crate::sim::house_state::HouseUiName::Computer)
+            ),
             rgb: sources.text_rgb(sim, raw.owner),
             kills: raw.kills,
             losses: raw.losses,

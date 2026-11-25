@@ -9,6 +9,7 @@ use crate::app::{App, AppState};
 use crate::ui::multiplayer_setup::*;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::page::{PageCue, PageEvent};
+use crate::ui::shell::static_reveal::HoverLabel;
 use crate::util::time::Instant;
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -478,7 +479,7 @@ fn handle_events(state: &mut AppState, view: &SetupView) {
 }
 
 /// The status help of the control under the pointer at `x`, `y`.
-fn hovered_help(state: &AppState, view: &SetupView) -> String {
+fn update_hovered_help(state: &mut AppState, view: &SetupView) {
     let (x, y) = state.match_state.input.cursor_px();
     let controller = &state.frontend.shell_controller;
     let gui = controller.gui();
@@ -508,24 +509,24 @@ fn hovered_help(state: &AppState, view: &SetupView) -> String {
             id,
         )
     });
-    let help = player
-        .or_else(|| {
-            over.or(over_preview.then_some(MAP_PREVIEW))
-                .and_then(|id| tooltip_key(view.dialog, id))
-                .and_then(|key| {
-                    state
-                        .process_assets
-                        .csf
-                        .as_ref()
-                        .and_then(|csf| csf.get(&key))
-                        .map(str::to_owned)
-                })
-        })
-        .unwrap_or_default();
-    if over_preview {
-        crate::app::frontend::preview_zoom::box_help(&state.frontend.skirmish_preview_texture, help)
-    } else {
-        help
+    let key = over
+        .or(over_preview.then_some(MAP_PREVIEW))
+        .and_then(|id| tooltip_key(view.dialog, id));
+    let csf = state.process_assets.csf.as_ref();
+    let key = key.as_deref().filter(|key| {
+        key.starts_with("VERA:") || csf.is_some_and(|table| table.get(key).is_some())
+    });
+    let label = HoverLabel::new(
+        key,
+        over_preview
+            && crate::app::frontend::preview_zoom::available(&state.frontend.skirmish_preview_texture),
+    );
+    if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+        if let Some(player) = player {
+            ui.statics.hover(&player, Instant::now());
+        } else {
+            ui.statics.hover_label(label, csf, Instant::now());
+        }
     }
 }
 
@@ -548,11 +549,7 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     let held = slider_held(&state.frontend.shell_controller) || notice_active(&state.frontend);
     state.frontend.shell_controller.on_pointer_move(x, y);
     if !held {
-        let help = hovered_help(state, &view);
-        let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
-            return;
-        };
-        ui.statics.hover(&help, Instant::now());
+        update_hovered_help(state, &view);
     }
     handle_events(state, &view);
 }

@@ -5,6 +5,7 @@
 use super::descriptor::DialogResourceId;
 use super::geom::{self, RectPx, ScaledRects};
 use super::layout::RectTable;
+use crate::assets::csf_file::CsfFile;
 
 /// The count-rule message box's resource control ids (ShellMessageBox__Run
 /// `0x005D3490`), in the order the box answers with them: OK 0, Cancel 1,
@@ -35,7 +36,61 @@ pub const FOOTER_TEMPLATE: &str = "0x121.Footer";
 pub struct BoxButton {
     pub id: u16,
     pub caption: String,
+    caption_key: Option<&'static str>,
     pub enabled: bool,
+}
+
+impl BoxButton {
+    pub(crate) fn caption_in(&self, csf: Option<&CsfFile>) -> String {
+        box_text(csf, self.caption_key, &self.caption)
+    }
+}
+
+fn box_text(csf: Option<&CsfFile>, key: Option<&str>, fallback: &str) -> String {
+    key.map_or_else(
+        || fallback.to_owned(),
+        |key| crate::i18n::label(csf, key, fallback),
+    )
+}
+
+/// A shell label and its literal substitutions, retained while the dialog is open.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ShellText {
+    pub(crate) key: String,
+    values: Vec<(&'static str, String)>,
+}
+
+impl ShellText {
+    pub(crate) fn new(key: &str) -> Self {
+        Self::with(key, &[])
+    }
+
+    pub(crate) fn with(key: &str, values: &[(&'static str, &dyn std::fmt::Display)]) -> Self {
+        Self {
+            key: key.to_owned(),
+            values: values
+                .iter()
+                .map(|(name, value)| (*name, value.to_string()))
+                .collect(),
+        }
+    }
+
+    pub(crate) fn resolve(&self) -> String {
+        self.resolve_in(None, "")
+    }
+
+    fn resolve_in(&self, csf: Option<&CsfFile>, fallback: &str) -> String {
+        let text = crate::i18n::label(csf, &self.key, fallback);
+        if self.values.is_empty() || (csf.is_none() && !self.key.starts_with("VERA:")) {
+            return text;
+        }
+        let values: Vec<(&str, &dyn std::fmt::Display)> = self
+            .values
+            .iter()
+            .map(|(name, value)| (*name, value as &dyn std::fmt::Display))
+            .collect();
+        crate::i18n::fill(&text, &values)
+    }
 }
 
 /// One front-end message or wait box as it paints and takes the pointer: its
@@ -45,6 +100,7 @@ pub struct BoxButton {
 pub struct ShellBox {
     pub dialog: DialogResourceId,
     pub body: String,
+    body_label: Option<ShellText>,
     pub buttons: Vec<BoxButton>,
     /// Its `shell_layout.ini` section; without one, the count-rule template
     /// for its number of buttons (`0xCE`, `0x120`, `0x121`).
@@ -56,9 +112,9 @@ pub struct ShellBox {
     pub footer: Option<Footer>,
 }
 
-/// VERA's own arrangement of a count-rule box, Add Mod's
-/// (`app::shell_mod_import`): the body fills the panel inside a 24-pixel
-/// inset, OK, the third button and Cancel sit along its footer, and each
+/// VERA's arrangement for mod import and file dialogs: the body fills the
+/// panel inside a 24-pixel inset, OK, the third button and Cancel sit along
+/// its footer, and each
 /// `raised` button stands one button height and 6 pixels above the footer
 /// button it names. gamemd has no such box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,18 +138,18 @@ impl Footer {
     fn arrange(&self, base: BoxParts, ids: &[u16]) -> BoxParts {
         const INSET: i32 = Footer::INSET;
         let scale = base.scale;
+        let button = scale.base_rect(base.button(0));
         let mut body = scale.derive_rect(base.dialog, |dialog| {
             RectPx::new(
                 dialog.x + INSET,
                 dialog.y + INSET,
                 dialog.w - 2 * INSET,
-                dialog.h - 3 * INSET,
+                dialog.h - 2 * INSET - button.h - 6,
             )
         });
         if self.list {
             body = scale.derive_rect(body, |rect| RectPx::new(rect.x, rect.y, rect.w, 66));
         }
-        let button = scale.base_rect(base.button(0));
         let place = |slot: i32| {
             scale.derive_rect(base.dialog, |dialog| {
                 let x = match slot {
@@ -229,6 +285,7 @@ impl ShellBox {
         Self {
             dialog,
             body: body.into(),
+            body_label: None,
             buttons: Vec::new(),
             template: None,
             on_screen: false,
@@ -264,9 +321,56 @@ impl ShellBox {
         self.buttons.push(BoxButton {
             id,
             caption: caption.into(),
+            caption_key: None,
             enabled: true,
         });
         self
+    }
+
+    /// Remember which captions the string table supplied. Literal text from a
+    /// mod or a service must survive a language change as it was received.
+    pub(crate) fn with_caption_keys(mut self, keys: &[&'static str]) -> Self {
+        for (button, key) in self.buttons.iter_mut().zip(keys.iter().copied()) {
+            button.caption_key = Some(key);
+        }
+        self
+    }
+
+    pub(crate) fn with_body_key(mut self, key: &str) -> Self {
+        self.body_label = Some(ShellText::new(key));
+        self
+    }
+
+    /// An open box that can re-resolve its text and captions after a language change.
+    pub(crate) fn localized_message(
+        csf: Option<&CsfFile>,
+        body: ShellText,
+        confirm: &'static str,
+        cancel: Option<&'static str>,
+    ) -> Self {
+        let mut message = Self::message(
+            body.resolve_in(csf, ""),
+            crate::i18n::label(csf, confirm, "OK"),
+            cancel
+                .map(|key| crate::i18n::label(csf, key, ""))
+                .unwrap_or_default(),
+            String::new(),
+        )
+        .with_caption_keys(&[confirm, cancel.unwrap_or_default()]);
+        message.body_label = Some(body);
+        message
+    }
+
+    pub(crate) fn body_in(&self, csf: Option<&CsfFile>) -> String {
+        self.body_label.as_ref().map_or_else(
+            || self.body.clone(),
+            |label| label.resolve_in(csf, &self.body),
+        )
+    }
+
+    pub(crate) fn replace_body(&mut self, text: String, key: Option<&str>) {
+        self.body = text;
+        self.body_label = key.map(ShellText::new);
     }
 
     /// Greys button `id`, which then takes no press.
@@ -303,8 +407,13 @@ impl ShellBox {
 
     /// Renames button `id`.
     pub fn set_caption(&mut self, id: u16, caption: String) {
+        self.replace_caption(id, caption, None);
+    }
+
+    pub(crate) fn replace_caption(&mut self, id: u16, caption: String, key: Option<&'static str>) {
         if let Some(button) = self.buttons.iter_mut().find(|b| b.id == id) {
             button.caption = caption;
+            button.caption_key = key;
         }
     }
 
@@ -835,11 +944,7 @@ pub struct WolVerifyLayout {
     pub boxes: [RectPx; 8],
 }
 
-pub fn wol_verify_layout(
-    screen_w: i32,
-    screen_h: i32,
-    scale: geom::ShellScale,
-) -> WolVerifyLayout {
+pub fn wol_verify_layout(screen_w: i32, screen_h: i32, scale: geom::ShellScale) -> WolVerifyLayout {
     // Modern rooms carry the fitted room transform. The classic popup retains
     // its executed native geometry, even in a larger fitted shell.
     let dialog = if scale.is_unscaled() {
@@ -899,6 +1004,56 @@ fn modal_child(dialog: RectPx, local: RectPx) -> RectPx {
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_open_mod_box_relabels_its_buttons_and_keeps_literal_format_values() {
+        use crate::assets::csf_file::test_csf;
+        let opening = test_csf(&[
+            ("TXT_BODY", "{mod}: {code}"),
+            ("TXT_OK", "OK"),
+            ("TXT_CLOSE", "Close"),
+        ]);
+        let selected = test_csf(&[
+            ("TXT_BODY", "校验码 {code}，模组 {mod}"),
+            ("TXT_OK", "写入清单"),
+            ("TXT_CLOSE", "关闭"),
+        ]);
+        let message = ShellBox::localized_message(
+            Some(&opening),
+            ShellText::with("TXT_BODY", &[("mod", &"Pack {code}"), ("code", &"09AF")]),
+            "TXT_OK",
+            Some("TXT_CLOSE"),
+        );
+        assert_eq!(message.body, "Pack {code}: 09AF");
+        assert_eq!(
+            message.body_in(Some(&selected)),
+            "校验码 09AF，模组 Pack {code}"
+        );
+        assert_eq!(message.buttons[0].caption_in(Some(&selected)), "写入清单");
+        assert_eq!(message.buttons[1].caption_in(Some(&selected)), "关闭");
+        assert_eq!(message.answer(control::OK), Some(0));
+        assert_eq!(message.answer(control::CANCEL), Some(1));
+    }
+
+    #[test]
+    fn mod_file_footer_leaves_room_for_the_report_above_both_actions() {
+        let message = ShellBox::message(
+            "report".into(),
+            "Make List".into(),
+            "Close".into(),
+            String::new(),
+        )
+        .footer(Footer {
+            list: false,
+            raised: &[],
+        });
+        let parts = message.parts(800, 600, geom::RETAIL_SCALE);
+        let make = parts.button(0);
+        let close = parts.button(1);
+        assert!(parts.body.h >= 6 * 17);
+        assert!(parts.body.y + parts.body.h < make.y.min(close.y));
+        assert!(make.x + make.w < close.x);
+    }
 
     #[test]
     fn count_rule_picks_the_template_and_answers_by_button() {
@@ -1292,7 +1447,10 @@ mod tests {
             assert_eq!(layout.dialog, scale.scale_rect(native.dialog));
             assert_eq!(layout.title, scale.scale_rect(native.title));
             assert_eq!(layout.boxes, native.boxes.map(|r| scale.scale_rect(r)));
-            for rect in [layout.dialog, layout.title].into_iter().chain(layout.boxes) {
+            for rect in [layout.dialog, layout.title]
+                .into_iter()
+                .chain(layout.boxes)
+            {
                 assert!(rect.x >= 0 && rect.y >= 0 && rect.w > 0 && rect.h > 0);
                 assert!(rect.x + rect.w <= w && rect.y + rect.h <= h);
             }

@@ -256,6 +256,31 @@ impl KeyboardState {
         result.select_category(0);
         result
     }
+    /// Relabel the open controls in place so the hot row, current command,
+    /// capture focus and pending key still refer to the same items.
+    pub(crate) fn refresh_labels(
+        &mut self,
+        mut row_for: impl FnMut(usize) -> Option<KeyboardCommandRow>,
+        empty_category: &str,
+    ) {
+        let mut categories = vec![None; self.categories.len()];
+        for row in &mut self.commands {
+            if let Some(fresh) = row_for(row.command_index) {
+                if let Some(index) = self
+                    .categories
+                    .iter()
+                    .position(|name| *name == row.category)
+                {
+                    categories[index].get_or_insert_with(|| fresh.category.clone());
+                }
+                *row = fresh;
+            }
+        }
+        for (name, new) in self.categories.iter_mut().zip(categories) {
+            *name = new.unwrap_or_else(|| empty_category.to_owned());
+        }
+        self.sync_command_names();
+    }
     pub fn select_category(&mut self, category: usize) {
         self.ui.gui_mut().close_popup();
         // 5FB500..5FB514 compares the retained category index before reset.
@@ -282,11 +307,9 @@ impl KeyboardState {
         self.rows
             .sort_by_key(|i| self.commands[*i].name.to_lowercase());
         // 5FB60E targets static63B, not list4C8: initial selection stays absent.
-        let names = self.rows.iter().map(|i| self.commands[*i].name.clone());
-        let names = Value::Items(names.collect());
+        self.sync_command_names();
         if let Some(node) = self.list_node() {
             let gui = self.ui.gui_mut();
-            let _ = gui.set(node, Prop::Items, names);
             let _ = gui.set(node, Prop::Selected, Value::Int(-1));
             let _ = gui.set(node, Prop::Top, Value::Int(0));
         }
@@ -296,6 +319,15 @@ impl KeyboardState {
             gui.close_popup();
         }
         self.current_owner_visible = false;
+    }
+    fn sync_command_names(&mut self) {
+        if let Some(node) = self.list_node() {
+            let names = self.rows.iter().map(|i| self.commands[*i].name.clone());
+            let _ = self
+                .ui
+                .gui_mut()
+                .set(node, Prop::Items, Value::Items(names.collect()));
+        }
     }
     fn category_node(&self) -> Option<NodeId> {
         self.ui
@@ -772,6 +804,30 @@ mod tests {
         state.select_category(1);
         state.select_command(0);
         assert_eq!(state.selected_command().unwrap().command_index, 7);
+        state.captured = 81;
+        state.refresh_labels(
+            |index| {
+                Some(KeyboardCommandRow {
+                    command_index: index,
+                    name: "新指令".into(),
+                    category: if index == 7 { "扩展" } else { "控制" }.into(),
+                    description: "说明".into(),
+                })
+            },
+            "扩展",
+        );
+        assert_eq!(state.categories, ["控制", "扩展"]);
+        assert_eq!(
+            state.ui.gui().get(state.list_node().unwrap(), Prop::Items).unwrap(),
+            Some(&Value::Items(vec!["新指令".into()]))
+        );
+        let selected = state.selected_command().unwrap();
+        assert_eq!(
+            (selected.command_index, selected.description.as_str()),
+            (7, "说明")
+        );
+        assert!(state.capture_focused());
+        assert_eq!(state.captured, 81);
     }
 
     #[test]

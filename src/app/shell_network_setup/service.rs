@@ -1135,12 +1135,15 @@ fn fail_go_handoff_with_notice(state: &mut AppState, label: &str, fallback: &str
     }
     let message = state.csf_label(label, fallback);
     let ok = state.csf_label("TXT_OK", "OK");
+    let notice = ShellBox::notice(message, ok)
+        .with_body_key(label)
+        .with_caption_keys(&["TXT_OK"]);
     state
         .frontend
         .multiplayer_setup
         .as_mut()
         .expect("setup interaction")
-        .notice = Some(ShellBox::notice(message, ok));
+        .notice = Some(notice);
     let protocol = state
         .frontend
         .network_setup_protocol

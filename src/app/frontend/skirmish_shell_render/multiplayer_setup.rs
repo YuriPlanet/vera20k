@@ -107,7 +107,7 @@ pub(crate) fn render_multiplayer_setup(
             ui.shown = true;
         }
         ui.statics
-            .set_map_labels(&view.mode_label, &view.map_label, now);
+            .set_labels(&heading, &view.mode_label, &view.map_label, now);
         let shown = ui.statics.paint(now, sliding);
         [
             (shown.heading, layout.page.title, ShellAlign::PANEL_TITLE),

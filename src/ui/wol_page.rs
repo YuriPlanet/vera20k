@@ -164,7 +164,8 @@ fn enter_clicks_send(c: &mut DialogController, dialog: DialogResourceId) -> bool
 /// Edit `id` of `dialog` as the NewEdit its getters read.
 fn edit(c: &DialogController, dialog: DialogResourceId, id: u16) -> NewEdit {
     let node = c.control(dialog, id);
-    node.and_then(|node| c.gui().edit_state(node)).unwrap_or_default()
+    node.and_then(|node| c.gui().edit_state(node))
+        .unwrap_or_default()
 }
 
 fn set_enabled(c: &mut DialogController, dialog: DialogResourceId, id: u16, enabled: bool) {
@@ -191,8 +192,82 @@ pub(crate) enum WolPageAction {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct WolPageDialog {
     pub(crate) lines: Vec<LanChatLine>,
+    /// Wrapped row ranges occupied by local notices. Every other row is literal chat.
+    notices: Vec<(std::ops::Range<usize>, &'static str)>,
     /// `0x5C8`: the locate result.
-    pub(crate) status: String,
+    pub(crate) status: Option<PageLocation>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum PageLocation {
+    Channel(String),
+    Lobby(i32),
+    Label(&'static str),
+}
+
+impl WolPageDialog {
+    pub(crate) fn append(
+        &mut self,
+        line: LanChatLine,
+        key: Option<&'static str>,
+        width: i32,
+        measure: impl Fn(&[u16]) -> i32,
+    ) -> usize {
+        let old = self.lines.len();
+        let dropped = crate::ui::lan_shell::append_wrapped(&mut self.lines, line, width, measure);
+        let end = self.lines.len() + dropped;
+        if let Some(key) = key.filter(|_| end > old) {
+            self.notices.push((old..end, key));
+        }
+        self.drop_notice_rows(dropped);
+        dropped
+    }
+
+    fn drop_notice_rows(&mut self, dropped: usize) {
+        if dropped > 0 {
+            self.notices.retain_mut(|(rows, _)| {
+                if rows.end <= dropped {
+                    return false;
+                }
+                rows.start = rows.start.saturating_sub(dropped);
+                rows.end -= dropped;
+                true
+            });
+        }
+    }
+
+    pub(crate) fn relabel_notices(
+        &mut self,
+        label: impl Fn(&str) -> String,
+        width: i32,
+        measure: impl Fn(&[u16]) -> i32,
+    ) {
+        if self.notices.is_empty() {
+            return;
+        }
+        let old = std::mem::take(&mut self.lines);
+        let mut cursor = 0;
+        for (range, key) in std::mem::take(&mut self.notices) {
+            self.lines.extend_from_slice(&old[cursor..range.start]);
+            let first = self.lines.len();
+            let mut rows = Vec::new();
+            let line = LanChatLine {
+                text: label(key).encode_utf16().collect(),
+                color: u32::MAX,
+            };
+            crate::ui::lan_shell::append_wrapped(&mut rows, line, width, &measure);
+            self.lines.extend(rows);
+            self.notices.push((first..self.lines.len(), key));
+            cursor = range.end;
+        }
+        self.lines.extend_from_slice(&old[cursor..]);
+        let dropped = self
+            .lines
+            .len()
+            .saturating_sub(crate::ui::lan_shell::CHAT_ROWS);
+        self.lines.drain(..dropped);
+        self.drop_notice_rows(dropped);
+    }
 }
 
 /// The page reply window `{start [0xB76478], duration [0xB76480]}` in
@@ -291,7 +366,7 @@ impl WolPageDialog {
     /// The name's locate: the status clears.
     fn locate(&mut self, c: &DialogController, capacity: usize, actions: &mut Vec<WolPageAction>) {
         actions.push(WolPageAction::Locate(Self::name_text(c, capacity)));
-        self.status.clear();
+        self.status = None;
     }
 
     /// One `WM_COMMAND` from an edit.
@@ -307,7 +382,7 @@ impl WolPageDialog {
             NAME => {
                 Self::enable_send(c);
                 *last = NAME;
-                self.status.clear();
+                self.status = None;
             }
             // 0x0078D275..0x0078D37C: 0x005EDD00 caps the text first.
             TEXT => {
@@ -578,6 +653,29 @@ mod tests {
     const ENTER: InputEvent = InputEvent::Key(Key::Enter);
     const TAB: InputEvent = InputEvent::Key(Key::Tab);
 
+    #[test]
+    fn only_local_page_notices_are_retranslated_and_rewrapped() {
+        let mut page = WolPageDialog::default();
+        let line = || LanChatLine {
+            text: "Sent".encode_utf16().collect(),
+            color: u32::MAX,
+        };
+        let measure = |units: &[u16]| units.len() as i32;
+        page.append(line(), None, 100, measure);
+        page.append(line(), Some("TXT_PAGESENT"), 100, measure);
+        page.append(line(), None, 100, measure);
+        page.relabel_notices(|_| "Page\ndelivered".into(), 100, measure);
+        let texts = |page: &WolPageDialog| {
+            page.lines
+                .iter()
+                .map(|line| String::from_utf16_lossy(&line.text))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(texts(&page), ["Sent", "Page", "delivered", "Sent"]);
+        page.relabel_notices(|_| "已发送".into(), 100, measure);
+        assert_eq!(texts(&page), ["Sent", "已发送", "Sent"]);
+    }
+
     fn typed(text: &str) -> InputEvent {
         InputEvent::Text(text.into())
     }
@@ -770,11 +868,11 @@ mod tests {
         let mut page = WolPageDialog::default();
         press(&mut page, &mut c, NAME, &mut last);
         page.input(&mut c, typed("Tanya"), &mut last);
-        page.status = "Lobby 1".into();
+        page.status = Some(PageLocation::Lobby(0));
         // The name's kill and set notifications: `last` and the status only.
         assert!(page.press_transcript_row(&mut c, &mut last).is_empty());
         assert_eq!((c.focused_control(PAGE_DIALOG), last), (Some(NAME), NAME));
-        assert!(page.status.is_empty());
+        assert!(page.status.is_none());
         page.input(&mut c, typed("x"), &mut last);
         assert_eq!(text(&c, PAGE_DIALOG, NAME), "Tanyax");
         // From the text field the first notification locates once.
@@ -850,9 +948,16 @@ mod tests {
         c.focus_control(RECEIVED_DIALOG, Some(TEXT));
         assert_eq!(received.input(&mut c, ENTER), None);
         assert_eq!(text(&c, RECEIVED_DIALOG, TEXT), "\r\n");
-        assert!(!enabled(&c, RECEIVED_DIALOG, SEND), "the append is no EN_CHANGE");
+        assert!(
+            !enabled(&c, RECEIVED_DIALOG, SEND),
+            "the append is no EN_CHANGE"
+        );
         received.input(&mut c, typed("a"));
-        assert_eq!(text(&c, RECEIVED_DIALOG, TEXT), "a\r\n", "typed at the kept caret");
+        assert_eq!(
+            text(&c, RECEIVED_DIALOG, TEXT),
+            "a\r\n",
+            "typed at the kept caret"
+        );
         assert_eq!(
             received.input(&mut c, ENTER),
             Some(WolPageReceivedAction::Send {

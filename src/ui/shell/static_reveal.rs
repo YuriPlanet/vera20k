@@ -6,6 +6,7 @@
 //! successfully presented count and one dirty paint. The app layer commits the
 //! dirty paint only after swapchain presentation.
 
+use crate::assets::csf_file::CsfFile;
 use vera20k_gui::time::{Duration, Instant};
 
 /// Native kind-1 timer interval of the right-panel heading `0x694`
@@ -252,6 +253,39 @@ pub struct DialogStatics {
     heading: PresentedKind1Static,
     /// Holds the last hover help.
     status_line: PresentedKind1Static,
+    status_label: Option<HoverLabel>,
+}
+
+/// The source of a control's status-line text, retained while a list or another
+/// dialog has the pointer. A map preview can add the localized zoom hint.
+#[derive(Debug, Clone)]
+pub(crate) struct HoverLabel {
+    key: String,
+    enlarge: bool,
+}
+
+impl HoverLabel {
+    pub(crate) fn new(key: Option<&str>, enlarge: bool) -> Self {
+        Self {
+            key: key.unwrap_or_default().to_owned(),
+            enlarge,
+        }
+    }
+
+    fn text(&self, csf: Option<&CsfFile>) -> String {
+        let text = if self.key.is_empty() {
+            String::new()
+        } else {
+            crate::i18n::label(csf, &self.key, "")
+        };
+        if !self.enlarge {
+            text
+        } else if text.is_empty() {
+            crate::i18n::tr("VERA:ClickToEnlarge")
+        } else {
+            crate::i18n::tr_fill("VERA:HelpClickToEnlarge", &[("help", &text)])
+        }
+    }
 }
 
 impl Default for DialogStatics {
@@ -259,14 +293,20 @@ impl Default for DialogStatics {
         Self {
             heading: PresentedKind1Static::new(HEADING_KIND1),
             status_line: PresentedKind1Static::new(STATUS_LINE_KIND1),
+            status_label: None,
         }
     }
 }
 
 impl DialogStatics {
+    /// Update the heading without sending SHOW to this dialog or its status line.
+    pub(crate) fn set_heading(&mut self, heading: &str, now: Instant) {
+        self.heading.set_text(heading, now);
+    }
+
     /// The SHOW completion with the heading the dialog holds.
     pub fn show(&mut self, heading: &str, now: Instant) {
-        self.heading.set_text(heading, now);
+        self.set_heading(heading, now);
         self.heading.show(now);
         self.status_line.show(now);
     }
@@ -275,10 +315,28 @@ impl DialogStatics {
     /// a started reveal, and every message repaints the line
     /// (`0x00615EF7`). Returns whether the help changed.
     pub fn hover(&mut self, help: &str, now: Instant) -> bool {
+        self.status_label = None;
         let changed = self.status_line.text() != help;
         self.status_line.set_text(help, now);
         self.status_line.repaint();
         changed
+    }
+
+    pub(crate) fn hover_label(
+        &mut self,
+        label: HoverLabel,
+        csf: Option<&CsfFile>,
+        now: Instant,
+    ) -> bool {
+        let changed = self.hover(&label.text(csf), now);
+        self.status_label = Some(label);
+        changed
+    }
+
+    pub(crate) fn refresh_help(&mut self, csf: Option<&CsfFile>, now: Instant) {
+        if let Some(label) = &self.status_label {
+            self.status_line.set_text(&label.text(csf), now);
+        }
     }
 
     /// Another dialog stops covering this one without a slide (the seed
@@ -391,6 +449,31 @@ pub mod tests {
                 count: 19,
                 range: 16
             })
+        );
+    }
+
+    #[test]
+    fn retained_hover_reloads_its_label_and_keeps_literal_player_help() {
+        let now = Instant::now();
+        let first = crate::assets::csf_file::test_csf(&[("STT:Mode", "Choose a mode")]);
+        let second = crate::assets::csf_file::test_csf(&[("STT:Mode", "Choisir un mode")]);
+        let mut dialog = DialogStatics::default();
+        dialog.show("", now);
+        dialog.hover_label(HoverLabel::new(Some("STT:Mode"), false), Some(&first), now);
+        assert_eq!(
+            dialog.paint(now, false).status_line.unwrap().text,
+            "Choose a mode"
+        );
+        dialog.refresh_help(Some(&second), now);
+        assert_eq!(
+            dialog.paint(now, false).status_line.unwrap().text,
+            "Choisir un mode"
+        );
+        dialog.hover("Player 1", now);
+        dialog.refresh_help(Some(&second), now);
+        assert_eq!(
+            dialog.paint(now, false).status_line.unwrap().text,
+            "Player 1"
         );
     }
 

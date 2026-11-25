@@ -172,6 +172,8 @@ const NUMBER_KIND1: Kind1Params = Kind1Params {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScoreRow {
     pub name: String,
+    /// The House was named by TXT_COMPUTER. A player's literal handle may also be "Computer".
+    pub computer_name: bool,
     /// `HSV_To_RGB` of the house colour scheme's base HSV, sent with `0x498`
     /// to every cell of the row (`0x005C9E0C..0x005C9E58`).
     pub rgb: [u8; 3],
@@ -237,7 +239,11 @@ pub struct ScoreBackground {
 /// Format the elapsed time through `TXT_TIME_FORMAT_HOURS`, whose entry
 /// carries the `Time:` prefix and three `%02d` fields, after the native clamp.
 pub fn format_elapsed(model: &ScoreScreenModel, format: &str) -> String {
-    let total = model.elapsed_seconds.min(MAX_DISPLAY_SECONDS);
+    format_elapsed_seconds(model.elapsed_seconds, format)
+}
+
+pub fn format_elapsed_seconds(seconds: u32, format: &str) -> String {
+    let total = seconds.min(MAX_DISPLAY_SECONDS);
     substitute_numbers(format, &[total / 3600, (total % 3600) / 60, total % 60], 2)
 }
 
@@ -488,6 +494,23 @@ pub struct ScoreTexts {
     pub headers: [String; 5],
 }
 
+impl ScoreTexts {
+    pub fn localize(model: &ScoreScreenModel, caption: impl Fn(&str) -> String) -> Self {
+        Self {
+            game: format_game_number(model, &caption("TXT_GAME")),
+            time: format_elapsed(model, &caption("TXT_TIME_FORMAT_HOURS")),
+            headers: [
+                "GUI:Player",
+                "GUI:Kills",
+                "GUI:Losses",
+                "GUI:Built",
+                "GUI:Score",
+            ]
+            .map(caption),
+        }
+    }
+}
+
 /// The open `0x108` dialog.
 #[derive(Debug, Clone)]
 pub struct ScorePage {
@@ -498,6 +521,26 @@ pub struct ScorePage {
 }
 
 impl ScorePage {
+    pub fn refresh_labels(&mut self, caption: impl Fn(&str) -> String, now: Instant) {
+        self.texts = ScoreTexts::localize(&self.model, &caption);
+        self.statics.set_text(GAME_LABEL, &self.texts.game, now);
+        self.statics.set_text(TIME_LABEL, &self.texts.time, now);
+        for (id, text) in HEADER_IDS.into_iter().zip(&self.texts.headers) {
+            self.statics.set_text(id, text, now);
+        }
+        let visible = self.visible_range();
+        let computer = caption("TXT_COMPUTER");
+        for (index, row) in self.model.rows.iter_mut().enumerate() {
+            if row.computer_name {
+                row.name.clone_from(&computer);
+                if visible.contains(&index) {
+                    self.statics
+                        .set_text(ROW_CELL_IDS[index - visible.start][0], &computer, now);
+                }
+            }
+        }
+    }
+
     /// `0x497`: set every text and row colour before the page shows. Rows
     /// past the model keep `GUI:Blank` and draw nothing, so they get no
     /// static here.
@@ -726,6 +769,7 @@ mod tests {
     fn row(name: &str, score: i32) -> ScoreRow {
         ScoreRow {
             name: name.into(),
+            computer_name: false,
             rgb: [0, 0, 0],
             kills: 0,
             losses: 0,
@@ -780,6 +824,7 @@ mod tests {
             rows: vec![
                 ScoreRow {
                     name: "Computer".into(),
+                    computer_name: true,
                     rgb: [255, 25, 25],
                     kills: 0,
                     losses: 0,
@@ -787,7 +832,8 @@ mod tests {
                     score: 0,
                 },
                 ScoreRow {
-                    name: "[New Player]".into(),
+                    name: "Computer".into(),
+                    computer_name: false,
                     rgb: [34, 107, 212],
                     kills: 0,
                     losses: 15,
@@ -801,7 +847,7 @@ mod tests {
             time: format_elapsed(&model, "Time: %02d:%02d:%02d"),
             headers: ["Player", "Kills", "Losses", "Built", "Score"].map(String::from),
         };
-        let page = ScorePage::open(model, &texts, Instant::now());
+        let mut page = ScorePage::open(model, &texts, Instant::now());
         let shown: Vec<(u16, &str, ShellAlign, Option<[u8; 3]>)> = page
             .statics
             .0
@@ -819,6 +865,18 @@ mod tests {
         // Row 1: name, Kills, then Losses.
         let losses = (0x06A4, "15", ShellAlign::H_RIGHT, Some([34, 107, 212]));
         assert_eq!(shown[14], losses);
+        page.refresh_labels(
+            |key| {
+                if key == "TXT_COMPUTER" {
+                    "电脑".into()
+                } else {
+                    key.into()
+                }
+            },
+            Instant::now(),
+        );
+        assert_eq!(page.statics.text(ROW_CELL_IDS[0][0]), Some("电脑"));
+        assert_eq!(page.statics.text(ROW_CELL_IDS[1][0]), Some("Computer"));
     }
 
     #[test]

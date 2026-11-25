@@ -140,7 +140,14 @@ impl WolLobbyState {
     /// Opens the country list on `rows` with the row of `locale` lit and,
     /// unlike gamemd's combos, scrolled to it where the list allows; its
     /// face never shows, so it hangs from `value`, the Country row's value.
-    pub(crate) fn open_countries(&mut self, rows: Vec<LocaleRow>, locale: i32, value: RectPx) {
+    /// A language change retains the country at the top while the new names are sorted.
+    pub(crate) fn open_countries(
+        &mut self,
+        rows: Vec<LocaleRow>,
+        locale: i32,
+        value: RectPx,
+        top_locale: Option<i32>,
+    ) {
         let Some(node) = self.countries_node() else {
             return;
         };
@@ -148,7 +155,9 @@ impl WolLobbyState {
             return;
         };
         let selected = rows.iter().position(|row| row.locale == locale);
-        let top = selected
+        let top = top_locale
+            .and_then(|locale| rows.iter().position(|row| row.locale == locale))
+            .or(selected)
             .unwrap_or(0)
             .min(rows.len().saturating_sub(CARD_COUNTRY_ROWS));
         let items = rows.iter().map(|row| row.text.clone()).collect();
@@ -257,7 +266,7 @@ mod tests {
         lobby.press_player(0);
         let value = RectPx::new(100, 100, 150, 12);
         for (locale, lit, top) in [(0, 0, 0), (17, 17, 17), (37, 37, 31)] {
-            lobby.open_countries(rows(), locale, value);
+            lobby.open_countries(rows(), locale, value, None);
             let list = lobby.countries_drop_down().expect("open");
             assert_eq!(list.hot_row, Some(lit), "{locale}");
             assert_eq!(list.popup.first, top, "{locale}");
@@ -270,5 +279,13 @@ mod tests {
             "{effects:?}"
         );
         assert!(!lobby.countries_open());
+
+        // The language changes while 31 is the top country and 37 is selected.
+        let mut translated = rows();
+        translated.swap(31, 7);
+        lobby.open_countries(translated, 37, value, Some(31));
+        let list = lobby.countries_drop_down().unwrap();
+        assert_eq!(list.hot_row, Some(37));
+        assert_eq!(list.popup.first, 7);
     }
 }

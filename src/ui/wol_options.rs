@@ -190,6 +190,12 @@ fn translate_rows() -> impl Iterator<Item = Option<ChatLanguage>> {
     std::iter::once(None).chain(ChatLanguage::all().map(Some))
 }
 
+pub(crate) fn translate_labels(off: &str) -> Vec<String> {
+    translate_rows()
+        .map(|language| language.map_or_else(|| off.to_owned(), |l| l.name().to_owned()))
+        .collect()
+}
+
 impl WolPreferences {
     /// Init `0x497`, in [`CHECKBOXES`] order: every nonzero live value checks
     /// its box; unchecked is the template default.
@@ -248,9 +254,7 @@ pub(crate) fn spec(
             .label(key)
             .with(Prop::Checked, Value::Bool(on))
     };
-    let rows = translate_rows()
-        .map(|language| language.map_or_else(|| off.to_owned(), |l| l.name().to_owned()))
-        .collect();
+    let rows = translate_labels(off);
     let row = translate_rows()
         .position(|language| language == translate.language)
         .unwrap_or(0);

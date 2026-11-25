@@ -27,6 +27,8 @@
 
 use crate::app::frontend::skirmish_session::cooperative::CooperativeMissionRow;
 use crate::app::match_runtime::network_match::participant_name;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::scenario_catalog::ScenarioCatalog;
 use crate::app::match_runtime::session::{
     CooperativeRoundEvent, CooperativeRoundStep, MatchSession, SessionMode,
 };
@@ -220,6 +222,13 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
     {
         log::warn!("co-op round countries: {error:#}");
     }
+    // BC6 uses the setup dialog's chrome, which was dropped on entering the match.
+    App::ensure_skirmish_shell_chrome(
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+    );
     // 0x0072D300 (Scenario+0x34B8's palette) and 0x0060CF00's SCRBK.
     App::prepare_campaign_score_art(state, model.side);
     state.frontend.score_page = None;
@@ -265,6 +274,7 @@ fn build_model(state: &AppState, can_continue: bool, elapsed: i32) -> Option<Coo
                 row.owner,
             )
             .unwrap_or_default(),
+            computer_name: false, // cooperative_score_rows selects human Houses
             rgb: sources.text_rgb(sim, row.owner),
             kills: row.kills,
             losses: row.losses,
@@ -274,14 +284,7 @@ fn build_model(state: &AppState, can_continue: bool, elapsed: i32) -> Option<Coo
         .collect();
     crate::ui::score_shell::sort_rows(&mut rows);
     // s = T/60 signed, then the 99:59:59 clamp (0x0046EE34..0x0046EEE4).
-    let time_model = crate::ui::score_shell::ScoreScreenModel {
-        elapsed_seconds: (elapsed / 60) as u32,
-        ..Default::default()
-    };
-    let time = crate::ui::score_shell::format_elapsed(
-        &time_model,
-        &state.csf_text("TXT_TIME_FORMAT_HOURS"),
-    );
+    let elapsed_seconds = (elapsed / 60) as u32;
     let side = crate::app::input::commands::preferred_local_owner_name(&state.match_state)
         .as_deref()
         .and_then(|owner| sim.interner().get(owner))
@@ -298,10 +301,6 @@ fn build_model(state: &AppState, can_continue: bool, elapsed: i32) -> Option<Coo
                 .iter()
                 .position(|map| map.file_name.eq_ignore_ascii_case(&record.file_name))
         });
-    let map_name = map_index
-        .and_then(|index| catalog.shell_maps().get(index))
-        .map(|map| map.display_name.clone())
-        .unwrap_or_default();
     let mode_key = state
         .match_state
         .session
@@ -310,24 +309,42 @@ fn build_model(state: &AppState, can_continue: bool, elapsed: i32) -> Option<Coo
             crate::skirmish_modes::mode_by_id(&state.frontend.skirmish_modes, launch.mode.id)
         })
         .map_or_else(|| "GUI:None".to_owned(), |mode| mode.ui_name_key.clone());
-    let description = runtime
+    let description_key = runtime
         .cooperative_setup_view()
         .description
-        .map(|(campaign, stage)| {
-            state.csf_text(&format!("NAME:COOPDESC{}{}", campaign + 1, stage + 1))
-        })
-        .unwrap_or_default();
+        .map(|(campaign, stage)| format!("NAME:COOPDESC{}{}", campaign + 1, stage + 1));
     Some(CoopScoreModel {
         rows,
-        time,
-        next_mission: map_name.clone(),
-        mode_label: state.csf_text(&mode_key),
-        map_label: map_name,
-        description,
+        elapsed_seconds,
+        mode_key,
+        description_key,
         side,
         map_index,
         can_continue,
     })
+}
+
+impl CoopScoreModel {
+    pub(crate) fn map_label<'a>(&self, catalog: &'a ScenarioCatalog) -> &'a str {
+        self.map_index
+            .and_then(|index| catalog.shell_maps().get(index))
+            .map(|map| map.display_name.as_str())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn time(&self, process_assets: &ProcessAssets) -> String {
+        crate::ui::score_shell::format_elapsed_seconds(
+            self.elapsed_seconds,
+            &process_assets.csf_text("TXT_TIME_FORMAT_HOURS"),
+        )
+    }
+
+    pub(crate) fn description(&self, process_assets: &ProcessAssets) -> String {
+        self.description_key
+            .as_deref()
+            .map(|key| process_assets.csf_text(key))
+            .unwrap_or_default()
+    }
 }
 
 /// Cooperative `+0xA4`'s dialog (`0x005C44E0` -> `0x00471420`) after the
@@ -343,7 +360,6 @@ fn build_campaign_end(
     state: &AppState,
     side: i32,
 ) -> Option<crate::ui::campaign_score_shell::CampaignEndModel> {
-    use crate::assets::csf_file::{CsfArg, format_csf};
     let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let computer = state.csf_text("TXT_COMPUTER");
     let sources = crate::app::presentation::house_ui::HouseUiSources::from_state(
@@ -387,6 +403,7 @@ fn build_campaign_end(
                         .unwrap_or_else(|| (String::new(), [255, 255, 0]));
                     crate::ui::score_shell::ScoreRow {
                         name,
+                        computer_name: false,
                         rgb,
                         kills: kills as u32,
                         losses: lost as u32,
@@ -401,43 +418,18 @@ fn build_campaign_end(
     };
     crate::ui::score_shell::sort_rows(&mut rows);
     // s = T/60, then the 99:59:59 clamp (0x00470E3C..0x00470EB6).
-    let time = crate::ui::score_shell::format_elapsed(
-        &crate::ui::score_shell::ScoreScreenModel {
-            elapsed_seconds: (time / 60) as u32,
-            ..Default::default()
-        },
-        &state.csf_text("TXT_TIME_FORMAT_HOURS"),
-    );
-    let difficulty = match runtime.cooperative_difficulty() {
-        level @ 0..=2 => {
-            let level = state.csf_text(
-                [
-                    "TXT_DIFFICULTY_EASY",
-                    "TXT_DIFFICULTY_MEDIUM",
-                    "TXT_DIFFICULTY_BRUTAL",
-                ][level as usize],
-            );
-            format_csf(
-                &state.csf_text("GUI:DifficultyString"),
-                &[CsfArg::Str(&level)],
-            )
-        }
-        _ => state.csf_text("GUI:Blank"),
-    };
-    let campaign_name = usize::try_from(campaign)
+    let campaign_name_key = usize::try_from(campaign)
         .ok()
         .and_then(|campaign| runtime.cooperative_campaign_name(campaign))
-        .map(|key| state.csf_label(key, key))
-        .unwrap_or_default();
+        .map(str::to_owned);
     Some(crate::ui::campaign_score_shell::CampaignEndModel {
         side,
-        campaign_name,
-        campaign_number: format_csf(
-            &state.csf_text("GUI:CampaignLabel"),
-            &[CsfArg::Int(i64::from(campaign) + 1)],
-        ),
-        difficulty,
-        time,
+        labels: crate::ui::campaign_score_shell::CampaignEndLabels {
+            campaign_name_key,
+            campaign_number: i64::from(campaign) + 1,
+            difficulty: runtime.cooperative_difficulty(),
+            elapsed_seconds: (time / 60) as u32,
+        },
         rows,
     })
 }

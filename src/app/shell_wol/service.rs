@@ -1179,11 +1179,13 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
 
 pub(super) fn wait_box(process_assets: &ProcessAssets, key: &str) -> WolWaitBox {
     let text = |key| process_assets.csf_text(key);
-    WolWaitBox::new(
+    let mut wait = WolWaitBox::new(
         text(key),
         text("GUI:Disconnect"),
         text("GUI:WOLCheckStatus"),
-    )
+    );
+    wait.shell_box = wait.shell_box.with_body_key(key);
+    wait
 }
 
 /// `0x005E2CD0`'s box over the shell: `0xD0` (OK) or `0x126` (Yes/No).
@@ -1229,7 +1231,7 @@ pub(super) fn replace_open_box_body(
 ) -> bool {
     match wol.map(|visit| &mut visit.page) {
         Some(WolPage::Message { message, .. }) => {
-            message.body = body.to_owned();
+            message.replace_body(body.to_owned(), None);
             window.request_redraw();
             true
         }
@@ -1245,7 +1247,9 @@ fn apply(state: &mut AppState, step: WolStep) {
             let wait = wait_box(&state.process_assets, key);
             let visit = state.frontend.wol.as_mut().expect("WOL visit");
             match &mut visit.page {
-                WolPage::Backdrop { wait: Some(open) } => open.shell_box.body = wait.shell_box.body,
+                WolPage::Backdrop { wait: Some(open) } => {
+                    open.shell_box.replace_body(wait.shell_box.body, Some(key))
+                }
                 page => *page = WolPage::Backdrop { wait: Some(wait) },
             }
             state
@@ -1254,7 +1258,8 @@ fn apply(state: &mut AppState, step: WolStep) {
                 .reset_to(crate::ui::wol_shell::WAIT_DIALOG);
         }
         WolStep::Message { key, yes_no, then } => {
-            let message = message_box(&state.process_assets, state.csf_text(key), yes_no);
+            let message =
+                message_box(&state.process_assets, state.csf_text(key), yes_no).with_body_key(key);
             let dialog = message.dialog;
             let visit = state.frontend.wol.as_mut().expect("WOL visit");
             visit.page = WolPage::Message { message, then };

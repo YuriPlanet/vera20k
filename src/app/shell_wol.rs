@@ -187,7 +187,7 @@ pub(crate) enum WolPage {
     /// The locale page `0xFE` during the connect.
     Locale(Box<crate::ui::wol_persona::WolLocalePage>),
     /// My Information `0x114` (welcome mode 6).
-    MyInformation(Box<crate::ui::wol_my_info::WolMyInfoPage>),
+    MyInformation(Box<my_info::MyInfoDialog>),
     /// The Buddy List `0x116` (mode 5); its runner's records stay in the
     /// visit's [`lobby::WolLobby`].
     Buddy(Box<buddy::BuddyDialog>),
@@ -196,6 +196,34 @@ pub(crate) enum WolPage {
     QuickMatch(Box<quick_match::QuickMatchDialog>),
     /// Quick Match's postmatch add-buddy query `0x122`.
     AddBuddyQuery(Box<persona::AddBuddyQuery>),
+}
+
+/// Repaint retained local labels without replaying the page's service requests.
+pub(crate) fn refresh_labels(state: &mut AppState) {
+    let Some(visit) = state.frontend.wol.as_mut() else {
+        return;
+    };
+    let refresh_games = visit.lobby().is_some_and(|lobby| lobby.ui.is_modern());
+    match &mut visit.page {
+        WolPage::Login(login) => {
+            for form in login.form.iter_mut().chain(login.account.iter_mut()) {
+                form.refresh_text();
+            }
+        }
+        WolPage::Locale(page) => {
+            let count = page.rows.len() as i32;
+            persona::locale_count(state, count);
+        }
+        WolPage::MyInformation(_) => my_info::refresh_labels(state),
+        WolPage::Buddy(_) => buddy::buddies_changed(state, false),
+        WolPage::Lobby => player_card::refresh_labels(state),
+        WolPage::Options(_) => options::refresh_labels(&mut state.frontend.shell_controller),
+        _ => {}
+    }
+    if refresh_games {
+        lobby::refill_games(&mut state.frontend, &state.process_assets);
+    }
+    page::refresh_labels(&mut state.frontend, &state.renderer, &state.process_assets);
 }
 
 /// What follows a WOL message box.
@@ -480,7 +508,7 @@ pub(crate) fn message_box(
     process_assets: &ProcessAssets,
     key: &str,
 ) -> crate::ui::shell::modal::ShellBox {
-    service::message_box(process_assets, process_assets.csf_text(key), false)
+    service::message_box(process_assets, process_assets.csf_text(key), false).with_body_key(key)
 }
 
 /// Start Game Now's abort (`0x00794D13..0x00794E64`): `0x130` closes,

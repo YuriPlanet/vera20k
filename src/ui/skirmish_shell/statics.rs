@@ -13,10 +13,11 @@
 //! changed text restarts a started reveal from count 1 (`0x4B2`,
 //! `0x00611BC1`), as when Use Map picks another map (`0x006ADA99`).
 
+use crate::assets::csf_file::CsfFile;
 use crate::util::time::{Duration, Instant};
 
 use crate::ui::shell::static_reveal::{
-    DialogStatics, DialogStaticsPaint, Kind1Params, PresentedKind1Static, StaticPaint,
+    DialogStatics, DialogStaticsPaint, HoverLabel, Kind1Params, PresentedKind1Static, StaticPaint,
 };
 
 /// Game type `0x6EC` and map name `0x5A8` (the executed getters).
@@ -63,15 +64,21 @@ impl SkirmishStatics {
     /// The SHOW completion with the texts the dialog holds (`0x4B2`, then
     /// `0x4EE` to each static).
     pub(crate) fn show(&mut self, heading: &str, game_type: &str, map_label: &str, now: Instant) {
-        self.game_type.set_text(game_type, now);
-        self.map_label.set_text(map_label, now);
+        self.set_labels(heading, game_type, map_label, now);
         self.dialog.show(heading, now);
         self.game_type.show(now);
         self.map_label.show(now);
     }
 
-    /// Shared setup pages replace map/mode strings without replaying SHOW.
-    pub(crate) fn set_map_labels(&mut self, game_type: &str, map_label: &str, now: Instant) {
+    /// A changed language, mode or map updates the texts without replaying SHOW.
+    pub(crate) fn set_labels(
+        &mut self,
+        heading: &str,
+        game_type: &str,
+        map_label: &str,
+        now: Instant,
+    ) {
+        self.dialog.set_heading(heading, now);
         self.game_type.set_text(game_type, now);
         self.map_label.set_text(map_label, now);
     }
@@ -79,6 +86,19 @@ impl SkirmishStatics {
     /// A hover message to the status line ([`DialogStatics::hover`]).
     pub(crate) fn hover(&mut self, help: &str, now: Instant) -> bool {
         self.dialog.hover(help, now)
+    }
+
+    pub(crate) fn hover_label(
+        &mut self,
+        label: HoverLabel,
+        csf: Option<&CsfFile>,
+        now: Instant,
+    ) -> bool {
+        self.dialog.hover_label(label, csf, now)
+    }
+
+    pub(crate) fn refresh_help(&mut self, csf: Option<&CsfFile>, now: Instant) {
+        self.dialog.refresh_help(csf, now);
     }
 
     /// Every static for this recomposition; the frame loop commits them

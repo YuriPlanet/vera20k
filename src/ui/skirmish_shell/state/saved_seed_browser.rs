@@ -225,6 +225,12 @@ fn int(value: Option<&Value>) -> Option<i32> {
 }
 
 impl<I> SavedSeedBrowserState<I> {
+    pub(crate) fn refresh_empty_slot_label(&mut self, label: &str) {
+        if let Some(row) = self.entries.iter_mut().find(|row| row.file_name.is_none()) {
+            row.description = label.into();
+        }
+    }
+
     pub fn node(&self, id: u16) -> Option<NodeId> {
         self.ui.control(dialog(id), id)
     }
@@ -594,6 +600,11 @@ mod tests {
         assert_eq!(state.description(), "Future");
         state.select(1);
         assert_eq!(state.description(), "Working");
+        state.set_description(&"Player edit".into());
+        state.refresh_empty_slot_label("[空位]");
+        assert_eq!(state.entries[1].description.display_text(), "[空位]");
+        assert_eq!(state.entries[0].description.display_text(), "Future");
+        assert_eq!(state.description(), "Player edit");
         assert!(matches!(
             state.action_outcome(),
             Some(SavedSeedOutcome::Save {

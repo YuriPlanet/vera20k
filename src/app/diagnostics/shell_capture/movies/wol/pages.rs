@@ -325,8 +325,13 @@ impl WolCapture {
             .map(|line| String::from_utf16_lossy(&line.text))
             .collect();
         let csf = |key: &str| state.csf_label(key, key);
+        let status = crate::app::shell_wol::page::location_text(
+            state.frontend.wol.as_ref(),
+            &state.process_assets,
+            page,
+        );
         let done = match self.target {
-            WolTarget::PageFindStatus => page.status == csf("TXT_FINDPAGE_NOT_ONLINE"),
+            WolTarget::PageFindStatus => status == csf("TXT_FINDPAGE_NOT_ONLINE"),
             WolTarget::PageUserGone => texts.contains(&csf("TXT_PAGEUSERGONE")),
             WolTarget::SetupPage => texts.contains(&test_page_back("Boris")),
             _ => texts.contains(&test_page_back("Tanya")),
@@ -344,9 +349,9 @@ impl WolCapture {
                 .iter()
                 .any(|text| text.starts_with(&format!("[{NICKNAME}] ")));
             ensure!(
-                echo && texts.contains(&csf("TXT_PAGESENT")) && !page.status.is_empty(),
+                echo && texts.contains(&csf("TXT_PAGESENT")) && !status.is_empty(),
                 "0xCF lacks the echo, the result or the status: {texts:?} {:?}",
-                page.status
+                status
             );
             let line = test_page_back(name);
             let transcript = if self.target == WolTarget::SetupPage {
@@ -359,10 +364,7 @@ impl WolCapture {
                 "the page back did not reach the transcript below"
             );
         }
-        self.event(
-            frame,
-            json!({"0xCF lines": texts, "status": page.status.clone()}),
-        );
+        self.event(frame, json!({"0xCF lines": texts, "status": status}));
         MoviesCapture::restore_neutral_pointer(state);
         if self.target == WolTarget::SetupPage {
             crate::app::input::multiplayer_setup::cursor_moved(state);

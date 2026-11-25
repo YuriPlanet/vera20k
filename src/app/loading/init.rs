@@ -2626,10 +2626,7 @@ pub(crate) fn load_csf(
     asset_manager: &AssetManager,
 ) -> anyhow::Result<crate::assets::csf_file::CsfFile> {
     let (mut csf, supplements) =
-        crate::assets::csf_file::CsfFile::load_active(asset_manager.ships_ares(), |name| {
-            asset_manager.get_ref(name)
-        })
-        .map_err(
+        crate::assets::csf_file::CsfFile::load_for_interface(asset_manager).map_err(
             // The startup error card shows these, before any string table.
             |err| match err {
                 crate::assets::error::AssetError::AssetNotFound { .. } => {
@@ -2645,7 +2642,7 @@ pub(crate) fn load_csf(
         "Loaded CSF string table: {}; supplements={supplements:?}",
         crate::assets::csf_file::CsfFile::active_csf_name()
     );
-    crate::i18n::apply(&mut csf);
+    crate::i18n::apply_for_mod(&mut csf, asset_manager.mod_dir());
     Ok(csf)
 }
 
