@@ -46,6 +46,7 @@ pub mod electric_bolt;
 pub mod fire_coord;
 pub mod fire_error;
 pub(crate) mod fire_error_world;
+mod fire_plan;
 pub mod gattling;
 pub(crate) mod greatest_threat;
 pub mod in_range;
