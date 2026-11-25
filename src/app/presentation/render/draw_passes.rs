@@ -2228,7 +2228,7 @@ mod tests {
         let screen_fixed = source_offset("// --- Screen-fixed UI:");
         let sidebar_blit = source_offset("surface.composite(&mut pass)");
         let full_window_scissor = source_offset(
-            "pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());",
+            "pass.set_scissor_rect(\n        0,\n        0,\n        renderer.render_width(&frontend.screen),",
         );
         let first_screen_submission = source_offset("\"message_text\"");
         let tooltip_text = source_offset("\"tooltip_text\"");
