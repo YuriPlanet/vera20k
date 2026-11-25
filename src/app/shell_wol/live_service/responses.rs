@@ -210,7 +210,10 @@ pub(super) fn apply_response(
                 {
                     notice(state, &tr("VERA:WatchingNotTaken"));
                 } else if legacy_refusal
-                    && let Some(key) = crate::app::shell_network_setup::lobby_refused_option(state)
+                    && let Some(key) = crate::app::shell_network_setup::lobby_refused_option(
+                        &mut state.frontend,
+                        &mut state.match_state.session,
+                    )
                 {
                     notice(state, &tr(key));
                 }

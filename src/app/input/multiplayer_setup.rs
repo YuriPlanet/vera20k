@@ -488,9 +488,15 @@ fn hovered_help(state: &AppState, view: &SetupView) -> String {
     let over = hit.filter(|id| {
         !matches!(*id, MAP_PREVIEW | ROSTER_AREA) && painted_row(*id, BADGE).is_none()
     });
-    let player = badge
-        .or(over)
-        .and_then(|id| crate::app::shell_network_setup::view::player_help(state, view, id));
+    let player = badge.or(over).and_then(|id| {
+        crate::app::shell_network_setup::view::player_help(
+            &state.frontend.wol_lobby_globals,
+            &state.match_state.session,
+            &state.process_assets,
+            view,
+            id,
+        )
+    });
     let help = player
         .or_else(|| {
             over.or(over_preview.then_some(MAP_PREVIEW))

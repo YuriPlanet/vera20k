@@ -32,22 +32,21 @@ pub(super) fn set_teams(
 }
 
 /// Only a lobby known to predate watching may need a room rule omitted.
-pub(crate) fn lobby_refused_option(state: &mut AppState) -> Option<&'static str> {
-    let lobby_watches = crate::app::shell_wol::lobby_watches(state.frontend.wol.as_ref());
+pub(crate) fn lobby_refused_option(
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
+) -> Option<&'static str> {
+    let lobby_watches = crate::app::shell_wol::lobby_watches(frontend.wol.as_ref());
     if lobby_watches == Some(false)
-        && super::maps::generated_selection(&state.match_state.session)
-        && state
-            .frontend
-            .multiplayer_shell_runtime
-            .start_staging()
-            .count
+        && super::maps::generated_selection(session)
+        && frontend.multiplayer_shell_runtime.start_staging().count
             > crate::map::preview::NATIVE_START_STAGING_SLOTS as i32
     {
         return Some("VERA:BigRandomMapNotTaken");
     }
-    let line = refused_room_rule(&mut state.match_state.session, lobby_watches)?;
+    let line = refused_room_rule(session, lobby_watches)?;
     actions::queue(
-        &mut state.frontend.network_setup_protocol,
+        &mut frontend.network_setup_protocol,
         NetworkSetupRequest::PublishOptions,
     );
     Some(line)

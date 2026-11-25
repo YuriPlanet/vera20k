@@ -350,7 +350,7 @@ pub(crate) fn player_ready(state: &mut AppState, name: &str, value: i32) -> anyh
     }
     let result = ready_arm(state, name, value);
     if super::quick_match(state.frontend.network_setup_protocol.as_ref()) {
-        quick_match_start(state, name);
+        quick_match_start(&mut state.frontend, &state.match_state.session, name);
     } else {
         guest_sink_tail(
             &mut state.frontend.network_setup_protocol,
@@ -364,29 +364,27 @@ pub(crate) fn player_ready(state: &mut AppState, name: &str, value: i32) -> anyh
 /// (`n` untested) from the node at index 1 while the channel has exactly
 /// two users, on the host before its StartGame: every channel user, in
 /// reverse channel order, to API+0x48, stage 9 (90 s) and `[0xB77DEC]`.
-fn quick_match_start(state: &mut AppState, name: &str) {
-    let session = &state.match_state.session;
+fn quick_match_start(frontend: &mut FrontendState, session: &MatchSession, name: &str) {
     let second = session
         .network_setup()
         .and_then(|launch| launch.humans.get(1))
         .is_some_and(|human| human.name.eq_ignore_ascii_case(name));
     if !session.host()
         || !second
-        || crate::app::shell_wol::lobby::member_count(state.frontend.wol.as_ref()) != 2
+        || crate::app::shell_wol::lobby::member_count(frontend.wol.as_ref()) != 2
     {
         return;
     }
-    let users = crate::app::shell_wol::lobby::member_names(state.frontend.wol.as_ref())
+    let users = crate::app::shell_wol::lobby::member_names(frontend.wol.as_ref())
         .rev()
         .map(str::to_owned)
         .collect();
-    if state
-        .frontend
+    if frontend
         .network_setup_protocol
         .as_mut()
         .is_some_and(|protocol| protocol.submit_start(users))
     {
-        crate::app::shell_wol::quick_match::start_requested(state.frontend.wol.as_mut());
+        crate::app::shell_wol::quick_match::start_requested(frontend.wol.as_mut());
     }
 }
 
@@ -398,20 +396,16 @@ fn quick_match_start(state: &mut AppState, name: &str) {
 /// online lobby's verified map runs it again (`accept_network_map_source`).
 /// RESIDUAL: the channel-owner gate (`0x007931A0`, the first operator is
 /// not this user) holds for every guest the matchbot names.
-pub(super) fn quick_match_accept(state: &mut AppState) {
-    let assigned = state
-        .match_state
-        .session
-        .network_setup()
-        .is_some_and(|launch| {
-            let slot = &launch.local_player().slot;
-            !slot.country_random && !slot.color_random
-        });
-    if !assigned || crate::app::shell_wol::lobby::member_count(state.frontend.wol.as_ref()) != 2 {
+pub(super) fn quick_match_accept(frontend: &mut FrontendState, session: &MatchSession) {
+    let assigned = session.network_setup().is_some_and(|launch| {
+        let slot = &launch.local_player().slot;
+        !slot.country_random && !slot.color_random
+    });
+    if !assigned || crate::app::shell_wol::lobby::member_count(frontend.wol.as_ref()) != 2 {
         return;
     }
     queue(
-        &mut state.frontend.network_setup_protocol,
+        &mut frontend.network_setup_protocol,
         NetworkSetupRequest::Ready(true),
     );
 }

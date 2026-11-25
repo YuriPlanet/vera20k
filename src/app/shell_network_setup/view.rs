@@ -9,7 +9,7 @@ use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::{MatchSession, NetworkVacancy};
 use crate::app::process_assets::ProcessAssets;
 use crate::app::shell_network_setup::NetworkSetupProtocol;
-use crate::app::shell_wol::lobby::player_badge;
+use crate::app::shell_wol::lobby::{WolLobbyGlobals, player_badge};
 use crate::skirmish_launch::{AiDifficulty, LaunchStartPosition, LaunchTeam};
 use crate::skirmish_modes::mode_by_id;
 use crate::ui::multiplayer_setup::*;
@@ -81,40 +81,36 @@ const TEAM_BOX_ROWS: usize = 5;
 /// VERA's online room: the help under the pointer on the name or badge of
 /// a player with a badge, as the lobby's player list gives it
 /// ([`crate::app::shell_wol::lobby::badge_help`]).
-pub(crate) fn player_help(state: &AppState, view: &SetupView, control: u16) -> Option<String> {
+pub(crate) fn player_help(
+    lobby_globals: &WolLobbyGlobals,
+    session: &MatchSession,
+    process_assets: &ProcessAssets,
+    view: &SetupView,
+    control: u16,
+) -> Option<String> {
     let (SetupColumn::Player, row) = SetupColumn::decode(control)? else {
         return None;
     };
     let badge = view.row_icons.get(row)?.as_ref()?.badge?;
     let row = view.combo(control)?.row;
-    let launch = state.match_state.session.network_setup()?;
+    let launch = session.network_setup()?;
     let human = launch
         .humans
         .iter()
         .find(|human| human.raw_slot_index == Some(row))?;
-    crate::app::shell_wol::lobby::badge_help(
-        &state.frontend.wol_lobby_globals,
-        &state.process_assets,
-        &human.name,
-        badge,
-    )
+    crate::app::shell_wol::lobby::badge_help(lobby_globals, process_assets, &human.name, badge)
 }
 
 /// Whether the local player could press Accept (`SetupView::accept_enabled`).
-pub(super) fn accept_enabled(state: &AppState) -> bool {
-    let session = &state.match_state.session;
-    state
-        .frontend
+pub(super) fn accept_enabled(frontend: &FrontendState, session: &MatchSession) -> bool {
+    frontend
         .network_setup_protocol
         .as_ref()
         .is_some_and(|protocol| protocol.accept_eligible)
         && session
             .network_setup()
             .is_some_and(|launch| !session.network_player_ready(launch.local_player_index))
-        && crate::app::shell_wol::local_choices_agreed(
-            state.frontend.wol.as_ref(),
-            &state.match_state.session,
-        )
+        && crate::app::shell_wol::local_choices_agreed(frontend.wol.as_ref(), session)
 }
 
 /// The room's map in the scenario catalog, when this player shows its own
@@ -1004,7 +1000,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         // and Bases checked and disabled in a tournament or clan room.
         short_game_locked: host && dialog.wol() && room.tournament_or_clan(),
         team_header: !no_team_lists,
-        accept_enabled: accept_enabled(state),
+        accept_enabled: accept_enabled(&state.frontend, &state.match_state.session),
         start_requested: protocol.start_requested
             && !session.network_player_ready(launch.local_player_index),
         combos,

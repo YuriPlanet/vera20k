@@ -654,7 +654,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             }
             state.frontend.skirmish_preview_texture = None;
             if dialog.wol() && !dialog.host && quick_match {
-                super::wol::quick_match_accept(state);
+                super::wol::quick_match_accept(&mut state.frontend, &state.match_state.session);
             }
         }
         NetworkSetupEvent::StartPrompt => {
@@ -1341,7 +1341,7 @@ pub(crate) fn accept_network_map_source(
     if super::quick_match(state.frontend.network_setup_protocol.as_ref())
         && !state.match_state.session.host()
     {
-        super::wol::quick_match_accept(state);
+        super::wol::quick_match_accept(&mut state.frontend, &state.match_state.session);
     }
     Ok(())
 }
@@ -1492,7 +1492,7 @@ fn auto_accept(state: &mut AppState) {
             .network_setup_protocol
             .as_ref()
             .is_none_or(|protocol| protocol.locked)
-        || !super::view::accept_enabled(state)
+        || !super::view::accept_enabled(&state.frontend, &state.match_state.session)
     {
         return;
     }

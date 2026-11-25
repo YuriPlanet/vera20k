@@ -303,7 +303,13 @@ impl WolCapture {
                     .context("the guest's name")?;
                 set_window_pointer_to_rect_center(state, rect);
                 crate::app::input::multiplayer_setup::cursor_moved(state);
-                let help = setup::view::player_help(state, &view, combo.id);
+                let help = setup::view::player_help(
+                    &state.frontend.wol_lobby_globals,
+                    &state.match_state.session,
+                    &state.process_assets,
+                    &view,
+                    combo.id,
+                );
                 let label = |key: &str| state.csf_label(key, key);
                 let expected = crate::i18n::fill(
                     &label("VERA:PlayerHelp"),
