@@ -78,7 +78,9 @@ fn foot_mission_handler_due(sim: &Simulation, id: u64, now: u32) -> bool {
 /// returns its delay through this same epilogue. The committed selector alone
 /// chooses the handler for miners as for every other Foot. Unrepresented
 /// acquisition and approach branches remain
-/// explicit residuals rather than guessed AI.
+/// explicit residuals rather than guessed AI. A Wasm module's `MissionStep`
+/// may replace a Guard, Area Guard, Hunt or Attack body's outcome before the
+/// epilogue (`ext_modules::unit_ai`).
 pub(crate) fn dispatch_foot_mission(
     sim: &mut Simulation,
     id: u64,
@@ -887,6 +889,30 @@ pub(crate) fn dispatch_foot_mission(
         }
     } else {
         evaluation
+    };
+
+    // Wasm module `MissionStep` (`ext_modules::unit_ai`): the Guard, Area
+    // Guard, Hunt or Attack body's outcome, at MissionClass::AI's commit,
+    // after the body and all its draws.
+    let evaluation = match input.mission {
+        Some(
+            mission @ (MissionType::Guard
+            | MissionType::Sticky
+            | MissionType::AreaGuard
+            | MissionType::Hunt
+            | MissionType::Attack),
+        ) => {
+            let (queue, delay) = sim.module_mission_step(
+                rules,
+                id,
+                mission,
+                evaluation.queue,
+                evaluation.delay,
+                &mut ctx.effects,
+            );
+            MissionHandlerEvaluation { delay, queue }
+        }
+        _ => evaluation,
     };
 
     if let Some(queued_mission) = evaluation.queue {

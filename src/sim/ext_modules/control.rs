@@ -87,7 +87,7 @@ use crate::sim::components::NavTargetRef;
 use crate::sim::world::{FrameEffects, Simulation};
 
 /// A reference to `target`'s object or cell, for `other` and `cell`.
-fn target_fields(sim: &Simulation, target: Option<TargetKind>) -> (u64, Option<(u16, u16)>) {
+pub(super) fn target_fields(sim: &Simulation, target: Option<TargetKind>) -> (u64, Option<(u16, u16)>) {
     match target {
         None => (0, None),
         Some(TargetKind::Cell(x, y)) => (0, Some((x, y))),
@@ -101,7 +101,7 @@ fn target_fields(sim: &Simulation, target: Option<TargetKind>) -> (u64, Option<(
 }
 
 /// A NavCom destination as a module reference.
-fn destination_ref(destination: NavTargetRef) -> i64 {
+pub(super) fn destination_ref(destination: NavTargetRef) -> i64 {
     match destination {
         NavTargetRef::Cell { rx, ry } => cell_ref(rx, ry),
         NavTargetRef::Object { id } => id as i64,
