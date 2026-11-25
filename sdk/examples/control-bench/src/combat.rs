@@ -21,8 +21,9 @@
 //!   `AR` from outside its own range; `Retaliate` answers 0 and `VR` must not
 //!   turn on `AR` (no Attack mission, no target `AR`) where the engine would
 //!   have (`native` 1).
-//! - crushing: a player Grizzly `CT` (weapons off) drives back and forth
-//!   over two enemy GIs (weapons off, asleep); `CrushAllowed` spares the
+//! - crushing: a player Grizzly `CT` (weapons off) drives onto the cells of
+//!   two enemy GIs (weapons off, asleep) lined up east of it, one after the
+//!   other; `CrushAllowed` spares the
 //!   first one it meets (still alive next frame) and allows the other (its
 //!   `Crushed` event follows).
 //!
@@ -202,14 +203,14 @@ const SLOTS: [Slot; UNITS] = [
     Slot {
         id: "E1",
         enemy: true,
-        at: (-1, 9),
+        at: (2, 0),
         setup: Setup::Target,
         binds: &[CRUSH, CRUSHED],
     },
     Slot {
         id: "E1",
         enemy: true,
-        at: (1, 9),
+        at: (4, 0),
         setup: Setup::Target,
         binds: &[CRUSH, CRUSHED],
     },
@@ -232,6 +233,18 @@ fn center() -> Cell {
     arena(COMBAT)
 }
 
+/// Where a slot's offset counts from: the GIs line up east of the crusher
+/// where it stands (the arena's row may be clamped at the map's edge), the
+/// others from the arena's centre.
+fn anchor(slot: usize) -> Cell {
+    let tank = unit(CT);
+    match get(tank, Prop::Cell) {
+        Ok(cell) if (slot == I1 || slot == I2) && alive(tank) => Cell(cell),
+        _ if slot == I1 || slot == I2 => offset(center(), -3, 9),
+        _ => center(),
+    }
+}
+
 /// The current frame (this file's `frame` is the area's hook).
 fn clock() -> i64 {
     i64::from(vera20k_sdk::frame())
@@ -248,7 +261,7 @@ fn upkeep() {
             continue;
         }
         let house = if spec.enemy { enemy() } else { player() };
-        let Some(made) = spawn(offset(center(), spec.at.0, spec.at.1), spec.id, house) else {
+        let Some(made) = spawn(offset(anchor(slot), spec.at.0, spec.at.1), spec.id, house) else {
             continue;
         };
         SPAWNS[slot].fetch_add(1, Relaxed);
@@ -339,6 +352,9 @@ static ALLOWED: AtomicI64 = AtomicI64::new(0);
 static CRUSH_SEEN: AtomicI64 = AtomicI64::new(0);
 /// The crusher's leg: even east, odd west.
 static CRUSH_LEG: AtomicI64 = AtomicI64::new(0);
+/// The frame the current leg started, and the crush requests so far.
+static LEG_SINCE: AtomicI64 = AtomicI64::new(0);
+static CRUSH_ASKED: AtomicI64 = AtomicI64::new(0);
 
 // --------------------------------------------------------------- Exports
 
@@ -794,6 +810,7 @@ fn crush(mut d: CrushAllowedDecision) {
     if victim == NO_HANDLE || (victim != unit(I1).0 && victim != unit(I2).0) {
         return;
     }
+    CRUSH_ASKED.fetch_add(1, Relaxed);
     let spared = SPARED.load(Relaxed);
     if spared == NO_HANDLE || spared == victim {
         d.set_result(0);
@@ -833,20 +850,66 @@ fn check_crush(now: i64) {
     }
 }
 
-/// Drives the crusher between the ends of the GIs' row whenever it stands.
+/// Drives the crusher onto the GIs' cells in turn, one leg each: the crush
+/// is checked in the cell the crusher stands in, against occupants within
+/// half a cell of its centre, so its legs end on the GIs themselves. A leg
+/// ends when the crusher reaches that cell or after 300 frames.
 fn drive_crusher() {
     let tank = unit(CT);
-    if marked("combat.crush") || !alive(tank) || tank.moving().unwrap_or(true) {
+    if marked("combat.crush") {
         return;
     }
-    let end = |leg: i64| {
-        let dx = if leg % 2 == 0 { 3 } else { -3 };
-        offset(center(), dx, 9)
-    };
+    let now = clock();
+    if now % 600 == 0 {
+        crush_diagnostics(tank);
+    }
+    if !alive(tank) {
+        return;
+    }
     let mut leg = CRUSH_LEG.load(Relaxed);
-    if get(tank, Prop::Cell) == Ok(end(leg).0) {
+    let goal = |leg: i64| {
+        let first = if leg % 2 == 0 { I1 } else { I2 };
+        [first, first ^ I1 ^ I2]
+            .into_iter()
+            .map(unit)
+            .find(|gi| alive(*gi))
+            .and_then(|gi| get(gi, Prop::Cell).ok())
+    };
+    let here = get(tank, Prop::Cell).ok();
+    let reached = goal(leg).is_some() && here == goal(leg);
+    if reached || now - LEG_SINCE.load(Relaxed) > 300 {
         leg += 1;
         CRUSH_LEG.store(leg, Relaxed);
+        LEG_SINCE.store(now, Relaxed);
+    } else if tank.moving().unwrap_or(false) {
+        return;
     }
-    let _ = Action::set_mission(tank, Mission::Move, end(leg));
+    if let Some(cell) = goal(leg) {
+        let _ = Action::set_mission(tank, Mission::Move, Cell(cell));
+    }
+}
+
+/// A temporary line on the crush scene while its mark is missing.
+fn crush_diagnostics(tank: Techno) {
+    let mut line = crate::Line::new();
+    line.text("combat-diag crush: asked ")
+        .num(CRUSH_ASKED.load(Relaxed))
+        .text(" leg ")
+        .num(CRUSH_LEG.load(Relaxed))
+        .text(" seen ")
+        .num(CRUSH_SEEN.load(Relaxed));
+    for (name, who) in [(" tank ", tank), (" gi1 ", unit(I1)), (" gi2 ", unit(I2))] {
+        let cell = Cell(get(who, Prop::Cell).unwrap_or(0));
+        line.text(name)
+            .num(i64::from(cell.x()))
+            .text(",")
+            .num(i64::from(cell.y()))
+            .text(" hp ")
+            .num(who.health().unwrap_or(-1))
+            .text(" m ")
+            .num(who.mission().unwrap_or(-1))
+            .text(" mv ")
+            .num(i64::from(who.moving().unwrap_or(false)));
+    }
+    line.log();
 }
