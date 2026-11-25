@@ -5,7 +5,7 @@
 //! owners; match-scoped input and presentation live inside MatchState.
 //! The architecture guards keep unrelated flat fields from returning.
 
-use super::{OverlayTypeRegistry, ResolvedTerrainGrid};
+use super::OverlayTypeRegistry;
 use crate::app::shell_route::ShellRoute;
 
 mod platform;
@@ -76,20 +76,12 @@ impl AppState {
         self.platform.translucent_fog_enabled()
     }
 
-    pub(crate) fn health_bar_mode(&self) -> crate::ui::main_menu_dialogs::options::HealthBarMode {
-        self.persistence.health_bar_mode()
-    }
-
     pub(crate) fn color_vision_matrix(&self) -> Option<crate::render::color_vision::Mat3> {
         self.persistence.color_vision_matrix()
     }
 
     pub(crate) fn focus_freeze_active(&self) -> bool {
         focus_freeze_active(&self.platform, &self.match_state)
-    }
-
-    pub(crate) fn ra2_dir(&self) -> Option<&std::path::Path> {
-        ra2_dir(&self.platform, &self.process_assets)
     }
 
     pub(crate) fn render_width(&self) -> u32 {
@@ -117,23 +109,9 @@ impl AppState {
         hd_art_on(&self.persistence)
     }
 
-    pub(crate) fn hd_radar(&self) -> bool {
-        self.persistence.hd_radar(self.platform.capture_choices())
-    }
-
-    pub(crate) fn smooth_sidebar(&self) -> bool {
-        self.persistence
-            .smooth_sidebar(self.platform.capture_choices())
-    }
-
     pub(crate) fn smooth_online_menus(&self) -> bool {
         self.persistence
             .smooth_online_menus(self.frontend.native_shell_ui)
-    }
-
-    pub(crate) fn hd_map_previews(&self) -> bool {
-        self.persistence
-            .hd_map_previews(self.platform.capture_choices())
     }
 
     pub(crate) fn match_zoom_pass(&self) -> Option<&crate::render::upscale_pass::UpscalePass> {
@@ -243,10 +221,6 @@ impl AppState {
 
     pub(crate) fn lobby_colors(&self) -> crate::rules::skirmish_colors::SkirmishColorMode {
         lobby_colors(&self.frontend, &self.match_state)
-    }
-
-    pub(crate) fn terrain_template(&self) -> Option<&ResolvedTerrainGrid> {
-        self.match_state.terrain_template()
     }
 }
 
