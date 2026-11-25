@@ -292,7 +292,7 @@ impl Simulation {
             .passenger_role()
             .cargo()
             .map_or((0, 0), |cargo| (cargo.count(), cargo.total_size()));
-        if carrier_type.ares_passengers_by_size {
+        if carrier_type.passengers_by_size() {
             victim_type.size <= f64::from(carrier_type.passengers - total)
         } else {
             (count as i32) < carrier_type.passengers

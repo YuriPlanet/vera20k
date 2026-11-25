@@ -536,15 +536,15 @@ impl WeaponType {
             ),
             #[cfg(feature = "phobos")]
             phobos_weapon_targeting: crate::rules::phobos_airburst::read_weapon_targeting(section),
-            // Phobos `Valueable<T>` reads through the shared Ares parser: a
-            // failed conversion keeps the constructor's value.
+            // Phobos `Valueable<T>` keeps the constructor's value after a
+            // failed conversion.
             #[cfg(feature = "phobos")]
             phobos_laser_is_single_color: crate::rules::ares_switch::not_ares_read(|| {
                 section.read_ares_bool("IsSingleColor", false)
             }),
             #[cfg(feature = "phobos")]
             phobos_laser_thickness: crate::rules::ares_switch::not_ares_read(|| {
-                section.read_ares_int("LaserThickness", 3)
+                section.read_phobos_scalar_int("LaserThickness", 3)
             }),
             #[cfg(feature = "phobos")]
             phobos_beam_is_house_color: crate::rules::ares_switch::not_ares_read(|| {
@@ -625,7 +625,7 @@ impl WeaponType {
             attach_effect_same_source_only,
             #[cfg(feature = "phobos")]
             rof_random_delay: Some(crate::rules::ares_switch::not_ares_read(|| {
-                section.read_ares_partial_int_pair(
+                section.read_phobos_partial_int_pair(
                     "ROF.RandomDelay",
                     crate::rules::ini_value::PartialIntPair {
                         low: 0,

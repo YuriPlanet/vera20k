@@ -538,6 +538,80 @@ fn begin_landing_cycle() -> (Simulation, RuleSet, u64) {
     (sim, rules, id)
 }
 
+fn hover_deployer_ini(type_keys: &str) -> IniFile {
+    IniFile::from_str(&format!(
+        "[General]\nHoverHeight=120\nHoverBob=.04\nHoverDampen=40%\nGravity=6\n\
+         [Animations]\n0=SCHPDEPL\n[AudioVisual]\nDeployDir=4\n\
+         [VehicleTypes]\n0=HOVR\n[HOVR]\nStrength=100\nSpeed=8\nROT=5\n\
+         Locomotor={{4A582742-9839-11D1-B709-00A024DDAFD1}}\n\
+         SpeedType=Hover\nMovementZone=Amphibious\nIsSimpleDeployer=yes\nDeployToLand=yes\n\
+         {type_keys}[Unload]\nRate=.016\n"
+    ))
+}
+
+fn begin_hover_landing(rules: &RuleSet) -> (Simulation, u64) {
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 7);
+    let id = sim
+        .spawn_object("HOVR", "Americans", 10, 10, 64, rules)
+        .unwrap();
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::Move {
+            entity_id: id,
+            target_rx: 16,
+            target_ry: 10,
+        },
+        Some(rules)
+    ));
+    advance_until(&mut sim, rules, 100, "ordinary Hover lift", |sim| {
+        altitude(sim, id) > 20
+    });
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::DeployMcv { entity_id: id },
+        Some(rules)
+    ));
+    advance_until(&mut sim, rules, 40, "deployment landing request", |sim| {
+        sim.entities().get(id).unwrap().landing_for_deploy()
+    });
+    assert!(altitude(&sim, id) > 0);
+    assert!(!sim.entities().get(id).unwrap().is_fully_deployed());
+    (sim, id)
+}
+
+#[test]
+fn hover_lands_and_finishes_simple_deploy_without_ares() {
+    let rules = RuleSet::from_ini(&hover_deployer_ini("")).unwrap();
+    assert!(!rules.ares());
+    let (mut sim, id) = begin_hover_landing(&rules);
+    advance_until(&mut sim, &rules, 180, "Hover touchdown", |sim| {
+        altitude(sim, id) == 0
+    });
+    advance_until(&mut sim, &rules, 40, "fully deployed Hover", |sim| {
+        sim.entities().get(id).unwrap().is_fully_deployed()
+    });
+    assert!(!sim.entities().get(id).unwrap().landing_for_deploy());
+}
+
+#[test]
+fn hover_deploy_uses_type_facing_without_ares() {
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+
+    let mut layers =
+        RulesLayerStack::new(hover_deployer_ini("DeployingAnim=SCHPDEPL\nDeployDir=6\n"));
+    // The P1 direction reader keeps a valid earlier value when the map
+    // supplies an out-of-range override.
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[HOVR]\nDeployDir=8\n"),
+    );
+    let rules = RuleSet::from_rules_layers(&layers).unwrap();
+    assert!(!rules.ares());
+    let (sim, id) = begin_hover_landing(&rules);
+    let entity = sim.entities().get(id).unwrap();
+    assert_eq!(entity.body_facing.destination(), 6 << 13);
+}
+
 #[test]
 fn ordinary_commands_land_animate_deploy_reverse_and_resume_flight() {
     let (mut sim, rules, id) = begin_landing_cycle();

@@ -680,10 +680,9 @@ impl IniFile {
         ini
     }
 
-    /// Compatibility overlay: later exact keys replace earlier ones. Without
-    /// Ares this is also the include extension's policy, not native
-    /// PutString528660 parity; a game read the Ares way loads includes through
-    /// `IniFile::merge_load`.
+    /// Compatibility overlay: later exact keys replace earlier ones. Phobos
+    /// `$Include` uses this with the stock reader. The Ares reader loads
+    /// includes through `IniFile::merge_load` and `PutString528660`.
     /// Residual: overlapping loose PKT files (699B58) can retain a cached
     /// duplicate pair across insertion, then change selection on a later sort.
     /// That separate map-catalog merge needs native index/capacity/cache history

@@ -1,5 +1,5 @@
-//! Ares 3.0 trigger events and actions: TEventExt and TActionExt, for a
-//! game where Ares plays. The parent Tag/Trigger owner calls these first, as the
+//! Ares trigger events and actions: TEventExt and TActionExt. The parent
+//! Tag/Trigger owner calls these first, as the
 //! hooks at `0x71E949` (HasOccurred) and `0x6DD8D7` (Execute) run before the
 //! stock switches; an unhandled kind keeps the stock body.
 //!
@@ -16,8 +16,14 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::world::{FrameEffects, Simulation, UninitContext};
 
+pub(super) const fn event_hooks_enabled(kind: i32, ares: bool) -> bool {
+    // Vehicle capture publishes its explicit attached events for Script67
+    // as well as for the existing Ares input paths.
+    ares || matches!(kind, 69 | 70)
+}
+
 impl Simulation {
-    /// TEventExt::HasOccured (Ares.dll 1004F7A0, hook 0x71E949) for the kinds
+    /// TEventExt::HasOccured (Ares 3.0p1 0x71E949 -> 0x10051090) for the kinds
     /// Ares handles: its replacements of 60/61 and its events 62..88. `None`
     /// keeps the stock body. Every handled event that does not match is
     /// false; none writes the persistence flag or the retained House, and

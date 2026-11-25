@@ -286,6 +286,62 @@ fn ares_busy_factory_exit_takes_another_type_that_can_build_the_product() {
 }
 
 #[test]
+fn ares_p1_busy_clone_source_does_not_redirect_to_an_ordinary_building() {
+    use crate::sim::ai_base_building::BuildingExit;
+    use crate::sim::mission::MissionType;
+    use crate::sim::world::FrameEffects;
+
+    for (ares, alternate) in [(false, "CLONER"), (true, "GARAGE")] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares);
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &crate::sim::arena_fixture::clear_ground_ini(
+                "[Countries]\n0=Americans\n[BuildingTypes]\n0=CLONER\n1=GARAGE\n\
+             [VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nSpeed=6\nClonedAt=CLONER\n\
+             [CLONER]\nStrength=500\nWeaponsFactory=yes\nCloningFacility=yes\n\
+             [GARAGE]\nStrength=500\nWeaponsFactory=yes\n",
+            ),
+            &IniFile::from_str("[CLONER]\nFoundation=3x3\n[GARAGE]\nFoundation=3x3\n"),
+        )
+        .unwrap();
+        let mut sim = Simulation::with_seed(0x44_44B3);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        spawn_structure(&mut sim, &rules, 1, "Americans", "CLONER", 6, 6);
+        spawn_structure(&mut sim, &rules, 2, "Americans", alternate, 14, 12);
+        busy_factory_exit_mission(&mut sim, 1, MissionType::Unload);
+        busy_factory_exit_mission(&mut sim, 2, MissionType::Guard);
+        let mut effects = FrameEffects::default();
+        let clone = sim
+            .construct_resolved_object_limbo_at_height(
+                rules.object("MTNK").unwrap(),
+                "Americans",
+                0,
+                0,
+                0,
+                0,
+                &rules,
+                &mut effects,
+            )
+            .unwrap();
+
+        assert_eq!(
+            super::production_queue::exit_produced_object(
+                &mut sim,
+                &rules,
+                1,
+                clone,
+                (0, 0),
+                None,
+                &mut effects
+            ),
+            BuildingExit::TryLater
+        );
+        assert!(sim.substrate.entities.get(clone).unwrap().in_limbo());
+    }
+}
+
+#[test]
 fn sentinel_place_success_keeps_the_indexed_empty_factory() {
     let Some((mut sim, rules, owner)) = busy_factory_exit_world() else {
         return;

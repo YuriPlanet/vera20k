@@ -710,6 +710,11 @@ impl Simulation {
                     {
                         let _wall = {
                             let mut host = SimulationWallRuntimeHost {
+                                wall_gates: crate::sim::cell_kernel::WallGateConnections::new(
+                                    &self.substrate,
+                                    &self.interner,
+                                    rules,
+                                ),
                                 dirty_cells: &mut self.dirty_cells,
                                 zone_grid: &mut self.zone_grid,
                                 path_grid: &mut self.path_grid,

@@ -57,9 +57,7 @@ impl Simulation {
         overlays: Option<&OverlayTypeRegistry>,
         effects: &mut FrameEffects<'_>,
     ) -> bool {
-        if rules.ares_form()
-            && rules.super_weapon_uses_ai_targeting(self.interner.resolve(sw_type_id))
-        {
+        if rules.super_weapon_uses_ai_targeting(self.interner.resolve(sw_type_id)) {
             let launched = super::ai_fire::fire_extension_automatic(
                 self, rules, owner, sw_type_id, overlays, effects, true,
             );
@@ -119,15 +117,13 @@ impl Simulation {
         target_source: super::SuperWeaponTargetSource,
         selection: Option<super::PaidSuperWeaponSelection>,
     ) -> bool {
-        // Whether Ares plays in this game, read once: without it only the
-        // stock Fire_SW statements below run, in the stock order.
-        let ares = rules.ares_form();
         let automatic = target_source != super::SuperWeaponTargetSource::Manual;
         #[cfg(any(test, feature = "test-support"))]
         super::ai_fire::observe(super::ai_fire::AiFireEvent::Fire(sw_type_id, cell));
         let Some(sw) = rules.super_weapon(self.interner.resolve(sw_type_id)) else {
             return false;
         };
+        let ares = sw.uses_extension_rules(rules);
         if super_instance(self, owner, sw_type_id).is_none() {
             return false;
         }
@@ -141,7 +137,8 @@ impl Simulation {
         // later refuses (e.g. funds changed while queued). Otherwise an old
         // cancel/final for that refused request could match a future retry.
         // This is sequence metadata only: no wallet, charge or pair is touched.
-        let requested_source = selection.filter(|_| ares && sw.pre_click && !sw.post_click);
+        let requested_source =
+            selection.filter(|_| rules.ares_form() && sw.pre_click && !sw.post_click);
         if let Some(request) = requested_source {
             let Some(next) = self.next_paid_super_weapon_selection(rules, owner, sw_type_id) else {
                 return false;
@@ -251,14 +248,21 @@ impl Simulation {
         let payment = paid_final.unwrap_or((sw_type_id, sw));
         let guarded =
             ares && (paid_source.is_some() || paid_final.is_some() || sw.money_amount != 0);
+        // 3.0p1 ClickFire (0x10035BFF..0x10035C39) can stop a queued
+        // draining Super without the activation price. The sidebar has its
+        // own wallet check (0x10035868) before queueing a player's click.
+        let stopping_drain = sw.use_charge_drain
+            && super_instance(self, owner, sw_type_id)
+                .is_some_and(|instance| instance.charge_drain_state() == 2);
         // Explicit extension only: all admission precedes paired-Super writes.
         // Stock zero-cost Fire_SW retains its native refused-click tail.
         if guarded
+            && !stopping_drain
             && (!(if paid_source.is_some() || paid_final.is_some() {
                 super::targeting::on_map(self, cell)
             } else {
                 super::money::valid_target(self, sw, cell)
-            }) || !click_fire_admission(self, owner, sw_type_id, sw, ares)
+            }) || !click_fire_admission(self, owner, sw_type_id, sw, rules.ares_form())
                 || !super::money::admit(
                     &mut self.sound_events,
                     &self.houses,
@@ -394,7 +398,7 @@ fn click_fire(
     payment: Option<(InternedId, &SuperWeaponType)>,
     selecting_paid_source: bool,
 ) -> bool {
-    let ares = rules.ares_form();
+    let ares = sw.uses_extension_rules(rules);
     if sw.use_charge_drain {
         // ClickFire6CB934..6CBA7A precedes ordinary ready/running/one-time
         // admission. House control is independent of local launch output.
@@ -414,7 +418,7 @@ fn click_fire(
             let Some(instance) = super_instance(sim, owner, sw_type_id) else {
                 return false;
             };
-            instance.click_charge_drain(sw, frame, ratio, rules.ares_form())
+            instance.click_charge_drain(sw, frame, ratio, ares)
         } else {
             // HouseCtor4F573A clears +1FA; no enabled fresh writer has been
             // established. Native6CBA52 tests that byte, without human timer
@@ -437,19 +441,20 @@ fn click_fire(
                 overlay_registry,
                 frame_effects,
             );
-            // Launch reaches the common SWTypeExt::Launch10032ED0 for a new
-            // type here too. Its money step never settles: Fire_SW refuses a
-            // charge-drain type with Money.Amount before this click.
-            if ares && effect_launched && sw.kind.has_ares_handler() {
-                super::ares_presentation::on_launch(sim, rules, owner, sw_type_id, cell);
-                super::raise_ares_activation_events(
+            // Ready -> Draining at 0x10035C52..0x10035CBB reaches Launch.
+            // Its successful Activate settles Money.Amount once, at
+            // 0x100339FF..0x10033A16. Deactivation above never enters Launch.
+            if ares && effect_launched {
+                complete_ares_effect(
                     sim,
                     rules,
                     owner,
                     sw_type_id,
+                    sw,
                     cell,
                     overlay_registry,
                     frame_effects,
+                    payment,
                 );
             }
         }
@@ -457,7 +462,9 @@ fn click_fire(
     }
     // Paid launches passed this same owner before the outer transaction writes.
     let needs_native_admission = !ares || sw.money_amount == 0;
-    if needs_native_admission && !click_fire_admission(sim, owner, sw_type_id, sw, ares) {
+    if needs_native_admission
+        && !click_fire_admission(sim, owner, sw_type_id, sw, rules.ares_form())
+    {
         return false;
     }
     if ares
@@ -468,7 +475,7 @@ fn click_fire(
     }
     // Without Ares no type has a handler, and Fire_SW passes no `payment`
     // and never selects a paid source.
-    let extension_effect = ares && sw.kind.has_ares_handler();
+    let extension_effect = ares && (sw.kind.has_ares_handler() || sw.has_builtin_rules());
     if let Some((money_type, money_sw)) = payment
         && !extension_effect
         && money_sw.money_amount != 0
@@ -497,34 +504,16 @@ fn click_fire(
     // no usable launch building still spends its charge, but never its fee.
     // Keep one wallet/settlement owner shared with the other extension kinds.
     if extension_effect && effect_launched {
-        // 10032FDF: skipped when the handler's Flags hold NoMoney.
-        if let Some((money_type, money_sw)) = payment
-            && money_sw.money_amount != 0
-            && !sw
-                .kind
-                .ares_flags()
-                .has(crate::rules::superweapon_type::AresSuperWeaponFlags::NO_MONEY)
-        {
-            super::money::transact(
-                &mut sim.sound_events,
-                &mut sim.houses,
-                owner,
-                money_type,
-                money_sw,
-            );
-        }
-        // Common Launch10032FDF..10033242 settles first, then constructs
-        // animation/sound and finally removes the queued Ready announcement.
-        super::ares_presentation::on_launch(sim, rules, owner, sw_type_id, cell);
-        // Activate10032020 raises its trigger events once Launch returned.
-        super::raise_ares_activation_events(
+        complete_ares_effect(
             sim,
             rules,
             owner,
             sw_type_id,
+            sw,
             cell,
             overlay_registry,
             frame_effects,
+            payment,
         );
     }
     // `0x006CBBDE..0x006CBC34`: a type that is neither pairs no anim.
@@ -550,6 +539,62 @@ fn click_fire(
     true
 }
 
+/// Common Ares 3.0p1 Launch (0x100338F0): after successful Activate, pay
+/// unless Flags has NoMoney, report the effect, and notify its House Tags.
+fn complete_ares_effect(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw_type_id: InternedId,
+    sw: &SuperWeaponType,
+    cell: (u16, u16),
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    frame_effects: &mut FrameEffects<'_>,
+    payment: Option<(InternedId, &SuperWeaponType)>,
+) {
+    if let Some((money_type, money_sw)) = payment
+        && money_sw.money_amount != 0
+        && !sw
+            .kind
+            .ares_flags()
+            .has(crate::rules::superweapon_type::AresSuperWeaponFlags::NO_MONEY)
+    {
+        if sw.use_charge_drain {
+            // P1 0x100339FF applies the transaction unconditionally after
+            // Activate. A paid start was admitted before its timer write.
+            super::money::settle(&mut sim.houses, owner, money_sw.money_amount);
+        } else {
+            super::money::transact(
+                &mut sim.sound_events,
+                &mut sim.houses,
+                owner,
+                money_type,
+                money_sw,
+            );
+        }
+    }
+    if sw.kind.has_ares_handler() && (rules.ares_form() || sw.kind.is_extension()) {
+        super::ares_presentation::on_launch(sim, rules, owner, sw_type_id, cell);
+        super::raise_ares_activation_events(
+            sim,
+            rules,
+            owner,
+            sw_type_id,
+            cell,
+            overlay_registry,
+            frame_effects,
+        );
+    } else if sw.has_builtin_rules() {
+        // A built-in selector can reach a stock launch without changing
+        // its payload or presentation. Its common SW.Shots is still live.
+        let frame = sim.session.binary_frame() as i32;
+        if let Some(instance) = super_instance(sim, owner, sw_type_id) {
+            instance.record_ares_launch(frame);
+        }
+        sim.houses.request_house_tech_tree_recheck(owner);
+    }
+}
+
 /// Pure admission apart from existing type-specific refusal feedback. Reused
 /// before paid paired-Super writes; successful checks neither charge nor pay.
 fn click_fire_admission(
@@ -559,12 +604,14 @@ fn click_fire_admission(
     sw: &SuperWeaponType,
     ares: bool,
 ) -> bool {
-    if sw.use_charge_drain {
-        return false;
-    }
     let Some(instance) = super_instance(sim, owner, sw_type_id) else {
         return false;
     };
+    if sw.use_charge_drain {
+        return instance.is_active()
+            && !instance.is_suspended()
+            && instance.charge_drain_state() == 1;
+    }
     if !instance.click_fire_admits() && !sw.post_click {
         return false;
     }
@@ -716,7 +763,7 @@ fn launch(
         | SuperWeaponKind::EMPulse
         | SuperWeaponKind::Firestorm
         | SuperWeaponKind::DropPod
-            if !ares => {}
+            if !ares && !sw.has_builtin_rules() => {}
         SuperWeaponKind::HunterSeeker => {
             let activated = super::hunter_seeker::launch(
                 sim,
@@ -877,6 +924,14 @@ fn launch(
             super::sonar_pulse::launch(sim, rules, owner, sw, (rx, ry));
             super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
             return true;
+        }
+        // The Ares 3.0p1 Battery (1006FBD0) and Firestorm (100725D0) Activate
+        // entries require Super+6D. A lost grant no longer ticks its drain.
+        SuperWeaponKind::Battery | SuperWeaponKind::Firestorm
+            if !super_instance(sim, owner, sw_type_id)
+                .is_some_and(|instance| instance.is_active()) =>
+        {
+            return false;
         }
         SuperWeaponKind::Battery => {
             super::battery::activate(sim, rules, owner, sw);

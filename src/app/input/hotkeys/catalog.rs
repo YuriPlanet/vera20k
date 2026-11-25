@@ -33,6 +33,23 @@ pub(crate) fn registered_commands() -> &'static [CommandMetadata] {
     static ALL: OnceLock<Vec<CommandMetadata>> = OnceLock::new();
     ALL.get_or_init(|| {
         let mut all = RETAIL_COMMANDS.to_vec();
+        // Ares 3.0p1 registers TogglePower before retaining the UnitTab
+        // creation path (`0x533058 -> 0x10002A40 -> 0x533062`).
+        let unit_tab = all
+            .iter()
+            .position(|row| row.command == HotkeyCommand::UnitTab)
+            .unwrap_or(all.len());
+        all.insert(
+            unit_tab,
+            command!(
+                HotkeyCommand::TogglePower,
+                "TogglePower",
+                "TXT_TOGGLE_POWER",
+                "TXT_INTERFACE",
+                "TXT_TOGGLE_POWER_DESC",
+                None
+            ),
+        );
         all.extend_from_slice(&CAMERA_COMMANDS);
         all.extend_from_slice(&SHORTCUT_COMMANDS);
         all.extend_from_slice(&VERA_COMMANDS);

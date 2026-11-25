@@ -87,9 +87,10 @@ pub(super) fn prepare(
     if !data.needs_designator && !influence.any_inhibitor && influence.inhibitors.is_empty() {
         return data;
     }
-    // Predicates1006D880/1006D900: exact owner for designation, hostile
-    // owner for inhibition, alive/nonzero HP/nonlimbo/not deactivated for
-    // both, plus Building IsPowerOnline4555D0 for inhibitors only.
+    // Predicates 1006D880 and 1006D900 require a live object with health,
+    // out of limbo and not deactivated. Ares 3.0p1's inhibitor predicate
+    // (1006E910) checks the inhibitor owner's alliance with the firer.
+    // Building inhibitors also need IsPowerOnline4555D0.
     // Query XY is pure; coalescing the two scans draws no RNG and writes no
     // timer, detach, fog or cell state.
     for entity in sim.substrate.entities.values() {
@@ -113,7 +114,7 @@ pub(super) fn prepare(
         let inhibitor = entity.owner() != owner
             && !sim
                 .house_alliances
-                .is_allied(&sim.interner, owner, entity.owner())
+                .is_allied(&sim.interner, entity.owner(), owner)
             && (influence.any_inhibitor || matches(&influence.inhibitors))
             && (entity.category() != EntityCategory::Structure
                 || sim.building_operational_state(entity.stable_id(), rules) == Some(true));
@@ -186,7 +187,7 @@ pub(super) fn check(
     cell: (u16, u16),
     automatic: bool,
 ) -> Result<(), TargetReject> {
-    if !rules.ares_form() {
+    if !sw.uses_extension_rules(rules) {
         return if sw.kind.is_extension() {
             Err(TargetReject::InvalidPayload)
         } else {

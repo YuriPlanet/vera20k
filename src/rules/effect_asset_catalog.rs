@@ -235,17 +235,33 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
             roots.insert(name.to_ascii_uppercase());
         }
     };
-    // The Ares roots below join only for Rules read the Ares way.
+    // Ares-format roots follow the Rules reader mode. Built-in attachments
+    // and Tunnel EMP also declare their animation roots in the stock reader.
     let ares_way = crate::rules::ares_switch::ares_way();
     // Ares common Launch10033068..100330AA constructs SW.Animation through
     // the same AnimClass owner as other effects, even when it is hidden.
-    if ares_way {
-        for sw in rules.super_weapons.values() {
-            if let Some(Some(animation)) = &sw.presentation.animation {
-                insert(animation);
-            }
+    for sw in rules.super_weapons.values() {
+        if (ares_way || sw.has_builtin_rules())
+            && let Some(Some(animation)) = &sw.presentation.animation
+        {
+            insert(animation);
         }
     }
+    if ares_way || rules.has_builtin_firestorm() {
+        let firestorm = rules.ares_firestorm_globals();
+        for animation in [
+            firestorm.active_anim(),
+            firestorm.idle_anim(),
+            firestorm.victim_anim(0),
+            firestorm.victim_anim(100),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            insert(animation);
+        }
+    }
+    let mut configured_emp = false;
     for warhead in rules.warheads_iter() {
         for name in &warhead.anim_list {
             insert(name);
@@ -253,16 +269,21 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
         // Installed Ares EMP10062610/10062FD0 constructs the retained
         // Warhead sparkle as AnimClass421EA0. Existing-pointer lookup alone
         // does not bind its physical bounds for that constructor.
-        if ares_way && let Some(name) = warhead.ares_rules().and_then(|emp| emp.sparkles()) {
-            insert(name);
+        if let Some(emp) = warhead.ares_rules() {
+            configured_emp |= emp.duration() != 0;
+            if (ares_way || emp.duration() != 0)
+                && let Some(name) = emp.sparkles()
+            {
+                insert(name);
+            }
         }
-        // AttachedEffect 100586E0 constructs the registered AnimClass with
-        // flags 0x600 and then attaches it to the victim. It needs physical
-        // bounds through this same loader closure before construction.
-        if ares_way
-            && let Some(name) = warhead
-                .ares_rules()
-                .and_then(|wh| wh.attach_effect().animation())
+        // AttachEffectClass::CreateAnim (Ares 3.0p1 0x10059380) takes its
+        // physical frame bounds from the registered AnimClass.
+        if let Some(name) = warhead
+            .ares_rules()
+            .map(|wh| wh.attach_effect())
+            .filter(|effect| ares_way || effect.is_enabled(false))
+            .and_then(|effect| effect.animation())
         {
             insert(name);
         }
@@ -285,26 +306,30 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     // First activation10062625 may fall back through Type/General, while
     // refresh uses only the explicit Warhead pointer. Bind every configured
     // producer through this same closure, for graphical and headless loads.
-    if ares_way {
+    if ares_way || configured_emp || rules.temporal_attach_effects_enabled() {
         for object in rules.all_objects() {
-            if let Some(Some(name)) = object.emp_rules().and_then(|emp| emp.sparkles()) {
+            if (ares_way
+                || configured_emp
+                    && object.locomotor == crate::rules::locomotor_type::LocomotorKind::Tunnel)
+                && let Some(Some(name)) = object.emp_rules().and_then(|emp| emp.sparkles())
+            {
                 insert(name);
             }
-            // Self effects reach the same Anim constructor as Warhead effects
-            // (Ares Update10058E00, self-attach10058FC5 -> Attach10058520
-            // -> CreateAnim100586E0). Their image
-            // bounds are gameplay inputs too: an attached anim may kill its
-            // parent through ordinary AnimAI damage and its death weapon.
+            // Self effects reach the same Anim constructor through
+            // TechnoClass_Update (Ares 3.0p1 0x1004C094).
             if let Some(name) = object
                 .self_attach_effect()
+                .filter(|effect| ares_way || effect.is_enabled(false))
                 .and_then(|effect| effect.animation())
             {
                 insert(name);
             }
         }
-        if let Some(name) = rules.emp_sparkles() {
-            insert(name);
-        }
+    }
+    if (ares_way || configured_emp)
+        && let Some(name) = rules.emp_sparkles()
+    {
+        insert(name);
     }
     // Muzzle animations `TechnoClass::Fire_At` constructs
     // (`sim::world::damage_consequences`, `combat::fire_coord`), and the
@@ -1044,7 +1069,9 @@ mod tests {
             // index1 even without Ares. Reserve that slot so this fixture isolates
             // EMP roots rather than also binding TYPE_SPARK through electrocution.
             let ini = IniFile::from_str(
-                "[VehicleTypes]\n0=CONTROL\n[Warheads]\n0=EMP\n[Animations]\n0=WH_SPARK\n1=ELECTRO\n2=TYPE_SPARK\n3=GLOBAL_SPARK\n4=AE_VISUAL\n[General]\nEMPulseSparkles=GLOBAL_SPARK\n[CONTROL]\nStrength=100\nEMP.Sparkles=TYPE_SPARK\n[EMP]\nEMP.Duration=2\nEMP.Sparkles=WH_SPARK\nAttachEffect.Duration=5\nAttachEffect.Animation=ae_visual\n",
+                "[VehicleTypes]\n0=CONTROL\n[Warheads]\n0=EMP\n[Animations]\n0=WH_SPARK\n1=ELECTRO\n2=TYPE_SPARK\n3=GLOBAL_SPARK\n4=AE_VISUAL\n[General]\nEMPulseSparkles=GLOBAL_SPARK\n\
+                 [CONTROL]\nStrength=100\nLocomotor={4A582743-9839-11D1-B709-00A024DDAFD1}\nEMP.Sparkles=TYPE_SPARK\n\
+                 [EMP]\nEMP.Duration=2\nEMP.Sparkles=WH_SPARK\nAttachEffect.Duration=5\nAttachEffect.Animation=ae_visual\n",
             );
             let art = IniFile::from_str(
                 "[WH_SPARK]\nLoopCount=-1\n[TYPE_SPARK]\nLoopCount=-1\n[GLOBAL_SPARK]\nLoopCount=-1\n[AE_VISUAL]\nLoopCount=-1\n",
@@ -1065,15 +1092,16 @@ mod tests {
                 );
             }
             let roots = anim_class_roots(&rules);
+            let binds = |name| ares_way || name != "AE_VISUAL";
             for name in names {
-                assert_eq!(roots.iter().any(|root| root == name), ares_way, "{name}");
+                assert_eq!(roots.iter().any(|root| root == name), binds(name), "{name}");
             }
             // Same tolerant binder used by the app loader; no test-only frame
             // setter. Missing unrelated default roots remain tolerant.
             rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
             let mut sim = Simulation::with_seed(17);
             for name in names {
-                let expected = ares_way.then_some(6);
+                let expected = binds(name).then_some(6);
                 assert_eq!(
                     rules
                         .art()
@@ -1083,7 +1111,10 @@ mod tests {
                     expected,
                     "{name}"
                 );
-                assert_eq!(rules.art().scheduler_anim_types().contains(name), ares_way);
+                assert_eq!(
+                    rules.art().scheduler_anim_types().contains(name),
+                    binds(name)
+                );
                 let type_name = sim.intern(name);
                 let world = AnimWorldCoord {
                     x: 128,
@@ -1099,7 +1130,7 @@ mod tests {
                     },
                     world,
                 );
-                assert_eq!(spawned.is_ok(), ares_way, "{name}: {spawned:?}");
+                assert_eq!(spawned.is_ok(), binds(name), "{name}: {spawned:?}");
             }
         }
     }
@@ -1165,6 +1196,47 @@ mod tests {
                 "the self animation must reach the real death-weapon receiver",
             );
         }
+    }
+
+    #[test]
+    fn built_in_temporal_attachments_bind_their_only_animation_roots() {
+        let _stock = crate::rules::ares_switch::read_ares_way(false);
+        let root = TestRoot::new();
+        for name in ["SELF_AE", "HIT_AE", "OFF_AE"] {
+            std::fs::write(
+                root.path().join(format!("{name}.SHP")),
+                shp_with_undecodable_pixels(6),
+            )
+            .unwrap();
+        }
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        // Reserve the ordinary InfDeath slots. Each tested SHP is named
+        // solely by its AttachEffect descriptor.
+        let ini = IniFile::from_str(
+            "[VehicleTypes]\n0=UNIT\n[Warheads]\n0=HIT\n1=OFF\n\
+             [Animations]\n0=DUMMY\n1=ELECTRO\n2=SELF_AE\n3=HIT_AE\n4=OFF_AE\n\
+             [UNIT]\nStrength=100\nAttachEffect.Duration=-1\nAttachEffect.Animation=SELF_AE\n\
+             AttachEffect.TemporalHidesAnim=yes\n\
+             [HIT]\nAttachEffect.Duration=5\nAttachEffect.Animation=HIT_AE\n\
+             AttachEffect.TemporalHidesAnim=yes\n\
+             [OFF]\nAttachEffect.Duration=5\nAttachEffect.Animation=OFF_AE\n",
+        );
+        let art = IniFile::from_str("[SELF_AE]\nRate=1\n[HIT_AE]\nRate=1\n[OFF_AE]\nRate=1\n");
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+        assert!(!rules.ares());
+        rules.install_art_data(ArtRegistry::from_ini(&art));
+        let roots = tolerant_anim_class_roots(&rules);
+        rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
+        let frames = |name| {
+            rules
+                .art()
+                .anim_runtime_config(name)
+                .unwrap()
+                .raw_shp_frame_count
+        };
+        assert_eq!(frames("SELF_AE"), Some(6));
+        assert_eq!(frames("HIT_AE"), Some(6));
+        assert_eq!(frames("OFF_AE"), None);
     }
 
     fn catalog_hash(catalog: &EffectAssetCatalog) -> u64 {

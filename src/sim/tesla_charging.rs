@@ -114,10 +114,9 @@ impl Simulation {
         // stock sample below and for every building: a `Battery.Overpower`
         // type of an active battery is overpowered. Nothing clears it again
         // for a type that is not Overpowerable.
-        let battery = rules.ares_form()
-            && power_states
-                .get(&building.owner())
-                .is_some_and(|state| state.overpowers(&object.id));
+        let battery = power_states
+            .get(&building.owner())
+            .is_some_and(|state| state.overpowers(&object.id));
         if object.overpowerable {
             Self::sample_tesla_charge(substrate, power_states, id);
         }

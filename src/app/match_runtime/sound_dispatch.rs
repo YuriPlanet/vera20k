@@ -870,7 +870,6 @@ pub(super) fn dispatch_sim_sound_events(
                     type_override: None,
                 }
             }
-            SimSoundEvent::SuperWeaponInsufficientFunds { .. } if !ares => continue,
             SimSoundEvent::AresSuperWeaponRefused { .. } => continue,
             SimSoundEvent::AresSuperWeaponActivated { .. }
             | SimSoundEvent::AresLightningStormApproaching { .. }
@@ -925,8 +924,6 @@ pub(super) fn dispatch_sim_sound_events(
                     type_override: None,
                 }
             }
-            // Reached only when the Rules were read the Ares way
-            // (`RuleSet::ares_form`): the stock arm above takes the rest.
             SimSoundEvent::SuperWeaponInsufficientFunds { owner, sw_type } => {
                 if !owner_is_local(sim.interner(), owner, local_owner_name) {
                     continue;
@@ -935,6 +932,7 @@ pub(super) fn dispatch_sim_sound_events(
                     .interner()
                     .try_resolve(sw_type)
                     .and_then(|name| rules.super_weapon(name))
+                    .filter(|sw| sw.uses_extension_rules(rules))
                     .and_then(|sw| sw.insufficient_funds_eva.as_deref())
                 else {
                     continue;
@@ -1296,6 +1294,10 @@ pub(super) fn ares_superweapon_messages(
     let interner = sim.interner();
     let local = local_owner_name.and_then(|name| interner.get(name));
     let line = |sw_type, message, firer| {
+        let sw = rules.super_weapon(interner.try_resolve(sw_type)?)?;
+        if !sw.uses_extension_rules(rules) {
+            return None;
+        }
         Some(HudMessage::AresSuperWeaponMessage {
             sw_type,
             message,

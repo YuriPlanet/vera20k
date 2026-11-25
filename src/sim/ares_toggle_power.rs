@@ -89,7 +89,7 @@ impl Simulation {
         if low_power {
             for &(_, _, id, drain) in candidates.iter().rev() {
                 surplus = surplus.wrapping_add(drain);
-                self.go_building_offline(id, rules, effects);
+                self.go_building_offline(id, rules, effects, false);
                 if surplus >= 0 {
                     break;
                 }

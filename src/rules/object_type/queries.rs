@@ -199,6 +199,11 @@ impl ObjectType {
         self.curtain_modifiers
     }
 
+    /// The building type is immune to manual Force Shield targeting.
+    pub fn force_shield_pointer_blocked(&self) -> bool {
+        f64::from_bits(self.curtain_modifiers[1].bits()) <= 0.0
+    }
+
     pub(crate) fn crew_rules(&self) -> &crate::rules::ares_crew::CrewTypeRules {
         &self.crew
     }
@@ -231,8 +236,30 @@ impl ObjectType {
     pub(crate) fn bind_techno_combat_rules(
         &mut self,
         rules: &crate::rules::ares_techno_type::AresTechnoTypeRules,
+        ares_way: bool,
     ) {
         self.techno_combat = rules.clone();
+        if !ares_way && !self.uses_hover_deploy_facing() {
+            self.techno_combat.clear_deploy_dir();
+        }
+    }
+
+    /// The ordinary vehicle branch of Mission_Unload (0x0073DE6E).
+    pub(crate) fn simple_vehicle_deployer(&self) -> bool {
+        self.category == ObjectCategory::Vehicle
+            && self.is_simple_deployer
+            && self.passengers <= 0
+            && !self.harvester
+            && !self.weeder
+            && self.deploys_into.is_none()
+    }
+
+    /// The built-in Hover landing's animated facing (Ares 3.0p1 0x1004A236).
+    pub(crate) fn uses_hover_deploy_facing(&self) -> bool {
+        self.deploy_to_land
+            && self.locomotor == crate::rules::locomotor_type::LocomotorKind::Hover
+            && self.deploying_anim.is_some()
+            && self.simple_vehicle_deployer()
     }
 
     pub(crate) fn cloak_power(&self) -> &crate::rules::ares_cloak_power::CloakPowerTypeRules {
@@ -299,13 +326,17 @@ impl ObjectType {
         curtain_modifiers: [NativeF64Bits; 2],
     ) {
         self.emp = emp.cloned();
-        if crate::rules::ares_switch::ares_way() {
-            self.promotion_abilities = abilities.cloned();
-            self.self_attach_effect = attachment.cloned();
+        self.promotion_abilities = abilities.cloned();
+        self.curtain_modifiers[1] = curtain_modifiers[1];
+        let ares_way = crate::rules::ares_switch::ares_way();
+        self.self_attach_effect = attachment
+            .filter(|settings| ares_way || settings.is_enabled(false))
+            .cloned();
+        if ares_way {
             self.cloak_allowed = cloak_allowed;
             self.turret_rot_override = turret_rot_override;
             self.aircraft_crashable = aircraft_crashable;
-            self.curtain_modifiers = curtain_modifiers;
+            self.curtain_modifiers[0] = curtain_modifiers[0];
         }
     }
 
@@ -457,8 +488,16 @@ impl ObjectType {
     pub(crate) fn bind_building_type_ext(
         &mut self,
         ext: &crate::rules::ares_building_type::BuildingTypeExtRules,
+        ares_way: bool,
+        builtin_firestorm: bool,
     ) {
-        self.building_type_ext = ext.clone();
+        if ares_way {
+            self.building_type_ext = ext.clone();
+        } else {
+            self.building_type_ext.dock_unload_cell = ext.dock_unload_cell;
+            self.building_type_ext.dock_unload_facing = ext.dock_unload_facing;
+            self.building_type_ext.firestorm_wall = builtin_firestorm && ext.firestorm_wall;
+        }
     }
 
     /// Ares CompleteInitialization (`1000D380`, hook 0x679CAF) over this
@@ -974,10 +1013,16 @@ impl ObjectType {
         self.unit_absorb || self.infantry_absorb
     }
 
-    /// Ares `Passengers.BySize=`, which the passenger pips also read
-    /// (TechnoExt::GetPassengerPips 10044C90).
-    pub const fn ares_passengers_by_size(&self) -> bool {
-        self.ares_passengers_by_size
+    /// `Passengers.BySize=` also supplies the Ares pips and Phobos insignia.
+    pub const fn passengers_by_size(&self) -> bool {
+        self.passengers_by_size
+    }
+
+    /// `UnitClass::Receive_Radio` alone picks the configured mode for
+    /// ordinary boarding (Ares 3.0p1 `0x73762B -> 0x1004CDB0`). Aircraft
+    /// keep their own radio rules and the established planner/pip behavior.
+    pub const fn vehicle_cargo_by_size(&self) -> bool {
+        !matches!(self.category, ObjectCategory::Vehicle) || self.passengers_by_size()
     }
 
     pub const fn pips_draw_for_all(&self) -> bool {
@@ -1635,6 +1680,16 @@ impl ObjectType {
     /// `Foundation::dimensions` already answers.
     pub fn is_1x1_with_undeploy(&self) -> bool {
         self.undeploys_into.is_some() && self.foundation.dimensions() == (1, 1)
+    }
+
+    /// `BuildingTypeClass::CanTogglePower`, inlined at `0x0069286F..0x00692891`
+    /// and in Ares 3.0p1 at `0x1005D552..0x1005D571`:
+    /// `TogglePower=` (`+0x154A`) with a positive drain (`+0xEE4`) or
+    /// `Powered=` (`+0x1573`).
+    pub fn can_toggle_power(&self) -> bool {
+        self.toggle_power
+            && (crate::sim::power_system::native_building_power_drain(self.power) > 0
+                || self.powered)
     }
 
     /// BuildingClass::CanBeSelectedNow's type test (`0x00459C03`): whether a

@@ -592,13 +592,13 @@ fn unit_delivery_civilian_uses_first_existing_house_not_first_country() {
     }
 }
 
-/// The delay is SWTypeExt's one `SW.Deferment` Nullable read (Ares'
-/// Parser<int>: `$30` scans decimal, `abc` leaves it unset), and Activate
-/// (10075920) waits 20 frames when it is unset or negative.
+/// SWTypeExt reads `SW.Deferment` through 3.0p1 Parser<int>. `$30` means 48,
+/// and `abc` leaves the value unset. Activate (10075920) waits 20 frames
+/// when the value is unset or negative.
 #[test]
 fn unit_delivery_waits_the_common_ares_deferment_read() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
-    for (value, frames) in [("-1", 20), ("abc", 20), ("$30", 30)] {
+    for (value, frames) in [("-1", 20), ("abc", 20), ("$30", 48)] {
         let rules = rules(&format!("[Delivery]\nSW.Deferment={value}\n"));
         let mut sim = world(&rules);
         fire(&mut sim, &rules, "Americans", (12, 10));
@@ -800,6 +800,111 @@ fn unit_delivery_ai_ground_rally_arm_completes_a_delivery() {
     assert_eq!((unit.position.rx(), unit.position.ry()), (12, 10));
     assert_eq!(unit.mission.effective().known(), Some(MissionType::Hunt));
     assert!(!sim.super_weapons[&owner][&sw].is_ready);
+}
+
+#[test]
+fn unit_delivery_ai_base_modes_launch_at_the_selected_house_base_with_ares_off() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    use crate::sim::snapshot::{GameSnapshot, PlayerSaveCells};
+    use crate::sim::superweapon::ai_fire;
+    use crate::sim::world::SnapshotProcessState;
+
+    for (mode, target) in [("Base", (12, 10)), ("EnemyBase", (21, 17))] {
+        let rules = rules(&format!(
+            "[SuperWeaponTypes]\n1=Other\n[Other]\nType=PsychicReveal\n\
+             [GAPOWR]\nSuperWeapons=Delivery,Other\n[Delivery]\n\
+             SW.AITargeting={mode}\nSW.Deferment=2\nSW.AIRequiresTarget=empty\n\
+             SW.AuxBuildings=GAPOWR\nSW.RangeMinimum=4\nSW.RangeMaximum=6\nMoney.Amount=-1000\n"
+        ));
+        assert!(!rules.ares());
+        let mut sim = world(&rules);
+        let terrain = sim.resolved_terrain().unwrap().clone();
+        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
+            terrain.width(),
+            terrain.height(),
+        ));
+        let owner = sim.interner.get("Russians").unwrap();
+        let sw = sim.interner.get("Delivery").unwrap();
+        let other = sim.interner.get("Other").unwrap();
+        sim.spawn_object("GAPOWR", "Russians", target.0 - 5, target.1, 0, &rules)
+            .unwrap();
+        crate::sim::superweapon::grant_provided_supers(&mut sim, &rules, owner);
+        assert!(sim.super_weapons[&owner][&sw].is_active());
+        assert!(!sim.super_weapons[&owner][&other].is_active());
+        sim.super_weapons
+            .instance_mut(&owner, &sw)
+            .unwrap()
+            .set_charged(
+                rules.super_weapon("Delivery").unwrap(),
+                sim.session.binary_frame(),
+            );
+        let enemy = sim.interner.get("Americans").unwrap();
+        let house = sim.houses.get_mut(&owner).unwrap();
+        house.set_base_center_for_test(Some((12, 10)));
+        house.set_enemy_house_for_test(Some(enemy));
+        sim.houses
+            .get_mut(&enemy)
+            .unwrap()
+            .set_base_center_for_test(Some((21, 17)));
+
+        let blocker = sim
+            .spawn_object("E1", "Americans", target.0, target.1, 0, &rules)
+            .unwrap();
+        ai_fire::try_fire(&mut sim, &rules, owner, None, &mut FrameEffects::default());
+        assert!(
+            sim.unit_deliveries.pending.is_empty(),
+            "{mode}: occupied target"
+        );
+        assert!(sim.super_weapons[&owner][&sw].is_ready());
+
+        sim.uninit_with_rules(blocker, &rules);
+        ai_fire::try_fire(&mut sim, &rules, owner, None, &mut FrameEffects::default());
+        let [delivery] = sim.unit_deliveries.pending.as_slice() else {
+            panic!("{mode}: expected one pending delivery");
+        };
+        assert_eq!(delivery.cell, target);
+        assert_eq!(delivery.owner, owner);
+        assert_eq!(sim.houses[&owner].economy().credits(), 1000);
+        assert!(!sim.super_weapons[&owner][&sw].is_ready());
+        let bytes = GameSnapshot::save(&sim, 0, rules.simulation_config_hash(), "base delivery", 0);
+        let (mut restored, _) = GameSnapshot::load(&bytes)
+            .unwrap()
+            .restore_player_world(
+                SnapshotProcessState::Live(&sim),
+                &rules,
+                terrain,
+                sim.terrain_speed_config().clone(),
+                PlayerSaveCells::FixtureBaseline,
+            )
+            .unwrap();
+        assert_eq!(
+            restored.unit_deliveries.pending,
+            sim.unit_deliveries.pending
+        );
+        restored.session.set_binary_frame_for_test(1);
+        crate::sim::superweapon::tick_active_superweapon_effects(
+            &mut restored,
+            &rules,
+            None,
+            &mut FrameEffects::default(),
+        );
+        assert!(payloads(&restored, "MTNK").is_empty());
+        restored.session.set_binary_frame_for_test(2);
+        crate::sim::superweapon::tick_active_superweapon_effects(
+            &mut restored,
+            &rules,
+            None,
+            &mut FrameEffects::default(),
+        );
+        let ids = payloads(&restored, "MTNK");
+        assert_eq!(
+            ids.len(),
+            1,
+            "{mode}: delivery executes after the deferment"
+        );
+        let unit = restored.substrate.entities.get(ids[0]).unwrap();
+        assert_eq!((unit.position.rx(), unit.position.ry()), target);
+    }
 }
 
 #[test]

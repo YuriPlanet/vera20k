@@ -299,10 +299,11 @@ impl Simulation {
         let Some(nav @ NavTargetRef::Object { id: target_id }) = actor.navigation.nav_com() else {
             return Ok(VehicleCaptureOutcome::default());
         };
+        let ares_capture = rules.ares() || self.following_script_vehicle_capture(actor, rules);
         if !self.entity_object_type(actor, rules).is_some_and(|ty| {
-            if rules.ares() {
-                // Ares 3.0 InfantryClass_UpdateVehicleThief_Check (10049970,
-                // hook 0x5202F9): VehicleThief (+EC6) or CanDrive.
+            if ares_capture {
+                // Ares 3.0p1 0x5202F9 -> 0x1004A5D0 admits VehicleThief
+                // or CanDrive and resumes at 0x52030D.
                 ty.vehicle_thief || ty.driver_rules().can_drive()
             } else {
                 ty.thief
@@ -334,9 +335,9 @@ impl Simulation {
             < crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS
             && distance < 128
         {
-            if rules.ares() {
-                //5203F7 ->100499A0: the shared Ares receiver returns whether
-                //this caller must consume the actor (Drive can board it).
+            if ares_capture {
+                // Ares 3.0p1 0x5203F7 -> 0x1004A600 returns whether this
+                // caller consumes the actor (Drive can instead board it).
                 let outcome =
                     self.ares_capture_vehicle(actor_id, target_id, rules, registry, effects)?;
                 if outcome.consumed {

@@ -42,9 +42,9 @@ provide compatibility references. No Ares DLL or C# simulation is loaded.
 - `Deliver.Types` preserves duplicates and resolves existing, category-distinct
   types at the ordered rules read. Omitted or empty reads retain prior values;
   `none` clears the list. Unknown or ambiguous names are skipped.
-- `SW.Deferment` is the common superweapon read every Ares type shares (Ares'
-  integer parser, so `$30` is 30). Text it cannot parse leaves the value an
-  earlier layer read. Unset and negative values wait 20 frames
+- `SW.Deferment` is the common superweapon read every Ares type shares. The
+  3.0p1 integer parser reads `$30` as hexadecimal 48. An unreadable value
+  keeps the previous layer's result. Unset and negative values wait 20 frames
   (`SW_UnitDelivery::Activate`, `10075920`); zero delivers immediately.
   Pending requests freeze the payload,
   resolved owner, target, settings and deadline. They use the wrapping simulation

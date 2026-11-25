@@ -83,6 +83,10 @@ fn after_anchor(
 }
 
 pub(super) fn execute_object_navigation(state: &mut AppState, direction: ObjectDirection) {
+    // Next/Previous Object (0x00536610/0x00536A80) first call
+    // SetTogglePowerMode(0) (0x00536617/0x00536A87), then SetWaypointMode,
+    // SetRepairMode(0) and SetSellMode(0).
+    crate::app::input::power_mode::disable(state);
     let placement = state.armed_building_type().is_some();
     state
         .match_state

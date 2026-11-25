@@ -1014,8 +1014,12 @@ impl Simulation {
                 .and_then(|entity| self.object_type(entity.type_ref(), rules))
                 .and_then(crate::sim::production::factory_category_for_building)
         {
-            production::update_factory_queue(self, rules, old_owner, factory_category, effects);
-            production::update_factory_queue(self, rules, new_owner, factory_category, effects);
+            production::update_factory_queue(
+                self, rules, old_owner, factory_category, effects, false,
+            );
+            production::update_factory_queue(
+                self, rules, new_owner, factory_category, effects, false,
+            );
         }
         // Building4492D7..449368: the computer's captured-building sale is
         // after both factory queue updates and before the house rechecks.

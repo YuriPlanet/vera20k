@@ -4,13 +4,16 @@ This page lists what the Ares 3.0 port still lacks, and for each gap the gamemd 
 depends on. The supported chains are listed in [ares.md](ares.md); each chain's addresses,
 dispositions and smaller residuals are in its own `docs/ares-*.md`, and the hooks skipped
 on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
+The [Ares 3.0p1 V2.5 index](zh-CN/ares-3.0-differences-v2.5.html) tracks
+the individual items on `Base-for-modders`, including 70 partially implemented
+and 24 unimplemented entries.
 
 ## Where it stands
 
-- Everything is in every build and plays when the game plays Ares ([ares.md](ares.md));
-  other games keep their behaviour. The one deliberate change for every game: buildings
-  and aircraft no longer take stealth from `Cloakable=` (native vanilla never did; see
-  [ares-bugfixes.md](ares-bugfixes.md)).
+- Every build includes the Ares support. On `Base-for-modders`, built-in fixes
+  apply by default or through their own INI keys and script actions. The Ares
+  setting controls the remaining extension paths. [Ares settings](ares.md)
+  · [`Cloakable=` rules for buildings and aircraft](ares-bugfixes.md)
 - INI keys: the restored Ares source reads 684 distinct keys. The engine reads every
   gameplay key among them. The keys still unread are UI and front-end keys (uimd.ini
   `[UISettings]`, campaign `HoverSound`, the movie list,
@@ -54,7 +57,8 @@ only that house.
 | Mechanism | What is missing | Where |
 |---|---|---|
 | `CanMakeStuffUp` | The Rules draws and the 90-frame infantry panic are ported and the written values are saved in `AresMadeUpRules`, but nothing reads them yet: 28 Rules fields with about 110 read sites, many in free functions without a Simulation | [ares-warhead-residuals.md](ares-warhead-residuals.md) |
-| EMP | Tunnel movers; a landed Aircraft's Fly Power_Off spin (0x4CFD20); a LaserFencePost's fence recalc (0x4533A0, VERA builds no fence sections) | [ares-emp.md](ares-emp.md) |
+| EMP | Tunnel movers during digging, surfacing and underground travel. A landed Aircraft's Fly Power_Off spin (0x4CFD20) and a LaserFencePost's fence recalc (0x4533A0) also remain. VERA builds no fence sections. | [ares-emp.md](ares-emp.md) |
+| Superweapon AI targeting | The `Stealth`, `MultiMissile` and `LightningRandom` pickers | [Ares 3.0p1 V2.5 index](zh-CN/ares-3.0-differences-v2.5.html#ares-entry-not-supported-037) |
 | Refinery storage | The Weeder store, Removed_From_Game's keepTiberium arm, a fifth tiberium slot, the storage pips (0x44D755, 0x709B4E) and the `Message.SilosNeeded` text (needs a sim-to-client message event) | [ares-tiberium.md](ares-tiberium.md) |
 | Trench traversal | Only a buildings-only selection gets the cursor and click; Ctrl+Alt over a friendly trench keeps its stock answer; `GarrisonedIn` is not kept | [ares-building-hooks.md](ares-building-hooks.md) |
 | Deactivated objects | The deactivated What_Action over an object gates only the hover cursor of the object that owns it; the click paths keep their stock rungs below the ClickedAction refusal | [ares-techno-hooks.md](ares-techno-hooks.md) |
@@ -74,7 +78,6 @@ data.
 | Flying carriers: spawned aircraft keep their launch Z, and the spawn manager aims them at its cell | `0x414338`, `0x6B783B` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Capture manager and parasite on any weapon slot (TechnoClass Init_1), with the parasite slot hooks | `0x6F407D`, `0x629804`, `0x62A020`, `0x62A7B1` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Gunner temporal swap | `0x74642C`, `0x74653C` | [ares-techno-hooks.md](ares-techno-hooks.md) |
-| Hover `DeployToLand` landing | `0x513EAA`, `0x514A21`, `0x514DFE` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Occupier + VehicleThief destination expiry | `0x4D9A83` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | The PermaDisguise arm of `InfantryClass::ClearDisguise` has no Rust caller | `0x5227A3` | [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md) |
 | `GarrisonedIn` is not kept: a garrisoned infantryman's skipped death anim, its release on Limbo and Unlimbo | `0x518434`, `0x51DF38`, `0x51DFFD` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
@@ -82,8 +85,8 @@ data.
 | UnInit announces expiry only when Limbo fails; VERA keeps both broadcasts and their order | `0x5F6612` | [ares-bugfixes.md](ares-bugfixes.md) |
 | Expired Flamer/Scorch anims make no SmallFire/LargeFire anims (needs `MapClass::GetRandomCoordsNear`); retail sets neither key | `0x4250C9`, `0x42511B`, `0x42513F` | [ares-anim-particles.md](ares-anim-particles.md) |
 | Dormant on retail data: Doggie, the `DeathAnims=` owner, Mission_Guard's superweapon gate, the ICBM crate's Ares Nuke type, a bullet damage anim's MakeInfantryOwner outside Phobos | `0x51F628`, `0x518CB3`, `0x51ABD7`, `0x5200C1`, `0x51849A`, `0x449716`, `0x6CEEB0`, `0x469C4E` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
-| Superweapon money: charge-drain activation with `Money.Amount` | none | [ares-superweapon-money.md](ares-superweapon-money.md) |
-| AttachEffect: `TemporalHidesAnim` and the airborne half-distance collection | none | [ares-attach-effect.md](ares-attach-effect.md) |
+| Map events 75–77 still require Ares, including for the built-in superweapons | none | [ares-triggers.md](ares-triggers.md) |
+| AttachEffect airborne half-distance collection | none | [ares-attach-effect.md](ares-attach-effect.md) |
 | Country power plants: a house with no candidate is a fatal error natively (`0x1001DEF6`); VERA splices nothing | none | [ares-country-powerplants.md](ares-country-powerplants.md) |
 | With Phobos too: Phobos `SuperWeaponSidebar.*Houses` keep the 0x80 buffer | `0x4750EC`, `0x475107` | [ares-bugfixes.md](ares-bugfixes.md) |
 
@@ -168,9 +171,10 @@ For each item:
 - Port the INI read exactly (section, key, constructor default, Valueable/Nullable,
   parser, Find vs FindOrAllocate, read order) into the extension's `src/rules/ares_*.rs`
   reader with the `read_ares_*` helpers.
-- Port the hook at the engine's single owner of the hooked gamemd function, behind
-  the game's switch, `RuleSet::ares` (`RuleSet::ares_form` where it needs data only Rules
-  read the Ares way hold), citing the Ares.dll function and the gamemd hook address.
+- Port the hook at the engine's single owner of the hooked gamemd function and cite
+  the Ares.dll function and gamemd hook address. Apply the branch policy in
+  [Ares settings](ares.md). Extension paths that need Ares-format data use
+  `RuleSet::ares_form`.
 - New simulation state is saved (serde default) and world-hashed in an owner struct with
   rule-named operations; the architecture guards check this.
 - One to three focused tests per mechanism. A stock oracle test that an installed Ares

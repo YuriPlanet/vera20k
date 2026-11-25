@@ -1395,13 +1395,14 @@ pub(crate) fn snapshot_get_rof(
                     house.rof_bias()
                 }),
             ae_rof: firer.map_or(1.0, |entity| entity.phobos_rof_multiplier()),
-            // None describes the unpatched kernel, so a game without Ares
-            // keeps the stock building-ammo shortcut and no FMUL.
-            attached_rof: rules.ares().then(|| {
-                firer.map_or(crate::util::native_x87::NativeF64Bits::ONE, |entity| {
-                    entity.attached_rof_multiplier()
-                })
-            }),
+            // The stock building-ammo shortcut applies while the built-in
+            // attachment has no ROF modifier and Ares is off.
+            attached_rof: {
+                use crate::util::native_x87::NativeF64Bits;
+                let multiplier =
+                    firer.map_or(NativeF64Bits::ONE, |entity| entity.attached_rof_multiplier());
+                (rules.ares() || multiplier != NativeF64Bits::ONE).then_some(multiplier)
+            },
             #[cfg(feature = "phobos")]
             rof_random_delay: Some(
                 rof_weapon

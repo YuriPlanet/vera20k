@@ -25,9 +25,10 @@ load builds each section and links it once it ends. Loading into an INI that has
 key and lists it last. `ReadCCFile` loads every Ares `[#include]` and Phobos `$Include`
 file this way into the INI that lists it, so a game read the Ares way loads included files
 into the root INI (`IniFile::merge_load`) instead of composing them with `IniFile::merge`.
-That holds in a `phobos` build too, which keeps `merge` for a game read the stock way. A file's `[#include]`
-entries join the root's, so the include walk reads them next. Those entries include an
-unterminated last line, which this arm loads.
+That holds in a `phobos` build too. With the stock reader, `[#include]` uses
+the file overlay described in [INI directives](ini-directives.md), and `[$Include]`
+uses `IniFile::merge`. A file's `[#include]` entries join the root's, so the include
+walk reads them next. The Ares merge arm also loads an unterminated last line.
 
 - **`+` keys.** A key that is exactly `+` becomes `var_<n>`. One counter serves both arms.
   VERA numbers per INI, continuing through its included files, so a registry such as

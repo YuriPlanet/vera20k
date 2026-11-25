@@ -684,7 +684,7 @@ impl Simulation {
             stable_id,
             context.rules(),
         );
-        if context.rules.ares() {
+        if context.rules.attach_effects_enabled() {
             self.destroy_ares_attach_effects(stable_id, context.rules());
         }
         // Techno destructor6F452C destroys its planning token after the Foot

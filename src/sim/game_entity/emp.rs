@@ -1,4 +1,5 @@
-//! Ares EMP for every Foot mover but Tunnel and for every EMP-prone building.
+//! Ares EMP for Foot movers and EMP-prone buildings, including surfaced
+//! Tunnel movers in games using their built-in warhead path.
 //! The Techno+504 counter and held Anim have one private owner; the existing powered-unit owner keeps +1C8.
 //! Installed Bullet46920B ->100536E0/10062320 and AI6FAF0D ->10053DF0.
 //! Evidence/transport bounds: tools/rules_oracle/ares_emp.{py,json,meta.json};
@@ -403,12 +404,21 @@ mod receiver {
             let Some(victim) = self.substrate.entities.get(target) else {
                 return EmpDelivery::Rejected;
             };
+            let locomotor = victim.locomotor.as_ref();
+            let mover = locomotor.map(|loco| loco.active_kind());
+            let surfaced_tunnel = locomotor
+                .and_then(|locomotor| locomotor.tunnel_runtime())
+                .is_some_and(|tunnel| {
+                    tunnel.state() == crate::sim::movement::tunnel_movement::TunnelState::Idle
+                });
+            if !rules.ares() && !surfaced_tunnel {
+                return EmpDelivery::Rejected;
+            }
             let Some(object) = self.interner.object_type(victim.type_ref(), rules) else {
                 return EmpDelivery::Rejected;
             };
-            let Some(kind) = object.emp_rules() else {
-                return EmpDelivery::Rejected;
-            };
+            let default_emp = crate::rules::ares_emp::EmpTypeRules::default();
+            let kind = object.emp_rules().unwrap_or(&default_emp);
             let source_owner = source
                 .and_then(|source| self.substrate.entities.get(source))
                 .map(|source| source.owner());
@@ -485,14 +495,15 @@ mod receiver {
             // the crash of enableEMPEffect10062B40 or the inlined Threshold
             // in-air arm. A falling object keeps falling (ObjectAI5F3F11 tests
             // no deactivation) and lands offline; a mind-controlled one keeps
-            // its controller. A Tunnel mover's dig and underground states are
-            // not traced under Deactivate. A Prism tower in a forwarding
-            // network leaves it at its next operational sample (Ares
+            // its controller. P1 0x10063070 admits a surfaced Tunnel mover;
+            // 0x10063213 -> 0x100638A0 takes Deactivate, using the base
+            // ILocomotion power slots 0x0055A8F0/0x0055A910. Digging states
+            // need their own movement lifecycle trace. A Prism tower in a
+            // forwarding network leaves it at its next operational sample (Ares
             // 10016950, hook454B3D on the4549B0 off edge), as it does going
             // offline; delivery itself touches no network link.
-            let mover = victim.locomotor.as_ref().map(|loco| loco.active_kind());
             if victim.category() != EntityCategory::Structure
-                && matches!(mover, None | Some(LocomotorKind::Tunnel))
+                && (mover.is_none() || (mover == Some(LocomotorKind::Tunnel) && !surfaced_tunnel))
             {
                 return EmpDelivery::Unsupported;
             }
@@ -547,6 +558,11 @@ mod receiver {
                 }
             } else if old <= 0 && remaining > 0 {
                 let died = self.enable_ares_emp(target, source, rules, effects);
+                // Ares 3.0p1 delivery (10063220..1006322A) announces a
+                // victim that did not crash only for a malicious warhead, before its Tags.
+                if !died && settings.combat().malicious() {
+                    self.announce_ares_emp_attack(target, rules, effects);
+                }
                 // 100624C5..10062509 checks Alive before63 and again before
                 //62. The generic raise has no source; retain the current Tag
                 //rather than a pre-callback attachment. Neither check skips
@@ -732,11 +748,10 @@ mod receiver {
             {
                 manager.suspend_work();
             }
-            self.announce_ares_emp_attack(target, rules, effects);
             false
         }
-        /// Installed EMPulse::announceAttack10062150, the last call of
-        /// enableEMPEffect10062B40. Its Owner == PlayerPtr test (10062162)
+        /// EMPulse::announceAttack (10062150 in 3.0, 10062EA0 in 3.0p1).
+        /// Its Owner == PlayerPtr test (10062162 in 3.0)
         /// is the human-house test here: the House Tags NotifyUnderAttack
         /// raises are state every peer shares, and the app plays the radar
         /// event and EVA for the local owner alone. In a game with several
@@ -799,8 +814,7 @@ mod receiver {
                 ry,
                 owner: entity.owner(),
                 victim_type: entity.type_ref(),
-                // Ares Malicious hook 10053980 reads the global ReceiveDamage
-                // sets (100536A0); outside it the own line plays.
+                // Delivery has already applied the EMP warhead's Malicious check.
                 own_alert: true,
                 line,
             };
@@ -989,12 +1003,13 @@ mod receiver {
             rules: &RuleSet,
             effects: &mut FrameEffects<'_>,
         ) {
-            let Some(entity) = self.substrate.entities.get_mut(target) else {
+            let Some(entity) = self
+                .substrate
+                .entities
+                .get_mut_if(target, |entity| entity.emp.remaining != 0)
+            else {
                 return;
             };
-            if entity.emp.remaining == 0 {
-                return;
-            }
             entity.emp.remaining = entity.emp.remaining.wrapping_sub(1);
             let remaining = entity.emp.remaining;
             let delayed = !entity.deactivated.is_offline() && advisable(entity);

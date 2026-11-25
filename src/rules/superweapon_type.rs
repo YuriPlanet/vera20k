@@ -216,7 +216,10 @@ impl SuperWeaponKind {
     /// Parse from the INI `Type=` string value. Case-insensitive. The Ares
     /// types are names only when the Rules are read the Ares way.
     pub fn from_ini_str(s: &str) -> Option<Self> {
-        let ares = crate::rules::ares_switch::ares_way();
+        Self::parse_kind(s, crate::rules::ares_switch::ares_way())
+    }
+
+    fn parse_kind(s: &str, ares: bool) -> Option<Self> {
         match s.to_ascii_lowercase().as_str() {
             "multimissile" => Some(Self::MultiMissile),
             "ironcurtain" => Some(Self::IronCurtain),
@@ -243,6 +246,14 @@ impl SuperWeaponKind {
             "droppod" if ares => Some(Self::DropPod),
             _ => None,
         }
+    }
+
+    fn has_builtin_rules(self, base_targeting: bool, charge_drain: bool, paid: bool) -> bool {
+        let stock = !self.is_extension()
+            && !matches!(self, Self::NoEffect | Self::ChronoSphere | Self::ChronoWarp);
+        (base_targeting && (stock || self == Self::UnitDelivery))
+            || (paid
+                && ((stock && charge_drain) || matches!(self, Self::Battery | Self::Firestorm)))
     }
 }
 
@@ -665,6 +676,9 @@ impl AresSuperWeaponPresentation {
 /// tracked per-house in `sim/superweapon/`.
 #[derive(Debug, Clone)]
 pub struct SuperWeaponType {
+    /// An authored base selector or paid charge/drain definition participates
+    /// in the corresponding SWTypeExt path independently of the global mode.
+    builtin_rules: bool,
     pub(crate) presentation: AresSuperWeaponPresentation,
     /// Section name in rules.ini (e.g., "LightningStormSpecial").
     pub id: String,
@@ -855,13 +869,23 @@ impl SuperWeaponType {
     /// way.
     pub fn from_ini_section(id: &str, section: &IniSection) -> Self {
         // A standalone section has no earlier ranges or CombatDamage layer.
-        Self::from_ini_section_with_range(id, section, None, 3)
+        Self::from_ini_section_with_range(id, section, None, false, 3)
+    }
+
+    pub(crate) fn has_builtin_rules(&self) -> bool {
+        self.builtin_rules
+    }
+
+    /// Whether this definition uses its extension state in the current game.
+    pub fn uses_extension_rules(&self, rules: &crate::rules::ruleset::RuleSet) -> bool {
+        self.builtin_rules || rules.ares_form()
     }
 
     pub(crate) fn from_ini_section_with_range(
         id: &str,
         section: &IniSection,
         processed_range: Option<(f32, i32)>,
+        base_targeting: bool,
         psychic_reveal_radius: i32,
     ) -> Self {
         let ares_way = crate::rules::ares_switch::ares_way();
@@ -871,13 +895,26 @@ impl SuperWeaponType {
         let line_multiplier = section.read_int("LineMultiplier", 0);
         // ReadINI6CEC2D..6CEC7E: each 0x28-byte ReadString is compared
         // against the kind names; a rejected name leaves the prior field.
+        let charge_drain = section.read_bool("UseChargeDrain", false);
+        let has_price = crate::rules::ares_switch::not_ares_read(|| {
+            section.read_ares_int("Money.Amount", 0) != 0
+        });
         let kind = section
             .read_string_with("Type", 0x28, None, |current, value| {
-                SuperWeaponKind::from_ini_str(value).or(current)
+                SuperWeaponKind::parse_kind(value, true)
+                    .filter(|kind| {
+                        ares_way
+                            || !kind.is_extension()
+                            || kind.has_builtin_rules(base_targeting, charge_drain, has_price)
+                    })
+                    .or(current)
             })
             // Ctor6CE5B0 initializes Type to -1; rejected/missing reads do
             // not remove the registered type or skip its other fields.
             .unwrap_or(SuperWeaponKind::NoEffect);
+        let builtin_rules = kind.has_builtin_rules(base_targeting, charge_drain, has_price);
+        let _builtin = (builtin_rules && !ares_way).then(crate::rules::ares_switch::not_ares_reads);
+        let ares_way = ares_way || builtin_rules;
         let (extension_kind, ares_click_flags) = if ares_way {
             (
                 kind.has_ares_handler(),
@@ -890,6 +927,7 @@ impl SuperWeaponType {
             (false, (false, false))
         };
         Self {
+            builtin_rules,
             presentation: AresSuperWeaponPresentation::default(),
             id: id.to_string(),
             // AbstractTypeClass `UIName=`, ReadString 0x20 (`0x00410AFB`).
@@ -1003,7 +1041,7 @@ impl SuperWeaponType {
             use_charge_drain: {
                 let forced = ares_way
                     && matches!(kind, SuperWeaponKind::Battery | SuperWeaponKind::Firestorm);
-                forced || section.read_bool("UseChargeDrain", false)
+                forced || charge_drain
             },
             // Ares LoadFromINIFile (10033370's tail) derives these from the
             // handler's Flags, not user tags: only the Chronosphere pair has

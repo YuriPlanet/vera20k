@@ -21,7 +21,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::anim_class::{AnimConstructorInput, AnimId, AnimSpawnError, AnimWorldCoord};
 use crate::sim::cell_rect::{CellPassabilityArgs, canonical_cell_ref, check_cell_passability};
 use crate::sim::pathfinding::zone_incremental::ZoneRepairKind;
-use crate::sim::world::{Simulation, SimulationWallRuntimeHost};
+use crate::sim::world::Simulation;
 use crate::util::fixed_math::SimFixed;
 
 /// Synchronous failure of the shared runtime Overlay constructor/Mark chain.
@@ -92,32 +92,6 @@ impl<'a> SimulationMarkHost<'a> {
             }
             NativeCellIdentity::Dummy => None,
         }
-    }
-
-    /// The borrow-split wall observer over this Simulation's live owners.
-    fn with_wall_host<R>(
-        &mut self,
-        apply: impl FnOnce(
-            &mut crate::sim::overlay_grid::OverlayGrid,
-            &mut ResolvedTerrainGrid,
-            &mut SimulationWallRuntimeHost<'_>,
-        ) -> R,
-    ) -> Option<R> {
-        let sim = &mut *self.sim;
-        let playfield_bounds = sim.playfield_bounds();
-        let mut host = SimulationWallRuntimeHost {
-            dirty_cells: &mut sim.dirty_cells,
-            zone_grid: &mut sim.zone_grid,
-            path_grid: &mut sim.path_grid,
-            bridge_state: sim.bridge_state.as_ref(),
-            playfield_bounds,
-        };
-        let (Some(grid), Some(terrain)) =
-            (sim.overlay_grid.as_mut(), sim.resolved_terrain.as_mut())
-        else {
-            return None;
-        };
-        Some(apply(grid, terrain, &mut host))
     }
 }
 
@@ -302,14 +276,13 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
     fn wall_cleanup(&mut self, anchor: NativeCellIdentity) -> Result<(), RuntimeOverlayError> {
         let (x, y) = self.coord(anchor);
         let registry = self.registry;
-        self.with_wall_host(|grid, terrain, host| {
-            crate::sim::overlay_grid::refresh_wall_connectivity_after_placement_with_host(
+        self.sim.with_wall_host(self.rules, |grid, terrain, host| {
+            crate::sim::overlay_grid::refresh_wall_neighborhood_with_host(
                 grid,
                 registry,
                 Some(terrain),
-                x as u16,
-                y as u16,
-                Some(host as &mut dyn crate::sim::overlay_grid::WallDamageTransactionHost),
+                (i32::from(x), i32::from(y)),
+                Some(host),
             );
         });
         Ok(())
@@ -317,7 +290,7 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
 
     fn merge_wall_zones(&mut self, anchor: NativeCellIdentity) -> Result<(), RuntimeOverlayError> {
         let (x, y) = self.coord(anchor);
-        self.with_wall_host(|grid, terrain, host| {
+        self.sim.with_wall_host(self.rules, |grid, terrain, host| {
             use crate::sim::overlay_grid::WallDamageTransactionHost;
             host.navigation_step(
                 terrain,

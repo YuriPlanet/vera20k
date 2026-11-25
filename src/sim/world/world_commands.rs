@@ -1043,7 +1043,7 @@ impl Simulation {
                 if *on {
                     self.go_building_online(*entity_id, rules, frame_effects)
                 } else {
-                    self.go_building_offline(*entity_id, rules, frame_effects)
+                    self.go_building_offline(*entity_id, rules, frame_effects, true)
                 }
             }
             // Offline game-speed transitions are consumed at master-frame

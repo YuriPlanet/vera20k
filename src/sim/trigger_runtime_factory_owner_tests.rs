@@ -289,7 +289,7 @@ fn transferred_held_infantry_uses_its_owner_for_rates_and_survives_restore() {
         .find(|f| f.owner() == owner && f.category() == ProductionCategory::Infantry)
         .unwrap()
         .balance();
-    assert!(sim.go_building_offline(pile2, &rules, &mut FrameEffects::default()));
+    assert!(sim.go_building_offline(pile2, &rules, &mut FrameEffects::default(), false));
     assert!(
         sim.production
             .factories()

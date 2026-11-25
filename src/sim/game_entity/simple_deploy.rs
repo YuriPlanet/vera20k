@@ -6,13 +6,14 @@ use crate::sim::anim_class::AnimId;
 use std::hash::{Hash, Hasher};
 
 /// The deployment attachment: the deploy animation a Unit retains
-/// (`TechnoClass+0x130`) and its Jumpjet landing request (`+0x134`). The
+/// (`TechnoClass+0x130`) and its Hover or Jumpjet landing request (`+0x134`). The
 /// Techno constructor clears both, and both survive independently of the
 /// Unit's deploy bytes (`+0x6E0..+0x6E2`). Only this module's operations
 /// write it: the animation is retained (`0x00739BDC`, `0x00739DC0`), expired
 /// (`0x00710443..0x0071044E`, `0x0070794C`) and taken for UnInit
 /// (`0x006F467F`); the landing is requested (`0x00739B2C`) and cleared by
-/// the Jumpjet (`0x0054CA75`, `0x0054B46D`).
+/// Hover (`0x00514A21` and `0x00514DFE`, Ares) or Jumpjet
+/// (`0x0054CA75`, `0x0054B46D`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DeployAttachment {
     deploy_anim: Option<AnimId>,
@@ -57,8 +58,8 @@ impl GameEntity {
         self.seldom.deploy_attachment.landing_for_deploy = true;
     }
 
-    /// The Jumpjet's clear of the landing request: its touchdown
-    /// (`0x0054CA75`) and `Move_To`'s lift (`0x0054B46D`).
+    /// The locomotor consumes the request on touchdown or cancels it on a
+    /// new move. Hover also cancels on Water and Beach.
     pub(crate) fn clear_landing_for_deploy(&mut self) {
         self.seldom.deploy_attachment.landing_for_deploy = false;
     }

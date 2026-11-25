@@ -304,7 +304,7 @@ mod tests {
         world::{FrameEffects, ObjectAiCtx, Simulation},
     };
 
-    fn scene(discard: bool, reset: bool) -> (Simulation, RuleSet, u64, u64) {
+    fn scene(discard: bool, reset: bool, patch: &str) -> (Simulation, RuleSet, u64, u64) {
         let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
             "[VehicleTypes]\n0=EMITTER\n[BuildingTypes]\n0=TOWER\n[Warheads]\n0=AE_TEST\n[Animations]\n0=VISUAL\n\
              [EMITTER]\nStrength=400\nArmor=heavy\nSpeed=6\nPrimary=PULSE\nLocomotor={{4A582741-9839-11d1-B709-00A024DDAFD1}}\nMovementZone=Normal\n\
@@ -316,7 +316,11 @@ mod tests {
             if reset { "yes" } else { "no" }
         ));
         let art = IniFile::from_str("[TOWER]\nFoundation=1x1\n[VISUAL]\nRate=1\nEnd=4\n");
-        let layers = crate::rules::native_processing::RulesLayerStack::new(ini);
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        let mut layers = RulesLayerStack::new(ini);
+        if !patch.is_empty() {
+            layers.push(RulesLayerKind::Scenario, IniFile::from_str(patch));
+        }
         let processed = layers.process_with_fixed_art(&art).unwrap();
         let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
         let mut registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
@@ -361,6 +365,7 @@ mod tests {
             let (mut sim, rules, target, source) = scene(
                 row["discard_on_entry"].as_bool().unwrap(),
                 row["anim_reset_on_reapply"].as_bool().unwrap_or(false),
+                "",
             );
             let source_house = sim.entities().get(source).unwrap().owner();
             sim.substrate
@@ -498,7 +503,7 @@ mod tests {
     fn attach_effect_parent_bullet_actual_ai_snapshot_and_limbo_use_one_owner() {
         let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::sim::combat::{TargetKind, world_fire::FireVisit};
-        let (mut sim, rules, target, source) = scene(false, false);
+        let (mut sim, rules, target, source) = scene(false, false, "");
         sim.commit_fire_visit(
             FireVisit::Direct {
                 id: source,
@@ -607,6 +612,98 @@ mod tests {
         restored.process_pending_delete_with(&rules, &mut FrameEffects::empty(), 1, false);
         assert!(restored.entities().get(target).is_none());
     }
+
+    #[test]
+    fn temporal_hides_only_the_animation_of_built_in_attached_effects() {
+        use crate::sim::combat::{TargetKind, world_fire::FireVisit};
+
+        let _stock = crate::rules::ares_switch::read_ares_way(false);
+        let (mut sim, rules, target, source) = scene(
+            false,
+            false,
+            "[VehicleTypes]\n1=FREEZER\n[Warheads]\n1=TIME\n\
+             [FREEZER]\nStrength=400\nArmor=heavy\nSpeed=6\nPrimary=WARP\n\
+             Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\nMovementZone=Normal\n\
+             [WARP]\nDamage=1\nROF=1\nRange=8\nSpeed=100\nProjectile=INVIS\nWarhead=TIME\n\
+             [TIME]\nTemporal=yes\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+             [TOWER]\nAttachEffect.Duration=-1\nAttachEffect.Animation=VISUAL\n\
+             AttachEffect.TemporalHidesAnim=yes\nAttachEffect.ArmorMultiplier=3\n\
+             [AE_TEST]\nAttachEffect.TemporalHidesAnim=yes\nAttachEffect.FirepowerMultiplier=2\n",
+        );
+        assert!(!rules.ares());
+        assert!(!rules.ares_form());
+        let freezer = sim
+            .spawn_object("FREEZER", "Americans", 10, 12, 0, &rules)
+            .unwrap();
+        sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
+        sim.commit_fire_visit(
+            FireVisit::Direct {
+                id: source,
+                target: TargetKind::Entity(target),
+                weapon_index: 0,
+            },
+            &rules,
+            None,
+            &mut FrameEffects::empty(),
+        );
+        let bullet = *sim.projectiles.iter().next().unwrap().0;
+        sim.object_ai_visit_one(bullet, Some(&rules), &mut ObjectAiCtx::default());
+
+        let stats = |sim: &Simulation| {
+            let victim = sim.entities().get(target).unwrap();
+            (
+                victim.armor_multiplier().bits(),
+                victim.firepower_multiplier().bits(),
+            )
+        };
+        let combined = (3.0_f64.to_bits(), 2.0_f64.to_bits());
+        assert_eq!(stats(&sim), combined);
+        let get_entries = |sim: &Simulation| {
+            sim.entities()
+                .get(target)
+                .unwrap()
+                .seldom
+                .ares
+                .attach_effects
+                .entries
+                .iter()
+                .map(|entry| (entry.animation, entry.remaining))
+                .collect::<Vec<_>>()
+        };
+        let before = get_entries(&sim);
+        assert_eq!(before.len(), 2);
+        assert!(before.iter().all(|(anim, _)| anim.is_some()));
+
+        sim.temporal_initiate_warp(
+            freezer,
+            Some(target),
+            &rules,
+            None,
+            &mut FrameEffects::empty(),
+        );
+        sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
+        assert!(sim.entities().get(target).unwrap().is_warped_out());
+        assert_eq!(get_entries(&sim), vec![(None, -1), (None, 5)]);
+        assert_eq!(stats(&sim), combined);
+
+        sim.temporal_initiate_warp(freezer, None, &rules, None, &mut FrameEffects::empty());
+        sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
+        let after = get_entries(&sim);
+        assert_eq!(after.len(), 2);
+        assert_eq!((after[0].1, after[1].1), (-1, 4));
+        assert!(
+            after
+                .iter()
+                .zip(before)
+                .all(|(after, before)| { after.0.is_some() && after.0 != before.0 })
+        );
+        assert_eq!(stats(&sim), combined);
+        for _ in 0..4 {
+            sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
+        }
+        assert_eq!(stats(&sim), (3.0_f64.to_bits(), 1.0_f64.to_bits()));
+        assert_eq!(get_entries(&sim).len(), 1);
+    }
 }
 
 mod receiver {
@@ -630,17 +727,7 @@ mod receiver {
                 return;
             };
             let settings = extension.attach_effect();
-            if settings.duration() == 0 {
-                return;
-            }
-            // Ground WH speed/firepower/armor share the existing aggregate owner.
-            // ROF and Temporal remain explicit
-            // later mechanisms; never apply a misleading visual-only substitute.
-            if !settings.visual_combat_path() {
-                log::debug!(
-                    "Ares AttachEffect {} requires a later dependency chain",
-                    warhead.id
-                );
+            if !settings.is_enabled(rules.ares()) {
                 return;
             }
             let targets = self.ares_cell_spread_items(impact, warhead.cell_spread_f64, rules);
@@ -796,14 +883,18 @@ mod receiver {
             let Some(entry) = victim.seldom.ares.attach_effects.entries.get(index) else {
                 return;
             };
-            let source = entry.source_house;
-            let Some(name) = entry
-                .origin
-                .settings(rules, &self.interner)
-                .and_then(|settings| settings.animation())
-            else {
+            let Some(settings) = entry.origin.settings(rules, &self.interner) else {
                 return;
             };
+            // Ares 3.0p1 AttachEffectClass::CreateAnim 0x10059380 checks
+            // TemporalTargetingMe (+0x278) and the descriptor flag.
+            if victim.temporal.is_warped() && settings.temporal_hides_anim() {
+                return;
+            }
+            let Some(name) = settings.animation() else {
+                return;
+            };
+            let source = entry.source_house;
             let coord = crate::sim::movement::ground_pose::position_world_coord(&victim.position);
             let world = AnimWorldCoord {
                 x: coord.x,
@@ -845,6 +936,39 @@ mod receiver {
                 .and_then(|entry| entry.animation.take());
             if let Some(anim) = anim {
                 self.destroy_anim_with_context(anim, rules);
+            }
+        }
+
+        /// Ares 3.0p1 temporal animation handler 0x10059650. The
+        /// visibility flag also belongs to cloak and limbo. The next normal
+        /// owner visit recreates visuals (0x10059B05..0x10059B1F).
+        pub(crate) fn hide_ares_attach_effect_anims_for_temporal(
+            &mut self,
+            target: u64,
+            rules: &RuleSet,
+        ) {
+            let Some(victim) = self.substrate.entities.get_mut(target) else {
+                return;
+            };
+            let effects = &mut victim.seldom.ares.attach_effects;
+            if effects.animations_hidden {
+                return;
+            }
+            effects.animations_hidden = true;
+            for index in 0..effects.entries.len() {
+                let hide = self.substrate.entities.get(target).is_some_and(|victim| {
+                    victim
+                        .seldom
+                        .ares
+                        .attach_effects
+                        .entries
+                        .get(index)
+                        .and_then(|entry| entry.origin.settings(rules, &self.interner))
+                        .is_some_and(|settings| settings.temporal_hides_anim())
+                });
+                if hide {
+                    self.retire_attached_effect_anim(target, index, rules);
+                }
             }
         }
 
@@ -965,9 +1089,6 @@ mod receiver {
                     .ares
                     .attach_effects
                     .self_effect = SelfEffectState::Disabled(saved_delay);
-                return;
-            }
-            if !settings.visual_combat_path() {
                 return;
             }
             let delay = if saved_delay == i32::MAX {

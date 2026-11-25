@@ -461,7 +461,7 @@ impl MovementTypeRules {
         self.no_manual_enter
     }
 
-    /// `DeployDir` (read<Direction::Value> 100409B0: 0..7, else unset): the
+    /// `DeployDir` (Ares 3.0p1 reader 0x10041670): the
     /// eighth-turn a simple deployer with a `DeployingAnim=` faces before it
     /// deploys, else `[AudioVisual] DeployDir` (JumpjetLocomotionClass_State4
     /// _54C550_DeployDir 100499F0, hook 0x54C767; UnitClass_SimpleDeploy
@@ -894,6 +894,27 @@ impl CustomMissileRules {
 }
 
 impl AresTechnoTypeRules {
+    /// TechnoTypeExt `LoadFromINIFile` 3.0p1 `0x1003FFEA` calls the nullable
+    /// direction reader `0x10040330` -> `0x10041670`. Absent, invalid and
+    /// out-of-range values keep the earlier result.
+    pub(crate) fn read_deploy_dir(&mut self, section: &IniSection) {
+        self.movement.deploy_dir = section.read_string_with(
+            "DeployDir",
+            2048,
+            self.movement.deploy_dir,
+            |current, value| {
+                crate::rules::ini_value::parse_ares_int(value)
+                    .filter(|facing| (0..8).contains(facing))
+                    .map(|facing| facing as u8)
+                    .or(current)
+            },
+        );
+    }
+
+    pub(crate) fn clear_deploy_dir(&mut self) {
+        self.movement.deploy_dir = None;
+    }
+
     /// LoadFromINIFile1003E385 -> Valueable::Read1000EB20 ->
     /// detail::read<AnimType*>1000C9C0. This Find-only key also reads in a
     /// stock-way pass, so its presence can enable the run-time Ares switch.
@@ -1152,17 +1173,7 @@ impl AresTechnoTypeRules {
             self.residual.fake_of = fake_of;
         }
         // After FakeOf: an invalid or out-of-range facing keeps the value.
-        self.movement.deploy_dir = section.read_string_with(
-            "DeployDir",
-            2048,
-            self.movement.deploy_dir,
-            |current, value| {
-                crate::rules::ini_value::parse_ares_int(value)
-                    .filter(|facing| (0..8).contains(facing))
-                    .map(|facing| facing as u8)
-                    .or(current)
-            },
-        );
+        self.read_deploy_dir(section);
         // Then Convert.Deploy, ahead of Convert.Water/Land/Script.
         if let Some(convert_deploy) = resolve_techno("Convert.Deploy") {
             self.residual.convert_deploy = convert_deploy;

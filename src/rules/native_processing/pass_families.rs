@@ -561,6 +561,28 @@ impl RulesPassProcessor {
                             .as_ref()
                             .expect("Ares reader requires its armor catalog"),
                     );
+            } else if let Some(section) =
+                pass.section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
+            {
+                // P1 WarheadTypeExt calls the shared reader at 0x10052DE4.
+                // A later pass can enable the descriptor's temporal behavior.
+                let _built_in = crate::rules::ares_switch::not_ares_reads();
+                let sparkle = self.resolve_existing_type_from(
+                    section,
+                    "EMP.Sparkles",
+                    RulesTypeFamily::Animation,
+                );
+                let animation = self.resolve_existing_type_from(
+                    section,
+                    "AttachEffect.Animation",
+                    RulesTypeFamily::Animation,
+                );
+                let extension = &mut self.family_mut(RulesTypeFamily::Warhead)[index].ares_warhead;
+                let settings = extension.get_or_insert_with(Default::default);
+                settings.read_builtin_pass(section, sparkle, animation);
+                if *settings == Default::default() {
+                    *extension = None;
+                }
             }
             index += 1;
         }

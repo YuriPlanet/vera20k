@@ -31,7 +31,7 @@ fn explicit_power_toggle_holds_and_resumes_the_existing_paid_factory_head() {
     let sim = &mut fixture.runtime.simulation;
     let rules = &fixture.runtime.resources.rules;
     let rng = sim.rng_state();
-    assert!(sim.go_building_offline(fixture.target, rules, &mut FrameEffects::default()));
+    assert!(sim.go_building_offline(fixture.target, rules, &mut FrameEffects::default(), false));
     assert!(
         !sim.production
             .factories()
@@ -39,7 +39,7 @@ fn explicit_power_toggle_holds_and_resumes_the_existing_paid_factory_head() {
             .unwrap()
             .suspended
     );
-    assert!(sim.go_building_offline(fixture.barracks, rules, &mut FrameEffects::default()));
+    assert!(sim.go_building_offline(fixture.barracks, rules, &mut FrameEffects::default(), false));
     let held = sim
         .production
         .factories()
@@ -316,6 +316,7 @@ impl PaidHead {
                 self.owner,
                 CATEGORY,
                 &mut FrameEffects::default(),
+                false,
             ),
             "declared_successful_delivery_completion" => {
                 assert!(sim.production.edit_factories().complete_production(

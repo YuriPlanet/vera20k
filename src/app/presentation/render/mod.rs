@@ -928,7 +928,7 @@ pub(crate) fn render_game(
             bridge_shadows: &world.bridge_body_shadow,
             object_layers: &world.object_layers,
             fogged_objects: &world.fogged_objects,
-            building_status_text: &world.building_status_text,
+            building_status: &world.building_status,
             surface_effects,
             tactical_lines,
             persistent_lights,
@@ -1237,10 +1237,7 @@ fn upload_to_gpu(
     // Terrain + overlays
     pool.upload("terrain", &world.terrain.normal);
     pool.upload("cell_body", &world.cell_bodies);
-    pool.upload(
-        "building_status_text",
-        &world.building_status_text.instances,
-    );
+    pool.upload("building_status", &world.building_status.instances);
     pool.upload("fogged_objects", &world.fogged_objects.instances);
     for (layer, objects) in world.object_layers.iter().enumerate() {
         pool.upload_page("object_layer", layer, &objects.instances);

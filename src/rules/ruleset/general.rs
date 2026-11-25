@@ -2608,7 +2608,8 @@ impl GeneralRules {
             audio_visual.read_phobos_color("AirstrikeLineColor", defaults.airstrike_line_color);
         #[cfg(feature = "phobos")]
         let airstrike_line_z_adjust = crate::rules::ares_switch::not_ares_read(|| {
-            audio_visual.read_ares_int("AirstrikeLineZAdjust", defaults.airstrike_line_z_adjust)
+            audio_visual
+                .read_phobos_scalar_int("AirstrikeLineZAdjust", defaults.airstrike_line_z_adjust)
         });
         let Some(general) = ini.section("General") else {
             return Self {
@@ -3266,7 +3267,7 @@ impl GeneralRules {
             decloak_damaged_targets: general.read_bool("DecloakDamagedTargets", true),
             #[cfg(feature = "phobos")]
             rof_random_delay: crate::rules::ares_switch::not_ares_read(|| {
-                combat_damage.read_ares_partial_int_pair(
+                combat_damage.read_phobos_partial_int_pair(
                     "ROF.RandomDelay",
                     crate::rules::ini_value::PartialIntPair {
                         low: 0,

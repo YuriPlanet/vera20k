@@ -1,10 +1,10 @@
 # Ares builtin AttachEffect
 
-When a game plays Ares ([Ares](ares.md)), every build runs ordinary ground-victim
-and type-owned self effects, with ordered Foot speed, Techno firepower/armor/ROF and
-temporary cloakability. A game without Ares has no attachment vector, update,
-damage pre-effect or animation root. Snapshots include the new
-state in the automatic snapshot layout digest; old layouts are rejected.
+Every build runs ordinary ground-victim and type-owned self effects, with
+ordered Foot speed, Techno firepower, armor and ROF, and temporary cloakability.
+On `Base-for-modders`, a descriptor with a nonzero `AttachEffect.Duration` and
+`AttachEffect.TemporalHidesAnim=yes` enables that effect directly from its
+TechnoType or Warhead rules. See [Ares](ares.md) for the general setting.
 
 ## Owners and order
 
@@ -163,7 +163,7 @@ new-entry animation/aggregate work or noncumulative refresh. Installed Ares
 `StartUncloaking` (`0x007036C0`) with the sound-suppression argument set.
 States 1/2 enter uncloaking; states 0/3 retain their clock and progress. Effect
 expiry does not reverse that transition. No additional cloak timer or state is
-introduced, and a game without Ares keeps the stock reader/dispatch.
+introduced. The configured effect uses the same transition in either reading mode.
 
 Ground-warhead armor effects use the existing crate-multiplier owner for both
 the permanent crate baseline and effective armor. Ares `RecalculateStats`
@@ -175,15 +175,22 @@ Armor1/Armor2 crate hooks (`0x1005F840`/`0x1005F870`,
 test/write the baseline, then recompute before the next recipient. Expiry and
 DiscardOnEntry restore the baseline through the shared attachment lifecycle.
 Both baseline and effective armor are saved, hashed and validated on restore;
-the added saved field is Ares-only. A game Ares does not play in keeps its state and hashes.
+the snapshot layout includes both values.
 
-The current chain admits effects with TemporalHidesAnim disabled. Temporal
-hide behavior and airborne half-distance collection remain later mechanisms, not silently visual-only
-effects. Their active callers keep the wider compatibility goal open. The
-shared collector retains its documented fractional-distance rounding residual.
-No explicit RNG draw or timer is added beyond actual positive-duration visits;
-the existing Anim constructor owns its own RNG, and synchronous UnInit owns
-detach/expiry work. Manual game acceptance remains pending.
+## Temporal animation visibility
+
+Ares 3.0p1 reads `AttachEffect.TemporalHidesAnim` at `0x1005973A`. Its
+`TemporalClass_UpdateA` hook (`0x71A84E → 0x1004C7C0`, resumes at
+`0x71A88D`) calls `0x10059650` to retire animations for matching effects.
+The instance retains its stats and duration. The animation constructor
+`0x10059380` checks the Temporal link before creating a visual. The normal
+Techno update recreates eligible animations after release
+(`0x1004C094 → 0x10059AA0`). The existing frozen AI pauses duration while
+held and resumes it on the next ordinary visit. The existing Anim constructor
+owns RNG use and synchronous UnInit owns detach and expiry work.
+
+The airborne half-distance collection and the shared collector's
+fractional-distance rounding remain documented separately.
 
 ## Self effects and temporary cloakability
 

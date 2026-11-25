@@ -904,7 +904,7 @@ impl Simulation {
                 false,
                 &config,
                 context.reborrow(),
-                vision::MapRevealProjection::UncachedConditional,
+                vision::MapRevealProjection::UncachedConditional { outline: false },
                 Some(viewer),
             ) {
                 Self::refresh_sight_border(
@@ -934,7 +934,7 @@ impl Simulation {
         line_of_sight: Option<&SightHeights>,
         final_pass: bool,
         config: &vision::VisionConfig,
-        mut context: UninitContext<'_>,
+        context: UninitContext<'_>,
         projection: vision::MapRevealProjection,
         notification_viewer: Option<crate::sim::intern::InternedId>,
     ) -> Option<(u16, u16, i32)> {
@@ -958,6 +958,15 @@ impl Simulation {
         // projected AI/other plane is not another native client callback.
         let notification_viewer = notification_viewer.filter(|viewer| viewers.contains(viewer));
         let network = self.session.execution_topology().is_lockstep();
+        // Standalone reveals from anims, weapons and scenario actions keep
+        // their existing range. Normal Techno sight and See take the long
+        // area route when their effective range exceeds the stock table.
+        let radius = match projection {
+            vision::MapRevealProjection::Transient | vision::MapRevealProjection::Fire => {
+                radius.min(vision::MAX_SIGHT_RANGE)
+            }
+            _ => radius,
+        };
         let local_origin = config.area_origin(cell, radius, z);
         // The fog's buffer, lent for this walk: receivers below may reveal
         // again, and a nested walk takes its own.
@@ -967,13 +976,41 @@ impl Simulation {
             cell,
             radius,
             z,
+            matches!(
+                projection,
+                vision::MapRevealProjection::UncachedConditional { outline: true }
+            ),
             line_of_sight.and_then(|heights| heights.cell_levels(self.resolved_terrain.as_ref())),
             (self.fog.width(), self.fog.height()),
         );
+        self.apply_reveal_area_cells(
+            viewers,
+            &cells,
+            final_pass,
+            projection,
+            notification_viewer,
+            context,
+        );
+        self.fog.restore_reveal_cells(cells);
+        //5673A0's native House rejection567570..5D0 skips its border too.
+        //Keep the admitted local XYZ captured before any synchronous callback;
+        //a logical other-viewer projection is not another admitted native call.
+        local_origin.filter(|_| (network && !viewers.is_empty()) || notification_viewer.is_some())
+    }
+
+    fn apply_reveal_area_cells(
+        &mut self,
+        viewers: &[InternedId],
+        cells: &[(u16, u16)],
+        final_pass: bool,
+        projection: vision::MapRevealProjection,
+        notification_viewer: Option<InternedId>,
+        mut context: UninitContext<'_>,
+    ) {
         #[cfg(any(test, feature = "test-support"))]
         REVEAL_CALLS.with_borrow_mut(|trace| {
             if let Some(trace) = trace {
-                trace.walks.push(cells.clone());
+                trace.walks.push(cells.to_vec());
             }
         });
         for &viewer in viewers {
@@ -988,10 +1025,10 @@ impl Simulation {
                     .or(self.resolved_terrain.as_ref())
                     .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
                 self.fog
-                    .reveal_source_map_cells(viewer, &cells, final_pass, native_cells.as_ref());
+                    .reveal_source_map_cells(viewer, cells, final_pass, native_cells.as_ref());
                 continue;
             }
-            for &cell in &cells {
+            for &cell in cells {
                 self.apply_reveal_map_cell(
                     viewer,
                     cell,
@@ -1002,11 +1039,6 @@ impl Simulation {
                 );
             }
         }
-        self.fog.restore_reveal_cells(cells);
-        //5673A0's native House rejection567570..5D0 skips its border too.
-        //Keep the admitted local XYZ captured before any synchronous callback;
-        //a logical other-viewer projection is not another admitted native call.
-        local_origin.filter(|_| (network && !viewers.is_empty()) || notification_viewer.is_some())
     }
 
     /// Whether a reveal's MapCell4A9CA0 discovery notification reaches
@@ -1068,7 +1100,7 @@ impl Simulation {
                 .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
             if matches!(
                 projection,
-                vision::MapRevealProjection::UncachedConditional
+                vision::MapRevealProjection::UncachedConditional { .. }
                     | vision::MapRevealProjection::Fire
             ) && self
                 .fog
@@ -2226,7 +2258,19 @@ impl Simulation {
                 self.fog.abandon_sight_admission(id, viewer);
                 continue;
             }
-            if let Some(released) = self.fog.take_sight_admission(id, viewer, false) {
+            let released = self.fog.take_sight_admission(id, viewer, false);
+            if source.radius > i32::from(vision::MAX_SIGHT_RANGE) {
+                if let Some(released) = released {
+                    self.release_extended_sight(
+                        viewer,
+                        released,
+                        notification_viewer,
+                        context.reborrow(),
+                    );
+                }
+                continue;
+            }
+            if let Some(released) = released {
                 self.fog.recycle_footprint(released.cells);
             }
             self.walk_source_sight_at(
@@ -2240,6 +2284,34 @@ impl Simulation {
                 notification_viewer,
             );
         }
+    }
+
+    /// Release the cells the long source actually changed. A prior save may
+    /// have a long cached radius and a ten-cell admission. Terrain levels can
+    /// also change between entry and release. Use its retained contribution
+    /// so the final5678E0 cell calls cannot decrement a different source.
+    fn release_extended_sight(
+        &mut self,
+        viewer: InternedId,
+        admission: vision::SightAdmission,
+        notification_viewer: Option<InternedId>,
+        context: UninitContext<'_>,
+    ) {
+        #[cfg(any(test, feature = "test-support"))]
+        REVEAL_CALLS.with_borrow_mut(|trace| {
+            if let Some(trace) = trace {
+                trace.map_calls += 1;
+            }
+        });
+        self.apply_reveal_area_cells(
+            &[viewer],
+            &admission.cells,
+            true,
+            vision::MapRevealProjection::Source,
+            notification_viewer,
+            context,
+        );
+        self.fog.recycle_footprint(admission.cells);
     }
 
     /// One viewer's `MapClass::RevealArea @ 0x005678E0` walk of `source`
@@ -2279,14 +2351,11 @@ impl Simulation {
         context: UninitContext<'_>,
         notification_viewer: Option<crate::sim::intern::InternedId>,
     ) {
-        // Non-retail negative radii retain their raw cache but walk no cells.
-        // Native567A63 instead indexes before its count table; that out-of-table
-        // traversal is not reproduced. Ordinary positive radii clamp at10.
         let _ = self.reveal_area(
             &[viewer],
             (origin.0, origin.1),
             origin.2,
-            radius.clamp(0, i32::from(vision::MAX_SIGHT_RANGE)) as u16,
+            vision::sight_walk_radius(radius),
             heights,
             final_pass,
             config,
@@ -2432,7 +2501,7 @@ impl Simulation {
     pub(crate) fn reveal_uncached_object_sight(
         &mut self,
         id: u64,
-        _incremental: bool,
+        incremental: bool,
         skip_reveal: bool,
         only_viewer: Option<crate::sim::intern::InternedId>,
         mut context: UninitContext<'_>,
@@ -2490,7 +2559,7 @@ impl Simulation {
                     &viewers,
                     cell,
                     location.z,
-                    radius.clamp(0, i32::from(vision::MAX_SIGHT_RANGE)) as u16,
+                    vision::sight_walk_radius(radius),
                     Some(&heights),
                     final_pass,
                     &config,
@@ -2498,7 +2567,7 @@ impl Simulation {
                     if skip_reveal {
                         vision::MapRevealProjection::FogProtect
                     } else {
-                        vision::MapRevealProjection::Transient
+                        vision::MapRevealProjection::UncachedAircraft
                     },
                     self.session.current_house(),
                 );
@@ -2527,6 +2596,7 @@ impl Simulation {
         if geometry.radius == 0 {
             return;
         }
+        let radius = vision::sight_walk_radius(geometry.radius);
         let clients = self.fog_viewers();
         let projected = self.reveal_viewers.direct(
             self.house_alliances.as_map(),
@@ -2544,7 +2614,6 @@ impl Simulation {
             // `0x005678E0`'s house gate (`0x00567AB0..0x00567B12`) still
             // receives the call and returns at `0x00567D88`; every client
             // map runs its own instance, so each is called once.
-            let radius = geometry.radius.clamp(0, i32::from(vision::MAX_SIGHT_RANGE)) as u16;
             for _client in clients.iter() {
                 let _ = self.reveal_area(
                     &[],
@@ -2566,7 +2635,7 @@ impl Simulation {
                 &[viewer],
                 (geometry.origin.0, geometry.origin.1),
                 geometry.origin.2,
-                geometry.radius.clamp(0, i32::from(vision::MAX_SIGHT_RANGE)) as u16,
+                radius,
                 Some(&heights),
                 false,
                 &config,
@@ -2574,7 +2643,9 @@ impl Simulation {
                 if skip_reveal {
                     vision::MapRevealProjection::FogProtect
                 } else {
-                    vision::MapRevealProjection::UncachedConditional
+                    vision::MapRevealProjection::UncachedConditional {
+                        outline: incremental,
+                    }
                 },
                 notification_viewer,
             );
@@ -2582,7 +2653,7 @@ impl Simulation {
                 only_viewer.and_then(|_| {
                     config.area_origin(
                         (geometry.origin.0, geometry.origin.1),
-                        geometry.radius.clamp(0, i32::from(vision::MAX_SIGHT_RANGE)) as u16,
+                        radius,
                         geometry.origin.2,
                     )
                 })
@@ -3382,7 +3453,18 @@ impl Simulation {
         let Some(footprint) = footprint.filter(|footprint| footprint.radius != 0) else {
             return;
         };
-        self.fog.take_sight_admission(stable_id, current, true);
+        let released = self.fog.take_sight_admission(stable_id, current, true);
+        if footprint.radius > i32::from(vision::MAX_SIGHT_RANGE) {
+            if let Some(released) = released {
+                self.release_extended_sight(
+                    current,
+                    released,
+                    Some(current),
+                    UninitContext::new(rules),
+                );
+            }
+            return;
+        }
         let heights = self.sight_height_grid(&config);
         self.walk_source_sight(
             current,

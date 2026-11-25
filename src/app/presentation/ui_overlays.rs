@@ -15,9 +15,11 @@ use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseColorMap;
 use crate::render::batch::{BatchTexture, SpriteInstance};
 use crate::render::bit_font::BitFont;
+use crate::render::sidebar_cameo_atlas::SidebarCameoEntry;
 use crate::rules::house_colors::{HouseColorRamps, NO_REMAP};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::{DriveCoord, Position};
+use crate::sim::intern::InternedId;
 use crate::ui::main_menu_dialogs::options::HealthBarMode;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -50,6 +52,8 @@ struct StructureHud {
     toggled_off: bool,
     /// `GameEntity::shows_production_to` the local player.
     shows_production_to_observer: bool,
+    /// The factory's held product while its production is revealed to this viewer.
+    revealed_factory_product: Option<InternedId>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -127,26 +131,40 @@ impl HudFacts {
         let terrain = sim.resolved_terrain();
         let object = at.object_type(entity);
         let id = entity.stable_id();
-        let structure = (entity.category() == EntityCategory::Structure).then(|| StructureHud {
-            sensor_range: object.map_or(0, |object| {
-                object.building_sensor_range(
-                    entity.gap_supercharged(),
-                    crate::sim::combat::combat_weapon::current_weapon(
-                        entity,
-                        object,
-                        sim.entities(),
-                        rules,
-                        sim.interner(),
-                    )
-                    .map(|weapon| weapon.range_leptons),
-                    rules.ares(),
-                )
-            }),
-            foundation_leptons: entity.seldom.type_facts.foundation().dimensions_leptons(),
-            toggled_off: entity.ares_toggled_off(),
-            shows_production_to_observer: at
+        let structure = (entity.category() == EntityCategory::Structure).then(|| {
+            let shows_production_to_observer = at
                 .observer_id
-                .is_some_and(|viewer| entity.shows_production_to(viewer)),
+                .is_some_and(|viewer| entity.shows_production_to(viewer));
+            StructureHud {
+                sensor_range: object.map_or(0, |object| {
+                    object.building_sensor_range(
+                        entity.gap_supercharged(),
+                        crate::sim::combat::combat_weapon::current_weapon(
+                            entity,
+                            object,
+                            sim.entities(),
+                            rules,
+                            sim.interner(),
+                        )
+                        .map(|weapon| weapon.range_leptons),
+                        rules.ares(),
+                    )
+                }),
+                foundation_leptons: entity.seldom.type_facts.foundation().dimensions_leptons(),
+                toggled_off: entity.ares_toggled_off(),
+                shows_production_to_observer,
+                revealed_factory_product: object
+                    .filter(|object| {
+                        entity.seldom.selection.is_selected()
+                            && ((shows_production_to_observer && object.spy_reveals_production())
+                                || at
+                                    .observer_id
+                                    .is_some_and(|viewer| sim.session().is_observer_house(viewer)))
+                    })
+                    .and_then(|object| {
+                        crate::sim::production::active_factory_product_at(sim, entity, object)
+                    }),
+            }
         });
         let more = HudMore {
             // Owned rows, as the frame outlives this tick; an object with no
@@ -280,6 +298,11 @@ impl HudFacts {
     fn shows_production_to_observer(&self) -> bool {
         self.structure
             .is_some_and(|structure| structure.shows_production_to_observer)
+    }
+
+    fn revealed_factory_product(&self) -> Option<InternedId> {
+        self.structure
+            .and_then(|structure| structure.revealed_factory_product)
     }
 }
 
@@ -734,32 +757,60 @@ pub(crate) struct StatusTextOverlayInstances {
     pub text: Vec<SpriteInstance>,
 }
 
-/// One label's two material spans in a frame-local upload. Rectangle and
-/// glyph stores stay together when several Building labels overlap.
+/// One building's output in a frame-local upload. The material order is
+/// retained when buildings' labels and cameos overlap.
 #[derive(Debug)]
-pub(crate) struct StatusTextRun {
-    pub rectangles: std::ops::Range<u32>,
-    pub text: std::ops::Range<u32>,
+pub(crate) enum BuildingStatusRun {
+    Text {
+        rectangles: std::ops::Range<u32>,
+        text: std::ops::Range<u32>,
+    },
+    ProductionCameo(u32),
 }
 
-/// BuildingClass::Array-ordered text emitted once after Ground2. This is draw
-/// data only; ProductionState owns primary identities and PowerState owns the
-/// retained House totals.
+/// BuildingClass::Array-ordered status emitted once after Ground2. The
+/// simulation retains the factory product, primary identities and House totals.
 #[derive(Debug, Default)]
-pub(crate) struct BuildingStatusTextInstances {
+pub(crate) struct BuildingStatusInstances {
     pub instances: Vec<SpriteInstance>,
-    pub runs: Vec<StatusTextRun>,
+    pub runs: Vec<BuildingStatusRun>,
 }
 
-impl BuildingStatusTextInstances {
+impl BuildingStatusInstances {
     fn push(&mut self, label: StatusTextOverlayInstances) {
         let start = self.instances.len() as u32;
         self.instances.extend(label.rectangles);
         let rectangles_end = self.instances.len() as u32;
         self.instances.extend(label.text);
-        self.runs.push(StatusTextRun {
+        self.runs.push(BuildingStatusRun::Text {
             rectangles: start..rectangles_end,
             text: rectangles_end..self.instances.len() as u32,
+        });
+    }
+
+    fn push_production_cameo(
+        &mut self,
+        entry: SidebarCameoEntry,
+        anchor: [i32; 2],
+        camera: [f32; 2],
+    ) {
+        self.runs.push(BuildingStatusRun::ProductionCameo(
+            self.instances.len() as u32
+        ));
+        // DrawVisible centers the 60x48 PCX at the building's projected anchor;
+        // the SHP path is centered by its draw flags. The atlas stores the crop.
+        let position = std::array::from_fn(|axis| {
+            anchor[axis] as f32 + camera[axis] - entry.canvas_size[axis] * 0.5
+                + entry.crop_origin[axis]
+        });
+        self.instances.push(SpriteInstance {
+            position,
+            size: entry.pixel_size,
+            uv_origin: entry.uv_origin,
+            uv_size: entry.uv_size,
+            tint: [1.0; 3],
+            alpha: 1.0,
+            ..Default::default()
         });
     }
 }
@@ -1031,9 +1082,11 @@ pub(crate) fn build_building_status_render_instances(
     rules: &RuleSet,
     superweapon_building_timers: bool,
     convenience_help: bool,
-) -> BuildingStatusTextInstances {
-    let mut labels = BuildingStatusTextInstances::default();
+    production_cameo: impl Fn(&str, bool) -> Option<SidebarCameoEntry>,
+) -> BuildingStatusInstances {
+    let mut labels = BuildingStatusInstances::default();
     let current_house = sim.interner().resolve(current_house_id);
+    let viewer = sim.houses().get(&current_house_id);
     let ares_form = rules.ares_form();
     // `current_house_id` is the frame's local player, whom its records answer
     // for, and whose view decides the allies' labels' colour. The sweep is
@@ -1087,13 +1140,29 @@ pub(crate) fn build_building_status_render_instances(
         } else {
             Vec::new()
         };
-        // DrawExtraInfo needs the building selected, including when it is
-        // also hovered.
-        let label = (entity.selection.is_selected()
-            && body_opportunities.contains(&entity.stable_id()))
-        .then(|| building_status_text(entity, object, allied, primary, ares_form))
-        .flatten();
-        if label.is_none() && lines.is_empty() && info_lines.is_empty() {
+        // Ares 3.0p1 BuildingClass_DrawVisible (0x43E7B0 -> 0x10016130)
+        // returns after drawing a revealed product's cameo. Its selected
+        // status text path (0x100163D1) only runs without that cameo.
+        let selected =
+            entity.selection.is_selected() && body_opportunities.contains(&entity.stable_id());
+        let cameo = selected
+            .then(|| {
+                let name = sim
+                    .interner()
+                    .resolve(entity.hud.revealed_factory_product()?);
+                let alternate = viewer.is_some_and(|house| {
+                    rules.object(name).is_some_and(|product| {
+                        let country = sim.interner().resolve(house.house_type_id());
+                        super::sidebar_render::shows_alt_cameo(house, product, rules, country)
+                    })
+                });
+                production_cameo(name, alternate)
+            })
+            .flatten();
+        let label = (selected && cameo.is_none())
+            .then(|| building_status_text(entity, object, allied, primary, ares_form))
+            .flatten();
+        if cameo.is_none() && label.is_none() && lines.is_empty() && info_lines.is_empty() {
             continue;
         }
         let location = entity.hud.location;
@@ -1169,6 +1238,9 @@ pub(crate) fn build_building_status_render_instances(
             labels.push(status_text_instances(
                 font, text, origin, measure, camera, tint,
             ));
+        }
+        if let Some(cameo) = cameo {
+            labels.push_production_cameo(cameo, anchor, camera);
         }
         let Some(label) = label else {
             continue;
@@ -1320,27 +1392,32 @@ enum BuildingStatusText {
 pub(crate) fn build_building_status_instances(
     state: &AppState,
     body_opportunities: &BTreeSet<u64>,
-) -> BuildingStatusTextInstances {
+) -> BuildingStatusInstances {
     let (Some(runtime), Some(rules), Some(csf)) = (
         state.match_state.sim_runtime.presentation(),
         state.rules(),
         state.process_assets.csf.as_ref(),
     ) else {
-        return BuildingStatusTextInstances::default();
+        return BuildingStatusInstances::default();
     };
     let sim = &runtime.simulation;
     let Some(frame) = state.match_state.sim_runtime.frame() else {
-        return BuildingStatusTextInstances::default();
+        return BuildingStatusInstances::default();
     };
     // The local player comes from the world this frame draws, not from
     // `local_player_owner`: that accessor reads the home runtime, which is
     // empty whenever a tick has it lent to the simulation thread, and asking
     // it here blanked every label for exactly those frames.
     let Some(current_house) = sim.session().current_house() else {
-        return BuildingStatusTextInstances::default();
+        return BuildingStatusInstances::default();
     };
     let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(state);
     let zoom = state.match_state.input.zoom_level;
+    let cameo_atlas = state
+        .match_state
+        .match_presentation
+        .sidebar_cameo_atlas
+        .as_ref();
     build_building_status_render_instances(
         sim,
         frame,
@@ -1362,6 +1439,9 @@ pub(crate) fn build_building_status_instances(
             .match_presentation
             .superweapon_building_timers,
         state.match_state.match_presentation.convenience_help,
+        |type_id, alternate| {
+            cameo_atlas.and_then(|atlas| atlas.factory_cameo(type_id, alternate).copied())
+        },
     )
 }
 
@@ -1794,7 +1874,7 @@ fn phobos_insignia_draw<'a>(
     let passengers = (object.passengers > 0)
         .then(|| {
             let cargo = entity.passenger_role.cargo();
-            let index = if object.phobos_passengers_by_size {
+            let index = if object.passengers_by_size() {
                 cargo.map_or(0, crate::app::presentation::frame::Cargo::total_size)
             } else {
                 cargo.map_or(0, |cargo| cargo.count() as i32)
@@ -1957,7 +2037,7 @@ fn repair_wrench_admitted(
     }
 }
 
-/// Ares TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C): the
+/// Ares 3.0p1 TechnoClass_DrawExtras_PowerOff (`0x6F526C -> 0x1004AC40`): the
 /// POWEROFF.SHP marker over a building whose last power toggle switched it
 /// off (BuildingExt `TogglePower_HasPower` +0x51, written by GoOffline
 /// `0x452393` and GoOnline `0x452287`), shown when its owner is the player's
@@ -2018,9 +2098,8 @@ pub(crate) fn techno_extras_for_parent(
         return strip;
     }
     // The bomb clock, the 10049FE0 markers and the firestorm wall's bar
-    // follow `RuleSet::ares_form`, as `Simulation::bomb_clock_frame`, the
-    // power toggle and BuildingTypeExt do; the submerged strip follows
-    // `RuleSet::ares`.
+    // follow `RuleSet::ares_form`, as `Simulation::bomb_clock_frame` and
+    // BuildingTypeExt do. The submerged strip follows `RuleSet::ares`.
     let ares_form = rules.is_some_and(RuleSet::ares_form);
     let ares = rules.is_some_and(RuleSet::ares);
     let local_owner_id = local_owner.and_then(|name| sim.interner().get(name));
@@ -2033,20 +2112,15 @@ pub(crate) fn techno_extras_for_parent(
         viewport.ignore_visibility || (local_owner.is_some() && bomb.seen_by_observer)
     });
     let repairing = repair_wrench_admitted(sim, entity, rules, local_owner);
-    // Ares 10049FE0 replaces the wrench block (hook 0x6F526C, resuming at
-    // 0x6F5347) when the Rules were read the Ares way: each marker needs its
-    // loaded SHP, and the power-off marker joins the wrench behind the same
-    // shroud test.
+    // The power-off marker joins the wrench behind the same shroud test,
+    // using the retained GoOffline state and its own SHP (3.0p1 0x1004AC40).
+    // The Ares reader still selects the extended wrench admission.
     let repairing = if ares_form {
         repairing && overlay.repair_wrench().is_some()
     } else {
         repairing
     };
-    let power_off = if ares_form {
-        overlay.power_off().is_some() && power_off_marker_admitted(sim, entity)
-    } else {
-        false
-    };
+    let power_off = overlay.power_off().is_some() && power_off_marker_admitted(sim, entity);
     if (bomb_visible || repairing || power_off)
         && (viewport.ignore_visibility
             || local_owner_id
@@ -2132,8 +2206,7 @@ pub(crate) fn techno_extras_for_parent(
         }
         // 10049FE0 draws the marker after the wrench, 18 pixels down and
         // right of the point when the wrench shows.
-        if ares_form
-            && power_off
+        if power_off
             && let Some(shape) = overlay.power_off()
             && let Ok(frame) = usize::try_from(ares_status_marker_frame(
                 binary_frame,
@@ -2556,7 +2629,7 @@ fn ares_passenger_pip_frames(
         Some((passenger.category(), kind))
     };
     let mut unit_frame = 5;
-    let mut by_size = object.ares_passengers_by_size();
+    let mut by_size = object.passengers_by_size();
     if entity.category() == EntityCategory::Structure {
         if object.absorbs_passengers() {
             unit_frame = 4;
@@ -2736,10 +2809,12 @@ fn scale_pip_rows(
             }
             return pips;
         }
-        //473460 rereads current binary64 Size and truncates after each entry;
-        //PassengerCargo retains that signed native result. Negative totals
-        //produce no passenger frames in the native drawing path.
-        let total = cargo.total_size();
+        // 473460 rereads Size and truncates after each entry. A negative
+        // size total draws no passenger frames.
+        // An explicit vehicle Passengers.BySize=no (P1 `0x709D38 -> 0x1004AEE0`)
+        // uses the same one-slot occupancy here as the boarding rules.
+        let by_size = object.vehicle_cargo_by_size();
+        let total = cargo.occupied_capacity(by_size);
         if total < 0 {
             return pips;
         }
@@ -2771,10 +2846,12 @@ fn scale_pip_rows(
             //709EB5..ECA/709F0A..F23 use FTOL(Size - 1) for high-slot
             //fillers before the passenger's own lower slot. Cargo head comes
             //first. The other-RTTI arm709F2C writes only frame1.
-            if matches!(
-                passenger.category(),
-                EntityCategory::Infantry | EntityCategory::Unit
-            ) {
+            if by_size
+                && matches!(
+                    passenger.category(),
+                    EntityCategory::Infantry | EntityCategory::Unit
+                )
+            {
                 for _ in 0..passenger_pip_filler_count(kind.size).max(0) {
                     let Some(index) = next.checked_sub(1) else {
                         break;
@@ -3036,6 +3113,116 @@ mod mind_control_pip_tests;
 
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
+    #[test]
+    fn revealed_factory_product_draws_its_cameo_in_place_of_status_text() {
+        use super::{BuildingStatusRun, build_building_status_render_instances};
+        use crate::app::presentation::frame::PresentationFrame;
+        use crate::assets::csf_file::test_csf;
+        use crate::render::bit_font::tests::make_test_font;
+        use crate::render::sidebar_cameo_atlas::SidebarCameoEntry;
+        use crate::rules::ruleset::RuleSet;
+        use crate::sim::arena_fixture::{clear_ground_ini, rival_arena};
+        use crate::sim::production::enqueue_by_type;
+        use crate::sim::world::{FrameEffects, Simulation};
+        use std::collections::BTreeSet;
+
+        let rules = RuleSet::from_ini(&clear_ground_ini(
+            "[Countries]\n0=Americans\n1=Russians\n\
+             [BuildingTypes]\n0=GAWEAP\n[VehicleTypes]\n0=MTNK\n\
+             [GAWEAP]\nStrength=100\nOwner=Americans\nFactory=UnitType\nPower=20\n\
+             [MTNK]\nStrength=100\nSpeed=6\nOwner=Americans\nTechLevel=1\nCost=100\nTrainable=yes\n",
+        ))
+        .unwrap();
+        assert!(!rules.ares());
+        let mut sim = rival_arena(&rules, 7);
+        let player = sim.interner().get("Americans").unwrap();
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(player));
+        sim.houses_mut_for_test()
+            .get_mut(&player)
+            .unwrap()
+            .economy_mut_for_test()
+            .set_credits_for_test(1_000);
+        let factory = sim
+            .spawn_object("GAWEAP", "Americans", 8, 8, 0, &rules)
+            .unwrap();
+        sim.entity_mut_for_test(factory)
+            .unwrap()
+            .seldom
+            .selection
+            .set_selected_for_test(true);
+
+        let font = make_test_font(&[], 4);
+        let csf = test_csf(&[("TXT_POWER_DRAIN2", "Power %d/%d")]);
+        let opportunities = BTreeSet::from([factory]);
+        let cameo = SidebarCameoEntry {
+            uv_origin: [0.25, 0.25],
+            uv_size: [0.125, 0.125],
+            canvas_size: [60.0, 48.0],
+            pixel_size: [50.0, 40.0],
+            crop_origin: [5.0, 4.0],
+        };
+        let alternate = SidebarCameoEntry {
+            uv_origin: [0.5, 0.25],
+            ..cameo
+        };
+        let draw = |sim: &Simulation, cameo_loaded| {
+            build_building_status_render_instances(
+                sim,
+                &PresentationFrame::of_test(sim, &rules),
+                &opportunities,
+                player,
+                &Default::default(),
+                &rules.house_color_ramps,
+                &font,
+                &csf,
+                [0.0; 2],
+                1.0,
+                [-512, -512, 1024, 1024],
+                &rules,
+                false,
+                false,
+                |name, elite| {
+                    (cameo_loaded && name == "MTNK").then_some(if elite {
+                        alternate
+                    } else {
+                        cameo
+                    })
+                },
+            )
+        };
+        assert!(enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "MTNK",
+            &mut FrameEffects::default(),
+            false,
+        ));
+        assert!(matches!(
+            draw(&sim, true).runs.as_slice(),
+            [BuildingStatusRun::Text { .. }]
+        ));
+
+        sim.session_mut_for_test()
+            .install_observer_houses_for_test(vec![player]);
+        let labels = draw(&sim, true);
+        assert!(matches!(
+            labels.runs.as_slice(),
+            [BuildingStatusRun::ProductionCameo(0)]
+        ));
+        assert_eq!(labels.instances[0].uv_origin, cameo.uv_origin);
+        sim.houses_mut_for_test()
+            .get_mut(&player)
+            .unwrap()
+            .grant_veteran_units();
+        assert_eq!(draw(&sim, true).instances[0].uv_origin, alternate.uv_origin);
+        assert!(matches!(
+            draw(&sim, false).runs.as_slice(),
+            [BuildingStatusRun::Text { .. }]
+        ));
+    }
+
     /// Convenience Help's reload row, formatted when drawn from the facts
     /// the frame captured: an allied unit and an allied building that are
     /// reloading their magazines each draw the filled VERA:InfoReload row.

@@ -652,18 +652,13 @@ fn build_view(
         let rules = state.rules();
         for item in &mut view.items {
             item.alt_cameo = !item.is_superweapon
+                && atlas.has_alternate(&item.type_id)
                 && house.is_some_and(|house| {
                     rules.is_some_and(|rules| {
                         rules.object(&item.type_id).is_some_and(|obj| {
                             let country = simulation
                                 .map_or("", |sim| sim.interner().resolve(house.house_type_id()));
-                            shows_alt_cameo(
-                                house,
-                                obj,
-                                rules,
-                                country,
-                                atlas.has_alternate(&item.type_id),
-                            )
+                            shows_alt_cameo(house, obj, rules, country)
                         })
                     })
                 });
@@ -757,17 +752,13 @@ pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
 /// SpyEffect veterancy (`sim::spy_infiltration`).
 ///
 /// [`SidebarCameoAtlas::cameo`]: crate::render::sidebar_cameo_atlas::SidebarCameoAtlas::cameo
-fn shows_alt_cameo(
+pub(super) fn shows_alt_cameo(
     house: &crate::sim::house_state::HouseState,
     obj: &crate::rules::object_type::ObjectType,
     rules: &crate::rules::ruleset::RuleSet,
     country: &str,
-    has_alternate: bool,
 ) -> bool {
     use crate::rules::object_type::ObjectCategory;
-    if !has_alternate {
-        return false;
-    }
     if rules.ares() {
         if obj.category == ObjectCategory::Building && obj.undeploys_into.is_some() {
             return false;
@@ -1441,13 +1432,7 @@ mod tests {
         let rules = &retail.rules;
         let id = crate::sim::intern::InternedId::default();
         let shows = |house: &HouseState, kind: &str| {
-            shows_alt_cameo(
-                house,
-                rules.object(kind).expect("a retail type"),
-                rules,
-                "",
-                true,
-            )
+            shows_alt_cameo(house, rules.object(kind).expect("a retail type"), rules, "")
         };
         let mut barracks = HouseState::new(id, 0, None, true, 0, 10);
         barracks.grant_veteran_infantry();
@@ -1535,13 +1520,13 @@ mod tests {
             let country = interner.intern("SYNTHCOUNTRY");
             let house = HouseState::new(owner, 0, Some(country), true, 0, 10);
             assert_eq!(
-                shows_alt_cameo(
-                    &house,
-                    rules.object("SUBJECT").unwrap(),
-                    &rules,
-                    "SYNTHCOUNTRY",
-                    row["alt_art"].as_bool().unwrap()
-                ),
+                row["alt_art"].as_bool().unwrap()
+                    && shows_alt_cameo(
+                        &house,
+                        rules.object("SUBJECT").unwrap(),
+                        &rules,
+                        "SYNTHCOUNTRY",
+                    ),
                 row["eligible"].as_bool().unwrap(),
                 "{}",
                 row["name"]

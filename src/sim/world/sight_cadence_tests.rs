@@ -423,6 +423,96 @@ fn a_movers_sight_moves_at_each_cell_arrival() {
     }
 }
 
+fn extended_sight_arena() -> (Simulation, RuleSet, InternedId) {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+        "[VehicleTypes]\n0=SCOUT\n1=WATCH\n[SCOUT]\nStrength=100\nSight=12\nSpeed=5\n\
+         [WATCH]\nStrength=100\nSight=1\nSpeed=5\n",
+    ))
+    .unwrap();
+    assert!(!rules.ares());
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+    let owner = sim.intern("Americans");
+    sim.session.set_current_house_for_test(Some(owner));
+    let options = crate::sim::game_options::GameOptions {
+        fog_of_war: true,
+        ..*sim.session.game_options()
+    };
+    sim.session.set_game_options_for_test(options);
+    sim.fog = vision::FogState::new(32, 32);
+    (sim, rules, owner)
+}
+
+#[test]
+fn ordinary_extended_sight_reveals_and_refogs_at_the_configured_radius() {
+    let (mut sim, rules, owner) = extended_sight_arena();
+    let (scout, calls) = trace_reveal_calls(|| {
+        sim.spawn_object("SCOUT", "Americans", 12, 12, 0, &rules)
+            .expect("ordinary vehicle Unlimbo")
+    });
+    assert!(sim.fog.is_cell_visible(owner, 23, 12), "eleventh cell");
+    assert!(sim.fog.is_cell_visible(owner, 24, 12), "twelfth cell");
+    assert!(
+        !sim.fog.is_cell_revealed(owner, 25, 12),
+        "outside the radius"
+    );
+    assert!(!sim.fog.is_cell_revealed(owner, 22, 21), "outside the disc");
+    assert!(calls.border_receivers.contains(&(27, 12)), "border padding");
+
+    let ((), fog_protect) = trace_reveal_calls(|| {
+        sim.reveal_uncached_object_sight(
+            scout,
+            false,
+            true,
+            Some(owner),
+            UninitContext::new(&rules),
+        );
+    });
+    assert!(fog_protect.walks[0].contains(&(24, 12)));
+
+    sim.techno_limbo_with_rules(scout, &rules);
+    for x in [23, 24] {
+        assert!(!sim.fog.is_cell_visible(owner, x, 12), "refog at cell {x}");
+        assert!(sim.fog.is_cell_revealed(owner, x, 12), "retain knowledge");
+    }
+}
+
+#[test]
+fn releasing_an_old_capped_sight_save_keeps_the_other_sources_counter() {
+    let (mut sim, rules, owner) = extended_sight_arena();
+    let scout = sim
+        .spawn_object("SCOUT", "Americans", 12, 12, 0, &rules)
+        .unwrap();
+    // Before extended sight, admission cached the type's 12 while the map
+    // walked only the stock ten-cell disc. Recreate that saved combination.
+    sim.fog = vision::FogState::new(32, 32);
+    sim.update_object_sight_with_context(scout, 10, Some(owner), UninitContext::new(&rules));
+    let mut old_source = sim.fog.clear_source_sight_latch(scout, owner).unwrap();
+    old_source.radius = 12;
+    old_source.latched = true;
+    assert!(sim.fog.retain_source_sight(scout, owner, owner, old_source));
+    sim.fog
+        .sight_admissions_mut_for_test()
+        .get_mut(&(scout, owner))
+        .unwrap()
+        .radius = 12;
+    sim.spawn_object("WATCH", "Americans", 24, 12, 0, &rules)
+        .unwrap();
+
+    let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "capped-sight", 0);
+    let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .unwrap()
+        .sim;
+    restored.restore_after_snapshot_load().unwrap();
+    let counter = |sim: &Simulation| {
+        sim.fog.by_owner()[&owner].shroud_knowledge_raw()[12 * 32 + 24].counter()
+    };
+    let before = counter(&restored);
+    assert_eq!(before, -1, "the Watch is the only source here");
+    restored.techno_limbo_with_rules(scout, &rules);
+    assert_eq!(counter(&restored), before);
+}
+
 /// Original70B202 clears250 alone. Inactive254/260 still drive a later
 /// border and therefore must survive frames, hashing and the saved game.
 #[test]

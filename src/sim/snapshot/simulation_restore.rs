@@ -24,21 +24,45 @@ impl Simulation {
         }
     }
 
-    /// Saved Ares state (a delivery base override, an attached superweapon,
-    /// a pending unit delivery, a paid superweapon selection) loads only into
-    /// a game Ares plays in; the player load checks it with the loading
-    /// game's switch before restoring.
+    /// Attachment and paired selections need Ares. Pending deliveries and
+    /// their building overrides can also come from a built-in definition.
     pub(crate) fn validate_ares_state_for_load(
         &self,
-        ares: bool,
+        rules: &crate::rules::ruleset::RuleSet,
     ) -> Result<(), SnapshotRestoreError> {
+        let ares = rules.ares();
+        let builtin_delivery = |name: &str| {
+            rules.super_weapon(name).and_then(|sw| {
+                sw.has_builtin_rules()
+                    .then_some(sw.unit_delivery.as_ref())
+                    .flatten()
+            })
+        };
         for (_, entity) in self.substrate.entities.iter_sorted() {
             entity
-                .validate_ares_compatibility(ares)
+                .validate_ares_compatibility(ares, |id| {
+                    self.interner.try_resolve(id).is_some_and(|name| {
+                        rules.super_weapon_order.iter().any(|sw| {
+                            builtin_delivery(sw).is_some_and(|delivery| {
+                                !delivery.base_normal
+                                    && delivery.types.iter().any(|ty| {
+                                        ty.category
+                                            == crate::rules::object_type::ObjectCategory::Building
+                                            && ty.id.eq_ignore_ascii_case(name)
+                                    })
+                            })
+                        })
+                    })
+                })
                 .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
         }
         self.unit_deliveries
-            .validate_ares_compatibility(ares)
+            .validate_ares_compatibility(ares, |id| {
+                self.interner
+                    .try_resolve(id)
+                    .and_then(builtin_delivery)
+                    .is_some()
+            })
             .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
         self.validate_paid_super_weapon_selections_for_load(ares)
             .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;
@@ -512,7 +536,7 @@ impl Simulation {
             }
         }
         let ares = rules.ares_form();
-        if ares {
+        if rules.attach_effects_enabled() {
             self.validate_attached_stats_after_restore(rules)
                 .map_err(
                     |(object_id, reason)| SnapshotRestoreError::InvalidAttachedStatsState {
@@ -520,6 +544,8 @@ impl Simulation {
                         reason,
                     },
                 )?;
+        }
+        if ares {
             self.validate_factory_country_references(rules)
                 .map_err(|reason| SnapshotRestoreError::InvalidFactoryCountry { reason })?;
         }
@@ -682,9 +708,7 @@ impl Simulation {
 
         // Ares 3.0 10014B70 (hook 0x483D94): a powered firestorm section's
         // Impassable class is a Recalc product the template lacks.
-        if ares {
-            self.ares_firestorm_restore_zone_classes(rules);
-        }
+        self.ares_firestorm_restore_zone_classes(rules);
         if !self.rebuild_dynamic_navigation(rules) {
             return Err(SnapshotRestoreError::NavigationAuthorityPublicationFailed);
         }

@@ -183,12 +183,27 @@ impl FacingClass {
     ///
     /// No-op when `new_target == current`. Returns true if state changed.
     pub fn set(&mut self, new_target: u16, binary_frame: u32) -> bool {
+        self.set_from_current(new_target, binary_frame, Self::current)
+    }
+
+    /// Ares 3.0p1's setter at 0x100494B0 samples its own Current (0x10009D00)
+    /// before setting the new desired facing and the same turn timer.
+    pub(super) fn set_ares(&mut self, new_target: u16, binary_frame: u32) -> bool {
+        self.set_from_current(new_target, binary_frame, Self::current_ares)
+    }
+
+    fn set_from_current(
+        &mut self,
+        new_target: u16,
+        binary_frame: u32,
+        current: fn(&Self, u32) -> u16,
+    ) -> bool {
         if new_target == self.current {
             return false;
         }
         if (self.rot_per_frame as i16) > 0 {
             // Snapshot animated value into prev BEFORE writing new target.
-            self.prev = self.current(binary_frame);
+            self.prev = current(self, binary_frame);
         } else {
             self.prev = self.current;
         }

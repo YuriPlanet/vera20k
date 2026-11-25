@@ -36,7 +36,7 @@ ApplyDamage=                     ; yes/no: the shot carries Damage=; default
 
 [MyTank]                         ; TechnoType
 ImmuneToAbduction=no
-Passengers.BySize=yes            ; the hold counts Size= (abduction only here)
+Passengers.BySize=yes            ; the hold counts Size= on abduction
 ```
 
 ## Ivan bombs in Ares games

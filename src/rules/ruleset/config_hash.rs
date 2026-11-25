@@ -29,6 +29,10 @@ impl RuleSet {
             b"ai-hate-delays-v1".hash(&mut hasher);
             self.general.ai_hate_delays.hash(&mut hasher);
         }
+        // Ares games already hash this retained flag with their building globals.
+        if !self.ares && self.toggle_power_allowed() {
+            b"manual-building-power-toggle-v1".hash(&mut hasher);
+        }
         // Identical current text can inherit different CombatDamage values.
         b"drain-money-controls-v1".hash(&mut hasher);
         self.general.drain_money_frame_delay.hash(&mut hasher);
@@ -267,6 +271,37 @@ impl RuleSet {
                 .hash(&mut hasher);
             self.side_ids.hash(&mut hasher);
             self.side_extensions.hash(&mut hasher);
+        } else if !self.ares_super_weapon_metadata.is_empty() {
+            b"builtin-superweapon-types-v1".hash(&mut hasher);
+            self.ares_super_weapon_metadata.hash(&mut hasher);
+            for object in &self.object_list {
+                if !object.additional_super_weapons().is_empty() {
+                    object.id.hash(&mut hasher);
+                    object.additional_super_weapons().hash(&mut hasher);
+                }
+            }
+        }
+        if !self.ares && self.has_builtin_firestorm() {
+            b"builtin-firestorm-wall-v1".hash(&mut hasher);
+            self.ares_firestorm_globals().hash(&mut hasher);
+            for object in &self.object_list {
+                if object.ares_firestorm_wall() || object.ignores_firestorm {
+                    (
+                        object.category,
+                        &object.id,
+                        object.ares_firestorm_wall(),
+                        object.ignores_firestorm,
+                    )
+                        .hash(&mut hasher);
+                }
+            }
+            Self::by_upper_id(self.projectile_entries().filter_map(|(id, projectile)| {
+                projectile
+                    .bullet_type_ext
+                    .ignores_firestorm
+                    .then_some((id, true))
+            }))
+            .hash(&mut hasher);
         }
         #[cfg(feature = "phobos")]
         {
@@ -348,6 +383,21 @@ impl RuleSet {
         // when Ares plays, so a stock game's hash stays as it was.
         if self.ares {
             b"ares-plays-v1".hash(&mut hasher);
+        } else {
+            // ART already enters the multiplayer file agreement. The
+            // replay/snapshot hash also needs non-default built-in docks
+            // in games where BuildingTypeExt is not hashed below.
+            let defaults = crate::rules::ares_building_type::BuildingTypeExtRules::default();
+            let docks = Self::by_upper_id(self.object_list.iter().filter_map(|object| {
+                let ext = object.building_type_ext();
+                let settings = (ext.dock_unload_cell, ext.dock_unload_direction());
+                (settings != (defaults.dock_unload_cell, defaults.dock_unload_direction()))
+                    .then_some((&object.id, settings))
+            }));
+            if !docks.is_empty() {
+                b"dock-unload-art-v1".hash(&mut hasher);
+                docks.hash(&mut hasher);
+            }
         }
         if self.ares {
             b"ares-global-controls-v1".hash(&mut hasher);
@@ -556,31 +606,34 @@ impl RuleSet {
                 b"ares-bounty-rules-v1".hash(&mut hasher);
                 bounty.hash(&mut hasher);
             }
-            // Ares TypeExt driver fields retain earlier successful reads even
-            // when the merged text contains later invalid/empty values.
-            let drivers = self
-                .object_list
-                .iter()
-                .filter(|object| {
-                    object.driver_rules() != &crate::rules::ares_driver::DriverTypeRules::default()
-                        || object.vehicle_thief_sound(false).is_some()
-                        || object.vehicle_thief_sound(true).is_some()
-                })
-                .map(|object| {
+        }
+        // Script67 uses TypeExt driver fields in either rules mode. Hash the
+        // retained values even if the merged INI contains an invalid override.
+        let drivers = self
+            .object_list
+            .iter()
+            .filter(|object| {
+                object.driver_rules() != &crate::rules::ares_driver::DriverTypeRules::default()
+                    || (self.ares
+                        && (object.vehicle_thief_sound(false).is_some()
+                            || object.vehicle_thief_sound(true).is_some()))
+            })
+            .map(|object| {
+                (
+                    (object.category, object.id.to_ascii_uppercase()),
                     (
-                        (object.category, object.id.to_ascii_uppercase()),
-                        (
-                            object.driver_rules(),
-                            object.vehicle_thief_sound(false),
-                            object.vehicle_thief_sound(true),
-                        ),
-                    )
-                })
-                .collect::<BTreeMap<_, _>>();
-            if !drivers.is_empty() {
-                b"ares-driver-rules-v1".hash(&mut hasher);
-                drivers.hash(&mut hasher);
-            }
+                        object.driver_rules(),
+                        object.vehicle_thief_sound(false),
+                        object.vehicle_thief_sound(true),
+                    ),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        if !drivers.is_empty() {
+            b"ares-driver-rules-v1".hash(&mut hasher);
+            drivers.hash(&mut hasher);
+        }
+        if self.ares {
             let aircraft_crash_overrides = self
                 .object_list
                 .iter()
@@ -594,23 +647,26 @@ impl RuleSet {
                 b"ares-aircraft-crashable-v1".hash(&mut hasher);
                 aircraft_crash_overrides.hash(&mut hasher);
             }
-            // TypeExt IronCurtain.Modifier/ForceShield.Modifier scale every
-            // curtain TechnoClass::IronCurtain (hook 70E2B0) applies.
-            let curtain_modifiers = self
-                .object_list
-                .iter()
-                .filter(|object| object.ares_curtain_modifiers() != [NativeF64Bits::ONE; 2])
-                .map(|object| {
-                    (
-                        (object.category, object.id.to_ascii_uppercase()),
-                        object.ares_curtain_modifiers(),
-                    )
-                })
-                .collect::<BTreeMap<_, _>>();
-            if !curtain_modifiers.is_empty() {
-                b"ares-curtain-modifiers-v1".hash(&mut hasher);
-                curtain_modifiers.hash(&mut hasher);
-            }
+        }
+        // TechnoClass::IronCurtain (hook 0x70E2B0) uses ForceShield.Modifier
+        // in every game and uses IronCurtain.Modifier when Ares plays.
+        let curtain_modifiers = self
+            .object_list
+            .iter()
+            .filter_map(|object| {
+                let mut modifiers = object.ares_curtain_modifiers();
+                if !self.ares {
+                    modifiers[0] = NativeF64Bits::ONE;
+                }
+                (modifiers != [NativeF64Bits::ONE; 2])
+                    .then(|| ((object.category, object.id.to_ascii_uppercase()), modifiers))
+            })
+            .collect::<BTreeMap<_, _>>();
+        if !curtain_modifiers.is_empty() {
+            b"ares-curtain-modifiers-v1".hash(&mut hasher);
+            curtain_modifiers.hash(&mut hasher);
+        }
+        if self.ares {
             let cloak_power = self
                 .object_list
                 .iter()
@@ -735,6 +791,48 @@ impl RuleSet {
                     .map(|(name, wh)| (name, wh.ares_rules())),
             )
             .hash(&mut hasher);
+        }
+        if self.builtin_attach_effects {
+            b"builtin-temporal-attach-effects-v1".hash(&mut hasher);
+        }
+        if !self.ares && self.builtin_attach_effects {
+            self.object_list
+                .iter()
+                .filter_map(|object| {
+                    let settings = object
+                        .self_attach_effect()
+                        .filter(|s| s.is_enabled(false))?;
+                    Some(((object.category, object.id.to_ascii_uppercase()), settings))
+                })
+                .collect::<BTreeMap<_, _>>()
+                .hash(&mut hasher);
+            Self::by_upper_id(self.warhead_entries().filter_map(|(name, wh)| {
+                let ext = wh.ares_rules()?;
+                ext.attach_effect().is_enabled(false).then_some((name, ext))
+            }))
+            .hash(&mut hasher);
+        }
+        if !self.ares && self.builtin_tunnel_emp {
+            b"builtin-tunnel-emp-v1".hash(&mut hasher);
+            Self::by_upper_id(self.warhead_entries().filter_map(|(name, wh)| {
+                let settings = wh.ares_rules().filter(|ext| ext.duration() != 0)?;
+                Some((name, settings))
+            }))
+            .hash(&mut hasher);
+            self.emp_sparkles.hash(&mut hasher);
+            self.object_list
+                .iter()
+                .filter(|object| {
+                    object.locomotor == crate::rules::locomotor_type::LocomotorKind::Tunnel
+                })
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        (object.emp_rules(), object.promotion_abilities()),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>()
+                .hash(&mut hasher);
         }
 
         // UnitType747734 retains CarriesCrate across later absent/invalid
@@ -981,6 +1079,23 @@ impl RuleSet {
             })
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
+        // Ares 3.0p1 0x1003FFEA retains a valid DeployDir across rejected
+        // reads. Its effective Hover override can differ under equal
+        // current source text.
+        let hover_deploy_facing = Self::by_upper_id(self.object_list.iter().filter_map(|object| {
+            if !object.uses_hover_deploy_facing() {
+                return None;
+            }
+            object
+                .techno_combat()
+                .movement()
+                .deploy_dir()
+                .map(|dir| (&object.id, dir))
+        }));
+        if !hover_deploy_facing.is_empty() {
+            b"hover-deploy-facing-v1".hash(&mut hasher);
+            hover_deploy_facing.hash(&mut hasher);
+        }
         Self::by_upper_id(
             self.projectile_entries()
                 .map(|(id, projectile)| (id, &projectile.shrapnel_weapon)),

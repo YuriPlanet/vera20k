@@ -448,25 +448,19 @@ fn sidebar_cameo_press(
 
 /// The factory a ready cameo's click places `held` from: the product's
 /// `ObjectClass::FindFactory(0, 0)` (`0x005F5C20`, called at `0x006AB31A`),
-/// or with Ares `HouseExt::FindFactory(owner, type, 0, 1, 0, 1)`
-/// (SidebarClass_ProcessCameoClick_Power, Ares.dll `10025170`, hook
-/// `0x006AB312`). None where Ares ends the click because only factories
-/// without power fit (`0x006AB95A`): no abandon and no EVA follow.
+/// or Ares 3.0p1 `HouseExt::FindFactory(owner, type, 0, 1, 0, 1)`
+/// (SidebarClass_ProcessCameoClick_Power, `0x006AB312 -> 0x10025C90`).
+/// When the only matching factories are switched off, end the click at
+/// `0x006AB95A` without abandon or EVA.
 pub(in crate::app::input) fn ready_cameo_factory(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     held: u64,
 ) -> Option<Option<u64>> {
-    use crate::sim::production::AresObjectFactory;
-    if !rules.ares_form() {
-        return Some(crate::sim::production::object_find_factory(
-            sim, rules, held, false, false,
-        ));
-    }
-    match crate::sim::production::ares_object_factory(sim, rules, held) {
-        AresObjectFactory::Unpowered => None,
-        AresObjectFactory::Missing => Some(None),
-        AresObjectFactory::Found(id) => Some(Some(id)),
+    use crate::sim::production::ReadyObjectFactory;
+    match crate::sim::production::ready_object_factory(sim, rules, held, false, true) {
+        ReadyObjectFactory::Unpowered => None,
+        result => Some(result.available()),
     }
 }
 
@@ -537,7 +531,7 @@ fn apply_sidebar_action_inner(state: &mut AppState, action: SidebarAction) {
     }
 }
 
-/// The Repair and Sell modes need a building the issuing seat can manage.
+/// Repair, Sell and Power modes need a building the issuing seat can manage.
 pub(in crate::app::input) fn local_has_manageable_building(
     sim: &crate::sim::world::Simulation,
 ) -> bool {

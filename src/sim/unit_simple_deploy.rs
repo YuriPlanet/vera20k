@@ -1,9 +1,10 @@
 //! Unit simple deployment,739AC0/739CD0 and Mission_Unload73DE6E.
 //! The Unit Mission leaf owns6E0..6E2; Techno owns its one Stage and retained
-//! deployment Anim. Jumpjet consumes the same landing-for-deploy byte134.
+//! deployment Anim. Hover and Jumpjet consume the same landing-for-deploy byte134.
 //! Evidence and executable boundary controls: tools/spatial_oracle/unit_simple_deploy.
 
 use crate::map::entities::EntityCategory;
+use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::components::{AnimClassSpawnDescriptor, NavTargetRef};
@@ -12,17 +13,20 @@ use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::{FrameEffects, Simulation};
 
+/// The direction read by Ares' Hover landing (0x1004A236..0x1004A25F)
+/// and simple deploy facing hooks. Values are expressed in 16-bit turns.
+pub(super) fn simple_deploy_facing(object: &ObjectType, rules: &RuleSet) -> u16 {
+    object.techno_combat().movement().deploy_dir().map_or_else(
+        || u16::from(rules.general.deploy_dir as u8) << 8,
+        |dir| u16::from(dir) << 13,
+    )
+}
+
 pub(crate) fn is_simple_deployer(sim: &Simulation, entity: &GameEntity, rules: &RuleSet) -> bool {
     entity.category() == EntityCategory::Unit
         && sim
             .object_type(entity.type_ref(), rules)
-            .is_some_and(|object| {
-                object.is_simple_deployer
-                    && object.passengers <= 0
-                    && !object.harvester
-                    && !object.weeder
-                    && object.deploys_into.is_none()
-            })
+            .is_some_and(ObjectType::simple_vehicle_deployer)
 }
 
 impl Simulation {
@@ -125,7 +129,7 @@ impl Simulation {
             entity,
             self.resolved_terrain.as_ref(),
         );
-        // Ares 3.0 UnitClass_SimpleDeploy_Height (1004C380, hook 0x739ADA)
+        // Ares 3.0p1 UnitClass_SimpleDeploy_Height (0x1004CFE0, hook 0x739ADA)
         // drops the airborne non-DeployToLand refusal: such a deployer
         // deploys where it is.
         let airborne_refused = !rules.ares() && height > 0 && !object.deploy_to_land;
@@ -145,12 +149,9 @@ impl Simulation {
             leaf.deploy_reverse_active()
         } != 0;
         let retained = entity.deploy_anim();
-        // The same hook raises InAir only for a `DeployToLand=` type.
-        if deploying
-            && !entity.landing_for_deploy()
-            && height > 0
-            && (!rules.ares() || deploy_to_land)
-        {
+        // 0x1004D003..0x1004D027 raises +0x134 for DeployToLand above ground
+        // and resumes the updater at 0x739B14.
+        if deploying && deploy_to_land && height > 0 && !entity.landing_for_deploy() {
             self.substrate
                 .entities
                 .get_mut(id)
@@ -206,7 +207,7 @@ impl Simulation {
                 .landing_for_deploy()
         {
             if let Some(name) = configured_anim
-                && !(deploying && self.ares_simple_deploy_turning(id, rules))
+                && !(deploying && self.simple_deploy_turning(id, rules))
             {
                 let anim_id = if let Some(anim_id) = retained {
                     anim_id
@@ -262,40 +263,42 @@ impl Simulation {
         )
     }
 
-    /// Ares 3.0 UnitClass_SimpleDeploy_Facing (1004C2D0, hook 0x739B8A): a
+    /// Ares 3.0p1 UnitClass_SimpleDeploy_Facing (0x1004CF30, hook 0x739B8A): a
     /// deployer with a `DeployingAnim=` first faces its type's `DeployDir`,
     /// else `[AudioVisual] DeployDir`, in eighth turns; until it does, it
     /// turns (Do_Turn, while its locomotor is not moving) and starts no
     /// animation (0x739C70, the shared sound tail). True while it turns.
-    fn ares_simple_deploy_turning(&mut self, id: u64, rules: &RuleSet) -> bool {
-        if rules.ares_form() {
-            let frame = self.session.binary_frame();
-            let Some(entity) = self.substrate.entities.get(id) else {
-                return false;
-            };
-            let Some(object) = self.object_type(entity.type_ref(), rules) else {
-                return false;
-            };
-            let dir = object.techno_combat().movement().deploy_dir().map_or_else(
-                || ((((rules.general.deploy_dir as u16) >> 4) + 1) >> 1) & 7,
-                u16::from,
-            );
-            let current = entity.body_facing_current(frame);
-            if (((current >> 12) + 1) >> 1) & 7 == dir {
-                return false;
-            }
-            let moving = crate::sim::movement::motion_query::is_moving_now(
-                entity,
-                crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses),
-                frame,
-            );
-            if !moving && let Some(entity) = self.substrate.entities.get_mut(id) {
-                crate::sim::movement::locomotor_do_turn(entity, dir << 13, frame);
-            }
-            true
-        } else {
-            false
+    fn simple_deploy_turning(&mut self, id: u64, rules: &RuleSet) -> bool {
+        let frame = self.session.binary_frame();
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        let Some(object) = self.object_type(entity.type_ref(), rules) else {
+            return false;
+        };
+        let hover_deploy = object.deploy_to_land
+            && entity
+                .locomotor
+                .as_ref()
+                .is_some_and(|loco| loco.hover_runtime().is_some());
+        if !hover_deploy && !rules.ares_form() {
+            return false;
         }
+        let octant = |facing: u16| (((facing >> 12) + 1) >> 1) & 7;
+        let dir = octant(simple_deploy_facing(object, rules));
+        let current = entity.body_facing_current(frame);
+        if octant(current) == dir {
+            return false;
+        }
+        let moving = crate::sim::movement::motion_query::is_moving_now(
+            entity,
+            crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses),
+            frame,
+        );
+        if !moving && let Some(entity) = self.substrate.entities.get_mut(id) {
+            crate::sim::movement::locomotor_do_turn(entity, dir << 13, frame);
+        }
+        true
     }
 
     fn start_unit_deploy_anim(

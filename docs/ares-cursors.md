@@ -72,13 +72,24 @@ NoCursor=Disallowed                     ; over a cell it may not fire at
 Cursor choice is presentation only: no simulation state, RNG draw or hash
 reads the list or the overrides.
 
+## Manual building power
+
+Assign **Toggle Power** in the **Interface** keyboard category. The command
+has no default binding. `[General] TogglePowerAllowed=yes` enables it even
+with the global Ares switch off. In this mode a click toggles a building
+you control when its type has `TogglePower=yes` (the default) and consumes
+power or has `Powered=yes`. Warped and EMP-disabled buildings are refused.
+Power mode stays active until canceled or replaced by another display mode.
+Finished products wait while every suitable factory has been switched off.
+
+Ares 3.0p1 registers the command at `0x533058 -> 0x10002A40`. The cursor and
+click use `0x69281E -> 0x1005D4B0` and `0x4ABFBE -> 0x10058B70`. The
+click queues the same On/Off Line record as the original engine.
+
 ## Not covered
 
 - `DisplayClass_ChooseAction_CanSell` (`0x6929FC`) is ported with the unit
   sale ([ares-reverse-engineering.md](ares-reverse-engineering.md)).
-- `DisplayClass_LeftMouseButtonUp_ExecPowerToggle` (`0x4ABFBE`) and the
-  TogglePower/NoTogglePower actions: the player's toggle-power mode (the Ares
-  TogglePower command, `0x69281E`) is not in VERA.
 - `FootClass_ActionOnObject_Allow` (`0x4D7524`) only lets the Ares
   superweapon actions reach a Foot's click; VERA's radar drops a NoCursor
   click instead of dispatching it. `0x4AB366`, `0x4AB44A` and `0x5BDD9F` are

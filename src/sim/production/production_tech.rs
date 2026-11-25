@@ -5,6 +5,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{BuildCategory, FactoryType, ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::entity_store::EntityStore;
+use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
 
@@ -355,6 +356,28 @@ pub(crate) fn factory_category_for_building(object: &ObjectType) -> Option<Produ
         FactoryType::UnitType => ProductionCategory::Vehicle,
         FactoryType::AircraftType => ProductionCategory::Aircraft,
     })
+}
+
+/// The held product seen at this building by Ares 3.0p1 DrawVisible
+/// (`0x43E7B0` to `0x10016130`, factory lookup `0x100161EB..0x1001623C`).
+/// A player-controlled house uses its queue for this building's factory kind.
+/// A computer house uses the building's own factory.
+pub fn active_factory_product_at(
+    sim: &Simulation,
+    building: &GameEntity,
+    building_type: &ObjectType,
+) -> Option<InternedId> {
+    let owner = building.owner();
+    let house = sim.houses.get(&owner)?;
+    let factories = sim.production().factories();
+    let product = if house.is_controlled_by_human(sim.session.rule_policy()) {
+        factories
+            .view(owner, factory_category_for_building(building_type)?)?
+            .object?
+    } else {
+        factories.building_factory(building.stable_id())?.object()?
+    };
+    product.entity_id.map(|_| product.type_id)
 }
 
 /// Check if a structure is a production factory for the given category.

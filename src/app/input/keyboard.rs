@@ -207,7 +207,11 @@ fn localized(state: &AppState, key: &str, parameter: Option<u8>) -> String {
             .csf
             .as_ref()
             .and_then(|csf| csf.get(key))
-            .unwrap_or(key)
+            .unwrap_or(match key {
+                "TXT_TOGGLE_POWER" => "Toggle Power",
+                "TXT_TOGGLE_POWER_DESC" => "Switch power on or off for one of your buildings.",
+                _ => key,
+            })
             .to_owned()
     };
     match parameter {

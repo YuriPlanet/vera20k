@@ -8,18 +8,19 @@ use crate::rules::native_processing::RulesLayerStack;
 use crate::rules::superweapon_type::SuperWeaponKind;
 use crate::sim::command::Command;
 
-fn rules() -> RuleSet {
-    let ini = crate::sim::arena_fixture::clear_ground_ini(
+fn rules(money: i32) -> RuleSet {
+    let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
         "[Countries]\n0=Americans\n1=Russians\n\
          [BuildingTypes]\n0=FSWALL\n\
          [FSWALL]\nStrength=500\nFirestorm.Wall=yes\nTurret=no\nSight=0\n\
          [Warheads]\n0=C4WH\n\
          [C4WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
          [General]\nDamageToFirestormDamageCoefficient=2.5\n\
-         [SuperWeaponTypes]\n0=Fire\n\
+         [SuperWeaponTypes]\n0=Fire\n1=Battery\n\
          [Fire]\nType=Firestorm\nRechargeTime=1\nIsPowered=no\nAction=Nuke\n\
-         SW.CreateRadarEvent=yes\n",
-    );
+         SW.CreateRadarEvent=yes\nMoney.Amount={money}\n\
+         [Battery]\nType=Battery\nRechargeTime=1\nIsPowered=no\nBattery.Power=50\n",
+    ));
     let art = IniFile::from_str("[FSWALL]\nFoundation=1x1\n");
     let processed = RulesLayerStack::new(ini)
         .process_with_fixed_art(&art)
@@ -50,8 +51,14 @@ fn click(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, sw: InternedI
 /// leaves it whole and takes `F2I(damage * 2.5)` frames off the drain.
 #[test]
 fn a_firestorm_super_powers_the_walls_while_it_drains_and_hits_shorten_the_drain() {
-    let _ares = crate::rules::ares_switch::read_ares_way(true);
-    let rules = rules();
+    check_firestorm_drain(true, 0);
+    check_firestorm_drain(false, -800);
+}
+
+fn check_firestorm_drain(ares: bool, money: i32) {
+    let _ares_mode = crate::rules::ares_switch::read_ares_way(ares);
+    let rules = rules(money);
+    assert_eq!(rules.ares(), ares);
     let fire = rules.super_weapon("Fire").unwrap();
     assert_eq!(fire.kind, SuperWeaponKind::Firestorm);
     assert!(fire.use_charge_drain && fire.action.is_none());
@@ -66,6 +73,7 @@ fn a_firestorm_super_powers_the_walls_while_it_drains_and_hits_shorten_the_drain
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     let owner = sim.interner.get("Americans").unwrap();
+    crate::sim::credit_income::add_credits(&mut sim.houses, owner, -money);
     for house in ["Americans", "Russians"] {
         let house = sim.interner.get(house).unwrap();
         construct_house_supers(&mut sim, &rules, house, false);
@@ -105,6 +113,8 @@ fn a_firestorm_super_powers_the_walls_while_it_drains_and_hits_shorten_the_drain
     assert_eq!(sim.super_weapons[&owner][&sw].charge_drain_state(), 2);
     assert!(sim.ares_firestorm.is_active(owner));
     assert_eq!(wall_frame(&sim), 32);
+    assert_eq!(sim.houses[&owner].economy().credits(), 0);
+    assert_eq!(sim.houses[&owner].economy().spent_credits(), -money);
     let left = sim.super_weapons[&owner][&sw].charge_remaining(1000);
     let hit = crate::sim::combat::EntityDamageEvent::direct_receiver(
         wall,
@@ -132,4 +142,45 @@ fn a_firestorm_super_powers_the_walls_while_it_drains_and_hits_shorten_the_drain
     assert_eq!(sim.super_weapons[&owner][&sw].charge_drain_state(), 1);
     assert!(!sim.ares_firestorm.is_active(owner));
     assert_eq!(wall_frame(&sim), 0);
+    assert_eq!(sim.houses[&owner].economy().spent_credits(), -money);
+}
+
+#[test]
+fn lost_grants_cannot_start_firestorm_or_battery_effects() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = rules(0);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+    let owner = sim.interner.get("Americans").unwrap();
+    construct_house_supers(&mut sim, &rules, owner, false);
+    let supers = ["Fire", "Battery"].map(|name| sim.interner.get(name).unwrap());
+    sim.session.set_binary_frame_for_test(100);
+    for sw in supers {
+        assert!(grant_super(
+            &sim.interner,
+            &sim.session,
+            &mut sim.substrate,
+            &sim.houses,
+            &mut sim.super_weapons,
+            &rules,
+            owner,
+            sw,
+            false,
+            false,
+        ));
+    }
+    sim.session.set_binary_frame_for_test(1000);
+    tick_house_superweapon_instances(&mut sim, &rules, owner, &mut Default::default());
+    update_owned_supers(&mut sim, &rules, owner, &mut Default::default());
+    for sw in supers {
+        let instance = &sim.super_weapons[&owner][&sw];
+        assert!(!instance.is_active());
+        assert_eq!(instance.charge_drain_state(), 1);
+        click(&mut sim, &rules, owner, sw);
+    }
+    assert!(!sim.ares_firestorm.is_active(owner));
+    assert!(
+        !sim.power_states
+            .get(&owner)
+            .is_some_and(|power| power.has_battery())
+    );
 }

@@ -5,9 +5,13 @@
 
 use super::*;
 use crate::map::entities::EntityCategory;
+use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponKind;
 use crate::sim::{
-    combat::Health, game_entity::GameEntity, house_state::HouseState, world::Simulation,
+    combat::Health,
+    game_entity::GameEntity,
+    house_state::HouseState,
+    world::{FrameEffects, Simulation},
 };
 
 fn pointer_scene(input: &serde_json::Value) -> (Simulation, InternedId, Option<u64>) {
@@ -86,7 +90,13 @@ fn pointer_admission_matches_original_action_and_release() {
             other => panic!("unexpected native Super kind {other}"),
         };
         let before = sim.state_hash();
-        let accepted = super_weapon_pointer_target_is_valid(&sim, viewer, kind, picked);
+        let accepted = super_weapon_pointer_target_is_valid(
+            &sim,
+            RuleSet::empty_for_test(),
+            viewer,
+            kind,
+            picked,
+        );
         assert_eq!(
             accepted,
             row["expected"]["event_count"] == 1,
@@ -109,7 +119,13 @@ fn pointer_admission_rechecks_directional_alliance_after_arming() {
         "target_kind": 6, "target_owner": 1, "local_allies": 0, "target_allies": 0
     }));
     let admitted = |sim: &Simulation| {
-        super_weapon_pointer_target_is_valid(sim, viewer, SuperWeaponKind::ForceShield, picked)
+        super_weapon_pointer_target_is_valid(
+            sim,
+            RuleSet::empty_for_test(),
+            viewer,
+            SuperWeaponKind::ForceShield,
+            picked,
+        )
     };
     assert!(!admitted(&sim));
     sim.house_alliances_mut_for_test()
@@ -136,16 +152,75 @@ fn pointer_admission_rechecks_directional_alliance_after_arming() {
 }
 
 #[test]
+fn manual_force_shield_pointer_respects_modifier_without_ares() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    for (setting, pointer_allowed, shield_duration) in [
+        ("", true, 80),
+        ("ForceShield.Modifier=25%", true, 20),
+        ("ForceShield.Modifier=0%", false, 0),
+        ("ForceShield.Modifier=-25%", false, -20),
+    ] {
+        let ini = crate::rules::ini_parser::IniFile::from_str(&format!(
+            "[General]\nForceShieldDuration=80\n\
+             [BuildingTypes]\n0=PointerTarget\n[PointerTarget]\nStrength=100\n{setting}\n\
+             [SuperWeaponTypes]\n0=Shield\n[Shield]\nType=ForceShield\nAction=ForceShield\n",
+        ));
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        assert!(!rules.ares());
+        let (mut sim, viewer, picked) = pointer_scene(&serde_json::json!({
+            "target_kind": 6, "target_owner": 0, "local_allies": 0, "target_allies": 0
+        }));
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let target = sim.entities().get(picked.unwrap()).unwrap();
+        assert!(
+            sim.interner()
+                .object_type(target.type_ref(), &rules)
+                .is_some()
+        );
+
+        assert_eq!(
+            super_weapon_pointer_target_is_valid(
+                &sim,
+                &rules,
+                viewer,
+                SuperWeaponKind::ForceShield,
+                picked,
+            ),
+            pointer_allowed,
+            "{setting}"
+        );
+        let shield = sim.interner().get("Shield").unwrap();
+        assert!(crate::sim::superweapon::force_shield::launch(
+            &mut sim,
+            &rules,
+            viewer,
+            10,
+            10,
+            shield,
+            &mut FrameEffects::default(),
+        ));
+        let target = sim.entities().get(picked.unwrap()).unwrap();
+        assert_eq!(
+            target.invulnerability.map(|state| state.timer().duration()),
+            Some(shield_duration),
+            "{setting}"
+        );
+    }
+}
+
+#[test]
 fn stock_command_target_check_remains_separate_from_pointer_gate() {
     let ini = crate::rules::ini_parser::IniFile::from_str(
         "[SuperWeaponTypes]\n0=Shield\n[Shield]\nType=ForceShield\nAction=ForceShield\n",
     );
-    let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
+    let rules = RuleSet::from_ini(&ini).unwrap();
     let mut sim = Simulation::new();
     let viewer = sim.intern("Viewer");
     let shield = sim.intern("Shield");
     assert!(!super_weapon_pointer_target_is_valid(
         &sim,
+        &rules,
         viewer,
         SuperWeaponKind::ForceShield,
         None

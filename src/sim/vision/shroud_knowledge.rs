@@ -353,8 +353,9 @@ pub(crate) struct SightAdmission {
     pub radius: i32,
     /// Derived active source-count footprint of real native Cell identities.
     /// Missing slots still receive native calls through the shared Dummy, but
-    /// never acquire rectangular source-count slots. Cleared with the latch;
-    /// a native release recomputes geometry from cached origin/radius.
+    /// never acquire rectangular source-count slots. A stock release walks
+    /// cached origin/radius. Long releases use these retained real cells to
+    /// keep the counts balanced across map changes and older saves.
     pub cells: Vec<(u16, u16)>,
 }
 

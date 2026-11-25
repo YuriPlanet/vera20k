@@ -99,6 +99,8 @@ pub struct DirectiveOptions {
     /// Execute Phobos `[$Include]`. Phobos `-Include` replaces the Ares hooks,
     /// so a document that uses `$Include` leaves its `[#include]` inert.
     pub phobos: bool,
+    /// Copy missing keys from sections named by `$Inherits`.
+    pub inheritance: bool,
 }
 
 impl Default for DirectiveOptions {
@@ -108,21 +110,19 @@ impl Default for DirectiveOptions {
             strict: false,
             ares: true,
             phobos: true,
+            inheritance: true,
         }
     }
 }
 
 impl DirectiveOptions {
-    /// Dialects this read can execute: Ares' on a thread that reads the Ares
-    /// way (`ares_switch::ares_way`: a game that ships `ares.mix`), Phobos'
-    /// in a build with it. Natively one launch runs one dialect: Phobos
-    /// `-Include` swaps `$Include` in for the Ares hooks. VERA has no such
-    /// switch, so a game with both keeps both, and a document that uses
-    /// `$Include` takes over from its `[#include]`.
+    /// An explicit `[#include]` works with either INI reader. Phobos'
+    /// `-Include` swaps in `$Include` natively. In VERA a document using
+    /// `$Include` gives it priority when Phobos is available.
     pub fn production() -> Self {
         Self {
-            ares: crate::rules::ares_switch::ares_way(),
             phobos: crate::rules::PHOBOS_ENABLED,
+            inheritance: crate::rules::ares_switch::ares_way() || crate::rules::PHOBOS_ENABLED,
             ..Self::default()
         }
     }
@@ -383,10 +383,11 @@ pub fn process_directives(
         });
     }
     let dialect = select_include_dialect(&ini, options);
-    let inheritance = ini
-        .sections
-        .iter()
-        .any(|section| section.is_present(INHERITS));
+    let inheritance = options.inheritance
+        && ini
+            .sections
+            .iter()
+            .any(|section| section.is_present(INHERITS));
     if dialect.is_none() && !inheritance {
         return Ok(ExpandedIni {
             ini,
@@ -414,10 +415,7 @@ pub fn process_directives(
         }
         traversal.enter(source_name, dialect.reference())?;
         match dialect {
-            IncludeDialect::Ares => {
-                ini = including_ini(ini);
-                walk_ares_includes(&mut ini, &mut load, &mut traversal)?;
-            }
+            IncludeDialect::Ares => walk_ares_includes(&mut ini, &mut load, &mut traversal)?,
             IncludeDialect::Phobos => {
                 let listed = include_list(ini.section(PHOBOS), &mut traversal)?;
                 ini = including_ini(ini);
@@ -426,13 +424,14 @@ pub fn process_directives(
         }
         traversal.exit();
     }
-    traversal.text_budget = inherited_text_budget(&ini);
-    let mut completed = HashSet::new();
-    // Preserve the host's physical section occurrences, first-section lookup
-    // and native parsing. A document without directives is byte-parser exact.
-    let names: Vec<String> = ini.section_names().into_iter().map(str::to_owned).collect();
-    for name in names {
-        inherit(&mut ini, &name, &mut completed, &mut traversal)?;
+    if options.inheritance {
+        traversal.text_budget = inherited_text_budget(&ini);
+        let mut completed = HashSet::new();
+        // Preserve the host's physical section occurrences and native lookup.
+        let names: Vec<String> = ini.section_names().into_iter().map(str::to_owned).collect();
+        for name in names {
+            inherit(&mut ini, &name, &mut completed, &mut traversal)?;
+        }
     }
     Ok(ExpandedIni {
         ini,
@@ -475,11 +474,8 @@ fn include_work_limit(traversal: &Traversal<'_>) -> DirectiveDiagnostic {
     }
 }
 
-/// The INI the root's included files load into. Both dialects apply the
-/// current document first: a later read, meaning an included file or a later
-/// sibling, overwrites its values. Natively that INI is the root itself, as
-/// it stays on a thread that reads the Ares way; otherwise VERA composes the
-/// compatibility projection [`IniFile::merge`] builds.
+/// Phobos's stock-reader composition uses the existing compatibility
+/// projection. With the Ares reader Phobos loads into the root itself.
 fn including_ini(root: IniFile) -> IniFile {
     if crate::rules::ares_switch::ares_way() {
         root
@@ -492,17 +488,22 @@ fn including_ini(root: IniFile) -> IniFile {
 
 /// `ReadCCFile` reads an included file into the INI that lists it, through
 /// `LoadFromStraw`'s merge arm, where an Ares launch's parser hooks act on it.
-/// Returns the file's own `list` section.
+/// Returns the file's own include section.
 fn load_included(
     merged: &mut IniFile,
     bytes: &[u8],
-    list: &str,
+    dialect: IncludeDialect,
 ) -> Result<Option<IniSection>, crate::rules::error::RulesError> {
+    let list = dialect.section();
     if crate::rules::ares_switch::ares_way() {
         return Ok(Some(merged.merge_load(bytes, list)));
     }
     let child = IniFile::from_bytes(bytes)?;
-    merged.merge(&child);
+    match dialect {
+        // Keep the stock parser's choices for repeated keys in both files.
+        IncludeDialect::Ares => merged.merge_source_sections(&child, true),
+        IncludeDialect::Phobos => merged.merge(&child),
+    }
     Ok(child.section(list).cloned())
 }
 
@@ -549,7 +550,7 @@ fn read_include(
     let own = match load(name) {
         Ok(Some(bytes)) => {
             traversal.included.insert(identity);
-            match load_included(merged, &bytes, dialect.section()) {
+            match load_included(merged, &bytes, dialect) {
                 Ok(own) => own,
                 Err(error) => {
                     traversal.report(
@@ -612,7 +613,7 @@ fn load_listed(
     Ok(())
 }
 
-/// Ares.dll `CCINIClass_ReadCCFile2` (`10064660`, the tail of `ReadCCFile`
+/// Ares.dll `CCINIClass_ReadCCFile2` (`0x10064660`, 3.0p1 `0x100655E0`, the tail of `ReadCCFile`
 /// `0x004741F0`, hooked at `0x00474314`). Every included file loads into the
 /// root INI, so its `[#include]` entries join the root's section. One index,
 /// shared by every nesting level, walks that section until it reaches its

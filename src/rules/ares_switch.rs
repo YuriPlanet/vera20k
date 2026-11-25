@@ -29,10 +29,10 @@
 //! [`not_ares_reads`]: an Ares reader that replaces a stock read or reads a
 //! key retail data already holds, and the Phobos readers, which parse with
 //! Ares' `Valueable<T>` readers, so a Phobos-only mod keeps Ares off. That
-//! holds in a build with the `phobos` feature: without those readers the
-//! three keys both extensions read (`LaserThickness`, `Beam.IsHouseColor`,
-//! `Passengers.BySize`) count as Ares'. The store's own merges and walks are
-//! not reader lookups.
+//! holds in a build with the `phobos` feature: without those readers
+//! `LaserThickness` and `Beam.IsHouseColor` count as Ares'. Built-in vehicle
+//! capacity reads `Passengers.BySize` in every build without turning on Ares.
+//! The store's own merges and walks are not reader lookups.
 //!
 //! One game, one answer. The processing passes keep their Ares-only keys
 //! with the processed rules ([`AresInputs`], saved with them); the RuleSet
@@ -44,10 +44,11 @@
 //! How a game is read follows the game too. Ares.dll replaces some stock
 //! reads (list capacities, the `[WeaponTypes]` pre-allocation, the generic
 //! prerequisites and armors), adds its own, and hooks every INI text load
-//! (its `+` keys, `[Child]:[Base]` sections, later-wins keys and
-//! `[#include]`); a game that ships `ares.mix` has its INIs loaded and its
+//! (its `+` keys, `[Child]:[Base]` sections, and later-wins keys); a game
+//! that ships `ares.mix` has its INIs loaded and its
 //! Rules processed and projected the Ares way ([`ares_way`]), any other game
-//! the stock way. With no mod selected, an installed `ares.mix` is ignored
+//! the stock way. An explicit `[#include]` works with either reader. With
+//! no mod selected, an installed `ares.mix` is ignored
 //! unless the player's Ares setting is On; a selected mod can mount its own
 //! or the installation's copy, and the setting Off mounts none
 //! (`AssetManager::ships_ares`). The few Ares readers whose state only Ares

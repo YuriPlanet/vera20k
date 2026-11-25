@@ -274,15 +274,14 @@ fn place_ready_building_for_tab(state: &mut AppState, tab: SidebarTab) {
 
 /// The factory a structure tab hotkey hands Manual_Place4FB840 with the
 /// tab's ready building `held`: its `ObjectClass::FindFactory(0, 0)`
-/// (`0x005F5C20`), or with Ares (0, 1), a powered one
-/// (Set{Structure,Defense}TabCommandClass_Execute_Power, Ares.dll
-/// `10025150`/`10025130`, hooks `0x00535DB6`/`0x00535E76`).
+/// (`0x005F5C20`), or Ares 3.0p1's (0, 1)
+/// (`0x00535DB6 -> 0x10025C70`, `0x00535E76 -> 0x10025C50`).
 pub(in crate::app::input) fn ready_tab_factory(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     held: u64,
 ) -> Option<u64> {
-    crate::sim::production::object_find_factory(sim, rules, held, false, rules.ares_form())
+    crate::sim::production::ready_object_factory(sim, rules, held, false, false).available()
 }
 
 /// Placement start centres the foundation on the Cell of `factory`, the
@@ -449,6 +448,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
             }
         }
         HotkeyCommand::AutoLoad => crate::app::input::smart_command::hotkey_pressed(state),
+        HotkeyCommand::TogglePower => crate::app::input::power_mode::execute_command(state),
         // A chord runs in the window owner before this dispatch; a binding on
         // a typing key reaches here, after the chat edit.
         HotkeyCommand::PerformanceStats
@@ -574,9 +574,11 @@ pub(super) fn press_super_weapon(
     right: bool,
     gui_sound: bool,
 ) {
-    let ares = state
-        .rules()
-        .is_some_and(crate::rules::ruleset::RuleSet::ares_form);
+    let ares = state.rules().is_some_and(|rules| {
+        rules
+            .super_weapon(section)
+            .is_some_and(|sw| sw.uses_extension_rules(rules))
+    });
     let selection = (|| {
         let runtime = state.match_state.sim_runtime.runtime()?;
         let sim = &runtime.simulation;

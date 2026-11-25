@@ -568,13 +568,13 @@ impl Simulation {
         rules: &RuleSet,
         effects: &mut FrameEffects<'_>,
     ) -> bool {
-        // Installed Ares Foot4DFE00 hook10049130 redirects only Ext+B0.
-        if rules.ares_form()
-            && self
-                .substrate
-                .entities
-                .get(id)
-                .is_some_and(|foot| foot.seldom.ares.vehicle_driver.vehicle_seek())
+        // Ares 3.0p1 0x4DFE00 -> 0x10049D80 redirects only when Ext+B0
+        // requests a vehicle search and returns at 0x4DFF3E.
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|foot| foot.seldom.ares.vehicle_driver.vehicle_seek())
         {
             return self.ares_enter_nearest_vehicle(id, rules, effects);
         }

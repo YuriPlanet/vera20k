@@ -495,7 +495,10 @@ impl ProjectileType {
             bullet_type_ext: if crate::rules::ares_switch::ares_way() {
                 crate::rules::ares_bullet_type::BulletTypeExtRules::from_section(section)
             } else {
-                Default::default()
+                crate::rules::ares_bullet_type::BulletTypeExtRules {
+                    ignores_firestorm: section.read_bool("IgnoresFirestorm", false),
+                    ..Default::default()
+                }
             },
             image: None,
             image_loads: Vec::new(),

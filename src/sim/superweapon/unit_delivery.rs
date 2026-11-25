@@ -50,12 +50,20 @@ impl UnitDeliveryState {
         }
     }
 
-    /// Saved pending deliveries load only into a game Ares plays in (`ares`,
-    /// [`RuleSet::ares`]), like the entity's delivery base override
-    /// (`GameEntity::validate_ares_compatibility`).
-    pub(crate) fn validate_ares_compatibility(&self, ares: bool) -> Result<(), &'static str> {
-        if !ares && !self.pending.is_empty() {
-            return Err("pending deliveries require a game Ares plays in");
+    /// A saved pending delivery needs its provider definition to be usable
+    /// with the loading game's rules.
+    pub(crate) fn validate_ares_compatibility(
+        &self,
+        ares: bool,
+        builtin_delivery: impl Fn(InternedId) -> bool,
+    ) -> Result<(), &'static str> {
+        if !ares
+            && self
+                .pending
+                .iter()
+                .any(|delivery| !builtin_delivery(delivery.sw_type))
+        {
+            return Err("pending deliveries require an enabled UnitDelivery definition");
         }
         Ok(())
     }
@@ -86,7 +94,7 @@ fn a_game_without_ares_rejects_pending_unit_delivery_state() {
             owner, 0, None, true, 0, 10,
         ));
     let mut state = UnitDeliveryState::default();
-    assert!(state.validate_ares_compatibility(false).is_ok());
+    assert!(state.validate_ares_compatibility(false, |_| false).is_ok());
     state.pending.push(PendingDelivery {
         sw_type,
         owner,
@@ -101,10 +109,10 @@ fn a_game_without_ares_rejects_pending_unit_delivery_state() {
         activation_sound: None,
     });
     assert_eq!(
-        state.validate_ares_compatibility(false),
-        Err("pending deliveries require a game Ares plays in")
+        state.validate_ares_compatibility(false, |_| false),
+        Err("pending deliveries require an enabled UnitDelivery definition")
     );
-    assert!(state.validate_ares_compatibility(true).is_ok());
+    assert!(state.validate_ares_compatibility(true, |_| false).is_ok());
     assert!(state.validate(&sim).is_ok());
 }
 
@@ -155,7 +163,7 @@ pub(crate) fn configured(
     owner: InternedId,
     sw: &SuperWeaponType,
 ) -> bool {
-    rules.ares_form()
+    sw.uses_extension_rules(rules)
         && !sw.pre_click
         && !sw.post_click
         && !sw.use_charge_drain

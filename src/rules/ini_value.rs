@@ -545,8 +545,8 @@ impl IniSection {
 
     /// Ares Valueable<int>: ReadString(2048), then Parser<int>::TryParse.
     /// Absent, empty or failed conversions keep the current value. The `$`
-    /// branch scans decimal (`$%d`), while a final `h`/`H` scans hex (`%xh`).
-    /// Source: Ares 4f1d9299, Utilities/{TemplateDef.h,Parser.h,INIParser.h}.
+    /// prefix and final `h`/`H` both select hex. Ares 3.0p1
+    /// `Parser<int>::TryParse` (`10077B20`) passes `$%x` to the scanner.
     /// Scanner overflow keeps VERA's deterministic low-32-bit convention;
     /// out-of-range Ares CRT behavior is not claimed equivalent.
     pub fn read_ares_int(&self, key: &str, default: i32) -> i32 {
@@ -567,7 +567,7 @@ impl IniSection {
         })
     }
 
-    /// Ares/Phobos `PartialVector2D<int>` (`Utilities/TemplateDef.h`'s
+    /// Ares `PartialVector2D<int>` (`Utilities/TemplateDef.h`'s
     /// `read<PartialVector2D<int>>` over `MultiParser<int>::Parse(value, out, 2)`):
     /// ReadString(2048), then at most two comma-separated [`parse_ares_int`]
     /// tokens. Each token is space-trimmed on both sides and the scan stops at
@@ -576,9 +576,27 @@ impl IniSection {
     /// scan writes neither slot and leaves the count, so the whole pair retains.
     pub fn read_ares_partial_int_pair(&self, key: &str, current: PartialIntPair) -> PartialIntPair {
         let _ares = crate::rules::ares_switch::ares_reads();
+        self.read_partial_int_pair(key, current, parse_ares_int)
+    }
+
+    #[cfg(feature = "phobos")]
+    pub(crate) fn read_phobos_partial_int_pair(
+        &self,
+        key: &str,
+        current: PartialIntPair,
+    ) -> PartialIntPair {
+        self.read_partial_int_pair(key, current, parse_phobos_int)
+    }
+
+    fn read_partial_int_pair(
+        &self,
+        key: &str,
+        current: PartialIntPair,
+        parse: fn(&str) -> Option<i32>,
+    ) -> PartialIntPair {
         self.read_string_with(key, 2048, current, |previous, value| {
             let mut fields = [previous.low, previous.high];
-            let values = scan_partial_int_fields(value, &mut fields);
+            let values = scan_partial_int_fields(value, &mut fields, parse);
             if values == 0 {
                 return previous;
             }
@@ -641,7 +659,7 @@ impl IniSection {
         })
     }
 
-    /// Ares/Phobos `ValueableVector<int>` (`detail::parse_values<int>` over
+    /// Ares `ValueableVector<int>` (`detail::parse_values<int>` over
     /// `strtok(",")`): ReadString(2048), split on commas, and each token
     /// through [`parse_ares_int`]. A token that does not convert is skipped, so
     /// the list keeps the index alignment its caller pairs with another list
@@ -649,10 +667,19 @@ impl IniSection {
     /// a present one replaces it, even with no usable token.
     pub fn read_ares_int_list(&self, key: &str) -> Option<Vec<i32>> {
         let _ares = crate::rules::ares_switch::ares_reads();
+        self.read_int_list_with(key, parse_ares_int)
+    }
+
+    #[cfg(feature = "phobos")]
+    pub(crate) fn read_phobos_int_list(&self, key: &str) -> Option<Vec<i32>> {
+        self.read_int_list_with(key, parse_phobos_int)
+    }
+
+    fn read_int_list_with(&self, key: &str, parse: fn(&str) -> Option<i32>) -> Option<Vec<i32>> {
         Some(
             self.read_list(key, 2048)?
                 .iter()
-                .filter_map(|token| parse_ares_int(token))
+                .filter_map(|token| parse(token))
                 .collect(),
         )
     }
@@ -806,7 +833,7 @@ impl IniSection {
     pub fn read_phobos_int_pair(&self, key: &str, current: [i32; 2]) -> [i32; 2] {
         self.read_string_with(key, 2048, current, |current, raw| {
             let mut fields = current;
-            scan_partial_int_fields(raw, &mut fields);
+            scan_partial_int_fields(raw, &mut fields, parse_phobos_int);
             fields
         })
     }
@@ -825,26 +852,33 @@ impl IniSection {
                 return None;
             }
             let mut fields = current.unwrap_or_default();
-            let values = scan_partial_int_fields(raw, &mut fields);
+            let values = scan_partial_int_fields(raw, &mut fields, parse_phobos_int);
             (values == 2 || current.is_some()).then_some(fields)
         })
     }
 
-    /// Phobos shares Ares's `Parser<int>::TryParse`, including `$%d`.
+    /// Phobos' `Parser<int>::TryParse` retains the `$%d` format.
     pub fn read_phobos_nullable_int(&self, key: &str, current: Option<i32>) -> Option<i32> {
-        self.read_phobos_nullable_with(key, current, parse_ares_int)
+        self.read_phobos_nullable_with(key, current, parse_phobos_int)
+    }
+
+    /// ReadString(2048) followed directly by Phobos' single-value parser.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn read_phobos_scalar_int(&self, key: &str, current: i32) -> i32 {
+        self.read_string_with(key, 2048, current, |current, raw| {
+            parse_phobos_int(raw).unwrap_or(current)
+        })
     }
 
     /// Phobos `Valueable<int>`: `INI_EX::ReadInteger` is ReadString(2048),
     /// then `Read<int, 1>`, whose `Parser<int, 1>::Parse`
     /// (`src/Utilities/Parser.h` at c783774a) converts only the text before
-    /// the first comma, through the `Parser<int>::TryParse` it shares with
-    /// Ares (`$%d` included): the [`scan_ares_fields`] scan with one slot.
+    /// the first comma through `Parser<int>::TryParse` (`$%d` included).
     /// Absent, empty and failed reads keep the current value.
     pub fn read_phobos_int(&self, key: &str, current: i32) -> i32 {
         self.read_string_with(key, 2048, current, |current, raw| {
             let mut value = [current];
-            scan_ares_fields(raw, &mut value);
+            scan_buffered_int_fields(raw, &mut value, parse_phobos_int);
             value[0]
         })
     }
@@ -1989,8 +2023,20 @@ fn parse_ares_double_bits(value: &str) -> Option<NativeF64Bits> {
 
 /// The single Ares Parser<int> core, also used by compound int/bool readers.
 pub(crate) fn parse_ares_int(value: &str) -> Option<i32> {
-    if let Some(decimal) = value.strip_prefix('$') {
-        scan_decimal_i32(&mut decimal.as_bytes())
+    parse_extension_int(value, true)
+}
+
+pub(crate) fn parse_phobos_int(value: &str) -> Option<i32> {
+    parse_extension_int(value, false)
+}
+
+fn parse_extension_int(value: &str, dollar_hex: bool) -> Option<i32> {
+    if let Some(digits) = value.strip_prefix('$') {
+        if dollar_hex {
+            scan_hex_u32(digits.as_bytes()).map(|value| value as i32)
+        } else {
+            scan_decimal_i32(&mut digits.as_bytes())
+        }
     } else if value
         .as_bytes()
         .last()
@@ -2013,11 +2059,11 @@ fn parse_phobos_color(value: &str) -> Option<[u8; 3]> {
     .then(|| channels.map(|channel| channel as u8))
 }
 
-/// Ares 3.0 `detail::parse<T>(value, out, count)` (1000C7E0 for int,
+/// Ares `detail::parse<T>(value, out, count)` (3.0 1000C7E0 for int,
 /// 100089C0 for BYTE): [`scan_partial_int_fields`], except that NextToken's
 /// `sscanf_s("%[^,]")` into its 0x80-byte buffer fails on a token of 128
 /// bytes or more (after the leading spaces), which ends the scan there.
-fn scan_ares_fields(value: &str, out: &mut [i32]) -> u8 {
+fn scan_buffered_int_fields(value: &str, out: &mut [i32], parse: fn(&str) -> Option<i32>) -> u8 {
     let limit = value
         .split(',')
         .take(out.len())
@@ -2030,22 +2076,21 @@ fn scan_ares_fields(value: &str, out: &mut [i32]) -> u8 {
                 >= 128
         })
         .unwrap_or(out.len());
-    scan_partial_int_fields(value, &mut out[..limit])
+    scan_partial_int_fields(value, &mut out[..limit], parse)
 }
 
 /// The three-value coordinate reader 100406D0, when all three convert.
 fn parse_ares_coord3(value: &str) -> Option<[i32; 3]> {
     let mut fields = [0; 3];
-    (scan_ares_fields(value, &mut fields) == 3).then_some(fields)
+    (scan_buffered_int_fields(value, &mut fields, parse_ares_int) == 3).then_some(fields)
 }
 
 /// `detail::parse<unsigned char>` 100089C0 with three channels:
-/// `Parser<BYTE>::TryParse` (10076A10) scans the token like `Parser<int>`
-/// (`$%hu`, `%hxh`, `%hu`) into a WORD, keeping its low 16 bits, and accepts
-/// it only up to 255.
+/// Ares 3.0p1 `Parser<BYTE>::TryParse` (`10077AA0`) uses `$%hx`, `%hxh`,
+/// and `%hu` into a WORD, keeping the low 16 bits and accepting up to 255.
 fn parse_ares_color(value: &str) -> Option<[u8; 3]> {
     let mut fields = [0; 3];
-    if scan_ares_fields(value, &mut fields) != 3 {
+    if scan_buffered_int_fields(value, &mut fields, parse_ares_int) != 3 {
         return None;
     }
     let channel = |field: i32| u8::try_from(field as u16).ok();
@@ -2061,7 +2106,7 @@ fn parse_ares_color(value: &str) -> Option<[u8; 3]> {
 /// at least one character), trim the token's trailing spaces and convert it
 /// with `Parser<int>::TryParse`. The scan returns at the first slot that yields
 /// no token or no conversion, so a trailing comma counts as one parsed value.
-fn scan_partial_int_fields(value: &str, out: &mut [i32]) -> u8 {
+fn scan_partial_int_fields(value: &str, out: &mut [i32], parse: fn(&str) -> Option<i32>) -> u8 {
     let mut rest = value.as_bytes();
     for (index, slot) in out.iter_mut().enumerate() {
         while rest.first().is_some_and(|byte| is_crt_space(*byte)) {
@@ -2078,7 +2123,7 @@ fn scan_partial_int_fields(value: &str, out: &mut [i32]) -> u8 {
         while token.last().is_some_and(|byte| is_crt_space(*byte)) {
             token = &token[..token.len() - 1];
         }
-        let parsed = std::str::from_utf8(token).ok().and_then(parse_ares_int);
+        let parsed = std::str::from_utf8(token).ok().and_then(parse);
         let Some(parsed) = parsed else {
             return index as u8;
         };
@@ -2148,20 +2193,21 @@ mod tests {
     }
 
     #[test]
-    fn ares_integer_reader_retains_failed_values_and_uses_ares_dollar_decimal() {
+    fn ares_integer_reader_retains_failed_values_and_reads_dollar_hex() {
         let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
 
         for (value, expected) in [
             ("", -500),
             ("garbage", -500),
-            ("$bad", -500),
+            ("$not_hex", -500),
             ("0", 0),
-            ("$100", 100),
+            ("$7B", 123),
+            ("$100", 256),
             ("100h", 256),
             ("-700tail", -700),
-            ("$-100", -100),
-            ("$10h", 10),
+            ("$-100", -256),
+            ("$10h", 16),
             ("0x10", 0),
             ("-2147483648", i32::MIN),
         ] {
@@ -2180,6 +2226,18 @@ mod tests {
                 "{value}"
             );
         }
+    }
+
+    #[test]
+    fn ares_coordinate_and_color_readers_use_dollar_hex() {
+        let ini = sec("[S]\nVector=$2A, $-10, 3\nColor=$AA,$10,$FF\nPair=$100,$20\n");
+        let section = ini.section("S").unwrap();
+        assert_eq!(section.read_phobos_int_pair("Pair", [0; 2]), [100, 20]);
+        assert_eq!(section.read_ares_coord3("Vector", [0; 3]), [42, -16, 3]);
+        assert_eq!(
+            section.read_ares_nullable_color("Color", None),
+            Some([170, 16, 255])
+        );
     }
 
     fn sec(body: &str) -> IniFile {

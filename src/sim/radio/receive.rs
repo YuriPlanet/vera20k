@@ -41,23 +41,22 @@ use crate::sim::world::{FrameEffects, Simulation};
 /// The hull facing a Unit turns to on PREPARE_TO_DOCK (`0x007376E6`): east.
 pub(crate) const DOCK_FACING: u16 = 0x4000;
 
-/// The literal pad offset of `0x0043CA80..0x0043CA8D` (`add dx,3; inc ax`).
-const DOCK_PAD_OFFSET: [i32; 2] = [3, 1];
-
 /// The pad cell a DockUnload/Weeder dock sends in MOVE_HERE
 /// (`0x0043CA71..0x0043CAB8`): its NW cell (`Get_Cell`, Location / 256) plus
 /// (3, 1), CellStruct int16 adds. The stock refinery pad is this cell.
 #[cfg(test)]
 pub(crate) fn dock_pad_cell(rx: u16, ry: u16) -> (u16, u16) {
-    dock_pad_cell_at(rx, ry, DOCK_PAD_OFFSET)
+    let [x, y] = dock_pad_cell_at(
+        [rx as i16, ry as i16],
+        crate::rules::ares_building_type::DEFAULT_DOCK_UNLOAD_CELL,
+    );
+    (x as u16, y as u16)
 }
 
-/// The pad cell for an offset: each word is added as a CellStruct short.
-fn dock_pad_cell_at(rx: u16, ry: u16, offset: [i32; 2]) -> (u16, u16) {
-    (
-        (rx as i16).wrapping_add(offset[0] as i16) as u16,
-        (ry as i16).wrapping_add(offset[1] as i16) as u16,
-    )
+/// Ares 3.0p1 `1004571E..1004575E` compares the sum before narrowing.
+/// MOVE_HERE packs the same pad into CellStruct words for the radio payload.
+pub(crate) fn dock_pad_cell_at([x, y]: [i16; 2], [dx, dy]: [i32; 2]) -> [i32; 2] {
+    [i32::from(x).wrapping_add(dx), i32::from(y).wrapping_add(dy)]
 }
 
 /// Receiver-side radio dispatch. `target_sid` is the receiver; `sender_sid` is
@@ -573,11 +572,11 @@ fn building_docking(
     let (rx, ry) = (building.position.rx(), building.position.ry());
     // Ares 3.0 10014540 (hook 0x0043CA80) reads the pad offset from the
     // type's art DockUnloadCell (default 3, 1).
-    let pad_offset = if rules.ares_form() {
-        object.building_type_ext().dock_unload_cell
-    } else {
-        DOCK_PAD_OFFSET
-    };
+    let [pad_x, pad_y] = dock_pad_cell_at(
+        crate::sim::movement::ground_pose::position_world_xy(&building.position)
+            .map(crate::util::lepton::lepton_to_cell_packed),
+        object.building_type_ext().dock_unload_cell,
+    );
     // Building43C882/43CB0C..CBC0: Hospital bypasses the general dock's
     // HELLO/NeedToMove arm. Full contacts may release a finished patient.
     if object.hospital {
@@ -741,16 +740,14 @@ fn building_docking(
         }
         return RadioResponse::Roger;
     }
-    // 0x0043CA71..0x0043CAB8: the pad is Get_Cell() + (3, 1), CellStruct
-    // int16 adds on the NW foundation cell.
-    let pad = dock_pad_cell_at(rx, ry, pad_offset);
+    // 0x0043CA71..0x0043CAB8 packs the pad into CellStruct words.
     let arrived = transmit(
         sim,
         building_id,
         from,
         RadioMessage::MoveToCell,
         RadioPayload {
-            target: Some(NavTargetRef::cell(pad.0, pad.1)),
+            target: Some(NavTargetRef::cell(pad_x as u16, pad_y as u16)),
             ..RadioPayload::default()
         },
         rules,
@@ -1068,9 +1065,8 @@ fn unit_docking(
         return RadioResponse::Negatory;
     }
     let movement_zone = sender_type.movement_zone;
-    let ares = rules.ares_form();
     if transport.seldom.radio_contacts.slot(0) != Some(from) {
-        if !transport_has_room(transport, transport_type, sender_type, ares) {
+        if !transport_has_room(transport, transport_type, sender_type) {
             return RadioResponse::Negatory;
         }
         if transport.seldom.radio_contacts.is_empty() {
@@ -1133,10 +1129,11 @@ fn unit_docking(
             return RadioResponse::Docking;
         }
     }
-    let room =
-        sim.substrate.entities.get(unit).is_some_and(|transport| {
-            transport_has_room(transport, transport_type, sender_type, ares)
-        });
+    let room = sim
+        .substrate
+        .entities
+        .get(unit)
+        .is_some_and(|transport| transport_has_room(transport, transport_type, sender_type));
     if transport_type.passengers <= 0 || !room {
         return foot_receive(
             sim,
@@ -1204,9 +1201,9 @@ fn unit_docking(
 /// Unit737430 message0F, 73758A..7376AA: the mobile transport's admission
 /// query. Both the UI adapter and the real arrival radio use this one owner.
 /// Native controls: unit_transport_can_enter.py. It reads the receiver's
-/// one-way alliance, the ground Cell building list, and total cargo Size,
-/// not the passenger count. Native controls cover integer and fractional
-/// Size/SizeLimit inputs through the shared masked-x87 admission owner.
+/// one-way alliance and the ground Cell building list. In default size mode
+/// the native controls cover integer and fractional Size/SizeLimit inputs
+/// through the shared masked-x87 admission owner.
 pub(crate) fn unit_can_enter_radio(
     sim: &Simulation,
     unit: u64,
@@ -1266,7 +1263,7 @@ pub(crate) fn unit_can_enter_radio(
     {
         return RadioResponse::None;
     }
-    if !transport_has_room(transport, transport_type, passenger_type, ares) {
+    if !transport_has_room(transport, transport_type, passenger_type) {
         return RadioResponse::Negatory;
     }
     // Ares 3.0 1004C270 (hook 0x73769E), at the ROGER: a passenger of a type
@@ -1283,59 +1280,36 @@ pub(crate) fn unit_can_enter_radio(
     RadioResponse::Roger
 }
 
-/// A Unit transport's room for a sender, as its DOCKING and CAN_LOAD arms
-/// measure it (`UnitClass::Receive_Radio @ 0x00737430`, 0x0E and 0x0F): its
-/// cargo's signed-int total plus the sender's binary64 `Size=` within the
-/// receiver's integer `Passengers=`, and the sender's binary64 `Size=` within
-/// binary64 `SizeLimit=`. The original receiver performs these comparisons
-/// in the x87 owner exposed by PassengerCargo. `ares` is the game's
-/// `RuleSet::ares_form`.
+/// A Unit's CAN_LOAD (`0x73762B`) and DOCKING (`0x73782F`, `0x737994`)
+/// ask the same cargo owner. The P1 hooks `0x1004CDB0`, `0x1004CE30` and
+/// `0x1004CE70` keep the sender's `SizeLimit=` tests at `0x737677`,
+/// `0x737877` and `0x7379E8` when measuring by headcount.
 fn transport_has_room(
     transport: &crate::sim::game_entity::GameEntity,
     transport_type: &crate::rules::object_type::ObjectType,
     sender_type: &crate::rules::object_type::ObjectType,
-    ares: bool,
 ) -> bool {
-    // Ares 3.0 UnitClass_ReceivedRadioCommand_BySize1/3/4 (1004C150,
-    // 1004C1D0, 1004C210; hooks 0x73762B, 0x73782F, 0x737994): a
-    // `Passengers.BySize=no` transport counts heads below `Passengers=` in
-    // place of the Size total; the SizeLimit test after it stays.
-    if ares && !transport_type.ares_passengers_by_size {
-        let heads = transport
-            .passenger_role()
-            .cargo()
-            .map_or(0, |cargo| cargo.count() as i32);
-        return heads < transport_type.passengers
-            && crate::sim::passenger::PassengerCargo::size_within_limit(
-                sender_type.size,
-                transport_type.size_limit,
-            );
-    }
-    let occupied = transport
-        .passenger_role()
-        .cargo()
-        .map_or(0, |cargo| cargo.total_size());
-    crate::sim::passenger::PassengerCargo::size_fits_transport(
-        occupied,
+    crate::sim::passenger::PassengerCargo::fits_transport(
+        transport.passenger_role().cargo(),
         sender_type.size,
         transport_type.passengers,
         transport_type.size_limit,
+        transport_type.vehicle_cargo_by_size(),
     )
 }
 
-/// The facing a docking unit turns to: east ([`DOCK_FACING`]), or in a game
-/// read the Ares way `TechnoExt::GetDockUnloadFacing @ 10044C00`: the art
+/// The facing a docking unit turns to (`TechnoExt::GetDockUnloadFacing`
+/// at Ares `10044C00`): the art
 /// `DockUnloadFacing` of the building in its first radio contact slot
 /// (`HasAnyLink`, `GetNthLink(0)`), else east.
 pub(crate) fn dock_unload_facing(sim: &Simulation, unit: u64, rules: &RuleSet) -> u16 {
-    if rules.ares_form()
-        && let Some(dock) = sim
-            .substrate
-            .entities
-            .get(unit)
-            .and_then(|entity| entity.seldom.radio_contacts.slot(0))
-            .and_then(|dock| sim.substrate.entities.get(dock))
-            .filter(|dock| dock.category() == EntityCategory::Structure)
+    if let Some(dock) = sim
+        .substrate
+        .entities
+        .get(unit)
+        .and_then(|entity| entity.seldom.radio_contacts.slot(0))
+        .and_then(|dock| sim.substrate.entities.get(dock))
+        .filter(|dock| dock.category() == EntityCategory::Structure)
         && let Some(object) = sim.object_type(dock.type_ref(), rules)
     {
         return object.building_type_ext().dock_unload_direction();
@@ -2572,7 +2546,7 @@ mod tests {
             cargo.set_passengers_for_test(vec![2, 3]);
             cargo.set_passenger_sizes_for_test(vec![3.0, 3.0]);
             assert_eq!(
-                super::transport_has_room(&hull, object, rider, rules.ares_form()),
+                super::transport_has_room(&hull, object, rider),
                 room,
                 "{transport}"
             );

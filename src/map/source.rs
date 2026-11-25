@@ -529,9 +529,6 @@ fn expand_map_ini_with_options(
     assets: &AssetManager,
     strict: bool,
 ) -> Result<IniFile> {
-    if !(crate::rules::ares_switch::ares_way() || crate::rules::PHOBOS_ENABLED) {
-        return Ok(ini);
-    }
     let (expanded, _) = crate::rules::retail_sources::expand_ini_with_assets(
         assets,
         ini,
@@ -1962,45 +1959,39 @@ mod tests {
         for ares_way in [false, true] {
             let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
             let root = TestDirectory::new("network-map-includes");
+            std::fs::create_dir(root.path().join("Rules")).unwrap();
             let mut bytes = SOURCE_TEST_MAP.to_vec();
-            bytes.extend_from_slice(b"\n[#include]\n0=child.ini\n");
+            bytes.extend_from_slice(b"\n[#include]\n0=rules\\child.ini\n");
             root.write("Shared.map", &bytes);
-            root.write("child.ini", b"[General]\nBuildSpeed=.5\n");
+            root.write("Rules/Child.INI", b"[General]\nBuildSpeed=.5\n");
             let a = AssetManager::from_loose_root_for_test(root.path());
             let first = load_network_map_ini(root.path(), "Shared.map", &a).unwrap();
-            root.write("child.ini", b"[General]\nBuildSpeed=.7\n");
+            root.write("Rules/Child.INI", b"[General]\nBuildSpeed=.7\n");
             let b = AssetManager::from_loose_root_for_test(root.path());
             let second = load_network_map_ini(root.path(), "Shared.map", &b).unwrap();
             assert_eq!(
                 first.source.physical_identity(),
                 second.source.physical_identity()
             );
-            assert_eq!(
-                effective_network_map_digest(&first.ini, false, false)
-                    != effective_network_map_digest(&second.ini, false, false),
-                ares_way
+            assert_ne!(
+                effective_network_map_digest(&first.ini, false, false),
+                effective_network_map_digest(&second.ini, false, false)
             );
-            std::fs::remove_file(root.path().join("child.ini")).unwrap();
+            std::fs::remove_file(root.path().join("Rules/Child.INI")).unwrap();
             let c = AssetManager::from_loose_root_for_test(root.path());
-            assert_eq!(
-                load_network_map_ini(root.path(), "Shared.map", &c).is_err(),
-                ares_way
-            );
-            if ares_way {
-                root.write("child.ini", SOURCE_TEST_MAP);
-                let bytes = b"[#include]\n0=child.ini\n".to_vec();
-                let loaded = install_received_map(
-                    &root.path().join("cache"),
-                    bytes.clone(),
-                    &sha256_hex(&bytes),
-                    bytes.len(),
-                )
-                .unwrap();
-                let assets = AssetManager::from_loose_root_for_test(root.path());
-                let loaded =
-                    resolve_network_map_ini(loaded, &assets, false, "Included.map").unwrap();
-                validate_network_map_content(&loaded.ini, false).unwrap();
-            }
+            assert!(load_network_map_ini(root.path(), "Shared.map", &c).is_err());
+            root.write("Rules/Child.INI", SOURCE_TEST_MAP);
+            let bytes = b"[#include]\n0=rules\\child.ini\n".to_vec();
+            let loaded = install_received_map(
+                &root.path().join("cache"),
+                bytes.clone(),
+                &sha256_hex(&bytes),
+                bytes.len(),
+            )
+            .unwrap();
+            let assets = AssetManager::from_loose_root_for_test(root.path());
+            let loaded = resolve_network_map_ini(loaded, &assets, false, "Included.map").unwrap();
+            validate_network_map_content(&loaded.ini, false).unwrap();
         }
     }
 
@@ -2133,7 +2124,7 @@ mod tests {
     }
 
     #[test]
-    fn ini_directives_map_gameplay_and_metadata_follow_build_capability() {
+    fn ini_directives_map_gameplay_and_metadata_share_include_resolution() {
         for ares_way in [false, true] {
             let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
             let dir = TestDirectory::new("map-ini-directives");
@@ -2153,14 +2144,17 @@ mod tests {
             let metadata =
                 load_map_ini_by_name_or_path_with_assets(dir.path(), "Arena.map", &assets).unwrap();
             assert_eq!(loaded.map.ini.content_hash(), metadata.ini.content_hash());
-            let ares_include = ares_way;
             assert_eq!(
                 loaded
                     .map
                     .ini
                     .section_or_empty("Unit")
                     .read_int("Strength", 0),
-                if ares_include { 250 } else { 0 }
+                if ares_way || crate::rules::PHOBOS_ENABLED {
+                    250
+                } else {
+                    0
+                }
             );
             assert_eq!(
                 loaded
@@ -2176,7 +2170,7 @@ mod tests {
                     .ini
                     .section_or_empty("Basic")
                     .read_name("Name", 128),
-                ares_include.then_some("Included name")
+                Some("Included name")
             );
             assert_eq!(
                 serde_json::to_value(&loaded.source).unwrap(),

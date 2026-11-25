@@ -282,7 +282,7 @@ fn authored_power_flag_and_needs_engineer_use_distinct_latches_and_survive_save_
             .stuff_enabled(),
         "NeedsEngineer does not clear660"
     );
-    assert!(sim.go_building_offline(tech, &rules, &mut FrameEffects::default()));
+    assert!(sim.go_building_offline(tech, &rules, &mut FrameEffects::default(), false));
     // GoOnline (`0x00452271`) refuses while the EMP counter `+0x504` runs.
     sim.entities_mut_for_test()
         .get_mut(tech)
@@ -304,7 +304,7 @@ fn authored_power_flag_and_needs_engineer_use_distinct_latches_and_survive_save_
     );
     assert_eq!(sim.building_operational_state(tech, &rules), Some(false));
     assert!(
-        sim.go_building_offline(powered, &rules, &mut FrameEffects::default()),
+        sim.go_building_offline(powered, &rules, &mut FrameEffects::default(), false),
         "Powered accepts zero drain"
     );
     let hash = sim.state_hash();

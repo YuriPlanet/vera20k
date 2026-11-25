@@ -789,6 +789,68 @@ fn native_power_status_labels_preserve_color_a_z_and_constructor_order() {
 }
 
 #[test]
+#[ignore = "requires GPU; revealed factory production cameo draw"]
+fn factory_status_draw_samples_the_production_cameo_atlas() {
+    use crate::app::presentation::ui_overlays::BuildingStatusRun;
+    use crate::render::batch::SpriteInstance;
+
+    let gpu = Gpu::new();
+    let format = wgpu::TextureFormat::Bgra8UnormSrgb;
+    let size = [8, 8];
+    let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+    batch.write_camera(&gpu.queue, camera(size));
+    let atlas =
+        batch.create_texture_on_device(&gpu.device, &gpu.queue, &[255, 0, 0, 255], 1, 1, None);
+    let mut pool = InstanceBufferPool::new();
+    pool.upload_on_device(
+        &gpu.device,
+        &gpu.queue,
+        "building_status",
+        &[SpriteInstance {
+            position: [2.0; 2],
+            size: [4.0; 2],
+            uv_size: [1.0; 2],
+            tint: [1.0; 3],
+            alpha: 1.0,
+            ..Default::default()
+        }],
+    );
+    let color = gpu.target(size, format);
+    let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+    let cv = color.create_view(&Default::default());
+    let dv = depth.create_view(&Default::default());
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    clear(
+        &mut encoder,
+        &cv,
+        &dv,
+        0,
+        wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+    );
+    let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
+    terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
+    super::object_extras::draw_building_status(
+        &mut encoder,
+        &cv,
+        &dv,
+        &mut terrain,
+        [0, 0, size[0], size[1]],
+        &batch,
+        None,
+        pool.get("building_status").map(|(buffer, _)| buffer),
+        None,
+        Some(&atlas),
+        &[BuildingStatusRun::ProductionCameo(0)],
+        batch.surface_camera_bind_group(),
+    );
+    let reads = [gpu.read(&mut encoder, &color)];
+    let output = gpu.finish(encoder, &reads, size);
+    let inside = (3 * size[0] as usize + 3) * 4;
+    assert_eq!(output[0][inside..inside + 4], [0, 0, 255, 255]);
+    assert_eq!(output[0][0..4], [0, 0, 0, 255]);
+}
+
+#[test]
 fn native_power_status_reader_history_reaches_the_immutable_type() {
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
     use crate::rules::ruleset::RuleSet;
@@ -1060,6 +1122,7 @@ fn native_building_status_labels(fixture: &'static str) {
                 // The native comparison draws gamemd's labels only.
                 false,
                 false, // VERA convenience help off for the native comparison
+                |_, _| None,
             );
             assert_eq!(
                 labels.runs.len(),
@@ -1072,9 +1135,16 @@ fn native_building_status_labels(fixture: &'static str) {
                 .iter()
                 .zip(row["text_draws"].as_array().unwrap())
             {
+                let crate::app::presentation::ui_overlays::BuildingStatusRun::Text {
+                    rectangles,
+                    text,
+                } = run
+                else {
+                    panic!("{} expected native status text", row["name"]);
+                };
                 let at = |field: &str, index: usize| draw[field][index].as_i64().unwrap() as f32;
                 // The backing gamemd fills, clipped to the view.
-                let backing = &labels.instances[run.rectangles.start as usize];
+                let backing = &labels.instances[rectangles.start as usize];
                 assert_eq!(
                     (backing.position, backing.size),
                     (
@@ -1100,7 +1170,7 @@ fn native_building_status_labels(fixture: &'static str) {
                     [0.0, 0.0],
                 );
                 assert_eq!(
-                    labels.instances[run.text.start as usize].position, native_text[0].position,
+                    labels.instances[text.start as usize].position, native_text[0].position,
                     "{} original centered text origin",
                     row["name"]
                 );
@@ -1113,7 +1183,7 @@ fn native_building_status_labels(fixture: &'static str) {
             pool.upload_on_device(
                 &gpu.device,
                 &gpu.queue,
-                "building_status_text",
+                "building_status",
                 &labels.instances,
             );
             let a_input =
@@ -1133,7 +1203,7 @@ fn native_building_status_labels(fixture: &'static str) {
             clear(&mut encoder, &cv, &dv, old_z, wgpu::LoadOp::Load);
             let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
             terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
-            super::object_extras::draw_building_status_text(
+            super::object_extras::draw_building_status(
                 &mut encoder,
                 &cv,
                 &dv,
@@ -1141,8 +1211,9 @@ fn native_building_status_labels(fixture: &'static str) {
                 clip,
                 &batch,
                 Some(&overlay),
-                pool.get("building_status_text").map(|(buffer, _)| buffer),
+                pool.get("building_status").map(|(buffer, _)| buffer),
                 Some(font.atlas()),
+                None,
                 &labels.runs,
                 batch.surface_camera_bind_group(),
             );

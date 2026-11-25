@@ -58,13 +58,14 @@ EngineerAlwaysCaptureTech=yes
   `0x51E4ED`, and the arrival at `0x519FAF`), and
   `GetEngineerEnterEnemyBuildingAction` (`10025220`) for the hostile
   action (hooks `0x51E5BB`, `0x51E5E1`) and arrival damage (`0x519D9C`).
-- `sim/ares_garrison.rs`: the occupier admission (`10017060`, hook
-  `0x457D58`, inside `passenger::can_dock_occupier_garrison`), the raid of
-  another house's building on entry (`10017240`, hook `0x52297F`) and its
-  return once empty (`evalRaidStatus 100136C0` after `0x4581CD`,
-  `0x458729` and a pass-through hit). The raided owner is saved and
-  hashed with the building; `production::can_sell_building` refuses a
-  raided building (`10017200`, hook `0x4494D2`).
+- `sim/ares_garrison.rs`: the occupier admission (3.0p1 `10017710`, hook
+  `0x457D58`, inside `passenger::can_dock_occupier_garrison`) and raid on
+  entry (3.0p1 `10017910`, hook `0x52297F`). Campaign houses controlled by
+  the player can share garrisons and keep the building's owner. An empty
+  raided garrison returns to its old owner (`evalRaidStatus 100136C0`
+  after `0x4581CD`, `0x458729` and a pass-through hit). The raided owner
+  is saved and hashed with the building. `production::can_sell_building`
+  refuses a raided building (`10017200`, hook `0x4494D2`).
 - `sim/world/object_entry.rs` and `object_turn.rs`: `IsPassable` in the
   Infantry and Unit `Can_Enter_Cell` building arms (`10014D70`, hook
   `0x51C4C8`; `10015100`, hook `0x73F7B0`) and the idle infantryman's

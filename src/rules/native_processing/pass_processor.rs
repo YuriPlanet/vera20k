@@ -404,17 +404,13 @@ impl RulesPassProcessor {
                 .drop_pod
                 .read_pass(general, trailer, types);
         }
-        // The same LoadAfterTypeData1002A800 continues with General's
-        // BountyEnablers1002AAAB and AudioVisual's BountyDisplay1002AAC5.
-        if ares_way {
-            let enablers = pass.section("General").and_then(|section| {
-                self.resolve_existing_list_from(
-                    section,
-                    "BountyEnablers",
-                    RulesTypeFamily::Building,
-                    2048,
-                )
-            });
+        self.ares_global_controls
+            .building
+            .read_toggle_power(pass, ares_way);
+        {
+            // A later pass can declare a paid Firestorm. Retain the
+            // Find-only references without opting into any other Ares rule.
+            let _builtin = (!ares_way).then(crate::rules::ares_switch::not_ares_reads);
             // 1002AAF0 sets the firestorm anims' Find defaults on the
             // rulesmd.ini pass only; 1002A800 reads the firestorm keys after
             // TogglePower and before BountyEnablers (Find-only pointers).
@@ -448,6 +444,18 @@ impl RulesPassProcessor {
                     warhead,
                 },
             );
+        }
+        // The same LoadAfterTypeData1002A800 continues with General's
+        // BountyEnablers1002AAAB and AudioVisual's BountyDisplay1002AAC5.
+        if ares_way {
+            let enablers = pass.section("General").and_then(|section| {
+                self.resolve_existing_list_from(
+                    section,
+                    "BountyEnablers",
+                    RulesTypeFamily::Building,
+                    2048,
+                )
+            });
             self.ares_global_controls
                 .bounty
                 .read_after_type_data(pass, enablers);

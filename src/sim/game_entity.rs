@@ -1154,12 +1154,12 @@ fn a_stock_game_rejects_saved_delivery_base_override_and_keeps_base_space() {
         20,
         EntityCategory::Structure,
     );
-    assert!(entity.validate_ares_compatibility(false).is_ok());
+    assert!(entity.validate_ares_compatibility(false, |_| false).is_ok());
     assert!(entity.unit_delivery_provides_base_space());
     entity.unit_delivery_no_base = true;
     assert_eq!(
-        entity.validate_ares_compatibility(false),
-        Err("delivery base overrides require a game Ares plays in")
+        entity.validate_ares_compatibility(false, |_| false),
+        Err("delivery base overrides require an enabled UnitDelivery definition")
     );
 }
 
@@ -1272,14 +1272,14 @@ impl GameEntity {
         self.ares_super_target = target;
     }
 
-    /// Saved extension effects must be admitted by the game that resumes
-    /// them: a game Ares plays in (`ares`, [`RuleSet::ares`]).
-    /// Keep the raw delivery override private to its entity owner.
-    ///
-    /// [`RuleSet::ares`]: crate::rules::ruleset::RuleSet::ares
-    pub(crate) fn validate_ares_compatibility(&self, ares: bool) -> Result<(), &'static str> {
-        if !ares && self.unit_delivery_no_base {
-            return Err("delivery base overrides require a game Ares plays in");
+    /// Saved effects must be admitted by the rules that resume them.
+    pub(crate) fn validate_ares_compatibility(
+        &self,
+        ares: bool,
+        builtin_delivery_can_override_base: impl FnOnce(InternedId) -> bool,
+    ) -> Result<(), &'static str> {
+        if !ares && self.unit_delivery_no_base && !builtin_delivery_can_override_base(self.type_ref()) {
+            return Err("delivery base overrides require an enabled UnitDelivery definition");
         }
         if !ares && (self.ares_super_weapon.is_some() || self.ares_super_target.is_some()) {
             return Err("attached superweapons require a game Ares plays in");

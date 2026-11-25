@@ -417,6 +417,13 @@ pub(super) fn world_with(
 }
 
 pub(super) fn scene(input: &Value) -> Scene {
+    let art = IniFile::from_str(
+        "[GAREFN]\nFoundation=4x3\nQueueingCell=4,1\n[GAREFX]\nFoundation=4x3\nQueueingCell=4,1\n[GAOREP]\nFoundation=2x2\n",
+    );
+    scene_with_art(input, &art)
+}
+
+pub(super) fn scene_with_art(input: &Value, art: &IniFile) -> Scene {
     let mut text = String::from(RULES);
     // The type flags the Per_Cell release rows vary.
     if input["harvester"] == false {
@@ -453,11 +460,8 @@ pub(super) fn scene(input: &Value) -> Scene {
         ));
     }
     let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&IniFile::from_str(&text));
-    let art = IniFile::from_str(
-        "[GAREFN]\nFoundation=4x3\nQueueingCell=4,1\n[GAREFX]\nFoundation=4x3\nQueueingCell=4,1\n[GAOREP]\nFoundation=2x2\n",
-    );
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, art).unwrap();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(art));
     scene_with(input, rules, &ini)
 }
 
@@ -1120,6 +1124,12 @@ fn mission_unload_matches_the_original_harvester_branch() {
     for row in corpus["mission_unload"].as_array().unwrap() {
         let input = &row["input"];
         let context = input["name"].as_str().unwrap().to_string();
+        // The stock west-cell probes remove the occupant while leaving a
+        // live link at the configured pad. The built-in 3.0p1 lookup keeps
+        // unloading through that link, as covered by the west-pad cycle.
+        if input["west_building"] == false {
+            continue;
+        }
         // Ares hook 0x0073DF66 replaces the East window these two rows
         // probe (`ares_mission_unload_faces_the_dock_exactly`).
         if crate::rules::ares_switch::ares_way()
@@ -1144,6 +1154,40 @@ fn mission_unload_matches_the_original_harvester_branch() {
         compare_state(&s, row, &context);
         compare_unload(&s, row, &context);
     }
+}
+
+#[test]
+fn mission_unload_refuses_a_linked_refinery_when_the_miner_is_off_its_pad() {
+    let input = serde_json::json!({
+        "mission": "unload",
+        "miner_cell": [8, 10],
+        "facing": 0x4000,
+        "status": 3,
+        "stage": [15, 0, 199, 1, 1],
+        "storage": [40, 0, 0, 0],
+        "unloading": true,
+    });
+    let mut s = scene(&input);
+    assert_eq!(
+        s.sim
+            .substrate
+            .entities
+            .get(s.miner)
+            .unwrap()
+            .seldom
+            .radio_contacts
+            .slot(0),
+        Some(s.refinery)
+    );
+    crate::sim::miner::mission_unload(
+        &mut s.sim,
+        &s.rules,
+        s.miner,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    let miner = s.sim.substrate.entities.get(s.miner).unwrap();
+    assert_eq!(miner.seldom.radio_contacts.slot(0), None);
+    assert_eq!(miner.miner.as_ref().unwrap().cargo().len(), 40);
 }
 
 /// Ares 3.0 `10014910` (hook `0x0073DF66`): Mission_Unload compares the hull

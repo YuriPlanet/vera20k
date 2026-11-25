@@ -116,9 +116,15 @@ const PUBLISHED_FLAGS: u8 = FLAG_REVEALED
     | FLAG_HOSTILE_GAP_PRESENT
     | FLAG_GAP_FOG;
 
-/// Map5678E0 clamps its visited disc to10. Native source cached260 retains
-/// the raw effective radius; the independent border traversal clamps to11.
+/// Last radius in the stock Map5678E0 table. Ordinary longer sight uses
+/// the runtime rings. Other area reveal callers keep the stock limit.
 pub const MAX_SIGHT_RANGE: u16 = 10;
+
+/// Ares 3.0p1 Map5673A0/5678E0 (0x10069730..45, 0x10069C20..35):
+/// nonpositive sight visits nothing and the runtime enumerator caps at 256.
+pub(crate) fn sight_walk_radius(radius: i32) -> u16 {
+    radius.clamp(0, i32::from(crate::sim::cell_rect::MAX_CELL_SPREAD)) as u16
+}
 
 /// World height of one terrain level, in leptons. Same retail value the
 /// coordinate-Z evaluator uses (`util::lepton::LEPTONS_PER_LEVEL`); kept local
@@ -2366,14 +2372,22 @@ impl VisionConfig {
         cell: (u16, u16),
         radius: u16,
         z: i32,
+        outline: bool,
         line_of_sight: Option<CellLevels<'_>>,
         dimensions: (u16, u16),
     ) {
+        // The P1 RevealArea bodies start at radius-3 in outline mode when
+        // RevealByHeight is off (0x10069757..72, 0x10069C47..62).
+        let first_ring = if outline && !self.reveal_by_height {
+            radius.saturating_sub(3)
+        } else {
+            0
+        };
         extend_reveal_cells(
             cells,
             cell.0,
             cell.1,
-            radius,
+            first_ring..=radius,
             z,
             line_of_sight.is_some(),
             line_of_sight,
@@ -2543,7 +2557,7 @@ pub(crate) fn sight_admission(
         &mut cells,
         rx,
         ry,
-        geometry.radius.clamp(0, i32::from(MAX_SIGHT_RANGE)) as u16,
+        0..=sight_walk_radius(geometry.radius),
         height_leptons,
         config.reveal_by_height,
         height_grid,
@@ -2638,8 +2652,8 @@ pub(crate) fn entity_sight_geometry(
         sight_ability,
         config.veteran_sight,
     );
-    //70B0D8 stores the raw effective260. Map5678E0 clamps only its walk,
-    //and border567DA0 independently clamps cached260+3 to3..11.
+    //70B0D8 stores the raw effective260. Area and border each apply their
+    //own walk limit to that cached sight.
     let effective = radius_override.unwrap_or(with_veterancy);
     SightGeometry {
         owner: revealer,
@@ -2764,11 +2778,9 @@ impl CellLevels<'_> {
 /// The cells `MapClass::RevealArea @ 0x005678E0` hands its leaf, in its
 /// order; `RevealShroud @ 0x005673A0` walks the same cells.
 ///
-/// The walk takes the engine's reveal spiral, `REVEAL_SPIRAL[0 ..
-/// RING_SIZES[range]]` (the offset table `0xABD490` and the count table
-/// `0x007ED3D0`), with no special case at any radius: 0 reveals nothing and
-/// more than 10 is 10 (`0x00567A3E..0x00567A59`). Every entry, ring 10
-/// included, passes through the same height line-of-sight gate.
+/// The stock walk takes the engine's reveal spiral (offset table
+/// `0xABD490` and count table `0x007ED3D0`) through radius 10. Longer
+/// ordinary sight takes the runtime ring and height rules below.
 ///
 /// ## Elevation Z-shift
 /// The spiral is centered on the viewer's *screen* cell, not its raw foot cell.
@@ -2799,9 +2811,9 @@ impl CellLevels<'_> {
 /// - In GameMode 3 or 4 with a session object (`0x00A8B23C`) whose vt+4
 ///   answers false, three fixed cells are skipped (`0x005679C8..0x005679F7`,
 ///   `0x00567D17..0x00567D5E`); VERA has no session object.
-/// - With `RevealByHeight=` off, a caller's outline argument (arg 3, the
-///   Techno sight callers') walks only the outer three rings
-///   (`0x00567A77..0x00567AA5`); retail rules leave the key on.
+/// - The stock table path keeps the existing full walk for an outline
+///   request with `RevealByHeight=no` (`0x00567A77..0x00567AA5`).
+///   Retail rules leave the key on.
 ///
 /// Production walks fill a kept buffer ([`extend_reveal_cells`]); this
 /// owned form serves fixtures.
@@ -2821,7 +2833,7 @@ pub(crate) fn collect_reveal_cells(
         &mut cells,
         center_rx,
         center_ry,
-        range,
+        0..=range.min(MAX_SIGHT_RANGE),
         viewer_height_leptons,
         reveal_by_height,
         height_grid,
@@ -2837,13 +2849,14 @@ pub(crate) fn extend_reveal_cells(
     cells: &mut Vec<(u16, u16)>,
     center_rx: u16,
     center_ry: u16,
-    range: u16,
+    rings: std::ops::RangeInclusive<u16>,
     viewer_height_leptons: i32,
     reveal_by_height: bool,
     height_grid: Option<CellLevels<'_>>,
     (width, height): (u16, u16),
     map_size: Option<(i32, i32)>,
 ) {
+    let range = *rings.end();
     let Some((cx, cy)) = reveal_area_origin(
         (center_rx, center_ry, viewer_height_leptons),
         range,
@@ -2852,53 +2865,75 @@ pub(crate) fn extend_reveal_cells(
         return;
     };
 
-    // Clamp range to MAX_SIGHT_RANGE (the original also clamps to 10).
-    let clamped = (range as usize).min(MAX_SIGHT_RANGE as usize);
-    let spiral_end = REVEAL_RING_SIZES[clamped];
-    cells.reserve(spiral_end);
     let viewer_level = viewer_height_leptons / LEPTONS_PER_HEIGHT_LEVEL;
     let z_shift = iso_height_shift_cells(viewer_height_leptons);
     let w = i32::from(width);
     let h = i32::from(height);
     let on_map = |x: i32, y: i32| {
-        map_size.is_none_or(|(size_w, size_h)| {
-            crate::map::playfield::size_diamond_contains(size_w, size_h, (x as i16, y as i16))
-        })
+        x >= 0
+            && x < w
+            && y >= 0
+            && y < h
+            && map_size.is_none_or(|(size_w, size_h)| {
+                crate::map::playfield::size_diamond_contains(size_w, size_h, (x as i16, y as i16))
+            })
     };
-
-    for i in 0..spiral_end {
-        let (dx, dy) = REVEAL_SPIRAL[i];
-        let rx = cx + dx as i32;
-        let ry = cy + dy as i32;
-        if on_map(rx, ry) && rx >= 0 && rx < w && ry >= 0 && ry < h {
-            // Height-based LOS: check whether terrain at the obstruction cell
-            // blocks sight. The original engine samples the cell at
-            // `foot_target + mirror[i] + (2, 2)` — the per-entry mirror steps one
-            // cell back toward the viewer, plus a fixed +2 on each axis baked into
-            // the original's obstruction math. The obstruction is relative to the
-            // raw foot cell, so we add `z_shift` back to undo the spiral's Z-shift
-            // (in the original this cancellation is implicit). If that cell's Level
-            // exceeds viewer_level + 3, the target is not revealed (LOS blocked).
-            if reveal_by_height && let Some(levels) = height_grid {
-                let (mdx, mdy) = REVEAL_MIRROR[i];
-                let obs_x = rx + mdx as i32 + 2 + z_shift;
-                let obs_y = ry + mdy as i32 + 2 + z_shift;
-                if obs_x >= 0 && obs_x < w && obs_y >= 0 && obs_y < h {
-                    // Original567CB5 MOVSX reads Cell+11B as a signed byte.
-                    let obs_level =
-                        i32::from(levels.level(obs_x as u16, obs_y as u16, width) as i8);
-                    if viewer_level + 3 < obs_level {
-                        continue; // terrain blocks LOS
-                    }
+    let extended = range > MAX_SIGHT_RANGE;
+    let clear_height = |x: i32, y: i32, mx: i32, my: i32| {
+        if reveal_by_height && let Some(levels) = height_grid {
+            // Sample relative to the raw foot cell. Undo the screen lift
+            // and add the native two-cell bias and the mirror offset.
+            let obs_x = x + mx + 2 + z_shift;
+            let obs_y = y + my + 2 + z_shift;
+            if obs_x >= 0 && obs_x < w && obs_y >= 0 && obs_y < h {
+                let level = levels.level(obs_x as u16, obs_y as u16, width);
+                // P1 0x1006A3A8 reads the byte unsigned. The stock table
+                // path at 0x00567CB5 reads a signed byte.
+                let level = if extended {
+                    i32::from(level)
+                } else {
+                    i32::from(level as i8)
+                };
+                if viewer_level + 3 < level {
+                    return false;
                 }
             }
+        }
+        true
+    };
+
+    if extended {
+        // P1 MapClass_RevealArea0/1 (0x005673A0 -> 0x1004F530 -> 0x005678D6,
+        // 0x005678E0 -> 0x1004F5C0 -> 0x00567D8F) use runtime CellSpread rings.
+        // 0x10069887..D5 / 0x10069D61..AF apply the strict squared cutoff.
+        // 0x1006A2E0 steps each obstruction axis toward the raw center.
+        let range = range.min(crate::sim::cell_rect::MAX_CELL_SPREAD);
+        let radius_squared = (i32::from(range) + 1).pow(2);
+        for (dx, dy) in crate::sim::cell_rect::cell_spread_rings(*rings.start(), range) {
+            let (dx, dy) = (i32::from(dx), i32::from(dy));
+            let (rx, ry) = (cx + dx, cy + dy);
+            if dx * dx + dy * dy < radius_squared
+                && on_map(rx, ry)
+                && clear_height(rx, ry, -dx.signum(), -dy.signum())
+            {
+                cells.push((rx as u16, ry as u16));
+            }
+        }
+        return;
+    }
+
+    let end = REVEAL_RING_SIZES[usize::from(range)];
+    cells.reserve(end);
+    for (&(dx, dy), &(mx, my)) in REVEAL_SPIRAL[..end].iter().zip(&REVEAL_MIRROR) {
+        let (rx, ry) = (cx + i32::from(dx), cy + i32::from(dy));
+        if on_map(rx, ry) && clear_height(rx, ry, i32::from(mx), i32::from(my)) {
             cells.push((rx as u16, ry as u16));
         }
     }
 }
 
 /// Original Map567DA0 ground-frame refresh geometry. Unlike RevealArea,
-/// height zero takes the whole clamped3..11 disc, without LOS. The selected
+/// height zero takes the whole disc, without LOS. The selected
 /// frontier path uses finalarg0; nonzero skips the traversal. Executed table:
 /// original561910, tools' consumed reveal spiral corpus (Steam gamemd).
 /// Its independent inner-height argument selects an inner ring; the ordinary
@@ -2910,6 +2945,21 @@ pub(crate) fn sight_border_cells(
 ) -> Vec<(u16, u16)> {
     let center = height_shifted_cell_origin(origin);
     let center = (center.0 as i16, center.1 as i16);
+    let to_cell = |(x, y)| {
+        (
+            center.0.wrapping_add(x) as u16,
+            center.1.wrapping_add(y) as u16,
+        )
+    };
+    if radius > i32::from(MAX_SIGHT_RANGE) + 3 {
+        // Above ordinary sight 10 plus its border padding, use the P1
+        // Map567DA0 hook (0x1004F630 -> 0x00567F61). Its 0x1006A580
+        // helper caps the outer ring at 256 and the starting ring at 253.
+        let first = inner_height.clamp(0, i32::from(crate::sim::cell_rect::MAX_CELL_SPREAD) - 3);
+        return crate::sim::cell_rect::cell_spread_rings(first as u16, sight_walk_radius(radius))
+            .map(to_cell)
+            .collect();
+    }
     let end = REVEAL_RING_SIZES[radius.clamp(3, 11) as usize];
     let start = if inner_height <= 0 {
         0
@@ -2918,12 +2968,7 @@ pub(crate) fn sight_border_cells(
     };
     REVEAL_SPIRAL[start..end]
         .iter()
-        .map(|&(x, y)| {
-            (
-                center.0.wrapping_add(i16::from(x)) as u16,
-                center.1.wrapping_add(i16::from(y)) as u16,
-            )
-        })
+        .map(|&(x, y)| to_cell((i16::from(x), i16::from(y))))
         .collect()
 }
 

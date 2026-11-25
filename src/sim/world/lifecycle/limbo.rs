@@ -487,6 +487,8 @@ impl Simulation {
             {
                 entity.seldom.ares.powered_by = None;
             }
+        }
+        if context.rules.attach_effects_enabled() {
             self.limbo_ares_attach_effects(stable_id, context.rules());
         }
         // Phobos `TechnoClass_Limbo_Wrapper` replaces the Limbo entry
@@ -624,6 +626,11 @@ impl Simulation {
             crate::sim::radio::broadcast_break(self, stable_id, context.rules(), context.effects());
         }
         let outcome = self.object_conceal_with_context(stable_id, context.reborrow());
+        if outcome == ConcealOutcome::Concealed {
+            // Recompute Building445B81..445C73's gate endpoints with the
+            // removed building now absent from the live ground lists.
+            self.refresh_gate_wall_connections(stable_id, context.rules());
+        }
         // Ares 3.0 UnitClass_Remove (1005D610, hook 0x7440BD), after a Foot
         // Limbo that removed the Unit: its Tank Bunker lets it go
         // (`BuildingClass::ClearBunker @ 0x00459470`).
@@ -651,20 +658,12 @@ impl Simulation {
         // Ares 3.0 BuildingClass_Remove_FirestormWall (10014A70, hook
         // 0x445DF4) after the base Limbo disconnects a firestorm wall
         // section from its neighbours (`UpdateFirewallLinks`).
-        if context.rules.ares()
-            && self
-                .substrate
-                .entities
-                .get(stable_id)
-                .is_some_and(|entity| entity.category() == EntityCategory::Structure)
-        {
-            self.ares_update_firewall_links(
-                stable_id,
-                context.rules(),
-                context.registry(),
-                context.effects(),
-            );
-        }
+        self.ares_update_firewall_links(
+            stable_id,
+            context.rules(),
+            context.registry(),
+            context.effects(),
+        );
         // Building445DF4..445E14 follows the base Limbo, including the
         // already-limbo branch4458CE. This is one House/category callback,
         // never a global eligibility sweep or a boolean-transition latch.
@@ -688,6 +687,7 @@ impl Simulation {
                 owner,
                 category,
                 context.effects(),
+                false,
             );
         }
         outcome

@@ -130,8 +130,8 @@ impl PhobosAirburstType {
             "Splits.AllowRepeatTargets",
             value.splits_allow_repeat_targets,
         );
-        value.splits_target_cell_range =
-            section.read_ares_int("Splits.TargetCellRange", value.splits_target_cell_range);
+        value.splits_target_cell_range = section
+            .read_phobos_scalar_int("Splits.TargetCellRange", value.splits_target_cell_range);
         value.splits_use_weapon_targeting = section.read_phobos_nullable_bool(
             "Splits.UseWeaponTargeting",
             value.splits_use_weapon_targeting,
@@ -156,7 +156,7 @@ impl PhobosAirburstType {
             "AirburstWeapon.HeadToTarget",
             value.airburst_weapon_head_to_target,
         );
-        value.airburst_weapon_radial_fire_segments = section.read_ares_int(
+        value.airburst_weapon_radial_fire_segments = section.read_phobos_scalar_int(
             "AirburstWeapon.RadialFireSegments",
             value.airburst_weapon_radial_fire_segments,
         );

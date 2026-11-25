@@ -2,9 +2,10 @@
 
 Ares 3.0 brings back Tiberian Sun's firestorm
 wall as a superweapon (`Type=Firestorm`, SW_Firewall) that powers a House's
-`Firestorm.Wall=` building sections while it drains. A game that ships `ares.mix`
-reads the keys below in every build ([Ares](ares.md)); other games keep the stock
-`FirestormWall=` paths.
+`Firestorm.Wall=` building sections while it drains. Every build reads these
+keys in Ares games. On Base-for-modders, a Firestorm with nonzero
+`Money.Amount` also uses this wall path and its startup fee with Ares off.
+[Ares rules](ares.md) · [Startup fees](ares-superweapon-money.md)
 
 ```ini
 [SuperWeaponTypes]
@@ -92,7 +93,7 @@ House is short of power). Every change updates each of the House's sections:
   SetFirestormState's zone batch over the sections' cells.
 - `sim/superweapon/firewall.rs`: Activate `100715C0`, Deactivate
   `100715F0`, through the charge-drain owners in `superweapon/fire.rs` and
-  `superweapon/mod.rs`.
+  `superweapon/mod.rs`. The 3.0p1 Activate entry (`100725D0`) requires a current grant.
 - Hook sites: building Update `0x440378` (`techno_ai.rs`), Put `0x440D01`
   and Remove `0x445DF4` (`lifecycle.rs`), ReceiveDamage `0x4423E7`
   (`combat/world_receiver.rs`), CanSell `0x449518` (`production_sell.rs`),

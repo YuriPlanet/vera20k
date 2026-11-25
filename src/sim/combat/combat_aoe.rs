@@ -20,6 +20,7 @@ use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::warhead_type::WarheadType;
+use crate::sim::cell_kernel::WallGateConnections;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::StringInterner;
 use crate::sim::map::bridge_topology::{CellBridgeView, ListLayer};
@@ -90,9 +91,16 @@ pub(crate) trait AoECellPrelude {
 
 struct AoEWallDamageHost<'borrow, 'prelude> {
     prelude: &'borrow mut Option<&'prelude mut dyn AoECellPrelude>,
+    wall_gates: Option<WallGateConnections<'borrow>>,
 }
 
 impl WallDamageTransactionHost for AoEWallDamageHost<'_, '_> {
+    fn wall_connects_to_gate(&self, cell: (u16, u16), wall: u8, east_west: bool) -> bool {
+        self.wall_gates
+            .as_ref()
+            .is_some_and(|gates| gates.connects(cell, wall, east_west))
+    }
+
     fn dirty_step(&mut self, step: WallDirtyStep, packed_coord: (u16, u16)) {
         if let Some(prelude) = self.prelude.as_deref_mut() {
             prelude.wall_dirty_step(step, packed_coord);
@@ -699,6 +707,7 @@ impl AoECollector {
         warhead: &WarheadType,
         layer_context: &mut AoELayerContext<'_>,
         cell_prelude: &mut Option<&mut dyn AoECellPrelude>,
+        wall_gates: Option<WallGateConnections<'_>>,
     ) -> AoESpreadCell {
         let requested = (
             (self.impact_rx as i16).wrapping_add(dx),
@@ -749,7 +758,10 @@ impl AoECollector {
             self.base_damage,
             warhead,
             layer_context,
-            cell_prelude,
+            &mut AoEWallDamageHost {
+                prelude: cell_prelude,
+                wall_gates,
+            },
             &mut self.result,
         );
         AoESpreadCell {
@@ -1015,7 +1027,22 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
         return AoEDamageResult::default();
     };
     for &(dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64, rules.ares()).iter() {
-        let cell = collector.prepare_cell(dx, dy, warhead, &mut layer_context, &mut cell_prelude);
+        let wall_gates = layer_context
+            .occupancy
+            .map(|occupancy| WallGateConnections {
+                occupancy,
+                entities,
+                interner,
+                gate_types: &rules.general.building_types,
+            });
+        let cell = collector.prepare_cell(
+            dx,
+            dy,
+            warhead,
+            &mut layer_context,
+            &mut cell_prelude,
+            wall_gates,
+        );
         collector.capture_cell(&cell, entities, &layer_context, terrain_objects);
     }
     collector.finish(entities, &layer_context, warhead)
@@ -1027,7 +1054,7 @@ fn route_wall_before_cell_objects(
     raw_damage: i32,
     warhead: &WarheadType,
     context: &mut AoELayerContext<'_>,
-    cell_prelude: &mut Option<&mut dyn AoECellPrelude>,
+    host: &mut AoEWallDamageHost<'_, '_>,
     _result: &mut AoEDamageResult,
 ) {
     let (Some(grid), Some(registry), Some(rng)) = (
@@ -1051,20 +1078,15 @@ fn route_wall_before_cell_objects(
         return;
     };
 
-    let _wall_result = {
-        let mut host = AoEWallDamageHost {
-            prelude: cell_prelude,
-        };
-        damage_wall_overlay_with_runtime_host(
-            grid,
-            registry,
-            context.terrain.as_deref_mut(),
-            target,
-            routed_damage,
-            rng,
-            Some(&mut host),
-        )
-    };
+    let _wall_result = damage_wall_overlay_with_runtime_host(
+        grid,
+        registry,
+        context.terrain.as_deref_mut(),
+        target,
+        routed_damage,
+        rng,
+        Some(host),
+    );
     #[cfg(any(test, feature = "test-support"))]
     _result.wall_mutations.extend(_wall_result.mutations);
 }

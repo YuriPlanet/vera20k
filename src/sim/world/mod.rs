@@ -1346,6 +1346,7 @@ pub(crate) fn repair_zone_after_recalc(
 /// Wall map callbacks over the installed presentation and navigation owners.
 /// Native Cell expiry7258D0 has no Techno listener broadcast.
 pub(crate) struct SimulationWallRuntimeHost<'a> {
+    pub(crate) wall_gates: crate::sim::cell_kernel::WallGateConnections<'a>,
     pub(crate) dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
     pub(crate) zone_grid: &'a mut Option<ZoneGrid>,
     pub(crate) path_grid: &'a mut Option<Arc<PathGrid>>,
@@ -1354,6 +1355,10 @@ pub(crate) struct SimulationWallRuntimeHost<'a> {
 }
 
 impl WallDamageTransactionHost for SimulationWallRuntimeHost<'_> {
+    fn wall_connects_to_gate(&self, cell: (u16, u16), wall: u8, east_west: bool) -> bool {
+        self.wall_gates.connects(cell, wall, east_west)
+    }
+
     fn dirty_step(&mut self, step: WallDirtyStep, packed_coord: (u16, u16)) {
         match step {
             WallDirtyStep::Tactical => self.dirty_cells.mark_tactical(packed_coord),

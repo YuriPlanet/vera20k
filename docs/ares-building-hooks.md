@@ -48,6 +48,12 @@ SizeLimit=15              ; the largest Size= that may enter
   (Ares `100156F0`, hook `0x440709`, `world_spawn::wall_unlimbo`). The sale
   requires a matching sellable `ToOverlay=` building type. Retail names
   GADUMY for every gate. GAGATE_A is a `Gate=yes` type with TechLevel -1.
+- **Wall ends beside gates.** GAWALL and NAWALL join a live gate in the
+  matching `[General]` GDI or Nod gate slot. GateOne connects east–west
+  and GateTwo north–south, following the concrete-wall checks in
+  `0x00480552..0x00480620`. Placing a wall or placing or removing a gate
+  refreshes the adjoining wall frames. On removal, VERA refreshes the
+  endpoints after the gate leaves the cell's ground occupancy.
 - **Trench lines.** `IsTrench=` (BuildingTypeExt `+0x84`) makes a type
   linkable like a firestorm section: placing it fills the gap up to
   `GuardRange` cells to a same-house or allied trench of the same kind, and
@@ -85,9 +91,9 @@ SizeLimit=15              ; the largest Size= that may enter
   answers ROGER (`100176B0`). Infantry may click any entrance
   (`100176E0`); a unit's order parks it as a pending entry and its cell
   entry admits the building like a `UnitAbsorb=` one (`10017830`,
-  `100177F0`). On arrival infantry enter the building owner's network and
-  units their own House's (`10017760`, `10017870`): focus, gattling and
-  captor dropped, `EnterTransportSound=` played, limboed
+  `100177F0`). On arrival infantry and vehicles join the entrance owner's
+  network (`10017760` and 3.0p1 `10017F60`). The entrant clears focus,
+  gattling spin and captor, plays `EnterTransportSound=`, and enters limbo
   (EnterTunnel `10009000`). Self-clicking an entrance whose network holds
   a Foot unloads it (`100173A0`), last in first out, one per Unload
   dispatch (UnloadOne `100098A0`, `sim::transport_unload`). A
@@ -151,7 +157,7 @@ SizeLimit=15              ; the largest Size= that may enter
 | `0x442DF2` | `10017350` | BuildingClass_Demolish_Tunnel | ported: `crew_survival::spawn_building_survivors` |
 | `0x44A37F` | `100173E0` | BuildingClass_Mi_Selling_Tunnel | ported: `production_sell::sale_survivors` |
 | `0x71A995` | `100177B0` | TemporalClass_Update_Tunnel | ported: `temporal` erase |
-| `0x73A23F` | `10017870` | UnitClass_UpdatePosition_Tunnel | ported: `movement::per_cell::unit_per_cell_absorber` |
+| `0x73A23F` | `10017F60` | UnitClass_UpdatePosition_Tunnel | 3.0p1 entrance-owner routing in `movement::per_cell::unit_per_cell_absorber` |
 | `0x73F606` | `100177F0` | UnitClass_IsCellOccupied_Tunnel | ported: `world::object_entry` |
 | `0x741CE5` | `10017830` | UnitClass_SetDestination_Tunnel | ported: `movement::track_path` |
 | `0x51ED8E` | `100176E0` | InfantryClass_GetActionOnObject_Tunnel | ported: `world::world_orders::entry_click_action` |

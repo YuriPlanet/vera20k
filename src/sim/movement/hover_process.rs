@@ -39,6 +39,7 @@ use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::mission_data::MissionType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::rules::terrain_rules::LandType;
 use crate::sim::cell_kernel::{native_xy_distance, native_xyz_distance};
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::game_entity::GameEntity;
@@ -133,17 +134,21 @@ pub(crate) fn hover_move_to(
         })
     });
     hover.destination = Some(DriveCoord { z, ..coord });
-    if !airborne {
-        return HoverMoveTo::Done;
-    }
     //514E66: Is_Moving_Now is moving with a nonzero request. A Foot already
     //moving to a head keeps it; one without a head (514EA1) takes the request.
     let moving_now = hover.ready_state().is_moving_now();
-    if moving_now && hover.head.is_some() {
-        return HoverMoveTo::Done;
-    }
-    if moving_now {
+    let path_step = airborne && (!moving_now || hover.head.is_none());
+    if path_step && moving_now {
         hover.speed_request = crate::util::native_x87::NativeF64Bits::ONE;
+    }
+    // Ares 3.0p1 Hover Move_To 0x514DFE -> 0x1004A160 clears the
+    // admitted DeployToLand request after the destination ground lookup.
+    // A zero return resumes the replaced stock instructions at 0x514DFE.
+    if entity.landing_for_deploy() {
+        entity.clear_landing_for_deploy();
+    }
+    if !path_step {
+        return HoverMoveTo::Done;
     }
     entity.foot_speed.set_speed_fraction(SIM_ONE);
     HoverMoveTo::PathStepOwed
@@ -322,6 +327,7 @@ impl Simulation {
         self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
         let mut out = HoverProcessOutcome::default();
         self.hover_process_movement(id, true, rules, registry, &mut out, effects)?;
+        self.substrate.hover_clear_speed_without_nav_com(id);
         Ok(())
     }
 
@@ -338,6 +344,7 @@ impl Simulation {
         if self.hover_is_moving(id) && !self.hover_move(id, rules, registry, &mut out, effects)? {
             return Ok(out);
         }
+        self.hover_deploy_landing_tail(id, rules, effects)?;
         self.hover_process_tail(id, rules, effects);
         Ok(out)
     }
@@ -603,8 +610,78 @@ impl Simulation {
         self.foot_mark_put(id, rules, registry, effects);
     }
 
-    /// Process 0x00514A21..0x00514C12: the altitude controller and the
-    /// Shove tail and the water DropAsBomb gate.
+    /// Ares 3.0p1 `HoverLocomotionClass_ILocomotion_Process_DeployToLand`
+    /// at 0x514A21 -> 0x1004A1A0 replays Is_Moving_Now and resumes its
+    /// test at 0x514A2A. This consumes the Techno's existing landing request.
+    fn hover_deploy_landing_tail(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<(), FrameAdvanceError> {
+        let Some(entity) = self
+            .substrate
+            .entities
+            .get(id)
+            .filter(|entity| entity.landing_for_deploy())
+        else {
+            return Ok(());
+        };
+        let Some(object) = self
+            .entity_object_type(entity, rules)
+            .filter(|object| object.deploy_to_land)
+        else {
+            return Ok(());
+        };
+        let moving = runtime(entity).is_some_and(|hover| hover.ready_state().is_moving_now());
+        let desired = object
+            .deploying_anim
+            .as_ref()
+            .map(|_| crate::sim::unit_simple_deploy::simple_deploy_facing(object, rules));
+        let cancel = self.resolved_terrain.as_ref().is_some_and(|terrain| {
+            let cells = NativeCellQuery::canonical(terrain);
+            let [x, y] = ground_pose::position_world_xy(&entity.position);
+            let land = cells.land_type(cells.lookup_world(x, y));
+            land == LandType::Water as i32 || land == LandType::Beach as i32
+        });
+        let frame = self.session.binary_frame();
+        if cancel {
+            if let Some(entity) = self.substrate.entities.get_mut(id) {
+                entity.clear_landing_for_deploy();
+            }
+            self.mission_queue_exact(
+                id,
+                crate::sim::mission::MissionId::from_known(MissionType::Guard),
+                1,
+                frame,
+                &crate::sim::mission::authority::LiveReadyInputProvider { rules },
+            )
+            .map_err(|error| self.hover_error(id, error.to_string()))?;
+        }
+        if moving {
+            if let Some(entity) = self.substrate.entities.get_mut(id) {
+                hover_stop_moving(entity);
+            }
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+        }
+        let Some(entity) = self.substrate.entities.get_mut(id) else {
+            return Ok(());
+        };
+        if let Some(desired) = desired
+            && entity.body_facing_current_ares(frame) != desired
+        {
+            entity.body_facing.set_ares(desired, frame);
+        }
+        if super::super::air_movement::current_fly_height(entity, self.resolved_terrain.as_ref())
+            <= 0
+        {
+            entity.clear_landing_for_deploy();
+            self.locomotor_mark_all_occupation_bits(id, false, rules.ares_form());
+        }
+        Ok(())
+    }
+
+    /// Process 0x00514AC8..0x00514C12: altitude, Shove and water DropAsBomb.
     fn hover_process_tail(&mut self, id: u64, rules: &RuleSet, effects: &mut FrameEffects<'_>) {
         Self::hover_altitude(
             &self.session,
@@ -721,14 +798,18 @@ impl Simulation {
                 matches!((ground(ahead), ground(location)), (Some(next), Some(here)) if next > here)
             })
         });
-        let powered = entity
-            .locomotor
-            .as_ref()
-            .is_some_and(|loco| loco.is_powered());
+        // Ares 3.0p1 UpdateHover 0x513EAA -> 0x1004A2C0 skips the
+        // powered lift at 0x513EAA and resumes at 0x513ECD during landing.
+        // The same bob, low-altitude rise and gravity/damping still run.
+        let powered_lift = !entity.landing_for_deploy()
+            && entity
+                .locomotor
+                .as_ref()
+                .is_some_and(|loco| loco.is_powered());
         let Some(hover) = runtime_mut(entity) else {
             return;
         };
-        let visible = hover.altitude_step(height, climbing, id as i32, frame, powered, rules);
+        let visible = hover.altitude_step(height, climbing, id as i32, frame, powered_lift, rules);
         //513E74..513E8C: SetHeight with +0x74 cleared, so unmarked.
         Self::set_object_height_unmarked(substrate, resolved_terrain, id, visible);
     }
@@ -756,6 +837,7 @@ impl Simulation {
                 self.substrate.hover_set_speed(id, true);
                 self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
                 self.hover_process_movement(id, true, rules, registry, out, effects)?;
+                self.substrate.hover_clear_speed_without_nav_com(id);
             }
             return Ok(());
         };
@@ -1403,6 +1485,16 @@ impl crate::sim::world::ObjectSubstrate {
                 .set_speed_fraction(if full { SIM_ONE } else { SIM_ZERO });
         }
     }
+    /// Ares 3.0p1 `1005D990` at Move_To's two returns (`0x514E97`,
+    /// `0x514F60`) and `1005D9D0` at SpeedUpdate's `0x516305`: after the
+    /// path attempt, use Foot vt+0x544 with zero if NavCom (+0x5A4) is null.
+    fn hover_clear_speed_without_nav_com(&mut self, id: u64) {
+        if let Some(entity) = self.entities.get_mut(id)
+            && entity.navigation.nav_com().is_none()
+        {
+            entity.foot_speed.set_speed_fraction(SIM_ZERO);
+        }
+    }
     /// The zeroed request/current pair and `Set_Speed(0)`.
     fn hover_halt(&mut self, id: u64) {
         if let Some(hover) = self.hover_mut(id) {
@@ -1424,6 +1516,58 @@ enum Arrival {
 #[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hover_path_attempts_drop_speed_when_arrival_clears_nav_com() {
+        use crate::rules::{ini_parser::IniFile, native_processing::RulesLayerStack};
+
+        let ini = IniFile::from_str(
+            "[VehicleTypes]\n0=HOVR\n[HOVR]\nStrength=100\nSpeed=8\n\
+             MovementZone=Amphibious\nSpeedType=Hover\n\
+             Locomotor={4A582742-9839-11D1-B709-00A024DDAFD1}\n",
+        );
+        for ares in [false, true] {
+            let rules =
+                RuleSet::from_rules_layers(&RulesLayerStack::new(ini.clone()).with_ares_mix(ares))
+                    .unwrap();
+            let mut sim = Simulation::with_seed(7);
+            crate::sim::arena_fixture::supply_native_map(&mut sim);
+            let id = sim
+                .spawn_object("HOVR", "Americans", 10, 10, 0, &rules)
+                .unwrap();
+
+            for speed_update in [false, true] {
+                let actor = sim.substrate.entities.get_mut(id).unwrap();
+                let at = ground_pose::position_world_coord(&actor.position);
+                actor
+                    .navigation
+                    .publish_nav_com(Some(NavTargetRef::cell(10, 10)));
+                actor.foot_speed.set_speed_fraction(SIM_ONE);
+                runtime_mut(actor).unwrap().destination = Some(at);
+                let mut effects = FrameEffects::default();
+                if speed_update {
+                    sim.hover_speed_update(
+                        id,
+                        &rules,
+                        Some(rules.overlay_registry()),
+                        &mut HoverProcessOutcome::default(),
+                        &mut effects,
+                    )
+                    .unwrap();
+                } else {
+                    sim.hover_move_to_path_step(id, &rules, &mut effects)
+                        .unwrap();
+                }
+                let actor = sim.entities().get(id).unwrap();
+                assert_eq!(actor.navigation.nav_com(), None);
+                assert_eq!(
+                    actor.foot_speed.applied_fraction(),
+                    SIM_ZERO,
+                    "Ares={ares}, SpeedUpdate={speed_update}",
+                );
+            }
+        }
+    }
 
     /// Hover::Path_And_Arrival stops at 51657C and sends NULL at 5166D7 through
     /// Foot+480. Human Infantry in deploy Doing 27 refuses at 51AA7E.

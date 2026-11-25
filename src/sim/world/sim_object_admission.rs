@@ -189,14 +189,19 @@ impl Simulation {
             }
             if inviso {
                 let placement = if rules.ares() {
-                    let placement = self.ares_shrapnel_flak_placement(stable_id, placement, rules);
-                    // Ares 1001A940 (hook 0x4688BD): a firestorm wall on the
-                    // way burns the child before the obstacle walk.
-                    if self.ares_inviso_firestorm(stable_id, placement, rules) {
-                        continue;
-                    }
-                    let placement = self.ares_inviso_obstacle(stable_id, placement, rules);
+                    self.ares_shrapnel_flak_placement(stable_id, placement, rules)
+                } else {
                     placement
+                };
+                // Ares 1001A940 (hook 0x4688BD): a firestorm wall on the
+                // way burns the child before the obstacle walk.
+                if self.ares_firestorm.any_active()
+                    && self.ares_inviso_firestorm(stable_id, placement, rules)
+                {
+                    continue;
+                }
+                let placement = if rules.ares() {
+                    self.ares_inviso_obstacle(stable_id, placement, rules)
                 } else {
                     placement
                 };

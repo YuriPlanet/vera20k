@@ -503,24 +503,20 @@ impl Simulation {
         effects: &mut FrameEffects<'_>,
     ) {
         let ares = rules.ares_form();
-        let Some(foot) = self
-            .substrate
-            .entities
-            .get(id)
-            .map(|entity| entity.category().is_foot())
-        else {
+        let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
         // Installed Ares Activate1004CCB0 replaces70FBE0 and vetoes before
         // ResetOrders/Power_On/sound. Keep this admission in the shared owner:
         // House50E010's power-center recovery also calls this function.
+        // vt+0x37C: Techno70EFD0 tests signed +504 > 0. Unit746C90 also
+        // checks DeathFrames= when running the full Ares activation hook.
+        if entity.emp_remaining() > 0 || (ares && entity.is_under_emp()) {
+            return;
+        }
+        let foot = entity.category().is_foot();
+        let was_offline = entity.deactivated.is_offline();
         if ares {
-            let entity = self.substrate.entities.get(id).expect("same receiver");
-            // vt+0x37C: Techno70EFD0 tests signed +504 > 0, Unit746C90 also
-            // a running DeathFrames= counter.
-            if entity.is_under_emp() {
-                return;
-            }
             //100454F0: a PoweredUnit= center or the PoweredBy source.
             if !self.ares_is_powered(id, rules) {
                 return;
@@ -530,11 +526,6 @@ impl Simulation {
                 return;
             }
         }
-        let was_offline = self
-            .substrate
-            .entities
-            .get(id)
-            .is_some_and(|entity| entity.deactivated.is_offline());
         self.reset_orders_to_guard(id, rules, effects);
         if foot
             && let Some(locomotor) = self

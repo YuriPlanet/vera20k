@@ -115,8 +115,8 @@ pub struct AresInfiltrationArms {
 /// building's destruction clears them (`BuildingClass_Destroy_OldSpy1`, hook
 /// `0x0044161C`) and a change of owner drops the new owner
 /// (`BuildingClass_ChangeOwnership_OldSpy1`/`2`, hooks `0x00448312` and
-/// `0x00448D95`). The selected-building status text reads it (Ares
-/// `BuildingClass_DrawVisible`, hook `0x0043E7B0`).
+/// `0x00448D95`). The selected-building cameo and status text read it
+/// (3.0p1 `BuildingClass_DrawVisible`, hook `0x0043E7B0`).
 ///
 /// RESIDUAL: Ares' `UpdateDisplayTo` (`0x0044F7A0`) also folds the bits of
 /// `SpyEffect.RevealRadar` buildings, and the `SpyEffect.KeepRadar` houses

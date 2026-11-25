@@ -2514,7 +2514,7 @@ fn frame_hud_messages(
 ) -> Vec<crate::app::input::messages::HudMessage> {
     let events = &output.sound_events;
     let mut messages = super::sound_dispatch::hud_messages(events, sim.interner(), local_owner);
-    if rules.ares_form() {
+    if rules.has_super_weapon_extension_rules() {
         messages.extend(super::sound_dispatch::ares_superweapon_messages(
             events,
             sim,

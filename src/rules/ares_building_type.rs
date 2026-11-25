@@ -31,6 +31,9 @@ use crate::rules::foundation::Foundation;
 use crate::rules::ini_parser::IniSection;
 use crate::util::native_x87::NativeF64Bits;
 
+/// Default pad offset in CellStruct words (stock 0x0043CA80..0x0043CA8D).
+pub(crate) const DEFAULT_DOCK_UNLOAD_CELL: [i32; 2] = [3, 1];
+
 /// One direction of the advanced rubble switch: `Rubble.Destroyed*` on a
 /// normal building (the rubble it turns into) or `Rubble.Intact*` on a
 /// rubble (the building an engineer rebuilds), the arguments
@@ -244,7 +247,7 @@ impl Default for BuildingTypeExtRules {
             returnable: None,
             ai_build_counts: Vec::new(),
             ai_extra_counts: Vec::new(),
-            dock_unload_cell: [3, 1],
+            dock_unload_cell: DEFAULT_DOCK_UNLOAD_CELL,
             dock_unload_facing: 8,
             degrade_amount: None,
             degrade_percentage: None,
@@ -300,19 +303,7 @@ impl BuildingTypeExtRules {
         references: BuildingTypeExtReferences,
     ) {
         let _ares = crate::rules::ares_switch::ares_reads();
-        // The art keys come first, from the type's Image= section: the
-        // Point2D reader 1000FAE0 and the Facing32 reader 1000FBF0.
-        self.dock_unload_cell = read_point(art, "DockUnloadCell", self.dock_unload_cell);
-        self.dock_unload_facing = art.read_string_with(
-            "DockUnloadFacing",
-            2048,
-            self.dock_unload_facing,
-            |current, value| {
-                crate::rules::ini_value::parse_ares_int(value)
-                    .filter(|facing| (0..32).contains(facing))
-                    .unwrap_or(current)
-            },
-        );
+        self.read_dock_art(art);
         // The Ares <= 0.9 art key, then the rules key (1000DD40 after the
         // dock keys).
         self.solid_height = art.read_ares_int("SolidHeight", self.solid_height);
@@ -386,7 +377,7 @@ impl BuildingTypeExtRules {
         self.degrade_percentage =
             section.read_ares_nullable_double_bits("Degrade.Percentage", self.degrade_percentage);
         self.is_passable = section.read_ares_bool("IsPassable", self.is_passable);
-        self.firestorm_wall = section.read_ares_bool("Firestorm.Wall", self.firestorm_wall);
+        self.read_firestorm_wall(section);
         if let Some(counts) = section.read_ares_int_list("AIBuildCounts") {
             self.ai_build_counts = counts;
         }
@@ -523,6 +514,27 @@ impl BuildingTypeExtRules {
         if count > 1 { count - 1 } else { 0 }
     }
 
+    /// Read the built-in dock keys from the type's Image= art section:
+    /// Ares Point2D `1000FAE0` and Facing32 `1000FBF0`.
+    pub(crate) fn read_firestorm_wall(&mut self, section: &IniSection) {
+        self.firestorm_wall = section.read_ares_bool("Firestorm.Wall", self.firestorm_wall);
+    }
+
+    pub(crate) fn read_dock_art(&mut self, art: &IniSection) {
+        let _builtin = crate::rules::ares_switch::not_ares_reads();
+        self.dock_unload_cell = read_point(art, "DockUnloadCell", self.dock_unload_cell);
+        self.dock_unload_facing = art.read_string_with(
+            "DockUnloadFacing",
+            2048,
+            self.dock_unload_facing,
+            |current, value| {
+                crate::rules::ini_value::parse_ares_int(value)
+                    .filter(|facing| (0..32).contains(facing))
+                    .unwrap_or(current)
+            },
+        );
+    }
+
     /// The dock's unload facing as a 16-bit direction (`DockUnloadFacing
     /// << 11`, `TechnoExt::GetDockUnloadFacing @ 10044C00`).
     pub(crate) fn dock_unload_direction(&self) -> u16 {
@@ -642,8 +654,8 @@ pub(crate) struct BuildingGlobalRules {
     /// `[General] Degrade.AmountConsumer` (`+0xEC`): the amount for a
     /// power consumer.
     pub(crate) degrade_amount_consumer: i32,
-    /// `[General] TogglePowerAllowed` (`+0x1C`): computer houses switch
-    /// their buildings off and on to balance their power.
+    /// `[General] TogglePowerAllowed` (`+0x1C`): allows the player's
+    /// TogglePower command and allows computer power balancing.
     pub(crate) toggle_power_allowed: bool,
     /// `[General] TogglePowerDelay` (`+0x20`, constructor 45): the frames
     /// between two balancing passes.
@@ -759,8 +771,7 @@ impl BuildingGlobalRules {
             .map(|tunnel| tunnel.passengers.max(-1))
     }
 
-    /// `1002A800`'s `[General]` engineer reads, ahead of `HSBuilding`, and
-    /// its later TogglePower keys.
+    /// `1002A800`'s `[General]` engineer reads, ahead of `HSBuilding`.
     pub(crate) fn read_after_type_data(&mut self, pass: &crate::rules::ini_parser::IniFile) {
         let _ares = crate::rules::ares_switch::ares_reads();
         if let Some(section) = pass.section("General") {
@@ -770,13 +781,28 @@ impl BuildingGlobalRules {
                 "EngineerAlwaysCaptureTech",
                 self.engineer_always_capture_tech,
             );
-            // Later in 1002A800, after the drop pod keys.
-            self.toggle_power_allowed =
-                section.read_ares_bool("TogglePowerAllowed", self.toggle_power_allowed);
-            self.toggle_power_delay =
-                section.read_ares_int("TogglePowerDelay", self.toggle_power_delay);
         }
-        if let Some(section) = pass.section("IQ") {
+    }
+
+    /// Ares 3.0p1 LoadAfterTypeData reads TogglePowerAllowed at
+    /// `0x1002B4C9` through the Ares boolean parser `0x1000EED0`, after
+    /// the drop pod keys. The built-in manual command uses it in every game.
+    /// Delay and IQ still belong to Ares' AI power balancing.
+    pub(crate) fn read_toggle_power(
+        &mut self,
+        pass: &crate::rules::ini_parser::IniFile,
+        ares_way: bool,
+    ) {
+        if let Some(section) = pass.section("General") {
+            self.toggle_power_allowed = crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_bool("TogglePowerAllowed", self.toggle_power_allowed)
+            });
+            if ares_way {
+                self.toggle_power_delay =
+                    section.read_ares_int("TogglePowerDelay", self.toggle_power_delay);
+            }
+        }
+        if ares_way && let Some(section) = pass.section("IQ") {
             self.toggle_power_iq = section.read_ares_int("TogglePower", self.toggle_power_iq);
         }
     }

@@ -1244,60 +1244,69 @@ mod clamp_tests;
 /// the center outward, ring by ring, clamped to its `Max` of 0x100. Ring 1 is
 /// `(0,0), (-1,-1), (0,-1), (1,-1), (-1,0), (1,0), (-1,1), (0,1), (1,1)`.
 pub fn cell_spread_offsets(spread: usize) -> Vec<(i16, i16)> {
-    /// `CellSpreadEnumerator::Max`.
-    const MAX_SPREAD: usize = 0x100;
-    let spread = spread.min(MAX_SPREAD);
-    let mut curspread: usize = 0;
-    let mut current = (0i16, 0i16);
+    let spread = spread.min(usize::from(MAX_CELL_SPREAD));
+    let mut cells = Vec::with_capacity(spread * 4 + 1);
+    cells.extend(cell_spread_rings(0, spread as u16));
+    cells
+}
+
+/// `CellSpreadEnumerator::Max`.
+pub(crate) const MAX_CELL_SPREAD: u16 = 0x100;
+
+/// The inclusive rings, starting at the native first offset of `first`.
+pub(crate) fn cell_spread_rings(first: u16, last: u16) -> impl Iterator<Item = (i16, i16)> {
+    let last = last.min(MAX_CELL_SPREAD);
+    let mut curspread = first.min(MAX_CELL_SPREAD + 1);
+    let mut current = if curspread == 0 {
+        (0, 0)
+    } else {
+        (-1, -(curspread as i16))
+    };
     let mut has_two = true;
     let mut had_two = true;
-    let mut cells = Vec::with_capacity(spread * 4 + 1);
-    loop {
-        if curspread > spread {
-            return cells;
+    std::iter::from_fn(move || {
+        if curspread > last {
+            return None;
         }
-        cells.push(current);
+        let next = current;
         if current == (0, 0) || (current.0 == 1 && current.1 == curspread as i16) {
             curspread += 1;
             current = (-1, -(curspread as i16));
             has_two = true;
             had_two = true;
-            continue;
-        }
-        if has_two {
+        } else if has_two {
             current.0 += 1;
             has_two = current.0 == 0;
-            continue;
-        }
-        if current.0 < 0 {
+        } else if current.0 < 0 {
             current.0 = -current.0;
             has_two = had_two;
-            continue;
+        } else {
+            current.1 += 1;
+            let change_sign = current.1 > 0;
+            if change_sign {
+                current.1 = -current.1;
+            }
+            current.0 = (curspread as i16 + current.1)
+                .wrapping_mul(-2)
+                .wrapping_sub(1);
+            let diff = current.0 - current.1;
+            has_two = diff >= 0;
+            had_two = has_two;
+            if diff == -1 {
+                current.0 += 1;
+            } else if diff < 0 {
+                current.0 = current
+                    .1
+                    .wrapping_neg()
+                    .wrapping_div(2)
+                    .wrapping_sub(curspread as i16);
+            }
+            if change_sign {
+                current.1 = -current.1;
+            }
         }
-        current.1 += 1;
-        let change_sign = current.1 > 0;
-        if change_sign {
-            current.1 = -current.1;
-        }
-        current.0 = (curspread as i16 + current.1)
-            .wrapping_mul(-2)
-            .wrapping_sub(1);
-        let diff = current.0 - current.1;
-        has_two = diff >= 0;
-        had_two = has_two;
-        if diff == -1 {
-            current.0 += 1;
-        } else if diff < 0 {
-            current.0 = current
-                .1
-                .wrapping_neg()
-                .wrapping_div(2)
-                .wrapping_sub(curspread as i16);
-        }
-        if change_sign {
-            current.1 = -current.1;
-        }
-    }
+        Some(next)
+    })
 }
 
 #[cfg(all(test, tests_sim_c_g))]

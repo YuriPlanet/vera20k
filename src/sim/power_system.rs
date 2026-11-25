@@ -113,9 +113,8 @@ pub struct PowerState {
 /// (+0x0C), BatteryCount (+0x10), BatteryKeepOnline (+0x70) and
 /// BatteryOverpower (+0x7C), written only by SW_Battery's Activate
 /// (`0x1006EBD0`) and Deactivate (`0x1006EC40`) here. Lists hold one entry per
-/// active battery's BuildingType. Trigger action 0x92 also adds AuxPower
-/// ([`PowerState::add_aux_power`]); script action 0x41 does natively but is
-/// not ported.
+/// active battery's BuildingType. Trigger action 0x92 and script action
+/// 0x41 also add AuxPower through [`PowerState::add_aux_power`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AresHousePower {
     aux_power: i32,
@@ -348,7 +347,8 @@ impl PowerState {
 
     /// Ares trigger action 0x92 (TActionExt::Execute 100396C0, hook
     /// 0x6DD8D7): HouseExt AuxPower += the action's Value2, then
-    /// RecheckPower (House+5778).
+    /// RecheckPower (House+5778). Ares 3.0p1 script action 0x41
+    /// (`0x1003A6F6..0x1003A711`) makes the same writes for the team's House.
     pub(crate) fn add_aux_power(&mut self, power: i32) {
         self.ares.aux_power = self.ares.aux_power.wrapping_add(power);
         self.invalidate(false);
@@ -757,18 +757,12 @@ fn recalculate_power_for_owner(
     binary_frame: u32,
     require_discovery: bool,
 ) {
-    // Ares HouseClass_UpdatePower_Auxiliary10024650 (hook 508C7F) starts
-    // the counters from HouseExt AuxPower: positive as output, negative as
-    // drain (the 32-bit negation wraps).
+    // Ares 3.0p1 HouseClass_UpdatePower_Auxiliary 0x10025170 (hook 0x508C7F)
+    // seeds the counters from HouseExt AuxPower before the building scan at
+    // 0x508C8B. A script can populate AuxPower even in a stock-way game.
     let ares = rules.ares_form();
-    let (mut produced, mut drained): (i32, i32) = if ares {
-        (
-            state.ares.aux_power.max(0),
-            state.ares.aux_power.wrapping_neg().max(0),
-        )
-    } else {
-        (0, 0)
-    };
+    let mut produced = state.ares.aux_power.max(0);
+    let mut drained = state.ares.aux_power.wrapping_neg().max(0);
     let mut has_drained_power_source = false;
     // Phobos `HouseExt::PowerPlantEnhancers`: this owner's active registered
     // enhancer buildings. The list is derived from the same building order the
@@ -1094,9 +1088,7 @@ fn radar_provider_available(
 ) -> bool {
     // Ares HouseClass_UpdateRadar_Battery10024780 (hook 508E66): on low
     // power the radar buildings are checked only while a battery is active.
-    let ares = rules.ares_form();
-    let low_power_blocks = if ares { !state.has_battery() } else { true };
-    if state.low_power() && low_power_blocks {
+    if state.low_power() && !state.has_battery() {
         return false;
     }
     // Native House+68 order chooses the first otherwise eligible provider;
@@ -1124,7 +1116,7 @@ fn radar_provider_available(
         // Ares Radar_Update_CheckEligible10024550 (hook508EBC) skips a
         // jammed or EMPed (+504 > 0) radar to the next one; a remaining
         // nonzero counter still ends the scan as508F12 does.
-        if ares {
+        if rules.ares_form() {
             if entity.seldom.ares.radar_jam.is_jammed() || entity.emp_remaining() > 0 {
                 continue;
             }

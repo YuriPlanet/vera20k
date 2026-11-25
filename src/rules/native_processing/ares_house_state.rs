@@ -587,6 +587,12 @@ impl CountryVeterancyState {
         self.ares.can_be_driven
     }
 
+    pub(super) fn read_can_be_driven(&mut self, section: &IniSection) {
+        // Ares 3.0p1 CountryExt's nullable CanBeDriven read at 0x1001CCAB.
+        self.ares.can_be_driven =
+            section.read_ares_nullable_bool("CanBeDriven", self.ares.can_be_driven);
+    }
+
     pub(crate) fn degrades_override(&self) -> Option<bool> {
         self.ares.degrades
     }

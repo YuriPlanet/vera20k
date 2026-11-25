@@ -1102,7 +1102,7 @@ fn trigger_online_is_independent_of_temporal_and_corrupt_chain_clear_does_not_re
     let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
     let other = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 12);
     let mut effects = FrameEffects::default();
-    assert!(sim.go_building_offline(building, &rules, &mut effects));
+    assert!(sim.go_building_offline(building, &rules, &mut effects, false));
     assert!(!entity(&sim, building).is_warped_out());
     sim.temporal_initiate_warp(cleg, Some(building), &rules, None, &mut effects);
     assert!(!entity(&sim, building).building_online());

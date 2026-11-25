@@ -29,6 +29,7 @@ fn transport(id: u64, capacity: i32, size_limit: f64, pos: [i32; 2]) -> Transpor
         id,
         capacity,
         size_limit,
+        by_size: true,
         cargo: crate::sim::passenger::PassengerCargo::new(capacity as u32, size_limit),
         pos,
     }
@@ -105,7 +106,11 @@ fn range_boundary_and_carrier_exclusion() {
 fn scene() -> Option<(Simulation, RuleSet)> {
     // Authored Size allows the retail LCRF to board another selected hull.
     // Keep the real startup, mode and map reader passes for everything else.
-    let patch = crate::rules::ini_parser::IniFile::from_str("[LCRF]\nSize=1\n");
+    scene_with_patch("[LCRF]\nSize=1\n")
+}
+
+fn scene_with_patch(patch: &str) -> Option<(Simulation, RuleSet)> {
+    let patch = crate::rules::ini_parser::IniFile::from_str(patch);
     let rules = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
         "Hills.mmx",
         &patch,
@@ -175,6 +180,22 @@ fn production_assignments_keep_each_passenger_within_range() {
     add(&mut sim, &rules, 10, "LCRF", 11);
     add(&mut sim, &rules, 11, "LCRF", 50);
     assert_eq!(pairs(&sim, &rules, &[1, 2, 10, 11]), [(1, 10), (2, 10)]);
+}
+
+#[test]
+fn production_autoload_reserves_seats_by_headcount_without_ares() {
+    let Some((mut sim, rules)) =
+        scene_with_patch("[E1]\nSize=3\n[LCRF]\nPassengers=2\nSizeLimit=3\nPassengers.BySize=no\n")
+    else {
+        return;
+    };
+    for id in [1, 2, 3] {
+        add(&mut sim, &rules, id, "E1", 10);
+    }
+    add(&mut sim, &rules, 10, "LCRF", 11);
+
+    assert_eq!(pairs(&sim, &rules, &[1, 2, 3, 10]), [(1, 10), (2, 10)]);
+    assert!(!rules.ares());
 }
 
 #[test]

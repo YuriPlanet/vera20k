@@ -120,6 +120,11 @@ impl RuleSet {
         self.ares_global_controls.building()
     }
 
+    /// `[General] TogglePowerAllowed=` gates the player's power mode.
+    pub fn toggle_power_allowed(&self) -> bool {
+        self.ares_building_globals().toggle_power_allowed
+    }
+
     /// RulesExt DamageAirConsiderBridges and IronCurtainFlash.
     pub(crate) fn ares_warhead_globals(&self) -> &crate::rules::ares_warhead::WarheadGlobalRules {
         self.ares_global_controls.warhead()
@@ -139,6 +144,13 @@ impl RuleSet {
         &self,
     ) -> &crate::rules::ares_firestorm::FirestormGlobalRules {
         self.ares_global_controls.firestorm()
+    }
+
+    pub(crate) fn has_builtin_firestorm(&self) -> bool {
+        self.super_weapons.values().any(|sw| {
+            sw.has_builtin_rules()
+                && sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Firestorm
+        })
     }
 
     /// Ares RulesExt+70, used by SW_HunterSeeker::Activate100728EB.

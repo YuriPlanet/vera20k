@@ -372,6 +372,48 @@ fn ares_emp_stops_hover_and_ship_movers() {
     }
 }
 
+/// The P1 delivery at 0x10063070 admits a surfaced Tunnel mover and takes
+/// its ILocomotion Power_Off/Power_On slots through the ordinary EMP lifecycle.
+#[test]
+fn configured_emp_stops_and_recovers_a_surfaced_tunnel_mover_with_ares_off() {
+    use crate::sim::movement::tunnel_movement::TunnelState;
+
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let mut patch = IniFile::from_str(PATCH);
+    patch.merge(&IniFile::from_str(
+        "[HTNK]\nLocomotor={4A582743-9839-11d1-B709-00A024DDAFD1}\nEMP.Threshold=no\n",
+    ));
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&patch)
+    else {
+        return;
+    };
+    let rules = retail.rules;
+    assert!(!rules.ares() && !rules.ares_form());
+    let (mut sim, grid) = scene(&rules, false);
+    let gun = spawn(&mut sim, &rules, "MTNK", "Americans", 12, 10);
+    let victim = spawn(&mut sim, &rules, "HTNK", "Russians", 15, 10);
+    let locomotor = |sim: &Simulation| {
+        let mover = sim
+            .entities()
+            .get(victim)
+            .unwrap()
+            .locomotor
+            .as_ref()
+            .unwrap();
+        (mover.tunnel_runtime().unwrap().state(), mover.is_powered())
+    };
+    assert_eq!(locomotor(&sim), (TunnelState::Idle, true));
+    assert!(
+        fire(&mut sim, &rules, &grid, gun, victim, victim),
+        "an EMP shell disables a Tunnel unit on the surface"
+    );
+    assert!(offline(&sim, victim));
+    assert_eq!(locomotor(&sim), (TunnelState::Idle, false));
+    assert!(run(&mut sim, &rules, &grid, 151, |sim| emp(sim, victim) == 0));
+    assert!(!offline(&sim, victim));
+    assert_eq!(locomotor(&sim), (TunnelState::Idle, true));
+}
+
 /// A V3 rocket tilting on its launcher takes the Aircraft branch of
 /// enableEMPEffect10062B40 like any Fly mover: above the ground it crashes
 /// through TechnoExt::Destroy10044300. The launcher is made immune so its
@@ -480,51 +522,61 @@ fn ares_emp_darkens_a_spy_satellite_uplink_until_expiry() {
     );
 }
 
-/// announceAttack10062150 for the player's own victims: the War Miner's
-/// ore-miner warning and the Ore Purifier's base warning, with no ally
-/// line. `Malicious=no` keeps the damage path's warnings out.
+/// The EMP pre-effect isolates its warnings from the damage receiver's own
+/// alerts. Ares 3.0p1's delivery at 10063224 guards both EMP warning lines.
 #[test]
-fn ares_emp_announces_the_players_miner_and_base() {
+fn ares_emp_warnings_require_a_malicious_warhead() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(rules) = rules() else {
         return;
     };
-    let (mut sim, grid) = scene(&rules, false);
-    let americans = sim.interner.intern("Americans");
-    let gun = spawn(&mut sim, &rules, "MTNK", "Russians", 12, 10);
-    let harv = spawn(&mut sim, &rules, "HARV", "Americans", 15, 10);
-    let other = spawn(&mut sim, &rules, "MTNK", "Russians", 12, 20);
-    let purifier = spawn(&mut sim, &rules, "GAOREP", "Americans", 15, 19);
-    assert_eq!(
-        sim.entities().get(purifier).unwrap().category(),
-        EntityCategory::Structure
-    );
-    order(
-        &mut sim,
-        Command::Attack {
-            attacker_id: gun,
-            target_id: harv,
-        },
-    );
-    order(
-        &mut sim,
-        Command::Attack {
-            attacker_id: other,
-            target_id: purifier,
-        },
-    );
-    assert!(run(&mut sim, &rules, &grid, 60, |sim| emp(sim, harv) > 0
-        && emp(sim, purifier) > 0));
-    // The fixture frame keeps every frame's sounds; nothing collects them.
-    let mut warnings: Vec<_> = sim
-        .sound_events
-        .iter()
-        .filter_map(|event| match event {
-            SimSoundEvent::UnderAttack { owner, miner, .. } => Some((*owner, *miner)),
-            SimSoundEvent::AllyUnderAttack { owner, .. } => Some((*owner, false)),
-            _ => None,
-        })
-        .collect();
-    warnings.sort();
-    assert_eq!(warnings, [(americans, false), (americans, true)]);
+    let quiet_warhead = rules.warhead("EMPWH").unwrap();
+    let mut warning_warhead = quiet_warhead.clone();
+    let patch = IniFile::from_str("[EMPWH]\nMalicious=yes\n");
+    warning_warhead
+        .ares_rules_mut()
+        .unwrap()
+        .combat_mut()
+        .read_pass(patch.section("EMPWH").unwrap(), None, None, None);
+
+    for (warhead, malicious) in [(quiet_warhead, false), (&warning_warhead, true)] {
+        let (mut sim, _) = scene(&rules, false);
+        let americans = sim.interner.intern("Americans");
+        let gun = spawn(&mut sim, &rules, "MTNK", "Russians", 12, 10);
+        let harv = spawn(&mut sim, &rules, "HARV", "Americans", 15, 10);
+        let purifier = spawn(&mut sim, &rules, "GAOREP", "Americans", 15, 19);
+        for victim in [harv, purifier] {
+            let centre = crate::sim::movement::ground_pose::object_get_coords(
+                sim.entities().get(victim).unwrap(),
+                sim.resolved_terrain.as_ref(),
+            );
+            sim.apply_ares_emp_detonation(
+                crate::sim::projectile::ProjectileCoord {
+                    x: centre.x,
+                    y: centre.y,
+                    z: centre.z,
+                },
+                Some(gun),
+                warhead,
+                &rules,
+                &mut Default::default(),
+            );
+            assert!(emp(&sim, victim) > 0);
+        }
+        let mut warnings: Vec<_> = sim
+            .sound_events
+            .iter()
+            .filter_map(|event| match event {
+                SimSoundEvent::UnderAttack { owner, miner, .. } => Some((*owner, *miner)),
+                SimSoundEvent::AllyUnderAttack { owner, .. } => Some((*owner, false)),
+                _ => None,
+            })
+            .collect();
+        warnings.sort();
+        let expected = [(americans, false), (americans, true)];
+        assert_eq!(
+            warnings.as_slice(),
+            if malicious { &expected[..] } else { &[] }
+        );
+    }
 }

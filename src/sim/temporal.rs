@@ -713,14 +713,17 @@ impl Simulation {
                 return;
             }
         }
-        // Ares 3.0 TemporalClass_UpdateA (1004BB60, hook 0x71A84E): the
-        // target's JammerClass unjams everything and is freed (its next
-        // TechnoClass_Update makes a new one). Its AttachEffect anim hiding
-        // (`TemporalHidesAnim`) belongs to the AttachEffect owner's residual.
-        if rules.ares_form()
-            && let Some(target) = link.target
-        {
-            self.remove_radar_jammer(target);
+        // Ares 3.0p1 TemporalClass_UpdateA (0x1004C7C0, hook 0x71A84E)
+        // removes the jammer, then hides attached animations via 0x10059650.
+        // VERA evaluates the chain and head damage below in the same slot as
+        // the replaced 0x71A84E..0x71A88D before the shared continuation.
+        if let Some(target) = link.target {
+            if rules.ares_form() {
+                self.remove_radar_jammer(target);
+            }
+            if rules.temporal_attach_effects_enabled() {
+                self.hide_ares_attach_effect_anims_for_temporal(target, rules);
+            }
         }
         // 0x0071A84E..0x0071A88A: the chain first, then the head's own weapon.
         let chain = link

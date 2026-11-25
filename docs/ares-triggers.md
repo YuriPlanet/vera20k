@@ -86,6 +86,20 @@ into that House's index first (hook `0x71EE79`).
 
 147 and 149 are attached-object actions.
 
+## Team scripts
+
+- `65,<power>` adds a signed amount of auxiliary power to the team's House.
+  The House recalculates its output and drain, and the team proceeds to the
+  next action.
+- `67,0` asks each eligible infantry member to seek a vehicle. An infantry
+  member that accepts a target leaves the team to capture it. The team proceeds
+  to the next action. The vehicle admission rules still apply, including
+  `VehicleThief=`, `CanDrive=` and the target Country's `CanBeDriven=`.
+  An attached trigger can use vehicle capture events 69 and 70. A recorded
+  hijacker remains subject to its `VehicleThief.OneTime=` rule if the vehicle dies.
+
+The script action itself enables these two behaviors.
+
 ## Where VERA20K owns it
 
 - `sim/trigger_runtime_ares.rs`: HasOccured, TechTypeExists, the Ares raise

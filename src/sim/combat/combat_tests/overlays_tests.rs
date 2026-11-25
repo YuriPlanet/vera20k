@@ -201,7 +201,7 @@ fn wall_warhead_damages_and_destroys_wall_overlay() {
     assert_eq!(initial_wall_entities, 0, "wall state is cell-owned");
 
     // Forced destruction (literal -1 bypasses the probabilistic gate).
-    sim.apply_wall_damage(WallPointerTarget::Real(5, 5), -1, &registry);
+    sim.apply_wall_damage(WallPointerTarget::Real(5, 5), -1, &registry, &rules);
     // Overlay cleared.
     let grid = sim
         .overlay_grid
@@ -520,17 +520,17 @@ fn build_minimal_sim_with_gawall_seeded(
 fn wall_damage_deterministic_across_replays() {
     let seed: u64 = 0x1234_5678;
     let snapshot_a: (Option<u8>, u8) = {
-        let (mut sim, _rules, registry) = build_minimal_sim_with_gawall_seeded(5, 5, seed);
+        let (mut sim, rules, registry) = build_minimal_sim_with_gawall_seeded(5, 5, seed);
         for _ in 0..5 {
-            sim.apply_wall_damage(WallPointerTarget::Real(5, 5), 100, &registry);
+            sim.apply_wall_damage(WallPointerTarget::Real(5, 5), 100, &registry, &rules);
         }
         let cell = sim.overlay_grid.as_ref().unwrap().cell(5, 5);
         (cell.overlay_id, cell.overlay_data)
     };
     let snapshot_b: (Option<u8>, u8) = {
-        let (mut sim, _rules, registry) = build_minimal_sim_with_gawall_seeded(5, 5, seed);
+        let (mut sim, rules, registry) = build_minimal_sim_with_gawall_seeded(5, 5, seed);
         for _ in 0..5 {
-            sim.apply_wall_damage(WallPointerTarget::Real(5, 5), 100, &registry);
+            sim.apply_wall_damage(WallPointerTarget::Real(5, 5), 100, &registry, &rules);
         }
         let cell = sim.overlay_grid.as_ref().unwrap().cell(5, 5);
         (cell.overlay_id, cell.overlay_data)

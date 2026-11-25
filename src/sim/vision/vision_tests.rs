@@ -370,12 +370,9 @@ fn test_allied_visibility_is_shared() {
     assert!(fog.is_cell_visible(intern::test_intern("Alliance"), 4, 4));
 }
 
-// -- Sight cap tests --
-
 #[test]
-fn test_sight_capped_at_max_range() {
+fn configured_sight_beyond_the_stock_table_extends_the_footprint() {
     let mut store = EntityStore::new();
-    // Spawn with sight=15, which exceeds MAX_SIGHT_RANGE (10).
     spawn_with_vision(&mut store, 1, "Americans", 20, 20, 15);
 
     let fog = fixture_visibility(
@@ -385,10 +382,8 @@ fn test_sight_capped_at_max_range() {
         &default_config(),
         &ti(),
     );
-    // Cell at distance 10 should be visible (exactly at MAX_SIGHT_RANGE).
-    assert!(fog.is_cell_visible(intern::test_intern("Americans"), 30, 20));
-    // Cell at distance 11 should NOT be visible (capped).
-    assert!(!fog.is_cell_visible(intern::test_intern("Americans"), 31, 20));
+    assert!(fog.is_cell_visible(intern::test_intern("Americans"), 35, 20));
+    assert!(!fog.is_cell_visible(intern::test_intern("Americans"), 36, 20));
 }
 
 /// `TechnoClass::UpdateReveal @ 0x0070AF50`: a `SIGHT`-ability veteran sees

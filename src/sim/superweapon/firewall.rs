@@ -6,7 +6,8 @@
 //! LoadFromINI `0x10071620` (Action=None, UseChargeDrain and no radar event,
 //! every pass); it has no Initialize, so no AI targeting mode. The
 //! charge-drain ClickFire (`0x10035130`), drain expiry (`0x10035730`), loss
-//! (`0x10035610`) and hold (`0x10035750`) owners in `fire`/`mod` call these.
+//! (`0x10035610`) and hold (3.0p1 `0x10036190`) owners in `fire`/`mod` call these.
+//! The 3.0p1 Activate grant check (`0x100725D4`) runs in `fire`.
 //!
 //! Both edges set the House's tech-tree recheck (House+0x1FC) for the
 //! player's own click: natively the local player's House only, which VERA
@@ -21,7 +22,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::world::{FrameEffects, Simulation};
 
 /// SW_Firewall::Activate `0x100715C0`: SetFirestormState(true) of the
-/// Super's owner. Always activates.
+/// Super's owner after launch admission.
 pub(super) fn activate(
     sim: &mut Simulation,
     rules: &RuleSet,

@@ -39,6 +39,11 @@ reader `0x10033370` and its hooks); no Ares DLL is loaded.
   the charge-drain ClickFire (`0x10035130`) and the cameo AnimStage (`0x10035420`).
   Ares games also clamp the stage at 54 (`0x100354C0`) and let computer Houses
   toggle a drain like human ones.
+- The 3.0p1 SetOnHold hook (`0x6CB4D0`, `0x10036190`) converts a running
+  drain into paused charge using the remaining drain time and the type's ratio.
+  Releasing the hold normally restarts from the instance's recharge time,
+  including a scenario override. The same timer behavior applies to an authored
+  `UseChargeDrain=yes` type using the stock rule path.
 - `Money.DrainAmount` / `Money.DrainDelay` transact while a drain runs, every
   `DrainDelay` frames left on its timer; an unaffordable amount ends the drain
   (`0x100358A0`). A human House hears `EVA.InsufficientFunds` and sees
@@ -73,7 +78,7 @@ reader `0x10033370` and its hooks); no Ares DLL is loaded.
 auxiliary power, its `Battery.KeepOnline` building types work without power and its
 `Battery.Overpower` types are overpowered; any active battery keeps radar buildings
 working on low power. Clicking it off, the drain running out, a hold or loss
-deactivates it.
+deactivates it. The 3.0p1 Activate entry (`0x1006FBD0`) requires a current grant.
 
 `Type=Protect` is an Iron Curtain with its own duration, a `SW.Range` rectangle or
 radius (default 3x3), `SW.AffectsHouse`/`SW.AffectsTarget` filters, the type's

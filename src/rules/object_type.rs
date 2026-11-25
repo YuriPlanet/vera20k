@@ -926,12 +926,6 @@ pub struct ObjectType {
     /// Ares `TechnoTypeExt` insignia keys (`Insignia*`, `InsigniaFrame*`,
     /// `Insignia.ShowEnemy`), accumulated like the Phobos block above.
     pub ares_insignia: crate::rules::insignia_type::AresInsignia,
-    /// Phobos `Passengers.BySize` (`Valueable<bool>`, default yes): the
-    /// passenger-count key `DrawInsignia` indexes `Insignia.PassengersN`
-    /// with. Its other consumer, the NoQueueUpToEnter admission rewrite, is
-    /// not ported.
-    #[cfg(feature = "phobos")]
-    pub phobos_passengers_by_size: bool,
     /// Phobos `TechnoTypeExt` Iron Curtain / Force Shield overrides
     /// (`IronCurtain.*`, `ForceShield.*`).
     #[cfg(feature = "phobos")]
@@ -1262,10 +1256,10 @@ pub struct ObjectType {
     /// type. Only the Ares firestorm walls read it (`sim::ares_firestorm`),
     /// so only a Rules read the Ares way keeps it.
     pub(crate) ignores_firestorm: bool,
-    /// Ares TechnoTypeExt+4C4 `Passengers.BySize=` (constructor true): the
-    /// hold counts passengers' `Size=` against `Passengers=`, else heads
-    /// (CanHoldPassenger 100448E0, abduction only here).
-    pub(crate) ares_passengers_by_size: bool,
+    /// `Passengers.BySize=` (Ares TechnoTypeExt+4C4, constructor true):
+    /// shared by ordinary vehicle cargo, the Ares pips and abductor, and
+    /// the Phobos `Insignia.PassengersN` index.
+    passengers_by_size: bool,
     /// Ares TechnoTypeExt+46C `Saboteur=` (constructor false, Valueable read
     /// in `TechnoTypeExt::ExtData::LoadFromINIFile`): an `Infiltrate=`
     /// infantryman blows up the buildings it enters
@@ -2442,7 +2436,8 @@ pub struct ObjectType {
     /// Whether this building can be toggled on/off by the player.
     /// Parsed from `TogglePower=yes` in rules.ini.
     /// Defaults to true for buildings (most can be powered down).
-    /// Triggers `TogglePower` cursor when hovering this building in power-toggle mode.
+    /// Triggers `TogglePower` cursor when hovering this building in power mode
+    /// ([`Self::can_toggle_power`]).
     pub toggle_power: bool,
 
     /// `InfantryGainSelfHeal=` (`BuildingTypeClass+0x1564`, read by the

@@ -1,6 +1,5 @@
-//! `BuildingClass::Unlimbo @ 0x00440580`'s arms that remove what the new
-//! building stands on (`0x004405BC..0x00440770`, `0x00440A6D..0x00440B01`),
-//! on the flat two-house arena. The rules text is this fixture's own.
+//! Walls under a new building (`BuildingClass::Unlimbo @ 0x00440580`)
+//! and connections at its ends (`0x0044104D..0x0044115E`), on a flat arena.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::art_data::ArtRegistry;
@@ -9,8 +8,8 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::CellObjectMember;
-use crate::sim::overlay_grid::OverlayGrid;
-use crate::sim::world::Simulation;
+use crate::sim::overlay_grid::{OverlayGrid, WallPointerTarget};
+use crate::sim::world::{Simulation, UninitContext};
 
 const RULES: &str = "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
      [BuildingTypes]\n0=TOWER\n1=GAWALL\n2=GATE\n3=POST\n4=FENCE\n5=MODWALL\n\
@@ -32,8 +31,12 @@ const GAWALL: u8 = 2;
 const MODWALL: u8 = 3;
 
 fn arena(rules_ini: &str) -> (Simulation, RuleSet, OverlayTypeRegistry) {
+    arena_with_art(rules_ini, ART)
+}
+
+fn arena_with_art(rules_ini: &str, art_ini: &str) -> (Simulation, RuleSet, OverlayTypeRegistry) {
     let ini = IniFile::from_str(rules_ini);
-    let art = IniFile::from_str(ART);
+    let art = IniFile::from_str(art_ini);
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("fixture rules");
     rules.install_art_data(ArtRegistry::from_ini(&art));
     let registry = OverlayTypeRegistry::from_ini(&ini, None);
@@ -88,6 +91,109 @@ fn an_ares_gate_sells_its_owners_mod_wall_under_it() {
     assert_eq!(grid.cell(10, 10).overlay_id, None);
     assert_eq!(grid.cell(10, 10).wall_owner, None);
     assert_eq!(grid.cell(11, 10).overlay_id, Some(MODWALL));
+}
+
+fn gate_connection_arena() -> (Simulation, RuleSet, OverlayTypeRegistry) {
+    // Stock GAWALL and NAWALL use overlay array positions 2 and 26.
+    let reserved: String = (4..26).map(|i| format!("{i}=UnusedOverlay{i}\n")).collect();
+    let rules = RULES
+        .replace("5=MODWALL\n", "5=MODWALL\n6=NAWALL\n7=NGATE\n")
+        .replace("[General]", &format!("{reserved}26=NAWALL\n[General]"))
+        .replace("GDIGateOne=GATE", "GDIGateOne=GATE\nNodGateTwo=NGATE")
+        .replace(
+            "[Clear]",
+            "[NAWALL]\nStrength=300\nWall=yes\n[NGATE]\nStrength=500\nGate=yes\n[Clear]",
+        );
+    let art = ART.replace("[GATE]\nFoundation=1x1", "[GATE]\nFoundation=3x1")
+        + "[NGATE]\nFoundation=1x3\n[NAWALL]\nFoundation=1x1\nToOverlay=NAWALL\n";
+    arena_with_art(&rules, &art)
+}
+
+#[test]
+fn placing_and_removing_a_gate_updates_existing_concrete_wall_ends() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let (mut sim, rules, registry) = gate_connection_arena();
+    assert!(!rules.ares());
+    for (x, y) in [(8, 10), (9, 10), (13, 10), (10, 9)] {
+        sim.spawn_object_with_overlay_registry("GAWALL", "Americans", x, y, 0, &rules, &registry)
+            .expect("place concrete wall");
+    }
+    sim.overlay_grid
+        .as_mut()
+        .unwrap()
+        .set_overlay_data(9, 10, 0x18);
+    let gate = sim
+        .spawn_object_with_overlay_registry("GATE", "Russians", 10, 10, 0, &rules, &registry)
+        .expect("place east-west gate beside the other house's walls");
+    let grid = sim.overlay_grid.as_ref().unwrap();
+    assert_eq!(
+        grid.cell(9, 10).overlay_data,
+        0x1A,
+        "preserve damage and wall links"
+    );
+    assert_eq!(
+        grid.cell(13, 10).overlay_data,
+        0x08,
+        "connect the opposite end"
+    );
+    assert_eq!(
+        grid.cell(10, 9).overlay_data,
+        0,
+        "ignore a perpendicular wall"
+    );
+    sim.apply_wall_damage(WallPointerTarget::Real(10, 9), -1, &registry, &rules);
+    let grid = sim.overlay_grid.as_mut().unwrap();
+    assert_eq!(
+        grid.cell(9, 10).overlay_data,
+        0x1A,
+        "keep the live gate link"
+    );
+    let owner = grid.cell(13, 10).wall_owner;
+    assert!(owner.is_some());
+    grid.set_overlay_data(13, 10, 0x28);
+
+    sim.uninit_with_context(gate, UninitContext::new(&rules));
+    let grid = sim.overlay_grid.as_ref().unwrap();
+    assert_eq!(
+        grid.cell(9, 10).overlay_data,
+        0x18,
+        "drop only the gate link"
+    );
+    assert_eq!(
+        grid.cell(13, 10).overlay_id,
+        None,
+        "clean up the isolated damaged wall"
+    );
+    assert_eq!(grid.cell(13, 10).wall_owner, owner);
+}
+
+#[test]
+fn placing_a_wall_connects_to_an_existing_gate_of_the_matching_family_and_axis() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let (mut sim, rules, registry) = gate_connection_arena();
+    sim.spawn_object_with_overlay_registry("NGATE", "Americans", 10, 10, 0, &rules, &registry)
+        .expect("place north-south gate");
+    for (wall, x, y) in [("NAWALL", 10, 9), ("NAWALL", 11, 10), ("GAWALL", 10, 13)] {
+        sim.spawn_object_with_overlay_registry(wall, "Americans", x, y, 0, &rules, &registry)
+            .expect("place wall beside gate");
+    }
+    let grid = sim.overlay_grid.as_ref().unwrap();
+    assert_eq!(grid.cell(10, 9).overlay_id, Some(26));
+    assert_eq!(
+        grid.cell(10, 9).overlay_data,
+        0x04,
+        "connect south into Nod gate"
+    );
+    assert_eq!(
+        grid.cell(11, 10).overlay_data,
+        0,
+        "ignore the gate's long side"
+    );
+    assert_eq!(
+        grid.cell(10, 13).overlay_data,
+        0,
+        "ignore a different wall family"
+    );
 }
 
 #[test]

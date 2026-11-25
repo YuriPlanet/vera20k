@@ -61,10 +61,10 @@ impl Simulation {
         // retained Event+54) follows its last read of the condition.
         let condition =
             &self.trigger_runtime.definitions.trigger_types[type_index].events[ordinal].condition;
-        // Ares 3.0 TEventExt::HasOccured (1004F7A0, hook 0x71E949) answers
-        // its own kinds before the stock switch.
+        // Ares 3.0p1 0x71E949 -> 0x10051090 answers enabled kinds before
+        // the stock switch and resumes at 0x71F163 or 0x71F1B1.
         let ares = rules.ares_form();
-        if ares
+        if super::ares::event_hooks_enabled(condition.kind, ares)
             && let Some(occurred) = self.ares_has_occurred(condition, input, incoming_house, rules)
         {
             return occurred;
