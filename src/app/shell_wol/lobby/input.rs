@@ -168,6 +168,13 @@ fn pointer(state: &mut AppState, press: Option<bool>) {
         return;
     };
     let effects = lobby.ui.pointer(x, y, press);
+    // Android: a press that lands on one of the lobby's edits arms the keyboard
+    // for its own dialog (`0x113`).
+    #[cfg(target_os = "android")]
+    if press == Some(true) && lobby.ui.gui().pressed_edit() {
+        crate::util::android_ime::arm(crate::ui::wol_lobby::DIALOG.0);
+        crate::util::android_ime::request_show();
+    }
     apply(state, effects);
 }
 

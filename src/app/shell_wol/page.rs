@@ -79,6 +79,12 @@ pub(crate) fn open(wol: Option<&WolVisit>) -> bool {
 }
 
 /// The open dialog that takes the input, `0xCF` first.
+/// The dialog whose edits take keys, for `app::input::ime::gui_armed`.
+#[cfg(target_os = "android")]
+pub(crate) fn armed_dialog(wol: Option<&WolVisit>) -> Option<u16> {
+    top(wol).map(|dialog| dialog.0)
+}
+
 fn top(wol: Option<&WolVisit>) -> Option<DialogResourceId> {
     if page_dialog(wol).is_some() {
         Some(PAGE_DIALOG)
@@ -624,6 +630,13 @@ pub(crate) fn mouse(state: &mut AppState, pressed: bool) {
     }
     let before = leaf::focused(&state.frontend.shell_controller);
     let events = leaf::pointer_quiet(state, if pressed { Pointer::Down } else { Pointer::Up });
+    // Android: a press that lands on one of the page's edits arms the keyboard
+    // for this dialog, the tree those edits live in.
+    #[cfg(target_os = "android")]
+    if pressed && state.frontend.shell_controller.gui().pressed_edit() {
+        crate::util::android_ime::arm(dialog.0);
+        crate::util::android_ime::request_show();
+    }
     if dialog == PAGE_DIALOG {
         let after = leaf::focused(&state.frontend.shell_controller);
         let actions = with_last(&mut state.frontend, |page, c, last| {

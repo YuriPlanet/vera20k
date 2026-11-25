@@ -249,6 +249,7 @@ impl GuiScreen {
             Self::LanLobby
                 | Self::SetupRoom
                 | Self::WolPages
+                | Self::WolLobby
                 | Self::Skirmish
                 | Self::ChooseMap
                 | Self::InGamePage
@@ -366,10 +367,26 @@ fn gui_armed(state: &AppState) -> bool {
             .or_else(|| shell.saved_seed_browser.as_ref().map(|browser| browser.ime_ui())),
         _ => None,
     });
-    controller
-        .or_else(|| Some(&state.frontend.shell_controller))
-        .and_then(|controller| controller.top_id())
-        .is_some_and(|dialog| crate::util::android_ime::armed(dialog.0))
+    let armed = |id: u16| crate::util::android_ime::armed(id);
+    let by_screen = gui_screen(state).map(|(screen, _)| match screen {
+        GuiScreen::Setups => controller
+            .and_then(|controller| controller.top_id())
+            .map(|dialog| armed(dialog.0)),
+        // The WOL lobby keeps its own tree (`0x113`); the WOL pages keep
+        // theirs on the shell's stack.
+        GuiScreen::WolLobby => Some(armed(crate::ui::wol_lobby::DIALOG.0)),
+        GuiScreen::WolPages => {
+            crate::app::shell_wol::page::armed_dialog(state.frontend.wol.as_ref()).map(armed)
+        }
+        _ => None,
+    });
+    by_screen.flatten().unwrap_or_else(|| {
+        state
+            .frontend
+            .shell_controller
+            .top_id()
+            .is_some_and(|dialog| armed(dialog.0))
+    })
 }
 
 /// Android: the WOL lobby's own dialog (`0x113`) takes the keys, with no page
