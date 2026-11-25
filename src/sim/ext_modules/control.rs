@@ -40,9 +40,14 @@
 //!   off-map cell keeps the native answer.
 //! - `DeployAllowed` (veto): before UnitClass::Deploy's transaction
 //!   (`0x007393C0`, after its placement test), at a simple deployer's
-//!   deploy admission (`0x00739AC0`) and at an infantryman's pending deploy
-//!   (`0x00521B40`). A refusal leaves the object as a refused deploy does:
-//!   a DeploysInto unit queues Guard (without the EVA), the others stay.
+//!   deploy admission (`0x00739AC0`) and before every infantryman's
+//!   Do_Action(Deploy) (`deploy::infantry_request_deploy`: the pending
+//!   deploy `0x00521B40`, Mission_Unload `0x0051F6E0`, the computer's
+//!   automatic deploy `0x00521631`, the Approach arm `0x00522472`). A
+//!   refusal leaves the object as a refused deploy does: a DeploysInto unit
+//!   queues Guard (without the EVA), a simple deployer's or an
+//!   infantryman's Unload ends in Guard without deploying, the others stay
+//!   as they stand. Undeploys are not asked.
 //!
 //! Delivered events (tier `v1`):
 //! - `TargetChanged`: after the represented class setter `Assign_Target`

@@ -15,11 +15,20 @@
 //! - computer-house objects, ordered through `House::order` (queued, run in
 //!   the next frame's command step, so `CommandAllowed` and `DestinationSet`
 //!   reach this module): a Chrono Miner for `CommandAllowed` and
-//!   `DestinationSet`, a Siege Chopper (an MCV if it is never asked) on level
-//!   ground for `DeployAllowed`; each removed once done. A GI's deploy
-//!   command is not used: `Mission_Unload` deploys a standing infantryman
-//!   without asking `DeployAllowed` (`src/sim/deploy.rs`
-//!   `infantry_mission_unload`); only the walking one's pending deploy asks;
+//!   `DestinationSet`, a Siege Chopper on level ground for `DeployAllowed`,
+//!   a standing GI for `DeployInfantry` (its deploy command, the Unload
+//!   mission); each removed once done;
+//! - a computer MCV in the computer's own base, on a level 5x5 spot whose
+//!   corner `find` answers `Placeable` for its yard type: `DeployMcv` (its
+//!   `DeployAllowed` refusal, then the deploy and its `Deployed`) and
+//!   `BirthYard` (the yard's `Birth`, `other` the MCV). The house holds a
+//!   `Forces` claim from the allowed order until the deploy: a computer
+//!   yard's deploy regroups the house's ground forces otherwise. Yard and MCV
+//!   are removed afterwards;
+//! - a player power plant destroyed by `Action::damage` (defenses read, so
+//!   it leaves survivors: one roll in three per foundation cell, retried on
+//!   a new plant up to eight times): `BirthSurvivor` (a crewman's `Birth`,
+//!   `other` the plant); each survivor is removed;
 //! - the computer house's own harvesters (`HarvestCell`) and production
 //!   (`ProductionQueued` on the first type its factories start,
 //!   `ProductionAllowed` on a type they started twice; the house gets 10000
@@ -37,15 +46,15 @@
 //! computer house's factories to start a bound type twice, and another one
 //! while it is forbidden;
 //! `HarvestCell` needs a computer harvester scanning on an ore field of at
-//! least two cells' spread; the deploy needs the chopper's (or the MCV's)
-//! deploy to be asked at all.
+//! least two cells' spread; the chopper's deploy needs it to land level;
+//! the MCV needs a `Placeable` 5x5 spot in the computer's base.
 
 use core::sync::atomic::{AtomicI64, Ordering::Relaxed};
 
 use vera20k_sdk::prelude::*;
 use vera20k_sdk::{
     DeployAllowedDecision, DestinationSetDecision, HarvestCellDecision, IdleMissionDecision,
-    MissionStepDecision, NO_HANDLE, get, sys,
+    MissionStepDecision, NO_HANDLE, get, set, sys,
 };
 
 use crate::{alive, arena, bench_fail, enemy, mark, offset, player, spawn};
@@ -59,6 +68,10 @@ pub const MARKS: &[&str] = &[
     "movement.DestinationSet",
     "movement.HarvestCell",
     "movement.DeployAllowed",
+    "movement.DeployInfantry",
+    "movement.DeployMcv",
+    "movement.BirthYard",
+    "movement.BirthSurvivor",
     "movement.IdleMission",
     "movement.MissionStep",
     "movement.MoveFrame",
@@ -82,9 +95,15 @@ const KEY_MF: i32 = 408;
 const KEY_PF: i32 = 409;
 const KEY_AP: i32 = 410;
 const KEY_OBS: i32 = 411;
+const KEY_GI_DA: i32 = 412;
+const KEY_MCV_DA: i32 = 413;
 const KEY_ORDER_RESULT: i32 = 420;
 const KEY_COMMANDED: i32 = 421;
 const KEY_DEPLOYED: i32 = 422;
+const KEY_GI_DEPLOYED: i32 = 423;
+const KEY_MCV_DEPLOYED: i32 = 424;
+const KEY_BIRTH_YARD: i32 = 425;
+const KEY_BIRTH_SURVIVOR: i32 = 426;
 
 /// `RefuseReason` `Vetoed` (appendix 8.3, enum 26).
 const VETOED: i64 = 9;
@@ -200,7 +219,7 @@ static HC_OTHER: V = V::new(0);
 static HC_BOUND: V = V::new(0);
 static HC_TRIES: V = V::new(0);
 
-// DeployAllowed: a GI, else an MCV.
+// DeployAllowed on a Siege Chopper.
 static U_DEPLOY: V = V::new(0);
 static TR_DA: V = V::new(0);
 static TR_DEPLOYED: V = V::new(0);
@@ -209,6 +228,40 @@ static DA_AT: V = V::new(0);
 static DA_KIND: V = V::new(0);
 static DA_ALLOW: V = V::new(0);
 static DA_BECAME: V = V::new(0);
+
+// DeployInfantry: a standing computer GI.
+static U_GI: V = V::new(0);
+static TR_GI_DA: V = V::new(0);
+static TR_GI_DEPLOYED: V = V::new(0);
+static GI: V = V::new(0);
+static GI_AT: V = V::new(0);
+static GI_ASKED: V = V::new(0);
+static GI_ALLOW: V = V::new(0);
+static GI_DEPLOYED: V = V::new(0);
+
+// DeployMcv and BirthYard: a computer MCV in the computer's base.
+static U_MCV: V = V::new(0);
+static TR_MCV_DA: V = V::new(0);
+static TR_MCV_DEPLOYED: V = V::new(0);
+static TR_BIRTH_YARD: V = V::new(0);
+static MC: V = V::new(0);
+static MC_AT: V = V::new(0);
+static MC_AFTER: V = V::new(0);
+static MC_TRIES: V = V::new(0);
+static MC_ASKED: V = V::new(0);
+static MC_ALLOW: V = V::new(0);
+static MC_YARD: V = V::new(0);
+static MC_BORN: V = V::new(0);
+static MC_CLAIM: V = V::new(0);
+
+// BirthSurvivor: a destroyed player power plant.
+static U_PLANT: V = V::new(0);
+static TR_BIRTH_SURVIVOR: V = V::new(0);
+static SV: V = V::new(0);
+static SV_AT: V = V::new(0);
+static SV_TRIES: V = V::new(0);
+static SV_SEEN: V = V::new(0);
+static SV_WARHEAD: V = V::new(0);
 
 // ProductionQueued, then ProductionAllowed, on the computer house's own
 // production.
@@ -374,6 +427,9 @@ pub fn frame(now: i32) {
     destination_set(now);
     harvest_cell(now, since);
     deploy_allowed(now, since);
+    deploy_infantry(now, since);
+    deploy_mcv(now, since);
+    birth_survivor(now, since);
     production(now, since);
 }
 
@@ -408,6 +464,10 @@ pub fn events(record: &EventRecord) {
                 _ => {}
             }
         }
+        KEY_GI_DEPLOYED => gi_deployed(record),
+        KEY_MCV_DEPLOYED => mcv_deployed(record),
+        KEY_BIRTH_YARD => yard_born(record),
+        KEY_BIRTH_SURVIVOR => survivor_born(record),
         _ => {}
     }
 }
@@ -422,6 +482,8 @@ pub fn decide(record: &mut DecideRecord) {
         KEY_DS => decide_destination(DestinationSetDecision::from(record)),
         KEY_HC => decide_harvest(HarvestCellDecision::from(record)),
         KEY_DA => decide_deploy(DeployAllowedDecision::from(record)),
+        KEY_GI_DA => decide_gi_deploy(DeployAllowedDecision::from(record)),
+        KEY_MCV_DA => decide_mcv_deploy(DeployAllowedDecision::from(record)),
         KEY_IM => decide_idle(IdleMissionDecision::from(record)),
         KEY_MS => decide_step(MissionStepDecision::from(record)),
         KEY_MF => decide_move_frame(MoveFrameDecision::from(record)),
@@ -1072,10 +1134,10 @@ fn decide_harvest(mut d: HarvestCellDecision) {
 // --------------------------------------------------------- DeployAllowed
 
 /// The deployers tried in turn: a Siege Chopper (a simple deployer, asked
-/// in its Unload mission), then an MCV (asked after its placement test).
-/// The GI's own deploy command is not asked (see the report): the Unload
-/// mission deploys a standing infantryman without the question.
-const DEPLOYERS: [&str; 2] = ["SCHP", "AMCV"];
+/// in its Unload mission). An MCV has its own scene in the computer's base
+/// (`deploy_mcv`): a computer yard deployed next to the player's start
+/// would move the computer's base there.
+const DEPLOYERS: [&str; 1] = ["SCHP"];
 
 /// A cell whose 5x5 block around it is level and passable, near `center`.
 fn flat_spot(center: Cell) -> Cell {
@@ -1203,6 +1265,435 @@ fn decide_deploy(mut d: DeployAllowedDecision) {
         }
         _ => {}
     }
+}
+
+// -------------------------------------------------------- DeployInfantry
+
+/// A standing computer GI (weapons off, far from the player's tanks) is
+/// ordered to deploy (`ToggleInfantryDeploy`, its Unload mission): the
+/// deploy is refused (it must be asked, and the GI must stay standing),
+/// then allowed (its `Deployed` must come and `Deployed` read 1).
+fn deploy_infantry(now: i64, since: i64) {
+    let gi = U_GI.unit();
+    match GI.get() {
+        0 if since >= 30 => {
+            let Some(gi) = put(&U_GI, offset(arena(crate::MOVEMENT), 10, -1), "E1", enemy()) else {
+                GI.set(DONE);
+                return;
+            };
+            let _ = Modifier::override_(gi, Prop::DisableWeapons, 1, -1);
+            TR_GI_DA.set(decider(Event::DEPLOY_ALLOWED, gi, KEY_GI_DA));
+            TR_GI_DEPLOYED.set(
+                Trigger::on(Event::DEPLOYED)
+                    .bind(gi)
+                    .enqueue(KEY_GI_DEPLOYED)
+                    .done()
+                    .map_or(0, |trigger| trigger.0),
+            );
+            GI_AT.set(now);
+            GI.set(1);
+        }
+        1 if now >= GI_AT.get() + 10 => {
+            GI_AT.set(now);
+            GI.set(2);
+            if !order_infantry_deploy(gi) {
+                gi_finish();
+            }
+        }
+        2 if now >= GI_AT.get() + 60 => {
+            if GI_ASKED.get() == 1 {
+                if get(gi, Prop::Deployed) != Ok(0) {
+                    bench_fail("movement.DeployInfantry", "the GI deployed after the veto");
+                    gi_finish();
+                    return;
+                }
+                GI_AT.set(now);
+                GI.set(3);
+                if !alive(gi) || !order_infantry_deploy(gi) {
+                    gi_finish();
+                }
+            } else if now > GI_AT.get() + 200 || !alive(gi) {
+                gi_finish();
+            }
+        }
+        3 => {
+            if GI_DEPLOYED.get() == 1 && GI_ALLOW.get() == 1 && get(gi, Prop::Deployed) == Ok(1) {
+                mark("movement.DeployInfantry");
+                mark("movement.DeployAllowed");
+                gi_finish();
+            } else if now > GI_AT.get() + 300 || !alive(gi) {
+                gi_finish();
+            }
+        }
+        _ => {}
+    }
+}
+
+fn order_infantry_deploy(gi: Techno) -> bool {
+    let units = [gi];
+    enemy()
+        .order(&Order::new(Command::ToggleInfantryDeploy, 0, 0, &units))
+        .is_ok()
+}
+
+fn gi_finish() {
+    let gi = U_GI.unit();
+    if alive(gi) {
+        let _ = Action::remove(gi);
+    }
+    disable(&TR_GI_DA);
+    disable(&TR_GI_DEPLOYED);
+    GI.set(DONE);
+}
+
+fn decide_gi_deploy(mut d: DeployAllowedDecision) {
+    if d.object().0 != U_GI.get() {
+        return;
+    }
+    match GI.get() {
+        1 | 2 => {
+            d.set_result(0);
+            GI_ASKED.set(1);
+        }
+        3 => {
+            d.set_result(1);
+            GI_ALLOW.set(1);
+        }
+        _ => {}
+    }
+}
+
+fn gi_deployed(record: &EventRecord) {
+    if record.subject != U_GI.get() || record.value != 1 {
+        return;
+    }
+    match GI.get() {
+        1 | 2 => {
+            bench_fail("movement.DeployInfantry", "deployed after the veto");
+            gi_finish();
+        }
+        3 => GI_DEPLOYED.set(1),
+        _ => {}
+    }
+}
+
+// ------------------------------------------------- DeployMcv, BirthYard
+
+/// The MCVs tried, with the yard each deploys into.
+const MCVS: [(&str, &str); 2] = [("AMCV", "GACNST"), ("SMCV", "NACNST")];
+
+/// One page of `Placeable` cells for `yard` around the computer's first
+/// building, from `MC_AFTER` on; the first whose 5x5 block from it is level
+/// and passable takes `mcv` on its yard's deploy cell (one cell in from the
+/// corner, `deploy_origin_from_unit_cell`). The MCV, or none.
+fn place_mcv(mcv: TypeRef, yard: TypeRef) -> Option<Techno> {
+    let first = Find::objects()
+        .owned_by(enemy())
+        .where_prop(Prop::Category, Op::Eq, Category::Building as i64)
+        .first();
+    let base = Cell(get(Techno(first), Prop::Cell).ok()?);
+    let mut out = [NO_HANDLE; 16];
+    let (count, next) = Find::cells()
+        .within(offset(base, -8, -8), 17, 17)
+        .of_type(yard)
+        .seen_by(enemy())
+        .where_prop(Prop::Placeable, Op::Eq, 1)
+        .page(&mut out, MC_AFTER.get())
+        .ok()?;
+    MC_AFTER.set(next);
+    for &corner in &out[..count] {
+        let corner = Cell(corner);
+        let Ok(level) = corner.height() else {
+            continue;
+        };
+        let clear = (0..5).all(|y| {
+            (0..5).all(|x| {
+                let cell = offset(corner, x, y);
+                cell.height().is_ok_and(|h| h == level) && passable(cell)
+            })
+        });
+        if !clear {
+            continue;
+        }
+        let at = offset(corner, 1, 1);
+        if let Ok(unit) = Action::create_object(at, mcv, enemy()) {
+            if cell_of(unit) == at {
+                return Some(unit);
+            }
+            let _ = Action::remove(unit);
+        }
+    }
+    None
+}
+
+/// Spawns the first known MCV of `MCVS` on a placeable spot and binds its
+/// triggers; false while none is found yet.
+fn next_mcv() -> bool {
+    let Some((mcv, yard)) = MCVS.into_iter().find_map(|(mcv, yard)| {
+        Some((
+            TypeRef::techno_type(mcv).ok()?,
+            TypeRef::techno_type(yard).ok()?,
+        ))
+    }) else {
+        return false;
+    };
+    if let Some(unit) = place_mcv(mcv, yard) {
+        U_MCV.set(unit.0);
+        TR_MCV_DA.set(decider(Event::DEPLOY_ALLOWED, unit, KEY_MCV_DA));
+        TR_MCV_DEPLOYED.set(
+            Trigger::on(Event::DEPLOYED)
+                .bind(unit)
+                .enqueue(KEY_MCV_DEPLOYED)
+                .done()
+                .map_or(0, |trigger| trigger.0),
+        );
+        TR_BIRTH_YARD.set(
+            Trigger::on(Event::BIRTH)
+                .bind(yard)
+                .enqueue(KEY_BIRTH_YARD)
+                .done()
+                .map_or(0, |trigger| trigger.0),
+        );
+        return true;
+    }
+    false
+}
+
+/// The `Forces` claim on the computer house (`Domain` bit 1), added to or
+/// taken from the bits this module holds there.
+const FORCES: i64 = 2;
+
+fn claim_forces(on: bool) {
+    let them = enemy();
+    let held = get(them, Prop::ControlDomains).unwrap_or(0);
+    let want = if on { held | FORCES } else { held & !FORCES };
+    if set(them, Prop::ControlDomains, want).is_ok() {
+        MC_CLAIM.set(i64::from(on));
+    }
+}
+
+/// The MCV's deploy is refused (it must be asked, no `Deployed` may come),
+/// then allowed under a `Forces` claim: `Deployed` (`other` the yard) and
+/// the yard's `Birth` (`other` the MCV) must come.
+fn deploy_mcv(now: i64, since: i64) {
+    let mcv = U_MCV.unit();
+    match MC.get() {
+        0 if since >= 40 && now >= MC_AT.get() => {
+            if next_mcv() {
+                MC_AT.set(now);
+                MC.set(1);
+            } else if MC_AFTER.get() == 0 {
+                // A whole scan without a spot: again later, three times.
+                MC_TRIES.add(1);
+                MC_AT.set(now + 300);
+                if MC_TRIES.get() >= 3 {
+                    MC.set(DONE);
+                }
+            }
+        }
+        1 if now >= MC_AT.get() + 15 => {
+            MC_AT.set(now);
+            MC.set(2);
+            if !order_deploy(mcv) {
+                mcv_finish();
+            }
+        }
+        2 if now >= MC_AT.get() + 90 => {
+            if MC_ASKED.get() == 1 && alive(mcv) {
+                claim_forces(true);
+                MC_AT.set(now);
+                MC.set(3);
+                if !order_deploy(mcv) {
+                    mcv_finish();
+                }
+            } else if now > MC_AT.get() + 300 || !alive(mcv) {
+                mcv_finish();
+            }
+        }
+        3 => {
+            let yard = MC_YARD.get();
+            if yard != 0 && MC_BORN.get() != 0 {
+                if MC_ALLOW.get() == 1 {
+                    mark("movement.DeployMcv");
+                    mark("movement.DeployAllowed");
+                }
+                if MC_BORN.get() == yard {
+                    mark("movement.BirthYard");
+                } else {
+                    bench_fail("movement.BirthYard", "the Birth named another yard");
+                }
+                mcv_finish();
+            } else if now > MC_AT.get() + 300 {
+                mcv_finish();
+            }
+        }
+        _ => {}
+    }
+}
+
+fn mcv_finish() {
+    if MC_CLAIM.get() == 1 {
+        claim_forces(false);
+    }
+    for unit in [Techno(MC_YARD.get()), U_MCV.unit()] {
+        if unit.0 != 0 && alive(unit) {
+            let _ = Action::remove(unit);
+        }
+    }
+    disable(&TR_MCV_DA);
+    disable(&TR_MCV_DEPLOYED);
+    disable(&TR_BIRTH_YARD);
+    MC.set(DONE);
+}
+
+fn decide_mcv_deploy(mut d: DeployAllowedDecision) {
+    if d.object().0 != U_MCV.get() {
+        return;
+    }
+    match MC.get() {
+        1 | 2 => {
+            d.set_result(0);
+            MC_ASKED.set(1);
+        }
+        3 => {
+            d.set_result(1);
+            MC_ALLOW.set(1);
+        }
+        _ => {}
+    }
+}
+
+fn mcv_deployed(record: &EventRecord) {
+    if record.subject != U_MCV.get() || record.value != 1 {
+        return;
+    }
+    match MC.get() {
+        1 | 2 => {
+            bench_fail("movement.DeployMcv", "deployed after the veto");
+            MC_YARD.set(record.other);
+            mcv_finish();
+        }
+        3 if record.other != NO_HANDLE && record.other != 0 => MC_YARD.set(record.other),
+        3 => {
+            bench_fail("movement.DeployMcv", "Deployed named no yard");
+            mcv_finish();
+        }
+        _ => {}
+    }
+}
+
+fn yard_born(record: &EventRecord) {
+    if record.other == U_MCV.get() && MC.get() == 3 {
+        MC_BORN.set(record.subject);
+    }
+}
+
+// --------------------------------------------------------- BirthSurvivor
+
+/// The crew types a power plant's survivors can be (`AlliedCrew=`,
+/// `SovietCrew=`, `ThirdCrew=`): its survivors' `Birth` binds them.
+const CREW: [&str; 3] = ["E1", "E2", "INIT"];
+
+/// Warheads tried in turn until one destroys a plant.
+const WARHEADS: [&str; 3] = ["Super", "AP", "HE"];
+
+/// A player power plant in the arena, destroyed with defenses read: one of
+/// its survivors' `Birth` must name the plant as `other` and the player as
+/// the survivor's owner. Up to eight plants; every survivor is removed.
+fn birth_survivor(now: i64, since: i64) {
+    match SV.get() {
+        0 if since >= 600 => {
+            TR_BIRTH_SURVIVOR.set(type_trigger(Event::BIRTH, &CREW, KEY_BIRTH_SURVIVOR));
+            SV.set(if TR_BIRTH_SURVIVOR.get() == 0 {
+                DONE
+            } else {
+                1
+            });
+        }
+        1 => {
+            let at = offset(arena(crate::MOVEMENT), 4, 1);
+            let warhead = WARHEADS
+                .get(SV_WARHEAD.get() as usize)
+                .and_then(|name| TypeRef::warhead(name).ok());
+            let Some(warhead) = warhead else {
+                if (SV_WARHEAD.get() as usize) < WARHEADS.len() {
+                    SV_WARHEAD.add(1);
+                } else {
+                    sv_finish();
+                }
+                return;
+            };
+            let plant = ["GAPOWR", "NAPOWR"]
+                .into_iter()
+                .find_map(|id| put(&U_PLANT, at, id, player()));
+            let Some(plant) = plant else {
+                sv_finish();
+                return;
+            };
+            SV_AT.set(now);
+            SV.set(2);
+            let hit = Action::damage(plant, 100_000, warhead).is_ok();
+            if !hit || plant.health().is_ok_and(|health| health > 0) {
+                // This warhead does not kill a plant: the next one.
+                let _ = Action::remove(plant);
+                SV_WARHEAD.add(1);
+                SV.set(1);
+            }
+        }
+        2 => {
+            if SV_SEEN.get() == 1 {
+                mark("movement.BirthSurvivor");
+                SV_AT.set(now);
+                SV.set(3);
+            } else if now > SV_AT.get() + 90 {
+                let plant = U_PLANT.unit();
+                if alive(plant) {
+                    let _ = Action::remove(plant);
+                }
+                SV_TRIES.add(1);
+                if SV_TRIES.get() < 8 {
+                    SV.set(1);
+                } else {
+                    sv_finish();
+                }
+            }
+        }
+        // The other survivors' `Birth` records remove them meanwhile.
+        3 if now > SV_AT.get() + 60 => sv_finish(),
+        _ => {}
+    }
+}
+
+fn sv_finish() {
+    disable(&TR_BIRTH_SURVIVOR);
+    SV.set(DONE);
+}
+
+fn survivor_born(record: &EventRecord) {
+    let plant = U_PLANT.get();
+    if plant == 0 || record.other != plant {
+        return;
+    }
+    let survivor = Techno(record.subject);
+    if survivor.owner() == Ok(player()) {
+        SV_SEEN.set(1);
+    } else {
+        bench_fail("movement.BirthSurvivor", "the survivor has another owner");
+    }
+    if alive(survivor) {
+        let _ = Action::remove(survivor);
+    }
+}
+
+/// A delivered-event trigger on `kind` bound to `ids`' types; its handle or 0.
+fn type_trigger(kind: i32, ids: &[&str], key: i32) -> i64 {
+    let mut trigger = Trigger::on(kind);
+    for id in ids {
+        if let Ok(ty) = TypeRef::techno_type(id) {
+            trigger = trigger.bind(ty);
+        }
+    }
+    trigger.enqueue(key).done().map_or(0, |trigger| trigger.0)
 }
 
 // ------------------------------------- ProductionAllowed, ProductionQueued
