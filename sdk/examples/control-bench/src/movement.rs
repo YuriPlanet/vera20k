@@ -21,7 +21,8 @@
 //! - a computer MCV in the computer's own base, on a level 5x5 spot whose
 //!   corner `find` answers `Placeable` for its yard type: `DeployMcv` (its
 //!   `DeployAllowed` refusal, then the deploy and its `Deployed`) and
-//!   `BirthYard` (the yard's `Birth`, `other` the MCV). The house holds a
+//!   `BirthYard` (the yard's `Birth`, `other` the MCV), once `HarvestCell`
+//!   is done (or late in the run). The house holds a
 //!   `Forces` claim from the allowed order until the deploy: a computer
 //!   yard's deploy regroups the house's ground forces otherwise. Yard and MCV
 //!   are removed afterwards;
@@ -1057,15 +1058,17 @@ fn decide_destination(mut d: DestinationSetDecision) {
 /// The computer house's own harvesters (a miner made by `create_object`
 /// never scanned in the first runs): one scan is answered with another ore
 /// cell of the field, which the observer must see as the harvester's
-/// NavCom (or it arrives). Up to three tries.
+/// NavCom (or it arrives). Up to [`HC_MAX_TRIES`] tries.
+/// Answered scans tried before giving up. The scans come when a computer
+/// harvester looks for ore (the first one after ~1900 frames in the bench's
+/// scene), so the area waits for them for the whole run.
+const HC_MAX_TRIES: i64 = 12;
+
 fn harvest_cell(now: i64, since: i64) {
     match HC.get() {
         0 if since >= 3 => {
             HC.set(1);
             HC_AT.set(now);
-        }
-        1 if now > HC_AT.get() + 4000 => {
-            HC.set(DONE);
         }
         2 => {
             let harvester = HC_UNIT.unit();
@@ -1078,7 +1081,7 @@ fn harvest_cell(now: i64, since: i64) {
                 HC.set(DONE);
             } else if now > HC_AT.get() + 300 || !alive(harvester) {
                 HC_TRIES.add(1);
-                if HC_TRIES.get() < 3 {
+                if HC_TRIES.get() < HC_MAX_TRIES {
                     HC_AT.set(now);
                     HC.set(1);
                 } else {
@@ -1379,6 +1382,10 @@ fn gi_deployed(record: &EventRecord) {
 
 // ------------------------------------------------- DeployMcv, BirthYard
 
+/// The frame after the arena opened when the MCV scene starts even with
+/// `HarvestCell` still pending (the scene takes at most ~1000 frames).
+const MCV_LATEST: i64 = 4500;
+
 /// The MCVs tried, with the yard each deploys into.
 const MCVS: [(&str, &str); 2] = [("AMCV", "GACNST"), ("SMCV", "NACNST")];
 
@@ -1478,7 +1485,10 @@ fn claim_forces(on: bool) {
 fn deploy_mcv(now: i64, since: i64) {
     let mcv = U_MCV.unit();
     match MC.get() {
-        0 if since >= 40 && now >= MC_AT.get() => {
+        // After `HarvestCell` (or late in the run): the deploy re-anchors
+        // the computer's base and Paranoid, which may change where its
+        // harvesters go next.
+        0 if since >= 40 && now >= MC_AT.get() && (HC.get() == DONE || since >= MCV_LATEST) => {
             if next_mcv() {
                 MC_AT.set(now);
                 MC.set(1);
