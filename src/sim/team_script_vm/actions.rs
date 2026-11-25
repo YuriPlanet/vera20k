@@ -358,7 +358,7 @@ impl Simulation {
                 }
                 self.team_regroup(team_id, rules, frame_effects);
                 if let Some(team) = self.team_script_vm.teams.get_mut(&team_id)
-                    && team.guard_timer.remaining(current_frame) == 0
+                    && team.guard_over(current_frame)
                 {
                     team.advance_pending = true;
                 }
@@ -1390,11 +1390,13 @@ impl Simulation {
     /// same-frame effects), both on only with batched target scans
     /// (`Simulation::batch_target_scans`), pending side-by-side play:
     /// - Each team scans where the frame plus its own phase is a multiple of
-    ///   the period ([`Self::patrol_scan_remainder`]), so the teams' scans
-    ///   spread over the period instead of all falling on one frame. A team
-    ///   still scans once a period, but up to a period less one frame (13
-    ///   frames with retail's 14) sooner or later than natively, so it turns
-    ///   on a threat that much sooner or later.
+    ///   the period ([`Self::patrol_scan_due`]), so the teams' scans spread
+    ///   over the period instead of all falling on one frame, and, as the
+    ///   team updates on its own turn ([`Self::run_team_ai_pass`]), on the
+    ///   first own turn from that frame. A team still scans once a period,
+    ///   but up to a period less one frame (13 frames with retail's 14)
+    ///   sooner or up to 16 later than natively, so it turns on a threat
+    ///   that much sooner or later.
     /// - A leader whose scan is due as the team step begins has it answered
     ///   then, beside the other teams' (`techno_ai::scan_batch`), and its
     ///   scan here takes that answer while the leader stands as it did. The
@@ -1427,8 +1429,8 @@ impl Simulation {
         }) {
             self.team_assign_mission_target(team_id, Some(waypoint_target), rules, effects);
         }
-        match self.patrol_scan_remainder(team_id, rules) {
-            Some(0) => {
+        match self.patrol_scan_due(team_id, rules) {
+            Some(true) => {
                 if let Some(leader) = self.team_leader(team_id, rules) {
                     let threat = crate::sim::world::direct_greatest_threat(
                         self,
@@ -1460,7 +1462,7 @@ impl Simulation {
                     }
                 }
             }
-            Some(_) => {}
+            Some(false) => {}
             None => log::error!("Team {team_id} Script16 has an invalid PatrolScan divisor"),
         }
         if self
@@ -1475,24 +1477,40 @@ impl Simulation {
         }
     }
 
-    /// `0x006ECD40..0x006ECD63`: the signed global frame (`0x00A8ED84`)
-    /// modulo `ftol([AI] PatrolScan= * 900)`, where zero lets `team_id`'s
-    /// Script16 scan; `None` for a period whose IDIV faults. With batched
-    /// target scans the frame first gains the team's phase, its id modulo
-    /// the period's size (a sim-scale deviation, see
-    /// [`Self::team_action_patrol_waypoint`]): team ids rise with
+    /// Whether `team_id`'s Script16 scans in this update
+    /// (`0x006ECD40..0x006ECD63`): the signed global frame (`0x00A8ED84`)
+    /// modulo `ftol([AI] PatrolScan= * 900)` is zero; `None` for a period
+    /// whose IDIV faults. With batched target scans (sim-scale deviations,
+    /// see [`Self::team_action_patrol_waypoint`]) the frame first gains the
+    /// team's phase, its id modulo the period's size: team ids rise with
     /// construction and are saved, so the phase keeps no state of its own.
-    pub(super) fn patrol_scan_remainder(&self, team_id: u64, rules: &RuleSet) -> Option<i32> {
+    /// The scan then runs on the team's own turn ([`Self::team_own_turn`])
+    /// when such a frame fell since its last one: the remainder is below the
+    /// frames between the turns. A period shorter than that scans on every
+    /// own turn.
+    pub(super) fn patrol_scan_due(&self, team_id: u64, rules: &RuleSet) -> Option<bool> {
         let period = rules.general.patrol_scan_frames();
-        let phase = if self.target_scans_batched() {
-            // Below the period's size, at most 2^31, so it fits.
-            (team_id % u64::from(period.unsigned_abs().max(1))) as i32
-        } else {
-            0
+        let frame = self.session.binary_frame() as i32;
+        let Some(turns) = self.team_update_period() else {
+            return frame.checked_rem(period).map(|remainder| remainder == 0);
         };
-        (self.session.binary_frame() as i32)
-            .wrapping_add(phase)
-            .checked_rem(period)
+        // Below the period's size, at most 2^31, so it fits.
+        let phase = (team_id % u64::from(period.unsigned_abs().max(1))) as i32;
+        let remainder = frame.wrapping_add(phase).checked_rem(period)?;
+        Some(self.team_own_turn(team_id) && (0..turns as i32).contains(&remainder))
+    }
+
+    /// Whether `Coordinate_Attack`'s leader check runs in `team_id`'s update:
+    /// on frames where the signed `Frame % 8` is 4 (`0x006EB59A..0x006EB5AE`,
+    /// [`attack_check_frame`]). A team that updates on its own turn (a
+    /// sim-scale deviation, [`Self::run_team_ai_pass`]) checks on its own
+    /// turn when such a frame fell since its last one.
+    fn team_attack_check_due(&self, team_id: u64) -> bool {
+        let frame = self.session.binary_frame() as i32;
+        let Some(turns) = self.team_update_period() else {
+            return attack_check_frame(frame);
+        };
+        self.team_own_turn(team_id) && frame.wrapping_sub(4).rem_euclid(8) < turns as i32
     }
 
     /// Script action 11 (`0x006ED7E0`, `first` unread): each live member
@@ -3179,7 +3197,7 @@ impl Simulation {
         }
         // `0x006EB59A..0x006EB5D2`. Without a target the action finishes
         // below, and a restart after the step's advance changes nothing.
-        if attack_check_frame(self.session.binary_frame() as i32)
+        if self.team_attack_check_due(team_id)
             && let (Some(leader), Some(target)) = (leader, focus)
             && self.selected_weapon_fire_error(rules, leader, target.target_kind(), true)
                 == FireError::Illegal

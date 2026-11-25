@@ -106,8 +106,11 @@
 //! changed anything. The summary prints how many visits were counted.
 //!
 //! The simulation batches its path searches and target scans as a real
-//! match does; `--serial-paths` searches and `--serial-scans` scans in native
-//! order instead. The `path_batch` line sums the batch's passes over the
+//! match does, and with the scans spreads the patrol scans over their period
+//! and updates each team on its own turns; `--serial-paths` searches in
+//! native order instead, and `--serial-scans` scans in native order, has
+//! every patrolling team scan on the same frame and updates every team every
+//! frame. The `path_batch` line sums the batch's passes over the
 //! measured frames ([`PathBatchStats`]): registrations waiting and answered,
 //! the ones the cap, a re-path budget or the urgency-2 limit left for a later
 //! pass (`capped` counts the limit's), and the cells the searches expanded,
