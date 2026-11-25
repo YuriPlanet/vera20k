@@ -1265,13 +1265,6 @@ pub(crate) fn paint_gui_into(
             }
             NodeKind::Combo => {
                 let Some(atlas) = atlas else { return };
-                let host_rows = gui
-                    .get(node, Prop::RowCount)
-                    .ok()
-                    .flatten()
-                    .and(style.rows_of)
-                    .zip(id(node))
-                    .and_then(|(rows_of, id)| rows_of(id));
                 if style.combos == ComboArt::Framed {
                     paint.draw(Material::Controls, |out, _| {
                         super::chrome::push_ownerdraw_two_pixel_bevel_frame(
@@ -1295,7 +1288,6 @@ pub(crate) fn paint_gui_into(
                     enabled,
                     scale,
                     style,
-                    host_rows,
                 );
             }
             NodeKind::List => {
@@ -2210,6 +2202,23 @@ fn push_cell(
         .push(text(bit_font, item, rect, align, glyph, rgb, depth));
 }
 
+/// The open popup and any rows supplied by its host.
+fn combo_popup_rows(
+    gui: &Gui,
+    node: NodeId,
+    style: GuiStyle<'_>,
+) -> Option<(vera20k_gui::ComboDropDown, Option<HostRows>)> {
+    let drop_down = gui.combo_drop_down(node)?;
+    let rows = gui
+        .get(node, Prop::RowCount)
+        .ok()
+        .flatten()
+        .and(style.rows_of)
+        .zip(gui.id_of(node))
+        .and_then(|(rows_of, id)| rows_of(id));
+    Some((drop_down, rows))
+}
+
 /// An owner-draw combo's face, its caption unless an overlay covers it, and
 /// its drop-down while it is open, its rows in the style's colour and glyph
 /// scale.
@@ -2226,9 +2235,8 @@ fn paint_combo(
     enabled: bool,
     scale: ShellScale,
     style: GuiStyle<'_>,
-    host_rows: Option<HostRows>,
 ) {
-    let drop_down = gui.combo_drop_down(node);
+    let popup_rows = combo_popup_rows(gui, node, style);
     let selected = usize::try_from(int(gui, node, Prop::Selected, -1)).ok();
     // A colour row shows its swatch (`house_color_tint`) and no text.
     let swatches = items(gui, node, Prop::Swatches);
@@ -2240,20 +2248,30 @@ fn paint_combo(
         ))
     };
     let face_swatch = selected.and_then(swatch);
-    let open = drop_down.is_some();
     let items = items(gui, node, Prop::Items);
-    // A host-counted combo's rows are the host's, each in its own colour
-    // (`u32::MAX` for the style's).
-    let rows: Vec<(&str, u32)> = match &host_rows {
-        Some(rows) => rows.iter().map(|(row, rgb)| (row.as_str(), *rgb)).collect(),
-        None => items.iter().map(|row| (row.as_str(), u32::MAX)).collect(),
-    };
+    let selected_item = selected.and_then(|row| items.get(row)).map(String::as_str);
     let font = bit_font;
     if style.combos == ComboArt::Cell {
-        let lit = (style.rgb_of.zip(gui.id_of(node))).and_then(|(rgb_of, id)| rgb_of(id));
-        if let Some((row, (item, _))) = selected.and_then(|row| Some((row, *rows.get(row)?))) {
+        // The room's face caption already comes from the selected choice.
+        let host = if caption && face_swatch.is_none() {
+            style
+                .text_of
+                .zip(gui.id_of(node))
+                .and_then(|(text_of, id)| text_of(id))
+        } else {
+            None
+        };
+        if let Some(item) = face_swatch
+            .map(|_| "")
+            .or(host.as_deref())
+            .or(selected_item)
+        {
+            let lit = style
+                .rgb_of
+                .zip(gui.id_of(node))
+                .and_then(|(rgb_of, id)| rgb_of(id));
             let look = (lit, style.text_factor.unwrap_or(scale.factor()));
-            let face = (rect, caption, swatch(row), item);
+            let face = (rect, caption, face_swatch, item);
             push_cell(
                 paint, bit_font, atlas, gui, node, face, look, style.rgb, scale,
             );
@@ -2262,7 +2280,7 @@ fn paint_combo(
         let control = ControlPaint::Combo {
             rect,
             swatch: face_swatch,
-            open,
+            open: popup_rows.is_some(),
             disabled: !enabled,
         };
         paint.draw(Material::Controls, |out, _| {
@@ -2272,7 +2290,7 @@ fn paint_combo(
         let host = (style.text_of.zip(gui.id_of(node))).and_then(|(text_of, id)| text_of(id));
         let face = match (&host, gui.get(node, Prop::Text).ok().flatten()) {
             (Some(face), _) | (None, Some(Value::Text(face))) => Some(face.as_str()),
-            _ => selected.and_then(|row| items.get(row)).map(String::as_str),
+            _ => selected_item,
         };
         let rgb = text_rgb(
             gui,
@@ -2308,8 +2326,17 @@ fn paint_combo(
             });
         }
     }
-    let Some(drop_down) = drop_down else { return };
+    let Some((drop_down, host_rows)) = popup_rows else {
+        return;
+    };
     let popup = drop_down.popup;
+    // A host-counted combo supplies a color for each row.
+    let row_at = |row: usize| match &host_rows {
+        Some(rows) => rows.get(row).map(|(item, color)| (item.as_str(), *color)),
+        None => items.get(row).map(|item| (item.as_str(), u32::MAX)),
+    };
+    let row_count = host_rows.as_ref().map_or(items.len(), Vec::len);
+    let visible_rows = popup.first..popup.first + popup.visible_rows;
     if style.combos == ComboArt::Beveled {
         let rows_rect = popup.rect;
         let frame = RectPx::new(
@@ -2329,7 +2356,7 @@ fn paint_combo(
         });
         let row_h = vera20k_gui::shell::list::ListMetrics::combo(scale).row_h;
         let lit = drop_down.hot_row.or(selected);
-        for (index, (item, _)) in rows.iter().enumerate() {
+        for (index, (item, _)) in (0..row_count).filter_map(|index| Some((index, row_at(index)?))) {
             let row = RectPx::new(
                 rows_rect.x,
                 rows_rect.y + index as i32 * row_h,
@@ -2402,8 +2429,8 @@ fn paint_combo(
         }
         let left = crate::ui::skirmish_shell::COMBO_TEXT_LEFT_INSET as f32;
         let left = (left * scale.factor()).round() as i32;
-        for (index, (item, _)) in rows.iter().enumerate() {
-            let Some(row) = popup.row_rect(index) else {
+        for index in visible_rows {
+            let (Some(row), Some((item, _))) = (popup.row_rect(index), row_at(index)) else {
                 continue;
             };
             paint.popup_texts.push(text(
@@ -2424,7 +2451,7 @@ fn paint_combo(
             atlas,
             popup.rect,
             drop_down.hot_row.and_then(|row| popup.row_rect(row)),
-            (popup.first..popup.first + popup.visible_rows).filter_map(|row| {
+            visible_rows.clone().filter_map(|row| {
                 let at = scale.derive_rect(popup.row_rect(row)?, |r| {
                     RectPx::new(r.x + 2, r.y + 2, r.w - 4, r.h - 4)
                 });
@@ -2442,8 +2469,8 @@ fn paint_combo(
     // The rows fit the list in their own glyph size.
     let glyph = style.text_factor.unwrap_or(scale.factor());
     let fit = combo_dropdown_text_fit_width(popup.content(), scale) as f32 * scale.factor() / glyph;
-    for row in popup.first..popup.first + popup.visible_rows {
-        let (Some(at), Some((item, packed))) = (popup.row_rect(row), rows.get(row).copied()) else {
+    for row in visible_rows {
+        let (Some(at), Some((item, packed))) = (popup.row_rect(row), row_at(row)) else {
             continue;
         };
         let rgb = match packed {
@@ -2630,6 +2657,37 @@ mod tests {
             .filter_map(|node| gui.id_of(node))
             .collect();
         assert_eq!(ids, [1, 4, 5, 8, 9]);
+    }
+
+    #[test]
+    fn combo_requests_host_rows_only_for_its_open_popup() {
+        let mut gui = Gui::new(8);
+        let root = gui.create(NodeKind::Dialog, None).unwrap();
+        let combo = gui
+            .create_tree(&NodeSpec::new(NodeKind::Combo).id(7), Some(root))
+            .unwrap();
+        gui.set(combo, Prop::Rect, Value::Rect(RectPx::new(10, 20, 120, 24)))
+            .unwrap();
+        gui.set(combo, Prop::RowCount, Value::Int(1)).unwrap();
+        gui.push_dialog(root, DialogKind::Page).unwrap();
+
+        let calls = std::cell::Cell::new(0);
+        let rows_of = |id| {
+            assert_eq!(id, 7);
+            calls.set(calls.get() + 1);
+            Some(vec![("Host choice".to_owned(), 0x0000_009f)])
+        };
+        let style = GuiStyle {
+            rows_of: Some(&rows_of),
+            ..GuiStyle::default()
+        };
+        assert!(combo_popup_rows(&gui, combo, style).is_none());
+        assert_eq!(calls.get(), 0);
+
+        gui.open_popup(combo, 0).unwrap();
+        let (_, rows) = combo_popup_rows(&gui, combo, style).unwrap();
+        assert_eq!(rows.unwrap(), [("Host choice".to_owned(), 0x0000_009f)]);
+        assert_eq!(calls.get(), 1);
     }
 
     #[test]
