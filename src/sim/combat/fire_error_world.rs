@@ -30,6 +30,87 @@ use crate::sim::touch_log::live_read_check_enabled;
 use crate::sim::vision::FireFog;
 use crate::sim::world::Simulation;
 
+/// `TechnoClass::GetFireError` (vt+0x3C0, `0x006FC0B0`) asked by a caller
+/// outside the combat owner.
+///
+/// Public and read-only: "may this object be sent at that one" is one question
+/// with one native answer, and a second copy of the rule is a second rule. It
+/// draws no RNG and writes nothing.
+///
+/// `check_range` is false. How far away the target is decides the *order* —
+/// shoot from here or walk there — and that is the caller's business, not part
+/// of the answer: a unit out of reach is still a unit to send.
+///
+/// The answer is the best of the eight slots. A type armed through
+/// `Secondary=` alone still has an answer, and a slot with no weapon answers
+/// `Illegal`, which is what "this object has nothing for that" looks like.
+///
+/// `None` when either object is gone: the caller asked about something that is
+/// no longer there, which is its own kind of no.
+pub fn fire_error(
+    world: &Simulation,
+    rules: &RuleSet,
+    firer: u64,
+    target: u64,
+) -> Option<FireError> {
+    answer(world, rules, firer, target, false)
+}
+
+/// The same question with the range test on: `CanFireAt @ 0x006F77B0`'s half of
+/// the answer, which is what the firing code itself gets.
+///
+/// [`fire_error`] deliberately leaves it off, because "may this object be sent
+/// at that one" does not depend on where it stands. A caller deciding between
+/// *shoot from here* and *walk closer* needs the range in the answer, and this
+/// is the only second door to the same body: one rule, two questions.
+pub fn fire_error_in_range(
+    world: &Simulation,
+    rules: &RuleSet,
+    firer: u64,
+    target: u64,
+) -> Option<FireError> {
+    answer(world, rules, firer, target, true)
+}
+
+fn answer(
+    world: &Simulation,
+    rules: &RuleSet,
+    firer: u64,
+    target: u64,
+    check_range: bool,
+) -> Option<FireError> {
+    let entity = world.entities().get(firer)?;
+    let obj = world.interner().object_type(entity.type_ref(), rules)?;
+    let mut transient: Option<FireError> = None;
+    let mut refused: Option<FireError> = None;
+    for slot in 0..8i32 {
+        let code = FireSubject {
+            world,
+            rules,
+            fog: Some(world.fog.fire_view(world.house_alliances())),
+            firer: entity,
+            obj,
+            target: Some(TargetKind::Entity(target)),
+            weapon_index: slot,
+        }
+        .fire_error(check_range);
+        match code {
+            FireError::Ok => return Some(FireError::Ok),
+            // Not this type against this target, ever: no weapon here has an
+            // answer to it, which is what a refused order looks like.
+            FireError::Illegal | FireError::Cant => {
+                refused.get_or_insert(code);
+            }
+            // Not this instant — the magazine is empty, the turret is turning.
+            // That clears on its own, and "not yet" is still "yes, send it".
+            _ => {
+                transient.get_or_insert(code);
+            }
+        }
+    }
+    transient.or(refused)
+}
+
 /// One firer, target and weapon slot, as GetFireError sees them.
 pub(crate) struct FireSubject<'a> {
     pub world: &'a Simulation,

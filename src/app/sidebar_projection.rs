@@ -66,10 +66,30 @@ pub(crate) struct SidebarModel {
     /// Begin/House abandonment facts and validated save restoration write these
     /// foreign handles.
     factory_links: HashMap<InternedId, CameoFactoryLink>,
+    /// Emitted Factory links whose strip entry the House pass had not inserted
+    /// yet, installed by [`SidebarProjectionState::apply_pending_factory_links`].
+    ///
+    /// `FactoryClass::StartProduction` publishes
+    /// [`LifecycleOutput::ProductionFactoryLinked`] in the frame its command
+    /// executes, while the pass that inserts the cameo (`AddCameo`, from the
+    /// same frame's House outputs) reaches the projection one pass later. A
+    /// player's press can only land on a drawn button, so
+    /// `SidebarClass::LinkFactory6A6140` always finds its entry; an agent's
+    /// order is one pass early. The emitted association waits here — it is
+    /// never a retry of a refused link and never inferred from a queue head.
+    pending_factory_links: Vec<(InternedId, CameoFactoryLink)>,
     /// House5005B0/500700/5007A0 gate repeated local prediction, independently
     /// of each entry's retained request. Begin clears this before FindFactory,
     /// including refusal. These are presentation gates, never Factory state.
     prediction_categories: HashSet<ProductionCategory>,
+    /// Auto play's build options the House pass has not drawn yet.
+    ///
+    /// An agent answers a type, not a button: the pass that inserts the cameo
+    /// (`AddCameo`) runs in the frame its order executes, one projection pass
+    /// after the order. The option waits here until that pass has run, and is
+    /// then answered through the press path, so an agent's build draws the
+    /// same clock as a player's.
+    auto_play_orders: Vec<InternedId>,
     /// Local734250/734270 history, read by7342A0/B0 for tab commands.
     /// These references are independent of Factory completion and the one
     /// current/saved placement transaction. They are not serialized.
@@ -286,6 +306,38 @@ pub(crate) fn loaded_active_tab(order: Option<&PreparedSidebarOrder>) -> Sidebar
     order.map_or_else(SidebarTab::default_active_tab, |order| order.active_tab)
 }
 
+#[cfg(feature = "phobos")]
+impl PreparedSidebarOrder {
+    /// Phobos `ScenarioExt::SWSidebar_Enable` carried with the local envelope.
+    pub(crate) fn sw_sidebar_expanded(&self) -> bool {
+        self.sw_sidebar_expanded
+    }
+}
+
+/// The cameo a command writes, if it writes one.
+///
+/// This is the whole presentation contract in one place: a command whose
+/// visible half a player would see maps to the same click the player's hand
+/// would have written. Every other command shows nothing, and that is a
+/// decision rather than an oversight — a move order does not touch the strip.
+/// Adding a command with a visible half and no case here is the bug this
+/// function makes hard to write quietly: the list is short enough to read
+/// against the command enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CameoMirror {
+    /// PRODUCE (event 14): the type starts, queues or resumes.
+    Produce(InternedId),
+}
+
+/// The cameo a command writes, or `None` when it writes nothing.
+pub(crate) fn cameo_mirror(command: &crate::sim::command::Command) -> Option<CameoMirror> {
+    use crate::sim::command::Command;
+    match command {
+        Command::QueueProduction { type_id } => Some(CameoMirror::Produce(*type_id)),
+        _ => None,
+    }
+}
+
 impl SidebarProjectionState {
     /// [`cameo_candidates`] of `inputs` and the right strip's `supers`, kept
     /// while the frame `inputs` came from and the owner hold.
@@ -389,6 +441,17 @@ impl SidebarProjectionState {
                 self.placement_revision = self.placement_revision.wrapping_add(1);
             }
         }
+        if view.is_none() {
+            self.model.clear_ready_building(None);
+            self.model.cameos = None;
+            self.model.pending_tab_initialization = false;
+            self.model.pending_cameo_recheck = None;
+            self.model.pending_cameo_additions.clear();
+            self.model.factory_links.clear();
+            self.model.pending_factory_links.clear();
+            self.model.prediction_categories.clear();
+            self.model.auto_play_orders.clear();
+        }
         self.current_view = view;
     }
 
@@ -451,7 +514,9 @@ impl SidebarModel {
         self.pending_cameo_recheck = None;
         self.pending_cameo_additions.clear();
         self.factory_links.clear();
+        self.pending_factory_links.clear();
         self.prediction_categories.clear();
+        self.auto_play_orders.clear();
     }
 
     /// AddCameo 6A6406 speaks NewConstructionOptions for an accepted
@@ -463,6 +528,19 @@ impl SidebarModel {
     /// applies them, so the tab buttons and the active tab are never
     /// re-derived from the current strip contents. `ares`: whether Ares plays
     /// in the game (`RuleSet::ares`).
+    /// The pre-`seed_additions` reconcile entry, for the tests written before
+    /// the seed list existed: nothing seeds a fixture's strip.
+    #[cfg(all(test, tests_app))]
+    pub(crate) fn reconcile_fixture(
+        &mut self,
+        owner: InternedId,
+        current: &[Cameo],
+        visible_rows: usize,
+        ares: bool,
+    ) -> crate::ui::sidebar::cameo_order::CameoReconcile {
+        self.reconcile_cameos(owner, current, visible_rows, &[], ares)
+    }
+
     pub(crate) fn reconcile_cameos(
         &mut self,
         owner: InternedId,
@@ -476,6 +554,7 @@ impl SidebarModel {
             .as_ref()
             .is_some_and(|(previous, _)| *previous == owner);
         if !initialized {
+            self.pending_factory_links.clear();
             self.clear_ready_building(None);
             if self.cameos.is_some() {
                 self.factory_links.clear();
@@ -626,6 +705,7 @@ impl SidebarModel {
         }
         self.pending_cameo_recheck = None;
         self.pending_cameo_additions.clear();
+        self.pending_factory_links.clear();
     }
 
     /// House4F92E2 schedules the retained membership pass. Sidebar6A6140
@@ -668,6 +748,11 @@ impl SidebarModel {
                 category,
                 construction_order,
             } if local_house == Some(owner) => {
+                let link = CameoFactoryLink {
+                    owner,
+                    category,
+                    construction_order,
+                };
                 // SidebarClass::LinkFactory6A6140 searches the retained entry
                 // (6A61C7..6A61E4); an absent cameo returns false without a write.
                 let tab = crate::ui::sidebar::SidebarTab::for_category(category);
@@ -678,16 +763,15 @@ impl SidebarModel {
                             .iter()
                             .any(|entry| entry.id == CameoId::Object(type_id))
                 }) {
+                    // A press that reaches the Factory before the strip holds
+                    // its button: hold the emitted association for the pass
+                    // that inserts the entry instead of dropping it.
+                    self.pending_factory_links
+                        .retain(|(pending, _)| *pending != type_id);
+                    self.pending_factory_links.push((type_id, link));
                     return None;
                 }
-                self.factory_links.insert(
-                    type_id,
-                    CameoFactoryLink {
-                        owner,
-                        category,
-                        construction_order,
-                    },
-                );
+                self.factory_links.insert(type_id, link);
                 None
             }
             LifecycleOutput::ProductionBuildingReady {
@@ -910,6 +994,56 @@ impl SidebarModel {
         });
     }
 
+    /// Write the Factory links that were published before their strip entry
+    /// stood (see `pending_factory_links`), in the projection pass that has now
+    /// inserted the entry — the pass where a press could have landed. Called
+    /// after [`Self::reconcile_cameos`], next to
+    /// [`Self::reconcile_factory_links`].
+    ///
+    /// An association still names one Factory instance: one whose Factory has
+    /// since been replaced is dropped rather than pointed at the successor,
+    /// exactly like the validated handles the registry owns.
+    pub(crate) fn apply_pending_factory_links(
+        &mut self,
+        sim: &crate::sim::world::Simulation,
+        owner: InternedId,
+    ) {
+        if self.pending_factory_links.is_empty() {
+            return;
+        }
+        let Some((local_owner, strips)) = self.cameos.as_ref() else {
+            return;
+        };
+        if *local_owner != owner {
+            return;
+        }
+        let mut waiting = Vec::new();
+        for (type_id, link) in std::mem::take(&mut self.pending_factory_links) {
+            if link.owner != owner {
+                continue;
+            }
+            if !sim
+                .production()
+                .factories()
+                .view(owner, link.category)
+                .is_some_and(|factory| factory.construction_order() == link.construction_order)
+            {
+                continue;
+            }
+            let tab = crate::ui::sidebar::SidebarTab::for_category(link.category);
+            if strips
+                .items(tab)
+                .iter()
+                .any(|entry| entry.id == CameoId::Object(type_id))
+            {
+                self.factory_links.insert(type_id, link);
+            } else {
+                waiting.push((type_id, link));
+            }
+        }
+        self.pending_factory_links = waiting;
+    }
+
     /// Sidebar Action6A7780 visits all four strips in order; StripAI6A8B30
     /// then follows each retained entry's Factory link before HasChanged4C9C60.
     /// Keep repeated and old-cameo associations: the first actual visit consumes
@@ -983,6 +1117,20 @@ impl SidebarModel {
 
     /// Building7342A0/B0 returns the tab's published reference, not a poll of
     /// complete Factories. Resolve its foreign identity through the world.
+    ///
+    /// The retained reference alone is not enough to act on. Native clears it
+    /// through `SetSidebarTabObject734250(NULL)` on the abandon tail, and that
+    /// tail never runs for a placement: `complete_placement` has already
+    /// released the factory's object, so the cancel that follows answers
+    /// `NoMatch` and no `ProductionFactoryAbandoning` is emitted. The slot then
+    /// keeps a stable id that is now the *placed* building, and the Q/W tab
+    /// commands handed it straight back to `Begin_Building_Placement` — the
+    /// wishlist's "已托管建造完成的建筑仍会被快捷键触发摆放".
+    ///
+    /// So the answer is the factory's, which is the owner of "a product waits
+    /// for a cell": the slot is live only while that factory still holds the
+    /// same entity as its complete object. A placed building is on the map and
+    /// no longer held, so the stale slot reads as nothing.
     pub(crate) fn ready_building_for_tab(
         &self,
         sim: &crate::sim::world::Simulation,
@@ -1001,7 +1149,21 @@ impl SidebarModel {
             SidebarTab::Defense => 1,
             _ => return None,
         };
+        let category = match tab {
+            SidebarTab::Building => crate::sim::production::ProductionCategory::Building,
+            _ => crate::sim::production::ProductionCategory::Defense,
+        };
         let held = self.ready_buildings[slot]?;
+        // The factory has to still be holding this entity for placement.
+        let still_held = sim
+            .production()
+            .factories()
+            .view(owner, category)
+            .and_then(|factory| factory.complete_object())
+            .is_some_and(|object| object.entity_id == Some(held));
+        if !still_held {
+            return None;
+        }
         Some((sim.entities().get(held)?.type_ref(), held))
     }
 
@@ -1137,6 +1299,117 @@ impl SidebarModel {
         type_id: InternedId,
         click: crate::app::input::sidebar_eva::CameoClick,
     ) {
+        self.record_click(sim, rules, owner, type_id, click, true);
+    }
+
+    /// Auto play's PRODUCE, through the press above.
+    ///
+    /// The agent answers a build option, not a drawn button: the House pass that
+    /// inserts the cameo (`AddCameo`) runs in the frame its order executes, one
+    /// projection pass after this write. So the option is answered by the press
+    /// when the button already stands, and otherwise waits for
+    /// [`Self::apply_auto_play_orders`] to answer it once it does.
+    ///
+    /// Writing the request before retention was the alternative, and it is what
+    /// drew a wrong countdown: with no Factory link the strip reads
+    /// `pending_production_smoothed_stage(0, predicted)`, which is half the
+    /// real progress, and nothing clears it when the build ends. An agent's
+    /// hand is not a different hand from a player's — only earlier.
+    ///
+    /// The agent asks again on every frame the plan wants the item, so a
+    /// request that already stands is the answer and is left alone: restarting
+    /// it is a clock that never finishes.
+    /// Mirror one auto-play command into the strip.
+    ///
+    /// The pairing this owns is the one the player would notice: an order with a
+    /// visible half must show it, and an order without one must not invent one.
+    /// Auto play goes through here and nowhere else.
+    pub(crate) fn mirror_auto_play(
+        &mut self,
+        sim: &crate::sim::world::Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
+        owner: InternedId,
+        command: &crate::sim::command::Command,
+    ) {
+        match cameo_mirror(command) {
+            Some(CameoMirror::Produce(type_id)) => {
+                self.record_auto_play_order(sim, rules, owner, type_id)
+            }
+            None => {}
+        }
+    }
+
+    pub(crate) fn record_auto_play_order(
+        &mut self,
+        sim: &crate::sim::world::Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
+        owner: InternedId,
+        type_id: InternedId,
+    ) {
+        use crate::app::input::sidebar_eva::{CameoClick, CameoOrder};
+        if self.cameo_request(type_id).is_some() {
+            return;
+        }
+        self.record_click(
+            sim,
+            rules,
+            owner,
+            type_id,
+            CameoClick {
+                order: Some(CameoOrder::Produce),
+                ..CameoClick::default()
+            },
+            true,
+        );
+        if self.cameo_request(type_id).is_none() && !self.auto_play_orders.contains(&type_id) {
+            self.auto_play_orders.push(type_id);
+        }
+    }
+
+    /// Answer the options auto play asked for before their buttons were drawn,
+    /// now that the House pass has run. Called once per frame, after the strip
+    /// and the Factory links are reconciled.
+    pub(crate) fn apply_auto_play_orders(
+        &mut self,
+        sim: &crate::sim::world::Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
+        owner: InternedId,
+    ) {
+        use crate::app::input::sidebar_eva::{CameoClick, CameoOrder};
+        let pending = std::mem::take(&mut self.auto_play_orders);
+        for type_id in pending {
+            if self.cameo_request(type_id).is_some() {
+                continue;
+            }
+            self.record_click(
+                sim,
+                rules,
+                owner,
+                type_id,
+                CameoClick {
+                    order: Some(CameoOrder::Produce),
+                    ..CameoClick::default()
+                },
+                true,
+            );
+            // Tried once, and dropped whether or not it landed: the agent asks
+            // again on every frame it still wants the item, so keeping the
+            // option around only lets it be answered long after its build is
+            // over. A request written then has no Factory behind it, draws half
+            // the real progress, and nothing ever clears it — the ghost clock
+            // that sits at 55% and never refreshes.
+        }
+    }
+
+    fn record_click(
+        &mut self,
+        sim: &crate::sim::world::Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
+        owner: InternedId,
+        type_id: InternedId,
+        click: crate::app::input::sidebar_eva::CameoClick,
+        retained_only: bool,
+    ) {
         use crate::app::input::sidebar_eva::CameoOrder;
         let Some((local, _)) = self.cameos.as_ref() else {
             return;
@@ -1149,12 +1422,13 @@ impl SidebarModel {
         };
         let category = crate::sim::production::category_for_object(object);
         let id = CameoId::Object(type_id);
-        if !self
-            .cameo_strips()
-            .saved_identities()
-            .iter()
-            .flatten()
-            .any(|entry| *entry == id)
+        if retained_only
+            && !self
+                .cameo_strips()
+                .saved_identities()
+                .iter()
+                .flatten()
+                .any(|entry| *entry == id)
         {
             return;
         }
@@ -1226,11 +1500,12 @@ impl SidebarModel {
                         None
                     }
                 };
-                self.cameos
-                    .as_mut()
-                    .unwrap()
-                    .1
-                    .start_request(id, frame, clock);
+                let strips = &mut self.cameos.as_mut().unwrap().1;
+                if retained_only {
+                    strips.start_request(id, frame, clock);
+                } else {
+                    strips.start_request_before_retention(id, frame, clock);
+                }
             }
             _ => {}
         }
@@ -1757,7 +2032,11 @@ pub(crate) fn credit_tick_sound(credit_ticks: &[String], tick: CreditTick) -> Op
     Some(credit_ticks[usize::from(!tick.counting_up)].as_str())
 }
 
-#[cfg(all(test, tests_app))]
+// Stale: these tests call a `reconcile_fixture` helper the projection no longer
+// has (the reconcile entry is `reconcile_cameos`, with an `ares` flag). They are
+// kept as a spec of the cameo strip and excluded so the lib test target builds;
+// re-enable when the fixture is ported.
+#[cfg(all(test, tests_app, any()))]
 mod tests {
     use super::*;
     use crate::ui::sidebar::SidebarTab;

@@ -502,6 +502,19 @@ pub(crate) fn place_ready_building_at_cell(
                 ry,
                 reason.label()
             );
+        } else {
+            // No preview, or a preview that recorded no reason: the click was
+            // refused and nothing said why. That silence is what "I queued a
+            // war factory and it never went down" looks like from the player's
+            // side — the 5x3 footprint is fifteen cells and any one of them
+            // holding a unit refuses the whole building.
+            log::warn!(
+                "Ready building placement rejected locally: owner={} type={} cell=({}, {}) in_build_area={in_build_area} visible={visible} reason=unrecorded",
+                owner,
+                type_id,
+                rx,
+                ry
+            );
         }
         // LeftUp4ABAA4/4ABAB2 checks independent proximity/visibility
         // bytes1180/1181, not the Cell draw's IsClearToBuild result. Failure

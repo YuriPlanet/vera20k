@@ -260,6 +260,18 @@ pub(crate) fn enqueue_selected<'k>(
     if outcome == EnqueueOutcome::AppendRefused {
         sim.sound_events
             .emit(SimSoundEvent::ProductionRefused { owner: owner_id });
+        // The append is refused — the queue is at `[General]
+        // MaximumQueuedObjects=` or the type is at its build limit — and the
+        // caller already wrote the cameo's request record for the press.
+        // Returning `false` with that record still set draws a clock that never
+        // finishes and never clears. Native clears the request on the refused
+        // PRODUCE, and the client turns this into the same clear.
+        //
+        // The arms that refuse before the queue — no factory, a busy building
+        // line — deliberately do not clear: a brain asking for what it cannot
+        // build yet is a caller bug, and `ControlBoard`'s gate keeps it from
+        // reaching this function at all.
+        effects.clear_production_request(type_interned);
         return false;
     }
     if outcome == EnqueueOutcome::Started {

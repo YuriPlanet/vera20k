@@ -2161,7 +2161,7 @@ fn techno_receive(
             }
         }
         RadioMessage::RepairTick => techno_repair_tick(sim, techno, rules, effects),
-        RadioMessage::Reload => techno_reload(&sim.interner, &mut sim.substrate, techno, rules),
+        RadioMessage::Reload => techno_reload(sim, techno, rules),
         // 0x1A, 0x1B and 0x1E have no represented sender; neither has 0x1D
         // to anything but an aircraft, which answers it itself.
         RadioMessage::SecondaryLockSet
@@ -2174,31 +2174,39 @@ fn techno_receive(
 
 /// RELOAD, Techno case 0x1F (`0x006F4C9C`): Ammo at the type's `Ammo=`
 /// answers NEGATORY; otherwise one round more and ROGER.
-fn techno_reload(
-    interner: &StringInterner,
-    substrate: &mut ObjectSubstrate,
-    techno: u64,
-    rules: &RuleSet,
-) -> RadioResponse {
-    let Some(type_ammo) = substrate
+///
+/// The handover is the reload itself, so it leaves the shared Techno ammo
+/// clock (`StartReloading6FB080`, `+0x1FC`/`+0x204`) running for the round
+/// (`Reload=`/`EmptyReload=`) when the magazine is still short. That clock
+/// is what an aircraft's Mission_Attack strike states read: a round being
+/// handed over is not a round aboard yet.
+fn techno_reload(sim: &mut Simulation, techno: u64, rules: &RuleSet) -> RadioResponse {
+    let now = sim.session.binary_frame() as i32;
+    let Some((type_ref, type_ammo)) = sim
+        .substrate
         .entities
         .get(techno)
-        .and_then(|entity| interner.object_type(entity.type_ref(), rules))
-        .map(|object| object.ammo)
+        .and_then(|entity| {
+            sim.interner
+                .object_type(entity.type_ref(), rules)
+                .map(|object| (entity.type_ref(), object.ammo))
+        })
     else {
         return RadioResponse::None;
     };
-    let Some(ammo) = substrate
-        .entities
-        .get_mut(techno)
-        .and_then(|entity| entity.ammo_mut())
-    else {
+    let Some(entity) = sim.substrate.entities.get_mut(techno) else {
+        return RadioResponse::None;
+    };
+    let Some(ammo) = entity.ammo_mut() else {
         return RadioResponse::None;
     };
     if ammo.current() == type_ammo {
         return RadioResponse::Negatory;
     }
     ammo.reload_round();
+    if let Some(object) = sim.interner.object_type(type_ref, rules) {
+        entity.start_reloading_ammo(object, now);
+    }
     RadioResponse::Roger
 }
 
@@ -3242,6 +3250,67 @@ mod tests {
                 .partner(),
             Some(1)
         );
+    }
+
+    /// RELOAD (`0x006F4C9C`) hands one round over and starts the shared
+    /// Techno ammo clock (`StartReloading6FB080`) for it: the round is aboard
+    /// only when that clock runs out, so an aircraft cannot fire it first.
+    #[test]
+    fn an_airfield_reload_handover_starts_the_ammo_clock() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+        use crate::sim::ammo::TechnoAmmo;
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[AircraftTypes]\n0=ORCA\n[BuildingTypes]\n0=GAAIRC\n\
+             [ORCA]\nStrength=150\nAmmo=3\nReload=40\nAirportBound=yes\n\
+             [GAAIRC]\nStrength=1000\nHelipad=yes\nUnitReload=yes\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        spawn_refinery(&mut sim, 2, "Americans", 1);
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .set_type_ref_for_test(sim.interner.intern("GAAIRC"));
+        spawn_miner(&mut sim, 1, "Americans");
+        {
+            let plane = sim.substrate.entities.get_mut(1).unwrap();
+            plane.set_category_for_test(EntityCategory::Aircraft);
+            plane.set_type_ref_for_test(sim.interner.intern("ORCA"));
+            plane.install_ammo_for_test(Some(TechnoAmmo::new(3)));
+            plane.ammo_mut().unwrap().set_current_for_test(0);
+        }
+        for (id, partner) in [(1, 2), (2, 1)] {
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .seldom
+                .radio_contacts
+                .set_slot(0, partner);
+        }
+
+        let response = transmit(
+            &mut sim,
+            2,
+            1,
+            RadioMessage::Reload,
+            RadioPayload::default(),
+            &rules,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
+
+        assert_eq!(response, RadioResponse::Roger);
+        let frame = sim.session.binary_frame() as i32;
+        let plane = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(plane.ammo().unwrap().current(), 1);
+        assert_eq!(
+            plane.ammo_reload_timer().remaining(frame),
+            40,
+            "the handed-over round is still loading"
+        );
+        assert_eq!(plane.ammo_reload_timer().remaining(frame + 40), 0);
     }
 
     #[test]

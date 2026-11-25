@@ -783,3 +783,4 @@ fn a_captured_human_construction_yard_cancels_placement() {
         "a computer's yard"
     );
 }
+

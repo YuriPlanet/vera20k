@@ -213,6 +213,10 @@ pub mod animation_sequence;
 pub mod art_data;
 pub mod bridge_warheads;
 pub mod building_extra_power;
+/// What a unit type can do, derived from its own rules keys.
+///
+/// VERA's own model: the policy layers ask it instead of matching type names.
+pub mod capabilities;
 pub mod building_light;
 pub mod building_rubble;
 pub mod building_upgrade;
@@ -290,6 +294,10 @@ pub mod terrain_asset_catalog;
 pub mod terrain_object_type;
 pub mod terrain_rules;
 pub mod tiberium_type;
+/// What every type is for, derived from the rules' own weapon and warhead data.
+///
+/// VERA's own model: the role weights the army picker reads come from here.
+pub mod unit_role;
 pub mod voxel_anim_type;
 pub mod voxel_asset_catalog;
 mod voxel_model_plan;

@@ -126,10 +126,14 @@ pub mod type_handle_table; // Interned bridge warheads used by combat.
 // --- Pure read-only deterministic engine-data services (gamemd-exact lookup tables) ---
 
 // --- Subsystem folders (multi-file subsystems with internal mod.rs) ---
+pub mod autoplay; // façade for agent-driven play: host, hotkey-facing types, scripted brain
+pub mod behavior; // L1 of the AI stack: goals, the order funnel, per-object view, managed routines
 pub mod bounce;
 pub mod combat; // targeting, weapons, AOE, fire gates, damage resolution
+pub mod control; // L2 of the AI stack: scheduling, admission, budgets, managed state, observation
 pub mod miner; // harvester state machine, dock sequences, ore delivery
 pub mod production; // build queue, placement, economy, tech tree, selling
+pub mod strategy; // L3 of the AI stack: the brain contract and the retail brain
 pub mod voxel_anim;
 pub mod world; // Simulation orchestrator, command dispatch, spawn, hash
 

@@ -2394,6 +2394,18 @@ impl Simulation {
                     .map(|engineer| engineer.owner())
                 {
                     self.announce_building_capture(building_id, capture_owner, rules);
+                    // The one line a policy needs to accept "capture" as a
+                    // feature: the building changed hands, and the engineer that
+                    // did it is consumed by this arm. Without it the policy's log
+                    // shows an engineer playing `MissionType::Capture` and then
+                    // vanishing, which reads the same whether it captured the
+                    // building or died walking to it.
+                    log::info!(
+                        "capture: engineer {} took building {} for {}",
+                        engineer_id,
+                        building_id,
+                        self.interner.resolve(capture_owner)
+                    );
                     self.change_owner_with_rules(
                         building_id,
                         capture_owner,

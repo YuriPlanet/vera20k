@@ -331,6 +331,19 @@ impl FactoryType {
         }
     }
 
+    /// The value [`Self::from_rtti`] reads back: what a factory's
+    /// `Suggest_New_Object` dispatch (`0x004FBD80`) is keyed by, for a caller
+    /// that knows the category a factory makes rather than the class RTTI the
+    /// native call site carries.
+    pub(crate) const fn production_rtti(self) -> i32 {
+        match self {
+            Self::BuildingType => 7,
+            Self::InfantryType => 16,
+            Self::UnitType => 40,
+            Self::AircraftType => 3,
+        }
+    }
+
     /// The factory that builds an object of `category`: its type class.
     pub const fn for_category(category: ObjectCategory) -> Self {
         match category {

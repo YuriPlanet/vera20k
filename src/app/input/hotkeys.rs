@@ -145,6 +145,19 @@ pub(crate) enum HotkeyCommand {
     /// neutral unchanged) to tell players apart in large melee matches. Pure
     /// presentation; works in a match only.
     RelationColors,
+    /// Auto play: install the host, or take it down when every switch is on.
+    /// Registered in the `vera20k` keyboard category with no default key.
+    ToggleAutoPlay,
+    /// Auto play's forces half alone: the base keeps building while the player
+    /// takes the troops back.
+    ToggleAutoPlayForces,
+    /// Auto play's production half alone, the mirror of the forces key.
+    AutoPlayBuild,
+    /// Auto play's abilities half: superweapon launches on a switch of their own.
+    AutoPlayAbilities,
+    /// Auto play's scope key: the three halves keep running, but only over the
+    /// objects standing in the brain's teams.
+    ToggleAutoPlaySquads,
     /// Ctrl+D smart command: context-dependent convenience action on the
     /// selection (transport loading, garrison, engineer, sabotage, etc.).
     /// Registered in the `vera20k` keyboard category with the Ctrl+D default.

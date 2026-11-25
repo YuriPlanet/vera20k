@@ -1,0 +1,55 @@
+[package]
+name = "vera20k-autoplay"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# The policy crate. It sits outside vera20k-core on purpose: core keeps the
+# command ingress and the read-only projection, and this crate is the only
+# consumer that decides anything.
+[dependencies]
+vera20k-core = { path = "../src" }
+# The harness installs a stderr logger; the policy itself never logs.
+log = "0.4"
+# The replay reader writes its report as JSON. serde_json is already a
+# workspace dependency, and the engine's own diagnostic artifacts are JSON.
+serde_json = { workspace = true }
+
+[dev-dependencies]
+# The retail fixture reads RULESMD.INI through the production reader; tests that
+# need real object types use it, and skip without RA2_DIR.
+vera20k-core = { path = "../src", features = ["test-support"] }
+
+[features]
+# The retail rules fixture, for the profile dump. Not part of a normal build.
+retail-fixture = ["vera20k-core/test-support"]
+
+[[bin]]
+name = "autoplay-profiles"
+path = "src/bin/profiles.rs"
+required-features = ["retail-fixture"]
+
+# One harness for both brains: the ported assist policy and this crate's, so a
+# comparison run is the same binary with one flag.
+[[bin]]
+name = "autoplay-match"
+path = "src/bin/match.rs"
+required-features = ["retail-fixture"]
+
+# Read a recorded match back and report the whole process: the reference a
+# policy change is measured against. It needs the retail install at run time,
+# not the rules fixture, so it builds without `retail-fixture`.
+[[bin]]
+name = "autoplay-replay"
+path = "src/bin/replay.rs"
+
+# The role weights the army picker reads, so the composition can be reviewed
+# without running a match.
+[[bin]]
+name = "autoplay-roles"
+path = "src/bin/roles.rs"
+required-features = ["retail-fixture"]
+
+[lib]
+name = "autoplay"
+path = "src/lib.rs"

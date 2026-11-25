@@ -1411,3 +1411,143 @@ mod context_click_route_tests {
 #[cfg(all(test, tests_app_input_d_z))]
 #[path = "building_occupant_deploy_tests.rs"]
 mod building_occupant_deploy_tests;
+/// How many commands one agent may issue in a frame. No native equivalent is
+/// known — gamemd has no auto play — so this caps VERA's own path rather than
+/// reproducing a limit.
+///
+/// It is no longer a hand: an eight-command frame is a player's click rate, and
+/// the agent is not clicking. At eight, an army of a hundred units waited
+/// thirteen frames for its turn and the frame's allowance went to whichever
+/// step ran first — measured on the pinned match, raising it alone moved the win
+/// from tick 35 726 to 29 238. The number here is a safety valve against a
+/// pathological frame, not a fairness rule: fog and reaction are where honesty
+/// lives now, and per-object rate limits in the board keep a single unit from
+/// being re-tasked every frame.
+const AUTO_PLAY_COMMANDS_PER_FRAME: usize = 512;
+
+/// The retail policy's own generator seed. The policy's draws belong to it, not
+/// to a simulation stream, so a fixed seed keeps an unattended match
+/// reproducible frame for frame.
+const AUTO_PLAY_POLICY_SEED: u64 = 0x5EED_2_1;
+
+/// VERA's own: auto play runs exactly while a host is installed, so there is no
+/// second switch that has to be kept in step with it. Installing brings all
+/// three halves — building, forces and abilities — on, and the master key is
+/// all-or-nothing: from a host that is missing any switch it turns all three
+/// on, and from a host that has them all it takes the host down.
+///
+/// The installed brain is the assist one (`AssistBrain`): it generates the
+/// native BasePlan from the loaded rules — `AI_RecalcBuildOptions` — and plays
+/// it through the command path: deploy the MCV, queue what the plan asks for,
+/// place it, keep the harvesters coming. `docs/autoplay.md` carries the scope
+/// and the residuals.
+fn toggle_auto_play(state: &mut AppState) {
+    if let Some(host) = state.match_state.auto_play.as_mut() {
+        let mut domains = host.domains();
+        domains.toggle_master();
+        // Keep the session, its scope and its task history while paused.
+        // Dropping the host would reset the fifth key and all three work
+        // switches when the player presses Global again.
+        host.set_domains(domains);
+    } else {
+        install_auto_play(state, crate::sim::control::board::AutoPlayDomains::ALL);
+    }
+    post_auto_play_state(state);
+}
+
+/// Install a session running `domains`. `false` when there is no house to drive.
+fn install_auto_play(
+    state: &mut AppState,
+    domains: crate::sim::control::board::AutoPlayDomains,
+) -> bool {
+    let Some(owner) = state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .and_then(|runtime| runtime.simulation.session().current_house())
+    else {
+        return false;
+    };
+    // Which brain drives the house. The assist is the default, and
+    // `VERA20K_BRAIN=assist` names it so the variable and the module agree; an
+    // unknown value lands there too. `VERA20K_BRAIN=v2` selects the crate
+    // outside the engine, which has not reached parity, so one build shows both.
+    let brain: Box<dyn crate::sim::control::brain::Brain> =
+        if std::env::var("VERA20K_BRAIN").is_ok_and(|value| value.eq_ignore_ascii_case("v2")) {
+            match state.match_state.sim_runtime.runtime() {
+                Some(runtime) => Box::new(autoplay::policy::Policy::new(&runtime.resources.rules)),
+                None => Box::new(crate::sim::strategy::assist::AssistBrain::new(
+                    AUTO_PLAY_POLICY_SEED,
+                )),
+            }
+        } else {
+            Box::new(crate::sim::strategy::assist::AssistBrain::new(
+                AUTO_PLAY_POLICY_SEED,
+            ))
+        };
+    let mut session = crate::app::match_runtime::autoplay_session::AutoplaySession::new(
+        crate::sim::autoplay::AutoPlayHost::new(brain, owner, AUTO_PLAY_COMMANDS_PER_FRAME),
+    );
+    session.set_domains(domains);
+    state.match_state.auto_play = Some(session);
+    true
+}
+
+/// Four distinct choices: three work domains and a pure *player group*
+/// scope switch. Pressing the fifth key while paused creates a paused session
+/// with the new scope: no production/forces/ability domain is enabled by it.
+/// A paused host remains alive so Global can restore the three domains without
+/// forgetting the fifth key or resetting the strategy's state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AutoPlaySwitch {
+    Production,
+    Forces,
+    Abilities,
+    GroupScope,
+}
+
+fn toggle_auto_play_switch(state: &mut AppState, switch: AutoPlaySwitch) {
+    if state.match_state.auto_play.is_none() {
+        let mut domains = crate::sim::control::board::AutoPlayDomains::NONE;
+        match switch {
+            AutoPlaySwitch::Production => domains.production = true,
+            AutoPlaySwitch::Forces => domains.forces = true,
+            AutoPlaySwitch::Abilities => domains.abilities = true,
+            AutoPlaySwitch::GroupScope => domains.grouped_only = true,
+        }
+        install_auto_play(state, domains);
+    } else if let Some(host) = state.match_state.auto_play.as_mut() {
+        let mut domains = host.domains();
+        match switch {
+            AutoPlaySwitch::Production => domains.production = !domains.production,
+            AutoPlaySwitch::Forces => domains.forces = !domains.forces,
+            AutoPlaySwitch::Abilities => domains.abilities = !domains.abilities,
+            AutoPlaySwitch::GroupScope => domains.grouped_only = !domains.grouped_only,
+        }
+        host.set_domains(domains);
+    }
+    post_auto_play_state(state);
+}
+
+/// Report which switches are on. A toggle gives no other sign it fired, and
+/// this is the message sink that takes plain text rather than a CSF template.
+fn post_auto_play_state(state: &mut AppState) {
+    let message = match state.match_state.auto_play.as_ref() {
+        Some(host) => {
+            let scope = if host.domains().grouped_only {
+                ", grouped only"
+            } else {
+                ", ungrouped only"
+            };
+            format!(
+                "Auto play: {} ({}){}",
+                host.domains().describe(),
+                host.policy_name(),
+                scope
+            )
+        }
+        None => "Auto play off".to_string(),
+    };
+    crate::app::input::messages::post_selection_navigation_text(state, &message);
+}
+

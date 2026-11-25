@@ -1186,6 +1186,14 @@ impl SuperWeaponInstance {
         self.charge_start_tick != -1 && self.is_active && self.is_ready
     }
 
+    /// Whether the sidebar's button for this Super is live: granted, charged or
+    /// draining, and not held. That is [`Self::can_fire`] plus the grant, the
+    /// same pair `ClickFire` tests before Launch, exposed so a decision outside
+    /// this module can ask the question without reading the fields.
+    pub fn ready_to_fire(&self, sw: &SuperWeaponType) -> bool {
+        self.is_active && self.can_fire(sw)
+    }
+
     /// ClickFire after its Launch (`0x006CBA72..0x006CBB8A`), whatever the
     /// launch did: a one-time instance clears its one-time/granted/ready
     /// flags and leaves its timer/hold intact (6CBB18..6CBB60). Otherwise,

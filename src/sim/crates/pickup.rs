@@ -456,6 +456,14 @@ pub(crate) fn pickup_crate(
         // statistics block (`0x00749020`). VERA runs no mode-4 session.
     }
     // `0x00481D86`: removal, then the replacement crate.
+    // The pickup is logged because it is the one crate event a policy cannot
+    // read from the world afterwards: the crate is gone and a replacement
+    // stands somewhere else, so "was the box collected or did it expire" is
+    // a question the log has to answer.
+    log::info!(
+        "crate picked up at {cell:?} by house {}",
+        sim.interner.resolve(owner)
+    );
     let _ = remove_pickup_crate(sim, rules, registry, cell);
     if policy.uses_match_crates() && sim.session.game_options().crates {
         if let Err(error) = place_one_random_crate(

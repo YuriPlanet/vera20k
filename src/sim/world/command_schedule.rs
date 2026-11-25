@@ -377,10 +377,11 @@ impl Simulation {
     ///
     /// This is an append-only ingress: it preserves the command owner, execution
     /// tick, and insertion position exactly. It does not sort, retime, normalize,
-    /// intern, deduplicate, or apply the negotiated input delay.
-    pub fn queue_command(&mut self, command: CommandEnvelope) {
+    /// intern, deduplicate, or apply the negotiated input delay. Returns true
+    /// if the queue accepted the command.
+    pub fn queue_command(&mut self, command: CommandEnvelope) -> bool {
         if self.replaying_recorded_commands {
-            return;
+            return false;
         }
         let record = !Self::command_uses_frame_ingress(
             &command.payload,
@@ -390,7 +391,7 @@ impl Simulation {
             QueuedCommand::from_envelope(command),
             record,
             DoListInsertion::Back,
-        );
+        )
     }
 
     /// Already-ordered arrivals share one admitted FIFO, including commands

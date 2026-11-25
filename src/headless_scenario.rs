@@ -86,6 +86,63 @@ pub fn battle_session(
     )
 }
 
+/// The same session with the local country, the skirmish options and the
+/// computer houses' `LaunchTeam` named.
+///
+/// A retail Skirmish setup stores a team per seat, and `launch_alliance_map`
+/// (`sim::scenario_bootstrap`) allies every seat on the same team. A setup whose
+/// twenty-nine computers all carry team 3 is therefore one human against a
+/// twenty-nine-member alliance, which is a different battle from the same seats
+/// with no team at all (`LaunchTeam::None`), where every house is at war with
+/// every other. The team is the scenario, not a cosmetic seat column, so a
+/// harness that cannot state it cannot reproduce a saved setup.
+pub fn battle_session_with_seats(
+    selected_map_file: &str,
+    opponents: &[(LaunchCountry, AiDifficulty)],
+    local_country: LaunchCountry,
+    options: crate::skirmish_launch::SkirmishLaunchOptions,
+    ai_team: crate::skirmish_launch::LaunchTeam,
+) -> SkirmishLaunchSession {
+    use crate::skirmish_launch::{
+        BATTLE_MODE_ID, LaunchStartPosition, LaunchTeam, SkirmishAiSlot, SkirmishLaunchMode,
+        SkirmishLocalSlot,
+    };
+
+    SkirmishLaunchSession::from_rows(
+        SkirmishLaunchMode::stock(BATTLE_MODE_ID).expect("stock Battle row"),
+        Some(selected_map_file.to_string()),
+        vec![crate::skirmish_launch::SkirmishHumanSlot {
+            raw_slot_index: Some(0),
+            name: "Player".to_string(),
+            slot: SkirmishLocalSlot {
+                country: local_country,
+                country_random: false,
+                color_index: 0,
+                color_random: false,
+                start_position: LaunchStartPosition::Auto,
+                team: LaunchTeam::None,
+            },
+            role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
+        }],
+        0,
+        opponents
+            .iter()
+            .enumerate()
+            .map(|(slot, &(country, difficulty))| SkirmishAiSlot {
+                raw_slot_index: (slot + 1) as u8,
+                country,
+                country_random: false,
+                color_index: slot as u8 + 1,
+                color_random: false,
+                start_position: LaunchStartPosition::Auto,
+                team: ai_team,
+                difficulty,
+            })
+            .collect(),
+        options,
+    )
+}
+
 /// A loaded scenario plus the per-tick inputs `advance_tick` needs.
 pub struct HeadlessScenario {
     /// The runtime owner (F09): simulation plus its bound immutable

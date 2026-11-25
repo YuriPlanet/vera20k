@@ -4,9 +4,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 
 fn rules(global: &str, techno: &str, section: &str) -> RuleSet {
-    let ini = format!(
-        "[General]\n{global}[{section}]\n0=TEST\n[TEST]\nStrength=100\n{techno}"
-    );
+    let ini = format!("[General]\n{global}[{section}]\n0=TEST\n[TEST]\nStrength=100\n{techno}");
     RuleSet::from_ini(&IniFile::from_str(&ini)).expect("rules read")
 }
 

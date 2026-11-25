@@ -1544,6 +1544,77 @@ fn the_civilian_house_is_asked_of_its_house_type() {
     }
 }
 
+#[test]
+fn a_house_whose_last_base_unit_is_destroyed_is_defeated() {
+    // The match harness reports a win when every opposing house `is_defeated`, and
+    // that flag comes from the defeat gate, which asks whether the house still holds
+    // what it needs to stay in the game.
+    //
+    // In `short_game` - the mode these matches run in - that means a `BaseUnit`
+    // (`AMCV`/`SMCV`/`PCV` from `[General]`), not any unit at all. A house with a
+    // full army and no base unit is defeated. That is retail's rule, not a defect.
+    //
+    // Three earlier readings of this were wrong and are recorded so they are not
+    // repeated. `spawn_object` takes the scenario-construction path and never calls
+    // `Added_To_Game`, so a unit made that way is on the map but uncounted. And a
+    // `TANK` is not a base unit, so a house holding one reads as defeated under
+    // `short_game` no matter what the counters say.
+    let rules = rules(3);
+    let (mut sim, houses) = sim_with_houses(&[0, 1]);
+    let owner = houses[1];
+    let mcv = sim
+        .spawn_object("AMCV", "house1", 10, 10, 0, &rules)
+        .expect("a base unit for the doomed house");
+    sim.house_added_to_game(mcv, &rules);
+
+    sim.check_defeat(Some(&rules), None);
+    assert!(
+        !sim.houses[&owner].is_defeated(),
+        "a house holding a base unit is alive"
+    );
+
+    // `uninit` is the path a destroyed object takes, and it is what runs
+    // `Removed_From_Game` and drops the active counters. `queue_object` plus
+    // `flush_pending_delete` only removes the entity, leaving the counters where
+    // they were - which is why the first version of this test read a house as alive
+    // after its last base unit was gone.
+    sim.uninit_with_rules(mcv, &rules);
+    sim.flush_pending_delete();
+    sim.check_defeat(Some(&rules), None);
+
+    assert!(
+        sim.houses[&owner].is_defeated(),
+        "a house whose last base unit is gone must be defeated"
+    );
+}
+
+#[test]
+fn a_house_with_no_base_unit_from_the_start_is_defeated() {
+    // Arena.mmx places no MCV and no construction yard for anybody: its `[Units]`
+    // and `[Infantry]` sections are all `Neutral`, `[Structures]` is 155 civilian
+    // buildings, and there is no `[Base]` section at all. An opposing house on that
+    // map therefore begins with nothing `short_game` counts as survival, and the
+    // defeat gate should finish it on the first frame.
+    //
+    // It does not, which is why a 48000-tick match can end with `enemy=0` and still
+    // report a timeout. This is the smallest form of that question: a house, no base
+    // unit, one frame.
+    let rules = rules(3);
+    let (mut sim, houses) = sim_with_houses(&[0, 1]);
+    let owner = houses[1];
+    assert!(
+        sim.session().game_options().short_game,
+        "the fixture runs short games, which is the mode Arena's matches use"
+    );
+
+    sim.check_defeat(Some(&rules), None);
+
+    assert!(
+        sim.houses[&owner].is_defeated(),
+        "a house that never had a base unit must be defeated under short_game"
+    );
+}
+
 /// Inside an object pass the Houses are walked for the Civilian-side House
 /// once: later asks at the same House count reuse the answer, a House
 /// registered during the pass is seen, and an ask outside a pass walks.

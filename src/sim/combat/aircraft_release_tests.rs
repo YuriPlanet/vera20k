@@ -11,12 +11,15 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     let elite = input["elite_weapon"].as_bool().unwrap_or(false);
     let passenger = input["passenger"].as_bool().unwrap_or(false);
     let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-        "[AircraftTypes]\n0=ORCA\n[ORCA]\nStrength=150\nSpeed=8\nAmmo=2\nROT=5\n\
+        "[AircraftTypes]\n0=ORCA\n[ORCA]\nStrength=150\nSpeed=8\nAmmo=2\n{}ROT=5\n\
          Primary=Gun\n{}Fighter={}\nLocomotor={{4A582746-9839-11d1-B709-00A024DDAFD1}}\n{}\
          [Gun]\nDamage=10\nROF=20\nRange=20\nBurst={}\nOmniFire={}\nProjectile=Shell\nWarhead=WH\n{}{}\
          [EliteGun]\nDamage=10\nROF=37\nRange=20\nBurst={}\nProjectile=Shell\nWarhead=WH\n\
          [Shell]\nROT={}\nInviso={}\nAG=yes\nAA=yes\n\
          [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n{}{}",
+        input["reload"]
+            .as_i64()
+            .map_or(String::new(), |reload| format!("Reload={reload}\n")),
         if elite { "ElitePrimary=EliteGun\n" } else { "" },
         input["fighter"].as_bool().unwrap_or(false),
         if input["missile_spawn"].as_bool().unwrap_or(false) {
@@ -328,6 +331,40 @@ fn aircraft_request_preserves_rearm_and_state3_does_not_fire_early() {
             .ammo()
             .unwrap()
             .release_pending()
+    );
+}
+
+/// The airfield hands a round over with RELOAD (`0x006F4C9C`) and that
+/// handover starts the shared Techno ammo clock (`StartReloading6FB080`).
+/// Mission_Attack's strike states answer its REARM code (`0x006FC94F`)
+/// until the round is aboard, so an aircraft cannot fire a round it is
+/// still being given.
+#[test]
+fn a_round_the_airfield_is_still_handing_over_cannot_be_fired() {
+    let (mut sim, rules) = fixture(&serde_json::json!({
+        "burst": 1,
+        "reload": 40,
+        "ammo": 1,
+    }));
+    let frame = sim.session.binary_frame() as i32;
+    {
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        let object = sim.interner.object_type(entity.type_ref(), &rules).unwrap();
+        entity.start_reloading_ammo(object, frame);
+    }
+    assert!(dispatch(&mut sim, &rules).is_empty(), "the round is not aboard");
+    for step in 1..40 {
+        sim.session.set_binary_frame_for_test(frame as u32 + step);
+        assert!(
+            dispatch(&mut sim, &rules).is_empty(),
+            "still loading the handed-over round at +{step}"
+        );
+    }
+    sim.session.set_binary_frame_for_test(frame as u32 + 40);
+    assert_eq!(
+        dispatch(&mut sim, &rules).len(),
+        1,
+        "the loaded round fires once the clock expires"
     );
 }
 

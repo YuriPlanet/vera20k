@@ -44,6 +44,7 @@ Thumbs.db
 /infodocs/
 
 /docs/*
+!/docs/ai-layers.md
 !/docs/save-compatibility.md
 !/docs/capabilities.md
 !/docs/rfcs/
@@ -116,6 +117,7 @@ Thumbs.db
 !/docs/index.md
 !/docs/menu-reference.md
 !/docs/Networking.md
+!/docs/autoplay.md
 !/docs/ares-unit-delivery.md
 !/docs/ares-superweapon-building-gates.md
 !/docs/ares-superweapon-money.md
@@ -212,3 +214,9 @@ tools/vendor-eval/
 /android/local.properties
 /android/**/build/
 /android/app/src/main/jniLibs/
+
+# Reference matches: 140 MB of replays and logs, kept on disk and out of git
+/autoplay/reference/
+
+# Working notes kept on disk, not part of the engine
+/autoplay/docs/history/

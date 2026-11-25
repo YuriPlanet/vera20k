@@ -328,7 +328,7 @@ pub struct TeamAiTriggerDefinition {
 /// succeeded (`+0x104`) and ended (`+0x108`); both counts start at 0 in the
 /// constructor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub(crate) struct AiTriggerTrackRecord {
+pub struct AiTriggerTrackRecord {
     weight: NativeF64Bits,
     successes: i32,
     attempts: i32,
@@ -343,8 +343,20 @@ impl AiTriggerTrackRecord {
         }
     }
 
-    pub(crate) const fn weight(&self) -> NativeF64Bits {
+    pub const fn weight(&self) -> NativeF64Bits {
         self.weight
+    }
+
+    /// `+0x104`: teams this trigger started that reached the end of their
+    /// script. Public with the weight so a run can tell "the trigger never
+    /// qualified" from "it qualified and the weight never won".
+    pub const fn successes(&self) -> i32 {
+        self.successes
+    }
+
+    /// `+0x108`: teams this trigger started, whether or not they succeeded.
+    pub const fn attempts(&self) -> i32 {
+        self.attempts
     }
 
     /// `AITriggerTypeClass::RegisterSuccess @ 0x0041FD60` (`succeeded`) or
@@ -714,17 +726,18 @@ impl TeamScriptState {
         )
     }
 
-    #[cfg(test)]
+    /// `+0x7E`: the script ran to its end.
     pub fn succeeded(&self) -> bool {
         self.succeeded
     }
 
-    #[cfg(test)]
+    /// The action that stopped this team's script, if any. Public because it
+    /// is the one answer to "why is this team not moving?".
     pub fn refusal(&self) -> Option<TeamScriptRefusal> {
         self.refusal
     }
 
-    #[cfg(any(test, feature = "telemetry"))]
+    /// `+0x7F`: the recruit loop has filled the team once, so the script runs.
     pub fn formed(&self) -> bool {
         self.formed
     }
@@ -1147,7 +1160,10 @@ impl TeamScriptVm {
 
     /// The AI triggers in AITriggerTypeClass::Array order, with their running
     /// weights.
-    pub(crate) fn ai_triggers_in_order(
+    ///
+    /// Public as a read-only view: a run reports which triggers qualified and
+    /// what they started, and never writes through it.
+    pub fn ai_triggers_in_order(
         &self,
     ) -> impl Iterator<Item = (&TeamAiTriggerDefinition, AiTriggerTrackRecord)> {
         self.ai_trigger_order.iter().filter_map(|id| {
@@ -1183,7 +1199,12 @@ impl TeamScriptVm {
     /// `entity_id`'s team (`FootClass+0x5D4`) and whether its TeamType is
     /// `IsBaseDefense=` (`+0xF6`). [`Self::team_of`] answers the team alone
     /// without reading the TeamType.
-    pub(crate) fn team_for_member(&self, entity_id: u64) -> Option<(u64, bool)> {
+    ///
+    /// Public as a read-only view of the membership index: a run counts how
+    /// many units the native team pipeline holds versus how many stand
+    /// outside it, which is the difference between "the script is fighting"
+    /// and "our own orders are".
+    pub fn team_for_member(&self, entity_id: u64) -> Option<(u64, bool)> {
         let team_id = self.team_of(entity_id)?;
         let is_base_defense = self
             .teams

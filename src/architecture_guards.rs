@@ -499,6 +499,13 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 // by `#[path]`, which the test-gate scan cannot see.
                 "sim/movement/bridge_restamp_retail_probe.rs",
                 "sim/movement/bridge_tile_retail_probe.rs",
+                // The auto play policy's diagnostics: `AUTOPLAY_TRACE` names
+                // where to append its decision log and `AUTOPLAY_HONEST`
+                // decides whether that log may rewrite a plan it just made.
+                // Both are read once when the brain is built and reach no
+                // simulation state, hash or multiplayer checksum, so they
+                // cannot make two peers disagree.
+                "sim/strategy/assist/mod.rs",
             ],
         ),
         (
@@ -2228,6 +2235,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "AI_Manage_Build_Queue's mode: 2 for a harvester (0x004FE109), 1 for a building (0x004FE3AB)",
         ),
         (
+            "sim/control/budget.rs",
+            "set_rotation_start",
+            "the micro rotation resumes past the last object stepped this frame; only \
+             ControlBoard::step_managed writes it",
+        ),
+        (
             "sim/ai_team_creation.rs",
             "set_trigger_ratio",
             "TAction 76 stores the signed +0x90 dword unchanged (0x006DF364)",
@@ -2973,6 +2986,45 @@ fn test_gated_files(files: &[SourceFile]) -> BTreeSet<String> {
             .iter()
             .any(|dir| file.rel.starts_with(dir.as_str()))
         {
+
+/// The auto play stack's three layers depend one way only: L3 → L2 → L1.
+///
+/// A reference to a layer above is a cycle waiting to happen — L1 would
+/// schedule, L2 would decide, and a change in one would reach the other two.
+/// The rule is cheap to check and expensive to unwind, so it is checked.
+#[test]
+fn sim_ai_layers_depend_one_way() {
+    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    // Directory, then the paths it must not name in production code.
+    const RULES: &[(&str, &[&str])] = &[
+        ("sim/behavior/", &["sim::control", "sim::strategy"]),
+        ("sim/control/", &["sim::strategy"]),
+        ("sim/strategy/", &["sim::behavior"]),
+    ];
+    let mut violations: Vec<String> = Vec::new();
+    for file in source_files(&src_root) {
+        let Some(production) = &file.production else {
+            continue;
+        };
+        for (dir, forbidden) in RULES {
+            if !file.rel.starts_with(dir) {
+                continue;
+            }
+            for needle in *forbidden {
+                if production.contains(needle) {
+                    violations.push(format!("{} names {needle}", file.rel));
+                }
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "auto play layer(s) reaching upward: {violations:?}\n\
+         L3 decides, L2 schedules and delivers, L1 executes; an upward reference \
+         makes that a cycle. Speak to the layer below through its public types \
+         (control re-exports the goal vocabulary for exactly this)."
+    );
+}
             gated.insert(file.rel.clone());
         }
     }

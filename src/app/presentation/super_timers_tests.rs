@@ -64,11 +64,14 @@ fn the_lines_match_native() {
             .iter()
             .enumerate()
             .map(|(index, entry)| (house(index), timer(&entry[1]).remaining(frame)));
+        // Native's logic frame is 1/15 s, which is this engine's rate at the
+        // retail bucket: `GameSpeed` 4, 64 ms per tick.
         let lines = timer_lines(
             scenario_left,
             &views,
             blackouts,
             int(&row["game_mode"]) == 0,
+            frames_per_second(4),
         );
 
         // The fixture's labels: the Scenario's "Mission", each Super's name

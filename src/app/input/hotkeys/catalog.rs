@@ -28,6 +28,9 @@ macro_rules! command {
     };
 }
 
+/// Every command the keyboard page lists: the retail registration, then the
+/// commands this build adds to it — auto play's own switches first, and
+/// VeraX's and Phobos' under their features.
 pub(crate) fn registered_commands() -> &'static [CommandMetadata] {
     use std::sync::OnceLock;
     static ALL: OnceLock<Vec<CommandMetadata>> = OnceLock::new();
@@ -42,6 +45,7 @@ pub(crate) fn registered_commands() -> &'static [CommandMetadata] {
         all.splice(unit_tab..unit_tab, ARES_COMMANDS);
         all.extend_from_slice(&CAMERA_COMMANDS);
         all.extend_from_slice(&SHORTCUT_COMMANDS);
+        all.extend_from_slice(&AUTOPLAY_COMMANDS);
         all.extend_from_slice(&VERA_COMMANDS);
         #[cfg(feature = "phobos")]
         all.extend_from_slice(&PHOBOS_COMMANDS);
@@ -911,6 +915,64 @@ const RETAIL_COMMANDS: [CommandMetadata; 87] = [
         "Cmnd:Delete",
         "TXT_INTERFACE",
         "Cmnd:DeleteDesc",
+        None
+    ),
+];
+
+/// Auto play's own commands, registered after every retail one. They carry no
+/// default key: the retail KEYBOARDMD.INI has no entry for them, so the player
+/// picks one in the keyboard page. The CSF has no entry either and falls back
+/// to showing the key. The category must stay the one `VERA_CATEGORY_KEY`
+/// names, or these commands open a second category of their own — the macro
+/// takes a literal, so a test pins the two together.
+const AUTOPLAY_COMMANDS: [CommandMetadata; 5] = [
+    command!(
+        HotkeyCommand::ToggleAutoPlay,
+        "AutoPlay",
+        "VERA:AutoPlay",
+        "VERA:HotkeyCategory",
+        "VERA:AutoPlayDesc",
+        None
+    ),
+    // Auto play's second switch: the forces half alone, so the base keeps
+    // building while the player takes the troops back.
+    command!(
+        HotkeyCommand::ToggleAutoPlayForces,
+        "AutoPlayForces",
+        "VERA:AutoPlayForces",
+        "VERA:HotkeyCategory",
+        "VERA:AutoPlayForcesDesc",
+        None
+    ),
+    // The production half on its own, the mirror of the forces key: bound
+    // together they are two independent switches, and the master key above
+    // remains the one that runs both.
+    command!(
+        HotkeyCommand::AutoPlayBuild,
+        "AutoPlayBuild",
+        "VERA:AutoPlayBuild",
+        "VERA:HotkeyCategory",
+        "VERA:AutoPlayBuildDesc",
+        None
+    ),
+    // The abilities half: the superweapon launches on a switch of their own,
+    // so the army can run while the player keeps the missile.
+    command!(
+        HotkeyCommand::AutoPlayAbilities,
+        "AutoPlayAbilities",
+        "VERA:AutoPlayAbilities",
+        "VERA:HotkeyCategory",
+        "VERA:AutoPlayAbilitiesDesc",
+        None
+    ),
+    // The fifth key is a pure scope state: only player-number-group members
+    // versus only non-grouped units. It never changes the three work switches.
+    command!(
+        HotkeyCommand::ToggleAutoPlaySquads,
+        "AutoPlaySquads",
+        "VERA:AutoPlaySquads",
+        "VERA:HotkeyCategory",
+        "VERA:AutoPlaySquadsDesc",
         None
     ),
 ];

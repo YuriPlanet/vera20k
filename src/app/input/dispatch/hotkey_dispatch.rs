@@ -407,6 +407,21 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
                 crate::app::input::beacon::delete_selected(state);
             }
         }
+        // VERA's own: auto play is on while a host is installed; the second key
+        // flips only the forces half.
+        HotkeyCommand::ToggleAutoPlay => super::toggle_auto_play(state),
+        HotkeyCommand::AutoPlayBuild => {
+            super::toggle_auto_play_switch(state, super::AutoPlaySwitch::Production)
+        }
+        HotkeyCommand::ToggleAutoPlayForces => {
+            super::toggle_auto_play_switch(state, super::AutoPlaySwitch::Forces)
+        }
+        HotkeyCommand::AutoPlayAbilities => {
+            super::toggle_auto_play_switch(state, super::AutoPlaySwitch::Abilities)
+        }
+        HotkeyCommand::ToggleAutoPlaySquads => {
+            super::toggle_auto_play_switch(state, super::AutoPlaySwitch::GroupScope)
+        }
         HotkeyCommand::ScatterObject => queue_scatter_for_selected(state),
         HotkeyCommand::AllToCheer => queue_house_cheer(state),
         HotkeyCommand::VeterancyNav => selection_navigation::execute_category_navigation(

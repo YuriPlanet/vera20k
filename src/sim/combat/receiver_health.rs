@@ -510,3 +510,4 @@ impl BerserkState {
         true
     }
 }
+

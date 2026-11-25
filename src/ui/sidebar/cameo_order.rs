@@ -375,6 +375,28 @@ impl CameoStrips {
         if !self.strips.iter().flatten().any(|entry| entry.id == id) {
             return;
         }
+        self.write_request(id, now, clock);
+    }
+
+    /// The same request1 for a cameo the strips do not hold yet.
+    ///
+    /// `Select6AB0C9` reaches an entry `AddCameo` already inserted, and a mouse
+    /// press can only land on a drawn button, so that path always arrives after
+    /// retention. An agent answers the build option itself: the House pass that
+    /// inserts the button runs in the frame its order executes, one projection
+    /// pass later. The record is keyed by cameo identity and every consumer
+    /// reads it through a retained entry, so it stays inert until that entry
+    /// arrives — and then it is the clock the press would have drawn.
+    pub(crate) fn start_request_before_retention(
+        &mut self,
+        id: CameoId,
+        now: i32,
+        clock: Option<(i32, i32)>,
+    ) {
+        self.write_request(id, now, clock);
+    }
+
+    fn write_request(&mut self, id: CameoId, now: i32, clock: Option<(i32, i32)>) {
         let request = self.requests.entry(id).or_insert(CameoRequest {
             state: CameoRequestState::Started,
             progress: StageClass::constructed(now),

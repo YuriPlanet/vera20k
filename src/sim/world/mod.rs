@@ -200,6 +200,19 @@ mod world_commands;
 pub use world_commands::Selection;
 mod world_hash;
 
+/// The origin a deploy from `cell` uses: the foundation's corner, shifted a
+/// cell north-west when the foundation is wider than two.
+///
+/// `UnitClass::Deploy` puts the building down at that origin, so a caller
+/// that asks whether a cell would take the building has to ask about the
+/// origin and not about the cell.
+pub(crate) fn deploy_origin(
+    cell: (u16, u16),
+    yard: &crate::rules::object_type::ObjectType,
+) -> (i16, i16) {
+    world_spawn::deploy_origin_from_unit_cell(cell.0, cell.1, &yard.foundation)
+}
+
 #[cfg(all(test, tests_sim_world_c_o))]
 mod custom_foundation_tests;
 mod world_orders;

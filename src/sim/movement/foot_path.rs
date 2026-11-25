@@ -1346,6 +1346,17 @@ impl Simulation {
                 //code 6's invalid-cell test (0x4D3BBD..0x4D3BD7). An FNPC that
                 //finds nothing answers the zero Cell (0x56E79A..0x56E7AA reads
                 //0xABD480), so SetDestination and the search go to cell (0,0).
+                //
+                // Taking upstream's answer here rather than this branch's own
+                // earlier guard: the frame used to be ended when a walled-in
+                // building had no passable neighbour (tick 12816, an Enter on a
+                // clumped base), and upstream fixed that at the owner instead —
+                // with no cell allocated at (0, 0) the zero Cell is the shared
+                // Dummy, which GetCell stamps before the destination setter
+                // reads it, so the search cannot reach it and the frame goes on
+                // (#4269, `a_code7_redirect_without_a_nearby_cell_heads_for_the
+                // _zero_cell`). The guard is not needed against that, and keeping
+                // both would hide the native path from the test that pins it.
                 let near = self
                     .find_path_nearby_cell(id, target, rules)?
                     .unwrap_or((0, 0));

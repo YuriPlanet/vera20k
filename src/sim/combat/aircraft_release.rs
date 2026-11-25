@@ -456,6 +456,21 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
 
 impl StrikeHost for CombatStrike<'_, '_, '_> {
     fn fire_error(&mut self) -> fire_error::FireError {
+        // The airfield's RELOAD handover (`0x006F4C9C`) starts the shared
+        // Techno ammo clock (`StartReloading6FB080`) for the round it just
+        // added. Until that round is aboard every strike state answers the
+        // GetFireError REARM code (`0x006FC94F`), exactly as a Unit's own
+        // Reload6FB010 leaves it. Aircraft have no AI-side Reload dispatch to
+        // advance it: the airfield's `ReloadRate=` visit spacing is what hands
+        // the rounds out, and the clock only guards the last handover.
+        if let Some(entity) = self.world.substrate.entities.get(self.id())
+            && entity
+                .ammo_reload_timer()
+                .remaining(self.binary_frame as i32)
+                > 0
+        {
+            return fire_error::FireError::Rearm;
+        }
         self.with_subject(|subject| subject.fire_error(true))
             .unwrap_or(fire_error::FireError::Illegal)
     }

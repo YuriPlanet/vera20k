@@ -23,11 +23,33 @@ use crate::rules::house_colors::{
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::superweapon::SuperTimerView;
+use crate::sim::world::Simulation;
 use crate::ui::game_screen::GameScreen;
 
-/// Frames to a timer line's second (`0x88888889`, `sar 3`: a truncating
-/// divide).
-pub(crate) const FRAMES_PER_SECOND: i32 = 15;
+/// The bucket the host admits a tick on, in milliseconds: one `GameSpeed` 16 ms
+/// bucket per tick (`app::types::GAME_SPEED_BUCKET_MS`). Speed 0 admits a tick
+/// every rendered frame, which is one bucket as well.
+const TICK_BUCKET_MS: u32 = 16;
+/// The widest `GameSpeed` the dialog exposes (gamemd's literal 0..6).
+const MAX_GAME_SPEED: u32 = 6;
+
+/// Frames to a timer line's second at `game_speed`.
+///
+/// Native's `0x88888889` / `sar 3` divides by 15 because its logic frame *is*
+/// 1/15 s and nothing can change it. Here the tick is admitted every
+/// `GameSpeed` 16 ms bucket and the speed is the player's to set, so the rate
+/// is what follows: `1000 / (speed * 16)`, which is native's own 15 at the
+/// retail bucket. A countdown that keeps dividing by 15 at every speed is the
+/// one that lies.
+pub(crate) fn frames_per_second(game_speed: u32) -> i32 {
+    let ms_per_tick = game_speed.clamp(1, MAX_GAME_SPEED) * TICK_BUCKET_MS;
+    i32::try_from(1_000 / ms_per_tick.max(1)).unwrap_or(1).max(1)
+}
+
+/// The same rate for a caller that already holds the session.
+pub(crate) fn session_frames_per_second(sim: &Simulation) -> i32 {
+    frames_per_second(u32::try_from(sim.session().game_options().game_speed).unwrap_or(1))
+}
 /// The blackout lines' label, read through the string table (`0x00842A50`,
 /// `0x00734E60`).
 const BLACKOUT_LABEL: &str = "MSG:BlackoutTimer";
@@ -81,10 +103,11 @@ pub(crate) fn timer_lines(
     supers: &[SuperTimerView],
     blackouts: impl IntoIterator<Item = (InternedId, i32)>,
     campaign: bool,
+    frames_per_second: i32,
 ) -> Vec<TimerLine> {
     let line = |source, frames: i32| TimerLine {
         source,
-        seconds: frames / FRAMES_PER_SECOND,
+        seconds: frames / frames_per_second.max(1),
     };
     let scenario = scenario_left.map(|left| line(TimerSource::Scenario, left));
     let supers = supers
@@ -511,6 +534,7 @@ pub(crate) fn update_super_timers(state: &mut AppState) {
         if grouped { &[] } else { &supers },
         blackouts,
         !sim.session().game_mode_nonzero(),
+        frames_per_second(u32::try_from(sim.session().game_options().game_speed).unwrap_or(1)),
     );
     if grouped {
         // The team lines take the Super lines' place: after the Scenario

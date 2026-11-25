@@ -1991,6 +1991,67 @@ fn placement_command_rejects_marked_ground_mobiles_until_they_are_unmarked() {
     }
 }
 
+/// A refused foundation has already been cleared (`BuildingTypeClass::
+/// Flush_For_Placement @ 0x0045EE70`): the allied vehicle standing on it
+/// counts as told to leave, so the retried placement lands instead of
+/// refusing the same cells for as long as the vehicle happens to stand there.
+/// Only a vehicle of another house blocks.
+#[test]
+fn an_allied_vehicle_on_the_foundation_is_told_to_leave_not_a_blocker() {
+    let rules = ground_occupant_placement_rules();
+    let mut sim = placement_sim();
+    spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
+    sim.spawn_object("MTNK", "Americans", 13, 11, 0, &rules)
+        .expect("real spawn/unlimbo should mark the mobile occupant");
+    ready_building(&mut sim, &rules, "Americans", "GAPOWR");
+    assert!(
+        !place_building(&mut sim, &rules, "Americans", "GAPOWR", (12, 10), None),
+        "a marked vehicle on the 2x2 still refuses the click"
+    );
+
+    // `MapClass::In_Bounds` (0x00568300) reads `MapClass+0xF4`: the shared
+    // fixture's zero base admits no cell, so the flush scan needs bounds that
+    // hold this foundation. It reads nothing else of the placement.
+    sim.set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
+        base: 10,
+        off_fc: -100,
+        off_100: -100,
+        off_104: 200,
+        off_108: 200,
+    }));
+    let house = sim.interner.intern("Americans");
+    let power = rules
+        .object_in_category(
+            crate::rules::object_type::ObjectCategory::Building,
+            "GAPOWR",
+        )
+        .expect("fixture power plant");
+    let flush = |sim: &mut Simulation, power: &crate::rules::object_type::ObjectType| {
+        crate::sim::build_site::flush_for_placement(
+            sim,
+            &rules,
+            None,
+            power,
+            (12, 10),
+            house,
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+    };
+    assert_eq!(
+        flush(&mut sim, power),
+        crate::sim::build_site::Flush::Scattered,
+        "the allied vehicle on the foundation is told to leave"
+    );
+
+    sim.spawn_object("MTNK", "Russians", 12, 10, 0, &rules)
+        .expect("an enemy vehicle spawns on the foundation");
+    assert_eq!(
+        flush(&mut sim, power),
+        crate::sim::build_site::Flush::Blocked,
+        "another house's vehicle is not cleared"
+    );
+}
+
 #[test]
 fn placement_command_rejects_nonblocking_overlay_and_preserves_ready_building() {
     let mut sim = placement_sim();

@@ -1171,6 +1171,7 @@ impl App {
                 frame_stopped: false,
                 live_network: None,
                 lan_service: None,
+                auto_play: None,
                 startup: Default::default(),
                 sim_runtime: Default::default(),
                 input: crate::app::input::state::MatchInputState::new(hotkey_bindings),

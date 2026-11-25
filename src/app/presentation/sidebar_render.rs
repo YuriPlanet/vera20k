@@ -439,11 +439,32 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         .match_presentation
         .sidebar_projection
         .model.set_cameo_frame(sim.session().binary_frame() as i32);
+    // A Begin in the frame that also inserted this entry published its link
+    // before the strip held the cameo; admit it in the pass that inserted it.
+    state
+        .match_state
+        .match_presentation
+        .sidebar_projection
+        .model.apply_pending_factory_links(sim, owner);
     state
         .match_state
         .match_presentation
         .sidebar_projection
         .model.reconcile_factory_links(sim, owner);
+    // Auto play's options are answered here, where the buttons and the Factory
+    // links they press against are both current.
+    let rules = &state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .expect("sidebar runtime")
+        .resources
+        .rules;
+    state
+        .match_state
+        .match_presentation
+        .sidebar_projection
+        .model.apply_auto_play_orders(sim, rules, owner);
     state
         .match_state
         .match_presentation

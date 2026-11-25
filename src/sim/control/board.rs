@@ -1,0 +1,1190 @@
+//! The control board: the one place a frame's requests become commands.
+//!
+//! Per frame, in this order:
+//!
+//! 1. the brain **thinks** against a fresh projection and answers orders and
+//!    intents;
+//! 2. what a factory has finished is taken out of it, so a finished build
+//!    never blocks its own category;
+//! 3. attached objects are stepped — garbage-collected, then the rotation for
+//!    this frame — and each routine's answer becomes a goal.
+//!
+//! Each command passes the domain, budget and actor gates before it is
+//! stamped with the house and current tick and submitted to the simulation's
+//! command queue. The same admission applies to a retail brain, a script and
+//! a managed routine, and a refusal is *counted and
+//! reported*, never silent. A unit that stops is either waiting on a native
+//! transition (`NotReady`) or has left the house's control (rejected), and the
+//! counters say which.
+//!
+//! Nothing above this file may issue a command on its own — that is the whole
+//! contract. The board writes no simulation state except through the owners it
+//! calls, and owns no gameplay rule.
+
+use std::collections::BTreeSet;
+
+use crate::rules::ruleset::RuleSet;
+use crate::sim::behavior::managed::{FallbackReason, MicroKind, MicroParams};
+use crate::sim::behavior::order::{ApplyOutcome, Funnel};
+use crate::sim::behavior::view::ThreatView;
+use crate::sim::behavior::{Goal, MicroStep};
+use crate::sim::command::{Command, CommandEnvelope};
+use crate::sim::control::brain::{Brain, Outbox};
+use crate::sim::control::budget::Budget;
+use crate::sim::control::intent::Intent;
+use crate::sim::control::micro::MicroTable;
+use crate::sim::control::observation::Observation;
+use crate::sim::intern::InternedId;
+use crate::sim::production::ProductionCategory;
+use crate::sim::world::Simulation;
+
+/// The categories whose product leaves a factory as a unit, and which
+/// `Place_Production` therefore takes without a cell: everything a factory
+/// makes that is not a building.
+const MOBILE_CATEGORIES: [ProductionCategory; 4] = [
+    ProductionCategory::Infantry,
+    ProductionCategory::Vehicle,
+    ProductionCategory::Aircraft,
+    ProductionCategory::Ship,
+];
+
+/// Three independent work switches plus a *separate* player-control-group scope.
+///
+/// Global toggles all three work switches together, preserving `grouped_only`.
+/// The fifth hotkey alternates "only non-grouped" / "only grouped" without
+/// changing any work switch. A production queue or superweapon is house-wide;
+/// the scope affects only requests that name one or more controllable actors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AutoPlayDomains {
+    pub production: bool,
+    pub forces: bool,
+    pub abilities: bool,
+    /// `false`: drive only units outside the player's 0–9 control groups.
+    /// `true`: drive only units that belong to those groups. These are the
+    /// *player's* groups, never `AssistBrain`'s tactical `Squads` roster.
+    pub grouped_only: bool,
+}
+
+impl AutoPlayDomains {
+    pub const ALL: Self = Self {
+        production: true,
+        forces: true,
+        abilities: true,
+        grouped_only: false,
+    };
+
+    pub const NONE: Self = Self {
+        production: false,
+        forces: false,
+        abilities: false,
+        grouped_only: false,
+    };
+
+    pub const fn any(&self) -> bool {
+        self.production || self.forces || self.abilities
+    }
+
+    /// Master key: all three work switches on if any is off, otherwise all
+    /// three off. This must *never* reset the scope key.
+    pub fn toggle_master(&mut self) {
+        let next = !(self.production && self.forces && self.abilities);
+        self.production = next;
+        self.forces = next;
+        self.abilities = next;
+    }
+
+    /// An actor-scoped command can only touch the selected kind of player
+    /// control group. House-scoped construction and powers remain eligible.
+    pub fn admits_actor(&self, actor: u64, player_groups: &BTreeSet<u64>) -> bool {
+        player_groups.contains(&actor) == self.grouped_only
+    }
+
+    pub fn admits(&self, command: &Command) -> bool {
+        if belongs_to_production(command) {
+            self.production
+        } else if belongs_to_abilities(command) {
+            self.abilities
+        } else {
+            self.forces
+        }
+    }
+
+    pub fn describe(&self) -> String {
+        let mut on: Vec<&str> = Vec::new();
+        if self.production {
+            on.push("build");
+        }
+        if self.forces {
+            on.push("forces");
+        }
+        if self.abilities {
+            on.push("abilities");
+        }
+        if on.is_empty() {
+            return "paused".to_string();
+        }
+        on.join(" + ")
+    }
+}
+
+/// Whether a command is an ability rather than the army's own work.
+///
+/// A superweapon launch is the house's whole hand out of a sidebar button —
+/// the missile, the paradrop, the spy plane — and it is the one kind of order
+/// a player may want to keep for themselves while the army runs.
+fn belongs_to_abilities(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::LaunchSuperWeapon { .. }
+            | Command::BeginPaidSuperWeapon { .. }
+            | Command::CompletePaidSuperWeapon { .. }
+            | Command::CancelPaidSuperWeapon { .. }
+    )
+}
+
+/// Whether a command is the base's work rather than the troops'.
+///
+/// Production, placement and the commands that tidy a build up are the base's;
+/// everything that moves, aims, fires, captures or launches is the forces'.
+/// `DeployMcv` counts as the base's because it is how a base starts.
+fn belongs_to_production(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::QueueProduction { .. }
+            | Command::SuspendProduction { .. }
+            | Command::CycleProducerFocus { .. }
+            | Command::PlaceReadyBuilding { .. }
+            | Command::PlaceProducedMobile { .. }
+            | Command::CancelProductionByType { .. }
+            | Command::SellBuilding { .. }
+            | Command::ToggleRepair { .. }
+            | Command::SetRally { .. }
+            | Command::TogglePrimaryFactory { .. }
+            | Command::DeployMcv { .. }
+            | Command::UndeployBuilding { .. }
+    )
+}
+
+/// The fifth key gates object-scoped *intents, direct commands, orders and
+/// managed attachments*. Production queues and house powers name no actor and
+/// are therefore unaffected by group membership. Return policy-suppressed
+/// orders without calling the native rejection/backoff path.
+fn filter_group_scope(
+    out: &mut Outbox,
+    domains: AutoPlayDomains,
+    player_groups: &BTreeSet<u64>,
+) -> Vec<(u64, Goal)> {
+    let mut suppressed = Vec::new();
+    out.orders.retain(|order| {
+        if domains.admits_actor(order.actor, player_groups) {
+            true
+        } else {
+            suppressed.push((order.actor, order.goal));
+            false
+        }
+    });
+    out.attachments
+        .retain(|request| domains.admits_actor(request.actor, player_groups));
+    out.intents.retain(|intent| {
+        actor_of(&intent.clone().command())
+            .is_none_or(|actor| domains.admits_actor(actor, player_groups))
+    });
+    out.commands.retain_mut(|command| {
+        if let Command::SetRally { producer_ids, .. } = command {
+            producer_ids.retain(|actor| domains.admits_actor(*actor, player_groups));
+            return !producer_ids.is_empty();
+        }
+        actor_of(command).is_none_or(|actor| domains.admits_actor(actor, player_groups))
+    });
+    suppressed
+}
+
+/// Drives one brain and one house.
+pub struct ControlBoard {
+    brain: Box<dyn Brain>,
+    owner: InternedId,
+    domains: AutoPlayDomains,
+    budget: Budget,
+    micro: MicroTable,
+    /// Current members of the player's 0–9 control groups. The scope key
+    /// chooses whether these or their complement are eligible for automation.
+    player_groups: BTreeSet<u64>,
+    /// Commands the gate dropped, and orders the funnel called not-ready.
+    /// Diagnostics: the queue is the authority, not these counts.
+    rejected: usize,
+    not_ready: usize,
+    /// Object orders the brain asked for recently, and the tick each was
+    /// asked on. See [`ORDER_ISSUE_COOLDOWN`].
+    recent_orders: Vec<(u64, Goal, u64)>,
+    /// House requests the brain asked for recently, and the tick each was
+    /// asked on. See [`INTENT_ISSUE_COOLDOWN`].
+    recent_intents: Vec<(Intent, u64)>,
+}
+
+/// How long the same house request is held before the board lets it through
+/// again, in frames.
+///
+/// A request is a fact about the world — a type the yard is already making,
+/// a building already waiting for its cell — and the brain's answer to not
+/// seeing it take effect is to ask again next frame. Measured on XMP29U2.MAP:
+/// one building type was queued 12,898 times in a 24,736-tick match, at a
+/// median spacing of one tick, and the yard never finished it.
+///
+/// One term: long enough for the state to move, short enough that a request
+/// held back for a passing reason is not lost.
+pub(crate) const INTENT_ISSUE_COOLDOWN: u64 = 15;
+/// How long the same order to the same object is held before the board lets it
+/// through again, in frames.
+///
+/// The funnel answers a unit that is mid-transition with `NotReady`, and the
+/// brain's answer to that is to ask again next frame. Measured on Barrel.mmx:
+/// one engineer was sent into the same building 321 times in 12,000 ticks, and
+/// one tank was sent to the same cell 150 times. A different goal — a new target,
+/// a new cell — is a different order and is never held.
+const ORDER_ISSUE_COOLDOWN: u64 = 15;
+
+impl ControlBoard {
+    pub fn new(brain: Box<dyn Brain>, owner: InternedId, max_commands_per_frame: usize) -> Self {
+        Self {
+            brain,
+            owner,
+            domains: AutoPlayDomains::ALL,
+            budget: Budget::new(max_commands_per_frame),
+            player_groups: BTreeSet::new(),
+            micro: MicroTable::default(),
+            rejected: 0,
+            not_ready: 0,
+            recent_intents: Vec::new(),
+            recent_orders: Vec::new(),
+        }
+    }
+
+    /// The house every issued command is stamped with. Not necessarily the
+    /// local player's: a computer house can be driven the same way.
+    pub fn owner(&self) -> InternedId {
+        self.owner
+    }
+
+    /// Which halves of the work the board lets through now.
+    pub fn domains(&self) -> AutoPlayDomains {
+        self.domains
+    }
+
+    /// Changing scope is a policy handover: detach routines that are no
+    /// longer in scope, so a paused retreat cannot fire after the user takes
+    /// the unit back or changes the control-group filter.
+    pub fn set_domains(&mut self, domains: AutoPlayDomains) {
+        self.domains = domains;
+        self.retain_managed_scope();
+    }
+
+    /// Current player control-group membership (not an AI tactical squad).
+    pub fn excluded(&self) -> &BTreeSet<u64> {
+        &self.player_groups
+    }
+
+    /// Set the full projected group membership for this frame. Historical
+    /// callers call this `take_back`: the scope key now decides whether the
+    /// grouped units are *handed back* or *handed to the AI*.
+    pub fn take_back(&mut self, groups: BTreeSet<u64>) {
+        self.player_groups = groups;
+        self.retain_managed_scope();
+    }
+
+    fn retain_managed_scope(&mut self) {
+        let domains = self.domains;
+        let groups = &self.player_groups;
+        self.micro.retain_scope(|actor| domains.admits_actor(actor, groups));
+    }
+
+    /// The brain driving the house, for diagnostics.
+    pub fn brain_name(&self) -> &'static str {
+        self.brain.name()
+    }
+
+    pub fn rejected(&self) -> usize {
+        self.rejected
+    }
+
+    pub fn not_ready(&self) -> usize {
+        self.not_ready
+    }
+
+    pub fn managed(&self) -> &MicroTable {
+        &self.micro
+    }
+
+    /// Put an object under a managed routine, with an optional post. `false`
+    /// when it is already managed.
+    pub fn attach(
+        &mut self,
+        entity: u64,
+        kind: MicroKind,
+        params: MicroParams,
+        post: Option<(u16, u16)>,
+    ) -> bool {
+        self.domains.forces
+            && self.domains.admits_actor(entity, &self.player_groups)
+            && self.micro.attach(entity, kind, params, post)
+    }
+
+    /// Return an object to the brain's direct orders.
+    pub fn detach(&mut self, entity: u64) -> bool {
+        self.micro.detach(entity).is_some()
+    }
+
+    /// One frame of auto play. Call it before the frame advances.
+    ///
+    /// Returns the commands it queued, in issue order. They are the client's
+    /// only view of what this hand did: a player's press writes its cameo's
+    /// `request1` and predicted clock as it clicks
+    /// (`Select6AB0C9..6AB94D`), so the client mirrors the same presentation
+    /// writes for these orders. The queue stays the authority for the frame.
+    pub fn step(&mut self, sim: &mut Simulation, rules: &RuleSet) -> Vec<Command> {
+        if sim.session().input_locked() || !self.domains.any() {
+            return Vec::new();
+        }
+        let owner = self.owner;
+        if !sim.houses().contains_key(&owner) {
+            return Vec::new();
+        }
+        self.budget.begin_frame();
+        let owner_name = sim.interner().resolve(owner).to_owned();
+
+        let mut issued = Vec::new();
+
+        // 1. Decisions.
+        let mut out = Outbox::default();
+        {
+            let obs = Observation::new(sim, owner)
+                .with_control_scope(&self.player_groups, self.domains.grouped_only)
+                .with_work_scope(self.domains.production, self.domains.forces, self.domains.abilities);
+            self.brain.think(rules, &obs, &mut out);
+        }
+        let suppressed = filter_group_scope(&mut out, self.domains, &self.player_groups);
+        if !suppressed.is_empty() {
+            self.brain.orders_suppressed(&suppressed);
+        }
+        let tick = sim.session().tick();
+        let mut asked: Vec<Intent> = Vec::new();
+        let mut refused_intents: Vec<Intent> = Vec::new();
+        for intent in out.intents {
+            // The same request again inside one term is the brain asking for a
+            // state it has already asked for: the yard is already making that
+            // type, the building is already waiting for its cell. Held for a
+            // term and dropped, so a frame cannot turn one request into twenty
+            // thousand. See [`INTENT_ISSUE_COOLDOWN`].
+            if self.recent_intents.iter().any(|(held, at)| {
+                *held == intent && tick.saturating_sub(*at) < INTENT_ISSUE_COOLDOWN
+            }) {
+                continue;
+            }
+            let command = intent.clone().command();
+            if self.admit(sim, rules, &owner_name, command, &mut issued) {
+                asked.push(intent);
+            } else {
+                refused_intents.push(intent);
+            }
+        }
+        if !refused_intents.is_empty() {
+            self.brain.intents_refused(&refused_intents);
+        }
+        for intent in asked {
+            self.recent_intents.push((intent, tick));
+        }
+        self.recent_intents
+            .retain(|(_, at)| tick.saturating_sub(*at) < INTENT_ISSUE_COOLDOWN);
+        // Objects the brain hands to a managed routine. Consumed before the
+        // orders below, because a routine is its object's only issuer: the
+        // order the brain also asked for this frame is dropped by the
+        // `is_managed` guard rather than issued and then overwritten.
+        for request in out.attachments {
+            if !self.domains.forces
+                || !self.domains.admits_actor(request.actor, &self.player_groups)
+            {
+                log::debug!(
+                    "auto play: refused by force/scope switch {} (attach {})",
+                    request.actor,
+                    request.kind.name()
+                );
+                self.rejected += 1;
+                continue;
+            }
+            if self
+                .micro
+                .attach(request.actor, request.kind, request.params, request.post)
+            {
+                log::debug!(
+                    "auto play: {} attached to {}",
+                    request.actor,
+                    request.kind.name()
+                );
+            }
+        }
+        for command in out.commands {
+            self.admit(sim, rules, &owner_name, command, &mut issued);
+        }
+        // The orders that never left. A brain keeps its own record of what it
+        // has told each object, and an order dropped here — by the per-frame
+        // budget, by a routine that owns the object, by the gate — leaves no
+        // trace in the simulation for that record to contradict, so the brain
+        // is told and forgets it. Without this a budget of eight against an
+        // army of a hundred is a hundred units each told once, refused, and
+        // held to it for the whole of the intent's term.
+        let mut refused: Vec<(u64, Goal)> = Vec::new();
+        let mut asked_orders: Vec<(u64, Goal, u64)> = Vec::new();
+        for order in &out.orders {
+            if self.micro.is_managed(order.actor) {
+                refused.push((order.actor, order.goal.clone()));
+                continue;
+            }
+            // The same order to the same object inside one term is the brain
+            // asking again for a state it has already asked for. A different
+            // goal — a new target, a new cell — is a different order.
+            if self.recent_orders.iter().any(|(actor, goal, at)| {
+                *actor == order.actor
+                    && *goal == order.goal
+                    && tick.saturating_sub(*at) < ORDER_ISSUE_COOLDOWN
+            }) {
+                continue;
+            }
+            let outcome = self.issue(
+                sim,
+                rules,
+                &owner_name,
+                order.actor,
+                order.goal.clone(),
+                &mut issued,
+            );
+            asked_orders.push((order.actor, order.goal.clone(), tick));
+            if !outcome.is_queued() {
+                refused.push((order.actor, order.goal.clone()));
+            }
+        }
+        for (actor, goal, at) in asked_orders {
+            self.recent_orders.push((actor, goal, at));
+        }
+        self.recent_orders
+            .retain(|(_, _, at)| tick.saturating_sub(*at) < ORDER_ISSUE_COOLDOWN);
+        if !refused.is_empty() {
+            self.brain.orders_refused(&refused);
+        }
+
+        // 2. Delivery: take what the factories have finished out of them. A
+        // factory keeps its product until the house takes it, so a build that
+        // is never taken leaves the category busy for good.
+        // Delivery is also production. If the player disabled that domain,
+        // leave held mobile products in their factories instead of retrying
+        // a gate-rejected PlaceProducedMobile every tick (and inflating the
+        // rejection counter while combat/abilities continue to run).
+        if self.domains.production {
+            for category in MOBILE_CATEGORIES {
+                let finished = Observation::new(sim, owner)
+                    .finished_product(category)
+                    .is_some();
+                if finished {
+                    self.admit(
+                        sim,
+                        rules,
+                        &owner_name,
+                        Command::PlaceProducedMobile { category },
+                        &mut issued,
+                    );
+                }
+            }
+        }
+
+        // 3. Managed objects, when the forces half is on.
+        if self.domains.forces {
+            self.step_managed(sim, rules, &owner_name, &mut issued);
+        }
+
+        let execute_tick = sim.session().tick();
+        // One line every ten seconds in the log the client already writes:
+        // "the brain does nothing" and "the brain is refused" look the same
+        // from the screen, and only these four counts tell them apart.
+        if execute_tick % 600 == 0 {
+            log::info!(
+                "auto play: tick={execute_tick} owner={owner_name} production={} forces={} abilities={} grouped_only={} queued={} rejected={} not_ready={} player_group_members={}",
+                self.domains.production,
+                self.domains.forces,
+                self.domains.abilities,
+                self.domains.grouped_only,
+                issued.len(),
+                self.rejected,
+                self.not_ready,
+                self.player_groups.len()
+            );
+        }
+        issued
+    }
+
+    /// Step this frame's rotation of attached objects and issue what they ask.
+    fn step_managed(
+        &mut self,
+        sim: &mut Simulation,
+        rules: &RuleSet,
+        owner_name: &str,
+        issued: &mut Vec<Command>,
+    ) {
+        let owner = self.owner;
+        for (entity, reason) in self.micro.retain_live(sim, owner) {
+            log::info!(
+                "retail-ai: {} handed back to the brain ({})",
+                entity,
+                reason.describe()
+            );
+        }
+        if self.micro.is_empty() {
+            return;
+        }
+        let ids = self
+            .micro
+            .rotation(self.budget.rotation_start(), self.budget.micro_steps());
+        if ids.is_empty() {
+            return;
+        }
+
+        let mut steps: Vec<(u64, MicroStep)> = Vec::new();
+        {
+            let threats = ThreatView::new(sim, owner);
+            for &entity in &ids {
+                if !self.domains.admits_actor(entity, &self.player_groups) {
+                    continue;
+                }
+                if let Some(step) = self.micro.step_one(entity, sim, rules, &threats) {
+                    steps.push((entity, step));
+                }
+            }
+        }
+        if let Some(&last) = ids.last() {
+            self.budget.set_rotation_start(last.wrapping_add(1));
+        }
+
+        for (entity, step) in steps {
+            match step {
+                MicroStep::Wait { .. } => {}
+                MicroStep::Done => {
+                    self.micro.detach(entity);
+                }
+                MicroStep::Fallback(reason) => {
+                    self.fall_back(entity, reason);
+                }
+                MicroStep::Goal(goal) => {
+                    let outcome = self.issue(sim, rules, owner_name, entity, goal, issued);
+                    if let Some(reason) = self.micro.record_outcome(entity, outcome) {
+                        self.fall_back(entity, reason);
+                    }
+                }
+            }
+        }
+    }
+
+    fn fall_back(&mut self, entity: u64, reason: FallbackReason) {
+        self.micro.detach(entity);
+        log::info!(
+            "retail-ai: micro routine on {} handed back to the brain ({})",
+            entity,
+            reason.describe()
+        );
+    }
+
+    /// Turn one goal into a command and admit it.
+    fn issue(
+        &mut self,
+        sim: &mut Simulation,
+        rules: &RuleSet,
+        owner_name: &str,
+        actor: u64,
+        goal: Goal,
+        issued: &mut Vec<Command>,
+    ) -> ApplyOutcome {
+        // Two orders are not sent: the one the object already stands on, and a
+        // march that would delete the gun order it is working.
+        //
+        // `Set_Destination` re-runs the path, so a destination re-sent every
+        // frame is a unit that restarts its walk before it covers a cell —
+        // drift, and a command stream the engine has no use for. And
+        // `FootClass::Assign_Target_Command` (`0x004DF0E0`) runs
+        // `Clear_All_TarCom` for every mission but AttackMove, so a march does
+        // not pause an attack: it deletes the target and the unit walks off
+        // unarmed. A one-step reposition still preempts — the dodge and kite
+        // passes move a unit out from under a shell — so only a destination
+        // more than a step away is refused.
+        if let Some(standing) = order_stands(sim, rules, self.owner, actor, &goal) {
+            log::trace!("auto play: {actor} already {standing}, {goal:?} dropped");
+            return ApplyOutcome::Queued;
+        }
+        let funnel = Funnel::new(sim, rules, self.owner);
+        match funnel.prepare(actor, goal) {
+            Ok(command) => {
+                if self.admit(sim, rules, owner_name, command, issued) {
+                    ApplyOutcome::Queued
+                } else {
+                    ApplyOutcome::Rejected
+                }
+            }
+            Err(refusal) => {
+                let outcome = refusal.outcome();
+                if outcome == ApplyOutcome::NotReady {
+                    self.not_ready += 1;
+                } else {
+                    self.rejected += 1;
+                }
+                outcome
+            }
+        }
+    }
+
+    /// The gate: budget, domain switch, ownership and the native order gate.
+    fn admit(
+        &mut self,
+        sim: &mut Simulation,
+        rules: &RuleSet,
+        owner_name: &str,
+        command: Command,
+        issued: &mut Vec<Command>,
+    ) -> bool {
+        if !self.domains.admits(&command) || !admits(sim, owner_name, &command) {
+            log::debug!("auto play: refused by the gate {command:?}");
+            self.rejected += 1;
+            return false;
+        }
+        // A build the house has no factory for is refused here rather than by
+        // the simulation.
+        //
+        // `HouseClass::Begin_Production` answers false when `FindFactory` finds
+        // nothing, and the click that asked for it has already written the
+        // cameo's request record: the refusal leaves the button drawing a clock
+        // that never starts and never clears. A player cannot reach that state —
+        // the sidebar only offers cameos the house can build — but a brain asks
+        // for what its plan wants, so it can. The plan is the brain's business;
+        // this gate is what keeps its mistakes off the simulation.
+        if let Command::QueueProduction { type_id } = command
+            && !has_a_factory_for(sim, rules, self.owner, type_id)
+        {
+            log::debug!("auto play: refused, no factory builds {type_id:?}");
+            self.rejected += 1;
+            return false;
+        }
+        // The fifth switch is a pure scope filter. It applies to an actor
+        // regardless of whether the requested work belongs to Forces or
+        // Production, including multi-producer rally commands. House-wide
+        // queues and powers name no actor and pass this filter unchanged.
+        let scoped = match &command {
+            Command::SetRally { producer_ids, .. } => {
+                !producer_ids.is_empty()
+                    && producer_ids.iter().all(|id| {
+                        self.domains.admits_actor(*id, &self.player_groups)
+                    })
+            }
+            _ => actor_of(&command).is_none_or(|actor| {
+                self.domains.admits_actor(actor, &self.player_groups)
+            }),
+        };
+        if !scoped {
+            log::debug!("auto play: refused by the player group scope {command:?}");
+            self.rejected += 1;
+            return false;
+        }
+        // Objects the player never had: `Spawned=yes` units ("created by
+        // another object and therefore not player controllable",
+        // rulesmd.ini) and `Selectable=no` ones. A click cannot reach them, so
+        // neither may auto play — the paradrop transport is the type this is
+        // named for.
+        if actor_of(&command).is_some_and(|actor| !player_controllable(sim, rules, actor)) {
+            log::debug!("auto play: refused, not the player's to command {command:?}");
+            self.rejected += 1;
+            return false;
+        }
+        if !self.budget.try_command() {
+            log::debug!("auto play: refused, the frame budget is spent {command:?}");
+            self.rejected += 1;
+            return false;
+        }
+        let envelope = CommandEnvelope::new(self.owner, sim.session().tick(), command.clone());
+        if !sim.queue_command(envelope) {
+            log::debug!("auto play: refused by the command queue {command:?}");
+            self.rejected += 1;
+            return false;
+        }
+        issued.push(command);
+        true
+    }
+}
+
+/// Whether the house owns any factory that could start `type_id`.
+///
+/// The production path's own probe, reused rather than restated: the same
+/// `FindFactory` `Begin_Production` calls. The question here is narrower than
+/// "may it start right now" — a busy line or a full build limit is a wait, not
+/// a mistake — so only "is there a producer of the right category at all" is
+/// asked.
+fn has_a_factory_for(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    type_id: InternedId,
+) -> bool {
+    let Some(object) = sim.interner().object_type(type_id, rules) else {
+        return false;
+    };
+    crate::sim::production::find_factory(sim, rules, owner, object, false, false, false).is_some()
+}
+
+/// Whether a click could have reached this object: the player's to command.
+///
+/// `Spawned=` is the retail rules' own word for it — "created by another
+/// object and therefore not player controllable" — and `Selectable=no` is the
+/// other half, the object that can never join a selection. A type the rules do
+/// not name stays controllable, because a missing key is not a refusal.
+fn player_controllable(sim: &Simulation, rules: &RuleSet, entity: u64) -> bool {
+    let Some(actor) = sim.entities().get(entity) else {
+        return false;
+    };
+    let name = sim.interner().resolve(actor.type_ref());
+    match rules.object(name) {
+        Some(object) => !object.spawned && object.selectable,
+        None => true,
+    }
+}
+
+/// Whether the house may issue this command: the acting object, when the
+/// command names exactly one, must be the house's and must admit orders.
+///
+/// Both predicates are the production ones, reused rather than restated:
+/// `world_commands.rs` documents that the MegaMission receiver resolves its
+/// actor independently of the event house, so without the ownership half an
+/// agent could order an object it does not own.
+fn admits(sim: &Simulation, owner: &str, command: &Command) -> bool {
+    match actor_of(command) {
+        None => true,
+        Some(entity_id) => {
+            // `entity_owned_by_id` is now a test fixture, so the ownership half
+            // compares the interned name this frame's owner resolved to against
+            // the object's owner. Same question, read from the entity store.
+            let Some(owner_id) = sim.interner().get(owner) else {
+                return false;
+            };
+            sim.entities()
+                .get(entity_id)
+                .is_some_and(|entity| entity.owner() == owner_id
+                    && entity.seldom.slave.owner().is_none())
+                && sim.order_actor_admits(entity_id)
+        }
+    }
+}
+
+/// How far from where a unit stands a movement order may name and still count
+/// as a reposition rather than a march, in cells. A dodge or a kite step moves
+/// a unit out from under a shell; a march sends it somewhere else entirely.
+const REPOSITION_CELLS: u16 = 2;
+
+/// When `goal` is already what `actor` is doing — or a march that would delete
+/// the fire order it is working — the reason, for the log; `None` otherwise.
+fn order_stands(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    actor: u64,
+    goal: &Goal,
+) -> Option<&'static str> {
+    let obs = Observation::new(sim, owner);
+    match *goal {
+        Goal::Attack { target } => {
+            // A target this house may no longer shoot is not an order standing:
+            // the object changed hands under the gun, and letting the answer
+            // stay `on that target` is how the army keeps firing at its own
+            // captured building until the last hit point is gone. Asking
+            // `is_hostile` per frame is the whole point — the order has to die
+            // with the enmity it was issued under.
+            if !obs.is_hostile(target)
+                && !obs.can_control_neutral(rules, actor, target)
+            {
+                return None;
+            }
+            (obs.attack_target(actor) == Some(target)).then_some("on that target")
+        }
+        Goal::Move { cell } | Goal::AttackMove { cell } => {
+            if obs.destination(actor) == Some(cell) {
+                return Some("walking there");
+            }
+            let entity = sim.entities().get(actor)?;
+            let from = (entity.position.rx(), entity.position.ry());
+            let steps = from.0.abs_diff(cell.0).max(from.1.abs_diff(cell.1));
+            let live_gun = obs.attack_target(actor).is_some_and(|target| {
+                obs.is_hostile(target) && obs.engage_error(rules, actor, target).is_none()
+            });
+            (live_gun && steps > REPOSITION_CELLS).then_some("firing on a target")
+        }
+        _ => None,
+    }
+}
+
+/// The object a command acts on, when it names exactly one.
+fn actor_of(command: &Command) -> Option<u64> {
+    Some(match command {
+        Command::Move { entity_id, .. }
+        | Command::MoveToObject { entity_id, .. }
+        | Command::Stop { entity_id }
+        | Command::AttackMove { entity_id, .. }
+        | Command::Guard { entity_id, .. }
+        | Command::DeployMcv { entity_id }
+        | Command::UndeployBuilding { entity_id }
+        | Command::SellBuilding { entity_id }
+        | Command::ToggleRepair { entity_id }
+        | Command::UnloadPassengers {
+            transport_id: entity_id,
+        }
+        | Command::ToggleInfantryDeploy { entity_id }
+        | Command::Scatter { entity_id }
+        | Command::TogglePrimaryFactory { entity_id }
+        | Command::MegaMission { entity_id, .. }
+        | Command::SetBuildingOnLine { entity_id, .. }
+        | Command::ArchiveObject { entity_id, .. } => *entity_id,
+        Command::Attack { attacker_id, .. }
+        | Command::ForceAttackCell { attacker_id, .. }
+        | Command::PlantC4 { attacker_id, .. } => *attacker_id,
+        Command::EjectBunker { bunker_id } => *bunker_id,
+        Command::CaptureBuilding { engineer_id, .. } => *engineer_id,
+        // House-scoped commands: production, sale of a wall cell, superweapon
+        // targeting, speed, exit, diplomacy and the rest. Admission belongs to
+        // their receivers.
+        _ => return None,
+    })
+}
+
+#[cfg(all(test, tests_sim_c_g))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn non_group_scope_filters_all_unit_issuers_but_keeps_production() {
+        let mut out = Outbox::default();
+        out.order(7, Goal::Move { cell: (12, 12) });
+        out.order(8, Goal::Move { cell: (13, 12) });
+        out.attach(7, MicroKind::Retreat, MicroParams::default(), None);
+        out.attach(8, MicroKind::Retreat, MicroParams::default(), None);
+        out.command(Command::Stop { entity_id: 7 });
+        out.command(Command::Stop { entity_id: 8 });
+        out.intent(Intent::QueueProduction {
+            type_id: InternedId::from_index(0),
+        });
+        let suppressed = filter_group_scope(&mut out, AutoPlayDomains::ALL, &BTreeSet::from([8]));
+        assert_eq!(suppressed, vec![(8, Goal::Move { cell: (13, 12) })]);
+        assert_eq!(out.orders.len(), 1);
+        assert_eq!(out.attachments.len(), 1);
+        assert_eq!(out.commands.len(), 1);
+        assert_eq!(out.intents.len(), 1);
+        assert_eq!(out.orders[0].actor, 7);
+        assert_eq!(out.attachments[0].actor, 7);
+    }
+
+    /// The fifth switch is not part of Global: even a paused board remembers
+    /// which side of the player's control groups will be driven next time.
+    #[test]
+    fn master_switch_preserves_fifth_key_and_resets_three_domains_together() {
+        let mut domains = AutoPlayDomains::ALL;
+        domains.grouped_only = true;
+        domains.toggle_master();
+        assert_eq!(domains, AutoPlayDomains { grouped_only: true, ..AutoPlayDomains::NONE });
+        domains.toggle_master();
+        assert_eq!(domains, AutoPlayDomains { grouped_only: true, ..AutoPlayDomains::ALL });
+        domains.production = false;
+        domains.abilities = false;
+        domains.toggle_master();
+        assert_eq!(domains, AutoPlayDomains { grouped_only: true, ..AutoPlayDomains::ALL });
+        domains.grouped_only = false;
+        assert!(domains.production && domains.forces && domains.abilities);
+    }
+
+    /// A player's numbered control group is the **only** eligible force when
+    /// the fifth switch selects groups. Actor-scoped production (selling a
+    /// factory) also obeys that scope; house-wide queues and powers do not.
+    #[test]
+    fn group_only_scope_filters_intents_orders_attachments_and_rally_producers() {
+        let type_id = InternedId::from_index(0);
+        let mut out = Outbox::default();
+        out.order(7, Goal::Move { cell: (12, 12) });
+        out.order(8, Goal::Move { cell: (13, 12) });
+        out.attach(7, MicroKind::Retreat, MicroParams::default(), None);
+        out.attach(8, MicroKind::Retreat, MicroParams::default(), None);
+        out.command(Command::Stop { entity_id: 7 });
+        out.command(Command::Stop { entity_id: 8 });
+        out.command(Command::SetRally { rx: 14, ry: 14, producer_ids: vec![7, 8] });
+        out.intent(Intent::SellBuilding { entity_id: 7 });
+        out.intent(Intent::SellBuilding { entity_id: 8 });
+        out.intent(Intent::QueueProduction { type_id });
+        out.intent(Intent::LaunchSuperWeapon { sw_type_id: type_id, cell: (14, 14) });
+        let mut domains = AutoPlayDomains::ALL;
+        domains.grouped_only = true;
+        let suppressed = filter_group_scope(&mut out, domains, &BTreeSet::from([8]));
+        assert_eq!(suppressed, vec![(7, Goal::Move { cell: (12, 12) })]);
+        assert_eq!(out.orders.len(), 1);
+        assert_eq!(out.orders[0].actor, 8);
+        assert_eq!(out.attachments.len(), 1);
+        assert_eq!(out.attachments[0].actor, 8);
+        assert_eq!(out.intents.len(), 3, "sell 8, house production, house power");
+        assert!(!out.intents.contains(&Intent::SellBuilding { entity_id: 7 }));
+        assert!(out.intents.contains(&Intent::SellBuilding { entity_id: 8 }));
+        assert_eq!(out.commands.len(), 2, "stop 8 and filtered rally");
+        assert!(out.commands.iter().any(|command| matches!(command,
+            Command::SetRally { producer_ids, .. } if producer_ids.as_slice() == [8]
+        )));
+    }
+
+    #[test]
+    fn empty_player_group_is_not_a_reason_to_enable_fifth_key_forces() {
+        let mut group_only = AutoPlayDomains::ALL;
+        group_only.grouped_only = true;
+        assert!(!group_only.admits_actor(10, &BTreeSet::new()));
+        assert!(AutoPlayDomains::ALL.admits_actor(10, &BTreeSet::new()));
+        assert!(group_only.admits(&Command::QueueProduction { type_id: InternedId::from_index(0) }));
+    }
+
+    fn arena() -> Option<(Simulation, RuleSet)> {
+        let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()?;
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xA17);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        Some((sim, rules))
+    }
+
+    /// The wish list's own example of an object no click can reach: the paradrop
+    /// transport. Retail marks it `Spawned=yes` ("created by another object and
+    /// therefore not player controllable") and `Selectable=no`, so auto play
+    /// must leave it alone while still driving the house's own units.
+    #[test]
+    fn a_spawned_object_is_not_the_players_to_command() {
+        let (mut sim, rules) = arena().expect("retail rules");
+        let owner = sim
+            .houses()
+            .keys()
+            .next()
+            .map(|owner| sim.interner().resolve(*owner).to_owned())
+            .expect("a house");
+
+        let plane = sim
+            .spawn_object("PDPLANE", &owner, 20, 20, 0, &rules)
+            .expect("the paradrop transport spawns");
+        assert!(
+            !player_controllable(&sim, &rules, plane),
+            "Spawned=yes and Selectable=no: not the player's"
+        );
+
+        let tank = sim
+            .spawn_object("MTNK", &owner, 21, 21, 0, &rules)
+            .expect("a tank spawns");
+        assert!(
+            player_controllable(&sim, &rules, tank),
+            "a player's own tank is the player's"
+        );
+
+        assert!(
+            !player_controllable(&sim, &rules, 999_999),
+            "an absent object cannot be commanded either"
+        );
+    }
+
+    /// The three switches own three kinds of order, and the abilities switch
+    /// owns the superweapon launches alone: a player who takes the missile
+    /// back keeps the army, and a player who takes the army back keeps the
+    /// missile.
+    #[test]
+    fn the_switches_own_their_own_kinds_of_order() {
+        let launch = Command::LaunchSuperWeapon {
+            sw_type_id: crate::sim::intern::InternedId::from_index(0),
+            target_rx: 10,
+            target_ry: 10,
+        };
+        let march = Command::Move {
+            entity_id: 1,
+            target_rx: 10,
+            target_ry: 10,
+        };
+        let queue = Command::QueueProduction {
+            type_id: crate::sim::intern::InternedId::from_index(0),
+        };
+
+        let abilities_only = AutoPlayDomains {
+            grouped_only: false,
+            production: false,
+            forces: false,
+            abilities: true,
+        };
+        assert!(
+            abilities_only.admits(&launch),
+            "the missile is the abilities'"
+        );
+        assert!(!abilities_only.admits(&march), "and not the army's");
+        assert!(!abilities_only.admits(&queue), "and not the base's");
+
+        let forces_only = AutoPlayDomains {
+            grouped_only: false,
+            production: false,
+            forces: true,
+            abilities: false,
+        };
+        assert!(forces_only.admits(&march));
+        assert!(
+            !forces_only.admits(&launch),
+            "the missile stays with the player"
+        );
+
+        let build_only = AutoPlayDomains {
+            grouped_only: false,
+            production: true,
+            forces: false,
+            abilities: false,
+        };
+        assert!(build_only.admits(&queue));
+        assert!(!build_only.admits(&march));
+        assert!(!build_only.admits(&launch));
+
+        assert!(AutoPlayDomains::ALL.admits(&launch));
+        assert!(
+            !AutoPlayDomains::NONE.any(),
+            "nothing on is a host driving nothing"
+        );
+        assert_eq!(
+            AutoPlayDomains::ALL.describe(),
+            "build + forces + abilities"
+        );
+        assert_eq!(abilities_only.describe(), "abilities");
+        assert_eq!(AutoPlayDomains::NONE.describe(), "paused");
+    }
+    /// A march does not replace a gun that is firing: `Assign_Target_Command`
+    /// clears the target on any mission but AttackMove, so the Move does not
+    /// pause the attack — it deletes it. A one-step reposition still preempts,
+    /// which is what the dodge and kite passes move a unit with.
+    #[test]
+    fn a_march_does_not_replace_a_live_fire_order() {
+        let Some((mut sim, rules)) = arena() else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        let gi = sim
+            .spawn_object("E1", "Americans", 20, 20, 255, &rules)
+            .expect("a GI");
+        let target = sim
+            .spawn_object("E2", "Russians", 21, 20, 255, &rules)
+            .expect("a conscript");
+        sim.queue_commands([CommandEnvelope::new(
+            owner,
+            sim.session().tick(),
+            Command::Attack {
+                attacker_id: gi,
+                target_id: target,
+            },
+        )]);
+        sim.advance_tick(&[], Some(&rules), None, None, 33);
+        let obs = Observation::new(&sim, owner);
+        assert_eq!(obs.attack_target(gi), Some(target), "the target is held");
+        assert_eq!(
+            order_stands(&sim, &rules, owner, gi, &Goal::Move { cell: (40, 40) }),
+            Some("firing on a target")
+        );
+        assert_eq!(
+            order_stands(&sim, &rules, owner, gi, &Goal::Move { cell: (21, 21) }),
+            None,
+            "a step out from under a shell is still a reposition"
+        );
+        assert_eq!(
+            order_stands(&sim, &rules, owner, gi, &Goal::Attack { target }),
+            Some("on that target"),
+            "an attack it already holds is not re-sent"
+        );
+    }
+
+    /// A destination the unit already holds is not re-sent: the path is not
+    /// re-run, which is what drift looked like from the outside.
+    #[test]
+    fn a_destination_already_held_is_not_re_sent() {
+        let Some((mut sim, rules)) = arena() else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        let gi = sim
+            .spawn_object("E1", "Americans", 20, 20, 255, &rules)
+            .expect("a GI");
+        sim.queue_commands([CommandEnvelope::new(
+            owner,
+            sim.session().tick(),
+            Command::Move {
+                entity_id: gi,
+                target_rx: 26,
+                target_ry: 20,
+            },
+        )]);
+        sim.advance_tick(&[], Some(&rules), None, None, 2);
+        let obs = Observation::new(&sim, owner);
+        assert_eq!(obs.destination(gi), Some((26, 20)), "it is walking there");
+        assert_eq!(
+            order_stands(&sim, &rules, owner, gi, &Goal::Move { cell: (26, 20) }),
+            Some("walking there")
+        );
+        assert_eq!(
+            order_stands(&sim, &rules, owner, gi, &Goal::Move { cell: (26, 30) }),
+            None,
+            "a different destination is a new order"
+        );
+    }
+
+    /// An attack order dies with the enmity it was issued under.
+    ///
+    /// A capture, an engineer or a mind control turns the thing being shot at
+    /// into this house's own building. The gunner never re-reads it, so the
+    /// old answer — "already on that target" — kept the order standing and the
+    /// army kept firing at its own prize until the last hit point.
+    ///
+    /// Measured on Arena.mmx seed 0x5EED at 24000 ticks with the death ledger
+    /// on: 26 of 41 local losses were under `Attack`, and the roster showed
+    /// `CABUNK01:2` — two neutral bunkers the house had taken and was then
+    /// shooting at.
+    #[test]
+    fn an_attack_on_a_building_that_changed_hands_does_not_stand() {
+        let Some((mut sim, rules)) = arena() else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        let russian = sim.interner.intern("Russians");
+        let tank = sim
+            .spawn_object("MTNK", "Americans", 20, 20, 0, &rules)
+            .expect("a grizzly");
+        let prize = sim
+            .spawn_object("NAREFN", "Russians", 22, 20, 0, &rules)
+            .expect("an enemy refinery");
+        sim.queue_commands([CommandEnvelope::new(
+            owner,
+            sim.session().tick(),
+            Command::Attack {
+                attacker_id: tank,
+                target_id: prize,
+            },
+        )]);
+        sim.advance_tick(&[], Some(&rules), None, None, 2);
+        let obs = Observation::new(&sim, owner);
+        assert_eq!(obs.attack_target(tank), Some(prize), "it is shooting at it");
+        assert!(
+            order_stands(&sim, &rules, owner, tank, &Goal::Attack { target: prize }).is_some(),
+            "while the refinery is the enemy's, the order stands"
+        );
+
+        // The building changes hands: same object, same gun, different side.
+        sim.change_owner_with_rules(
+            prize,
+            owner,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::empty(),
+        );
+        let obs = Observation::new(&sim, owner);
+        assert!(!obs.is_hostile(prize), "it is the house's own now");
+        assert_eq!(
+            order_stands(&sim, &rules, owner, tank, &Goal::Attack { target: prize }),
+            None,
+            "so the order is not lived out and has to be replaced"
+        );
+        let _ = russian;
+    }
+}

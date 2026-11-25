@@ -13,7 +13,7 @@ publish = false
 # asset tools and the game binary). The core manifest sits in `src/`, so rustc
 # still names every source file `src/...`.
 [workspace]
-members = ["src", "gui", "services/relay-protocol", "services/relay", "android"]
+members = ["src", "gui", "services/relay-protocol", "services/relay", "android", "autoplay"]
 # Plain `cargo build`/`cargo test --lib` cover both crates.
 default-members = [".", "src"]
 
@@ -119,6 +119,9 @@ tests-ui = []
 [dependencies]
 # The GPU-free engine. Its dev features follow this package's.
 vera20k-core = { path = "src" }
+# The policy crate: the client drives it through the same host as the ported
+# retail brain. Selected with VERA20K_BRAIN=v2.
+vera20k-autoplay = { path = "autoplay" }
 vera20k-gui = { path = "gui" }
 
 # Background HTTPS lobby I/O; verified TLS is independent of simulation.

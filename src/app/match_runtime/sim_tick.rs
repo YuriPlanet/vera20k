@@ -16,6 +16,7 @@ use crate::app::match_runtime::session::SessionMode;
 
 use crate::app::types::SIM_TICK_MS;
 use crate::map::terrain;
+use crate::render::sprite_atlas;
 use crate::sim::production;
 use crate::sim::replay::{ReplayLog, ScenarioServiceInput};
 use crate::sim::trigger_runtime::TriggerEffect;
@@ -1556,7 +1557,15 @@ fn after_frame(state: &mut AppState, frame_committed: bool) {
         // Factory while drawing, so the drawn state follows the simulation
         // even when no pass, input or flash window rebuilt the projection
         // this frame.
-        if recheck || flashing {
+        // Auto play issues the same commands a player's clicks issue and
+        // writes the same cameo request that a press writes, but a cameo's
+        // membership, queue and readiness are only rebuilt by a full
+        // projection pass (its request is admitted before the House pass
+        // inserts the button). Without this the sidebar shows nothing
+        // while the house builds, which reads as the house doing
+        // something it may not.
+        let auto_playing = state.match_state.auto_play.is_some();
+        if recheck || flashing || auto_playing {
             // The rebuilt view takes the same drawn state.
             crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
         } else {
@@ -2129,10 +2138,27 @@ fn advance_one_simulation_frame(
     // Delay-zero AnimClass construction can emit StartSound during the
     // final map-load sweep. Keep it until this first tactical drain;
     // `drain(..)` below still consumes every event exactly once.
+    // Auto play is another command producer: it runs before the drain, so what
+    // it issues now is among this frame's due commands. It steps only in the
+    // lane that drains, so nothing it issues waits for a later frame's drain.
+    // A lent frame drains on the simulation thread; the orders issued here are
+    // already in the queue by then.
+    let drains_this_frame = !replaying && !resuming && tick_lane == TickLane::Ordinary;
+    if drains_this_frame && let Some(session) = state.match_state.auto_play.as_mut() {
+        // The session owns the pairing the player would notice: it steps the
+        // host, mirrors every admitted command into the strip, and hands the
+        // commands back. Nothing here names a command kind, so a new one with a
+        // visible half cannot be forgotten in a match nobody reads.
+        session.step(
+            sim,
+            &rt.resources.rules,
+            &mut state.match_state.match_presentation.sidebar_projection,
+        );
+    }
     // A lent frame takes its due commands on the simulation thread, after
     // its frame is published: taken here, the published world would have a
     // selection or control group neither queued nor applied.
-    let due_commands = if !threaded && !replaying && !resuming && tick_lane == TickLane::Ordinary {
+    let due_commands = if !threaded && drains_this_frame {
         sim.take_due_commands()
     } else {
         Vec::new()

@@ -15,6 +15,7 @@ oracle families index their own fixtures and producers.
 | Play a launcher's (`-SPAWN`) match on loopback: direct, through a local relay with a stand-in lobby, or with browser players | [spawn runs](spawn/README.md), `tools/spawn/run.sh` |
 | Inspect process audio definitions, sample sources and retention evidence | [Process audio catalog owner](audio_catalog_owner.md), `asset sound` |
 | Wait for builds; test, check, lint or build the current checkout; preserve A/B binaries | `python -m tools.cargo_run` (below) |
+| Measure an autoplay change: build, run the retail tests, and play the pinned matches side by side | `python -m tools.autoplay_check` (below) |
 | Avoid shell traps that make a failed run look clean | [shell pitfalls](#shell-pitfalls) |
 | Compile and test one optional capability (`phobos`, `npatch`, diagnostic builds), or all of them | [capabilities](../docs/capabilities.md), `python -m tools.capability_tests` |
 | Run a committed test map headless or interactive, by scenario name | [capabilities](../docs/capabilities.md#test-maps), `python -m tools.run_test_map` |
@@ -140,6 +141,29 @@ configuration locally with:
 python -m tools.cargo_run -- build --locked --release --no-default-features --bin vera20k
 ```
 
+## Autoplay measurement loop
+
+```sh
+python -m tools.autoplay_check                                   # the pinned seed
+python -m tools.autoplay_check --seeds 0x5EED,19,10              # three seeds at once
+python -m tools.autoplay_check --skip-tests --ticks 12000       # a shorter look
+python -m unittest tools.tests.test_autoplay_check -v
+```
+
+One command for the loop an autoplay change needs: build the fast-profile
+match binary, run the retail strategy tests, and play the pinned matches,
+side by side, printing what each run said (the result tick, the yards the
+house ended with, the walls on the ring, the superweapon plot the build list
+chose, and the crates that were collected).
+
+The profile matters more than anything else here. The dev profile is
+`opt-level = 1`, and a 36 000-frame match on it takes about three minutes;
+the fast profile is release optimization with an incremental build, and the
+same match takes about one. The matches are single-threaded, so several seeds
+run at once cost about as much wall clock as one.
+
+The retail install is read from `RA2_DIR`; without it the build and the tests
+still run and the matches are reported as skipped.
 ## Test groups
 
 A test run that names one part of one crate compiles only that part's tests:

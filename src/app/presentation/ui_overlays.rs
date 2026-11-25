@@ -231,7 +231,7 @@ impl HudFacts {
                     sim.house_alliances()
                         .is_allied(sim.interner(), viewer, entity.owner())
                 }) {
-                StatusInfo::capture(entity, object, rules, at.binary_frame)
+                StatusInfo::capture(entity, object, rules, at.binary_frame, sim)
             } else {
                 StatusInfo::default()
             },
@@ -342,8 +342,10 @@ impl StatusInfo {
         object: Option<&crate::rules::object_type::ObjectType>,
         rules: &RuleSet,
         frame: u32,
+        sim: &crate::sim::world::Simulation,
     ) -> Self {
-        use crate::app::presentation::super_timers::FRAMES_PER_SECOND;
+        let frames_per_second =
+            crate::app::presentation::super_timers::session_frames_per_second(sim);
         let Some(object) = object else {
             return Self::default();
         };
@@ -354,12 +356,12 @@ impl StatusInfo {
         let reload_seconds = (object.ammo > 0 && ammo < object.ammo)
             .then(|| entity.ammo_reload_timer().remaining(frame as i32))
             .filter(|&remaining| remaining > 0)
-            .map(|remaining| remaining / FRAMES_PER_SECOND);
+            .map(|remaining| remaining / frames_per_second);
         // Building repair: the repair's own owner answers what is left.
         let repair = (entity.category() == EntityCategory::Structure)
             .then(|| crate::sim::production::repair_remaining(entity, object, rules, frame))
             .flatten()
-            .map(|(frames, cost)| (frames / FRAMES_PER_SECOND, cost));
+            .map(|(frames, cost)| (frames / frames_per_second, cost));
         Self {
             reload_seconds,
             repair,
@@ -1165,8 +1167,8 @@ pub(crate) fn build_building_status_render_instances(
         if let Some(shift) = super_shift {
             for (row, line) in lines.iter().enumerate() {
                 let name = super_line_name(sim, rules, csf, line.super_id);
-                let seconds =
-                    line.left.max(0) / crate::app::presentation::super_timers::FRAMES_PER_SECOND;
+                let seconds = line.left.max(0)
+                    / crate::app::presentation::super_timers::session_frames_per_second(sim);
                 // `*` marks a Super this building charges itself (the Superweapon
                 // Limit's per-building shots) rather than the House's one shared
                 // charge that a radar or a battle lab provides.

@@ -15,6 +15,8 @@ use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, LEPTONS_PER_LEVEL};
 use super::LifecycleOutput;
 #[cfg(any(test, feature = "test-support"))]
 use super::LifecycleTestEvent;
+#[cfg(any(test, feature = "test-support"))]
+const LIFECYCLE_TEST_EVENT_WINDOW: usize = 4_000;
 use super::{
     PlacementEvidence, RevealFailure, RevealOutcome, RevealPosition, RevealRequest, UninitContext,
 };
@@ -23,6 +25,17 @@ impl Simulation {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn trace_lifecycle_for_test(&mut self, event: LifecycleTestEvent) {
         self.lifecycle_test_events.push(event);
+        // A test channel is a window, not a log. Every caller reads the last
+        // few events after the frame it cared about, and none of them reads
+        // forty thousand. Left unbounded this vector is the whole match: a
+        // 1v29 harness build (`--features retail-fixture`, which compiles
+        // `test-support` in) reached an 80 GiB allocation inside
+        // `commit_frame_tail` and aborted at tick 24540, so the run could not
+        // finish rather than the policy being wrong.
+        if self.lifecycle_test_events.len() >= LIFECYCLE_TEST_EVENT_WINDOW {
+            self.lifecycle_test_events
+                .drain(..self.lifecycle_test_events.len() - LIFECYCLE_TEST_EVENT_WINDOW + 1);
+        }
     }
 
     #[cfg(any(test, feature = "test-support"))]

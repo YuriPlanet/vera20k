@@ -2331,6 +2331,20 @@ impl HouseState {
         self.request_tech_recheck();
     }
 
+    /// Read-only result for the AutoPlay infiltration ledger. A disappearing
+    /// spy is not evidence of success: dogs, guns and mind control can also
+    /// remove it. Read the actual permanent house effect instead.
+    pub(crate) fn spy_class_effect_observed(&self, class: u8) -> bool {
+        match class {
+            1 => self.spy_gains.veteran_infantry,
+            2 => self.spy_gains.veteran_units,
+            3 => self.spy_gains.allied_tech,
+            4 => self.spy_gains.soviet_tech,
+            5 => self.spy_gains.third_tech,
+            _ => false,
+        }
+    }
+
     /// `HouseClass::CanBuild`'s `RequiresStolen*Tech=` gates
     /// (`0x004F7976..0x004F79E2`): whether this house has stolen what
     /// `obj` requires.
@@ -2835,7 +2849,10 @@ impl HouseState {
 
     /// Read-only snapshot of the four independent activation bytes. HouseState
     /// owns all runtime writes; consumers cannot replace the retained block.
-    pub(crate) const fn ai_activation(&self) -> HouseAiActivationLatches {
+    /// Public because a run's diagnosis ("was the AI trigger latch ever armed
+    /// for this house?") is a plain read of House+1EF..+1F3, not a decision a
+    /// policy layer makes.
+    pub const fn ai_activation(&self) -> HouseAiActivationLatches {
         self.ai_activation
     }
 

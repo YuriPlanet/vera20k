@@ -1270,6 +1270,28 @@ pub(crate) fn suggest_new_object<'r>(
     }
 }
 
+/// [`suggest_new_object`] keyed by what the factory makes rather than by the
+/// class RTTI its native call site carries, for a caller that holds the
+/// category: a factory's own class decides the RTTI, so this is the same
+/// question, not a second answer.
+pub(crate) fn suggested_product<'r>(
+    sim: &Simulation,
+    rules: &'r RuleSet,
+    owner: InternedId,
+    category: ObjectCategory,
+) -> Option<&'r ObjectType> {
+    // No producer in hand, so the ordinary slot: `producer_naval` is the
+    // producing building's own `Naval=`, and a caller that has not named one
+    // reads `+0x5650`, which is what an ordinary build reads.
+    suggest_new_object(
+        sim,
+        rules,
+        owner,
+        FactoryType::for_category(category).production_rtti(),
+        false,
+    )
+}
+
 /// `BaseClass::Find_Node @ 0x0042EB50` for BuildingType index `wanted`, or
 /// the first open node when `wanted` is -1. A node is open when
 /// [`node_satisfied`] rejects it. The nonzero mode arm for -1 (`0x0042EB76`)

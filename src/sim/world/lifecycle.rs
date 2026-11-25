@@ -21,7 +21,6 @@ use crate::sim::combat::TargetKind;
 #[cfg(test)]
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
-#[cfg(any(test, feature = "test-support"))]
 use crate::sim::projectile::ProjectileTarget;
 
 #[cfg(any(test, feature = "test-support"))]
@@ -1036,6 +1035,13 @@ pub enum LifecycleTestEvent {
     /// the detaching object, so a test can pin the descending walk.
     DetachTargetingSweepVisited {
         detach_id: u64,
+        // A test channel is a window, not a log. Every caller reads the last
+        // few events after the frame it cared about, and none of them reads
+        // forty thousand. Left unbounded this vector is the whole match: a
+        // 1v29 harness build (`--features retail-fixture`, which compiles
+        // `test-support` in) reached an 80 GiB allocation inside
+        // `commit_frame_tail` and aborted at tick 24540, so the run could not
+        // finish rather than the policy being wrong.
         listener_id: u64,
         restored: bool,
         target_cleared: bool,

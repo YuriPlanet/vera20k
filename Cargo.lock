@@ -3300,6 +3300,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tungstenite",
  "ureq",
+ "vera20k-autoplay",
  "vera20k-core",
  "vera20k-gui",
  "wasm-bindgen",
@@ -3325,6 +3326,15 @@ dependencies = [
  "ndk-context",
  "vera20k",
  "winit",
+]
+
+[[package]]
+name = "vera20k-autoplay"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "serde_json",
+ "vera20k-core",
 ]
 
 [[package]]

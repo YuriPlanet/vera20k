@@ -440,7 +440,7 @@ pub(crate) fn place_production_with_overlays<'k>(
         effects,
     );
     let new_sid = if obj.wall {
-        if evaluate_resolved_building_placement(
+        if let Some(reason) = evaluate_resolved_building_placement(
             sim,
             rules,
             sim.interner.key_name(owner),
@@ -451,8 +451,8 @@ pub(crate) fn place_production_with_overlays<'k>(
             None,
         )
         .reason
-        .is_some()
         {
+            log::warn!("Placement of {type_id} at ({rx},{ry}) refused: {reason:?} (wall)");
             failed_building_unlimbo(sim, rules, owner_id, yard, effects);
             return false;
         }
@@ -502,7 +502,7 @@ pub(crate) fn place_production_with_overlays<'k>(
         // Event::Execute4C70E1..4C710B passes an admitted PLACE straight to
         // House4FB0E0. Its placement refusal occurs after HELLO4FB1F1, and
         // still reaches the yard's FirstContact BREAK4FB4A6.
-        if evaluate_resolved_building_placement(
+        if let Some(reason) = evaluate_resolved_building_placement(
             sim,
             rules,
             sim.interner.key_name(owner),
@@ -513,8 +513,8 @@ pub(crate) fn place_production_with_overlays<'k>(
             None,
         )
         .reason
-        .is_some()
         {
+            log::warn!("Placement of {type_id} at ({rx},{ry}) refused: {reason:?}");
             failed_building_unlimbo(sim, rules, owner_id, yard, effects);
             return false;
         }

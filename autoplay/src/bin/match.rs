@@ -1,0 +1,1207 @@
+//! Runs one standard skirmish headless, with auto play driving the local
+//! house and the retail computer AI driving the opponent.
+//!
+//! This is the gate for the auto play chain: it plays a whole match with no
+//! window and no human input, so "auto play can hold its own in a skirmish"
+//! is something that can be run, not something that has to be remembered
+//! from the last time somebody played it.
+//!
+//! Everything it decides depends only on the simulation state, the tick and
+//! the pinned seed, in integer math, so a run replays.
+//!
+//! ```text
+//! cargo run --bin autoplay-match -- --ra2-dir <install> --map Death.mmx
+//! ```
+
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+use vera20k_core::headless_scenario::{self, SIM_TICK_MS};
+use vera20k_core::rules::object_type::ObjectCategory;
+use vera20k_core::rules::ruleset::RuleSet;
+use vera20k_core::sim::autoplay::AutoPlayHost;
+use vera20k_core::sim::control::brain::{Brain, Outbox};
+use vera20k_core::sim::control::observation::Observation;
+use vera20k_core::sim::intern::InternedId;
+use vera20k_core::sim::production::ProductionCategory;
+use vera20k_core::sim::replay::{
+    PLAY_HASH_INTERVAL, REPLAY_VERSION, ReplayHeader, ReplayLog, ReplayStartup,
+};
+use vera20k_core::sim::strategy::assist::AssistBrain;
+use vera20k_core::sim::world::{FrameEffects, Simulation, TickLane};
+use vera20k_core::skirmish_launch::{AiDifficulty, LaunchCountry, SkirmishLaunchOptions};
+
+/// The map main's own match bench loads by default, so it is known to have the
+/// ore, the starts and the trigger data a match needs.
+const DEFAULT_MAP: &str = "Death.mmx";
+/// Forty minutes of game time at the native 15 frames a second: a match
+/// against the computer AI does not resolve in ten, and a gate that stops
+/// before one side has lost cannot tell a draw from a loss.
+const DEFAULT_TICKS: u64 = 36_000;
+/// A progress line every two minutes.
+const DEFAULT_PROGRESS: u64 = 1_800;
+/// With `--dump-teams`, the native team census every forty seconds: teams are
+/// created, filled and dissolved well inside two minutes, and a coarse sample
+/// cannot tell a script that advances from one that never started.
+const TEAM_PROGRESS: u64 = 600;
+/// Team detail lines per house, so a large `Max=` registry cannot bury the
+/// rest of the run.
+const MAX_TEAM_LINES: usize = 12;
+/// Commands the control layer admits per frame: the same safety valve the
+/// client uses (`app::input::dispatch`). It is not a hand — see the note there.
+const DEFAULT_PER_FRAME: usize = 512;
+
+struct Args {
+    ra2_dir: PathBuf,
+    map: String,
+    seed: u32,
+    ticks: u64,
+    progress: u64,
+    replay_out: Option<PathBuf>,
+    per_frame: usize,
+    opponent: LaunchCountry,
+    /// The local house's country: the side the policy plays.
+    country: LaunchCountry,
+    /// Starting credits: the opening every result is relative to.
+    credits: Option<i32>,
+    /// Starting units, and the tech level the match begins at.
+    units: Option<i32>,
+    tech: Option<i32>,
+    /// How many computer houses play against the local one.
+    opponents: usize,
+    difficulty: AiDifficulty,
+    /// Print what the brain asks for, from a separate brain reading the same
+    /// state, for the first this many frames. Diagnostics only: the run itself
+    /// is driven by the host's own brain, whose generator has moved on.
+    dump: u64,
+    /// Print the native team pipeline for the first this many frames: every
+    /// live team's type, script, cursor and members, plus a census every
+    /// `TEAM_PROGRESS` frames and at the end. Read-only.
+    dump_teams: u64,
+    /// Which brain drives the local house: `retail` (the ported policy in
+    /// core) or `v2` (the policy crate).
+    brain: String,
+    /// The match's game speed index, 0..=6, as the in-game speed control sets
+    /// it (`GameOptions::apply_in_game_speed`).
+    ///
+    /// This is *not* cosmetic. `GameOptions::speed_normalize` (`0x005FB2E0`)
+    /// divides frame counts by `speed + 1`, and construction
+    /// (`sim/building_construction.rs`) and infantry action
+    /// (`sim/infantry_action.rs`) both call it — so a house at speed 6 builds
+    /// and acts at about a seventh of the frame cadence it has at speed 0. A
+    /// headless run at the default index therefore has to say so, or the numbers
+    /// describe a game nobody plays.
+    speed: u8,
+    /// The `LaunchTeam` every computer house is seated on, as a retail
+    /// `SkirmishSetups.ini` slot stores it. `None` (the flag's absence) seats
+    /// them on no team, which is a free-for-all; a team number makes
+    /// `launch_alliance_map` ally them with each other, so the local house faces
+    /// one alliance of that size instead of that many separate houses.
+    ai_team: Option<u8>,
+    /// `ShortGame=`: a house is out once it holds no buildings, without waiting
+    /// for its last units. A saved setup stores it per map.
+    short_game: Option<bool>,
+    /// `SuperWeaponsAllowed=`. Off keeps every superweapon from being built.
+    super_weapons: Option<bool>,
+    /// `BuildOffAlly=`: a structure may be placed beside an ally's building.
+    build_off_ally: Option<bool>,
+    /// `MCVRepacks=`: a deployed yard may be packed back into a maker.
+    mcv_redeploy: Option<bool>,
+    /// `CratesAppear=`.
+    crates: Option<bool>,
+}
+
+fn parse_args() -> Result<Args, String> {
+    let mut ra2_dir = std::env::var("RA2_DIR")
+        .ok()
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from);
+    let mut map = DEFAULT_MAP.to_string();
+    let mut seed = 0x5EED_u32;
+    let mut ticks = DEFAULT_TICKS;
+    let mut progress = DEFAULT_PROGRESS;
+    let mut replay_out = None;
+    let mut per_frame = DEFAULT_PER_FRAME;
+    let mut opponent = LaunchCountry::Russia;
+    let mut country = LaunchCountry::America;
+    let mut credits: Option<i32> = None;
+    let mut units: Option<i32> = None;
+    let mut tech: Option<i32> = None;
+    let mut opponents = 1_usize;
+    let mut difficulty = AiDifficulty::Normal;
+    let mut dump = 0_u64;
+    let mut dump_teams = 0_u64;
+    let mut brain = "retail".to_string();
+    let mut speed: u8 = 1;
+    let mut ai_team: Option<u8> = None;
+    let mut short_game: Option<bool> = None;
+    let mut super_weapons: Option<bool> = None;
+    let mut build_off_ally: Option<bool> = None;
+    let mut mcv_redeploy: Option<bool> = None;
+    let mut crates: Option<bool> = None;
+
+    let mut args = std::env::args_os().skip(1);
+    while let Some(arg) = args.next() {
+        let flag = arg.to_string_lossy().into_owned();
+        let mut value = || -> Result<String, String> {
+            args.next()
+                .map(|value| value.to_string_lossy().into_owned())
+                .ok_or_else(|| format!("{flag} needs a value"))
+        };
+        match flag.as_str() {
+            "--ra2-dir" => ra2_dir = Some(PathBuf::from(value()?)),
+            "--map" => map = value()?,
+            "--replay-out" => replay_out = Some(PathBuf::from(value()?)),
+            "--seed" => seed = value()?.parse().map_err(|_| "seed is a u32".to_string())?,
+            "--ticks" => ticks = value()?.parse().map_err(|_| "ticks is a u64".to_string())?,
+            "--progress" => {
+                progress = value()?
+                    .parse()
+                    .map_err(|_| "progress is a u64".to_string())?
+            }
+            "--per-frame" => {
+                per_frame = value()?
+                    .parse()
+                    .map_err(|_| "per-frame is a usize".to_string())?
+            }
+            "--opponent" => opponent = parse_country(&value()?)?,
+            "--country" => country = parse_country(&value()?)?,
+            "--credits" => {
+                credits = Some(
+                    value()?
+                        .parse()
+                        .map_err(|_| "credits is an i32".to_string())?,
+                )
+            }
+            "--units" => {
+                units = Some(
+                    value()?
+                        .parse()
+                        .map_err(|_| "units is an i32".to_string())?,
+                )
+            }
+            "--tech" => tech = Some(value()?.parse().map_err(|_| "tech is an i32".to_string())?),
+            "--opponents" => {
+                opponents = value()?
+                    .parse()
+                    .map_err(|_| "opponents is a count".to_string())?
+            }
+            "--difficulty" => difficulty = parse_difficulty(&value()?)?,
+            "--speed" => {
+                let parsed: u8 = value()?.parse().map_err(|_| "speed is a u8".to_string())?;
+                if parsed > 6 {
+                    return Err(format!("speed {parsed} is out of range: 0..=6"));
+                }
+                speed = parsed;
+            }
+            "--dump" => dump = value()?.parse().map_err(|_| "dump is a u64".to_string())?,
+            "--brain" => {
+                brain = value()?;
+                if brain != "retail" && brain != "v2" {
+                    return Err(format!("unknown brain {brain}: retail or v2"));
+                }
+            }
+            "--dump-teams" => {
+                dump_teams = value()?
+                    .parse()
+                    .map_err(|_| "dump-teams is a u64".to_string())?
+            }
+            // The retail setup's own columns and options. Each takes `yes`/`no`
+            // (or a team number), so a saved `SkirmishSetups.ini` section reads
+            // straight across into the flags.
+            "--team" => {
+                ai_team = Some(
+                    value()?
+                        .parse()
+                        .map_err(|_| "team is a number 0..=3".to_string())?,
+                )
+            }
+            "--short-game" => short_game = Some(parse_yes_no(&value()?)?),
+            "--super-weapons" => super_weapons = Some(parse_yes_no(&value()?)?),
+            "--build-off-ally" => build_off_ally = Some(parse_yes_no(&value()?)?),
+            "--mcv-redeploy" => mcv_redeploy = Some(parse_yes_no(&value()?)?),
+            "--crates" => crates = Some(parse_yes_no(&value()?)?),
+            "--help" | "-h" => return Err(String::new()),
+            other => return Err(format!("unknown flag {other}")),
+        }
+    }
+    let ra2_dir = ra2_dir.ok_or("set --ra2-dir or RA2_DIR to the retail install")?;
+    Ok(Args {
+        ra2_dir,
+        map,
+        seed,
+        ticks,
+        progress,
+        replay_out,
+        per_frame,
+        opponent,
+        country,
+        credits,
+        units,
+        tech,
+        opponents,
+        difficulty,
+        dump,
+        dump_teams,
+        brain,
+        speed,
+        ai_team,
+        short_game,
+        super_weapons,
+        build_off_ally,
+        mcv_redeploy,
+        crates,
+    })
+}
+
+fn parse_country(name: &str) -> Result<LaunchCountry, String> {
+    match name.to_ascii_lowercase().as_str() {
+        "america" => Ok(LaunchCountry::America),
+        "russia" => Ok(LaunchCountry::Russia),
+        "yuri" => Ok(LaunchCountry::Yuri),
+        "korea" => Ok(LaunchCountry::Korea),
+        "iraq" => Ok(LaunchCountry::Iraq),
+        "france" => Ok(LaunchCountry::France),
+        "germany" => Ok(LaunchCountry::Germany),
+        "cuba" => Ok(LaunchCountry::Cuba),
+        "libya" => Ok(LaunchCountry::Libya),
+        "greatbritain" | "britain" => Ok(LaunchCountry::GreatBritain),
+        other => Err(format!("unknown country {other}")),
+    }
+}
+
+fn parse_difficulty(name: &str) -> Result<AiDifficulty, String> {
+    match name.to_ascii_lowercase().as_str() {
+        "easy" => Ok(AiDifficulty::Easy),
+        "normal" => Ok(AiDifficulty::Normal),
+        "hard" => Ok(AiDifficulty::Hard),
+        other => Err(format!("unknown difficulty {other}")),
+    }
+}
+
+/// A retail setup's `yes`/`no`, which is how `SkirmishSetups.ini` stores every
+/// box: `1`/`0` and `true`/`false` are accepted because the same value reaches
+/// these flags from a script as from the file.
+fn parse_yes_no(value: &str) -> Result<bool, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "yes" | "true" | "1" | "on" => Ok(true),
+        "no" | "false" | "0" | "off" => Ok(false),
+        other => Err(format!("expected yes or no, got {other}")),
+    }
+}
+
+const USAGE: &str = "\
+autoplay-match: a headless skirmish with auto play on the local house
+
+  --ra2-dir <dir>    the retail install (or RA2_DIR)
+  --map <file>       the map to load (default Death.mmx)
+  --seed <u32>       the pinned seed (default 0x5eed)
+  --ticks <u64>      how many frames to play (default 36000, forty minutes)
+  --progress <u64>   a progress line every this many frames (default 1800)
+  --replay-out <file>  record commands and hashes for autoplay-replay
+  --per-frame <n>    commands the control layer admits per frame (default 8)
+  --opponent <name>  the computer house's country (default russia)
+  --country <name>   the local house's country: what the policy plays
+                     (default america)
+  --credits <n>      starting credits (default: the rules' Battle default)
+  --units <n>        starting units per house
+  --tech <n>         starting tech level
+  --difficulty <n>   easy | normal | hard (default normal)
+  --speed <n>        the game speed index 0..=6 (default 1). Not cosmetic:
+                     speed_normalize divides construction and infantry-action
+                     cadence by speed + 1, so the same tick count means
+                     different progress at different indices
+  --dump <n>         print the brain's orders for the first n frames
+  --dump-teams <n>   print the native team pipeline (teams, scripts, cursors,
+                     members) for the first n frames, a census every 600
+
+The retail setup's own columns and boxes, so a saved `SkirmishSetups.ini`
+section reads straight across into the flags:
+
+  --team <n>         seat every computer on team n. Absent: no team, which is a
+                     free-for-all. A team number makes the computers allies of
+                     each other, so the local house faces one alliance
+  --short-game <yn>  a house is out once it holds no buildings
+  --super-weapons <yn>
+  --build-off-ally <yn>
+  --mcv-redeploy <yn>
+  --crates <yn>
+";
+
+/// One line of telemetry, so a run can be read without a debugger.
+struct Snapshot {
+    tick: u64,
+    credits: i32,
+    enemy_credits: i32,
+    power: i32,
+    own: usize,
+    enemy: usize,
+    ready: usize,
+    rejected: usize,
+    not_ready: usize,
+}
+
+fn snapshot(
+    sim: &Simulation,
+    local: InternedId,
+    enemies: &[InternedId],
+    tick: u64,
+    host: &AutoPlayHost,
+) -> Snapshot {
+    let obs = Observation::new(sim, local);
+    // The whole other side, so a 1v7 reads as seven houses and not one.
+    let enemy_credits = enemies
+        .iter()
+        .map(|enemy| Observation::new(sim, *enemy).credits())
+        .sum();
+    let enemy = enemies
+        .iter()
+        .map(|enemy| Observation::new(sim, *enemy).own_entities().count())
+        .sum();
+    Snapshot {
+        tick,
+        credits: obs.credits(),
+        enemy_credits,
+        power: obs.power_balance(),
+        own: obs.own_entities().count(),
+        enemy,
+        ready: obs.ready_buildings().count(),
+        rejected: host.rejected(),
+        not_ready: host.not_ready(),
+    }
+}
+
+/// What the native team pipeline is doing on one side of one frame.
+///
+/// The question a headless match has to answer before anyone touches tactics
+/// is *who is fighting*: units a live team holds, driven by a retail script
+/// (`TeamClass::AI`), or units standing outside every team, driven by this
+/// run's own orders. These are counts of that split, plus why a team that
+/// exists is not moving.
+#[derive(Default)]
+struct TeamCensus {
+    /// Live teams owned by the side.
+    teams: usize,
+    /// Teams whose recruit loop filled them once (`+0x7F`), so their script
+    /// is running.
+    formed: usize,
+    /// Units in a team (`TeamClass+0x54` member lists).
+    members: usize,
+    /// Formed teams whose script cursor moved since the previous sample.
+    advancing: usize,
+    /// Formed teams whose script cursor stood still since the previous
+    /// sample: the script is blocked, not merely slow.
+    stalled: usize,
+    /// Teams whose script stopped on an unported action.
+    refused: usize,
+    /// Teams that reached the end of their script.
+    succeeded: usize,
+    /// Orderable non-building units of the side that belong to no team.
+    loose: usize,
+    /// Live teams per current script action id.
+    actions: BTreeMap<i32, usize>,
+}
+
+impl TeamCensus {
+    fn line(&self) -> String {
+        let actions: Vec<String> = self
+            .actions
+            .iter()
+            .map(|(action, count)| format!("{action}:{count}"))
+            .collect();
+        format!(
+            "{} teams/{} formed ({} advancing, {} stalled, {} refused, {} done), \
+             {} members, {} loose, actions [{}]",
+            self.teams,
+            self.formed,
+            self.advancing,
+            self.stalled,
+            self.refused,
+            self.succeeded,
+            self.members,
+            self.loose,
+            actions.join(" ")
+        )
+    }
+}
+
+/// Counts the native team pipeline for `houses`, and returns the cursors it
+/// saw so the next sample can tell a running script from a stuck one.
+///
+/// Read-only: it walks `TeamScriptVm`'s existing views and the entity store.
+/// `previous` is the caller's own scratch, not simulation state.
+fn census_teams(
+    sim: &Simulation,
+    rules: &RuleSet,
+    houses: &[InternedId],
+    previous: &mut BTreeMap<u64, i32>,
+) -> TeamCensus {
+    let vm = sim.team_script_vm();
+    let mut census = TeamCensus::default();
+    let mut cursors = BTreeMap::new();
+    for team in vm.teams_in_order() {
+        if !houses.contains(&team.owner()) {
+            continue;
+        }
+        census.teams += 1;
+        census.members += team.members().count();
+        census.refused += usize::from(team.refusal().is_some());
+        census.succeeded += usize::from(team.succeeded());
+        *census.actions.entry(team.current_action(vm)).or_default() += 1;
+        if team.formed() {
+            census.formed += 1;
+            match previous.get(&team.id()) {
+                Some(&before) if team.cursor() > before => census.advancing += 1,
+                Some(_) => census.stalled += 1,
+                // The first sample has nothing to compare against.
+                None => {}
+            }
+        }
+        cursors.insert(team.id(), team.cursor());
+    }
+    *previous = cursors;
+
+    for house in houses {
+        for entity in Observation::new(sim, *house).own_entities() {
+            if vm.team_for_member(entity.entity_id).is_some() {
+                continue;
+            }
+            let combat = sim
+                .object_type(entity.type_id, rules)
+                .is_some_and(|ty| ty.category != ObjectCategory::Building && entity.orderable);
+            census.loose += usize::from(combat);
+        }
+    }
+    census
+}
+
+/// Prints one house's live teams: TeamType, script, cursor, current action,
+/// member count by unit type. Read-only.
+fn print_teams(sim: &Simulation, house: InternedId, tick: u64, previous: &BTreeMap<u64, i32>) {
+    let vm = sim.team_script_vm();
+    let name = sim.interner().resolve(house);
+    let mut types: BTreeMap<u64, InternedId> = BTreeMap::new();
+    for entity in Observation::new(sim, house).own_entities() {
+        types.insert(entity.entity_id, entity.type_id);
+    }
+    let mut shown = 0_usize;
+    let mut total = 0_usize;
+    for team in vm.teams_in_order() {
+        if team.owner() != house {
+            continue;
+        }
+        total += 1;
+        if shown == MAX_TEAM_LINES {
+            continue;
+        }
+        shown += 1;
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        for member in team.members() {
+            let label = types
+                .get(&member)
+                .map(|type_id| sim.interner().resolve(*type_id))
+                .unwrap_or("?");
+            *counts.entry(label.to_owned()).or_default() += 1;
+        }
+        let members: Vec<String> = counts
+            .iter()
+            .map(|(label, count)| format!("{label}x{count}"))
+            .collect();
+        let state = if team.succeeded() {
+            "done"
+        } else if team.refusal().is_some() {
+            "refused"
+        } else if !team.formed() {
+            "forming"
+        } else if previous
+            .get(&team.id())
+            .is_none_or(|before| team.cursor() > *before)
+        {
+            "running"
+        } else {
+            "stalled"
+        };
+        println!(
+            "  team@{tick} {name}: {} script {} cursor {} action {} {state} members [{}]",
+            team.team_type_id()
+                .map(|id| sim.interner().resolve(id))
+                .unwrap_or("?"),
+            sim.interner().resolve(team.script_id()),
+            team.cursor(),
+            team.current_action(vm),
+            members.join(" "),
+        );
+    }
+    if total > shown {
+        println!("  team@{tick} {name}: ... and {} more", total - shown);
+    }
+}
+
+/// The AI trigger table's own activity: how many triggers exist, how many have
+/// a finished team on their record, and the first few of those.
+///
+/// The counts are the trigger's own accounting (`RegisterSuccess` /
+/// `RegisterFailure`, `+0x104`/`+0x108`), which native updates when a team it
+/// started ends — so a trigger that has been picked but whose team is still
+/// alive reads as zero here. This is the other half of "the computer's AI is
+/// not attacking": a table nothing ever picks is a different defect from
+/// teams that form and then sit still.
+fn print_ai_triggers(sim: &Simulation, tick: u64) {
+    let vm = sim.team_script_vm();
+    let mut total = 0_usize;
+    let mut fired: Vec<String> = Vec::new();
+    let mut ever_started = 0_usize;
+    for (definition, record) in vm.ai_triggers_in_order() {
+        total += 1;
+        if record.attempts() == 0 {
+            continue;
+        }
+        ever_started += 1;
+        if fired.len() < MAX_TEAM_LINES {
+            fired.push(format!(
+                "{} ({} attempts, {} ok{})",
+                definition.display_name,
+                record.attempts(),
+                record.successes(),
+                if definition.enabled { "" } else { ", disabled" }
+            ));
+        }
+    }
+    println!(
+        "  triggers@{tick}: {total} registered, {ever_started} with a finished team{}",
+        if fired.is_empty() {
+            String::new()
+        } else {
+            format!(": {}", fired.join("; "))
+        }
+    );
+}
+
+/// Each house's activation latch and chosen enemy, as the native AI leaves
+/// them: the two fields the computer's own `HouseClass::Update` would set.
+fn print_house_ai(sim: &Simulation, houses: &[InternedId], tick: u64) {
+    for house in houses {
+        let Some(state) = sim.houses().get(house) else {
+            continue;
+        };
+        let activation = state.ai_activation();
+        println!(
+            "  house@{tick} {}: human {} enemy {} | triggers_active {} production {} \
+             autocreate {} base_building {}",
+            sim.interner().resolve(*house),
+            state.is_human(),
+            state
+                .enemy_house()
+                .map(|id| sim.interner().resolve(id))
+                .unwrap_or("-"),
+            activation.ai_triggers_active,
+            activation.production,
+            activation.autocreate_allowed,
+            activation.auto_base_building,
+        );
+    }
+}
+
+/// The whole team report for one sample: activation latches, trigger activity,
+/// then per house the census line and the live teams.
+fn report_teams(
+    sim: &Simulation,
+    rules: &RuleSet,
+    houses: &[InternedId],
+    tick: u64,
+    previous: &mut BTreeMap<InternedId, BTreeMap<u64, i32>>,
+) {
+    print_house_ai(sim, houses, tick);
+    print_ai_triggers(sim, tick);
+    for house in houses {
+        let before = previous.get(house).cloned().unwrap_or_default();
+        let census = census_teams(sim, rules, &[*house], previous.entry(*house).or_default());
+        println!(
+            "  teams@{tick} {}: {}",
+            sim.interner().resolve(*house),
+            census.line()
+        );
+        print_teams(sim, *house, tick, &before);
+    }
+}
+
+/// A logger that prints `retail-ai` and friends to stderr. The brain logs why
+/// it is waiting, which is the whole point of a headless run: nobody is
+/// watching the base to notice it stopped.
+struct StderrLog;
+
+impl log::Log for StderrLog {
+    fn enabled(&self, _metadata: &log::Metadata<'_>) -> bool {
+        true
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        eprintln!("[{}] {}", record.level(), record.args());
+    }
+
+    fn flush(&self) {}
+}
+
+fn main() -> Result<(), String> {
+    static LOGGER: StderrLog = StderrLog;
+    log::set_logger(&LOGGER).map_err(|error| error.to_string())?;
+    log::set_max_level(log::LevelFilter::Info);
+    log::info!("logger up");
+
+    let args = match parse_args() {
+        Ok(args) => args,
+        Err(error) => {
+            if error.is_empty() {
+                print!("{USAGE}");
+                return Ok(());
+            }
+            eprintln!("autoplay-match: {error}\n\n{USAGE}");
+            std::process::exit(2);
+        }
+    };
+
+    let seats: Vec<(LaunchCountry, AiDifficulty)> =
+        std::iter::repeat_n((args.opponent, args.difficulty), args.opponents.max(1)).collect();
+    let mut options = SkirmishLaunchOptions::default();
+    // The speed index the match runs at. `speed_normalize` divides construction
+    // and infantry-action frame counts by `speed + 1`, so this changes what a
+    // tick means and a headless number is only comparable to a played match
+    // with the same index.
+    options.game_speed = i32::from(args.speed);
+    if let Some(credits) = args.credits {
+        options.starting_credits = credits;
+    }
+    if let Some(units) = args.units {
+        options.unit_count = units;
+    }
+    if let Some(tech) = args.tech {
+        options.tech_level = tech;
+    }
+    // The saved setup's own boxes. Each is left at the rules' default when the
+    // flag is absent, so a run that does not name them describes the stock
+    // opening, and a run that does is the setup a player actually saved.
+    if let Some(short_game) = args.short_game {
+        options.short_game = short_game;
+    }
+    if let Some(super_weapons) = args.super_weapons {
+        options.super_weapons = super_weapons;
+    }
+    if let Some(build_off_ally) = args.build_off_ally {
+        options.build_off_ally = build_off_ally;
+    }
+    if let Some(mcv_redeploy) = args.mcv_redeploy {
+        options.mcv_redeploy = mcv_redeploy;
+    }
+    if let Some(crates) = args.crates {
+        options.crates = crates;
+    }
+    let start_units = options.unit_count;
+    let start_tech = options.tech_level;
+    // Read before the session takes `options` by value: the start line reports
+    // the boxes the match actually plays, not the flags that were passed.
+    let played = (
+        options.short_game,
+        options.super_weapons,
+        options.build_off_ally,
+        options.mcv_redeploy,
+        options.crates,
+    );
+    // The team every computer is seated on: the same column a saved setup
+    // stores per slot, and what decides whether the computers are one alliance
+    // or a free-for-all.
+    let ai_team = args
+        .ai_team
+        .map_or(vera20k_core::skirmish_launch::LaunchTeam::None, |team| {
+            vera20k_core::skirmish_launch::LaunchTeam::Team(team)
+        });
+    let session = headless_scenario::battle_session_with_seats(
+        &args.map,
+        &seats,
+        args.country,
+        options,
+        ai_team,
+    );
+    let mut scenario =
+        headless_scenario::load_session(&args.ra2_dir, &args.map, args.seed, session.clone())?;
+    let mut replay = if args.replay_out.is_some() {
+        let sim = &mut scenario.runtime.simulation;
+        // Match the frame-zero setup that standalone ReplayPlayback reconstructs.
+        sim.batch_path_searches();
+        sim.batch_target_scans();
+        // The normal App turns effect anims into presentation before frame zero
+        // (app::loading::transitions), and ReplayStartup refuses to capture
+        // without it: the standalone player presents them the same way.
+        sim.present_effect_anims();
+        sim.sleep_idle_objects_in_match();
+        sim.hash_state_every(PLAY_HASH_INTERVAL);
+        let mut log = ReplayLog::new(ReplayHeader {
+            pixel_conversion_bounds: sim.session().pixel_conversion_bounds(),
+            version: REPLAY_VERSION,
+            tick_hz: vera20k_core::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND,
+            seed: sim.session().seed(),
+            map_name: sim.session().map_name().to_owned(),
+            rules_hash: scenario.runtime.resources.rules.simulation_config_hash(),
+        });
+        let startup = ReplayStartup::capture(
+            &scenario.runtime,
+            &session,
+            &scenario.source,
+            scenario.map.ini.content_hash(),
+            SIM_TICK_MS,
+            false,
+        )
+        .map_err(|error| format!("capture replay startup: {error:#}"))?;
+        log.startup = Some(Box::new(startup));
+        Some(log)
+    } else {
+        None
+    };
+    let sim = &scenario.runtime.simulation;
+
+    let local = sim
+        .session()
+        .current_house()
+        .ok_or("the launch has no local house")?;
+    // Every computer house on the map is an opponent: the run is won when they
+    // are all defeated, which on a 1v7 is seven bases and not one.
+    //
+    // The passive houses are not: the Neutral and Special owners hold the map's
+    // civilians and the scripted props, nobody can defeat them, and counting
+    // them turned every run into a timeout the moment the list stopped being
+    // "the first computer house".
+    let enemies: Vec<InternedId> = sim
+        .houses()
+        .order()
+        .iter()
+        .copied()
+        .filter(|id| {
+            *id != local
+                && sim
+                    .houses()
+                    .get(id)
+                    .is_some_and(|house| !house.is_human() && !house.multiplay_passive())
+        })
+        .collect();
+    if enemies.is_empty() {
+        return Err("the launch has no computer opponent".to_string());
+    }
+
+    // The opening is part of the result: a run that does not say what it
+    // started with cannot be compared with the next one.
+    {
+        let obs = Observation::new(sim, local);
+        let mut roster: BTreeMap<String, usize> = BTreeMap::new();
+        for entity in obs.own_entities() {
+            *roster
+                .entry(sim.interner().resolve(entity.type_id).to_owned())
+                .or_default() += 1;
+        }
+        let units: Vec<String> = roster
+            .iter()
+            .map(|(name, count)| format!("{name}:{count}"))
+            .collect();
+        log::info!(
+            "start: map={} country={:?} credits={} unit_count={} tech={} own={} enemies={} \
+             ai_team={:?} short_game={} super_weapons={} build_off_ally={} mcv_redeploy={} \
+             crates={} roster=[{}]",
+            args.map,
+            args.country,
+            obs.credits(),
+            start_units,
+            start_tech,
+            roster.values().sum::<usize>(),
+            enemies.len(),
+            ai_team,
+            played.0,
+            played.1,
+            played.2,
+            played.3,
+            played.4,
+            units.join(",")
+        );
+    }
+
+    println!(
+        "autoplay-match: game speed {} reads {}/frame",
+        sim.session().game_options().game_speed,
+        sim.session().game_options().speed_normalize(8),
+    );
+    println!(
+        "autoplay-match: {} on {}, seed {:#x}, {} ticks, {} per frame",
+        sim.interner().resolve(local),
+        args.map,
+        args.seed,
+        args.ticks,
+        args.per_frame
+    );
+    println!(
+        "{:>6} {:>9} {:>9} {:>7} {:>6} {:>6} {:>6} {:>9} {:>9}",
+        "tick", "credits", "ecred", "power", "own", "enemy", "ready", "rejected", "notready"
+    );
+
+    if args.dump > 0 {
+        for entity in Observation::new(sim, local).own_entities() {
+            println!(
+                "  start: {} {} at {:?} health {} mission {:?} orderable {}",
+                entity.entity_id,
+                sim.interner().resolve(entity.type_id),
+                entity.cell,
+                entity.health,
+                entity.mission,
+                entity.orderable
+            );
+        }
+    }
+
+    let chosen: Box<dyn Brain> = match args.brain.as_str() {
+        "v2" => Box::new(autoplay::policy::Policy::new(
+            &scenario.runtime.resources.rules,
+        )),
+        _ => Box::new(AssistBrain::new(u64::from(args.seed))),
+    };
+    let mut host = AutoPlayHost::new(chosen, local, args.per_frame);
+    let mut last = snapshot(sim, local, &enemies, 0, &host);
+    println!(
+        "{:>6} {:>9} {:>9} {:>7} {:>6} {:>6} {:>6} {:>9} {:>9}",
+        last.tick,
+        last.credits,
+        last.enemy_credits,
+        last.power,
+        last.own,
+        last.enemy,
+        last.ready,
+        last.rejected,
+        last.not_ready
+    );
+
+    // Both sides, so the report says who is fighting, not just how much.
+    let mut houses = vec![local];
+    houses.extend(enemies.iter().copied());
+    // Per house, each team's script cursor at the previous sample. Diagnostic
+    // scratch only: it never feeds back into the simulation.
+    let mut team_cursors: BTreeMap<InternedId, BTreeMap<u64, i32>> = BTreeMap::new();
+    if args.dump_teams > 0 {
+        report_teams(
+            sim,
+            &scenario.runtime.resources.rules,
+            &houses,
+            0,
+            &mut team_cursors,
+        );
+    }
+
+    let mut outcome = "timeout";
+    // The frame the loop actually reached: the snapshot only refreshes on a
+    // progress line, so `last.tick` stays 0 when a short run ends first.
+    let mut reached = 0_u64;
+    for tick in 1..=args.ticks {
+        reached = tick;
+        if tick <= args.dump {
+            let sim = &scenario.runtime.simulation;
+            let obs = Observation::new(sim, local);
+            let mut brain = AssistBrain::new(u64::from(args.seed));
+            let mut out = Outbox::default();
+            brain.think(&scenario.runtime.resources.rules, &obs, &mut out);
+            let funnel = vera20k_core::sim::behavior::Funnel::new(
+                sim,
+                &scenario.runtime.resources.rules,
+                local,
+            );
+            for order in &out.orders {
+                println!(
+                    "  brain@{tick}: {:?} -> {:?}",
+                    order,
+                    funnel.prepare(order.actor, order.goal)
+                );
+            }
+            println!("  brain@{tick}: intents={:?}", out.intents);
+        }
+        {
+            let runtime = &mut scenario.runtime;
+            host.step(&mut runtime.simulation, &runtime.resources.rules);
+        }
+        let mut frame = scenario
+            .runtime
+            .advance_frame(
+                &[],
+                SIM_TICK_MS,
+                TickLane::Ordinary,
+                FrameEffects::default(),
+            )
+            .map_err(|error| format!("tick {tick}: {error}"))?;
+
+        let sim = &scenario.runtime.simulation;
+        let won = enemies.iter().all(|enemy| is_defeated(sim, *enemy));
+        let lost = is_defeated(sim, local);
+        if lost {
+            outcome = "lost";
+        } else if won {
+            outcome = "won";
+        }
+        if let Some(log) = &mut replay {
+            let mut hash = frame.tick.state_hash;
+            if hash.is_none() && (tick == args.ticks || outcome != "timeout") {
+                hash = Some(sim.state_hash());
+            }
+            log.record_tick(frame.tick.tick, frame.take_admitted_commands(), hash);
+        }
+        if args.dump_teams > 0 && tick % TEAM_PROGRESS == 0 {
+            let rules = &scenario.runtime.resources.rules;
+            if tick <= args.dump_teams {
+                report_teams(sim, rules, &houses, tick, &mut team_cursors);
+            } else {
+                for house in &houses {
+                    let census = census_teams(
+                        sim,
+                        rules,
+                        &[*house],
+                        team_cursors.entry(*house).or_default(),
+                    );
+                    println!(
+                        "  teams@{tick} {}: {}",
+                        sim.interner().resolve(*house),
+                        census.line()
+                    );
+                }
+            }
+        }
+        if tick % args.progress == 0 || outcome != "timeout" {
+            if args.dump > 0 {
+                let obs = Observation::new(sim, local);
+                let mut counts: std::collections::BTreeMap<String, usize> =
+                    std::collections::BTreeMap::new();
+                for entity in obs.own_entities() {
+                    *counts
+                        .entry(format!(
+                            "{}#{:?}",
+                            sim.interner().resolve(entity.type_id),
+                            entity.mission
+                        ))
+                        .or_default() += 1;
+                }
+                let line: Vec<String> = counts
+                    .iter()
+                    .map(|(name, count)| format!("{name} {count}"))
+                    .collect();
+                println!("  own@{tick}: {}", line.join(", "));
+                // What the other side is fielding, by type: an army census
+                // that only counted its own units cannot answer "what beat
+                // us", and the types are the sim's own names for them.
+                let mut theirs: std::collections::BTreeMap<String, usize> =
+                    std::collections::BTreeMap::new();
+                for entity in enemies.iter().flat_map(|enemy| {
+                    Observation::new(sim, *enemy)
+                        .own_entities()
+                        .collect::<Vec<_>>()
+                }) {
+                    *theirs
+                        .entry(sim.interner().resolve(entity.type_id).to_owned())
+                        .or_default() += 1;
+                }
+                let line: Vec<String> = theirs
+                    .iter()
+                    .map(|(name, count)| format!("{name} {count}"))
+                    .collect();
+                println!("  enemy@{tick}: {}", line.join(", "));
+                let yard = obs
+                    .building_in_production()
+                    .map(|(type_id, suspended)| {
+                        format!("{} held={suspended}", sim.interner().resolve(type_id))
+                    })
+                    .unwrap_or_else(|| "idle".to_owned());
+                let rules = &scenario.runtime.resources.rules;
+                let factories = |owner: InternedId| {
+                    let obs = Observation::new(sim, owner);
+                    [ProductionCategory::Vehicle, ProductionCategory::Infantry]
+                        .into_iter()
+                        .map(|category| {
+                            let text = obs
+                                .factory_product(category)
+                                .map(|(type_id, suspended)| {
+                                    let progress =
+                                        obs.production_progress(rules, type_id).unwrap_or(0);
+                                    format!(
+                                        "{}@{progress}{}",
+                                        sim.interner().resolve(type_id),
+                                        if suspended { "!" } else { "" }
+                                    )
+                                })
+                                .unwrap_or_else(|| "-".to_owned());
+                            format!("{category:?}={text}")
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                };
+                let their_lines: Vec<String> = enemies
+                    .iter()
+                    .map(|enemy| {
+                        format!("{}: {}", sim.interner().resolve(*enemy), factories(*enemy))
+                    })
+                    .collect();
+                println!(
+                    "  spend@{tick}: yard {yard} | own {} | enemy {}",
+                    factories(local),
+                    their_lines.join(" "),
+                );
+            }
+            last = snapshot(sim, local, &enemies, tick, &host);
+            println!(
+                "{:>6} {:>9} {:>9} {:>7} {:>6} {:>6} {:>6} {:>9} {:>9}",
+                last.tick,
+                last.credits,
+                last.enemy_credits,
+                last.power,
+                last.own,
+                last.enemy,
+                last.ready,
+                last.rejected,
+                last.not_ready
+            );
+        }
+        if outcome != "timeout" {
+            break;
+        }
+    }
+
+    if let (Some(path), Some(log)) = (&args.replay_out, replay) {
+        log.standalone_startup()
+            .map_err(|error| format!("validate replay: {error:#}"))?;
+        let mut file = std::fs::File::create_new(path)
+            .map_err(|error| format!("create replay {}: {error}", path.display()))?;
+        log.write_json(&mut file)
+            .map_err(|error| format!("write replay {}: {error:#}", path.display()))?;
+        println!("autoplay-match: replay written to {}", path.display());
+    }
+    println!("autoplay-match: {outcome} at tick {reached}");
+    // A run that ended on a census frame has already printed this one.
+    if args.dump_teams > 0 && reached % TEAM_PROGRESS != 0 {
+        let sim = &scenario.runtime.simulation;
+        report_teams(
+            sim,
+            &scenario.runtime.resources.rules,
+            &houses,
+            reached,
+            &mut team_cursors,
+        );
+    }
+    if args.dump > 0 {
+        let sim = &scenario.runtime.simulation;
+        let obs = Observation::new(sim, local);
+        for entity in obs.own_entities() {
+            println!(
+                "  final: {} at {:?} health {} mission {:?} inprod {}",
+                sim.interner().resolve(entity.type_id),
+                entity.cell,
+                entity.health,
+                entity.mission,
+                obs.in_production(&scenario.runtime.resources.rules, entity.type_id)
+            );
+        }
+        for entity in enemies.iter().flat_map(|enemy| {
+            Observation::new(sim, *enemy)
+                .own_entities()
+                .collect::<Vec<_>>()
+        }) {
+            println!(
+                "  enemy: {} at {:?} health {}",
+                sim.interner().resolve(entity.type_id),
+                entity.cell,
+                entity.health
+            );
+        }
+    }
+    // How the losses happened. `losses` only ever said how many, so every
+    // reading of "why is this army weak" has been indirect; this is the
+    // partition. Printed for both sides, because a loss only means something
+    // next to what took it. Re-borrowed here: `sim` above is held across the
+    // frame loop's mutable borrow of the runtime.
+    report_deaths(&scenario.runtime.simulation, local, &enemies);
+    Ok(())
+}
+
+/// Print each side's losses by (what died, what killed it), then how the
+/// victim's own mission was split.
+///
+/// Two readings that a single `lost` total cannot give:
+///
+/// - the pair table answers "did the army die to what it was built to fight,
+///   or to something it could not answer" - a tank lost to infantry reads
+///   apart from one lost to a defence tower;
+/// - the mission split answers "did it die moving, fighting, or standing
+///   still", which separates a bad engagement from a bad approach from a
+///   unit that was never given anything to do.
+///
+/// The health split is the third: a loss at full strength is a one-shot (a
+/// superweapon, a crush, a collapsing bridge), not a firefight it lost.
+fn report_deaths(sim: &Simulation, local: InternedId, enemies: &[InternedId]) {
+    for house in std::iter::once(local).chain(enemies.iter().copied()) {
+        let Some(state) = sim.houses().get(&house) else {
+            continue;
+        };
+        let tracking = state.tracking();
+        let name = sim.interner().resolve(house);
+        let total: i32 = tracking.deaths_by_pair().values().sum();
+        if total == 0 {
+            println!("deaths {name}: none");
+            continue;
+        }
+        println!("deaths {name}: {total}");
+        // Most frequent pair first: the shape of the problem is in the head.
+        let mut pairs: Vec<_> = tracking
+            .deaths_by_pair()
+            .iter()
+            .map(|(&(victim, killer), &count)| (count, victim, killer))
+            .collect();
+        pairs.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        for (count, victim, killer) in pairs {
+            println!(
+                "  {count:>4}x {} <- {}",
+                sim.interner().resolve(victim),
+                killer.map_or("<no attacker>".to_owned(), |killer| {
+                    sim.interner().resolve(killer).to_owned()
+                })
+            );
+        }
+        // The row detail is a capped window; say so rather than implying it is
+        // the whole match.
+        let rows = tracking.deaths();
+        if rows.len() < total as usize {
+            println!(
+                "  (mission and health splits cover the last {} of {total})",
+                rows.len()
+            );
+        }
+        let mut by_mission: std::collections::BTreeMap<i32, i32> =
+            std::collections::BTreeMap::new();
+        let mut one_shot = 0;
+        let mut worn_down = 0;
+        for record in rows {
+            *by_mission.entry(record.mission.raw()).or_insert(0) += 1;
+            if record.health_permille >= 1000 {
+                one_shot += 1;
+            } else {
+                worn_down += 1;
+            }
+        }
+        let missions: Vec<String> = by_mission
+            .iter()
+            .map(|(mission, count)| {
+                let label = vera20k_core::sim::mission::MissionId::from_raw(*mission)
+                    .known()
+                    .map_or_else(
+                        || format!("MissionId({mission})"),
+                        |known| format!("{known:?}"),
+                    );
+                format!("{label}={count}")
+            })
+            .collect();
+        println!("  under: {}", missions.join(" "));
+        println!("  at full strength: {one_shot}, worn down: {worn_down}");
+    }
+}
+
+fn is_defeated(sim: &Simulation, house: InternedId) -> bool {
+    sim.houses()
+        .get(&house)
+        .is_some_and(|house| house.is_defeated())
+}

@@ -448,6 +448,58 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
     }
 }
 
+/// A placed building is off the tab's hands.
+///
+/// Native clears the retained reference on the abandon tail, and that tail does
+/// not run for a placement: `complete_placement` has already released the
+/// factory's object, so the cancel that follows answers `NoMatch` and no
+/// `ProductionFactoryAbandoning` is emitted. The slot then names the *placed*
+/// building, and the Q/W tab commands handed it back to
+/// `Begin_Building_Placement` — the wishlist's "已托管建造完成的建筑仍会被
+/// 快捷键触发摆放".
+///
+/// The tab's live answer is the factory's, not the slot's: a building the
+/// factory no longer holds is on the map.
+#[test]
+fn a_building_the_factory_no_longer_holds_is_not_ready_for_its_tab() {
+    use crate::sim::production::ProductionCategory;
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(
+            "[Countries]\n0=Americans\n[BuildingTypes]\n0=GACNST\n1=GAPOWR\n\
+             [GACNST]\nBuildCat=Resource\nFoundation=3x3\nStrength=1000\n\
+             [GAPOWR]\nBuildCat=Resource\nFoundation=2x2\nStrength=750\nPower=200\n",
+        ),
+        &crate::rules::ini_parser::IniFile::empty(),
+    )
+    .expect("a two-building ruleset");
+    let (mut sim, owner) = world(&rules, &["GACNST"]);
+    let options = all_build_options_for_owner(&sim, &rules, "Americans");
+    let candidates = cameo_candidates(&sim, &rules, None, owner, &options, &[]);
+    let mut projection = SidebarProjectionState::default();
+    projection.reconcile_fixture(owner, &candidates, 1);
+
+    // A completed power plant is published as the tab's ready building, then
+    // placed: the entity lives on the map and no factory holds it.
+    let plant = sim
+        .spawn_object("GAPOWR", "Americans", 20, 6, 255, &rules)
+        .expect("a power plant");
+    projection.apply_lifecycle_output(
+        &crate::sim::world::LifecycleOutput::ProductionBuildingReady {
+            owner,
+            category: ProductionCategory::Building,
+            stable_id: plant,
+        },
+        Some(owner),
+    );
+    assert!(
+        projection
+            .ready_building_for_tab(&sim, owner, SidebarTab::Building)
+            .is_none(),
+        "a building the factory no longer holds is not a ready building: the tab \
+         must not hand it back to placement"
+    );
+}
+
 fn native_context_world(context: &Value) -> (Simulation, RuleSet, InternedId, CsfFile) {
     let types: Vec<_> = context["types"]
         .as_array()
@@ -1929,6 +1981,196 @@ fn superweapon_retained_cameo_keeps_identity_through_hold_and_recovery() {
             &mut gadgets
         ),
         SuperWeaponClick::Refused
+    );
+}
+
+/// One idle Allied barracks and the GI it offers, on synthetic rules so the
+/// case runs without retail data.
+fn agent_clock_world() -> (Simulation, RuleSet, InternedId) {
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n[Sides]\nGDI=Americans\n[Americans]\nSide=GDI\n\
+         [InfantryTypes]\n0=E1\n[BuildingTypes]\n0=GAPILE\n\
+         [E1]\nName=GI\nOwner=Americans\nStrength=100\nCost=100\nTechLevel=1\n\
+         [GAPILE]\nName=Barracks\nOwner=Americans\nFactory=InfantryType\n\
+         Strength=1000\nTechLevel=-1\n",
+    ))
+    .unwrap();
+    let (sim, owner) = world(&rules, &["GAPILE"]);
+    (sim, rules, owner)
+}
+
+/// An agent answers a build option, not a drawn button. The House pass that
+/// inserts the cameo (`AddCameo`) runs in the frame its order executes, one
+/// projection pass after the write, and the Begin link lands before that insert
+/// — so the press's `request1` is what has to carry the cameo's clock.
+#[test]
+fn an_agent_order_placed_before_the_button_is_drawn_keeps_the_build_clock() {
+    let (sim, rules, owner) = agent_clock_world();
+    let e1 = sim.interner().get("E1").unwrap();
+    let options = all_build_options_for_owner(&sim, &rules, "Americans");
+    let candidates = cameo_candidates(&sim, &rules, None, owner, &options, &[]);
+    let mut projection = SidebarProjectionState::default();
+    // The scenario's first projection, before any button exists.
+    projection.reconcile_cameos(owner, &[], 3, &[]);
+    assert!(projection.cameo_request(e1).is_none());
+
+    // One frame, in the app's order: the agent's order, the House pass's option,
+    // the projection's insert, and the answer to the order at the end of that
+    // same frame — the button is drawn by then, so the press path takes it.
+    projection.record_auto_play_order(&sim, &rules, owner, e1);
+    projection.apply_lifecycle_output(
+        &LifecycleOutput::SidebarConstructionOption { owner, type_id: e1 },
+        Some(owner),
+    );
+    projection.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+    projection.reconcile_cameos(owner, &candidates, 3, &[]);
+    projection.apply_auto_play_orders(&sim, &rules, owner);
+
+    let tab = SidebarTab::for_category(crate::sim::production::category_for_object(
+        rules.object("E1").unwrap(),
+    ));
+    let mut view = view(&sim, &options, &projection, tab, 480.0);
+    projection.apply_cameo_draw_state(&mut view, &sim, &rules, owner, None);
+    let item = view
+        .items
+        .iter()
+        .find(|item| item.type_id == "E1")
+        .expect("the House pass inserted the GI");
+    assert!(
+        item.is_building_this_type,
+        "the pending request draws the build clock instead of the queue count"
+    );
+    assert!(!item.is_ready && !item.is_on_hold);
+}
+
+/// Auto play answers a build option, not a drawn button, so its order can land
+/// before the House pass inserts the cameo. It must wait for that pass and be
+/// answered by the press: writing the request into a strip that has no entry
+/// for it leaves a clock with no Factory behind it, and the strip then reads
+/// `pending_production_smoothed_stage(0, predicted)` — half the real progress,
+/// frozen where it stopped when the build ends.
+#[test]
+fn an_agent_order_without_a_button_waits_for_the_press_path() {
+    let (sim, rules, owner) = agent_clock_world();
+    let e1 = sim.interner().get("E1").unwrap();
+    let options = all_build_options_for_owner(&sim, &rules, "Americans");
+    let candidates = cameo_candidates(&sim, &rules, None, owner, &options, &[]);
+    let mut projection = SidebarProjectionState::default();
+    projection.reconcile_cameos(owner, &[], 3, &[]);
+
+    projection.record_auto_play_order(&sim, &rules, owner, e1);
+    assert!(
+        projection.cameo_request(e1).is_none(),
+        "an order with no button yet writes no clock of its own"
+    );
+
+    // The House pass inserts the button; the projection answers the order.
+    projection.apply_lifecycle_output(
+        &LifecycleOutput::SidebarConstructionOption { owner, type_id: e1 },
+        Some(owner),
+    );
+    projection.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+    projection.reconcile_cameos(owner, &candidates, 3, &[]);
+    projection.apply_auto_play_orders(&sim, &rules, owner);
+    assert_eq!(
+        projection.cameo_request(e1),
+        Some(crate::ui::sidebar::cameo_order::CameoRequestState::Started),
+        "the press path wrote the request once the button stood"
+    );
+}
+
+/// An agent's Begin can run in the frame whose House pass first publishes the
+/// option, so `StartProduction` publishes the Factory link before this
+/// projection holds the cameo `LinkFactory6A6140` writes it into. The emitted
+/// association waits for the pass that inserts the entry: without it the strip
+/// has neither link nor request and draws no clock at all while the Factory
+/// builds.
+#[test]
+fn an_agent_build_that_begins_before_its_button_is_drawn_shows_the_linked_clock() {
+    let (mut sim, rules, owner) = agent_clock_world();
+    let e1 = sim.interner().get("E1").unwrap();
+    let options = all_build_options_for_owner(&sim, &rules, "Americans");
+    let candidates = cameo_candidates(&sim, &rules, None, owner, &options, &[]);
+    let mut projection = SidebarProjectionState::default();
+    projection.reconcile_cameos(owner, &[], 3, &[]);
+
+    // The agent's order executes in this frame; the barracks Begin publishes
+    // its link before the House pass has drawn the GI's button.
+    assert!(
+        crate::sim::production::enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            Default::default(),
+            false,
+        ),
+        "the idle barracks admits the GI"
+    );
+    for output in sim.take_lifecycle_outputs_for_test() {
+        projection.apply_lifecycle_output(&output, Some(owner));
+    }
+    assert!(
+        projection.cameo_factory(&sim, owner, e1).is_none(),
+        "an absent cameo takes no link yet (6A61C7..6A61E4)"
+    );
+
+    // The same frame's House pass publishes the option; the projection's pass
+    // inserts the entry and only then can the link be written.
+    projection.apply_lifecycle_output(
+        &LifecycleOutput::SidebarConstructionOption { owner, type_id: e1 },
+        Some(owner),
+    );
+    projection.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+    projection.reconcile_cameos(owner, &candidates, 3, &[]);
+    assert!(projection.cameo_factory(&sim, owner, e1).is_none());
+    projection.apply_pending_factory_links(&sim, owner);
+    projection.reconcile_factory_links(&sim, owner);
+    assert!(
+        projection.cameo_factory(&sim, owner, e1).is_some(),
+        "the pass that inserted the entry writes the pending link"
+    );
+
+    let tab = SidebarTab::for_category(crate::sim::production::category_for_object(
+        rules.object("E1").unwrap(),
+    ));
+    let mut view = view(&sim, &options, &projection, tab, 480.0);
+    projection.apply_cameo_draw_state(&mut view, &sim, &rules, owner, None);
+    let item = view
+        .items
+        .iter()
+        .find(|item| item.type_id == "E1")
+        .expect("the House pass inserted the GI");
+    assert!(
+        item.is_building_this_type && item.enabled,
+        "the linked Factory draws the build clock the agent's build runs on"
+    );
+}
+
+/// The press path keeps the native admission: `Select6AB0C9` searches the
+/// retained strip, and a mouse press can only land on a drawn button.
+#[test]
+fn a_press_on_a_cameo_the_strip_has_not_inserted_writes_no_request() {
+    use crate::app::input::sidebar_eva::{CameoClick, CameoOrder};
+    let (sim, rules, owner) = agent_clock_world();
+    let e1 = sim.interner().get("E1").unwrap();
+    let mut projection = SidebarProjectionState::default();
+    projection.reconcile_cameos(owner, &[], 3, &[]);
+
+    projection.record_cameo_click(
+        &sim,
+        &rules,
+        owner,
+        e1,
+        CameoClick {
+            order: Some(CameoOrder::Produce),
+            ..CameoClick::default()
+        },
+    );
+
+    assert!(
+        projection.cameo_request(e1).is_none(),
+        "an entry the strip does not hold takes no request"
     );
 }
 
