@@ -65,11 +65,15 @@ jobs:
           RETAIL_GAME_DATA_URL: ${{ secrets.RETAIL_GAME_DATA_URL }}
         run: |
           python - <<'EOF'
-          import os, pathlib, sys, urllib.request, zipfile
+          import os, pathlib, shutil, sys, urllib.request, zipfile
           if not os.environ.get('RETAIL_GAME_DATA_URL'):
               print('::error::Set the RETAIL_GAME_DATA_URL secret to a zip of the retail install')
               sys.exit(1)
-          urllib.request.urlretrieve(os.environ['RETAIL_GAME_DATA_URL'], 'retail.zip')
+          # Cloudflare refuses Python's default user agent (error 1010).
+          request = urllib.request.Request(os.environ['RETAIL_GAME_DATA_URL'],
+                                           headers={'User-Agent': 'vera20k-ci'})
+          with urllib.request.urlopen(request) as response, open('retail.zip', 'wb') as out:
+              shutil.copyfileobj(response, out)
           with zipfile.ZipFile('retail.zip') as archive:
               archive.extractall('retail')
           os.remove('retail.zip')
@@ -133,11 +137,15 @@ jobs:
           RETAIL_GAME_DATA_URL: ${{ secrets.RETAIL_GAME_DATA_URL }}
         run: |
           python - <<'EOF'
-          import os, pathlib, sys, urllib.request, zipfile
+          import os, pathlib, shutil, sys, urllib.request, zipfile
           if not os.environ.get('RETAIL_GAME_DATA_URL'):
               print('::error::Set the RETAIL_GAME_DATA_URL secret to a zip of the retail install')
               sys.exit(1)
-          urllib.request.urlretrieve(os.environ['RETAIL_GAME_DATA_URL'], 'retail.zip')
+          # Cloudflare refuses Python's default user agent (error 1010).
+          request = urllib.request.Request(os.environ['RETAIL_GAME_DATA_URL'],
+                                           headers={'User-Agent': 'vera20k-ci'})
+          with urllib.request.urlopen(request) as response, open('retail.zip', 'wb') as out:
+              shutil.copyfileobj(response, out)
           with zipfile.ZipFile('retail.zip') as archive:
               archive.extractall('retail')
           os.remove('retail.zip')
