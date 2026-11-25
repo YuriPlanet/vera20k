@@ -140,3 +140,18 @@ recorded beside its code as a sim-scale deviation (AGENTS.md) and listed here.
   while the leader and the answer's target stand as the scan saw them. What
   an earlier team's update in the same step changes, such as an order to its
   members, a leader's scan sees a period later.
+- **Picture-only particle systems**
+  ([particles/spawn.rs](../src/sim/particles/spawn.rs),
+  `Simulation::spawn_effect_particle_system`). In a match, an electric bolt's
+  sparks and a damaged object's smoke whose system and particle types change
+  nothing but the picture (`RuleSet::particle_system_presentation_only`) run
+  outside the lockstep state, as the picture-only effect anims do: each frame
+  runs and draws them, but they take no Logic or Display place, unique id or
+  Scenario draw, announce no particle's end, are neither hashed nor saved, and
+  leave the object's damage-smoke slot (`TechnoClass+0x310`) empty. A smoke
+  still stops when its owner dies, crashes, sinks or cloaks, as a shared one
+  does. Later objects' unique ids and draws and the state hash so differ from
+  gamemd's. A player sees the same sparks and smoke, except after a load: a
+  hit makes smoke only as it makes the object yellow or red, so a damaged
+  object then has none until a hit makes it red, or yellow again after a
+  repair.

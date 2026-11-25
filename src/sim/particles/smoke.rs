@@ -69,7 +69,11 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     // that the store takes back, and the system is found again after it.
     let mut index = 0;
     let count = loop {
-        let Some(sys) = sim.substrate.particle_systems.get_mut(id) else {
+        let Some((sys, rng)) = sim
+            .substrate
+            .particle_systems
+            .system_and_rng_mut(id, &mut sim.scenario_rng)
+        else {
             return;
         };
         if let Some(coords) = followed.take() {
@@ -80,7 +84,7 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
             if pt.behaves_like != ParticleBehavesLike::Smoke {
                 break;
             }
-            super::system_ai::tick_smoke_particle(p, pt, frame, &mut sim.scenario_rng);
+            super::system_ai::tick_smoke_particle(p, pt, frame, rng);
             index += 1;
         }
         let Some(mut p) = sys.particles.get(index).cloned() else {

@@ -180,3 +180,68 @@ fn an_aircraft_span_covers_its_shadow_on_the_ground() {
         assert!((shadow_x - span.x).abs() <= 1.0, "{locomotor:?}");
     }
 }
+
+/// A match's presentation particle system and its particles, which hold no
+/// Display slot, are filed as effects with the point their draw is tested
+/// at, each particle at its place in its system, and the draw order places
+/// the system where Ground would hold it and its particles where Air would.
+#[test]
+fn a_presentation_particle_system_and_its_particles_are_filed_as_effects() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Particles]\n0=Spark\n[ParticleSystems]\n0=SparkSys\n\
+         [SparkSys]\nHoldsWhat=Spark\nBehavesLike=Spark\nParticleCap=6\nSparkSpawnFrames=1\n\
+         [Spark]\nBehavesLike=Spark\nMaxEC=500\nMinZVelocity=40\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::with_seed(31);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    // A spark's collision reads the overlay grid every map has; without one
+    // it retires on its first visit.
+    *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    sim.present_effect_anims();
+    sim.spawn_effect_particle_system(
+        rules.ps_type_id_by_name("SparkSys").unwrap(),
+        glam::IVec3::new(10 * 256 + 128, 10 * 256 + 128, 0),
+        None,
+        None,
+        glam::IVec3::ZERO,
+        None,
+        &rules,
+    );
+    sim.advance_tick(&[], Some(&rules), None, None, 67);
+    let (system, body) = sim
+        .particle_systems()
+        .presented_systems()
+        .next()
+        .expect("a presentation system");
+    let sparks: Vec<_> = body
+        .particles()
+        .iter()
+        .map(|spark| spark.stable_id())
+        .collect();
+    assert!(!sparks.is_empty(), "its first visit bursts");
+
+    let frame = PresentationFrame::of_test(&sim, &rules);
+    let members = frame.display_members(&sim);
+    let filed = |id| {
+        members
+            .effects()
+            .iter()
+            .find(|member| member.id == id)
+            .map(|member| member.kind)
+    };
+    let order = frame.display_order();
+    let layer = |id| order.position(id).map(|(layer, _)| layer.0);
+    assert!(
+        matches!(filed(system), Some(EffectKind::ParticleSystem(Some(_)))),
+        "{:?}",
+        members.effects()
+    );
+    assert_eq!(layer(system), Some(DisplayLayer::GROUND.index()));
+    for (index, &spark) in sparks.iter().enumerate() {
+        let place = DisplayParticlePlace::InSystem { system, index };
+        assert_eq!(members.particle_place(spark), Some(place));
+        assert!(matches!(filed(spark), Some(EffectKind::Particle(at, Some(_))) if at == place));
+        assert_eq!(layer(spark), Some(DisplayLayer::AIR.index()));
+    }
+}
