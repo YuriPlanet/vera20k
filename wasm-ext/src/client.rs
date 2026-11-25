@@ -13,10 +13,74 @@ use crate::{ActionParams, FindPage, Invalid, Order, Query, Status};
 /// The import module name for client API 1.0 (`vera:client@<major>.<minor>`).
 pub const CLIENT_IMPORT_MODULE: &str = "vera:client@1.0";
 
-/// Operations per render frame for one client module (RFC 15.4).
+/// Operations per render frame for one client module (RFC 15.4), shared by
+/// that frame's `client_on_events` and `client_on_render` calls.
 pub const CLIENT_FRAME_BUDGET: u64 = 100_000;
 /// Client events per render frame for one client module (RFC 15.4).
 pub const CLIENT_FRAME_EVENTS: usize = 1_024;
+/// The one-time budget of `client_init` and of `client_on_start`, each, as
+/// the simulation's one-time calls get (RFC 15.4 "One-time budgets"): the
+/// start function builds the module's interface.
+pub const CLIENT_ONE_TIME_BUDGET: u64 = 5_000_000;
+/// The largest notification (RFC 15.4 "Notifications"): a `Notify` event's
+/// `data` is at most this long.
+pub const MAX_NOTIFY_BYTES: usize = 256;
+/// The smallest `vera.delivery` area a module exporting `client_on_events`
+/// may declare: one record with the largest event data, so every event
+/// fits in some batch.
+pub const CLIENT_DELIVERY_MIN: usize = ClientEventRecord::SIZE + MAX_NOTIFY_BYTES;
+
+/// The client imports this engine provides (appendix 2.1), with their core
+/// Wasm signatures as text (`params -> results`).
+pub const CLIENT_IMPORTS: &[(&str, &str)] = &[
+    ("client_frame", "() -> i32"),
+    ("client_random", "(lo: i32, hi: i32, out: ptr) -> status"),
+    ("client_log", "(ptr, len)"),
+    ("client_has_kind", "(table: i32, id: i32) -> i32"),
+    ("client_lookup", "(kind: i32, ptr, len, out: ptr) -> status"),
+    (
+        "client_name_of",
+        "(kind: i32, id: i32, out: ptr, cap: i32, len_out: ptr) -> status",
+    ),
+    ("client_get", "(ref: i64, prop: i32, out: ptr) -> status"),
+    (
+        "client_get_many",
+        "(refs: ptr, n: i32, props: ptr, m: i32, out: ptr, count_out: ptr) -> status",
+    ),
+    (
+        "client_find",
+        "(query: ptr, len: i32, out: ptr, cap: i32, res: ptr) -> status",
+    ),
+    (
+        "client_var_get",
+        "(scope: i64, var: i32, out: ptr) -> status",
+    ),
+    ("client_set", "(ref: i64, prop: i32, value: i64) -> status"),
+    (
+        "client_set_bytes",
+        "(ref: i64, prop: i32, ptr, len: i32) -> status",
+    ),
+    (
+        "client_node_create",
+        "(kind: i32, parent: i64, props: ptr, len: i32, out: ptr) -> status",
+    ),
+    ("client_node_remove", "(node: i64) -> status"),
+    ("client_node_find", "(ptr, len: i32, out: ptr) -> status"),
+    (
+        "client_action",
+        "(kind: i32, target: i64, params: ptr, len: i32) -> status",
+    ),
+    ("client_send_order", "(ptr, len: i32) -> status"),
+    ("client_send_message", "(ptr, len: i32) -> status"),
+    (
+        "client_storage_read",
+        "(key: ptr, key_len: i32, out: ptr, cap: i32, len_out: ptr) -> status",
+    ),
+    (
+        "client_storage_write",
+        "(key: ptr, key_len: i32, data: ptr, data_len: i32) -> status",
+    ),
+];
 
 /// Client event kinds (appendix 4.6), the `kind` of a [`ClientEventRecord`].
 pub mod client_event {
@@ -132,14 +196,13 @@ impl NodeInit {
 /// What a client module reaches the game through: one method per
 /// `vera:client` import that needs the game (appendix 2.1). The sandbox
 /// checks arguments that need no game state, charges the budget, and copies
-/// memory; `client_frame`'s and `client_get_many`'s loops are its own.
+/// memory; `client_get_many`'s loop and `client_random`'s local stream
+/// (xorshift64, seeded per module) are its own.
 ///
 /// `Err(Invalid)` disables the module (RFC section 3, "Error model").
 pub trait ClientHost {
     /// The latest finished simulation frame (`client_frame`).
     fn frame(&mut self) -> i32;
-    /// A local, display-only draw in `[lo, hi]` (`client_random`).
-    fn random(&mut self, lo: i32, hi: i32) -> i32;
     /// One line for the in-game console (`client_log`).
     fn log(&mut self, line: &str);
     fn has_kind(&mut self, table: i32, id: i32) -> bool;

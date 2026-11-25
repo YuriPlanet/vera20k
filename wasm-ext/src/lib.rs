@@ -8,10 +8,11 @@
 //! `order` and `ini_register`, calls `on_rules`, delivers `on_events` batches ([`triggers`]),
 //! asks `on_decide` for decisions ([`decide`]) and
 //! reads the `vera.vars`, `vera.actions` and `vera.delivery` sections
-//! ([`sections`]); the other `vera:sim` imports and the client world come
-//! later. Desktop builds run modules with Wasmtime, the browser build with
-//! the browser's own WebAssembly engine, both after the same load-time
-//! rewrite.
+//! ([`sections`]); the other `vera:sim` imports come later. A client module
+//! (`ui.wasm`, [`ClientModuleOn`]) runs under `vera:client@1.0` and reaches
+//! the game through [`ClientHost`] ([`client`]). Desktop builds run modules
+//! with Wasmtime, the browser build with the browser's own WebAssembly
+//! engine, both after the same load-time rewrite.
 //!
 //! ABI deviation from RFC 0.0.14: an import that returns a value and a status
 //! takes a trailing `out` pointer for the value and returns the status. Stable
@@ -21,6 +22,8 @@
 //! value directly. See [`IMPORTS`].
 
 mod action_kinds;
+mod client_host;
+mod client_module;
 mod host;
 mod instrument;
 mod module;
@@ -58,6 +61,13 @@ pub mod decide;
 pub mod client;
 
 pub use client::{ClientEvent, ClientEventRecord, ClientHost, NodeInit, Source};
+pub use client_module::ClientModuleOn;
+
+/// A client module on this platform's runtime, as [`SimModule`] is.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub type ClientModule = ClientModuleOn<native::Wasmtime>;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub type ClientModule = ClientModuleOn<browser::Browser>;
 
 pub use decide::DecideRecord;
 
@@ -927,3 +937,6 @@ mod decide_tests;
 
 #[cfg(test)]
 mod rewrite_tests;
+
+#[cfg(test)]
+mod client_tests;
