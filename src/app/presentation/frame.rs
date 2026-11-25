@@ -1194,6 +1194,59 @@ impl Flashing {
     }
 }
 
+/// Where a frame's ascending record ids hold each id, found without searching
+/// all of them: the id range is cut into buckets of `1 << shift` ids, no more
+/// buckets than records, and `starts` keeps each bucket's first slot, so an
+/// id's search covers only its own bucket. It answers as a search of every id
+/// would.
+#[derive(Debug, Default)]
+struct SlotIndex {
+    /// The first record's id.
+    base: u64,
+    shift: u32,
+    /// Each bucket's first slot, then the record count.
+    starts: Vec<u32>,
+}
+
+impl SlotIndex {
+    fn of(ids: &[u64]) -> Self {
+        let (Some(&base), Some(&last)) = (ids.first(), ids.last()) else {
+            return Self::default();
+        };
+        debug_assert!(ids.is_sorted_by(|a, b| a < b), "record ids ascend");
+        // Buckets wider than the ids' mean gap.
+        let gap = (last - base) / ids.len() as u64;
+        let shift = (u64::BITS - gap.leading_zeros()).min(u64::BITS - 1);
+        let buckets = (last - base) >> shift;
+        let mut starts = Vec::with_capacity(buckets as usize + 2);
+        let mut slot = 0;
+        for bucket in 0..=buckets {
+            while ids
+                .get(slot)
+                .is_some_and(|&id| (id - base) >> shift < bucket)
+            {
+                slot += 1;
+            }
+            starts.push(slot as u32);
+        }
+        starts.push(ids.len() as u32);
+        Self {
+            base,
+            shift,
+            starts,
+        }
+    }
+
+    /// `id`'s slot in `ids`, the ids this index was built of.
+    fn slot(&self, ids: &[u64], id: u64) -> Option<usize> {
+        let bucket = usize::try_from(id.checked_sub(self.base)? >> self.shift).ok()?;
+        let start = *self.starts.get(bucket)? as usize;
+        let end = *self.starts.get(bucket + 1)? as usize;
+        let at = ids.get(start..end)?.binary_search(&id).ok()?;
+        Some(start + at)
+    }
+}
+
 /// Every stored object's record, for one world state and local player.
 #[derive(Debug, Default)]
 pub(crate) struct PresentationFrame {
@@ -1203,6 +1256,8 @@ pub(crate) struct PresentationFrame {
     /// searches. A draw asks for every Display member, and a search over the
     /// records themselves lands on a different large record at each step.
     ids: Vec<u64>,
+    /// Where in `ids` each id's search starts ([`SlotIndex`]).
+    index: SlotIndex,
     /// Each record's screen span, in the same order: what the object loop
     /// culls from without reading the record.
     spans: Vec<crate::app::presentation::display_members::ScreenSpan>,
@@ -1331,6 +1386,7 @@ impl PresentationFrame {
         }
         Self {
             objects,
+            index: SlotIndex::of(&ids),
             ids,
             spans,
             structures,
@@ -1346,9 +1402,8 @@ impl PresentationFrame {
     }
 
     pub(crate) fn object(&self, id: u64) -> Option<&ObjectRecord> {
-        self.ids
-            .binary_search(&id)
-            .ok()
+        self.index
+            .slot(&self.ids, id)
             .and_then(|slot| self.record_at(slot))
     }
 
@@ -1357,7 +1412,7 @@ impl PresentationFrame {
         &self,
         id: u64,
     ) -> Option<(usize, crate::app::presentation::display_members::ScreenSpan)> {
-        let slot = self.ids.binary_search(&id).ok()?;
+        let slot = self.index.slot(&self.ids, id)?;
         Some((slot, *self.spans.get(slot)?))
     }
 
