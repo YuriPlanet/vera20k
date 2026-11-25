@@ -12,8 +12,8 @@ use crate::host::Ctx;
 use crate::instrument::{self, DEPTH, METER, STOP, STOP_BUDGET, STOP_DEPTH};
 use crate::sections::{Delivery, Sections};
 use crate::{
-    EventRecord, Export, Fault, IMPORTS, Limits, LoadError, ModuleState, PAGE_BYTES,
-    SIM_IMPORT_MODULE, SimHost, VarDecl,
+    EventRecord, Export, Fault, IMPORTS, Limits, LoadError, MAX_MESSAGE_BYTES, ModuleState,
+    PAGE_BYTES, SIM_IMPORT_MODULE, SimHost, VarDecl,
 };
 
 /// Most records one `on_events` call receives (RFC 15.4), within what the
@@ -62,6 +62,14 @@ impl TrapKind {
     }
 }
 
+/// One argument of an export call: the engine's exports take `i32`s, and
+/// `on_message` an `i64` sender first (appendix 1.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Arg {
+    I32(i32),
+    I64(i64),
+}
+
 /// What executes rewritten module bytes: Wasmtime on the desktop, the
 /// browser's own WebAssembly engine in the browser. Every import goes through
 /// [`crate::host`]. Module memory is reached by copying, since a browser's
@@ -71,9 +79,10 @@ pub(crate) trait Runtime: Sized {
     fn instantiate(bytes: &[u8], ctx: Ctx) -> Result<Self, String>;
     /// Runs `f` on the context the imports share.
     fn with_ctx<T>(&mut self, f: impl FnOnce(&mut Ctx) -> T) -> T;
-    /// Calls export `name` (a function of `args.len()` i32 parameters and
-    /// no results, checked at load) with `args`.
-    fn call(&mut self, name: &str, args: &[i32]) -> Result<(), TrapKind>;
+    /// Calls export `name` (a function of `args`' parameter types and no
+    /// results, checked at load) with `args`: none, two `i32`s, or
+    /// `on_message`'s `(i64, i32, i32)`.
+    fn call(&mut self, name: &str, args: &[Arg]) -> Result<(), TrapKind>;
     /// The module's memory size in bytes, 0 without memory.
     fn memory_len(&self) -> usize;
     /// Copies module memory at `offset` into `buf`; false out of bounds.
@@ -98,6 +107,8 @@ pub struct SimModuleOn<R> {
     exports: [bool; 4],
     on_events: bool,
     on_decide: bool,
+    /// `on_message(sender: i64, ptr, len)` (appendix 1.2, phase 2).
+    on_message: bool,
     /// `vera.delivery`, checked against memory at load.
     delivery: Option<Delivery>,
     /// Every mutable global the module declares, in global index order.
@@ -141,10 +152,34 @@ impl<R: Runtime> SimModuleOn<R> {
         }
         let on_events = export(Export::Events, 2)?;
         let on_decide = export(Export::Decide, 2)?;
+        let on_message = match rewritten
+            .exports
+            .iter()
+            .find(|(name, _)| name == Export::Message.name())
+        {
+            None => false,
+            Some((_, ty)) => {
+                use wasmparser::ValType;
+                if ty.params() != [ValType::I64, ValType::I32, ValType::I32]
+                    || !ty.results().is_empty()
+                {
+                    return Err(LoadError::Invalid(
+                        "export on_message must have signature (i64, i32, i32) -> ()".into(),
+                    ));
+                }
+                true
+            }
+        };
         let rt = R::instantiate(&rewritten.bytes, Ctx::new(Arc::clone(&sections)))
             .map_err(LoadError::Invalid)?;
-        check_delivery(delivery, on_events || on_decide, rt.memory_len())
-            .map_err(LoadError::Invalid)?;
+        // A message is written into the delivery area; any valid area holds
+        // the largest one (appendix "Custom sections").
+        check_delivery(
+            delivery,
+            on_events || on_decide || on_message,
+            rt.memory_len(),
+        )
+        .map_err(LoadError::Invalid)?;
         // `on_decide` reads one `DecideRecord` in place.
         if on_decide && delivery.is_some_and(|area| (area.bytes as usize) < DecideRecord::SIZE) {
             return Err(LoadError::Invalid(format!(
@@ -159,6 +194,7 @@ impl<R: Runtime> SimModuleOn<R> {
             exports,
             on_events,
             on_decide,
+            on_message,
             delivery,
             globals: rewritten.mutable_globals,
             global_bits: Vec::new(),
@@ -232,6 +268,12 @@ impl<R: Runtime> SimModuleOn<R> {
         self.sections.action_key(name)
     }
 
+    /// The notification names the module's `vera.notify` declares, with
+    /// their IDs ([`crate::notify_id`]).
+    pub fn notify_names(&self) -> &[(String, i32)] {
+        &self.sections.notify
+    }
+
     /// The raw bits of every mutable global after the latest call.
     pub fn globals(&self) -> &[u64] {
         &self.global_bits
@@ -266,6 +308,7 @@ impl<R: Runtime> SimModuleOn<R> {
         match export {
             Export::Events => self.on_events,
             Export::Decide => self.on_decide,
+            Export::Message => self.on_message,
             _ => self.exports.get(export as usize).copied().unwrap_or(false),
         }
     }
@@ -288,7 +331,9 @@ impl<R: Runtime> SimModuleOn<R> {
         budget: u64,
         host: &mut dyn SimHost,
     ) -> Result<u64, Fault> {
-        if !matches!(export, Export::Events | Export::Decide) && self.has_export(export) {
+        if !matches!(export, Export::Events | Export::Decide | Export::Message)
+            && self.has_export(export)
+        {
             return self.run(export, budget, host, &[]);
         }
         Ok(0)
@@ -317,8 +362,39 @@ impl<R: Runtime> SimModuleOn<R> {
         }
         let bytes: Vec<u8> = records.iter().flat_map(EventRecord::to_bytes).collect();
         self.write_delivery(area, &bytes)?;
-        let args = [area.offset as i32, records.len() as i32];
+        let args = [Arg::I32(area.offset as i32), Arg::I32(records.len() as i32)];
         self.run(Export::Events, budget, host, &args)
+    }
+
+    /// Writes one client message's `data` at the start of the delivery area
+    /// and calls `on_message(sender, ptr, len)` with `budget` operations
+    /// (RFC 0001 section 10, appendix 1.2). `sender` is the sending player's
+    /// house reference, which the engine fills. Without the export no call
+    /// is made and nothing is used. A message over [`MAX_MESSAGE_BYTES`] is
+    /// the engine's error, refused before the call.
+    pub fn deliver_message(
+        &mut self,
+        sender: i64,
+        data: &[u8],
+        budget: u64,
+        host: &mut dyn SimHost,
+    ) -> Result<u64, Fault> {
+        let (true, Some(area)) = (self.on_message, self.delivery) else {
+            return Ok(0);
+        };
+        if data.len() > MAX_MESSAGE_BYTES || data.len() > area.bytes as usize {
+            return Err(Fault::Invalid(format!(
+                "a {}-byte message exceeds the delivery area",
+                data.len()
+            )));
+        }
+        self.write_delivery(area, data)?;
+        let args = [
+            Arg::I64(sender),
+            Arg::I32(area.offset as i32),
+            Arg::I32(data.len() as i32),
+        ];
+        self.run(Export::Message, budget, host, &args)
     }
 
     /// Writes `record` into the delivery area and calls `on_decide(ptr, 1)`
@@ -358,7 +434,12 @@ impl<R: Runtime> SimModuleOn<R> {
                 return Err(Fault::Trap("delivery area: out of bounds".into()));
             }
         }
-        let used = self.run(Export::Decide, budget, host, &[area.offset as i32, 1])?;
+        let used = self.run(
+            Export::Decide,
+            budget,
+            host,
+            &[Arg::I32(area.offset as i32), Arg::I32(1)],
+        )?;
         let mut bytes = [0u8; DecideRecord::SIZE];
         if !self.rt.read_memory(area.offset as usize, &mut bytes) {
             return Err(Fault::Trap("delivery area: out of bounds".into()));
@@ -388,7 +469,7 @@ impl<R: Runtime> SimModuleOn<R> {
         export: Export,
         budget: u64,
         host: &mut dyn SimHost,
-        args: &[i32],
+        args: &[Arg],
     ) -> Result<u64, Fault> {
         // The store outlives this call but the host does not: erase the
         // borrow's lifetime and clear the pointer before returning.
@@ -520,7 +601,8 @@ fn check(bytes: &[u8]) -> Result<(), LoadError> {
 
 /// `vera.delivery` must hold at least one `EventRecord`, start 8-byte
 /// aligned (records are read in place) and lie inside the initial memory. A
-/// module exporting `on_events` must declare it.
+/// module exporting `on_events`, `on_decide` or `on_message` must declare
+/// it.
 fn check_delivery(
     delivery: Option<Delivery>,
     on_events: bool,
@@ -528,7 +610,9 @@ fn check_delivery(
 ) -> Result<(), String> {
     let Some(area) = delivery else {
         return match on_events {
-            true => Err("exports on_events without a vera.delivery section".into()),
+            true => Err(
+                "exports on_events, on_decide or on_message without a vera.delivery section".into(),
+            ),
             false => Ok(()),
         };
     };

@@ -1,6 +1,6 @@
-//! The `vera.vars`, `vera.actions` and `vera.delivery` custom sections
-//! (appendix "Custom sections"), read once at load. A module that breaks
-//! their rules never loads.
+//! The `vera.vars`, `vera.actions`, `vera.notify` and `vera.delivery`
+//! custom sections (appendix "Custom sections"), read once at load. A module
+//! that breaks their rules never loads.
 //!
 //! Each section is little endian and unpadded and starts with a format byte
 //! (1); names are a `u16` length and ASCII bytes, compared with ASCII case
@@ -14,6 +14,7 @@
 pub const VARS: &str = "vera.vars";
 pub const ACTIONS: &str = "vera.actions";
 pub const DELIVERY: &str = "vera.delivery";
+pub const NOTIFY: &str = "vera.notify";
 
 /// Variables one module may declare (open question 7).
 pub const MAX_VARS: usize = 4096;
@@ -62,14 +63,18 @@ pub struct Sections {
     /// `vera.actions`: (name, dispatch key), in section order.
     pub actions: Vec<(String, i32)>,
     pub delivery: Option<Delivery>,
+    /// `vera.notify`: the notification names the module sends, with their
+    /// IDs ([`notify_id`]), in section order (RFC 0001 section 10).
+    pub notify: Vec<(String, i32)>,
 }
 
 impl Sections {
-    /// Reads every `vera.vars`, `vera.actions` and `vera.delivery` section
-    /// of a module that already passed validation.
+    /// Reads every `vera.vars`, `vera.actions`, `vera.notify` and
+    /// `vera.delivery` section of a module that already passed validation.
     pub fn read(module: &[u8]) -> Result<Self, String> {
         let mut sections = Self::default();
         let (mut saw_vars, mut saw_actions, mut saw_delivery) = (false, false, false);
+        let mut saw_notify = false;
         for payload in wasmparser::Parser::new(0).parse_all(module) {
             let wasmparser::Payload::CustomSection(section) = payload.map_err(|e| e.to_string())?
             else {
@@ -80,6 +85,7 @@ impl Sections {
                 VARS => &mut saw_vars,
                 ACTIONS => &mut saw_actions,
                 DELIVERY => &mut saw_delivery,
+                NOTIFY => &mut saw_notify,
                 _ => continue,
             };
             if std::mem::replace(seen, true) {
@@ -89,6 +95,7 @@ impl Sections {
             let parsed = match name {
                 VARS => parse_vars(data).map(|vars| sections.vars = vars),
                 ACTIONS => parse_actions(data).map(|actions| sections.actions = actions),
+                NOTIFY => parse_notify(data).map(|notify| sections.notify = notify),
                 _ => parse_delivery(data).map(|delivery| sections.delivery = Some(delivery)),
             };
             parsed.map_err(|e| format!("{name}: {e}"))?;
@@ -111,6 +118,53 @@ impl Sections {
             .find(|(_, k)| *k == key)
             .map(|(name, _)| name.as_str())
     }
+
+    /// The ID of notification `name` if `vera.notify` declares it (ASCII
+    /// case-insensitive), as `lookup(Notify)` answers it.
+    pub fn notify_lookup(&self, name: &str) -> Option<i32> {
+        self.notify
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|(_, id)| *id)
+    }
+
+    /// The declared name with ID `id`.
+    pub fn notify_name(&self, id: i32) -> Option<&str> {
+        self.notify
+            .iter()
+            .find(|(_, i)| *i == id)
+            .map(|(name, _)| name.as_str())
+    }
+}
+
+/// Notifications one module may declare, as for `vera.actions` (RFC 15.4).
+pub const MAX_NOTIFY_NAMES: usize = 4096;
+
+/// A notification name's ID (RFC 0001 section 10, appendix 8.1 `Notify`):
+/// the 32-bit FNV-1a hash of its UTF-8 bytes with ASCII `A`..`Z` folded to
+/// lowercase (nothing else folded), as the bits of an `i32`. The same on
+/// every machine and in both worlds. A name hashing to −1 cannot be
+/// declared ([`Sections::read`] rejects it).
+pub fn notify_id(name: &str) -> i32 {
+    name.bytes()
+        .map(|b| b.to_ascii_lowercase())
+        .fold(0x811C_9DC5u32, |hash, byte| {
+            (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193)
+        }) as i32
+}
+
+/// The first pair of different names in `a` and `b` (ASCII
+/// case-insensitive) with the same ID: RFC 0001 section 3, step 7. A name
+/// both declare is the same notification and no collision.
+pub fn notify_collision<'a>(
+    a: &'a [(String, i32)],
+    b: &'a [(String, i32)],
+) -> Option<(&'a str, &'a str)> {
+    a.iter().find_map(|(name, id)| {
+        b.iter()
+            .find(|(other, other_id)| other_id == id && !other.eq_ignore_ascii_case(name))
+            .map(|(other, _)| (name.as_str(), other.as_str()))
+    })
 }
 
 struct Reader<'a> {
@@ -229,6 +283,44 @@ fn parse_actions(data: &[u8]) -> Result<Vec<(String, i32)>, String> {
     }
     reader.end()?;
     Ok(actions)
+}
+
+/// `format: u8 = 1, count: u32, [{ name_len: u16, name }; count]`. Also
+/// rejects an empty name, more than [`MAX_NOTIFY_NAMES`] names, a name whose
+/// ID is −1 and two names with the same ID (RFC 0001 section 3, step 7).
+fn parse_notify(data: &[u8]) -> Result<Vec<(String, i32)>, String> {
+    let mut reader = Reader { data, at: 0 };
+    reader.format()?;
+    let count = u32::from_le_bytes(reader.array()?);
+    if count as usize > MAX_NOTIFY_NAMES {
+        return Err(format!(
+            "declares {count} notifications, limit {MAX_NOTIFY_NAMES}"
+        ));
+    }
+    let mut names: Vec<(String, i32)> = Vec::with_capacity(count as usize);
+    for index in 0..count {
+        let name = reader.name()?;
+        if name.is_empty() {
+            return Err(format!("notification {index} has an empty name"));
+        }
+        if names.iter().any(|(n, _)| n.eq_ignore_ascii_case(&name)) {
+            return Err(format!("duplicate name {name}"));
+        }
+        let id = notify_id(&name);
+        if id == -1 {
+            return Err(format!(
+                "{name} hashes to -1, which no notification may have"
+            ));
+        }
+        if let Some((other, _)) = names.iter().find(|(_, other)| *other == id) {
+            return Err(format!(
+                "{name} and {other} have the same notification ID {id}"
+            ));
+        }
+        names.push((name, id));
+    }
+    reader.end()?;
+    Ok(names)
 }
 
 /// `format: u8 = 1, offset: u32, bytes: u32`.

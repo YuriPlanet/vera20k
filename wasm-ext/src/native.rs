@@ -14,7 +14,7 @@ use wasmtime::{
 use crate::SIM_IMPORT_MODULE;
 use crate::host::{self, Ctx, Guest, for_each_import};
 use crate::instrument::METER;
-use crate::module::{Runtime, TrapKind};
+use crate::module::{Arg, Runtime, TrapKind};
 
 fn engine() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
@@ -144,16 +144,20 @@ impl Runtime for Wasmtime {
         f(self.store.data_mut())
     }
 
-    fn call(&mut self, name: &str, args: &[i32]) -> Result<(), TrapKind> {
+    fn call(&mut self, name: &str, args: &[Arg]) -> Result<(), TrapKind> {
         let result = match *args {
             [] => self
                 .instance
                 .get_typed_func::<(), ()>(&mut self.store, name)
                 .and_then(|f| f.call(&mut self.store, ())),
-            [a, b] => self
+            [Arg::I32(a), Arg::I32(b)] => self
                 .instance
                 .get_typed_func::<(i32, i32), ()>(&mut self.store, name)
                 .and_then(|f| f.call(&mut self.store, (a, b))),
+            [Arg::I64(a), Arg::I32(b), Arg::I32(c)] => self
+                .instance
+                .get_typed_func::<(i64, i32, i32), ()>(&mut self.store, name)
+                .and_then(|f| f.call(&mut self.store, (a, b, c))),
             _ => return Err(TrapKind::Other),
         };
         result.map_err(|e| trap_kind(&e))

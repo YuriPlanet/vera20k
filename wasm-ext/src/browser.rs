@@ -23,7 +23,7 @@ use wasm_bindgen::{JsCast, JsValue};
 use crate::SIM_IMPORT_MODULE;
 use crate::host::{self, Ctx, Guest, for_each_import};
 use crate::instrument::METER;
-use crate::module::{Runtime, TrapKind};
+use crate::module::{Arg, Runtime, TrapKind};
 
 /// What the module and its imports share.
 struct Inner {
@@ -232,14 +232,21 @@ impl Runtime for Browser {
         f(&mut self.inner.borrow_mut().ctx)
     }
 
-    fn call(&mut self, name: &str, args: &[i32]) -> Result<(), TrapKind> {
+    fn call(&mut self, name: &str, args: &[Arg]) -> Result<(), TrapKind> {
         let function: Function = self
             .export(name)
             .and_then(|f| f.dyn_into().ok())
             .ok_or(TrapKind::Other)?;
         let result = match *args {
             [] => function.call0(&JsValue::NULL),
-            [a, b] => function.call2(&JsValue::NULL, &a.into(), &b.into()),
+            [Arg::I32(a), Arg::I32(b)] => function.call2(&JsValue::NULL, &a.into(), &b.into()),
+            // An `i64` parameter takes a BigInt.
+            [Arg::I64(a), Arg::I32(b), Arg::I32(c)] => function.call3(
+                &JsValue::NULL,
+                &BigInt::from(a).into(),
+                &b.into(),
+                &c.into(),
+            ),
             _ => return Err(TrapKind::Other),
         };
         result.map(|_| ()).map_err(|e| trap_kind(&e))

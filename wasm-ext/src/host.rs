@@ -11,9 +11,9 @@ use crate::sections::Sections;
 use crate::triggers::{ActionDef, NAME_MODULE_ACTION, TriggerDef};
 use crate::{
     ActionParams, ENTRY_COST, Export, Fault, HOST_CALL_COST, INI_EVENT, INI_KEY, INI_REGISTRY,
-    INI_SECTIONS, Invalid, MAX_SCAN, NAME_ACTION_KIND, NAME_KINDS, NAME_PROPERTY, Order, Query,
-    SKIPS_PER_OP, SimHost, Status, action_kind_id, action_kind_name, ini_name_valid, property_id,
-    property_name,
+    INI_SECTIONS, Invalid, MAX_NOTIFY_BYTES, MAX_SCAN, NAME_ACTION_KIND, NAME_KINDS, NAME_NOTIFY,
+    NAME_PROPERTY, Order, Query, SKIPS_PER_OP, SimHost, Status, action_kind_id, action_kind_name,
+    ini_name_valid, property_id, property_name,
 };
 
 /// What the imports keep per module, beside the runtime's own store data.
@@ -93,6 +93,7 @@ macro_rules! for_each_import {
         $wrap!("trigger_unbind", trigger_unbind(trigger: i64, reference: i64) -> i32);
         $wrap!("rules_get", rules_get(sec: i32, sec_len: i32, key: i32, key_len: i32, out: i32, cap: i32, len_out: i32) -> i32);
         $wrap!("rules_set", rules_set(sec: i32, sec_len: i32, key: i32, key_len: i32, val: i32, val_len: i32) -> i32);
+        $wrap!("send_notify", send_notify(to: i64, id: i32, ptr: i32, len: i32) -> i32);
         $wrap!("order", order(house: i64, ptr: i32, len: i32) -> i32);
         $wrap!("ini_register", ini_register(kind: i32, section: i32, ptr: i32, len: i32, key: i32, out: i32) -> i32);
     };
@@ -279,11 +280,17 @@ pub(crate) fn lookup(g: &mut dyn Guest, kind: i32, ptr: i32, len: i32, out: i32)
     }
     charge(g, HOST_CALL_COST)?;
     let bytes = copy_input(g, ptr, len)?;
-    // This module's own `vera.actions` answers ModuleAction.
+    // This module's own `vera.actions` answers ModuleAction, its own
+    // `vera.notify` Notify (RFC 0001 section 10: a name it did not declare
+    // is not found).
     let module_action = std::str::from_utf8(&bytes)
         .ok()
         .filter(|_| kind == NAME_MODULE_ACTION)
         .map(|name| g.ctx().sections.action_key(name));
+    let notify = std::str::from_utf8(&bytes)
+        .ok()
+        .filter(|_| kind == NAME_NOTIFY)
+        .map(|name| g.ctx().sections.notify_lookup(name));
     let host = host(g)?;
     // A name that is not UTF-8 names nothing.
     let result = match std::str::from_utf8(&bytes) {
@@ -294,6 +301,9 @@ pub(crate) fn lookup(g: &mut dyn Guest, kind: i32, ptr: i32, len: i32, out: i32)
         Ok(_) if kind == NAME_MODULE_ACTION => Ok(module_action
             .flatten()
             .map_or((-1, Status::NotFound), |key| (key, Status::Ok))),
+        Ok(_) if kind == NAME_NOTIFY => Ok(notify
+            .flatten()
+            .map_or((-1, Status::NotFound), |id| (id, Status::Ok))),
         Ok(name) if kind == NAME_ACTION_KIND => {
             Ok(action_kind_id(name).map_or((-1, Status::NotFound), |id| (id, Status::Ok)))
         }
@@ -317,11 +327,15 @@ pub(crate) fn name_of(
     if !(0..NAME_KINDS).contains(&kind) {
         return Err(fail(g, Invalid(format!("unknown name kind {kind}"))));
     }
-    let module_action = (kind == NAME_MODULE_ACTION)
-        .then(|| g.ctx().sections.action_name(id).map(str::to_owned));
+    let module_action = match kind {
+        NAME_MODULE_ACTION => Some(g.ctx().sections.action_name(id).map(str::to_owned)),
+        NAME_NOTIFY => Some(g.ctx().sections.notify_name(id).map(str::to_owned)),
+        _ => None,
+    };
     let host = enter(g, 0)?;
     let result = if let Some(name) = module_action {
-        // Any i32 is a dispatch key; one `vera.actions` lacks has no name.
+        // Any i32 is a dispatch key or a notification ID; one the module's
+        // section lacks has no name.
         Ok(name.map_or((String::new(), Status::NotFound), |n| (n, Status::Ok)))
     } else if id == -1 {
         Ok((String::new(), Status::NotFound))
@@ -663,6 +677,29 @@ pub(crate) fn rules_set(
     let key = read_str(g, key, key_len)?;
     let value = read_str(g, val, val_len)?;
     let result = host(g)?.rules_set(&section, &key, &value);
+    Ok(result.map_err(|e| fail(g, e))? as i32)
+}
+
+/// `send_notify` (RFC 0001 section 10, appendix 1.1 #22): an ID the
+/// module's `vera.notify` does not declare is `NotFound`, data over
+/// [`MAX_NOTIFY_BYTES`] `Refused`, both before the host is asked; the host
+/// counts the frame's notifications. Unavailable in `vera_init`.
+pub(crate) fn send_notify(g: &mut dyn Guest, to: i64, id: i32, ptr: i32, len: i32) -> R<i32> {
+    deny_in_decide(g, "send_notify")?;
+    let range = input_buffer(g, ptr, len)?;
+    if in_init(g) {
+        return Ok(Status::Unsupported as i32);
+    }
+    charge(g, HOST_CALL_COST)?;
+    if g.ctx().sections.notify_name(id).is_none() {
+        return Ok(Status::NotFound as i32);
+    }
+    if range.len() > MAX_NOTIFY_BYTES {
+        return Ok(Status::Refused as i32);
+    }
+    charge(g, range.len() as u64)?;
+    let data = read(g, range);
+    let result = host(g)?.send_notify(to, id, &data);
     Ok(result.map_err(|e| fail(g, e))? as i32)
 }
 
