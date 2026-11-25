@@ -298,6 +298,6 @@ pub fn decide(record: &mut DecideRecord) {
     record.set_result(0);
     ASKS.fetch_add(1, Relaxed);
     if VETOED_AT.load(Relaxed) == 0 {
-        VETOED_AT.store(i64::from(frame()), Relaxed);
+        VETOED_AT.store(i64::from(vera20k_sdk::frame()), Relaxed);
     }
 }
