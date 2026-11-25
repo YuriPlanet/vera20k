@@ -38,6 +38,10 @@ again with the same factories selected, in any order, to stop.
   it would leave the kind without one. So a group waits while a turn's order
   is on its way, which online can take a moment, and an object finished
   meanwhile turns the group once the order has arrived.
+- If the command queue is full or the scenario has locked player input, the
+  group keeps its turn. It sends the order once input is unlocked and the
+  queue has room. If the game permanently refuses the order, the group waits
+  for the next finished object.
 - Clicking a factory to make it primary yourself still works; the group
   carries on from that factory.
 - A group belongs to the player's own game. It ends with the match, it is not

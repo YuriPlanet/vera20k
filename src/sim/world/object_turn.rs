@@ -936,14 +936,47 @@ impl Simulation {
         sim.parasite_ai_for_victim(stable_id, rules, overlay_registry, effects);
     }
 
+    /// The start of the live object pass: answer its batched path searches
+    /// (`movement::path_batch`) and target scans (`techno_ai::scan_batch`) as
+    /// one body of work. Both read only the world as the pass finds it, and
+    /// each answer depends on that world alone, so answering them side by
+    /// side changes none. Every thread starts on the searches, the costliest
+    /// first, and goes on to the scans, so the scans do not wait for the
+    /// slowest search.
+    pub(crate) fn answer_batched_work(
+        &mut self,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    ) {
+        let scans = self.batched_scans(rules, overlay_registry);
+        let objects = if scans.is_some() {
+            self.batched_scan_objects()
+        } else {
+            0
+        };
+        let answer = |world: &Simulation, index: usize| scans.as_ref()?.answer(world, index);
+        let scanned = match self.answer_batched_path_searches(rules, (objects, &answer)) {
+            Some(scanned) => scanned,
+            // A pass with no search to run answers its scans by themselves.
+            None => {
+                let _area =
+                    crate::sim::frame_profile::area(crate::sim::frame_profile::phase::TARGETING);
+                let world = &*self;
+                crate::sim::parallel::filter_map_indices(objects, |index| answer(world, index))
+            }
+        };
+        if scans.is_some() {
+            self.install_scan_answers(scanned);
+        }
+    }
+
     pub(super) fn advance_live_object_pass(
         &mut self,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: &mut super::FrameEffects<'_>,
     ) -> Result<LiveObjectPassOutcome, super::FrameAdvanceError> {
-        self.answer_batched_path_searches(rules);
-        self.answer_batched_scans(rules, overlay_registry);
+        self.answer_batched_work(rules, overlay_registry);
         let mut object_ctx = techno_ai::ObjectAiCtx {
             effects: effects.reborrow(),
             overlay_registry,
@@ -1287,11 +1320,17 @@ impl Simulation {
                 ))
             });
             let frame = sim.session.binary_frame();
-            if let Some((cadence, hover_attack, deploy_to_land, air_rate)) = foot_body_cadence
-                && let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |entity| {
+            if let Some((cadence, hover_attack, deploy_to_land, air_rate)) = foot_body_cadence {
+                // The predicate is pure: it reads this entity, this frame and
+                // this state, and nothing changes between the admission and
+                // the counter it admits. Ask it once and advance on its
+                // answer, so a foot is asked one time per frame.
+                let speed_rules =
+                    crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses);
+                let due = sim.substrate.entities.get(stable_id).is_some_and(|entity| {
                     crate::sim::animation::foot_body_frame_due(
                         entity,
-                        crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
+                        speed_rules,
                         cadence,
                         hover_attack,
                         deploy_to_land,
@@ -1299,18 +1338,12 @@ impl Simulation {
                         sim.resolved_terrain.as_ref(),
                         frame,
                     )
-                })
-            {
-                crate::sim::animation::tick_foot_body_frame_counter(
-                    entity,
-                    crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
-                    cadence,
-                    hover_attack,
-                    deploy_to_land,
-                    air_rate,
-                    sim.resolved_terrain.as_ref(),
-                    sim.session.binary_frame(),
-                );
+                });
+                // Only a due foot is handed out, so a foot that is not due
+                // stays out of the touch logs as before.
+                if let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |_| due) {
+                    crate::sim::animation::tick_foot_body_frame_counter(entity, due);
+                }
             }
         }
 

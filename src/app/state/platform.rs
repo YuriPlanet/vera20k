@@ -7,21 +7,6 @@ use winit::window::{UserAttentionType, Window};
 
 use crate::app::frontend::startup_options::ScreenSize;
 use crate::app::match_runtime::frame_pacer::LocalFramePacer;
-use crate::ui::game_screen::GameScreen;
-
-/// Loading uses tactical dimensions only for pending match-resource setup;
-/// its own artwork uses the window directly. Frontend layout and hit testing
-/// must never inherit the match zoom's source size.
-pub(super) fn render_dimensions(
-    screen: &GameScreen,
-    window: (u32, u32),
-    tactical_source: Option<(u32, u32)>,
-) -> (u32, u32) {
-    match screen {
-        GameScreen::MainMenu | GameScreen::MissionResult { .. } => window,
-        GameScreen::Loading | GameScreen::InGame => tactical_source.unwrap_or(window),
-    }
-}
 
 /// Window lifecycle and wall-clock pacing owned by the platform layer.
 ///
@@ -213,6 +198,28 @@ impl PlatformState {
     /// cursor. Presentation-only.
     pub(crate) fn owns_pointer(&self) -> bool {
         self.pointer_in_client && self.window_active
+    }
+
+    /// Whether the OS pointer is held in the client area of the active
+    /// window, so a zoomed match clamps each movement to the frame
+    /// (`MatchInputState::set_cursor_from_window`).
+    pub(crate) fn confines_pointer(&self) -> bool {
+        self.pointer_held && self.window_active
+    }
+
+    /// A capture's own presentation choices, which stand in for the Options
+    /// ones; `None` outside captures.
+    pub(crate) fn capture_choices(&self) -> Option<&CapturePresentation> {
+        self.capture_client_size
+            .is_some()
+            .then_some(&self.capture_presentation)
+    }
+
+    /// Client presentation preference; the simulation never reads this option.
+    pub(crate) fn translucent_fog_enabled(&self) -> bool {
+        self.game_config
+            .as_ref()
+            .is_some_and(|config| config.graphics.translucent_fog)
     }
     /// VERA's own (gamemd never flashes its window): while another
     /// application is in front, flash the taskbar button (Windows), bounce

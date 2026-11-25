@@ -230,11 +230,8 @@ fn ares_dig_keys_replace_the_audio_visual_effects() {
     let (sim, _) = fixture();
     let entity = sim.substrate.entities.get(DIGGER).unwrap();
     let names = |effects| sim.tunnel_dig_effect_types(entity, effects, &rules);
-    let dig_sound = rules.general.dig_sound.clone();
-    assert_eq!(
-        names(DigEffects::DIG_IN),
-        (dig_sound.clone(), Some("MYDIG".into()))
-    );
+    let dig_sound = rules.general.dig_sound.as_deref();
+    assert_eq!(names(DigEffects::DIG_IN), (dig_sound, Some("MYDIG")));
     assert_eq!(names(DigEffects::DIG_OUT), (dig_sound, None));
 }
 

@@ -429,10 +429,7 @@ fn press_allies_box(state: &mut AppState, view: &DiplomacyView, row: usize) {
 }
 
 fn play_checkbox_sound(state: &mut AppState) {
-    let sound = state
-        .rules()
-        .and_then(|rules| rules.general.gui_checkbox_sound.clone());
-    App::play_shell_ui_sound_by_id(state, sound.as_deref());
+    App::play_shell_rules_sound(state, |rules| rules.general.gui_checkbox_sound.as_deref());
 }
 
 /// `Ally 0x00731840`: queue EVENT_ALLY toward `house` for the player's

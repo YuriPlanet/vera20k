@@ -263,12 +263,14 @@ impl Simulation {
     ) -> Result<bool, FrameAdvanceError> {
         let registry = ctx.overlay_registry;
         let mut bridge_state_changed = false;
+        // The warp as this visit read it: the arms below write the live one
+        // (`chrono_warp_mut`, the timer check) through `&mut self`.
         let Some(warp) = self
             .substrate
             .entities
             .get(id)
             .and_then(|entity| entity.chrono_warp())
-            .cloned()
+            .copied()
         else {
             return Ok(bridge_state_changed);
         };

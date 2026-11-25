@@ -21,6 +21,7 @@
 #                    per drawn picture and SLOW_TICK_MS (default 0) more per
 #                    simulation tick (VERA20K_SPAWN_SLOW_DRAW_MS / _TICK_MS)
 #   AI=N             N computer houses after the humans (relay: PLAYERS=1 allowed)
+#   STARTS=A,B,...   each source's start (-2 none); humans on one start share its House
 #   ALONE=on         relay, PLAYERS=1: a certificate the relay orders alone
 #   WATCHERS=N       relay: N watchers (OUT/w0..), started WATCH_AFTER seconds
 #                    (default 0) after p0's match appears (docs/spawn.md "Watching")
@@ -56,6 +57,7 @@ extra="--players $players"
 [ -n "${AI:-}" ] && extra="$extra --ai $AI"
 [ "${ALONE:-}" = on ] && extra="$extra --alone on"
 [ -n "${SPEED:-}" ] && extra="$extra --speed $SPEED"
+[ -n "${STARTS:-}" ] && extra="$extra --starts $STARTS"
 watchers=${WATCHERS:-0}
 [ "$watchers" -gt 0 ] && extra="$extra --watchers $watchers"
 

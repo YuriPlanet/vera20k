@@ -12,8 +12,12 @@ use crate::sim::snapshot::GameSnapshot;
 use crate::util::fixed_math::{SIM_ONE, SimFixed};
 
 fn rules(speed: u32) -> RuleSet {
+    rules_with_cadence(speed, 1, 0)
+}
+
+fn rules_with_cadence(speed: u32, walk_rate: u32, idle_rate: u32) -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(&format!(
-        "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=100\nSpeed={speed}\nAccelerates=no\nSensorsSight=1\nWalkRate=1\nIdleRate=0\n"
+        "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=100\nSpeed={speed}\nAccelerates=no\nSensorsSight=1\nWalkRate={walk_rate}\nIdleRate={idle_rate}\n"
     ))).unwrap()
 }
 
@@ -260,4 +264,50 @@ fn forced_object_turn_queries_live_speed_and_advances_shp_once() {
     );
     assert!(outcome.moved_steps > 1);
     assert_eq!(entity.body_frame_counter.get(), before_body + 1);
+}
+
+/// The Foot body counter advances once per due frame. `0x004DA81A` asks
+/// the same predicate for the admission and for the counter it admits, so
+/// a walking foot whose WalkRate divides the frame advances the counter
+/// exactly once, and a frame the rate does not divide advances it not at
+/// all.
+#[test]
+fn foot_body_counter_advances_once_per_due_frame() {
+    let rules = rules_with_cadence(6, 4, 0);
+    let mut sim = fixture(0x43);
+    let mut before = sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .body_frame_counter
+        .get();
+    let mut due_frames = 0;
+    for frame in 0..12 {
+        let walking = {
+            let entity = sim.substrate.entities.get(1).unwrap();
+            crate::sim::movement::motion_query::is_moving_now(
+                entity,
+                crate::sim::movement::SpeedRules::new(&rules, &sim.interner, &sim.houses),
+                frame,
+            )
+        };
+        tick(&mut sim, &rules, frame);
+        let after = sim
+            .substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .body_frame_counter
+            .get();
+        let due = walking && frame % 4 == 0;
+        assert_eq!(
+            after,
+            before + u32::from(due),
+            "frame {frame}: the counter advances once on a due frame"
+        );
+        due_frames += u32::from(due);
+        before = after;
+    }
+    assert!(due_frames > 0, "the foot walked on a due frame");
 }

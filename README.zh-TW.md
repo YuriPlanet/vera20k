@@ -13,7 +13,7 @@
 
 # VERA20K
 
-VERA20K 是《紅色警戒2：尤里的復仇》的全新引擎。玩起來和原版一樣，單位、地圖和畫面都相同，可在 Windows、macOS 和 Linux 上執行。它支援更大規模的戰鬥：一張地圖最多 30 名玩家、20,000 個單位。
+VERA20K 是《紅色警戒2：尤里的復仇》的全新引擎。玩起來和原版一樣，單位、地圖和畫面都相同，可在 Windows、macOS 和 Linux 上執行。它支援更大規模的戰鬥，一張地圖最多可容納 20,000 個單位。離線遭遇戰最多有 120 個玩家席位，區域網路與線上對戰最多有 30 個。
 
 VERA20K 由玩家打造、為玩家而做，專案的方向由玩家說了算。
 
@@ -30,7 +30,7 @@ VERA20K 由玩家打造、為玩家而做，專案的方向由玩家說了算。
 ## 專案目標
 
 1. 保留原版《紅色警戒2：尤里的復仇》的玩法、畫面和氛圍。
-2. 支援更大規模的戰鬥：在 500×500 的地圖上，容納最多 **30 名玩家**和 **20,000 個單位**。
+2. 支援在 500×500 的地圖上進行更大規模的戰鬥，最多容納 **20,000 個單位**。離線遭遇戰最多有 **120 個玩家席位**，區域網路與線上對戰最多有 **30 個**。
 3. 加入 RTS 遊戲中已有的功能，以及一些前所未見的功能。
 4. 內建多人遊戲客戶端
 
@@ -112,7 +112,8 @@ VERA20K 預設使用《尤里的復仇》原版規則。你可以在 **Options**
 《命令與征服》和《紅色警戒》原始碼、World-Altering Editor、Final Alert、YRpp、Ares、Phobos，
 以及其他為此做出貢獻的專案和社群。
 
-版權所有 © 2026 Halvor Nikolai Rusten 及 VERA20K 貢獻者。本專案採用 [GPLv3](LICENSE-GPL) 許可證，並附有[附加條款](LEGAL.md#additional-terms)。本倉庫不包含遊戲檔案。
+版權所有 © 2026 Halvor Nikolai Rusten 及 VERA20K 貢獻者。本專案採用 [GPLv3](LICENSE-GPL) 許可證，並附有[附加條款](LEGAL.md#additional-terms)。
+VERA20K 經許可隨附《Tiberian Sun: Firestorm》的雪地和冰面地塊，這些地塊仍歸 Electronic Arts 所有。玩家需自行提供《紅色警戒2：尤里的復仇》的遊戲檔案。
 Command & Conquer 和 Red Alert 是 Electronic Arts Inc. 的商標，截圖和應用圖示（《紅色警戒2》的紅星）中的遊戲美術資源歸 Electronic Arts 所有。
 VERA20K 與 Electronic Arts 無隸屬關係，也未獲其認可。
 

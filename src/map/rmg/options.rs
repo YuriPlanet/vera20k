@@ -76,9 +76,11 @@ pub struct RmgOptions {
     /// A 0..100 slider that randomly damages every neutral building on the map
     /// for a war-torn look; stronger than the War Damage Extra wins.
     pub damage_amount: i32,
-    /// VERA extension: extra civilians, 0 = only the original urban foots. A
-    /// 0..100 slider that scatters civilian infantry and vehicles (the same
-    /// kinds a town already places) over open ground, all on Neutral.
+    /// VERA extension: civilians, 0 = none. A 0..100 slider that scatters
+    /// civilian infantry and vehicles (the same kinds a town places) over open
+    /// ground, all on Neutral. At 0 the urban districts (Ares' `UrbanAreas`,
+    /// Urban Presence) place no foot traffic either, so the default leaves
+    /// out the original urban foots.
     pub civilian_amount: i32,
     /// VERA extension: animals, 0 = none. A 0..100 slider that scatters the
     /// rules' `Name=Animal …` infantry and vehicles on Neutral ground.

@@ -84,7 +84,7 @@ impl App {
                 return None;
             }
         };
-        let Some(theater) = crate::map::theater::load_scenario_theater(
+        let Ok(Some(theater)) = crate::map::theater::load_scenario_theater(
             assets,
             &map.header.theater,
             &map.ini,

@@ -2670,6 +2670,12 @@ pub struct ObjectType {
     /// default at `0x005243B8`). No stock INI authors it. See
     /// [`ObjectType::emits_damage_spark`] for the spark flag it feeds.
     pub cyborg: bool,
+    /// Tiberian Sun Firestorm's InfantryType `IsWebImmune=` (`+0x4B7`, read
+    /// with the current value as default by `InfantryTypeClass::Read_INI`
+    /// `0x004DA8E0` at `0x004DAB40`; constructor false, `0x004DA229`): a web
+    /// leaves this infantryman alone (`docs/ts-webs.md`). gamemd has no
+    /// such key.
+    pub is_web_immune: bool,
     /// TechnoType `+0xC8F`, projected from the Rules passes: see
     /// [`ObjectType::emits_damage_spark`].
     pub damage_sparks: bool,

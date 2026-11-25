@@ -1379,7 +1379,7 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
         &rules,
         "Americans",
         crate::sim::production::ProductionCancellation::Type {
-            type_id: "E1",
+            type_id: "E1".into(),
             naval: false
         },
         false,
@@ -1560,7 +1560,7 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: "GAPOWR",
+                type_id: "GAPOWR".into(),
                 naval: false
             },
             false,
@@ -2332,7 +2332,7 @@ fn cancel_by_type_removes_ready_building_and_refunds() {
         &rules,
         "Americans",
         crate::sim::production::ProductionCancellation::Type {
-            type_id: "GAREFN",
+            type_id: "GAREFN".into(),
             naval: false,
         },
         false,

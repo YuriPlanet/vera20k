@@ -137,6 +137,7 @@ pub(crate) mod sidebar_projection;
 // the lib test target builds; re-enable when the call sites are updated.
 #[cfg(all(test, tests_app, any()))]
 mod sidebar_projection_tests;
+pub(crate) mod spawn_frame_cost;
 pub(crate) mod spawn_probe;
 mod state;
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]

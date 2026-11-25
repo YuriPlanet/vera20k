@@ -427,7 +427,7 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
                 rules,
                 "Americans",
                 production::ProductionCancellation::Type {
-                    type_id: kind,
+                    type_id: kind.into(),
                     naval: false
                 },
                 false,
@@ -1406,7 +1406,7 @@ fn building_production_darkens_other_cameos_until_cancelled() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: "GAPOWR",
+                type_id: "GAPOWR".into(),
                 naval: false
             },
             false,

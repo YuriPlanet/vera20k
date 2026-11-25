@@ -233,6 +233,11 @@ const POINTERS: &[(&str, PublishPointer)] = &[
     // ReadAudioVisual's Dig +294 (constructor `0x00665A10`, read
     // `0x0066A587..0x0066A5B1`), the Tunnel locomotor's dig anim.
     ("Dig", |rules, id| rules.general.dig_anim = named(id)),
+    // Firestorm 2.0's WebbedInfantry +F68 (constructor `0x005C57FF`, read
+    // `0x005C8498` through `0x005D39A0`), which gamemd lacks.
+    ("WebbedInfantry", |rules, id| {
+        rules.general.webbed_infantry = named(id);
+    }),
     // WarpIn +338, WarpOut +33C, WarpAway +340, ChronoSparkle1 +344,
     // IronCurtainInvokeAnim +348, ForceShieldInvokeAnim +34C (constructor
     // `0x00665B02..0x00665B20`, read `0x0066E188..0x0066E327`).

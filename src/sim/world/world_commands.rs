@@ -31,7 +31,7 @@ use crate::sim::command::{
 };
 use crate::sim::control_authority::CommandCapability;
 use crate::sim::house_diplomacy::HouseAlliances;
-use crate::sim::intern::{InternedId, StringInterner};
+use crate::sim::intern::{InternKey, InternedId, StringInterner};
 use crate::sim::mission::MissionType;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::pathfinding::PathGrid;
@@ -189,12 +189,11 @@ impl Simulation {
             return false;
         };
         let record = record.as_ref();
-        let owner = self.interner.resolve(owner).to_owned();
         if let Some(event) = CycleProducerRecord::decode(record) {
             return production::cycle_active_producer_for_owner_category(
                 self,
                 rules,
-                &owner,
+                owner,
                 event.category,
             );
         }
@@ -206,7 +205,7 @@ impl Simulation {
             };
             return match event.event {
                 ProductionEvent::Produce => {
-                    production::enqueue_selected(self, rules, &owner, selection, effects, false)
+                    production::enqueue_selected(self, rules, owner, selection, effects, false)
                 }
                 ProductionEvent::Suspend => {
                     let Some(category) = selection.category(rules) else {
@@ -216,7 +215,7 @@ impl Simulation {
                         &self.interner,
                         &mut self.production,
                         &self.session,
-                        &owner,
+                        owner,
                         category,
                     )
                 }
@@ -224,7 +223,7 @@ impl Simulation {
                     production::cancel_production_for_owner(
                         self,
                         rules,
-                        &owner,
+                        owner,
                         production::ProductionCancellation::Selected(selection),
                         event.event == ProductionEvent::AbandonAll,
                         effects,
@@ -236,7 +235,7 @@ impl Simulation {
             return production::place_production_with_overlays(
                 self,
                 rules,
-                &owner,
+                owner,
                 production::ProductionPlacement::Selected {
                     selection: production::ProductionSelection {
                         rtti: event.rtti,
@@ -254,9 +253,9 @@ impl Simulation {
 
     /// Dispatch a single command, returning true if it was successfully applied.
     #[cfg(any(test, feature = "test-support"))]
-    pub fn apply_command(
+    pub fn apply_command<'k>(
         &mut self,
-        command_owner: &str,
+        command_owner: impl Into<InternKey<'k>>,
         cmd: &Command,
         rules: Option<&RuleSet>,
     ) -> bool {
@@ -270,15 +269,18 @@ impl Simulation {
         )
     }
 
-    pub(crate) fn apply_command_with_overlays(
+    /// The receiver for one command of `command_owner`: the id the command
+    /// carries, or a fixture's or tool's house name.
+    pub(crate) fn apply_command_with_overlays<'k>(
         &mut self,
         sender: Option<i8>,
-        command_owner: &str,
+        command_owner: impl Into<InternKey<'k>>,
         cmd: &Command,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
+        let command_owner = command_owner.into();
         // A semantic envelope cannot promote an embedded record into an
         // authenticated source. DoList supplies this byte from its raw entry.
         let has_grants = self.session.has_custom_control_grants();
@@ -325,7 +327,7 @@ impl Simulation {
                     // even when its source exited before this execution.
                     // The live-source gate below still refuses its effects.
                     let issuing_house = self.command_sender_owner(record.house_id());
-                    if issuing_house != self.interner.get(command_owner)
+                    if issuing_house != self.interner.key_id(command_owner)
                         || !u64::try_from(typed.source_id)
                             .is_ok_and(|actor| self.planning_acknowledge_generated(actor, record))
                     {
@@ -377,7 +379,7 @@ impl Simulation {
                     self.local_grant_source()
                         .is_some_and(|(source, _)| sender == Some(source))
                 } else {
-                    self.interner.get(command_owner)
+                    self.interner.key_id(command_owner)
                         == self.control_projection().local_command_house()
                 };
                 if !for_this_client {
@@ -393,7 +395,7 @@ impl Simulation {
             Command::SetLatencyFudge { value } => {
                 // Event LATENCYFUDGE4C7F4F stores the unmodified dword; its
                 // network-session owner receives the write after MainTick.
-                let Some(owner) = self.interner.get(command_owner) else {
+                let Some(owner) = self.interner.key_id(command_owner) else {
                     return false;
                 };
                 self.lifecycle_outputs
@@ -831,17 +833,14 @@ impl Simulation {
             ),
             // Production events act on the event's own house (the
             // EventClass header's house id); the payload names no owner.
-            Command::QueueProduction { type_id } => {
-                let type_s = self.interner.resolve(*type_id).to_string();
-                production::enqueue_by_type(
-                    self,
-                    rules,
-                    command_owner,
-                    &type_s,
-                    frame_effects,
-                    false,
-                )
-            }
+            Command::QueueProduction { type_id } => production::enqueue_by_type(
+                self,
+                rules,
+                command_owner,
+                *type_id,
+                frame_effects,
+                false,
+            ),
             Command::SuspendProduction { category } => production::suspend_production(
                 &self.interner,
                 &mut self.production,
@@ -875,13 +874,12 @@ impl Simulation {
                 )
             }
             Command::PlaceReadyBuilding { type_id, rx, ry } => {
-                let type_s = self.interner.resolve(*type_id).to_string();
                 production::place_production_with_overlays(
                     self,
                     rules,
                     command_owner,
                     production::ProductionPlacement::Building {
-                        type_id: &type_s,
+                        type_id: (*type_id).into(),
                         cell: (*rx, *ry),
                     },
                     overlay_registry,
@@ -901,14 +899,16 @@ impl Simulation {
                 )
             }
             Command::CancelProductionByType { type_id, all } => {
-                let type_s = self.interner.resolve(*type_id).to_string();
                 production::cancel_production_for_owner(
                     self,
                     rules,
                     command_owner,
                     crate::sim::production::ProductionCancellation::Type {
-                        type_id: &type_s,
-                        naval: rules.object(&type_s).is_some_and(|object| object.naval),
+                        type_id: (*type_id).into(),
+                        naval: self
+                            .interner
+                            .object_type(*type_id, rules)
+                            .is_some_and(|object| object.naval),
                     },
                     *all,
                     frame_effects,
@@ -1008,7 +1008,7 @@ impl Simulation {
             // Stuff flag, factory queue refresh, EVA line for a human house). The
             // dispatch has no owner check; only the VERA network gate above adds one.
             Command::SetBuildingOnLine { entity_id, on } => {
-                let Some(owner) = self.interner.get(command_owner) else {
+                let Some(owner) = self.interner.key_id(command_owner) else {
                     return false;
                 };
                 if !self.houses.contains_key(&owner) {
@@ -1055,7 +1055,7 @@ impl Simulation {
             // EventClass tail, before any House check.
             Command::LiveGameSpeed { speed } => self.session.apply_in_game_speed(*speed),
             Command::Cheer => {
-                let Some(owner) = self.interner.get(command_owner) else {
+                let Some(owner) = self.interner.key_id(command_owner) else {
                     return false;
                 };
                 if !self.houses.contains_key(&owner) {
@@ -1065,7 +1065,7 @@ impl Simulation {
                 true
             }
             Command::Destruct => {
-                let Some(owner) = self.interner.get(command_owner) else {
+                let Some(owner) = self.interner.key_id(command_owner) else {
                     return false;
                 };
                 // VERA shared control: one player resigning (B6 Leave beside
@@ -1084,7 +1084,7 @@ impl Simulation {
                 true
             }
             Command::ExitMatch => {
-                let Some(owner) = self.interner.get(command_owner) else {
+                let Some(owner) = self.interner.key_id(command_owner) else {
                     return false;
                 };
                 if !self.houses.contains_key(&owner) {
@@ -1151,7 +1151,7 @@ impl Simulation {
                 // EventClass::Execute 0x004C6DEE..0x004C6E23: no admission
                 // gate; the sender toggles on its own mask, announced.
                 let (Some(owner), Some(other)) = (
-                    self.interner.get(command_owner),
+                    self.interner.key_id(command_owner),
                     usize::try_from(*house_index)
                         .ok()
                         .and_then(|index| self.houses.order().get(index).copied()),
@@ -1510,7 +1510,7 @@ impl Simulation {
             | Command::CompletePaidSuperWeapon { .. }
             | Command::CancelPaidSuperWeapon { .. }
             | Command::BeginPaidSuperWeapon { .. } => {
-                let owner = self.interner.intern(command_owner);
+                let owner = self.interner.intern_key(command_owner);
                 self.apply_superweapon_command_for_house(
                     owner,
                     cmd,

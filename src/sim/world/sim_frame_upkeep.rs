@@ -236,8 +236,8 @@ impl Simulation {
         } else {
             self.interner
                 .object_type(building.type_ref(), rules)
-                .and_then(|obj| obj.super_weapon.clone())
-                .map(|section| self.interner.intern(&section))
+                .and_then(|obj| obj.super_weapon.as_deref())
+                .map(|section| self.interner.intern(section))
         };
         let Some(sw_type) = sw_type else {
             return;

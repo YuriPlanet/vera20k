@@ -682,11 +682,9 @@ fn entity_status_pips_drawable(
     }
     // House4F9A50 reads the ASKING owner's ally bits (6F6A58..8C).
     building_type.is_some_and(|object| object.can_be_occupied || object.pips_draw_for_all())
-        || crate::map::houses::is_allied_with(
-            sim.house_alliances().as_map(),
-            sim.interner().resolve(entity.owner()),
-            sim.interner().resolve(current_house_id),
-        )
+        || sim
+            .house_alliances()
+            .is_allied(sim.interner(), entity.owner(), current_house_id)
 }
 
 /// Project the simulation-owned control-group membership onto the live objects that
@@ -1078,7 +1076,6 @@ pub(crate) fn build_building_status_render_instances(
     convenience_help: bool,
 ) -> BuildingStatusTextInstances {
     let mut labels = BuildingStatusTextInstances::default();
-    let current_house = sim.interner().resolve(current_house_id);
     // Each family's built-in template (`health_templates`) may hide or move it.
     let super_shift = health_templates::family(Mark::SuperLabel);
     let info_shift = health_templates::family(Mark::InfoLabel);
@@ -1096,12 +1093,9 @@ pub(crate) fn build_building_status_render_instances(
         if !entity.lifecycle.cell_marked() {
             continue;
         }
-        let owner_name = sim.interner().resolve(entity.owner());
-        let allied = crate::map::houses::is_allied_with(
-            sim.house_alliances().as_map(),
-            owner_name,
-            current_house,
-        );
+        let allied =
+            sim.house_alliances()
+                .is_allied(sim.interner(), entity.owner(), current_house_id);
         let Some(object) = sim.interner().object_type(entity.type_ref(), rules) else {
             continue;
         };

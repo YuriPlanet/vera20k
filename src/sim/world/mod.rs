@@ -164,7 +164,7 @@ mod trigger_camera;
 mod trigger_camera_tests;
 mod trigger_explosion;
 mod trigger_strikes;
-pub(crate) use shroud_refresh::ParanoidMaps;
+pub(crate) use shroud_refresh::{HumanPlayerClients, ParanoidMaps};
 pub(crate) use techno_ai::AresPrismForwarding;
 pub(crate) use techno_ai::ObjectAiCtx;
 pub(crate) use techno_ai::PassiveScan;

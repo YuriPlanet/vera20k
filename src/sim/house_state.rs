@@ -1900,10 +1900,11 @@ impl HouseState {
             .unwrap_or(0)
     }
 
-    /// Explicit retained Counter prior for native execution comparisons.
+    /// Explicit retained Counter prior, for the tests that need one.
     /// Normal construction/acquisition must never call this fixture adapter.
+    /// Client tests reach it through the `test-support` feature.
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn set_produced_count_for_test(
+    pub fn set_produced_count_for_test(
         &mut self,
         category: ObjectCategory,
         type_index: i32,

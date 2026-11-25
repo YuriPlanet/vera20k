@@ -615,10 +615,9 @@ pub(super) fn press_super_weapon(
         right,
     );
     if gui_sound && click.gui_sound() {
-        let sound = state
-            .rules()
-            .and_then(|rules| rules.general.gui_build_sound.clone());
-        crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        crate::app::App::play_shell_rules_sound(state, |rules| {
+            rules.general.gui_build_sound.as_deref()
+        });
     }
     match click {
         super::superweapon_cameo::SuperWeaponClick::Refused

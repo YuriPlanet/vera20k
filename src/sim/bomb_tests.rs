@@ -980,6 +980,28 @@ fn a_bomb_outlives_its_planter_and_credits_no_one() {
     assert!(tank.seldom.kill_record.killer().is_none(), "no kill credit");
 }
 
+/// Every object's expiry reaches the bomb list (`0x00725961`), and only a
+/// bomb the expiring object planted is written: the carrier of any other
+/// bomb is read, not handed out.
+#[test]
+fn an_expiry_hands_out_only_the_carriers_of_the_bombs_its_object_planted() {
+    let rules = rules();
+    let mut sim = sim(27);
+    let tank = spawn(&mut sim, &rules, "LTNK", "Americans", 12, 10);
+    let other = spawn(&mut sim, &rules, "HTNK", "Americans", 14, 10);
+    let ivan = spawn(&mut sim, &rules, "IVAN", "Russians", 11, 10);
+    let second = spawn(&mut sim, &rules, "IVAN", "Russians", 13, 10);
+    sim.bomb_attach_for_test(ivan, Some(tank), &rules);
+    sim.bomb_attach_for_test(second, Some(other), &rules);
+    assert_eq!(sim.bomb_carriers().len(), 2);
+
+    let handed_out = sim.substrate.entities.hand_outs();
+    Simulation::bomb_planter_expired(&mut sim.substrate, &sim.bombs, ivan);
+    assert_eq!(sim.substrate.entities.hand_outs() - handed_out, 1);
+    assert_eq!(bomb(&sim, tank).unwrap().planter, None);
+    assert_eq!(bomb(&sim, other).unwrap().planter, Some(second));
+}
+
 /// UnInit defuses silently (`0x005F65F3`); a building changing hands loses
 /// its bomb unless it is `CanBeOccupied=` (`0x00448277`); mind control keeps
 /// a unit's.

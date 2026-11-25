@@ -202,7 +202,29 @@ const INFANTRY_ACTIONS: [InfantryActionRecord; 42] = [
     }, // 41
 ];
 
+/// VERA's Doing for Tiberian Sun Firestorm's Struggle (Firestorm DoType 20),
+/// numbered after gamemd's 42 actions: a webbed infantryman plays it
+/// (`docs/ts-webs.md`).
+pub const DO_STRUGGLE: i32 = 42;
+
+/// Firestorm 2.0 `MasterDoControls[20]` at `0x006D20F4`, bytes `00 00 01 03`:
+/// not interruptible and rate 3. The interrupt byte's readers are `Do_Action`
+/// (`0x004D65CD`), `Can_Fire` (`0x004D5A9B`), `Scatter` (vt+0x144
+/// `0x004D6020`, at `0x004D6096`) and `Ready_To_Commence` (vt+0x1AC
+/// `0x004D9490`, at `0x004D9522`), the gate `InfantryClass::AI` asks before
+/// Commence (`0x004D4E5A`..`0x004D4E8B`). VERA's readiness reads the same
+/// record, so a webbed man's next mission waits for the web as there. Its
+/// IsMobile and RandomStart bytes (`0x006D20A5`, `0x006D20A6`) have no
+/// reader.
+const STRUGGLE_ACTION: InfantryActionRecord = InfantryActionRecord {
+    interruptible: false,
+    frame_delay: 3,
+};
+
 pub(crate) fn action_record(action: i32) -> Option<&'static InfantryActionRecord> {
+    if action == DO_STRUGGLE {
+        return Some(&STRUGGLE_ACTION);
+    }
     usize::try_from(action)
         .ok()
         .and_then(|index| INFANTRY_ACTIONS.get(index))
@@ -245,10 +267,25 @@ pub struct InfantrySequenceEntry {
 /// InfantryType's one 42-record bank. Constructor52392C..52396E initializes
 /// the signed frame fields/facing and empty sound slots; ReadSequenceData523D00
 /// mutates this bank in place. Save524C3C/Load524B10 retain it without an ART read.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct InfantrySequenceBank {
     records: Vec<InfantrySequenceEntry>,
     sounds: Vec<Vec<SequenceSoundIndex>>,
+    /// Firestorm's `Struggle=` record ([`DO_STRUGGLE`]), which gamemd's bank
+    /// lacks. The default (no frames) is a type without it.
+    struggle: InfantrySequenceEntry,
+}
+
+// The Struggle record enters the hash only when an ART pass gave it frames,
+// so a game without it hashes as before Firestorm's webs.
+impl std::hash::Hash for InfantrySequenceBank {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.records.hash(state);
+        self.sounds.hash(state);
+        if self.struggle != InfantrySequenceEntry::default() {
+            self.struggle.hash(state);
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -262,6 +299,7 @@ impl Default for InfantrySequenceBank {
         Self {
             records: vec![InfantrySequenceEntry::default(); 42],
             sounds: vec![Vec::new(); 42],
+            struggle: InfantrySequenceEntry::default(),
         }
     }
 }
@@ -297,11 +335,24 @@ impl InfantrySequenceBank {
                 }
             }
         }
+        // Firestorm 2.0 reads `Struggle=` with the other DoType names (table
+        // `0x006FD5CC`, entry 20) through the same record parser; it has no
+        // sound key.
+        self.struggle = read_sequence(section, "Struggle", self.struggle);
     }
 
     pub(crate) fn sequence_set(&self) -> SequenceSet {
-        if self
-            .records
+        let records: std::borrow::Cow<'_, [InfantrySequenceEntry]> =
+            if self.struggle == InfantrySequenceEntry::default() {
+                self.records.as_slice().into()
+            } else {
+                // Struggle is record [`DO_STRUGGLE`], after gamemd's 42; a type
+                // without it keeps the 42-record bank it always had.
+                let mut records = self.records.clone();
+                records.push(self.struggle);
+                records.into()
+            };
+        if records
             .iter()
             .all(|record| *record == InfantrySequenceEntry::default())
         {
@@ -309,7 +360,7 @@ impl InfantrySequenceBank {
             // carries all-zero signed records, so it cannot grant a DoAction.
             return crate::rules::animation_sequence::default_infantry_sequences();
         }
-        build_sequence_set_from_records(&self.records)
+        build_sequence_set_from_records(&records)
     }
 
     /// Presentation names are a derived view of saved fixed-catalog ordinals.

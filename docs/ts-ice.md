@@ -4,7 +4,7 @@ Firestorm's snow maps had ice that gives way. A heavy unit driving onto ice crac
 a sound; a heavier one, or a unit on ice that is already cracked, breaks it and sinks, and
 so does every other vehicle standing there. A crack freezes over after a while, and open
 water the map marks for ice grows back. Yuri's Revenge still reads the rules keys but has
-no ice code. Choose **Ice Lake** in Skirmish to play with VERA's original ice tiles.
+no ice code. Choose **Ice Lake** in Skirmish to try the breakable ice.
 The two bases face each other across a frozen shortcut. Grizzlies crack fresh ice,
 Rhinos and Apocalypse tanks break through, and either shore gives a dry route
 around the lake.
@@ -59,15 +59,22 @@ to 2 and 4 and gives `MTNK`, `HTNK` and `APOC` weights 2, 4 and 5.
 
 ### Paint the tiles in an editor
 
+The installer ships `vera_ice.mix` and `vera_ice_tiles.ini` together. On Windows,
+open the `Terrain` folder beside `vera20k.exe`. On macOS and Linux, start the game
+once, then open `Terrain` beside `VERA.INI` in your VERA20k settings folder.
+The defaults are `~/Library/Application Support/VERA20k/Terrain` on macOS and
+`~/.local/share/VERA20k/Terrain` on Linux. VERA maintains these release files.
+Make any edits in your own editor or mod folder.
+
 In World-Altering Editor with a Yuri's Revenge profile:
 
 1. Use a separate editor data directory with access to your YR files. Copy
-   [vera_ice.mix](../src/assets/bundled/vera_ice.mix) into a search directory
+   [vera_ice.mix](../Terrain/vera_ice.mix) into a search directory
    from the profile's `FileManagerConfig.ini`. Under `[MIXFiles]`, add
    `N=vera_ice.mix`, replacing `N` with the next unused number.
 2. Start with an editor-only copy of stock `SNOWMD.INI`. Replace the four ice
    entries in its existing `[General]` section with the values in
-   [vera_ice_tiles.ini](../src/assets/bundled/vera_ice_tiles.ini). Append the five
+   [vera_ice_tiles.ini](../Terrain/vera_ice_tiles.ini). Append the five
    `[TileSet0083]` through `[TileSet0087]` sections from the same file. Stock
    snow uses tiles 0–963. The first added section reserves the gap to 4096.
 3. Reopen the editor and load a snow map. Select **VERA Ice 1**, **VERA Ice 2**,
@@ -76,7 +83,7 @@ In World-Altering Editor with a Yuri's Revenge profile:
    its central crossing should show ice on both banks and open pools away
    from the middle.
 4. Put the finished map in VERA's `Maps` folder. Share just the map file with
-   other players. VERA supplies the artwork when it loads the map.
+   other players. VERA supplies the artwork when it loads the map. The [game files notice](../LEGAL.md#game-files) covers the bundled tile art.
 
 The editor numbers tiles by their order in the theater and supports named MIX
 archives in its file-manager configuration.

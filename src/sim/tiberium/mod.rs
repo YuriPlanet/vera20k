@@ -713,7 +713,7 @@ fn spawner_cell_spread(
 }
 
 fn adjacent_cells_in_range(range: i32) -> Vec<(i16, i16)> {
-    crate::sim::cell_rect::cell_spread_offsets(range as u32 as usize)
+    crate::sim::cell_rect::cell_spread_offsets(range as u32 as usize).collect()
 }
 
 /// Result of one `Reduce_Tiberium` call.

@@ -1594,10 +1594,7 @@ impl Simulation {
             return;
         };
         let mut choice = i32::from(choice);
-        let controller_team = self
-            .team_script_vm
-            .team_for_member(controller_id)
-            .map(|(team_id, _)| team_id);
+        let controller_team = self.team_script_vm.team_of(controller_id);
         if let Some(decision) = controller_team
             .and_then(|team_id| self.team_script_vm.mind_control_decision(team_id))
             .filter(|&decision| decision != 0)

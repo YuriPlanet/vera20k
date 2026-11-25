@@ -1642,14 +1642,11 @@ impl Simulation {
     /// (`0x0050B716`) passes only on `house`'s own. Mode zero reads `house`'s
     /// human and PlayerControl flags (`+0x1EC`, `+0x1ED`), so a campaign
     /// PlayerControl house passes on the player's client too.
-    pub(crate) fn human_player_clients(&self, house: InternedId) -> Vec<InternedId> {
-        self.human_player_client_set(house).to_vec()
-    }
-
-    /// [`Self::human_player_clients`] without the extra copy of the client
-    /// list (inside the object pass the list is the pass's own, so nothing is
-    /// copied): a shot's RevealOnFire asks it per shot at a human player's
-    /// object.
+    ///
+    /// The answer owns no copy of the client list (inside the object pass the
+    /// list is the pass's own), so a caller may reveal through `&mut self`
+    /// while it walks it: a shot's RevealOnFire asks it per shot at a human
+    /// player's object.
     pub(crate) fn human_player_client_set(&self, house: InternedId) -> HumanPlayerClients {
         let control = super::ControlProjection::for_native_view(&self.session, &self.houses);
         if control.uses_player_pointer() {
@@ -1665,6 +1662,9 @@ impl Simulation {
         }
     }
 
+    /// An owned list: it is built, not stored (offline, the current house
+    /// moved first), and its callers reveal through `&mut self` while they
+    /// walk it. [`Self::any_fog_client`] asks it without building it.
     fn fog_clients_current_first(&self) -> Vec<crate::sim::intern::InternedId> {
         if self.session.execution_topology().is_lockstep() {
             return self.represented_player_maps();
@@ -1675,6 +1675,16 @@ impl Simulation {
             clients.insert(0, current);
         }
         clients
+    }
+
+    /// Whether `admits` holds for one of [`Self::fog_clients_current_first`].
+    fn any_fog_client(&self, mut admits: impl FnMut(&InternedId) -> bool) -> bool {
+        if self.session.execution_topology().is_lockstep() {
+            return self
+                .each_represented_player_map()
+                .any(|house| admits(&house));
+        }
+        self.offline_player_map().iter().any(&mut admits) || self.fog_viewers().iter().any(admits)
     }
 
     /// RegrowFogAtCell4ACC50, with an explicit DFS stack preserving its
@@ -2850,10 +2860,7 @@ impl Simulation {
             };
             // A map that hears cell notifications hands them to receivers
             // beyond the maps: walk every map with it.
-            if quiet
-                && paranoid.unsettled.is_some()
-                && !self.fog_clients_current_first().iter().any(walked)
-            {
+            if quiet && paranoid.unsettled.is_some() && !self.any_fog_client(walked) {
                 let maps: Vec<_> = self.houses.order().iter().copied().filter(walked).collect();
                 walks.journaled = !maps.is_empty();
                 walks.maps = Some(maps);
