@@ -409,3 +409,112 @@ fn automation_allowed_reads_the_room_switch() {
     assert_eq!(mem_i64(&scene, 0, 0), 1);
     assert!(scene.sim().ext_modules().automation_allowed());
 }
+
+/// RFC 0001 section 10's round trip with the SDK example
+/// (`sdk/examples/ui-reinforcements`), when `VERA20K_TEST_UI_REINFORCEMENTS`
+/// names its `rules.wasm|ui.wasm`: the client module loads; the button's
+/// message travels the command stream to the map's `on_message`, which
+/// creates one Rhino for the sender at waypoint 3 and notifies its player;
+/// a second purchase is refused.
+#[test]
+fn ui_reinforcements_round_trip() {
+    let Some(paths) = std::env::var("VERA20K_TEST_UI_REINFORCEMENTS").ok() else {
+        return;
+    };
+    let (rules_path, ui_path) = paths
+        .split_once('|')
+        .expect("VERA20K_TEST_UI_REINFORCEMENTS is rules.wasm|ui.wasm");
+    let ui = std::fs::read(ui_path.trim()).expect("ui.wasm reads");
+    let client = vera20k_wasm_ext::ClientModule::load(&ui, vera20k_wasm_ext::Limits::MAP)
+        .unwrap_or_else(|e| panic!("ui.wasm loads: {e}"));
+    for export in [
+        "client_on_start",
+        "client_on_render",
+        "client_on_events",
+    ] {
+        assert!(client.has_export(export), "ui.wasm exports {export}");
+    }
+    let Some(mut scene) = scenario() else { return };
+    // Waypoint 3 is a start of this map, its MCV on the cell, where the
+    // module rightly refuses (no tank, no charge). Move the waypoint over
+    // free cells beside it until the land admits a Rhino.
+    let (x, y) = scene
+        .sim()
+        .session
+        .waypoint_cell(3)
+        .expect("the map sets waypoint 3");
+    let free: Vec<(u16, u16)> = {
+        let sim = scene.sim();
+        let (x, y) = (x as u16, y as u16);
+        (x.saturating_sub(4)..=x + 4)
+            .flat_map(|cx| (y.saturating_sub(4)..=y + 4).map(move |cy| (cx, cy)))
+            .filter(|&cell| {
+                !sim.terrain_objects.cell_index().contains_key(&cell)
+                    && sim
+                        .entities()
+                        .iter_sorted()
+                        .all(|(_, e)| (e.position.rx(), e.position.ry()) != cell)
+            })
+            .collect()
+    };
+    let bytes = std::fs::read(rules_path.trim()).expect("rules.wasm reads");
+    scene
+        .runtime
+        .simulation
+        .install_ext_module(&scene.runtime.resources.rules, ModuleSource::Map, &bytes)
+        .expect("rules.wasm installs");
+    let (house, _) = house_and_unit(&scene);
+    let rhinos = |scene: &HeadlessScenario| {
+        let sim = scene.sim();
+        sim.entities()
+            .iter_sorted()
+            .filter(|(_, e)| {
+                e.owner() == house
+                    && e.lifecycle.object_alive()
+                    && sim.interner.resolve(e.type_ref()) == "HTNK"
+            })
+            .count()
+    };
+    let notify = vera20k_wasm_ext::notify_id("Reinforced");
+    let to = house_ref(house_index(&scene, house));
+    let buy = |scene: &mut HeadlessScenario| {
+        let sim = &mut scene.runtime.simulation;
+        let record = sim
+            .encode_module_message_record(house, 1, &[1])
+            .expect("the message encodes");
+        let tick = sim.session.tick();
+        sim.queue_command(CommandEnvelope::synchronized(record, tick));
+        for _ in 0..8 {
+            scene.tick();
+        }
+        let outbox = scene.runtime.simulation.take_client_outbox();
+        outbox
+            .notifies
+            .iter()
+            .filter(|n| n.to == to && n.id == notify)
+            .count()
+    };
+    let before = rhinos(&scene);
+    let mut notified = 0;
+    for &(rx, ry) in &free {
+        let drop = crate::map::waypoints::Waypoint { index: 3, rx, ry };
+        scene
+            .runtime
+            .simulation
+            .session
+            .install_waypoints(&std::collections::HashMap::from([(3, drop)]));
+        notified += buy(&mut scene);
+        if rhinos(&scene) > before {
+            break;
+        }
+    }
+    assert_eq!(rhinos(&scene), before + 1, "one Rhino for one purchase");
+    assert_eq!(notified, 1, "the buyer's player is told once");
+    // Bought once: a second message changes nothing.
+    notified += buy(&mut scene);
+    let log = scene.runtime.simulation.ext_modules_mut().take_log();
+    eprintln!("ui-reinforcements log: {log:?}");
+    assert_eq!(scene.sim().ext_modules().status()[0].1, None, "rules.wasm runs");
+    assert_eq!(rhinos(&scene), before + 1, "a second purchase is refused");
+    assert_eq!(notified, 1);
+}
