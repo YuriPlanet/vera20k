@@ -1016,7 +1016,9 @@ impl UiTree {
     pub(crate) fn button_look(&self, node: NodeId) -> ButtonLook {
         let pointed = self.pointed == Some(node);
         ButtonLook {
-            hovered: pointed && self.held.is_none_or(|held| held == node),
+            // A held button looks pressed, not hovered; while one is
+            // held no other hovers.
+            hovered: pointed && self.held.is_none(),
             pressed: pointed && self.held == Some(node),
         }
     }
