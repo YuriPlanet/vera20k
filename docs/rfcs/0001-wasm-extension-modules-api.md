@@ -655,7 +655,7 @@ These events fire at safe points. **Object + weapon** also permits binding to we
 | 8–15 | An infantryman's `InfDeath` (0..255) | The killing warhead's |
 | 32–62 | Death weapon ID plus 1, fired instead of the type's own (at `DeathWeaponDamageModifier`); 0 for the type's own | 0 |
 
-Other bits must be 0. An answer with other bits, a negative answer or an unknown weapon ID keeps the previous link's result. Sinking, crashing, `DeathFrames=`, explosion animations and releasing slaves and mind-controlled units stay with the engine.
+Other bits must be 0. An answer with other bits, a negative answer or an unknown weapon ID keeps the previous link's result. Sinking, crashing, `DeathFrames=`, explosion animations and releasing slaves and mind-controlled units stay with the engine. A plan that drops debris, the passengers' deaths or the death weapon drops their random draws with them: a different outcome, still deterministic.
 
 ### 4.4 New polling events
 

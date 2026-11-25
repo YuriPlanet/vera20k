@@ -30,7 +30,10 @@
 //! `Explosion=`/`DestroyAnim=` and the slaves' and captives' release stay
 //! native: they are the object's lifecycle, not choices the arm makes.
 //! An `InfDeath` the module leaves as native keeps a native value outside
-//! 0..255.
+//! 0..255. A plan that drops the debris, the passengers' deaths or the death
+//! weapon drops their Scenario draws with them: a different outcome, still
+//! deterministic, not a native computation replaced (control-point list
+//! 4.4 asks that only of the latter).
 
 use vera20k_wasm_ext::triggers::EVENT_FATAL_DAMAGE;
 
