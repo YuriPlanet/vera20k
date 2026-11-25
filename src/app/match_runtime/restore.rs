@@ -162,7 +162,12 @@ pub(crate) fn commit_prepared_load(
         theater_ext,
     };
     crate::app::loading::transitions::install_world_presentation(
-        state,
+        &state.platform,
+        &mut state.renderer,
+        &mut state.frontend,
+        &mut state.match_state,
+        &mut state.process_assets,
+        &state.persistence,
         map,
         committed.presentation,
     );

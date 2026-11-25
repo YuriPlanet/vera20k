@@ -491,14 +491,18 @@ pub(crate) struct CoopScoreView {
     pub(crate) difficulty: i32,
 }
 
-pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
+pub(crate) fn view(
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+) -> Option<CoopScoreView> {
     use crate::app::frontend::skirmish_shell_render::{
         flag_pcx_for_side_item_data, side_item_data_for_country,
     };
     use crate::app::shell_network_setup::view::choice;
     use crate::rules::ruleset::CountryIdx;
     use crate::ui::skirmish_shell::{SkirmishComboItem, SkirmishCountryChoice};
-    let session = &state.match_state.session;
+    let session = &match_state.session;
     let round = session.cooperative_round()?;
     let launch = session.network_setup()?;
     let mut slots: [Option<CoopSlotView>; 2] = [None, None];
@@ -512,7 +516,7 @@ pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
             (
                 crate::ui::multiplayer_setup::SetupChoice {
                     value: -2,
-                    text: state.csf_text("GUI:Random"),
+                    text: process_assets.csf_text("GUI:Random"),
                     swatch: None,
                     greyed: false,
                 },
@@ -521,9 +525,9 @@ pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
         } else {
             (
                 choice(
-                    &state.frontend,
-                    &state.match_state,
-                    &state.process_assets,
+                    frontend,
+                    match_state,
+                    process_assets,
                     SkirmishComboItem::Country(SkirmishCountryChoice::Country(slot.country)),
                 ),
                 side_item_data_for_country(slot.country),
@@ -534,8 +538,7 @@ pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
         } else {
             SkirmishComboItem::Color(usize::from(slot.color_index))
         };
-        let rules = state
-            .match_state
+        let rules = match_state
             .sim_runtime
             .runtime()
             .map(|rt| &rt.resources.rules);
@@ -550,16 +553,11 @@ pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
             name: human.name.clone(),
             country,
             flag,
-            color: choice(
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
-                color_item,
-            ),
+            color: choice(frontend, match_state, process_assets, color_item),
             start: choice(
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
+                frontend,
+                match_state,
+                process_assets,
                 SkirmishComboItem::Start(slot.start_position),
             ),
             ready: session.cooperative_round_slot_ready(index),
@@ -571,10 +569,7 @@ pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
         slots,
         continue_enabled: session.cooperative_round_continue_enabled(),
         quit_enabled: round.quit_enabled(),
-        difficulty: state
-            .frontend
-            .multiplayer_shell_runtime
-            .cooperative_difficulty(),
+        difficulty: frontend.multiplayer_shell_runtime.cooperative_difficulty(),
     })
 }
 

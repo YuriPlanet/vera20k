@@ -11,21 +11,28 @@ use crate::render::tactical_draw_plan::RenderZPolicy;
 
 const CLEAR_PIXEL: [u8; 4] = [255, 0, 255, 255];
 
-pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
-    let sim = &state
-        .match_state
+pub(super) fn observe(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    output_prefix: &Path,
+) -> Result<Value> {
+    let sim = &match_state
         .sim_runtime
         .runtime()
         .context("aircraft runtime absent")?
         .simulation;
     let mut objects = PlannedObjects::default();
     build_unit_instances(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
         &mut objects,
         &NativeDisplayOrder::from_world(sim, None),
     );
@@ -34,7 +41,7 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
         .filter(|entity| entity.category() == crate::map::entities::EntityCategory::Aircraft)
         .map(|entity| {
             let name = sim.interner().resolve(entity.type_ref());
-            let frames = state.match_state.match_presentation.unit_atlas.as_ref()
+            let frames = match_state.match_presentation.unit_atlas.as_ref()
                 .map(|atlas| atlas.frame_counts.iter().filter(|((model,_,_),_)| model == name)
                     .map(|((_,layer,turret),count)| json!({"layer": format!("{layer:?}"), "turret": turret, "frames": count}))
                     .collect::<Vec<_>>()).unwrap_or_default();
@@ -53,8 +60,8 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
         let mut pool = InstanceBufferPool::new();
         let instances: Vec<SpriteInstance> = pieces.iter().map(|piece| piece.instance).collect();
         pool.upload_on_device(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
             "aircraft_probe",
             &instances,
         );
@@ -64,11 +71,11 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
             ("z-bypass", RenderZPolicy::None),
         ] {
             let pixels = raster(
-                &state.platform,
-                &state.renderer,
-                &state.frontend.screen,
-                &state.match_state.match_presentation,
-                &state.persistence,
+                platform,
+                renderer,
+                &frontend.screen,
+                &match_state.match_presentation,
+                persistence,
                 &pool,
                 pieces,
                 policy,
@@ -95,8 +102,8 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
             image::save_buffer(
                 &path,
                 &rgba,
-                state.render_width(),
-                state.render_height(),
+                renderer.render_width(&frontend.screen),
+                renderer.render_height(&frontend.screen),
                 image::ColorType::Rgba8,
             )?;
             outputs.push(
@@ -104,9 +111,9 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
                 "image": path, "bgra_sha256": crate::util::sha256::sha256_hex(&pixels)}),
             );
         }
-        let shroud = state.match_state.match_presentation.shroud_buffer.as_ref();
-        let input = &state.match_state.input;
-        let gpu = &state.renderer.gpu;
+        let shroud = match_state.match_presentation.shroud_buffer.as_ref();
+        let input = &match_state.input;
+        let gpu = &renderer.gpu;
         observations.push(json!({
             "id": entity.stable_id(), "type": sim.interner().resolve(entity.type_ref()),
             "display_layer": object.parent.layer.0,

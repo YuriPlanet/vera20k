@@ -567,7 +567,14 @@ impl TacticalCaptureSession {
                         // The chrome places its nodes at a pointer message;
                         // the receipt reads them as they stand now.
                         crate::app::input::chrome_input::refresh(state);
-                        Some(MapCommandBarGestureReceipt::capture(state, command)?)
+                        Some(MapCommandBarGestureReceipt::capture(
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.persistence,
+                            command,
+                        )?)
                     }
                     _ => None,
                 };

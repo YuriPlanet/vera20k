@@ -208,7 +208,13 @@ fn advance(state: &mut AppState) -> Option<Instant> {
                     if state.frontend.shell_message_box.is_some() {
                         App::close_shell_message_box_from_controller(&mut state.frontend);
                     }
-                    open_offer(state);
+                    open_offer(
+                        &state.platform.window,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.process_assets,
+                        &state.persistence.options_profile,
+                    );
                     return None;
                 }
                 let skipped = Version::parse(&state.persistence.options_profile.skipped_update);
@@ -295,7 +301,15 @@ fn advance(state: &mut AppState) -> Option<Instant> {
                 App::leave_shell_dialog(
                     state,
                     crate::app::frontend::shell_transition::ShellSlideKind::MainMenu,
-                    crate::app::updater::open_offer,
+                    |state| {
+                        crate::app::updater::open_offer(
+                            &state.platform.window,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &state.process_assets,
+                            &state.persistence.options_profile,
+                        )
+                    },
                 );
             } else {
                 state.frontend.updater.phase = Phase::Found { package, offer };
@@ -396,58 +410,52 @@ const CHECK_FAILED: &str = "VERA:UpdateCheckFailed";
 /// Vera Options' Check for Updates, once its page has slid out: an offer
 /// waiting for the main menu shows now, and otherwise a check (the one
 /// under way, or a new one) answers in a box, offering a skipped version too.
-pub(crate) fn open_check(state: &mut AppState) {
+pub(crate) fn open_check(
+    window: &winit::window::Window,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    options_profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+) {
     // Over the empty shell backdrop, as the offer asks.
-    App::destroy_current_shell_dialog(&mut state.frontend);
-    match std::mem::take(&mut state.frontend.updater.phase) {
+    App::destroy_current_shell_dialog(frontend);
+    match std::mem::take(&mut frontend.updater.phase) {
         Phase::Found { package, offer } => {
-            state.frontend.updater.phase = Phase::Offered { package, offer };
-            open_offer(state);
+            frontend.updater.phase = Phase::Offered { package, offer };
+            open_offer(window, renderer, frontend, process_assets, options_profile);
         }
         Phase::Checking {
             package, result, ..
         } => {
             // The player reached Options, so the menu has shown.
-            state.frontend.updater.phase = Phase::Checking {
+            frontend.updater.phase = Phase::Checking {
                 package,
                 result,
                 asked: true,
                 menu_hold: None,
             };
-            open_checking(
-                &state.platform.window,
-                &state.renderer,
-                &mut state.frontend,
-                &state.process_assets,
-                &state.persistence.options_profile,
-            );
+            open_checking(window, renderer, frontend, process_assets, options_profile);
         }
         Phase::NotStarted | Phase::Finished => match start(true) {
             Ok(phase) => {
-                state.frontend.updater.phase = phase;
-                open_checking(
-                    &state.platform.window,
-                    &state.renderer,
-                    &mut state.frontend,
-                    &state.process_assets,
-                    &state.persistence.options_profile,
-                );
+                frontend.updater.phase = phase;
+                open_checking(window, renderer, frontend, process_assets, options_profile);
             }
             Err(reason) => {
-                state.frontend.updater.phase = Phase::Finished;
+                frontend.updater.phase = Phase::Finished;
                 show_notice(
-                    &state.platform.window,
-                    &state.renderer,
-                    &mut state.frontend,
-                    &state.process_assets,
-                    &state.persistence.options_profile,
+                    window,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    options_profile,
                     crate::i18n::tr(reason),
                 );
             }
         },
         // A box of the updater's own is up already.
         phase @ (Phase::Offered { .. } | Phase::Downloading { .. }) => {
-            state.frontend.updater.phase = phase;
+            frontend.updater.phase = phase;
         }
     }
 }
@@ -495,9 +503,15 @@ pub(crate) fn lobby_outdated(frontend: &mut crate::app::frontend::state::Fronten
 
 /// The menu has slid out, or has not shown yet: ask over the empty shell
 /// backdrop, as Exit Game does (`App::open_exit_confirm`).
-pub(crate) fn open_offer(state: &mut AppState) {
+pub(crate) fn open_offer(
+    window: &winit::window::Window,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    options_profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+) {
     use crate::i18n::{tr, tr_fill};
-    let Phase::Offered { offer, .. } = &state.frontend.updater.phase else {
+    let Phase::Offered { offer, .. } = &frontend.updater.phase else {
         return;
     };
     let (question, confirm, skip, changes) = match offer {
@@ -529,14 +543,14 @@ pub(crate) fn open_offer(state: &mut AppState) {
         tr("VERA:Later"),
         skip.map(tr).unwrap_or_default(),
     );
-    let notes = notes::ReleaseNotes::new(&state.renderer.bit_font, changes);
-    App::destroy_current_shell_dialog(&mut state.frontend);
+    let notes = notes::ReleaseNotes::new(&renderer.bit_font, changes);
+    App::destroy_current_shell_dialog(frontend);
     App::open_shell_message_box(
-        &state.platform.window,
-        &state.renderer,
-        &mut state.frontend,
-        &state.process_assets,
-        &state.persistence.options_profile,
+        window,
+        renderer,
+        frontend,
+        process_assets,
+        options_profile,
         shell_box,
         ShellMessageBoxPurpose::UpdateOffer(notes),
     );

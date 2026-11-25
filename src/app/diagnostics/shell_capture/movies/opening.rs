@@ -1061,14 +1061,23 @@ impl OpeningCapture {
         Ok(())
     }
 
-    pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
+    pub(super) fn receipt(
+        &self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        sfx_player: &Option<SfxPlayer>,
+        persistence: &PersistenceState,
+    ) -> Result<Value> {
         ensure!(
             self.ready(
-                &state.platform,
-                &state.renderer,
-                &state.frontend.screen,
-                &state.match_state,
-                &state.persistence
+                platform,
+                renderer,
+                &frontend.screen,
+                match_state,
+                persistence
             )?,
             "opening readback missed its selected checkpoint"
         );
@@ -1082,9 +1091,9 @@ impl OpeningCapture {
             "locked_arrow_probe": self.lock_probe, "unlocked_arrow_probe": self.unlock_probe,
             "locked_mouse_probe": self.locked_mouse_probe,
             "unlocked_mouse_probe": self.unlocked_mouse_probe,
-            "save_restore": self.restored, "current": opening_observation(&state.platform, &state.renderer, &state.frontend, &state.match_state, &state.audio.sfx_player, &state.persistence)?,
+            "save_restore": self.restored, "current": opening_observation(platform, renderer, frontend, match_state, sfx_player, persistence)?,
             "retained_radar": self.saved_radar,
-            "radar_display": state.match_state.match_presentation.radar_anim.as_ref()
+            "radar_display": match_state.match_presentation.radar_anim.as_ref()
                 .map(|radar| json!({"phase": format!("{:?}", radar.phase()),
                     "minimap_visible": radar.is_minimap_visible()})),
             "pre_lock_save": self.pre_lock_save, "unlocked_save": self.unlocked_save,
@@ -1094,12 +1103,12 @@ impl OpeningCapture {
             "trigger_springs": self.trigger_springs,
             "trigger_events": self.trigger_events,
             "push_orders": self.push_orders,
-            "outcome": trace_outcome(&state.match_state),
+            "outcome": trace_outcome(match_state),
             "houses": if matches!(self.target, OpeningTarget::TriggerTrace { .. }) {
-                Some(trace_houses(&state.match_state.sim_runtime)?)
+                Some(trace_houses(&match_state.sim_runtime)?)
             } else { None },
             "encounter_entities": if matches!(self.target, OpeningTarget::SovietTick(_) | OpeningTarget::SovietNavy(_) | OpeningTarget::SovietGroups(_) | OpeningTarget::SovietFortresses(_)) {
-                let sim = &state.match_state.sim_runtime.runtime().context("encounter runtime")?.simulation;
+                let sim = &match_state.sim_runtime.runtime().context("encounter runtime")?.simulation;
                 Some(sim.entities().iter_sorted().map(|(_, entity)| json!({
                     "id": entity.stable_id(), "type": sim.interner().resolve(entity.type_ref()),
                     "owner": sim.interner().resolve(entity.owner()), "active": entity.is_active(),
@@ -1112,7 +1121,7 @@ impl OpeningCapture {
                 })).collect::<Vec<_>>())
             } else { None },
             "aircraft_raster": if matches!(self.target, OpeningTarget::AlliedTick(_)) {
-                Some(aircraft::observe(state, &self.save_directory)?)
+                Some(aircraft::observe(platform, renderer, frontend, match_state, process_assets, persistence, &self.save_directory)?)
             } else { None },
             "clock_domain": if self.target == OpeningTarget::RealtimeUnlocked {
                 "ordinary wall-clock frame pacing and audio service"

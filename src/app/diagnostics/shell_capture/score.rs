@@ -191,7 +191,13 @@ impl CampaignScoreCapture {
 
         if self.phase == CampaignScorePhase::MainMenu {
             if rendered == PresentedShell::MainMenu
-                && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state))?
+                && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                ))?
             {
                 App::open_campaign_score_page(
                     &state.renderer,
@@ -248,7 +254,13 @@ impl CampaignScoreCapture {
         match animation.phase {
             CampaignAnimationPhase::MainMenu => {
                 if rendered == PresentedShell::MainMenu
-                    && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state))?
+                    && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence,
+                    ))?
                 {
                     App::open_campaign_score_page(
                         &state.renderer,
@@ -833,7 +845,13 @@ impl ScoreCapture {
     ) -> Result<()> {
         if self.phase == Phase::MainMenu {
             if rendered == PresentedShell::MainMenu
-                && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state))?
+                && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                ))?
             {
                 let model =
                     comparison_model(&state.frontend, &state.match_state, &state.process_assets)?;

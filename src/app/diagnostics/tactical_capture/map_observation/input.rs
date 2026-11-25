@@ -2,6 +2,7 @@
 //! selection, placement, sidebar and command-bar state seen around each gesture.
 
 use super::*;
+use crate::app::persistence::PersistenceState;
 
 #[derive(Debug, Serialize)]
 pub(super) struct MapCommandReceipt {
@@ -720,35 +721,44 @@ impl MapCommandBarGestureReceipt {
         })
     }
 
-    pub(super) fn capture(state: &AppState, command: &str) -> Result<(Self, vera20k_gui::NodeId)> {
+    pub(super) fn capture(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+        command: &str,
+    ) -> Result<(Self, vera20k_gui::NodeId)> {
         let (layout, slots) =
             crate::app::presentation::sidebar_build::command_bar::layout_and_slots(
-                &state.platform,
-                &state.renderer,
-                &state.frontend,
-                &state.match_state,
-                &state.persistence,
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
             )
             .context("command-bar layout is absent")?;
-        let (gui, nodes) =
-            crate::app::input::chrome_input::chrome(&state.match_state.match_presentation)
-                .context("command-bar controls are absent")?;
+        let (gui, nodes) = crate::app::input::chrome_input::chrome(&match_state.match_presentation)
+            .context("command-bar controls are absent")?;
         let (mut receipt, handle) = Self::resolve(
             command,
             layout,
             &slots,
             (gui, nodes.command_bar),
-            [state.render_width(), state.render_height()],
+            [
+                renderer.render_width(&frontend.screen),
+                renderer.render_height(&frontend.screen),
+            ],
         )?;
         if command == "Thumb" {
             ensure!(
-                state.frontend.screen == crate::ui::game_screen::GameScreen::InGame
-                    && !state.match_state.paused()
-                    && state.frontend.keyboard_dialog.is_none(),
+                frontend.screen == crate::ui::game_screen::GameScreen::InGame
+                    && !match_state.paused()
+                    && frontend.keyboard_dialog.is_none(),
                 "thumb gesture requires ordinary unpaused in-game input"
             );
             receipt.thumb = Some(MapCommandBarThumbReceipt {
-                before: MapCommandBarThumbState::capture(&state.match_state, handle)?,
+                before: MapCommandBarThumbState::capture(match_state, handle)?,
                 press: None,
                 release: None,
                 after: None,

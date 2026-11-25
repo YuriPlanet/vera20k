@@ -654,7 +654,14 @@ impl MoviesCapture {
             (Phase::MainMenu, PresentedShell::MainMenu) => {
                 // Only VERA's room's capture runs in a scaled window
                 // (`parse_launch_args`).
-                let snapshot = MainMenuCaptureSnapshot::from_state(state).scaled_as_reference();
+                let snapshot = MainMenuCaptureSnapshot::from_state(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )
+                .scaled_as_reference();
                 if steady_main_menu_capture_ready(snapshot)? {
                     let exit_phase = match self.target {
                         MoviesTarget::ExitConfirm => Some(Phase::Exit),
@@ -1499,7 +1506,13 @@ impl MoviesCapture {
                 }
             }
             (Phase::NetworkReturned, PresentedShell::MainMenu) => {
-                if steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state))? {
+                if steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                ))? {
                     self.route
                         .push(json!({"dialog": 0xe2, "frame": frame, "action": "settled"}));
                     self.phase = Phase::Settling(SETTLE_FRAMES);
@@ -1613,7 +1626,13 @@ impl MoviesCapture {
                         &state.renderer.gpu,
                         &mut state.match_state.input,
                     );
-                    if steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state))? {
+                    if steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence,
+                    ))? {
                         let cleanup = campaign_abort_cleanup_receipt(
                             &state.frontend,
                             &state.match_state,
@@ -1665,7 +1684,13 @@ impl MoviesCapture {
                 &state.match_state,
                 &state.process_assets,
             )?;
-            return steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state));
+            return steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.persistence,
+            ));
         }
         if let Some(restart) = self.restart.as_ref() {
             return restart.ready(state);
@@ -1954,7 +1979,13 @@ impl MoviesCapture {
         format: wgpu::TextureFormat,
         pixels: &[u8],
         frame: u32,
-        state: &AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        sfx_player: &Option<SfxPlayer>,
+        persistence: &PersistenceState,
     ) -> Result<Value> {
         let mut manifest = json!({
             "schema_version": "vera20k.movies-shell-capture.v1",
@@ -1973,7 +2004,7 @@ impl MoviesCapture {
             ..
         } = self.target
         {
-            let visit = state.frontend.wol.as_ref().context("captured WOL visit")?;
+            let visit = frontend.wol.as_ref().context("captured WOL visit")?;
             ensure!(
                 !visit.modern_ui(),
                 "captured WOL welcome lost its native page"
@@ -1988,20 +2019,20 @@ impl MoviesCapture {
             });
         }
         if let MoviesTarget::CampaignStart { target, .. } = self.target {
-            let startup = crate::app::loading::pump::loading_campaign_startup(&state.frontend)
+            let startup = crate::app::loading::pump::loading_campaign_startup(frontend)
                 .map(campaign_startup_receipt)
                 .or_else(|| self.observed_campaign_startup.clone())
                 .context("campaign startup receipt missing at readback")?;
             let map_source = match target {
                 CampaignStartTarget::LoadingFirst => {
-                    crate::app::loading::pump::loading_map_source(&state.frontend)
+                    crate::app::loading::pump::loading_map_source(frontend)
                 }
                 CampaignStartTarget::FirstLive
                 | CampaignStartTarget::InitialSaved
                 | CampaignStartTarget::ExplicitFirstLive(_)
                 | CampaignStartTarget::AbortReturn
                 | CampaignStartTarget::Opening(_)
-                | CampaignStartTarget::Restart(_) => state.match_state.loaded_map_source.as_ref(),
+                | CampaignStartTarget::Restart(_) => match_state.loaded_map_source.as_ref(),
             }
             .context("campaign selected map source missing at readback")?;
             // Readiness is queried before the first loading render prepares
@@ -2019,8 +2050,7 @@ impl MoviesCapture {
             manifest["startup"] = startup;
             manifest["map_admission"] = json!("prepared");
             manifest["selected_map_source"] = serde_json::to_value(map_source)?;
-            manifest["process_source_ini_hashes"] =
-                process_source_ini_hashes(&state.process_assets)?;
+            manifest["process_source_ini_hashes"] = process_source_ini_hashes(process_assets)?;
             manifest["checkpoint_phase"] = json!(match target {
                 CampaignStartTarget::LoadingFirst => "loading-first-frame",
                 CampaignStartTarget::FirstLive => "first-live-frame",
@@ -2065,30 +2095,30 @@ impl MoviesCapture {
                 CampaignStartTarget::LoadingFirst => Value::Null,
                 CampaignStartTarget::FirstLive | CampaignStartTarget::ExplicitFirstLive(_) => {
                     campaign_runtime_receipt(
-                        &state.platform,
-                        &state.renderer,
-                        &state.frontend.screen,
-                        &state.match_state,
-                        &state.persistence,
+                        platform,
+                        renderer,
+                        &frontend.screen,
+                        match_state,
+                        persistence,
                     )?
                 }
                 CampaignStartTarget::InitialSaved => installed_campaign_runtime_receipt(
-                    &state.platform,
-                    &state.renderer,
-                    &state.frontend.screen,
-                    &state.match_state,
-                    &state.persistence,
+                    platform,
+                    renderer,
+                    &frontend.screen,
+                    match_state,
+                    persistence,
                 )?,
                 CampaignStartTarget::AbortReturn | CampaignStartTarget::Restart(_) => self
                     .observed_campaign_runtime
                     .clone()
                     .context("campaign route has no first-live runtime observation")?,
                 CampaignStartTarget::Opening(_) => installed_campaign_runtime_receipt(
-                    &state.platform,
-                    &state.renderer,
-                    &state.frontend.screen,
-                    &state.match_state,
-                    &state.persistence,
+                    platform,
+                    renderer,
+                    &frontend.screen,
+                    match_state,
+                    persistence,
                 )?,
             };
             if matches!(target, CampaignStartTarget::Restart(target) if target.next_scenario().is_some())
@@ -2096,33 +2126,29 @@ impl MoviesCapture {
                 // This readback presents the next mission. The restart receipt
                 // separately retains the initial and loaded mission identities.
                 manifest["startup"] = campaign_startup_receipt(
-                    state
-                        .match_state
+                    match_state
                         .startup
                         .installed_campaign()
                         .context("continued mission has no campaign admission")?,
                 );
                 manifest["runtime"] = campaign_runtime_receipt(
-                    &state.platform,
-                    &state.renderer,
-                    &state.frontend.screen,
-                    &state.match_state,
-                    &state.persistence,
+                    platform,
+                    renderer,
+                    &frontend.screen,
+                    match_state,
+                    persistence,
                 )?;
             }
             if target == CampaignStartTarget::AbortReturn {
                 manifest["runtime_observation"] = json!("first-live-frame-before-Escape-press");
-                manifest["cleanup"] = campaign_abort_cleanup_receipt(
-                    &state.frontend,
-                    &state.match_state,
-                    &state.process_assets,
-                )?;
+                manifest["cleanup"] =
+                    campaign_abort_cleanup_receipt(frontend, match_state, process_assets)?;
             }
             if target == CampaignStartTarget::InitialSaved {
                 manifest["initial_save"] = initial_save_receipt(
-                    &state.match_state,
-                    &state.process_assets,
-                    &state.persistence.repository,
+                    match_state,
+                    process_assets,
+                    &persistence.repository,
                     &self.restart_save_directory,
                 )?;
             }
@@ -2132,7 +2158,15 @@ impl MoviesCapture {
                 "mission_opening_1308": "unresolved; this receipt does not certify scripted mission opening",
             });
             if let Some(opening) = &self.opening {
-                manifest["opening"] = opening.receipt(state)?;
+                manifest["opening"] = opening.receipt(
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    sfx_player,
+                    persistence,
+                )?;
                 manifest["coverage"]["first_live"] =
                     json!("tick-zero installation observed before exact production steps");
                 manifest["coverage"]["mission_opening_1308"] = json!(
@@ -2154,16 +2188,16 @@ impl MoviesCapture {
         } else if self.target == MoviesTarget::CampaignBack {
             manifest["schema_version"] = json!("vera20k.campaign-start-capture.v1");
             manifest["checkpoint_phase"] = json!("campaign-back-return");
-            manifest["shell_return"] = json!({"screen": format!("{:?}", state.frontend.screen),
-                "route": format!("{:?}", state.frontend.shell_route),
-                "campaign_page_present": state.frontend.campaign.is_some(),
-                "loading_session_present": state.frontend.loading_session.is_some()});
+            manifest["shell_return"] = json!({"screen": format!("{:?}", frontend.screen),
+                "route": format!("{:?}", frontend.shell_route),
+                "campaign_page_present": frontend.campaign.is_some(),
+                "loading_session_present": frontend.loading_session.is_some()});
         }
         if let Some(lan) = self.lan.as_ref() {
-            manifest["lan"] = lan.receipt(&state.frontend, &state.match_state)?;
+            manifest["lan"] = lan.receipt(frontend, match_state)?;
         }
         if let Some(wol) = self.wol.as_ref() {
-            manifest["wol"] = wol.receipt(&state.platform.game_config, &state.frontend);
+            manifest["wol"] = wol.receipt(&platform.game_config, frontend);
         }
         Ok(manifest)
     }

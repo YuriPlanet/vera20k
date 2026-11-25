@@ -153,7 +153,16 @@ impl FailureCapture {
         route: &mut Vec<Value>,
     ) -> Result<bool> {
         if self.mode == Mode::Desync {
-            return self.observe_checksum(state, render, route);
+            return self.observe_checksum(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                render,
+                route,
+            );
         }
         let now = (crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32) >> 4;
         if self.quit.is_some() {
@@ -496,14 +505,18 @@ impl FailureCapture {
 
     fn observe_checksum(
         &mut self,
-        state: &mut AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
         render: u32,
         route: &mut Vec<Value>,
     ) -> Result<bool> {
         use crate::app::match_runtime::network_failure;
         let (frame, tick, rng, mismatch) = {
-            let sim = &state
-                .match_state
+            let sim = &match_state
                 .sim_runtime
                 .runtime()
                 .context("desync world")?
@@ -527,11 +540,11 @@ impl FailureCapture {
                 "checksum modal is not the expected admitted peer mismatch"
             );
             ensure!(
-                state.match_state.network_failure.is_some()
-                    && state.frontend.shell_controller.top_id() == Some(network_failure::DIALOG),
+                match_state.network_failure.is_some()
+                    && frontend.shell_controller.top_id() == Some(network_failure::DIALOG),
                 "real checksum CE dialog is absent"
             );
-            let labels = network_failure::labels(&state.match_state.sim_runtime);
+            let labels = network_failure::labels(&match_state.sim_runtime);
             ensure!(
                 labels.0.0 == "TXT_OUT_OF_SYNC" && labels.1.0 == "TXT_STOP",
                 "another error dialog replaced the checksum modal"
@@ -557,32 +570,32 @@ impl FailureCapture {
             }
             let rect = crate::ui::shell::modal::menu_message_box(
                 1,
-                state.render_width() as i32,
-                state.render_height() as i32,
+                renderer.render_width(&frontend.screen) as i32,
+                renderer.render_height(&frontend.screen) as i32,
             )
             .button(0);
             set_window_pointer_to_rect_center(
-                &state.renderer,
-                &state.frontend.screen,
-                &mut state.match_state.input,
+                renderer,
+                &frontend.screen,
+                &mut match_state.input,
                 rect,
             );
             network_failure::cursor_moved(
-                &state.platform,
-                &state.renderer,
-                &mut state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
             );
             if held.pressed_render.is_none() {
                 network_failure::mouse(
-                    &state.platform,
-                    &state.renderer,
-                    &mut state.frontend,
-                    &mut state.match_state,
-                    &state.process_assets,
-                    &mut state.audio.sfx_player,
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    sfx_player,
                     MouseButton::Left,
                     true,
                 );
@@ -590,22 +603,19 @@ impl FailureCapture {
                 route.push(json!({"render_frame":render,"native_frame":frame,"action":"actual checksum CE Stop pressed; frame and RNG held"}));
             } else if held.released_render.is_none() {
                 network_failure::mouse(
-                    &state.platform,
-                    &state.renderer,
-                    &mut state.frontend,
-                    &mut state.match_state,
-                    &state.process_assets,
-                    &mut state.audio.sfx_player,
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    sfx_player,
                     MouseButton::Left,
                     false,
                 );
                 held.released_render = Some(render);
                 route.push(json!({"render_frame":render,"native_frame":frame,"action":"actual checksum CE Stop released through normal input"}));
             }
-            MoviesCapture::restore_neutral_pointer(
-                &state.renderer.gpu,
-                &mut state.match_state.input,
-            );
+            MoviesCapture::restore_neutral_pointer(&renderer.gpu, &mut match_state.input);
             return Ok(false);
         }
         let Some(held) = &self.checksum else {
@@ -615,7 +625,7 @@ impl FailureCapture {
             held.released_render.is_some(),
             "checksum continuation cleared without Stop acknowledgement"
         );
-        if state.frontend.screen != GameScreen::MainMenu || !lobby_settled(&state.frontend) {
+        if frontend.screen != GameScreen::MainMenu || !lobby_settled(frontend) {
             return Ok(false);
         }
         ensure!(
@@ -623,16 +633,15 @@ impl FailureCapture {
             "checksum Stop did not commit exactly one native aborted tail"
         );
         ensure!(
-            state.match_state.live_network.is_none()
-                && state.match_state.lan_service.is_some()
-                && !state.match_state.network_wait.waiting()
-                && state.match_state.network_failure.is_none()
-                && state.frontend.shell_controller.top_id() != Some(network_failure::DIALOG)
-                && state.match_state.session.network_setup().is_none()
-                && state.frontend.loading_session.is_none()
-                && state.match_state.scenario_exit.is_none()
-                && !state
-                    .match_state
+            match_state.live_network.is_none()
+                && match_state.lan_service.is_some()
+                && !match_state.network_wait.waiting()
+                && match_state.network_failure.is_none()
+                && frontend.shell_controller.top_id() != Some(network_failure::DIALOG)
+                && match_state.session.network_setup().is_none()
+                && frontend.loading_session.is_none()
+                && match_state.scenario_exit.is_none()
+                && !match_state
                     .sim_runtime
                     .runtime()
                     .context("returned desync world")?

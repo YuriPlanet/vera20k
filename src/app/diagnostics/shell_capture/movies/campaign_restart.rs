@@ -1033,7 +1033,13 @@ impl RestartCapture {
                 if state.frontend.screen == GameScreen::MainMenu
                     && state.frontend.shell_message_box.is_none()
                     && state.audio.theme.current_song() == state.audio.theme.from_name("INTRO")
-                    && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state))?
+                    && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence,
+                    ))?
                 {
                     ensure!(
                         state

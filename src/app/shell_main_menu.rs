@@ -1067,7 +1067,13 @@ impl App {
                         // its values; the main menu returns after the
                         // updater's last box.
                         Self::commit_launcher_options_result(state, LauncherParentResult::Back);
-                        crate::app::updater::open_check(state);
+                        crate::app::updater::open_check(
+                            &state.platform.window,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &state.process_assets,
+                            &state.persistence.options_profile,
+                        );
                     });
                 }
             }

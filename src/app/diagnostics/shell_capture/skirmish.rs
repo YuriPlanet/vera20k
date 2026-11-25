@@ -286,45 +286,55 @@ impl CaptureGuard {
 }
 
 fn guard(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
     chooser: Option<ChooserTarget>,
     loading: bool,
     expected_cursor: (f32, f32),
     keyboard_open: bool,
 ) -> Result<()> {
-    let shell = &state.frontend.skirmish_shell_state;
+    let shell = &frontend.skirmish_shell_state;
     // `main_menu_dialog_open` also counts the shared Keyboard dialog A3,
     // which the in-game Keyboard route opens on purpose; its other two
     // dialogs still count there.
     let main_menu_dialog = if keyboard_open {
-        state.frontend.shell_message_box.is_some() || state.frontend.options_dialog.is_some()
+        frontend.shell_message_box.is_some() || frontend.options_dialog.is_some()
     } else {
-        state.main_menu_dialog_open()
+        frontend.main_menu_dialog_open()
     };
     CaptureGuard {
-        main_menu_screen: state.frontend.screen == GameScreen::MainMenu
+        main_menu_screen: frontend.screen == GameScreen::MainMenu
             || (loading
                 && matches!(
-                    state.frontend.screen,
+                    frontend.screen,
                     GameScreen::Loading | GameScreen::InGame | GameScreen::MissionResult { .. }
                 )),
-        surface: (state.render_width(), state.render_height()),
-        failed: state.frontend.main_menu_shell_error.is_some(),
+        surface: (
+            renderer.render_width(&frontend.screen),
+            renderer.render_height(&frontend.screen),
+        ),
+        failed: frontend.main_menu_shell_error.is_some(),
         developer_shortcut: false,
-        software_cursor: state.use_software_cursor(),
+        software_cursor: crate::app::state::use_software_cursor(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+        ),
         // The game moves the pointer; the quit route puts it back at rest
         // when the shell returns (and its readiness requires that).
-        cursor: if loading && state.frontend.screen != GameScreen::Loading {
+        cursor: if loading && frontend.screen != GameScreen::Loading {
             (EXPECTED_CURSOR_X as f32, EXPECTED_CURSOR_Y as f32)
         } else {
-            (
-                state.match_state.input.cursor_x,
-                state.match_state.input.cursor_y,
-            )
+            (match_state.input.cursor_x, match_state.input.cursor_y)
         },
         expected_cursor,
         interaction_active: main_menu_dialog
-            || state.frontend.quit_cascade.is_some()
+            || frontend.quit_cascade.is_some()
             || (shell.choose_map_modal.is_some() && chooser.is_none())
             || (shell.random_map_setup_modal.is_some()
                 && !matches!(chooser, Some(ChooserTarget::RandomMap(_))))
@@ -343,7 +353,7 @@ fn guard(
             || shell.validation_modal.is_some()
             || (shell.saved_seed_browser.is_some()
                 && chooser != Some(ChooserTarget::RandomMap(RandomMapTarget::SeedBrowserReturn)))
-            || (state.frontend.random_map_generation.is_some()
+            || (frontend.random_map_generation.is_some()
                 && !matches!(
                     chooser,
                     Some(ChooserTarget::RandomMap(
@@ -353,12 +363,11 @@ fn guard(
                             | RandomMapTarget::EjectBox
                     ))
                 ))
-            || (state.frontend.shell_controller.top_id()
+            || (frontend.shell_controller.top_id()
                 == Some(crate::ui::skirmish_shell::page::DIALOG)
-                && (state.frontend.shell_controller.gui().popup().is_some()
-                    || state.frontend.shell_controller.gui().pressed().is_some()))
-            || state
-                .frontend
+                && (frontend.shell_controller.gui().popup().is_some()
+                    || frontend.shell_controller.gui().pressed().is_some()))
+            || frontend
                 .shell_controller
                 .focused_control(crate::ui::skirmish_shell::page::DIALOG)
                 == Some(0x6A0),
@@ -534,10 +543,21 @@ impl SkirmishCapture {
         input.cursor_y = point.1 as f32;
     }
 
-    fn guard(&self, state: &AppState) -> Result<()> {
+    fn guard(
+        &self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+    ) -> Result<()> {
         let rest = self.rest_point();
         guard(
-            state,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
             self.chooser,
             matches!(
                 self.phase,
@@ -550,7 +570,7 @@ impl SkirmishCapture {
                     | Phase::InGameMenu
             ),
             (rest.0 as f32, rest.1 as f32),
-            self.keyboard_open(&state.match_state.match_presentation),
+            self.keyboard_open(&match_state.match_presentation),
         )
     }
 
@@ -1140,11 +1160,23 @@ impl SkirmishCapture {
             state.match_state.input.cursor_x = EXPECTED_CURSOR_X as f32;
             state.match_state.input.cursor_y = EXPECTED_CURSOR_Y as f32;
         }
-        self.guard(state)?;
+        self.guard(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        )?;
         self.last_presented = Some(rendered);
         match (self.phase, rendered) {
             (Phase::MainMenu, PresentedShell::MainMenu) => {
-                if steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state))? {
+                if steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                ))? {
                     self.route
                         .push(json!({"dialog": 0xe2, "frame": frame, "action": "SinglePlayer"}));
                     App::handle_main_menu_shell_action(
@@ -1206,7 +1238,14 @@ impl SkirmishCapture {
                 }
             }
             (Phase::Skirmish, PresentedShell::Skirmish) => {
-                if self.settled(state)? && self.selected_scene.is_none() {
+                if self.settled(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )? && self.selected_scene.is_none()
+                {
                     self.selected_scene = Some(selected_scene(&state.frontend)?);
                 } else if let Some(point) = self
                     .hover
@@ -1813,42 +1852,55 @@ impl SkirmishCapture {
         Ok(())
     }
 
-    fn settled(&self, state: &AppState) -> Result<bool> {
-        self.guard(state)?;
+    fn settled(
+        &self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+    ) -> Result<bool> {
+        self.guard(platform, renderer, frontend, match_state, persistence)?;
         ensure!(
-            state.frontend.shell_route == ShellRoute::Skirmish,
+            frontend.shell_route == ShellRoute::Skirmish,
             "skirmish capture did not reach the Skirmish shell"
         );
         ensure!(
-            state.frontend.skirmish_shell_chrome.is_some(),
+            frontend.skirmish_shell_chrome.is_some(),
             "skirmish chrome unavailable"
         );
         ensure!(
-            state.frontend.main_menu_movie.is_none(),
+            frontend.main_menu_movie.is_none(),
             "prior shell movie survived skirmish entry"
         );
-        Ok(state.frontend.shell_first_paint_slide.is_none()
-            && state.frontend.shell_slide_active_shell == Some(ShellSlideKind::Skirmish)
-            && state.frontend.skirmish_shell_state.statics.is_terminal())
+        Ok(frontend.shell_first_paint_slide.is_none()
+            && frontend.shell_slide_active_shell == Some(ShellSlideKind::Skirmish)
+            && frontend.skirmish_shell_state.statics.is_terminal())
     }
 
-    pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
-        self.guard(state)?;
+    pub(super) fn ready(
+        &self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+    ) -> Result<bool> {
+        self.guard(platform, renderer, frontend, match_state, persistence)?;
         if let Some(target) = self.entry_tick {
             return Ok(self.entry_held
-                && entry_wave_tick(&state.frontend, ShellSlideKind::Skirmish) == Some(target));
+                && entry_wave_tick(frontend, ShellSlideKind::Skirmish) == Some(target));
         }
         match self.chooser {
             Some(ChooserTarget::Steady) => {
                 return Ok(self.phase == Phase::Chooser
                     && self.pointer_rested
-                    && Self::chooser_settled(&state.frontend));
+                    && Self::chooser_settled(frontend));
             }
             Some(ChooserTarget::Eject) => {
                 return Ok(self.phase == Phase::Chooser
                     && self.pointer_rested
-                    && state
-                        .frontend
+                    && frontend
                         .skirmish_shell_state
                         .choose_map_modal
                         .as_ref()
@@ -1857,68 +1909,62 @@ impl SkirmishCapture {
             Some(ChooserTarget::Entry(target)) => {
                 return Ok(self.phase == Phase::Chooser
                     && self.entry_held
-                    && entry_wave_tick(&state.frontend, ShellSlideKind::ChooseMap)
-                        == Some(target));
+                    && entry_wave_tick(frontend, ShellSlideKind::ChooseMap) == Some(target));
             }
             Some(ChooserTarget::RandomMap(target)) => {
                 return Ok(match target {
                     RandomMapTarget::Steady => {
-                        self.phase == Phase::RandomMap && Self::random_map_settled(&state.frontend)
+                        self.phase == Phase::RandomMap && Self::random_map_settled(frontend)
                     }
                     RandomMapTarget::Entry(tick) => {
                         self.phase == Phase::RandomMap
                             && self.entry_held
-                            && entry_wave_tick(&state.frontend, ShellSlideKind::RandomMap)
-                                == Some(tick)
+                            && entry_wave_tick(frontend, ShellSlideKind::RandomMap) == Some(tick)
                     }
                     RandomMapTarget::Hover(_) | RandomMapTarget::ListOpen => {
                         self.phase == Phase::RandomMap
                             && self.hovered
-                            && Self::random_map_settled(&state.frontend)
+                            && Self::random_map_settled(frontend)
                     }
                     RandomMapTarget::CancelEntry(tick) => {
                         self.phase == Phase::RandomMapCancel
                             && self.entry_held
-                            && entry_wave_tick(&state.frontend, ShellSlideKind::ChooseMap)
-                                == Some(tick)
+                            && entry_wave_tick(frontend, ShellSlideKind::ChooseMap) == Some(tick)
                     }
                     RandomMapTarget::UseMap => {
                         self.pointer_rested
-                            && state.frontend.random_map_generation.is_none()
-                            && state
-                                .frontend
-                                .skirmish_shell_state
-                                .choose_map_modal
-                                .is_none()
+                            && frontend.random_map_generation.is_none()
+                            && frontend.skirmish_shell_state.choose_map_modal.is_none()
                             && self.last_presented == Some(PresentedShell::Skirmish)
-                            && self.settled(state)?
+                            && self.settled(
+                                platform,
+                                renderer,
+                                frontend,
+                                match_state,
+                                persistence,
+                            )?
                     }
                     RandomMapTarget::SeedBrowserReturn => {
                         self.phase == Phase::RandomMap
                             && self.pointer_rested
-                            && state
-                                .frontend
-                                .skirmish_shell_state
-                                .saved_seed_browser
-                                .is_none()
-                            && Self::random_map_settled(&state.frontend)
+                            && frontend.skirmish_shell_state.saved_seed_browser.is_none()
+                            && Self::random_map_settled(frontend)
                     }
                     RandomMapTarget::CancelSteady => {
                         self.phase == Phase::RandomMapCancel
                             && self.pointer_rested
-                            && state
-                                .frontend
+                            && frontend
                                 .skirmish_shell_state
                                 .random_map_setup_modal
                                 .is_none()
-                            && Self::chooser_settled(&state.frontend)
+                            && Self::chooser_settled(frontend)
                     }
                     RandomMapTarget::Eject(
                         crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel,
                     ) => {
                         self.phase == Phase::RandomMapEject
                             && self.answer_rested
-                            && Self::chooser_settled(&state.frontend)
+                            && Self::chooser_settled(frontend)
                     }
                     RandomMapTarget::EjectBox => self.phase == Phase::RandomMap && self.eject_seen,
                     RandomMapTarget::Eject(
@@ -1926,39 +1972,37 @@ impl SkirmishCapture {
                     ) => {
                         self.phase == Phase::RandomMapEject
                             && self.answer_rested
-                            && state
-                                .frontend
-                                .skirmish_shell_state
-                                .choose_map_modal
-                                .is_none()
+                            && frontend.skirmish_shell_state.choose_map_modal.is_none()
                             && self.last_presented == Some(PresentedShell::Skirmish)
-                            && self.settled(state)?
+                            && self.settled(
+                                platform,
+                                renderer,
+                                frontend,
+                                match_state,
+                                persistence,
+                            )?
                     }
                 });
             }
             Some(ChooserTarget::Return) => {
                 return Ok(self.phase == Phase::ChooserReturn
-                    && state
-                        .frontend
-                        .skirmish_shell_state
-                        .choose_map_modal
-                        .is_none()
+                    && frontend.skirmish_shell_state.choose_map_modal.is_none()
                     && self.last_presented == Some(PresentedShell::Skirmish)
-                    && self.settled(state)?);
+                    && self.settled(platform, renderer, frontend, match_state, persistence)?);
             }
             None => {}
         }
         if self.loading == Some(LoadingTarget::DefeatScore) {
             return Ok(self.phase == Phase::Scoring
                 && self.last_presented == Some(PresentedShell::Score)
-                && App::score_shell_active(&state.frontend)
-                && Self::score_settled(&state.frontend));
+                && App::score_shell_active(frontend)
+                && Self::score_settled(frontend));
         }
         if self.loading == Some(LoadingTarget::DefeatContinue) {
             return Ok(self.phase == Phase::Continuing
-                && state.frontend.screen == GameScreen::MainMenu
+                && frontend.screen == GameScreen::MainMenu
                 && self.last_presented == Some(PresentedShell::Skirmish)
-                && self.settled(state)?);
+                && self.settled(platform, renderer, frontend, match_state, persistence)?);
         }
         if self.loading == Some(LoadingTarget::Diplomacy) {
             return Ok(self.phase == Phase::Diplomacy && self.diplomacy_frames >= 2);
@@ -1966,8 +2010,7 @@ impl SkirmishCapture {
         if let Some(LoadingTarget::InGameMenu(target)) = self.loading {
             // A3's heading types in once it is up.
             let revealed = target != InGameMenuTarget::Keyboard
-                || state
-                    .frontend
+                || frontend
                     .keyboard_dialog
                     .as_ref()
                     .is_some_and(|dialog| dialog.title.is_terminal());
@@ -1978,13 +2021,11 @@ impl SkirmishCapture {
         }
         if self.loading == Some(LoadingTarget::AfterQuit) {
             return Ok(self.phase == Phase::Quitting
-                && state.frontend.screen == GameScreen::MainMenu
-                && (
-                    state.match_state.input.cursor_x,
-                    state.match_state.input.cursor_y,
-                ) == (EXPECTED_CURSOR_X as f32, EXPECTED_CURSOR_Y as f32)
+                && frontend.screen == GameScreen::MainMenu
+                && (match_state.input.cursor_x, match_state.input.cursor_y)
+                    == (EXPECTED_CURSOR_X as f32, EXPECTED_CURSOR_Y as f32)
                 && self.last_presented == Some(PresentedShell::Skirmish)
-                && self.settled(state)?);
+                && self.settled(platform, renderer, frontend, match_state, persistence)?);
         }
         if let Some(target) = self.loading {
             let next = match target {
@@ -1999,15 +2040,14 @@ impl SkirmishCapture {
                 }
             };
             return Ok(self.phase == Phase::Starting
-                && state.frontend.screen == GameScreen::Loading
-                && crate::app::loading::pump::next_native_loading_frame(&state.frontend)
-                    == Some(next));
+                && frontend.screen == GameScreen::Loading
+                && crate::app::loading::pump::next_native_loading_frame(frontend) == Some(next));
         }
         if let Some(target) = self.slide_out_tick {
             return Ok(self.phase == Phase::SlideOut
                 && self.last_presented == Some(PresentedShell::Skirmish)
                 && crate::app::frontend::shell_transition::shell_exit_wave(
-                    &state.frontend.shell_exit,
+                    &frontend.shell_exit,
                     ShellSlideKind::Skirmish,
                 )
                 .map(|wave| wave.tick())
@@ -2021,11 +2061,11 @@ impl SkirmishCapture {
         {
             return Ok(false);
         }
-        if !self.settled(state)? {
+        if !self.settled(platform, renderer, frontend, match_state, persistence)? {
             return Ok(false);
         }
         ensure!(
-            self.selected_scene.as_ref() == Some(&selected_scene(&state.frontend)?),
+            self.selected_scene.as_ref() == Some(&selected_scene(frontend)?),
             "selected skirmish state changed during capture"
         );
         Ok(true)

@@ -964,46 +964,48 @@ pub(crate) enum ExactStepError {
 /// `Play_Movie @ 0x005BED40` also suspends the sound events (`0x00406EA0`,
 /// resumed by `0x00406EC0`). The movie routes apply both through
 /// `AppAudioRuntime`; the SFX player combines their reasons with this pause.
-pub(crate) fn pump_audio_service(state: &mut AppState, now_ms: u64) {
+pub(crate) fn pump_audio_service(
+    platform: &crate::app::PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &crate::app::persistence::PersistenceState,
+    now_ms: u64,
+) {
     // `Play_Movie @ 0x005BED40`'s Bink loop (`0x00432C70`) never reaches
     // `Network_ServiceLoop`, so a full-screen movie runs no pump: Theme AI
     // does not move on past the held song, and only the outputs run.
-    if state.frontend.fullscreen_movie.is_some() {
-        service_audio_outputs(
-            &state.frontend.screen,
-            &state.match_state,
-            &mut state.audio,
-            now_ms,
-        );
+    if frontend.fullscreen_movie.is_some() {
+        service_audio_outputs(&frontend.screen, match_state, audio, now_ms);
         return;
     }
     crate::app::presentation::building_anim::refresh_coordinate_sound_gains(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        process_assets,
+        &mut audio.sfx_player,
+        persistence,
     );
     // The process audio service remains live while the loading job holds the
     // asset-manager lease. Retained simulations still own Main on the shell;
     // only the process before its first scenario uses the frontend cursor.
     //Full-screen5BED40 acquires its own shared movie hold synchronously.
     //It does not also call the scenario/menu pause path684140.
-    let paused = state
-        .match_state
-        .presentation_paused(&state.frontend.screen);
+    let paused = match_state.presentation_paused(&frontend.screen);
     let assets = crate::app::loading::pump::audio_service_asset_manager(
-        &state.process_assets,
-        state.frontend.loading_session.as_ref(),
+        process_assets,
+        frontend.loading_session.as_ref(),
     );
-    let mut main = crate::app::state::process_main_draws(&state.frontend.frontend_main_rng);
-    state.audio.service_audio(
+    let mut main = crate::app::state::process_main_draws(&frontend.frontend_main_rng);
+    audio.service_audio(
         now_ms,
         paused,
         assets,
-        state.process_assets.audio_catalog(),
+        process_assets.audio_catalog(),
         &mut main,
     );
 }
@@ -1429,7 +1431,16 @@ fn advance_in_game_runtime_mode(
         // A Finish here admits the world only on the following pass. Its
         // Network_ServiceLoop (`0x0055D835`) comes first.
         if main_tick_pumps_audio {
-            pump_audio_service(state, wall_ms);
+            pump_audio_service(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &state.persistence,
+                wall_ms,
+            );
         }
         super::scenario_pause::apply_service(state, ScenarioServiceInput::StepChronoScreen);
         state
@@ -1742,7 +1753,16 @@ pub(crate) fn finish_threaded_frame(state: &mut AppState) {
         &state.persistence,
     );
     if main_tick_owns_audio_pump(&state.frontend.screen, &state.match_state, true) {
-        pump_audio_service(state, super::frame_pacer::wall_clock_ms());
+        pump_audio_service(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &state.persistence,
+            super::frame_pacer::wall_clock_ms(),
+        );
     }
 }
 
@@ -1912,7 +1932,16 @@ fn after_simulation_pass(
     // simulation thread has delivered none yet: its pump runs when it
     // finishes ([`finish_threaded_frame`]).
     if decision.run_sim && main_tick_pumps_audio && !state.match_state.sim_runtime.is_lent() {
-        pump_audio_service(state, music_now_ms);
+        pump_audio_service(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &state.persistence,
+            music_now_ms,
+        );
     }
     crate::app::input::camera::queue_keyboard_scroll(&mut state.match_state, scroll_steps);
     if decision.tactical_mutation || replaying {
