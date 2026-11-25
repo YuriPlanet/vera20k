@@ -29,11 +29,17 @@ and executes the saved command before it accepts the fixture.
 | `main-30e9a0f38.sav` | `30e9a0f38` (pre-release) | `skirmish` |
 | `main-a33fcac81.sav` | `a33fcac81` (Wasm extension modules) | `skirmish` |
 | `main-2e39b88dd.sav` | `2e39b88dd` (Wasm modules and ArtImageSwap) | `skirmish` |
+| `main-2e67ebaa8.sav` | `2e67ebaa8` (pre-release merge) | `skirmish` |
+| `main-fb29ff473.sav` | `fb29ff473` (Wasm modules, ArtImageSwap and NPatch) | `skirmish` |
 
 The Kratos writer revision is in PR #5080. In a fresh clone, fetch it with
 `git fetch origin pull/5080/head` before checking out `bc55c35e7`. The Wasm
 modules writers are in PR #5183: fetch `pull/5183/head` before checking out
-`a33fcac81` or `2e39b88dd`.
+`a33fcac81` or `2e39b88dd`. The NPatch writers are in PR #5172: fetch
+`pull/5172/head` before checking out `2e67ebaa8` or `fb29ff473`. The
+`2e67ebaa8` row is the writer after NPatch left the build flags: its layout
+`0xE5279FB2` stores each processed rules layer's NPatch key reads beside
+Tiberian Sun's web fields, which `30e9a0f38` predated.
 
 The ordinary worlds use `compat.map`, a flat 3×3 terrain and an authored
 APC type. At tick 91 the Americans player has 1,000 credits. The pending

@@ -403,11 +403,9 @@ impl ObjectType {
             prerequisite_override: Vec::new(),
             // ReadInt over the constructor's 0x7FFFFFFF (`0x00713152`).
             build_limit: section.read_int("BuildLimit", i32::MAX),
-            aibuild_limit: if crate::rules::NPATCH_ENABLED {
+            aibuild_limit: crate::rules::npatch_switch::npatch_read(|| {
                 section.read_int("AIBuildLimit", i32::MAX)
-            } else {
-                i32::MAX
-            },
+            }),
             forbid_parallel_ai_queues: crate::rules::phobos_switch::phobos_read(|| {
                 section.read_bool("ForbidParallelAIQueues", false)
             }),
@@ -415,11 +413,9 @@ impl ObjectType {
             target_zone_scan_type: crate::rules::phobos_switch::phobos_read(|| {
                 TargetZoneScanType::read_ini(section)
             }),
-            ai_planning_count: if crate::rules::NPATCH_ENABLED {
+            ai_planning_count: crate::rules::npatch_switch::npatch_read(|| {
                 building_int(section, category, "AIPlanningCount") & 0xFF
-            } else {
-                0
-            },
+            }),
             requires_stolen_allied_tech: section.read_bool("RequiresStolenAlliedTech", false),
             requires_stolen_soviet_tech: section.read_bool("RequiresStolenSovietTech", false),
             requires_stolen_third_tech: section.read_bool("RequiresStolenThirdTech", false),
