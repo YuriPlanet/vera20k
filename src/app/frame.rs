@@ -958,7 +958,10 @@ impl App {
             .match_diagnostics
             .begin_presentation_observation();
         crate::app::diagnostics::performance_overlay::observe_simulation(
-            state,
+            &state.renderer.performance_overlay,
+            &state.platform,
+            &state.frontend.screen,
+            &state.match_state,
             hidden_run.is_some(),
         );
         let tooltip_ms = crate::app::input::tooltips::update(state);
@@ -1024,9 +1027,9 @@ impl App {
 
         // Outcome gates, exit cascades, the audio pump and the simulation
         // advance, shared with the hidden-window service loop.
-        let shell_capture_owns_simulation = shell_capture
-            .as_deref()
-            .is_some_and(|capture| capture.owns_simulation_steps(state));
+        let shell_capture_owns_simulation = shell_capture.as_deref().is_some_and(|capture| {
+            capture.owns_simulation_steps(&state.frontend.screen, &state.match_state.sim_runtime)
+        });
         // A capture that checks every committed frame needs one per render.
         let catch_up_allowed = !shell_capture
             .as_deref()
@@ -1147,7 +1150,10 @@ impl App {
             && let Some(session) = shell_capture.as_deref_mut()
             && session.is_entry_sequence()
         {
-            session.complete_entry_sequence_after_wave(state)?;
+            session.complete_entry_sequence_after_wave(
+                &state.renderer.gpu,
+                &state.frontend.shell_first_paint_slide,
+            )?;
             event_loop.exit();
             return Ok(FrameRenderOutcome::Unavailable);
         }
@@ -1628,7 +1634,13 @@ impl App {
             &mut encoder,
             &output.texture,
             &state.renderer.bit_font,
-            crate::app::diagnostics::performance_overlay::match_panel(state),
+            crate::app::diagnostics::performance_overlay::match_panel(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            ),
         );
         if state.frontend.screen == GameScreen::InGame
             && let Some(offset_px) = runtime_pass.screen_shake_offset
@@ -1670,8 +1682,11 @@ impl App {
                 (Some(_), None) | (None, _) => false,
             };
         if let Some(session) = shell_capture.as_deref_mut() {
-            shell_capture_current_frame |=
-                session.should_capture_after_render(state, presented_shell)?;
+            shell_capture_current_frame |= session.should_capture_after_render(
+                &state.renderer.gpu,
+                &state.frontend,
+                presented_shell,
+            )?;
         }
         let replay_capture_current_frame = game_render_output.is_some()
             && state.match_state.match_diagnostics.playback_capture_ready();

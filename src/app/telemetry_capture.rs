@@ -405,8 +405,10 @@ fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
         state.match_state.input.cursor_y,
     );
     let path_grid = sim.path_grid();
-    let active_speed_type =
-        crate::app::diagnostics::debug_overlays::resolve_debug_speed_type(state);
+    let active_speed_type = crate::app::diagnostics::debug_overlays::resolve_debug_speed_type(
+        &state.diag,
+        &state.match_state.sim_runtime,
+    );
 
     let cursor_elevation = state
         .resolved_terrain()

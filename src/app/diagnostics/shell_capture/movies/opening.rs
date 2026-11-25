@@ -184,7 +184,14 @@ impl OpeningCapture {
         })
     }
 
-    pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
+    pub(super) fn ready(
+        &self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        screen: &GameScreen,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+    ) -> Result<bool> {
         if matches!(
             self.target,
             OpeningTarget::RadarAlert | OpeningTarget::RadarRestored
@@ -192,8 +199,7 @@ impl OpeningCapture {
             let Some(expected) = self.saved_radar.as_ref() else {
                 return Ok(false);
             };
-            let radar = state
-                .match_state
+            let radar = match_state
                 .match_presentation
                 .minimap
                 .as_ref()
@@ -208,8 +214,7 @@ impl OpeningCapture {
                 actual == *expected,
                 "first radar redraw changed the retained alert state: actual={actual:?}, expected={expected:?}"
             );
-            let visible = state
-                .match_state
+            let visible = match_state
                 .match_presentation
                 .radar_anim
                 .as_ref()
@@ -218,24 +223,18 @@ impl OpeningCapture {
                 visible && (self.target == OpeningTarget::RadarAlert || self.restored.is_some())
             );
         }
-        let sim = &state
-            .match_state
+        let sim = &match_state
             .sim_runtime
             .runtime()
             .context("campaign opening has no installed runtime")?
             .simulation;
         if let OpeningTarget::TriggerTrace { tick, .. } = self.target {
             // A mission that ends first stops the trace on its outcome frame.
-            return Ok(trace_outcome(state).is_some() || sim.session().tick() == tick);
+            return Ok(trace_outcome(match_state).is_some() || sim.session().tick() == tick);
         }
         let locked = sim.session().input_locked();
-        let view = camera::saved_tactical_view(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &state.match_state,
-            &state.persistence,
-        );
+        let view =
+            camera::saved_tactical_view(platform, renderer, screen, match_state, persistence);
         Ok(self.saw_lock
             && match self.target {
                 OpeningTarget::Locked => locked,
@@ -278,9 +277,21 @@ impl OpeningCapture {
                 );
             }
             self.initial_runtime = Some(if self.target == OpeningTarget::RealtimeUnlocked {
-                installed_campaign_runtime_receipt(state)?
+                installed_campaign_runtime_receipt(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &state.match_state,
+                    &state.persistence,
+                )?
             } else {
-                campaign_runtime_receipt(state)?
+                campaign_runtime_receipt(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &state.match_state,
+                    &state.persistence,
+                )?
             });
             if let OpeningTarget::TriggerTrace { .. } = self.target {
                 #[cfg(feature = "dev-overlays")]
@@ -309,7 +320,14 @@ impl OpeningCapture {
                 );
             }
         }
-        self.observe(state)?;
+        self.observe(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.audio.sfx_player,
+            &state.persistence,
+        )?;
         if matches!(
             self.target,
             OpeningTarget::RadarAlert | OpeningTarget::RadarRestored
@@ -335,28 +353,40 @@ impl OpeningCapture {
         }
         // Readback is submitted before this hook. Keep its receipt on the
         // exact state that was drawn, including the first unlocked frame.
-        if self.ready(state)? {
+        if self.ready(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence,
+        )? {
             return Ok(());
         }
         if self.target == OpeningTarget::RealtimeUnlocked {
             return Ok(());
         }
         if matches!(self.target, OpeningTarget::SovietNavy(_)) && self.saw_unlock && !locked {
-            self.issue_naval_orders(state)?;
+            self.issue_naval_orders(&mut state.match_state.sim_runtime)?;
         }
         if matches!(
             self.target,
             OpeningTarget::SovietGroups(_) | OpeningTarget::SovietFortresses(_)
         ) && !locked
         {
-            self.issue_campaign_encounter_orders(state)?;
+            self.issue_campaign_encounter_orders(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &mut state.match_state,
+                &state.persistence,
+            )?;
         }
         if let OpeningTarget::TriggerTrace {
             push: Some(cell), ..
         } = self.target
             && !locked
         {
-            self.issue_trace_push_orders(state, cell)?;
+            self.issue_trace_push_orders(&state.frontend, &mut state.match_state, cell)?;
         }
         if matches!(
             self.target,
@@ -365,8 +395,15 @@ impl OpeningCapture {
             && !locked
             && self.timer_action_replay.is_none()
         {
-            self.replay_timer_actions(state)?;
-            self.observe(state)?;
+            self.replay_timer_actions(&mut state.match_state.sim_runtime)?;
+            self.observe(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.audio.sfx_player,
+                &state.persistence,
+            )?;
         }
         if self.target == OpeningTarget::RestoreUnlocked
             && self.restored.is_none()
@@ -390,7 +427,13 @@ impl OpeningCapture {
                 &state.persistence,
             );
             let depth = state.match_state.input.cursor_visibility.level();
-            let saved_runtime = installed_campaign_runtime_receipt(state)?;
+            let saved_runtime = installed_campaign_runtime_receipt(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            )?;
             let path = crate::app::persistence::commands::save_game(
                 &state.platform,
                 &state.renderer,
@@ -422,7 +465,13 @@ impl OpeningCapture {
                 state.match_state.input.cursor_visibility.level() == depth,
                 "ordinary load changed outgoing cursor display depth"
             );
-            let loaded_runtime = installed_campaign_runtime_receipt(state)?;
+            let loaded_runtime = installed_campaign_runtime_receipt(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            )?;
             ensure!(
                 saved_runtime["tick"] == loaded_runtime["tick"]
                     && saved_runtime["binary_frame"] == loaded_runtime["binary_frame"],
@@ -438,7 +487,14 @@ impl OpeningCapture {
                 "rng_limit": "LoadScenario resets Scenario RNG; Main and MapGen are retained by their existing owners",
                 "format": "VERA snapshot; native SAV wire compatibility is not claimed",
             }));
-            self.observe(state)?;
+            self.observe(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.audio.sfx_player,
+                &state.persistence,
+            )?;
         }
         if self.target == OpeningTarget::LoadUnlockedWhileLocked {
             self.drive_load_while_locked(state)?;
@@ -479,7 +535,14 @@ impl OpeningCapture {
             self.trigger_events
                 .extend(events.into_iter().map(|event| json!(event)));
         }
-        self.observe(state)?;
+        self.observe(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.audio.sfx_player,
+            &state.persistence,
+        )?;
         Ok(())
     }
 
@@ -571,10 +634,8 @@ impl OpeningCapture {
     }
 
     #[cfg(feature = "dev-overlays")]
-    fn replay_timer_actions(&mut self, state: &mut AppState) -> Result<()> {
-        let runtime = state
-            .match_state
-            .sim_runtime
+    fn replay_timer_actions(&mut self, sim_runtime: &mut SimHost) -> Result<()> {
+        let runtime = sim_runtime
             .write_sim(SimWrite::Debug)
             .context("timer replay has no runtime")?;
         let sim = &mut runtime.simulation;
@@ -595,7 +656,7 @@ impl OpeningCapture {
     }
 
     #[cfg(not(feature = "dev-overlays"))]
-    fn replay_timer_actions(&mut self, _state: &mut AppState) -> Result<()> {
+    fn replay_timer_actions(&mut self, _: &mut SimHost) -> Result<()> {
         anyhow::bail!("timer action replay requires dev-overlays")
     }
 
@@ -654,8 +715,15 @@ impl OpeningCapture {
                 self.unlocked_save = Some(path);
                 try_load_save_file(state, &pre_lock)
                     .context("replay the opening from the pre-lock save")?;
-                self.loaded_frame = Some(installed_frame(state)?);
-                self.observe(state)?;
+                self.loaded_frame = Some(installed_frame(&state.match_state.sim_runtime)?);
+                self.observe(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.audio.sfx_player,
+                    &state.persistence,
+                )?;
             }
             return Ok(());
         };
@@ -666,7 +734,7 @@ impl OpeningCapture {
         App::enter_in_game_menu_state(state, InGameMenuState::Menu);
         try_load_save_file(state, &unlocked).context("load the unlocked save in the lock")?;
         App::enter_in_game_menu_state(state, InGameMenuState::Closed);
-        self.loaded_frame = Some(installed_frame(state)?);
+        self.loaded_frame = Some(installed_frame(&state.match_state.sim_runtime)?);
         let locked_after = crate::app::input::campaign_input::is_locked(&state.match_state);
         let depth_after = state.match_state.input.cursor_visibility.level();
         let cursor_instances_after =
@@ -686,12 +754,34 @@ impl OpeningCapture {
             "depth_after": depth_after, "cursor_instances_after": cursor_instances_after,
             "right_drag_pans_after": probe_right_drag_pans(state),
         }));
-        self.observe(state)?;
+        self.observe(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.audio.sfx_player,
+            &state.persistence,
+        )?;
         Ok(())
     }
 
-    fn observe(&mut self, state: &AppState) -> Result<()> {
-        let facts = opening_observation(state)?;
+    fn observe(
+        &mut self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        sfx_player: &Option<SfxPlayer>,
+        persistence: &PersistenceState,
+    ) -> Result<()> {
+        let facts = opening_observation(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            sfx_player,
+            persistence,
+        )?;
         if self.target == OpeningTarget::RealtimeUnlocked {
             ensure!(
                 facts["game_speed"] == 2,
@@ -789,11 +879,9 @@ impl OpeningCapture {
     /// A bounded play input for the first retail objective. It uses the client
     /// command queue; damage, navigation, reinforcements and triggers remain
     /// entirely in the ordinary simulation.
-    fn issue_naval_orders(&mut self, state: &mut AppState) -> Result<()> {
+    fn issue_naval_orders(&mut self, sim_runtime: &mut SimHost) -> Result<()> {
         use crate::sim::command::Command;
-        let sim = &mut state
-            .match_state
-            .sim_runtime
+        let sim = &mut sim_runtime
             .write_sim(SimWrite::Debug)
             .context("naval runtime")?
             .simulation;
@@ -866,13 +954,20 @@ impl OpeningCapture {
 
     /// Player input only. The stock map owns discovery, creation, recruitment,
     /// movement, damage and cleanup. No Tag or AI action is called here.
-    fn issue_campaign_encounter_orders(&mut self, state: &mut AppState) -> Result<()> {
+    fn issue_campaign_encounter_orders(
+        &mut self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        persistence: &PersistenceState,
+    ) -> Result<()> {
         use crate::sim::combat::TargetKind;
         use crate::sim::command::Command;
         if self.group_orders.is_some() {
             return Ok(());
         }
-        let (tick, owner, ids) = armed_player_units(state)?;
+        let (tick, owner, ids) = armed_player_units(frontend, match_state)?;
         if tick < 300 || ids.is_empty() {
             return Ok(());
         }
@@ -884,7 +979,7 @@ impl OpeningCapture {
         if let Some(group) = group {
             ensure!(
                 crate::app::input::commands::try_schedule_command(
-                    &mut state.match_state,
+                    match_state,
                     &owner,
                     Command::AssignControlGroup {
                         group,
@@ -898,7 +993,7 @@ impl OpeningCapture {
         for &entity_id in &ids {
             ensure!(
                 crate::app::input::commands::try_schedule_command(
-                    &mut state.match_state,
+                    match_state,
                     &owner,
                     Command::AttackMove {
                         entity_id,
@@ -914,11 +1009,11 @@ impl OpeningCapture {
             "requested_native_group": group, "attack_move_cell": target}));
         if group.is_some() {
             camera::center_camera_on_cell(
-                &state.platform,
-                &state.renderer,
-                &state.frontend.screen,
-                &mut state.match_state,
-                &state.persistence,
+                platform,
+                renderer,
+                &frontend.screen,
+                match_state,
+                persistence,
                 target.0,
                 target.1,
             );
@@ -929,11 +1024,16 @@ impl OpeningCapture {
     /// Trigger trace `-push-<X>-<Y>`: like a player sending the whole armed
     /// force, every armed unit attack-moves toward one Cell, again each game
     /// minute so new and idle units follow. Player input only.
-    fn issue_trace_push_orders(&mut self, state: &mut AppState, cell: (u16, u16)) -> Result<()> {
+    fn issue_trace_push_orders(
+        &mut self,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        cell: (u16, u16),
+    ) -> Result<()> {
         use crate::sim::combat::TargetKind;
         use crate::sim::command::Command;
         const PERIOD_TICKS: u64 = 900;
-        let (tick, owner, ids) = armed_player_units(state)?;
+        let (tick, owner, ids) = armed_player_units(frontend, match_state)?;
         if ids.is_empty()
             || self
                 .push_orders
@@ -945,7 +1045,7 @@ impl OpeningCapture {
         for &entity_id in &ids {
             ensure!(
                 crate::app::input::commands::try_schedule_command(
-                    &mut state.match_state,
+                    match_state,
                     &owner,
                     Command::AttackMove {
                         entity_id,
@@ -963,7 +1063,13 @@ impl OpeningCapture {
 
     pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
         ensure!(
-            self.ready(state)?,
+            self.ready(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence
+            )?,
             "opening readback missed its selected checkpoint"
         );
         Ok(json!({
@@ -976,7 +1082,7 @@ impl OpeningCapture {
             "locked_arrow_probe": self.lock_probe, "unlocked_arrow_probe": self.unlock_probe,
             "locked_mouse_probe": self.locked_mouse_probe,
             "unlocked_mouse_probe": self.unlocked_mouse_probe,
-            "save_restore": self.restored, "current": opening_observation(state)?,
+            "save_restore": self.restored, "current": opening_observation(&state.platform, &state.renderer, &state.frontend, &state.match_state, &state.audio.sfx_player, &state.persistence)?,
             "retained_radar": self.saved_radar,
             "radar_display": state.match_state.match_presentation.radar_anim.as_ref()
                 .map(|radar| json!({"phase": format!("{:?}", radar.phase()),
@@ -988,9 +1094,9 @@ impl OpeningCapture {
             "trigger_springs": self.trigger_springs,
             "trigger_events": self.trigger_events,
             "push_orders": self.push_orders,
-            "outcome": trace_outcome(state),
+            "outcome": trace_outcome(&state.match_state),
             "houses": if matches!(self.target, OpeningTarget::TriggerTrace { .. }) {
-                Some(trace_houses(state)?)
+                Some(trace_houses(&state.match_state.sim_runtime)?)
             } else { None },
             "encounter_entities": if matches!(self.target, OpeningTarget::SovietTick(_) | OpeningTarget::SovietNavy(_) | OpeningTarget::SovietGroups(_) | OpeningTarget::SovietFortresses(_)) {
                 let sim = &state.match_state.sim_runtime.runtime().context("encounter runtime")?.simulation;
@@ -1017,10 +1123,8 @@ impl OpeningCapture {
     }
 }
 
-fn installed_frame(state: &AppState) -> Result<(u64, u32)> {
-    let session = &state
-        .match_state
-        .sim_runtime
+fn installed_frame(sim_runtime: &SimHost) -> Result<(u64, u32)> {
+    let session = &sim_runtime
         .runtime()
         .context("load left no installed runtime")?
         .simulation
@@ -1033,14 +1137,20 @@ fn mid_pan(view: &crate::sim::snapshot::SavedTacticalView) -> bool {
     view.focus_rate_bits != 0 && (0.25..1.0).contains(&progress)
 }
 
-fn opening_observation(state: &AppState) -> Result<Value> {
-    let sim = &state
-        .match_state
+fn opening_observation(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    sfx_player: &Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) -> Result<Value> {
+    let sim = &match_state
         .sim_runtime
         .runtime()
         .context("opening observation has no runtime")?
         .simulation;
-    let viewer = crate::app::input::commands::preferred_local_owner_name(&state.match_state)
+    let viewer = crate::app::input::commands::preferred_local_owner_name(match_state)
         .and_then(|name| sim.interner().get(&name));
     // Read the same CellClass shroud owner as world drawing. Diagnostic misses
     // retain a separate Dummy, so observing a capture never changes the sim.
@@ -1139,7 +1249,7 @@ fn opening_observation(state: &AppState) -> Result<Value> {
             })
         })
         .collect::<Vec<_>>();
-    let messages = state.match_state.match_presentation.message_list.messages().iter()
+    let messages = match_state.match_presentation.message_list.messages().iter()
         .map(|message| json!({"text": message.text, "rgb": message.rgb, "deadline_ms": message.deadline_ms}))
         .collect::<Vec<_>>();
     Ok(json!({
@@ -1147,13 +1257,13 @@ fn opening_observation(state: &AppState) -> Result<Value> {
         "input_locked": sim.session().input_locked(),
         "scenario_timer": sim.session().scenario_timer_view().map(|(remaining, caption)|
             json!({"remaining": remaining, "caption": caption})),
-        "cursor_depth": state.match_state.input.cursor_visibility.level(),
-        "camera": camera::saved_tactical_view(&state.platform, &state.renderer, &state.frontend.screen, &state.match_state, &state.persistence),
-        "camera_origin": [state.match_state.input.camera_x, state.match_state.input.camera_y],
+        "cursor_depth": match_state.input.cursor_visibility.level(),
+        "camera": camera::saved_tactical_view(platform, renderer, &frontend.screen, match_state, persistence),
+        "camera_origin": [match_state.input.camera_x, match_state.input.camera_y],
         "fog_viewer": viewer.map(|viewer| sim.interner().resolve(viewer)),
         "active_types": active_types, "flashing": flashing, "no_effects_anims": markers,
         "building_receivers": building_receivers, "aircraft": aircraft,
-        "super_timers": state.rules().map(|rules|
+        "super_timers": crate::app::state::active_rules(frontend, match_state).map(|rules|
             crate::sim::superweapon::super_timer_views(sim, rules).into_iter().map(|view|
                 json!({"owner": sim.interner().resolve(view.owner()),
                     "type": sim.interner().resolve(view.sw_type()),
@@ -1161,8 +1271,8 @@ fn opening_observation(state: &AppState) -> Result<Value> {
                     "recharge": view.recharge_frames(), "place": view.place()}))
                 .collect::<Vec<_>>()).unwrap_or_default(),
         "teams": teams, "messages": messages,
-        "eva_active": state.audio.sfx_player.as_ref().is_some_and(|sfx| sfx.voices_active()),
-        "eva_event": state.audio.sfx_player.as_ref().and_then(|sfx| sfx.current_eva_event()),
+        "eva_active": sfx_player.as_ref().is_some_and(|sfx| sfx.voices_active()),
+        "eva_event": sfx_player.as_ref().and_then(|sfx| sfx.current_eva_event()),
         "game_speed": sim.session().game_options().game_speed,
         "wall_ms": crate::app::match_runtime::frame_pacer::wall_clock_ms(),
     }))
@@ -1343,15 +1453,17 @@ fn probe_unlocked_mouse_edges(state: &mut AppState) -> Result<Value> {
 
 /// The current tick, the player's House name and the armed, active, on-map
 /// units a player would send: no buildings, harvesters or unarmed units.
-fn armed_player_units(state: &AppState) -> Result<(u64, String, Vec<u64>)> {
-    let sim = &state
-        .match_state
+fn armed_player_units(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+) -> Result<(u64, String, Vec<u64>)> {
+    let sim = &match_state
         .sim_runtime
         .runtime()
         .context("campaign runtime")?
         .simulation;
     let viewer = sim.session().current_house().context("campaign player")?;
-    let rules = state.rules().context("campaign rules")?;
+    let rules = crate::app::state::active_rules(frontend, match_state).context("campaign rules")?;
     let ids = sim
         .entities()
         .iter_sorted()
@@ -1380,9 +1492,9 @@ fn armed_player_units(state: &AppState) -> Result<(u64, String, Vec<u64>)> {
 }
 
 /// The local House's campaign outcome, once Flag_To_Win or Flag_To_Lose set it.
-fn trace_outcome(state: &AppState) -> Option<&'static str> {
-    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
-    let owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state)
+fn trace_outcome(match_state: &MatchState) -> Option<&'static str> {
+    let sim = &match_state.sim_runtime.runtime()?.simulation;
+    let owner = crate::app::input::commands::preferred_local_owner_name(match_state)
         .and_then(|name| sim.interner().get(&name))?;
     let house = sim.houses().get(&owner)?;
     if house.has_won() {
@@ -1395,10 +1507,8 @@ fn trace_outcome(state: &AppState) -> Option<&'static str> {
 }
 
 /// End-of-trace House summary: live, non-limbo objects per category.
-fn trace_houses(state: &AppState) -> Result<Value> {
-    let sim = &state
-        .match_state
-        .sim_runtime
+fn trace_houses(sim_runtime: &SimHost) -> Result<Value> {
+    let sim = &sim_runtime
         .runtime()
         .context("trigger trace runtime")?
         .simulation;

@@ -41,9 +41,9 @@ impl ProfileCheck {
         frame: u32,
     ) -> Result<ProfileStep> {
         let lobby = if online {
-            rendered == PresentedShell::WolLobby && online::online_lobby_settled(state)
+            rendered == PresentedShell::WolLobby && online::online_lobby_settled(&state.frontend)
         } else {
-            rendered == PresentedShell::LanLobby && lobby_settled(state)
+            rendered == PresentedShell::LanLobby && lobby_settled(&state.frontend)
         };
         if self.backed && lobby {
             self.backed = false;
@@ -55,9 +55,9 @@ impl ProfileCheck {
         }
         if rendered != PresentedShell::NetworkSetup
             || !(if online {
-                online::online_setup_settled(state, true)
+                online::online_setup_settled(&state.frontend, true)
             } else {
-                setup_settled(state, true)
+                setup_settled(&state.frontend, true)
             })
         {
             return Ok(if self.backed {
@@ -80,7 +80,7 @@ impl ProfileCheck {
             "profile check needs the host alone on an admitted30-capable map"
         );
         if self.reconstructing {
-            let restored = snapshot(state, frame)?;
+            let restored = snapshot(&state.match_state.session, frame)?;
             let before = self.before.as_ref().context("remembered profile")?;
             ensure!(
                 restored["map"] == before["map"]
@@ -123,7 +123,7 @@ impl ProfileCheck {
                         && slot.color_index == 1),
             "actual combo choices were not applied"
         );
-        self.before = Some(snapshot(state, frame)?);
+        self.before = Some(snapshot(&state.match_state.session, frame)?);
         setup_button(state, crate::ui::multiplayer_setup::BACK)?;
         self.backed = true;
         Ok(ProfileStep::Waiting)
@@ -230,8 +230,7 @@ impl SetupComboInput {
     }
 }
 
-fn snapshot(state: &AppState, frame: u32) -> Result<Value> {
-    let session = &state.match_state.session;
+fn snapshot(session: &MatchSession, frame: u32) -> Result<Value> {
     let launch = session.network_setup().context("profile setup snapshot")?;
     Ok(json!({"render_frame":frame,"process_id":std::process::id(),
         "capacity":session.network_map_metadata().context("profile map metadata")?.player_capacity,

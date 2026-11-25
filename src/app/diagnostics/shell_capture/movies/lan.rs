@@ -530,7 +530,7 @@ impl LanCapture {
         self.route.push(json!({"frame":frame,"action":action}));
     }
     fn settle(&mut self, state: &mut AppState) {
-        MoviesCapture::restore_neutral_pointer(state);
+        MoviesCapture::restore_neutral_pointer(&state.renderer.gpu, &mut state.match_state.input);
         if state.frontend.shell_route == ShellRoute::LanLobby {
             lobby::cursor_moved(state);
         } else if state.frontend.shell_route == ShellRoute::NetworkSetup {
@@ -562,10 +562,11 @@ impl LanCapture {
             },
         })
     }
-    fn drain_requests(&mut self, state: &mut AppState) -> Vec<NetworkSetupRequest> {
-        let requests = state
-            .frontend
-            .network_setup_protocol
+    fn drain_requests(
+        &mut self,
+        network_setup_protocol: &mut Option<NetworkSetupProtocol>,
+    ) -> Vec<NetworkSetupRequest> {
+        let requests = network_setup_protocol
             .as_mut()
             .map(|p| p.take_service_requests())
             .unwrap_or_default();
@@ -574,20 +575,22 @@ impl LanCapture {
         );
         requests
     }
-    fn host_options(&self, state: &AppState) -> Result<SkirmishLaunchSession> {
-        let mut launch = state
-            .match_state
-            .session
+    fn host_options(
+        &self,
+        frontend: &FrontendState,
+        session: &MatchSession,
+        process_assets: &ProcessAssets,
+    ) -> Result<SkirmishLaunchSession> {
+        let mut launch = session
             .network_setup()
             .context("admitted guest setup")?
             .clone();
         let values = &self.inputs["host_options"];
         let mode_id = values["mode_id"].as_i64().context("native mode")? as i32;
         let mode = if self.target == LanTarget::CoopGuest {
-            cooperative_mode(state)?
+            cooperative_mode(&frontend.skirmish_modes)?
         } else {
-            state
-                .frontend
+            frontend
                 .skirmish_modes
                 .iter()
                 .find(|m| m.id == mode_id)
@@ -597,13 +600,12 @@ impl LanCapture {
         let file = if self.target == LanTarget::CoopGuest {
             COOP_MAP
         } else if self.target.missing_map() {
-            self.assert_map_absent(state)?;
+            self.assert_map_absent(&frontend.scenario_catalog, process_assets)?;
             TRANSFER_FILE
         } else {
             let file = values["map"].as_str().context("native map")?;
             ensure!(
-                state
-                    .frontend
+                frontend
                     .scenario_catalog
                     .shell_maps()
                     .iter()
@@ -616,7 +618,7 @@ impl LanCapture {
         // Packet7/5E00B0 constructs the guest's local node first; roster
         // packets append the host later. Preserve that admitted source order
         // while mapping full-options values by identity (5E3D10).
-        self.assert_guest_order(state, true)?;
+        self.assert_guest_order(session, true)?;
         for human in &mut launch.humans {
             let values = self.human(human.name == self.human(true)?.name)?;
             human.slot = values.slot;
@@ -671,10 +673,10 @@ impl LanCapture {
                 seed: Some(self.seed()?),
             }),
         )?;
-        self.assert_guest_order(state, true)
+        self.assert_guest_order(&state.match_state.session, true)
     }
-    fn assert_guest_order(&self, state: &AppState, host_admitted: bool) -> Result<()> {
-        let launch = state.match_state.session.network_setup().context("BD")?;
+    fn assert_guest_order(&self, session: &MatchSession, host_admitted: bool) -> Result<()> {
+        let launch = session.network_setup().context("BD")?;
         ensure!(
             launch.local_player_index == 0,
             "native guest local node must remain source index0"
@@ -747,9 +749,12 @@ impl LanCapture {
             effective_digest: String::new(),
         })
     }
-    fn assert_map_absent(&self, state: &AppState) -> Result<PathBuf> {
-        let assets = state
-            .process_assets
+    fn assert_map_absent(
+        &self,
+        scenario_catalog: &ScenarioCatalog,
+        process_assets: &ProcessAssets,
+    ) -> Result<PathBuf> {
+        let assets = process_assets
             .manager()
             .context("retained assets for missing-map control")?;
         let root = fs::canonicalize(assets.ra2_dir())?;
@@ -765,9 +770,7 @@ impl LanCapture {
             "missing-map control already resolves through VFS"
         );
         ensure!(
-            !state
-                .frontend
-                .scenario_catalog
+            !scenario_catalog
                 .shell_maps()
                 .iter()
                 .any(|map| map.file_name.eq_ignore_ascii_case(TRANSFER_FILE)),
@@ -794,7 +797,7 @@ impl LanCapture {
     /// BC after Use Map on the Soviet row: Cooperative on its first map,
     /// the stage's description, Random countries and the published C0.
     fn assert_cooperative_campaign_used(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let mode_id = cooperative_mode(state)?.id;
+        let mode_id = cooperative_mode(&state.frontend.skirmish_modes)?.id;
         let launch = state.match_state.session.network_setup().context("BC")?;
         ensure!(launch.mode.id == mode_id, "Use Map left Cooperative");
         let file = launch.selected_map_file.clone().context("campaign map")?;
@@ -806,7 +809,7 @@ impl LanCapture {
             launch.local_slot().country_random,
             "the Soviet first stage has three countries: Random"
         );
-        let requests = self.drain_requests(state);
+        let requests = self.drain_requests(&mut state.frontend.network_setup_protocol);
         let text = requests
             .iter()
             .find_map(|request| match request {
@@ -832,9 +835,14 @@ impl LanCapture {
     /// The guest's join in Cooperative: its America is not a Soviet stage
     /// country, so it takes the stage default (Random), and `+0x94`
     /// publishes the campaign with both names.
-    fn assert_cooperative_join(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+    fn assert_cooperative_join(
+        &mut self,
+        network_setup_protocol: &mut Option<NetworkSetupProtocol>,
+        session: &MatchSession,
+        frame: u32,
+    ) -> Result<()> {
         let peer = self.human(false)?.name;
-        let launch = state.match_state.session.network_setup().context("BC")?;
+        let launch = session.network_setup().context("BC")?;
         let guest = launch
             .humans
             .iter()
@@ -844,7 +852,7 @@ impl LanCapture {
             guest.slot.country_random,
             "the stage admitted the guest's America"
         );
-        let requests = self.drain_requests(state);
+        let requests = self.drain_requests(network_setup_protocol);
         let text = requests
             .iter()
             .find_map(|request| match request {
@@ -896,20 +904,15 @@ impl LanCapture {
         Ok(())
     }
 
-    pub(super) fn isolated_root(state: &AppState) -> Result<PathBuf> {
-        let assets = state
-            .process_assets
+    pub(super) fn isolated_root(process_assets: &ProcessAssets) -> Result<PathBuf> {
+        let assets = process_assets
             .manager()
             .context("retained assets for an isolated root")?;
         Self::marked_root(assets.ra2_dir())
     }
 
-    pub(super) fn isolated_settings_root(state: &AppState) -> Result<PathBuf> {
-        let config = state
-            .platform
-            .game_config
-            .as_ref()
-            .context("capture game config")?;
+    pub(super) fn isolated_settings_root(game_config: &Option<GameConfig>) -> Result<PathBuf> {
+        let config = game_config.as_ref().context("capture game config")?;
         Self::marked_root(config.paths.settings_dir())
     }
 
@@ -1059,7 +1062,9 @@ impl LanCapture {
                 self.event(frame, "MainMenu Network");
                 self.phase = LanPhase::Lobby;
             }
-            LanPhase::Lobby if rendered == PresentedShell::LanLobby && lobby_settled(state) => {
+            LanPhase::Lobby
+                if rendered == PresentedShell::LanLobby && lobby_settled(&state.frontend) =>
+            {
                 ensure!(
                     state.match_state.session_mode() == SessionMode::Lan
                         && state.match_state.session.network_setup().is_none(),
@@ -1110,7 +1115,10 @@ impl LanCapture {
                         lobby_button(state, crate::ui::lan_shell::BACK)?;
                         // The real click completes before restoring the sealed
                         // cursor required by the returning MainMenu snapshot.
-                        MoviesCapture::restore_neutral_pointer(state);
+                        MoviesCapture::restore_neutral_pointer(
+                            &state.renderer.gpu,
+                            &mut state.match_state.input,
+                        );
                         self.phase = LanPhase::MainReturn;
                     }
                     LanTarget::Chat => {
@@ -1285,7 +1293,7 @@ impl LanCapture {
                 }
             }
             LanPhase::JoinRecovered
-                if rendered == PresentedShell::LanLobby && lobby_settled(state) =>
+                if rendered == PresentedShell::LanLobby && lobby_settled(&state.frontend) =>
             {
                 let runtime = state.frontend.lan.as_mut().context("recovered BB")?;
                 ensure!(
@@ -1320,7 +1328,8 @@ impl LanCapture {
                 self.settle(state);
             }
             LanPhase::Host
-                if rendered == PresentedShell::NetworkSetup && setup_settled(state, true) =>
+                if rendered == PresentedShell::NetworkSetup
+                    && setup_settled(&state.frontend, true) =>
             {
                 self.event(frame, "BC steady");
                 if self.target.host_observer() {
@@ -1350,18 +1359,20 @@ impl LanCapture {
                         self.phase = LanPhase::RandomMap;
                     }
                     target if target.cooperative_host() && !self.cooperative_committed => {
-                        self.offline_selection = Some(offline_selection(state));
+                        self.offline_selection =
+                            Some(offline_selection(&state.frontend.skirmish_shell_state));
                         setup_button(state, crate::ui::multiplayer_setup::CHOOSE_MAP)?;
                         self.phase = LanPhase::Chooser;
                     }
                     LanTarget::CoopHost => self.settle(state),
                     LanTarget::ChooseMap | LanTarget::ChooseMapCancel => {
-                        self.offline_selection = Some(offline_selection(state));
+                        self.offline_selection =
+                            Some(offline_selection(&state.frontend.skirmish_shell_state));
                         setup_button(state, crate::ui::multiplayer_setup::CHOOSE_MAP)?;
                         self.phase = LanPhase::Chooser;
                     }
                     LanTarget::HostSettings => {
-                        self.drain_requests(state);
+                        self.drain_requests(&mut state.frontend.network_setup_protocol);
                         let before = state
                             .match_state
                             .session
@@ -1387,7 +1398,7 @@ impl LanCapture {
                             "real checkbox did not change owner"
                         );
                         ensure!(
-                            self.drain_requests(state)
+                            self.drain_requests(&mut state.frontend.network_setup_protocol)
                                 .contains(&NetworkSetupRequest::PublishOptions),
                             "checkbox omitted host options publication"
                         );
@@ -1460,7 +1471,11 @@ impl LanCapture {
                             NetworkSetupEvent::ParticipantJoined(self.human(false)?),
                         )?;
                         if self.target == LanTarget::CoopJoin {
-                            self.assert_cooperative_join(state, frame)?;
+                            self.assert_cooperative_join(
+                                &mut state.frontend.network_setup_protocol,
+                                &state.match_state.session,
+                                frame,
+                            )?;
                             self.settle(state);
                             return Ok(());
                         }
@@ -1605,7 +1620,8 @@ impl LanCapture {
                         if self.target == LanTarget::HostMissingMap {
                             self.settle(state);
                         } else {
-                            let requests = self.drain_requests(state);
+                            let requests =
+                                self.drain_requests(&mut state.frontend.network_setup_protocol);
                             ensure!(
                                 requests.contains(&NetworkSetupRequest::RequestAcceptance),
                                 "host did not request readiness: {requests:?}; chat {:?}",
@@ -1648,7 +1664,7 @@ impl LanCapture {
                 );
                 setup_button(state, crate::ui::multiplayer_setup::START)?;
                 ensure!(
-                    self.drain_requests(state)
+                    self.drain_requests(&mut state.frontend.network_setup_protocol)
                         .iter()
                         .any(|r| matches!(r, NetworkSetupRequest::Go { .. })),
                     "real second Start did not request GO"
@@ -1683,12 +1699,13 @@ impl LanCapture {
                         "host observer assignment differs from executed native special color"
                     );
                 }
-                self.admitted = Some(session_receipt(state));
+                self.admitted = Some(session_receipt(&state.frontend.screen, &state.match_state));
                 setup::service_event(state, NetworkSetupEvent::ControlledGoCompleted)?;
                 self.phase = LanPhase::Loading;
             }
             LanPhase::SettingsControl(step)
-                if rendered == PresentedShell::NetworkSetup && setup_settled(state, true) =>
+                if rendered == PresentedShell::NetworkSetup
+                    && setup_settled(&state.frontend, true) =>
             {
                 use crate::ui::multiplayer_setup::{CREDITS, SPEED, SetupColumn, UNITS};
                 let view = setup::view(state).context("BC settings view")?;
@@ -1762,7 +1779,7 @@ impl LanCapture {
                         })
                     };
                     if let Some((control, index, value)) = candidate {
-                        self.drain_requests(state);
+                        self.drain_requests(&mut state.frontend.network_setup_protocol);
                         let face = layout.control_rect(control).context("combo face")?;
                         let arrow = crate::ui::skirmish_shell::combo_arrow_hit_rect(
                             face,
@@ -1814,7 +1831,7 @@ impl LanCapture {
                         })
                         .context("trackbar has no different admitted jump")?;
                     let before = bar.value;
-                    self.drain_requests(state);
+                    self.drain_requests(&mut state.frontend.network_setup_protocol);
                     setup_click(state, RectPx::new(x, y, 1, 1));
                     let options = &state
                         .match_state
@@ -1838,7 +1855,7 @@ impl LanCapture {
                         "trackbar capture survived mouse release"
                     );
                     ensure!(
-                        self.drain_requests(state)
+                        self.drain_requests(&mut state.frontend.network_setup_protocol)
                             .contains(&NetworkSetupRequest::PublishOptions),
                         "trackbar omitted options publication"
                     );
@@ -1847,13 +1864,13 @@ impl LanCapture {
                         "control":control,"before":before,"after":actual,"point":[x,y]}));
                     self.phase = LanPhase::SettingsControl(step + 1);
                 } else {
-                    self.drain_requests(state);
+                    self.drain_requests(&mut state.frontend.network_setup_protocol);
                     setup_click(state, layout.chat);
                     setup_input::key_press(state, None, Some("Setup ready"));
                     setup_input::key_press(state, Some(KeyCode::Enter), None);
                     let expected = "Setup ready\r\n".encode_utf16().collect::<Vec<_>>();
                     ensure!(
-                        self.drain_requests(state)
+                        self.drain_requests(&mut state.frontend.network_setup_protocol)
                             .contains(&NetworkSetupRequest::Chat(expected)),
                         "BC chat Enter omitted native CRLF service payload"
                     );
@@ -1962,16 +1979,17 @@ impl LanCapture {
                     "canonical_setup":launch}),
                 );
                 ensure!(
-                    self.drain_requests(state)
+                    self.drain_requests(&mut state.frontend.network_setup_protocol)
                         .contains(&NetworkSetupRequest::PublishOptions),
                     "host combo omitted options publication"
                 );
                 self.phase = LanPhase::SettingsControl(step + 1);
             }
             LanPhase::Guest
-                if rendered == PresentedShell::NetworkSetup && setup_settled(state, false) =>
+                if rendered == PresentedShell::NetworkSetup
+                    && setup_settled(&state.frontend, false) =>
             {
-                self.assert_guest_order(state, false)?;
+                self.assert_guest_order(&state.match_state.session, false)?;
                 ensure!(
                     state
                         .match_state
@@ -1989,8 +2007,12 @@ impl LanCapture {
                         state,
                         NetworkSetupEvent::ParticipantJoined(self.human(true)?),
                     )?;
-                    self.assert_guest_order(state, true)?;
-                    let launch = self.host_options(state)?;
+                    self.assert_guest_order(&state.match_state.session, true)?;
+                    let launch = self.host_options(
+                        &state.frontend,
+                        &state.match_state.session,
+                        &state.process_assets,
+                    )?;
                     self.publish_setup(state, launch)?;
                     if self.target == LanTarget::CoopGuest {
                         self.guest_receives_campaign(state, frame)?;
@@ -2006,7 +2028,7 @@ impl LanCapture {
                         state.match_state.session.network_map_status(0) == Some(status),
                         "production map availability did not produce expected K{status}"
                     );
-                    let requests = self.drain_requests(state);
+                    let requests = self.drain_requests(&mut state.frontend.network_setup_protocol);
                     ensure!(
                         requests.contains(&NetworkSetupRequest::MapStatus(status)),
                         "production map availability did not publish K{status}"
@@ -2025,13 +2047,13 @@ impl LanCapture {
                     self.phase = LanPhase::Configured;
                 }
             }
-            LanPhase::Configured if setup_settled(state, false) => match self.target {
+            LanPhase::Configured if setup_settled(&state.frontend, false) => match self.target {
                 LanTarget::Guest
                 | LanTarget::CoopGuest
                 | LanTarget::NoMap
                 | LanTarget::TransferEligible => self.settle(state),
                 LanTarget::StartPrompt | LanTarget::StartPromptAccepted => {
-                    self.drain_requests(state);
+                    self.drain_requests(&mut state.frontend.network_setup_protocol);
                     setup::service_event(state, NetworkSetupEvent::StartPrompt)?;
                     let view = setup::view(state).context("prompted BD")?;
                     ensure!(
@@ -2066,7 +2088,8 @@ impl LanCapture {
                         "host Start prompt omitted localized chat"
                     );
                     ensure!(
-                        self.drain_requests(state).is_empty(),
+                        self.drain_requests(&mut state.frontend.network_setup_protocol)
+                            .is_empty(),
                         "host prompt emitted readiness before Accept"
                     );
                     self.phase = LanPhase::Prompt(Instant::now());
@@ -2083,10 +2106,10 @@ impl LanCapture {
                     self.phase = LanPhase::Returned;
                 }
                 _ => {
-                    self.drain_requests(state);
+                    self.drain_requests(&mut state.frontend.network_setup_protocol);
                     setup_button(state, crate::ui::multiplayer_setup::ACCEPT)?;
                     ensure!(
-                        self.drain_requests(state)
+                        self.drain_requests(&mut state.frontend.network_setup_protocol)
                             .contains(&NetworkSetupRequest::Ready(true)),
                         "real Accept did not emit A1"
                     );
@@ -2095,7 +2118,7 @@ impl LanCapture {
             },
             LanPhase::Prompt(started)
                 if rendered == PresentedShell::NetworkSetup
-                    && setup_settled(state, false)
+                    && setup_settled(&state.frontend, false)
                     && started.elapsed() >= Duration::from_millis(1100) =>
             {
                 // Let the production renderer advance its own one-second
@@ -2110,7 +2133,7 @@ impl LanCapture {
                     self.settle(state);
                 } else {
                     setup_button(state, crate::ui::multiplayer_setup::ACCEPT)?;
-                    let requests = self.drain_requests(state);
+                    let requests = self.drain_requests(&mut state.frontend.network_setup_protocol);
                     ensure!(
                         requests == vec![NetworkSetupRequest::Ready(true)],
                         "prompted real Accept must emit exactly one A1"
@@ -2131,7 +2154,11 @@ impl LanCapture {
                 match self.target {
                     LanTarget::Accepted | LanTarget::StartPromptAccepted => self.settle(state),
                     LanTarget::ColorChange => {
-                        let mut launch = self.host_options(state)?;
+                        let mut launch = self.host_options(
+                            &state.frontend,
+                            &state.match_state.session,
+                            &state.process_assets,
+                        )?;
                         launch.humans[1].slot.color_index = 3;
                         self.publish_setup(state, launch)?;
                         ensure!(
@@ -2140,14 +2167,18 @@ impl LanCapture {
                         );
                         ensure!(
                             !self
-                                .drain_requests(state)
+                                .drain_requests(&mut state.frontend.network_setup_protocol)
                                 .contains(&NetworkSetupRequest::Ready(false)),
                             "color-only update emitted A0"
                         );
                         self.settle(state);
                     }
                     LanTarget::HostChange => {
-                        let mut launch = self.host_options(state)?;
+                        let mut launch = self.host_options(
+                            &state.frontend,
+                            &state.match_state.session,
+                            &state.process_assets,
+                        )?;
                         launch.options.starting_credits = self.inputs["changed_credits"]
                             .as_i64()
                             .context("declared credits")?
@@ -2158,7 +2189,7 @@ impl LanCapture {
                             "material change failed to clear readiness"
                         );
                         ensure!(
-                            self.drain_requests(state)
+                            self.drain_requests(&mut state.frontend.network_setup_protocol)
                                 .iter()
                                 .filter(|request| **request == NetworkSetupRequest::Ready(false))
                                 .count()
@@ -2176,14 +2207,14 @@ impl LanCapture {
                             },
                         )?;
                         ensure!(
-                            self.drain_requests(state).contains(
-                                &NetworkSetupRequest::PrepareMapForHandoff {
+                            self.drain_requests(&mut state.frontend.network_setup_protocol)
+                                .contains(&NetworkSetupRequest::PrepareMapForHandoff {
                                     received_budget: self.timing()?
-                                }
-                            ),
+                                }),
                             "GO bypassed map service"
                         );
-                        self.admitted = Some(session_receipt(state));
+                        self.admitted =
+                            Some(session_receipt(&state.frontend.screen, &state.match_state));
                         self.apply_timing(state, false)?;
                         if matches!(
                             self.target,
@@ -2225,7 +2256,7 @@ impl LanCapture {
             }
             LanPhase::Chooser
                 if rendered == PresentedShell::NetworkSetup
-                    && MoviesCapture::slide_settled(state, ShellSlideKind::ChooseMap)
+                    && MoviesCapture::slide_settled(&state.frontend, ShellSlideKind::ChooseMap)
                     && state
                         .frontend
                         .skirmish_shell_state
@@ -2242,7 +2273,8 @@ impl LanCapture {
                     "chooser not active"
                 );
                 ensure!(
-                    self.offline_selection == Some(offline_selection(state)),
+                    self.offline_selection
+                        == Some(offline_selection(&state.frontend.skirmish_shell_state)),
                     "LAN Choose Map wrote the offline Skirmish selection"
                 );
                 if self.target.cooperative_host() {
@@ -2261,7 +2293,8 @@ impl LanCapture {
                 }
             }
             LanPhase::ChooserReturn
-                if rendered == PresentedShell::NetworkSetup && setup_settled(state, true) =>
+                if rendered == PresentedShell::NetworkSetup
+                    && setup_settled(&state.frontend, true) =>
             {
                 ensure!(
                     state
@@ -2272,7 +2305,8 @@ impl LanCapture {
                     "chooser survived Cancel"
                 );
                 ensure!(
-                    self.offline_selection == Some(offline_selection(state)),
+                    self.offline_selection
+                        == Some(offline_selection(&state.frontend.skirmish_shell_state)),
                     "LAN Choose Map Cancel wrote the offline Skirmish selection"
                 );
                 if self.target.cooperative_host() {
@@ -2283,7 +2317,9 @@ impl LanCapture {
                     self.settle(state);
                 }
             }
-            LanPhase::Returned if rendered == PresentedShell::LanLobby && lobby_settled(state) => {
+            LanPhase::Returned
+                if rendered == PresentedShell::LanLobby && lobby_settled(&state.frontend) =>
+            {
                 ensure!(
                     state.frontend.multiplayer_setup.is_none()
                         && state.frontend.network_setup_protocol.is_none()
@@ -2498,8 +2534,12 @@ impl LanCapture {
                     return Ok(());
                 }
                 if self.target == LanTarget::HostPeerLeft {
-                    queue_peer_command(state, 1, crate::sim::command::Command::ExitMatch)?;
-                    let tick = sim_tick(state)?;
+                    queue_peer_command(
+                        &mut state.match_state,
+                        1,
+                        crate::sim::command::Command::ExitMatch,
+                    )?;
+                    let tick = sim_tick(&state.match_state.sim_runtime)?;
                     self.route
                         .push(json!({"frame":frame,"action":"controlled peer EXIT","tick":tick}));
                     self.phase = LanPhase::PeerLeaving { tick };
@@ -2830,7 +2870,12 @@ impl LanCapture {
                         let rect = layout
                             .control_rect(crate::ui::coop_score_shell::CONTINUE)
                             .context("Continue rect")?;
-                        let point = set_window_pointer_to_rect_center(state, rect);
+                        let point = set_window_pointer_to_rect_center(
+                            &state.renderer,
+                            &state.frontend.screen,
+                            &mut state.match_state.input,
+                            rect,
+                        );
                         crate::app::input::coop_score::cursor_moved(state);
                         crate::app::input::coop_score::mouse(state, MouseButton::Left, true);
                         crate::app::input::coop_score::mouse(state, MouseButton::Left, false);
@@ -2911,7 +2956,8 @@ impl LanCapture {
             }
             LanPhase::CoopNextLoading => {}
             LanPhase::ScoreWait => {
-                if rendered != PresentedShell::Score || !super::super::score::reveals_settled(state)
+                if rendered != PresentedShell::Score
+                    || !super::super::score::reveals_settled(&state.frontend)
                 {
                     return Ok(());
                 }
@@ -2969,7 +3015,7 @@ impl LanCapture {
                     );
                     self.observed_exit_cascade = true;
                 }
-                if rendered == PresentedShell::LanLobby && lobby_settled(state) {
+                if rendered == PresentedShell::LanLobby && lobby_settled(&state.frontend) {
                     ensure!(
                         self.observed_exit_cascade,
                         "LAN returned without executed EXIT cascade"
@@ -3028,7 +3074,7 @@ impl LanCapture {
                     "published random-map metadata {metadata:?} is not the record's"
                 );
                 ensure!(
-                    self.drain_requests(state)
+                    self.drain_requests(&mut state.frontend.network_setup_protocol)
                         .contains(&NetworkSetupRequest::PublishOptions),
                     "the random map was not published"
                 );
@@ -3102,7 +3148,7 @@ impl LanCapture {
                 }
                 ensure!(!allied(state, 1, 0)?, "the alliance formed both ways");
                 queue_peer_command(
-                    state,
+                    &mut state.match_state,
                     1,
                     crate::sim::command::Command::Ally { house_index: 0 },
                 )?;
@@ -3506,26 +3552,24 @@ impl LanCapture {
             .as_ref()
             .is_some_and(|live| live.observes_every_frame())
     }
-    pub(super) fn owns_simulation_steps(&self, state: &AppState) -> bool {
+    pub(super) fn owns_simulation_steps(&self, screen: &GameScreen, sim_runtime: &SimHost) -> bool {
         if let Some(live) = &self.live {
-            return live.owns_simulation_steps(state);
+            return live.owns_simulation_steps(sim_runtime);
         }
-        self.abort_return()
-            && self.phase == LanPhase::Loading
-            && state.frontend.screen == GameScreen::InGame
+        self.abort_return() && self.phase == LanPhase::Loading && *screen == GameScreen::InGame
     }
-    pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
+    pub(super) fn ready(&self, frontend: &FrontendState, match_state: &MatchState) -> Result<bool> {
         if let Some(live) = &self.live {
             return Ok(live.ready());
         }
         if self.phase == LanPhase::CoopNextLoading {
-            return Ok(state.frontend.screen == GameScreen::Loading
-                && crate::app::loading::pump::next_native_loading_frame(&state.frontend)
+            return Ok(frontend.screen == GameScreen::Loading
+                && crate::app::loading::pump::next_native_loading_frame(frontend)
                     == Some(crate::app::loading::pump::NextLoadingFrame::First));
         }
         if self.phase == LanPhase::RemoteProgress {
             ensure!(
-                state.frontend.screen == GameScreen::Loading,
+                frontend.screen == GameScreen::Loading,
                 "remote-progress checkpoint missed loading"
             );
             return Ok(true);
@@ -3536,26 +3580,30 @@ impl LanCapture {
                 return Ok(false);
             }
             ensure!(
-                state.match_state.session_mode() == SessionMode::Lan,
+                match_state.session_mode() == SessionMode::Lan,
                 "network handoff became offline"
             );
-            return Ok(state.frontend.screen == GameScreen::Loading
-                && crate::app::loading::pump::next_native_loading_frame(&state.frontend)
+            return Ok(frontend.screen == GameScreen::Loading
+                && crate::app::loading::pump::next_native_loading_frame(frontend)
                     == Some(crate::app::loading::pump::NextLoadingFrame::First));
         }
         Ok(self.phase == LanPhase::Settle(0)
-            && state.frontend.shell_exit.is_none()
-            && state.frontend.shell_first_paint_slide.is_none())
+            && frontend.shell_exit.is_none()
+            && frontend.shell_first_paint_slide.is_none())
     }
     pub(super) fn measurement_failure(&self) -> Option<String> {
         self.live.as_ref()?.measurement_failure()
     }
 
-    pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
+    pub(super) fn receipt(
+        &self,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+    ) -> Result<Value> {
         if let Some(live) = &self.live {
-            return live.receipt(state);
+            return live.receipt(frontend, match_state);
         }
-        let presentation = crate::app::loading::pump::network_loading_presentation(&state.frontend);
+        let presentation = crate::app::loading::pump::network_loading_presentation(frontend);
         if self.target == LanTarget::HostObserverGo {
             use crate::render::loading_screen_chrome::LoadingArtVariant;
             let loading = presentation
@@ -3587,15 +3635,15 @@ impl LanCapture {
             "participants":loading.participants.iter().map(|row|json!({"label":row.label,"art":format!("{:?}",row.art)})).collect::<Vec<_>>()}));
         Ok(
             json!({"target":format!("{:?}",self.target),"route":self.route,
-            "service_boundary":"controlled decoded inputs; no transport/backend claim","session":session_receipt(state),"before_handoff":self.admitted,"installed_runtime":self.observed_runtime,"observed_exit_cascade":self.observed_exit_cascade,"loading_presentation":presentation}),
+            "service_boundary":"controlled decoded inputs; no transport/backend claim","session":session_receipt(&frontend.screen, match_state),"before_handoff":self.admitted,"installed_runtime":self.observed_runtime,"observed_exit_cascade":self.observed_exit_cascade,"loading_presentation":presentation}),
         )
     }
 }
 /// The retail Cooperative game type.
-fn cooperative_mode(state: &AppState) -> Result<&crate::skirmish_modes::SkirmishGameMode> {
-    state
-        .frontend
-        .skirmish_modes
+fn cooperative_mode(
+    skirmish_modes: &[SkirmishGameMode],
+) -> Result<&crate::skirmish_modes::SkirmishGameMode> {
+    skirmish_modes
         .iter()
         .find(|mode| mode.class == crate::skirmish_modes::MpModeClass::Cooperative)
         .context("retail Cooperative mode")
@@ -3608,7 +3656,7 @@ fn click_cooperative_mode(state: &mut AppState) -> Result<Vec<String>> {
         &state.renderer,
         &state.frontend.screen,
     );
-    let mode_id = cooperative_mode(state)?.id;
+    let mode_id = cooperative_mode(&state.frontend.skirmish_modes)?.id;
     let modal = state
         .frontend
         .skirmish_shell_state
@@ -3693,16 +3741,16 @@ fn list_row_point(
     )
 }
 
-fn session_receipt(state: &AppState) -> Value {
-    json!({"mode":format!("{:?}",state.match_state.session_mode()),"host":state.match_state.session.host(),
-        "setup":state.match_state.session.network_setup(),"seed":state.match_state.session.network_start_seed(),
-        "max_ahead_frames":state.match_state.session.network_max_ahead_frames(),
-        "setup_capacity":state.match_state.session.network_setup_capacity(),"observer_row":state.match_state.session.network_observer_row(),
-        "screen":format!("{:?}",state.frontend.screen)})
+fn session_receipt(screen: &GameScreen, match_state: &MatchState) -> Value {
+    json!({"mode":format!("{:?}",match_state.session_mode()),"host":match_state.session.host(),
+        "setup":match_state.session.network_setup(),"seed":match_state.session.network_start_seed(),
+        "max_ahead_frames":match_state.session.network_max_ahead_frames(),
+        "setup_capacity":match_state.session.network_setup_capacity(),"observer_row":match_state.session.network_observer_row(),
+        "screen":format!("{:?}",*screen)})
 }
-fn lobby_settled(state: &AppState) -> bool {
-    MoviesCapture::slide_settled(state, ShellSlideKind::LanLobby)
-        && state.frontend.shell_page_title.is_terminal()
+fn lobby_settled(frontend: &FrontendState) -> bool {
+    MoviesCapture::slide_settled(frontend, ShellSlideKind::LanLobby)
+        && frontend.shell_page_title.is_terminal()
 }
 /// Shared production input sequence for both native LAN movies and real
 /// network runs. The generator and its accepted artifacts remain app-owned.
@@ -3721,7 +3769,7 @@ impl RandomMapInput {
         route: &mut Vec<Value>,
     ) -> Result<bool> {
         match self.phase {
-            0 if MoviesCapture::slide_settled(state, ShellSlideKind::ChooseMap)
+            0 if MoviesCapture::slide_settled(&state.frontend, ShellSlideKind::ChooseMap)
                 && state
                     .frontend
                     .skirmish_shell_state
@@ -3852,22 +3900,26 @@ fn random_map_click(state: &mut AppState, point: (i32, i32), chooser: bool) {
     }
 }
 
-fn setup_settled(state: &AppState, host: bool) -> bool {
+fn setup_settled(frontend: &FrontendState, host: bool) -> bool {
     MoviesCapture::slide_settled(
-        state,
+        frontend,
         ShellSlideKind::NetworkSetup(crate::app::shell_network_setup::setup_dialog(
-            &state.frontend,
+            frontend,
             host,
             crate::ui::multiplayer_setup::SetupFlavor::Lan,
         )),
-    ) && state
-        .frontend
+    ) && frontend
         .multiplayer_setup
         .as_ref()
         .is_some_and(|ui| ui.statics.is_terminal())
 }
 fn lobby_click(state: &mut AppState, rect: RectPx) {
-    set_window_pointer_to_rect_center(state, rect);
+    set_window_pointer_to_rect_center(
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state.input,
+        rect,
+    );
     lobby::cursor_moved(state);
     lobby::mouse(state, MouseButton::Left, true);
     lobby::mouse(state, MouseButton::Left, false);
@@ -3905,8 +3957,8 @@ fn setup_button(state: &mut AppState, id: u16) -> Result<()> {
     Ok(())
 }
 
-fn offline_selection(state: &AppState) -> (i32, usize) {
-    let dialog = &state.frontend.skirmish_shell_state;
+fn offline_selection(skirmish_shell_state: &SkirmishShellState) -> (i32, usize) {
+    let dialog = skirmish_shell_state;
     (dialog.selected_mode.id, dialog.selected_map_idx)
 }
 
@@ -4033,10 +4085,8 @@ fn chat_key(
     }
 }
 
-fn sim_tick(state: &AppState) -> Result<u64> {
-    Ok(state
-        .match_state
-        .sim_runtime
+fn sim_tick(sim_runtime: &SimHost) -> Result<u64> {
+    Ok(sim_runtime
         .runtime()
         .context("installed LAN runtime")?
         .simulation

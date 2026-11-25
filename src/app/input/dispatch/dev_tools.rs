@@ -177,7 +177,10 @@ pub(crate) fn toggle_heightmap_overlay(diag: &mut DiagnosticsState) {
 #[cfg(feature = "dev-overlays")]
 pub(crate) fn cycle_terrain_cost_speed_type(state: &mut AppState, forward: bool) {
     if state.diag.debug_show_pathgrid {
-        let current = crate::app::diagnostics::debug_overlays::resolve_debug_speed_type(state);
+        let current = crate::app::diagnostics::debug_overlays::resolve_debug_speed_type(
+            &state.diag,
+            &state.match_state.sim_runtime,
+        );
         let next = if forward {
             current.cycle_next()
         } else {
