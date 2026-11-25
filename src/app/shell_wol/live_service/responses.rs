@@ -527,7 +527,19 @@ pub(super) fn apply_response(
             if let Some((line, target, reply)) =
                 service.translations.reply(id, outcome, Instant::now())
             {
-                super::translation::show(state, line, target, &reply);
+                super::translation::show(
+                    &mut state.frontend,
+                    &state.platform,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    &state.diag,
+                    &mut state.audio.sfx_player,
+                    &state.persistence,
+                    line,
+                    target,
+                    &reply,
+                );
             }
         }
         http::Response::AccountAnswered { attempt, answer } => {

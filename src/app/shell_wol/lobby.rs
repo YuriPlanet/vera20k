@@ -2905,7 +2905,15 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
                 )
             });
         }
-        WolLobbyAction::Page => super::page::open_page_dialog(state),
+        WolLobbyAction::Page => super::page::open_page_dialog(
+            &mut state.frontend,
+            &mut state.platform,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &mut state.audio,
+            &mut state.persistence,
+        ),
         // 0x0078BF7D: mode 5 with return mode 4; event 6 then ends the
         // runner as Back does, and WOL_Main runs the Buddy List runner.
         WolLobbyAction::Unported(BUDDY) => App::leave_shell_dialog(

@@ -4,6 +4,7 @@
 use super::shell_saved_seeds::saved_browser_rows;
 use super::{App, AppState};
 use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::PersistenceState;
@@ -45,21 +46,25 @@ impl App {
         ))
     }
 
-    pub(crate) fn open_saved_game_browser(state: &mut AppState, mode: SavedSeedMode) {
-        let Some(layout) = Self::saved_game_layout(
-            &state.platform,
-            &state.renderer,
-            &state.frontend,
-            &state.match_state,
-            &state.persistence,
-            mode,
-        ) else {
+    pub(crate) fn open_saved_game_browser(
+        platform: &mut PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &mut PersistenceState,
+        mode: SavedSeedMode,
+    ) {
+        let Some(layout) =
+            Self::saved_game_layout(platform, renderer, frontend, match_state, persistence, mode)
+        else {
             return;
         };
         let mut browser = Self::open_saved_game_rows(
-            &state.match_state,
-            &state.process_assets,
-            &state.persistence.repository,
+            match_state,
+            process_assets,
+            &persistence.repository,
             mode,
             saved_browser_rows(&layout),
             None,
@@ -67,15 +72,15 @@ impl App {
         // The active-game browser shows its heading and prompt.
         browser.statics = true;
         // The child replaces its hidden parent and owns all subsequent input.
-        state.match_state.match_presentation.saved_game_browser = Some(browser);
+        match_state.match_presentation.saved_game_browser = Some(browser);
         Self::enter_in_game_menu_state(
-            &mut state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             InGameMenuState::SavedGame(mode),
         );
     }
@@ -432,28 +437,34 @@ impl App {
     }
 
     pub(crate) fn finish_saved_game_load(
-        state: &mut AppState,
+        platform: &mut PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &mut PersistenceState,
         path: &std::path::Path,
         result: Result<(), crate::app::persistence::PreparedLoadError>,
     ) {
         match result {
             Ok(()) => {
-                state.match_state.match_presentation.saved_game_browser = None;
+                match_state.match_presentation.saved_game_browser = None;
                 Self::enter_in_game_menu_state(
-                    &mut state.platform,
-                    &state.renderer,
-                    &mut state.frontend,
-                    &mut state.match_state,
-                    &state.process_assets,
-                    &mut state.audio,
-                    &mut state.persistence,
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    audio,
+                    persistence,
                     InGameMenuState::Closed,
                 );
             }
             Err(error) => Self::report_saved_game_load_error(
-                &mut state.frontend,
-                &mut state.match_state.match_presentation,
-                &state.process_assets,
+                frontend,
+                &mut match_state.match_presentation,
+                process_assets,
                 path,
                 &error,
             ),

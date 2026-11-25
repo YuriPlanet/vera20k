@@ -6,7 +6,9 @@
 use super::actions::queue;
 use super::chat_notice as message;
 use super::*;
+use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::match_runtime::sim_host::SimHost;
+use crate::app::persistence::PersistenceState;
 use crate::app::renderer_state::RendererState;
 use crate::audio::sfx::SfxPlayer;
 use crate::render::gpu::GpuContext;
@@ -609,26 +611,27 @@ pub(super) fn clear_guest_acceptance(
 /// host may Start again); a match closes the setup and runs Start Game Now
 /// (`0x794BA0`), whose timing block decides MaxAhead.
 pub(super) fn game_started(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
     users: Vec<WolStartUser>,
     pings: Vec<i32>,
 ) -> anyhow::Result<()> {
     // 0x7A7B95: once a start has matched ([0xB77E27]), OnGameStart does
     // nothing more.
-    if verify(state.frontend.network_setup_protocol.as_ref()).is_some() {
+    if verify(frontend.network_setup_protocol.as_ref()).is_some() {
         return Ok(());
     }
     // 0x7A7B82..0x7A7B9E: the page reply window restarts with no time.
     let now = crate::ui::wol_page::reply_window_now(
         crate::app::match_runtime::frame_pacer::wall_clock_ms(),
     );
-    state
-        .frontend
-        .wol_lobby_globals
-        .page_reply_window
-        .arm(now, 0);
-    let launch = state
-        .match_state
+    frontend.wol_lobby_globals.page_reply_window.arm(now, 0);
+    let launch = match_state
         .session
         .network_setup()
         .ok_or_else(|| anyhow::anyhow!("no admitted setup"))?;
@@ -641,33 +644,39 @@ pub(super) fn game_started(
                 .any(|user| user.name.eq_ignore_ascii_case(&human.name))
         });
     if !matches {
-        if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+        if let Some(protocol) = frontend.network_setup_protocol.as_mut() {
             protocol.set_start_phase(super::StartPhase::Idle);
         }
         return Ok(());
     }
     // 0x7A7CC3..0x7A7CE9: modes 1-3 close 0x117; 0x7A7CEE..0x7A7CFC: an
     // open 0xCF closes.
-    crate::app::shell_wol::quick_match::game_started(&mut state.frontend);
-    crate::app::shell_wol::page::close_page_dialog(state);
+    crate::app::shell_wol::quick_match::game_started(frontend);
+    crate::app::shell_wol::page::close_page_dialog(
+        frontend,
+        platform,
+        match_state,
+        process_assets,
+        renderer,
+        audio,
+        persistence,
+    );
     // 0x794F6F..: the first user row with flag bit0 is the channel owner.
     let channel_owner = users
         .iter()
         .find(|user| user.flags & 1 != 0)
         .is_some_and(|user| user.name.eq_ignore_ascii_case(&local));
-    state
-        .match_state
+    match_state
         .session
         .prepare_wol_timing(pings, channel_owner)?;
     // [0xB779C4] (0x7A7D0E..0x7A7D49) and Start Game Now's clan lists
     // (0x795250..0x79546E) for the match.
-    let terms = crate::app::shell_wol::lobby::start_terms(state.frontend.wol.as_ref());
-    state.match_state.session.set_wol_start(terms);
+    let terms = crate::app::shell_wol::lobby::start_terms(frontend.wol.as_ref());
+    match_state.session.set_wol_start(terms);
     // C2/C9 stay up: Start Game Now (0x794BA0) pushes the verify 0x130
     // over them with the nodes in [0xA8DA78] order (0x794C5B).
-    let names = launch_names(&state.match_state.session);
-    let protocol = state
-        .frontend
+    let names = launch_names(&match_state.session);
+    let protocol = frontend
         .network_setup_protocol
         .as_mut()
         .expect("setup owns protocol");

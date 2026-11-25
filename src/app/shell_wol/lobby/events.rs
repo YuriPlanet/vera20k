@@ -18,12 +18,16 @@ use super::{
     show_wait, sort_lobby, units, visit_joined, visit_room_left, visit_settles, visit_user_joined,
     visit_user_left, visiting, watch_refused,
 };
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::app::shell_wol::WolVisit;
+use crate::audio::sfx::SfxPlayer;
 use crate::util::config::GameConfig;
 
 /// Lobby events of the service. Events nothing waits for are stale.
@@ -415,27 +419,37 @@ pub(in crate::app::shell_wol) fn message_received(
 /// current dialog's transcript and the sink returns; only the path without
 /// a transcript clears the name (`0x007AA685`).
 /// RESIDUAL: in a match the line is a MessageList row (WOL in-match chain).
-pub(in crate::app::shell_wol) fn located(state: &mut AppState, result: Result<WolChannel, u32>) {
+pub(in crate::app::shell_wol) fn located(
+    frontend: &mut FrontendState,
+    platform: &PlatformState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    result: Result<WolChannel, u32>,
+) {
     // 0x007A9986: a pending buddy locate takes any answer first.
     if super::buddies::located(
-        &mut state.frontend,
-        &state.platform.window,
-        &state.process_assets,
-        &state.renderer,
+        frontend,
+        &platform.window,
+        process_assets,
+        renderer,
         &result,
     ) {
         return;
     }
     // 0x007A997A: with 0xCF in the stack its status takes the answer.
     if super::page::located(
-        state.frontend.wol.as_mut(),
-        &state.platform.window,
-        &state.process_assets,
+        frontend.wol.as_mut(),
+        &platform.window,
+        process_assets,
         &result,
     ) {
         return;
     }
-    let Some(visit) = state.frontend.wol.as_ref() else {
+    let Some(visit) = frontend.wol.as_ref() else {
         return;
     };
     let name = visit.locate_name.clone().unwrap_or_default();
@@ -445,12 +459,12 @@ pub(in crate::app::shell_wol) fn located(state: &mut AppState, result: Result<Wo
             let room = match channel.lobby_number().filter(|_| channel.kind == 0) {
                 Some(number) => WolLobbyRow::joined_name(
                     number,
-                    &base_names(state.frontend.wol.as_ref(), &state.process_assets),
+                    &base_names(frontend.wol.as_ref(), process_assets),
                 ),
                 None => channel.name.clone(),
             };
             format_csf(
-                &state.csf_text("TXT_USER_FOUND"),
+                &process_assets.csf_text("TXT_USER_FOUND"),
                 &[CsfArg::Str(&name), CsfArg::Str(&room)],
             )
         }
@@ -460,7 +474,7 @@ pub(in crate::app::shell_wol) fn located(state: &mut AppState, result: Result<Wo
                 0x0004_0132 => "TXT_USER_FIND_DISABLED",
                 _ => "TXT_USER_NOT_ONLINE",
             };
-            format_csf(&state.csf_text(key), &[CsfArg::Str(&name)])
+            format_csf(&process_assets.csf_text(key), &[CsfArg::Str(&name)])
         }
     };
     // 0x007AA5D5..0x007AA685: colour [0x7EEF28] = -1; `[0xB76E28]` is
@@ -469,10 +483,20 @@ pub(in crate::app::shell_wol) fn located(state: &mut AppState, result: Result<Wo
         text: text.encode_utf16().collect(),
         color: u32::MAX,
     };
-    if !super::page::current_window_line(state, line) {
+    if !super::page::current_window_line(
+        frontend,
+        platform,
+        match_state,
+        process_assets,
+        renderer,
+        diag,
+        sfx_player,
+        persistence,
+        line,
+    ) {
         log::info!("WOL find result outside a transcript: {text}");
     }
-    if let Some(visit) = state.frontend.wol.as_mut() {
+    if let Some(visit) = frontend.wol.as_mut() {
         visit.locate_name = None;
     }
 }
@@ -482,7 +506,17 @@ pub(in crate::app::shell_wol) fn located(state: &mut AppState, result: Result<Wo
 /// to the current window only: its `0x53F` (`0x113`, C2/C9, `0x11E`), else
 /// its `0x5B5` (`0xCF`).
 /// RESIDUAL: with neither, a match posts a MessageList row (in-match chain).
-pub(in crate::app::shell_wol) fn page_result(state: &mut AppState, result: Result<(), u32>) {
+pub(in crate::app::shell_wol) fn page_result(
+    frontend: &mut FrontendState,
+    platform: &PlatformState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    result: Result<(), u32>,
+) {
     let key = match result {
         Ok(()) => "TXT_PAGESENT",
         Err(0x0004_0134) => "TXT_PAGEDISABLED",
@@ -490,13 +524,23 @@ pub(in crate::app::shell_wol) fn page_result(state: &mut AppState, result: Resul
         Err(_) => "TXT_PAGEFAILED",
     };
     let line = LanChatLine {
-        text: units(&state.process_assets, key),
+        text: units(process_assets, key),
         color: u32::MAX,
     };
     if result.is_ok() {
-        super::page::append_page_line(&mut state.frontend, &state.renderer, line);
+        super::page::append_page_line(frontend, renderer, line);
     } else {
-        super::page::current_window_line(state, line);
+        super::page::current_window_line(
+            frontend,
+            platform,
+            match_state,
+            process_assets,
+            renderer,
+            diag,
+            sfx_player,
+            persistence,
+            line,
+        );
     }
 }
 
@@ -771,22 +815,29 @@ pub(in crate::app::shell_wol) fn channel_ban(
 /// plays last in both.
 /// RESIDUAL: the auto-reply `[0xB77E40]`/`[0xB76230]` has no writer here.
 pub(in crate::app::shell_wol) fn page_received(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
+    platform: &PlatformState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
     from: WolMember,
     text: Vec<u16>,
     ansi: bool,
 ) {
-    if state.frontend.wol.is_none()
+    if frontend.wol.is_none()
         || !sender_passes(
-            &state.frontend,
+            frontend,
             &from,
             &text,
-            state.frontend.shell_route == ShellRoute::NetworkSetup,
+            frontend.shell_route == ShellRoute::NetworkSetup,
         )
     {
         return;
     }
-    let visit = state.frontend.wol.as_mut().expect("checked");
+    let visit = frontend.wol.as_mut().expect("checked");
     if ansi {
         visit.last_pager = Some(from.name.clone());
     }
@@ -800,62 +851,52 @@ pub(in crate::app::shell_wol) fn page_received(
     if in_game {
         let row = String::from_utf16_lossy(&line.text);
         crate::app::input::messages::post_wol_page_rows(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
             &row,
             ansi,
         );
-        super::page::append_page_line(&mut state.frontend, &state.renderer, line);
+        super::page::append_page_line(frontend, renderer, line);
         if ansi {
             let now = crate::ui::wol_page::reply_window_now(
                 crate::app::match_runtime::frame_pacer::wall_clock_ms(),
             );
-            state
-                .frontend
+            frontend
                 .wol_lobby_globals
                 .page_reply_window
                 .arm(now, crate::ui::wol_page::REPLY_WINDOW_TICKS);
         }
     } else {
-        super::page::append_page_line(&mut state.frontend, &state.renderer, line.clone());
+        super::page::append_page_line(frontend, renderer, line.clone());
         // The walk down the stack stops at the first `0x53F`: the lobby's
         // (also while Options `0x2BC` hides it), C2/C9's, or `0x11E`'s.
-        let route = state.frontend.shell_route;
-        let transcript = super::page::page_received(state.frontend.wol.as_ref()).is_none()
+        let route = frontend.shell_route;
+        let transcript = super::page::page_received(frontend.wol.as_ref()).is_none()
             && (route == ShellRoute::NetworkSetup
-                || lobby_dialog(state.frontend.wol.as_ref()).is_some()
-                || super::quick_match::page_open(state.frontend.wol.as_ref()));
+                || lobby_dialog(frontend.wol.as_ref()).is_some()
+                || super::quick_match::page_open(frontend.wol.as_ref()));
         if transcript {
             crate::app::shell_lan::append_chat(
-                &state.renderer,
-                &mut state.frontend,
-                &state.match_state,
-                &state.process_assets,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
                 line,
             );
         } else {
-            super::page::page_received_line(
-                &mut state.frontend,
-                &state.platform.window,
-                &state.renderer,
-                line,
-            );
+            super::page::page_received_line(frontend, &platform.window, renderer, line);
         }
     }
     // 0x7A94ED..0x7A9510: with [0xB77E40] the pager gets the Quick Match
     // away text (API+0xEC).
-    super::quick_match::page_reply(state.frontend.wol.as_mut(), &from.name);
-    App::play_shell_rules_sound(
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
-        |rules| rules.general.incoming_message_sound(),
-    );
+    super::quick_match::page_reply(frontend.wol.as_mut(), &from.name);
+    App::play_shell_rules_sound(frontend, match_state, process_assets, sfx_player, |rules| {
+        rules.general.incoming_message_sound()
+    });
 }

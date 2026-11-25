@@ -280,7 +280,15 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             Ok(())
         }
         SetupAction::Page => {
-            crate::app::shell_wol::page::open_page_dialog(state);
+            crate::app::shell_wol::page::open_page_dialog(
+                &mut state.frontend,
+                &mut state.platform,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &mut state.audio,
+                &mut state.persistence,
+            );
             Ok(())
         }
         SetupAction::Chat(text) => {

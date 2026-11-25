@@ -898,7 +898,17 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             );
         }
         NetworkSetupEvent::GameStarted { users, pings } => {
-            super::wol::game_started(state, users, pings)?;
+            super::wol::game_started(
+                &mut state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                users,
+                pings,
+            )?;
         }
         NetworkSetupEvent::VerifyStarted { pairs } => {
             if pairs {

@@ -566,7 +566,17 @@ pub(crate) fn pump_saved_game_load(state: &mut AppState) -> Option<bool> {
             result,
         );
     } else if from_browser {
-        crate::app::App::finish_saved_game_load(state, path, result);
+        crate::app::App::finish_saved_game_load(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            path,
+            result,
+        );
     } else if let Err(error) = result {
         #[cfg(feature = "dev-overlays")]
         log_prepared_load_error(path, &error);

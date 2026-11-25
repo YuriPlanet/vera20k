@@ -105,7 +105,16 @@ fn apply(state: &mut AppState, effects: Vec<WolLobbyEffect>) {
                 &state.platform.window,
                 &name,
             ),
-            WolLobbyEffect::CardButton(id) => super::player_card::button(state, id),
+            WolLobbyEffect::CardButton(id) => super::player_card::button(
+                &mut state.frontend,
+                &mut state.platform,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &mut state.audio,
+                &mut state.persistence,
+                id,
+            ),
             WolLobbyEffect::CardCountry(row) => super::player_card::country_picked(
                 &mut state.frontend,
                 state.platform.game_config.as_ref(),

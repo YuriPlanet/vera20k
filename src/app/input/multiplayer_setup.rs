@@ -303,7 +303,17 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     }
     // The page dialog 0xCF runs its own modal loop over C2/C9.
     if crate::app::shell_wol::page::open(state.frontend.wol.as_ref()) {
-        crate::app::shell_wol::page::key_press(state, code, text);
+        crate::app::shell_wol::page::key_press(
+            &mut state.frontend,
+            &mut state.platform,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &mut state.audio,
+            &mut state.persistence,
+            code,
+            text,
+        );
         return;
     }
     // The native 5D3490 message box owns all input while its CE runs, and
@@ -666,7 +676,16 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         return;
     }
     if crate::app::shell_wol::page::open(state.frontend.wol.as_ref()) {
-        crate::app::shell_wol::page::mouse(state, pressed);
+        crate::app::shell_wol::page::mouse(
+            &mut state.frontend,
+            &mut state.platform,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &mut state.audio,
+            &mut state.persistence,
+            pressed,
+        );
         return;
     }
     let Some((view, layout)) = synced(

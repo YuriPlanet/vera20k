@@ -1036,11 +1036,33 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             return;
         }
         WolServiceEvent::Page { from, text, ansi } => {
-            super::lobby::page_received(state, from, text, ansi);
+            super::lobby::page_received(
+                &mut state.frontend,
+                &state.platform,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &state.diag,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                from,
+                text,
+                ansi,
+            );
             return;
         }
         WolServiceEvent::PageResult(result) => {
-            super::lobby::page_result(state, result);
+            super::lobby::page_result(
+                &mut state.frontend,
+                &state.platform,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &state.diag,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                result,
+            );
             return;
         }
         WolServiceEvent::Message {
@@ -1107,7 +1129,17 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             return;
         }
         WolServiceEvent::Located(result) => {
-            super::lobby::located(state, result);
+            super::lobby::located(
+                &mut state.frontend,
+                &state.platform,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &state.diag,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                result,
+            );
             return;
         }
         WolServiceEvent::NetStatus(status)

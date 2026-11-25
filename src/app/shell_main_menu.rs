@@ -1063,7 +1063,16 @@ impl App {
             ) => {
                 state.frontend.options_dialog = Some(dialog);
                 Self::leave_shell_dialog(state, ShellSlideKind::Options, move |state| {
-                    App::commit_launcher_options_result(state, result)
+                    App::commit_launcher_options_result(
+                        &mut state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        result,
+                    )
                 });
             }
             Some(result) => {
@@ -1088,7 +1097,16 @@ impl App {
                         // Options closes as through Back, keeping and saving
                         // its values; the main menu returns after the
                         // updater's last box.
-                        Self::commit_launcher_options_result(state, LauncherParentResult::Back);
+                        Self::commit_launcher_options_result(
+                            &mut state.platform,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &mut state.audio,
+                            &mut state.persistence,
+                            LauncherParentResult::Back,
+                        );
                         crate::app::updater::open_check(
                             &state.platform.window,
                             &state.renderer,
@@ -1106,31 +1124,36 @@ impl App {
     /// then write the profile and build `0xE2` (Main Menu, `0x005FAD10`), or
     /// run the Keyboard page or VERA's Mods page.
     pub(super) fn commit_launcher_options_result(
-        state: &mut AppState,
+        platform: &mut PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &mut PersistenceState,
         result: crate::ui::main_menu_dialogs::options::LauncherParentResult,
     ) {
         // The key page and VERA's Mods page are children of Options: closing
         // one reopens the dialog on the page the player left. Back and
         // Terminal end the dialog for good.
-        state.frontend.options_reopen_at = match result {
-            LauncherParentResult::Keyboard | LauncherParentResult::Mods => state
-                .frontend
+        frontend.options_reopen_at = match result {
+            LauncherParentResult::Keyboard | LauncherParentResult::Mods => frontend
                 .options_dialog
                 .as_ref()
                 .map(|dialog| dialog.category()),
             _ => None,
         };
-        let Some(dialog) = state.frontend.options_dialog.take() else {
+        let Some(dialog) = frontend.options_dialog.take() else {
             return;
         };
         crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
-            &mut state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             dialog,
             result,
             None,
@@ -1203,18 +1226,26 @@ impl App {
 
     /// Pump-terminal completion enters the same always-apply parent transaction
     /// as Back, then writes once before the caller performs unrelated exit work.
-    pub(crate) fn close_launcher_options_terminal(state: &mut AppState) {
-        let Some(dialog) = state.frontend.options_dialog.take() else {
+    pub(crate) fn close_launcher_options_terminal(
+        platform: &mut PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &mut PersistenceState,
+    ) {
+        let Some(dialog) = frontend.options_dialog.take() else {
             return;
         };
         crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
-            &mut state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             dialog,
             LauncherParentResult::Terminal,
             None,
@@ -1681,7 +1712,15 @@ impl App {
         // always-apply final result: Apply -> destroy -> one write.
         // Complete that transaction before unrelated shell teardown.
         crate::app::input::keyboard::prepare_terminal_exit(state);
-        Self::close_launcher_options_terminal(state);
+        Self::close_launcher_options_terminal(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+        );
         crate::app::input::pause_menu::on_match_end(
             &mut state.platform,
             &state.renderer,

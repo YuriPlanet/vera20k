@@ -298,7 +298,15 @@ impl App {
         {
             crate::app::input::keyboard::prepare_terminal_exit(state);
         }
-        Self::close_launcher_options_terminal(state);
+        Self::close_launcher_options_terminal(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+        );
         if state
             .frontend
             .shell_message_box
