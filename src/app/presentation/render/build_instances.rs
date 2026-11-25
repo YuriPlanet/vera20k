@@ -284,7 +284,7 @@ pub(super) fn build_world_instances(
         Some(rt) => {
             let world = rt.view().simulation();
             match state.match_state.sim_runtime.frame() {
-                Some(frame) => frame.display_order(world),
+                Some(frame) => frame.display_order(),
                 None => {
                     own_order = super::draw_plan_lowering::NativeDisplayOrder::from_world(
                         world,

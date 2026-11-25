@@ -268,7 +268,7 @@ fn tactical_world_tip_text_for_viewer(
     let sim = view.simulation();
     let own_order;
     let order = match frame {
-        Some(frame) => frame.display_order(sim).ordered(),
+        Some(frame) => frame.display_order().ordered(),
         None => {
             own_order = sim.display_draw_order(Some(rules));
             &own_order

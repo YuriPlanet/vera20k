@@ -67,11 +67,11 @@ const _: () = {
 };
 
 impl SimRuntime {
-    /// The host releases the frame's and presentation copy's resource references
-    /// before returning the live runtime for a Rules write.
+    /// The host releases the presentation copy's resource reference before
+    /// returning the live runtime for a Rules write.
     pub fn resources_mut(&mut self) -> &mut SimResources {
         std::sync::Arc::get_mut(&mut self.resources)
-            .expect("resources are shared only with a presentation frame the host drops first")
+            .expect("resources are shared only with a presentation copy the host drops first")
     }
 
     /// Test adapter for an existing simulation with empty resource inputs.

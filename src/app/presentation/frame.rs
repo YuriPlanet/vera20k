@@ -19,6 +19,7 @@
 //! local player, never on the camera, the cursor or render caches.
 
 use crate::app::presentation::instances::TetherDraw;
+use crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder;
 use crate::app::presentation::render_pose::RenderPose;
 use crate::map::entities::EntityCategory;
 use crate::render::draw_state::ObserverDrawContext;
@@ -1268,19 +1269,14 @@ pub(crate) struct PresentationFrame {
     /// ([`ObjectRecord::may_draw_a_line`], [`Self::line_sources`]).
     line_sources: Vec<usize>,
     /// The Display members of the world this frame was captured from, filed
-    /// by the first draw that asks ([`Self::display_members`]).
+    /// by the first read ([`Self::display_members`]): before a tick is lent
+    /// (`SimHost::lend`), or by the first draw.
     display_members:
         crate::util::sync::OnceLock<crate::app::presentation::display_members::DisplayMembers>,
-    /// The Display order of the world this frame was captured from, built by
-    /// the first live-world read or before publishing a detached copy. The frame is
-    /// dropped before that world can change, so every later draw of it reads
-    /// the same order.
-    display_order: crate::util::sync::OnceLock<
-        crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
-    >,
-    /// The rules the world was captured under, which the Ground draw order
-    /// reads (`Simulation::ground_draw_order`).
-    resources: CapturedRules,
+    /// The Display order of the world this frame was captured from, sorted
+    /// beside its records: Ground sorts by the objects, which the world copy
+    /// a lent tick's draws read leaves out.
+    display_order: NativeDisplayOrder,
     /// Every anim's absolute coordinate (`Simulation::anim_absolute_coord`),
     /// which an attached anim takes from its owner object.
     anim_coords: crate::util::lookup_hash::LookupMap<u64, crate::sim::anim_class::AnimWorldCoord>,
@@ -1294,21 +1290,10 @@ pub(crate) struct PresentationFrame {
     pub(crate) psychic_detection: bool,
 }
 
-/// The resources a frame was captured under; none for a default frame.
-#[derive(Default)]
-struct CapturedRules(Option<std::sync::Arc<crate::sim::runtime::SimResources>>);
-
-impl std::fmt::Debug for CapturedRules {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("CapturedRules")
-    }
-}
-
 impl PresentationFrame {
-    /// Release the live match's resources before the host accepts its next Rules write.
-    /// Freeing the frame's 20,000 object records can still run on the pool.
-    pub(crate) fn retire(mut self: Box<Self>) {
-        self.resources.0 = None;
+    /// Free the frame's 20,000 object records on the pool. The frame holds
+    /// none of the match's resources, so a Rules write need not wait for it.
+    pub(crate) fn retire(self: Box<Self>) {
         crate::sim::parallel::drop_on_pool(self);
     }
 
@@ -1341,14 +1326,23 @@ impl PresentationFrame {
                 (!sites.is_empty()).then_some((viewer, sites))
             }),
         };
-        // The scene frame reads no record, so it is captured beside them.
+        // The scene frame and the Display order read no record, so they are
+        // captured beside them, the order on the pool.
         let mut objects = Vec::new();
+        let mut display_order = None;
         let mut scene = None;
         crate::sim::parallel::alongside(
             || {
-                objects = sim
-                    .entities()
-                    .par_map(|_, entity| ObjectRecord::capture(entity, &at));
+                crate::sim::parallel::alongside(
+                    || {
+                        display_order = Some(NativeDisplayOrder::from_world(sim, Some(at.rules())));
+                    },
+                    || {
+                        objects = sim
+                            .entities()
+                            .par_map(|_, entity| ObjectRecord::capture(entity, &at));
+                    },
+                )
             },
             || {
                 scene = Some(crate::app::presentation::frame_scene::SceneFrame::capture(
@@ -1357,6 +1351,7 @@ impl PresentationFrame {
             },
         );
         let scene = scene.expect("captured beside the records");
+        let display_order = display_order.expect("sorted beside the records");
         let anim_coords = sim.anim_absolute_coords().collect();
         let parachute_animations = sim
             .entities()
@@ -1392,8 +1387,7 @@ impl PresentationFrame {
             structures,
             line_sources,
             display_members: Default::default(),
-            display_order: Default::default(),
-            resources: CapturedRules(Some(runtime.resources.clone())),
+            display_order,
             anim_coords,
             parachute_animations,
             scene,
@@ -1432,18 +1426,10 @@ impl PresentationFrame {
         })
     }
 
-    /// `sim`'s draw order for this frame's draws. `sim` is the world the
-    /// frame was captured from.
-    pub(crate) fn display_order(
-        &self,
-        sim: &Simulation,
-    ) -> &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder {
-        self.display_order.get_or_init(|| {
-            crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder::from_world(
-                sim,
-                self.resources.0.as_ref().map(|resources| &resources.rules),
-            )
-        })
+    /// The draw order of the world this frame was captured from, for every
+    /// draw of it.
+    pub(crate) fn display_order(&self) -> &NativeDisplayOrder {
+        &self.display_order
     }
 
     /// `Simulation::anim_absolute_coord` of anim `id`.

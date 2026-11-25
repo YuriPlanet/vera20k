@@ -377,20 +377,21 @@ impl SimHost {
         }
     }
 
-    /// Capture the frame of the home runtime, and with `world` the copy of
-    /// the world drawing reads beside it.
+    /// Capture the frame of the home runtime, and with `world` its Display
+    /// members and the copy of the world drawing reads beside it.
     fn capture_frame(&mut self, world: bool) {
         let _ = self.frame();
         if world
             && self.presentation.is_none()
             && let (Some(frame), Some(runtime)) = (self.frame.get(), self.runtime.as_mut())
         {
+            // The cursor's pick and every draw read the Display members. Filed
+            // now, while the pool is idle, no draw beside the lent tick files
+            // them on the pool the tick works on.
+            frame.display_members(&runtime.simulation);
             let viewer = runtime.simulation.session().current_house();
             let reuse = self.spare.take();
             let started = Instant::now();
-            // Box selection (AddSelectable 0x006D9EF0) can ask for the order
-            // before drawing. Sort while the Ground objects are still attached.
-            frame.display_order(&runtime.simulation);
             self.presentation = Some(Box::new(runtime.presentation_copy(viewer, reuse)));
             let mut costs = self.snapshot_costs.get();
             costs.copy += started.elapsed();
