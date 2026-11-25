@@ -355,7 +355,8 @@ impl TacticalCaptureSession {
                 row
             })
             .collect();
-        let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+        let local_owner =
+            crate::app::input::commands::preferred_local_owner_name(&state.match_state);
         let local_visibility_owner = local_owner
             .as_deref()
             .and_then(|owner| sim.interner().get(owner).map(|id| (owner, id)));
@@ -614,7 +615,7 @@ impl TacticalCaptureSession {
         {
             let rendered = MapSidebarObservation::from_view(
                 output
-                    .drawn_sidebar_view(state)
+                    .drawn_sidebar_view(&state.match_state.match_presentation)
                     .context("requested sidebar draw is absent")?,
             )?;
             ensure!(
@@ -652,7 +653,9 @@ impl TacticalCaptureSession {
         validate_loaded_resources(state)?;
         let unit_atlas =
             unit_atlas_statistics(state.match_state.match_presentation.unit_atlas.as_ref())?;
-        let sidebar_drawn = output.drawn_sidebar_view(state).is_some();
+        let sidebar_drawn = output
+            .drawn_sidebar_view(&state.match_state.match_presentation)
+            .is_some();
         let ready = sidebar_drawn
             && !state.match_state.paused()
             && !state.main_menu_dialog_open()
@@ -663,7 +666,11 @@ impl TacticalCaptureSession {
             && self.input_violations == 0;
         let static_default_cursor =
             crate::app::presentation::ui_overlays::static_default_cursor(state);
-        let camera_input_idle = crate::app::input::camera::camera_input_idle(state);
+        let camera_input_idle = crate::app::input::camera::camera_input_idle(
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.input,
+        );
         let cursor_position = [
             state.match_state.input.cursor_x,
             state.match_state.input.cursor_y,

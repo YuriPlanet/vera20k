@@ -15,7 +15,7 @@ use crate::rules::overlay_types::TiberiumImageError;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::bounce::BounceState;
 use crate::sim::components::AnimClassSpawnDescriptor;
-use crate::sim::intern::InternedId;
+use crate::sim::intern::{InternKey, InternedId};
 use crate::sim::occupancy::{RawCellKey, infantry_raw_occupation_mask};
 use crate::sim::timer::CdTimer;
 use crate::sim::world::FrameEffects;
@@ -1084,16 +1084,17 @@ impl Simulation {
     /// bound constructs nothing. This optional-effect boundary also reports
     /// and refuses an invalid Tiberium Image reached during the child's Start;
     /// the core constructor and the live Anim visitor return that error.
-    pub(crate) fn spawn_named_anim(
+    pub(crate) fn spawn_named_anim<'k>(
         &mut self,
         rules: &RuleSet,
-        type_name: &str,
+        type_name: impl Into<InternKey<'k>>,
         coord: AnimWorldCoord,
         delay: u16,
         draw_flags: u32,
         z_adjust: i32,
     ) -> bool {
-        let type_id = self.interner.intern(type_name);
+        let type_name = type_name.into();
+        let type_id = self.interner.intern_key(type_name);
         let (rx, ry, sub_x, sub_y, z) = coord.to_cell_sub_z();
         let descriptor = AnimClassSpawnDescriptor {
             delay,
@@ -1107,12 +1108,16 @@ impl Simulation {
             Ok(_) => true,
             Err(AnimSpawnError::Tiberium(error)) => {
                 log::warn!(
-                    "optional animation [{type_name}] refused an invalid Tiberium Image start: {error}"
+                    "optional animation [{}] refused an invalid Tiberium Image start: {error}",
+                    self.interner.key_name(type_name)
                 );
                 false
             }
             Err(error) => {
-                log::debug!("anim [{type_name}] did not construct: {error}");
+                log::debug!(
+                    "anim [{}] did not construct: {error}",
+                    self.interner.key_name(type_name)
+                );
                 false
             }
         }

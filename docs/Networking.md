@@ -402,9 +402,11 @@ parts leave those files out. On LAN the refusal keeps the native text without th
 list. Nothing new is exchanged and the identity stays 32 bytes.
 
 A snow map with `[Map] VeraIce=yes` uses the original Yuri's Revenge snow
-terrain and the VERA ice tiles embedded in the game. The map agreement covers
-the switch, the painted cells and the map's weights. The build agreement
-covers the bundled tiles. Ice Lake uses the same map identity and transfer
+terrain and VERA's installed ice pack. The map agreement covers the switch, the
+painted cells and the map's weights. Both loose `Terrain` files enter the
+multiplayer build identity. Each game checks their lengths and SHA-256 against
+that build before using them. An incomplete or changed pack stops the ice map
+from loading and tells the player to restore the installed files. Ice Lake uses the same map identity and transfer
 as any authored map. A mixed-build room follows the existing build check.
 A game from before this is another build, which the build check refuses first; a
 rollback starts such games together again.

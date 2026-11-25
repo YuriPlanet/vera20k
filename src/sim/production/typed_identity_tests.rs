@@ -428,7 +428,7 @@ fn typed_duplicate_snapshot_rebind_continues_paid_queue_and_rejects_wrong_identi
         assert!(live.simulation.houses[&owner].economy().spent_credits() > 0);
         // Match native player-load resets of Scenario RNG and the unsaved
         // planner before comparing whole state and continuing both copies.
-        live.simulation.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *live.simulation.scenario_rng = crate::sim::rng::SimRng::new(0);
         live.simulation.reset_planning_after_player_load();
         let rules = &live.resources.rules;
         // Validate player-load admission against the supplied synthetic map

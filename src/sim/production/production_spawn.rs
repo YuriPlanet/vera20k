@@ -589,7 +589,7 @@ mod tests {
                 0x3f00_0000,
             ));
         }
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         sim.set_playfield_bounds_for_test(Some(test_playfield_bounds()));
         sim
     }

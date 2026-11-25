@@ -2,13 +2,17 @@
 //! Options/Theme retain values and playback, including while simulation is paused.
 use super::dialog_page::InGameDialog;
 use crate::app::persistence::options::audio::{AudioVolume, apply_volume};
+use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::presentation::state::MatchPresentationState;
 use crate::app::{App, AppState};
+use crate::audio::theme::ThemeRuntime;
 use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::page::PageEvent;
 use crate::ui::shell::sound::{
     self, SoundButton, SoundControl, SoundLayout, SoundSlider, SoundState, SoundTrackRow,
 };
 use crate::util::time::Instant;
+use winit::window::Window;
 
 fn channel(id: SoundSlider) -> AudioVolume {
     match id {
@@ -23,26 +27,8 @@ pub(crate) const DIALOG: InGameDialog = InGameDialog {
     title: Some(("GUI:SoundOptions", "Sound Options")),
     lower: (0x686, ("GUI:Back", "Back")),
     label: "Active Sound B8",
-    ui: |state| {
-        Some(
-            &state
-                .match_state
-                .match_presentation
-                .sound_dialog
-                .as_ref()?
-                .ui,
-        )
-    },
-    ui_mut: |state| {
-        Some(
-            &mut state
-                .match_state
-                .match_presentation
-                .sound_dialog
-                .as_mut()?
-                .ui,
-        )
-    },
+    ui: |presentation| Some(&presentation.sound_dialog.as_ref()?.ui),
+    ui_mut: |presentation| Some(&mut presentation.sound_dialog.as_mut()?.ui),
     own_checkbox_sound: false,
     // B8 reads the control under the pointer on every move, a held
     // trackbar's drag included.
@@ -60,7 +46,7 @@ pub(crate) fn open(state: &mut AppState) {
     // in-game menu, whose page the Sound button is on, does both as it closes
     // for this state.
     App::enter_in_game_menu_state(state, InGameMenuState::Sound);
-    let positions = volume_positions(state);
+    let positions = volume_positions(&state.persistence.options_profile);
     let rows = state
         .audio
         .theme
@@ -100,7 +86,11 @@ pub(crate) fn open(state: &mut AppState) {
 pub(crate) fn apply_back_volumes(state: &mut AppState, positions: [u8; 3]) {
     for id in SoundSlider::ALL {
         apply_volume(
-            state,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence.options_profile,
             channel(id),
             (f64::from(positions[id as usize]) * 0.1) as f32,
             false,
@@ -113,15 +103,24 @@ pub(crate) fn apply_back_volumes(state: &mut AppState, positions: [u8; 3]) {
 }
 
 /// Init `0x497`'s slider positions, rounded from the three volumes.
-pub(crate) fn volume_positions(state: &AppState) -> [u8; 3] {
-    let p = &state.persistence.options_profile;
+pub(crate) fn volume_positions(options_profile: &RetailOptionsProfile) -> [u8; 3] {
+    let p = options_profile;
     [p.score_volume, p.sound_volume, p.voice_volume]
         .map(crate::ui::main_menu_dialogs::options::admitted_volume_position)
 }
 
 /// A changed slider applies live (`WM_HSCROLL`).
 pub(crate) fn apply_slider_volume(state: &mut AppState, id: SoundSlider, volume: f32) {
-    apply_volume(state, channel(id), volume, true);
+    apply_volume(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &mut state.persistence.options_profile,
+        channel(id),
+        volume,
+        true,
+    );
 }
 
 fn back(state: &mut AppState) {
@@ -158,19 +157,25 @@ fn activate(state: &mut AppState, id: SoundButton) {
 }
 
 /// Poll the captured list gesture and return its next event-loop wake deadline.
-pub(crate) fn poll_scroll_repeat(state: &mut AppState) -> Option<Instant> {
-    if state.match_state.match_presentation.in_game_menu != InGameMenuState::Sound {
+pub(crate) fn poll_scroll_repeat(
+    window: &Window,
+    presentation: &mut MatchPresentationState,
+) -> Option<Instant> {
+    if presentation.in_game_menu != InGameMenuState::Sound {
         return None;
     }
-    let dialog = state.match_state.match_presentation.sound_dialog.as_mut()?;
-    let window = &state.platform.window;
+    let dialog = presentation.sound_dialog.as_mut()?;
     dialog.ui.poll_then(|| window.request_redraw())
 }
 
 /// Shuffle and Repeat exclude each other (`0x006B6300`); both write the
 /// Options owner, which the theme player reads.
-fn toggle_score_option(state: &mut AppState, shuffle: bool) {
-    let p = &mut state.persistence.options_profile;
+fn toggle_score_option(
+    theme: &mut ThemeRuntime,
+    options_profile: &mut RetailOptionsProfile,
+    shuffle: bool,
+) {
+    let p = options_profile;
     if shuffle {
         p.is_score_shuffle = !p.is_score_shuffle;
         if p.is_score_shuffle {
@@ -182,10 +187,7 @@ fn toggle_score_option(state: &mut AppState, shuffle: bool) {
             p.is_score_shuffle = false;
         }
     }
-    state
-        .audio
-        .theme
-        .set_score_options(p.is_score_repeat, p.is_score_shuffle);
+    theme.set_score_options(p.is_score_repeat, p.is_score_shuffle);
 }
 
 /// SoundState::new built B8's controls.
@@ -194,8 +196,8 @@ fn nodes() -> vera20k_gui::NodeSpec {
 }
 
 /// Shuffle's and Repeat's Checked from the Options owner.
-fn score_boxes(state: &AppState) -> [(SoundControl, bool); 2] {
-    let profile = &state.persistence.options_profile;
+fn score_boxes(options_profile: &RetailOptionsProfile) -> [(SoundControl, bool); 2] {
+    let profile = options_profile;
     [
         (SoundControl::Shuffle, profile.is_score_shuffle),
         (SoundControl::Repeat, profile.is_score_repeat),
@@ -217,9 +219,14 @@ fn put_boxes(
 /// renderer's call every drawn frame before it paints from them.
 pub(crate) fn sync(state: &mut AppState) -> Option<SoundLayout> {
     let layout = super::dialog_page::layout(state, SoundLayout::new)?;
-    let boxes = score_boxes(state);
+    let boxes = score_boxes(&state.persistence.options_profile);
     let sync = move |gui: &mut vera20k_gui::Gui, root| put_boxes(gui, root, boxes);
-    DIALOG.sync(state, nodes, |id| layout.rect(id), sync);
+    DIALOG.sync(
+        &mut state.match_state.match_presentation,
+        nodes,
+        |id| layout.rect(id),
+        sync,
+    );
     Some(layout)
 }
 
@@ -230,13 +237,22 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
     let Some(layout) = super::dialog_page::layout(state, SoundLayout::new) else {
         return;
     };
-    let boxes = score_boxes(state);
+    let boxes = score_boxes(&state.persistence.options_profile);
     let sync = move |gui: &mut vera20k_gui::Gui, root| put_boxes(gui, root, boxes);
     let events = DIALOG.route(state, down, nodes, |id| layout.rect(id), sync);
     state.platform.window.request_redraw();
     for event in events {
         if let Some((id, volume)) = sound::shell_sound_volume(&event) {
-            apply_volume(state, channel(id), volume, true);
+            apply_volume(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence.options_profile,
+                channel(id),
+                volume,
+                true,
+            );
             continue;
         }
         let (PageEvent::Activated(id) | PageEvent::Toggled(id, _)) = event else {
@@ -244,8 +260,16 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
         };
         match SoundControl::from_id(id) {
             Some(SoundControl::Button(button)) => activate(state, button),
-            Some(SoundControl::Shuffle) => toggle_score_option(state, true),
-            Some(SoundControl::Repeat) => toggle_score_option(state, false),
+            Some(SoundControl::Shuffle) => toggle_score_option(
+                &mut state.audio.theme,
+                &mut state.persistence.options_profile,
+                true,
+            ),
+            Some(SoundControl::Repeat) => toggle_score_option(
+                &mut state.audio.theme,
+                &mut state.persistence.options_profile,
+                false,
+            ),
             _ => {}
         }
     }

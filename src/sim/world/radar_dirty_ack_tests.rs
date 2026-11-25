@@ -43,8 +43,8 @@ fn radar_dirty_wall_partial_damage_marks_nothing() {
     );
     let registry = OverlayTypeRegistry::from_ini(&ini, Some(&ini));
     let mut sim = Simulation::new();
-    sim.overlay_grid = Some(OverlayGrid::new(16, 16));
-    sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(16, 16));
+    *sim.overlay_grid = Some(OverlayGrid::new(16, 16));
+    *sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(16, 16));
     sim.overlay_grid.as_mut().unwrap().place_overlay(4, 5, 2, 0);
     let _ = sim.overlay_grid.as_mut().unwrap().take_dirty_cells();
     sim.apply_wall_damage(WallPointerTarget::Real(4, 5), 1, &registry);
@@ -77,7 +77,7 @@ fn radar_dirty_batch_survives_action40_and_load_rebuild_needs_no_stale_batch() {
         [4, 40, 54, 12],
         crate::sim::world::UninitContext::new(crate::rules::ruleset::RuleSet::empty_for_test())
     ));
-    assert_eq!(sim.playfield_revision, 1);
+    assert_eq!(*sim.playfield_revision, 1);
     assert_eq!(sim.dirty_cells.take_radar(), vec![(20, 20)]);
 
     sim.dirty_cells.mark_radar([(20, 20)]);
@@ -95,5 +95,5 @@ fn radar_dirty_batch_survives_action40_and_load_rebuild_needs_no_stale_batch() {
         .sim;
     assert!(restored.dirty_cells.radar().is_empty());
     assert_eq!(restored.dirty_cells.radar_generation(), 0);
-    assert_eq!(restored.playfield_revision, sim.playfield_revision);
+    assert_eq!(*restored.playfield_revision, *sim.playfield_revision);
 }

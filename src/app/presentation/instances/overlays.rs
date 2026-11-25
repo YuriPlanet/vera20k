@@ -1250,9 +1250,10 @@ pub(crate) fn build_overlay_instances(
             .presentation()
             .map_or((None, None, false), |runtime| {
                 let sim = &runtime.simulation;
-                let viewer = crate::app::input::commands::preferred_local_owner_name(state)
-                    .as_deref()
-                    .and_then(|name| sim.interner().get(name));
+                let viewer =
+                    crate::app::input::commands::preferred_local_owner_name(&state.match_state)
+                        .as_deref()
+                        .and_then(|name| sim.interner().get(name));
                 (
                     viewer.filter(|_| {
                         state.translucent_fog_enabled()
@@ -1537,7 +1538,7 @@ pub(crate) fn build_weapon_wave_instances(
     else {
         return;
     };
-    let observer = crate::app::input::commands::preferred_local_owner(state)
+    let observer = crate::app::input::commands::preferred_local_owner(&state.match_state)
         .as_deref()
         .and_then(|owner| sim.interner().get(owner));
     let camera = [

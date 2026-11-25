@@ -49,7 +49,7 @@ impl App {
         }
         // Window events stop now, so the focus loss that frees the cursor
         // lock never arrives.
-        crate::app::input::cursor::release_cursor_confinement(state);
+        crate::app::input::cursor::release_cursor_confinement(&mut state.platform);
         state.platform.window.set_visible(false);
     }
 
@@ -85,11 +85,11 @@ fn say_goodbye(state: &mut AppState) {
     let online =
         state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol;
     if online && state.match_state.live_network.is_some() {
-        crate::app::lan_service::return_transport(state);
+        crate::app::lan_service::return_transport(&mut state.frontend, &mut state.match_state);
     }
     crate::app::shell_wol::retire_visit_for_exit(state);
     if state.match_state.lan_service.is_some() {
-        crate::app::lan_service::close(state);
+        crate::app::lan_service::close(&state.frontend, &mut state.match_state);
     }
     if let Some(live) = state.match_state.live_network.take() {
         live.into_transport()

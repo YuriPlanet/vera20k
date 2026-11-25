@@ -8,6 +8,7 @@
 
 use crate::app::AppState;
 use crate::app::presentation::frame::ObjectRecord;
+use crate::app::presentation::state::MatchPresentationState;
 use crate::map::entities::EntityCategory;
 use crate::map::terrain;
 use crate::render::batch::DepthAxis;
@@ -313,7 +314,7 @@ fn tactical_bounded_entity_encounter_order(
     else {
         return Vec::new();
     };
-    let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+    let local_owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state);
     // Screen selection takes what the battlefield shows.
     let Some(frame) = state.match_state.sim_runtime.frame() else {
         return Vec::new();
@@ -327,8 +328,13 @@ fn tactical_bounded_entity_encounter_order(
     let margin = 32.0 / zoom;
     // The world rectangle the battlefield shows: from the camera, the
     // frame's corner, in by the battlefield's own corner.
-    let (left_px, top_px, width_px, height_px) =
-        crate::app::input::camera::tactical_viewport_px(state);
+    let (left_px, top_px, width_px, height_px) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let left = state.match_state.input.camera_x + left_px as f32 / zoom;
     let top = state.match_state.input.camera_y + top_px as f32 / zoom;
     let min_x = left - margin;
@@ -367,7 +373,7 @@ fn compose_tactical_screen_entity_encounter_order(
     // band box and the T key's screen pass reach only the first 500 drawn.
     // VERA registers all.
     let mut candidates: Vec<u64> = frame
-        .display_order(sim)
+        .display_order()
         .ordered()
         .iter()
         .map(|&(_, id)| id)
@@ -448,17 +454,16 @@ pub(crate) fn layer_draw_band(
 }
 
 /// The Display's entities that draw a body, in Tactical's order, with their bands.
-pub(crate) fn drawn_display_entities<'a>(
-    sim: &'a crate::sim::world::Simulation,
-    frame: &'a crate::app::presentation::frame::PresentationFrame,
+pub(crate) fn drawn_display_entities(
+    frame: &crate::app::presentation::frame::PresentationFrame,
 ) -> impl Iterator<
     Item = (
-        &'a crate::app::presentation::frame::ObjectRecord,
+        &crate::app::presentation::frame::ObjectRecord,
         EntityDrawBand,
     ),
 > {
     frame
-        .display_order(sim)
+        .display_order()
         .ordered()
         .iter()
         .filter_map(|&(layer, id)| Some((frame.object(id)?, layer_draw_band(layer)?)))
@@ -495,17 +500,19 @@ pub(crate) fn ground_sort_row(entity: &ObjectRecord, drawn_row_y: f32) -> f32 {
 /// Lower screen_y → larger depth (further from camera). The height lift is
 /// taken back off so the row is the ground-projected one, exactly as every
 /// native class folds `-AdjustForZ(Location.Z)` into its Z term.
-pub(crate) fn compute_sprite_depth(state: &AppState, screen_y: f32, z: u8) -> f32 {
-    let axis = depth_axis(state);
+pub(crate) fn compute_sprite_depth(
+    presentation: &MatchPresentationState,
+    screen_y: f32,
+    z: u8,
+) -> f32 {
+    let axis = depth_axis(presentation);
     compute_sprite_depth_params(axis.origin_y, axis.world_height, screen_y, z)
 }
 
 /// The normalised depth axis of the loaded map (`DepthAxis::NONE` outside a
 /// match): what `BatchRenderer::update_camera` uploads for the shaders.
-pub(crate) fn depth_axis(state: &AppState) -> DepthAxis {
-    state
-        .match_state
-        .match_presentation
+pub(crate) fn depth_axis(presentation: &MatchPresentationState) -> DepthAxis {
+    presentation
         .terrain_grid
         .as_ref()
         .map(|g| DepthAxis {
@@ -648,7 +655,7 @@ pub(crate) fn translucent_fog_viewer(
     if !state.translucent_fog_enabled() || state.match_state.sandbox_full_visibility {
         return None;
     }
-    let name = crate::app::input::commands::preferred_local_owner_name(state)?;
+    let name = crate::app::input::commands::preferred_local_owner_name(&state.match_state)?;
     sim.interner().get(&name)
 }
 
@@ -816,7 +823,13 @@ impl TacticalAdmission {
     /// This draw's battlefield (`camera::tactical_viewport_px`).
     pub(crate) fn of_state(state: &AppState) -> Self {
         let input = &state.match_state.input;
-        let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+        let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+        );
         Self::of(
             [input.camera_x, input.camera_y],
             [x, y, width, height],
@@ -906,8 +919,13 @@ impl PassByWindow {
         let input = &state.match_state.input;
         let camera = [input.camera_x, input.camera_y];
         let zoom = input.zoom_level;
-        let (centring_width, centring_height) =
-            crate::app::input::camera::tactical_centring_size(state);
+        let (centring_width, centring_height) = crate::app::input::camera::tactical_centring_size(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+        );
         let from_camera = |width: u32, height: u32| {
             [
                 camera[0],

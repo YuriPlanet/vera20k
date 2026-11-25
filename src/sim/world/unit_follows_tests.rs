@@ -26,7 +26,7 @@ fn arena(rules: &RuleSet) -> Simulation {
     // Clear ground, Houses and non-short-game policy are scene priors. Units,
     // FOLLOWS, object Tag and Event13/Action14 all use production readers.
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     sim.session.set_game_mode(ScenarioGameMode::Skirmish);
     sim.session.game_options_mut_for_test().short_game = false;
     for (index, name) in ["Americans", "Russians"].into_iter().enumerate() {

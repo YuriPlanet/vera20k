@@ -192,7 +192,7 @@ fn receiver_commit_keeps_negative_heal_on_exact_zero_techno_tail_and_wide_hits()
         entity.health.set_for_test(hp);
         entity.lifecycle.set_object_alive_for_test(alive);
         entity.estimated_health = crate::sim::estimated_health::EstimatedHealth::from_raw(-123);
-        world.interner = interner.clone();
+        *world.interner = interner.clone();
         world.substrate.entities.insert(entity);
         let event =
             EntityDamageEvent::area(1, damage, 0, super::super::RAD_NO_ATTACKER, None, warhead);

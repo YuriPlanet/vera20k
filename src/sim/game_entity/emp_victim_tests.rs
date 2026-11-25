@@ -45,7 +45,7 @@ pub(super) fn scene(rules: &RuleSet, water: bool) -> (Simulation, Arc<PathGrid>)
     sim.set_input_delay_ticks(0);
     let americans = sim.interner.intern("Americans");
     sim.session.set_current_house_for_test(Some(americans));
-    sim.fog = FogState::new(32, 32);
+    *sim.fog = FogState::new(32, 32);
     for y in 0..32 {
         for x in 0..32 {
             sim.fog.mark_visible_for_owner(americans, x, y);

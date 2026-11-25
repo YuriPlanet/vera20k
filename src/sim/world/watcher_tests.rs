@@ -190,7 +190,7 @@ fn the_followed_players_own_records_are_another_games() {
             .lifecycle_outputs
             .contains(&LifecycleOutput::OptionsRequested)
     );
-    assert!(!sim.quit_requested, "the watch goes on");
+    assert!(!*sim.quit_requested, "the watch goes on");
     let house = sim.houses.get(&ann).unwrap();
     assert!(
         house.is_to_die() || house.has_lost(),

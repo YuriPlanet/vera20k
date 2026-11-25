@@ -386,7 +386,7 @@ fn shroud_current_sight_world_collector_and_native_frame_restore() {
     sim.uninit(1);
     sim.reconcile_active_vision_structures(&rules); // pending survives generator removal
     // Native Scenario deserialization resets only this RNG to Seed(0).
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let hash = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "shroud-current-sight", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
@@ -721,7 +721,7 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
         clocks.reload(b, 119);
     }
     // Native Scenario deserialization resets only this RNG to Seed(0).
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let hash = sim.state_hash();
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "foot-sight-timer", 0);
     let mut sim = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -855,7 +855,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
     use crate::util::fixed_math::SimFixed;
     let (mut sim, _rules, owner) = fixture();
     // A live map: the reveal leaves test the stored playfield byte.
-    sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
+    *sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
     insert_sight_unit(&mut sim, 2, owner, 13, 13);
     let mut loco = LocomotorState::for_test_kind(LocomotorKind::Fly);
     loco.set_layer_for_test(MovementLayer::Air);
@@ -1106,7 +1106,7 @@ fn shroud_current_sight_spy_sat_event_preserves_registration_order_and_restore()
             );
         }
         // Native Scenario deserialization resets only this RNG to Seed(0).
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let hash = sim.state_hash();
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "spysat-map-latch", 0);
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -1187,7 +1187,7 @@ fn shroud_current_sight_spy_sat_replays_allied_buildings_but_not_mobile_admissio
             assert_eq!(sim.fog.is_cell_visible(viewer, 12, 12), building);
         }
         let bytes = save_codec::serialize(&sim.fog).unwrap();
-        sim.fog = save_codec::deserialize(&bytes).unwrap();
+        *sim.fog = save_codec::deserialize(&bytes).unwrap();
         sim.refresh_fog(&vision::VisionConfig::default(), &rules);
         sim.reconcile_active_vision_structures(&rules);
         assert_eq!(sim.fog.is_cell_revealed(viewer, 12, 12), building);

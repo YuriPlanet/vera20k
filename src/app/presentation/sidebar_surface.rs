@@ -27,13 +27,18 @@
 //! where its pixels are the window's, over the copy where they are not
 //! ([`column_text`]).
 
-use crate::app::AppState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::presentation::state::MatchPresentationState;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::render::batch::{BatchRenderer, CameraUniform};
 use crate::render::bit_font::TextRaster;
 use crate::render::scaled_copy::{MaskSource, MaskedCopy, ScaledSurface, WindowMask};
 use crate::render::terrain_draw::{
     PackedCompositePiece, PackedSpriteKind, PackedSurface, TerrainDrawRenderer,
 };
+use crate::ui::game_screen::GameScreen;
 use crate::ui::main_menu_dialogs::options::ZoomGeometry;
 use crate::ui::sidebar::SidebarFrame;
 
@@ -581,12 +586,24 @@ impl ColumnText {
 /// without one or under the in-match page, where the battlefield's text
 /// stays too. Over the copy, the build clock (`0x006A9E97`) no longer blends
 /// over the queue counts gamemd draws before it.
-pub(crate) fn column_text(state: &AppState) -> ColumnText {
-    let input = &state.match_state.input;
+pub(crate) fn column_text(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> ColumnText {
+    let input = &match_state.input;
     place_column_text(
-        state.sidebar_frame(),
+        crate::app::state::sidebar_frame(
+            platform,
+            persistence,
+            renderer,
+            screen,
+            &match_state.match_presentation.sidebar_layout_spec,
+        ),
         [input.camera_x, input.camera_y],
-        crate::app::presentation::window_ui::battlefield_raster(state),
+        crate::app::presentation::window_ui::battlefield_raster(renderer, screen, match_state),
     )
 }
 
@@ -627,31 +644,32 @@ fn place_column_text(
 /// into `view` (`app::frame`). Not under the in-match dialogs: they draw over
 /// the frame without depth (`in_match_page_draw`).
 pub(crate) fn draw_window_copy(
-    state: &AppState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    presentation: &MatchPresentationState,
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
 ) {
     use crate::ui::pause_menu::InGameMenuState;
     let (Some(zoom), Some(surface)) = (
-        state.match_zoom_pass(),
-        state.renderer.sidebar_surface.as_ref(),
+        renderer.match_zoom_pass(screen),
+        renderer.sidebar_surface.as_ref(),
     ) else {
         return;
     };
     if matches!(
-        state.match_state.match_presentation.in_game_menu,
+        presentation.in_game_menu,
         InGameMenuState::Page | InGameMenuState::Surrender
     ) {
         return;
     }
     // The frame pass's depth (`dispatch_draw_passes`): the wheel zoom's
     // frame target, or the zoom pass's.
-    let frame_depth = state
-        .renderer
+    let frame_depth = renderer
         .world_zoom_pass
         .as_ref()
         .map_or(zoom.depth_view(), |world| world.frame_depth_view());
-    let gpu = &state.renderer.gpu;
+    let gpu = &renderer.gpu;
     surface.draw_window_copy(
         &gpu.device,
         &gpu.queue,

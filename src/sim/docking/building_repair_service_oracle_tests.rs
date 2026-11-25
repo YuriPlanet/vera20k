@@ -311,8 +311,8 @@ fn scene(golden: &Value, row: &Value) -> Scene {
     let bounds = crate::map::playfield::PlayfieldBounds::from_normalized_local_size(
         16, local[0], local[1], local[2], local[3],
     );
-    sim.playfield_bounds = Some(bounds);
-    sim.playfield_size_height = Some(16);
+    *sim.playfield_bounds = Some(bounds);
+    *sim.playfield_size_height = Some(16);
     sim.session.set_map_width_for_test(16);
     sim.session.set_map_height_for_test(16);
     let mut terrain = test_flat_ground_grid(32);
@@ -324,7 +324,7 @@ fn scene(golden: &Value, row: &Value) -> Scene {
         }
     }
     let path = PathGrid::from_resolved_terrain(&terrain);
-    sim.zone_grid = Some(
+    *sim.zone_grid = Some(
         crate::sim::pathfinding::zone_map::ZoneGrid::build_with_native_map_context(
             &path,
             &terrain,
@@ -333,8 +333,8 @@ fn scene(golden: &Value, row: &Value) -> Scene {
             Some(bounds),
         ).into(),
     );
-    sim.path_grid = Some(Arc::new(path));
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.path_grid = Some(Arc::new(path));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     sim.install_resolved_terrain_for_new_map(terrain);
     // Native scenes supply an existing human House and empty storage before
     // either Techno is constructed. Install that same membership prerequisite.
@@ -572,7 +572,7 @@ fn scene(golden: &Value, row: &Value) -> Scene {
     house
         .economy_mut()
         .set_spent_for_test(int(&before["spent"]));
-    sim.scenario_rng = if let Some(hex) = row["rng_before"]["scenario"].as_str() {
+    *sim.scenario_rng = if let Some(hex) = row["rng_before"]["scenario"].as_str() {
         SimRng::from_native_state_hex_for_test(hex)
     } else {
         SimRng::new(case["seed"].as_u64().unwrap_or(1))

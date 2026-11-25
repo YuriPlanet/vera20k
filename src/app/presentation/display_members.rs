@@ -124,51 +124,30 @@ pub(crate) struct DisplayMembers {
 
 impl DisplayMembers {
     /// `sim`'s Display members, filed. `sim` is the world `frame` was
-    /// captured from.
+    /// captured from. The worker pool files them a run at a time, and the
+    /// runs join in order, so each loop's members keep Tactical's order.
+    /// They are filed while no tick is out (the host files them before one
+    /// leaves), so the pool is idle and the caller only waits: the main
+    /// thread's time is the frame's.
     pub(crate) fn of(frame: &PresentationFrame, sim: &Simulation) -> Self {
-        let particles: LookupMap<_, _> = sim.particle_systems().display_particle_places().collect();
-        let mut objects = Vec::new();
-        let mut effects = Vec::new();
-        // Every object store shares one id namespace
-        // (`Simulation::allocate_stable_id`), so an id has one store and the
-        // order of these tests picks no winner: records, Anims and Terrain
-        // objects, the many, are asked first.
-        for &(layer, id) in frame.display_order(sim).ordered() {
-            let object = |kind| ObjectMember { layer, id, kind };
-            let kind = if let Some((slot, span)) = frame.slot_and_span(id) {
-                objects.push(object(ObjectKind::Record { slot, span }));
-                continue;
-            } else if let Some(anim) = sim.anim(id) {
-                EffectKind::Anim(anim_screen_point(frame, anim, id))
-            } else if sim.terrain_objects().objects().contains_key(&id) {
-                continue;
-            } else if sim.projectiles().get(id).is_some() {
-                objects.push(object(ObjectKind::Bullet));
-                continue;
-            } else if sim.voxel_anims().get(id).is_some() {
-                objects.push(object(ObjectKind::Debris));
-                continue;
-            } else if let Some(light) = frame.scene.spotlights.get(&id) {
-                let [x, y, z] = light.coord;
-                EffectKind::Spotlight(screen_point(x, y, z))
-            } else if let Some(system) = sim.particle_systems().get(id) {
-                let at = system.coords();
-                EffectKind::ParticleSystem(
-                    (!system.in_limbo()).then(|| screen_point(at.x, at.y, at.z)),
-                )
-            } else if let Some(&place) = particles.get(&id) {
-                let point =
-                    sim.particle_systems()
-                        .display_particle_at(id, place)
-                        .map(|(_, particle)| {
-                            let at = particle.coords();
-                            screen_point(at.x, at.y, at.z)
-                        });
-                EffectKind::Particle(place, point)
-            } else {
-                continue;
-            };
-            effects.push(EffectMember { id, kind });
+        let mut members = None;
+        crate::sim::parallel::alongside(|| members = Some(Self::filed(frame, sim)), || {});
+        members.expect("filed on the pool")
+    }
+
+    fn filed(frame: &PresentationFrame, sim: &Simulation) -> Self {
+        let systems = sim.particle_systems();
+        let particles: LookupMap<_, _> = systems
+            .display_particle_places()
+            .chain(systems.presented_particle_places())
+            .collect();
+        let runs: Vec<_> = frame.display_order().ordered().chunks(FILED_RUN).collect();
+        let filed = crate::sim::parallel::map(&runs, |run| file_run(frame, sim, &particles, run));
+        let mut objects = Vec::with_capacity(filed.iter().map(|(objects, _)| objects.len()).sum());
+        let mut effects = Vec::with_capacity(filed.iter().map(|(_, effects)| effects.len()).sum());
+        for (run_objects, run_effects) in filed {
+            objects.extend(run_objects);
+            effects.extend(run_effects);
         }
         // The presentation anims hold no Display slot; they follow every
         // member here, and the draw order places each in its own layer
@@ -178,6 +157,25 @@ impl DisplayMembers {
                 effects.push(EffectMember {
                     id,
                     kind: EffectKind::Anim(anim_screen_point(frame, anim, id)),
+                });
+            }
+        }
+        // So do the presentation particle systems and their particles
+        // (`ParticleSystemStore::presented_systems`), which never enter Limbo.
+        for (system, body) in systems.presented_systems() {
+            let at = body.coords();
+            effects.push(EffectMember {
+                id: system,
+                kind: EffectKind::ParticleSystem(Some(screen_point(at.x, at.y, at.z))),
+            });
+            for (index, particle) in body.particles().iter().enumerate() {
+                let at = particle.coords();
+                effects.push(EffectMember {
+                    id: particle.stable_id(),
+                    kind: EffectKind::Particle(
+                        DisplayParticlePlace::InSystem { system, index },
+                        Some(screen_point(at.x, at.y, at.z)),
+                    ),
                 });
             }
         }
@@ -202,6 +200,60 @@ impl DisplayMembers {
     pub(crate) fn particle_place(&self, id: u64) -> Option<DisplayParticlePlace> {
         self.particles.get(&id).copied()
     }
+}
+
+/// How many Display members one task of [`DisplayMembers::of`] files.
+const FILED_RUN: usize = 512;
+
+/// The objects and the effects among `run`'s Display members, in its order.
+fn file_run(
+    frame: &PresentationFrame,
+    sim: &Simulation,
+    particles: &LookupMap<u64, DisplayParticlePlace>,
+    run: &[(DisplayLayer, u64)],
+) -> (Vec<ObjectMember>, Vec<EffectMember>) {
+    let mut objects = Vec::new();
+    let mut effects = Vec::new();
+    // Every object store shares one id namespace
+    // (`Simulation::allocate_stable_id`), so an id has one store and the
+    // order of these tests picks no winner: records, Anims and Terrain
+    // objects, the many, are asked first.
+    for &(layer, id) in run {
+        let object = |kind| ObjectMember { layer, id, kind };
+        let kind = if let Some((slot, span)) = frame.slot_and_span(id) {
+            objects.push(object(ObjectKind::Record { slot, span }));
+            continue;
+        } else if let Some(anim) = sim.anim(id) {
+            EffectKind::Anim(anim_screen_point(frame, anim, id))
+        } else if sim.terrain_objects().objects().contains_key(&id) {
+            continue;
+        } else if sim.projectiles().get(id).is_some() {
+            objects.push(object(ObjectKind::Bullet));
+            continue;
+        } else if sim.voxel_anims().get(id).is_some() {
+            objects.push(object(ObjectKind::Debris));
+            continue;
+        } else if let Some(light) = frame.scene.spotlights.get(&id) {
+            let [x, y, z] = light.coord;
+            EffectKind::Spotlight(screen_point(x, y, z))
+        } else if let Some(system) = sim.particle_systems().get(id) {
+            let at = system.coords();
+            EffectKind::ParticleSystem((!system.in_limbo()).then(|| screen_point(at.x, at.y, at.z)))
+        } else if let Some(&place) = particles.get(&id) {
+            let point =
+                sim.particle_systems()
+                    .display_particle_at(id, place)
+                    .map(|(_, particle)| {
+                        let at = particle.coords();
+                        screen_point(at.x, at.y, at.z)
+                    });
+            EffectKind::Particle(place, point)
+        } else {
+            continue;
+        };
+        effects.push(EffectMember { id, kind });
+    }
+    (objects, effects)
 }
 
 #[cfg(all(test, tests_app_presentation))]

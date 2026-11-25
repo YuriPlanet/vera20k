@@ -290,7 +290,15 @@ impl TacticalCaptureSession {
                 self.set_map_audio_context(state)?;
             }
             if let Some([rx, ry]) = camera_cell {
-                crate::app::input::camera::center_camera_on_cell(state, rx, ry);
+                crate::app::input::camera::center_camera_on_cell(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &mut state.match_state,
+                    &state.persistence,
+                    rx,
+                    ry,
+                );
             }
             self.record_map_frame(state)?;
             self.post_l0_started_at = Some(Instant::now());
@@ -417,7 +425,7 @@ impl TacticalCaptureSession {
             // and queuing. This diagnostic does not add the input-delay setting
             // or bypass ordinary House/actor admission in the next frame.
             let execute_tick = crate::app::input::commands::try_schedule_command(
-                state,
+                &mut state.match_state,
                 &command.owner,
                 payload.clone(),
             )
@@ -460,8 +468,11 @@ impl TacticalCaptureSession {
                 .cursor_position
                 .context("gesture neutral cursor missing")?;
             ensure!(
-                crate::app::input::camera::camera_input_idle(state)
-                    && state.match_state.input.hotkey_modifiers.is_empty()
+                crate::app::input::camera::camera_input_idle(
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &state.match_state.input
+                ) && state.match_state.input.hotkey_modifiers.is_empty()
                     && !state.match_state.input.selection_state.is_band_box_active(),
                 "gesture requires idle ordinary input without modifiers or an active band box"
             );
@@ -580,7 +591,10 @@ impl TacticalCaptureSession {
                     MouseButton::Left
                 };
                 let button = |state: &mut AppState, edge| {
-                    crate::app::input::tooltips::on_button_event(state);
+                    crate::app::input::tooltips::on_button_event(
+                        &state.diag,
+                        &mut state.match_state,
+                    );
                     crate::app::input::dispatch::handle_mouse_input(state, mouse_button, edge);
                 };
                 let modifier_keys = literal_modifiers(scheduled.gesture.modifiers())?;
@@ -614,7 +628,9 @@ impl TacticalCaptureSession {
                     thumb.press = Some(MapCommandBarThumbEdge::capture(state, *handle)?);
                 }
                 let mouse = &state.match_state.input.tactical_mouse;
-                let chrome = crate::app::input::chrome_input::chrome(state).map(|(_, nodes)| nodes);
+                let chrome =
+                    crate::app::input::chrome_input::chrome(&state.match_state.match_presentation)
+                        .map(|(_, nodes)| nodes);
                 // What the press reached: the node it fired, pressed or
                 // passed on, else the holder.
                 let routed = state.match_state.match_presentation.in_game_chrome.last_route;
@@ -651,7 +667,10 @@ impl TacticalCaptureSession {
                         // button the side's layout added.
                         mouse.captured
                             || routed.is_some_and(|node| {
-                                crate::app::input::chrome_input::is_layout_button(state, node)
+                                crate::app::input::chrome_input::is_layout_button(
+                                    &state.match_state.match_presentation,
+                                    node,
+                                )
                             })
                     };
                 if matches!(scheduled.gesture, MapGesture::Drag { .. }) {
@@ -727,8 +746,11 @@ impl TacticalCaptureSession {
                     "literal quickload did not finish its queued restoration"
                 );
             }
-            let neutral_input_restored = crate::app::input::camera::camera_input_idle(state)
-                && state.match_state.input.hotkey_modifiers.is_empty()
+            let neutral_input_restored = crate::app::input::camera::camera_input_idle(
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state.input,
+            ) && state.match_state.input.hotkey_modifiers.is_empty()
                 && !state.match_state.input.selection_state.is_band_box_active()
                 && [
                     state.match_state.input.cursor_x,

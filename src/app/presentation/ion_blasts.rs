@@ -71,8 +71,20 @@ pub(super) fn draws(state: &crate::app::AppState) -> Vec<IonBlastDraw> {
         return Vec::new();
     };
     let input = &state.match_state.input;
-    let (_, _, width, height) = crate::app::input::camera::tactical_viewport_px(state);
-    let origin = crate::app::input::camera::tactical_origin_world(state);
+    let (_, _, width, height) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
+    let origin = crate::app::input::camera::tactical_origin_world(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     ion_blast_draws(
         runtime.view().simulation().ion_blasts(),
         [input.camera_x, input.camera_y],

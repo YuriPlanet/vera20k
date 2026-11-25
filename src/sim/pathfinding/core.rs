@@ -820,7 +820,8 @@ pub trait SearchFootEntry {
     /// expansions with the expansions this cell search has made. `false`
     /// stops it with [`PathSearchFailure::Stopped`], which no retry
     /// follows. Going on changes nothing. The path batch stops a code-2
-    /// re-path whose answer its turn's budget cuts whatever the search finds.
+    /// re-path whose answer its turn's budget cuts whatever the search finds,
+    /// and an urgency-2 one at its limit.
     fn keeps_searching(&self, _expanded: u32) -> bool {
         true
     }

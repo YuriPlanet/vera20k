@@ -329,7 +329,7 @@ fn permanent_grant_scans_all_upgrade_slots_and_persists_without_the_building() {
     // discards active planning, including the yard's constructor token
     // (ClearScene6370B0 / TechnoLoad70BF79). Isolate the retained factory
     // state from those independent load transitions.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     sim.reset_planning_after_player_load();
     let before = sim.state_hash();
     let bytes = GameSnapshot::save_validated(&sim, 1, 2, "factory plans", 0);

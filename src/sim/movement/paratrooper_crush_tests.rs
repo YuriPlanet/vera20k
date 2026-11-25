@@ -44,7 +44,7 @@ fn scene() -> Option<(RuleSet, Simulation, InternedId, u64)> {
     sim.fog.set_width_for_test(64);
     sim.fog.set_height_for_test(64);
     sim.set_input_delay_ticks(0);
-    sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+    *sim.overlay_grid = Some(OverlayGrid::new(64, 64));
     for (kind, house, at) in [
         ("CAAIRP", "Americans", (30, 40)),
         ("GAPOWR", "Americans", (30, 36)),

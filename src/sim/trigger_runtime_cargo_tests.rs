@@ -291,7 +291,7 @@ fn train_and_truck_flags_are_independent_and_empty_types_drop_nothing() {
     ] {
         let (mut sim, rules, registry) = fixture();
         // Use the same descriptor handoff as both map-loading roots.
-        sim.session =
+        *sim.session =
             crate::sim::scenario_session::ScenarioSession::from_descriptor(&ScenarioDescriptor {
                 train_crate: train,
                 truck_crate: truck,

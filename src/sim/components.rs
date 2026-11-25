@@ -100,7 +100,9 @@ impl NavTargetRef {
 pub struct FootPathRuntime {
     /// Foot+640/+648, including the native frame anchor.
     movement_timer: crate::sim::timer::CdTimer,
-    /// Foot+668/+670.
+    /// Foot+668/+670. The path batch also starts it again for a Foot whose
+    /// urgency-2 re-path it stopped at its limit, a sim-scale deviation
+    /// (`movement::path_batch`).
     blocked_timer: crate::sim::timer::CdTimer,
     /// Foot+6B7.
     path_blocked: bool,

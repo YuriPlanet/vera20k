@@ -11,6 +11,7 @@ use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::FrameChannel;
 use crate::sim::world::ObjectSubstrate;
+use crate::util::forked::Forked;
 
 /// Foot+0x53C and signed dword+0x540. The sound may have finished (or playback
 /// may have been rejected) while the latch remains set. Device state must
@@ -48,12 +49,14 @@ impl Simulation {
     /// Ordinary unlinked SQD is covered; linked actors can retain/start a
     /// sound and spend a Main draw wrongly.
     /// Held locomotor routes retain their existing moving-now/cadence limits.
+    /// The Main stream and the sound channel are written only by a draw or
+    /// an event (`util::forked`).
     pub(super) fn tick_move_sound_after_process(
         interner: &StringInterner,
         session: &ScenarioSession,
-        main_rng: &mut SimRng,
+        main_rng: &mut Forked<SimRng>,
         substrate: &mut ObjectSubstrate,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
+        sound_events: &mut Forked<FrameChannel<SimSoundEvent>>,
         houses: &Houses,
         stable_id: u64,
         body_frame_before_process: u32,

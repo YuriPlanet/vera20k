@@ -247,7 +247,7 @@ fn ares_reveal_exclusions_follow_the_admitted_rules_in_network_play() {
         let (rules, mut sim, owner) = ares_scene("3,3");
         sim.install_session_admission(mode, class, policy);
         // This direct launch omits the frame's fog-dimension update.
-        sim.fog = crate::sim::vision::FogState::new(64, 64);
+        *sim.fog = crate::sim::vision::FogState::new(64, 64);
         let sw_type = sim.interner.get(REVEAL).unwrap();
         let sw = rules.super_weapon(REVEAL).unwrap();
         super::ares_launch(&mut sim, &rules, owner, sw_type, sw, (7, 29));

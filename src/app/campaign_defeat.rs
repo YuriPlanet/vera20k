@@ -34,7 +34,9 @@ impl App {
     /// The defeat cascade has finished: read what the prompt needs while the
     /// lost Simulation is still resident, retire it, then play the Lose movie.
     pub(super) fn begin_campaign_defeat(state: &mut AppState) {
-        let retry = Self::prepare_campaign_restart(state).map(Box::new);
+        let retry =
+            Self::prepare_campaign_restart(&state.match_state, &state.persistence.options_profile)
+                .map(Box::new);
         let movie = state
             .match_state
             .map_basic
@@ -65,7 +67,11 @@ impl App {
         Self::destroy_current_shell_dialog(state);
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
         Self::open_shell_message_box(
-            state,
+            &state.platform.window,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
             shell_box,
             crate::app::frontend::state::ShellMessageBoxPurpose::CampaignReplay(defeat.retry),
         );

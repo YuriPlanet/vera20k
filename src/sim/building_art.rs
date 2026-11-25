@@ -713,14 +713,14 @@ impl Simulation {
         if next == old || object.turret_anim_is_voxel {
             return;
         }
-        let image = object.image.clone();
+        let image = &object.image;
         self.clear_building_anim_slot(id, 9);
         if next == -1 {
             //45153A also skips the variant store (raw old=-2). Normal
             //constructor/cycling state stays in -1..=2.
             return;
         }
-        self.allocate_wall_tower_art(id, &image, next, rules);
+        self.allocate_wall_tower_art(id, image, next, rules);
         self.substrate
             .entities
             .get_mut(id)
@@ -764,11 +764,10 @@ impl Simulation {
         }
         let variant = entity.building_art.wall_tower_variant;
         if variant != -1 {
-            let image = object.image.clone();
             self.clear_building_anim_slot(id, 9);
-            self.allocate_wall_tower_art(id, &image, variant, rules);
-        } else if let Some(name) = object.turret_anim.clone() {
-            self.allocate_building_anim_slot(id, 9, &name, false, 0, None, rules);
+            self.allocate_wall_tower_art(id, &object.image, variant, rules);
+        } else if let Some(name) = object.turret_anim.as_deref() {
+            self.allocate_building_anim_slot(id, 9, name, false, 0, None, rules);
         }
         self.aim_building_turret_anim(id, true);
     }
@@ -1513,7 +1512,7 @@ pub(crate) fn slot_test_fixture_with(building_rules: &str) -> (Simulation, RuleS
     entity.set_owner_for_test(sim.interner.intern("A"));
     entity.health.set_for_test(100);
     sim.substrate.entities.insert(entity);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     (sim, rules, id)
 }
 
@@ -1800,7 +1799,7 @@ mod slot_tests {
             Some(replaced)
         );
         assert_eq!(sim.anim(replaced).unwrap().runtime().frame_timer, timer);
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "", 0);
         let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .unwrap()
@@ -1935,8 +1934,8 @@ mod slot_tests {
             .unwrap();
             assert!(!sim.anim(missing).unwrap().runtime().first_ai_guard);
             assert!(!sim.anim(missing).unwrap().runtime().inactive);
-            sim.session
-                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+            let session = &mut *sim.session;
+            session.set_binary_frame_for_test(session.binary_frame() + 1);
             sim.visit_anim(
                 missing,
                 &rules,

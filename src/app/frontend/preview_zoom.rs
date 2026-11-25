@@ -18,7 +18,10 @@ use vera20k_gui::{InputEvent, Key, MouseButton, NodeKind, NodeSpec, Prop, Value}
 use winit::event::KeyEvent;
 use winit::keyboard::{KeyCode, PhysicalKey};
 
-use crate::app::AppState;
+use crate::app::frontend::skirmish_shell_render::SkirmishPreviewTexture;
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::state::MatchInputState;
+use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::skirmish_shell::RectPx;
 
@@ -43,18 +46,19 @@ pub(crate) struct PreviewZoom {
 
 /// Whether a press on the preview box would enlarge it: the box shows a
 /// picture.
-fn available(state: &AppState) -> bool {
-    state.frontend.skirmish_preview_texture.is_some()
+fn available(skirmish_preview_texture: &Option<SkirmishPreviewTexture>) -> bool {
+    skirmish_preview_texture.is_some()
 }
 
 /// Whether the pointer is on `dialog`'s preview static `0x468`, as its
 /// widgets hit-test it.
 pub(crate) fn over_box(
-    state: &AppState,
+    shell_controller: &DialogController,
+    input: &MatchInputState,
     dialog: crate::ui::shell::descriptor::DialogResourceId,
 ) -> bool {
-    let (x, y) = state.match_state.input.cursor_px();
-    let controller = &state.frontend.shell_controller;
+    let (x, y) = input.cursor_px();
+    let controller = shell_controller;
     let gui = controller.gui();
     let node = controller
         .root_in(dialog)
@@ -64,17 +68,21 @@ pub(crate) fn over_box(
 
 /// Enlarge the preview when a press lands on the box (`over`) while it
 /// shows a picture. True when it did, as the press is then the preview's.
-pub(crate) fn press_on_box(state: &mut AppState, over: bool) -> bool {
-    let (x, y) = state.match_state.input.cursor_px();
-    if !over || !available(state) {
+pub(crate) fn press_on_box(
+    frontend: &mut FrontendState,
+    input: &MatchInputState,
+    over: bool,
+) -> bool {
+    let (x, y) = input.cursor_px();
+    if !over || !available(&frontend.skirmish_preview_texture) {
         return false;
     }
-    state.frontend.preview_zoom = Some(PreviewZoom {
+    frontend.preview_zoom = Some(PreviewZoom {
         opened_at: Some((x, y)),
     });
     // The press that opened it was the page's: its release finds nothing
     // held here and closes nothing.
-    let controller = &mut state.frontend.shell_controller;
+    let controller = &mut frontend.shell_controller;
     controller.close(DIALOG);
     controller.push_modal_overlay(DIALOG);
     if let Some(root) = controller.root_in(DIALOG) {
@@ -97,8 +105,11 @@ pub(crate) fn press_on_box(state: &mut AppState, over: bool) -> bool {
 }
 
 /// The preview box's `help`, ending with the hint that a press enlarges it.
-pub(crate) fn box_help(state: &AppState, help: String) -> String {
-    if !available(state) {
+pub(crate) fn box_help(
+    skirmish_preview_texture: &Option<SkirmishPreviewTexture>,
+    help: String,
+) -> String {
+    if !available(skirmish_preview_texture) {
         return help;
     }
     if help.is_empty() {
@@ -108,10 +119,10 @@ pub(crate) fn box_help(state: &AppState, help: String) -> String {
     }
 }
 
-pub(crate) fn close(state: &mut AppState) {
-    if state.frontend.preview_zoom.take().is_some() {
-        state.frontend.shell_controller.close(DIALOG);
-        state.platform.window.request_redraw();
+pub(crate) fn close(window: &winit::window::Window, frontend: &mut FrontendState) {
+    if frontend.preview_zoom.take().is_some() {
+        frontend.shell_controller.close(DIALOG);
+        window.request_redraw();
     }
 }
 
@@ -132,14 +143,17 @@ impl PreviewZoom {
 
 /// Whether the map's briefing shows in its box `frame` (in window pixels)
 /// over the enlarged preview, where the pointer is now.
-pub(crate) fn shows_briefing(state: &mut AppState, frame: RectPx) -> bool {
-    let pointer = state.match_state.input.cursor_px();
-    let controller = &mut state.frontend.shell_controller;
+pub(crate) fn shows_briefing(
+    frontend: &mut FrontendState,
+    input: &MatchInputState,
+    frame: RectPx,
+) -> bool {
+    let pointer = input.cursor_px();
+    let controller = &mut frontend.shell_controller;
     controller.set_prop(DIALOG, BRIEFING, Prop::Rect, Value::Rect(frame));
     let over = controller.hovered_node_in(DIALOG).is_some()
         && controller.hovered_node_in(DIALOG) == controller.control(DIALOG, BRIEFING);
-    state
-        .frontend
+    frontend
         .preview_zoom
         .as_mut()
         .is_some_and(|zoom| zoom.briefing_shown(over, pointer))
@@ -147,11 +161,15 @@ pub(crate) fn shows_briefing(state: &mut AppState, frame: RectPx) -> bool {
 
 /// One input for the enlarged preview's dialog; true while it shows, as it
 /// takes every input. Its button closes it on activation.
-fn input(state: &mut AppState, event: Option<InputEvent>) -> bool {
-    if state.frontend.preview_zoom.is_none() {
+fn input(
+    window: &winit::window::Window,
+    frontend: &mut FrontendState,
+    event: Option<InputEvent>,
+) -> bool {
+    if frontend.preview_zoom.is_none() {
         return false;
     }
-    let controller = &mut state.frontend.shell_controller;
+    let controller = &mut frontend.shell_controller;
     let Some(event) = event.filter(|_| controller.root_in(DIALOG).is_some()) else {
         return true;
     };
@@ -161,7 +179,7 @@ fn input(state: &mut AppState, event: Option<InputEvent>) -> bool {
         .iter()
         .any(|event| matches!(event, vera20k_gui::UiEvent::Activated { .. }));
     if closes {
-        close(state);
+        close(window, frontend);
     }
     true
 }
@@ -169,21 +187,30 @@ fn input(state: &mut AppState, event: Option<InputEvent>) -> bool {
 /// The pointer while the enlarged preview shows: a move (`None`) or any
 /// button's press or release, every button its one button's press. A press
 /// and then its release close it. True while it shows.
-pub(crate) fn pointer(state: &mut AppState, pressed: Option<bool>) -> bool {
-    let (x, y) = state.match_state.input.cursor_px();
+pub(crate) fn pointer(
+    window: &winit::window::Window,
+    frontend: &mut FrontendState,
+    match_input: &MatchInputState,
+    pressed: Option<bool>,
+) -> bool {
+    let (x, y) = match_input.cursor_px();
     let button = MouseButton::Left;
     let event = match pressed {
         None => InputEvent::PointerMove { x, y },
         Some(true) => InputEvent::PointerDown { x, y, button },
         Some(false) => InputEvent::PointerUp { x, y, button },
     };
-    input(state, Some(event))
+    input(window, frontend, Some(event))
 }
 
 /// A key while the enlarged preview shows: Enter (and Space, which clicks
 /// its button) its default, Escape its cancel; both close it. True while it
 /// shows, as it takes every key.
-pub(crate) fn key(state: &mut AppState, event: &KeyEvent) -> bool {
+pub(crate) fn key(
+    window: &winit::window::Window,
+    frontend: &mut FrontendState,
+    event: &KeyEvent,
+) -> bool {
     let key = match event.physical_key {
         _ if !event.state.is_pressed() || event.repeat => None,
         PhysicalKey::Code(KeyCode::Escape) => Some(Key::Escape),
@@ -192,17 +219,19 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) -> bool {
         }
         _ => None,
     };
-    input(state, key.map(InputEvent::Key))
+    input(window, frontend, key.map(InputEvent::Key))
 }
 
 /// The wheel while the enlarged preview shows, which nothing takes. True
 /// while it shows.
-pub(crate) fn wheel(state: &mut AppState) -> bool {
-    input(state, None)
+pub(crate) fn wheel(window: &winit::window::Window, frontend: &mut FrontendState) -> bool {
+    input(window, frontend, None)
 }
 
-pub(crate) fn is_open(state: &AppState) -> bool {
-    state.frontend.preview_zoom.is_some()
+pub(crate) fn is_open(
+    preview_zoom: &Option<crate::app::frontend::preview_zoom::PreviewZoom>,
+) -> bool {
+    preview_zoom.is_some()
 }
 
 #[cfg(all(test, tests_app_frontend))]

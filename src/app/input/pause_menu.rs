@@ -3,7 +3,10 @@
 //! (72FC60,60B000,60B350,60B7A0).
 
 use crate::app::match_runtime::session::{PauseEventLimiters, SessionMode, WallBucketTimer};
+use crate::app::match_runtime::sim_host::SimHost;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::presentation::state::MatchPresentationState;
 use crate::app::{App, AppState};
 use crate::ui::main_menu_dialogs::OptionsDialogState;
 use crate::ui::main_menu_dialogs::options::shell::{IN_GAME_KEYBOARD_HELP, LauncherOptionsLayout};
@@ -18,6 +21,7 @@ use crate::ui::shell::pause_menu::{
     PauseMenuTemplate, pause_menu_layout,
 };
 use crate::ui::skirmish_shell::SavedSeedMode;
+use winit::window::Window;
 
 /// FF's two trackbars' positions as the dialog holds them between init and
 /// Resume; the trackbars report each move here.
@@ -103,15 +107,14 @@ fn refit_match(state: &mut AppState) {
 }
 
 /// The template the open in-game menu was created from.
-pub(crate) fn current_template(state: &AppState) -> PauseMenuTemplate {
-    state.match_state.match_presentation.pause_menu_template
+pub(crate) fn current_template(presentation: &MatchPresentationState) -> PauseMenuTemplate {
+    presentation.pause_menu_template
 }
 
 /// `0x004F10E1..0x004F1130` for the running session.
-fn select_template(state: &AppState) -> PauseMenuTemplate {
-    let mode = state.match_state.session_mode();
-    let local_defeated = state
-        .match_state
+fn select_template(match_state: &MatchState) -> PauseMenuTemplate {
+    let mode = match_state.session_mode();
+    let local_defeated = match_state
         .sim_runtime
         .runtime()
         .is_some_and(|runtime| runtime.simulation.local_player_defeated());
@@ -129,9 +132,9 @@ pub(crate) fn current_layout(state: &AppState) -> Option<PauseMenuLayout> {
         shell.height,
         shell.layout,
         shell.button_size,
-        current_template(state),
+        current_template(&state.match_state.match_presentation),
     );
-    if multiplayer_control(state).is_some() {
+    if multiplayer_control(&state.match_state).is_some() {
         layout.enable_shared_pause();
     }
     let category = state
@@ -166,7 +169,7 @@ pub(crate) fn options_page_layout(state: &AppState) -> Option<LauncherOptionsLay
             (shell.width, shell.height),
             menu.page_column(),
             page.dialog.category(),
-            current_template(state) == PauseMenuTemplate::Internet,
+            current_template(&state.match_state.match_presentation) == PauseMenuTemplate::Internet,
             page.game_speed_shown,
             menu.button(PauseMenuButton::Keyboard).is_none(),
             (
@@ -219,7 +222,8 @@ fn run_options_page(state: &mut AppState) {
         refit_match(state);
     }
     if language {
-        let labels = App::launcher_options_labels(state);
+        let labels =
+            App::launcher_options_labels(state.frontend.shell_route, &state.process_assets);
         if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
             page.dialog.set_labels(labels);
         }
@@ -249,7 +253,13 @@ fn options_page_pointer(state: &mut AppState, pressed: Option<bool>) -> bool {
     let Some(layout) = options_page_layout(state) else {
         return false;
     };
-    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
+    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     let Some(page) = state.match_state.match_presentation.options_page.as_mut() else {
         return false;
     };
@@ -265,8 +275,8 @@ fn options_page_pointer(state: &mut AppState, pressed: Option<bool>) -> bool {
 
 /// Esc on a page of the Options column goes back to Game Controls and the
 /// menu's own buttons, as the column's Back does. False on Game Controls.
-pub(crate) fn back_from_options(state: &mut AppState) -> bool {
-    let Some(page) = state.match_state.match_presentation.options_page.as_mut() else {
+pub(crate) fn back_from_options(presentation: &mut MatchPresentationState) -> bool {
+    let Some(page) = presentation.options_page.as_mut() else {
         return false;
     };
     if page.dialog.category() == Category::GameControls {
@@ -326,45 +336,42 @@ fn multiplayer_control_for(
     })
 }
 
-pub(crate) fn multiplayer_control(state: &AppState) -> Option<MultiplayerPauseControl> {
-    let pause = state
-        .match_state
-        .live_network
-        .as_ref()?
-        .multiplayer_pause()?;
-    multiplayer_control_for(pause, state.match_state.multiplayer_paused())
+pub(crate) fn multiplayer_control(match_state: &MatchState) -> Option<MultiplayerPauseControl> {
+    let pause = match_state.live_network.as_ref()?.multiplayer_pause()?;
+    multiplayer_control_for(pause, match_state.multiplayer_paused())
 }
 
 /// The explicit relay action is serviced without simulation ticks. Repeats
 /// while awaiting confirmation are consumed, never queued as toggles.
-pub(crate) fn toggle_multiplayer_pause(state: &mut AppState) -> bool {
-    let Some(control) = multiplayer_control(state) else {
+pub(crate) fn toggle_multiplayer_pause(window: &Window, match_state: &mut MatchState) -> bool {
+    let Some(control) = multiplayer_control(match_state) else {
         return false;
     };
     if control.enabled
-        && let Some(pause) = live_pause(state)
+        && let Some(pause) = live_pause(match_state)
     {
-        request_multiplayer_pause(state, !pause.paused);
+        request_multiplayer_pause(window, match_state, !pause.paused);
     }
     true
 }
 
-fn live_pause(state: &AppState) -> Option<crate::net::live_commands::MultiplayerPauseStatus> {
-    state.match_state.live_network.as_ref()?.multiplayer_pause()
+fn live_pause(
+    match_state: &MatchState,
+) -> Option<crate::net::live_commands::MultiplayerPauseStatus> {
+    match_state.live_network.as_ref()?.multiplayer_pause()
 }
 
 /// Asks the relay to pause or resume, unless the match is ending. True when
 /// the request went out.
-fn request_multiplayer_pause(state: &mut AppState, paused: bool) -> bool {
-    let sent = state.match_state.scenario_exit.is_none()
-        && state.match_state.scenario_outcome.is_none()
-        && state
-            .match_state
+fn request_multiplayer_pause(window: &Window, match_state: &mut MatchState, paused: bool) -> bool {
+    let sent = match_state.scenario_exit.is_none()
+        && match_state.scenario_outcome.is_none()
+        && match_state
             .live_network
             .as_mut()
             .is_some_and(|live| live.request_multiplayer_pause(paused));
     if sent {
-        state.platform.window.request_redraw();
+        window.request_redraw();
     }
     sent
 }
@@ -389,10 +396,10 @@ fn chat_command_for(
 /// VERA: `/pause` and `/resume` typed in match chat (`input::chat`) ask for
 /// the Pause key's shared pause and answer with a message row.
 pub(crate) fn chat_command(state: &mut AppState, want: bool) {
-    let paused = live_pause(state).is_some_and(|pause| pause.paused);
-    let (ask, answer) = chat_command_for(multiplayer_control(state), paused, want);
+    let paused = live_pause(&state.match_state).is_some_and(|pause| pause.paused);
+    let (ask, answer) = chat_command_for(multiplayer_control(&state.match_state), paused, want);
     if let Some(label) = answer
-        && (!ask || request_multiplayer_pause(state, want))
+        && (!ask || request_multiplayer_pause(&state.platform.window, &mut state.match_state, want))
     {
         crate::app::input::messages::post_chat_command_answer(state, &crate::i18n::tr(label));
     }
@@ -400,23 +407,19 @@ pub(crate) fn chat_command(state: &mut AppState, want: bool) {
 
 /// The applied GameSpeed FF's init (4F1720) reads; a queued speed event
 /// changes it only when it executes.
-fn current_game_speed(state: &AppState) -> i32 {
-    state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .map_or(0, |runtime| {
-            runtime.simulation.session().game_options().game_speed
-        })
+fn current_game_speed(sim_runtime: &SimHost) -> i32 {
+    sim_runtime.runtime().map_or(0, |runtime| {
+        runtime.simulation.session().game_options().game_speed
+    })
 }
 
 /// Entering state 1 recreates the dialog: 4F10E0 picks its template and FF's
 /// init reads the live values.
 pub(crate) fn on_open(state: &mut AppState) {
-    state.match_state.match_presentation.pause_menu_template = select_template(state);
+    state.match_state.match_presentation.pause_menu_template = select_template(&state.match_state);
     state.match_state.match_presentation.internet_pause = InternetPauseControls::open(
         state.match_state.session.latency_fudge(),
-        current_game_speed(state),
+        current_game_speed(&state.match_state.sim_runtime),
     );
     // Escape opens on Game Controls, the settings a player most often reaches
     // for mid-match. Back from one of the menu's dialogs shows the page it
@@ -428,7 +431,7 @@ pub(crate) fn on_open(state: &mut AppState) {
         .unwrap_or(Category::GameControls);
     // BBB's init (4E1FE0, message 0x497) decides the Game Speed row and
     // reads the speed in effect.
-    crate::app::input::in_game_options::on_open(state);
+    crate::app::input::in_game_options::on_open(&state.frontend, &mut state.match_state);
     let options = &state.match_state.match_presentation.in_game_options;
     let (context, game_speed_shown) = (options.speed_context, !options.game_speed_hidden);
     let speed_position = u8::try_from(options.game_speed_position()).unwrap_or(0);
@@ -438,7 +441,14 @@ pub(crate) fn on_open(state: &mut AppState) {
         .collect();
     let speed_caption = label("GUI:GameSpeed", "Game Speed");
     let sound_label = label("GUI:Sound", "Sound");
-    let mut dialog = App::launcher_options_from_state(state);
+    let mut dialog = App::launcher_options_from_state(
+        &state.platform,
+        &state.renderer.performance_overlay,
+        state.frontend.shell_route,
+        &state.process_assets,
+        state.audio.launcher_audio_available,
+        &state.persistence.options_profile,
+    );
     dialog.set_in_game_controls(speed_caption, speed_names, speed_position, sound_label);
     dialog.select_category(category);
     let opened = dialog.pack();
@@ -486,14 +496,13 @@ fn close_page(state: &mut AppState, apply_speed: bool) {
     }
 }
 
-pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 8] {
-    let ui = &state.match_state.match_presentation.dialog_ui;
-    let template = current_template(state);
+pub(crate) fn button_states(match_state: &MatchState) -> [PauseMenuButtonState; 8] {
+    let ui = &match_state.match_presentation.dialog_ui;
+    let template = current_template(&match_state.match_presentation);
     // Native4F17D9..4F1832 applies559C20 eligibility to Load/Delete only, and
     // only in modes0/5; BBA/FF have neither control.
-    let has_saves = state.match_state.match_presentation.pause_menu_has_saves;
-    let controls_page = state
-        .match_state
+    let has_saves = match_state.match_presentation.pause_menu_has_saves;
+    let controls_page = match_state
         .match_presentation
         .options_page
         .as_ref()
@@ -504,7 +513,7 @@ pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 8] {
         // Game Controls while its page shows, as a tab.
         highlighted: button == PauseMenuButton::GameControls && controls_page,
         enabled: if button == PauseMenuButton::SharedPause {
-            multiplayer_control(state).is_some_and(|control| control.enabled)
+            multiplayer_control(match_state).is_some_and(|control| control.enabled)
         } else {
             has_saves || !matches!(button, PauseMenuButton::Load | PauseMenuButton::Delete)
         },
@@ -515,8 +524,7 @@ pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 8] {
 /// page's, else the menu's ([`super::dialog_page::help`]; a held trackbar
 /// keeps the help it showed at the press, FF's pointer moves going only to
 /// it until the release). A string-table or `VERA:` key.
-pub(crate) fn hovered_help(state: &AppState) -> Option<&str> {
-    let presentation = &state.match_state.match_presentation;
+pub(crate) fn hovered_help(presentation: &MatchPresentationState) -> Option<&str> {
     if let Some(help) = presentation
         .options_page
         .as_ref()
@@ -596,7 +604,7 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
     if options_page_pointer(state, down) {
         return;
     }
-    let states = button_states(state);
+    let states = button_states(&state.match_state);
     let template = layout.template;
     let positions = state
         .match_state
@@ -641,7 +649,13 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
                         .internet_pause
                         .set(slider, value)
                 {
-                    App::play_page_cue(state, crate::ui::shell::page::PageCue::ListClick);
+                    App::play_page_cue(
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                        crate::ui::shell::page::PageCue::ListClick,
+                    );
                 }
             }
             _ => {}
@@ -680,7 +694,7 @@ fn activate(state: &mut AppState, button: PauseMenuButton) {
         PauseMenuButton::Save => App::open_saved_game_browser(state, SavedSeedMode::Save),
         PauseMenuButton::Delete => App::open_saved_game_browser(state, SavedSeedMode::Delete),
         PauseMenuButton::SharedPause => {
-            toggle_multiplayer_pause(state);
+            toggle_multiplayer_pause(&state.platform.window, &mut state.match_state);
         }
         // BBB's 0x52C: A3 opens over the menu and comes back to it.
         PauseMenuButton::Keyboard => crate::app::input::keyboard::open(
@@ -749,7 +763,7 @@ fn resume_internet_events(state: &mut AppState) {
         .sim_runtime
         .runtime()
         .is_some_and(|runtime| runtime.simulation.local_player_defeated());
-    if current_template(state) != PauseMenuTemplate::Internet
+    if current_template(&state.match_state.match_presentation) != PauseMenuTemplate::Internet
         || state.match_state.session_mode() != SessionMode::Wol
         || local_defeated
     {
@@ -757,7 +771,7 @@ fn resume_internet_events(state: &mut AppState) {
     }
     let controls = state.match_state.match_presentation.internet_pause;
     let latency_fudge = state.match_state.session.latency_fudge();
-    let game_speed = current_game_speed(state);
+    let game_speed = current_game_speed(&state.match_state.sim_runtime);
     let now_bucket = crate::app::match_runtime::frame_pacer::wall_clock_bucket();
     let relay_paced = state
         .match_state
@@ -772,7 +786,7 @@ fn resume_internet_events(state: &mut AppState) {
         now_bucket,
         relay_paced,
     );
-    let Some(owner) = crate::app::input::commands::preferred_local_owner(state) else {
+    let Some(owner) = crate::app::input::commands::preferred_local_owner(&state.match_state) else {
         return;
     };
     // Resume4F1595..4F167A emits latency first, then speed. The limiters above

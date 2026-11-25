@@ -24,6 +24,13 @@ zenity or kdialog. It keeps config.toml, its settings, logs, saves and
 replays in ~/.local/share/VERA20k. To use another game folder, change ra2_dir
 in that config.toml.
 
+SNOW MAPS
+Map makers can copy vera_ice.mix and vera_ice_tiles.ini from the Terrain
+folder into their map editor's data directory. On Windows, Terrain is beside
+vera20k.exe. On macOS and Linux, open VERA20k once to get the files in the
+Terrain folder beside VERA.INI. See docs/ts-ice.md in the source for the map
+editor's file and tileset settings.
+
 REQUIREMENTS
   A GPU with Vulkan, DirectX 12 or Metal. Some older GPUs with DirectX 12,
     such as Intel's 4th generation, are not enough; VERA20k then draws with

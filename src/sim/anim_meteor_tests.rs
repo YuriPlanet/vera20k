@@ -43,7 +43,7 @@ pub(in crate::sim) fn formed_sim(seed: u64, level: u8) -> Simulation {
     });
     terrain.shared_cell_dummy().set_level_slope(level as i8, 0);
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
     sim.session.set_map_width_for_test(128);
     sim.session.set_map_height_for_test(128);
     sim.session.set_binary_frame_for_test(1000);
@@ -75,7 +75,7 @@ fn original_meteor_shower_controls_preserve_signed_spread_and_interleaved_constr
             let offset = (12 + 4 * index) * 2;
             native.replace_range(offset..offset + 8, &replacement);
         }
-        sim.scenario_rng = SimRng::from_native_state_hex_for_test(&native);
+        *sim.scenario_rng = SimRng::from_native_state_hex_for_test(&native);
         let waypoint = input["waypoint"].as_u64().unwrap() as u32;
         sim.session.install_waypoints(&HashMap::from([(
             waypoint,
@@ -122,7 +122,7 @@ fn original_anim_ore_loop_keeps_direction_aliasing_density_and_constructor_refus
         let input = &row["input"];
         let expected = &row["expected"];
         let mut sim = formed_sim(input["seed"].as_u64().unwrap(), 0);
-        sim.native_unique_ids =
+        *sim.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(0));
         let mut config = rules.art().anim_runtime_config("METSMALL").unwrap().clone();
         config.tiberium_spread_radius = input["radius"].as_i64().unwrap() as i32;
@@ -340,7 +340,7 @@ fn meteor_flight_restores_native_rng_prior_and_cleans_up() {
     //This flight has not mutated the formed template; bind that same resource
     //before comparing hashes or continuing its ground queries after loading.
     restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
-    restored.resolved_terrain = sim.resolved_terrain.clone();
+    *restored.resolved_terrain = (*sim.resolved_terrain).clone();
     restored.restore_after_snapshot_load().unwrap();
     assert_eq!(
         sim.live_object_order_snapshot(),
@@ -358,7 +358,7 @@ fn meteor_flight_restores_native_rng_prior_and_cleans_up() {
         restored.scenario_rng.native_state_hex(),
         SimRng::new(0).native_state_hex()
     );
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     assert_eq!(sim.state_hash(), restored.state_hash());
     let other_streams = [
         sim.main_rng.native_state_hex(),
@@ -366,9 +366,8 @@ fn meteor_flight_restores_native_rng_prior_and_cleans_up() {
     ];
     for _ in 0..100 {
         for world in [&mut sim, &mut restored] {
-            world
-                .session
-                .set_binary_frame_for_test(world.session.binary_frame().wrapping_add(1));
+            let session = &mut *world.session;
+            session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
             for &id in &ids {
                 world
                     .visit_anim(id, &rules, None, &mut FrameEffects::empty())

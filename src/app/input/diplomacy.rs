@@ -10,8 +10,11 @@
 //! refresh shows the same values up to 250 ms earlier.
 
 use super::dialog_page::InGameDialog;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::SessionMode;
+use crate::app::match_runtime::sim_host::SimHost;
 use crate::app::match_runtime::sim_host::SimWrite;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::presentation::house_ui::HouseUiSources;
 use crate::app::{App, AppState};
 use crate::rules::rule_policy::RulePolicy;
@@ -306,8 +309,21 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
         sim,
         rules,
         switches,
-        &HouseUiSources::from_state(state, &computer),
-        |country| crate::app::presentation::house_ui::country_display_name(state, sim, country),
+        &HouseUiSources::from_state(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets.csf,
+            &computer,
+        ),
+        |country| {
+            crate::app::presentation::house_ui::country_display_name(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets.csf,
+                sim,
+                country,
+            )
+        },
     );
     let paging = state.match_state.match_presentation.diplomacy_page;
     let range = paging.range(resolved.rows.len(), DIPLOMACY_ROWS);
@@ -333,9 +349,12 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
     // WOLTaunts; the 250 ms refresh never touches it.
     view.taunts = state.frontend.multiplayer_shell_runtime.taunts_on(mode);
     view.map_name = if mode.execution_topology().is_lockstep() {
-        crate::app::shell_network_setup::map_display_name(state)
+        crate::app::shell_network_setup::map_display_name(
+            &state.frontend.scenario_catalog,
+            &state.match_state.session,
+        )
     } else {
-        crate::app::frontend::skirmish_shell_render::skirmish_selected_map_name(state)
+        crate::app::frontend::skirmish_shell_render::skirmish_selected_map_name(&state.frontend)
     }
     .unwrap_or_default()
     .to_string();
@@ -368,7 +387,12 @@ pub(crate) fn sync(state: &mut AppState) -> Option<(DiplomacyLayout, DiplomacyVi
     let view = view(state);
     let rect = |id| view.rect(&layout, id);
     let sync = |gui: &mut vera20k_gui::Gui, root| view.sync(&layout, gui, root);
-    DIALOG.sync(state, diplomacy::spec, rect, sync);
+    DIALOG.sync(
+        &mut state.match_state.match_presentation,
+        diplomacy::spec,
+        rect,
+        sync,
+    );
     Some((layout, view))
 }
 
@@ -425,14 +449,17 @@ fn press_allies_box(state: &mut AppState, view: &DiplomacyView, row: usize) {
         return;
     };
     play_checkbox_sound(state);
-    ally(state, house);
+    ally(&mut state.match_state.sim_runtime, house);
 }
 
 fn play_checkbox_sound(state: &mut AppState) {
-    let sound = state
-        .rules()
-        .and_then(|rules| rules.general.gui_checkbox_sound.clone());
-    App::play_shell_ui_sound_by_id(state, sound.as_deref());
+    App::play_shell_rules_sound(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        |rules| rules.general.gui_checkbox_sound.as_deref(),
+    );
 }
 
 /// `Ally 0x00731840`: queue EVENT_ALLY toward `house` for the player's
@@ -445,11 +472,11 @@ fn play_checkbox_sound(state: &mut AppState) {
 /// clears it.
 /// Sim-scale deviation: a full OutList (128 records, `[0xA802C8]`) drops the
 /// event natively; VERA's far larger queue refuses the click instead.
-pub(crate) fn ally(state: &mut AppState, house: InternedId) {
-    let Some(local) = crate::app::input::commands::preferred_command_owner(state) else {
+pub(crate) fn ally(sim_runtime: &mut SimHost, house: InternedId) {
+    let Some(local) = crate::app::input::commands::preferred_command_owner(sim_runtime) else {
         return;
     };
-    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
+    let Some(runtime) = sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     let rules = &runtime.resources.rules;
@@ -483,20 +510,19 @@ fn alliance_change_allowed(
 /// `AllianceCommandClass::Execute 0x00536F20` → `0x007318F0`: toggle the
 /// alliance with the owner of the first selected object, when the player is
 /// not defeated and that owner is another human House; then `Ally`'s gates.
-pub(crate) fn toggle_alliance_hotkey(state: &mut AppState) {
+pub(crate) fn toggle_alliance_hotkey(frontend: &FrontendState, match_state: &mut MatchState) {
     let first = crate::app::input::dispatch::selected_stable_ids_in_order(
-        state
-            .match_state
+        match_state
             .sim_runtime
             .runtime()
             .map(|runtime| &runtime.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     )
     .first()
     .copied();
-    let Some(owner) = state.match_state.sim_runtime.runtime().and_then(|runtime| {
+    let Some(owner) = match_state.sim_runtime.runtime().and_then(|runtime| {
         let sim = &runtime.simulation;
         let local = sim.session().current_house()?;
         if sim.houses().get(&local)?.is_defeated() {
@@ -507,7 +533,7 @@ pub(crate) fn toggle_alliance_hotkey(state: &mut AppState) {
     }) else {
         return;
     };
-    ally(state, owner);
+    ally(&mut match_state.sim_runtime, owner);
 }
 
 /// A press on an enabled chat box: the checkbox proc flips its state, plays

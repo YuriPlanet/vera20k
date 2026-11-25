@@ -73,18 +73,17 @@ impl DeferredClientEffects {
     /// needs its exchange, which only [`Self::hands_off_queue`] leaves to the
     /// main thread.
     pub(crate) fn applies(
-        state: &AppState,
+        match_state: &crate::app::match_runtime::state::MatchState,
         replaying: bool,
         observing_commands: bool,
         initial_save: bool,
     ) -> bool {
-        state.match_state.sim_runtime.thread_enabled()
+        match_state.sim_runtime.thread_enabled()
             && !replaying
             && !observing_commands
             && !initial_save
-            && state.match_state.live_network.is_none()
-            && !state
-                .match_state
+            && match_state.live_network.is_none()
+            && !match_state
                 .sim_runtime
                 .runtime()
                 .is_some_and(|runtime| runtime.simulation.session().game_mode().is_network())
@@ -140,7 +139,9 @@ impl DeferredClientEffects {
             match effect {
                 DeferredEffect::TacticalRadar(available) => {
                     crate::app::presentation::building_anim::set_local_tactical_radar(
-                        state, available,
+                        &mut state.match_state,
+                        &mut state.audio.sfx_player,
+                        available,
                     );
                 }
                 DeferredEffect::PlanningLeft => {
@@ -164,7 +165,8 @@ impl DeferredClientEffects {
                     .match_state
                     .match_presentation
                     .sidebar_projection
-                    .model.clear_production_request(type_id),
+                    .model
+                    .clear_production_request(type_id),
                 // Recorded only when the sim emits Ares bounty text, so this runs in every game.
                 DeferredEffect::Bounty(text) => {
                     if let Some(rt) = state.match_state.sim_runtime.runtime() {

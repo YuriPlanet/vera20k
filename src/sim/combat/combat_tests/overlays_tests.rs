@@ -153,8 +153,8 @@ fn build_minimal_sim_with_gawall(rx: u16, ry: u16) -> (Simulation, RuleSet, Over
     let mut grid = OverlayGrid::new(10, 10);
     // Place GAWALL (overlay_id=2). Initial frame = 0 (isolated, stage 0).
     grid.place_overlay(rx, ry, 2, 0);
-    sim.overlay_grid = Some(grid);
-    sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(10, 10));
+    *sim.overlay_grid = Some(grid);
+    *sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(10, 10));
 
     (sim, rules, registry)
 }
@@ -166,8 +166,8 @@ fn vehicle_on_overlay(rules: &RuleSet, veh_type: &str, overlay_id: u8) -> Simula
     let mut sim = Simulation::new();
     let mut grid = OverlayGrid::new(10, 10);
     grid.place_overlay(5, 5, overlay_id, 0);
-    sim.overlay_grid = Some(grid);
-    sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(10, 10));
+    *sim.overlay_grid = Some(grid);
+    *sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(10, 10));
     let owner_id = sim.interner.intern("Test");
     let obj = rules.object(veh_type).expect("veh object");
     let veh_type_id = sim.interner.intern(veh_type);

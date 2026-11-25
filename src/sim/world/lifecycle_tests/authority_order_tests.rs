@@ -93,7 +93,7 @@ fn lifecycle_authority_reveal_mark_failure_keeps_adjusted_coords_alive_limbo() {
     assert!(!entity.lifecycle.cell_marked());
     assert!(!entity.seldom.in_logic_vector.is_member());
     assert_eq!(
-        sim.lifecycle_test_events,
+        *sim.lifecycle_test_events,
         vec![
             LifecycleTestEvent::RevealLimboCleared,
             LifecycleTestEvent::RevealCoordinatesCommitted,
@@ -183,7 +183,7 @@ fn lifecycle_authority_logic_flag_sets_after_append() {
             .is_member()
     );
     assert_eq!(
-        sim.lifecycle_test_events,
+        *sim.lifecycle_test_events,
         vec![
             LifecycleTestEvent::LogicAppended,
             LifecycleTestEvent::LogicMembershipSet,
@@ -515,7 +515,7 @@ fn lifecycle_authority_conceal_deselects_unmarks_unregisters_then_sets_limbo() {
 
     let _ = sim.object_conceal(1);
     assert_eq!(
-        sim.lifecycle_test_events,
+        *sim.lifecycle_test_events,
         vec![
             LifecycleTestEvent::ConcealDeselected,
             LifecycleTestEvent::ConcealDestroyNotifyBoundary {
@@ -652,7 +652,7 @@ fn lifecycle_authority_techno_limbo_breaks_contacts_before_common_conceal() {
 
     let _ = sim.techno_limbo(1);
     assert_eq!(
-        sim.lifecycle_test_events,
+        *sim.lifecycle_test_events,
         vec![
             LifecycleTestEvent::BreakSlot {
                 slot: 0,
@@ -1019,7 +1019,7 @@ fn lifecycle_authority_entity_and_anim_share_ordered_drain() {
 
     sim.process_pending_delete();
     assert_eq!(
-        sim.lifecycle_test_events,
+        *sim.lifecycle_test_events,
         vec![
             LifecycleTestEvent::PendingDeleteDrainStarted,
             LifecycleTestEvent::DeferredDeleteSelected {
@@ -1058,7 +1058,7 @@ fn lifecycle_authority_late_tail_commits_frame_before_drain() {
 
     let _ = sim.advance_tick(&[], None, None, None, 67);
     assert_eq!(
-        sim.lifecycle_test_events,
+        *sim.lifecycle_test_events,
         vec![
             LifecycleTestEvent::BinaryFrameCommitted,
             LifecycleTestEvent::PendingDeleteDrainStarted,

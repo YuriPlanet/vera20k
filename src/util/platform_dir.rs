@@ -35,9 +35,9 @@ pub fn get() -> Option<&'static Path> {
 }
 
 /// A resource folder installed beside the Windows executable, in macOS bundle
-/// Resources, or in an AppImage's shared game directory.
+/// Resources, or in the Linux game or launcher's AppImage resource directory.
 pub fn packaged_resource_dir(program_dir: &Path, name: &str) -> Option<PathBuf> {
-    ["", "../Resources", "../share/vera20k"]
+    ["", "../Resources", "../share/vera20k", "../lib/VERA20K"]
         .into_iter()
         .map(|parent| program_dir.join(parent).join(name))
         .find(|dir| dir.is_dir())

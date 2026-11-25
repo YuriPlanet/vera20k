@@ -1073,6 +1073,7 @@ impl ProcessedRulesLayers {
             &[String],
             &[NativeF64Bits; 11],
             Option<&AresWarheadVerses>,
+            Option<crate::rules::warhead_type::WarheadWeb>,
         ),
     > {
         self.native_type_construction_trace
@@ -1091,6 +1092,7 @@ impl ProcessedRulesLayers {
                     member.warhead_anim.debris_types.as_slice(),
                     &member.warhead_verses,
                     member.ares_verses.as_ref(),
+                    member.warhead_anim.web,
                 )
             })
     }

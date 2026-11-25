@@ -23,16 +23,16 @@ use crate::app::frontend::menu_page_render::{
     FamilyFrame, encode_family_page, family_art_ready, page_panel_state, page_tree,
 };
 use crate::app::frontend::shell_pass::TexturedDraw;
-use crate::render::hud_paint::{HudPaint, Material};
 use crate::app::frontend::shell_transition::ShellSlideKind;
-use crate::app::frontend::skirmish_shell_render::gui_paint::{
-    GuiStyle, PageArt, paint_gui_into,
-};
+use crate::app::frontend::skirmish_shell_render::gui_paint::{GuiStyle, PageArt, paint_gui_into};
+use crate::app::process_assets::ProcessAssets;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::shell_paint::{
     PARENT_BACKGROUND_DEPTH, SHELL_TEXT_RGB_ENABLED, push_entry_crop, push_entry_native,
     push_entry_scaled, push_entry_window_crop,
 };
 use crate::render::shell_text_reveal::PathAReveal;
+use crate::ui::score_shell::ScorePage;
 use crate::ui::score_shell::{
     BAND_IDS, CONTINUE_BUTTON, HEADING, NEXT_PAGE, PREVIOUS_PAGE, SCORE_PAGE, ScoreStatics,
     sync_static_texts,
@@ -58,12 +58,13 @@ pub(crate) fn static_reveal(statics: &ScoreStatics, id: u16) -> Option<PathAReve
 }
 
 /// The heading `0x694` the proc sets (`0x005C9BEC..0x005C9C34`).
-pub(crate) fn score_title_text(state: &AppState) -> String {
-    state
-        .frontend
-        .score_page
+pub(crate) fn score_title_text(
+    score_page: &Option<ScorePage>,
+    process_assets: &ProcessAssets,
+) -> String {
+    score_page
         .as_ref()
-        .map(|page| state.csf_text(page.model.title_key))
+        .map(|page| process_assets.csf_text(page.model.title_key))
         .unwrap_or_default()
 }
 
@@ -79,7 +80,7 @@ pub(crate) fn render_score_page(
     {
         return Ok(false);
     }
-    let layout = crate::app::frontend::shell_layout::score_layout(state);
+    let layout = crate::app::frontend::shell_layout::score_layout(&state.renderer.gpu);
     let (screen, scale, dialog) = (layout.page.screen, layout.page.scale, SCORE_PAGE.dialog);
     let paged = state
         .frontend
@@ -87,7 +88,13 @@ pub(crate) fn render_score_page(
         .as_ref()
         .is_some_and(|page| page.page_count() > 1);
     let rect_of = |id| layout.node_rect(id, paged);
-    let mut tree = page_tree(state, dialog, crate::ui::score_shell::nodes, rect_of, &[]);
+    let mut tree = page_tree(
+        &mut state.frontend.shell_controller,
+        dialog,
+        crate::ui::score_shell::nodes,
+        rect_of,
+        &[],
+    );
     // Only Continue has status help; the paging pair has none.
     let mut panel = page_panel_state(
         state,
@@ -109,10 +116,7 @@ pub(crate) fn render_score_page(
     let column = panel.column.is_some();
     {
         let frontend = &mut state.frontend;
-        let page = frontend
-            .score_page
-            .as_mut()
-            .expect("checked before render");
+        let page = frontend.score_page.as_mut().expect("checked before render");
         page.statics.paint(Instant::now(), !leaving);
         let page = &*page;
         // The statics carry the template windows `0x0060B950` keeps; on a
@@ -177,11 +181,26 @@ pub(crate) fn render_score_page(
     let controller = &state.frontend.shell_controller;
     let nodes = match &tree {
         Some((gui, root)) => Some((gui, *root)),
-        None => controller.root_in(dialog).map(|root| (controller.gui(), root)),
+        None => controller
+            .root_in(dialog)
+            .map(|root| (controller.gui(), root)),
     };
     let mut paint = HudPaint::default();
     if let Some((gui, root)) = nodes {
-        paint_gui_into(&mut paint, state, None, gui, root, scale, &[], style);
+        paint_gui_into(
+            &mut paint,
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            None,
+            gui,
+            root,
+            scale,
+            &[],
+            style,
+        );
     }
 
     // Paint mode 1 (`0x00621E90`): the right panel, then the dialog's own
@@ -232,8 +251,11 @@ pub(crate) fn render_score_page(
         instances: art_sprites,
     };
     let title = SCORE_PAGE.title_key;
-    let mut frame =
-        FamilyFrame::new("Score Shell", &layout.page, panel, title).on(state, dialog, &tree);
+    let mut frame = FamilyFrame::new("Score Shell", &layout.page, panel, title).on(
+        &state.frontend.shell_controller,
+        dialog,
+        &tree,
+    );
     frame.ids = vec![CONTINUE_BUTTON, PREVIOUS_PAGE, NEXT_PAGE];
     frame.over = paint;
     if page.model.background.is_some() {

@@ -54,9 +54,9 @@ fn fixture(family: TrackFamily, budget: i32) -> (Simulation, TrackInvocation, i3
             )
         }
     }
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     sim.substrate.entities.insert(entity);
-    sim.substrate.occupancy =
+    *sim.substrate.occupancy =
         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
     (
         sim,
@@ -189,7 +189,7 @@ fn building_navigation_reaches_drive_and_ship_terminal_callbacks() {
             }
             building.seldom.radio_contacts.remove(101);
             sim.substrate.entities.insert(building);
-            sim.interner = crate::sim::intern::test_interner();
+            *sim.interner = crate::sim::intern::test_interner();
             let mover = sim.substrate.entities.get_mut(1).unwrap();
             let destination = head(mover, family);
             mover
@@ -435,7 +435,7 @@ fn crossing_mark_state_and_open_topped_cargo_are_visible_before_paid_continuatio
         "[VehicleTypes]\n0=MTNK\n[MTNK]\nOpenTopped=yes\n",
     ))
     .unwrap();
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     let mut cargo = PassengerCargo::new(2, 1.0);
     cargo.board_forced_chain(&[(2, 1.0)]);
     sim.substrate
@@ -661,17 +661,17 @@ fn accepted_chain_preserves_call_budget_and_reloads_callback_queue_once() {
                 })
                 .collect(),
         );
-        sim.path_grid = Some(std::sync::Arc::new(
+        *sim.path_grid = Some(std::sync::Arc::new(
             crate::sim::pathfinding::PathGrid::from_resolved_terrain(&terrain),
         ));
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         // Supplied Passive=true exercises the admitted native arm; this is
         // not an assertion that stock MTNK can accept an in-call chain.
         let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
             "[VehicleTypes]\n0=MTNK\n[MTNK]\nPassive=yes\n",
         ))
         .unwrap();
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let selected = drive_track::select_drive_track(32, 64, false).unwrap();
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         if family == TrackFamily::Ship {
@@ -920,7 +920,7 @@ fn a_terminal_point_over_a_dip_stores_the_decks_level() {
         BridgeStampFamily::Nesw,
     );
     assert_eq!(terrain.corrected_high_bridge_deck_level((10, 9)), Some(9));
-    sim.path_grid = Some(std::sync::Arc::new(
+    *sim.path_grid = Some(std::sync::Arc::new(
         crate::sim::pathfinding::PathGrid::from_resolved_terrain(&terrain),
     ));
     sim.install_resolved_terrain_for_new_map(terrain);
@@ -949,7 +949,7 @@ fn a_terminal_point_over_a_dip_stores_the_decks_level() {
 fn bridge_placement_retains_selected_cell_but_reads_fresh_world_attributes() {
     let (mut sim, _, _) = fixture(TrackFamily::Drive, 0);
     if sim.path_grid.is_none() {
-        sim.path_grid = Some(std::sync::Arc::new(crate::sim::pathfinding::PathGrid::new(
+        *sim.path_grid = Some(std::sync::Arc::new(crate::sim::pathfinding::PathGrid::new(
             32, 32,
         )));
     }
@@ -967,7 +967,7 @@ fn bridge_placement_retains_selected_cell_but_reads_fresh_world_attributes() {
                 let mut grid = crate::sim::pathfinding::PathGrid::new(32, 32);
                 grid.set_cell_for_test(10, 10, 4, false, false);
                 grid.set_cell_for_test(10, 9, 0, true, false);
-                sim.path_grid = Some(std::sync::Arc::new(grid));
+                *sim.path_grid = Some(std::sync::Arc::new(grid));
                 sim.substrate
                     .entities
                     .get_mut(id)
@@ -1311,7 +1311,7 @@ fn per_cell_partner_fixture(
     producer.lifecycle.set_cell_marked_for_test(true);
     producer.mission.apply_test_fixture(guard);
     sim.substrate.entities.insert(producer);
-    sim.substrate.occupancy =
+    *sim.substrate.occupancy =
         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
     assert_eq!(
         transmit(
@@ -1728,7 +1728,7 @@ fn computer_product_at_factory_exit() -> (Simulation, RuleSet) {
         .type_facts
         .set_foundation_for_test("5x3".into());
     producer.position.put_location(DriveCoord::cell(6, 9, 0));
-    sim.substrate.occupancy =
+    *sim.substrate.occupancy =
         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
     let unit = sim.substrate.entities.get_mut(1).unwrap();
     unit.mission.apply_test_fixture(MissionTestFixture {
@@ -1908,7 +1908,7 @@ fn per_cell_factory_harvester_queue_uses_live_readiness_and_preserves_miner_stat
                     .type_facts
                     .set_foundation_for_test("1x2".into());
                 producer.position.put_location(DriveCoord::cell(10, 9, 0));
-                sim.substrate.occupancy =
+                *sim.substrate.occupancy =
                     crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
             }
             let unit = sim.substrate.entities.get_mut(1).unwrap();
@@ -2231,7 +2231,7 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
         sim.session.set_map_width_for_test(16);
         sim.session.set_map_height_for_test(16);
         let terrain = test_flat_ground_grid(32);
-        sim.path_grid = Some(Arc::new(PathGrid::from_resolved_terrain(&terrain)));
+        *sim.path_grid = Some(Arc::new(PathGrid::from_resolved_terrain(&terrain)));
         sim.install_resolved_terrain_for_new_map(terrain);
         let owner = sim.intern("Russians");
         sim.houses
@@ -2392,9 +2392,9 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
         house
             .economy_mut()
             .set_spent_for_test(integer(&before["spent"]));
-        sim.substrate.occupancy =
+        *sim.substrate.occupancy =
             crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
-        sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
+        *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
         assert!(sim.track_survives(tank), "{context}: admitted live Unit");
         let building = sim.substrate.entities.get(depot).unwrap();
         let center =
@@ -2513,7 +2513,7 @@ fn idle_base_fixture(category: EntityCategory) -> Simulation {
         _ => panic!("the idle base fixture supplies only Foot categories"),
     };
     let mut actor = GameEntity::test_default_of_category(1, type_id, "Americans", 10, 10, category);
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     // Original fixture end=none, +687=0 and no planning/Archive work. No
     // active controller or class tail is supplied by this comparison.
     actor.locomotor = None;
@@ -2707,7 +2707,7 @@ fn inherited_foot_idle_latch_roundtrips_and_hashes_for_every_foot_category() {
         let mut sim = idle_base_fixture(category);
         // The production deserializer resets Scenario RNG; isolate this byte
         // by normalizing that independent load behavior before whole hashes.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let clear_hash = sim.state_hash();
         assert_eq!(
             sim.substrate
@@ -2776,7 +2776,7 @@ fn per_cell_factory_clearance_scatters_a_harvester_off_the_factory() {
             .type_facts
             .set_foundation_for_test("5x3".into());
         producer.position.put_location(DriveCoord::cell(6, 9, 0));
-        sim.substrate.occupancy =
+        *sim.substrate.occupancy =
             crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
         let order = NavTargetRef::cell(14, 14);
         let unit = sim.substrate.entities.get_mut(1).unwrap();
@@ -2837,7 +2837,7 @@ fn per_cell_refinery_clearance_returns_a_tethered_harvester_to_its_ore() {
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         let refinery = sim.substrate.entities.get_mut(2).unwrap();
         refinery.position.put_location(DriveCoord::cell(12, 12, 0));
-        sim.substrate.occupancy =
+        *sim.substrate.occupancy =
             crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
         let unit = sim.substrate.entities.get_mut(1).unwrap();
         unit.navigation.set_nav_com_for_test(None);
@@ -3286,7 +3286,7 @@ fn paid_drive_crossing_sets_wall_tilt_after_mark_put_before_per_cell() {
                 }
             }
         }
-        sim.overlay_grid = Some(grid);
+        *sim.overlay_grid = Some(grid);
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         let loco = entity.locomotor.as_mut().unwrap();
         assert!(loco.store_drive_straight(straight));
@@ -3394,7 +3394,7 @@ fn drive_crush_fixture(
             }
         }
     }
-    sim.overlay_grid = Some(overlays);
+    *sim.overlay_grid = Some(overlays);
     let actor = sim.substrate.entities.get_mut(1).unwrap();
     actor.health = crate::sim::combat::Health::new(300);
     actor
@@ -3604,8 +3604,8 @@ fn crusher_all_paid_crossing_caps_the_next_track_speed_prefix() {
 fn crush_slowdown_is_foot_owned_saved_and_hashed() {
     use crate::sim::snapshot::GameSnapshot;
     let mut sim = Simulation::new();
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.interner = crate::sim::intern::test_interner();
     sim.substrate
         .entities
         .insert(GameEntity::test_default(1, "BFRT", "Americans", 10, 10));
@@ -3796,10 +3796,10 @@ fn a_train_smashes_what_it_cannot_crush_in_the_cell_it_enters() {
                 entity.lifecycle.set_cell_marked_for_test(true);
                 sim.substrate.entities.insert(entity);
             }
-            sim.substrate.occupancy =
+            *sim.substrate.occupancy =
                 crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
         }
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         sim.interner.bind_types(&rules);
         let mut crossed = None;
         sim.run_track_points_observed(invocation, budget, Some(&rules), None, &mut |sim, id, e| {
@@ -4012,9 +4012,10 @@ fn terminal_idle_checks_a_move_that_is_still_queued() {
         ai_counter: 0,
         dispatch_timer: MissionDispatchTimer::at_frame(0),
     });
+    let note = actor.note_names();
     actor
         .navigation
-        .publish_nav_com(Some(NavTargetRef::cell(10, 9)));
+        .publish_nav_com(Some(NavTargetRef::cell(10, 9)), note);
     let loco = actor.locomotor.as_mut().unwrap();
     loco.store_track_destination(TrackFamily::Drive, Some(DriveCoord::cell(10, 9, 0)));
     let mut track = loco.track_progress(TrackFamily::Drive).unwrap();

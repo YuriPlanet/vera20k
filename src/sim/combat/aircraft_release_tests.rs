@@ -85,7 +85,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     }
     sim.substrate.entities.insert(entity);
     sim.set_next_stable_object_id_for_test(2);
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     if passenger {
         // Retail Clear ground and a playfield holding the aircraft's cell
         // (10, 10), where Paradrop places the passenger.
@@ -388,7 +388,7 @@ fn aircraft_release_snapshot_retains_burst_pending_and_mission_delay() {
     restored.restore_after_snapshot_load().unwrap();
     // Snapshot's existing RNG-load policy initializes seed0; this test checks
     // retained release state and its no-RNG next entry, not that other policy.
-    restored.scenario_rng = sim.scenario_rng.clone();
+    *restored.scenario_rng = (*sim.scenario_rng).clone();
     assert_eq!(restored.state_hash(), sim.state_hash());
     for world in [&mut sim, &mut restored] {
         world.session.set_binary_frame_for_test(20);
@@ -635,7 +635,7 @@ fn a_human_aircraft_shooting_over_shroud_maps_the_cells_around_it() {
     for human in [false, true] {
         let (mut sim, mut rules) = fixture(&serde_json::json!({"burst": 1}));
         rules.general.attacking_aircraft_sight_range = 2;
-        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+        *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
             64,
             64,
             crate::map::resolved_terrain::test_flat_cell,
@@ -671,7 +671,7 @@ fn a_human_aircraft_shooting_over_shroud_maps_the_cells_around_it() {
 fn a_campaign_ally_aircraft_shooting_over_shroud_maps_the_players_cells() {
     let (mut sim, mut rules) = fixture(&serde_json::json!({"burst": 1}));
     rules.general.attacking_aircraft_sight_range = 2;
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
         64,
         64,
         crate::map::resolved_terrain::test_flat_cell,

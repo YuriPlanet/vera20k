@@ -130,7 +130,7 @@ This product includes software developed by the Kratos PP author.
 ## Game files
 
 VERA20K includes 240 ice and shoreline tiles from Command & Conquer: Tiberian Sun – Firestorm
-with permission. The [bundled ice archive](src/assets/bundled/vera_ice.mix) adapts them to the
+with permission. The [bundled ice archive](Terrain/vera_ice.mix) adapts them to the
 Yuri's Revenge tile size and snow palette. Electronic Arts owns the artwork. VERA20K's code
 and art licenses grant no rights to reuse it separately. EA has not endorsed and does not support this product.
 

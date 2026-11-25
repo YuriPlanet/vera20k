@@ -13,28 +13,30 @@ use super::{
     lobby, lobby_mut, message_line, quick_match_runner, refill_players, request, request_games,
     request_listed, sort_lobby, switching_room,
 };
+use crate::app::frontend::state::FrontendState;
+use crate::app::shell_wol::WolVisit;
 
 /// VERA: the room's Lobby (docs/lobby-protocol.md "Visiting the lobby"):
 /// this player also joins the public lobby to look round it. Their room
 /// goes on hidden, its events still reaching it, until Back to Room.
 pub(crate) fn visit_lobby(state: &mut AppState) {
-    if quick_match_runner(state) || !in_setup_channel(state) {
+    if quick_match_runner(state.frontend.wol.as_ref()) || !in_setup_channel(state) {
         return;
     }
-    let Some(runner) = lobby_mut(state) else {
+    let Some(runner) = lobby_mut(state.frontend.wol.as_mut()) else {
         return;
     };
     if !matches!(runner.step, Step::Ready) || runner.visit.is_some() {
         return;
     }
     runner.step = Step::Visiting { request: None };
-    request(state, WolServiceRequest::VisitLobby);
+    request(state.frontend.wol.as_mut(), WolServiceRequest::VisitLobby);
 }
 
 /// Whether this player looks round the public lobby while their game room
 /// goes on hidden ([`visit_lobby`]).
-pub(crate) fn visiting(state: &AppState) -> bool {
-    lobby(state).is_some_and(|lobby| lobby.visit.is_some())
+pub(crate) fn visiting(wol: Option<&WolVisit>) -> bool {
+    lobby(wol).is_some_and(|lobby| lobby.visit.is_some())
 }
 
 /// VERA online: where the lobby can deliver a page to `name`: the name as
@@ -63,12 +65,12 @@ pub(in crate::app::shell_wol) fn page_target<'a>(
 /// shows over the hidden room, with Back to Room. A repeat answer lists the
 /// lobby again; one this game no longer waits for ends the visit.
 pub(super) fn visit_joined(state: &mut AppState, joined: WolJoined) {
-    let Some(runner) = lobby_mut(state) else {
+    let Some(runner) = lobby_mut(state.frontend.wol.as_mut()) else {
         return;
     };
     let first = runner.visit.is_none();
     if first && !matches!(runner.step, Step::Visiting { .. }) {
-        request(state, WolServiceRequest::EndVisit);
+        request(state.frontend.wol.as_mut(), WolServiceRequest::EndVisit);
         return;
     }
     if first {
@@ -76,7 +78,7 @@ pub(super) fn visit_joined(state: &mut AppState, joined: WolJoined) {
         runner.pending = None;
     }
     let listed = joined.members.clone();
-    sort_lobby(state, |lobby, sort, rank| {
+    sort_lobby(&mut state.frontend, |lobby, sort, rank| {
         let mut members = Vec::new();
         for member in joined.members {
             insert_member(&mut members, member, sort, rank);
@@ -87,10 +89,10 @@ pub(super) fn visit_joined(state: &mut AppState, joined: WolJoined) {
         });
         lobby.ui.set_visiting(true);
     });
-    request_listed(state, &listed);
+    request_listed(&mut state.frontend, &listed);
     show_visit(state);
     if first {
-        let room = current_channel(state)
+        let room = current_channel(state.frontend.wol.as_ref())
             .map(|room| room.name)
             .unwrap_or_default();
         message_line(
@@ -111,18 +113,18 @@ fn show_visit(state: &mut AppState) {
         .shell_controller
         .reset_to(super::WOL_LOBBY_DIALOG);
     let join = selected_admits(state);
-    if let Some(lobby) = lobby_mut(state) {
+    if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
         lobby.shown = true;
         lobby.covered = false;
         lobby.ui.set_commands(true, join, false);
     }
-    refill_players(state);
-    request_games(state);
+    refill_players(&mut state.frontend);
+    request_games(state.frontend.wol.as_mut());
 }
 
 /// Whether the selected game row admits Join, as a player or a spectator.
 pub(super) fn selected_admits(state: &mut AppState) -> bool {
-    lobby(state)
+    lobby(state.frontend.wol.as_ref())
         .and_then(|lobby| lobby.ui.selected_row(GAMES))
         .is_some_and(|row| {
             admit_row(state, row, false, false) || admit_row(state, row, true, false)
@@ -133,14 +135,14 @@ pub(super) fn selected_admits(state: &mut AppState) -> bool {
 /// went on meanwhile, shows as it is now.
 pub(super) fn back_to_room(state: &mut AppState) {
     if visit_ends(state) {
-        request(state, WolServiceRequest::EndVisit);
+        request(state.frontend.wol.as_mut(), WolServiceRequest::EndVisit);
     }
 }
 
 /// Ends a visit here, for Back to Room or the room's start (the lobby ends
 /// it for a start itself): the room shows again. False without a visit.
 pub(in crate::app::shell_wol) fn visit_ends(state: &mut AppState) -> bool {
-    let Some(runner) = lobby_mut(state) else {
+    let Some(runner) = lobby_mut(state.frontend.wol.as_mut()) else {
         return false;
     };
     if runner.visit.take().is_none() {
@@ -156,14 +158,14 @@ pub(in crate::app::shell_wol) fn visit_ends(state: &mut AppState) -> bool {
     }
     runner.shown = false;
     runner.covered = false;
-    refill_players(state);
+    refill_players(&mut state.frontend);
     crate::app::shell_network_setup::show_room(state);
     true
 }
 
 /// A refused or lost visit: the player stays in their room.
 pub(super) fn visit_failed(state: &mut AppState) {
-    let Some(runner) = lobby_mut(state) else {
+    let Some(runner) = lobby_mut(state.frontend.wol.as_mut()) else {
         return;
     };
     runner.step = Step::Ready;
@@ -174,7 +176,7 @@ pub(super) fn visit_failed(state: &mut AppState) {
 /// the hidden room is dropped through its owner. The lobby visited, if
 /// there was a visit.
 pub(super) fn take_visit(state: &mut AppState) -> Option<LobbyVisit> {
-    let runner = lobby_mut(state)?;
+    let runner = lobby_mut(state.frontend.wol.as_mut())?;
     let visit = runner.visit.take()?;
     runner.ui.set_visiting(false);
     if state.frontend.network_setup_protocol.is_some() {
@@ -186,17 +188,19 @@ pub(super) fn take_visit(state: &mut AppState) -> Option<LobbyVisit> {
 /// The visitor's room ended or the service committed their switch to
 /// another one. Keep the pending destination until its joined event.
 pub(super) fn visit_room_left(state: &mut AppState) {
-    if lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::Leaving { .. })) {
+    if lobby(state.frontend.wol.as_ref())
+        .is_some_and(|lobby| matches!(lobby.step, Step::Leaving { .. }))
+    {
         take_visit(state);
         leave_finished(state, true);
         return;
     }
-    let room = current_channel(state)
+    let room = current_channel(state.frontend.wol.as_ref())
         .map(|room| room.name)
         .unwrap_or_default();
     // A committed switch and an independent room closure both emit
     // channel_left. Until the destination answers, only the departure is known.
-    let key = if switching_room(state) {
+    let key = if switching_room(state.frontend.wol.as_ref()) {
         "VERA:NoLongerInRoom"
     } else {
         "VERA:VisitedRoomClosed"
@@ -213,36 +217,42 @@ pub(super) fn visit_settles(state: &mut AppState, line: String) {
     };
     state.frontend.wol_lobby_globals.lobby_number = visit.channel.joined_lobby_number();
     let join = selected_admits(state);
-    if let Some(lobby) = lobby_mut(state) {
+    if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
         lobby.current = Some(visit.channel);
         lobby.members = visit.members;
         lobby.ui.set_commands(true, join, false);
     }
-    refill_players(state);
+    refill_players(&mut state.frontend);
     message_line(state, line);
 }
 
 /// Another user joined the lobby this player visits: its list takes them,
 /// with their ladder record and high score, as the modern lobby's users.
-pub(super) fn visit_user_joined(state: &mut AppState, member: WolMember) {
-    if !visiting(state) {
+pub(super) fn visit_user_joined(frontend: &mut FrontendState, member: WolMember) {
+    if !visiting(frontend.wol.as_ref()) {
         return;
     }
     let key = member.name.to_ascii_lowercase();
-    request(state, WolServiceRequest::LadderRecords(vec![key.clone()]));
-    request(state, WolServiceRequest::HighScores(vec![key]));
-    sort_lobby(state, |lobby, sort, rank| {
+    request(
+        frontend.wol.as_mut(),
+        WolServiceRequest::LadderRecords(vec![key.clone()]),
+    );
+    request(
+        frontend.wol.as_mut(),
+        WolServiceRequest::HighScores(vec![key]),
+    );
+    sort_lobby(frontend, |lobby, sort, rank| {
         if let Some(visit) = lobby.visit.as_mut() {
             insert_member(&mut visit.members, member, sort, rank);
         }
     });
-    refill_players(state);
+    refill_players(frontend);
 }
 
 /// Another user left the lobby this player visits.
-pub(super) fn visit_user_left(state: &mut AppState, name: String) {
-    if let Some(visit) = lobby_mut(state).and_then(|lobby| lobby.visit.as_mut()) {
+pub(super) fn visit_user_left(frontend: &mut FrontendState, name: String) {
+    if let Some(visit) = lobby_mut(frontend.wol.as_mut()).and_then(|lobby| lobby.visit.as_mut()) {
         visit.members.retain(|member| member.name != name);
     }
-    refill_players(state);
+    refill_players(frontend);
 }

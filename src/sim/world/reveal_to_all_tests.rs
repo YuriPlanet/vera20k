@@ -46,7 +46,7 @@ pub(super) fn world_on(rules: RuleSet) -> (RuleSet, Simulation, InternedId) {
     sim.session.set_current_house_for_test(Some(americans));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.fog = vision::FogState::new(128, 128);
+    *sim.fog = vision::FogState::new(128, 128);
     let allocated: std::collections::BTreeSet<_> = sim
         .resolved_terrain
         .as_ref()
@@ -623,8 +623,8 @@ fn native_action51_keeps_null_house241_and_gates_foreign_map_changes() {
         };
         let foreign = sim.interner.get("Russians").unwrap();
         let (fog, terrain) = vision::native_map_cell_fixture(&row["topology"], player);
-        sim.fog = fog;
-        sim.resolved_terrain = Some(terrain);
+        *sim.fog = fog;
+        *sim.resolved_terrain = Some(terrain);
         let width = row["size_width"].as_u64().unwrap() as u32;
         sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
             theater: "TEMPERATE".into(),

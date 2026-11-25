@@ -5,6 +5,7 @@
 //! unproven. No presentation result feeds back into synchronized state.
 
 use crate::app::AppState;
+use crate::app::presentation::state::MatchPresentationState;
 use crate::app::presentation::target_lines::{TacticalViewport, push_rect};
 use crate::render::native_surface_format::{RGB565, interpolate_rgb8};
 use crate::render::surface_line::{StoreGate, SurfaceStroke, clip_line};
@@ -50,10 +51,24 @@ pub(super) fn build(
         return (out, highlights);
     };
     let node = |id: Option<u64>| id.and_then(|id| graph.nodes.iter().find(|node| node.id == id));
-    let hovered = node(crate::app::input::planning_mode::hover_node(state));
+    let hovered = node(crate::app::input::planning_mode::hover_node(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ));
     let highlighted = node(state.match_state.input.planning.highlighted_node());
     let phase = stroke_phase(wall_ms);
-    let color = |owner, bright| stroke_rgb(state, sim, &rt.resources.rules, owner, bright);
+    let color = |owner, bright| {
+        stroke_rgb(
+            &state.match_state.match_presentation,
+            sim,
+            &rt.resources.rules,
+            owner,
+            bright,
+        )
+    };
     // A derived frame-local membership index avoids scanning the whole graph
     // once per badge in large selected groups. It dies with this projection.
     let highlighted_members: std::collections::HashSet<_> = highlighted
@@ -142,7 +157,7 @@ pub(super) fn build(
             emit_segment(&mut out, from, to, rgb, phase, 2, view);
             emit_badge(
                 &mut out,
-                state,
+                &state.match_state.match_presentation,
                 node.badge,
                 [from, to],
                 rgb,
@@ -180,7 +195,7 @@ pub(super) fn build(
             emit_segment(&mut out, from, to, rgb, phase, 1, view);
             emit_badge(
                 &mut out,
-                state,
+                &state.match_state.match_presentation,
                 actor.current_badge,
                 [from, to],
                 rgb,
@@ -196,7 +211,7 @@ pub(super) fn build(
             emit_segment(&mut out, from, to, rgb, phase, 1, view);
             emit_badge(
                 &mut out,
-                state,
+                &state.match_state.match_presentation,
                 actor.mega_badge,
                 [from, to],
                 rgb,
@@ -223,7 +238,7 @@ pub(super) fn build(
         );
         emit_badge(
             &mut out,
-            state,
+            &state.match_state.match_presentation,
             actor.badge,
             [from, to],
             rgb,
@@ -268,16 +283,14 @@ pub(super) fn stroke_phase(wall_ms: u32) -> i32 {
 /// A house's stroke and marker colour: toward white for a stroke not yet
 /// committed, toward black otherwise.
 pub(super) fn stroke_rgb(
-    state: &AppState,
+    presentation: &MatchPresentationState,
     sim: &Simulation,
     rules: &RuleSet,
     owner: InternedId,
     bright: bool,
 ) -> [u8; 3] {
     let name = sim.interner().resolve(owner);
-    let index = state
-        .match_state
-        .match_presentation
+    let index = presentation
         .house_color_map
         .get(name)
         .copied()
@@ -368,7 +381,7 @@ fn emit_badge_outer(
 
 fn emit_badge(
     out: &mut Vec<SurfaceStroke>,
-    state: &AppState,
+    presentation: &MatchPresentationState,
     kind: Option<PlanningBadgeKind>,
     [from, to]: [[i32; 2]; 2],
     rgb: [u8; 3],
@@ -398,9 +411,7 @@ fn emit_badge(
         PlanningBadgeKind::AreaGuard => 433,
         PlanningBadgeKind::AttackMove => 434,
     };
-    let Some(badge) = state
-        .match_state
-        .match_presentation
+    let Some(badge) = presentation
         .software_cursor
         .as_ref()
         .and_then(|cursor| cursor.planning_badge(frame))

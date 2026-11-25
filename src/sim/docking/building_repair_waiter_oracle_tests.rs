@@ -236,7 +236,7 @@ fn native_actual_ally_entry_near_stop_preserves_pending_until_foundation_refusal
     // Native supplies an admitted peer plus its original Drive constructor,
     // excluding complete Unit construction. Bind the actual pre-Process RNG
     // after Rust constructs that same prepared occupant; no spawn-RNG claim.
-    scene.sim.scenario_rng =
+    *scene.sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(native["rng_before"]["scenario"].as_str().unwrap());
     assert!(
         scene

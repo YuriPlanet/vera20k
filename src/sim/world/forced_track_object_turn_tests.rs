@@ -152,7 +152,7 @@ fn every_bunker_selector_restores_before_first_point_midcurve_and_paid_sentinel(
                 // probes at each new save boundary. Their track, occupation,
                 // mission and facing state stay live.
                 sim.substrate.restore_move_sound_state_after_load(1);
-                sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+                *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
                 for (_, probe) in &mut restored_probes {
                     assert!(
                         !probe
@@ -164,11 +164,11 @@ fn every_bunker_selector_restores_before_first_point_midcurve_and_paid_sentinel(
                             .is_active()
                     );
                     probe.substrate.restore_move_sound_state_after_load(1);
-                    probe.scenario_rng = crate::sim::rng::SimRng::new(0);
+                    *probe.scenario_rng = crate::sim::rng::SimRng::new(0);
                 }
                 restored.rebuild_caches_after_load(
                     sim.resolved_terrain.as_ref().unwrap().clone(),
-                    sim.terrain_speed_config.clone(),
+                    (*sim.terrain_speed_config).clone(),
                     &rules,
                 );
                 assert!(restored.rebuild_dynamic_navigation(&rules));
