@@ -117,7 +117,7 @@ pub(crate) const MAX_PUSH: i64 = 2048;
 /// The most frames one `Push` takes.
 const MAX_PUSH_FRAMES: i64 = 255;
 /// A `Push` without frames moves this many leptons a frame.
-const PUSH_LEPTONS_PER_FRAME: i64 = 64;
+const PUSH_LEPTONS_PER_FRAME: u64 = 64;
 
 /// The pushes in progress (module docs), by object creation serial.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -431,7 +431,7 @@ impl Simulation {
         let distance = force.unsigned_abs().min(MAX_PUSH as u64) as i64 * force.signum();
         let frames = match frames {
             frames if frames > 0 => frames.min(MAX_PUSH_FRAMES),
-            _ => (distance.abs() + PUSH_LEPTONS_PER_FRAME - 1) / PUSH_LEPTONS_PER_FRAME,
+            _ => distance.unsigned_abs().div_ceil(PUSH_LEPTONS_PER_FRAME) as i64,
         }
         .clamp(1, MAX_PUSH_FRAMES);
         let push = Push {
