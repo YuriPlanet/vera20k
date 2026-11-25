@@ -585,6 +585,22 @@ class CacheTests(unittest.TestCase):
         for path in (recent, other, Path(result['receipt_path'])):
             self.assertTrue(path.exists(), path)
 
+    def test_an_applied_pass_drops_inspections_of_executables_that_are_gone(self):
+        binary, _ = self.label()
+        inspections = self.store / 'inspections'
+        inspections.mkdir(parents=True)
+        def record(executable):
+            path = inspections / (hashlib.sha256(str(executable).encode()).hexdigest() + '.json')
+            path.write_text(json.dumps({'binary': str(executable), 'references': []}))
+            return path
+        live, stale = record(binary), record(self.target / 'debug/deps/retired-test-hash')
+        self.trim(dry_run=True)
+        self.assertTrue(stale.exists())
+        result = self.trim()
+        self.assertFalse(stale.exists())
+        self.assertTrue(live.exists())
+        self.assertEqual(result['removed_inspection_records'], 1, result)
+
     def test_incremental_budget_keeps_hottest_if_it_fits_after_cold_eviction(self):
         cold = [self.write('debug/incremental/crate-123/s-old/object.o', age=10),
                 self.write('debug/incremental/crate-123/s-old/dep-graph.bin', age=10)]

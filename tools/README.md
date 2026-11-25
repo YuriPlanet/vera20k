@@ -498,7 +498,9 @@ and unmet targets, each cache profile's last use and the profiles whose working
 sets it evicted, in eviction order, and the checkouts whose held lock alone kept
 an otherwise reclaimable executable alive. Releasing one of those locks makes
 that executable reclaimable, so a later pass stops trusting the receipt while
-the lock is gone. A pass removes receipts older than seven days. Dry runs never remove files; their projected space is an estimate.
+the lock is gone. A pass removes receipts older than seven days, and an applied
+pass removes the inspection record of each executable that no longer exists.
+Dry runs never remove files; their projected space is an estimate.
 APFS clones/snapshots and unrelated volume activity can make observed reclamation
 differ from file allocation; applying a plan rechecks real free space and tries
 additional eligible cold entries when necessary. Plans are never reused for deletion.

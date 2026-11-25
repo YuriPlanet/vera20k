@@ -219,6 +219,31 @@ def _inspect_cached(store: Path, binary: Path, revision: str, preserved, counter
     return refs
 
 
+def _prune_inspections(directory: Path) -> int:
+    """Remove the inspection record of each executable that no longer exists.
+
+    A record answers only for its executable's current identity, so once the
+    file is gone no pass reads it again; without this the store keeps one
+    record for every executable ever built. An unreadable record stays: the
+    read that reaches it decides.
+    """
+    removed = 0
+    for entry in os.scandir(directory):
+        if not entry.name.endswith('.json') or not entry.is_file(follow_symlinks=False):
+            continue
+        try:
+            binary = json.loads(Path(entry.path).read_text()).get('binary')
+        except (OSError, ValueError, AttributeError):
+            continue
+        if isinstance(binary, str) and os.path.isabs(binary) and not os.path.exists(binary):
+            try:
+                os.unlink(entry.path)
+            except OSError:
+                continue  # Gone already, or the next pass removes it.
+            removed += 1
+    return removed
+
+
 def _directory_identity(path: Path) -> tuple:
     _plain(path)
     info = path.stat()
@@ -1109,6 +1134,8 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
                 'incremental_bytes': max(0, projected_incremental - policy.incremental_bytes),
                 'free_bytes': {key: max(0, policy.min_free_bytes - count)
                                for key, count in (projected_free if dry_run else receipt['free_after']).items()}}
+        if not dry_run:
+            receipt['removed_inspection_records'] = _prune_inspections(store / 'inspections')
     except (OSError, ValueError, subprocess.SubprocessError, UnicodeError) as error:
         receipt['state'] = 'partial' if receipt['removed_files'] else 'blocked'
         receipt['errors'].append(str(error))
