@@ -136,7 +136,11 @@ impl DisplayMembers {
     }
 
     fn filed(frame: &PresentationFrame, sim: &Simulation) -> Self {
-        let particles: LookupMap<_, _> = sim.particle_systems().display_particle_places().collect();
+        let systems = sim.particle_systems();
+        let particles: LookupMap<_, _> = systems
+            .display_particle_places()
+            .chain(systems.presented_particle_places())
+            .collect();
         let runs: Vec<_> = frame.display_order().ordered().chunks(FILED_RUN).collect();
         let filed = crate::sim::parallel::map(&runs, |run| file_run(frame, sim, &particles, run));
         let mut objects = Vec::with_capacity(filed.iter().map(|(objects, _)| objects.len()).sum());
@@ -153,6 +157,25 @@ impl DisplayMembers {
                 effects.push(EffectMember {
                     id,
                     kind: EffectKind::Anim(anim_screen_point(frame, anim, id)),
+                });
+            }
+        }
+        // So do the presentation particle systems and their particles
+        // (`ParticleSystemStore::presented_systems`), which never enter Limbo.
+        for (system, body) in systems.presented_systems() {
+            let at = body.coords();
+            effects.push(EffectMember {
+                id: system,
+                kind: EffectKind::ParticleSystem(Some(screen_point(at.x, at.y, at.z))),
+            });
+            for (index, particle) in body.particles().iter().enumerate() {
+                let at = particle.coords();
+                effects.push(EffectMember {
+                    id: particle.stable_id(),
+                    kind: EffectKind::Particle(
+                        DisplayParticlePlace::InSystem { system, index },
+                        Some(screen_point(at.x, at.y, at.z)),
+                    ),
                 });
             }
         }

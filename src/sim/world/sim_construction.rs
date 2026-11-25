@@ -321,13 +321,27 @@ impl Simulation {
     // sub-cell rotation and paradrop sub-cell; destruction smudge, survivor and
     // debris and the smudge type pick; the overlay/wall damage roll; ore growth
     // and spread (queue, direction, variant, TIBTRE); the building damage-fire
-    // type and start frame; a Smoke system's children's AI.
+    // type and start frame; a Smoke system's children's AI
+    // (`ParticleSystemStore::system_and_rng_mut`).
     pub(crate) fn bridge_rng(&mut self) -> &mut SimRng {
         &mut self.scenario_rng
     } // bridge collapse/debris/explosion
+    /// Particle/smoke/gas/fire lifetime/offset/dir/insert draws: Scenario's,
+    /// or while presentation particles are made or run
+    /// (`Simulation::present_particles`), their own stream, so the shared one
+    /// stays as the other games have it.
     pub(crate) fn particle_rng(&mut self) -> &mut SimRng {
-        &mut self.scenario_rng
-    } // particle/smoke/gas/fire lifetime/offset/dir/insert
+        self.particle_stream()
+    }
+    /// [`Self::particle_rng`]'s stream, not yet taken for writing, for a
+    /// consumer that draws only on some visits (the Smoke AI).
+    pub(crate) fn particle_stream(&mut self) -> &mut Forked<SimRng> {
+        if self.substrate.particle_systems.presenting() {
+            self.substrate.particle_systems.presented_rng()
+        } else {
+            &mut self.scenario_rng
+        }
+    }
     pub(crate) fn superweapon_rng(&mut self) -> &mut SimRng {
         &mut self.scenario_rng
     } // lightning-storm scatter/bolt

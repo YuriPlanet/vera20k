@@ -1171,6 +1171,67 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
     }
 }
 
+/// A sinking ship's hull stays alive (`0x00737E33..0x00737E5E`), but its
+/// kill's Destroy callback announces it (`Detach_All(1)`,
+/// `0x005F5765..0x005F57AF`), so its damage smoke lets go of it and stops
+/// emitting (`SystemPointerExpired62FE90`): in a match a presentation smoke
+/// (`Simulation::present_effect_anims`) as the shared one.
+#[test]
+fn a_sinking_ships_damage_smoke_stops_at_its_kill_presented_or_shared() {
+    let ship = "[SHIP]\nStrength=100\nDamageParticleSystems=Sys\n";
+    let rules = rules_from(&format!(
+        "{}[AudioVisual]\nConditionYellow=0.5\nConditionRed=0.25\n[Particles]\n0=Puff\n[Puff]\nBehavesLike=Smoke\nMaxEC=10\n\
+         [ParticleSystems]\n0=Sys\n[Sys]\nBehavesLike=Smoke\nHoldsWhat=Puff\n",
+        RULES.replace("[SHIP]\nStrength=100\n", ship)
+    ));
+    for presented in [false, true] {
+        let mut sim = water_cell_sim(&rules, true);
+        if presented {
+            sim.present_effect_anims();
+        }
+        let ship = spawn(&mut sim, &rules, "SHIP", 12, 12);
+        let hit = EntityDamageEvent::direct_receiver(
+            ship,
+            60,
+            0,
+            RAD_NO_ATTACKER,
+            None,
+            sim.interner.intern("KILLWH"),
+            ReceiverCallFlags {
+                ignore_defenses: false,
+                arg6: false,
+            },
+        );
+        sim.commit_noncombat_aoe_hits(&rules, None, &[hit], &mut FrameEffects::default());
+        let shared = sim.substrate.entities.get(ship).unwrap();
+        let shared = shared.seldom.damage_smoke_system_id.system();
+        let smoke = if presented {
+            assert_eq!(shared, None);
+            sim.particle_systems().presented_damage_smoke(ship)
+        } else {
+            shared
+        }
+        .expect("the yellow hit smokes");
+        assert_eq!(
+            sim.particle_systems().get(smoke).unwrap().owner_entity(),
+            Some(ship)
+        );
+
+        kill(&mut sim, &rules, ship);
+        assert!(
+            sim.substrate
+                .entities
+                .get(ship)
+                .unwrap()
+                .sinking
+                .is_active()
+        );
+        let smoke = sim.particle_systems().get(smoke).unwrap();
+        assert_eq!(smoke.owner_entity(), None, "presented {presented}");
+        assert!(smoke.done_spawning(), "presented {presented}");
+    }
+}
+
 /// Retail Dustbowl runtime against native execution: a power plant killed
 /// through the production receiver, with retail rules and art bound, throws
 /// its `DebrisAnims=` chunks, rolls for and places its centre mark and plays
