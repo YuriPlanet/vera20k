@@ -63,14 +63,9 @@ fn position(sim: &Simulation, id: u64) -> [i32; 3] {
 
 /// Give the object a destination six cells east.
 fn order_move(sim: &mut Simulation, id: u64) {
-    let terrain = sim.resolved_terrain.clone().expect("arena terrain");
+    let terrain = sim.resolved_terrain.as_ref().expect("arena terrain");
     let entity = sim.substrate.entities.get_mut(id).expect("entity");
-    crate::sim::movement::navcom::set_destination_internal_cell(
-        entity,
-        (16, 10),
-        Some(&terrain),
-        0,
-    );
+    crate::sim::movement::navcom::set_destination_internal_cell(entity, (16, 10), Some(terrain), 0);
     crate::sim::movement::DestinationTiming::new(0, 60).accept(entity);
 }
 
