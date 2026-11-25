@@ -439,6 +439,28 @@ separate work):
   `Type`, `Owner`, `Ready`, `ChargePercent` (writing runs stock action 129), and
   `find` scope 8 `SuperWeapons` over granted Supers, by house then type.
 
+## Done (phase 2a: RFC 0.0.21 gaps and unit control points, RFC 0.0.22)
+
+Branch `feature/wasm-control-points` (items 1 and 2 of the control-point plan):
+
+- Gaps the RFC already promised: stock `SpiedBy` (2) and `ThievedBy` (3) for module
+  triggers (module-only raises; no native site raises them on a Tag); `Birth` for
+  deployed buildings, undeployed units, survivors, crew and Ares pilots; garrison
+  `TransportExited`/`PassengerRemoved` (`value2` 1) on ejection and on removal inside;
+  `FatalDamage` on deaths without a damage commit (every `record_the_kill` terminal
+  caller with Strength left; a sale is no death); `DamageIncoming` (preview) at the
+  Techno receiver's entry; `SpeedMultiplier` on Fly, Jumpjet and Rocket (module
+  modifiers alone on their type speed); `Crushed` and `Detonated` (fired projectiles
+  only).
+- Control points (`ext_modules::control`): decision-only `FireAllowed`, `Retaliate`,
+  `DestinationSet`, `CrushAllowed`, `HarvestCell`, `DeployAllowed` (preview, 1044..1050
+  without 1048); delivered `TargetChanged`, `Deployed`, `Promoted`, `ExperienceGained`,
+  `Cloaked`, `Decloaked`. No new saved state: every decision completes at its commit
+  point and every event is raised there.
+- Not done: `ImmunityFlags` (a new modifier `Stat` variant changes the save layout,
+  which needs a migration step and a frozen save first); `MissionChanged` (1048, no
+  raise point: mission transitions are written without rules or frame effects).
+
 ## Provisional numbering (open question 5)
 
 - Property IDs: section 7 names in first-appearance order, duplicates merged
@@ -532,13 +554,16 @@ modules, external modders, freeze), and the later items (`Launch`,
 
 - The stopped-module notice is translated (`VERA:ModuleStopped`), but the fault
   reason inside it is English only.
-- Events not raised: stock 0, 2, 3, 24, 31, 33, 51, 53, 54, 59, Ares 87, 88; 4.3
-  `HitByWarhead`, `SpawnFire`, `HitTarget`, `TargetChanged`, `ProjectileIncoming`,
-  `Detonated`, `Crushed`, `HouseTransfer`, `ProductionCancelled`
-  (reasons in `events.rs`). `Birth` misses paradrops, spawned aircraft, crate units,
-  survivors and starting objects; a garrison entry raises `TransportEntered` and
-  `PassengerAdded` with `value2` 1, but garrison exits and non-departure cargo removal
-  raise no passenger events; type-bound timers scan every object when due, and type-bound
+- Events not raised: stock 0, 24, 31, 33, 51, 53, 54, 59, Ares 87, 88; 4.3
+  `HitByWarhead`, `SpawnFire`, `HitTarget`, `ProjectileIncoming`, `HouseTransfer`,
+  `ProductionCancelled`, `MissionChanged` (reasons in `events.rs` and `control.rs`).
+  `Birth` misses paradrops, spawned aircraft, crate units and starting objects;
+  non-departure cargo removal and Ares' trench traverse raise no passenger events;
+  `TargetChanged` misses a new object's initial target; `DeployAllowed`/`Deployed`
+  miss Ares' convert-on-deploy arms beyond the simple deployer; `CrushAllowed` is not
+  asked by Can_Enter_Cell's crush codes (the crusher still drives in);
+  `DamageIncoming` does not pre-check Ares rank immunities, CanTargetHouse,
+  TypeImmune, bunker or warp gates; type-bound timers scan every object when due, and type-bound
   polls walk the IDs, reading only the due phase's types; `Timer` with only
   weapon/projectile bindings never fires.
 - Decisions: decision triggers cannot have immediate actions; `ProductionAllowed`

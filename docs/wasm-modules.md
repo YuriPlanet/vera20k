@@ -119,6 +119,15 @@ the source tree). Its Wasm verbs need no game install:
   player's click would, human or computer; `House::order` gives computer houses
   orders for many units and production.
 - Triggers: `Trigger::on(Event::TAKE_DAMAGE).bind(..).where_prop(..).enqueue(..)`.
+- Unit events and decisions (RFC 0.0.22): `Event::TARGET_CHANGED`, `DETONATED`,
+  `CRUSHED`, `DEPLOYED`, `PROMOTED`, `EXPERIENCE_GAINED`, `CLOAKED` and `DECLOAKED`
+  are delivered, with views such as `PromotedEvent`. `FIRE_ALLOWED`, `RETALIATE`,
+  `DESTINATION_SET`, `CRUSH_ALLOWED`, `HARVEST_CELL`, `DEPLOY_ALLOWED` and
+  `DAMAGE_INCOMING` are decisions only: bind them with `Trigger::decide_sync` and
+  answer in `on_decide!` (`FireAllowedDecision::set_result(0)` vetoes a shot). They are
+  `preview` and may change. `MISSION_CHANGED` is numbered but not raised yet; check
+  with `has_kind`. A `SpeedMultiplier` modifier also slows or speeds up aircraft,
+  jumpjets and rockets.
 - INI names: `ini::key`, `ini::registry` and `ini::event` let modders configure the
   module in INI ([below](#ini-names-a-module-registers)).
 
