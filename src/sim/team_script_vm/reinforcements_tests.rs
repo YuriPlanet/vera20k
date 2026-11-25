@@ -2554,3 +2554,53 @@ fn a_tunnel_team_arrives_underground_and_digs_out_at_its_cell() {
         (15, 15, 0)
     );
 }
+
+/// #4974: action 107 placed a Team whose only member is a Unit with a Jumpjet
+/// locomotor and no `Speed=` (its type speed stays 0). The specific Foot
+/// constructor still creates the instance (`0x007354CE..0x00735566`), so
+/// 65EC30 can begin its Teleport piggyback and Move_To instead of panicking.
+#[test]
+fn chrono_reinforcement_places_a_zero_speed_jumpjet_unit() {
+    use crate::rules::locomotor_type::LocomotorKind;
+
+    let ini = IniFile::from_str(
+        "[Countries]\n0=Americans\n[VehicleTypes]\n0=YANH\n\
+         [YANH]\nStrength=100\nImage=MTNK\nMovementZone=Fly\n\
+         Locomotor={92612C46-F71F-11d1-AC9F-006008055BB5}\n",
+    );
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let terrain_rules = TerrainRules::from_ini(&ini);
+    let input = serde_json::json!({"entries": [["YANH", 1]], "origin": [40, 20]});
+    let mut sim = reinforcement_world(&rules, &terrain_rules, &input);
+    let team_type = sim.interner.get("TT").unwrap();
+    let (placed, _) = sim.spawn_chrono_team_reinforcements(
+        team_type,
+        4,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
+    assert!(placed, "65EC30 places the zero-speed Jumpjet Unit");
+    let member = sim
+        .entities()
+        .values()
+        .find(|entity| sim.interner.resolve(entity.type_ref()) == "YANH")
+        .map(|entity| entity.stable_id())
+        .expect("the placed member");
+    let (speed, kind) = {
+        let entity = sim.substrate.entities.get(member).unwrap();
+        (
+            sim.object_type(entity.type_ref(), &rules).unwrap().speed,
+            entity
+                .locomotor
+                .as_ref()
+                .map(|locomotor| locomotor.effective_kind()),
+        )
+    };
+    assert_eq!(speed, 0);
+    assert_eq!(
+        kind,
+        Some(LocomotorKind::Jumpjet),
+        "the Foot keeps its constructed Jumpjet under the Teleport piggyback"
+    );
+}

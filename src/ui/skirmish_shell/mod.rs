@@ -53,7 +53,7 @@ pub use state::{
     starts_by_team, MenuPick, apply_seat_action, apply_team_colors, apply_team_preset,
     apply_team_starts, balance_teams_by_strength, team_start_seats, skirmish_session_options,
     status_help_key_for_choose_map_hover,
-    status_help_key_for_hover, status_help_key_for_random_map_setup, team_choices,
+    status_help_key_for_hover, status_help_key_for_random_map_setup, team_choices, team_items,
 };
 
 pub mod game_options;
