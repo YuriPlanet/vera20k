@@ -428,7 +428,7 @@ impl Simulation {
         if length == 0 {
             return Status::Refused;
         }
-        let distance = force.abs().min(MAX_PUSH) * force.signum();
+        let distance = force.unsigned_abs().min(MAX_PUSH as u64) as i64 * force.signum();
         let frames = match frames {
             frames if frames > 0 => frames.min(MAX_PUSH_FRAMES),
             _ => (distance.abs() + PUSH_LEPTONS_PER_FRAME - 1) / PUSH_LEPTONS_PER_FRAME,
