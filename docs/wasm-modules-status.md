@@ -457,9 +457,9 @@ Branch `feature/wasm-control-points` (items 1 and 2 of the control-point plan):
   without 1048); delivered `TargetChanged`, `Deployed`, `Promoted`, `ExperienceGained`,
   `Cloaked`, `Decloaked`. No new saved state: every decision completes at its commit
   point and every event is raised there.
-- Not done: `ImmunityFlags` (a new modifier `Stat` variant changes the save layout,
-  which needs a migration step and a frozen save first); `MissionChanged` (1048, no
-  raise point: mission transitions are written without rules or frame effects).
+- Deferred by the maintainer: `MissionChanged` (1048, tier `later`; no raise
+  point: mission transitions are written from many callers without rules or frame
+  effects). `has_kind` answers 0 for it (`ext_modules_control_tests.rs`).
 
 ## Provisional numbering (open question 5)
 
@@ -549,8 +549,8 @@ section 10 permissions.
 Before version 1 (RFC "Process"): the TypeScript SDK
 (deferred by the maintainer), phase 2 (`ui.wasm`), phase 3 (a real mission with
 modules, external modders, freeze), and the later items (peer calls,
-`TargetChanged`'s decision form, the Guard/Area Guard/Hunt/Attack mission
-slots MIS-S3..S6).
+`TargetChanged`'s decision form, `MissionChanged`, the Guard/Area Guard/Hunt/Attack
+mission slots MIS-S3..S6).
 
 ## Done (control points, preview, RFC 0.0.23)
 

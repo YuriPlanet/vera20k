@@ -640,7 +640,7 @@ TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）�
 | 100024 | `SuperWeaponLaunched` | `id` 超级武器类型，`house`，`cell` 目标 | 超级武器发射后 | 全局 | — | v1 |
 | 100025 | `ProductionCancelled` | `house`，`id` 类型，`value` 退还的金钱 | 玩家或 AI 取消生产队列中的条目后 | 类型 | — | later |
 | 100040 | `ModuleEvent` | `id` 事件 ID（`EventDef.id` 同此），`subject`（全局事件为 0），`other`、`value`、`value2`、`house` 取自 `RaiseEvent` 的参数（[RFC 6h](0001-wasm-extension-modules.zh-CN.md#6h-ini-注册)） | `RaiseEvent` 执行时 | 注册为对象事件时为对象，否则为全局 | — | v1 |
-| 100048 | `MissionChanged` | `value` 新任务（`Mission`） | 当前任务改变后 | 对象 | — | later |
+| 100048 | `MissionChanged` | `value` 新任务（`Mission`） | 当前任务改变后。暂缓：引擎在许多地方改写任务，且手边没有本帧的效果，目前没有统一的引发点 | 对象 | — | later |
 | 100051 | `Deployed` | `value` 1 部署、0 收起，`other` 变成的对象（仍是自己为 0） | 部署或收起完成后（单位变建筑、简单部署单位、步兵） | 对象 | — | v1 |
 | 100052 | `Promoted` | `value` 新等级（1 老兵，2 精英） | 等级采样记下晋升后 | 对象 | — | v1 |
 | 100053 | `ExperienceGained` | `other` 被击杀者，`value` 获得的经验（百分之一等级，即 `Experience` 的单位） | 击杀经验发放后，每个获得者一次 | 对象 | — | v1 |

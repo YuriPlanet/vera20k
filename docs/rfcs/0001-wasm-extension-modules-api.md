@@ -640,7 +640,7 @@ These events fire at safe points. **Object + weapon** also permits binding to we
 | 100024 | `SuperWeaponLaunched` | `id` superweapon type, `house`, `cell` target | After superweapon launch | Global | — | v1 |
 | 100025 | `ProductionCancelled` | `house`, `id` type, `value` credits refunded | After player or AI cancels production queue entry | Type | — | later |
 | 100040 | `ModuleEvent` | `id` event ID (same as `EventDef.id`), `subject` (0 for a global event), `other`, `value`, `value2`, `house` from the `RaiseEvent` parameters ([RFC 6h](0001-wasm-extension-modules.md#6h-ini-registration)) | When `RaiseEvent` executes | Object when registered as an object event, otherwise global | — | v1 |
-| 100048 | `MissionChanged` | `value` new mission (`Mission`) | After the current mission changes | Object | — | later |
+| 100048 | `MissionChanged` | `value` new mission (`Mission`) | After the current mission changes. Deferred: the engine writes mission changes from many places without a frame's effects at hand, so there is no single raise point yet | Object | — | later |
 | 100051 | `Deployed` | `value` 1 deployed, 0 undeployed, `other` the object it became (0 when it stays itself) | After a deploy or undeploy completes (a unit into a building, a simple deployer, an infantryman) | Object | — | v1 |
 | 100052 | `Promoted` | `value` new rank (1 veteran, 2 elite) | After the rank sample stores a promotion | Object | — | v1 |
 | 100053 | `ExperienceGained` | `other` victim, `value` gain in hundredths of a rank (the `Experience` unit) | On each recipient after a kill's experience is awarded | Object | — | v1 |
