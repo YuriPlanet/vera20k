@@ -185,6 +185,7 @@ impl Simulation {
             idle_sleep: Default::default(),
             scan_batch: Forked::new(None),
             effect_anims: Default::default(),
+            turn_streams: Default::default(),
             interner: Forked::new(crate::sim::intern::StringInterner::new()),
             type_tech_levels: Forked::new(TypeTechLevels::default()),
             rule_handles: Forked::new(None),

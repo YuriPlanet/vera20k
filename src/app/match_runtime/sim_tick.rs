@@ -4435,6 +4435,7 @@ mod modal_pump_tests {
         sim.batch_path_searches();
         sim.batch_target_scans();
         sim.present_effect_anims();
+        sim.separate_turn_streams(true);
         sim.sleep_idle_objects_in_match();
         sim.hash_state_every(std::num::NonZeroU64::MIN);
         let mut diagnostics = MatchDiagnosticsState::default();
