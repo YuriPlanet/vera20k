@@ -2322,6 +2322,10 @@ mod decide_tests;
 mod flight_tests;
 
 #[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_death_tests.rs"]
+mod death_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_event_tests.rs"]
 mod event_tests;
 

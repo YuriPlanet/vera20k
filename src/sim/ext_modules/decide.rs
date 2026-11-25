@@ -44,6 +44,8 @@
 //!   write all pass there, on every machine in command order. A refused
 //!   command does nothing, as a receiver refusal does; a rally point keeps
 //!   the producers not refused.
+//! - `FatalDamage` (preview) → the death plan's bits: the entry of the
+//!   receiver's death arm (`combat::death_plan`, `0x00702050`).
 //! - `Fire` (preview) → a shot plan, the count of `ProjectileSpec`s in the
 //!   result area: FireAt's launch, just before `BulletClass::Fire`
 //!   (`combat::fire_plan`).

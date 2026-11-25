@@ -255,6 +255,58 @@ impl FireDecision<'_> {
     }
 }
 
+decision!(
+    /// `FatalDamage` (appendix 4.3, preview): the death plan, at the entry
+    /// of the death arm of a unit or building a hit killed. The result is
+    /// the plan's bits ([`FatalDamageDecision`]'s constants); `native` is
+    /// the engine's own plan.
+    FatalDamageDecision {
+        victim: Techno = |r| Techno(r.subject),
+        /// The killer; `NO_HANDLE` without one.
+        killer: Techno = |r| Techno(r.other),
+        /// The killing hit's damage.
+        damage: i64 = |r| r.value,
+        /// The killing warhead's ID, −1 when unknown.
+        warhead: i32 = |r| r.id,
+        position: [i32; 3] = |r| [r.x, r.y, r.z],
+    }
+);
+
+impl FatalDamageDecision<'_> {
+    /// Passengers die with it and the death weapon may fire.
+    pub const EXPLODE: i64 = 1;
+    /// The death weapon fires (with [`Self::EXPLODE`]).
+    pub const DEATH_WEAPON: i64 = 1 << 1;
+    /// Debris is thrown.
+    pub const DEBRIS: i64 = 1 << 2;
+    /// A building's survivors appear and a vehicle's passengers escape.
+    pub const SURVIVORS: i64 = 1 << 3;
+    /// A vehicle's crew escapes.
+    pub const CREW: i64 = 1 << 4;
+    /// The unit-lost announcement plays.
+    pub const ANNOUNCE: i64 = 1 << 5;
+
+    /// `previous` with `bit` set or cleared.
+    pub fn with(&self, bit: i64, on: bool) -> i64 {
+        if on {
+            self.0.previous | bit
+        } else {
+            self.0.previous & !bit
+        }
+    }
+
+    /// `plan` with infantry death `inf_death` (0..255).
+    pub const fn with_inf_death(plan: i64, inf_death: u8) -> i64 {
+        (plan & !(0xFF << 8)) | ((inf_death as i64) << 8)
+    }
+
+    /// `plan` firing weapon ID `weapon` as the death weapon (−1 for the
+    /// type's own).
+    pub const fn with_death_weapon(plan: i64, weapon: i32) -> i64 {
+        (plan & 0xFFFF_FFFF) | (((weapon as i64) + 1) << 32)
+    }
+}
+
 /// `PathKind` (appendix 8.3, enum 22).
 #[repr(i32)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
