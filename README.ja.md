@@ -79,7 +79,15 @@ cargo run --release --bin vera20k
 
 VERA20K は標準で Yuri's Revenge オリジナル版のルールを使います。**Options** ではサウンド、グラフィック、操作の設定を変えたり、VERA 独自の機能を有効にしたりできます。設定は `VERA.INI` に保存され、VERA 独自の項目は `[VERA]` セクションにまとまっています。
 
-対戦ルールはロビーの設定、MOD、マップで変更できます。MOD やマップの INI ファイルでは、VERA20K が対応する [Ares](docs/ares.md) や [Phobos](docs/phobos.md) の機能を有効にできます。MOD に `ares.mix` を同梱しても Ares が有効になります。Phobos の一部の機能には、引き続き `--features phobos` を指定したビルドが必要です。
+自分の MOD、マップ、音楽なども追加できます。追加するファイルは VERA20K フォルダーに置きます。Windows ではインストール先のフォルダー、macOS では `~/Library/Application Support/VERA20k`、Linux では `~/.local/share/VERA20k` です。
+
+- **MOD：** **Options → Mods** の **Add Mod** でダウンロードした MOD をインストールでき、**New Mod** で自分の MOD を作り始められます。MOD ごとに `Mods` の中にフォルダーができます。
+- **マップ：** `.map`、`.mpr`、`.yrm` ファイルを `Maps` に置くと、スカーミッシュで遊べます。オンラインでダウンロードしたマップもここに保存されます。
+- **音楽：** WAV または AUD ファイルを `musics` に置き、同じフォルダーに `[Music]` の下に `enable=yes` と書いた `music.ini` を追加します。試合中にゲームの音楽と一緒に流れます。`ExclusiveMode=yes` にすると自分の曲だけが流れます。
+- **HD グラフィック：** [HD アートパック](docs/hd-art.md)は MOD と同じようにインストールして選びます。そのあと **Options** で **HD art** をオンにします。
+- **言語：** `vera20k.<language>.ini` ファイルで言語を追加したり、ゲームのテキストを変えたりできます。[翻訳ガイド](src/i18n/README.md)をご覧ください。
+
+対戦ルールはロビーの設定、MOD、マップで変更できます。MOD やマップの INI ファイルでは、VERA20K が対応する [Ares](docs/ares.md)、[Phobos](docs/phobos.md)、[Kratos](docs/kratos.md) の機能を有効にできます。MOD に `ares.mix` を同梱しても Ares が有効になります。Phobos の一部の機能には、引き続き `--features phobos` を指定したビルドが必要です。
 
 自分の MOD を作るには、[MOD 制作ガイド](docs/modding.md)をご覧ください。
 
