@@ -632,6 +632,33 @@ fn cameo_tip_text(money_format: Option<&str>, name: &str, cost: Option<i64>) -> 
     formatted.replace(' ', "\n")
 }
 
+/// A client module's `ItemTooltips` text for the type of the cameo at
+/// `slot`, on a line after its tip (RFC 0001 appendix 7.10): the line the
+/// module wrote on the grid the cameo is in, the sidebar's own included. A
+/// super weapon is named by its section, any other cameo by its type.
+fn with_item_tooltip(
+    state: &AppState,
+    view: &SidebarView,
+    slot: usize,
+    item: &crate::ui::sidebar::SidebarItem,
+    tip: String,
+) -> String {
+    let Some(ui) = state.match_state.ui_modules.as_ref() else {
+        return tip;
+    };
+    let type_name = item
+        .super_weapon_section
+        .as_deref()
+        .unwrap_or(&item.type_id);
+    let extra = crate::app::input::chrome_input::cameo_grid_node(state, view, slot)
+        .and_then(|grid| ui.item_tooltip(grid, type_name));
+    match extra {
+        Some(extra) if tip.is_empty() => extra,
+        Some(extra) => format!("{tip}\n{extra}"),
+        None => tip,
+    }
+}
+
 fn superweapon_money_tip(money_format: Option<&str>, name: &str, amount: i32) -> String {
     if amount < 0 {
         cameo_tip_text(money_format, name, Some(-i64::from(amount)))
@@ -753,7 +780,7 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
     for (slot, item) in view.items.iter().enumerate() {
         let text = || {
             dynamic_tip_text(cursor, || {
-                if item.is_superweapon {
+                let tip = if item.is_superweapon {
                     // The retained view carries the same native UIName used for
                     // ordering. Only explicitly paid Supers add a localized cost.
                     let amount = item
@@ -784,7 +811,8 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
                         &item.display_name,
                         item.cost.map(i64::from),
                     )
-                }
+                };
+                with_item_tooltip(state, view, slot, item, tip)
             })
         };
         regions.push(region(

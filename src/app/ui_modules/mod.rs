@@ -217,6 +217,16 @@ struct CallOutput {
 }
 
 impl UiModules {
+    /// What a module's `ItemTooltips` on cameo grid `grid` adds to type
+    /// `type_name`'s tooltip (appendix 7.10), for the sidebar's cameo tips.
+    pub(crate) fn item_tooltip(
+        &self,
+        grid: vera20k_gui::NodeId,
+        type_name: &str,
+    ) -> Option<String> {
+        self.tree.item_tooltip(grid, type_name)
+    }
+
     fn new(map_ui: MapUi) -> Self {
         Self {
             slots: Vec::new(),

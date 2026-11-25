@@ -1371,7 +1371,7 @@ Client-only references, writable with `client_set` and `client_set_bytes`. They 
 
 | Property | Value | Applies to | Notes |
 | --- | --- | --- | --- |
-| `Name` | string | All | Read-only name for `client_node_find`. For a `veraui.ini` node, the part name after the layout prefix in the section name |
+| `Name` | string | All | Name for `client_node_find`. For a `veraui.ini` node, the part name after the layout prefix in the section name, read-only. A module names a node it created once with `client_set_bytes`, unique among its source's nodes. Naming again, a taken name or another's node returns `Refused` |
 | `Label` | string | `Text`, `Button`, `Decoration` | CSF entry name or literal. Display the CSF entry if it exists, otherwise the literal text |
 | `Art` | string | `Button`, `Image`, `Decoration` | Image name, resolved by name; the engine decides the format |
 | `X`, `Y`, `Width`, `Height` | int | All | Pixels |

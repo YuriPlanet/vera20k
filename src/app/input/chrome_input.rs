@@ -593,6 +593,22 @@ pub(crate) fn layout_part_node(state: &AppState, index: usize) -> Option<(&Gui, 
     Some((gui, *nodes.layout_buttons.get(index)?))
 }
 
+/// The node of the cameo grid that `view`'s cameo `slot` is in: a grid the
+/// layout adds is its part's node, any other cameo the sidebar's own grid's
+/// (the part `Cameos`). Client modules find either by its part name and
+/// write its `ItemTooltips` (RFC 0001 appendix 7.10).
+pub(crate) fn cameo_grid_node(state: &AppState, view: &SidebarView, slot: usize) -> Option<NodeId> {
+    let (_, nodes) = chrome(state)?;
+    match view
+        .added_grids
+        .iter()
+        .find(|grid| (grid.first..grid.first + grid.len).contains(&slot))
+    {
+        Some(grid) => nodes.layout_buttons.get(grid.part).copied(),
+        None => Some(nodes.sidebar_parts[SidebarPart::Cameos as usize]),
+    }
+}
+
 fn sync_key(state: &AppState) -> SyncKey {
     let presentation = &state.match_state.match_presentation;
     SyncKey {

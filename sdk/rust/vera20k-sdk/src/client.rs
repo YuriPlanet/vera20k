@@ -312,6 +312,18 @@ impl Ui {
         Self::create_with(kind, parent, &[])
     }
 
+    /// A new node named `name` (see [`Node::set_name`]); the node is removed
+    /// again when the name is refused.
+    pub fn create_named(kind: NodeKind, parent: Node, name: &str) -> Result<Node> {
+        let node = Self::create(kind, parent)?;
+        if let Err(status) = node.set_name(name) {
+            // The refused name is what to report, not the removal.
+            let _ = node.remove();
+            return Err(status);
+        }
+        Ok(node)
+    }
+
     /// A new node with initial scalar properties, set in one call.
     pub fn create_with(kind: NodeKind, parent: Node, props: &[(Prop, i64)]) -> Result<Node> {
         const MAX: usize = 16;
@@ -347,6 +359,14 @@ impl Node {
 
     pub fn set(self, prop: Prop, value: i64) -> Result<()> {
         set(self, prop, value)
+    }
+
+    /// Names a node this module created, for [`Ui::find`] (appendix 7.10):
+    /// once per node, unique among this source's nodes. `Err(Refused)` for
+    /// an empty name, a second name, a name taken, or a node of the engine,
+    /// a layout or the other module.
+    pub fn set_name(self, name: &str) -> Result<()> {
+        set_bytes(self, Prop::Name, name.as_bytes())
     }
 
     /// A CSF entry name or literal text (`Text`, `Button`).

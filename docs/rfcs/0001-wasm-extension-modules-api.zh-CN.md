@@ -1371,7 +1371,7 @@ Ares 和 Phobos 的键尚未分类。
 
 | 属性 | 值 | 适用于 | 说明 |
 | --- | --- | --- | --- |
-| `Name` | string | 全部 | `client_node_find` 用的名字；`veraui.ini` 节点为部件名（节名中布局前缀之后的部分），只读 |
+| `Name` | string | 全部 | `client_node_find` 用的名字；`veraui.ini` 节点为部件名（节名中布局前缀之后的部分），只读。模块新建的节点可用 `client_set_bytes` 命名一次，名字在本来源的节点中唯一；再次命名、重名、命名别处的节点返回 `Refused` |
 | `Label` | string | `Text`、`Button`、`Decoration` | CSF 条目名或文字：有该名字的 CSF 条目时显示条目，否则显示文字本身 |
 | `Art` | string | `Button`、`Image`、`Decoration` | 图片名，按名字解析，格式由引擎决定 |
 | `X`、`Y`、`Width`、`Height` | int | 全部 | 像素 |

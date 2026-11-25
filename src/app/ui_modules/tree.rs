@@ -22,6 +22,9 @@
 //!   them ([`UiTree::layout`]) in screen pixels; the engine places its own.
 //! - Each module holds at most half of what the GUI admits of others
 //!   ([`Origin::share`]); a create past it is `Refused`.
+//! - A module names a node it made once, with `client_set_bytes(Name)`
+//!   (appendix 7.10): the name is unique among its source's nodes and
+//!   `client_node_find` finds it first ([`UiTree::set_bytes`]).
 //!
 //! Pointer routing ([`UiTree::pointer_move`], [`UiTree::pointer_down`],
 //! [`UiTree::key_escape`]) turns the pointer into `Click`, `Hover`,
@@ -628,7 +631,8 @@ impl UiTree {
 
     /// `client_node_find`: this source's nodes first, then the engine's,
     /// the mod's and the map's; among one source's the first made. A
-    /// `veraui.ini` or `[VeraUI]` part is named by its part name.
+    /// `veraui.ini` or `[VeraUI]` part is named by its part name, a
+    /// module's node by the `Name` it gave it ([`name`]).
     pub(crate) fn find(&self, gui: &Gui, source: Source, name: &str) -> (i64, Status) {
         let own = Owner::source(source);
         let order = [own, Owner::Engine, Owner::Mod, Owner::Map];
@@ -795,11 +799,12 @@ impl UiTree {
             Err(refused) => status_of(refused),
         };
         Ok(match prop {
-            // Read only, and strings are written with `client_set_bytes`.
-            NodeProp::Name => Status::Refused,
-            NodeProp::Label | NodeProp::Art | NodeProp::Items | NodeProp::ItemTooltips => {
-                Status::Unsupported
-            }
+            // Strings are written with `client_set_bytes`.
+            NodeProp::Name
+            | NodeProp::Label
+            | NodeProp::Art
+            | NodeProp::Items
+            | NodeProp::ItemTooltips => Status::Unsupported,
             NodeProp::X | NodeProp::Y | NodeProp::Width | NodeProp::Height | NodeProp::Hold
                 if !record.placed =>
             {
@@ -859,8 +864,8 @@ impl UiTree {
         })
     }
 
-    /// `client_set_bytes` on a node: `Label`, `Art`, `Items` (one entry a
-    /// line), `ItemTooltips`.
+    /// `client_set_bytes` on a node: `Name` (see [`name`]), `Label`, `Art`,
+    /// `Items` (one entry a line), `ItemTooltips`.
     pub(crate) fn set_bytes(
         &mut self,
         gui: &mut Gui,
@@ -888,12 +893,14 @@ impl UiTree {
         if !Self::may_write(source, map_ui, record.owner) {
             return Ok(Status::Refused);
         }
+        if prop == Some(NodeProp::Name) {
+            return Ok(name(gui, table, source, serial, text));
+        }
         let Some(record) = table.records.get_mut(&serial) else {
             return Ok(Status::Gone);
         };
         let node = record.node;
         let (gui_prop, value) = match (prop, record.kind) {
-            (Some(NodeProp::Name), _) => return Ok(Status::Refused),
             (Some(NodeProp::Label), Kind::Text | Kind::Button) => {
                 // The label replaces a text's value from now on.
                 if record.value.take().is_some() {
@@ -955,16 +962,21 @@ impl UiTree {
         std::mem::take(&mut self.commands)
     }
 
-    /// The `ItemTooltips` modules wrote on cameo grids: each grid's node
-    /// and its lines, for the sidebar's tooltips.
-    pub(crate) fn item_tooltips(&self) -> Vec<(NodeId, String)> {
-        self.table
-            .borrow()
-            .records
-            .values()
-            .filter(|record| !record.item_tooltips.is_empty())
-            .map(|record| (record.node, record.item_tooltips.clone()))
-            .collect()
+    /// What a module's `ItemTooltips` on cameo grid `grid` adds to the
+    /// tooltip of type `type_name` (appendix 7.10): the text after the `=`
+    /// of the first line naming it, types matched as INI names are (ASCII
+    /// case aside). `None` while no module wrote the grid's or no line
+    /// names the type.
+    pub(crate) fn item_tooltip(&self, grid: NodeId, type_name: &str) -> Option<String> {
+        let table = self.table.borrow();
+        table
+            .of_node(grid)?
+            .item_tooltips
+            .lines()
+            .filter_map(|line| line.split_once('='))
+            .find(|(name, _)| name.trim().eq_ignore_ascii_case(type_name))
+            .map(|(_, extra)| extra.trim().to_owned())
+            .filter(|extra| !extra.is_empty())
     }
 
     fn push(&mut self, kind: i32, reference: i64, value: i32) {
@@ -1303,6 +1315,39 @@ impl UiTree {
             nodes.push(Some(node));
         }
         problems
+    }
+}
+
+/// `client_set_bytes(Name)` on node `serial`, whose writer was checked:
+/// a module names a node it made, once, and the name is unique among its
+/// source's nodes (the map's module's and `[VeraUI]` parts count as one,
+/// as `client_node_find` looks them up). An empty name, a second name, a
+/// name taken, or a node of the engine, of `veraui.ini` or of the other
+/// module: `Refused`. `veraui.ini` and `[VeraUI]` parts keep their part
+/// names, read only.
+fn name(gui: &mut Gui, table: &Table, source: Source, serial: u64, text: &str) -> Status {
+    let Some(record) = table.records.get(&serial) else {
+        return Status::Gone;
+    };
+    let node = record.node;
+    let named = |node: NodeId| matches!(gui.get(node, Prop::Name), Ok(Some(Value::Text(_))));
+    if text.is_empty() || made_by(gui, node) != Some(source) || named(node) {
+        return Status::Refused;
+    }
+    let own = Owner::source(source);
+    let taken = table.records.values().any(|other| {
+        other.owner == own
+            && matches!(
+                gui.get(other.node, Prop::Name),
+                Ok(Some(Value::Text(name))) if name.eq_ignore_ascii_case(text)
+            )
+    });
+    if taken {
+        return Status::Refused;
+    }
+    match gui.set(node, Prop::Name, Value::Text(text.to_owned())) {
+        Ok(()) => Status::Ok,
+        Err(refused) => status_of(refused),
     }
 }
 
@@ -1946,6 +1991,161 @@ mod tests {
                 &[0xFF]
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn a_module_names_its_own_node_once_and_finds_it_first() {
+        let (mut gui, mut tree) = (Gui::new(256), UiTree::new());
+        let map = IniFile::from_str("[VeraUI]\nParts=Buy\n[VeraUI.Buy]\nType=Button\nLabel=Buy\n");
+        tree.add_map_parts(&mut gui, &map, MapUi::Overlay, |_| true);
+        let chrome = gui.create(NodeKind::Dialog, None).unwrap();
+        let engine = gui.create(NodeKind::Button, Some(chrome)).unwrap();
+        gui.set(engine, Prop::Name, Value::Text("Panel".into()))
+            .unwrap();
+        let create = |tree: &mut UiTree, gui: &mut Gui, source: Source| {
+            let (node, status) = tree
+                .create(gui, source, MapUi::Overlay, node_kind::TEXT, 0, &[])
+                .unwrap();
+            assert_eq!(status, Status::Ok);
+            node
+        };
+        let set_name = |tree: &mut UiTree, gui: &mut Gui, source: Source, node: i64, name: &str| {
+            tree.set_bytes(
+                gui,
+                source,
+                MapUi::Overlay,
+                node,
+                prop("Name"),
+                name.as_bytes(),
+            )
+            .unwrap()
+        };
+        let own = create(&mut tree, &mut gui, Source::Mod);
+        assert_eq!(
+            set_name(&mut tree, &mut gui, Source::Mod, own, ""),
+            Status::Refused
+        );
+        assert_eq!(
+            set_name(&mut tree, &mut gui, Source::Mod, own, "Panel"),
+            Status::Ok
+        );
+        // Its own node before the engine's of the same name; others still
+        // find the engine's first.
+        assert_eq!(tree.find(&gui, Source::Mod, "panel"), (own, Status::Ok));
+        let (from_map, _) = tree.find(&gui, Source::Map, "Panel");
+        assert_eq!(node_of(&tree, from_map), engine);
+        // Once only.
+        assert_eq!(
+            set_name(&mut tree, &mut gui, Source::Mod, own, "Other"),
+            Status::Refused
+        );
+        // Unique among the source's nodes, ASCII case aside.
+        let second = create(&mut tree, &mut gui, Source::Mod);
+        assert_eq!(
+            set_name(&mut tree, &mut gui, Source::Mod, second, "PANEL"),
+            Status::Refused
+        );
+        // The map's module shares its names with the map's parts.
+        let map_node = create(&mut tree, &mut gui, Source::Map);
+        assert_eq!(
+            set_name(&mut tree, &mut gui, Source::Map, map_node, "buy"),
+            Status::Refused
+        );
+        assert_eq!(
+            set_name(&mut tree, &mut gui, Source::Map, map_node, "Panel"),
+            Status::Ok
+        );
+        assert_eq!(
+            tree.find(&gui, Source::Map, "Panel"),
+            (map_node, Status::Ok)
+        );
+        // An engine node, a `[VeraUI]` part and another module's node keep
+        // their names, even for the mod's module that may write them.
+        let (buy, _) = tree.find(&gui, Source::Mod, "Buy");
+        let unnamed = create(&mut tree, &mut gui, Source::Map);
+        assert_eq!(
+            set_name(&mut tree, &mut gui, Source::Mod, buy, "Sell"),
+            Status::Refused
+        );
+        assert_eq!(
+            set_name(&mut tree, &mut gui, Source::Mod, from_map, "Base"),
+            Status::Refused
+        );
+        assert_eq!(
+            set_name(&mut tree, &mut gui, Source::Mod, unnamed, "Mine"),
+            Status::Refused
+        );
+        // `client_set` writes no string; `client_get` reads none.
+        assert_eq!(
+            tree.set(
+                &mut gui,
+                Source::Mod,
+                MapUi::Overlay,
+                second,
+                prop("Name"),
+                1
+            )
+            .unwrap(),
+            Status::Unsupported
+        );
+        assert_eq!(
+            tree.get(&gui, own, prop("Name")).unwrap(),
+            (0, Status::Unsupported)
+        );
+        // A removed node's name is free again.
+        assert_eq!(
+            tree.remove(&mut gui, Source::Mod, MapUi::Overlay, own)
+                .unwrap(),
+            Status::Ok
+        );
+        assert_eq!(
+            set_name(&mut tree, &mut gui, Source::Mod, second, "Panel"),
+            Status::Ok
+        );
+        assert_eq!(tree.find(&gui, Source::Mod, "Panel"), (second, Status::Ok));
+    }
+
+    #[test]
+    fn item_tooltips_on_a_native_grid_add_to_a_type_s_tip() {
+        let (mut gui, mut tree) = (Gui::new(256), UiTree::new());
+        let chrome = gui.create(NodeKind::Dialog, None).unwrap();
+        let grid = gui.create(NodeKind::Panel, Some(chrome)).unwrap();
+        gui.set(grid, Prop::Name, Value::Text("Cameos".into()))
+            .unwrap();
+        assert_eq!(tree.item_tooltip(grid, "MTNK"), None);
+        let (cameos, _) = tree.find(&gui, Source::Mod, "Cameos");
+        assert_eq!(
+            tree.set_bytes(
+                &mut gui,
+                Source::Mod,
+                MapUi::Overlay,
+                cameos,
+                prop("ItemTooltips"),
+                b"MTNK=Veteran crews\r\nHTNK = \nE1=Cheap=fast\n"
+            )
+            .unwrap(),
+            Status::Ok
+        );
+        assert_eq!(
+            tree.item_tooltip(grid, "mtnk").as_deref(),
+            Some("Veteran crews")
+        );
+        assert_eq!(tree.item_tooltip(grid, "E1").as_deref(), Some("Cheap=fast"));
+        assert_eq!(tree.item_tooltip(grid, "HTNK"), None);
+        assert_eq!(tree.item_tooltip(grid, "SREF"), None);
+        // The map's module under overlay may not write the native grid.
+        assert_eq!(
+            tree.set_bytes(
+                &mut gui,
+                Source::Map,
+                MapUi::Overlay,
+                cameos,
+                prop("ItemTooltips"),
+                b"MTNK=x"
+            )
+            .unwrap(),
+            Status::Refused
         );
     }
 }
