@@ -345,7 +345,7 @@ pub(crate) fn open_touch_edit(state: &mut AppState) -> bool {
     // Enter's own choice: plain Enter in a skirmish session is the Skirmish
     // chat (`opens_skirmish_chat`), so a long press must not pick a target the
     // keyboard would not, or a pending spawn order survives it.
-    let target = if skirmish_input_available(state) {
+    let target = if skirmish_input_available(&state.match_state) {
         ChatTarget::Skirmish
     } else {
         ChatTarget::Listeners

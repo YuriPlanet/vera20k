@@ -1015,7 +1015,8 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
 
 /// The chat NewEdit while it takes keys, for the input method
 /// (`app::input::ime`). The name edit takes byte text only, so it keeps
-/// plain key text.
+/// plain key text. Android routes every GUI edit through `ImeTarget::Gui`.
+#[cfg(not(target_os = "android"))]
 pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
     let routed = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
         && state.frontend.shell_route == ShellRoute::LanLobby

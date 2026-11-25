@@ -57,7 +57,8 @@ pub(crate) fn ime_gui(state: &AppState) -> Option<&vera20k_gui::Gui> {
 /// The NewEdit that takes keys, for the input method (`app::input::ime`):
 /// `handle_wol_key` reaches [`key_press`] with the lobby page up, no page
 /// dialog and no popup. It is the chat edit while the chat shows, else VERA's
-/// room search.
+/// room search. Android routes every GUI edit through `ImeTarget::Gui`.
+#[cfg(not(target_os = "android"))]
 pub(crate) fn ime_edit_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
     let routed = crate::app::input::precedence::route_page(&state.frontend)
         == crate::app::input::precedence::ScreenPage::Wol
