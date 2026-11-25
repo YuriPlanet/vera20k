@@ -172,7 +172,12 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
         // The open Options page reads its captions again once the events
         // have run.
         E::LanguageSelected(tag) => {
-            if state.use_language(&tag) {
+            if crate::app::shell_main_menu::use_language(
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+                &tag,
+            ) {
                 state.persistence.options_profile.language = Some(tag);
             }
         }
@@ -274,7 +279,11 @@ fn apply_box(state: &mut AppState, id: C, on: bool) {
         // titles follow, as on a language change.
         C::ShowStringKeys => {
             crate::i18n::set_show_string_keys(on);
-            state.refresh_string_key_labels();
+            crate::app::shell_main_menu::refresh_string_key_labels(
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+            );
         }
         // A rule switch, as Terrain Deformation is: the next offline
         // scenario's rules read it, so a running match keeps what it started

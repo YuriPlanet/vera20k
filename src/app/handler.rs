@@ -831,7 +831,17 @@ impl App {
                 &mut state.frontend,
                 event,
             ))
-            || Self::shell_menu_key(state, event, screen)
+            || Self::shell_menu_key(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                state.audio.launcher_audio_available,
+                &state.persistence.options_profile,
+                event,
+                screen,
+            )
         {
             return;
         }
@@ -2376,7 +2386,15 @@ impl ApplicationHandler for App {
                 },
                 crate::app::shell_lan::poll,
                 crate::app::shell_wol::poll,
-                crate::app::shell_network_setup::poll,
+                |state| {
+                    crate::app::shell_network_setup::poll(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                    )
+                },
                 crate::app::input::multiplayer_setup::poll,
                 |state| {
                     use crate::app::input::coop_score;
@@ -2423,7 +2441,14 @@ impl ApplicationHandler for App {
                     )
                 },
                 Self::poll_skirmish_opponent_scroll,
-                Self::poll_language_files,
+                |state| {
+                    Self::poll_language_files(
+                        &state.platform,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &mut state.process_assets,
+                    )
+                },
                 |state| Self::campaign_score_animation_deadline(&state.frontend),
             ];
             // Captures and hidden runs replay sealed input: they never read

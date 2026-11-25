@@ -12,6 +12,7 @@ use crate::app::match_runtime::state::MatchState;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::app::shell_route::ShellRoute;
+use crate::audio::sfx::SfxPlayer;
 use crate::net::lan_messages::setup;
 use crate::render::gpu::GpuContext;
 use crate::skirmish_launch::SkirmishHumanSlot;
@@ -301,7 +302,10 @@ impl App {
                     .session
                     .wait_for_lan_room(host, game_id, Instant::now());
                 append_chat(
-                    state,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
                     LanChatLine {
                         text: text.encode_utf16().collect(),
                         color: u32::MAX,
@@ -458,24 +462,40 @@ fn push_box(renderer: &RendererState, frontend: &mut FrontendState, spec: NodeSp
 
 /// Select the active LAN dialog's transcript; the shared chat owner retains
 /// all wrapping, row retention and scroll behavior for BB, BC and BD.
-pub(crate) fn append_chat(state: &mut AppState, line: LanChatLine) {
-    append_chat_sent_at(state, line, None);
+pub(crate) fn append_chat(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    line: LanChatLine,
+) {
+    append_chat_sent_at(renderer, frontend, match_state, process_assets, line, None);
 }
 
 /// [`append_chat`] for a line the WOL service sent at `sent_at` (Unix
 /// seconds): VERA20K Online's chat lobby shows that time, not the current one.
-pub(crate) fn append_chat_sent_at(state: &mut AppState, line: LanChatLine, sent_at: Option<u64>) {
-    let route = state.frontend.shell_route;
+pub(crate) fn append_chat_sent_at(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    line: LanChatLine,
+    sent_at: Option<u64>,
+) {
+    let route = frontend.shell_route;
     // WOL Quick Match's 0x117 is the top dialog with a 0x53F.
     if route == ShellRoute::Wol
-        && crate::app::shell_wol::quick_match::page_open(state.frontend.wol.as_ref())
+        && crate::app::shell_wol::quick_match::page_open(frontend.wol.as_ref())
     {
-        crate::app::shell_wol::quick_match::append_line(&mut state.frontend, &state.renderer, line);
+        crate::app::shell_wol::quick_match::append_line(frontend, renderer, line);
         return;
     }
     let setup = route == ShellRoute::NetworkSetup;
     append_chat_to(
-        state,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
         setup,
         !setup && route == ShellRoute::WolLobby,
         line,
@@ -486,32 +506,76 @@ pub(crate) fn append_chat_sent_at(state: &mut AppState, line: LanChatLine, sent_
 /// [`append_chat`] for a line of the game room's: VERA keeps a lobby
 /// visitor's room going hidden (docs/lobby-protocol.md "Visiting the lobby"),
 /// and the line goes to its transcript, not to the lobby page on screen.
-pub(crate) fn append_room_chat(state: &mut AppState, line: LanChatLine) {
-    append_room_chat_sent_at(state, line, None);
+pub(crate) fn append_room_chat(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    line: LanChatLine,
+) {
+    append_room_chat_sent_at(renderer, frontend, match_state, process_assets, line, None);
 }
 
 /// [`append_room_chat`] for a line the WOL service sent at `sent_at`.
 pub(crate) fn append_room_chat_sent_at(
-    state: &mut AppState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     line: LanChatLine,
     sent_at: Option<u64>,
 ) {
-    if crate::app::shell_wol::lobby::visiting(state.frontend.wol.as_ref()) {
-        append_chat_to(state, true, false, line, sent_at);
+    if crate::app::shell_wol::lobby::visiting(frontend.wol.as_ref()) {
+        append_chat_to(
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            true,
+            false,
+            line,
+            sent_at,
+        );
     } else {
-        append_chat_sent_at(state, line, sent_at);
+        append_chat_sent_at(
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            line,
+            sent_at,
+        );
     }
 }
 
 /// The WOL lobby `0x113`'s transcript even while C2/C9 cover it: native
 /// keeps it in the shell stack, hidden, and its sinks still write to it.
 /// `sent_at` as for [`append_chat_sent_at`].
-pub(crate) fn append_wol_lobby_chat(state: &mut AppState, line: LanChatLine, sent_at: Option<u64>) {
-    append_chat_to(state, false, true, line, sent_at);
+pub(crate) fn append_wol_lobby_chat(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    line: LanChatLine,
+    sent_at: Option<u64>,
+) {
+    append_chat_to(
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        false,
+        true,
+        line,
+        sent_at,
+    );
 }
 
 fn append_chat_to(
-    state: &mut AppState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     setup: bool,
     wol_lobby: bool,
     mut line: LanChatLine,
@@ -519,13 +583,7 @@ fn append_chat_to(
 ) {
     // Only the modern chat lobby's lines show a time (the native shell UI
     // stays as gamemd draws it).
-    if wol_lobby
-        && state
-            .frontend
-            .wol
-            .as_ref()
-            .is_some_and(|visit| visit.modern_ui())
-    {
+    if wol_lobby && frontend.wol.as_ref().is_some_and(|visit| visit.modern_ui()) {
         let now = crate::util::time::SystemTime::now()
             .duration_since(crate::util::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -533,19 +591,22 @@ fn append_chat_to(
         line.text = crate::ui::wol_chat::timed_line(line.text, sent_at, now);
     }
     let (rect, scale, text) = if setup {
-        let layout = crate::app::input::multiplayer_setup::layout(state);
+        let layout = crate::app::input::multiplayer_setup::layout(
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+        );
         (layout.chat_log, layout.page.scale, layout.chat_text_scale())
     } else if wol_lobby {
         // The online page's chat may be hidden behind its games: wrap to
         // the log of its chat view.
-        let layout = crate::app::shell_wol::lobby::chat_layout(
-            state.frontend.wol.as_ref(),
-            &state.renderer.gpu,
-        );
+        let layout =
+            crate::app::shell_wol::lobby::chat_layout(frontend.wol.as_ref(), &renderer.gpu);
         let chat_log = layout.control_rect(crate::ui::wol_lobby::CHAT_LOG);
         (chat_log.unwrap_or_default(), layout.page.scale, 1.0)
     } else {
-        let layout = layout(&state.renderer.gpu);
+        let layout = layout(&renderer.gpu);
         (
             layout.rect(CHAT_LOG).unwrap_or_default(),
             layout.page.scale,
@@ -554,13 +615,12 @@ fn append_chat_to(
     };
     let width = crate::ui::lan_shell::chat_wrap_width(rect, scale, text);
     let setup_page = setup.then(|| {
-        crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state)
+        crate::app::shell_network_setup::dialog(frontend, match_state)
             .page()
             .dialog
     });
-    let font = &state.renderer.bit_font;
+    let font = &renderer.bit_font;
     let measure = |units: &[u16]| font.text_width(&String::from_utf16_lossy(units)) as i32;
-    let frontend = &mut state.frontend;
     let controller = &mut frontend.shell_controller;
     // The transcript and its log's list, which keeps the view.
     let (chat, gui, list) = if let Some(page) = setup_page {
@@ -599,23 +659,29 @@ fn append_chat_to(
 /// Append the line `key` (a CSF or `VERA:` label, [`crate::i18n::label`]) to
 /// the active lobby's or room's chat ([`append_chat`]), with the system error
 /// sound.
-pub(crate) fn report_error(state: &mut AppState, key: &str) {
-    let text = state.csf_label(key, key).encode_utf16().collect();
+pub(crate) fn report_error(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    key: &str,
+) {
+    let text = process_assets.csf_label(key, key).encode_utf16().collect();
     //5E2700 uses -1 for the ordinary yellow message color.
     append_chat(
-        state,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
         LanChatLine {
             text,
             color: u32::MAX,
         },
     );
-    App::play_shell_rules_sound(
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
-        |rules| rules.general.system_error_sound(),
-    );
+    App::play_shell_rules_sound(frontend, match_state, process_assets, sfx_player, |rules| {
+        rules.general.system_error_sound()
+    });
 }
 
 pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
@@ -676,7 +742,14 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                     .expect("active BB")
                     .lobby
                     .set_enabled(true);
-                report_error(state, key);
+                report_error(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    key,
+                );
             } else if let Some(game_id) = game_id {
                 let runtime = state.frontend.lan.as_mut().expect("active BB");
                 runtime.pending_join = Some(PendingJoin {
@@ -730,7 +803,10 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
             let mut display: Vec<u16> = format!("[{name}] ").encode_utf16().collect();
             display.extend_from_slice(&message);
             append_chat(
-                state,
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
                 LanChatLine {
                     text: display,
                     // `0x005DDEB9..0x005DDECA`: the echo uses `[0x7EEF44]`;
@@ -773,12 +849,27 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
             let notices = discovery_notices(&runtime.lobby.games, &games);
             let selection = runtime.lobby.replace_games(games);
             for (name, open, new_record) in notices {
-                discovery_notice(state, &name, open, new_record);
+                discovery_notice(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    &name,
+                    open,
+                    new_record,
+                );
             }
             if let Some(action) = selection {
                 dispatch(state, action);
             }
-            rejoin_host(state);
+            rejoin_host(
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+            );
         }
         LanServiceEvent::Players { game_id, players } => {
             if runtime.lobby.selected_game().map(|game| game.id) == game_id {
@@ -795,7 +886,14 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
             };
             let message = denial_modal(reason, pending.observe);
             runtime.release_request();
-            report_error(state, "TXT_REQUEST_DENIED");
+            report_error(
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                "TXT_REQUEST_DENIED",
+            );
             if let Some(message) = message {
                 show_modal(&state.renderer, &mut state.frontend, message);
             }
@@ -848,17 +946,19 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
 /// VERA: a returning guest joins its host's room as soon as it is listed.
 /// The name box stays live while it waits, so the name passes Join's checks
 /// first.
-fn rejoin_host(state: &mut AppState) {
-    let observe = state.frontend.multiplayer_shell_runtime.lan_observer();
-    let name = state
-        .frontend
-        .multiplayer_shell_runtime
-        .local_participant()
-        .name;
-    let name_error = join_name_error(&name, &reserved_names(&state.process_assets));
-    let Some(end) = state.frontend.lan.as_mut().and_then(|runtime| {
+fn rejoin_host(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    let observe = frontend.multiplayer_shell_runtime.lan_observer();
+    let name = frontend.multiplayer_shell_runtime.local_participant().name;
+    let name_error = join_name_error(&name, &reserved_names(process_assets));
+    let Some(end) = frontend.lan.as_mut().and_then(|runtime| {
         runtime.rejoin_host(
-            &mut state.match_state.session,
+            &mut match_state.session,
             observe,
             name_error,
             Instant::now(),
@@ -868,11 +968,23 @@ fn rejoin_host(state: &mut AppState) {
     };
     let host = match end {
         RejoinEnd::HostDidNotReturn(host) => host,
-        RejoinEnd::NameRefused(key) => return report_error(state, key),
+        RejoinEnd::NameRefused(key) => {
+            return report_error(
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                key,
+            );
+        }
     };
     let text = crate::i18n::tr_fill("VERA:LanHostDidNotReturn", &[("host", &host)]);
     append_chat(
-        state,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
         LanChatLine {
             text: text.encode_utf16().collect(),
             color: u32::MAX,
@@ -893,45 +1005,51 @@ fn discovery_notices(old: &[LanGameRow], incoming: &[LanGameRow]) -> Vec<(String
         .collect()
 }
 
-fn discovery_notice(state: &mut AppState, name: &str, open: bool, new_record: bool) {
+fn discovery_notice(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    name: &str,
+    open: bool,
+    new_record: bool,
+) {
     let key = if open {
         "TXT_S_FORMED_NEW_GAME"
     } else {
         "TXT_GAME_NOW_IN_PROGRESS"
     };
     let text = crate::assets::csf_file::format_csf(
-        &state.csf_label(key, key),
+        &process_assets.csf_label(key, key),
         &[crate::assets::csf_file::CsfArg::Str(name)],
     );
-    let play = |state: &mut AppState| {
-        App::play_shell_rules_sound(
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            |rules| {
-                if open {
-                    rules.general.game_forming_sound()
-                } else {
-                    rules.general.game_closed_sound()
-                }
-            },
-        );
+    let play = |frontend: &FrontendState, sfx_player: &mut Option<SfxPlayer>| {
+        App::play_shell_rules_sound(frontend, match_state, process_assets, sfx_player, |rules| {
+            if open {
+                rules.general.game_forming_sound()
+            } else {
+                rules.general.game_closed_sound()
+            }
+        });
     };
     // Existing-row transitions play5E030A before chat5E031E; new open ads
     // append5E04C1 before playing5E04E0. Both run only in membership0/1 (BB).
     if !new_record {
-        play(state);
+        play(frontend, sfx_player);
     }
     append_chat(
-        state,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
         LanChatLine {
             text: text.encode_utf16().collect(),
             color: u32::MAX,
         },
     );
     if new_record {
-        play(state);
+        play(frontend, sfx_player);
     }
 }
 
@@ -1015,19 +1133,21 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
 /// (`app::input::ime`). The name edit takes byte text only, so it keeps
 /// plain key text. Android routes every GUI edit through `ImeTarget::Gui`.
 #[cfg(not(target_os = "android"))]
-pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
-    let routed = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-        && state.frontend.shell_route == ShellRoute::LanLobby
-        && !shell_transition::blocks_shell_input(&state.frontend);
-    let chat = state.frontend.shell_controller.focused_control(PAGE.dialog) == Some(CHAT);
-    state
-        .frontend
+pub(crate) fn ime_chat_rect(
+    gpu: &GpuContext,
+    frontend: &FrontendState,
+) -> Option<crate::ui::shell::geom::RectPx> {
+    let routed = frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
+        && frontend.shell_route == ShellRoute::LanLobby
+        && !shell_transition::blocks_shell_input(frontend);
+    let chat = frontend.shell_controller.focused_control(PAGE.dialog) == Some(CHAT);
+    frontend
         .lan
         .as_ref()
         .filter(|runtime| {
             routed && runtime.modal.is_none() && !runtime.creating && runtime.lobby.enabled && chat
         })
-        .map(|_| layout(&state.renderer.gpu).rect(CHAT).unwrap_or_default())
+        .map(|_| layout(gpu).rect(CHAT).unwrap_or_default())
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
@@ -1321,13 +1441,18 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
             .requests
             .push(LanServiceRequest::CancelJoin { game_id });
         // Native reports a timeout as a denial; VERA says nothing answered.
+        let key = if state.frontend.native_shell_ui {
+            "TXT_REQUEST_DENIED"
+        } else {
+            "VERA:LanJoinNoAnswer"
+        };
         report_error(
-            state,
-            if state.frontend.native_shell_ui {
-                "TXT_REQUEST_DENIED"
-            } else {
-                "VERA:LanJoinNoAnswer"
-            },
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            key,
         );
     }
     let deadline = state

@@ -7,6 +7,7 @@ use super::actions::queue;
 use super::chat_notice as message;
 use super::*;
 use crate::app::match_runtime::sim_host::SimHost;
+use crate::app::renderer_state::RendererState;
 use crate::audio::sfx::SfxPlayer;
 use crate::render::gpu::GpuContext;
 use crate::skirmish_launch::LaunchTeam;
@@ -234,9 +235,13 @@ fn departed(state: &mut AppState, name: &str, operator: bool, tell: bool) -> any
     };
     service::service_event(state, service::NetworkSetupEvent::ParticipantLeft { index })?;
     if tell {
+        let dialog = super::dialog(&state.frontend, &state.match_state);
         service::tell_room(
-            state,
-            super::dialog(&state.frontend, &state.match_state),
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            dialog,
             "VERA:PlayerLeftRoom",
             name,
         );
@@ -525,7 +530,10 @@ pub(crate) fn user_kicked(state: &mut AppState, name: &str, line: String) -> any
     let full = state.match_state.session.network_no_open_player_row();
     if !full {
         crate::app::shell_lan::append_room_chat(
-            state,
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
             LanChatLine {
                 text: line.encode_utf16().collect(),
                 color: u32::MAX,
@@ -806,24 +814,24 @@ fn screen(gpu: &GpuContext) -> (i32, i32) {
 }
 
 /// `0x130`'s layout on the live screen.
-pub(crate) fn verify_layout(state: &AppState) -> crate::ui::shell::modal::WolVerifyLayout {
+pub(crate) fn verify_layout(
+    gpu: &GpuContext,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+) -> crate::ui::shell::modal::WolVerifyLayout {
     use crate::app::frontend::shell_layout;
     use crate::ui::shell::geom::RETAIL_SCALE;
 
-    let (width, height) = screen(&state.renderer.gpu);
-    let scale = if !setup_dialog(&state.frontend, false, SetupFlavor::Wol).modern {
+    let (width, height) = screen(gpu);
+    let scale = if !setup_dialog(frontend, false, SetupFlavor::Wol).modern {
         RETAIL_SCALE
-    } else if super::quick_match(state.frontend.network_setup_protocol.as_ref()) {
+    } else if super::quick_match(frontend.network_setup_protocol.as_ref()) {
         // Quick Match has no C2/C9 room; its backdrop uses the fitted WOL shell.
         shell_layout::shell_scale_for_screen((width as u32, height as u32))
     } else {
-        crate::app::input::multiplayer_setup::page_layout(
-            &state.renderer.gpu,
-            &state.frontend,
-            &state.match_state,
-        )
-        .page
-        .scale
+        crate::app::input::multiplayer_setup::page_layout(gpu, frontend, match_state)
+            .page
+            .scale
     };
     crate::ui::shell::modal::wol_verify_layout(width, height, scale)
 }
@@ -847,7 +855,7 @@ pub(crate) fn verify_pointer(state: &mut AppState, down: Option<bool>) {
         .and_then(|verify| verify.mismatch.as_ref())
         .map(|message| verify_mismatch_parts(&state.renderer.gpu, message).button(0))
         .unwrap_or_default();
-    let layout = verify_layout(state);
+    let layout = verify_layout(&state.renderer.gpu, &state.frontend, &state.match_state);
     let Ok(verify) = verify_mut(&mut state.frontend.network_setup_protocol) else {
         return;
     };
@@ -867,19 +875,23 @@ pub(crate) fn verify_pointer(state: &mut AppState, down: Option<bool>) {
 
 /// `0x130`'s widgets on its layout before they paint (input syncs them only
 /// on a pointer message).
-pub(crate) fn verify_sync(state: &mut AppState) {
-    let Some(shown) = verify(state.frontend.network_setup_protocol.as_ref()) else {
+pub(crate) fn verify_sync(
+    gpu: &GpuContext,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+) {
+    let Some(shown) = verify(frontend.network_setup_protocol.as_ref()) else {
         return;
     };
     let parts = Some(shown)
         .and_then(|verify| verify.mismatch.as_ref())
-        .map(|message| verify_mismatch_parts(&state.renderer.gpu, message));
+        .map(|message| verify_mismatch_parts(gpu, message));
     let ok = parts
         .as_ref()
         .map(|parts| parts.button(0))
         .unwrap_or_default();
-    let layout = verify_layout(state);
-    if let Ok(verify) = verify_mut(&mut state.frontend.network_setup_protocol) {
+    let layout = verify_layout(gpu, frontend, match_state);
+    if let Ok(verify) = verify_mut(&mut frontend.network_setup_protocol) {
         verify.sync_widgets(&layout, ok);
         verify.sync_mismatch(parts.as_ref());
     }
@@ -890,25 +902,30 @@ pub(crate) fn verify_poll_scroll(protocol: &mut Option<NetworkSetupProtocol>) ->
 }
 
 /// C2/C9 0x540 Enter (notify 0x501): commands first, then a plain line.
-pub(super) fn chat(state: &mut AppState, text: Vec<u16>) {
+pub(super) fn chat(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    text: Vec<u16>,
+) {
     // 5EDD00's TrimRight("\n\r") result is what WOL sends.
     let text = wol_chat::trim_line_end(&text).to_vec();
     if text.is_empty() {
         return;
     }
     let commands = wol_chat::WolChatCommands {
-        page: csf_units(&state.process_assets, "TXT_PAGE_COMMAND"),
-        reply: csf_units(&state.process_assets, "TXT_REPLY_COMMAND"),
-        reply_short: csf_units(&state.process_assets, "TXT_REPLY_COMMAND_SHORT"),
-        online: csf_units(&state.process_assets, "TXT_ONLINE_COMMAND"),
+        page: csf_units(process_assets, "TXT_PAGE_COMMAND"),
+        reply: csf_units(process_assets, "TXT_REPLY_COMMAND"),
+        reply_short: csf_units(process_assets, "TXT_REPLY_COMMAND_SHORT"),
+        online: csf_units(process_assets, "TXT_ONLINE_COMMAND"),
     };
-    let last_pager =
-        crate::app::shell_wol::last_pager(state.frontend.wol.as_ref()).map(str::to_owned);
-    let nickname = local_nickname(&state.match_state.session);
+    let last_pager = crate::app::shell_wol::last_pager(frontend.wol.as_ref()).map(str::to_owned);
+    let nickname = local_nickname(&match_state.session);
     let line = wol_chat::parse(&text, &commands, last_pager.is_some());
     let echo = match &line {
         WolChatLine::Notice(key) => {
-            message(state, key, &[]);
+            message(renderer, frontend, match_state, process_assets, key, &[]);
             return;
         }
         // 0078A470 prints nothing locally on success.
@@ -926,46 +943,64 @@ pub(super) fn chat(state: &mut AppState, text: Vec<u16>) {
             ))
         }
     };
-    crate::app::shell_wol::chat_sent(state.frontend.wol.as_mut(), &line);
+    crate::app::shell_wol::chat_sent(frontend.wol.as_mut(), &line);
     queue(
-        &mut state.frontend.network_setup_protocol,
+        &mut frontend.network_setup_protocol,
         NetworkSetupRequest::WolChat(line),
     );
     if let Some((text, color)) = echo {
-        crate::app::shell_lan::append_room_chat(state, LanChatLine { text, color });
+        crate::app::shell_lan::append_room_chat(
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            LanChatLine { text, color },
+        );
     }
 }
 
 /// C2/C9 0x3ED (`0x791110`): the edit is cleared first; outside a channel
 /// `TXT_NOT_IN_CHAN`, an empty line `TXT_ENTER_MESSAGE`, else an action.
-pub(super) fn emote(state: &mut AppState) {
-    if state.frontend.multiplayer_setup.is_none() {
+pub(super) fn emote(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) {
+    if frontend.multiplayer_setup.is_none() {
         return;
     }
-    let units: Vec<u16> =
-        crate::app::input::multiplayer_setup::chat_text(&state.frontend, &state.match_state)
-            .encode_utf16()
-            .collect();
+    let units: Vec<u16> = crate::app::input::multiplayer_setup::chat_text(frontend, match_state)
+        .encode_utf16()
+        .collect();
     let text = wol_chat::trim_line_end(&units).to_vec();
-    let page = super::dialog(&state.frontend, &state.match_state)
-        .page()
-        .dialog;
+    let page = super::dialog(frontend, match_state).page().dialog;
     let chat = crate::ui::multiplayer_setup::CHAT;
-    state.frontend.shell_controller.set_text(page, chat, "");
+    frontend.shell_controller.set_text(page, chat, "");
     if text.is_empty() {
-        message(state, "TXT_ENTER_MESSAGE", &[]);
+        message(
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            "TXT_ENTER_MESSAGE",
+            &[],
+        );
         return;
     }
-    let nickname = local_nickname(&state.match_state.session);
+    let nickname = local_nickname(&match_state.session);
     crate::app::shell_lan::append_room_chat(
-        state,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
         LanChatLine {
             text: wol_chat::emote_echo(&nickname, &text),
             color: wol_chat::EMOTE_COLOR,
         },
     );
     queue(
-        &mut state.frontend.network_setup_protocol,
+        &mut frontend.network_setup_protocol,
         NetworkSetupRequest::WolEmote(text),
     );
 }

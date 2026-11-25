@@ -1055,7 +1055,12 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             sent_at,
         } => {
             super::lobby::message_received(
-                state,
+                &mut state.frontend,
+                state.platform.game_config.as_ref(),
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &state.persistence.options_profile,
                 super::lobby::ReceivedMessage {
                     from,
                     text,
@@ -1080,7 +1085,12 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             sent_at,
         } => {
             super::lobby::message_received(
-                state,
+                &mut state.frontend,
+                state.platform.game_config.as_ref(),
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &state.persistence.options_profile,
                 super::lobby::ReceivedMessage {
                     from,
                     text,
@@ -1114,7 +1124,14 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             return;
         }
         WolServiceEvent::ChannelBan { name, banned } => {
-            super::lobby::channel_ban(state, &name, banned);
+            super::lobby::channel_ban(
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &name,
+                banned,
+            );
             return;
         }
         WolServiceEvent::LadderSeason(season) => {

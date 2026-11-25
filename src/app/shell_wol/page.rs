@@ -389,7 +389,13 @@ pub(super) fn current_window_line(state: &mut AppState, line: LanChatLine) -> bo
     if state.frontend.shell_route == ShellRoute::NetworkSetup
         || App::wol_page_is_lobby(state.frontend.wol.as_ref())
     {
-        crate::app::shell_lan::append_chat(state, line);
+        crate::app::shell_lan::append_chat(
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            line,
+        );
         return true;
     }
     false

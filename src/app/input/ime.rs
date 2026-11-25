@@ -185,7 +185,14 @@ fn edit_target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
             ),
             InputLayer::Screen(ScreenPage::InGameShell(InGameMenuState::SavedGame(_))) => (
                 ImeTarget::InGameConversionName,
-                App::saved_game_layout(state, browser.mode)?,
+                App::saved_game_layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                    browser.mode,
+                )?,
             ),
             _ => return None,
         };
@@ -219,15 +226,20 @@ fn edit_target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
         ),
         (
             ImeTarget::LanLobbyChat,
-            crate::app::shell_lan::ime_chat_rect(state),
+            crate::app::shell_lan::ime_chat_rect(&state.renderer.gpu, &state.frontend),
         ),
         (
             ImeTarget::SetupChat,
-            crate::app::input::multiplayer_setup::ime_chat_rect(state),
+            crate::app::input::multiplayer_setup::ime_chat_rect(
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+            ),
         ),
         (
             ImeTarget::WolLobbyEdit,
-            crate::app::shell_wol::lobby::ime_edit_rect(state),
+            crate::app::shell_wol::lobby::ime_edit_rect(&state.frontend, &state.renderer.gpu),
         ),
         (
             ImeTarget::ChooseMapSearch,

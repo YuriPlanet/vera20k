@@ -19,7 +19,12 @@ use super::{
     visit_user_left, visiting, watch_refused,
 };
 use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_wol::WolVisit;
+use crate::util::config::GameConfig;
 
 /// Lobby events of the service. Events nothing waits for are stale.
 pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolServiceEvent) {
@@ -90,7 +95,13 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
                 }
             }
         }
-        WolServiceEvent::VisitJoined(joined) => visit_joined(state, joined),
+        WolServiceEvent::VisitJoined(joined) => visit_joined(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            joined,
+        ),
         WolServiceEvent::VisitUserJoined(member) => visit_user_joined(&mut state.frontend, member),
         WolServiceEvent::VisitUserLeft(name) => visit_user_left(&mut state.frontend, name),
         WolServiceEvent::Joined(result) => joined(state, result),
@@ -158,7 +169,13 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
             visit_room_left(state)
         }
         WolServiceEvent::ChannelLeft if awaiting_room(&state.match_state.session) => {
-            room_not_returned(state, true)
+            room_not_returned(
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                true,
+            )
         }
         WolServiceEvent::ChannelLeft if in_setup_channel(&state.frontend) => {
             setup_channel_left(state)
@@ -297,7 +314,15 @@ pub(in crate::app::shell_wol) struct ReceivedMessage {
 /// `0x117`'s. In modes 1-3 the two ANSI message sinks route to the Quick
 /// Match runner instead (`0x007A8DBB..0x007A8DEB`, `0x007A8FDB..0x007A9024`);
 /// the UTF-16 and action sinks have no mode test.
-pub(in crate::app::shell_wol) fn message_received(state: &mut AppState, message: ReceivedMessage) {
+pub(in crate::app::shell_wol) fn message_received(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+    message: ReceivedMessage,
+) {
     let ReceivedMessage {
         from,
         text,
@@ -312,31 +337,33 @@ pub(in crate::app::shell_wol) fn message_received(state: &mut AppState, message:
     } = message;
     // A visitor's room goes on hidden: its lines go to it, and the visited
     // lobby's to the lobby page.
-    if visit && !visiting(state.frontend.wol.as_ref()) {
+    if visit && !visiting(frontend.wol.as_ref()) {
         return;
     }
     let room = !visit
-        && (state.frontend.shell_route == ShellRoute::NetworkSetup
-            || visiting(state.frontend.wol.as_ref()));
-    let in_game = state
-        .frontend
-        .wol
-        .as_ref()
-        .is_none_or(|visit| visit.in_game);
-    if ansi && !action && !in_game && super::quick_match::mode_active(state.frontend.wol.as_ref()) {
+        && (frontend.shell_route == ShellRoute::NetworkSetup || visiting(frontend.wol.as_ref()));
+    let in_game = frontend.wol.as_ref().is_none_or(|visit| visit.in_game);
+    if ansi && !action && !in_game && super::quick_match::mode_active(frontend.wol.as_ref()) {
         let text = String::from_utf16_lossy(&text);
-        super::quick_match::ansi_message(state, &from, &text, private, options);
+        super::quick_match::ansi_message(
+            frontend,
+            game_config,
+            match_state,
+            process_assets,
+            renderer,
+            options_profile,
+            &from,
+            &text,
+            private,
+            options,
+        );
         return;
     }
-    if state
-        .frontend
-        .wol
-        .as_ref()
-        .is_none_or(|visit| visit.in_game)
-        || !sender_passes(&state.frontend, &from, &text, room)
+    if frontend.wol.as_ref().is_none_or(|visit| visit.in_game)
+        || !sender_passes(frontend, &from, &text, room)
         || from
             .name
-            .eq_ignore_ascii_case(&nickname(&state.frontend.wol_account))
+            .eq_ignore_ascii_case(&nickname(&frontend.wol_account))
     {
         return;
     }
@@ -348,14 +375,28 @@ pub(in crate::app::shell_wol) fn message_received(state: &mut AppState, message:
     };
     let line = LanChatLine { text: line, color };
     if visit {
-        crate::app::shell_lan::append_wol_lobby_chat(state, line, sent_at);
+        crate::app::shell_lan::append_wol_lobby_chat(
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            line,
+            sent_at,
+        );
     } else {
-        crate::app::shell_lan::append_room_chat_sent_at(state, line, sent_at);
+        crate::app::shell_lan::append_room_chat_sent_at(
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            line,
+            sent_at,
+        );
     }
     let (prefix, _) = wol_chat::received_line(&sender(&from), &[], private, action);
     super::translation::received(
-        state.frontend.wol.as_mut(),
-        &state.persistence.options_profile,
+        frontend.wol.as_mut(),
+        options_profile,
         &text,
         localized,
         super::translation::TranslatedLine::Wol {
@@ -612,7 +653,13 @@ pub(in crate::app::shell_wol) fn kicked(
                 &state.csf_text(setup::kicked_key(&state.match_state.session)),
                 &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
             );
-            visit_settles(state, text);
+            visit_settles(
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                text,
+            );
             return;
         }
         if state.frontend.shell_route != ShellRoute::NetworkSetup
@@ -627,7 +674,10 @@ pub(in crate::app::shell_wol) fn kicked(
                 &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
             );
             crate::app::shell_lan::append_wol_lobby_chat(
-                state,
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
                 LanChatLine {
                     text: text.encode_utf16().collect(),
                     color: u32::MAX,
@@ -669,7 +719,13 @@ pub(in crate::app::shell_wol) fn kicked(
                 CsfArg::Str(&by.name),
             ],
         );
-        message_line(state, text);
+        message_line(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            text,
+        );
         if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
             lobby.members.retain(|member| member.name != user.name);
         }
@@ -679,13 +735,15 @@ pub(in crate::app::shell_wol) fn kicked(
 
 /// The ban sink `0x007AB3C0`: outside a match, `TXT_CHAN_BAN` or
 /// `TXT_CHAN_UNBAN` with the name in the transcript.
-pub(in crate::app::shell_wol) fn channel_ban(state: &mut AppState, name: &str, banned: bool) {
-    if state
-        .frontend
-        .wol
-        .as_ref()
-        .is_none_or(|visit| visit.in_game)
-    {
+pub(in crate::app::shell_wol) fn channel_ban(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    name: &str,
+    banned: bool,
+) {
+    if frontend.wol.as_ref().is_none_or(|visit| visit.in_game) {
         return;
     }
     let key = if banned {
@@ -694,10 +752,10 @@ pub(in crate::app::shell_wol) fn channel_ban(state: &mut AppState, name: &str, b
         "TXT_CHAN_UNBAN"
     };
     let text = crate::assets::csf_file::format_csf(
-        &state.csf_text(key),
+        &process_assets.csf_text(key),
         &[crate::assets::csf_file::CsfArg::Str(name)],
     );
-    message_line(state, text);
+    message_line(frontend, match_state, process_assets, renderer, text);
 }
 
 /// The page sinks after their gates: the ANSI one (`0x007A9200`) keeps the
@@ -774,7 +832,13 @@ pub(in crate::app::shell_wol) fn page_received(
                 || lobby_dialog(state.frontend.wol.as_ref()).is_some()
                 || super::quick_match::page_open(state.frontend.wol.as_ref()));
         if transcript {
-            crate::app::shell_lan::append_chat(state, line);
+            crate::app::shell_lan::append_chat(
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                line,
+            );
         } else {
             super::page::page_received_line(
                 &mut state.frontend,

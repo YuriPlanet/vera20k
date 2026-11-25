@@ -255,7 +255,13 @@ impl WolCapture {
                 let session = &mut state.match_state.session;
                 session.choose_network_row_kind(1, NetworkRowKind::Open)?;
                 setup_requests(&mut state.frontend.network_setup_protocol);
-                crate::app::shell_network_setup::poll(state);
+                crate::app::shell_network_setup::poll(
+                    &state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                );
                 let requests = setup_requests(&mut state.frontend.network_setup_protocol);
                 let (_, seated) = guest(state).context("guest")?;
                 ensure!(
@@ -298,9 +304,14 @@ impl WolCapture {
                     .get(page_row)
                     .and_then(Option::as_ref)
                     .and_then(|icon| icon.badge);
-                let rect = crate::app::input::multiplayer_setup::layout(state)
-                    .control_rect(combo.id)
-                    .context("the guest's name")?;
+                let rect = crate::app::input::multiplayer_setup::layout(
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                )
+                .control_rect(combo.id)
+                .context("the guest's name")?;
                 set_window_pointer_to_rect_center(
                     &state.renderer,
                     &state.frontend.screen,

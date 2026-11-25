@@ -42,16 +42,22 @@ fn held_while_starting(phase: StartPhase, action: &SetupAction, kick: bool) -> b
 
 /// The host's Player list puts Open, Closed, Open Observer or an AI on a
 /// guest's row, which kicks the guest (`select`).
-fn kicks_guest(state: &AppState, action: &SetupAction) -> bool {
+fn kicks_guest(
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    action: &SetupAction,
+) -> bool {
     let SetupAction::Select { control, value } = *action else {
         return false;
     };
     // 0 keeps the guest; the other two move it.
     !matches!(value, 0 | MOVE_TO_SPECTATORS | GIVE_SEAT)
         && matches!(SetupColumn::decode(control), Some((SetupColumn::Player, _)))
-        && super::view(state)
+        && super::view(renderer, frontend, match_state, process_assets)
             .and_then(|view| view.combo(control).map(|combo| combo.row))
-            .is_some_and(|row| guest_on_row(&state.match_state.session, row).is_some())
+            .is_some_and(|row| guest_on_row(&match_state.session, row).is_some())
 }
 
 /// The guest, not the host itself, on a host's row, with its team.
@@ -70,13 +76,31 @@ fn guest_on_row(session: &MatchSession, row: u8) -> Option<(usize, LaunchTeam)> 
 pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
     let dialog = super::dialog(&state.frontend, &state.match_state);
     let phase = super::start_phase(state.frontend.network_setup_protocol.as_ref());
-    let kick = phase.in_progress() && kicks_guest(state, &action);
+    let kick = phase.in_progress()
+        && kicks_guest(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &action,
+        );
     if held_while_starting(phase, &action, kick) {
         return;
     }
     let result = match action {
-        SetupAction::Start => start::request_start(state),
-        SetupAction::Accept => accept(state),
+        SetupAction::Start => start::request_start(
+            state.platform.game_config.as_ref(),
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
+        ),
+        SetupAction::Accept => accept(
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+        ),
         SetupAction::Back => {
             if state
                 .frontend
@@ -143,23 +167,72 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             }
             Ok(())
         }
-        SetupAction::Toggle { control } => toggle(state, control),
-        SetupAction::Trackbar { control, value } => trackbar(state, control, value),
-        SetupAction::Select { control, value } => select(state, control, value),
-        SetupAction::Join { control } => join(state, control),
-        SetupAction::DropRow { row, group } => drop_row(state, row, group),
+        SetupAction::Toggle { control } => toggle(
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            control,
+        ),
+        SetupAction::Trackbar { control, value } => trackbar(
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            control,
+            value,
+        ),
+        SetupAction::Select { control, value } => select(
+            state.platform.game_config.as_ref(),
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
+            control,
+            value,
+        ),
+        SetupAction::Join { control } => join(
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            control,
+        ),
+        SetupAction::DropRow { row, group } => drop_row(
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            row,
+            group,
+        ),
         SetupAction::Chat(text) if dialog.wol() => {
-            super::wol::chat(state, text);
+            super::wol::chat(
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                text,
+            );
             Ok(())
         }
         SetupAction::Emote => {
-            super::wol::emote(state);
+            super::wol::emote(
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+            );
             Ok(())
         }
         // 0x00790C8D (C2) and 0x0079235F (C9): the modal page dialog 0xCF.
         SetupAction::RosterPage { forward } => {
-            if let Some(view) = super::view(state)
-                && !view.locked
+            if let Some(view) = super::view(
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+            ) && !view.locked
                 && let Some(ui) = state.frontend.multiplayer_setup.as_mut()
             {
                 ui.page_rows(&view.pages, forward);
@@ -220,7 +293,10 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 .to_owned();
             let display = format!("[{name}] {}", String::from_utf16_lossy(&text));
             crate::app::shell_lan::append_room_chat(
-                state,
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
                 crate::ui::lan_shell::LanChatLine {
                     text: display.encode_utf16().collect(),
                     color: 0x40ffff,
@@ -244,11 +320,17 @@ pub(super) fn queue(protocol: &mut Option<NetworkSetupProtocol>, request: Networ
     }
 }
 
-fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
-    let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
+fn toggle(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    control: u16,
+) -> anyhow::Result<()> {
+    let current = super::view(renderer, frontend, match_state, process_assets)
+        .ok_or_else(|| anyhow::anyhow!("no setup"))?;
     anyhow::ensure!(current.enabled(control), "disabled checkbox");
-    let mut options = state
-        .match_state
+    let mut options = match_state
         .session
         .network_setup()
         .expect("view has setup")
@@ -285,11 +367,11 @@ fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
         }
         _ => anyhow::bail!("unknown setup checkbox"),
     }
-    state.match_state.session.set_network_options(options)?;
-    super::bans::clear_banned_rows(&state.frontend, &mut state.match_state)?;
-    host_option_edited(&mut state.frontend, &mut state.match_state)?;
+    match_state.session.set_network_options(options)?;
+    super::bans::clear_banned_rows(frontend, match_state)?;
+    host_option_edited(frontend, match_state)?;
     queue(
-        &mut state.frontend.network_setup_protocol,
+        &mut frontend.network_setup_protocol,
         NetworkSetupRequest::PublishOptions,
     );
     Ok(())
@@ -310,8 +392,16 @@ pub(super) fn host_option_edited(
     Ok(())
 }
 
-fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> {
-    let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
+fn trackbar(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    control: u16,
+    value: i32,
+) -> anyhow::Result<()> {
+    let current = super::view(renderer, frontend, match_state, process_assets)
+        .ok_or_else(|| anyhow::anyhow!("no setup"))?;
     anyhow::ensure!(current.enabled(control), "disabled slider");
     let range = current
         .trackbars
@@ -320,19 +410,23 @@ fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()
         .ok_or_else(|| anyhow::anyhow!("unknown setup slider"))?
         .range;
     let value = range.stepped(range.set_up(value));
-    if control == DIFFICULTY && state.match_state.session.campaign_room().is_some() {
-        return super::campaign_room::set_difficulty(state, value);
+    if control == DIFFICULTY && match_state.session.campaign_room().is_some() {
+        return super::campaign_room::set_difficulty(
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            value,
+        );
     }
     if control == DIFFICULTY {
-        state
-            .frontend
+        frontend
             .multiplayer_shell_runtime
             .set_cooperative_difficulty(value);
     } else if control == TEAM_COUNT {
         // 1 is Off.
         let teams = u8::try_from(value).ok().filter(|teams| *teams >= 2);
-        if state
-            .match_state
+        if match_state
             .session
             .network_setup()
             .is_some_and(|launch| launch.options.teams == teams)
@@ -340,31 +434,30 @@ fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()
             return Ok(());
         }
         return super::teams::set_teams(
-            &mut state.frontend.network_setup_protocol,
-            &mut state.match_state.session,
+            &mut frontend.network_setup_protocol,
+            &mut match_state.session,
             teams,
         )
-        .and_then(|()| host_option_edited(&mut state.frontend, &mut state.match_state));
+        .and_then(|()| host_option_edited(frontend, match_state));
     } else if control == ROOM_SIZE {
         // The room's Max players, which the online lobby lists; the next
         // Create Game starts from it.
         let people = u8::try_from(value).unwrap_or(u8::MAX);
-        let session = &mut state.match_state.session;
+        let session = &mut match_state.session;
         if session.network_people_limit() == Some(people) {
             return Ok(());
         }
         session.set_network_people_limit(people)?;
-        state.frontend.room_limits.players = session.network_people_limit().unwrap_or(people);
-        if super::dialog(&state.frontend, &state.match_state).wol() {
+        frontend.room_limits.players = session.network_people_limit().unwrap_or(people);
+        if super::dialog(frontend, match_state).wol() {
             queue(
-                &mut state.frontend.network_setup_protocol,
+                &mut frontend.network_setup_protocol,
                 NetworkSetupRequest::Advertise,
             );
         }
         return Ok(());
     } else {
-        let mut options = state
-            .match_state
+        let mut options = match_state
             .session
             .network_setup()
             .expect("view has setup")
@@ -377,8 +470,7 @@ fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()
                     crate::ui::shell::game_speed::SpeedContext::Network.stored_speed(value)
             }
             CREDITS => {
-                let credits = state
-                    .frontend
+                let credits = frontend
                     .skirmish_shell_state
                     .trackbar_bounds
                     .credits_from_visual_position(value);
@@ -403,18 +495,27 @@ fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()
         if options == before {
             return Ok(());
         }
-        state.match_state.session.set_network_options(options)?;
+        match_state.session.set_network_options(options)?;
     }
-    host_option_edited(&mut state.frontend, &mut state.match_state)?;
+    host_option_edited(frontend, match_state)?;
     queue(
-        &mut state.frontend.network_setup_protocol,
+        &mut frontend.network_setup_protocol,
         NetworkSetupRequest::PublishOptions,
     );
     Ok(())
 }
 
-fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> {
-    let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
+fn select(
+    game_config: Option<&GameConfig>,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+    control: u16,
+    value: i32,
+) -> anyhow::Result<()> {
+    let current = super::view(renderer, frontend, match_state, process_assets)
+        .ok_or_else(|| anyhow::anyhow!("no setup"))?;
     let combo = current
         .combo(control)
         .filter(|combo| combo.visible && combo.enabled && !current.locked)
@@ -423,13 +524,22 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
         combo.choices.iter().any(|choice| choice.value == value),
         "selection no longer belongs to this popup"
     );
-    let room_role = state.match_state.session.campaign_room().is_some()
+    let room_role = match_state.session.campaign_room().is_some()
         && matches!(
             SetupColumn::decode(control),
             Some((SetupColumn::Country, _))
         );
     if matches!(control, CAMPAIGN_SERIES | CAMPAIGN_STAGE) || room_role {
-        return super::campaign_room::select(state, control, combo.row, value);
+        return super::campaign_room::select(
+            game_config,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            control,
+            combo.row,
+            value,
+        );
     }
     // The team bar's lists: the caption and a grey item do nothing.
     if matches!(control, TEAM_MENU | SEAT_MENU) {
@@ -439,10 +549,10 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
             .any(|choice| choice.value == value && !choice.greyed)
         {
             return super::team_menus::select(
-                state.platform.game_config.as_ref(),
-                &mut state.frontend,
-                &mut state.match_state,
-                &mut state.process_assets,
+                game_config,
+                frontend,
+                match_state,
+                process_assets,
                 control,
                 value,
             );
@@ -453,13 +563,7 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
         let group = current.headers[page_row]
             .as_ref()
             .map(|header| header.group);
-        return add_ai(
-            &mut state.frontend,
-            &mut state.match_state,
-            group,
-            combo.row,
-            value,
-        );
+        return add_ai(frontend, match_state, group, combo.row, value);
     }
     let (column, _) =
         SetupColumn::decode(control).ok_or_else(|| anyhow::anyhow!("unknown setup combo"))?;
@@ -467,7 +571,7 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
     // VERA's host moves a guest as the guest's own choices would: into a
     // seat or to the spectators from its Player list; its side, colour,
     // start and team from the rest of its row, below.
-    let guest = guest_on_row(&state.match_state.session, combo.row);
+    let guest = guest_on_row(&match_state.session, combo.row);
     if let Some((index, team)) = guest {
         let observer = match value {
             MOVE_TO_SPECTATORS => Some(true),
@@ -475,14 +579,8 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
             _ => None,
         };
         if let Some(observer) = observer.filter(|_| column == SetupColumn::Player) {
-            let change = super::service::move_player(
-                &state.frontend,
-                &mut state.match_state,
-                index,
-                team,
-                observer,
-            )?;
-            super::service::publish_choices(&mut state.frontend, &state.match_state, change);
+            let change = super::service::move_player(frontend, match_state, index, team, observer)?;
+            super::service::publish_choices(frontend, match_state, change);
             return Ok(());
         }
     }
@@ -500,14 +598,13 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
             7 => NetworkRowKind::OpenObserver,
             _ => anyhow::bail!("unknown setup row type"),
         };
-        if let Some(peer) = state
-            .match_state
+        if let Some(peer) = match_state
             .session
             .choose_network_row_kind(row as u8, kind)?
         {
-            let keep_out = state.match_state.session.network_several_observers();
+            let keep_out = match_state.session.network_several_observers();
             queue(
-                &mut state.frontend.network_setup_protocol,
+                &mut frontend.network_setup_protocol,
                 NetworkSetupRequest::Kick {
                     name: peer.name,
                     keep_out,
@@ -516,26 +613,25 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
         }
         // Then online ([0xAC116C]) the advertisement 0x78F000: the game
         // record and user limit count Open Observer rows.
-        if super::dialog(&state.frontend, &state.match_state).wol() {
+        if super::dialog(frontend, match_state).wol() {
             queue(
-                &mut state.frontend.network_setup_protocol,
+                &mut frontend.network_setup_protocol,
                 NetworkSetupRequest::Advertise,
             );
         }
         queue(
-            &mut state.frontend.network_setup_protocol,
+            &mut frontend.network_setup_protocol,
             NetworkSetupRequest::PublishOptions,
         );
         //5EC9F0 ->5DAF30 publishes the changed row bindings independently
         //of the options' participant array, including kicked/unbound nodes.
         queue(
-            &mut state.frontend.network_setup_protocol,
+            &mut frontend.network_setup_protocol,
             NetworkSetupRequest::PublishRoster,
         );
         return Ok(());
     }
-    let mut slot = state
-        .match_state
+    let mut slot = match_state
         .session
         .network_row_choices(row as u8)
         .ok_or_else(|| anyhow::anyhow!("setup row has no choices"))?;
@@ -571,8 +667,7 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
     } else if guest.is_some() {
         false
     } else {
-        state
-            .match_state
+        match_state
             .session
             .network_setup()
             .expect("view has setup")
@@ -580,23 +675,11 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
             .is_observer()
     };
     if let Some((index, _)) = guest {
-        let change = super::service::place_player(
-            &state.frontend,
-            &mut state.match_state,
-            index,
-            slot,
-            observer,
-        )?;
-        super::service::publish_choices(&mut state.frontend, &state.match_state, change);
+        let change = super::service::place_player(frontend, match_state, index, slot, observer)?;
+        super::service::publish_choices(frontend, match_state, change);
         return Ok(());
     }
-    commit_row(
-        &mut state.frontend,
-        &mut state.match_state,
-        row as u8,
-        slot,
-        observer,
-    )
+    commit_row(frontend, match_state, row as u8, slot, observer)
 }
 
 /// Writes the choices of a row this player edits, then sends them: a
@@ -648,15 +731,21 @@ fn commit_row(
 /// VERA's header Join: the player moves to the header's team as its Team
 /// list does, a spectator into a free seat on it as a side in its Side list
 /// does; the spectators' Watch asks to watch as Observer there does.
-fn join(state: &mut AppState, control: u16) -> anyhow::Result<()> {
-    let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
+fn join(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    control: u16,
+) -> anyhow::Result<()> {
+    let current = super::view(renderer, frontend, match_state, process_assets)
+        .ok_or_else(|| anyhow::anyhow!("no setup"))?;
     anyhow::ensure!(current.enabled(control), "Join is not offered");
     let group = current
         .header_button(control)
         .ok_or_else(|| anyhow::anyhow!("no header Join"))?
         .group;
-    let local = state
-        .match_state
+    let local = match_state
         .session
         .network_setup()
         .expect("view has setup")
@@ -671,25 +760,27 @@ fn join(state: &mut AppState, control: u16) -> anyhow::Result<()> {
             false
         }
         SetupGroup::Players => {
-            slot.team = state.match_state.session.network_default_team();
+            slot.team = match_state.session.network_default_team();
             false
         }
         SetupGroup::NoTeam => anyhow::bail!("no team has no Join"),
         SetupGroup::ClosedSeats => anyhow::bail!("closed seats have no Join"),
         SetupGroup::Spectators => true,
     };
-    commit_row(
-        &mut state.frontend,
-        &mut state.match_state,
-        row,
-        slot,
-        observer,
-    )
+    commit_row(frontend, match_state, row, slot, observer)
 }
 
 /// The host drops a dragged roster row on another box ([`put_on_team`]).
-fn drop_row(state: &mut AppState, row: u8, group: SetupGroup) -> anyhow::Result<()> {
-    let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
+fn drop_row(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    row: u8,
+    group: SetupGroup,
+) -> anyhow::Result<()> {
+    let current = super::view(renderer, frontend, match_state, process_assets)
+        .ok_or_else(|| anyhow::anyhow!("no setup"))?;
     let page_row = current
         .headers
         .iter()
@@ -698,21 +789,15 @@ fn drop_row(state: &mut AppState, row: u8, group: SetupGroup) -> anyhow::Result<
         page_row.is_some_and(|header| current.drop_group(row, header) == Some(group)),
         "the row does not drop there"
     );
-    let session = &state.match_state.session;
+    let session = &match_state.session;
     let team = match group {
         SetupGroup::Team(team) => LaunchTeam::Team(team),
         SetupGroup::Players => session.network_default_team(),
         _ => LaunchTeam::None,
     };
     let observer = group == SetupGroup::Spectators;
-    let change = put_on_team(
-        &mut state.frontend,
-        &mut state.match_state,
-        row,
-        team,
-        observer,
-    )?;
-    super::service::publish_choices(&mut state.frontend, &state.match_state, change);
+    let change = put_on_team(frontend, match_state, row, team, observer)?;
+    super::service::publish_choices(frontend, match_state, change);
     Ok(())
 }
 
@@ -721,7 +806,7 @@ fn drop_row(state: &mut AppState, row: u8, group: SetupGroup) -> anyhow::Result<
 /// move them (`service::move_player`), an AI as its Team list would. The
 /// caller publishes the change.
 pub(super) fn put_on_team(
-    frontend: &mut FrontendState,
+    frontend: &FrontendState,
     match_state: &mut MatchState,
     row: u8,
     team: LaunchTeam,
@@ -806,24 +891,26 @@ fn add_ai(
     Ok(())
 }
 
-pub(super) fn accept(state: &mut AppState) -> anyhow::Result<()> {
-    let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
+pub(super) fn accept(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+) -> anyhow::Result<()> {
+    let current = super::view(renderer, frontend, match_state, process_assets)
+        .ok_or_else(|| anyhow::anyhow!("no setup"))?;
     anyhow::ensure!(current.enabled(ACCEPT), "Accept is not eligible");
-    let index = state
-        .match_state
+    let index = match_state
         .session
         .network_setup()
         .expect("view has setup")
         .local_player_index;
-    state
-        .match_state
-        .session
-        .set_network_player_ready(index, true)?;
-    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+    match_state.session.set_network_player_ready(index, true)?;
+    if let Some(protocol) = frontend.network_setup_protocol.as_mut() {
         protocol.start_requested = false;
     }
     queue(
-        &mut state.frontend.network_setup_protocol,
+        &mut frontend.network_setup_protocol,
         NetworkSetupRequest::Ready(true),
     );
     Ok(())

@@ -150,7 +150,13 @@ impl SetupComboInput {
         value: i32,
     ) -> Result<bool> {
         if let Some((control, index, expected)) = self.popup.take() {
-            let view = setup::view(state).context("presented setup combo")?;
+            let view = setup::view(
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+            )
+            .context("presented setup combo")?;
             let open = setup_input::open_list(&state.frontend, &state.match_state);
             ensure!(
                 expected == value
@@ -203,7 +209,13 @@ impl SetupComboInput {
             return Ok(true);
         }
         let control = setup_control_at_row(state, column, row)?.context("visible setup raw row")?;
-        let view = setup::view(state).context("setup combo view")?;
+        let view = setup::view(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        )
+        .context("setup combo view")?;
         let combo = view.combo(control).context("setup combo")?;
         ensure!(
             combo.enabled && combo.visible,
@@ -214,7 +226,12 @@ impl SetupComboInput {
             .iter()
             .position(|choice| choice.value == value)
             .context("legal setup item")?;
-        let layout = setup_input::layout(state);
+        let layout = setup_input::layout(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        );
         let face = layout.control_rect(control).context("setup combo face")?;
         setup_click(
             state,

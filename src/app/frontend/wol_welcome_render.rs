@@ -332,7 +332,11 @@ pub(crate) fn render_wol_page(
     if state.frontend.main_menu_shell_chrome.is_none() || state.frontend.wol.is_none() {
         return Ok(false);
     }
-    crate::app::shell_network_setup::verify_sync(state);
+    crate::app::shell_network_setup::verify_sync(
+        &state.renderer.gpu,
+        &mut state.frontend,
+        &state.match_state,
+    );
     let painted = painted(
         &mut state.frontend,
         &state.renderer,
@@ -770,7 +774,11 @@ pub(crate) fn render_wol_page(
                     &state.match_state,
                     &state.process_assets,
                     verify,
-                    &crate::app::shell_network_setup::verify_layout(state),
+                    &crate::app::shell_network_setup::verify_layout(
+                        &state.renderer.gpu,
+                        &state.frontend,
+                        &state.match_state,
+                    ),
                 )
             });
 

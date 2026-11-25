@@ -441,7 +441,12 @@ fn show_completion(state: &mut AppState, kind: ShellSlideKind, now: Instant) {
         // `0x102`'s own statics start, or repaint when the dialog shows again
         // after Choose Map.
         ShellSlideKind::NetworkSetup(_) => {
-            return crate::app::shell_network_setup::show_statics(state);
+            return crate::app::shell_network_setup::show_statics(
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+            );
         }
         ShellSlideKind::Skirmish => {
             let (title, game_type, map_label) =

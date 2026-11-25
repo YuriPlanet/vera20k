@@ -24,60 +24,68 @@ use crate::ui::single_player_shell::SinglePlayerShellState;
 use crate::util::time::{Duration, Instant};
 use winit::window::Window;
 
-impl AppState {
-    /// Puts `tag`'s language in use as a pick in the Language list does:
-    /// from the next frame every label reads in it, as the string table takes
-    /// its texts and the map titles read from the table follow; the fonts
-    /// take its script's letter forms and reading direction by themselves
-    /// (`TextEngine::follow_interface_language`), as after a reload of the
-    /// language files. False, changing nothing, when no language file
-    /// provides `tag`.
-    pub(crate) fn use_language(&mut self, tag: &str) -> bool {
-        if !crate::i18n::select(tag) {
-            return false;
-        }
-        self.refresh_string_key_labels();
-        true
+/// Puts `tag`'s language in use as a pick in the Language list does:
+/// from the next frame every label reads in it, as the string table takes
+/// its texts and the map titles read from the table follow; the fonts
+/// take its script's letter forms and reading direction by themselves
+/// (`TextEngine::follow_interface_language`), as after a reload of the
+/// language files. False, changing nothing, when no language file
+/// provides `tag`.
+pub(crate) fn use_language(
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+    tag: &str,
+) -> bool {
+    if !crate::i18n::select(tag) {
+        return false;
     }
+    refresh_string_key_labels(frontend, match_state, process_assets);
+    true
+}
 
-    /// Re-resolve the loaded string table and the map titles after a new
-    /// language, the String Keys box or its hotkey changed what labels answer.
-    pub(crate) fn refresh_string_key_labels(&mut self) {
-        if let Some(csf) = self.process_assets.csf.as_mut() {
-            crate::i18n::apply(csf);
-            crate::map::scenario_sources::relabel_records(
-                &mut self.frontend.scenario_catalog.records_mut(),
-                csf,
-            );
-        }
-        crate::app::loading::transitions::resolve_status_texts(
-            &self.frontend,
-            &mut self.match_state,
-            &self.process_assets,
+/// Re-resolve the loaded string table and the map titles after a new
+/// language, the String Keys box or its hotkey changed what labels answer.
+pub(crate) fn refresh_string_key_labels(
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+) {
+    if let Some(csf) = process_assets.csf.as_mut() {
+        crate::i18n::apply(csf);
+        crate::map::scenario_sources::relabel_records(
+            &mut frontend.scenario_catalog.records_mut(),
+            csf,
         );
-        crate::app::input::keyboard::refresh_title(&mut self.frontend, &self.process_assets);
-        // The login form keeps its status line as resolved text; the rest of
-        // that page resolves every frame.
-        if let Some(visit) = self.frontend.wol.as_mut()
-            && let crate::app::shell_wol::WolPage::Login(login) = &mut visit.page
-        {
-            for form in login.form.iter_mut().chain(login.account.iter_mut()) {
-                form.refresh_text();
-            }
+    }
+    crate::app::loading::transitions::resolve_status_texts(frontend, match_state, process_assets);
+    crate::app::input::keyboard::refresh_title(frontend, process_assets);
+    // The login form keeps its status line as resolved text; the rest of
+    // that page resolves every frame.
+    if let Some(visit) = frontend.wol.as_mut()
+        && let crate::app::shell_wol::WolPage::Login(login) = &mut visit.page
+    {
+        for form in login.form.iter_mut().chain(login.account.iter_mut()) {
+            form.refresh_text();
         }
     }
+}
 
-    /// The String Keys hotkey: with the Developer box ticked, keys and texts
-    /// swap in place; with it off, the key does nothing.
-    pub(crate) fn toggle_string_keys_view(&mut self) {
-        if !crate::i18n::string_keys_enabled() {
-            return;
-        }
-        let keys = crate::i18n::toggle_string_keys();
-        self.refresh_string_key_labels();
-        log::info!("String keys: {}", if keys { "keys" } else { "values" });
-        self.platform.window.request_redraw();
+/// The String Keys hotkey: with the Developer box ticked, keys and texts
+/// swap in place; with it off, the key does nothing.
+pub(crate) fn toggle_string_keys_view(
+    window: &Window,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+) {
+    if !crate::i18n::string_keys_enabled() {
+        return;
     }
+    let keys = crate::i18n::toggle_string_keys();
+    refresh_string_key_labels(frontend, match_state, process_assets);
+    log::info!("String keys: {}", if keys { "keys" } else { "values" });
+    window.request_redraw();
 }
 
 /// The options profile's `[Video]` bytes behind HIRES and TOGGLE, which the
@@ -840,20 +848,24 @@ impl App {
     /// While the Developer page's String Keys box is ticked, reload a language
     /// file rewritten in the settings folder or the checkout's `src/i18n`, so
     /// its texts (and their keys) follow without a restart, as after a pick
-    /// in the Language list ([`Self::use_language`]). Returns the next check,
+    /// in the Language list ([`use_language`]). Returns the next check,
     /// keeping the event loop awake for it even on a still screen.
-    pub(super) fn poll_language_files(state: &mut AppState) -> Option<Instant> {
+    pub(super) fn poll_language_files(
+        platform: &PlatformState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
+    ) -> Option<Instant> {
         if !crate::i18n::string_keys_enabled() {
             return None;
         }
-        let settings_dir = state
-            .platform
+        let settings_dir = platform
             .game_config
             .as_ref()
             .map(|config| config.paths.settings_dir().to_path_buf());
-        if state.frontend.language_files.poll(settings_dir.as_deref()) {
-            state.refresh_string_key_labels();
-            state.platform.window.request_redraw();
+        if frontend.language_files.poll(settings_dir.as_deref()) {
+            refresh_string_key_labels(frontend, match_state, process_assets);
+            platform.window.request_redraw();
         }
         Some(Instant::now() + Duration::from_secs(1))
     }

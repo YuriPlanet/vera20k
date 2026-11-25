@@ -91,9 +91,22 @@ pub(super) fn show(
                 color,
             };
             if !visit {
-                crate::app::shell_lan::append_room_chat(state, line);
+                crate::app::shell_lan::append_room_chat(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    line,
+                );
             } else if super::lobby::visiting(state.frontend.wol.as_ref()) {
-                crate::app::shell_lan::append_wol_lobby_chat(state, line, None);
+                crate::app::shell_lan::append_wol_lobby_chat(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    line,
+                    None,
+                );
             }
             state.platform.window.request_redraw();
         }

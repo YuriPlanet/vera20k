@@ -3,9 +3,13 @@
 
 use super::shell_saved_seeds::saved_browser_rows;
 use super::{App, AppState};
+use crate::app::PlatformState;
 use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::state::MatchPresentationState;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::map::rmg::SeedDescription;
 use crate::ui::game_screen::GameScreen;
 use crate::ui::pause_menu::InGameMenuState;
@@ -18,15 +22,19 @@ use winit::keyboard::KeyCode;
 
 impl App {
     pub(super) fn saved_game_layout(
-        state: &AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
         mode: SavedSeedMode,
     ) -> Option<SavedSeedLayout> {
         let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
-            &state.platform,
-            &state.renderer,
-            &state.frontend,
-            &state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
         )?;
         Some(crate::ui::shell::saved_games::saved_game_layout(
             mode,
@@ -38,7 +46,14 @@ impl App {
     }
 
     pub(crate) fn open_saved_game_browser(state: &mut AppState, mode: SavedSeedMode) {
-        let Some(layout) = Self::saved_game_layout(state, mode) else {
+        let Some(layout) = Self::saved_game_layout(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+            mode,
+        ) else {
             return;
         };
         let mut browser = Self::open_saved_game_rows(
@@ -76,15 +91,22 @@ impl App {
         }
     }
 
-    fn saved_game_browser_rows(state: &AppState, mode: SavedSeedMode) -> usize {
-        if state.frontend.screen == GameScreen::MainMenu {
+    fn saved_game_browser_rows(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+        mode: SavedSeedMode,
+    ) -> usize {
+        if frontend.screen == GameScreen::MainMenu {
             let layout = crate::app::frontend::shell_layout::load_saved_game_layout_for_mode(
-                &state.renderer.gpu,
+                &renderer.gpu,
                 mode,
             );
             saved_browser_rows(&layout.browser)
         } else {
-            Self::saved_game_layout(state, mode)
+            Self::saved_game_layout(platform, renderer, frontend, match_state, persistence, mode)
                 .as_ref()
                 .map_or(1, saved_browser_rows)
         }
@@ -108,7 +130,14 @@ impl App {
     }
 
     fn return_to_saved_game_list(state: &mut AppState, selection: PathBuf) {
-        let rows = Self::saved_game_browser_rows(state, SavedSeedMode::Load);
+        let rows = Self::saved_game_browser_rows(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+            SavedSeedMode::Load,
+        );
         let mut browser = Self::open_saved_game_rows(
             &state.match_state,
             &state.process_assets,
@@ -267,7 +296,14 @@ impl App {
                 if let Err(error) = state.persistence.repository.delete(&file_name) {
                     log::warn!("Delete browser: {}: {error}", file_name.display());
                 }
-                let layout = Self::saved_game_layout(state, SavedSeedMode::Delete);
+                let layout = Self::saved_game_layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                    SavedSeedMode::Delete,
+                );
                 let rows = layout.as_ref().map_or(1, saved_browser_rows);
                 let empty = Self::saved_game_browser_slot(
                     &mut state.frontend,
@@ -355,7 +391,14 @@ impl App {
                 }
             }
             SavedSeedOutcome::BeginConvert(source) => {
-                let rows = Self::saved_game_browser_rows(state, SavedSeedMode::Save);
+                let rows = Self::saved_game_browser_rows(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                    SavedSeedMode::Save,
+                );
                 let browser = Self::open_saved_game_rows(
                     &state.match_state,
                     &state.process_assets,
@@ -490,7 +533,14 @@ impl App {
         else {
             return;
         };
-        let Some(layout) = Self::saved_game_layout(state, mode) else {
+        let Some(layout) = Self::saved_game_layout(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+            mode,
+        ) else {
             return;
         };
         let extent = (layout.screen.w as u32, layout.screen.h as u32);
@@ -531,7 +581,14 @@ impl App {
         else {
             return;
         };
-        let Some(layout) = Self::saved_game_layout(state, mode) else {
+        let Some(layout) = Self::saved_game_layout(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+            mode,
+        ) else {
             return;
         };
         let extent = (layout.screen.w as u32, layout.screen.h as u32);

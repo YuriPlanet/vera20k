@@ -1058,7 +1058,12 @@ pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
             }
             log::info!("Thread stats: {}", if rows { "shown" } else { "hidden" });
         }
-        HotkeyCommand::StringKeys => state.toggle_string_keys_view(),
+        HotkeyCommand::StringKeys => crate::app::shell_main_menu::toggle_string_keys_view(
+            &state.platform.window,
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
+        ),
         _ => return,
     }
     state.platform.window.request_redraw();

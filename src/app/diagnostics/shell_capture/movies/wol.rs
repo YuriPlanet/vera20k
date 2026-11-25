@@ -1608,7 +1608,13 @@ fn login_click(state: &mut AppState, rect: RectPx) {
 }
 
 fn setup_view(state: &AppState) -> Result<crate::ui::multiplayer_setup::SetupView> {
-    setup::view(state).context("C2/C9 view")
+    setup::view(
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    )
+    .context("C2/C9 view")
 }
 
 /// Row `row`'s combo in `column` and the page row it stands on: VERA's room
@@ -1685,19 +1691,31 @@ fn press_header(
         .iter()
         .position(|header| header.as_ref().is_some_and(|header| header.group == group))
         .with_context(|| format!("{group:?}'s header"))?;
-    let rect = crate::app::input::multiplayer_setup::layout(state).header_controls[row].0;
+    let rect = crate::app::input::multiplayer_setup::layout(
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    )
+    .header_controls[row]
+        .0;
     setup_click(state, rect);
     Ok(())
 }
 
 fn setup_button(state: &mut AppState, id: u16) -> Result<()> {
-    let rect = crate::app::input::multiplayer_setup::layout(state)
-        .page
-        .buttons
-        .into_iter()
-        .find(|button| button.id == id)
-        .context("setup button")?
-        .rect;
+    let rect = crate::app::input::multiplayer_setup::layout(
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    )
+    .page
+    .buttons
+    .into_iter()
+    .find(|button| button.id == id)
+    .context("setup button")?
+    .rect;
     setup_click(state, rect);
     Ok(())
 }

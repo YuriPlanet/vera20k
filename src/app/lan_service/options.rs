@@ -148,7 +148,13 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
                     .session
                     .accept_campaign_room(Some(room), game_speed)?;
                 super::maps::clear_campaign_transfer(&mut state.frontend, &mut state.match_state);
-                campaign_room::report_local_files(state, true)?;
+                campaign_room::report_local_files(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    true,
+                )?;
             }
         }
     }
@@ -417,7 +423,13 @@ fn apply_host_room(
             if let Err(error) = &verified {
                 log::info!("Campaign room files refused: {error:#}");
             }
-            campaign_room::report_local_files(state, verified.is_ok())?;
+            campaign_room::report_local_files(
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                verified.is_ok(),
+            )?;
         }
         _ => anyhow::bail!("LAN host setup projection does not match its options body"),
     }
