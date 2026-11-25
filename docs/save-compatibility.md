@@ -60,7 +60,9 @@ offsets. Its saves convert with Kratos off, as those matches played. The
 `bc55c35e7` writer's layout `0x9F1BD701` predates Tiberian Sun webs; its
 infantry convert with no web. The `30e9a0f38` writer's layout `0xF215BF3A`
 predates the Wasm extension modules; its saves convert with no module. The
-`a33fcac81` writer covers direct loading of layout `0xE18EA373`.
+`a33fcac81` writer's layout `0xE18EA373` predates the modules' control
+points; its saves convert with no projectile path, push or immunity modifier.
+The `44498db86` writer covers direct loading of layout `0x8EAEA59C`.
 
 Run the menu and compatibility tests with this command.
 
