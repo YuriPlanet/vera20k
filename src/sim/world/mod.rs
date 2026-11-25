@@ -60,6 +60,9 @@ mod quiet_units;
 #[cfg(all(test, tests_sim_world_p_s))]
 mod quiet_units_tests;
 mod sinking;
+mod steady_ai;
+#[cfg(all(test, tests_sim_world_p_s))]
+mod steady_ai_tests;
 mod terrain_deformation;
 mod time_warp;
 mod trigger_chrono;

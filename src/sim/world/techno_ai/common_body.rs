@@ -1135,6 +1135,38 @@ pub(super) fn techno_after_acquisition(
     true
 }
 
+/// The GetCoords of `entity` (`id`, of type `object`) whose Cell
+/// [`behind_indicator_step`] asks about ([`behind_indicator_cell`]), or
+/// `None` when the step asks none: for a type without `CanBeHidden=`, an
+/// Aircraft, or while no Cell hides anything. A steady object's mark asks
+/// it too (`world::steady_ai`).
+pub(in crate::sim::world) fn behind_indicator_coord(
+    sim: &Simulation,
+    id: u64,
+    entity: &GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+) -> Option<crate::sim::anim_class::AnimWorldCoord> {
+    // With no hidden-occupation entry no Cell hides anything; skip the
+    // per-object coordinate and Cell lookups (VERA-only, result unchanged).
+    if !object.can_be_hidden
+        || entity.category() == EntityCategory::Aircraft
+        || sim.substrate.hidden_occupation.entry_count() == 0
+    {
+        return None;
+    }
+    sim.anim_owner_coords(id)
+}
+
+/// The Cell holding `coord`, which [`behind_indicator_step`] asks whether it
+/// hides objects; `None` off the map's coordinate range.
+pub(in crate::sim::world) fn behind_indicator_cell(
+    coord: crate::sim::anim_class::AnimWorldCoord,
+) -> Option<(u16, u16)> {
+    u16::try_from(coord.x / 256)
+        .ok()
+        .zip(u16::try_from(coord.y / 256).ok())
+}
+
 /// `TechnoClass::AI_Update @ 0x006FA24A..0x006FA30C`, before the allied
 /// target drop: an object whose type has `CanBeHidden=` (TechnoType `+0x724`)
 /// and that is not an Aircraft (vt+0x2C 2), standing on a Cell that hides it
@@ -1173,19 +1205,10 @@ pub(super) fn behind_indicator_step(sim: &mut Simulation, id: u64, rules: &RuleS
     let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
         return;
     };
-    // With no hidden-occupation entry no Cell hides anything; skip the
-    // per-object coordinate and Cell lookups (VERA-only, result unchanged).
-    let coord = (object.can_be_hidden
-        && entity.category() != EntityCategory::Aircraft
-        && sim.substrate.hidden_occupation.entry_count() != 0)
-        .then(|| sim.anim_owner_coords(id))
-        .flatten();
-    let hidden = coord.is_some_and(|coord| {
-        u16::try_from(coord.x / 256)
-            .ok()
-            .zip(u16::try_from(coord.y / 256).ok())
-            .is_some_and(|(rx, ry)| sim.substrate.cell_hides_objects(rx, ry))
-    });
+    let coord = behind_indicator_coord(sim, id, entity, object);
+    let hidden = coord
+        .and_then(behind_indicator_cell)
+        .is_some_and(|(rx, ry)| sim.substrate.cell_hides_objects(rx, ry));
     if !hidden {
         // A quiet unit holds no Behind anim (`world::quiet_units`).
         if !sim.quiet(id)
@@ -1376,20 +1399,10 @@ pub(super) fn techno_common_post(
     rules: &RuleSet,
     effects: &mut FrameEffects<'_>,
 ) {
-    // Techno6FABC4 follows Mission, passive acquisition and the reach slot.
-    // Buildings step at4509DE in their existing UpdateAnimation owner.
     // Native6FABBC..C2 skips ONLY the generic Stage block to6FAC31; the
     //shared flash/particle/EMP tail still precedes Building's Gattling code.
     //Do not reset Stage.changed or flash twice when migrating this caller.
-    // A quiet unit's stage clock stands still (`world::quiet_units`).
-    let now = sim.session.binary_frame() as i32;
-    if !sim.quiet(id)
-        && let Some(entity) = sim.substrate.entities.get_mut_if(id, |entity| {
-            entity.category() != EntityCategory::Structure && entity.native_stage().advances(now)
-        })
-    {
-        entity.tick_native_stage(now);
-    }
+    stage_step(sim, id);
     flash_step(&mut sim.substrate, id, sim.session.binary_frame());
 
     sim.update_damage_spark_after_ai(id, rules);
@@ -1401,6 +1414,22 @@ pub(super) fn techno_common_post(
     // No global frame sweep: limbo/skipped/dead visits never reach this slot.
     if rules.ares() {
         sim.tick_ares_emp(id, rules, effects);
+    }
+}
+
+/// The common stage clock (Techno6FABC4), after Mission, passive acquisition
+/// and the reach slot. Buildings step at4509DE in their existing
+/// UpdateAnimation owner. A quiet unit's clock stands still
+/// (`world::quiet_units`); a steady object's counted visit runs this step
+/// alone (`world::steady_ai`).
+pub(in crate::sim::world) fn stage_step(sim: &mut Simulation, id: u64) {
+    let now = sim.session.binary_frame() as i32;
+    if !sim.quiet(id)
+        && let Some(entity) = sim.substrate.entities.get_mut_if(id, |entity| {
+            entity.category() != EntityCategory::Structure && entity.native_stage().advances(now)
+        })
+    {
+        entity.tick_native_stage(now);
     }
 }
 

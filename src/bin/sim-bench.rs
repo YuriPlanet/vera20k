@@ -100,10 +100,11 @@
 //! up to date after every frame, as the client's simulation host does for
 //! drawing (docs/sim-thread.md), and counts it in the frame's time.
 //!
-//! Idle objects sleep as in a real match (`sim::world::idle_sleep`):
-//! `--no-sleep` runs every turn, which must give the same hashes, and
-//! `--sleep-check` runs every turn sleeping would skip and stops if one
-//! changed anything. The summary prints how many visits were counted.
+//! Idle objects sleep as in a real match (`sim::world::idle_sleep`), and
+//! steady objects' AI visits are counted (`sim::world::steady_ai`):
+//! `--no-sleep` runs every turn and visit, which must give the same hashes,
+//! and `--sleep-check` runs every turn and visit either would skip and stops
+//! if one changed anything. The summary prints how many were counted.
 //!
 //! The simulation batches its path searches and target scans as a real
 //! match does, and with the scans spreads the patrol scans over their period
@@ -1297,7 +1298,8 @@ fn main() -> Result<(), String> {
     let final_hash = runtime.simulation.state_hash();
     println!("final_hash={final_hash:016x}");
     let (asleep, counted) = runtime.simulation.idle_sleep_counts();
-    println!("idle_sleep asleep_now={asleep} visits_counted={counted}");
+    let steady = runtime.simulation.steady_ai_visits();
+    println!("idle_sleep asleep_now={asleep} visits_counted={counted} steady_ai_visits={steady}");
     if let Plan::Battle(battle) = &plan {
         println!(
             "battle fewest_mobile={} lost={} objects_made={}",
