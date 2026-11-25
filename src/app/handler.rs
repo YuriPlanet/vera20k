@@ -845,6 +845,11 @@ impl App {
         {
             return;
         }
+        #[cfg(target_os = "android")]
+        if screen == ScreenPage::Mods && state.frontend.mods.name_dialog.is_some() {
+            crate::app::App::name_dialog_key(state, event);
+            return;
+        }
         match screen {
             ScreenPage::CoopScore => return crate::app::input::coop_score::key(state, event),
             ScreenPage::LanLobby => return crate::app::shell_lan::key(state, event),
@@ -2448,7 +2453,12 @@ impl ApplicationHandler for App {
                         &state.persistence.options_profile,
                     )
                 },
-                #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                #[cfg(any(
+                    windows,
+                    target_os = "macos",
+                    target_os = "linux",
+                    target_os = "android"
+                ))]
                 Self::poll_mod_import,
                 |state| {
                     Self::poll_choose_map_scroll(

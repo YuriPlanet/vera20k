@@ -1532,7 +1532,12 @@ impl App {
         if Self::shell_menu_pointer(state, Some(down)) && down {
             return;
         }
-        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        #[cfg(any(
+            windows,
+            target_os = "macos",
+            target_os = "linux",
+            target_os = "android"
+        ))]
         super::shell_mod_import::sync(&state.renderer, &mut state.frontend);
         let parts = shell_layout::shell_box_parts(&state.renderer.gpu, &shell_box);
         let id = Self::shell_box_pointer(
@@ -1545,7 +1550,12 @@ impl App {
             Some(down),
         );
         // Add Mod's More and reorder buttons act inside the box.
-        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        #[cfg(any(
+            windows,
+            target_os = "macos",
+            target_os = "linux",
+            target_os = "android"
+        ))]
         if let Some(id) = id
             && super::shell_mod_import::is_preview_button(id)
         {
@@ -1563,7 +1573,12 @@ impl App {
             Self::resolve_shell_message_box(state, answer);
             return;
         }
-        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        #[cfg(any(
+            windows,
+            target_os = "macos",
+            target_os = "linux",
+            target_os = "android"
+        ))]
         super::shell_mod_import::follow_list(&state.renderer.gpu, &mut state.frontend);
     }
 
@@ -1674,6 +1689,18 @@ impl App {
                 which,
                 yes,
             ),
+            #[cfg(target_os = "android")]
+            Purpose::ModNotice => state.platform.window.request_redraw(),
+            #[cfg(target_os = "android")]
+            Purpose::ModDelete(folder) => Self::answer_mod_delete(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+                &folder,
+                yes,
+            ),
             Purpose::ModMade(dir) => Self::answer_mod_made(
                 &state.platform.window,
                 &state.renderer,
@@ -1683,7 +1710,12 @@ impl App {
                 &dir,
                 yes,
             ),
-            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            #[cfg(any(
+                windows,
+                target_os = "macos",
+                target_os = "linux",
+                target_os = "android"
+            ))]
             Purpose::ModImport(dialog) => Self::answer_mod_import(
                 &mut state.platform,
                 &state.renderer,
@@ -2208,7 +2240,12 @@ impl App {
         Self::raise_shell_message_box(&mut state.frontend);
         // Add Mod's boxes keep Enter from cancelling the choice or a running
         // import: it answers OK, or nothing while the import prepares.
-        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        #[cfg(any(
+            windows,
+            target_os = "macos",
+            target_os = "linux",
+            target_os = "android"
+        ))]
         if key == vera20k_gui::Key::Enter
             && let Some(activate) =
                 super::shell_mod_import::enter(state.frontend.shell_message_box.as_ref())

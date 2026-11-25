@@ -105,6 +105,50 @@ Reclaiming space: delete `target/owned-worktrees/<hash>` for a retired checkout,
 the next native build) and `target/debug`; the `fast` profile used for device
 builds stays small.
 
+## The Mods page on Android
+
+The app owns its storage, so no file manager can open `files/Mods`. The page
+keeps its list and Use This Mod, Check Files and New Mod; the right column's
+other rows are Android's own:
+
+| Row | Action |
+|---|---|
+| Add Mod | Choose ZIPs and Choose Folder open the system file manager (`VeraActivity.pickModZip`, `pickModFolder`). The activity copies the pick into `files/tmp/mod-import-*/`, keeping its name, and Add Mod's usual preview and install take it from there (`app::shell_mod_import`). The copies are deleted once the import ends or Add Mod closes, and at the next start. |
+| Export Mod | Copies the selected folder into a folder the system picker chooses (`VeraActivity.exportMod`). |
+| Rename Mod | Asks for a new name; renames the folder, keeps a shown `mod.ini` `Name=` and the next start's choice in step. |
+| Delete Mod | Asks first, then removes the folder and its home-screen shortcuts. |
+| Add Desktop Entry | Pins a home-screen shortcut for the selected mod (`VeraActivity.pinMod`). |
+
+New Mod and Rename Mod ask for the name in a dialog of the page's own
+(`ui::mods_shell::NAME_EDIT`), which the soft keyboard types into
+(`app::input::ime`). The activity's toasts say how an export or a failed
+copy went, in the player's language; the engine reaches the activity through
+`util::mod_actions`, whose hooks only the Android crate installs.
+
+## Launching a mod from a shortcut
+
+A launcher shortcut starts the game on one mod without changing the player's
+own choice. Its intent carries the `org.vera20k.ENTRY` extra, which the
+activity hands over once (`VeraActivity.takeLaunchEntry`): `mod:<folder>`
+gives the choice `--mod <folder>` gives a desktop launch
+(`app::mods::launch_entry_switch`), so that folder loads for this launch only
+and `config.toml` keeps the player's `[paths] mod`.
+
+Add Desktop Entry pins `modid:<id>` instead. The id is the hex string in the
+folder's `.vera20k-mod-id`, written when a mod is made, imported or pinned;
+the Android crate turns it into the folder that holds it now, so a renamed mod
+keeps its shortcut. The launcher owns the shortcut's label, which stays the
+name it was pinned with. At start the activity disables pinned shortcuts
+whose id no folder holds.
+
+```powershell
+adb shell am start -n org.vera20k/org.vera20k.VeraActivity `
+  --es org.vera20k.ENTRY "mod:Winter War"
+```
+
+An empty extra, an unknown prefix or a missing folder picks nothing, which is
+what a launch from the plain icon does.
+
 ## Launcher icon
 
 The desktop picks its window icon at run time (`src/app/window_icon.rs`): the

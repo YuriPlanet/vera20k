@@ -61,6 +61,117 @@ fn display_insets() -> vera20k::util::display_insets::Insets {
     .unwrap_or_default()
 }
 
+/// Calls one of the activity's Mods page actions, `method(String...)Z` with
+/// `args`; false when it cannot.
+fn activity_flag(method: &str, args: &[&str]) -> bool {
+    with_activity(|env, activity| {
+        let mut strings = Vec::with_capacity(args.len());
+        for arg in args {
+            strings.push(env.new_string(arg).ok()?);
+        }
+        let values: Vec<jni::objects::JValue> = strings.iter().map(|text| text.into()).collect();
+        let signature = format!("({})Z", "Ljava/lang/String;".repeat(args.len()));
+        env.call_method(activity, method, signature, &values)
+            .ok()?
+            .z()
+            .ok()
+    })
+    .flatten()
+    .unwrap_or(false)
+}
+
+/// Mods page: export `folder` through the system file manager; the toasts
+/// say `done` or `failed`.
+fn mod_export(folder: &str, done: &str, failed: &str) -> bool {
+    activity_flag("exportMod", &[folder, done, failed])
+}
+
+/// Mods page: pick a mod ZIP in the system file manager; the toast says
+/// `failed` when the copy does not work.
+fn mod_pick_zip(failed: &str) -> bool {
+    activity_flag("pickModZip", &[failed])
+}
+
+/// Mods page: pick a mod folder in the system file manager.
+fn mod_pick_folder(failed: &str) -> bool {
+    activity_flag("pickModFolder", &[failed])
+}
+
+/// The mod part a picker copied in, once.
+fn mod_take_picked() -> Option<String> {
+    with_activity(|env, activity| {
+        let value = env
+            .call_method(activity, "takePickedModPart", "()Ljava/lang/String;", &[])
+            .ok()?
+            .l()
+            .ok()?;
+        env.get_string(&JString::from(value))
+            .ok()
+            .map(|text| text.to_string_lossy().into_owned())
+    })
+    .flatten()
+    .filter(|part| !part.is_empty())
+}
+
+/// Mods page: delete the copies the pickers made.
+fn mod_clear_picked() {
+    let _ = with_activity(|env, activity| {
+        env.call_method(activity, "clearPickedModParts", "()V", &[])
+            .is_ok()
+    });
+}
+
+/// Mods page: forget `folder`'s home-screen shortcuts (`id` and its old name).
+fn mod_forget(folder: &str, id: &str) -> bool {
+    activity_flag("forgetModShortcut", &[folder, id])
+}
+
+/// Mods page: add a home-screen shortcut for `folder` under `id`.
+fn mod_pin(folder: &str, id: &str) -> bool {
+    activity_flag("pinMod", &[folder, id])
+}
+
+/// Resolves a `modid:<id>` entry to its folder by the id file the Mods folder
+/// keeps, so a shortcut survives a rename.
+fn folder_for_mod_id(data_dir: &std::path::Path, entry: &str) -> Option<String> {
+    let id = entry.strip_prefix("modid:")?.trim();
+    if id.is_empty() {
+        return None;
+    }
+    let mods = data_dir.join("Mods");
+    let entries = std::fs::read_dir(mods).ok()?;
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(dir.join(".vera20k-mod-id")) else {
+            continue;
+        };
+        if text.trim() == id {
+            return entry.file_name().to_str().map(|name| format!("mod:{name}"));
+        }
+    }
+    None
+}
+
+/// The entry a launcher shortcut handed over (`VeraActivity.takeLaunchEntry`),
+/// read once: `mod:<folder>` picks that mod for this launch.
+fn launch_entry() -> Option<String> {
+    with_activity(|env, activity| {
+        let value = env
+            .call_method(activity, "takeLaunchEntry", "()Ljava/lang/String;", &[])
+            .ok()?
+            .l()
+            .ok()?;
+        env.get_string(&JString::from(value))
+            .ok()
+            .map(|text| text.to_string_lossy().into_owned())
+    })
+    .flatten()
+    .filter(|entry| !entry.is_empty())
+}
+
 /// Folder-picker hook for `vera20k::util::folder_picker`.
 ///
 /// The picker is the one thing the NDK cannot do itself: a Storage Access
@@ -435,6 +546,17 @@ fn android_main(app: AndroidApp) {
     vera20k::util::display_insets::install(vera20k::util::display_insets::Hooks {
         insets: display_insets,
     });
+    // The Mods page cannot hand a path to a file manager on Android: export,
+    // Add Mod's pickers and the shortcut pin run in the activity.
+    vera20k::util::mod_actions::install(vera20k::util::mod_actions::Hooks {
+        export: mod_export,
+        pin: mod_pin,
+        forget: mod_forget,
+        pick_zip: mod_pick_zip,
+        pick_folder: mod_pick_folder,
+        take_picked: mod_take_picked,
+        clear_picked: mod_clear_picked,
+    });
     // The launcher icon is a compiled resource, so the VERA Icon box's choice
     // reaches the two activity aliases only through PackageManager.
     vera20k::util::app_icon::install(apply_app_icon);
@@ -464,6 +586,7 @@ fn android_main(app: AndroidApp) {
     // private folder to the engine before anything opens a file: it becomes
     // both the working directory and the settings folder, so logs, config.toml,
     // VERA.INI, saves and replays all persist there.
+    let data_dir = app.internal_data_path();
     match app.internal_data_path() {
         Some(dir) => {
             if let Err(error) = vera20k::entry::adopt_android_data_dir(&dir) {
@@ -523,7 +646,23 @@ fn android_main(app: AndroidApp) {
         vera20k::app::frontend::startup_options::RetailStartupOptions::default(),
     );
 
-    match vera20k::entry::run_with_loop(launch_mode, false, event_loop) {
+    // A pinned shortcut can name the mod this launch plays; `config.toml` keeps
+    // the player's own choice untouched.
+    let mut entry = launch_entry();
+    if let Some(entry) = entry.as_deref() {
+        log::info!("Launch entry: {entry}");
+    }
+    if let Some(id_entry) = entry.clone().filter(|entry| entry.starts_with("modid:")) {
+        match folder_for_mod_id(data_dir.as_deref().unwrap_or(std::path::Path::new(".")), &id_entry) {
+            Some(folder_entry) => {
+                log::info!("Launch entry {id_entry} is {folder_entry}");
+                entry = Some(folder_entry);
+            }
+            None => log::warn!("Launch entry {id_entry} names no mod here"),
+        }
+    }
+    match vera20k::entry::run_with_loop_and_entry(launch_mode, false, event_loop, entry.as_deref())
+    {
         Ok(0) => {}
         // Android has no `-SPAWN` status to propagate; a non-zero one still
         // belongs in the log before the activity finishes.

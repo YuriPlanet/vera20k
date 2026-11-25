@@ -686,7 +686,12 @@ pub(crate) fn render_shell_message_box_over_page(
     // The box's lists keep their widgets on the box as it lays out now.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     let _ = crate::app::updater::notes::sync(&state.renderer.gpu, &mut state.frontend);
-    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    #[cfg(any(
+        windows,
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "android"
+    ))]
     let _ = crate::app::shell_mod_import::sync(&state.renderer, &mut state.frontend);
     let state = &*state;
     let (Some(overlay), Some(chrome)) = (
@@ -803,7 +808,12 @@ fn build_shell_message_box_overlay(
         ShellMessageBoxPurpose::UpdateOffer(_)
         | ShellMessageBoxPurpose::UpdateProgress
         | ShellMessageBoxPurpose::UpdateCheck => atlas.ra2_dialog_background,
-        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        #[cfg(any(
+            windows,
+            target_os = "macos",
+            target_os = "linux",
+            target_os = "android"
+        ))]
         ShellMessageBoxPurpose::ModImport(_) => atlas.ra2_dialog_background,
         ShellMessageBoxPurpose::Notice
         | ShellMessageBoxPurpose::ModRestart(_)
@@ -848,9 +858,18 @@ fn build_shell_message_box_overlay(
     );
     let look = crate::app::frontend::skirmish_shell_render::BoxLook {
         covered: &list,
-        // Add Mod's greyed reorder buttons use the shell's disabled text.
+        // Add Mod's greyed reorder buttons use the shell's disabled text. On
+        // Android's screens that red is nearly the button's own colour, so
+        // the labels stay readable in a grey.
         disabled_rgb: if message_box.is_mod_import() {
-            shell_paint::SHELL_TEXT_RGB_DISABLED
+            #[cfg(not(target_os = "android"))]
+            {
+                shell_paint::SHELL_TEXT_RGB_DISABLED
+            }
+            #[cfg(target_os = "android")]
+            {
+                [0.62, 0.55, 0.5]
+            }
         } else {
             base_look.disabled_rgb
         },
@@ -925,7 +944,12 @@ fn build_shell_message_box_overlay(
     }
     // Add Mod's parts, each row's text inset 4 pixels from both ends and cut
     // to its row: the list's `Items`, which its sync writes as they change.
-    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    #[cfg(any(
+        windows,
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "android"
+    ))]
     let import_parts = crate::app::shell_mod_import::node(&renderer.gpu, frontend).map(|node| {
         use crate::app::frontend::skirmish_shell_render::gui_paint::{GuiStyle, paint_gui_styled};
         let gui = frontend.shell_controller.gui();
@@ -946,7 +970,12 @@ fn build_shell_message_box_overlay(
             style,
         )
     });
-    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    #[cfg(any(
+        windows,
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "android"
+    ))]
     let import_parts = import_parts.map(|mut import_parts| {
         let controls = import_parts.take_lane(crate::render::hud_paint::Material::Controls);
         draw.text.extend(import_parts.texts);
@@ -954,7 +983,12 @@ fn build_shell_message_box_overlay(
     });
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     draw.sprites.extend(notes.into_iter().flatten());
-    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    #[cfg(any(
+        windows,
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "android"
+    ))]
     draw.sprites.extend(import_parts.into_iter().flatten());
     Some(draw)
 }

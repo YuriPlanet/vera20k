@@ -19,9 +19,9 @@
 //! (C2/C9, BC/BD), the LAN lobby (BB), Choose Map's search line, and VERA's
 //! converted-save name edit. On Android they are the in-game line and the
 //! focused `Edit` of a GUI page (the LAN lobby's chat and name box, the setup
-//! room's chat, the WOL pages and lobby, the skirmish player name, and Choose
-//! Map's search line). Finished text goes through each screen's own text
-//! path, as WM_IME_CHAR does.
+//! room's chat, the WOL pages and lobby, the skirmish player name, Choose
+//! Map's search line, and the Mods page's name dialog). Finished text goes
+//! through each screen's own text path, as WM_IME_CHAR does.
 //!
 //! Player-name edits take no input method: NewEdit `0x00614B30` drops units at
 //! or above 0x100 from them (`0x00615226..0x0061527A`, the byte-only filter),
@@ -366,6 +366,9 @@ enum GuiScreen {
     LoadSavedGame,
     /// The in-game saved-game browser, likewise.
     InGameSavedGame,
+    /// The Mods page's name dialog (New Mod, Rename Mod), which focuses its
+    /// edit when it opens.
+    ModName,
 }
 
 #[cfg(target_os = "android")]
@@ -445,6 +448,9 @@ fn gui_screen(state: &AppState) -> Option<(GuiScreen, &vera20k_gui::Gui)> {
             crate::app::shell_wol::lobby::ime_gui(state)?,
         )),
         InputLayer::Screen(ScreenPage::Wol) => Some((GuiScreen::WolPages, shell.gui())),
+        InputLayer::Screen(ScreenPage::Mods) if state.frontend.mods.name_dialog.is_some() => {
+            Some((GuiScreen::ModName, shell.gui()))
+        }
         InputLayer::Screen(ScreenPage::InGameShell(InGameMenuState::Page)) => {
             Some((GuiScreen::InGamePage, shell.gui()))
         }
@@ -634,6 +640,7 @@ fn gui_key(state: &mut AppState, code: Option<winit::keyboard::KeyCode>, text: O
         ),
         GuiScreen::LoadSavedGame => crate::app::App::handle_load_saved_game_key(state, code, text),
         GuiScreen::InGameSavedGame => crate::app::App::saved_game_key(state, code, text),
+        GuiScreen::ModName => crate::app::App::name_dialog_input(state, code, text),
     }
 }
 
