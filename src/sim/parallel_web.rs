@@ -34,6 +34,13 @@ pub(crate) fn filter_map_indices<R: Send>(
 pub(crate) fn for_each_mut<T: Send>(items: &mut [T], work: impl Fn(&mut T) + Sync) {
     items.iter_mut().for_each(work);
 }
+pub(crate) fn for_each_mut_with<T: Send, S: Clone + Send>(
+    items: &mut [T],
+    mut init: S,
+    work: impl Fn(&mut S, &mut T) + Sync,
+) {
+    items.iter_mut().for_each(|item| work(&mut init, item));
+}
 pub(crate) fn any_index(len: usize, test: impl Fn(usize) -> bool + Sync) -> bool {
     (0..len).any(test)
 }
@@ -82,6 +89,14 @@ mod tests {
         let (mut serial, mut pooled) = (input, input);
         for_each_mut(&mut serial, |x| *x += 1);
         native::for_each_mut(&mut pooled, |x| *x += 1);
+        assert_eq!(serial, pooled);
+        let double = |scratch: &mut Vec<i32>, x: &mut i32| {
+            scratch.clear();
+            scratch.push(*x * 2);
+            *x = scratch[0];
+        };
+        for_each_mut_with(&mut serial, Vec::new(), double);
+        native::for_each_mut_with(&mut pooled, Vec::new(), double);
         assert_eq!(serial, pooled);
         assert_eq!(
             any_index(17, |x| x == 16),

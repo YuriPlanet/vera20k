@@ -157,6 +157,62 @@ pub trait FrameClient {
     fn production_request_cleared(&mut self, _type_id: crate::sim::intern::InternedId) {}
 }
 
+/// What a frame lends (VERA-only, sim-scale), for an object turn run on a
+/// fork of the world (`world::speculation`) to tell whether a boundary it
+/// asks would have served it: such a turn is lost, and the pass runs it
+/// again on the world. Callbacks count as lent with a client, whose methods
+/// may take them.
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct Lends {
+    sound: bool,
+    tactical_radar: bool,
+    outcome_wait: bool,
+    local_planning: bool,
+    network: bool,
+    callbacks: bool,
+    production: bool,
+}
+
+/// One sound delivery a turn on a fork reached: the frame's sound events
+/// so far ([`FrameEffects::flush_sound`]), or those and a looping sound's
+/// update ([`FrameEffects::update_looping_sound`]). The pass makes it on the
+/// world when it commits the turn, with the turn's first `emitted` events
+/// appended.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct SoundStep {
+    pub(super) emitted: usize,
+    pub(super) looping: Option<(u64, crate::sim::anim_class::AnimWorldCoord)>,
+}
+
+/// The effects of an object turn run on a fork of the world
+/// (`world::speculation`): nothing is lent, sound deliveries are noted for
+/// the commit, and a boundary the frame lends loses the turn.
+#[derive(Debug, Default)]
+pub(super) struct ForkEffects {
+    lends: Lends,
+    selection_voice_suppressed: bool,
+    pub(super) sound_steps: Vec<SoundStep>,
+}
+
+impl ForkEffects {
+    /// A fork's effects for a pass whose frame lends `lends`.
+    pub(super) fn new(lends: Lends, selection_voice_suppressed: bool) -> Self {
+        Self {
+            lends,
+            selection_voice_suppressed,
+            sound_steps: Vec::new(),
+        }
+    }
+
+    /// Note a sound delivery; one that would deliver nothing the last did
+    /// not is the same delivery.
+    fn note(&mut self, step: SoundStep) {
+        if step.looping.is_some() || self.sound_steps.last() != Some(&step) {
+            self.sound_steps.push(step);
+        }
+    }
+}
+
 /// Stack-scoped process effects accompanying this simulation visit. The
 /// simulation reaches each lent owner through `&mut`, so a callback cannot
 /// re-enter a boundary that is already running: the handle is passed on as
@@ -176,6 +232,9 @@ pub struct FrameEffects<'a> {
     production_factories: &'a [crate::sim::production::ProductionFactoryVisit],
     production_request_cleared: Option<&'a mut dyn FnMut(crate::sim::intern::InternedId)>,
     client: Option<&'a mut dyn FrameClient>,
+    /// An object turn on a fork of the world (`world::speculation`), which
+    /// lends nothing else.
+    fork: Option<&'a mut ForkEffects>,
 }
 
 impl<'a> FrameEffects<'a> {
@@ -203,6 +262,43 @@ impl<'a> FrameEffects<'a> {
             production_factories: &[],
             production_request_cleared: None,
             client: None,
+            fork: None,
+        }
+    }
+
+    /// The effects of an object turn run on a fork of the world.
+    pub(super) fn for_fork(fork: &'a mut ForkEffects) -> Self {
+        Self {
+            selection_voice_suppressed: fork.selection_voice_suppressed,
+            fork: Some(fork),
+            ..Self::empty()
+        }
+    }
+
+    /// What this frame lends ([`Lends`]).
+    pub(super) fn lends(&mut self) -> Lends {
+        Lends {
+            sound: self.sound().is_some(),
+            tactical_radar: self.tactical_radar().is_some(),
+            outcome_wait: self.outcome_wait().is_some(),
+            local_planning: self.local_planning().is_some(),
+            network: self.network().is_some(),
+            callbacks: self.before_logic.is_some()
+                || self.command_applied.is_some()
+                || self.bounty_text.is_some()
+                || self.production_request_cleared.is_some()
+                || self.client.is_some(),
+            production: !self.production_factories.is_empty(),
+        }
+    }
+
+    /// A turn on a fork asked a role or callback: it is lost if the frame
+    /// lends that one.
+    fn asked(&self, lent: impl FnOnce(Lends) -> bool) {
+        if let Some(fork) = self.fork.as_deref()
+            && lent(fork.lends)
+        {
+            super::speculation::mark_lost(super::speculation::Lost::Boundary);
         }
     }
 
@@ -225,6 +321,7 @@ impl<'a> FrameEffects<'a> {
                 .as_deref_mut()
                 .map(|f| f as _),
             client: self.client.as_deref_mut().map(|c| c as _),
+            fork: self.fork.as_deref_mut(),
         }
     }
 
@@ -244,6 +341,7 @@ impl<'a> FrameEffects<'a> {
     }
 
     fn sound(&mut self) -> Option<&mut dyn SoundBoundary> {
+        self.asked(|lends| lends.sound);
         match self.sound.as_deref_mut() {
             Some(sound) => Some(sound),
             None => self.client.as_deref_mut().and_then(FrameClient::sound),
@@ -251,6 +349,7 @@ impl<'a> FrameEffects<'a> {
     }
 
     fn tactical_radar(&mut self) -> Option<&mut dyn TacticalRadarBoundary> {
+        self.asked(|lends| lends.tactical_radar);
         match self.tactical_radar.as_deref_mut() {
             Some(radar) => Some(radar),
             None => self
@@ -261,6 +360,7 @@ impl<'a> FrameEffects<'a> {
     }
 
     fn outcome_wait(&mut self) -> Option<&mut dyn OutcomeWaitBoundary> {
+        self.asked(|lends| lends.outcome_wait);
         match self.outcome_wait.as_deref_mut() {
             Some(wait) => Some(wait),
             None => self
@@ -271,6 +371,7 @@ impl<'a> FrameEffects<'a> {
     }
 
     fn local_planning(&mut self) -> Option<&mut dyn LocalPlanningBoundary> {
+        self.asked(|lends| lends.local_planning);
         match self.local_planning.as_deref_mut() {
             Some(planning) => Some(planning),
             None => self
@@ -281,6 +382,7 @@ impl<'a> FrameEffects<'a> {
     }
 
     fn network(&mut self) -> Option<&mut dyn NetworkCommandBoundary> {
+        self.asked(|lends| lends.network);
         match self.network_commands.as_deref_mut() {
             Some(network) => Some(network),
             None => self
@@ -315,6 +417,7 @@ impl<'a> FrameEffects<'a> {
         rules: &RuleSet,
         text: crate::sim::bounty::BountyText,
     ) {
+        self.asked(|lends| lends.callbacks);
         if let Some(boundary) = self.bounty_text.as_deref_mut() {
             boundary(sim, rules, text);
         } else if let Some(client) = self.client.as_deref_mut() {
@@ -400,6 +503,7 @@ impl<'a> FrameEffects<'a> {
         command: &CommandRecord,
         applied: bool,
     ) {
+        self.asked(|lends| lends.callbacks);
         if let Some(observer) = self.command_applied.as_deref_mut() {
             observer(sim, command, applied);
         } else if let Some(client) = self.client.as_deref_mut() {
@@ -438,10 +542,12 @@ impl<'a> FrameEffects<'a> {
     pub(crate) fn production_factories(
         &self,
     ) -> &'a [crate::sim::production::ProductionFactoryVisit] {
+        self.asked(|lends| lends.production);
         self.production_factories
     }
 
     pub(crate) fn clear_production_request(&mut self, type_id: crate::sim::intern::InternedId) {
+        self.asked(|lends| lends.callbacks);
         if let Some(clear) = self.production_request_cleared.as_deref_mut() {
             clear(type_id);
         } else if let Some(client) = self.client.as_deref_mut() {
@@ -470,6 +576,7 @@ impl<'a> FrameEffects<'a> {
     }
 
     pub(crate) fn before_logic(&mut self, sim: &Simulation) {
+        self.asked(|lends| lends.callbacks);
         if let Some(boundary) = self.before_logic.as_deref_mut() {
             boundary(sim);
         } else if let Some(client) = self.client.as_deref_mut() {
@@ -507,8 +614,16 @@ impl<'a> FrameEffects<'a> {
 
     /// Stop/Release must complete at their native call sites before a later
     /// Main draw or object visit. The consumer also delivers earlier sound
-    /// facts first, preserving the existing ordered producer channel.
+    /// facts first, preserving the existing ordered producer channel. A turn
+    /// on a fork notes the delivery for its commit ([`SoundStep`]).
     pub(crate) fn flush_sound(&mut self, sim: &Simulation, rules: &RuleSet) {
+        if let Some(fork) = self.fork.as_deref_mut() {
+            fork.note(SoundStep {
+                emitted: sim.sound_events.len(),
+                looping: None,
+            });
+            return;
+        }
         if let Some(sound) = self.sound() {
             sound.consume(sim, rules, &sim.sound_events);
             assert_eq!(sound.delivered(), sim.sound_events.len());
@@ -524,6 +639,13 @@ impl<'a> FrameEffects<'a> {
         owner: u64,
         world: crate::sim::anim_class::AnimWorldCoord,
     ) {
+        if let Some(fork) = self.fork.as_deref_mut() {
+            fork.note(SoundStep {
+                emitted: sim.sound_events.len(),
+                looping: Some((owner, world)),
+            });
+            return;
+        }
         self.flush_sound(sim, rules);
         if let Some(sound) = self.sound() {
             sound.update_looping_sound(sim, owner, world);

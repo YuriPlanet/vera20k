@@ -235,6 +235,11 @@ impl Simulation {
         type_id: InternedId,
         spawn: DeathAnimSpawn,
     ) -> Option<crate::sim::anim_class::AnimId> {
+        // VERA-only: a turn on a fork of the world makes no anim; the pass
+        // runs it at its slot (`world::speculation`).
+        if self.lose_fork_turn(crate::sim::world::Lost::Anim) {
+            return None;
+        }
         let (rx, ry, sub_x, sub_y, z) = spawn.coord.to_cell_sub_z();
         let descriptor = AnimClassSpawnDescriptor {
             delay: spawn.delay,

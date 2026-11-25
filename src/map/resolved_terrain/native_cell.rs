@@ -116,8 +116,11 @@ struct DetachedWord {
     /// The Dummy, by its state's address.
     address: usize,
     word: u64,
-    /// A stamp changed `word` since the run began.
+    /// A stamp changed `word` since the run began, or a speculative run
+    /// refused a write of another word ([`SharedCellDummy::speculative`]).
     changed: bool,
+    /// A speculative run: the Dummy's other words refuse writes.
+    refuse: bool,
 }
 
 /// One native map-query identity domain. Bulk terrain is borrowed; input
@@ -572,6 +575,9 @@ impl SharedCellDummy {
     }
 
     pub(crate) fn adjust_neighbor_count(&self, add: bool) {
+        if self.refused() {
+            return;
+        }
         self.state
             .neighbor_count
             .fetch_add(if add { 1 } else { u8::MAX }, Ordering::Relaxed);
@@ -582,6 +588,9 @@ impl SharedCellDummy {
     }
 
     pub(crate) fn write_raw_tube_index(&self, index: i16) {
+        if self.refused() {
+            return;
+        }
         self.state.tube_index.store(index, Ordering::Relaxed);
     }
 
@@ -639,6 +648,20 @@ impl SharedCellDummy {
     /// nested side by side in the run started from the shared word, where
     /// one by one it would have seen the change.
     pub(crate) fn detached_stamps<R>(&self, work: impl FnOnce() -> R) -> (R, bool) {
+        self.detached_run(false, work)
+    }
+
+    /// [`Self::detached_stamps`] for an object turn run on a fork of the
+    /// world (`world::speculation`), whose writes must not reach the shared
+    /// Dummy: its stamps go to the private copy, and a write of any other
+    /// word is refused, leaving the word as it is. Answers whether a stamp
+    /// changed the copy or a write was refused: either makes the turn one
+    /// the pass runs again on the world itself.
+    pub(crate) fn speculative<R>(&self, work: impl FnOnce() -> R) -> (R, bool) {
+        self.detached_run(true, work)
+    }
+
+    fn detached_run<R>(&self, refuse: bool, work: impl FnOnce() -> R) -> (R, bool) {
         struct Restore(Option<DetachedWord>);
         impl Drop for Restore {
             fn drop(&mut self) {
@@ -649,11 +672,28 @@ impl SharedCellDummy {
             address: self.address(),
             word: self.state.cell.load(Ordering::Relaxed),
             changed: false,
+            refuse,
         };
         let _restore = Restore(DETACHED_CELL.replace(Some(run)));
         let result = work();
         let changed = DETACHED_CELL.get().is_some_and(|run| run.changed);
         (result, changed)
+    }
+
+    /// Whether a speculative run of this Dummy ([`Self::speculative`])
+    /// refuses the write about to be made of a word other than the cell
+    /// word; it notes the refusal as a change.
+    fn refused(&self) -> bool {
+        match DETACHED_CELL.get() {
+            Some(run) if run.refuse && run.address == self.address() => {
+                DETACHED_CELL.set(Some(DetachedWord {
+                    changed: true,
+                    ..run
+                }));
+                true
+            }
+            _ => false,
+        }
     }
 
     fn address(&self) -> usize {
@@ -697,6 +737,9 @@ impl SharedCellDummy {
     }
 
     pub(crate) fn write_raw_flags(&self, flags: u32) {
+        if self.refused() {
+            return;
+        }
         self.state.raw_flags.store(flags, Ordering::Relaxed);
     }
 
@@ -709,6 +752,9 @@ impl SharedCellDummy {
     }
 
     pub(crate) fn write_native_anchor(&self, anchor: Option<NativeCellIdentity>) {
+        if self.refused() {
+            return;
+        }
         let encoded = match anchor {
             None => 0,
             Some(NativeCellIdentity::Dummy) => 1,
@@ -724,6 +770,9 @@ impl SharedCellDummy {
     }
 
     pub(crate) fn write_overlay_identity(&self, identity: i32) {
+        if self.refused() {
+            return;
+        }
         let identity = u64::from(identity as u32);
         let _ = self
             .state
@@ -734,6 +783,9 @@ impl SharedCellDummy {
     }
 
     pub(crate) fn write_overlay_state(&self, state: u8) {
+        if self.refused() {
+            return;
+        }
         const STATE_MASK: u64 = 0xff << 32;
         let state = u64::from(state) << 32;
         let _ = self
@@ -745,6 +797,9 @@ impl SharedCellDummy {
     }
 
     pub fn write_overlay_identity_state(&self, identity: i32, state: u8) {
+        if self.refused() {
+            return;
+        }
         self.state.overlay.store(
             u64::from(identity as u32) | (u64::from(state) << 32),
             Ordering::Relaxed,
@@ -760,6 +815,9 @@ impl SharedCellDummy {
 
     /// `SmudgeTypeClass::Place @ 0x006B6080` on the fallback cell.
     pub(crate) fn write_smudge_identity_data(&self, identity: i32, data: u8) {
+        if self.refused() {
+            return;
+        }
         self.state.smudge.store(
             u64::from(identity as u32) | (u64::from(data) << 32),
             Ordering::Relaxed,
@@ -810,6 +868,9 @@ impl SharedCellDummy {
     }
 
     pub(super) fn update_retained_bridge_flags(&self, update: impl Fn(u32) -> u32) {
+        if self.refused() {
+            return;
+        }
         let _ = self
             .state
             .raw_flags

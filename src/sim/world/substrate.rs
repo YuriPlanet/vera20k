@@ -480,6 +480,8 @@ pub struct ObjectSubstrate {
     pub(crate) base_reservations: Forked<CellReservationGrid>,
     /// Plain-struct entity storage (dense, in stable_id order, + infantry registry).
     /// The authoritative object store — serialized verbatim (NOT skipped).
+    /// A fork of the world forks the store itself (`EntityStore::fork`), so
+    /// a turn copies only the entities it writes; this `Forked` stays inline.
     pub(in crate::sim) entities: Forked<EntityStore>,
     /// Synchronous Phobos limbo hook controls; stable saves restore enabled/idle.
     #[cfg(feature = "phobos")]
@@ -720,7 +722,7 @@ impl Default for ObjectSubstrate {
 }
 
 super::fork::fork_helpers! {
-    ObjectSubstrate, "substrate.":
+    ObjectSubstrate, SubstrateField, "substrate.":
     next_stable_object_id,
     next_air_tracker_order,
     logic,
@@ -730,7 +732,7 @@ super::fork::fork_helpers! {
     hidden_occupation,
     air_slots,
     base_reservations,
-    entities,
+    {entities},
     #[cfg(feature = "phobos")]
     phobos_limbo_control,
     anims,

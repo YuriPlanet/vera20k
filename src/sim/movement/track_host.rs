@@ -402,7 +402,7 @@ impl Simulation {
                     registry,
                     observe,
                     effects,
-                );
+                )?;
                 pass.moved = pass.moved.saturating_add(1);
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
                     set_head(entity, family, None);
@@ -478,6 +478,11 @@ impl Simulation {
             }
 
             if self.track_occupation_enabled(id) {
+                // A turn on a fork of the world marks no cell
+                // (`world::speculation`).
+                if self.lose_fork_turn(crate::sim::world::Lost::CellStep) {
+                    return Err(String::new());
+                }
                 Self::track_raw_mark(
                     &mut self.substrate,
                     &self.path_grid,
@@ -538,7 +543,7 @@ impl Simulation {
                 registry,
                 observe,
                 effects,
-            );
+            )?;
             pass.moved = pass.moved.saturating_add(1);
             if !self
                 .substrate
@@ -572,6 +577,9 @@ impl Simulation {
                 return Ok(pass);
             };
             if call.is_at_occupation_handoff(&live) {
+                if self.lose_fork_turn(crate::sim::world::Lost::CellStep) {
+                    return Err(String::new());
+                }
                 Self::track_raw_mark(
                     &mut self.substrate,
                     &self.path_grid,
@@ -660,7 +668,7 @@ impl Simulation {
                 registry,
                 observe,
                 effects,
-            );
+            )?;
         }
         Ok(pass)
     }
@@ -879,14 +887,19 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         observe: &mut impl FnMut(&mut Simulation, u64, TrackWorldEvent),
         effects: &mut FrameEffects<'_>,
-    ) {
+    ) -> Result<(), String> {
         let Some(entity) = self.substrate.entities.get(id) else {
-            return;
+            return Ok(());
         };
         let old = (entity.position.rx(), entity.position.ry());
         let selected_cell = cell(coord);
         let crossing = old != selected_cell;
         if crossing {
+            // A turn on a fork of the world crosses into no cell
+            // (`world::speculation`).
+            if self.lose_fork_turn(crate::sim::world::Lost::CellStep) {
+                return Err(String::new());
+            }
             self.foot_mark_remove(id, rules, registry, effects);
             observe(self, id, TrackWorldEvent::MarkRemove);
         }
@@ -963,7 +976,7 @@ impl Simulation {
                 .get(id)
                 .is_some_and(|entity| entity.lifecycle.object_alive())
             {
-                return;
+                return Ok(());
             }
         }
         if terminal && let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -997,7 +1010,7 @@ impl Simulation {
                 .and_then(|overlay| registry?.flags(overlay))
                 .is_some_and(|flags| flags.wall);
             let Some(entity) = self.substrate.entities.get(id) else {
-                return;
+                return Ok(());
             };
             if entity
                 .locomotor
@@ -1005,10 +1018,10 @@ impl Simulation {
                 .and_then(|loco| loco.drive_straight())
                 != Some(true)
             {
-                return;
+                return Ok(());
             }
             let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
-                return;
+                return Ok(());
             };
             //4B1A0F GetUnit(false) selects Ground and does not exclude self
             //or filter health. Mark(DOWN) has already returned. This host
@@ -1052,6 +1065,7 @@ impl Simulation {
                 }
             }
         }
+        Ok(())
     }
 
     /// Apply_Track_Occupation_Mode(0/1), Drive4B0AD0 / Ship6A01A0:

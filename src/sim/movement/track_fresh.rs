@@ -269,6 +269,11 @@ impl Simulation {
         let resumed = self
             .answered_recursion(id)
             .and_then(ProcessMovementArgs::of_recursion);
+        // A turn on a fork of the world asks for no path
+        // (`world::speculation`).
+        if self.lose_fork_turn(crate::sim::world::Lost::Path) {
+            return Err(String::new());
+        }
         if Self::defer_path_search(
             &mut self.path_batch,
             &self.resolved_terrain,
@@ -386,7 +391,11 @@ impl Simulation {
         // The pair scopes the entry question to the candidate Cell. When that
         // Cell is not the one the mark holds, nothing reads the unmarked
         // state, so the pair's two Recalcs only round-trip
-        // (`foot_mark_query_scope`).
+        // (`foot_mark_query_scope`). A turn on a fork of the world takes
+        // neither (`world::speculation`).
+        if self.lose_fork_turn(crate::sim::world::Lost::MarkQuery) {
+            return Err(String::new());
+        }
         let code = if coord_cell(location) == cell {
             self.foot_mark_remove(
                 id,
@@ -566,7 +575,11 @@ impl Simulation {
             .ok_or("Drive/Ship code-2 ladder without a track locomotor")?;
         // A batched re-path waits for the next frame's batch as if the timer
         // still ran (`path_batch`, a sim-scale deviation), unless it heads for
-        // the Foot's own cell.
+        // the Foot's own cell. A turn on a fork of the world asks for no path
+        // (`world::speculation`).
+        if self.lose_fork_turn(crate::sim::world::Lost::Path) {
+            return Err(String::new());
+        }
         if Self::defer_path_search(
             &mut self.path_batch,
             &self.resolved_terrain,

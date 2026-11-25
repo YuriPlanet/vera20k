@@ -478,6 +478,9 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 // search steps, not time.
                 "sim/frame_profile.rs",
                 "sim/movement/path_batch.rs",
+                // The object pass's phase times for sim-bench, which no
+                // state reads.
+                "sim/world/speculation.rs",
             ],
         ),
         (

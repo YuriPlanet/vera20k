@@ -111,8 +111,18 @@ pub(crate) fn filter_map_indices<R: Send>(
 
 /// `work` on every item in place.
 pub(crate) fn for_each_mut<T: Send>(items: &mut [T], work: impl Fn(&mut T) + Sync) {
+    for_each_mut_with(items, (), |(), item| work(item));
+}
+
+/// `work` on every item in place, with scratch: each thread that takes
+/// items works with its own clone of `init`, as [`map_with`]'s do.
+pub(crate) fn for_each_mut_with<T: Send, S: Clone + Send>(
+    items: &mut [T],
+    init: S,
+    work: impl Fn(&mut S, &mut T) + Sync,
+) {
     if !caller_takes() {
-        return items.par_iter_mut().for_each(&work);
+        return items.par_iter_mut().for_each_with(init, &work);
     }
     let takes = Takes::chunked(items.len());
     // A counter can hand out indices, not `&mut` items: each taker takes the
@@ -121,14 +131,14 @@ pub(crate) fn for_each_mut<T: Send>(items: &mut [T], work: impl Fn(&mut T) + Syn
     let chunks = || chunks.lock().expect("no taker panics under the lock");
     side_by_side(
         takes.count(),
-        (),
+        init,
         || chunks().len() != 0,
-        |()| {
+        |scratch| {
             loop {
                 let Some(chunk) = chunks().next() else {
                     break;
                 };
-                chunk.iter_mut().for_each(&work);
+                chunk.iter_mut().for_each(|item| work(scratch, item));
             }
         },
     );

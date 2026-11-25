@@ -183,6 +183,7 @@ impl Simulation {
             expiry_listeners: Default::default(),
             path_batch: Forked::new(None),
             idle_sleep: Default::default(),
+            speculation: Default::default(),
             scan_batch: Forked::new(None),
             effect_anims: Default::default(),
             turn_streams: Default::default(),

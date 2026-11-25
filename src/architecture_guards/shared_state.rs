@@ -42,7 +42,10 @@ fn pool_entry_count(code: &str) -> usize {
 /// the Dummy's other words: every writer of them takes `&mut` of the grid,
 /// an overlay, smudge or occupation owner or the Simulation, or runs at map
 /// load on a Dummy no task holds, and a task holds only `&` borrows of the
-/// world (`for_each_mut` hands out its own items).
+/// world (`for_each_mut` hands out its own items). The one task that holds
+/// a Simulation by `&mut`, an object turn on its own fork of the world
+/// (`world::speculation`), runs inside `SharedCellDummy::speculative`, which
+/// refuses those writes.
 const POOL_ENTRY_PINS: &[(&str, usize, &str)] = &[
     (
         "assets/mix_archive.rs",
@@ -147,6 +150,14 @@ const POOL_ENTRY_PINS: &[(&str, usize, &str)] = &[
         3,
         "never looks a cell up: the presentation copy's syncs, fog copy, clone and \
          the old copy's drop; the copy's Dummy is then forked",
+    ),
+    (
+        "sim/world/speculation.rs",
+        2,
+        "speculative: each object turn on a fork of the world runs inside \
+         `SharedCellDummy::speculative`, whose stamps go to a private copy and which \
+         refuses writes of the other words; a turn that stamped or was refused is \
+         dropped and runs on the world. The other entry frees results on the pool",
     ),
     (
         "sim/world/techno_ai/scan_batch.rs",
@@ -363,6 +374,13 @@ const SHARED_STATE_PINS: &[(&str, usize, &str)] = &[
         8,
         "a path batch's facts table, each entry kept once and read by every worker; \
          emptied each batch, never saved or hashed",
+    ),
+    (
+        "sim/world/speculation.rs",
+        4,
+        "this thread's notes of the object turn it runs on a fork of the world (lost, \
+         committed), set and read on that thread alone and put back around a turn \
+         started inside another; never saved or hashed",
     ),
 ];
 

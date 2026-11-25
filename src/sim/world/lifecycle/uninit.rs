@@ -26,6 +26,11 @@ impl Simulation {
     }
 
     pub fn uninit_with_context(&mut self, stable_id: u64, mut context: UninitContext<'_>) {
+        // VERA-only: a turn on a fork of the world removes no object; the
+        // pass runs it at its slot (`world::speculation`).
+        if self.lose_fork_turn(crate::sim::world::Lost::Removal) {
+            return;
+        }
         if self.classify_object(stable_id) == Some(ObjectKind::Terrain) {
             self.retire_non_entity_object(stable_id, context);
             return;

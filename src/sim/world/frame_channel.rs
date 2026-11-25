@@ -45,6 +45,17 @@ impl<T> FrameChannel<T> {
         std::mem::take(&mut self.facts)
     }
 
+    /// Give back the facts [`Self::take`] took, to a channel nothing has
+    /// written since: the object pass empties the channels while it runs
+    /// turns on forks of the world (`world::speculation`).
+    pub(super) fn put_back(&mut self, facts: Vec<T>) {
+        assert!(
+            self.facts.is_empty(),
+            "facts put back over facts emitted since"
+        );
+        self.facts = facts;
+    }
+
     /// Drop the facts of a frame that never reached collection.
     pub(super) fn discard(&mut self) {
         self.facts.clear();

@@ -65,7 +65,11 @@ impl Simulation {
         if !self.substrate.entities.is_steady(id) || self.steady_visit_acts(id, rules) {
             return self.object_ai_visit_one_with_effects(id, rules, ctx);
         }
-        self.idle_sleep.steady += 1;
+        // A turn on a fork notes it instead: the pass counts it where the
+        // turn's result applies (`world::speculation`).
+        if !super::speculation::note_steady_visit() {
+            self.idle_sleep.steady += 1;
+        }
         if self.idle_sleep.check {
             let check = self.steady_check(id);
             let outcome = self.object_ai_visit_one_with_effects(id, rules, ctx);
@@ -120,8 +124,9 @@ impl Simulation {
         self.sleep_check("steady AI", id, expected, hash)
     }
 
-    /// `id`'s turn is over: mark it steady if [`ai_rests`] holds and no
-    /// trigger has given it a sound.
+    /// `id`'s turn is over, or its turn on a fork of the world begins from
+    /// the state the last left (`world::speculation`): mark it steady if
+    /// [`ai_rests`] holds and no trigger has given it a sound.
     pub(super) fn steady_after_turn(&mut self, id: u64, rules: &RuleSet) {
         if !self.idle_sleep.is_on()
             || !matches!(

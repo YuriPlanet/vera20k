@@ -277,6 +277,13 @@ struct View {
     fork: bool,
     /// The fork's writes since its last take or reset.
     overlay: Overlay,
+    /// A record's allocation the fork writes its next copy into instead of
+    /// a new one: one lent to it ([`EntityStore::lend_record`]), or its own
+    /// copy from a turn whose writes it dropped.
+    spare: Option<Arc<GameEntity>>,
+    /// Copies made in new allocations since the last
+    /// [`EntityStore::take_record`].
+    fresh_copies: u64,
 }
 
 /// A fork's writes: the entities and sleep cells it wrote, by id, and the
@@ -318,10 +325,6 @@ pub(crate) struct EntityWrites {
     structural: bool,
 }
 
-#[cfg_attr(
-    not(any(test, feature = "test-support")),
-    expect(dead_code, reason = "no pass runs object turns on forks yet")
-)]
 impl EntityWrites {
     /// The turn changed a column's length or an index (see the module
     /// documentation): its writes cannot be merged, and it runs again on the
@@ -333,6 +336,16 @@ impl EntityWrites {
     /// The ids whose entity or sleep cell the turn wrote, each once.
     pub(crate) fn ids(&self) -> impl Iterator<Item = u64> + '_ {
         self.overlay.records().map(|written| written.id)
+    }
+
+    /// The copies of the entities the turn wrote, of writes that will not
+    /// be committed: their allocations serve a later fork
+    /// ([`EntityStore::lend_record`]).
+    pub(crate) fn into_records(self) -> impl Iterator<Item = Arc<GameEntity>> {
+        let Overlay { focus, others, .. } = self.overlay;
+        std::iter::once(focus)
+            .chain(others)
+            .filter_map(|written| written.entity)
     }
 }
 
@@ -436,11 +449,13 @@ impl EntityStore {
     /// forgetting the transient note neither wakes an object nor notes it in
     /// the logs or the lookup counts.
     ///
-    /// The note is the entity's own: a fork's write notes the fork's copy
-    /// (a copy starts noted), which [`Self::commit_writes`] moves in and logs
-    /// as a hand-out, so this store's next take reads it once. A shared
-    /// store or a fork forgets no note, its entities being its base's: it
-    /// gives its log as it is.
+    /// The note is the entity's own: a fork's copy keeps its base's note
+    /// ([`GameEntity::fork_copy`]) and a fork's write notes the copy, which
+    /// [`Self::commit_writes`] moves in and logs as a hand-out, so this
+    /// store's next take reads it once if noted. A turn that wrote the base
+    /// since, and could have changed its names, keeps the copy out
+    /// (`world::speculation`). A shared store or a fork forgets no note, its
+    /// entities being its base's: it gives its log as it is.
     pub(crate) fn take_unread_names(&mut self) -> Touched {
         let logged = self.touched.take(TouchReader::ExpiryListeners as usize);
         if self.view.is_some() || self.set_aside.is_some() {
@@ -1823,11 +1838,14 @@ impl EntityStore {
 }
 
 /// Forks (VERA-only, sim-scale; see the module documentation).
-#[cfg_attr(
-    not(any(test, feature = "test-support")),
-    expect(dead_code, reason = "no pass runs object turns on forks yet")
-)]
 impl EntityStore {
+    /// Whether this store is a fork ([`Self::fork`]), its own columns
+    /// after a structural write included: a store whose writes a pass
+    /// would drop.
+    pub(crate) fn is_fork(&self) -> bool {
+        self.set_aside.is_some() || self.view.as_deref().is_some_and(|view| view.fork)
+    }
+
     /// VERA-only (sim-scale): make this store the frozen base its
     /// [`Self::fork`]s read. The columns move behind one `Arc`, uncopied; the
     /// store answers every read as before and refuses writes until
@@ -1842,6 +1860,8 @@ impl EntityStore {
             base,
             fork: false,
             overlay: Overlay::default(),
+            spare: None,
+            fresh_copies: 0,
         }));
     }
 
@@ -1878,6 +1898,8 @@ impl EntityStore {
                     focus: Written::new(self.focus.0),
                     ..Overlay::default()
                 },
+                spare: None,
+                fresh_copies: 0,
             })),
             set_aside: None,
             focus: self.focus,
@@ -1910,7 +1932,8 @@ impl EntityStore {
 
     /// Drop what this fork wrote, its own columns if it met a structural
     /// write, and its touch logs: it reads its base again. Costs what the
-    /// fork wrote.
+    /// fork wrote. Its copy of the focused entity is kept for
+    /// [`Self::take_record`] if no lent record is.
     pub(crate) fn reset_fork(&mut self) {
         if let Some(view) = self.set_aside.take() {
             self.cols = Columns::default();
@@ -1918,14 +1941,39 @@ impl EntityStore {
             self.refocus();
         }
         let focus = self.focus.0;
-        self.view
+        let view = self
+            .view
             .as_deref_mut()
             .filter(|view| view.fork)
-            .expect("reset_fork of an entity store that is not a fork")
-            .overlay
-            .clear(focus);
+            .expect("reset_fork of an entity store that is not a fork");
+        if view.spare.is_none() {
+            view.spare = view.overlay.focus.entity.take();
+        }
+        view.overlay.clear(focus);
         self.touched = TouchLogs::everything();
         self.looks = TouchLogs::everything();
+    }
+
+    /// VERA-only (sim-scale): lend this fork `record`'s allocation until
+    /// [`Self::take_record`]. Its next copy of an entity is written into it
+    /// instead of a new allocation, if nothing else holds it: a record's
+    /// content is a whole value, so a copy does not depend on the allocation
+    /// it is written into.
+    pub(crate) fn lend_record(&mut self, record: Option<Arc<GameEntity>>) {
+        let view = fork_view(&mut self.view);
+        debug_assert!(
+            view.spare.is_none(),
+            "a record lent before was not taken back"
+        );
+        view.spare = record;
+    }
+
+    /// The record [`Self::lend_record`] lent, unless a copy took it, or else
+    /// the copy of the focused entity of a turn whose writes were dropped;
+    /// and how many copies took a new allocation since the last take.
+    pub(crate) fn take_record(&mut self) -> (Option<Arc<GameEntity>>, u64) {
+        let view = fork_view(&mut self.view);
+        (view.spare.take(), std::mem::take(&mut view.fresh_copies))
     }
 
     /// Apply one turn's writes from a fork ([`Self::take_fork_writes`]) to
@@ -1934,10 +1982,16 @@ impl EntityStore {
     /// cloned) and each written sleep cell its cell, the touch and look logs
     /// note them as the turn's hand-outs and [`Self::note_look`] calls would
     /// have, and every written slot is stamped for
-    /// [`Self::written_this_pass`]. A write outside the structural writers
+    /// [`Self::written_this_pass`]. The entities the copies replace go to
+    /// `replaced`, whose allocations the caller may lend to later forks
+    /// ([`Self::lend_record`]). A write outside the structural writers
     /// changes no index, which debug builds check. Structural writes are
     /// refused: the caller runs such a turn again on this store.
-    pub(crate) fn commit_writes(&mut self, writes: EntityWrites) {
+    pub(crate) fn commit_writes(
+        &mut self,
+        writes: EntityWrites,
+        replaced: &mut Vec<Arc<GameEntity>>,
+    ) {
         assert!(
             self.view.is_none() && self.set_aside.is_none(),
             "commit_writes to an entity store that is shared or a fork"
@@ -1970,7 +2024,7 @@ impl EntityStore {
                     "a merged write changed what an index of entity {} derives from",
                     written.id
                 );
-                self.cols.entities[slot] = Some(entity);
+                replaced.extend(self.cols.entities[slot].replace(entity));
             }
             if let Some(cell) = written.cell {
                 self.cols.sleep[slot] = cell;
@@ -2076,14 +2130,16 @@ impl View {
             .unwrap_or_else(|| self.base.sleep[slot as usize])
     }
 
-    /// `id`'s writes, its entity copied from the base's on first need.
+    /// `id`'s writes, its entity copied from the base's on first need, into
+    /// the spare allocation if the fork holds one nothing else does.
     fn copied(&mut self, id: u64, focused: bool, slot: u32) -> &mut Written {
         let written = self.overlay.written_mut(id, focused, slot);
-        if written.entity.is_none() {
-            written.entity = self.base.entities[slot as usize]
-                .as_deref()
-                .cloned()
-                .map(Arc::new);
+        if written.entity.is_none()
+            && let Some(entity) = self.base.entities[slot as usize].as_deref()
+        {
+            let (copy, fresh) = fork_copy_into(entity, self.spare.take());
+            self.fresh_copies += u64::from(fresh);
+            written.entity = Some(copy);
         }
         written
     }
@@ -2098,21 +2154,22 @@ impl View {
             .get_or_insert(base)
     }
 
-    /// [`EntityStore::wake_slot`] in the fork's copies: written only where
-    /// waking changes something.
+    /// [`EntityStore::wake_slot`] in the fork's copies. The cell is written
+    /// even where waking changes nothing, as the store's own wake stamps the
+    /// slot: which ids a turn on a fork wrote must not depend on the sleep,
+    /// quiet and steady marks, which no save keeps (`world::speculation`).
     fn wake(&mut self, id: u64, focused: bool, slot: u32) {
-        let cell = self.cell(id, focused, slot);
+        let cell = self.cell_mut(id, focused, slot);
+        let owed = cell.owed;
         if cell.wake_at == 0 {
-            if cell.marks != 0 {
-                self.cell_mut(id, focused, slot).marks = 0;
-            }
+            cell.marks = 0;
             return;
         }
-        *self.cell_mut(id, focused, slot) = SleepCell::default();
-        if cell.owed != 0
+        *cell = SleepCell::default();
+        if owed != 0
             && let Some(entity) = entity_mut(&mut self.copied(id, focused, slot).entity)
         {
-            entity.settle_sleep(cell.owed);
+            entity.settle_sleep(owed);
         }
     }
 }
@@ -2122,6 +2179,18 @@ fn fork_view(view: &mut Option<Box<View>>) -> &mut View {
     let view = view.as_deref_mut().expect("a store reading shared columns");
     assert!(view.fork, "{SHARED_WRITE}");
     view
+}
+
+/// A fork's copy of `entity`, written into `spare`'s allocation when nothing
+/// else holds it, and whether it took a new allocation instead.
+fn fork_copy_into(entity: &GameEntity, spare: Option<Arc<GameEntity>>) -> (Arc<GameEntity>, bool) {
+    if let Some(mut spare) = spare
+        && let Some(record) = Arc::get_mut(&mut spare)
+    {
+        *record = entity.fork_copy();
+        return (spare, false);
+    }
+    (Arc::new(entity.fork_copy()), true)
 }
 
 impl Overlay {
@@ -3374,7 +3443,7 @@ mod tests {
         assert!(!writes.structural());
         drop((fork, sibling));
         base.unshare();
-        base.commit_writes(writes);
+        base.commit_writes(writes, &mut Vec::new());
         assert_eq!(save(&base), save(&copy));
         assert_eq!(
             (reads(&base, &ids), walks(&base)),
@@ -3498,7 +3567,7 @@ mod tests {
         });
         store.unshare();
         assert!(!store.written_this_pass(2));
-        store.commit_writes(first);
+        store.commit_writes(first, &mut Vec::new());
         assert!(store.written_this_pass(2), "a commit stamps what it writes");
         assert!(
             second.ids().any(|id| store.written_this_pass(id)),

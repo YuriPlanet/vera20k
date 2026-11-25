@@ -87,6 +87,11 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: &mut FrameEffects<'_>,
     ) -> Result<bool, FrameAdvanceError> {
+        // A turn on a fork of the world arrives in no cell
+        // (`world::speculation`).
+        if self.lose_fork_turn(crate::sim::world::Lost::CellStep) {
+            return Err(self.lost_turn_error(id));
+        }
         match self
             .substrate
             .entities

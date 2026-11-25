@@ -45,6 +45,11 @@ impl Simulation {
         frame_effects: &mut FrameEffects<'_>,
     ) -> Result<Option<FootPathRequest>, String> {
         let id = request.entity_id;
+        // A turn on a fork of the world takes no next cell
+        // (`world::speculation`).
+        if self.lose_fork_turn(crate::sim::world::Lost::CellStep) {
+            return Err(String::new());
+        }
         if self.walk_tube_head(id, rules, registry, frame_effects)? {
             return Ok(None);
         }
@@ -355,7 +360,11 @@ impl Simulation {
             .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
         // A batched re-path waits for the next frame's batch as if the +640
         // timer still ran (`path_batch`, a sim-scale deviation), unless it
-        // heads for the Foot's own cell.
+        // heads for the Foot's own cell. A turn on a fork of the world asks
+        // for no path (`world::speculation`).
+        if self.lose_fork_turn(crate::sim::world::Lost::Path) {
+            return Err(String::new());
+        }
         if Self::defer_path_search(
             &mut self.path_batch,
             &self.resolved_terrain,

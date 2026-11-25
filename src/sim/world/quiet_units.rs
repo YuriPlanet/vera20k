@@ -39,7 +39,9 @@ impl Simulation {
         self.substrate.entities.is_quiet(id)
     }
 
-    /// `id`'s turn is over: mark it quiet if [`rests`] holds.
+    /// `id`'s turn is over, or its turn on a fork of the world begins from
+    /// the state the last left (`world::speculation`): mark it quiet if
+    /// [`rests`] holds.
     pub(super) fn quiet_after_turn(&mut self, id: u64, rules: &RuleSet) {
         if self.extension_steps_unsorted(rules)
             || !self.idle_sleep.is_on()

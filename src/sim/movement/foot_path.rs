@@ -531,6 +531,11 @@ impl Simulation {
         } else {
             super::path_batch::WaitingRequest::NoQueue
         };
+        // A turn on a fork of the world asks for no path
+        // (`world::speculation`); nor does it search below.
+        if self.lose_fork_turn(crate::sim::world::Lost::Path) {
+            return Err(String::new());
+        }
         if Self::defer_path_search(
             &mut self.path_batch,
             &self.resolved_terrain,
@@ -564,6 +569,9 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) -> Result<FindPathResult, String> {
+        if self.lose_fork_turn(crate::sim::world::Lost::Path) {
+            return Err(String::new());
+        }
         let id = request.entity_id;
         let frame = self.session.binary_frame();
         #[cfg(test)]

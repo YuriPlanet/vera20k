@@ -287,6 +287,9 @@ impl Simulation {
         rules: &RuleSet,
         frame_effects: &mut FrameEffects<'_>,
     ) -> damage_consequences::DamageCommitReceipt {
+        // A turn on a fork of the world notes its commit, which the pass
+        // makes at its slot (`world::speculation`).
+        super::speculation::note_commit();
         // With neither pending, the commit writes nothing.
         if !self.commit_work_pending() {
             return damage_consequences::DamageCommitReceipt::default();

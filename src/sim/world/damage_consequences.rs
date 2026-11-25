@@ -182,6 +182,9 @@ impl DamageConsequences {
         rules: &RuleSet,
         frame_effects: &mut FrameEffects<'_>,
     ) -> DamageCommitReceipt {
+        // A turn on a fork of the world notes its commit, which the pass
+        // makes at its slot (`world::speculation`).
+        super::speculation::note_commit();
         // A commit that carries nothing, with no navigation receipt or smudge
         // dirt pending, writes nothing (VERA-only, results unchanged); most
         // fire visits fire nothing.

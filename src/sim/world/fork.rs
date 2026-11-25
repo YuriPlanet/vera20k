@@ -1,6 +1,6 @@
 //! Forking the world: every field shared, forked, asked whether it was
-//! written and put back, for the object pass that is to run an object's turn
-//! on a private fork of the world (`util::forked`).
+//! written and put back, for the object pass that runs object turns on
+//! private forks of the world (`util::forked`, `world::speculation`).
 //!
 //! [`fork_helpers!`] writes a struct's helpers from the one list of its
 //! fields. Every body names each field without `..`, so a field added to
@@ -11,20 +11,42 @@ use super::Simulation;
 
 /// Writes `$ty`'s fork helpers from the list of its fields, in declaration
 /// order. A field in brackets is a struct of fields with helpers of its own;
-/// every other field is a `Forked`. `$prefix` goes before each field's name
-/// in [`Simulation::written_fields`].
+/// a field in braces is a `Forked` store that forks itself (the entity
+/// store: `EntityStore::share`, `fork` and `reset_fork`), so that it stays
+/// inline and its writes go into the store's fork; every other field is a
+/// `Forked`. `$prefix` goes before each field's name in
+/// [`Simulation::written_fields`]. `$field_ty` names each field's bit in
+/// `written_mask` ([`SimulationField`], `substrate::SubstrateField`).
 macro_rules! fork_helpers {
-    ($ty:ident, $prefix:literal: $($(#[$cfg:meta])* $([$part:ident])? $($field:ident)?,)+) => {
-        #[cfg_attr(
-            not(test),
-            expect(dead_code, reason = "the forked object pass is the first caller")
-        )]
+    ($ty:ident, $field_ty:ident, $prefix:literal:
+        $($(#[$cfg:meta])* $([$part:ident])? $({$own:ident})? $($field:ident)?,)+) => {
+        /// Each field's bit in `written_mask`, in declaration order. A
+        /// struct of fields with helpers of its own has none: it answers
+        /// for its fields itself.
+        #[allow(non_camel_case_types, dead_code, reason = "named after the fields")]
+        #[derive(Clone, Copy)]
+        #[repr(u8)]
+        pub(crate) enum $field_ty {
+            $($(#[$cfg])* $($own,)? $($field,)?)+
+            /// How many fields there are.
+            All,
+        }
+
+        const _: () = assert!(
+            ($field_ty::All as u32) <= u128::BITS,
+            "a written mask holds at most 128 fields"
+        );
+
         impl $ty {
             /// Share every field, for a world about to be forked.
             pub(crate) fn share_fields(&mut self) {
-                let $ty { $($(#[$cfg])* $($part)? $($field)?,)+ } = self;
+                let $ty { $($(#[$cfg])* $($part)? $($own)? $($field)?,)+ } = self;
                 $($(#[$cfg])* {
                     $($part.share_fields();)?
+                    $(
+                        $own.share();
+                        $crate::util::forked::Forked::clear_written($own);
+                    )?
                     $($crate::util::forked::Forked::share($field);)?
                 })+
             }
@@ -34,9 +56,13 @@ macro_rules! fork_helpers {
             /// # Panics
             /// When a fork still holds a field.
             pub(crate) fn unshare_fields(&mut self) {
-                let $ty { $($(#[$cfg])* $($part)? $($field)?,)+ } = self;
+                let $ty { $($(#[$cfg])* $($part)? $($own)? $($field)?,)+ } = self;
                 $($(#[$cfg])* {
                     $($part.unshare_fields();)?
+                    $(
+                        $own.unshare();
+                        $crate::util::forked::Forked::clear_written($own);
+                    )?
                     $($crate::util::forked::Forked::unshare($field);)?
                 })+
             }
@@ -44,39 +70,90 @@ macro_rules! fork_helpers {
             /// A fork: another handle on every shared field, and a full copy
             /// of every other.
             pub(crate) fn fork(&self) -> Self {
-                let $ty { $($(#[$cfg])* $($part)? $($field)?,)+ } = self;
+                let $ty { $($(#[$cfg])* $($part)? $($own)? $($field)?,)+ } = self;
                 $ty {
-                    $($(#[$cfg])* $($part: $part.fork(),)? $($field: $crate::util::forked::Forked::fork($field),)?)+
+                    $($(#[$cfg])*
+                        $($part: $part.fork(),)?
+                        $($own: $crate::util::forked::Forked::new($own.fork()),)?
+                        $($field: $crate::util::forked::Forked::fork($field),)?
+                    )+
                 }
             }
 
             /// Add the names of the written fields to `names`, in
             /// declaration order.
+            #[cfg_attr(
+                not(test),
+                expect(dead_code, reason = "tests name the written fields")
+            )]
             pub(super) fn push_written_fields(&self, names: &mut Vec<&'static str>) {
-                let $ty { $($(#[$cfg])* $($part)? $($field)?,)+ } = self;
+                let $ty { $($(#[$cfg])* $($part)? $($own)? $($field)?,)+ } = self;
                 $($(#[$cfg])* {
                     $($part.push_written_fields(names);)?
+                    $(if $crate::util::forked::Forked::written($own) {
+                        names.push(concat!($prefix, stringify!($own)));
+                    })?
                     $(if $crate::util::forked::Forked::written($field) {
                         names.push(concat!($prefix, stringify!($field)));
                     })?
                 })+
             }
 
+            /// The written fields of this struct, each as its field's bit
+            /// (the field enum above); a struct of fields with helpers of
+            /// its own answers for its fields itself.
+            pub(crate) fn written_mask(&self) -> u128 {
+                let $ty { $($(#[$cfg])* $($part)? $($own)? $($field)?,)+ } = self;
+                let mut mask = 0;
+                $($(#[$cfg])* {
+                    $(let _ = $part;)?
+                    $(if $crate::util::forked::Forked::written($own) {
+                        mask |= 1 << ($field_ty::$own as u32);
+                    })?
+                    $(if $crate::util::forked::Forked::written($field) {
+                        mask |= 1 << ($field_ty::$field as u32);
+                    })?
+                })+
+                mask
+            }
+
+            /// The name of the field whose `written_mask` bit is `bit`.
+            pub(crate) fn field_name(bit: u32) -> &'static str {
+                $($(#[$cfg])* {
+                    $(if bit == $field_ty::$own as u32 {
+                        return concat!($prefix, stringify!($own));
+                    })?
+                    $(if bit == $field_ty::$field as u32 {
+                        return concat!($prefix, stringify!($field));
+                    })?
+                })+
+                "?"
+            }
+
             /// Forget which fields were written.
+            #[cfg_attr(
+                not(test),
+                expect(dead_code, reason = "tests forget the written fields")
+            )]
             pub(crate) fn clear_written_fields(&mut self) {
-                let $ty { $($(#[$cfg])* $($part)? $($field)?,)+ } = self;
+                let $ty { $($(#[$cfg])* $($part)? $($own)? $($field)?,)+ } = self;
                 $($(#[$cfg])* {
                     $($part.clear_written_fields();)?
+                    $($crate::util::forked::Forked::clear_written($own);)?
                     $($crate::util::forked::Forked::clear_written($field);)?
                 })+
             }
 
             /// Make every written field `base`'s fork again, dropping what
-            /// this fork wrote.
+            /// this fork wrote; a store that forks itself drops its writes.
             pub(crate) fn restore_written_fields_from(&mut self, base: &Self) {
-                let $ty { $($(#[$cfg])* $($part)? $($field)?,)+ } = self;
+                let $ty { $($(#[$cfg])* $($part)? $($own)? $($field)?,)+ } = self;
                 $($(#[$cfg])* {
                     $($part.restore_written_fields_from(&base.$part);)?
+                    $(if $crate::util::forked::Forked::written($own) {
+                        $own.reset_fork();
+                        $crate::util::forked::Forked::clear_written($own);
+                    })?
                     $(if $crate::util::forked::Forked::written($field) {
                         $crate::util::forked::Forked::restore_from($field, &base.$field);
                     })?
@@ -88,7 +165,7 @@ macro_rules! fork_helpers {
 pub(super) use fork_helpers;
 
 fork_helpers! {
-    Simulation, "":
+    Simulation, SimulationField, "":
     interner,
     type_tech_levels,
     building_upgrade_art_names,
@@ -160,6 +237,7 @@ fork_helpers! {
     expiry_listeners,
     path_batch,
     idle_sleep,
+    speculation,
     scan_batch,
     effect_anims,
     turn_streams,
@@ -220,10 +298,7 @@ fork_helpers! {
 impl Simulation {
     /// The names of the fields written since their flags were last cleared,
     /// in declaration order; the object substrate's as `substrate.<name>`.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the forked object pass is the first caller")
-    )]
+    #[cfg_attr(not(test), expect(dead_code, reason = "tests name the written fields"))]
     pub(crate) fn written_fields(&self) -> Vec<&'static str> {
         let mut names = Vec::new();
         self.push_written_fields(&mut names);

@@ -18,6 +18,11 @@ impl Simulation {
     }
 
     pub(crate) fn destroy_anim_with_context(&mut self, id: AnimId, rules: &RuleSet) {
+        // VERA-only: a turn on a fork of the world takes no anim down; the
+        // pass runs it at its slot (`world::speculation`).
+        if self.lose_fork_turn(crate::sim::world::Lost::Anim) {
+            return;
+        }
         if self.substrate.pending_delete.contains_object(&id)
             || self.substrate.anims.local_delete_queued(id)
         {

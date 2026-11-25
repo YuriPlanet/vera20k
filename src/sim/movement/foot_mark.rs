@@ -326,6 +326,11 @@ impl Simulation {
         let Some((cell, layer)) = self.foot_mark_cell(id) else {
             return;
         };
+        // VERA-only: a turn on a fork of the world lifts no mark from the
+        // map, whose occupancy and cells it would copy (`world::speculation`).
+        if self.lose_fork_turn(crate::sim::world::Lost::Marks) {
+            return;
+        }
         self.substrate
             .occupancy
             .remove_on_layer(cell.0, cell.1, id, layer);
@@ -414,6 +419,10 @@ impl Simulation {
         let Some((cell, layer)) = self.foot_mark_cell(id) else {
             return;
         };
+        // VERA-only: nor does it put one down (`world::speculation`).
+        if self.lose_fork_turn(crate::sim::world::Lost::Marks) {
+            return;
+        }
         let (sub_cell, insertion) = {
             let entity = self.substrate.entities.get(id).expect("placed Foot");
             (

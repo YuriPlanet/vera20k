@@ -60,6 +60,11 @@ mod quiet_units;
 #[cfg(all(test, tests_sim_world_p_s))]
 mod quiet_units_tests;
 mod sinking;
+mod speculation;
+pub(crate) use speculation::Lost;
+pub use speculation::ObjectPassStats;
+#[cfg(all(test, tests_sim_world_p_s))]
+mod speculation_tests;
 mod steady_ai;
 #[cfg(all(test, tests_sim_world_p_s))]
 mod steady_ai_tests;
@@ -878,6 +883,11 @@ pub struct Simulation {
     /// hashed, and no result depends on it.
     #[serde(skip)]
     idle_sleep: Forked<idle_sleep::IdleSleep>,
+    /// Whether the object pass runs turns on forks of the world first, and
+    /// its counters (`speculation`). A runtime setting: never saved or
+    /// hashed; a match turns it on as it starts or is loaded.
+    #[serde(skip)]
+    speculation: Forked<speculation::Speculation>,
     /// Batched target scans (`techno_ai::scan_batch`); `None` scans in
     /// native order. A save carries only the setting.
     pub(crate) scan_batch: Forked<Option<techno_ai::ScanBatch>>,

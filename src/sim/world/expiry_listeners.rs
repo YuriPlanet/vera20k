@@ -718,7 +718,7 @@ mod tests {
         let writes = fork.take_fork_writes();
         drop(fork);
         stores.entities.unshare();
-        stores.entities.commit_writes(writes);
+        stores.entities.commit_writes(writes, &mut Vec::new());
         for (expired, namer) in [(20, 1), (21, 2), (22, 3), (23, 4), (24, 5)] {
             assert_eq!(reach(&mut index, &mut stores, expired), [namer]);
         }

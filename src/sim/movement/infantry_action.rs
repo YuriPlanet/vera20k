@@ -542,6 +542,9 @@ impl Simulation {
             .get(id)
             .is_some_and(|actor| actor.in_playfield())
             && self.team_script_vm.member_team_leaving_map(id) == Some(false)
+            // VERA-only: a turn on a fork of the world sets no team's latch,
+            // and the pass runs it at its slot (`world::speculation`).
+            && !self.lose_fork_turn(crate::sim::world::Lost::Team)
         {
             self.team_script_vm.mark_member_team_leaving_map(id);
         }

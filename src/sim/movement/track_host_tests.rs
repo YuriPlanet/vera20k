@@ -885,7 +885,8 @@ fn drive_stops_on_the_deck_over_a_depressed_side_lane() {
         None,
         &mut |_, _, _| {},
         &mut crate::sim::world::FrameEffects::default(),
-    );
+    )
+    .expect("a placement off a fork goes on");
     let tank = sim.substrate.entities.get(1).unwrap();
     assert!(tank.on_bridge());
     assert_eq!(position_world_coord(&tank.position).z, 936);
@@ -939,7 +940,8 @@ fn a_terminal_point_over_a_dip_stores_the_decks_level() {
         None,
         &mut |_, _, _| {},
         &mut crate::sim::world::FrameEffects::default(),
-    );
+    )
+    .expect("a placement off a fork goes on");
     let tank = sim.substrate.entities.get(1).unwrap();
     assert!(tank.on_bridge());
     assert_eq!(tank.position.z(), 9);
@@ -977,7 +979,8 @@ fn bridge_placement_retains_selected_cell_but_reads_fresh_world_attributes() {
             }
         },
         &mut crate::sim::world::FrameEffects::default(),
-    );
+    )
+    .expect("a placement off a fork goes on");
     assert!(sim.substrate.entities.get(1).unwrap().on_bridge());
 }
 

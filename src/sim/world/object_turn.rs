@@ -73,6 +73,16 @@ impl LiveObjectPassOutcome {
     pub(super) fn ownership_changed(&self) -> bool {
         self.ownership_changed
     }
+
+    /// Fold in `stable_id`'s turn.
+    fn add(&mut self, stable_id: u64, turn: &ObjectTurnOutcome) {
+        if turn.tube_turn {
+            self.tube_turns.insert(stable_id);
+        }
+        self.destroyed_structure |= turn.destroyed_structure;
+        self.bridge_state_changed |= turn.bridge_state_changed;
+        self.ownership_changed |= turn.ownership_changed;
+    }
 }
 
 #[derive(Default)]
@@ -81,13 +91,21 @@ pub(crate) struct GroundLocomotorOutcome {
     pub(super) bridge_state_changed: bool,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub(super) struct ObjectTurnOutcome {
     tube_turn: bool,
     movement: movement::MovementTickStats,
     destroyed_structure: bool,
     bridge_state_changed: bool,
     ownership_changed: bool,
+}
+
+impl ObjectTurnOutcome {
+    /// Fold in a commit the turn made at its slot ([`Simulation::commit_no_fire`]).
+    pub(super) fn add_commit(&mut self, receipt: super::damage_consequences::DamageCommitReceipt) {
+        self.bridge_state_changed |= receipt.bridge_state_changed;
+        self.destroyed_structure |= receipt.structure_destroyed;
+    }
 }
 
 /// What one object's locomotor Process did this turn.
@@ -831,11 +849,19 @@ impl Simulation {
             );
             retry = true;
         }
+        // A turn on a fork of the world goes no further than a step into
+        // another cell (`world::speculation`).
         if let Some((id, head)) = pending_movement.take_walk_per_cell() {
+            if sim.lose_fork_turn(super::speculation::Lost::CellStep) {
+                return Err(frame_error(sim, String::new()));
+            }
             outcome.bridge_state_changed |=
                 sim.run_completed_walk_step(id, head, rules, overlay_registry, effects)?;
         }
         if let Some((id, coord)) = pending_movement.take_walk_boundary() {
+            if sim.lose_fork_turn(super::speculation::Lost::CellStep) {
+                return Err(frame_error(sim, String::new()));
+            }
             sim.run_walk_boundary(id, coord, rules, overlay_registry, effects);
             pending_movement.record_track_movement(1);
         }
@@ -1013,6 +1039,12 @@ impl Simulation {
         // visits find their types through handles (VERA-only, answers
         // unchanged).
         self.interner.cover_types(rules);
+        // Turns that change nothing but their own object may run first, side
+        // by side, each on a fork of the world as the pass found it
+        // (`world::speculation`, sim-scale).
+        let clock = super::speculation::PassClock::start();
+        let mut speculated =
+            self.speculate_live_object_turns(rules, overlay_registry, &mut object_ctx.effects);
         let mut visit = |sim: &mut Self, stable_id: u64| -> Result<(), super::FrameAdvanceError> {
             #[cfg(feature = "debug-tools")]
             let debug_before = sim
@@ -1020,41 +1052,39 @@ impl Simulation {
                 .entities
                 .get(stable_id)
                 .and_then(crate::sim::debug_event_log::DebugObservation::capture);
-            // A sleeping object's visit is counted, not run (`idle_sleep`).
-            let check = match sim.visit_sleeper(stable_id, rules, &mut object_ctx.effects) {
-                super::idle_sleep::SleepVisit::Counted => return Ok(()),
-                super::idle_sleep::SleepVisit::Awake => None,
-                super::idle_sleep::SleepVisit::Check(check) => Some(check),
+            // A kept turn's result applies at its slot; any other runs here.
+            let kept = speculated.as_mut().and_then(|pass| {
+                sim.commit_kept_turn(stable_id, pass, rules, &mut object_ctx.effects)
+            });
+            let turn = match kept {
+                Some(turn) => turn,
+                None => match sim.run_live_object_slot(stable_id, rules, &mut object_ctx)? {
+                    Some(turn) => turn,
+                    None => return Ok(()),
+                },
             };
-            let turn = sim.advance_live_object_turn(stable_id, rules, &mut object_ctx)?;
-            if let Some(check) = check {
-                sim.finish_sleep_check(stable_id, *check);
-            }
-            sim.sleep_after_turn(stable_id, rules);
-            sim.quiet_after_turn(stable_id, rules);
-            sim.steady_after_turn(stable_id, rules);
             #[cfg(feature = "debug-tools")]
             if let Some(before) = debug_before
                 && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
             {
                 before.record(entity, sim.session.binary_frame());
             }
-            if turn.tube_turn {
-                outcome.tube_turns.insert(stable_id);
-            }
-            outcome.destroyed_structure |= turn.destroyed_structure;
-            outcome.bridge_state_changed |= turn.bridge_state_changed;
-            outcome.ownership_changed |= turn.ownership_changed;
+            outcome.add(stable_id, &turn);
             Ok(())
         };
         let walked = self.try_for_each_live_object::<super::FrameAdvanceError>(|sim, stable_id| {
             // The slot's visit, and everything it calls, draws from its
-            // object's own stream (`world::turn_streams`).
+            // object's own stream (`world::turn_streams`), as its turn on a
+            // fork did (`world::speculation`).
             sim.enter_turn_stream(stable_id);
             let visited = visit(sim, stable_id);
             sim.leave_turn_stream(stable_id);
             visited
         });
+        if let Some(pass) = speculated {
+            self.finish_speculated_pass(pass);
+        }
+        self.count_object_pass(clock);
         self.fog.settle_plane_writes();
         self.reveal_viewers.end();
         self.civilian_house_memo.end();
@@ -1063,6 +1093,29 @@ impl Simulation {
         self.end_turn_streams();
         walked?;
         Ok(outcome)
+    }
+
+    /// One Logic slot's visit: a sleeping object's is counted (`None`,
+    /// `idle_sleep`); any other object takes its turn.
+    pub(super) fn run_live_object_slot(
+        &mut self,
+        stable_id: u64,
+        rules: &RuleSet,
+        object_ctx: &mut techno_ai::ObjectAiCtx<'_>,
+    ) -> Result<Option<ObjectTurnOutcome>, super::FrameAdvanceError> {
+        let check = match self.visit_sleeper(stable_id, rules, &mut object_ctx.effects) {
+            super::idle_sleep::SleepVisit::Counted => return Ok(None),
+            super::idle_sleep::SleepVisit::Awake => None,
+            super::idle_sleep::SleepVisit::Check(check) => Some(check),
+        };
+        let turn = self.advance_live_object_turn(stable_id, rules, object_ctx)?;
+        if let Some(check) = check {
+            self.finish_sleep_check(stable_id, *check);
+        }
+        self.sleep_after_turn(stable_id, rules);
+        self.quiet_after_turn(stable_id, rules);
+        self.steady_after_turn(stable_id, rules);
+        Ok(Some(turn))
     }
 
     pub(super) fn advance_live_object_turn(
@@ -1108,6 +1161,9 @@ impl Simulation {
         if let Some(error) = ai.frame_error.take() {
             return Err(error);
         }
+        // A turn on a fork of the world stops here once lost
+        // (`world::speculation`); so it does after the Process.
+        sim.stop_lost_turn(stable_id)?;
         outcome.bridge_state_changed |= ai.bridge_state_changed;
         outcome.destroyed_structure |= ai.destroyed_structure;
         outcome.ownership_changed |= ai.ownership_changed();
@@ -1283,6 +1339,7 @@ impl Simulation {
         } else {
             sim.process_active_locomotor(stable_id, rules, object_ctx)?
         };
+        sim.stop_lost_turn(stable_id)?;
         outcome.movement.merge(process.movement);
         outcome.bridge_state_changed |= process.bridge_state_changed;
         // `0x004DA87A`: the Process may have converted or removed the owner.

@@ -128,7 +128,8 @@ impl NameNote {
 
 /// [`GameEntity::names_unread`]: set while the pointer-expiry index has not
 /// read the entity since its names may have changed. A new, copied or
-/// loaded entity is unread.
+/// loaded entity is unread; a fork's copy keeps the note
+/// ([`GameEntity::fork_copy`]).
 struct NamesUnread(bool);
 
 /// Transient: no two entities differ by it in a debug print.
@@ -2825,6 +2826,16 @@ impl GameEntity {
     pub(crate) fn note_names(&mut self) -> NameNote {
         self.names_unread.0 = true;
         NameNote(())
+    }
+
+    /// A copy for a fork of the entity store to write. Unlike a clone it
+    /// keeps the name note: the copy takes this entity's place when the
+    /// fork's writes are kept, and only a write the copy noted changes what
+    /// the pointer-expiry index read (`EntityStore::commit_writes`).
+    pub(crate) fn fork_copy(&self) -> Self {
+        let mut copy = self.clone();
+        copy.names_unread = NamesUnread(self.names_unread.0);
+        copy
     }
 
     /// Whether the entity was noted ([`Self::note_names`]) since the store

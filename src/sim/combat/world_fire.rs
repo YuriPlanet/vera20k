@@ -1523,6 +1523,12 @@ pub(super) fn emit_admitted_fire(
     overlay_registry: Option<&OverlayTypeRegistry>,
     effects: &mut FrameEffects<'_>,
 ) -> Option<u64> {
+    // VERA-only: a turn on a fork of the world fires no shot, whose bullet,
+    // anims and damage write the world; the pass runs the turn at its slot
+    // (`world::speculation`).
+    if world.lose_fork_turn(crate::sim::world::Lost::Fire) {
+        return None;
+    }
     // Infantry51DF70 clears68D for every direct FireAt caller, including
     // Guard521432 and a launch subsequently refused by Techno6FDD50.
     if shot.snap.category == EntityCategory::Infantry

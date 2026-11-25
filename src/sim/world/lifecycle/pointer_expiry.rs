@@ -1109,6 +1109,11 @@ impl Simulation {
         control: PointerExpiryControl,
         mut context: UninitContext<'_>,
     ) {
+        // VERA-only: a turn on a fork of the world reaches no listener; the
+        // pass runs it again on the world (`world::speculation`).
+        if self.lose_fork_turn(crate::sim::world::Lost::Expiry) {
+            return;
+        }
         // VERA-only: a batched target scan holds its pick across the turns
         // before its scanner's as a TarCom does (`techno_ai::scan_batch`).
         self.release_batched_scan_pick(expired_id);

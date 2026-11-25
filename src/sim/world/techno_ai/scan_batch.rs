@@ -539,19 +539,27 @@ impl Simulation {
         mask: ScanMission,
         scan_coord: Option<[i32; 3]>,
     ) -> Option<ThreatScanOutcome> {
-        let batch = self.scan_batch.as_mut()?;
+        let batch = self.scan_batch.as_ref()?;
         let index = batch
             .answers
             .binary_search_by_key(&id, |&(scanner, _)| scanner)
             .ok()?;
-        let slot = &mut batch.answers[index].1;
+        let slot = &batch.answers[index].1;
         // Another scan of the object leaves the answer for its own.
         if !slot.as_ref().is_some_and(|answer| {
             (answer.call, answer.mask, answer.scan_coord) == (call, mask, scan_coord)
         }) {
             return None;
         }
-        let answer = slot.take()?;
+        // VERA-only: a turn on a fork of the world reads the answer and takes
+        // none, so that its fork copies no batch (`util::forked`); the pass
+        // runs the turn at its slot (`world::speculation`).
+        let answer = if self.lose_fork_turn(crate::sim::world::Lost::Scan) {
+            slot.clone()?
+        } else {
+            self.scan_batch.as_mut()?.answers[index].1.take()?
+        };
+        let batch = self.scan_batch.as_ref()?;
         let released = answer
             .outcome
             .object()
