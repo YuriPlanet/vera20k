@@ -537,6 +537,20 @@ pub(crate) fn blocks_shell_input(state: &AppState) -> bool {
     state.frontend.quit_cascade.is_some()
         || shell_slide_running(&state.frontend)
         || external_menu_wait(state).is_some()
+        || update_check_holds_main_menu(state)
+}
+
+/// VERA: the main menu's first entry waits for the startup update check
+/// (`updater::Updater::holds_main_menu`), over the empty backdrop and taking
+/// no shell input, so a newer release is offered before the menu slides in.
+pub(crate) fn update_check_holds_main_menu(state: &AppState) -> bool {
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    let held = state.frontend.updater.holds_main_menu();
+    // The browser build has no updater.
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    let held = false;
+    held && state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
+        && state.frontend.shell_route == crate::app::shell_route::ShellRoute::MainMenu
 }
 
 /// Why an external network launch (docs/spawn.md) is at the main menu. It
@@ -667,7 +681,10 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
             }
             _ => ShellSlideKind::WolLobby,
         },
-        ShellRoute::MainMenu if state.frontend.main_menu_shell_error.is_none() => {
+        ShellRoute::MainMenu
+            if state.frontend.main_menu_shell_error.is_none()
+                && !update_check_holds_main_menu(state) =>
+        {
             ShellSlideKind::MainMenu
         }
         ShellRoute::MainMenu => return None,
@@ -878,7 +895,7 @@ mod tests {
         let column = ShellSlideKind::WolLobby.column(9, Some(lobby.page_spec()));
         assert_eq!(
             (column.top_buttons, column.bottom_button, column.top_panel),
-            (6, true, false)
+            (5, true, false)
         );
         assert_eq!(ShellSlideKind::WolWelcome.column(9, None).top_buttons, 6);
         let retail = ShellSlideKind::WolLobby.column(9, None);

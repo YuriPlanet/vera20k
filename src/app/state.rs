@@ -204,6 +204,21 @@ impl AppState {
             && !self.frontend.main_menu_dialog_open()
     }
 
+    /// VERA: the main menu is the page to show but has not started to slide
+    /// in: behind the startup logo and splash, or while the startup update
+    /// check holds it. A box asks over the empty backdrop at once, with no
+    /// slide in or out; its menu slides in once it closes.
+    pub(crate) fn main_menu_not_shown(&self) -> bool {
+        use crate::ui::game_screen::GameScreen;
+        let frontend = &self.frontend;
+        frontend.screen == GameScreen::MainMenu
+            && frontend.shell_route == ShellRoute::MainMenu
+            && frontend.shell_slide_active_shell.is_none()
+            && frontend.main_menu_shell_error.is_none()
+            && frontend.quit_cascade.is_none()
+            && !frontend.main_menu_dialog_open()
+    }
+
     pub(crate) fn main_menu_dialog_open(&self) -> bool {
         self.frontend.main_menu_dialog_open()
     }
