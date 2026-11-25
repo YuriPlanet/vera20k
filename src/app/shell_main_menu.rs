@@ -10,6 +10,7 @@ use crate::app::frontend::state::ShellMessageBoxPurpose as Purpose;
 use crate::app::input::state::MatchInputState;
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::SaveRepository;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
@@ -23,60 +24,68 @@ use crate::ui::single_player_shell::SinglePlayerShellState;
 use crate::util::time::{Duration, Instant};
 use winit::window::Window;
 
-impl AppState {
-    /// Puts `tag`'s language in use as a pick in the Language list does:
-    /// from the next frame every label reads in it, as the string table takes
-    /// its texts and the map titles read from the table follow; the fonts
-    /// take its script's letter forms and reading direction by themselves
-    /// (`TextEngine::follow_interface_language`), as after a reload of the
-    /// language files. False, changing nothing, when no language file
-    /// provides `tag`.
-    pub(crate) fn use_language(&mut self, tag: &str) -> bool {
-        if !crate::i18n::select(tag) {
-            return false;
-        }
-        self.refresh_string_key_labels();
-        true
+/// Puts `tag`'s language in use as a pick in the Language list does:
+/// from the next frame every label reads in it, as the string table takes
+/// its texts and the map titles read from the table follow; the fonts
+/// take its script's letter forms and reading direction by themselves
+/// (`TextEngine::follow_interface_language`), as after a reload of the
+/// language files. False, changing nothing, when no language file
+/// provides `tag`.
+pub(crate) fn use_language(
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+    tag: &str,
+) -> bool {
+    if !crate::i18n::select(tag) {
+        return false;
     }
+    refresh_string_key_labels(frontend, match_state, process_assets);
+    true
+}
 
-    /// Re-resolve the loaded string table and the map titles after a new
-    /// language, the String Keys box or its hotkey changed what labels answer.
-    pub(crate) fn refresh_string_key_labels(&mut self) {
-        if let Some(csf) = self.process_assets.csf.as_mut() {
-            crate::i18n::apply(csf);
-            crate::map::scenario_sources::relabel_records(
-                &mut self.frontend.scenario_catalog.records_mut(),
-                csf,
-            );
-        }
-        crate::app::loading::transitions::resolve_status_texts(
-            &self.frontend,
-            &mut self.match_state,
-            &self.process_assets,
+/// Re-resolve the loaded string table and the map titles after a new
+/// language, the String Keys box or its hotkey changed what labels answer.
+pub(crate) fn refresh_string_key_labels(
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+) {
+    if let Some(csf) = process_assets.csf.as_mut() {
+        crate::i18n::apply(csf);
+        crate::map::scenario_sources::relabel_records(
+            &mut frontend.scenario_catalog.records_mut(),
+            csf,
         );
-        crate::app::input::keyboard::refresh_title(&mut self.frontend, &self.process_assets);
-        // The login form keeps its status line as resolved text; the rest of
-        // that page resolves every frame.
-        if let Some(visit) = self.frontend.wol.as_mut()
-            && let crate::app::shell_wol::WolPage::Login(login) = &mut visit.page
-        {
-            for form in login.form.iter_mut().chain(login.account.iter_mut()) {
-                form.refresh_text();
-            }
+    }
+    crate::app::loading::transitions::resolve_status_texts(frontend, match_state, process_assets);
+    crate::app::input::keyboard::refresh_title(frontend, process_assets);
+    // The login form keeps its status line as resolved text; the rest of
+    // that page resolves every frame.
+    if let Some(visit) = frontend.wol.as_mut()
+        && let crate::app::shell_wol::WolPage::Login(login) = &mut visit.page
+    {
+        for form in login.form.iter_mut().chain(login.account.iter_mut()) {
+            form.refresh_text();
         }
     }
+}
 
-    /// The String Keys hotkey: with the Developer box ticked, keys and texts
-    /// swap in place; with it off, the key does nothing.
-    pub(crate) fn toggle_string_keys_view(&mut self) {
-        if !crate::i18n::string_keys_enabled() {
-            return;
-        }
-        let keys = crate::i18n::toggle_string_keys();
-        self.refresh_string_key_labels();
-        log::info!("String keys: {}", if keys { "keys" } else { "values" });
-        self.platform.window.request_redraw();
+/// The String Keys hotkey: with the Developer box ticked, keys and texts
+/// swap in place; with it off, the key does nothing.
+pub(crate) fn toggle_string_keys_view(
+    window: &Window,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+) {
+    if !crate::i18n::string_keys_enabled() {
+        return;
     }
+    let keys = crate::i18n::toggle_string_keys();
+    refresh_string_key_labels(frontend, match_state, process_assets);
+    log::info!("String keys: {}", if keys { "keys" } else { "values" });
+    window.request_redraw();
 }
 
 /// The options profile's `[Video]` bytes behind HIRES and TOGGLE, which the
@@ -839,20 +848,24 @@ impl App {
     /// While the Developer page's String Keys box is ticked, reload a language
     /// file rewritten in the settings folder or the checkout's `src/i18n`, so
     /// its texts (and their keys) follow without a restart, as after a pick
-    /// in the Language list ([`Self::use_language`]). Returns the next check,
+    /// in the Language list ([`use_language`]). Returns the next check,
     /// keeping the event loop awake for it even on a still screen.
-    pub(super) fn poll_language_files(state: &mut AppState) -> Option<Instant> {
+    pub(super) fn poll_language_files(
+        platform: &PlatformState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
+    ) -> Option<Instant> {
         if !crate::i18n::string_keys_enabled() {
             return None;
         }
-        let settings_dir = state
-            .platform
+        let settings_dir = platform
             .game_config
             .as_ref()
             .map(|config| config.paths.settings_dir().to_path_buf());
-        if state.frontend.language_files.poll(settings_dir.as_deref()) {
-            state.refresh_string_key_labels();
-            state.platform.window.request_redraw();
+        if frontend.language_files.poll(settings_dir.as_deref()) {
+            refresh_string_key_labels(frontend, match_state, process_assets);
+            platform.window.request_redraw();
         }
         Some(Instant::now() + Duration::from_secs(1))
     }
@@ -1050,12 +1063,30 @@ impl App {
             ) => {
                 state.frontend.options_dialog = Some(dialog);
                 Self::leave_shell_dialog(state, ShellSlideKind::Options, move |state| {
-                    App::commit_launcher_options_result(state, result)
+                    App::commit_launcher_options_result(
+                        &mut state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        result,
+                    )
                 });
             }
             Some(result) => {
                 crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
-                    state, dialog, result, None,
+                    &mut state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence,
+                    dialog,
+                    result,
+                    None,
                 );
             }
             None => {
@@ -1066,7 +1097,16 @@ impl App {
                         // Options closes as through Back, keeping and saving
                         // its values; the main menu returns after the
                         // updater's last box.
-                        Self::commit_launcher_options_result(state, LauncherParentResult::Back);
+                        Self::commit_launcher_options_result(
+                            &mut state.platform,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &mut state.audio,
+                            &mut state.persistence,
+                            LauncherParentResult::Back,
+                        );
                         crate::app::updater::open_check(
                             &state.platform.window,
                             &state.renderer,
@@ -1084,37 +1124,63 @@ impl App {
     /// then write the profile and build `0xE2` (Main Menu, `0x005FAD10`), or
     /// run the Keyboard page or VERA's Mods page.
     pub(super) fn commit_launcher_options_result(
-        state: &mut AppState,
+        platform: &mut PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &mut PersistenceState,
         result: crate::ui::main_menu_dialogs::options::LauncherParentResult,
     ) {
         // The key page and VERA's Mods page are children of Options: closing
         // one reopens the dialog on the page the player left. Back and
         // Terminal end the dialog for good.
-        state.frontend.options_reopen_at = match result {
-            LauncherParentResult::Keyboard | LauncherParentResult::Mods => state
-                .frontend
+        frontend.options_reopen_at = match result {
+            LauncherParentResult::Keyboard | LauncherParentResult::Mods => frontend
                 .options_dialog
                 .as_ref()
                 .map(|dialog| dialog.category()),
             _ => None,
         };
-        let Some(dialog) = state.frontend.options_dialog.take() else {
+        let Some(dialog) = frontend.options_dialog.take() else {
             return;
         };
         crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
-            state, dialog, result, None,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            dialog,
+            result,
+            None,
         );
     }
 
     /// The in-game menu's Options page has closed: the controls the player
     /// moved commit as the main menu's do, and the profile is written once.
     pub(crate) fn commit_in_game_options_page(
-        state: &mut AppState,
+        platform: &mut PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &mut PersistenceState,
         dialog: crate::ui::main_menu_dialogs::OptionsDialogState,
         opened: crate::ui::main_menu_dialogs::options::LauncherOptionsPacked,
     ) {
         crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
-            state,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             dialog,
             LauncherParentResult::Back,
             Some(opened),
@@ -1160,12 +1226,26 @@ impl App {
 
     /// Pump-terminal completion enters the same always-apply parent transaction
     /// as Back, then writes once before the caller performs unrelated exit work.
-    pub(crate) fn close_launcher_options_terminal(state: &mut AppState) {
-        let Some(dialog) = state.frontend.options_dialog.take() else {
+    pub(crate) fn close_launcher_options_terminal(
+        platform: &mut PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &mut PersistenceState,
+    ) {
+        let Some(dialog) = frontend.options_dialog.take() else {
             return;
         };
         crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
-            state,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             dialog,
             LauncherParentResult::Terminal,
             None,
@@ -1664,8 +1744,24 @@ impl App {
         // always-apply final result: Apply -> destroy -> one write.
         // Complete that transaction before unrelated shell teardown.
         crate::app::input::keyboard::prepare_terminal_exit(state);
-        Self::close_launcher_options_terminal(state);
-        crate::app::input::pause_menu::on_match_end(state);
+        Self::close_launcher_options_terminal(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+        );
+        crate::app::input::pause_menu::on_match_end(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+        );
         if crate::app::input::precedence::route_page(&state.frontend)
             == crate::app::input::precedence::ScreenPage::Skirmish
         {

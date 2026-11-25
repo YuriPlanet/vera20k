@@ -16,7 +16,14 @@ pub(crate) fn render_abort_shell(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    let layout = crate::app::input::abort::sync(state).expect("active B6 geometry");
+    let layout = crate::app::input::abort::sync(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+    )
+    .expect("active B6 geometry");
     let secondary = layout.secondary_kind;
     super::in_game_shell::paint_dialog(state, encoder, destination, &DIALOG, |paint, ui| {
         let state = paint.state;

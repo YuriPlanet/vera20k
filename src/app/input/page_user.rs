@@ -37,5 +37,13 @@ pub(crate) fn execute(state: &mut AppState) {
     if refused {
         return;
     }
-    crate::app::shell_wol::page::open_in_match(state);
+    crate::app::shell_wol::page::open_in_match(
+        &mut state.frontend,
+        &mut state.platform,
+        &mut state.match_state,
+        &state.process_assets,
+        &state.renderer,
+        &mut state.audio,
+        &mut state.persistence,
+    );
 }

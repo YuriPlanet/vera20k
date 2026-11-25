@@ -191,16 +191,20 @@ pub(crate) fn shared_ui_mut(
 
 /// A dialog's `layout` on the active-game shell as it stands.
 pub(crate) fn layout<L>(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
     layout: impl FnOnce(i32, i32, crate::ui::shell::in_game_shell::InGameShellLayout, [i32; 2]) -> L,
 ) -> Option<L> {
     Some(
         crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
-            &state.platform,
-            &state.renderer,
-            &state.frontend,
-            &state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
         )?
         .place(layout),
     )
@@ -218,9 +222,36 @@ pub(crate) fn in_game_pointer(
         InGameMenuState::Menu => super::pause_menu::pointer(state, down),
         InGameMenuState::AbortConfirm => super::abort::pointer(state, down),
         InGameMenuState::Surrender => super::surrender::pointer(state, down),
-        InGameMenuState::Sound => super::sound::pointer(state, down),
-        InGameMenuState::Diplomacy => super::diplomacy::pointer(state, down),
-        InGameMenuState::MissionBriefing => super::restate::pointer(state, down),
+        InGameMenuState::Sound => super::sound::pointer(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            down,
+        ),
+        InGameMenuState::Diplomacy => super::diplomacy::pointer(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            down,
+        ),
+        InGameMenuState::MissionBriefing => super::restate::pointer(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            down,
+        ),
         _ => {}
     }
 }

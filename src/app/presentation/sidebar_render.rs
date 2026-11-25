@@ -527,7 +527,16 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             &mut state.match_state.match_audio,
             crate::app::input::sidebar_eva::EVA_NEW_CONSTRUCTION_OPTIONS,
         );
-        crate::app::input::messages::post_eva_new_construction(state);
+        crate::app::input::messages::post_eva_new_construction(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            &state.persistence,
+        );
     }
 
     let display_credits = state

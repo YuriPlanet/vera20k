@@ -37,7 +37,13 @@ pub(super) fn join_failed_tail(state: &mut AppState, close: bool) {
         }
         close_wait(&mut state.frontend);
         if game {
-            super::quick_match::game_joined(state, false);
+            super::quick_match::game_joined(
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                false,
+            );
         }
         return;
     }
@@ -68,7 +74,12 @@ pub(super) fn join_failed_tail(state: &mut AppState, close: bool) {
         lobby.shown = true;
         lobby.covered = false;
         close_wait(&mut state.frontend);
-        let join = selected_admits(state);
+        let join = selected_admits(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+        );
         if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
             lobby.ui.set_commands(true, join, false);
         }
@@ -202,7 +213,14 @@ pub(super) fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
         // 0x7A5E86..0x7A5EC8: no TXT_JOINED_S in modes 1-3; the wait closes
         // and the lobby's user list sends the request (0x7A7B0D..0x7A7B3B).
         close_wait(&mut state.frontend);
-        super::quick_match::lobby_users_listed(state);
+        super::quick_match::lobby_users_listed(
+            &mut state.frontend,
+            state.platform.game_config.as_ref(),
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &state.persistence.options_profile,
+        );
         return;
     }
     if !modern_lobby(state.frontend.wol.as_ref()) {
@@ -217,9 +235,20 @@ pub(super) fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
             &state.csf_text("TXT_JOINED_S"),
             &[crate::assets::csf_file::CsfArg::Str(&name)],
         );
-        message_line(state, text);
+        message_line(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            text,
+        );
     }
-    let join = selected_admits(state);
+    let join = selected_admits(
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &state.renderer,
+    );
     if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
         lobby.ui.set_commands(true, join, true);
     }
@@ -271,14 +300,26 @@ pub(super) fn enter_game_as_guest(state: &mut AppState) {
         );
         setup::send_first_choices(&mut state.frontend, &state.match_state.session);
         if quick_match_runner(state.frontend.wol.as_ref()) {
-            super::quick_match::game_joined(state, true);
+            super::quick_match::game_joined(
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                true,
+            );
         }
         let room = lobby(state.frontend.wol.as_ref())
             .and_then(|lobby| lobby.current.as_ref())
             .map(|channel| channel.name.clone())
             .unwrap_or_default();
         if modern && let Some(line) = joined_game_line(&users, &room) {
-            message_line(state, line);
+            message_line(
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                line,
+            );
         }
     } else {
         // 0x7A782A..0x7A788D: no operator, the local tail 0x785740.
@@ -354,7 +395,13 @@ fn join_error(state: &mut AppState, code: u32) {
         // 0x7A5961..0x7A5D2A: modes 1-3 print these as lines (colour -1)
         // instead of the boxes; every failure sets event 5.
         let text = state.csf_text(key);
-        message_line(state, text);
+        message_line(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            text,
+        );
         join_failed_tail(state, true);
         return;
     }
@@ -389,7 +436,13 @@ fn join_error(state: &mut AppState, code: u32) {
             let text = state
                 .csf_text("TXT_CANT_JOINCHAN")
                 .replacen("%X", &format!("{code:X}"), 1);
-            message_line(state, text);
+            message_line(
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                text,
+            );
             join_failed_tail(state, true);
         }
     }

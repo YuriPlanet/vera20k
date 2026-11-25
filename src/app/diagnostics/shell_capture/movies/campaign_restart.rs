@@ -712,8 +712,14 @@ impl RestartCapture {
                         &state.match_state,
                         "menu held past deadline",
                     );
-                    let layout = crate::app::input::pause_menu::current_layout(state)
-                        .context("B5 layout")?;
+                    let layout = crate::app::input::pause_menu::current_layout(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence,
+                    )
+                    .context("B5 layout")?;
                     let rect = layout
                         .button(crate::ui::shell::pause_menu::PauseMenuButton::Resume)
                         .context("B5 Resume")?;
@@ -1245,8 +1251,14 @@ impl RestartCapture {
                 self.step == Step::Settling(0)
                     && state.match_state.match_presentation.in_game_menu
                         == crate::ui::pause_menu::InGameMenuState::AbortConfirm
-                    && crate::app::input::abort::current_abort_layout(state)
-                        .is_some_and(|layout| layout.secondary.is_some())
+                    && crate::app::input::abort::current_abort_layout(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence,
+                    )
+                    .is_some_and(|layout| layout.secondary.is_some())
             }
             RestartTarget::DefeatPrompt => {
                 self.step == Step::Settling(0) && state.frontend.shell_message_box.is_some()

@@ -5,8 +5,14 @@
 //! the switch itself is the existing On/Off Line event
 //! ([`Command::SetBuildingOnLine`]).
 
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::Command;
@@ -17,26 +23,41 @@ use crate::sim::world::Simulation;
 /// `10002A80`): with RulesExt `TogglePowerAllowed` (`+0x1C`) set it calls
 /// `SetTogglePowerMode(-1)`; entry unselects (`0x004AC89B`). The command
 /// exists only while Ares plays.
-pub(crate) fn execute_command(state: &mut AppState) {
-    if !state
-        .rules()
+pub(crate) fn execute_command(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    if !crate::app::state::active_rules(frontend, match_state)
         .is_some_and(|rules| rules.ares() && rules.ares_toggle_power_allowed())
     {
         return;
     }
-    let has_building = state
-        .match_state
+    let has_building = match_state
         .sim_runtime
         .runtime()
         .is_some_and(|runtime| super::dispatch::local_has_manageable_building(&runtime.simulation));
-    let placement_armed = state.armed_building_type().is_some();
-    if state
-        .match_state
+    let placement_armed = match_state.input.armed_building_type().is_some();
+    if match_state
         .match_presentation
         .sidebar_gadget_state
         .set_power_mode(true, placement_armed, i32::from(has_building))
     {
-        super::dispatch::unselect_all(state);
+        super::dispatch::unselect_all(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+        );
     }
 }
 
@@ -80,15 +101,30 @@ pub(crate) fn admits(sim: &Simulation, rules: &RuleSet, stable_id: u64) -> bool 
 }
 
 /// The building under the cursor that [`admits`] power mode's switch.
-pub(crate) fn building_under_cursor(state: &AppState) -> Option<u64> {
+pub(crate) fn building_under_cursor(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+) -> Option<u64> {
     let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        &state.match_state.input,
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
+        &match_state.input,
+        match_state.input.cursor_x,
+        match_state.input.cursor_y,
     );
-    let id = super::commands::visible_object_under_point(state, world_x, world_y)?;
-    let runtime = state.match_state.sim_runtime.runtime()?;
-    admits(&runtime.simulation, state.rules()?, id).then_some(id)
+    let id = super::commands::visible_object_under_point(
+        platform,
+        frontend,
+        match_state,
+        world_x,
+        world_y,
+    )?;
+    let runtime = match_state.sim_runtime.runtime()?;
+    admits(
+        &runtime.simulation,
+        crate::app::state::active_rules(frontend, match_state)?,
+        id,
+    )
+    .then_some(id)
 }
 
 /// `DisplayClass::BandBox_LeftUp @ 0x004AB9B0`'s TogglePower arm
@@ -96,12 +132,20 @@ pub(crate) fn building_under_cursor(state: &AppState) -> Option<u64> {
 /// queues the Off Line event (2), any other the On Line event (1), as the
 /// player's House. NoTogglePower does nothing. With nothing selected the
 /// selection dispatch before it (`0x004AE750`) has no receiver.
-pub(crate) fn click(state: &mut AppState) {
-    let Some(entity_id) = building_under_cursor(state) else {
+pub(crate) fn click(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    let Some(entity_id) = building_under_cursor(platform, frontend, match_state) else {
         return;
     };
-    let Some(online) = state
-        .match_state
+    let Some(online) = match_state
         .sim_runtime
         .runtime()
         .and_then(|runtime| runtime.simulation.entities().get(entity_id))
@@ -109,12 +153,18 @@ pub(crate) fn click(state: &mut AppState) {
     else {
         return;
     };
-    let Some(owner) = super::commands::preferred_command_owner(&state.match_state.sim_runtime)
-    else {
+    let Some(owner) = super::commands::preferred_command_owner(&match_state.sim_runtime) else {
         return;
     };
     super::commands::schedule_command(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         &owner,
         Command::SetBuildingOnLine {
             entity_id,

@@ -1351,7 +1351,16 @@ fn advance_in_game_runtime_mode(
         return false;
     }
     if !replaying {
-        crate::app::input::build_repeat::top_up(state);
+        crate::app::input::build_repeat::top_up(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            &state.persistence,
+        );
     }
     let frame_stepping = matches!(mode, RuntimeAdvanceMode::WallClock { .. })
         && state.diag.debug_frame_step_requested;
@@ -1898,7 +1907,14 @@ fn after_simulation_pass(
         && !crate::app::input::campaign_input::is_locked(&state.match_state)
     {
         crate::app::presentation::sidebar_render::republish_sidebar_projection(state);
-        crate::app::input::chrome_input::refresh_pointer(state);
+        crate::app::input::chrome_input::refresh_pointer(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.persistence,
+        );
     }
     // The audio service is NOT gated on the simulation. gamemd's
     // `AudioSystem::Pump @ 0x00406F70` hangs off `Network_ServiceLoop @
@@ -2450,7 +2466,14 @@ fn advance_one_simulation_frame(
             &state.persistence,
             FoundationCentre::Tactical,
         );
-        crate::app::input::cursor::answer_kept_questions(state);
+        crate::app::input::cursor::answer_kept_questions(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.persistence,
+        );
         state.match_state.sim_runtime.lend(Box::new(job));
         if let Some(request) = mouse_scroll {
             crate::app::input::camera::commit_camera_scroll(
@@ -2905,7 +2928,17 @@ fn finish_simulation_frame(
                     deferred.apply(&mut state.match_state, &mut state.audio.sfx_player);
                 }
                 for message in hud_messages {
-                    crate::app::input::messages::post_hud_message(state, message);
+                    crate::app::input::messages::post_hud_message(
+                        &state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                        &state.persistence,
+                        message,
+                    );
                 }
                 return false;
             }
@@ -3222,7 +3255,13 @@ fn finish_simulation_frame(
             match output {
                 LifecycleOutput::OptionsRequested => {
                     crate::app::App::enter_in_game_menu_state(
-                        state,
+                        &mut state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
                         crate::ui::pause_menu::InGameMenuState::Menu,
                     );
                 }
@@ -3245,7 +3284,13 @@ fn finish_simulation_frame(
                 }
                 LifecycleOutput::PlanningAppendRefused { owner, message } => {
                     crate::app::input::planning_mode::append_output(
-                        state,
+                        &state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.persistence,
                         Some(owner) == local_house,
                         message,
                         false,
@@ -3253,7 +3298,13 @@ fn finish_simulation_frame(
                 }
                 LifecycleOutput::PlanningFramePassQueued { owner, message } => {
                     crate::app::input::planning_mode::append_output(
-                        state,
+                        &state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.persistence,
                         Some(owner) == local_house,
                         message,
                         true,
@@ -3379,7 +3430,16 @@ fn finish_simulation_frame(
         // Main_Tick runs PlanMgr_Process_Frame after the frame's events
         // (0x0055DEA4); its input tail follows their lifecycle outputs.
         if frame_committed {
-            crate::app::input::planning_mode::frame_pass(state);
+            crate::app::input::planning_mode::frame_pass(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+            );
             // VERA ferry: the routes' orders, as ordinary input for a later
             // frame.
             crate::app::input::ferry::frame_pass(&mut state.match_state);
@@ -3405,7 +3465,17 @@ fn finish_simulation_frame(
         }
 
         for message in hud_messages {
-            crate::app::input::messages::post_hud_message(state, message);
+            crate::app::input::messages::post_hud_message(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                message,
+            );
         }
 
         // Simulation has already finalized identity, passability, navigation,
@@ -3603,7 +3673,14 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                 }
             }
             TriggerEffect::HomeCamera { coord } => {
-                crate::app::input::camera::apply_home_camera(state, *coord);
+                crate::app::input::camera::apply_home_camera(
+                    &state.platform,
+                    &mut state.renderer,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &state.persistence,
+                    *coord,
+                );
             }
             TriggerEffect::CameraAtCoord { coord, velocity } => {
                 crate::app::input::camera::apply_trigger_camera(
@@ -3637,16 +3714,50 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                 }
             }
             TriggerEffect::LocalizedMessage { csf_label } => {
-                crate::app::input::messages::post_trigger_message(state, csf_label);
+                crate::app::input::messages::post_trigger_message(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    &state.persistence,
+                    csf_label,
+                );
             }
             TriggerEffect::ExtModuleStopped { reason } => {
                 let text = crate::i18n::tr_fill("VERA:ModuleStopped", &[("reason", reason)]);
                 let name = crate::i18n::tr("VERA:ModuleSender");
-                crate::app::input::messages::post_chat_line(state, &name, &text, [1.0, 0.4, 0.4]);
+                crate::app::input::messages::post_chat_line(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    &state.persistence,
+                    &name,
+                    &text,
+                    [1.0, 0.4, 0.4],
+                );
             }
             TriggerEffect::ExtModuleNotice { text } => {
                 let name = crate::i18n::tr("VERA:ModuleSender");
-                crate::app::input::messages::post_chat_line(state, &name, text, [1.0, 0.8, 0.4]);
+                crate::app::input::messages::post_chat_line(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    &state.persistence,
+                    &name,
+                    text,
+                    [1.0, 0.8, 0.4],
+                );
             }
             TriggerEffect::SelectSidebarTab { index } => {
                 refresh_sidebar = true;

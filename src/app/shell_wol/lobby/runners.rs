@@ -122,7 +122,13 @@ pub(in crate::app::shell_wol) fn quick_match_join_game(state: &mut AppState, cha
             context.local_hash,
             channel.ex_info,
         );
-        super::quick_match::game_refused(state, reason);
+        super::quick_match::game_refused(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            reason,
+        );
         return;
     }
     join_channel(state, channel, "", true, false);
@@ -276,7 +282,15 @@ pub(in crate::app::shell_wol) fn buddy_join(state: &mut AppState, channel: WolCh
     )
     .is_err()
     {
-        join_failed_locally(state, true);
+        join_failed_locally(
+            &mut state.frontend,
+            &state.platform.window,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &state.persistence.options_profile,
+            true,
+        );
         return;
     }
     continue_join(state, channel);

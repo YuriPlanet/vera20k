@@ -466,7 +466,13 @@ impl App {
                 }
             }
             ScreenPage::CoopScore => match edge {
-                None => crate::app::input::coop_score::cursor_moved(state),
+                None => crate::app::input::coop_score::cursor_moved(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                ),
                 Some((button, edge)) => {
                     crate::app::input::coop_score::mouse(state, button, edge.is_pressed())
                 }
@@ -516,7 +522,13 @@ impl App {
     fn route_to_layer(state: &mut AppState, input: Input) {
         use crate::app::frontend::preview_zoom;
         use crate::app::input::tooltips;
-        let layer = crate::app::input::precedence::input_layer(state);
+        let layer = crate::app::input::precedence::input_layer(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        );
         // The blocking layers take every input first.
         match (layer, input) {
             (InputLayer::HouseOutcomeWait, Input::Key(event)) => {
@@ -587,7 +599,15 @@ impl App {
             // Shared tooltip service: every move restarts the show delay and
             // hides a visible tip, and any button edge (middle too) kills a
             // visible tip and its timer (study S1).
-            Input::Move => tooltips::on_mouse_move(state),
+            Input::Move => tooltips::on_mouse_move(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.persistence,
+            ),
             Input::Button(..) => tooltips::on_button_event(&state.diag, &mut state.match_state),
             Input::Key(_) | Input::Wheel(_) => {}
         }
@@ -599,7 +619,15 @@ impl App {
             InputLayer::Page(ModalPage::NetworkWait) => {
                 match input {
                     Input::Key(event) => release_held_key(&mut state.match_state.input, event),
-                    Input::Move => crate::app::input::connection::cursor_moved(state),
+                    Input::Move => crate::app::input::connection::cursor_moved(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                        &state.persistence,
+                    ),
                     Input::Button(button, edge) => {
                         dispatch::handle_mouse_input(state, button, edge)
                     }
@@ -718,7 +746,13 @@ impl App {
             && state.match_state.input.planning.owns_key(code)
         {
             crate::app::input::planning_mode::key_edge(
-                state,
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.persistence,
                 crate::app::input::hotkeys::HotkeyResolution::Unhandled,
                 code,
                 event.state,
@@ -797,7 +831,17 @@ impl App {
                 &mut state.frontend,
                 event,
             ))
-            || Self::shell_menu_key(state, event, screen)
+            || Self::shell_menu_key(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                state.audio.launcher_audio_available,
+                &state.persistence.options_profile,
+                event,
+                screen,
+            )
         {
             return;
         }
@@ -810,7 +854,18 @@ impl App {
             ScreenPage::CoopScore => return crate::app::input::coop_score::key(state, event),
             ScreenPage::LanLobby => return crate::app::shell_lan::key(state, event),
             // VERA: typing in Choose Map fills its search line.
-            _ if zoom_page && Self::choose_map_search_key(state, event) => return,
+            _ if zoom_page
+                && Self::choose_map_search_key(
+                    &state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                    event,
+                ) =>
+            {
+                return;
+            }
             ScreenPage::NetworkSetup if !chooser_open => {
                 return crate::app::input::multiplayer_setup::key(state, event);
             }
@@ -1017,7 +1072,13 @@ impl App {
             _ if in_game && menu == InGameMenuState::Page => {
                 if pressed {
                     crate::app::shell_wol::page::key_press(
-                        state,
+                        &mut state.frontend,
+                        &mut state.platform,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        &mut state.audio,
+                        &mut state.persistence,
                         Some(code),
                         event.text.as_deref(),
                     );
@@ -2347,7 +2408,15 @@ impl ApplicationHandler for App {
                 },
                 crate::app::shell_lan::poll,
                 crate::app::shell_wol::poll,
-                crate::app::shell_network_setup::poll,
+                |state| {
+                    crate::app::shell_network_setup::poll(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                    )
+                },
                 crate::app::input::multiplayer_setup::poll,
                 |state| {
                     use crate::app::input::coop_score;
@@ -2398,8 +2467,23 @@ impl ApplicationHandler for App {
                         &mut state.frontend,
                     )
                 },
-                Self::poll_skirmish_opponent_scroll,
-                Self::poll_language_files,
+                |state| {
+                    Self::poll_skirmish_opponent_scroll(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.match_state,
+                        &state.persistence,
+                    )
+                },
+                |state| {
+                    Self::poll_language_files(
+                        &state.platform,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &mut state.process_assets,
+                    )
+                },
                 |state| Self::campaign_score_animation_deadline(&state.frontend),
             ];
             // Captures and hidden runs replay sealed input: they never read

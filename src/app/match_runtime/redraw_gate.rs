@@ -129,7 +129,13 @@ pub(crate) fn still_frame(
     shake_px: Option<[i32; 2]>,
     clock: PictureClock,
 ) -> Option<StillFrame> {
-    let (modal, page) = crate::app::input::precedence::presented(state);
+    let (modal, page) = crate::app::input::precedence::presented(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    );
     let presentation = &state.match_state.match_presentation;
     let input = &state.match_state.input;
     let simulation = state
@@ -234,7 +240,13 @@ pub(crate) struct DrawLimits {
 /// The limits the picture just presented sets. `status_step` says it showed a
 /// new step of a status-line reveal.
 pub(crate) fn draw_limits(state: &AppState, status_step: bool) -> DrawLimits {
-    let (_, page) = crate::app::input::precedence::presented(state);
+    let (_, page) = crate::app::input::precedence::presented(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    );
     let picture_interval =
         if page == ScreenPage::Battlefield && state.platform.capture_client_size.is_none() {
             screen_picture_interval(

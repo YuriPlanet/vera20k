@@ -26,8 +26,15 @@ pub(crate) fn render_pause_menu_shell(
     destination: &wgpu::Texture,
     buttons: [PauseMenuButtonState; 8],
 ) -> anyhow::Result<()> {
-    let (layout, page_layout) =
-        crate::app::input::pause_menu::sync(state, &buttons).expect("active shell");
+    let (layout, page_layout) = crate::app::input::pause_menu::sync(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+        &buttons,
+    )
+    .expect("active shell");
     let mut overlay = in_game_shell::ShellFrameOverlay::default();
     let template = layout.template;
     let label = match template {

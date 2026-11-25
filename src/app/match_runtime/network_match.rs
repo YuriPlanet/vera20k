@@ -237,14 +237,28 @@ pub(crate) fn post_connection_line(state: &mut AppState, destroyed: ConnectionDe
     let color = crate::app::input::messages::HouseLineColor::Country;
     match destroyed.player {
         Some(player) => crate::app::input::messages::post_player_house_line(
-            state,
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            &state.persistence,
             destroyed.key,
             destroyed.owner,
             &player,
             color,
         ),
         None => crate::app::input::messages::post_house_line(
-            state,
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            &state.persistence,
             destroyed.key,
             destroyed.owner,
             color,
@@ -323,7 +337,17 @@ pub(crate) fn post_speed_changes(state: &mut AppState) {
             }
             MatchSpeedChange::Normal => crate::i18n::tr("VERA:GameSpeedNormal"),
         };
-        crate::app::input::messages::post_relay_notice(state, &text);
+        crate::app::input::messages::post_relay_notice(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            &state.persistence,
+            &text,
+        );
     }
 }
 
@@ -348,7 +372,17 @@ pub(crate) fn post_pause_changes(state: &mut AppState) {
             "VERA:PlayerResumedGame"
         };
         let text = crate::i18n::tr_fill(key, &[("name", &name)]);
-        crate::app::input::messages::post_relay_notice(state, &text);
+        crate::app::input::messages::post_relay_notice(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            &state.persistence,
+            &text,
+        );
     }
 }
 
@@ -373,7 +407,17 @@ pub(crate) fn post_connection_changes(state: &mut AppState) {
             "VERA:PlayerNotResponding"
         };
         let text = crate::i18n::tr_fill(key, &[("name", &name)]);
-        crate::app::input::messages::post_relay_notice(state, &text);
+        crate::app::input::messages::post_relay_notice(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            &state.persistence,
+            &text,
+        );
     }
 }
 
@@ -438,7 +482,17 @@ pub(crate) fn post_caught_up(state: &mut AppState) {
         });
     if caught_up && !defeated {
         let text = crate::i18n::tr("VERA:CaughtUp");
-        crate::app::input::chat::send_to_all(state, &text);
+        crate::app::input::chat::send_to_all(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            &state.persistence,
+            &text,
+        );
     }
 }
 

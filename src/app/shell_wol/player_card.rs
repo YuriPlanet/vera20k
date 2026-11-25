@@ -9,10 +9,14 @@
 use winit::keyboard::KeyCode;
 
 use super::service::WolServiceRequest;
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_wol::WolVisit;
 use crate::app::shell_wol::buddies::WolBuddies;
 use crate::app::web_link;
@@ -295,36 +299,70 @@ pub(super) fn dismissed(frontend: &mut FrontendState, window: &Window) {
 }
 
 /// Card button `id` released.
-pub(super) fn button(state: &mut AppState, id: u16) {
+pub(super) fn button(
+    frontend: &mut FrontendState,
+    platform: &mut PlatformState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    id: u16,
+) {
     if let (Some(name), Some(action)) = (
-        card(state.frontend.wol.as_ref()).map(|card| card.name.clone()),
+        card(frontend.wol.as_ref()).map(|card| card.name.clone()),
         WolCardAction::of(id),
     ) {
-        act(state, name, action);
+        act(
+            frontend,
+            platform,
+            match_state,
+            process_assets,
+            renderer,
+            audio,
+            persistence,
+            name,
+            action,
+        );
     }
 }
 
-fn act(state: &mut AppState, name: String, action: WolCardAction) {
+fn act(
+    frontend: &mut FrontendState,
+    platform: &mut PlatformState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    name: String,
+    action: WolCardAction,
+) {
     match action {
         WolCardAction::Message => {
-            close(&mut state.frontend, &state.platform.window);
-            super::page::open_page_dialog_to(state, &name);
+            close(frontend, &platform.window);
+            super::page::open_page_dialog_to(
+                frontend,
+                platform,
+                match_state,
+                process_assets,
+                renderer,
+                audio,
+                persistence,
+                &name,
+            );
         }
-        WolCardAction::Country => open_countries(
-            &mut state.frontend,
-            &state.process_assets,
-            &state.renderer.gpu,
-        ),
-        WolCardAction::Buddy => match buddy(&state.frontend.wol_buddies, &name) {
-            Some(known) => super::buddies::remove(&mut state.frontend, &known),
-            None => super::buddies::add(&mut state.frontend, name),
+        WolCardAction::Country => open_countries(frontend, process_assets, &renderer.gpu),
+        WolCardAction::Buddy => match buddy(&frontend.wol_buddies, &name) {
+            Some(known) => super::buddies::remove(frontend, &known),
+            None => super::buddies::add(frontend, name),
         },
         WolCardAction::Profile => {
             if let Some(url) = web_link::profile_url(&name) {
                 web_link::open_in_browser(&url);
             }
         }
-        WolCardAction::Close => close(&mut state.frontend, &state.platform.window),
+        WolCardAction::Close => close(frontend, &platform.window),
     }
 }
 

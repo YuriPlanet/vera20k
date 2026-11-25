@@ -541,7 +541,13 @@ fn press_score_button(state: &mut AppState, control: u16) -> Result<()> {
         &mut state.match_state.input,
         rect,
     );
-    crate::app::input::coop_score::cursor_moved(state);
+    crate::app::input::coop_score::cursor_moved(
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+    );
     crate::app::input::coop_score::mouse(state, MouseButton::Left, true);
     crate::app::input::coop_score::mouse(state, MouseButton::Left, false);
     MoviesCapture::restore_neutral_pointer(&state.renderer.gpu, &mut state.match_state.input);

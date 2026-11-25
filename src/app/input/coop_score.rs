@@ -3,7 +3,11 @@
 
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::{shell_layout, shell_transition};
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::{App, AppState};
+use crate::audio::sfx::SfxPlayer;
 use crate::render::gpu::GpuContext;
 use crate::ui::coop_score_shell::*;
 use crate::ui::shell::controller::DialogController;
@@ -31,21 +35,23 @@ pub(crate) fn active(frontend: &FrontendState) -> bool {
 /// the slots' picks, the flags their PCX. The chat edit holds the focus
 /// throughout (BC6 never moves it), the transcript's list follows new
 /// lines, and NewEdit keeps the chat's caret in view.
-fn sync(state: &mut AppState, layout: &CoopScoreLayout) {
-    let view = crate::app::cooperative_round::view(
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-    );
-    let page = state.frontend.coop_score_page.as_ref();
+fn sync(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    layout: &CoopScoreLayout,
+) {
+    let view = crate::app::cooperative_round::view(frontend, match_state, process_assets);
+    let page = frontend.coop_score_page.as_ref();
     let can_continue = page.is_some_and(|page| page.model.can_continue);
     let enabled = [CONTINUE, QUIT].map(|id| (id, enabled_in(view.as_ref(), page, id)));
     let rows = page.map_or(0, |page| page.ui.chat.lines.len());
     let slots = view.as_ref().map_or([false; 2], |view| {
         view.slots.each_ref().map(Option::is_some)
     });
-    let font = &state.renderer.bit_font;
-    let controller = &mut state.frontend.shell_controller;
+    let font = &renderer.bit_font;
+    let controller = &mut frontend.shell_controller;
     controller.ensure_active(COOP_SCORE_DIALOG);
     controller.set_scale_in(COOP_SCORE_DIALOG, layout.page.scale);
     let rect_of = |id| match id {
@@ -142,21 +148,27 @@ fn sync_values(
     }
 }
 
-pub(crate) fn update_geometry(state: &mut AppState) {
-    if active(&state.frontend) {
-        let layout = layout(&state.renderer.gpu);
-        sync(state, &layout);
+pub(crate) fn update_geometry(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) {
+    if active(frontend) {
+        let layout = layout(&renderer.gpu);
+        sync(renderer, frontend, match_state, process_assets, &layout);
     }
 }
 
 /// Whether control `id` takes input now (`0x0046FB50`, `0x0046DE20`).
-fn enabled(state: &AppState, id: u16) -> bool {
-    let view = crate::app::cooperative_round::view(
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-    );
-    enabled_in(view.as_ref(), state.frontend.coop_score_page.as_ref(), id)
+fn enabled(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    id: u16,
+) -> bool {
+    let view = crate::app::cooperative_round::view(frontend, match_state, process_assets);
+    enabled_in(view.as_ref(), frontend.coop_score_page.as_ref(), id)
 }
 
 /// [`enabled`] on the round's `view`.
@@ -196,7 +208,13 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
         return;
     }
     let layout = layout(&state.renderer.gpu);
-    sync(state, &layout);
+    sync(
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &layout,
+    );
     // The chat edit has the focus and takes every key; Enter submits.
     let controller = &mut state.frontend.shell_controller;
     let sent = crate::ui::lan_shell::chat_key(controller, COOP_SCORE_DIALOG, code, text);
@@ -210,27 +228,43 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
 /// GUIMainButtonSound, one on the chat edit keeps its focus and one on the
 /// log's scrollbar scrolls it (its rows take no click sound). Returns the
 /// activated button.
-fn pointer(state: &mut AppState, layout: &CoopScoreLayout, down: Option<bool>) -> Option<u16> {
-    sync(state, layout);
-    let (x, y) = state.match_state.input.cursor_px();
+fn pointer(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    layout: &CoopScoreLayout,
+    down: Option<bool>,
+) -> Option<u16> {
+    sync(renderer, frontend, match_state, process_assets, layout);
+    let (x, y) = match_state.input.cursor_px();
     let event = crate::app::input::dialog_page::event_at(x, y, down);
-    state.frontend.shell_controller.on_input(event);
-    let events = App::shell_page_events(
-        &mut state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
-        false,
-    );
+    frontend.shell_controller.on_input(event);
+    let events = App::shell_page_events(frontend, match_state, process_assets, sfx_player, false);
     events.into_iter().rev().find_map(|event| match event {
         PageEvent::Activated(id) => Some(id),
         _ => None,
     })
 }
 
-pub(crate) fn cursor_moved(state: &mut AppState) {
-    let layout = layout(&state.renderer.gpu);
-    pointer(state, &layout, None);
+pub(crate) fn cursor_moved(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    let layout = layout(&renderer.gpu);
+    pointer(
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        &layout,
+        None,
+    );
 }
 
 pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
@@ -249,9 +283,24 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     }
     let layout = layout(&state.renderer.gpu);
     let controller = &state.frontend.shell_controller;
-    let over = crate::ui::shell::menu_page::hovered_id(controller, COOP_SCORE_DIALOG)
-        .filter(|id| enabled(state, *id));
-    let action = match pointer(state, &layout, Some(pressed)) {
+    let over =
+        crate::ui::shell::menu_page::hovered_id(controller, COOP_SCORE_DIALOG).filter(|id| {
+            enabled(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                *id,
+            )
+        });
+    let action = match pointer(
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        &layout,
+        Some(pressed),
+    ) {
         Some(CONTINUE) => Some(CoopScoreAction::Continue),
         Some(QUIT) => Some(CoopScoreAction::Quit),
         _ => None,

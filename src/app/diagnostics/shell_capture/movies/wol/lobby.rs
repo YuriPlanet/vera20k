@@ -9,7 +9,10 @@ impl WolCapture {
     /// the lobby"); this plays the lobby's answers and the room's events.
     pub(super) fn lobby_visit(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         crate::app::shell_lan::append_chat(
-            state,
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
             crate::ui::lan_shell::LanChatLine {
                 text: "before the lobby".encode_utf16().collect(),
                 color: u32::MAX,
@@ -335,7 +338,10 @@ impl WolCapture {
                 // its host leaves: `host_changed`, then the old host's
                 // `member_left`. This guest's game hosts it on, chat and all.
                 crate::app::shell_lan::append_chat(
-                    state,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
                     crate::ui::lan_shell::LanChatLine {
                         text: "before the host left".encode_utf16().collect(),
                         color: u32::MAX,
@@ -583,7 +589,12 @@ impl WolCapture {
     /// C2 chat: a page through the CSF command, then an emote.
     fn setup_chat(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         let page = state.csf_label("TXT_PAGE_COMMAND", "TXT_PAGE_COMMAND");
-        let layout = crate::app::input::multiplayer_setup::layout(state);
+        let layout = crate::app::input::multiplayer_setup::layout(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        );
         setup_click(state, layout.chat);
         crate::app::input::multiplayer_setup::key_press(
             state,
@@ -669,7 +680,12 @@ impl WolCapture {
             accepted: true,
         };
         setup::service_event(state, ready())?;
-        let layout = crate::app::input::multiplayer_setup::layout(state);
+        let layout = crate::app::input::multiplayer_setup::layout(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        );
         // A clan room's Short Game is locked (0x78F85E), so the edit is
         // made only elsewhere.
         if !self.target.clan_match() {
@@ -789,7 +805,7 @@ impl WolCapture {
         setup::service_event(state, NetworkSetupEvent::VerifyStarted { pairs: true })?;
         setup::service_event(state, NetworkSetupEvent::PeerConnected { node: 1 })?;
         // A click holds node 0's box and clears a peer's (0x7932D7).
-        let layout = setup::verify_layout(state);
+        let layout = setup::verify_layout(&state.renderer.gpu, &state.frontend, &state.match_state);
         for node in [0, 1] {
             setup_click(
                 state,

@@ -66,20 +66,23 @@ pub(crate) fn ime_gui(state: &AppState) -> Option<&vera20k_gui::Gui> {
 /// dialog and no popup. It is the chat edit while the chat shows, else VERA's
 /// room search. Android routes every GUI edit through `ImeTarget::Gui`.
 #[cfg(not(target_os = "android"))]
-pub(crate) fn ime_edit_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
-    let routed = crate::app::input::precedence::route_page(&state.frontend)
+pub(crate) fn ime_edit_rect(
+    frontend: &FrontendState,
+    gpu: &GpuContext,
+) -> Option<crate::ui::shell::geom::RectPx> {
+    let routed = crate::app::input::precedence::route_page(frontend)
         == crate::app::input::precedence::ScreenPage::Wol
-        && !shell_transition::blocks_shell_input(&state.frontend)
-        && !App::wol_quick_match_verify(state.frontend.network_setup_protocol.as_ref())
-        && !super::page::open(state.frontend.wol.as_ref())
-        && App::wol_page_is_lobby(state.frontend.wol.as_ref());
-    lobby(state.frontend.wol.as_ref())
+        && !shell_transition::blocks_shell_input(frontend)
+        && !App::wol_quick_match_verify(frontend.network_setup_protocol.as_ref())
+        && !super::page::open(frontend.wol.as_ref())
+        && App::wol_page_is_lobby(frontend.wol.as_ref());
+    lobby(frontend.wol.as_ref())
         .filter(|lobby| {
             routed && lobby.interactive() && lobby.ui.popup.is_none() && lobby.ui.card.is_none()
         })
         .map(|lobby| {
             let edit = if lobby.ui.shows_chat() { CHAT } else { SEARCH };
-            layout(state.frontend.wol.as_ref(), &state.renderer.gpu)
+            layout(frontend.wol.as_ref(), gpu)
                 .control_rect(edit)
                 .unwrap_or_default()
         })
@@ -102,7 +105,16 @@ fn apply(state: &mut AppState, effects: Vec<WolLobbyEffect>) {
                 &state.platform.window,
                 &name,
             ),
-            WolLobbyEffect::CardButton(id) => super::player_card::button(state, id),
+            WolLobbyEffect::CardButton(id) => super::player_card::button(
+                &mut state.frontend,
+                &mut state.platform,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &mut state.audio,
+                &mut state.persistence,
+                id,
+            ),
             WolLobbyEffect::CardCountry(row) => super::player_card::country_picked(
                 &mut state.frontend,
                 state.platform.game_config.as_ref(),

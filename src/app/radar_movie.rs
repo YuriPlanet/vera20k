@@ -611,7 +611,18 @@ fn play_head(state: &mut AppState, wall_ms: u64) {
         });
     }
     for (text, duration) in due {
-        crate::app::input::messages::post_movie_subtitle(state, &text, duration);
+        crate::app::input::messages::post_movie_subtitle(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            &state.persistence,
+            &text,
+            duration,
+        );
     }
     if completed {
         let (has_next, service) = state

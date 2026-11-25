@@ -1253,10 +1253,14 @@ impl App {
     /// New exports use `rmap<seed>.map` in VERA's Maps folder. An existing
     /// export with the same bytes keeps its name; a different map keeps its
     /// file and the new export gets a hash suffix. Choose Map lists the result.
-    fn export_generated_map(state: &mut AppState) -> Option<std::path::PathBuf> {
-        let generated = state.frontend.random_map_retention.candidate()?;
-        let modal = state
-            .frontend
+    fn export_generated_map(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+    ) -> Option<std::path::PathBuf> {
+        let generated = frontend.random_map_retention.candidate()?;
+        let modal = frontend
             .skirmish_shell_state
             .random_map_setup_modal
             .as_ref();
@@ -1276,8 +1280,7 @@ impl App {
             2,
             players,
             preview,
-            state
-                .frontend
+            frontend
                 .random_map_retention
                 .generated_header()
                 .preview_source_bounds()
@@ -1285,10 +1288,10 @@ impl App {
         );
         let stem = format!("rmap{seed}");
         match crate::app::map_library::keep_map(
-            &state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &state.process_assets,
+            platform,
+            renderer,
+            frontend,
+            process_assets,
             &stem,
             text.as_bytes(),
         ) {
@@ -2086,7 +2089,12 @@ impl App {
         if export_requested {
             // The file goes to VERA's Maps folder, not the game folder, so the
             // dialog says where it went, or that it did not.
-            let exported = Self::export_generated_map(state);
+            let exported = Self::export_generated_map(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+            );
             let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
                 .map(std::path::PathBuf::from);
             if let Some(modal) = random_map_dialog(&mut state.frontend.skirmish_shell_state) {
