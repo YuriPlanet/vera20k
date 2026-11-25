@@ -64,24 +64,6 @@ impl App {
         state.platform.window.request_redraw();
     }
 
-    #[cfg(target_os = "horizon")]
-    fn apply_horizon_camera_pan(state: &mut AppState) {
-        if state.frontend.screen != GameScreen::InGame
-            || state.match_state.paused()
-            || state.match_state.network_wait.dialog_open()
-            || crate::app::frontend::shell_transition::blocks_shell_input(state)
-            || crate::app::input::campaign_input::is_locked(state)
-        {
-            return;
-        }
-        let pan = state.platform.window.horizon_camera_pan();
-        if !pan.active || pan.delta == (0.0, 0.0) {
-            return;
-        }
-        crate::app::input::camera::queue_stick_camera_pan(state, pan.delta);
-        state.platform.window.request_redraw();
-    }
-
     /// An event can interrupt WaitUntil before a capture's render cadence.
     /// Keep that render deadline while still waking for independently due
     /// lobby/network services. Offscreen frames have no swapchain pacing.
@@ -2040,8 +2022,6 @@ impl ApplicationHandler for App {
             crate::app::input::ime::sync(state);
             #[cfg(target_os = "horizon")]
             Self::apply_horizon_touch_pan(state);
-            #[cfg(target_os = "horizon")]
-            Self::apply_horizon_camera_pan(state);
             // cursor lock: the OS drops the clip on focus loss /
             // Windows key, so re-assert the player's choice every frame while
             // the window is focused. Presentation-only, never part of the sim.

@@ -29,8 +29,6 @@ unsafe extern "C" {
     fn platform_commit_user_save() -> u32;
     fn platform_unmount_user_save();
     fn platform_commit_sdmc() -> u32;
-    fn platform_romfs_init() -> bool;
-    fn platform_romfs_exit();
 }
 
 fn run() -> Result<()> {
@@ -44,22 +42,18 @@ fn run() -> Result<()> {
         save_result == 0,
         "mount user save data failed: {save_result:#010x}; launch the installed NSP and select a user"
     );
-    let romfs_mounted = unsafe { platform_romfs_init() };
-    let result = run_mounted(romfs_mounted);
+    let result = run_mounted();
     // The file logger buffers. Publish its tail before the save unmount and the
     // SD commit, so an error return that skips winit's exiting hook still leaves
     // the run's log on the card.
     log::logger().flush();
     // App::run has returned and dropped its file handles before the final commit.
     let commit = commit_user_save();
-    if romfs_mounted {
-        unsafe { platform_romfs_exit() };
-    }
     unsafe { platform_unmount_user_save() };
     result.and(commit)
 }
 
-fn run_mounted(romfs_mounted: bool) -> Result<()> {
+fn run_mounted() -> Result<()> {
     std::fs::create_dir_all(DIRECTORY).context("create client data directory")?;
     std::env::set_current_dir(DIRECTORY).context("enter client data directory")?;
     import_legacy_saves()?;
@@ -78,7 +72,6 @@ fn run_mounted(romfs_mounted: bool) -> Result<()> {
     );
     install_worker_pool();
     log::info!("Starting shared VERA20k client on Horizon");
-    log::info!("romfs_mounted={romfs_mounted}");
     vera20k::app::App::default().run()
 }
 

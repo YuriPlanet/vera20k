@@ -307,8 +307,6 @@ Result platform_mount_user_save(void) {
     }
     return result;
 }
-bool platform_romfs_init(void) { return R_SUCCEEDED(romfsInit()); }
-void platform_romfs_exit(void) { romfsExit(); }
 void platform_present(void) { consoleUpdate(NULL); }
 void platform_console_exit(void) { consoleExit(NULL); }
 extern const uint8_t _start[] __attribute__((visibility("hidden")));

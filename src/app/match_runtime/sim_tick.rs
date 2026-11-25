@@ -1391,8 +1391,12 @@ fn advance_in_game_runtime_mode(
     };
     // Sample the gesture once, before simulation. Apply its request at the
     // native Tactical__AI/pre-follow seam, after this frame's bounds writers.
-    let mouse_scroll =
-        crate::app::input::camera::sample_mouse_scroll(state, decision.scroll_input, scroll_steps);
+    let mouse_scroll = crate::app::input::camera::sample_camera_scroll(
+        state,
+        decision.scroll_input,
+        scroll_steps,
+        matches!(mode, RuntimeAdvanceMode::WallClock { .. }),
+    );
     if decision.run_sim {
         let tick_lane = decision.tick_lane;
         let resume = if resume_wait {
@@ -1632,9 +1636,12 @@ pub(crate) fn service_beside_tick(state: &mut AppState) {
         decision.frames_running,
         false,
     );
-    if let Some(request) =
-        crate::app::input::camera::sample_mouse_scroll(state, decision.scroll_input, scroll_steps)
-    {
+    if let Some(request) = crate::app::input::camera::sample_camera_scroll(
+        state,
+        decision.scroll_input,
+        scroll_steps,
+        true,
+    ) {
         crate::app::input::camera::commit_camera_scroll(state, request);
     }
     // A held key release has not reached the keys yet: an arrow it lets go

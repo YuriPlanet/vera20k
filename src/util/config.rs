@@ -279,16 +279,6 @@ pub const fn default_input_delay_ticks() -> u32 {
     15
 }
 
-#[cfg(target_os = "horizon")]
-fn horizon_retail_asset_root() -> PathBuf {
-    for candidate in [Path::new("romfs:/game"), Path::new("romfs:/")] {
-        if candidate.join("ra2md.mix").is_file() && candidate.join("ra2.mix").is_file() {
-            return candidate.to_path_buf();
-        }
-    }
-    PathBuf::from("sdmc:/game")
-}
-
 impl GameConfig {
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     pub fn load() -> Result<Self> {
@@ -308,11 +298,11 @@ impl GameConfig {
     pub fn load() -> Result<Self> {
         let working_dir =
             std::env::current_dir().context("Failed to locate the working directory")?;
-        // Horizon std has no current_exe implementation; the client keeps its
-        // writable config in cwd and prefers a packaged ROMFS over the SD game mount.
+        // Horizon users supply the retail files on SD. The client keeps its
+        // writable config in cwd because Horizon std does not support current_exe.
         #[cfg(target_os = "horizon")]
         {
-            Self::load_with_asset_root(&working_dir, horizon_retail_asset_root())
+            Self::load_with_asset_root(&working_dir, PathBuf::from("sdmc:/game"))
         }
         #[cfg(not(target_os = "horizon"))]
         {
@@ -393,18 +383,7 @@ impl GameConfig {
                 CONFIG_FILE_NAME,
                 root.display()
             );
-            #[cfg(target_os = "horizon")]
-            let bundled = root.starts_with("romfs:/");
-            let config = Self::from_retail_asset_root(root)?;
-            #[cfg(target_os = "horizon")]
-            let config = if bundled {
-                let mut config = config;
-                config.paths.settings_dir = working_dir.to_path_buf();
-                config
-            } else {
-                config
-            };
-            config
+            Self::from_retail_asset_root(root)?
         };
         config.apply_ra2_launch();
         Ok(config)

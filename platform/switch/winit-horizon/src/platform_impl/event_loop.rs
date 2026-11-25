@@ -222,10 +222,8 @@ impl<T> EventLoop<T> {
             let flow = active.control_flow();
             let timer_ready = matches!(flow, ControlFlow::WaitUntil(deadline) if now >= deadline);
             let redraw = active.p.shared.redraw.load(Ordering::Relaxed);
-            let camera_input = active.p.shared.camera_pan.lock().unwrap().active;
             if events.is_empty()
                 && user_events.is_empty()
-                && !camera_input
                 && !timer_ready
                 && !redraw
                 && flow != ControlFlow::Poll
@@ -323,13 +321,11 @@ pub struct TouchPan {
     pub active: bool,
 }
 
-/// Backend-owned right-stick camera proposal, in logical window pixels for the
-/// sampling interval. The app converts it through the same presentation and
-/// view scale as a two-finger drag.
+/// Right-stick velocity in window pixels per second. The app integrates it
+/// with the battlefield's scroll clock.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CameraPan {
-    pub delta: (f32, f32),
-    pub active: bool,
+    pub velocity: (f32, f32),
 }
 
 #[derive(Default)]
@@ -588,7 +584,6 @@ impl Input {
         if focused {
             unsafe { platform_sticks(&mut lx, &mut ly, &mut rx, &mut ry) };
         }
-        let mut camera_input = None;
         {
             let mut position = shared.cursor_position.lock().unwrap();
             if touched {
@@ -608,21 +603,15 @@ impl Input {
                 });
             }
         }
-        if focused && !touched {
-            let (rx, ry) = (stick_axis(rx), stick_axis(ry));
-            camera_input = Some(((rx * 850.0 * dt) as f32, (-ry * 850.0 * dt) as f32));
-        }
-        let mut camera_pan = shared.camera_pan.lock().unwrap();
-        if camera_input_allowed {
-            if let Some(delta) = camera_input {
-                camera_pan.delta = delta;
-                camera_pan.active = delta != (0.0, 0.0);
-            }
+        let velocity = if camera_input_allowed {
+            (
+                (stick_axis(rx) * 850.0) as f32,
+                (-stick_axis(ry) * 850.0) as f32,
+            )
         } else {
-            camera_pan.delta = (0.0, 0.0);
-            camera_pan.active = false;
-        }
-        drop(camera_pan);
+            (0.0, 0.0)
+        };
+        *shared.camera_pan.lock().unwrap() = CameraPan { velocity };
         let synthetic_buttons = (held as u32 & 3) | u32::from(touch_left);
         for (button, state) in pointer_button_edges(
             self.pointer_buttons,

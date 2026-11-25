@@ -87,26 +87,6 @@
          let mut this = Self {
              _name: name.to_owned(),
              instance_per_backend: Vec::new(),
---- a/wgpu-core/src/present.rs
-+++ b/wgpu-core/src/present.rs
-@@ -165,6 +165,8 @@
-     pub fn get_current_texture(&self) -> Result<ResolvedSurfaceOutput, SurfaceError> {
-         profiling::scope!("Surface::get_current_texture");
- 
-+        #[cfg(target_os = "horizon")]
-+        log::error!("[SURF] presentation.lock enter");
-         let (device, config) = if let Some(ref present) = *self.presentation.lock() {
-             present.device.check_is_valid()?;
-             (present.device.clone(), present.config.clone())
-@@ -173,6 +175,8 @@
-         };
- 
-         let suf = self.raw(device.backend()).unwrap();
-+        #[cfg(target_os = "horizon")]
-+        log::error!("[SURF] acquire_texture enter");
-         let (texture, status) = match unsafe {
-             suf.acquire_texture(
-                 Some(core::time::Duration::from_millis(FRAME_TIMEOUT_MS as u64)),
 --- a/wgpu-core-deps-windows-linux-android/Cargo.toml
 +++ b/wgpu-core-deps-windows-linux-android/Cargo.toml
 @@ -39,7 +39,7 @@

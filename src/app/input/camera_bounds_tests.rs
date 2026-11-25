@@ -128,12 +128,29 @@ fn oversized_local_bounds_keep_scroll_and_cinematic_focus_stable() {
 }
 
 #[test]
-fn right_stick_and_touch_motion_share_the_camera_scale_with_opposite_gesture_sign() {
-    let delta = (85.0_f32, -42.0_f32);
-    let scale = 0.75_f32 * 1.25_f32;
-    let stick = (delta.0 / scale, delta.1 / scale);
-    let touch = (-delta.0 / scale, -delta.1 / scale);
-    assert_eq!(stick, (90.666664, -44.8));
-    assert_eq!(touch, (-90.666664, 44.8));
-    assert_eq!(touch, (-stick.0, -stick.1));
+fn right_stick_covers_the_same_distance_during_a_slow_frame() {
+    let scroll = |times: &[u64]| {
+        let mut clock = EdgeScrollState::default();
+        clock.take_scroll_steps(0, true, false, false);
+        let mut carry = (0.0, 0.0);
+        times.iter().fold((0.0, 0.0), |total, &now| {
+            let steps = clock.take_scroll_steps(now, true, false, false);
+            let delta = stick_scroll_step((850.0, -425.0), steps, 1.0, 2.0, &mut carry);
+            (total.0 + delta.0, total.1 + delta.1)
+        })
+    };
+    let steady = scroll(&[16_000, 32_000, 48_000, 64_000, 80_000]);
+    assert_eq!(steady, (34.0, -17.0));
+    assert_eq!(scroll(&[80_000]), steady);
+}
+
+#[test]
+fn a_light_right_stick_deflection_carries_subpixel_motion_until_release() {
+    let mut carry = (0.0, 0.0);
+    let motion = (50.0, -50.0);
+    let mut step = |velocity| stick_scroll_step(velocity, ScrollSteps::Whole, 2.0, 1.0, &mut carry);
+    assert_eq!(step(motion), (0.0, 0.0));
+    assert_eq!(step((0.0, 0.0)), (0.0, 0.0));
+    assert_eq!(step(motion), (0.0, 0.0));
+    assert_eq!(step(motion), (1.0, -1.0));
 }

@@ -1,7 +1,7 @@
 # VERA20k Switch 移植
 
 这是原生 Horizon / 大气层移植入口，使用独立 Cargo workspace 构建。
-当前分支为 `feature/yuris-wgpu30`，Switch 客户端版本为 `0.0.3`。本分支也调整了共享
+当前分支为 `feature/yuris-wgpu30`，Switch 客户端版本为 `0.0.5`。本分支也调整了共享
 渲染代码及桌面依赖；Horizon 专用依赖补丁通过生成的 Switch Cargo 配置启用。
 
 客户端包含菜单、战役、遭遇战、音频和账号 SaveData 支持，仍处于实验阶段。
@@ -12,6 +12,7 @@
 鼠标键位同时支持中键与前进/后退，滚轮复用现有滚轮语义。剧情影片会从资源根
 读取 UTF-16LE `subtitlemd.txt` / `subtitle.txt`，按影片自身帧时钟绘制字幕。
 零售字幕、MIX 和其他游戏资源不入 Git。
+右摇杆按摇杆力度提供镜头速度，绘制前按经过的时间结算位移。
 
 当前 Switch 客户端由主线程调度共享 Rust 游戏核心和 wgpu/Vulkan 绘制；Rayon
 三线程池用于部分寻路和目标扫描，体素图集用 scoped `std::thread` 分摊姿态光栅化，
@@ -28,47 +29,43 @@ python3 build.py --client
 ```
 
 NSP 命名格式为 `dist/ver20k-Yuris-Revenge-v<VERSION>.nsp`，
-本版产物为 `dist/ver20k-Yuris-Revenge-v0.0.3.nsp`，标题 ID
+本版产物为 `dist/ver20k-Yuris-Revenge-v0.0.5.nsp`，标题 ID
 `0100f52556454000`。运行日志在客体 `sdmc:/switch/vera20k/logs/client.log`，
-错误结果在 `sdmc:/switch/vera20k/client.last-error.txt`。资源优先从包内 RomFS
-读取，配置和日志目录为
+错误结果在 `sdmc:/switch/vera20k/client.last-error.txt`。配置和日志目录为
 `sdmc:/switch/vera20k`。存档根为 `vera20k-user:/saves`，挂载到所选账号的
 系统 SaveData；NACP 要求选择用户，预设 256 MiB 数据空间和 64 MiB 日志空间。
 随构建生成的 NRO 留作诊断，当前客户端启动要求 NSP 的账号上下文。
 窗口后端来源与当前手柄映射见 [winit-horizon/UPSTREAM.md](winit-horizon/UPSTREAM.md)。
 
-完整客户端的 NSP 主机菜单图标和 NRO 图标统一使用 `icon.jpg`，
+完整客户端的 NSP 主机菜单图标和 NRO 图标统一使用 `yuris-revenge-icon.jpg`，
 格式为 256×256 RGB JPEG。
 
-## 把游戏资源一起打入 NSP
+## 手动放置游戏资源
 
-完整客户端链接构建默认把本机资源目录打入 Program RomFS，`--check` 只检查编译。
-可显式指定不同资源目录：
+从 `0.0.5` 起，NSP 只交付客户端程序和安装元数据。请从自己的《红色警戒 2》和
+《尤里的复仇》安装目录手动复制游戏资源到 SD 卡根目录下的 `game` 文件夹。
+两套主 MIX 文件直接放在这个目录里，使用小写文件名。
 
-```bash
-# 从仓库根目录执行。
-cd platform/switch
-python3 build.py --client --nsp \
-  --nsp-assets target/emulator/master-xdg-data/eden/sdmc/game
+```text
+SD:/
+└── game/
+    ├── ra2.mix
+    └── ra2md.mix
 ```
 
-也可以把 `--nsp-assets` 指向单独准备的资源目录。目录根必须有非空的
-`ra2.mix`、`ra2md.mix`（小写文件名）；指定目录的全部文件和子目录原样入包，
-因此请只放需要随包携带的资源。原始资源留在本机，不加入 Git。
+主 MIX 以外，请一并复制安装目录中的语言、补丁和媒体归档，例如 `language.mix`、
+`langmd.mix`、`expandmd01.mix`、`theme.mix`、`thememd.mix`、`movmd03.mix`、
+`movies01.mix` 和 `movies02.mix`。如有 UTF-16LE 的 `subtitlemd.txt` 或
+`subtitle.txt`，放在同一目录。使用实际资源文件，避免复制零字节占位文件。
 
-客户端链接构建默认打入游戏资源，并按 `ver20k-Yuris-Revenge-v<VERSION>.nsp` 命名。
-NSP 大小取决于实际资源目录，每次构建后请以对应 NSP 的 `stat` / `sha256sum` 结果为准。
-构建也会生成诊断 NRO；NRO 本身不内置这些资源。
-
-客户端挂载 `romfs:/`；没有配置覆盖时优先从包内读取资源，找不到包内资源时
-回退到 `sdmc:/game`。配置、日志和录像保存在
-`sdmc:/switch/vera20k`；普通存档改用账号 SaveData。首次发现旧 SD `saves` 目录时，
+客户端默认从 `sdmc:/game` 读取。旧 `config.toml` 的 `[paths] ra2_dir` 继续具有优先权；
+如果它仍指向 `romfs:/`，请先备份再移开旧配置，以使用 SD 卡默认目录。
+配置、日志和录像保存在 `sdmc:/switch/vera20k`。
+首次发现旧 SD `saves` 目录时，
 导入其中 `.bin` / `.sav` 文件，保留原件及账号下已有文件；导入完成标记按账号保存。
-旧 `config.toml` 的 `[paths] ra2_dir` 继续具有优先权；
-测试包内资源时，应先备份并移开旧配置，让默认资源发现生效。
 
-此前曾在独立 Eden 配置下验证：SD 中没有 `game` 目录，NSP 能启动完整主菜单并
-进入 URBAN 遭遇战，完整侧栏和单位可见。首次配置需沿用现有的
+用 `run_client_eden.sh` 验证时，也需手动把资源放到
+`target/emulator/master-xdg-data/eden/sdmc/game/`。首次配置需沿用现有的
 `disable_macro_jit=true` / `disable_macro_hle=true`，同时将各自的
 `\default` 设为 `false`，否则 Eden 会恢复默认值。
 `run_eden.sh --client` 仍是旧 NRO 诊断入口；验证当前客户端须将 Eden 的 `-g`
@@ -114,12 +111,6 @@ cc -std=gnu11 -Wall -Wextra -Werror -Iplatform/switch/tests/include \
 ```
 
 这些检查验证上报器的状态和字段写入，不能代替真机插件读数验收。
-
-资源打包不会补齐源目录缺少的音乐、影片或字幕。按需准备
-`theme.mix`、`thememd.mix`、`movmd03.mix`、`movies01.mix`、`movies02.mix`，
-以及 UTF-16LE `subtitlemd.txt`、`subtitle.txt`。
-随机地图生成仍有向资源目录写 `RandMap.Sed` / 预览文件的路径，在只读 RomFS
-模式下尚未适配，当前请使用已有地图。
 
 ## 已实现并验证
 
@@ -279,6 +270,7 @@ python3 build.py --nsp
 生成 `dist/vera20k-core.nro` 和 `dist/vera20k-core.nsp`。
 NSP 的应用 ID 为 `0100f52556455241`，直接包含核心程序，不依赖 SD 卡上的 NRO。
 打包器用独立 hactool 解密并校验 Program/Control/Meta NCA 的内容哈希与 NPDM，
+并要求 Program NCA 只有 ExeFS，杜绝随包附带游戏资源。
 仅容许自制包预期的固定密钥/ACID 未签名项。核心 NSP 已安装并通过真机运行验证。
 
 ```bash

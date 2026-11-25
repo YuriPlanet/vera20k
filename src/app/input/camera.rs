@@ -376,22 +376,13 @@ impl PendingCameraScroll {
 /// first, then through the logical view zoom, and invert the motion because
 /// dragging the terrain right moves the camera left.
 pub(crate) fn queue_touch_pan(state: &mut AppState, window_delta: (f32, f32)) {
-    queue_window_camera_motion(state, window_delta, true);
-}
-
-/// Queue a right-stick camera step. Unlike a drag gesture, the stick value is
-/// already a movement direction: pushing right must look right.
-pub(crate) fn queue_stick_camera_pan(state: &mut AppState, window_delta: (f32, f32)) {
-    queue_window_camera_motion(state, window_delta, false);
-}
-
-fn queue_window_camera_motion(state: &mut AppState, window_delta: (f32, f32), invert: bool) {
     if !window_delta.0.is_finite() || !window_delta.1.is_finite() {
         return;
     }
-    let render_scale = state
-        .tactical_zoom()
-        .map_or(1.0, crate::ui::main_menu_dialogs::options::ZoomGeometry::scale);
+    let render_scale = state.tactical_zoom().map_or(
+        1.0,
+        crate::ui::main_menu_dialogs::options::ZoomGeometry::scale,
+    );
     let view_zoom = state.match_state.input.zoom_level;
     if render_scale <= 0.0
         || !render_scale.is_finite()
@@ -401,11 +392,11 @@ fn queue_window_camera_motion(state: &mut AppState, window_delta: (f32, f32), in
         return;
     }
     let scale = render_scale * view_zoom;
-    let direction = if invert { -1.0 } else { 1.0 };
-    state.match_state.input.pending_camera_scroll.request((
-        direction * window_delta.0 / scale,
-        direction * window_delta.1 / scale,
-    ));
+    state
+        .match_state
+        .input
+        .pending_camera_scroll
+        .request((-window_delta.0 / scale, -window_delta.1 / scale));
 }
 
 /// An absolute view change replaces the committed and requested view together
@@ -506,6 +497,29 @@ fn whole_window_pixels(carry: &mut (f32, f32), movement: (f32, f32)) -> (f32, f3
     whole
 }
 
+/// Integrate a physical window velocity on the scroll clock, keeping fractional
+/// tactical pixels for the next pass. Return the step in world pixels.
+#[cfg(any(target_os = "horizon", all(test, tests_app_input_a_c)))]
+fn stick_scroll_step(
+    velocity: (f32, f32),
+    steps: ScrollSteps,
+    render_scale: f32,
+    zoom: f32,
+    carry: &mut (f32, f32),
+) -> (f32, f32) {
+    if !render_scale.is_finite() || render_scale <= 0.0 || !zoom.is_finite() || zoom <= 0.0 {
+        *carry = (0.0, 0.0);
+        return (0.0, 0.0);
+    }
+    let seconds_per_step = SCROLL_STEP_US as f32 / 1_000_000.0;
+    let time_per_scale = steps.owed() * seconds_per_step / render_scale;
+    let step = whole_window_pixels(
+        carry,
+        (velocity.0 * time_per_scale, velocity.1 * time_per_scale),
+    );
+    (step.0 / zoom, step.1 / zoom)
+}
+
 // ---------------------------------------------------------------------------
 // Edge auto-scroll — gamemd's CoastLevel ramp.
 // ---------------------------------------------------------------------------
@@ -580,6 +594,8 @@ pub(crate) struct EdgeScrollState {
     /// next pass ([`whole_window_pixels`]).
     mouse_carry: (f32, f32),
     key_carry: (f32, f32),
+    #[cfg(target_os = "horizon")]
+    stick_carry: (f32, f32),
     /// Radar-timer stamp of the last pass the mouse or the arrow keys
     /// scrolled in.
     last_scrolled: Option<u32>,
@@ -596,6 +612,8 @@ impl Default for EdgeScrollState {
             mouse_step: None,
             mouse_carry: (0.0, 0.0),
             key_carry: (0.0, 0.0),
+            #[cfg(target_os = "horizon")]
+            stick_carry: (0.0, 0.0),
             last_scrolled: None,
         }
     }
@@ -1512,15 +1530,14 @@ pub(crate) fn scrolling(input: &crate::app::input::state::MatchInputState) -> bo
         .is_some_and(|at| clock.radar_timer().wrapping_sub(at) <= 1)
 }
 
-/// Sample this pass's mouse scrolling, returning world-pixel movement without
-/// committing the view: Main_Tick's input poll (0x55D8AB) writes the right-drag
-/// latch when `input_poll` says this pass is one, then the mouse's step of each
-/// radar-timer unit in `steps` counts by its share. `None` means no step was
-/// owed.
-pub(crate) fn sample_mouse_scroll(
+/// Sample this pass's camera motion before committing the view. The mouse's
+/// step counts by its share of each radar-timer unit. Horizon's right stick
+/// uses those same steps during live input. `None` means no step was owed.
+pub(crate) fn sample_camera_scroll(
     state: &mut AppState,
     input_poll: bool,
     steps: ScrollSteps,
+    live_input: bool,
 ) -> Option<(f32, f32)> {
     if input_poll && !scroll_input_locked(state) {
         latch_right_drag(state);
@@ -1542,16 +1559,55 @@ pub(crate) fn sample_mouse_scroll(
     if movement != (0.0, 0.0) {
         input.edge_scroll.note_scrolled();
     }
-    if steps == ScrollSteps::Whole {
-        return Some(movement);
+    let movement = if steps == ScrollSteps::Whole {
+        movement
+    } else {
+        // The carry is in window pixels; the steps are in world pixels.
+        let zoom = input.zoom_level;
+        let whole = whole_window_pixels(
+            &mut input.edge_scroll.mouse_carry,
+            (movement.0 * zoom, movement.1 * zoom),
+        );
+        (whole.0 / zoom, whole.1 / zoom)
+    };
+    #[cfg(target_os = "horizon")]
+    if live_input {
+        let stick = sample_horizon_stick_scroll(state, steps);
+        return Some((movement.0 + stick.0, movement.1 + stick.1));
     }
-    // The carry is in window pixels; the steps are in world pixels.
-    let zoom = input.zoom_level;
-    let whole = whole_window_pixels(
-        &mut input.edge_scroll.mouse_carry,
-        (movement.0 * zoom, movement.1 * zoom),
+    #[cfg(not(target_os = "horizon"))]
+    let _ = live_input;
+    Some(movement)
+}
+
+#[cfg(target_os = "horizon")]
+fn sample_horizon_stick_scroll(state: &mut AppState, steps: ScrollSteps) -> (f32, f32) {
+    let velocity = state.platform.window.horizon_camera_pan().velocity;
+    if velocity == (0.0, 0.0)
+        || state.match_state.paused()
+        || state.match_state.network_wait.dialog_open()
+        || crate::app::frontend::shell_transition::blocks_shell_input(state)
+        || crate::app::input::campaign_input::is_locked(state)
+    {
+        state.match_state.input.edge_scroll.stick_carry = (0.0, 0.0);
+        return (0.0, 0.0);
+    }
+    let render_scale = state.tactical_zoom().map_or(
+        1.0,
+        crate::ui::main_menu_dialogs::options::ZoomGeometry::scale,
     );
-    Some((whole.0 / zoom, whole.1 / zoom))
+    let input = &mut state.match_state.input;
+    let movement = stick_scroll_step(
+        velocity,
+        steps,
+        render_scale,
+        input.zoom_level,
+        &mut input.edge_scroll.stick_carry,
+    );
+    if movement != (0.0, 0.0) {
+        input.edge_scroll.note_scrolled();
+    }
+    movement
 }
 
 /// The mouse's scroll step for radar-timer unit `unit`, in world pixels. A
@@ -1570,7 +1626,7 @@ fn unit_mouse_step(state: &mut AppState, unit: u32, fresh: bool) -> (f32, f32) {
 
 /// One native mouse input poll taken as one scroll step.
 pub(crate) fn poll_mouse_scroll(state: &mut AppState) -> (f32, f32) {
-    sample_mouse_scroll(state, true, ScrollSteps::Whole).unwrap_or_default()
+    sample_camera_scroll(state, true, ScrollSteps::Whole, false).unwrap_or_default()
 }
 
 /// One scroll step of the mouse at radar-timer reading `now`, in world pixels.

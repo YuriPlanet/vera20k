@@ -27,43 +27,10 @@ WGPU_ARCHIVES = {
     "wgpu-hal": "b6b7fb58561a792bc237628ba0792e332de418fefe145f13b5ed8201e6d52f58",
     "wgpu-core-deps-windows-linux-android": "7586165fd5f6d881cb9ce4bb71f40d6caab2c0f1837e3fc1d9788a197fb6004f",
 }
-DEFAULT_CLIENT_ASSETS = ROOT / "target/emulator/master-xdg-data/eden/sdmc/game"
-CLIENT_VERSION = "0.0.3"
+CLIENT_VERSION = "0.0.5"
 # NACP application title shown in the Switch menu (Yuri's Revenge build).
 CLIENT_TITLE = "尤里的复仇"
 PROFILE_FEATURES = "horizon-frame-profile,telemetry"
-# Media that the client cannot substitute: a zero-byte or absent member here
-# silently removes in-game movies, music or subtitles from the installed NSP
-# (a 0.0.3 build once shipped empty movmd03.mix/movies01.mix placeholders).
-REQUIRED_MEDIA_ASSETS = (
-    "movmd03.mix",
-    "movies01.mix",
-    "theme.mix",
-    "thememd.mix",
-    "subtitlemd.txt",
-)
-
-
-def check_asset_directory(assets: Path, require_media: bool) -> list[str]:
-    """Return warnings for media that is absent or empty in `assets`.
-
-    The two main MIX files are fatal; optional media only warns because some
-    installs legitimately lack it, but it must never be an empty placeholder.
-    """
-    for required in ("ra2.mix", "ra2md.mix"):
-        path = assets / required
-        if not path.is_file() or not path.stat().st_size:
-            return [f"NSP asset directory is missing {required}: {assets}"]
-    if not require_media:
-        return []
-    warnings = []
-    for name in REQUIRED_MEDIA_ASSETS:
-        path = assets / name
-        if not path.is_file():
-            warnings.append(f"{name} is absent from {assets}: movies/music/subtitles will be missing")
-        elif path.stat().st_size == 0:
-            warnings.append(f"{name} is empty in {assets}: it is a placeholder, not retail media")
-    return warnings
 
 
 def configure_client_savedata(nacp: Path, title_id: str):
@@ -171,9 +138,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="Compile-check without linking")
     parser.add_argument("--nsp", action="store_true",
-                        help="Also package a standalone NSP with local device keys (default for linked --client)")
-    parser.add_argument("--nsp-assets", metavar="DIR",
-                        help=f"Bundle retail assets into client NSP ROMFS (default: {DEFAULT_CLIENT_ASSETS})")
+                        help="Package a program-only NSP with local device keys (default for linked --client)")
     frontend = parser.add_mutually_exclusive_group()
     frontend.add_argument("--gpu", action="store_true",
                           help="Build the native-window production GPU probe")
@@ -193,25 +158,8 @@ def main():
     )
     if linked_client:
         args.nsp = True
-        args.nsp_assets = args.nsp_assets or str(DEFAULT_CLIENT_ASSETS)
-    if args.nsp_assets and not args.nsp:
-        parser.error("--nsp-assets requires --nsp")
-    if args.nsp_assets and not args.client:
-        parser.error("--nsp-assets currently requires --client")
     if args.profile_sim and not args.client:
         parser.error("--profile-sim currently requires --client")
-    if args.nsp_assets and (args.check or args.host_test or args.check_libc_abi or args.check_client_deps):
-        parser.error("--nsp-assets requires a linked client build")
-    if args.nsp_assets:
-        assets = Path(args.nsp_assets).expanduser().resolve()
-        media_warnings = check_asset_directory(assets, require_media=True)
-        if any("is missing" in warning for warning in media_warnings):
-            parser.error("\n".join(media_warnings))
-        args.nsp_assets = str(assets)
-        if media_warnings:
-            print("NSP asset media warnings:", flush=True)
-            for warning in media_warnings:
-                print("  warning:", warning, flush=True)
     os.chdir(ROOT)
     rust_bin = Path.home() / ".cargo/bin"
     os.environ["PATH"] = str(rust_bin) + os.pathsep + os.environ["PATH"]
@@ -411,7 +359,7 @@ def main():
         if args.client and args.profile_sim
         else client_nsp_artifact(CLIENT_VERSION)
         if args.client
-        else f"{artifact}-assets" if args.nsp_assets else None
+        else None
     )
     run(sdk / "tools/bin/nacptool", "--create", title, "Homebrew", version, nacp,
         f"--titleid={title_id}")
@@ -428,7 +376,6 @@ def main():
             nacp,
             artifact=nro_artifact,
             title_id=title_id,
-            romfs=Path(args.nsp_assets) if args.nsp_assets else None,
             output_artifact=output_artifact,
         )
 
