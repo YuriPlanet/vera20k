@@ -284,6 +284,8 @@ static PA_TYPE: V = V::new(-1);
 static PA_SLOT: V = V::new(0);
 static PA_BASE: V = V::new(0);
 static PA_OTHERS: V = V::new(0);
+/// The slots `ProductionAllowed` already tried (a bit each).
+static PA_TRIED: V = V::new(0);
 
 // --------------------------------------------------------------- Helpers
 
@@ -1827,6 +1829,7 @@ fn production_allowed(now: i64) {
             let Some(best) = (0..STARTS.len())
                 .filter(|&s| {
                     TYPE_IDS[s].get() >= 0
+                        && PA_TRIED.get() & (1 << s) == 0
                         && (PQ.get() == DONE || TYPE_IDS[s].get() != PROD_TYPE.get())
                 })
                 .max_by_key(|&s| STARTS[s].get())
@@ -1861,18 +1864,46 @@ fn production_allowed(now: i64) {
                 && PA_NATIVE.get() >= 1
             {
                 // The factories were busy and skipped the forbidden type.
+                PA_AT.set(now);
                 PA.set(2);
             } else if now > PA_AT.get() + 1200 {
-                PA.set(DONE);
+                pa_retry("window");
             }
         }
         2 if PA_YES.get() >= 1 => {
             mark("movement.ProductionAllowed");
             PA.set(DONE);
         }
+        2 if now > PA_AT.get() + 1500 => pa_retry("allowed back, never asked"),
         DONE => disable(&TR_PA),
         _ => {}
     }
+}
+
+/// A window that proved nothing: logs why (`BENCH-DIAG`) and lets the next
+/// most-started type of `PROD_TYPES` try (the AI's choices follow its
+/// TeamTypes and money, so the first pick may be one it stops wanting).
+fn pa_retry(why: &str) {
+    let slot = PA_SLOT.get();
+    let mut line = crate::Line::new();
+    line.text("BENCH-DIAG movement.ProductionAllowed ")
+        .text(why)
+        .text(": type ")
+        .num(PA_TYPE.get())
+        .text(" no ")
+        .num(PA_NO.get())
+        .text(" native ")
+        .num(PA_NATIVE.get())
+        .text(" others ")
+        .num(total_starts() - STARTS[slot as usize].get() - PA_OTHERS.get());
+    line.log();
+    disable(&TR_PA);
+    PA_TRIED.set(PA_TRIED.get() | (1 << slot));
+    PA_NO.set(0);
+    PA_NATIVE.set(0);
+    PA_YES.set(0);
+    PA_TYPE.set(-1);
+    PA.set(0);
 }
 
 fn decide_production_allowed(mut d: ProductionAllowedDecision) {
