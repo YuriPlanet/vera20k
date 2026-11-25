@@ -22,11 +22,15 @@
 //! | 3 | Survivors: a building's `SpawnSurvivors`, a vehicle's passengers escape | 0 when the killing call ignored defenses (NoSurvivor) |
 //! | 4 | Crew: a vehicle's crew escapes | 0 when the killing call's sixth argument forbids it |
 //! | 5 | The unit-lost announcement | 0 under Ares `UnitLost.Suppress` |
+//! | 6 | Tiberium remains (Ares `TiberiumRemains`, hook `0x702216`): Riparius around the cell | Ares' `TiberiumRemains` (`TiberiumHeal=` and `TiberiumHealEnabled` by default); 0 without Ares |
 //! | 8..15 | `InfDeath` an infantryman dies by (0..255) | the killing warhead's |
 //! | 32..62 | Death weapon ID + 1, fired in place of the type's (`DeathWeapon=`, the current weapon, `[CombatDamage] DeathWeapon=`) at `DeathWeaponDamageModifier`; 0 for the type's | 0 |
 //!
 //! Other bits must be 0; an answer with one, a negative answer or an
-//! unknown weapon keeps the previous result. Sinking, crashing, `DeathFrames=`,
+//! unknown weapon keeps the previous result. The engine has no wreck
+//! object: bit 6 is the one leftover the arm leaves, and a module may set it
+//! for any type and in a game without Ares (the placement draws from the
+//! Scenario RNG, as Ares' does). Sinking, crashing, `DeathFrames=`,
 //! `Explosion=`/`DestroyAnim=` and the slaves' and captives' release stay
 //! native: they are the object's lifecycle, not choices the arm makes.
 //! An `InfDeath` the module leaves as native keeps a native value outside
@@ -50,10 +54,11 @@ const DEBRIS: i64 = 1 << 2;
 const SURVIVORS: i64 = 1 << 3;
 const CREW: i64 = 1 << 4;
 const ANNOUNCE: i64 = 1 << 5;
+const TIBERIUM_REMAINS: i64 = 1 << 6;
 const INF_DEATH_SHIFT: u32 = 8;
 const WEAPON_SHIFT: u32 = 32;
 /// Every bit an answer may set.
-const KNOWN: i64 = 0x3F | (0xFF << INF_DEATH_SHIFT) | (0x7FFF_FFFF << WEAPON_SHIFT);
+const KNOWN: i64 = 0x7F | (0xFF << INF_DEATH_SHIFT) | (0x7FFF_FFFF << WEAPON_SHIFT);
 
 /// One death's plan (module docs).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,6 +69,8 @@ pub(super) struct DeathPlan {
     pub(super) survivors: bool,
     pub(super) crew: bool,
     pub(super) announce: bool,
+    /// Ares' TiberiumRemains (`Simulation::ares_tiberium_remains`).
+    pub(super) tiberium_remains: bool,
     pub(super) inf_death: i32,
     /// A module's death weapon (rules weapon index).
     weapon: Option<u32>,
@@ -78,6 +85,7 @@ impl DeathPlan {
             (self.survivors, SURVIVORS),
             (self.crew, CREW),
             (self.announce, ANNOUNCE),
+            (self.tiberium_remains, TIBERIUM_REMAINS),
         ]
         .into_iter()
         .filter(|(set, _)| *set)
@@ -104,6 +112,7 @@ impl DeathPlan {
             survivors: bits & SURVIVORS != 0,
             crew: bits & CREW != 0,
             announce: bits & ANNOUNCE != 0,
+            tiberium_remains: bits & TIBERIUM_REMAINS != 0,
             inf_death: if inf_death == native.inf_death.clamp(0, 255) {
                 native.inf_death
             } else {
@@ -203,7 +212,50 @@ fn native_death_plan(
         survivors: !flags.is_some_and(|flags| flags.ignore_defenses),
         crew: !flags.is_some_and(|flags| flags.arg6),
         announce: !unit_lost_suppressed,
+        // Ares 3.0 1004B050 (hook 0x702216).
+        tiberium_remains: rules.ares() && world.ares_leaves_tiberium_remains(dead_id, rules),
         inf_death: warhead.map_or(WarheadType::DEFAULT_INF_DEATH, |warhead| warhead.inf_death),
         weapon: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plan() -> DeathPlan {
+        DeathPlan {
+            explode: true,
+            death_weapon: true,
+            debris: false,
+            survivors: true,
+            crew: false,
+            announce: true,
+            tiberium_remains: false,
+            inf_death: 300,
+            weapon: None,
+        }
+    }
+
+    #[test]
+    fn the_tiberium_remains_bit_round_trips() {
+        let rules = RuleSet::empty_for_test();
+        let native = plan();
+        let bits = native.bits();
+        assert_eq!(bits & TIBERIUM_REMAINS, 0);
+        assert_eq!(DeathPlan::from_bits(bits, &native, rules), Some(native));
+        let remains = DeathPlan::from_bits(bits | TIBERIUM_REMAINS, &native, rules)
+            .expect("bit 6 is a plan bit");
+        assert!(remains.tiberium_remains);
+        assert_eq!(
+            remains,
+            DeathPlan {
+                tiberium_remains: true,
+                ..native
+            },
+            "only the remains changed; the out-of-range native InfDeath stays"
+        );
+        assert_eq!(remains.bits(), bits | TIBERIUM_REMAINS);
+        assert_eq!(DeathPlan::from_bits(bits | 1 << 7, &native, rules), None);
+    }
 }

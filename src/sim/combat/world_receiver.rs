@@ -2658,8 +2658,8 @@ pub(crate) fn handle_death(
                         crate::sim::world::UninitContext::new(rules).with_effects(run.effects()),
                     );
                 }
-                // Ares 3.0 1004B050 (hook 0x702216): TiberiumRemains.
-                if rules.ares() && callbacks_enabled(world) {
+                // Ares 3.0 1004B050 (hook 0x702216): the plan's TiberiumRemains.
+                if plan.tiberium_remains && callbacks_enabled(world) {
                     world.ares_tiberium_remains(dead_id, rules, run.effects());
                 }
                 // 0x00702216..0x00702228: then the Fire system link is released.

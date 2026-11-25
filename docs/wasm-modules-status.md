@@ -566,8 +566,12 @@ slots MIS-S3..S6).
   and `Simulation::visit_logic_bullet`. Tests `ext_modules_flight_tests.rs`.
 - `FatalDamage` decision form, the death plan: `src/sim/combat/death_plan.rs`,
   read at the entry of `world_receiver::handle_death`; tests
-  `ext_modules_death_tests.rs`.
-- `IdleMission`, `HarvestCell`: `src/sim/ext_modules/unit_ai.rs`; the computer
+  `ext_modules_death_tests.rs`. Bit 6 is Ares' TiberiumRemains (the engine has
+  no wreck object): the death arm places the remains only from the plan
+  (`Simulation::ares_leaves_tiberium_remains` is its native value); its
+  round trip is tested in `death_plan.rs` (no Ares scene in the harness).
+- `IdleMission`: `src/sim/ext_modules/unit_ai.rs` (`HarvestCell` is in
+  `control.rs`, its test with the idle one); the computer
   mission arms the 6i claims had missed are gated (`claims.rs` module doc);
   tests `ext_modules_unit_ai_tests.rs`.
 

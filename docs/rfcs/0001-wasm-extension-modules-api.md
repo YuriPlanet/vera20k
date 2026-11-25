@@ -658,6 +658,7 @@ These events fire at safe points. **Object + weapon** also permits binding to we
 | 3 | Survivors: a building's survivors appear, a vehicle's passengers escape | 0 when the killing hit ignored defenses |
 | 4 | A vehicle's crew escapes | 0 when the killing hit forbids it |
 | 5 | Unit-lost announcement | 1; 0 under Ares `UnitLost.Suppress` |
+| 6 | Tiberium remains: up to 2 Riparius on the cell and each orthogonal neighbour. The engine has no wreck object; this is the death's one leftover | Ares `TiberiumRemains` (by default `TiberiumHeal=` with `TiberiumHealEnabled`); 0 without Ares |
 | 8–15 | An infantryman's `InfDeath` (0..255) | The killing warhead's |
 | 32–62 | Death weapon ID plus 1, fired instead of the type's own (at `DeathWeaponDamageModifier`); 0 for the type's own | 0 |
 

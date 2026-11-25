@@ -285,6 +285,9 @@ impl FatalDamageDecision<'_> {
     pub const CREW: i64 = 1 << 4;
     /// The unit-lost announcement plays.
     pub const ANNOUNCE: i64 = 1 << 5;
+    /// Tiberium remains: Riparius on and around the cell (Ares'
+    /// `TiberiumRemains`; natively set only under Ares).
+    pub const TIBERIUM_REMAINS: i64 = 1 << 6;
 
     /// `previous` with `bit` set or cleared.
     pub fn with(&self, bit: i64, on: bool) -> i64 {

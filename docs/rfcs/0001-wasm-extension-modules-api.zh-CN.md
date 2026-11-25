@@ -658,6 +658,7 @@ TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）�
 | 3 | 幸存者：建筑产生幸存者，载具的乘客逃出 | 致命一击无视防御时为 0 |
 | 4 | 载具乘员逃出 | 致命一击禁止时为 0 |
 | 5 | 单位损失播报 | 1；Ares `UnitLost.Suppress` 为 0 |
+| 6 | 泰矿残留：所在格及四个正交相邻格各留下至多 2 的 Riparius。引擎没有残骸对象，这是死亡唯一留下的东西 | Ares `TiberiumRemains`（默认为 `TiberiumHeal=` 且 `TiberiumHealEnabled`）；无 Ares 时为 0 |
 | 8–15 | 步兵的 `InfDeath`（0..255） | 致命弹头的值 |
 | 32–62 | 死亡武器 ID 加 1，代替类型自己的死亡武器（按 `DeathWeaponDamageModifier`）；0 为类型自己的 | 0 |
 
