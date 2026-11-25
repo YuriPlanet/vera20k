@@ -470,11 +470,10 @@ fn an_approach_point_answer_replaces_the_approach_cell() {
     let order = CommandEnvelope::new(
         scene.sim().interner.get("Americans").expect("Americans house"),
         scene.sim().session.tick() + 1,
-        Command::clicked_mission(
-            tank,
-            crate::sim::mission::MissionType::Attack,
-            crate::sim::combat::TargetKind::Entity(enemy),
-        ),
+        Command::Attack {
+            attacker_id: tank,
+            target_id: enemy,
+        },
     );
     let mut orders = vec![order];
     for _ in 0..60 {
