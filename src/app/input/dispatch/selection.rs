@@ -675,7 +675,7 @@ pub(super) fn selection_voice_recipients(
     }
 }
 
-pub(super) fn queue_selection_snapshot_command(
+pub(crate) fn queue_selection_snapshot_command(
     state: &mut AppState,
     selected_ids: Vec<u64>,
     additive: bool,

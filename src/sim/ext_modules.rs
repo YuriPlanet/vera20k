@@ -98,7 +98,7 @@ mod writes;
 pub use actions::{ActionContext, run_action};
 pub(crate) use decide::CommandAdmission;
 use modifiers::{Modifier, ModifierOp, ModifierStore, Stat};
-pub(crate) use orders::take_due_orders;
+pub(crate) use orders::{CheckedOrder, check_client_order, take_due_orders};
 use props::{View, type_property};
 pub use rules::{MapUi, PreparedExtModules, WasmPolicy};
 use vars::{FIRST_DECLARED_VAR, VarStore, VarValues};
@@ -790,6 +790,36 @@ fn decode_ref(reference: i64) -> Result<Option<Ref>, Invalid> {
             )));
         }
     }))
+}
+
+/// A client module's cell argument (RFC 10; appendix "References"): a
+/// cell, or a waypoint's cell (`NotFound` for a waypoint the map does not
+/// set). Any other reference is invalid.
+pub(crate) fn client_cell(
+    sim: &Simulation,
+    reference: i64,
+) -> Result<Result<(u16, u16), Status>, Invalid> {
+    match decode_ref(reference)? {
+        Some(Ref::Cell { x, y }) => Ok(Ok((x, y))),
+        Some(Ref::Waypoint(number)) => {
+            Ok(orders::waypoint_cell(sim, number).ok_or(Status::NotFound))
+        }
+        _ => Err(Invalid(format!("{reference:#x} is not a cell"))),
+    }
+}
+
+/// A client module's object argument: the object ID. Any other reference
+/// (0 included) is invalid.
+pub(crate) fn client_object(reference: i64) -> Result<u64, Invalid> {
+    match decode_ref(reference)? {
+        Some(Ref::Object(id)) => Ok(id),
+        _ => Err(Invalid(format!("{reference:#x} is not an object"))),
+    }
+}
+
+/// A cell's reference, for a client read (the camera's `Cell`).
+pub(crate) const fn client_cell_ref(x: u16, y: u16) -> i64 {
+    cell_ref(x, y)
 }
 
 /// Object categories (appendix 8.3 `Category`).
