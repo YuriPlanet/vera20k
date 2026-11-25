@@ -1,14 +1,17 @@
 //! Developer diagnostics: the black-cell report, the `dev-overlays` overlay
 //! toggles, debug pause and frame step, and the Ctrl+Shift dev hotkey chord.
 
+#[cfg(feature = "dev-overlays")]
 use crate::app::AppState;
+#[cfg(feature = "dev-overlays")]
+use crate::app::diagnostics::state::DiagnosticsState;
+#[cfg(feature = "dev-overlays")]
+use crate::app::match_runtime::frame_pacer::LocalFramePacer;
+use crate::app::match_runtime::state::MatchState;
 #[cfg(feature = "dev-overlays")]
 use crate::app::types::OrderMode;
 // Only the dev chord matches on bare `KeyCode`; the retail path below keeps
 // fully-qualified `winit::keyboard::KeyCode`.
-use crate::app::diagnostics::state::DiagnosticsState;
-use crate::app::match_runtime::frame_pacer::LocalFramePacer;
-use crate::app::match_runtime::state::MatchState;
 #[cfg(feature = "dev-overlays")]
 use winit::keyboard::KeyCode;
 
