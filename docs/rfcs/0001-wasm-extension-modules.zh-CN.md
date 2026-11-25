@@ -4,7 +4,7 @@
 
 | | |
 | --- | --- |
-| RFC 版本 | 0.0.21 |
+| RFC 版本 | 0.0.22 |
 | 状态 | 草案（Draft） |
 | 创建日期 | 2026-11-16 |
 | 涉及的 API | `vera:sim@1`、`vera:client@1`（提议） |
@@ -594,6 +594,7 @@ AI 操作统一经过现有 AI owner。模块也可以用 `order` 像玩家一�
 版本 1 冻结三个可决定事件：`TakeDamage`（结算后的最终伤害）、`ProductionQueued`（是否入队）、`Defeat`（否决引擎的判负）。拒绝电脑所属方的 `ProductionQueued` 时，引擎清除它对该类生产的选择，让它重选。
 
 - **预览，不随版本 1 冻结：** `ProductionAllowed`（可用 `AllowType` 表达）、`CommandAllowed`（须先覆盖电脑 AI 的任务）。
+- **单位控制点（预览，0.0.22）：** `FireAllowed`、`Retaliate`、`DestinationSet`、`CrushAllowed`、`HarvestCell`、`DeployAllowed`，每个只在引擎对该单位的提交点询问一次，不在并行或推测性的计算里询问（附录 4.5）。每个都在它所决定的原生计算（含其中的随机数抽取）跑完之后询问，答案不会跳过这段计算的抽取；被拒绝的动作不再做它之后本会做的抽取。
 - **护盾：** 预览期新增 `DamageIncoming`（受伤入口的伤害，引擎按触发器声明的护甲算好盾伤）和可修饰属性 `TargetArmor`（索敌和开火许可用的护甲）。`TakeDamage` 只在结算后的伤害大于 0 时询问，所以不能用它实现另有护甲的护盾。这两项只有通过下述用例后才随版本 1 冻结；Phobos 兼容护盾仍由引擎实现，不要求模块逐点复刻。
 - **以后：** `TargetChanged`、`Fire`、`FatalDamage` 的决定形式，`Launch`、`ProjectileFrame`。模块用 `has_kind` 探测。
 
@@ -1065,7 +1066,7 @@ SDK 与模板按对象或所属方错开周期任务。读多个对象或属性�
 
 不在版本 1 中。每一项都会是一个后续 RFC 或一个新的次版本。
 
-- 更多投递型事件：`Built`（`other` 为建造者）、`Idle`（任务结束且没有排队的任务）、`MoveFailed` 和 `Arrived`（`cell` 为目的地）、`Stunned` 和 `Unstunned`（`other` 为来源）、`Promoted`（`value` 为新等级）、`Cloaked` 和 `Decloaked`、`Spotted` 和 `Lost`（`house` 为现在看到或失去该对象的所属方）、`AmmoChanged`（`value` 为旧值，`value2` 为新值）、`MissionChanged`（`value` 为任务）、`HouseDefeated`、`PlayerLeft` 和 `StorageFull`（`house`）、`MotionEnded`（`value` 为原因）。
+- 更多投递型事件：`Built`（`other` 为建造者）、`Idle`（任务结束且没有排队的任务）、`MoveFailed` 和 `Arrived`（`cell` 为目的地）、`Stunned` 和 `Unstunned`（`other` 为来源）、`Spotted` 和 `Lost`（`house` 为现在看到或失去该对象的所属方）、`AmmoChanged`（`value` 为旧值，`value2` 为新值）、`HouseDefeated`、`PlayerLeft` 和 `StorageFull`（`house`）、`MotionEnded`（`value` 为原因）。
 - 由模块定义并每帧执行的自定义任务。
 - 让 AI 学会使用 mod 新增的机制。
 - 一个对象挂多个标签。
@@ -1107,6 +1108,7 @@ SDK 与模板按对象或所属方错开周期任务。读多个对象或属性�
 
 ## 修订记录
 
+- **0.0.22**（2026-11-25）：新增单位控制点事件（附录 4.3、4.5）：只可决定的 `FireAllowed`、`Retaliate`、`DestinationSet`、`CrushAllowed`、`HarvestCell`、`DeployAllowed`（preview），投递的 `Deployed`、`Promoted`、`ExperienceGained`、`Cloaked`、`Decloaked`（v1）和 `MissionChanged`（later），从 100044 起编号。`TargetChanged`、`Detonated`、`Crushed`、`SpiedBy`、`ThievedBy` 升为 v1。`Birth` 覆盖部署、幸存者和乘员，进驻的乘客事件覆盖离开，`FatalDamage` 覆盖没有伤害提交的死亡。`SpeedMultiplier` 也作用于飞行、喷气背包和火箭的移动。
 - **0.0.21**（2026-11-24）：模块用 `ini_register` 在初始化时注册 INI 键、注册表和模块事件，开局时引擎把规则中出现的已注册名字交给处理函数，新增 `ModuleEvent`、`RaiseEvent` 和带参数的模块动作（第 6h 节）。模块可以按领域认领电脑所属方，客户端模块可以替本玩家操作，新增 `OrderRefused`、`SimEvent` 和驱动所属方的读取面；推翻 0.0.20 的“版本 1 不做所属方接管”（第 6i 节，待定问题 18）。mod 默认额度改为 500,000，新增席位额度和玩家设置的额度。`EventRecord` 增至 120 字节。
 
 - **0.0.20**（2026-11-23）：在列出影响游戏方式的地方写明：任务（写 `Mission`、`SetMission`）可作用于任何所属方的单位，包括玩家的；只有 `order` 限于电脑所属方。原文读起来像模块无法指挥玩家的单位。

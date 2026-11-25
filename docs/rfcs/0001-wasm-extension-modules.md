@@ -4,7 +4,7 @@
 
 | | |
 | --- | --- |
-| RFC version | 0.0.21 |
+| RFC version | 0.0.22 |
 | Status | Draft |
 | Created | 2026-11-16 |
 | APIs | `vera:sim@1`, `vera:client@1` (proposed) |
@@ -594,6 +594,7 @@ Decidable events replace the former override points. The event table identifies 
 Version 1 freezes three decidable events: `TakeDamage` (settled final damage), `ProductionQueued` (whether to enqueue) and `Defeat` (veto engine defeat). When `ProductionQueued` is refused for a computer house, the engine clears its choice in that production category so it chooses again.
 
 - **Preview, not frozen in version 1:** `ProductionAllowed` (expressible with `AllowType`) and `CommandAllowed` (must first cover computer AI missions).
+- **Unit control points (preview, 0.0.22):** `FireAllowed`, `Retaliate`, `DestinationSet`, `CrushAllowed`, `HarvestCell` and `DeployAllowed`, each asked once at the engine's commit point for that unit, never in parallel or speculative computation (appendix 4.5). Each is asked after the native computation it decides on has run, its random draws included, so an answer never skips a native draw of that computation; an action the answer refuses does not make the draws it would have made afterwards.
 - **Shields:** preview adds `DamageIncoming` (damage at the receive entry, with shield damage computed by the engine against the armor the trigger declares) and the modifiable property `TargetArmor` (armor for targeting and fire permission). `TakeDamage` asks only when settled damage is above 0, so it cannot implement a shield with its own armor. Both freeze in version 1 only after passing the cases below. Phobos-compatible shields remain in the engine, and modules need not reproduce them point by point.
 - **Later:** decision forms of `TargetChanged`, `Fire` and `FatalDamage`, plus `Launch` and `ProjectileFrame`. Modules probe with `has_kind`.
 
@@ -1065,7 +1066,7 @@ Use core Wasm modules and versioned function tables. Simulation modules can read
 
 Outside version 1. Each item gets a follow-up RFC or a new minor version.
 
-- Additional delivered events: `Built` (`other` builder), `Idle` (mission ended with no queued mission), `MoveFailed` and `Arrived` (`cell` destination), `Stunned` and `Unstunned` (`other` source), `Promoted` (`value` new rank), `Cloaked` and `Decloaked`, `Spotted` and `Lost` (`house` that gained or lost sight of the object), `AmmoChanged` (`value` old, `value2` new), `MissionChanged` (`value` mission), `HouseDefeated`, `PlayerLeft` and `StorageFull` (`house`), `MotionEnded` (`value` reason).
+- Additional delivered events: `Built` (`other` builder), `Idle` (mission ended with no queued mission), `MoveFailed` and `Arrived` (`cell` destination), `Stunned` and `Unstunned` (`other` source), `Spotted` and `Lost` (`house` that gained or lost sight of the object), `AmmoChanged` (`value` old, `value2` new), `HouseDefeated`, `PlayerLeft` and `StorageFull` (`house`), `MotionEnded` (`value` reason).
 - Module-defined custom missions executed per frame.
 - Teach AI to use mechanics introduced by mods.
 - Multiple tags on one object.
@@ -1107,6 +1108,7 @@ Question numbers are unchanged so earlier discussion still resolves. **Decided**
 
 ## Revision history
 
+- **0.0.22** (2026-11-25): Added unit control-point events (appendix 4.3, 4.5): the decision-only `FireAllowed`, `Retaliate`, `DestinationSet`, `CrushAllowed`, `HarvestCell` and `DeployAllowed` (preview) and the delivered `Deployed`, `Promoted`, `ExperienceGained`, `Cloaked` and `Decloaked` (v1) and `MissionChanged` (later), numbered from 100044. `TargetChanged`, `Detonated`, `Crushed`, `SpiedBy` and `ThievedBy` become v1. `Birth` covers deploys, survivors and crew, the garrison passenger events cover leaving, and `FatalDamage` covers deaths without a damage commit. `SpeedMultiplier` also scales flying, jumpjet and rocket movement.
 - **0.0.21** (2026-11-24): Modules register INI keys, registries and module events with `ini_register` at initialization, and at scenario start the engine passes the registered names appearing in the rules to their handlers. Added `ModuleEvent`, `RaiseEvent` and module actions with arguments (section 6h). Modules can claim a computer house by domain and client modules can play for the local player. Added `OrderRefused`, `SimEvent` and the read properties for driving a house, reversing 0.0.20's "no house takeover in version 1" (section 6i, open question 18). The mod default budget becomes 500,000, with seat budgets and a player-set budget added. `EventRecord` grows to 120 bytes.
 
 - **0.0.20** (2026-11-23): Stated where gameplay effects are listed that missions (`Mission` writes, `SetMission`) reach any house's units, a player's included; only `order` is limited to computer houses. The text read as if modules could not command a player's units.
