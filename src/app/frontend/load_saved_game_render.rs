@@ -85,6 +85,7 @@ pub(crate) fn render_load_saved_game_page(
             atlas,
             &layout.browser,
             browser,
+            None,
             sprites,
             texts,
         )

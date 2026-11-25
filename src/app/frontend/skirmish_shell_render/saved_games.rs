@@ -21,10 +21,11 @@ use crate::render::shell_text::ShellTextDraw;
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::saved_games::saved_game_layout;
+use crate::ui::sidebar::SidebarTheme;
 use crate::ui::skirmish_shell::saved_seed_browser::{
     ACTION, BACK, BROWSER_DIALOG, CONVERT, LIST, PROMPT, PROMPT_DIALOG, TITLE,
 };
-use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedLayout};
+use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedLayout, SavedSeedMode};
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 /// Each row's description, date and time in the template's columns (the
@@ -145,13 +146,14 @@ pub(crate) fn push_saved_browser_box<I>(
     atlas: Option<&SkirmishShellChromeAtlas>,
     layout: &SavedSeedLayout,
     browser: &SavedSeedBrowserState<I>,
+    side: Option<SidebarTheme>,
     sprites: &mut Vec<SpriteInstance>,
     texts: &mut Vec<ShellTextDraw>,
 ) {
     let Some(prompt) = browser.prompt.as_ref() else {
         return;
     };
-    let look = BoxLook::prompt(atlas.and_then(|atlas| atlas.mode_two_dialog_background(None)));
+    let look = BoxLook::prompt(atlas.and_then(|atlas| atlas.mode_two_dialog_background(side)));
     let shell_box = prompt.shell_box();
     let parts = skirmish_parts(&shell_box, (layout.screen.w, layout.screen.h));
     let pressed = |id| browser.pressed(id);
@@ -222,6 +224,7 @@ pub(super) fn seed_browser_paint<I>(
             Some(atlas),
             layout,
             browser,
+            None,
             sprites,
             texts,
         )
@@ -324,6 +327,12 @@ pub(crate) fn render_saved_game_shell(
         if let Some(root) = browser.ui.root_in(BROWSER_DIALOG) {
             paint.nodes_in(browser.ui.gui(), root, &[ACTION, CONVERT, BACK], style);
         }
+        // game.exe's mode-2 paint (0x005FF1F5) draws the player's side
+        // PUDLGBG art while a game runs; classic RA2's Save and Delete
+        // prompts show it.
+        let prompt_side = (crate::util::ra2_launch::enabled()
+            && matches!(browser.mode, SavedSeedMode::Save | SavedSeedMode::Delete))
+        .then_some(paint.theme);
         // The box's clipping excludes all underlying text, the active-game
         // title and column labels included.
         push_saved_browser_box(
@@ -335,6 +344,7 @@ pub(crate) fn render_saved_game_shell(
             state.frontend.skirmish_shell_chrome.as_ref(),
             &layout,
             browser,
+            prompt_side,
             &mut paint.controls,
             &mut paint.texts,
         );
