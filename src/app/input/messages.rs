@@ -37,9 +37,51 @@ pub(crate) fn message_now_ms(state: &AppState) -> u64 {
 /// scenario-side priority through69A310 and adds a non-silent4046 row.
 /// MessageDelay's ftol result is in WallClock16ms buckets, not sim frames.
 pub(crate) fn post_trigger_message(state: &mut AppState, csf_key: &str) {
-    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+    let Some((rgb, timeout)) = trigger_message_style(state) else {
         return;
     };
+    post_localized_message(
+        state,
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text: csf_key,
+            rgb,
+            timeout_ms: timeout,
+            silent: false,
+        },
+    );
+}
+
+/// A client module's `ShowMessage` (RFC 0001 appendix 5.4): the CSF entry
+/// `text` names, or else `text` itself (the rule of the node `Label`,
+/// appendix 7.10), as a trigger message row; `rgb` replaces the trigger
+/// message's colour.
+pub(crate) fn post_module_message(state: &mut AppState, text: &str, rgb: Option<[f32; 3]>) {
+    let Some((side_rgb, timeout)) = trigger_message_style(state) else {
+        return;
+    };
+    let resolved = state
+        .process_assets
+        .csf
+        .as_ref()
+        .and_then(|csf| csf.get(text))
+        .unwrap_or(text)
+        .to_owned();
+    post_resolved_message(
+        state,
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text: &resolved,
+            rgb: rgb.unwrap_or(side_rgb),
+            timeout_ms: timeout,
+            silent: false,
+        },
+    );
+}
+
+/// TAction11's row style: the scenario side's colour and MessageDelay.
+fn trigger_message_style(state: &AppState) -> Option<([f32; 3], Option<u64>)> {
+    let runtime = state.match_state.sim_runtime.runtime()?;
     // The selected campaign opening keeps its startup player/country. The
     // existing House owner supplies that side; a later scenario-side change
     // independent of the current House remains a separate retained-field gap.
@@ -66,16 +108,7 @@ pub(crate) fn post_trigger_message(state: &mut AppState, csf_key: &str) {
         trigger_message_rgb(&rules.color_schemes, side, rules.skirmish_colors())
     };
     let timeout = message_delay_timeout_ms(rules.general.message_delay_minutes);
-    post_localized_message(
-        state,
-        &crate::ui::messages::MessagePost {
-            prefix: None,
-            text: csf_key,
-            rgb,
-            timeout_ms: timeout,
-            silent: false,
-        },
-    );
+    Some((rgb, timeout))
 }
 
 fn message_delay_buckets(delay: crate::util::native_x87::NativeF64Bits) -> i32 {

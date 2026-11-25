@@ -803,7 +803,7 @@ pub(crate) fn preferred_local_owner(state: &AppState) -> Option<String> {
 }
 
 /// The issuer's primary House can differ from the represented view House.
-pub(super) fn preferred_command_owner(state: &AppState) -> Option<String> {
+pub(crate) fn preferred_command_owner(state: &AppState) -> Option<String> {
     let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let owner = sim.control_projection().local_command_house()?;
     Some(sim.interner().resolve(owner).to_owned())

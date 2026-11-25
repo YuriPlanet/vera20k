@@ -75,12 +75,10 @@ pub(crate) use hotkey_dispatch::{
 };
 pub(crate) use selection::{
     CommittedSelection, KeyModifiers, is_alt_held, is_ctrl_held, is_shift_held,
-    reconcile_selection_order_after_sim, selected_in_order, selected_stable_ids_in_order,
-    selection_order_for_world,
+    queue_selection_snapshot_command, reconcile_selection_order_after_sim, selected_in_order,
+    selected_stable_ids_in_order, selection_order_for_world,
 };
-use selection::{
-    apply_selection_action_line_policy, apply_selection_mutation, queue_selection_snapshot_command,
-};
+use selection::{apply_selection_action_line_policy, apply_selection_mutation};
 #[cfg(all(test, tests_app_input_d_z))]
 use selection::{
     apply_selection_action_line_policy_at_frame, insert_selected_id_by_role, logic_selects,

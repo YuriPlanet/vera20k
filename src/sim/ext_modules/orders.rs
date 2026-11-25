@@ -18,6 +18,11 @@
 //! command stream: every machine's modules issue them in lockstep, and
 //! replays resimulate the modules.
 //!
+//! A client module's `client_send_order` (RFC 10, 6i) goes through the same
+//! check ([`check_client_order`]) and becomes the same player commands
+//! ([`CheckedOrder::commands`]); those enter the local player's command
+//! stream like the player's own input (`app::ui_modules::local`).
+//!
 //! Commands of the table and the player commands they become:
 //! - `Guard` with a cell is the player's area-guard click (`Command::Guard`
 //!   with the cell, Foot ClickedAction_Cell `0x004D7E35..0x004D7E8B`);
@@ -198,89 +203,17 @@ impl Host<'_, '_> {
         if state.is_human() || state.is_defeated() {
             return Ok(Status::Refused);
         }
-        let Some((target_spec, value_spec, takes_units)) = command_spec(order.kind) else {
+        if command_spec(order.kind).is_none() {
             return Ok(Status::Unsupported);
-        };
+        }
         let issued = self.orders.iter().filter(|o| o.frame == self.frame_now());
         let (count, units) = issued.fold((0, 0), |(n, u), o| (n + 1, u + o.units.len()));
         if count >= MAX_ORDERS_PER_FRAME || units + order.units.len() > MAX_UNITS_PER_FRAME {
             return Ok(Status::Refused);
         }
-        if takes_units == order.units.is_empty() {
-            return Ok(Status::Refused);
-        }
-        let mut unit_ids = Vec::with_capacity(order.units.len());
-        for &unit in &order.units {
-            match decode_ref(unit)? {
-                Some(Ref::Object(id)) => unit_ids.push(id),
-                _ => return Ok(Status::Refused),
-            }
-        }
-        let target = match (target_spec, decode_ref(order.target)?) {
-            (TargetKindSpec::None | TargetKindSpec::Any, None) => Target::None,
-            (TargetKindSpec::Object | TargetKindSpec::Any, Some(Ref::Object(id))) => {
-                Target::Object(id)
-            }
-            (TargetKindSpec::Cell | TargetKindSpec::Any, Some(Ref::Cell { x, y })) => {
-                Target::Cell(x, y)
-            }
-            (TargetKindSpec::Cell | TargetKindSpec::Any, Some(Ref::Waypoint(number))) => {
-                match self.reader().waypoint_cell(number) {
-                    Some((x, y)) => Target::Cell(x, y),
-                    None => return Ok(Status::NotFound),
-                }
-            }
-            _ => return Ok(Status::Refused),
-        };
-        let value = if value_spec == ValueSpec::FactoryKind {
-            // Infantry, Vehicle, Naval and Aircraft: a building or defense
-            // is placed with `PlaceReadyBuilding`.
-            match order.value {
-                2..=5 => Some(order.value as u32),
-                _ => return Ok(Status::Refused),
-            }
-        } else {
-            match (value_spec, decode_ref(order.value)?) {
-                (ValueSpec::None, None) => None,
-                (
-                    ValueSpec::Techno | ValueSpec::Building,
-                    Some(Ref::Type {
-                        kind: NAME_TECHNO_TYPE,
-                        id,
-                    }),
-                ) => {
-                    let object = i32::try_from(id)
-                        .ok()
-                        .and_then(|id| techno_type(self.rules, id))
-                        .ok_or_else(|| Invalid(format!("no TechnoType {id}")))?;
-                    if value_spec == ValueSpec::Building
-                        && object.category != crate::rules::object_type::ObjectCategory::Building
-                    {
-                        return Ok(Status::Refused);
-                    }
-                    Some(id)
-                }
-                (
-                    ValueSpec::SuperWeapon,
-                    Some(Ref::Type {
-                        kind: NAME_SUPER_WEAPON,
-                        id,
-                    }),
-                ) => {
-                    if usize::try_from(id)
-                        .ok()
-                        .and_then(|i| self.rules.super_weapon_order.get(i))
-                        .is_none()
-                    {
-                        return Err(Invalid(format!("no SuperWeapon {id}")));
-                    }
-                    Some(id)
-                }
-                _ => return Ok(Status::Refused),
-            }
-        };
-        let Some(command) = order_command(order.kind, target, value) else {
-            return Ok(Status::Refused);
+        let checked = match check_order(self.sim, self.rules, order)? {
+            Ok(checked) => checked,
+            Err(status) => return Ok(status),
         };
         let Some(index) = self.sim.houses.index_of(owner) else {
             return Ok(Status::Gone);
@@ -288,8 +221,8 @@ impl Host<'_, '_> {
         self.orders.push(PendingOrder {
             house: index,
             frame: self.frame_now(),
-            command,
-            units: unit_ids,
+            command: checked.command,
+            units: checked.units,
         });
         Ok(Status::Ok)
     }
@@ -302,12 +235,182 @@ impl Host<'_, '_> {
 impl Reader<'_> {
     /// A waypoint's cell; `None` for a waypoint the map does not set.
     pub(crate) fn waypoint_cell(&self, number: i32) -> Option<(u16, u16)> {
-        if !self.sim.session.waypoint_is_valid(number) {
-            return None;
-        }
-        let (x, y) = self.sim.session.waypoint_cell(number)?;
-        Some((u16::try_from(x).ok()?, u16::try_from(y).ok()?))
+        waypoint_cell(self.sim, number)
     }
+}
+
+/// A waypoint's cell; `None` for a waypoint the map does not set.
+pub(super) fn waypoint_cell(sim: &Simulation, number: i32) -> Option<(u16, u16)> {
+    if !sim.session.waypoint_is_valid(number) {
+        return None;
+    }
+    let (x, y) = sim.session.waypoint_cell(number)?;
+    Some((u16::try_from(x).ok()?, u16::try_from(y).ok()?))
+}
+
+/// An order checked against the command table (appendix 8.3): the one
+/// check of `order` (RFC 6g) and `client_send_order` (RFC 10, 6i), so both
+/// accept the same orders and turn them into the same player commands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CheckedOrder {
+    command: OrderCommand,
+    /// The unit entries as object IDs; empty for a house-wide command.
+    units: Vec<u64>,
+}
+
+impl CheckedOrder {
+    /// The units the order names (object IDs).
+    pub(crate) fn units(&self) -> &[u64] {
+        &self.units
+    }
+
+    /// A house-wide command (production, placement, superweapon, wall
+    /// sale): the command table lists no units for it.
+    pub(crate) fn house_wide(&self) -> bool {
+        self.units.is_empty()
+    }
+
+    /// The player commands the order becomes, as the order's house's player
+    /// would send them; `None` where a type the order names is gone.
+    pub(crate) fn commands(&self, sim: &Simulation, rules: &RuleSet) -> Option<Vec<Command>> {
+        order_commands(sim, rules, &self.command, &self.units)
+    }
+}
+
+/// Checks `order` against the command table: target and value of the
+/// listed kinds, unit entries exactly where the table lists units.
+/// `Ok(Err(status))` for an order the table refuses (`Unsupported` for a
+/// command this engine does not run, `NotFound` for a missing waypoint).
+pub(crate) fn check_order(
+    sim: &Simulation,
+    rules: &RuleSet,
+    order: &Order,
+) -> Result<Result<CheckedOrder, Status>, Invalid> {
+    let Some((target_spec, value_spec, takes_units)) = command_spec(order.kind) else {
+        return Ok(Err(Status::Unsupported));
+    };
+    if takes_units == order.units.is_empty() {
+        return Ok(Err(Status::Refused));
+    }
+    let mut unit_ids = Vec::with_capacity(order.units.len());
+    for &unit in &order.units {
+        match decode_ref(unit)? {
+            Some(Ref::Object(id)) => unit_ids.push(id),
+            _ => return Ok(Err(Status::Refused)),
+        }
+    }
+    let target = match (target_spec, decode_ref(order.target)?) {
+        (TargetKindSpec::None | TargetKindSpec::Any, None) => Target::None,
+        (TargetKindSpec::Object | TargetKindSpec::Any, Some(Ref::Object(id))) => Target::Object(id),
+        (TargetKindSpec::Cell | TargetKindSpec::Any, Some(Ref::Cell { x, y })) => {
+            Target::Cell(x, y)
+        }
+        (TargetKindSpec::Cell | TargetKindSpec::Any, Some(Ref::Waypoint(number))) => {
+            match waypoint_cell(sim, number) {
+                Some((x, y)) => Target::Cell(x, y),
+                None => return Ok(Err(Status::NotFound)),
+            }
+        }
+        _ => return Ok(Err(Status::Refused)),
+    };
+    let value = if value_spec == ValueSpec::FactoryKind {
+        // Infantry, Vehicle, Naval and Aircraft: a building or defense
+        // is placed with `PlaceReadyBuilding`.
+        match order.value {
+            2..=5 => Some(order.value as u32),
+            _ => return Ok(Err(Status::Refused)),
+        }
+    } else {
+        match (value_spec, decode_ref(order.value)?) {
+            (ValueSpec::None, None) => None,
+            (
+                ValueSpec::Techno | ValueSpec::Building,
+                Some(Ref::Type {
+                    kind: NAME_TECHNO_TYPE,
+                    id,
+                }),
+            ) => {
+                let object = i32::try_from(id)
+                    .ok()
+                    .and_then(|id| super::techno_type(rules, id))
+                    .ok_or_else(|| Invalid(format!("no TechnoType {id}")))?;
+                if value_spec == ValueSpec::Building
+                    && object.category != crate::rules::object_type::ObjectCategory::Building
+                {
+                    return Ok(Err(Status::Refused));
+                }
+                Some(id)
+            }
+            (
+                ValueSpec::SuperWeapon,
+                Some(Ref::Type {
+                    kind: NAME_SUPER_WEAPON,
+                    id,
+                }),
+            ) => {
+                if usize::try_from(id)
+                    .ok()
+                    .and_then(|i| rules.super_weapon_order.get(i))
+                    .is_none()
+                {
+                    return Err(Invalid(format!("no SuperWeapon {id}")));
+                }
+                Some(id)
+            }
+            _ => return Ok(Err(Status::Refused)),
+        }
+    };
+    let Some(command) = order_command(order.kind, target, value) else {
+        return Ok(Err(Status::Refused));
+    };
+    Ok(Ok(CheckedOrder {
+        command,
+        units: unit_ids,
+    }))
+}
+
+/// `client_send_order`'s check (RFC 10, 6i): [`check_order`], then only the
+/// units `house` (a house reference) owns stay, as a player's input names
+/// only the player's own units. An order that lists units but keeps none is
+/// `Refused`.
+pub(crate) fn check_client_order(
+    sim: &Simulation,
+    rules: &RuleSet,
+    house: i64,
+    order: &Order,
+) -> Result<Result<CheckedOrder, Status>, Invalid> {
+    let owner = match decode_ref(house)? {
+        Some(Ref::House(index)) => sim.houses.order().get(index).copied(),
+        _ => None,
+    };
+    let Some(owner) = owner else {
+        return Ok(Err(Status::Refused));
+    };
+    let mut checked = match check_order(sim, rules, order)? {
+        Ok(checked) => checked,
+        Err(status) => return Ok(Err(status)),
+    };
+    if checked.house_wide() {
+        return Ok(Ok(checked));
+    }
+    checked.units = owned_units(sim, owner, &checked.units);
+    if checked.units.is_empty() {
+        return Ok(Err(Status::Refused));
+    }
+    Ok(Ok(checked))
+}
+
+/// The units of `units` that exist and belong to `owner`, in order.
+fn owned_units(sim: &Simulation, owner: InternedId, units: &[u64]) -> Vec<u64> {
+    units
+        .iter()
+        .copied()
+        .filter(|id| {
+            sim.entities()
+                .get(*id)
+                .is_some_and(|entity| entity.owner() == owner)
+        })
+        .collect()
 }
 
 /// The command of a checked order; `None` where target and value do not fit.
@@ -372,16 +475,7 @@ pub(crate) fn take_due_orders(sim: &mut Simulation, rules: &RuleSet) -> Vec<Vec<
             {
                 return None;
             }
-            let units: Vec<u64> = order
-                .units
-                .iter()
-                .copied()
-                .filter(|id| {
-                    sim.entities()
-                        .get(*id)
-                        .is_some_and(|entity| entity.owner() == owner)
-                })
-                .collect();
+            let units = owned_units(sim, owner, &order.units);
             let commands = order_commands(sim, rules, &order.command, &units)?;
             Some(
                 commands
