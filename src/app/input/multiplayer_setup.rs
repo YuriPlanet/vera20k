@@ -6,7 +6,6 @@ use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::input::state::MatchInputState;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::process_assets::ProcessAssets;
-use crate::app::shell_route::ShellRoute;
 use crate::app::{App, AppState};
 use crate::render::gpu::GpuContext;
 use crate::ui::multiplayer_setup::*;
@@ -258,7 +257,7 @@ pub(crate) fn leaves_escape(state: &AppState) -> bool {
 #[cfg(not(target_os = "android"))]
 pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
     let routed = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-        && state.frontend.shell_route == ShellRoute::NetworkSetup
+        && state.frontend.shell_route == crate::app::shell_route::ShellRoute::NetworkSetup
         && state
             .frontend
             .skirmish_shell_state
