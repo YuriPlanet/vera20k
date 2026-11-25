@@ -128,6 +128,17 @@ the source tree). Its Wasm verbs need no game install:
   `preview` and may change. `MISSION_CHANGED` is numbered but not raised yet; check
   with `has_kind`. A `SpeedMultiplier` modifier also slows or speeds up aircraft,
   jumpjets and rockets.
+- Movement (`preview`, may change): `Event::MOVE_FRAME` asks, every frame a bound
+  vehicle or infantryman on the ground (Drive, Ship, Walk, Mech or Hover) could
+  start a step, whether the module moves it instead: `MoveFrameDecision::step_by(dx,
+  dy)` moves it that many leptons this frame (the engine checks the cell it enters
+  and keeps it on the ground), `set_step` can also turn it or drop its destination,
+  no answer leaves it to its locomotor. `Event::PATH_FOUND` asks when a path search's
+  route is adopted: `PathFoundDecision::set_cells` replaces the route with your
+  cells (each next to the one before, up to 24), `no_route` makes the search fail.
+  `Action::push` shoves a ground unit some leptons toward or away from a cell over a
+  few frames, on top of its own movement; `Action::set_facing` turns it. Aircraft,
+  jumpjets, rockets, tunnelling and teleporting units are not covered.
 - INI names: `ini::key`, `ini::registry` and `ini::event` let modders configure the
   module in INI ([below](#ini-names-a-module-registers)).
 
@@ -186,7 +197,8 @@ the action's row in appendix section 5, in order, empty ones 0:
   voxel animation or particle system takes its name or its number.
 - `Mission` takes a mission name (`Hunt`, `Guard`, `Wait`, …), `EndFor` takes `Win`
   or `Lose`, `Teleport` takes `Nearby` or `Fail`, `Modify` takes `Add`, `Multiply`
-  or `Override`; numbers work too.
+  or `Override`; numbers work too. `Push(target,cell,distance,frames)` and
+  `SetFacing(target,facing)` take numbers.
 - A house is a country name; a cell is a waypoint number.
 - Sounds take their `[SoundList]` number.
 
