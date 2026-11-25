@@ -333,11 +333,22 @@ impl Host<'_, '_> {
             vera20k_wasm_ext::decide::EVENT_DEFEAT => TriggerScope::Global,
             vera20k_wasm_ext::decide::EVENT_PRODUCTION_ALLOWED
             | vera20k_wasm_ext::decide::EVENT_PRODUCTION_QUEUED
-            | vera20k_wasm_ext::decide::EVENT_COMMAND_ALLOWED
+            | vera20k_wasm_ext::decide::EVENT_COMMAND_ALLOWED => object,
+            // The unit decisions (`decide`, `control`, `unit_ai`) bind to the
+            // object or its type.
+            vera20k_wasm_ext::decide::EVENT_DAMAGE_INCOMING
+            | vera20k_wasm_ext::decide::EVENT_FIRE_ALLOWED
+            | vera20k_wasm_ext::decide::EVENT_RETALIATE
+            | vera20k_wasm_ext::decide::EVENT_DESTINATION_SET
+            | vera20k_wasm_ext::decide::EVENT_CRUSH_ALLOWED
+            | vera20k_wasm_ext::decide::EVENT_HARVEST_CELL
+            | vera20k_wasm_ext::decide::EVENT_DEPLOY_ALLOWED
             | vera20k_wasm_ext::decide::EVENT_IDLE_MISSION
-            | vera20k_wasm_ext::decide::EVENT_HARVEST_CELL => object,
-            // `Fire` and `Launch` also bind the weapon, warhead and
-            // projectile type; `ProjectileFrame` binds the projectile type.
+            // Movement (`motion`, `paths`): the mover or its type.
+            | vera20k_wasm_ext::decide::EVENT_MOVE_FRAME
+            | vera20k_wasm_ext::decide::EVENT_PATH_FOUND => object,
+            // `Fire`, `Launch` and `Detonated` also bind the weapon, warhead
+            // and projectile type; `ProjectileFrame` binds the projectile type.
             EVENT_FIRE
             | vera20k_wasm_ext::decide::EVENT_LAUNCH
             | vera20k_wasm_ext::decide::EVENT_PROJECTILE_FRAME => TriggerScope::Object { weapon: true },

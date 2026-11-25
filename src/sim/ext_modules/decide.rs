@@ -52,8 +52,13 @@
 //! - `Launch` and `ProjectileFrame` (preview) → a `PathSpec` (its byte count
 //!   in `result`) and a `ProjectileStep`: a bullet's launch and its flight
 //!   visit (`ext_modules::projectiles`).
+//! - `MoveFrame` (preview) → a `MoveStep`: a bound ground mover's locomotor
+//!   Process with no step in flight (`ext_modules::motion`).
+//! - `PathFound` (preview) → a count of `PathCell`s: a Find_Path search's
+//!   adoption (`ext_modules::paths`).
 //!
-//! Result areas (`Fire`, `Launch`, `ProjectileFrame`; RFC 15.4 sizes): the
+//! Result areas (`Fire`, `Launch`, `ProjectileFrame`, `MoveFrame`,
+//! `PathFound`; RFC 15.4 sizes): the
 //! area follows the record in the module's delivery area, smaller when that
 //! area is (0 when nothing fits). Each link gets the last accepted result's
 //! bytes (`previous_len`), the rest zeroed; an answer whose size does not fit
@@ -265,7 +270,7 @@ impl Simulation {
     }
 
     /// The decision chain for a kind with a result area (`Fire`, `Launch`,
-    /// `ProjectileFrame`; module docs): `area` goes in holding the native
+    /// `ProjectileFrame`, `MoveFrame`, `PathFound`; module docs): `area` goes in holding the native
     /// result's bytes (or none) and comes out holding the last accepted
     /// link's, cut to the bytes its answer uses. `None` when no link
     /// answered; `area` is then as it went in.

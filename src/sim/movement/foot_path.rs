@@ -740,6 +740,26 @@ impl Simulation {
                 }
             }
         };
+        // A Wasm module's `PathFound` (`ext_modules::paths`) at the adoption,
+        // whichever search answered: it may replace the route or refuse one.
+        let searched = if request.retain_head {
+            searched
+        } else {
+            use super::movement_path::MovePathFailure as Failure;
+            use crate::sim::pathfinding::zone_search::PathSearchFailure as Search;
+            let native = match &searched {
+                Ok(directions) => Some(Some(directions.as_slice())),
+                Err(Failure::Search(Search::NativeEntryRejected | Search::CellSearchExhausted)) => {
+                    Some(None)
+                }
+                Err(_) => None,
+            };
+            match native.and_then(|native| self.module_path_found(rules, id, goal, native)) {
+                Some(Some(directions)) => Ok(directions),
+                Some(None) => Err(Failure::Search(Search::CellSearchExhausted)),
+                None => searched,
+            }
+        };
         //4D3E82..3E9F copies a successful route before Mark1's callbacks.
         if let Ok(directions) = &searched {
             let actor = self
