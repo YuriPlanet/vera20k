@@ -47,7 +47,7 @@ fn area_of(key: i32) -> i32 {
 
 // ----------------------------------------------------------------- Marks
 
-const MAX_MARKS: usize = 256;
+const MAX_MARKS: usize = 512;
 static MARKED: [AtomicI64; MAX_MARKS] = [const { AtomicI64::new(0) }; MAX_MARKS];
 
 fn hash(name: &str) -> i64 {
@@ -305,6 +305,43 @@ fn tick() {
     triggers::frame(now);
     combat::frame(now);
     movement::frame(now);
+    if now % 300 == 0 {
+        report(now);
+    }
+}
+
+static DONE: AtomicI64 = AtomicI64::new(0);
+
+/// Every 300 frames until all are in: `BENCH <reached>/<total>` and, once
+/// every area's `MARKS` is reached, the one mark `bench.all`.
+fn report(now: i32) {
+    if DONE.load(Relaxed) != 0 {
+        return;
+    }
+    let areas = [
+        basics::MARKS,
+        triggers::MARKS,
+        combat::MARKS,
+        movement::MARKS,
+    ];
+    let total: usize = areas.iter().map(|marks| marks.len()).sum();
+    let reached = areas
+        .iter()
+        .flat_map(|marks| marks.iter())
+        .filter(|name| marked(name))
+        .count();
+    let mut line = Line::new();
+    line.text("BENCH frame ")
+        .num(i64::from(now))
+        .text(": ")
+        .num(reached as i64)
+        .text("/")
+        .num(total as i64);
+    line.log();
+    if reached == total {
+        DONE.store(1, Relaxed);
+        mark("bench.all");
+    }
 }
 
 #[unsafe(no_mangle)]
