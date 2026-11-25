@@ -22,13 +22,10 @@ pub const CLIENT_FRAME_EVENTS: usize = 1_024;
 /// the simulation's one-time calls get (RFC 15.4 "One-time budgets"): the
 /// start function builds the module's interface.
 pub const CLIENT_ONE_TIME_BUDGET: u64 = 5_000_000;
-/// The largest notification (RFC 15.4 "Notifications"): a `Notify` event's
-/// `data` is at most this long.
-pub const MAX_NOTIFY_BYTES: usize = 256;
 /// The smallest `vera.delivery` area a module exporting `client_on_events`
 /// may declare: one record with the largest event data, so every event
 /// fits in some batch.
-pub const CLIENT_DELIVERY_MIN: usize = ClientEventRecord::SIZE + MAX_NOTIFY_BYTES;
+pub const CLIENT_DELIVERY_MIN: usize = ClientEventRecord::SIZE + crate::MAX_NOTIFY_BYTES;
 
 /// The client imports this engine provides (appendix 2.1), with their core
 /// Wasm signatures as text (`params -> results`).

@@ -13,8 +13,8 @@ use crate::host::Ctx;
 use crate::instrument::{self, DEPTH, METER, STOP, STOP_BUDGET, STOP_DEPTH};
 use crate::sections::{self, Delivery, Sections};
 use crate::{
-    EventRecord, Export, Fault, IMPORTS, Limits, LoadError, ModuleState, PAGE_BYTES,
-    SIM_IMPORT_MODULE, SimHost, VarDecl,
+    EventRecord, Export, Fault, IMPORTS, Limits, LoadError, MAX_MESSAGE_BYTES, ModuleState,
+    PAGE_BYTES, SIM_IMPORT_MODULE, SimHost, VarDecl,
 };
 
 /// Which world a module belongs to (RFC section 1): it decides the import
@@ -146,6 +146,8 @@ pub struct SimModuleOn<R> {
     exports: [bool; 4],
     on_events: bool,
     on_decide: bool,
+    /// `on_message(sender: i64, ptr, len)` (appendix 1.2, phase 2).
+    on_message: bool,
     /// `vera.delivery`, checked against memory at load.
     delivery: Option<Delivery>,
     /// Every mutable global the module declares, in global index order.
@@ -179,15 +181,30 @@ impl<R: Runtime> SimModuleOn<R> {
         }
         let on_events = export(Export::Events, 2)?;
         let on_decide = export(Export::Decide, 2)?;
+        let on_message = export_fits(
+            &rewritten.exports,
+            Export::Message.name(),
+            &[ValType::I64, ValType::I32, ValType::I32],
+        )?;
         let rt = R::instantiate(
             &rewritten.bytes,
             Ctx::new(Arc::clone(&sections)),
             World::Sim,
         )
         .map_err(LoadError::Invalid)?;
+        // A message is written into the delivery area; any valid area holds
+        // the largest one (appendix "Custom sections").
         check_delivery(
             delivery,
-            (on_events || on_decide).then_some(Export::Events.name()),
+            if on_events {
+                Some(Export::Events.name())
+            } else if on_decide {
+                Some(Export::Decide.name())
+            } else if on_message {
+                Some(Export::Message.name())
+            } else {
+                None
+            },
             EventRecord::SIZE,
             rt.memory_len(),
         )
@@ -206,6 +223,7 @@ impl<R: Runtime> SimModuleOn<R> {
             exports,
             on_events,
             on_decide,
+            on_message,
             delivery,
             globals: rewritten.mutable_globals,
             global_bits: Vec::new(),
@@ -279,6 +297,12 @@ impl<R: Runtime> SimModuleOn<R> {
         self.sections.action_key(name)
     }
 
+    /// The notification names the module's `vera.notify` declares, with
+    /// their IDs ([`crate::notify_id`]).
+    pub fn notify_names(&self) -> &[(String, i32)] {
+        &self.sections.notify
+    }
+
     /// The raw bits of every mutable global after the latest call.
     pub fn globals(&self) -> &[u64] {
         &self.global_bits
@@ -313,6 +337,7 @@ impl<R: Runtime> SimModuleOn<R> {
         match export {
             Export::Events => self.on_events,
             Export::Decide => self.on_decide,
+            Export::Message => self.on_message,
             _ => self.exports.get(export as usize).copied().unwrap_or(false),
         }
     }
@@ -335,7 +360,9 @@ impl<R: Runtime> SimModuleOn<R> {
         budget: u64,
         host: &mut dyn SimHost,
     ) -> Result<u64, Fault> {
-        if !matches!(export, Export::Events | Export::Decide) && self.has_export(export) {
+        if !matches!(export, Export::Events | Export::Decide | Export::Message)
+            && self.has_export(export)
+        {
             return self.run(export, budget, host, &[]);
         }
         Ok(0)
@@ -366,6 +393,37 @@ impl<R: Runtime> SimModuleOn<R> {
         self.write_delivery(area, &bytes)?;
         let args = [Arg::I32(area.offset as i32), Arg::I32(records.len() as i32)];
         self.run(Export::Events, budget, host, &args)
+    }
+
+    /// Writes one client message's `data` at the start of the delivery area
+    /// and calls `on_message(sender, ptr, len)` with `budget` operations
+    /// (RFC 0001 section 10, appendix 1.2). `sender` is the sending player's
+    /// house reference, which the engine fills. Without the export no call
+    /// is made and nothing is used. A message over [`MAX_MESSAGE_BYTES`] is
+    /// the engine's error, refused before the call.
+    pub fn deliver_message(
+        &mut self,
+        sender: i64,
+        data: &[u8],
+        budget: u64,
+        host: &mut dyn SimHost,
+    ) -> Result<u64, Fault> {
+        let (true, Some(area)) = (self.on_message, self.delivery) else {
+            return Ok(0);
+        };
+        if data.len() > MAX_MESSAGE_BYTES || data.len() > area.bytes as usize {
+            return Err(Fault::Invalid(format!(
+                "a {}-byte message exceeds the delivery area",
+                data.len()
+            )));
+        }
+        self.write_delivery(area, data)?;
+        let args = [
+            Arg::I64(sender),
+            Arg::I32(area.offset as i32),
+            Arg::I32(data.len() as i32),
+        ];
+        self.run(Export::Message, budget, host, &args)
     }
 
     /// Writes `record` into the delivery area and calls `on_decide(ptr, 1)`
@@ -575,7 +633,7 @@ pub(crate) fn check(bytes: &[u8], world: World) -> Result<(), LoadError> {
             }
             Payload::CustomSection(section)
                 if world == World::Client
-                    && matches!(section.name(), sections::VARS | NOTIFY_SECTION) =>
+                    && matches!(section.name(), sections::VARS | sections::NOTIFY) =>
             {
                 return Err(invalid(format!(
                     "a client module declares {}, which only simulation modules declare",
@@ -617,9 +675,6 @@ pub(crate) fn check(bytes: &[u8], world: World) -> Result<(), LoadError> {
     }
     Ok(())
 }
-
-/// The `vera.notify` section's name (appendix "Custom sections").
-const NOTIFY_SECTION: &str = "vera.notify";
 
 /// `vera.delivery` must hold at least `min_bytes` (one `EventRecord` for a
 /// simulation module, [`crate::client::CLIENT_DELIVERY_MIN`] for a client

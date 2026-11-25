@@ -2209,6 +2209,24 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         ),
         (
             "rules/personal_rules.rs",
+            "set_automation_allowed",
+            "VERA's own switch with no native member: the room switch \"Allow automation\" \
+             (Wasm client modules, RFC 0001 6i), which the app passes in for the next scenario",
+        ),
+        (
+            "sim/ext_modules/rules.rs",
+            "set_automation_allowed",
+            "VERA's own switch with no native member: the loader hands the room's \"Allow \
+             automation\" to the prepared Wasm modules (global AutomationAllowed, RFC 0001 7.8)",
+        ),
+        (
+            "sim/trigger_runtime.rs",
+            "set_client_forwarding",
+            "VERA-only presentation flag with no native member: whether event sites also build \
+             SimEvent payloads for Wasm client modules (sim::ext_modules::client_outbox)",
+        ),
+        (
+            "rules/personal_rules.rs",
             "set_terrain_deformation",
             "VERA's own switch with no native member: the skirmish Game Options' Terrain \
              Deformation box, which the app passes in for the rules the next scenario reads",

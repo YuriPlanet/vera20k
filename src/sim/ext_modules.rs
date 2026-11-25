@@ -30,6 +30,9 @@
 //! - cell and global properties and `find` over cells ([`cells`]);
 //! - superweapon properties and `find` over superweapons ([`supers`]);
 //! - house orders for computer houses ([`orders`]);
+//! - client messages for `on_message` ([`messages`]), notifications
+//!   (`send_notify`) and forwarded simulation events for client modules
+//!   ([`client_outbox`]);
 //! - `rules_get`, and `rules_set` and `on_rules` while the rules are
 //!   processed ([`rules`]).
 //!
@@ -66,18 +69,20 @@ use std::hash::{Hash, Hasher};
 
 use vera20k_wasm_ext::decide::{EVENT_DEFEAT, EVENT_PRODUCTION_ALLOWED};
 use vera20k_wasm_ext::{
-    ActionParams, Area, ClauseSubject, Export, Fault, FindPage, Invalid, Limits, ModuleState,
-    NAME_ACTION_KIND, NAME_ANIM, NAME_COUNTRY, NAME_MODULE_EVENT, NAME_PARTICLE_SYSTEM,
-    NAME_PROJECTILE, NAME_PROPERTY, NAME_STRING, NAME_SUPER_WEAPON, NAME_TEAM_TYPE,
-    NAME_TECHNO_TYPE, NAME_VARIABLE, NAME_VOXEL_ANIM, NAME_WARHEAD, NAME_WEAPON, Order, Query,
-    SCOPE_CELLS, SCOPE_HOUSES, SCOPE_MODIFIERS, SCOPE_OBJECTS, SCOPE_SUPER_WEAPONS, SimHost,
-    SimModule, Status, TABLE_ACTION, TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
+    ActionParams, Area, ClauseSubject, Export, Fault, FindPage, Invalid, Limits,
+    MAX_NOTIFIES_PER_FRAME, ModuleState, NAME_ACTION_KIND, NAME_ANIM, NAME_COUNTRY,
+    NAME_MODULE_EVENT, NAME_NOTIFY, NAME_PARTICLE_SYSTEM, NAME_PROJECTILE, NAME_PROPERTY,
+    NAME_STRING, NAME_SUPER_WEAPON, NAME_TEAM_TYPE, NAME_TECHNO_TYPE, NAME_VARIABLE,
+    NAME_VOXEL_ANIM, NAME_WARHEAD, NAME_WEAPON, Order, Query, SCOPE_CELLS, SCOPE_HOUSES,
+    SCOPE_MODIFIERS, SCOPE_OBJECTS, SCOPE_SUPER_WEAPONS, SimHost, SimModule, Status, TABLE_ACTION,
+    TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
 };
 
 mod actions;
 mod cells;
 mod chains;
 mod claims;
+mod client_outbox;
 mod control;
 mod decide;
 mod events;
@@ -85,6 +90,7 @@ mod held;
 mod ini_names;
 mod ini_start;
 mod ini_triggers;
+mod messages;
 pub(crate) mod modifiers;
 mod orders;
 pub(crate) mod projectiles;
@@ -96,10 +102,13 @@ pub(crate) mod vars;
 mod writes;
 
 pub use actions::{ActionContext, run_action};
+pub(crate) use client_outbox::CLIENT_FORWARDED_EVENTS;
+pub use client_outbox::{ClientNotify, ClientOutbox, ClientSimEvent};
 pub(crate) use decide::CommandAdmission;
 use modifiers::{Modifier, ModifierOp, ModifierStore, Stat};
 pub(crate) use orders::take_due_orders;
 use props::{View, type_property};
+use rules::check_notify_collision;
 pub use rules::{MapUi, PreparedExtModules, WasmPolicy};
 use vars::{FIRST_DECLARED_VAR, VarStore, VarValues};
 
@@ -453,6 +462,20 @@ pub struct ExtModules {
     /// The `Commanded` serials of the current frame ([`orders`]); not
     /// saved, as a save resumes at a frame boundary.
     command_serial: orders::CommandSerial,
+    /// Client messages waiting for `on_message` and the rate counts
+    /// ([`messages`]).
+    messages: messages::ClientMessages,
+    /// (frame, notifications sent) per source, for
+    /// [`MAX_NOTIFIES_PER_FRAME`]; not saved, as a save resumes at a frame
+    /// boundary.
+    notify_count: [(u32, u32); 2],
+    /// What client modules receive ([`client_outbox`]); not saved, not
+    /// hashed.
+    client_outbox: ClientOutbox,
+    /// The room switch "Allow automation", the global `AutomationAllowed`
+    /// (appendix 7.8, RFC 6i): from the room's settings
+    /// (`PersonalRules::automation_allowed`), saved with the match.
+    automation_allowed: bool,
 }
 
 /// What a save holds: the modules, the modifiers and the variable values
@@ -472,6 +495,10 @@ struct SavedExtModules {
     claims: claims::DomainClaims,
     #[serde(default)]
     projectiles: projectiles::ModuleProjectiles,
+    #[serde(default)]
+    messages: messages::ClientMessages,
+    #[serde(default)]
+    automation_allowed: bool,
 }
 
 impl serde::Serialize for ExtModules {
@@ -503,6 +530,8 @@ impl serde::Serialize for ExtModules {
             ini: self.ini.clone(),
             claims: self.claims.clone(),
             projectiles: self.projectiles.clone(),
+            messages: self.messages.clone(),
+            automation_allowed: self.automation_allowed,
         }
         .serialize(serializer)
     }
@@ -519,6 +548,8 @@ impl<'de> serde::Deserialize<'de> for ExtModules {
             ini: saved.ini,
             claims: saved.claims,
             projectiles: saved.projectiles,
+            messages: saved.messages,
+            automation_allowed: saved.automation_allowed,
             ..Self::default()
         };
         modules.vars.values = saved.vars;
@@ -623,11 +654,13 @@ impl ExtModules {
         let claims = (!self.claims.is_empty()).then(|| fnv1a(self.claims.state_bytes()));
         let projectiles =
             (!self.projectiles.is_empty()).then(|| fnv1a(self.projectiles.state_bytes()));
+        let messages = (!self.messages.is_empty()).then(|| fnv1a(self.messages.state_bytes()));
         modules
             .chain(held.then(|| fnv1a(self.held_state_bytes())))
             .chain(ini)
             .chain(claims)
             .chain(projectiles)
+            .chain(messages)
     }
 
     /// The modifiers and declared-variable values as checksum bytes.
@@ -701,7 +734,34 @@ impl ExtModules {
         if !self.projectiles.is_empty() {
             self.projectiles.hash(hasher);
         }
+        if !self.messages.is_empty() {
+            self.messages.hash(hasher);
+        }
+        if self.automation_allowed {
+            b"automation-allowed".hash(hasher);
+        }
     }
+
+    /// The global `AutomationAllowed` (appendix 7.8): whether the room
+    /// allows client modules to play for their player (RFC 6i,
+    /// `client_send_order`).
+    pub fn automation_allowed(&self) -> bool {
+        self.automation_allowed
+    }
+}
+
+/// `lookup(Notify, name)` for the client (`client_lookup`, RFC 0001 section
+/// 10): the ID of a notification name some simulation module of this match
+/// declares in its `vera.notify` (ASCII case-insensitive), `None` for a name
+/// none declares, so a client cannot match an undeclared name by its hash.
+pub fn notify_id(sim: &Simulation, name: &str) -> Option<i32> {
+    sim.ext_modules.slots.iter().find_map(|slot| {
+        slot.module
+            .notify_names()
+            .iter()
+            .find(|(declared, _)| declared.eq_ignore_ascii_case(name))
+            .map(|(_, id)| *id)
+    })
 }
 
 /// 32-bit FNV-1a over `bytes`.
@@ -850,6 +910,7 @@ fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
                 | NAME_ACTION_KIND
                 | NAME_STRING
                 | NAME_MODULE_EVENT
+                | NAME_NOTIFY
         ),
         TABLE_SCOPE => matches!(
             id,
@@ -1236,6 +1297,36 @@ impl SimHost for Host<'_, '_> {
 
     fn order(&mut self, house: i64, order: &Order) -> Result<Status, Invalid> {
         self.queue_order(house, order)
+    }
+
+    /// `send_notify` (RFC 0001 section 10): `to` is a house reference or 0
+    /// for the observers; a house that does not exist is `Gone`. Past
+    /// [`MAX_NOTIFIES_PER_FRAME`] this frame `Refused`. The notification
+    /// goes to the client outbox, never into simulation state.
+    fn send_notify(&mut self, to: i64, id: i32, data: &[u8]) -> Result<Status, Invalid> {
+        if to != 0 && self.house(to)?.is_none() {
+            return Ok(Status::Gone);
+        }
+        let frame = self.sim.session.binary_frame();
+        let source = self.source as usize;
+        let count = &mut self.sim.ext_modules.notify_count[source];
+        if count.0 != frame {
+            *count = (frame, 0);
+        }
+        if count.1 >= MAX_NOTIFIES_PER_FRAME {
+            return Ok(Status::Refused);
+        }
+        count.1 += 1;
+        self.sim
+            .ext_modules
+            .client_outbox
+            .push_notify(ClientNotify {
+                to,
+                source: self.source.into(),
+                id,
+                data: data.to_vec(),
+            });
+        Ok(Status::Ok)
     }
 }
 
@@ -1919,7 +2010,15 @@ impl Simulation {
         bytes: &[u8],
     ) -> Result<(), String> {
         let module = SimModule::load(bytes, source.limits()).map_err(|e| e.to_string())?;
+        for slot in &self.ext_modules.slots {
+            let (first, second) = match slot.source < source {
+                true => (&slot.module, &module),
+                false => (&module, &slot.module),
+            };
+            check_notify_collision(first, second)?;
+        }
         let position = self.insert_ext_slot(source, module, FRAME_BUDGET, SEAT_BUDGET, 0);
+        self.trigger_runtime.set_client_forwarding(true);
         self.init_ext_slot(rules, position)
     }
 
@@ -2026,8 +2125,11 @@ impl Simulation {
         }
         self.ext_modules.map_ui = policy.map_ui;
         self.ext_modules.controller = policy.controller;
+        self.ext_modules.automation_allowed = policy.automation_allowed;
         if !modules.is_empty() {
             self.ext_modules.rules_ini = Some(rules_ini);
+            // Client modules hear the forwarded events ([`client_outbox`]).
+            self.trigger_runtime.set_client_forwarding(true);
         }
         let mut uninitialized = Vec::new();
         for prepared in modules {
@@ -2090,6 +2192,9 @@ impl Simulation {
         self.ext_modules
             .modifiers
             .refresh_all(&mut self.substrate.entities);
+        if !self.ext_modules.slots.is_empty() {
+            self.trigger_runtime.set_client_forwarding(true);
+        }
         Ok(())
     }
 
@@ -2115,8 +2220,9 @@ impl Simulation {
     /// The module phase: modifiers whose time is up expire, timed
     /// conversions whose time is up revert and `Timer` triggers whose
     /// period ends fire, then each enabled module in order
-    /// gets its `on_scenario_start` once, its queued event records
-    /// (`on_events`), then `on_frame`.
+    /// gets its `on_scenario_start` once, its client messages
+    /// (`on_message`, [`messages`]), its queued event records
+    /// (`on_events`), then `on_frame` (RFC section 5).
     pub(crate) fn run_ext_module_phase(
         &mut self,
         rules: &RuleSet,
@@ -2145,6 +2251,7 @@ impl Simulation {
         self.fire_deferred_module_triggers(rules, frame_effects);
         self.poll_module_events(rules, frame_effects);
         self.raise_module_timers(rules, frame_effects);
+        self.ext_modules.messages.prune(frame);
         for index in 0..self.ext_modules.slots.len() {
             if self.ext_modules.slots[index].disabled.is_some() {
                 continue;
@@ -2182,9 +2289,25 @@ impl Simulation {
                     continue;
                 }
             }
-            if let Err(fault) =
-                self.deliver_ext_module_events(rules, overlay_registry, frame_effects, index)
-            {
+            let messaged = match self.deliver_ext_module_messages(
+                rules,
+                overlay_registry,
+                frame_effects,
+                index,
+            ) {
+                Ok(called) => called,
+                Err(fault) => {
+                    self.disable_ext_module(index, Export::Message, fault);
+                    continue;
+                }
+            };
+            if let Err(fault) = self.deliver_ext_module_events(
+                rules,
+                overlay_registry,
+                frame_effects,
+                index,
+                messaged,
+            ) {
                 self.disable_ext_module(index, Export::Events, fault);
                 continue;
             }
@@ -2289,6 +2412,8 @@ impl Simulation {
         let source = slot.source;
         // Its house domain claims; the native AI takes them back (RFC 6i).
         self.ext_modules.claims.release(source);
+        // Its waiting client messages.
+        self.ext_modules.messages.clear(source);
         self.ext_modules.keep_log(reason.clone());
         self.trigger_runtime
             .module_triggers_mut()
@@ -2354,3 +2479,7 @@ mod order_tests;
 #[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_control_tests.rs"]
 mod control_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_message_tests.rs"]
+mod message_tests;

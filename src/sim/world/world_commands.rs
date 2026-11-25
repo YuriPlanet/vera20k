@@ -1140,6 +1140,14 @@ impl Simulation {
                 self.house_cheer(owner, rules, frame_effects);
                 Ok(())
             }
+            // VERA extension: a Wasm client module's message, queued for
+            // its source's `on_message` (`sim::ext_modules::messages`).
+            Command::ModuleMessage { source, data } => {
+                let Some(owner) = self.interner.key_id(command_owner) else {
+                    return Err(CommandRefusal::Other);
+                };
+                self.receive_module_message(owner, *source, data)
+            }
             Command::Destruct => {
                 let Some(owner) = self.interner.key_id(command_owner) else {
                     return Err(CommandRefusal::Other);

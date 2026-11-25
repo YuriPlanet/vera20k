@@ -1604,14 +1604,16 @@ fn load_scenario_ext_modules(
 ) -> Result<crate::sim::ext_modules::PreparedExtModules> {
     let mod_module = crate::sim::ext_modules::PreparedExtModules::read_mod_file(assets)
         .map_err(anyhow::Error::msg)?;
-    crate::sim::ext_modules::PreparedExtModules::load(
+    let mut modules = crate::sim::ext_modules::PreparedExtModules::load(
         owner.selected_rules_root(),
         mod_module.as_deref(),
         map_ini,
         owner.personal_rules().wasm_budget(),
         mod_ai_seats,
     )
-    .map_err(|e| anyhow::anyhow!("Wasm extension module: {e}"))
+    .map_err(|e| anyhow::anyhow!("Wasm extension module: {e}"))?;
+    modules.set_automation_allowed(owner.personal_rules().automation_allowed());
+    Ok(modules)
 }
 
 /// The shared Rules/AI ordering for ordinary Full_Init and its early .SED arm.
