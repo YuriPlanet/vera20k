@@ -7,7 +7,7 @@
 //! `EventClass__BuildMegaMissionEnvelope` `0x004C6860`), so every client
 //! replays exactly the same orders. Admission is the engine's own:
 //! [`crate::sim::passenger::can_enter_transport`] and
-//! [`crate::sim::passenger::PassengerCargo::size_fits_transport`]
+//! [`crate::sim::passenger::PassengerCargo::fits_transport`]
 //! (`UnitClass::Receive_Radio @ 0x00737430`, message 0x0F). Nothing here
 //! mutates simulation state.
 //!
@@ -36,7 +36,7 @@ const MAX_ORDERS: usize = 512;
 const LEPTONS_PER_CELL: i64 = 256;
 
 /// A selected object that may board: its type groups it for balance, and its
-/// `Size=` is the capacity unit the carrier's cargo measures.
+/// `Size=` is checked against the carrier's individual size limit.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PassengerFact {
     pub id: u64,
@@ -54,6 +54,7 @@ pub(crate) struct TransportFact {
     pub capacity: i32,
     /// binary64 `SizeLimit=`.
     pub size_limit: f64,
+    pub by_size: bool,
     /// A planning copy, updated through the authoritative cargo owner.
     pub cargo: PassengerCargo,
     pub pos: [i32; 2],
@@ -65,21 +66,22 @@ fn dist_sq(a: [i32; 2], b: [i32; 2]) -> i64 {
     dx * dx + dy * dy
 }
 
-/// Whether this pair is in range, fits the supplied planned total and passes
+/// Whether this pair is in range, fits the supplied planned hold and passes
 /// the engine's live admission query. Self-boarding is never planned.
 fn admits(
     passenger: &PassengerFact,
     transport: &TransportFact,
-    total: i32,
+    cargo: &PassengerCargo,
     eligible: &impl Fn(u64, u64) -> bool,
 ) -> bool {
     passenger.id != transport.id
         && dist_sq(passenger.pos, transport.pos) <= (SEARCH_RANGE_CELLS * LEPTONS_PER_CELL).pow(2)
-        && PassengerCargo::size_fits_transport(
-            total,
+        && PassengerCargo::fits_transport(
+            Some(cargo),
             passenger.size,
             transport.capacity,
             transport.size_limit,
+            transport.by_size,
         )
         && eligible(passenger.id, transport.id)
 }
@@ -94,7 +96,7 @@ fn nearest_eligible_dist(
 ) -> i64 {
     transports
         .iter()
-        .filter(|transport| admits(passenger, transport, transport.cargo.total_size(), eligible))
+        .filter(|transport| admits(passenger, transport, &transport.cargo, eligible))
         .map(|transport| dist_sq(passenger.pos, transport.pos))
         .min()
         .unwrap_or(i64::MAX)
@@ -178,7 +180,7 @@ pub(crate) fn assign(
             let mut best_distance = 0_i64;
             for (slot, transport) in transports.iter().enumerate() {
                 if used_as_passenger.contains(&transport.id)
-                    || !admits(passenger, transport, cargo[slot].total_size(), &eligible)
+                    || !admits(passenger, transport, &cargo[slot], &eligible)
                 {
                     continue;
                 }
@@ -300,6 +302,7 @@ fn transport_fact(
         id: entity.stable_id(),
         capacity: object.passengers,
         size_limit: object.size_limit,
+        by_size: object.vehicle_cargo_by_size(),
         cargo,
         pos,
     })

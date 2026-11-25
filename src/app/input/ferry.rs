@@ -488,6 +488,7 @@ impl FerryState {
                 return false;
             };
             let cargo = entity.passenger_role().cargo();
+            let by_size = object.vehicle_cargo_by_size();
             // A unit the player clicked aboard shows as the transport's
             // boarding contact.
             for id in entity.seldom.radio_contacts.iter_live() {
@@ -524,7 +525,8 @@ impl FerryState {
                 cell: (entity.position.rx(), entity.position.ry()),
                 idle: at_rest(entity),
                 passengers: cargo.map_or(0, PassengerCargo::count),
-                full: cargo.map_or(0, PassengerCargo::total_size) >= object.passengers,
+                full: cargo.map_or(0, |cargo| cargo.occupied_capacity(by_size))
+                    >= object.passengers,
                 boarding,
                 heading: match entity.navigation.nav_com() {
                     Some(crate::sim::components::NavTargetRef::Cell { rx, ry }) => Some((rx, ry)),
@@ -845,13 +847,15 @@ fn board_orders(
     }
     waiting.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)));
 
+    let by_size = transport_object.vehicle_cargo_by_size();
     let mut board = Vec::new();
     for (_, id, size) in waiting {
-        if PassengerCargo::size_fits_transport(
-            planned.total_size(),
+        if PassengerCargo::fits_transport(
+            Some(&planned),
             size,
             transport_object.passengers,
             transport_object.size_limit,
+            by_size,
         ) && can_enter_transport(sim, rules, id, route.transport)
         {
             planned.board_forced_chain(&[(id, size)]);

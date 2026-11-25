@@ -3,7 +3,7 @@
 
 use crate::map::entities::EntityCategory;
 use crate::rules::{ares_driver::OperatorRequirement, ruleset::RuleSet};
-use crate::sim::{mission::MissionType, world::Simulation};
+use crate::sim::{game_entity::GameEntity, mission::MissionType, world::Simulation};
 
 mod driver_kill;
 
@@ -105,8 +105,9 @@ impl CapturedDriver {
 }
 
 impl Simulation {
-    /// Infantry WhatAction51E7A6's human-house prefix, then the installed
-    /// Ares hook10049690: successful admission returns Capture9 at51E84B.
+    /// Infantry WhatAction51E7A6's human-house prefix and the Ares 3.0p1
+    /// hook `0x51E7BF -> 1004A2E0`: successful admission returns Capture9
+    /// at51E84B.
     /// Command producers and cursor feedback share this read-only action.
     pub fn ares_vehicle_capture_action(
         &self,
@@ -115,16 +116,45 @@ impl Simulation {
         target_id: u64,
         rules: &RuleSet,
     ) -> bool {
-        self.substrate.entities.get(actor_id).is_some_and(|actor| {
-            control.can_order(actor.owner())
+        let (Some(actor), Some(target)) = (
+            self.substrate.entities.get(actor_id),
+            self.substrate.entities.get(target_id),
+        ) else {
+            return false;
+        };
+        // The cursor hook asks the target's vt+0x80 before capture admission.
+        // The shared admission already asks it for other classes, but accepts
+        // Units with NonVehicle=yes for scripted capture.
+        if !control.can_order(actor.owner())
+            || (target.category() == EntityCategory::Unit
                 && self
-                    .ares_vehicle_capture_mode(actor_id, target_id, rules)
-                    .is_some()
-        })
+                    .entity_object_type(target, rules)
+                    .is_some_and(|object| object.non_vehicle))
+        {
+            return false;
+        }
+        self.ares_vehicle_capture_mode(actor_id, target_id, rules)
+            .is_some()
     }
 
-    /// Installed Ares TechnoExt::FindHijackTarget10046950..10046AE0,
-    /// reached by Foot4DFE00's hook10049130 and Script67's dispatcher.
+    /// Ares 3.0p1 FindHijackTarget `0x100474C0` sets both seek flags when
+    /// it finds a vehicle and queues Capture. The flags let an explicit
+    /// Script67 order finish through the same receivers in a stock-way game.
+    pub(crate) fn following_script_vehicle_capture(
+        &self,
+        actor: &GameEntity,
+        rules: &RuleSet,
+    ) -> bool {
+        actor.seldom.ares.vehicle_driver.vehicle_seek()
+            && actor.seldom.building_entry.should_enter_nearest_occupiable()
+            && actor.mission.current().known() == Some(MissionType::Capture)
+            && self
+                .entity_object_type(actor, rules)
+                .is_some_and(|ty| ty.vehicle_thief || ty.driver_rules().can_drive())
+    }
+
+    /// Ares 3.0p1 TechnoExt::FindHijackTarget `0x100474C0`, reached by
+    /// Foot4DFE00's hook `0x10049D80` and Script67's dispatcher.
     pub(crate) fn ares_enter_nearest_vehicle(
         &mut self,
         actor_id: u64,
@@ -581,6 +611,49 @@ impl Simulation {
 mod tests {
     use super::*;
     use crate::sim::{house_state::HouseState, world::FrameEffects};
+
+    #[test]
+    fn ares_p1_non_vehicle_click_keeps_the_passenger_entry_action() {
+        use crate::sim::world::{EntryBaseAction, EntryClickAction};
+
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+            "[Countries]\n0=Americans\n[Americans]\nCanBeDriven=yes\n\
+             [InfantryTypes]\n2=DRIVER\n[VehicleTypes]\n0=CARRIER\n1=HOST\n\
+             [DRIVER]\nCanDrive=yes\nStrength=75\nSpeed=4\nSpeedType=Foot\n\
+             Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+             [CARRIER]\nNonVehicle=yes\nPassengers=2\nSizeLimit=2\nStrength=300\nSpeed=6\n\
+             Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+             [HOST]\nStrength=300\nSpeed=6\n\
+             Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+        );
+        let owner = sim.interner.intern("Americans");
+        sim.houses
+            .register(HouseState::new(owner, 0, None, true, 0, 10));
+        sim.session.set_current_house_for_test(Some(owner));
+        let driver = sim
+            .spawn_object("DRIVER", "Americans", 15, 15, 0, &rules)
+            .unwrap();
+        let carrier = sim
+            .spawn_object("CARRIER", "Americans", 16, 15, 0, &rules)
+            .unwrap();
+        let host = sim
+            .spawn_object("HOST", "Americans", 17, 15, 0, &rules)
+            .unwrap();
+        let control = sim.control_projection();
+
+        assert_eq!(
+            sim.ares_vehicle_capture_mode(driver, carrier, &rules),
+            Some(VehicleCaptureMode::Drive),
+            "shared scripted capture admission retains the Unit case"
+        );
+        assert!(sim.ares_vehicle_capture_action(&control, driver, host, &rules));
+        assert_eq!(
+            sim.entry_click_action(driver, carrier, EntryBaseAction::Select, &rules),
+            Some(EntryClickAction::Enter)
+        );
+        assert!(!sim.ares_vehicle_capture_action(&control, driver, carrier, &rules));
+    }
 
     #[test]
     fn ares_vehicle_capture_admission_distinguishes_theft_and_civilian_driving() {

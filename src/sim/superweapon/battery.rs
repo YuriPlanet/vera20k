@@ -7,7 +7,8 @@
 //! Initialize `0x1006ECA0` (AITargeting LowPower), LoadFromINI `0x1006ECC0`
 //! (Action=None and UseChargeDrain forced every pass). The charge-drain
 //! ClickFire (`0x10035130`), drain expiry (`0x10035730`), loss
-//! (`0x10035610`) and hold (`0x10035750`) owners in `fire`/`mod` call these.
+//! (`0x10035610`) and hold (3.0p1 `0x10036190`) owners in `fire`/`mod` call these.
+//! The 3.0p1 Activate grant check (`0x1006FBD5`) runs in `fire`.
 //! The House power owner keeps the lent state ([`AresHousePower`]); its
 //! consumers are the power assessment, operational and overpower tests and
 //! the radar's low-power arm.
@@ -23,7 +24,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
 
 /// SW_Battery::Activate `0x1006EBD0`: count the battery, add its power and
-/// append its two lists, then dirty the House's power. Always activates.
+/// append its two lists, then dirty the House's power after launch admission.
 pub(super) fn activate(
     sim: &mut Simulation,
     rules: &RuleSet,

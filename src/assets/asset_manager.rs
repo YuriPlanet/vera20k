@@ -54,6 +54,15 @@ struct LooseAsset {
 }
 
 impl LooseAsset {
+    fn new(path: PathBuf) -> Self {
+        Self {
+            source_name: format!("loose:{}", path.display()),
+            path,
+            bytes: OnceLock::new(),
+            installation_copy: None,
+        }
+    }
+
     /// Borrowed asset APIs need stable storage, but loose files may be rewritten
     /// by profile/SED/preview owners. A retained mapping prevents Windows writes
     /// and cannot safely coexist with truncation on other platforms. Snapshot
@@ -348,6 +357,8 @@ pub struct AssetManager {
     /// Payloads are owned snapshots at first lookup (including failed reads).
     /// Mutable profile/seed/preview consumers read the filesystem directly.
     loose_files: HashMap<String, LooseAsset>,
+    /// Files below the loose roots, resolved on demand by INI includes.
+    loose_includes: Mutex<HashMap<String, Arc<LooseAsset>>>,
     /// Selected at AudioSystem::Init, before later bulk/theater mounts.
     audio_pairs: Vec<SelectedAudioPair>,
     /// Frozen root-file policy shared by Rules, Art, AI and tooling.
@@ -390,6 +401,12 @@ impl Clone for AssetManager {
                     .clone(),
             ),
             loose_files: self.loose_files.clone(),
+            loose_includes: Mutex::new(
+                self.loose_includes
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .clone(),
+            ),
             audio_pairs: self.audio_pairs.clone(),
             ini_roots: self.ini_roots.clone(),
             archive_names: self.archive_names.clone(),
@@ -689,6 +706,7 @@ impl AssetManager {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files,
+            loose_includes: Mutex::new(HashMap::new()),
             audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             archive_names: Default::default(),
@@ -1101,6 +1119,33 @@ impl AssetManager {
         Ok(self
             .resolve_file_with_limit(name, Some(maximum))?
             .map(ResolvedAssetFile::entry))
+    }
+
+    /// The Ares P1 CCINIClass_ReadCCFile2 hook at 0x474314 passes the listed
+    /// path unchanged to CCFile (0x10065684..0x100656B0). Resolve relative
+    /// loose include paths within the same mod/install roots before MIX.
+    pub(crate) fn with_include_file_bounded<T>(
+        &self,
+        listed_name: &str,
+        name: &str,
+        maximum: usize,
+        read: impl FnOnce(AssetResolutionRef<'_>) -> T,
+    ) -> Result<Option<T>, AssetError> {
+        if name.contains('/')
+            && !listed_name.starts_with(['/', '\\'])
+            && !listed_name.contains(':')
+            && !name.split('/').any(|part| part == "..")
+            && let Some(loose) = self.loose_include_asset(name)
+            && let Some(bytes) = loose.bytes_bounded(maximum)?
+        {
+            return Ok(Some(read(AssetResolutionRef {
+                bytes,
+                source_archive: &loose.source_name,
+                entry_id: mix_hash(name),
+            })));
+        }
+        self.resolve_ref_bounded(name, maximum)
+            .map(|source| source.map(read))
     }
 
     /// Copies supplied by the active mod, loose first then in registration
@@ -2152,15 +2197,7 @@ impl AssetManager {
                 continue;
             }
 
-            files.insert(
-                key,
-                LooseAsset {
-                    path: path.clone(),
-                    source_name: format!("loose:{}", path.display()),
-                    bytes: OnceLock::new(),
-                    installation_copy: None,
-                },
-            );
+            files.insert(key, LooseAsset::new(path));
         }
 
         Ok(files)
@@ -2169,6 +2206,22 @@ impl AssetManager {
     fn loose_asset(&self, name: &str) -> Option<&LooseAsset> {
         let key = loose_lookup_key(name)?;
         self.loose_files.get(&key)
+    }
+
+    fn loose_include_asset(&self, name: &str) -> Option<Arc<LooseAsset>> {
+        let mut includes = self
+            .loose_includes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(asset) = includes.get(name) {
+            return Some(Arc::clone(asset));
+        }
+        let path = self
+            .install_roots()
+            .find_map(|root| loose_include_path(root, name))?;
+        let asset = Arc::new(LooseAsset::new(path));
+        includes.insert(name.to_owned(), Arc::clone(&asset));
+        Some(asset)
     }
 
     /// Unreadable catalogued files must not hide a readable MIX fallback.
@@ -2223,6 +2276,21 @@ fn loose_lookup_key(name: &str) -> Option<String> {
     path.file_name()
         .and_then(OsStr::to_str)
         .map(str::to_ascii_lowercase)
+}
+
+fn loose_include_path(root: &Path, name: &str) -> Option<PathBuf> {
+    use crate::util::{case_insensitive_path, file_system};
+
+    let canonical_root = file_system::canonicalize(root).ok()?;
+    let mut path = canonical_root.clone();
+    for part in name.split('/') {
+        let matched = case_insensitive_path::find(&path, part)?;
+        path = file_system::canonicalize(&matched).ok()?;
+        if !path.starts_with(&canonical_root) {
+            return None;
+        }
+    }
+    file_system::is_file(&path).then_some(path)
 }
 
 /// Whether a retail directory listing keeps `path`: a regular file without the
@@ -3004,6 +3072,7 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
+            loose_includes: Mutex::new(HashMap::new()),
             audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             archive_names: Default::default(),
@@ -3091,6 +3160,7 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
+            loose_includes: Mutex::new(HashMap::new()),
             audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             archive_names: Default::default(),
@@ -3168,6 +3238,7 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
+            loose_includes: Mutex::new(HashMap::new()),
             audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             archive_names: Default::default(),
@@ -3213,6 +3284,7 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
+            loose_includes: Mutex::new(HashMap::new()),
             audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             archive_names: Default::default(),
@@ -3256,6 +3328,7 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
+            loose_includes: Mutex::new(HashMap::new()),
             audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             archive_names: Default::default(),
@@ -3300,6 +3373,7 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
+            loose_includes: Mutex::new(HashMap::new()),
             audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             archive_names: Default::default(),
@@ -3331,6 +3405,7 @@ mod tests {
             archive_catalog: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
+            loose_includes: Mutex::new(HashMap::new()),
             loose_files: HashMap::from([(
                 "ra2md.csf".to_string(),
                 LooseAsset {
@@ -3400,6 +3475,7 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
+            loose_includes: Mutex::new(HashMap::new()),
             audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             archive_names: Default::default(),

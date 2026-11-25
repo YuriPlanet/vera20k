@@ -20,6 +20,7 @@ it: ported (the Rust cites both addresses next to the code), equivalent
 | `0x7187DA` | `10037BC0` | TeleportLocomotionClass_Unwarp_PreventSelfCrush | `sim::movement::teleport_chrono` |
 | `0x7188F2` | `10037BE0` | TeleportLocomotionClass_Unwarp_SinkJumpJets | same |
 | `0x446AAF` | `10036860` | BuildingClass_Place_SkipFreeUnits | `sim::building_art` (Grand_Opening) |
+| `0x4444B3` | `100422E0` | BuildingClass_KickOutUnit_NoAlternateKickout | 3.0p1 busy exit guard in `sim::production::production_queue` |
 | `0x4444E2` | `100415E0` | BuildingClass_KickOutUnit_FindAlternateKickout | `sim::production::production_queue` |
 | `0x65DBB3` | `1003A340` | TeamTypeClass_CreateInstance_Plane | `sim::team_script_vm::reinforcements` |
 | `0x469EBA` | `1001A090` | BulletClass_DetonateAt_Splits | `sim::combat::airburst` (`ares_emit`) |

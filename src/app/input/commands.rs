@@ -101,7 +101,11 @@ pub(crate) fn cancel_build_by_type(state: &mut AppState, type_id: &str, all: boo
 }
 
 /// Stable id of the visible object selected by the tactical object picker.
-fn visible_object_under_point(state: &AppState, world_x: f32, world_y: f32) -> Option<u64> {
+pub(super) fn visible_object_under_point(
+    state: &AppState,
+    world_x: f32,
+    world_y: f32,
+) -> Option<u64> {
     let sim = state
         .match_state
         .sim_runtime
@@ -121,9 +125,12 @@ fn visible_object_under_point(state: &AppState, world_x: f32, world_y: f32) -> O
 /// SuperWeaponType6CEF80's pointer gate, shared by the cursor and release.
 /// Type10 accepts only the picked Building whose owner considers the current
 /// player allied (original4F9A50, called with the target House as ECX).
+/// Ares 3.0p1 Protect::CanFireAt (0x10075AC0, comparison at 0x10075B1A)
+/// rejects a building with ForceShield.Modifier <= 0 on manual targeting.
 /// The native launch body and non-pointer producers do not have this gate.
 fn super_weapon_pointer_target_is_valid(
     sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
     viewer: InternedId,
     kind: crate::rules::superweapon_type::SuperWeaponKind,
     picked: Option<u64>,
@@ -140,6 +147,10 @@ fn super_weapon_pointer_target_is_valid(
                     sim.interner().resolve(target.owner()),
                     sim.interner().resolve(viewer),
                 )
+                && sim
+                    .interner()
+                    .object_type_in_category(target.type_ref(), target.category().into(), rules)
+                    .is_none_or(|object| !object.force_shield_pointer_blocked())
         })
 }
 
@@ -170,6 +181,7 @@ pub(crate) fn super_weapon_pointer_target_at_cursor_is_valid(
     );
     super_weapon_pointer_target_is_valid(
         &runtime.simulation,
+        &runtime.resources.rules,
         viewer,
         sw.kind,
         visible_object_under_point(state, world.0, world.1),
@@ -603,9 +615,7 @@ pub(crate) enum PlaceAction<'a> {
 /// above `SuperWeaponDisallowed` (0x7E) names its current type, the armed one
 /// (resuming at `0x4AC21C`); a stock action names the armed type when it is
 /// that type's `Action=` (`+0xBC`); anything else names none (`0x4AC294`). It
-/// is superweapon code, so it follows [`RuleSet::ares_form`].
-///
-/// [`RuleSet::ares_form`]: crate::rules::ruleset::RuleSet::ares_form
+/// also applies when the armed definition enables its own extension rules.
 pub(crate) fn special_place_type<'a>(
     rules: &'a crate::rules::ruleset::RuleSet,
     armed: &'a str,
@@ -613,10 +623,17 @@ pub(crate) fn special_place_type<'a>(
 ) -> Option<&'a str> {
     match action {
         PlaceAction::Ares => Some(armed),
-        PlaceAction::Stock(action) if rules.ares_form() => rules
+        PlaceAction::Stock(action)
+            if rules.ares_form()
+                || rules
+                    .super_weapon(armed)
+                    .is_some_and(|sw| sw.uses_extension_rules(rules)) =>
+        {
+            rules
             .super_weapon(armed)
             .is_some_and(|sw| sw.has_action(action))
-            .then_some(armed),
+            .then_some(armed)
+        }
         PlaceAction::Stock(action) => {
             crate::sim::superweapon::first_super_type_with_action(rules, action)
         }

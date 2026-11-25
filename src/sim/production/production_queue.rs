@@ -525,6 +525,17 @@ fn exit_land(
         .known()
         == Some(crate::sim::mission::MissionType::Unload);
     if busy {
+        let Some(producer_object) = sim.object_type(producer_type, rules) else {
+            return BuildingExit::Failed;
+        };
+        // Ares 3.0p1 BuildingClass_KickOutUnit_NoAlternateKickout
+        // (`0x4444B3 -> 100422E0`) returns TryLater at 0x4452C5 for a
+        // non-factory or a CloningFacility instead of moving the output.
+        if producer_object.factory_type().is_none()
+            || producer_object.ares_production().cloning_facility()
+        {
+            return BuildingExit::TryLater;
+        }
         //4444B3..44451F walks the selected producer's House+68 in order:
         //identical BuildingType, another receiver, effective Guard5 and
         //Building+524 NULL. It calls the first eligible receiver once;
@@ -534,16 +545,15 @@ fn exit_land(
         // the producer's `Factory=` and `Naval=` and the product
         // `CanBeBuiltAt` it.
         let ares_types = if rules.ares_form() {
-            let producer = sim.object_type(producer_type, rules);
-            let product = sim
+            let Some(product) = sim
                 .substrate
                 .entities
                 .get(stable_id)
-                .and_then(|entity| sim.object_type(entity.type_ref(), rules));
-            let (Some(producer), Some(product)) = (producer, product) else {
+                .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+            else {
                 return BuildingExit::Failed;
             };
-            Some((producer, product))
+            Some((producer_object, product))
         } else {
             None
         };

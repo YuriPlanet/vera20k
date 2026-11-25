@@ -424,7 +424,7 @@ fn admit_bullet(
             .admitted_spawns
             .push((bullet_id, delivery.inviso, spawn));
     }
-    if rules.ares() && techno_fire {
+    if techno_fire {
         world.ares_fire_at_firestorm(bullet_id, bullet.origin, bullet.target_position, rules);
     }
     if delivery.inviso {
@@ -439,10 +439,12 @@ fn admit_bullet(
         );
         // Ares 1001A940 (hook 0x4688BD): a firestorm wall on the way burns
         // the bullet before the obstacle walk.
+        if world.ares_firestorm.any_active()
+            && world.ares_inviso_firestorm(bullet_id, placement, rules)
+        {
+            return false;
+        }
         let placement = if rules.ares() {
-            if world.ares_inviso_firestorm(bullet_id, placement, rules) {
-                return false;
-            }
             world.ares_inviso_obstacle(bullet_id, placement, rules)
         } else {
             placement

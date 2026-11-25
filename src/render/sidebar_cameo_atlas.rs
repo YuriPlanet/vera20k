@@ -37,9 +37,7 @@ pub struct SidebarCameoEntry {
 
 pub struct SidebarCameoAtlas {
     pub texture: BatchTexture,
-    entries: HashMap<String, SidebarCameoEntry>,
-    /// Each type's `AltCameo=` image that loaded, by type id.
-    alt_entries: HashMap<String, SidebarCameoEntry>,
+    techno_entries: HashMap<String, TechnoCameos<SidebarCameoEntry>>,
     /// Per-SuperWeaponType icons, independent of object IDs and filenames.
     superweapon_entries: HashMap<String, SidebarCameoEntry>,
     /// The atlas image and its cameos, kept for VERA's smooth sidebar
@@ -75,33 +73,81 @@ impl SidebarCameoAtlas {
         })
     }
 
-    pub fn get(&self, type_id: &str) -> Option<&SidebarCameoEntry> {
-        crate::util::native_string::with_ascii_uppercase(type_id, |key| self.entries.get(key))
-    }
-
     /// Loaded-art admission for the shared alternate-cameo selector.
     pub fn has_alternate(&self, type_id: &str) -> bool {
         crate::util::native_string::with_ascii_uppercase(type_id, |key| {
-            self.alt_entries.contains_key(key)
+            self.techno_entries
+                .get(key)
+                .is_some_and(TechnoCameos::has_sidebar_alternate)
         })
     }
 
-    /// The cameo `TechnoTypeClass::GetCameo @ 0x00712040` returns: the
-    /// type's `AltCameo=` image when `alt` holds and it loaded
-    /// (`pAltCameo != NULL`), else its plain cameo.
+    /// The sidebar's ordinary or alternate cameo, including its PCX overrides.
     pub fn cameo(&self, type_id: &str, alt: bool) -> Option<&SidebarCameoEntry> {
         crate::util::native_string::with_ascii_uppercase(type_id, |key| {
-            alt.then(|| self.alt_entries.get(key))
-                .flatten()
-                .or_else(|| self.entries.get(key))
+            self.techno_entries.get(key)?.sidebar(alt)
         })
+    }
+
+    pub(crate) fn factory_cameo(&self, type_id: &str, alt: bool) -> Option<&SidebarCameoEntry> {
+        crate::util::native_string::with_ascii_uppercase(type_id, |key| {
+            self.techno_entries.get(key)?.factory(alt)
+        })
+    }
+}
+
+struct TechnoCameos<T> {
+    ordinary: Option<T>,
+    ordinary_is_pcx: bool,
+    promoted_pcx: Option<T>,
+    alternate_shp: Option<T>,
+}
+
+impl<T> Default for TechnoCameos<T> {
+    fn default() -> Self {
+        Self {
+            ordinary: None,
+            ordinary_is_pcx: false,
+            promoted_pcx: None,
+            alternate_shp: None,
+        }
+    }
+}
+
+impl<T> TechnoCameos<T> {
+    fn has_sidebar_alternate(&self) -> bool {
+        self.ordinary_is_pcx || self.promoted_pcx.is_some() || self.alternate_shp.is_some()
+    }
+
+    fn sidebar(&self, alt: bool) -> Option<&T> {
+        if alt && let Some(pcx) = &self.promoted_pcx {
+            return Some(pcx);
+        }
+        self.factory(alt)
+    }
+
+    /// Ares 3.0p1 BuildingClass_DrawVisible (0x10016254, 0x10016381) first
+    /// checks the ordinary PCX surface, then calls TechnoTypeClass::GetCameo
+    /// (0x00712040) for the viewer's ordinary or alternate SHP.
+    /// The GetCameo hook (0x1005F270) admits promoted PCX for the alternate
+    /// test at 0x1003E228, then returns the alternate SHP pointer at 0x1005F29E.
+    fn factory(&self, alt: bool) -> Option<&T> {
+        if alt
+            && !self.ordinary_is_pcx
+            && (self.alternate_shp.is_some() || self.promoted_pcx.is_some())
+        {
+            return self.alternate_shp.as_ref();
+        }
+        self.ordinary.as_ref()
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CameoKind {
     Ordinary,
-    Promoted,
+    OrdinaryPcx,
+    PromotedPcx,
+    AlternateShp,
     SuperWeapon,
 }
 
@@ -135,7 +181,7 @@ pub fn build_sidebar_cameo_atlas(
     let atlas = pack_cameos(gpu, batch, &rendered)?;
     log::info!(
         "Sidebar cameo atlas built: {} entries, {}x{} px",
-        atlas.entries.len() + atlas.superweapon_entries.len(),
+        atlas.techno_entries.len() + atlas.superweapon_entries.len(),
         atlas.texture.width,
         atlas.texture.height
     );
@@ -156,12 +202,12 @@ fn collect_sidebar_cameos(
         .chain(rules.aircraft_ids.iter());
 
     for type_id in type_ids {
-        if let Some(cameo) = render_cameo(type_id, asset_manager, rules, palette) {
-            rendered.push(cameo);
-        }
-        if let Some(cameo) = render_alt_cameo(type_id, asset_manager, rules, palette) {
-            rendered.push(cameo);
-        }
+        let cameos = render_techno_cameos(type_id, asset_manager, rules, palette);
+        rendered.extend(
+            [cameos.ordinary, cameos.promoted_pcx, cameos.alternate_shp]
+                .into_iter()
+                .flatten(),
+        );
     }
 
     // Ares1005E410 selects a surface owned by this SuperWeaponType's extension.
@@ -288,8 +334,9 @@ fn render_cameo(
         && let [Some(name), _] = rules
             .art()
             .resolve_declared_pcx_cameos(type_id, &rules_image)
-        && let Some(cameo) = render_pcx_cameo(type_id, name, asset_manager)
+        && let Some(mut cameo) = render_pcx_cameo(type_id, name, asset_manager)
     {
+        cameo.kind = CameoKind::OrdinaryPcx;
         return Some(cameo);
     }
     let custom = if ares {
@@ -338,45 +385,64 @@ fn render_placeholder_cameo(
 /// The stock placeholder cameo (`0x008204FC`).
 const XXICON: &str = "XXICON.SHP";
 
-/// A type's `AltCameo=` image: `<AltCameo>.SHP`, read from the type's image
-/// section only (`TechnoTypeClass::ReadINI`, section `+0x1F8` at
-/// `0x00715A73`), with no fallback when it is missing.
-fn render_alt_cameo(
+fn render_techno_cameos(
     type_id: &str,
     asset_manager: &AssetManager,
     rules: &RuleSet,
     palette: &Palette,
-) -> Option<RenderedCameo> {
-    let rules_image = rules
-        .object(type_id)
-        .map(|obj| obj.image.clone())
-        .unwrap_or_else(|| type_id.to_string());
-    // Ares3.0 Cameos1005E430..1005E470: use promoted PCX only if loaded;
-    // otherwise the ordinary PCX still takes precedence over an AltCameo SHP.
-    let ares = rules.ares();
-    if ares {
-        let [normal, promoted] = rules
-            .art()
-            .resolve_declared_pcx_cameos(type_id, &rules_image);
-        for name in [promoted, normal].into_iter().flatten() {
-            if let Some(mut cameo) = render_pcx_cameo(type_id, name, asset_manager) {
-                cameo.kind = CameoKind::Promoted;
-                return Some(cameo);
-            }
+) -> TechnoCameos<RenderedCameo> {
+    let ordinary = render_cameo(type_id, asset_manager, rules, palette);
+    let ordinary_is_pcx = ordinary
+        .as_ref()
+        .is_some_and(|cameo| cameo.kind == CameoKind::OrdinaryPcx);
+    let rules_image = rules.object(type_id).map_or(type_id, |obj| &obj.image);
+    // Ares 3.0 Cameos 1005E430..1005E470 selects promoted PCX, ordinary
+    // PCX, then the legacy alternate SHP. The factory only uses the last
+    // two, so keep the SHP when promoted PCX is the sole loaded PCX.
+    let promoted_pcx = (|| {
+        if !rules.ares() {
+            return None;
         }
-    }
-    let custom = if ares {
-        techno_cameo_palette(type_id, &rules_image, rules, asset_manager)
-    } else {
+        let [_, promoted] = rules
+            .art()
+            .resolve_declared_pcx_cameos(type_id, rules_image);
+        let mut cameo = render_pcx_cameo(type_id, promoted?, asset_manager)?;
+        cameo.kind = CameoKind::PromotedPcx;
+        Some(cameo)
+    })();
+    let alternate_shp = if ordinary_is_pcx {
         None
+    } else {
+        render_alt_cameo(type_id, rules_image, asset_manager, rules, palette)
     };
+    TechnoCameos {
+        ordinary,
+        ordinary_is_pcx,
+        promoted_pcx,
+        alternate_shp,
+    }
+}
+
+/// `TechnoTypeClass::ReadINI` (0x00715A73) reads `<AltCameo>.SHP` from
+/// the type's image section.
+fn render_alt_cameo(
+    type_id: &str,
+    rules_image: &str,
+    asset_manager: &AssetManager,
+    rules: &RuleSet,
+    palette: &Palette,
+) -> Option<RenderedCameo> {
+    let custom = rules
+        .ares()
+        .then(|| techno_cameo_palette(type_id, rules_image, rules, asset_manager))
+        .flatten();
     let palette = custom.as_ref().unwrap_or(palette);
     let alt_cameo = rules
         .art()
-        .resolve_declared_alt_cameo_id(type_id, &rules_image)?;
+        .resolve_declared_alt_cameo_id(type_id, rules_image)?;
     let shp_name = format!("{alt_cameo}.SHP");
     let mut cameo = render_cameo_file(type_id, &shp_name, asset_manager, palette)?;
-    cameo.kind = CameoKind::Promoted;
+    cameo.kind = CameoKind::AlternateShp;
     log::debug!("Sidebar alt cameo {} loaded from {}", type_id, shp_name);
     Some(cameo)
 }
@@ -819,8 +885,7 @@ fn pack_cameos(
     let mut sharp = vec![false; (atlas_width * atlas_height) as usize];
     let mut pieces = Vec::with_capacity(pictures.len());
     let mut origins = vec![[0u32; 2]; pictures.len()];
-    let mut entries = HashMap::with_capacity(cameos.len());
-    let mut alt_entries = HashMap::new();
+    let mut techno_entries = HashMap::<_, TechnoCameos<_>>::new();
     let mut superweapon_entries = HashMap::new();
     let aw = atlas_width as f32;
     let ah = atlas_height as f32;
@@ -844,27 +909,35 @@ fn pack_cameos(
     }
     for (cameo, &picture) in cameos.iter().zip(&picture_of) {
         let [px, py] = origins[picture];
-        let target = match cameo.kind {
-            CameoKind::Ordinary => &mut entries,
-            CameoKind::Promoted => &mut alt_entries,
-            CameoKind::SuperWeapon => &mut superweapon_entries,
+        let entry = SidebarCameoEntry {
+            uv_origin: [px as f32 / aw, py as f32 / ah],
+            uv_size: [cameo.width as f32 / aw, cameo.height as f32 / ah],
+            pixel_size: [cameo.width as f32, cameo.height as f32],
+            canvas_size: [cameo.canvas_width as f32, cameo.canvas_height as f32],
+            crop_origin: [cameo.crop_x as f32, cameo.crop_y as f32],
         };
-        target.insert(
-            cameo.type_id.clone(),
-            SidebarCameoEntry {
-                uv_origin: [px as f32 / aw, py as f32 / ah],
-                uv_size: [cameo.width as f32 / aw, cameo.height as f32 / ah],
-                pixel_size: [cameo.width as f32, cameo.height as f32],
-                canvas_size: [cameo.canvas_width as f32, cameo.canvas_height as f32],
-                crop_origin: [cameo.crop_x as f32, cameo.crop_y as f32],
-            },
-        );
+        let type_id = cameo.type_id.clone();
+        match cameo.kind {
+            CameoKind::Ordinary | CameoKind::OrdinaryPcx => {
+                let cameos = techno_entries.entry(type_id).or_default();
+                cameos.ordinary = Some(entry);
+                cameos.ordinary_is_pcx = cameo.kind == CameoKind::OrdinaryPcx;
+            }
+            CameoKind::PromotedPcx => {
+                techno_entries.entry(type_id).or_default().promoted_pcx = Some(entry);
+            }
+            CameoKind::AlternateShp => {
+                techno_entries.entry(type_id).or_default().alternate_shp = Some(entry);
+            }
+            CameoKind::SuperWeapon => {
+                superweapon_entries.insert(type_id, entry);
+            }
+        }
     }
 
     Some(SidebarCameoAtlas {
         texture: batch.create_texture(gpu, &rgba, atlas_width, atlas_height),
-        entries,
-        alt_entries,
+        techno_entries,
         superweapon_entries,
         smooth_source: SmoothSource::new(rgba, [atlas_width, atlas_height], pieces)
             .with_sharp_pixels(sharp),
@@ -1317,15 +1390,10 @@ mod tests {
             )
             .unwrap();
             rules.install_art_data(ArtRegistry::from_ini(&art));
+            let icons = super::render_techno_cameos("TEST", &assets, &rules, &cameo);
             for (drawn, file) in [
-                (
-                    super::render_cameo("TEST", &assets, &rules, &cameo),
-                    "OLDICON.SHP",
-                ),
-                (
-                    super::render_alt_cameo("TEST", &assets, &rules, &cameo),
-                    "OLDALT.SHP",
-                ),
+                (icons.sidebar(false), "OLDICON.SHP"),
+                (icons.sidebar(true), "OLDALT.SHP"),
             ] {
                 let shp = assets.get_ref(file).unwrap();
                 let expected = super::render_shp_frame0("TEST", shp, palette).unwrap();
@@ -1347,15 +1415,42 @@ mod tests {
         let palette = Palette::from_rgb(|_| [1, 2, 3]);
         let rules = cameo_rules();
         let assets = AssetManager::from_loose_root_for_test(dir.path());
-        let normal = super::render_alt_cameo("TEST", &assets, &rules, &palette).unwrap();
-        assert_eq!(normal.kind, super::CameoKind::Promoted);
+        let icons = super::render_techno_cameos("TEST", &assets, &rules, &palette);
+        let normal = icons.sidebar(true).unwrap();
+        assert_eq!(normal.kind, super::CameoKind::OrdinaryPcx);
         assert_eq!([normal.canvas_width, normal.canvas_height], [60, 48]);
         assert_eq!(&normal.rgba[8..12], &[20, 40, 60, 255]);
         write_pcx(&dir, "promoted.pcx", [80, 90, 100]);
         let assets = AssetManager::from_loose_root_for_test(dir.path());
-        let promoted = super::render_alt_cameo("TEST", &assets, &rules, &palette).unwrap();
-        assert_eq!(promoted.kind, super::CameoKind::Promoted);
+        let icons = super::render_techno_cameos("TEST", &assets, &rules, &palette);
+        let promoted = icons.sidebar(true).unwrap();
+        assert_eq!(promoted.kind, super::CameoKind::PromotedPcx);
         assert_eq!(&promoted.rgba[8..12], &[80, 90, 100, 255]);
+        assert_eq!(
+            icons.factory(true).unwrap().kind,
+            super::CameoKind::OrdinaryPcx
+        );
+
+        dir.write("normal.pcx", b"not a PCX");
+        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        let icons = super::render_techno_cameos("TEST", &assets, &rules, &palette);
+        assert_eq!(
+            icons.sidebar(true).unwrap().kind,
+            super::CameoKind::PromotedPcx
+        );
+        assert_eq!(
+            icons.factory(true).unwrap().kind,
+            super::CameoKind::AlternateShp
+        );
+        assert_eq!(
+            icons.factory(false).unwrap().kind,
+            super::CameoKind::Ordinary
+        );
+
+        dir.write("oldalt.shp", b"not a SHP");
+        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        let icons = super::render_techno_cameos("TEST", &assets, &rules, &palette);
+        assert!(icons.factory(true).is_none());
     }
 
     #[test]
@@ -1371,8 +1466,9 @@ mod tests {
         let assets = AssetManager::from_loose_root_for_test(dir.path());
         let palette = Palette::from_rgb(|_| [1, 2, 3]);
         let rules = cameo_rules();
-        let normal = super::render_cameo("TEST", &assets, &rules, &palette).unwrap();
-        let promoted = super::render_alt_cameo("TEST", &assets, &rules, &palette).unwrap();
+        let icons = super::render_techno_cameos("TEST", &assets, &rules, &palette);
+        let normal = icons.sidebar(false).unwrap();
+        let promoted = icons.sidebar(true).unwrap();
         assert_eq!([normal.canvas_width, normal.canvas_height], [2, 2]);
         assert_eq!([promoted.canvas_width, promoted.canvas_height], [2, 2]);
     }
@@ -1496,10 +1592,8 @@ mod tests {
         let assets = AssetManager::from_loose_root_for_test(dir.path());
         let palette = Palette::from_rgb(|_| [1, 2, 3]);
         let rules = cameo_rules();
-        for cameo in [
-            super::render_cameo("TEST", &assets, &rules, &palette).unwrap(),
-            super::render_alt_cameo("TEST", &assets, &rules, &palette).unwrap(),
-        ] {
+        let icons = super::render_techno_cameos("TEST", &assets, &rules, &palette);
+        for cameo in [icons.sidebar(false).unwrap(), icons.sidebar(true).unwrap()] {
             assert_eq!([cameo.width, cameo.height], [60, 48]);
             assert!(cameo.rgba.chunks_exact(4).all(|pixel| pixel[3] == 0));
         }
@@ -1549,12 +1643,8 @@ mod tests {
             let assets = AssetManager::from_loose_root_for_test(dir.path());
             let palette = Palette::from_rgb(|_| [1, 2, 3]);
             let rules = cameo_rules();
-            let selected = if control["elite"].as_bool().unwrap() {
-                super::render_alt_cameo("TEST", &assets, &rules, &palette)
-            } else {
-                super::render_cameo("TEST", &assets, &rules, &palette)
-            }
-            .unwrap();
+            let icons = super::render_techno_cameos("TEST", &assets, &rules, &palette);
+            let selected = icons.sidebar(control["elite"].as_bool().unwrap()).unwrap();
             let surface = control["selected_surface"].as_u64().unwrap();
             if surface == 0 {
                 assert_eq!([selected.width, selected.height], [2, 2], "{control}");

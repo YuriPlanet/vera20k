@@ -114,7 +114,7 @@ pub struct PassengerCargo {
     /// the entry gives the Rust cargo list the same exact bookkeeping ability.
     #[serde(default)]
     passenger_sizes: Vec<f64>,
-    /// Maximum passenger count (from Passengers= in rules.ini).
+    /// Capacity from `Passengers=`.
     capacity: u32,
     /// Maximum Size= of individual passenger allowed (from SizeLimit= in rules.ini).
     size_limit: f64,
@@ -223,16 +223,38 @@ impl PassengerCargo {
         total
     }
 
-    /// Whether a carrier admits one more passenger of binary64 `Size=` into a
-    /// cargo whose signed total is `total`: UnitClass::Receive_Radio
-    /// `0x00737430`, message 0x0F, compares `total + Size <= Passengers=` and
-    /// `Size <= SizeLimit=` (original gamemd instructions).
+    /// Cargo space used in the carrier's configured mode. Keep the native
+    /// signed `CargoTotalSize` result in size mode, including negative totals.
+    pub fn occupied_capacity(&self, by_size: bool) -> i32 {
+        if by_size {
+            self.total_size()
+        } else {
+            i32::try_from(self.count()).unwrap_or(i32::MAX)
+        }
+    }
+
+    /// UnitClass::Receive_Radio `0x00737430` normally compares
+    /// `total + Size <= Passengers=`. Ares 3.0p1 `0x73762B -> 0x1004CDB0`
+    /// substitutes `count < Passengers=` for `Passengers.BySize=no` and
+    /// resumes at `0x737677` to apply the same individual `SizeLimit=`.
     ///
     /// Both the radio and VeraX's selection planner ask this owner. Planning
     /// boards into a cargo clone with [`Self::board_forced_chain`], preserving
     /// CargoTotalSize's head-first, per-passenger truncation order.
-    pub fn size_fits_transport(total: i32, size: f64, capacity: i32, size_limit: f64) -> bool {
-        Self::size_fits_capacity(total, size, capacity) && Self::size_within_limit(size, size_limit)
+    pub fn fits_transport(
+        cargo: Option<&Self>,
+        size: f64,
+        capacity: i32,
+        size_limit: f64,
+        by_size: bool,
+    ) -> bool {
+        let occupied = cargo.map_or(0, |cargo| cargo.occupied_capacity(by_size));
+        let has_room = if by_size {
+            Self::size_fits_capacity(occupied, size, capacity)
+        } else {
+            occupied < capacity
+        };
+        has_room && Self::size_within_limit(size, size_limit)
     }
 
     /// Recalculate through the same order-sensitive numeric owner used by
@@ -1105,27 +1127,28 @@ pub fn can_dock_occupier_garrison(
             rules.ares_form(),
         );
     }
-    let passive = owner_is_multiplay_passive(building.owner(), &sim.houses);
+    let owner_allows_entry = passenger.owner() == building.owner()
+        || owner_is_multiplay_passive(building.owner(), &sim.houses)
+        || campaign_players_share_garrison(sim, building.owner(), passenger.owner());
     let red_health = is_at_or_below_red_hp(
         building.health.current(),
         building_obj.strength,
         rules.general.condition_red,
     );
-    // Ares 3.0 10017060 (hook 0x457D58) replaces the occupier arm.
+    // Ares 3.0p1 10017710 (hook 0x457D58) adds the campaign owner check.
+    // Leave the extension's additional occupier admission in its owner.
     if rules.ares_form() {
         crate::sim::ares_garrison::occupier_admitted(
             sim,
             passenger,
-            building,
             passenger_obj,
             building_obj,
             occupants.count(),
-            passive,
+            owner_allows_entry,
             red_health,
         )
     } else {
-        let same_owner = passenger.owner() == building.owner();
-        if !same_owner && !passive {
+        if !owner_allows_entry {
             return false;
         }
         if occupants.count() as u32 == building_obj.max_number_occupants {
@@ -1137,6 +1160,24 @@ pub fn can_dock_occupier_garrison(
         // `0x00457D98`: `TechnoClass::IsMindControlled`.
         !passenger.seldom.mind_control.is_mind_controlled()
     }
+}
+
+/// Ares 3.0p1 `10017710` and `10017910` (hooks `0x457D58` and `0x52297F`):
+/// in a campaign, IsHuman or PlayerControl on both houses admits the occupier
+/// without a raid ownership transfer.
+pub(crate) fn campaign_players_share_garrison(
+    sim: &Simulation,
+    building_owner: InternedId,
+    occupier_owner: InternedId,
+) -> bool {
+    let player_controlled = |owner| {
+        sim.houses.get(&owner).is_some_and(|house| {
+            house.is_controlled_by_human(crate::rules::rule_policy::RulePolicy::stock_campaign())
+        })
+    };
+    !sim.session.game_mode_nonzero()
+        && player_controlled(building_owner)
+        && player_controlled(occupier_owner)
 }
 
 /// CanBeOccupiedBy's `Assaulter=` arm (`0x00457DAD..0x00457DD3`), for an
@@ -1557,8 +1598,8 @@ pub fn add_garrison_occupant(
     let Some(count) = sim.substrate.attach_garrison_occupant(building_id, pax_id) else {
         return Ok(false);
     };
-    // Ares 3.0 10017240 (hook 0x52297F): an occupier of another house
-    // raids the building (sim::ares_garrison).
+    // Ares 3.0p1 10017910 (hook 0x52297F): the raid owner handles entry by
+    // another house and preserves ownership between campaign player houses.
     if rules.ares_form() {
         sim.ares_occupier_entered(building_id, owner, rules, registry, effects);
     }
@@ -2272,6 +2313,60 @@ ConditionYellow=50%
             row["after"]["firing_latch"].as_u64().unwrap() as u8,
             "SetInOpenTransport710484 must observe the former TarCom",
         );
+    }
+
+    #[test]
+    fn ordinary_vehicle_boarding_counts_heads_without_ares() {
+        let patch = IniFile::from_str(
+            "[E1]\nSize=3\n[E2]\nSize=4\n\
+             [LCRF]\nPassengers=2\nSizeLimit=3\nPassengers.BySize=no\n",
+        );
+        let Some(fixture) =
+            crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&patch)
+        else {
+            return;
+        };
+        let rules = fixture.rules;
+        let mut sim = Simulation::new();
+        let transport = spawn_transport(&mut sim, &rules, "LCRF", "Americans", 10, 10);
+        let oversized =
+            spawn_entering_infantry(&mut sim, &rules, "E2", "Americans", transport, 10, 10);
+        assert!(!can_enter_transport(&sim, &rules, oversized, transport));
+
+        for count in 1..=2 {
+            let rider =
+                spawn_entering_infantry(&mut sim, &rules, "E1", "Americans", transport, 10, 10);
+            assert!(can_enter_transport(&sim, &rules, rider, transport));
+            sim.per_cell_process(
+                rider,
+                crate::sim::movement::PerCellReason::Arrival,
+                &rules,
+                None,
+                &mut FrameEffects::default(),
+            )
+            .expect("the admitted passenger arrives at the carrier");
+            assert_eq!(
+                sim.entities()
+                    .get(rider)
+                    .unwrap()
+                    .passenger_role()
+                    .inside_transport_id(),
+                Some(transport),
+                "a Size=3 rider uses one seat in a two-seat carrier"
+            );
+            assert_eq!(
+                sim.entities()
+                    .get(transport)
+                    .unwrap()
+                    .passenger_role()
+                    .passenger_count(),
+                count
+            );
+        }
+
+        let extra = spawn_entering_infantry(&mut sim, &rules, "E1", "Americans", transport, 10, 10);
+        assert!(!can_enter_transport(&sim, &rules, extra, transport));
+        assert!(!rules.ares());
     }
 
     /// Retail depots and refineries have no configured passenger capacity.

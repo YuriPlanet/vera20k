@@ -346,12 +346,13 @@ impl PhobosSpawnsTiberium {
         mut find_particle: impl FnMut(&str) -> Option<String>,
     ) {
         let _phobos = crate::rules::ares_switch::not_ares_reads();
-        self.tiberium_type = section.read_ares_int("SpawnsTiberium.Type", self.tiberium_type);
-        self.range = section.read_ares_int("SpawnsTiberium.Range", self.range);
+        self.tiberium_type =
+            section.read_phobos_scalar_int("SpawnsTiberium.Type", self.tiberium_type);
+        self.range = section.read_phobos_scalar_int("SpawnsTiberium.Range", self.range);
         self.growth_stage =
-            section.read_ares_partial_int_pair("SpawnsTiberium.GrowthStage", self.growth_stage);
-        self.cells_per_anim =
-            section.read_ares_partial_int_pair("SpawnsTiberium.CellsPerAnim", self.cells_per_anim);
+            section.read_phobos_partial_int_pair("SpawnsTiberium.GrowthStage", self.growth_stage);
+        self.cells_per_anim = section
+            .read_phobos_partial_int_pair("SpawnsTiberium.CellsPerAnim", self.cells_per_anim);
         if let Some(name) = section.read_name("SpawnsTiberium.Particle", 2048) {
             // Phobos TemplateDef.h ValueableIdx::Read updates only on a found
             // index or an explicit blank sentinel; an unknown name retains.

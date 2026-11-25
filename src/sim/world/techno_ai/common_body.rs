@@ -520,7 +520,9 @@ pub(super) fn techno_common_steps(
         {
             return false;
         }
-        // Ares1004B434 updates attachments before1004B528 EMP recovery.
+    }
+    // Ares 3.0p1 0x1004C094 updates attachments before EMP recovery.
+    if rules.attach_effects_enabled() {
         sim.update_ares_attach_effects(id, rules);
     }
     // Phobos `TechnoExt::UpdateAttachEffects` (Body.Update.cpp:895): one AI
@@ -532,9 +534,20 @@ pub(super) fn techno_common_steps(
         // Installed6F9E50 ->1004B320 owns delayed Building reactivation before
         //the stock head. EMP expiry itself must not invent a future-power sweep.
         sim.update_ares_emp_operability(id, rules, effects);
-        // Ares1004B320 then stops a deactivated Unit's driving and unjams a
-        // deactivated jammer or updates an active one.
+    }
+    // Ares1004B320 stops a deactivated Unit's driving. A configured EMP
+    // victim can also reach this slot when the rest of Ares is off.
+    if rules.ares()
+        || (rules.emp_enabled()
+            && sim
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.emp_remaining() > 0))
+    {
         sim.stop_ares_deactivated_unit_driving(id, rules, overlay_registry, effects);
+    }
+    if rules.ares() {
         sim.update_ares_radar_jammer(id, rules);
         sim.update_ares_driver_killed_mission(id, rules, effects);
         // Ares1004B64B..1004B658 follows the extension updates and precedes
@@ -1395,7 +1408,7 @@ pub(super) fn techno_common_post(
     sim.update_techno_discovery_from_shroud(id);
     // Installed Ares6FAF0D ->10053DF0, after the ordinary Techno tail.
     // No global frame sweep: limbo/skipped/dead visits never reach this slot.
-    if rules.ares() {
+    if rules.emp_enabled() {
         sim.tick_ares_emp(id, rules, effects);
     }
 }

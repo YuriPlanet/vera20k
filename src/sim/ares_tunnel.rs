@@ -5,13 +5,13 @@
 //! (`rules::ares_building_type`). Every House holds one network per entry
 //! (HouseExt Tunnels, `+0x64`, created by `HouseExt::GetTunnel @
 //! 10021560`): the Feet inside, in entry order. A Foot that walks into any
-//! tunnel building enters the network and is limboed; it leaves from any
-//! other building of the same type, last in first out.
+//! tunnel building enters the entrance owner's network and is limboed; it
+//! leaves from another building of that network, last in first out.
 //!
 //! - Entry: CAN_LOAD's tunnel arm (`100174E0`, hook `0x43C326`,
 //!   `sim::radio::receive::can_load`), DOCK_NOW's ROGER (`100176B0`, hook
 //!   `0x43C716`), the Infantry and Unit arrival arms (`10017760`, hook
-//!   `0x51A2AD`; `10017870`, hook `0x73A23F`; `sim::movement::per_cell`),
+//!   `0x51A2AD`; 3.0p1 `10017F60`, hook `0x73A23F`; `sim::movement::per_cell`),
 //!   the Unit cell entry and destination arms (`100177F0`, hook `0x73F606`;
 //!   `10017830`, hook `0x741CE5`) and the Infantry enter cursor
 //!   (`100176E0`, hook `0x51ED8E`, `world_orders`).
@@ -184,12 +184,22 @@ impl Simulation {
         &mut self,
         foot: u64,
         building: u64,
-        house: InternedId,
         tunnel: usize,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: &mut FrameEffects<'_>,
     ) -> bool {
+        // P1 `UnitClass_UpdatePosition_Tunnel` (`0x73A23F -> 10017F60`)
+        // takes the entrance's House+21C, as the infantry path already did.
+        // Admission and unloading address that same house's network.
+        let Some(house) = self
+            .substrate
+            .entities
+            .get(building)
+            .map(|entrance| entrance.owner())
+        else {
+            return false;
+        };
         if crate::sim::radio::transmit(
             self,
             foot,

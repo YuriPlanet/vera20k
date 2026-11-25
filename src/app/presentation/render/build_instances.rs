@@ -44,8 +44,8 @@ pub(super) struct WorldInstances {
     pub object_layers: [super::draw_plan_lowering::ObjectLayerPass; 5],
     /// Native separate FoggedObject drawing pass before live building bases.
     pub fogged_objects: super::draw_plan_lowering::ObjectLayerPass,
-    /// One BuildingClass::Array-ordered text sweep after Ground2 bodies.
-    pub building_status_text: crate::app::presentation::ui_overlays::BuildingStatusTextInstances,
+    /// One BuildingClass::Array-ordered status sweep after Ground2 bodies.
+    pub building_status: crate::app::presentation::ui_overlays::BuildingStatusInstances,
     /// Static smudge decals (craters, scorches) in the tile walk's order.
     pub smudge: Vec<SpriteInstance>,
     /// For each smudge, how many walk-ordered terrain tiles draw before it
@@ -718,7 +718,7 @@ pub(super) fn build_world_instances(
         .filter(|parent| parent.is_building())
         .map(|parent| parent.parent.id)
         .collect();
-    let building_status_text = build_building_status_instances(state, &building_body_opportunities);
+    let building_status = build_building_status_instances(state, &building_body_opportunities);
     let mut object_layers = super::draw_plan_lowering::lower_object_instances(planned_objects);
     let mut fogged_objects = instances::build_fogged_instances(state);
     // Bit_Blit seeds a raw frame, and a Unit composite, from its rect clipped
@@ -768,7 +768,7 @@ pub(super) fn build_world_instances(
         cell_body_draws,
         object_layers,
         fogged_objects,
-        building_status_text,
+        building_status,
         smudge,
         smudge_cuts,
         bridge_body_shadow,

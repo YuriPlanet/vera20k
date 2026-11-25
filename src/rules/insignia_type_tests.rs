@@ -27,7 +27,7 @@ fn insignia_type_defaults_and_promotable_overrides() {
         "[InsigniaTypes]\n0=PLAIN\n1=FULL\n\
          [PLAIN]\n\
          [FULL]\nInsignia=shared\nInsignia.Veteran=vet\n\
-         InsigniaFrame=4\nInsigniaFrame.Elite=7\n",
+         InsigniaFrame=$12\nInsigniaFrame.Elite=$17\n",
     );
     let plain = catalog.entry("plain").expect("case-insensitive entry");
     assert!(plain.images.iter().all(Vec::is_empty));
@@ -41,7 +41,7 @@ fn insignia_type_defaults_and_promotable_overrides() {
         "the common key applies, then Veteran appends its own read"
     );
     assert_eq!(full.images[2], ["shared.shp"]);
-    assert_eq!(full.frames, [4, 4, 7]);
+    assert_eq!(full.frames, [12, 12, 17]);
 }
 
 #[test]

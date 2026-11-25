@@ -149,6 +149,8 @@ pub(crate) enum HotkeyCommand {
     /// selection (transport loading, garrison, engineer, sabotage, etc.).
     /// Registered in the `vera20k` keyboard category with the Ctrl+D default.
     AutoLoad,
+    /// Ares 3.0p1 TogglePower command, gated by `[General] TogglePowerAllowed=`.
+    TogglePower,
     /// Phobos: `FireTacticalSW1..10`, positional on the first left-sidebar column.
     #[cfg(feature = "phobos")]
     FireTacticalSw(usize),
@@ -873,6 +875,25 @@ fn command_from_name(name: &str) -> Option<HotkeyCommand> {
 #[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn toggle_power_registers_without_a_default_binding() {
+        let catalog = catalog::registered_commands();
+        let at = catalog
+            .iter()
+            .position(|row| row.ini_name == "TogglePower")
+            .expect("TogglePower is registered");
+        let command = catalog[at].command;
+        assert_eq!(catalog[at + 1].command, HotkeyCommand::UnitTab);
+        assert_eq!(catalog[at].name_key, "TXT_TOGGLE_POWER");
+        assert_eq!(catalog[at].category_key, "TXT_INTERFACE");
+        assert_eq!(HotkeyBindings::from_ini_bytes(None).first_key(command), None);
+        assert_eq!(
+            HotkeyBindings::from_ini_bytes(Some(b"[Hotkey]\nTogglePower=80\n"))
+                .first_key(command),
+            Some(80),
+        );
+    }
 
     #[test]
     fn camera_bindings_use_normal_assignment_conflicts_and_persistence() {

@@ -970,6 +970,11 @@ pub struct RuleSet {
     /// Whether Ares plays in this game, decided once from its Rules layers
     /// and `ares.mix` by `rules::ares_switch`. Read through [`Self::ares`].
     ares: bool,
+    /// Derived from the projected TechnoType and Warhead descriptors, so
+    /// games without the built-in effect can skip its per-object visits.
+    builtin_attach_effects: bool,
+    /// A retained warhead can reach the surfaced Tunnel EMP receiver.
+    builtin_tunnel_emp: bool,
     /// Whether Phobos plays in this game, decided once from its Rules
     /// projection by `rules::phobos_switch`. Read through [`Self::phobos`].
     phobos: bool,

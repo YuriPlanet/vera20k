@@ -260,26 +260,45 @@ fn superweapon_money_minimum_signed_cost_cannot_overflow_into_a_reward() {
 }
 
 #[test]
-fn superweapon_money_unready_or_charge_drain_does_not_pay() {
+fn superweapon_money_unready_does_not_pay() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
-    for extra in ["", "UseChargeDrain=yes\n"] {
-        let rules = rules(&format!("[Reveal]\nMoney.Amount=-500\n{extra}"));
-        let (mut sim, owner) = world(&rules, 1000, true);
-        let id = ready(&mut sim, &rules, owner, "Reveal", false);
-        if extra.is_empty() {
-            sim.super_weapons
-                .map_mut_for_test()
-                .get_mut(&owner)
-                .unwrap()
-                .get_mut(&id)
-                .unwrap()
-                .is_ready = false;
-        }
-        let before = sim.state_hash();
-        assert!(!fire(&mut sim, &rules, owner, id, (10, 10)));
-        assert_eq!(sim.state_hash(), before);
-        assert!(sim.sound_events.is_empty());
-    }
+    let rules = rules("[Reveal]\nMoney.Amount=-500\n");
+    let (mut sim, owner) = world(&rules, 1000, true);
+    let id = ready(&mut sim, &rules, owner, "Reveal", false);
+    sim.super_weapons
+        .instance_mut(&owner, &id)
+        .unwrap()
+        .is_ready = false;
+    let before = sim.state_hash();
+    assert!(!fire(&mut sim, &rules, owner, id, (10, 10)));
+    assert_eq!(sim.state_hash(), before);
+    assert!(sim.sound_events.is_empty());
+}
+
+#[test]
+fn superweapon_money_paid_battery_starts_and_stops_with_ares_off() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let rules = rules(
+        "[SuperWeaponTypes]\n5=PsychicFlashSpecial\n\
+         [PsychicFlashSpecial]\nType=Battery\nAction=Custom\nUseChargeDrain=yes\n\
+         RechargeTime=1\nIsPowered=no\nBattery.Power=50\nMoney.Amount=-800\n\
+         [Storm]\nMoney.Amount=-1\n",
+    );
+    assert!(!rules.ares());
+    assert_eq!(rules.super_weapon("Storm").unwrap().money_amount, 0);
+    let (mut sim, owner) = world(&rules, 800, true);
+    let sw = ready(&mut sim, &rules, owner, "PsychicFlashSpecial", false);
+    assert!(fire(&mut sim, &rules, owner, sw, (0, 0)));
+    assert_eq!(sim.super_weapons[&owner][&sw].charge_drain_state(), 2);
+    assert!(sim.power_states.get(&owner).unwrap().has_battery());
+    assert_eq!(sim.houses[&owner].economy().credits(), 0);
+    assert_eq!(sim.houses[&owner].economy().spent_credits(), 800);
+
+    fire(&mut sim, &rules, owner, sw, (0, 0));
+    assert_eq!(sim.super_weapons[&owner][&sw].charge_drain_state(), 1);
+    assert!(!sim.power_states.get(&owner).unwrap().has_battery());
+    assert_eq!(sim.houses[&owner].economy().credits(), 0);
+    assert_eq!(sim.houses[&owner].economy().spent_credits(), 800);
 }
 
 #[test]

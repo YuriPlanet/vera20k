@@ -2276,6 +2276,7 @@ fn limited_heads_survive_revalidation_without_bypassing_limits_or_cleanup() {
             owner,
             category,
             &mut crate::sim::world::FrameEffects::default(),
+            false,
         );
         assert_eq!(
             held_id(&sim, owner, category),
@@ -3485,6 +3486,7 @@ fn a_ready_building_goes_with_the_last_construction_yard() {
         owner,
         ProductionCategory::Building,
         &mut crate::sim::world::FrameEffects::default(),
+        false,
     );
     assert!(sim.substrate.entities.contains(held));
 
@@ -4042,6 +4044,11 @@ fn a_yard_going_offline_refreshes_the_defense_queue_with_ares() {
             .is_some_and(|factory| factory.suspended)
     };
     assert!(!suspended(&sim));
-    assert!(sim.go_building_offline(1, &rules, &mut crate::sim::world::FrameEffects::default()));
+    assert!(sim.go_building_offline(
+        1,
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+        false,
+    ));
     assert_eq!(suspended(&sim), rules.ares_form());
 }

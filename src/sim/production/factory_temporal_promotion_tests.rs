@@ -393,6 +393,7 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
                 owner,
                 category,
                 &mut FrameEffects::default(),
+                false,
             );
             assert!(
                 runtime

@@ -44,7 +44,11 @@ PSIONICWEAPONIMMUNE and PSIONICSIMMUNE join the type flags in the receiver
 (10049490, 0x4DA584); `ImmuneToBerserk` overrides the Psychedelic immunity
 in the receiver and the fire error (10049EF0, 0x6FC417). A
 `Passengers.BySize=no` Unit hold compares heads with `Passengers=` in its
-three room tests, keeping the SizeLimit test (1004C150/1004C1D0/1004C210).
+three room tests, keeping the individual `SizeLimit=` test (3.0p1
+`0x73762B`→`0x1004CDB0`, `0x73782F`→`0x1004CE30`,
+`0x737994`→`0x1004CE70`). The explicit setting works without enabling Ares.
+Ctrl+D and Ferry use the same capacity for reservations, and Ferry uses it
+to decide when a vehicle's loaded hold is full.
 A cloaking carrier's own Detach_All no longer kills its docked spawns
 (1004A910, 0x707B19). The Temporal update frees its target's JammerClass
 (1004BB60, 0x71A84E). A MindControl pip scale counts the first MindControl
@@ -107,9 +111,8 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   their cursors through the Ares cursor owner (`app::input::ares_cursor`).
 - Init_1's capture manager and parasite for any weapon slot and the
   parasite slot hooks (0x629804, 0x62A020, 0x62A7B1); the gunner temporal
-  swap (0x74642C, 0x74653C); Hover DeployToLand (0x513EAA, 0x514A21,
-  0x514DFE); NoSelfGuardArea (0x51E748: the healer's self arm it skips is
-  not ported); the Occupier+VehicleThief expiry
+  swap (0x74642C, 0x74653C); NoSelfGuardArea (0x51E748: the healer's self
+  arm it skips is not ported); the Occupier+VehicleThief expiry
   (0x4D9A83).
 - Dormant in retail: flying carriers (0x414338, 0x6B783B).
 - Presentation and audio: the radial indicators of non-buildings
@@ -161,7 +164,8 @@ InfantryElectrocuted=         ; Find only; unset: ELECTRO, else AnimTypes[1]
   (`10044C90`): only a `PipScale=Passengers` type, the last passenger first,
   each clipped to the pips left, one gap step after a Gunner's first pip,
   `Passengers.BySize`, and a tunnel's network; another PipScale draws its own
-  scale instead.
+  scale instead. In ordinary rules, a vehicle explicitly configured to count
+  heads draws one occupied pip per passenger at the stock spacing.
 
 ### Not covered
 
@@ -224,14 +228,14 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `4DAA68` | FootClass_Update_MoveSound | `10049460` | residual: move sound under a Magnetron (audio) |
 | `4DECAE` | FootClass_Crash_Spin | `10049050` | ported earlier |
 | `4DFE00` | FootClass_GarrisonStructure_TakeVehicle | `10049130` | ported earlier |
-| `513EAA` | HoverLocomotionClass_UpdateHover_DeployToLand | `10049670` | residual: Hover DeployToLand landing |
-| `514A21` | HoverLocomotionClass_ILocomotion_Process_DeployToLand | `10049550` | residual: Hover DeployToLand landing |
-| `514DFE` | HoverLocomotionClass_ILocomotion_MoveTo_DeployToLand | `10049510` | residual: Hover DeployToLand landing |
+| `513EAA` | HoverLocomotionClass_UpdateHover_DeployToLand | `10049670` / `1004A2C0` (3.0p1) | Ported in `sim::movement::hover::process`. The pending deploy request suppresses lift. |
+| `514A21` | HoverLocomotionClass_ILocomotion_Process_DeployToLand | `10049550` / `1004A1A0` (3.0p1) | Ported. Hover stops movement, prepares the deploy animation's facing, and clears the request at touchdown or when Water or Beach cancels the deploy. |
+| `514DFE` | HoverLocomotionClass_ILocomotion_MoveTo_DeployToLand | `10049510` / `1004A160` (3.0p1) | Ported. An accepted Hover destination cancels the pending deploy landing. |
 | `519675` | InfantryClass_UpdatePosition_BeforeInfantrySpecific | `10049820` | ported earlier |
 | `5198AD` | InfantryClass_UpdatePosition_EnteredGrinder | `100498D0` | ported: `sim::reverse_engineering` (ares-reverse-engineering.md) |
 | `51CE9A` | InfantryClass_Idle | `10049740` | ported earlier |
 | `51E748` | InfantryClass_GetActionOnObject_NoSelfGuardArea | `10049710` | residual: NoSelfGuardArea (stock self Area Guard arm unported) |
-| `51E7BF` | InfantryClass_GetActionOnObject_CanCapture | `10049690` | ported earlier |
+| `51E7BF` | InfantryClass_GetActionOnObject_CanCapture | `1004A2E0` | 3.0p1 vehicle check in `sim::vehicle_theft::ares_vehicle_capture_action` |
 | `51F76D` | InfantryClass_Unload | `10049790` | ported earlier |
 | `5202F9` | InfantryClass_UpdateVehicleThief_Check | `10049970` | equivalent: VehicleThief or CanDrive admits the follow |
 | `5203F7` | InfantryClass_UpdateVehicleThief_Hijack | `100499A0` | ported earlier |

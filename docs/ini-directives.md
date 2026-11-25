@@ -1,13 +1,10 @@
 # INI file directives
 
-VERA expands includes in its existing INI source-selection path. Ares
-`[#include]` runs in every build in a game read the Ares way ([Ares](ares.md)),
-as a selected mod that ships `ares.mix` makes it; Phobos `[$Include]` is
-compiled in with `--features phobos`. Other games and builds treat them as
-ordinary, unused INI content. These are extension directives, not native YR syntax. Files
-without directives keep their native parsed representation, duplicate-section
-behavior, content hash and saved encoding. The raw `IniFile` byte parser and
-deserializer never load other files.
+The INI source selector expands an explicit `[#include]` in stock-reader and
+Ares-reader games. Phobos `[$Include]` is available with `--features phobos`.
+Files without directives keep their native parsed representation, duplicate-section
+behavior, content hash and saved encoding. Only the source selector opens include
+files. The raw INI parser and deserializer consume the supplied bytes.
 
 The `$Inherits` section-copy policy below is the ra2-mono adaptation credited in
 [Source mapping](#source-mapping), not an Ares or Phobos claim; Phobos's own
@@ -15,7 +12,7 @@ The `$Inherits` section-copy policy below is the ra2-mono adaptation credited in
 
 ```ini
 [#include]
-2=units.ini
+2=rules/units.ini
 10=weapons.ini
 
 [ExampleUnit]
@@ -27,10 +24,8 @@ Strength=250
 
 - With `--features phobos`, a document's `[$Include]` runs and takes over from
   its `[#include]`, as Phobos `-Include` does by restoring the vanilla bytes at
-  the Ares hooks (gamemd `0x474200`/`0x474314`). In a game read the Ares way, a
-  document without `[$Include]` expands its `[#include]`, in a `phobos` build
-  too: VERA has no `-Include` launch switch, while natively one launch runs one
-  dialect.
+  the Ares hooks (gamemd `0x474200`/`0x474314`). A document using only `[#include]`
+  expands it in a `phobos` build too.
 - Include lists are read in stored entry order, as Ares walks them with
   `INIClass::GetKeyName` (`0x00526CC0`). Phobos iterates the section's
   `EntryIndex`, gamemd's CRC lookup index; VERA keeps stored order for it too.
@@ -49,11 +44,12 @@ Strength=250
   by Ares and fatal under Phobos (`Debug::FatalErrorAndExit`).
 - Natively each included file loads into the INI that lists it, through
   `LoadFromStraw`'s merge arm. A game read the Ares way does the same, with Ares's
-  parser hooks ([Ares INI syntax](ares-ini-syntax.md)); other games compose with
-  `IniFile::merge`.
+  parser hooks ([Ares INI syntax](ares-ini-syntax.md)). With the stock reader,
+  `[#include]` overlays each selected value while keeping the stock parser's
+  duplicate-key choices. Phobos `[$Include]` uses its compatibility projection.
 - An included file's `[#include]` list joins the root's. Ares walks that one
   list with an index every nesting level shares (`CCINIClass_ReadCCFile2`
-  `10064660`), so a parent's remaining entries are read before the entries its
+  `0x10064660`, 3.0p1 `0x100655E0`), so a parent's remaining entries are read before the entries its
   child adds. A child entry that reuses a key replaces the earlier entry. The
   walk continues from the entry it last read (Ares's `GetKeyName` hook
   `100651D0`), and VERA reads the first entry it has not yet read.
@@ -83,9 +79,10 @@ Strength=250
   fails the load instead of publishing a partially inherited store, as the 1024
   include-reference limit does. Retail content is far below it.
 - Logical Include identities normalize slash direction, dot segments and ASCII
-  casing independently of host OS/cwd. File lookup stays with the existing VFS.
-  All Include references use that same resource root, not the including file's
-  host directory. This adds neither arbitrary host-path access nor new MIX mounts.
+  casing independently of host OS/cwd. A path such as `rules/units.ini` searches
+  the selected mod's loose files, then the installation, then the existing MIX
+  stack. Each loose component resolves within its resource root. Nested INIs
+  use the same resource roots as the document that included them.
 
 Native lexical rules still apply, including exact section/key casing, omitted
 empty values and entry-less sections, byte widening and the physical line limit.
@@ -105,15 +102,15 @@ expansion apply only to selected mods.
 
 ## Production integration
 
-In a game read the Ares way or a `phobos` build, `rules::retail_sources::select_ini`
-expands directives before transferring the selected physical snapshots to the existing
-ordered Rules owner. `DirectiveOptions::production` enables Ares' dialect in a game
-read the Ares way and Phobos' in a `phobos` build, and a document's `[$Include]` takes over from its `[#include]` when the
-Phobos capability is present. That shared entry serves Rules, fixed Art, AI,
+`rules::retail_sources::select_ini` expands directives before transferring the
+selected snapshots to the ordered Rules owner. `DirectiveOptions::production`
+enables `[#include]` in both reader modes. `$Inherits` runs in games read the
+Ares way and `phobos` builds. The shared entry serves Rules, fixed Art, AI,
 mode/campaign definitions, sound and EVA. The theme catalog uses the same entry
 while retaining its separate YR/RA2 playlist handling. Asset-backed map gameplay
 and metadata expand the decoded map INI before reading its fields; maps retain
 the existing physical root source identity, including MMX wrapper bytes.
+Network map agreement uses the same expansion with strict dependency checks.
 
 The root `IniSourceIdentity` still hashes the exact root bytes. `SelectedIni`
 additionally exposes the included physical sources, in traversal order, and
@@ -164,6 +161,7 @@ commit. This contribution is under VERA's GPLv3; no Ares/Phobos C++ is imported.
 | native source | VERA adaptation |
 | --- | --- |
 | Ares.dll `CCINIClass_ReadCCFile1`/`2` hooks (gamemd `0x474200`/`0x474314`, `ReadCCFile` `0x4741F0`) | Ares dialect in `rules/ini_directives.rs`: one walk over the shared stored-order list, once-per-root-load skip, missing file skipped, merge after load |
+| Ares 3.0p1 `0x10065684`–`0x100656B0` in `CCINIClass_ReadCCFile2` | `AssetManager` keeps the listed subdirectory path for the loose-file lookup before falling back to MIX |
 | Ares `INIClass::GetKeyCount` `0x526960`, `GetKeyName` `0x526CC0`, `ReadString` `0x528A10` | `IniSection::physical_entries` walk plus `read_name` with the native `0x80` buffer capacity |
 | Phobos `src/Misc/Hooks.INIInheritance.cpp` (`CCINIClass_Load_Inheritance` `0x474230`) | Phobos dialect: `$Include`, `SavedIncludes` once-per-file, fatal missing file, merge after load |
 | Phobos `src/Phobos.cpp` `-Include` (`0x474200`/`0x474314` restored) | A document's `$Include` takes over from its `[#include]`; selected by `DirectiveOptions::production` |

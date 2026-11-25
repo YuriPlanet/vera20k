@@ -1,7 +1,8 @@
 # Superweapon Money.Amount
 
-A game that ships `ares.mix` reads and plays these keys in every build ([Ares](ares.md));
-other games keep the original superweapons.
+A game that ships `ares.mix` reads and plays these keys in every build.
+Base-for-modders also supports a startup price for charge-drain powers,
+including Battery and Firestorm, with Ares off. [Ares rules](ares.md)
 
 ```ini
 [SuperWeaponTypes]
@@ -85,14 +86,25 @@ resolved money settings participate in configuration hashing; default zero does
 not add a new hash input. Source INI identity is still hashed normally.
 Presentation refusal events are transient and outside saved/hash state.
 
+## Charge-drain activation
+
+An accepted start checks `Money.Amount` and enters the normal charge-drain
+activation. Only a successful launch spends a fee or gives a reward. In Ares
+3.0p1, `0x10035CBB` enters Launch and `0x100339FF..0x10033A16` settles it.
+A stop command enters Deactivate through `0x10035C39` and leaves the balance
+alone. The sidebar still checks current affordability before submitting the
+command, including when a power is draining (`0x10035868..0x100358B5`).
+Scheduled changes during the drain use `Money.DrainAmount` and
+`Money.DrainDelay`. [Common superweapon keys](ares-superweapon-common.md)
+
 ## Two-stage powers and other limits
 
 Money-bearing two-stage configurations require a `PreClick=yes` source and a
 `PostClick=yes` destination with a valid `PreDependent`. This retains the existing
 native mapping: `PreDependent`'s type/kind index selects an entry in
 `[SuperWeaponTypes]`. If several destinations match, registry order selects the
-first matching pair with money on either definition. Malformed half-pairs and
-charge-drain configurations remain refused; clearing a Chronosphere/Warp's
+first matching pair with money on either definition. Malformed half-pairs
+remain refused. Clearing a Chronosphere/Warp's
 phase flags does not turn its nonzero money setting into a supported single
 stage. Both source and destination clicks must be on the map.
 
@@ -138,12 +150,12 @@ and hash stream. The added nondefault state is hashed only for a paid workflow.
 This closes the mechanism described in [#2107](https://github.com/YuriPlanet/vera20k/issues/2107),
 subject to the evidence boundary below.
 
-Also excluded: charge-drain activation with `Money.Amount`, the reported
-donor's legacy SW.Money alias/test-range bypass and country restrictions.
+The reported donor's legacy SW.Money alias, test-range bypass and country
+restrictions remain outside this implementation.
 `Money.DrainAmount`/`Money.DrainDelay`, the common messages and
 `SW.AlwaysGranted` are described in [common keys](ares-superweapon-common.md).
 
-Evidence levels: public Ares source establishes the tag/control-flow references;
-focused Rust regressions exercise VERA's production readers, wallet, commands,
-AI, client adapters and persistence. There is no Ares executable comparison,
-full-engine parity claim or live audio-device acceptance claim.
+Public Ares source establishes the two-stage control-flow references. The
+charge-drain activation and wallet order above were checked against Ares
+3.0p1 DLL instructions. Focused Rust regressions exercise VERA's production
+readers, wallet, commands, AI, client adapters and persistence.

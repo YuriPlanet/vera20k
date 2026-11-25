@@ -38,13 +38,17 @@ its supported features need.
 
 ## The Ares setting
 
+On `Base-for-modders`, new Ares fixes are part of the base engine. A fix to
+normal gameplay applies by default. When a behavior takes an INI key or a map
+script action, that input is enough to enable it.
+
 **Options → Game Options → Ares** (`[VERA] Ares=` in VERA.INI) chooses how a start
 treats Ares. Like the mod, it is read at start and holds until the next one:
 
 | Setting | What it does |
 | --- | --- |
 | **Auto** (default) | A selected mod declaring `[Extensions] Ares=yes`, or mounting `ares.mix`, gets Ares reading from startup. Otherwise Ares keys in the rules, mode or map enable their supported runtime behavior. |
-| **On** | Every game is an Ares game, as if its mod shipped `ares.mix`: its INIs load with Ares' syntax and `[#include]`, its Rules are read the Ares way, and Ares plays, the original game too. The installation's `ares.mix` mounts even with **No mod**, so a map alone can use all of this. |
+| **On** | Every game is an Ares game, as if its mod shipped `ares.mix`: its INIs load with Ares' syntax, its Rules are read the Ares way, and Ares plays, the original game too. The installation's `ares.mix` mounts even with **No mod**, so a map alone can use all of this. |
 | **Off** | `ares.mix` stays unmounted and Ares keys do not turn Ares on. A mod declaring that it requires Ares is refused, with a message telling the player to choose Auto or On and restart. |
 
 With On, the original game plays unlike gamemd wherever Ares itself does, such as the
@@ -53,6 +57,11 @@ replaces the setting for that launch, and `vera20k --probe --ares <setting>` rep
 the digest such a launch is checked against. The effective launch policy is part of
 the network agreement ([Networking](Networking.md#room-rules)); a save keeps the
 answer it was started with.
+
+`[#include]` works in every setting and accepts files in subdirectories of the
+selected mod or installation, for example `0=rules/infantry.ini`. Team script
+actions [65 and 67](ares-triggers.md#team-scripts) and `ForceShield.Modifier=`
+also work directly from their configuration.
 
 A save records no Ares capability; a save from an older build with the retired `ares`
 feature does not load.

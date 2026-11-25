@@ -2,7 +2,7 @@
 //! Other status families retain their existing owners and open parity bounds.
 use super::draw_plan_lowering::{FrameHealthBar, ObjectExtrasRun, ObjectLayerPass};
 use crate::app::presentation::sidebar_render::begin_main_load_pass;
-use crate::app::presentation::ui_overlays::StatusTextRun;
+use crate::app::presentation::ui_overlays::BuildingStatusRun;
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::selection_overlay::SelectionOverlay;
 use crate::render::tactical_draw_plan::RenderZPolicy;
@@ -378,8 +378,7 @@ fn draw_status_prefix<'a>(
         //6F5340: MOUSEPAL N1, E00/493DF0 consumes A and bypasses Z.
         batch.draw_passthrough_range(pass, shape.texture(), buffer, *index, 1);
     }
-    // Ares 10049FE0 draws POWEROFF.SHP after the wrench with the same flags
-    // (`power_off` is `None` unless the Rules were read the Ares way).
+    // Ares 3.0p1 0x1004AC40 draws POWEROFF.SHP after the wrench with the same flags.
     if let (Some(index), Some(shape)) = (power_off, overlay.power_off()) {
         batch.draw_passthrough_range(pass, shape.texture(), buffer, *index, 1);
     }
@@ -500,10 +499,9 @@ fn draw_status_group<'a>(
     }
 }
 
-/// Building43E7B0/70AA60's one ordered text pass at Tactical6D957A. The
-/// frame producer retains BuildingClass::Array order; each backing/outline
-/// and glyph is submitted before the following Building's label.
-pub(super) fn draw_building_status_text(
+/// Building43E7B0/70AA60's ordered pass at Tactical6D957A. The frame
+/// producer retains BuildingClass::Array order for status text and cameos.
+pub(super) fn draw_building_status(
     encoder: &mut wgpu::CommandEncoder,
     color: &wgpu::TextureView,
     depth: &wgpu::TextureView,
@@ -513,28 +511,41 @@ pub(super) fn draw_building_status_text(
     overlay: Option<&SelectionOverlay>,
     buffer: Option<&wgpu::Buffer>,
     font: Option<&BatchTexture>,
-    runs: &[StatusTextRun],
+    cameos: Option<&BatchTexture>,
+    runs: &[BuildingStatusRun],
     camera: &wgpu::BindGroup,
 ) {
-    let (Some(overlay), Some(buffer)) = (overlay, buffer) else {
+    let Some(buffer) = buffer else {
         return;
     };
-    if runs.is_empty() {
+    if runs.is_empty() || (overlay.is_none() && cameos.is_none()) {
         return;
     }
     let mut pass = begin_main_load_pass(encoder, color, depth);
     pass.set_scissor_rect(clip[0], clip[1], clip[2], clip[3]);
     for run in runs {
-        draw_status_text_material(
-            &mut pass,
-            batch,
-            overlay.white_texture(),
-            font,
-            buffer,
-            run.rectangles.clone(),
-            run.text.clone(),
-            camera,
-        );
+        match run {
+            BuildingStatusRun::Text { rectangles, text } => {
+                if let Some(overlay) = overlay {
+                    draw_status_text_material(
+                        &mut pass,
+                        batch,
+                        overlay.white_texture(),
+                        font,
+                        buffer,
+                        rectangles.clone(),
+                        text.clone(),
+                        camera,
+                    );
+                }
+            }
+            BuildingStatusRun::ProductionCameo(index) => {
+                if let Some(cameos) = cameos {
+                    batch
+                        .draw_passthrough_range_bound(&mut pass, cameos, buffer, camera, *index, 1);
+                }
+            }
+        }
     }
     drop(pass);
     terrain.note_external_passes(encoder, 1);

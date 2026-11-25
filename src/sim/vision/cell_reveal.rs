@@ -110,9 +110,13 @@ impl MapCellLookup {
 pub(crate) enum MapRevealProjection {
     Source,
     Transient,
+    /// Ordinary aircraft See uses the aircraft's own sight for both passes.
+    UncachedAircraft,
     /// Map5673A0 S32=true: skip a fully initialized/open receiver first;
     /// uncached4A9CA0 final0, not a retained source admission.
-    UncachedConditional,
+    UncachedConditional {
+        outline: bool,
+    },
     /// Map5673A0 final0: Cell4876F0, without MapCell cache initialization.
     Fire,
     /// Map5673A0/5678E0 skipReveal: clear pending fog without mapping.

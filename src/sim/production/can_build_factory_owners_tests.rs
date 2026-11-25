@@ -367,7 +367,16 @@ fn built_at_overrides_explicit_only_and_an_offline_tail_does_not_hide_an_online_
         .unwrap()
         .set_building_online_for_test(false);
     assert_eq!(
-        query_factory(&sim, &rules, owner, target, true, true, false, false),
+        query_factory(
+            &sim,
+            &rules,
+            owner,
+            target,
+            true,
+            FactoryPower::Online,
+            false,
+            false,
+        ),
         FactorySearch::Online(1)
     );
     sim.substrate
@@ -380,7 +389,16 @@ fn built_at_overrides_explicit_only_and_an_offline_tail_does_not_hide_an_online_
         Some(2)
     );
     assert_eq!(
-        query_factory(&sim, &rules, owner, target, true, true, false, true),
+        query_factory(
+            &sim,
+            &rules,
+            owner,
+            target,
+            true,
+            FactoryPower::Online,
+            false,
+            true,
+        ),
         FactorySearch::Online(1)
     );
 }

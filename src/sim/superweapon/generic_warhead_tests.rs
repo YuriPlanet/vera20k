@@ -451,6 +451,33 @@ fn hostile_building_inhibits_only_while_powered_and_within_range() {
 }
 
 #[test]
+fn a_superweapon_inhibitor_uses_its_owners_alliance() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    use crate::rules::superweapon_targeting::TargetReject;
+
+    let (mut sim, rules, owner, sw, _) = fixture(
+        "[Strike]\nSW.Inhibitors=TARGET\n[TARGET]\nInhibitorRange=2\n",
+        "Russians",
+    );
+    sim.house_alliances_mut_for_test()
+        .insert("RUSSIANS".into(), ["AMERICANS".into()].into());
+    assert_eq!(
+        sim.super_weapon_target_check(&rules, owner, sw, (17, 15), false),
+        Err(TargetReject::InhibitorInRange)
+    );
+    assert!(!fire(&mut sim, &rules, owner, sw, (17, 15)));
+
+    sim.house_alliances_mut_for_test().clear();
+    sim.house_alliances_mut_for_test()
+        .insert("AMERICANS".into(), ["RUSSIANS".into()].into());
+    assert_eq!(
+        sim.super_weapon_target_check(&rules, owner, sw, (17, 15), false),
+        Ok(())
+    );
+    assert!(fire(&mut sim, &rules, owner, sw, (17, 15)));
+}
+
+#[test]
 fn designation_rules_retain_nullable_ranges_across_invalid_later_reads() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut layers = RulesLayerStack::new(crate::sim::arena_fixture::clear_ground_ini(

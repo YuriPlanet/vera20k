@@ -217,7 +217,7 @@ fn powering_off_keeps_the_supercharge_without_its_drain() {
     };
     let rules = &retail.rules;
     let (mut sim, grid, owner, gap) = charged_arena(rules);
-    assert!(sim.go_building_offline(gap, rules, &mut FrameEffects::default()));
+    assert!(sim.go_building_offline(gap, rules, &mut FrameEffects::default(), false));
     for _ in 0..4 {
         run(&mut sim, rules, &grid, &[]);
     }

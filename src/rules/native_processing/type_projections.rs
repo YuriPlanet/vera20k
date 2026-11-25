@@ -1359,8 +1359,6 @@ impl ProcessedRulesLayers {
                         category,
                         member.native_stored_id.as_str(),
                         member.emp_type.as_ref(),
-                        // Only a read the Ares way fills these; the stock way
-                        // leaves None, None, None and 1.0 twice.
                         member.promotion_abilities.as_ref(),
                         member.self_attach_effect.as_ref(),
                         member.cloak_allowed,

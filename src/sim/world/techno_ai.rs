@@ -548,7 +548,7 @@ impl Simulation {
             )
             .expect("projectile remained present for its Logic slot");
         let terminal = !result.expired.is_empty() || !result.detonations.is_empty();
-        if rules.ares() && result.ares_firestormed {
+        if result.ares_firestormed {
             self.ares_burn_flying_bullet(id, rules);
         }
         // The rest of a `NUKE` impact precedes the slot's detonations.
@@ -1270,12 +1270,10 @@ fn techno_ai_shell(
             // Ares BuildingClass_Update_FirestormWall (10014B40, hook
             // 0x440378) ahead of the range drop: a `Firestorm.Wall` section's
             // flicker and victims (`UpdateFirewall(false)`).
-            if rules.ares()
-                && sim.substrate.entities.get(id).is_some_and(|entity| {
-                    sim.object_type(entity.type_ref(), rules)
-                        .is_some_and(|object| object.building_type_ext().firestorm_wall)
-                })
-            {
+            if sim.substrate.entities.get(id).is_some_and(|entity| {
+                sim.object_type(entity.type_ref(), rules)
+                    .is_some_and(|object| object.building_type_ext().firestorm_wall)
+            }) {
                 sim.ares_update_firewall(id, false, rules, ctx.overlay_registry, &mut ctx.effects);
             }
             // The range drop that ends the Update (`0x00440378`).

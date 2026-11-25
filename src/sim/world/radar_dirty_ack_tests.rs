@@ -2,6 +2,7 @@ use super::*;
 use crate::map::map_file::MapHeader;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::ruleset::RuleSet;
 use crate::sim::overlay_grid::{OverlayGrid, WallPointerTarget};
 use crate::sim::snapshot::GameSnapshot;
 
@@ -42,12 +43,13 @@ fn radar_dirty_wall_partial_damage_marks_nothing() {
         "[OverlayTypes]\n0=FILL0\n1=FILL1\n2=GAWALL\n[GAWALL]\nWall=yes\nStrength=1\nDamageLevels=4\n",
     );
     let registry = OverlayTypeRegistry::from_ini(&ini, Some(&ini));
+    let rules = RuleSet::from_ini(&ini).unwrap();
     let mut sim = Simulation::new();
     sim.overlay_grid = Some(OverlayGrid::new(16, 16));
     sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(16, 16));
     sim.overlay_grid.as_mut().unwrap().place_overlay(4, 5, 2, 0);
     let _ = sim.overlay_grid.as_mut().unwrap().take_dirty_cells();
-    sim.apply_wall_damage(WallPointerTarget::Real(4, 5), 1, &registry);
+    sim.apply_wall_damage(WallPointerTarget::Real(4, 5), 1, &registry, &rules);
     assert_eq!(
         sim.overlay_grid.as_ref().unwrap().cell(4, 5).overlay_data,
         0x10

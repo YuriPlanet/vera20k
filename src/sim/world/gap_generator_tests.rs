@@ -188,7 +188,7 @@ fn defeated_gap_viewer_keeps_old_counter_and_suppresses_new_hostile_gaps() {
     assert!(sim.fog.has_ground_bits(defeated, 12, 12));
     assert_eq!(gap_count(&sim, defeated, (12, 12)), 1);
 
-    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default()));
+    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default(), false));
     // GoOffline removes immediately; Building Update samples the off edge
     // before the following online edge can publish another CreateGap.
     sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
@@ -292,7 +292,7 @@ fn defeated_viewer_fogs_hostile_gap_through_power_cycle_without_shroud() {
     assert!(!sim.fog.is_cell_gap_fog(alive, 12, 12));
 
     // Powered off: the bulk clear+reproject drops the friendly fog too.
-    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default()));
+    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default(), false));
     sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     refresh(&mut sim, &rules);
     assert!(!sim.fog.is_cell_gap_fog(defeated, 12, 12));
@@ -334,7 +334,7 @@ fn defeat_does_not_reclassify_an_active_hostile_gap() {
 
     // The current defeated predicate sends this removal through the friendly
     // decrement, even though its activation wrote the hostile counter.
-    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default()));
+    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default(), false));
     sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     refresh(&mut sim, &rules);
     assert!(!sim.fog.is_cell_gap_fog(viewer, 12, 12));
@@ -390,7 +390,7 @@ fn explicit_power_off_removes_gap_before_the_operational_visit_and_on_defers_add
     sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     assert!(sim.fog.is_cell_gap_covered(b, 12, 12));
     let rng = sim.rng_state();
-    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default()));
+    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default(), false));
     assert!(
         !sim.fog.is_cell_gap_covered(b, 12, 12),
         "DisableStuff4524E9 removes immediately"
@@ -678,7 +678,7 @@ fn spy_sat_gap_reentry_and_removal_publish_the_native_ground_bits() {
     assert!(!sim.fog.is_cell_revealed(viewer, 12, 12));
     assert_eq!(ground(&sim), 0);
 
-    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default()));
+    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default(), false));
     assert!(sim.fog.is_cell_revealed(viewer, 12, 12));
     assert_eq!(ground(&sim), 0x18);
     sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
@@ -997,7 +997,7 @@ fn a_raised_gap_generator_centres_its_circle_by_its_height() {
         (true, false),
         "the owner's friendly gap fog takes the same disc"
     );
-    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default()));
+    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default(), false));
     assert_eq!(disc(&sim), (false, false, false, false));
 }
 
@@ -1035,7 +1035,7 @@ fn alliance_callbacks_recheck_gap_operation_without_overwriting_the_building_sam
     );
 
     sim.release_alliance_sight(context.reborrow());
-    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default()));
+    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default(), false));
     sim.admit_alliance_sight(context.reborrow());
     assert!(!sim.fog.is_cell_gap_covered(player, 12, 12));
     assert_eq!(

@@ -281,6 +281,77 @@ fn ferry_and_autoload_accept_only_locally_delegated_carriers_and_passengers() {
     )));
 }
 
+#[test]
+fn ferry_reserves_and_departs_on_headcount_without_ares() {
+    use crate::app::presentation::frame::ObjectRecord;
+    use crate::sim::passenger::{PassengerCargo, PassengerRole};
+
+    let patch = crate::rules::ini_parser::IniFile::from_str(
+        "[E1]\nSize=3\n[LCRF]\nPassengers=2\nSizeLimit=3\nPassengers.BySize=no\n",
+    );
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "Hills.mmx",
+        &patch,
+    ) else {
+        return;
+    };
+    let (mut sim, rules, aboard) = Simulation::walk_cell_input_test_scene_with(retail.rules, false);
+    let owner = sim.interner().get("Local").unwrap();
+    let transport = sim.spawn_object("LCRF", "Local", 4, 8, 0, &rules).unwrap();
+    let waiting = sim.spawn_object("E1", "Local", 5, 8, 0, &rules).unwrap();
+    sim.spawn_object("E1", "Local", 6, 8, 0, &rules).unwrap();
+    sim.resolve_type_handles(&rules);
+
+    let mut cargo = PassengerCargo::new(2, 3.0);
+    cargo.board_forced_chain(&[(aboard, 3.0)]);
+    sim.entity_mut_for_test(aboard)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::boarded_for_test(transport, false));
+    sim.entity_mut_for_test(transport)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::transport(cargo.clone()));
+
+    let pips = |sim: &Simulation| {
+        ObjectRecord::of_test_sim(sim, &rules, transport)
+            .hud
+            .scale_pips()
+            .iter()
+            .map(|pip| pip.frame)
+            .collect::<Vec<_>>()
+    };
+    let rider_pip = rules.object("E1").unwrap().pip() as usize;
+    assert_eq!(pips(&sim), [rider_pip, 0]);
+
+    let now = sim.session().tick();
+    let mut ferry = FerryState::default();
+    ferry.add(route_for(&sim, &rules, owner, transport, (13, 2), now).unwrap());
+    assert!(matches!(
+        ferry.check(&sim, &rules, owner, now).as_slice(),
+        [Command::MegaMission {
+            entity_id,
+            mission: MissionType::Enter,
+            destination: Some(TargetKind::Entity(carrier)),
+            ..
+        }] if *entity_id == waiting && *carrier == transport
+    ));
+    assert_eq!(ferry.routes[0].leg, Leg::Loading);
+
+    cargo.board_forced_chain(&[(waiting, 3.0)]);
+    sim.entity_mut_for_test(waiting)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::boarded_for_test(transport, false));
+    sim.entity_mut_for_test(transport)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::transport(cargo));
+    assert_eq!(pips(&sim), [rider_pip, rider_pip]);
+    assert!(matches!(
+        ferry.check(&sim, &rules, owner, now + CHECK_INTERVAL).as_slice(),
+        [Command::Move { entity_id, .. }] if *entity_id == transport
+    ));
+    assert_eq!(ferry.routes[0].leg, Leg::ToDrop);
+    assert!(!rules.ares());
+}
+
 /// One whole trip through the simulation, on a 16 x 16 scene with water on
 /// columns 8..=10: the GI at rest inside the circle is told aboard, the
 /// transport crosses, sets him down on the far bank and comes back to load.

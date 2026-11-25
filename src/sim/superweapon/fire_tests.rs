@@ -500,7 +500,7 @@ fn default_build_refuses_forged_paid_commands_and_saved_selection_state() {
     let before = sim.state_hash();
     // The player load refuses the saved selection in a game without Ares;
     // forged past it, no command it could produce is admitted below.
-    assert!(sim.validate_ares_state_for_load(rules.ares()).is_err());
+    assert!(sim.validate_ares_state_for_load(&rules).is_err());
     assert_eq!(
         sim.next_paid_super_weapon_selection(&rules, owner, sw_type),
         None

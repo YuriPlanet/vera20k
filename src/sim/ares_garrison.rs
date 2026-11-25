@@ -2,15 +2,16 @@
 //! (`rules::ares_building_type`).
 //!
 //! - `CanBeOccupiedBy` and `Bunker.Raidable` admit occupiers
-//!   (`BuildingClass_CanBeOccupied_SpecificOccupiers @ 10017060`, hook
+//!   (`BuildingClass_CanBeOccupied_SpecificOccupiers @ 10017710`, hook
 //!   `0x00457D58`, in `passenger::can_dock_occupier_garrison`).
 //! - An occupier entering a building of another house raids it
-//!   (`InfantryClass_GarrisonBuilding_OccupierEntered @ 10017240`, hook
+//!   (`InfantryClass_GarrisonBuilding_OccupierEntered @ 10017910`, hook
 //!   `0x0052297F`): the building is the occupier's until it is empty again
 //!   (`BuildingExt::ExtData::evalRaidStatus @ 100136C0`, after
 //!   SellBuilding's ejection `0x004581CD`, KillOccupants `0x00458729` and a
 //!   pass-through hit), and cannot be sold meanwhile (`10017200`, hook
-//!   `0x004494D2`, in `production::can_sell_building`).
+//!   `0x004494D2`, in `production::can_sell_building`). Campaign houses
+//!   controlled by the player share garrisons and keep their ownership.
 //! - A shot that snaps to a garrisoned building can pass through to one of
 //!   its occupants (`BulletExt::ExtData::DamageOccupants @ 10019AC0`, from
 //!   `BulletClass_Detonate @ 100536E0`, hook `0x0046920B`; see
@@ -61,13 +62,13 @@ impl RaidState {
 }
 
 impl Simulation {
-    /// `InfantryClass_GarrisonBuilding_OccupierEntered @ 10017240` (hook
+    /// Ares 3.0p1 `InfantryClass_GarrisonBuilding_OccupierEntered @ 10017910` (hook
     /// `0x0052297F`, after the occupier joins the list, before the threat
     /// refresh): an occupier of `occupier_owner` entering a building of
-    /// another house that is not already raided raids it, unless it is a
-    /// civilian building (TechLevel -1) of a `MultiplayPassive=` house, which
-    /// the original garrison reconciliation takes over. The building then
-    /// changes to the occupier's house with the capture announcement
+    /// another house that is not already raided raids it. Campaign player
+    /// houses share garrisons. The original garrison reconciliation owns
+    /// civilian buildings (TechLevel -1) of a `MultiplayPassive=` house.
+    /// A raid changes ownership with the capture announcement
     /// (`SetOwningHouse(owner, true)`).
     pub(crate) fn ares_occupier_entered(
         &mut self,
@@ -81,7 +82,10 @@ impl Simulation {
             return;
         };
         let owner = building.owner();
-        if owner == occupier_owner || building.seldom.ares.ares_raid.raided() {
+        if owner == occupier_owner
+            || building.seldom.ares.ares_raid.raided()
+            || crate::sim::passenger::campaign_players_share_garrison(self, owner, occupier_owner)
+        {
             return;
         }
         let Some(object) = self.object_type(building.type_ref(), rules) else {
@@ -292,21 +296,20 @@ impl Simulation {
     }
 }
 
-/// `BuildingClass_CanBeOccupied_SpecificOccupiers @ 10017060` (hook
+/// Ares 3.0p1 `BuildingClass_CanBeOccupied_SpecificOccupiers @ 10017710` (hook
 /// `0x00457D58`), past the original's type, mission, playfield and warp
 /// tests: an `Occupier=` infantryman of a type the building's
 /// `CanBeOccupiedBy` admits may enter when the building is not full and he
 /// is eligible (not mind-controlled, and for a civilian TechLevel -1
-/// building, not at red health), and the building is his house's, of a
-/// `MultiplayPassive=` house (`passive`), or `Bunker.Raidable` and empty.
+/// building, not at red health). Then the shared house admission or the
+/// building's empty `Bunker.Raidable` admission must succeed.
 pub(crate) fn occupier_admitted(
     sim: &Simulation,
     passenger: &crate::sim::game_entity::GameEntity,
-    building: &crate::sim::game_entity::GameEntity,
     passenger_obj: &crate::rules::object_type::ObjectType,
     building_obj: &crate::rules::object_type::ObjectType,
     occupants: i32,
-    passive: bool,
+    owner_allows_entry: bool,
     red_health: bool,
 ) -> bool {
     let ext = building_obj.building_type_ext();
@@ -319,7 +322,7 @@ pub(crate) fn occupier_admitted(
     if full || ineligible {
         return false;
     }
-    passenger.owner() == building.owner() || passive || (ext.bunker_raidable && occupants == 0)
+    owner_allows_entry || (ext.bunker_raidable && occupants == 0)
 }
 
 #[cfg(all(test, tests_sim_a_b))]

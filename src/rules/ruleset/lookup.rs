@@ -154,12 +154,8 @@ impl RuleSet {
     /// Cameo10034E75/10034F3F and SPECIAL_PLACE10038EB9 use the same
     /// retained flag. Expose the fact without exporting mutable SWExt state.
     pub fn super_weapon_uses_ai_targeting(&self, id: &str) -> bool {
-        if self.ares {
-            self.super_weapon_target_policy(id)
-                .is_some_and(|policy| policy.use_ai_targeting())
-        } else {
-            false
-        }
+        self.super_weapon_target_policy(id)
+            .is_some_and(|policy| policy.use_ai_targeting())
     }
 
     /// The ordered SWTypeExt targeting fields of an Ares GenericWarhead or
@@ -168,7 +164,8 @@ impl RuleSet {
         &self,
         id: &str,
     ) -> Option<crate::rules::superweapon_targeting::AresSuperWeaponTargetingState> {
-        if !self.super_weapon(id)?.kind.has_ares_handler() {
+        let sw = self.super_weapon(id)?;
+        if !sw.has_builtin_rules() && !(self.ares && sw.kind.has_ares_handler()) {
             return None;
         }
         self.super_weapon_metadata(id)
@@ -834,6 +831,21 @@ impl RuleSet {
         self.ares
     }
 
+    #[inline]
+    pub(crate) fn attach_effects_enabled(&self) -> bool {
+        self.ares || self.temporal_attach_effects_enabled()
+    }
+
+    #[inline]
+    pub(crate) fn temporal_attach_effects_enabled(&self) -> bool {
+        self.builtin_attach_effects
+    }
+
+    #[inline]
+    pub(crate) fn emp_enabled(&self) -> bool {
+        self.ares || self.builtin_tunnel_emp
+    }
+
     /// Whether Phobos plays in this game: its Rules layers or map hold a key
     /// of a Phobos piece that runs in every build, or the build has the
     /// `phobos` feature (`rules::phobos_switch`). Sim and presentation read
@@ -970,6 +982,10 @@ impl RuleSet {
     /// Look up a superweapon type by ID (case-insensitive, gamemd parity).
     pub fn super_weapon(&self, id: &str) -> Option<&SuperWeaponType> {
         Self::lookup_ci(&self.super_weapons, id)
+    }
+
+    pub fn has_super_weapon_extension_rules(&self) -> bool {
+        self.ares_form() || !self.ares_super_weapon_metadata.is_empty()
     }
 
     pub(crate) fn super_weapon_metadata(

@@ -956,8 +956,8 @@ impl SidebarProjectionState {
     /// Factory and retained request for Ready, stage and Hold. Input resolves
     /// these same handles and request records. With Ares a finished building
     /// is Ready only while its own `FindFactory(1, 1)` finds a powered
-    /// factory (StripClass_Draw_Power, Ares.dll `100251D0`, hook
-    /// `0x006A9822`); otherwise it draws as still building.
+    /// factory (Ares 3.0p1 StripClass_Draw_Power, `0x006A9822 -> 0x10025CF0`).
+    /// An explicit manual power toggle uses that wait state too.
     /// Sources: tools/sidebar_oracle/cameo_order.md (retained rearm) and
     /// pending_production.json (request/clock instructions and controls).
     pub(crate) fn factory_statuses(
@@ -994,12 +994,13 @@ impl SidebarProjectionState {
                                 o.category() == crate::map::entities::EntityCategory::Structure
                             })
                         };
-                        !rules.ares_form()
+                        !(rules.ares_form() || rules.toggle_power_allowed())
                             || object.entity_id.is_none_or(|id| {
                                 !building(id)
-                                    || crate::sim::production::object_find_factory(
-                                        sim, rules, id, true, true,
+                                    || crate::sim::production::ready_object_factory(
+                                        sim, rules, id, true, false,
                                     )
+                                    .available()
                                     .is_some()
                             })
                     });

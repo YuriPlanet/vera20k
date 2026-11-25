@@ -653,7 +653,12 @@ impl Simulation {
                     if map_ent.structure_online {
                         sim.go_building_online(stable_id, rules, &mut FrameEffects::default());
                     } else {
-                        sim.go_building_offline(stable_id, rules, &mut FrameEffects::default());
+                        sim.go_building_offline(
+                            stable_id,
+                            rules,
+                            &mut FrameEffects::default(),
+                            false,
+                        );
                     }
                 }
                 sim.finish_authored_building_enable(stable_id, rules);

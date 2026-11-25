@@ -126,7 +126,7 @@ DLL removed are not listed.
 
 | Hook | Name | Ares.dll | Disposition |
 |---|---|---|---|
-| `43CA80` | BuildingClass_ReceivedRadioCommand_DockUnloadCell | `10014540` | ported earlier |
+| `43CA80` | BuildingClass_ReceivedRadioCommand_DockUnloadCell | `10014540` | built-in `DockUnloadCell` from the refinery's `Image=` art section, default `(3,1)` |
 | `43FD2C` | BuildingClass_Update_ProduceCash | `100146E0` | ported: `credit_income::produce_cash_step` |
 | `44019D` | BuildingClass_Update_Battery | `10014690` | ported earlier |
 | `4409F4` | BuildingClass_Put_ProduceCash | `10014490` | ported: the upgrade's cash timer starts at Put for its `ProduceCashDelay` (`credit_income::ares_produce_cash_on_put`), then the factory plans of the upgrade being put, by its own type and Country, not the host's (`try_install_building_upgrade`) |
@@ -163,6 +163,7 @@ DLL removed are not listed.
 | `709B4E` | TechnoClass_DrawPipscale_SkipSkipTiberium | `100148B0` | residual: storage pips (ares-tiberium.md) |
 | `7376D9` | UnitClass_ReceivedRadioCommand_DockUnload_Facing | `10014970` | ported earlier |
 | `73DF66` | UnitClass_Mi_Unload_DockUnload_Facing | `10014910` | ported earlier |
+| `73E013`, `73E17F`, `73E2BF`, `741BDB` | Unload stages and SetDestination use the dock unload cell | 3.0p1 `10014EA0`, `10014EC0`, `10014EE0`, `10014FB0` | built-in `miner::refinery_dock`: `100456E0` uses the first radio contact and its configured pad for the unload and departure |
 
 ### Building/Hooks.Foundation.cpp
 
@@ -389,7 +390,7 @@ DLL removed are not listed.
 | `6A99B7` | StripClass_Draw_SuperDarken | `10034EF0` | ported earlier |
 | `6AAEDF` | SidebarClass_ProcessCameoClick_SuperWeapons | `10034DA0` | ported earlier |
 | `6AAF9D` | SidebarClass_ProcessCameoClick_SelectTarget | `10034D60` | ported earlier |
-| `6CB4D0` | SuperClass_SetOnHold | `10035750` | ported earlier |
+| `6CB4D0` | SuperClass_SetOnHold | 3.0p1 `10036190` | built-in: convert the remaining drain on hold and restart with the instance recharge value |
 | `6CB70C` | SuperClass_Grant_InitialReady | `100354E0` | ported earlier |
 | `6CB7B0` | SuperClass_Lose | `10035610` | ported earlier |
 | `6CB920` | SuperClass_ClickFire | `10035130` | ported earlier |

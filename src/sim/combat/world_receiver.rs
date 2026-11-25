@@ -655,8 +655,19 @@ pub(crate) fn collect_area(
                 air_impact,
                 impact_z,
             };
-            let spread_cell =
-                collector.prepare_cell(dx, dy, warhead, &mut context, &mut Some(prelude));
+            let wall_gates = crate::sim::cell_kernel::WallGateConnections::new(
+                &world.substrate,
+                &world.interner,
+                rules,
+            );
+            let spread_cell = collector.prepare_cell(
+                dx,
+                dy,
+                warhead,
+                &mut context,
+                &mut Some(prelude),
+                Some(wall_gates),
+            );
             let detached_cell = spread_cell.detached_cell(&context);
             (spread_cell, detached_cell)
         };
@@ -1469,8 +1480,7 @@ fn commit_entity(
         // Ares 3.0 BuildingClass_ReceiveDamage_FSW (10014A90, hook 0x4423E7),
         // past the type gates: an active firestorm wall section returns 0
         // and the hit shortens its House's firestorm drain instead.
-        if rules.ares()
-            && world
+        if world
                 .substrate
                 .entities
                 .get(target_id)
@@ -2931,7 +2941,8 @@ fn finish_concrete_death(
             ignore_defenses,
             selected_by_player,
         };
-        if rules.ares() {
+        if world.uses_ares_vehicle_survivors(dead_id, rules) {
+            // Ares 3.0p1 0x737F97 -> 0x1004CD40 ends at 0x73838A after survivors.
             world.release_ares_vehicle_survivors(
                 rules,
                 overlay_registry,
@@ -3050,9 +3061,9 @@ fn finish_concrete_death(
         // released its dock slots.
         effects.despawned_ids.push(dead_id);
     } else if category == EntityCategory::Aircraft && callbacks_enabled(world) {
-        if rules.ares() {
-            //41668B ->10048C50 reads the live selected byte here (unlike
-            //Unit's entry snapshot), then calls shared survivors100464C0.
+        if world.uses_ares_vehicle_survivors(dead_id, rules) {
+            // Ares 3.0p1 0x41668B -> 0x100498A0 reads the live selection
+            // and calls the shared survivor function at 0x10047030.
             let selected = world
                 .substrate
                 .entities
@@ -4048,6 +4059,26 @@ fn emit_detonation_receivers<'r>(
         ) {
             return (None, false);
         }
+    } else if warhead
+        .ares_rules()
+        .is_some_and(|ext| ext.duration() != 0 || ext.attach_effect().is_enabled(false))
+    {
+        let coordinate = ares_warhead_effect_coordinate(world, detonation);
+        let source_house = world
+            .substrate
+            .entities
+            .get(detonation.source_id)
+            .map(|source| source.owner());
+        // A configured EMP warhead can hit a surfaced Tunnel mover in the
+        // built-in path. Keep that admission in the shared EMP receiver.
+        world.apply_ares_emp_detonation(
+            coordinate,
+            Some(detonation.source_id),
+            warhead,
+            rules,
+            run.effects(),
+        );
+        world.apply_ares_attach_effect_detonation(coordinate, source_house, warhead, rules);
     }
 
     // `BulletClass::DetonateAtCoord @ 0x0046978e` is the chain's only

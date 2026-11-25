@@ -29,7 +29,7 @@ impl SelectionFlashGlobals {
         Self {
             duration_frames: ini
                 .section_or_empty("AudioVisual")
-                .read_ares_int("SelectionFlashDuration", 0),
+                .read_phobos_scalar_int("SelectionFlashDuration", 0),
         }
     }
 }

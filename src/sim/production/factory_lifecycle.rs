@@ -1081,12 +1081,21 @@ pub(in crate::sim) fn update_factory_queue(
     owner: InternedId,
     category: ProductionCategory,
     effects: &mut FrameEffects<'_>,
+    manual_power_change: bool,
 ) {
-    // Ares 3.0 HouseClass_Update_Factories_Queues 10025100 (hook 0x00509140)
-    // first runs the BuildingType/DontCare call again for BuildCat::Combat,
-    // so the defense strip's queue follows its construction yards too.
-    if rules.ares_form() && category == ProductionCategory::Building {
-        update_factory_queue(sim, rules, owner, ProductionCategory::Defense, effects);
+    // Ares 3.0p1 HouseClass_Update_Factories_Queues
+    // (0x00509140 -> 0x10025C20) first refreshes BuildCat::Combat alongside
+    // BuildingType/DontCare. Built-in manual power transitions follow both
+    // queues while ordinary construction-yard changes keep their stock path.
+    if (rules.ares_form() || manual_power_change) && category == ProductionCategory::Building {
+        update_factory_queue(
+            sim,
+            rules,
+            owner,
+            ProductionCategory::Defense,
+            effects,
+            false,
+        );
     }
     let queued: Vec<_> = sim
         .production

@@ -272,13 +272,23 @@ impl RulesPassProcessor {
                     retained.read_parachute_anim(|key| {
                         self.resolve_existing_type_from(&raw, key, RulesTypeFamily::Animation)
                     });
+                    if family == RulesTypeFamily::Vehicle {
+                        // Retain this before a later pass can enable Hover
+                        // simple deployment, as in TechnoTypeExt 0x1003FFEA.
+                        let _built_in = crate::rules::ares_switch::not_ares_reads();
+                        retained.read_deploy_dir(raw);
+                    }
                     self.family_mut(family)[index].techno_combat = retained;
                 }
                 if ares_way {
                     self.process_factory_owners(family, index, &raw);
                 }
-                if ares_way {
+                {
+                    // Ares 3.0p1 TypeExt CanDrive read 0x1003F243..0x1003F26A.
+                    // Script67 uses the retained driver rules in either INI mode.
                     use crate::rules::ares_driver::OperatorRequirement;
+                    let _explicit_driver_rules =
+                        (!ares_way).then(crate::rules::ares_switch::not_ares_reads);
                     let _ares = crate::rules::ares_switch::ares_reads();
                     let operator = raw.read_name("Operator", 2048).map(|name| {
                         if name.eq_ignore_ascii_case("_ANY_") {
@@ -297,38 +307,51 @@ impl RulesPassProcessor {
                     self.family_mut(family)[index]
                         .driver
                         .read_pass(&raw, operator);
-                    self.family_mut(family)[index].bounty.read_pass(&raw);
                 }
                 if ares_way {
+                    self.family_mut(family)[index].bounty.read_pass(&raw);
+                }
+                if ares_way || family != RulesTypeFamily::Building {
+                    let _built_in = (!ares_way).then(crate::rules::ares_switch::not_ares_reads);
                     // Find only: this nullable Anim reader never allocates.
-                    self.family_mut(family)[index]
-                        .promotion_abilities
-                        .as_mut()
-                        .expect("TechnoType promotion abilities")
-                        .read_pass(&raw);
                     let sparkle = self.resolve_existing_type_from(
                         &raw,
                         "EMP.Sparkles",
                         RulesTypeFamily::Animation,
                     );
-                    self.family_mut(family)[index]
-                        .emp_type
-                        .as_mut()
-                        .expect("TechnoType EMP extension")
-                        .read_pass(&raw, sparkle);
-                    // TechnoTypeExt::LoadFromINI1003DEC0 calls the shared
-                    // descriptor reader10058A50 at1003E8D4, before subclasses.
+                    let member = &mut self.family_mut(family)[index];
+                    let abilities = member
+                        .promotion_abilities
+                        .get_or_insert_with(Default::default);
+                    abilities.read_pass(&raw, ares_way);
+                    if !ares_way && *abilities == Default::default() {
+                        member.promotion_abilities = None;
+                    }
+                    let emp = member.emp_type.get_or_insert_with(Default::default);
+                    emp.read_pass(&raw, sparkle);
+                    if !ares_way && *emp == Default::default() {
+                        member.emp_type = None;
+                    }
+                }
+                // TechnoTypeExt::LoadFromINI calls the P1 descriptor reader
+                // 0x100596F0 from 0x1003F534. Retain earlier layers so a later rules or
+                // map pass can opt in with TemporalHidesAnim=yes.
+                {
+                    let _built_in = (!ares_way).then(crate::rules::ares_switch::not_ares_reads);
                     let animation = self.resolve_existing_type_from(
                         &raw,
                         "AttachEffect.Animation",
                         RulesTypeFamily::Animation,
                     );
+                    let attachment = &mut self.family_mut(family)[index].self_attach_effect;
+                    let settings = attachment.get_or_insert_with(Default::default);
+                    settings.read_pass(&raw, animation);
+                    if !ares_way && *settings == Default::default() {
+                        *attachment = None;
+                    }
+                }
+                if ares_way {
                     let member = &mut self.family_mut(family)[index];
-                    member
-                        .self_attach_effect
-                        .as_mut()
-                        .expect("TechnoType attachment descriptor")
-                        .read_pass(&raw, animation);
                     member.cloak_allowed =
                         raw.read_ares_bool("Cloakable.Allowed", member.cloak_allowed);
                     // TypeExt LoadFromINI1003DFB0 reads RadarJamRadius and the
@@ -345,13 +368,16 @@ impl RulesPassProcessor {
                     let member = &mut self.family_mut(family)[index];
                     member.turret_rot_override =
                         raw.read_ares_nullable_int("TurretROT", member.turret_rot_override);
-                    // TypeExt LoadFromINI1003DFB0: two independent
-                    // Valueable<double> reads (binary64, percent scales).
-                    let [iron_curtain, force_shield] = member.curtain_modifiers;
-                    member.curtain_modifiers = [
-                        raw.read_ares_double_bits("IronCurtain.Modifier", iron_curtain),
-                        raw.read_ares_double_bits("ForceShield.Modifier", force_shield),
-                    ];
+                    member.curtain_modifiers[0] = raw
+                        .read_ares_double_bits("IronCurtain.Modifier", member.curtain_modifiers[0]);
+                }
+                let member = &mut self.family_mut(family)[index];
+                // Ares 3.0p1 TechnoTypeExt::LoadFromINI 0x1003F427..0x1003F438
+                // reads the built-in Force Shield modifier as Valueable<double>.
+                member.curtain_modifiers[1] = crate::rules::ares_switch::not_ares_read(|| {
+                    raw.read_ares_double_bits("ForceShield.Modifier", member.curtain_modifiers[1])
+                });
+                if ares_way {
                     //1003E232: the common extension applies to all Technos.
                     member.building_has_spotlight =
                         crate::rules::ares_switch::not_ares_read(|| {
@@ -407,14 +433,14 @@ impl RulesPassProcessor {
                 }
                 match family {
                     RulesTypeFamily::Building => {
-                        if ares_way
-                            && let Some(supers) = self.resolve_existing_list_from(
-                                &raw,
-                                "SuperWeapons",
-                                RulesTypeFamily::SuperWeapon,
-                                2048,
+                        let supers = {
+                            let _builtin = (!ares_way)
+                                .then(crate::rules::ares_switch::not_ares_reads);
+                            self.resolve_existing_list_from(
+                                &raw, "SuperWeapons", RulesTypeFamily::SuperWeapon, 2048,
                             )
-                        {
+                        };
+                        if let Some(supers) = supers {
                             // BuildingTypeExt1000E71B ->1000EC70: ordered
                             // lookup-only ID vector, missing/empty retains,
                             // unknown tokens are skipped, registered sentinel IDs
@@ -507,6 +533,11 @@ impl RulesPassProcessor {
                             read_member(&mut self.families, family, index)
                                 .ares_cursors
                                 .read_building_pass(&raw, &self.ares_mouse_cursors);
+                        } else {
+                            let ext = &mut self.family_mut(family)[index].building_type_ext;
+                            ext.read_dock_art(fixed_art.section_or_empty(&image));
+                            let _builtin = crate::rules::ares_switch::not_ares_reads();
+                            ext.read_firestorm_wall(raw);
                         }
                         let member = read_member(&mut self.families, family, index);
                         // ReadINI460F50..460F9C: exact Rules key, ReadCoord529CA0,
@@ -648,12 +679,12 @@ impl RulesPassProcessor {
                                 gathering.anims = anims;
                             }
                             if let Some(tiberiums) =
-                                raw.read_ares_int_list("OreGathering.Tiberiums")
+                                raw.read_phobos_int_list("OreGathering.Tiberiums")
                             {
                                 gathering.tiberiums = tiberiums;
                             }
                             if let Some(frames) =
-                                raw.read_ares_int_list("OreGathering.FramesPerDir")
+                                raw.read_phobos_int_list("OreGathering.FramesPerDir")
                             {
                                 gathering.frames_per_dir = frames;
                             }

@@ -178,17 +178,15 @@ impl Simulation {
         // building is ignored (0x51BD7D); a `Firestorm.Wall` one takes the
         // stock FirestormWall branch (0x51BD56) in place of `FirestormWall=`:
         // only while its owner's firestorm is up does the man scatter.
-        if rules.ares() {
-            if object.building_type_ext().is_passable {
+        if rules.ares() && object.building_type_ext().is_passable {
+            return Ok(false);
+        }
+        if object.building_type_ext().firestorm_wall {
+            if !self.ares_firestorm.is_active(building.owner()) {
                 return Ok(false);
             }
-            if object.building_type_ext().firestorm_wall {
-                if !self.ares_firestorm.is_active(building.owner()) {
-                    return Ok(false);
-                }
-            } else if object.laser_fence {
-                return Ok(false);
-            }
+        } else if rules.ares() && object.laser_fence {
+            return Ok(false);
         }
         // RESIDUAL: specialized fence state. This prefix compares LaserFence+618
         // with8/12 and reads its owner's Firestorm+1FA. Their runtime
@@ -1124,7 +1122,7 @@ impl Simulation {
         // an active firestorm wall, then heals one in tiberium, right after
         // FootAI's TechnoAI call; the hook then replays 4DA53E..548's
         // Object+90 reload, so a burnt Foot returns here.
-        if rules.ares()
+        if (rules.ares() || sim.ares_firestorm.any_active())
             && !tube_active_at_entry
             && sim.substrate.entities.get(stable_id).is_some_and(|entity| {
                 matches!(
@@ -1139,7 +1137,9 @@ impl Simulation {
                 overlay_registry,
                 &mut object_ctx.effects,
             );
-            sim.ares_foot_tiberium_heal(stable_id, rules);
+            if rules.ares() {
+                sim.ares_foot_tiberium_heal(stable_id, rules);
+            }
             if sim
                 .substrate
                 .entities

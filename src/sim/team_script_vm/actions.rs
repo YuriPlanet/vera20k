@@ -135,7 +135,7 @@ impl Simulation {
 /// residuals can still refuse a path (Script22 currently admits single player).
 /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
 pub(super) const fn action_is_ported(action_id: i32, ares: bool) -> bool {
-    matches!(action_id, 0..=64) || (ares && matches!(action_id, 67 | 68))
+    matches!(action_id, 0..=65 | 67) || (ares && action_id == 68)
 }
 
 /// A member's NavCom as a team target, for `Distance`.
@@ -155,9 +155,10 @@ impl Simulation {
     /// archive target, unless the TeamType is `TransportsReturnOnUnload=`
     /// and the member carries passengers; a script run past its end
     /// destroys the team; the mission target and move target are cleared.
-    /// Otherwise the move target falls back to the mission target. Stock
-    /// actions outside `0..=0x40` do nothing; a game Ares plays in also
-    /// admits68.
+    /// Otherwise the move target falls back to the mission target. Ares 3.0p1
+    /// `0x6E9443 -> 0x1003AD90` checks extensions before the stock `0..=0x40`
+    /// table and resumes at `0x6E95AB` for a handled action. Script actions 65
+    /// and 67 provide their own opt-in.
     pub(super) fn team_step_script(
         &mut self,
         team_id: u64,
@@ -230,7 +231,7 @@ impl Simulation {
                 argument: 0,
             },
         );
-        if action.action_id as u32 > 0x40 && !(rules.ares() && action.action_id == 68) {
+        if !action_is_ported(action.action_id, rules.ares()) {
             return;
         }
         self.team_run_action(team_id, action, first, rules, registry, frame_effects);
@@ -492,7 +493,18 @@ impl Simulation {
                     team.advance_pending = true;
                 }
             }
-            64 | 67 if action.action_id == 64 || rules.ares() => {
+            65 => {
+                // Ares 3.0p1 0x1003A6F6..0x1003A711 adds the signed
+                // argument to the team's House AuxPower, then advances.
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    let owner = team.owner();
+                    if self.houses.contains_key(&owner) {
+                        self.power_states.house_mut(owner).add_aux_power(action.argument);
+                    }
+                    team.advance_pending = true;
+                }
+            }
+            64 | 67 => {
                 //6E9F0D -> each member's vt34C/Foot4DFE00. Cache the next
                 //member before its seek callback; successful entrants leave
                 //the Team via the shared6EA870 owner with no_idle=true.
@@ -507,13 +519,13 @@ impl Simulation {
                         .teams
                         .get(&team_id)
                         .and_then(|team| team.next_member_after(current));
-                    // Installed Ares dispatcher1003A110 sets Ext+B0 for67,
-                    // clears it for64, then calls the same Foot vt+34C.
-                    if ares && let Some(foot) = self.substrate.entities.get_mut(current) {
+                    // Ares 3.0p1 0x1003AB90 sets Ext+B0 for 67, clears
+                    // it for 64, then calls the same Foot vt+0x34C.
+                    if let Some(foot) = self.substrate.entities.get_mut(current) {
                         foot.seldom
                             .ares
                             .vehicle_driver
-                            .set_vehicle_seek(action.action_id != 64);
+                            .set_vehicle_seek(action.action_id == 67);
                     }
                     if self.foot_enter_nearest_occupiable(current, rules, frame_effects) {
                         self.team_remove_member(team_id, current, true, rules, frame_effects);

@@ -1065,6 +1065,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
                         crate::sim::overlay_grid::WallPointerTarget::Real(at.0, at.1),
                         -1,
                         registry,
+                        rules,
                     );
                 } else {
                     apply_area_damage(

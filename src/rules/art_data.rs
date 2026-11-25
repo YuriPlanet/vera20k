@@ -946,7 +946,7 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         hide_if_no_ore: section.read_bool("HideIfNoOre", false),
         #[cfg(feature = "phobos")]
         hide_if_no_ore_threshold: crate::rules::ares_switch::not_ares_read(|| {
-            section.read_ares_int("HideIfNoOre.Threshold", 0)
+            section.read_phobos_scalar_int("HideIfNoOre.Threshold", 0)
         }),
         is_animated_tiberium: section.read_bool("IsAnimatedTiberium", false),
         tiberium_spread_radius: section.read_int("TiberiumSpreadRadius", 0),

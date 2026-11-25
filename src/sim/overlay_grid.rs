@@ -1145,6 +1145,8 @@ pub(crate) enum WallPointerTarget {
 /// reconstructed from an after-return mutation list without losing native
 /// recursive and cleanup-visit order.
 pub(crate) trait WallDamageTransactionHost {
+    fn wall_connects_to_gate(&self, cell: (u16, u16), wall: u8, east_west: bool) -> bool;
+
     fn dirty_step(&mut self, step: WallDirtyStep, packed_coord: (u16, u16));
 
     fn navigation_step(
@@ -1636,6 +1638,7 @@ pub(crate) fn recompute_wall_connectivity_at_with_terrain(
         registry,
         resolved_terrain,
         NativeRuntimeOverlayCell::Real(rx, ry),
+        None,
     )
 }
 
@@ -1729,6 +1732,7 @@ fn recompute_wall_connectivity_target(
     registry: &OverlayTypeRegistry,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     target: NativeRuntimeOverlayCell,
+    host: Option<&dyn WallDamageTransactionHost>,
 ) -> RecomputeResult {
     let (overlay_id, overlay_data) =
         native_runtime_overlay_target_state(grid, resolved_terrain, target);
@@ -1772,11 +1776,13 @@ fn recompute_wall_connectivity_target(
             false,
         ) {
             crate::sim::cell_kernel::WallConnectionStep::Return(connected) => connected,
-            // Existing residual: this cleanup view does not implement native
-            //480552..620's Building/Gate list arms for requested0/2/26. Retain
-            // its prior false answer there; CAFNCB203 resolves in the prefix.
             crate::sim::cell_kernel::WallConnectionStep::GdiBuildings
-            | crate::sim::cell_kernel::WallConnectionStep::NodBuildings => false,
+            | crate::sim::cell_kernel::WallConnectionStep::NodBuildings => match (host, neighbor) {
+                (Some(host), NativeRuntimeOverlayCell::Real(x, y)) => {
+                    host.wall_connects_to_gate((x, y), overlay_id, *dy == 0)
+                }
+                _ => false,
+            },
         };
         if connects {
             connectivity |= 1 << bit;
@@ -1830,7 +1836,13 @@ pub(crate) fn runtime_wall_cleanup_visit_at(
         .and_then(|overlay_id| registry.flags(overlay_id))
         .is_some_and(|flags| flags.wall);
     let recomputed = if was_wall {
-        recompute_wall_connectivity_target(grid, registry, resolved_terrain, target)
+        recompute_wall_connectivity_target(
+            grid,
+            registry,
+            resolved_terrain,
+            target,
+            host.as_deref(),
+        )
     } else {
         RecomputeResult::NoChange
     };
@@ -1851,28 +1863,37 @@ pub(crate) fn runtime_wall_cleanup_visit_at(
     })
 }
 
-/// Runtime-hosted `PostDestructionWallCleanup(anchor, 1)` used by one wall
-/// Mark transaction.
-pub(crate) fn refresh_wall_connectivity_after_placement_with_host(
+/// Runtime-hosted `CellClass::PostDestructionWallCleanup @ 0x00480630`
+/// for wall Mark and the two ends of a gate.
+pub(crate) fn refresh_wall_neighborhood_with_host(
     grid: &mut OverlayGrid,
     registry: &OverlayTypeRegistry,
     mut resolved_terrain: Option<&mut ResolvedTerrainGrid>,
-    rx: u16,
-    ry: u16,
+    anchor: (i32, i32),
     mut host: Option<&mut dyn WallDamageTransactionHost>,
 ) {
     assert!(
         resolved_terrain.is_some(),
         "retained wall-neighbor authority requires resolved terrain for placement cleanup"
     );
+    let Some(receiver) = native_runtime_overlay_cell_lookup(
+        grid.width(),
+        grid.height(),
+        resolved_terrain.as_deref(),
+        anchor.0,
+        anchor.1,
+    ) else {
+        return;
+    };
     const CLEANUP_CROSS: [(i32, i32); 5] = [(0, -1), (1, 0), (0, 1), (-1, 0), (0, 0)];
     for (dx, dy) in CLEANUP_CROSS {
-        let Some(target) = native_runtime_overlay_cell_lookup(
+        let Some(target) = native_cleanup_visit_target(
             grid.width(),
             grid.height(),
             resolved_terrain.as_deref(),
-            i32::from(rx) + dx,
-            i32::from(ry) + dy,
+            receiver,
+            dx,
+            dy,
         ) else {
             continue;
         };
@@ -1887,8 +1908,13 @@ pub(crate) fn refresh_wall_connectivity_after_placement_with_host(
                 .0
                 .and_then(|overlay_id| registry.flags(overlay_id))
                 .is_some_and(|flags| flags.wall);
-        let result =
-            recompute_wall_connectivity_target(grid, registry, resolved_terrain.as_deref(), target);
+        let result = recompute_wall_connectivity_target(
+            grid,
+            registry,
+            resolved_terrain.as_deref(),
+            target,
+            host.as_deref(),
+        );
         if result == RecomputeResult::Destroyed
             && let Some(host) = host.as_deref_mut()
         {
@@ -2012,6 +2038,7 @@ fn cleanup_wall_neighbors_into(
                 registry,
                 resolved_terrain.as_deref(),
                 target,
+                host.as_deref(),
             );
             if recomputed == RecomputeResult::Destroyed
                 && let Some(host) = host.as_deref_mut()

@@ -525,7 +525,7 @@ fn special_place_names_the_first_type_of_the_release_action() {
             "[SuperWeaponTypes]\n0=Storm\n1=Bomb\n2=Bomb2\n\
             [Storm]\nType=LightningStorm\nAction=LightningStorm\n\
             [Bomb]\nType=Nuke\nAction=Nuke\n\
-            [Bomb2]\nType=Nuke\nAction=nuke\n{ares_key}"
+            [Bomb2]\nType=MultiMissile\nAction=nuke\n{ares_key}"
         );
         RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(&ini)).unwrap()
     };
@@ -536,6 +536,10 @@ fn special_place_names_the_first_type_of_the_release_action() {
     assert_eq!(special_place_type(&stock, "Storm", nuke), Some("Bomb"));
     assert_eq!(special_place_type(&stock, "Bomb2", nuke), Some("Bomb"));
     assert_eq!(special_place_type(&stock, "Storm", paradrop), None);
+    let builtin = read("SW.AITargeting=EnemyBase\n");
+    assert!(!builtin.ares());
+    assert_eq!(special_place_type(&builtin, "Bomb2", nuke), Some("Bomb2"));
+    assert_eq!(special_place_type(&builtin, "Storm", nuke), Some("Bomb"));
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ares = read("SW.Deferment=1\n");
     assert!(ares.ares_form());

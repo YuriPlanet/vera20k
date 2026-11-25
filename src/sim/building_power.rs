@@ -26,23 +26,20 @@ impl Default for BuildingOnline {
 }
 
 impl BuildingOnline {
-    /// GoOnline/GoOffline's admitted latch write (`0x00452287`,
-    /// `0x00452393`). Ares 3.0 BuildingClass_GoOnline_TogglePower 10014090
-    /// and _GoOffline_TogglePower 10014070 also record it when Ares plays
-    /// (`ares`, the game's `RuleSet::ares_form`).
-    fn toggle(&mut self, online: bool, ares: bool) {
+    /// GoOnline/GoOffline's admitted latch write. Ares 3.0p1 also remembers
+    /// the state via `0x00452287 -> 0x10014620` and
+    /// `0x00452393 -> 0x10014600`.
+    fn toggle(&mut self, online: bool, remember: bool) {
         self.online = online;
-        if ares {
+        if remember {
             self.toggle_power_has_power = online;
         }
     }
 
     /// TemporalGoOffline `0x004521C0` / TemporalGoOnline `0x00452210`. Ares
-    /// 3.0 BuildingClass_Enable_TogglePower 10013FB0 (hook `0x00452210`)
+    /// 3.0p1 BuildingClass_Enable_TogglePower `0x00452210 -> 0x10014540`
     /// restores the last toggle on release instead of storing one.
     fn temporal(&mut self, online: bool) {
-        // Runs in every game: only `toggle` when Ares plays clears the
-        // recorded toggle, so without Ares this stores `online` unchanged.
         let online = online && self.toggle_power_has_power;
         self.online = online;
     }
@@ -88,12 +85,14 @@ impl GameEntity {
 
 impl Simulation {
     /// GoOffline452360: only positive native PowerDrain or Powered types
-    /// can turn off. Return the actual transition, not Execute61's receipt.
+    /// can turn off. The built-in manual switch remembers an Off Line event
+    /// when its rules allow the player to toggle this type.
     pub(crate) fn go_building_offline(
         &mut self,
         id: u64,
         rules: &RuleSet,
         effects: &mut FrameEffects<'_>,
+        power_toggle_event: bool,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -111,13 +110,15 @@ impl Simulation {
         }
         let owner = entity.owner();
         let factory = crate::sim::production::factory_category_for_building(object);
+        let manual_toggle =
+            power_toggle_event && rules.toggle_power_allowed() && object.can_toggle_power();
         self.substrate
             .entities
             .get_mut(id)
             .unwrap()
             .building
             .building_online
-            .toggle(false, rules.ares_form());
+            .toggle(false, rules.ares_form() || manual_toggle);
         Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, true);
         self.houses.request_house_tech_tree_recheck(owner);
         self.set_building_stuff_enabled(id, false, rules);
@@ -129,7 +130,14 @@ impl Simulation {
             });
         }
         if let Some(category) = factory {
-            crate::sim::production::update_factory_queue(self, rules, owner, category, effects);
+            crate::sim::production::update_factory_queue(
+                self,
+                rules,
+                owner,
+                category,
+                effects,
+                manual_toggle,
+            );
         }
         true
     }
@@ -156,18 +164,26 @@ impl Simulation {
         let factory = self
             .object_type(entity.type_ref(), rules)
             .and_then(crate::sim::production::factory_category_for_building);
+        let was_toggled_off = entity.ares_toggled_off();
         self.substrate
             .entities
             .get_mut(id)
             .unwrap()
             .building
             .building_online
-            .toggle(true, rules.ares_form());
+            .toggle(true, rules.ares_form() || was_toggled_off);
         Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, true);
         self.houses.request_house_tech_tree_recheck(owner);
         self.set_building_stuff_enabled(id, true, rules);
         if let Some(category) = factory {
-            crate::sim::production::update_factory_queue(self, rules, owner, category, effects);
+            crate::sim::production::update_factory_queue(
+                self,
+                rules,
+                owner,
+                category,
+                effects,
+                was_toggled_off,
+            );
         }
         if self.house_is_human_player(owner) {
             self.sound_events.emit(SimSoundEvent::HouseEva {
@@ -225,7 +241,9 @@ impl Simulation {
             .object_type(entity.type_ref(), rules)
             .and_then(crate::sim::production::factory_category_for_building)
         {
-            crate::sim::production::update_factory_queue(self, rules, owner, category, effects);
+            crate::sim::production::update_factory_queue(
+                self, rules, owner, category, effects, false,
+            );
         }
     }
 }
@@ -293,7 +311,7 @@ mod ares_tests {
             ));
         let off = sim.spawn_object("DRAIN", "A", 10, 10, 0, &rules).unwrap();
         let on = sim.spawn_object("DRAIN", "A", 14, 10, 0, &rules).unwrap();
-        assert!(sim.go_building_offline(off, &rules, &mut FrameEffects::default()));
+        assert!(sim.go_building_offline(off, &rules, &mut FrameEffects::default(), false));
         for id in [off, on] {
             sim.substrate
                 .set_building_online_for_temporal(id, false, rules.ares_form());

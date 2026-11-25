@@ -3,8 +3,8 @@
 //! Mission_Harvest state 3 queues Enter. Each `FootClass::Mission_Enter`
 //! dispatch (`0x004D9290`) sends DOCKING (0x0E) to the refinery, whose
 //! receiver (`radio::receive`, `0x0043C7E9`) drives the handshake: MOVE_HERE
-//! to the pad NW+(3,1), then, once the miner stands in it, TETHER and
-//! PREPARE_TO_DOCK, which turns the hull to 0x4000 and sends DOCK_NOW back
+//! to the configured pad (default NW+(3,1)), then, once the miner stands in
+//! it, TETHER and PREPARE_TO_DOCK, which turns the hull and sends DOCK_NOW back
 //! (or the Drive track end sends it, `Simulation::unit_dock_now`). The refinery
 //! answers DOCK_NOW by queueing Unload, whose harvester branch
 //! ([`mission_unload`], `0x0073DEE0`) dumps the cargo on the Unit+0xF8
@@ -52,7 +52,6 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::components::BaleDepositEvent;
 use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
-use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::radio::{self, RadioMessage};
 use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
@@ -114,21 +113,19 @@ pub(crate) fn mission_unload(
     // B 0x0073DF56: the hull must sit in the 8-bit East window
     // (raw 0x3F80..=0x407F); otherwise turn (unless the turret is mid-swing).
     let raw = entity.body_facing_current(now);
-    if rules.ares_form() {
-        // Ares 3.0 10014910 (hook 0x0073DF66): the hull must face the dock's
-        // DockUnloadFacing exactly, and a mid-swing turret counts as facing it.
-        let facing = crate::sim::radio::receive::dock_unload_facing(sim, id, rules);
-        if raw != facing && !entity.turret_rotation_latch.is_set() {
-            if let Some(entity) = sim.substrate.entities.get_mut(id) {
-                crate::sim::movement::drive_do_turn(entity, facing, now);
-            }
-            return 5;
-        }
-    } else if (((u32::from(raw) >> 7) + 1) & 0x1FE) != 0x80 {
-        if !entity.turret_rotation_latch.is_set()
-            && let Some(entity) = sim.substrate.entities.get_mut(id)
-        {
-            crate::sim::movement::drive_do_turn(entity, UNLOAD_FACING, now);
+    let facing = radio::receive::dock_unload_facing(sim, id, rules);
+    let turret_turning = entity.turret_rotation_latch.is_set();
+    // The configured-direction path (`10014910`, hook `0x0073DF66`) accepts
+    // the exact direction or an active turret turn. Keep the stock east
+    // window for docks using the stock direction in a stock rules game.
+    let aligned = if rules.ares_form() || facing != UNLOAD_FACING {
+        raw == facing || turret_turning
+    } else {
+        (((u32::from(raw) >> 7) + 1) & 0x1FE) == 0x80
+    };
+    if !aligned {
+        if !turret_turning && let Some(entity) = sim.substrate.entities.get_mut(id) {
+            crate::sim::movement::drive_do_turn(entity, facing, now);
         }
         return 5;
     }
@@ -142,7 +139,7 @@ pub(crate) fn mission_unload(
             entity.restart_native_stage(0, now as i32, 1);
         }
         set_unload_latch(&mut sim.interner, &mut sim.substrate, rules, id, true);
-        if let Some(building) = unload_building(sim, id) {
+        if let Some(building) = unload_building(sim, rules, id) {
             crate::sim::world::building_anim::start_refinery_unload(sim, rules, building);
         }
         set_status(&mut sim.substrate, id, UNLOAD_DUMPING);
@@ -155,8 +152,7 @@ pub(crate) fn mission_unload(
     }
 }
 
-/// E 0x0073E2BF: the dump state, re-reading the building west of the miner
-/// on every dispatch.
+/// E 0x0073E2BF: the dump state revalidates the linked dock on every dispatch.
 fn unload_dumping(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -164,7 +160,7 @@ fn unload_dumping(
     effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let now = sim.session.binary_frame();
-    let Some(building) = unload_building(sim, id) else {
+    let Some(building) = unload_building(sim, rules, id) else {
         // 0x0073E311..0x0073E350: no building → OVER_OUT, Queue(Harvest, 1).
         radio::transmit_to_contact(sim, id, RadioMessage::Break, rules, effects);
         let _ = sim.mission_queue_exact(
@@ -236,7 +232,7 @@ fn unload_finishing(
     effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let now = sim.session.binary_frame();
-    if let Some(building) = unload_building(sim, id)
+    if let Some(building) = unload_building(sim, rules, id)
         && let Some(building) = sim.substrate.entities.get(building)
         && sim
             .object_type(building.type_ref(), rules)
@@ -381,7 +377,7 @@ pub(crate) fn clear_unload_latch(substrate: &mut ObjectSubstrate, id: u64) -> bo
 /// The Unit setter's unload step (`UnitClass::Set_Destination`
 /// `0x00741BC7..0x00741C4A`), run for every destination but NULL: while the
 /// Unit's mission (vt+0x184) or MissionQueue (`+0xB4`) is Unload, a
-/// `Harvester=` type (`+0xE0E`) has the building west of it
+/// `Harvester=` type (`+0xE0E`) has its linked dock
 /// ([`unload_building`]) delete its Special animation (slot 10,
 /// `ClearAnimSlot @ 0x00451E40`), the one the unload gate starts.
 pub(crate) fn clear_unload_anim_for_destination(sim: &mut Simulation, rules: &RuleSet, id: u64) {
@@ -395,36 +391,34 @@ pub(crate) fn clear_unload_anim_for_destination(sim: &mut Simulation, rules: &Ru
     let harvester = sim
         .object_type(entity.type_ref(), rules)
         .is_some_and(|object| object.harvester);
-    if let Some(building) = unload_building(sim, id)
-        && harvester
-    {
+    if harvester && let Some(building) = unload_building(sim, rules, id) {
         sim.clear_building_anim_slot(building, 10);
     }
 }
 
-/// Map5657A0 then building lookup47C520 in the cell west of the Unit.
-/// The lookup also runs for non-harvesters in the destination setter's Unload
-/// arm741BC7..741C4A, before testing Harvester. Its Dummy stamp can change a
-/// retained Cell destination that Foot subsequently reads through virtual+4C.
-fn unload_building(sim: &Simulation, id: u64) -> Option<u64> {
+/// Ares 3.0p1 `100456E0`: use the first radio contact if it is a building
+/// and the Unit stands at its configured unload cell. Hooks `0x0073E013`,
+/// `0x0073E17F`, `0x0073E2BF` and `0x00741BDB` replace the west-cell lookup
+/// and resume at `0x0073E05F`, `0x0073E1CB`, `0x0073E30B` and `0x00741C28`.
+fn unload_building(sim: &Simulation, rules: &RuleSet, id: u64) -> Option<u64> {
+    use crate::sim::movement::ground_pose::position_world_xy;
+    use crate::util::lepton::lepton_to_cell_packed;
+
     let entity = sim.substrate.entities.get(id)?;
-    let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
-    let x = crate::util::lepton::lepton_to_cell_packed(location.x).wrapping_sub(1) as u16;
-    let y = crate::util::lepton::lepton_to_cell_packed(location.y) as u16;
-    let (x, y) = if let Some(terrain) = sim.resolved_terrain.as_ref() {
-        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-        let cell = cells.lookup((x as i16, y as i16));
-        if cell == crate::map::cell_index::NativeCellIdentity::Dummy {
-            return None;
-        }
-        let (x, y) = cells.coord(cell);
-        (x as u16, y as u16)
-    } else {
-        (x, y)
-    };
-    sim.substrate
-        .occupancy
-        .first_building_on_layer(x, y, MovementLayer::Ground)
+    let dock_id = entity.seldom.radio_contacts.slot(0)?;
+    let dock = sim.substrate.entities.get(dock_id)?;
+    if dock.category() != EntityCategory::Structure {
+        return None;
+    }
+    let object = sim.object_type(dock.type_ref(), rules)?;
+    let pad = radio::receive::dock_pad_cell_at(
+        position_world_xy(&dock.position).map(lepton_to_cell_packed),
+        object.building_type_ext().dock_unload_cell,
+    );
+    let unit_cell = position_world_xy(&entity.position)
+        .map(lepton_to_cell_packed)
+        .map(i32::from);
+    (unit_cell == pad).then_some(dock_id)
 }
 
 /// `0x0073E539` / `0x0073E1F0`: a NavCom and a queued mission other than

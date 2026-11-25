@@ -332,6 +332,86 @@ fn building_on_off_line_dropped_for_a_firestorm_wall_type() {
     assert!(!sim.substrate.entities.get(7).unwrap().building_online());
 }
 
+#[test]
+fn explicit_toggle_power_preserves_offline_state() {
+    use crate::sim::production::{self, ProductionCategory};
+
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+        "[General]\nTogglePowerAllowed=yes\n\
+         [Countries]\n0=Americans\n1=Russians\n[BuildingTypes]\n0=YARD\n1=PILL\n\
+         [YARD]\nOwner=Americans\nFactory=BuildingType\nPowered=yes\nStrength=1000\n\
+         [PILL]\nOwner=Americans\nTechLevel=1\nCost=100\nStrength=100\nBuildCat=Combat\n",
+    ))
+    .unwrap();
+    assert!(!rules.ares());
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+    let owner = sim.interner().get("Americans").unwrap();
+    crate::sim::credit_income::add_credits(&mut sim.houses, owner, 1000);
+    let entity_id = sim
+        .spawn_object("YARD", "Americans", 8, 8, 0, &rules)
+        .unwrap();
+    assert!(production::enqueue_by_type(
+        &mut sim,
+        &rules,
+        "Americans",
+        "PILL",
+        &mut FrameEffects::default(),
+        false,
+    ));
+    let head = |sim: &Simulation| {
+        let factory = sim
+            .production
+            .factories()
+            .view(owner, ProductionCategory::Defense)
+            .unwrap();
+        (factory.progress, factory.suspended)
+    };
+    let advance = |sim: &mut Simulation| {
+        sim.session
+            .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+        production::step_factories(sim);
+    };
+    let mut frames = 0;
+    while head(&sim).0 == 0 && frames < 1024 {
+        advance(&mut sim);
+        frames += 1;
+    }
+    let stage = head(&sim).0;
+    assert!(stage > 0, "the defense has begun construction");
+
+    let toggle = |sim: &mut Simulation, on| {
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::SetBuildingOnLine { entity_id, on },
+            Some(&rules),
+        ));
+    };
+    toggle(&mut sim, false);
+    let building = sim.entities().get(entity_id).unwrap();
+    assert!(!building.building_online());
+    assert!(building.ares_toggled_off());
+    assert!(
+        head(&sim).1,
+        "the defense enters a system hold on manual power off"
+    );
+    for _ in 0..frames {
+        advance(&mut sim);
+    }
+    assert_eq!(head(&sim).0, stage, "no progress while the yard is off");
+
+    toggle(&mut sim, true);
+    assert!(!sim.entities().get(entity_id).unwrap().ares_toggled_off());
+    assert!(!head(&sim).1, "restoring power releases the defense hold");
+    for _ in 0..=frames {
+        advance(&mut sim);
+    }
+    assert!(
+        head(&sim).0 > stage,
+        "construction continues from the same head"
+    );
+}
+
 /// A launch hashes every frame and a test world none until the caller asks.
 /// Then only a frame whose tick is a multiple of the interval hashes, and its
 /// hash is the state's.

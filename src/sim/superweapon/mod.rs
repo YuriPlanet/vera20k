@@ -971,7 +971,7 @@ impl SuperWeaponInstance {
             if sw.use_charge_drain {
                 self.charge_drain_state = 0;
             }
-            if rules.ares_form()
+            if sw.uses_extension_rules(rules)
                 && sw.kind.has_ares_handler()
                 && let Some(metadata) = rules.super_weapon_metadata(&sw.id)
             {
@@ -1130,28 +1130,42 @@ impl SuperWeaponInstance {
         true
     }
 
-    /// Ares SetOnHold10035750's charge-drain tail after the shared hold
-    /// change: holding clears the drain state (-1); releasing starts it
-    /// charging (0), readies a never-fired `SW.InitialReady` type at once
-    /// (state 1) and otherwise restarts the timer with the type's own
-    /// RechargeTime (+0xB0, not the Super's override). The caller runs the
-    /// draining type's Deactivate.
-    fn ares_drain_hold(&mut self, on: bool, sw: &SuperWeaponType, rules: &RuleSet, frame: u32) {
+    /// Ares 3.0p1 SetOnHold (hook 0x6CB4D0, 0x10036190) converts a running
+    /// drain into paused charge after Deactivate. Releasing restarts with
+    /// the instance's GetRechargeTime (0x6CC260), except first-shot Ares readiness.
+    fn apply_charge_drain_hold(
+        &mut self,
+        on: bool,
+        was_draining: bool,
+        sw: &SuperWeaponType,
+        rules: &RuleSet,
+        frame: u32,
+    ) {
         if on {
+            if was_draining {
+                use MaskedX87Chop53 as F;
+                let full = F::load_i32(self.recharge_time(sw));
+                let left = F::load_i32(self.charge_remaining(frame as i32));
+                let ratio = F::load_f64(charge_to_drain_ratio(rules, sw));
+                let duration = F::fistp_i32_masked(F::sub(full, F::div(left, ratio)));
+                let mut timer = CdTimer::started(frame as i32, duration);
+                timer.pause(frame as i32);
+                self.store_charge_timer(timer);
+            }
             self.charge_drain_state = -1;
             return;
         }
         self.charge_drain_state = 0;
-        if rules
-            .super_weapon_metadata(&sw.id)
-            .is_some_and(|metadata| metadata.charge().initial_ready)
+        if sw.uses_extension_rules(rules)
             && self.ares_launch_count == 0
+            && rules
+                .super_weapon_metadata(&sw.id)
+                .is_some_and(|metadata| metadata.charge().initial_ready)
         {
             self.mark_ready(frame);
             self.charge_drain_state = 1;
-        }
-        if !self.is_ready {
-            self.store_charge_timer(CdTimer::started(frame as i32, sw.recharge_time_frames));
+        } else {
+            self.store_charge_timer(CdTimer::started(frame as i32, self.recharge_time(sw)));
         }
     }
 
@@ -1657,7 +1671,7 @@ pub fn super_timer_views(sim: &Simulation, rules: &RuleSet) -> Vec<SuperTimerVie
 /// GetChargeToDrainRatio10032690's `SW.ChargeToDrainRatio`, else (and when
 /// Ares doesn't play) `[General] ChargeToDrainRatio=` (Rules+0xEC0).
 pub(crate) fn charge_to_drain_ratio(rules: &RuleSet, sw: &SuperWeaponType) -> NativeF64Bits {
-    if rules.ares_form()
+    if sw.uses_extension_rules(rules)
         && let Some(metadata) = rules.super_weapon_metadata(&sw.id)
     {
         return metadata
@@ -1762,7 +1776,6 @@ pub fn superweapon_views_for_owner(
         return Vec::new();
     };
     let current_frame = sim.session.binary_frame() as i32;
-    let ares = rules.ares_form();
     let mut views = Vec::new();
     for inst in weapons.values() {
         if !inst.is_active {
@@ -1772,6 +1785,7 @@ pub fn superweapon_views_for_owner(
         let Some(sw_type) = rules.super_weapon(type_id_str) else {
             continue;
         };
+        let ares = sw_type.uses_extension_rules(rules);
         let paid_source = paid_pair_source(rules, sw_type);
         let display = inst.sidebar_display(
             sw_type,
@@ -1854,12 +1868,10 @@ pub(crate) fn tick_house_superweapon_instances(
     effects: &mut FrameEffects<'_>,
 ) {
     let current_frame = sim.session.binary_frame();
-    let ares = rules.ares_form();
-    let human = ares
-        && sim
-            .houses
-            .get(&owner)
-            .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
+    let human = sim
+        .houses
+        .get(&owner)
+        .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
     for name in &rules.super_weapon_order {
         let Some(type_id) = house_super(sim, owner, name) else {
             continue;
@@ -1885,7 +1897,7 @@ pub(crate) fn tick_house_superweapon_instances(
             // transacts Money.DrainAmount; an unaffordable one ends the drain
             // as the timer's expiry would (6CBD73).
             let expired = expired
-                || (ares
+                || (sw.is_some_and(|sw| sw.uses_extension_rules(rules))
                     && running
                     && !expired
                     && charge_drain
@@ -1921,7 +1933,7 @@ pub(crate) fn tick_house_superweapon_instances(
             // Ares Progress_Charged at 0x1003573F deactivates the draining type
             // before returning to 0x006CBD86. A House Tag may change this
             // instance's recharge override before the native reload at 0x006CBD8D.
-            if ares {
+            if sw.uses_extension_rules(rules) {
                 deactivate_ares_handler(sim, rules, owner, type_id, sw, true, effects);
             }
             if let Some(instance) = sim.super_weapons.instance_mut(&owner, &type_id) {
@@ -2144,8 +2156,8 @@ pub(crate) fn tick_active_superweapon_effects(
     let chrono = sim.step_chrono_screen();
     sim.publish_trigger_effects(chrono);
     let storm = lightning_storm::process(sim, rules, overlay_registry, frame_effects);
+    unit_delivery::tick(sim, rules, overlay_registry, frame_effects);
     if rules.ares_form() {
-        unit_delivery::tick(sim, rules, overlay_registry, frame_effects);
         chronosphere::ares_tick_chrono_warps(sim, rules, overlay_registry, frame_effects);
     }
     dominator || storm
@@ -2223,7 +2235,10 @@ pub fn super_weapon_available(
         return false;
     }
 
-    let allowed = if rules.ares_form() {
+    let Some(sw) = rules.super_weapon(name) else {
+        return false;
+    };
+    let allowed = if sw.uses_extension_rules(rules) {
         let Some(metadata) = rules.super_weapon_metadata(name) else {
             return false;
         };
@@ -2258,9 +2273,7 @@ pub fn super_weapon_available(
                 requirements.allows(|id| owned_building_present(sim, rules, owner, id))
             })
     } else {
-        rules
-            .super_weapon(name)
-            .is_some_and(|sw| aux_building_present(sim, rules, owner, sw))
+        aux_building_present(sim, rules, owner, sw)
     };
 
     #[cfg(feature = "phobos")]
@@ -2642,32 +2655,35 @@ fn provider_supers(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Supe
     // Observer pointer; VERA's observer list comes from every start slot, so
     // all peers skip the same Houses.
     let ares = rules.ares_form();
-    if ares {
-        if sim.session.is_observer_house(owner) {
-            return providers;
-        }
-        for name in &rules.super_weapon_order {
-            if rules
-                .super_weapon_metadata(name)
-                .is_some_and(|metadata| metadata.availability().always_granted())
-                && super_weapon_available(sim, rules, owner, name)
-                && let Some(id) = sim.interner.get(name)
-            {
-                providers.provided.insert(id);
-                providers.online.insert(id);
-                providers.charging.insert(id);
-            }
+    let has_extension_rules = rules.has_super_weapon_extension_rules();
+    if ares && sim.session.is_observer_house(owner) {
+        return providers;
+    }
+    for name in rules.super_weapon_order.iter().filter(|_| has_extension_rules) {
+        if rules
+            .super_weapon_metadata(name)
+            .is_some_and(|metadata| metadata.availability().always_granted())
+            && rules
+                .super_weapon(name)
+                .is_some_and(|sw| sw.uses_extension_rules(rules))
+            && super_weapon_available(sim, rules, owner, name)
+            && let Some(id) = sim.interner.get(name)
+        {
+            providers.provided.insert(id);
+            providers.online.insert(id);
+            providers.charging.insert(id);
         }
     }
     for building in owned_live_buildings(sim, owner) {
         // 10038F10 asks the building's power once: HasPower, not under EMP
         // and NoOperatorRequired or operated (10062F50). The stock pass
         // reads the online byte alone and has no Charging status.
-        let powered = building.building_online()
-            && (!ares
-                || (building.emp_remaining() <= 0
-                    && sim.ares_is_operated(building.stable_id(), rules)));
-        let charging = ares && powered && !building.is_warped_out() && {
+        let stock_online = building.building_online();
+        let powered = has_extension_rules
+            && stock_online
+            && building.emp_remaining() <= 0
+            && sim.ares_is_operated(building.stable_id(), rules);
+        let charging = powered && !building.is_warped_out() && {
             use crate::sim::mission::MissionType::{Construction, Selling};
             ![
                 building.mission.current().known(),
@@ -2678,11 +2694,15 @@ fn provider_supers(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Supe
         };
         for name in provided_supers(sim, rules, building, ares) {
             if let Some(id) = sim.interner.get(name) {
+                let ares = rules
+                    .super_weapon(name)
+                    .is_some_and(|sw| sw.uses_extension_rules(rules));
+                let online = if ares { powered } else { stock_online };
                 providers.provided.insert(id);
-                if powered {
+                if online {
                     providers.online.insert(id);
                 }
-                if charging {
+                if ares && charging {
                     providers.charging.insert(id);
                 }
             }
@@ -2706,7 +2726,6 @@ pub(crate) fn update_owned_supers(
         return;
     };
     let defeated = house.is_defeated();
-    let ares = rules.ares_form();
     let low_power = sim
         .power_states
         .get(&owner)
@@ -2719,6 +2738,7 @@ pub(crate) fn update_owned_supers(
         let Some(sw) = rules.super_weapon(name) else {
             continue;
         };
+        let ares = sw.uses_extension_rules(rules);
         let allowed = sim.session.game_options().super_weapons || !sw.disableable_from_shell;
         let frame = sim.session.binary_frame();
         let instance = sim
@@ -2749,18 +2769,17 @@ pub(crate) fn update_owned_supers(
                 on
             }
         };
-        // Lose at 0x10035683 has cleared the grant. SetOnHold at 0x100357E3
-        // has paused the timer, but does not write drain state -1 until
-        // 0x100357E8, after the synchronous House Tag callback returns.
+        // Lose at 0x10035683 has cleared the grant. SetOnHold (3.0p1
+        // 0x1003622B) runs the synchronous deactivation before converting
+        // the timer or clearing the drain state.
         if ares && draining && ending {
             deactivate_ares_handler(sim, rules, owner, type_id, sw, false, effects);
         }
-        if ares
-            && sw.use_charge_drain
+        if sw.use_charge_drain
             && let SuperHold::Suspend(on) = hold
             && let Some(instance) = sim.super_weapons.instance_mut(&owner, &type_id)
         {
-            instance.ares_drain_hold(on, sw, rules, frame);
+            instance.apply_charge_drain_hold(on, draining, sw, rules, frame);
         }
         sim.houses.request_house_tech_tree_recheck(owner);
         sim.sound_events
@@ -2893,7 +2912,6 @@ pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner
     if house.is_defeated() {
         return;
     }
-    let ares = rules.ares_form();
     //50B2C7..50B305 uses the power ratio even for an unpowered Super type.
     let low_power = sim
         .power_states
@@ -2916,7 +2934,7 @@ pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner
         // Ares 10039580 grants with `!PowerSourced` (10038F10): a powered
         // provider (or SW.AlwaysGranted), withdrawn on low power only for an
         // IsPowered type. The stock pass holds on the power ratio alone.
-        let low_power = if ares {
+        let low_power = if sw.uses_extension_rules(rules) {
             !(providers.online.contains(&type_id) && !(low_power && sw.is_powered))
         } else {
             low_power

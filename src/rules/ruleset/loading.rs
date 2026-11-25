@@ -248,6 +248,8 @@ impl RuleSet {
                 .iter_mut()
                 .find(|object| object.category == category && object.id == name)
             {
+                rules.builtin_attach_effects |=
+                    attachment.is_some_and(|settings| settings.is_enabled(false));
                 object.bind_ares_techno_rules(
                     emp,
                     abilities,
@@ -259,10 +261,9 @@ impl RuleSet {
                 );
             }
         }
-        // The retained canopy key can enable Ares in a stock-way game too.
-        for (category, name, retained) in processed.techno_combat_states() {
+        for (category, name, driver) in processed.driver_states() {
             if let Some(handle) = rules.object_category_index.get(category, name) {
-                rules.object_list[handle.0 as usize].bind_techno_combat_rules(retained);
+                rules.object_list[handle.0 as usize].bind_driver_rules(driver);
             }
         }
         if crate::rules::ares_switch::ares_way() {
@@ -279,11 +280,6 @@ impl RuleSet {
             for (category, name, group) in processed.selection_group_states() {
                 if let Some(handle) = rules.object_category_index.get(category, name) {
                     rules.object_list[handle.0 as usize].bind_selection_group(group);
-                }
-            }
-            for (category, name, driver) in processed.driver_states() {
-                if let Some(handle) = rules.object_category_index.get(category, name) {
-                    rules.object_list[handle.0 as usize].bind_driver_rules(driver);
                 }
             }
             for (category, name, bounty) in processed.bounty_states() {
@@ -373,8 +369,14 @@ impl RuleSet {
             }
         }
         for (name, ares) in processed.ares_warhead_states() {
+            let builtin = ares.is_some_and(|settings| settings.attach_effect().is_enabled(false));
+            let ares = ares.filter(|settings| {
+                crate::rules::ares_switch::ares_way() || builtin || settings.duration() != 0
+            });
             if let Some(warhead) = rules.warhead_mut(name) {
                 warhead.bind_ares_rules(ares);
+                rules.builtin_attach_effects |= builtin;
+                rules.builtin_tunnel_emp |= ares.is_some_and(|settings| settings.duration() != 0);
             }
         }
         for (category, name, armor) in processed.object_armor_states() {
@@ -549,6 +551,15 @@ impl RuleSet {
                 references.apply_to(object);
             }
         }
+        // Hover deploy facing uses the type after its DeployingAnim and
+        // DeploysInto references have bound. The retained canopy key can
+        // also enable Ares in a game read the stock way.
+        let ares_way = crate::rules::ares_switch::ares_way();
+        for (category, name, retained) in processed.techno_combat_states() {
+            if let Some(handle) = rules.object_category_index.get(category, name) {
+                rules.object_list[handle.0 as usize].bind_techno_combat_rules(retained, ares_way);
+            }
+        }
         for (name, trailer) in processed.aircraft_trailer_states() {
             if let Some(object) = rules
                 .object_list
@@ -670,20 +681,24 @@ impl RuleSet {
                     .then_some(rules.ai_base_spacing);
             }
         }
-        if crate::rules::ares_switch::ares_way() {
-            for (name, ext) in processed.building_type_ext_states() {
-                if let Some(handle) = rules
-                    .object_category_index
-                    .get(ObjectCategory::Building, name)
-                {
-                    let building = &mut rules.object_list[handle.0 as usize];
-                    building.bind_building_type_ext(ext);
+        let ares_way = crate::rules::ares_switch::ares_way();
+        let builtin_firestorm = rules.has_builtin_firestorm();
+        for (name, ext) in processed.building_type_ext_states() {
+            if let Some(handle) = rules
+                .object_category_index
+                .get(ObjectCategory::Building, name)
+            {
+                let building = &mut rules.object_list[handle.0 as usize];
+                building.bind_building_type_ext(ext, ares_way, builtin_firestorm);
+                if ares_way {
                     // AIBaseNormal joins the base-reservation gate above.
                     building.base_reservation_spacing = building
                         .base_reservation_writer_eligible()
                         .then_some(rules.ai_base_spacing);
                 }
             }
+        }
+        if ares_way {
             // Ares CompleteInitialization 1000D380 (hook 0x679CAF), once the
             // foundations above are final: a rubble pair shares one foundation.
             let foundations: HashMap<String, crate::rules::foundation::Foundation> = rules
@@ -784,7 +799,9 @@ impl RuleSet {
                 .values_mut()
                 .find(|super_weapon| super_weapon.id.eq_ignore_ascii_case(name))
             {
-                super_weapon.building_requirements = requirements.cloned();
+                if ares_way || super_weapon.has_builtin_rules() {
+                    super_weapon.building_requirements = requirements.cloned();
+                }
             }
         }
         #[cfg(feature = "phobos")]
@@ -804,23 +821,36 @@ impl RuleSet {
                 }
             }
         }
-        if crate::rules::ares_switch::ares_way() {
-            for (name, presentation) in processed.super_weapon_presentation_states() {
-                if let Some(sw) = rules
-                    .super_weapons
-                    .values_mut()
-                    .find(|sw| sw.id.eq_ignore_ascii_case(name))
-                {
-                    sw.presentation = presentation.clone();
-                }
+        for (name, presentation) in processed.super_weapon_presentation_states() {
+            if let Some(sw) = rules
+                .super_weapons
+                .values_mut()
+                .find(|sw| sw.id.eq_ignore_ascii_case(name))
+                && (ares_way || sw.has_builtin_rules())
+            {
+                sw.presentation = presentation.clone();
             }
-            for (name, supers) in processed.additional_super_weapon_states() {
-                if let Some(building) = rules.object_list.iter_mut().find(|object| {
-                    object.category == ObjectCategory::Building
-                        && object.id.eq_ignore_ascii_case(name)
-                }) {
-                    building.project_additional_super_weapons(supers);
-                }
+        }
+        for (name, supers) in processed.additional_super_weapon_states() {
+            let builtin;
+            let supers = if ares_way {
+                supers
+            } else {
+                builtin = supers
+                    .iter()
+                    .filter(|name| {
+                        rules
+                            .super_weapon(name)
+                            .is_some_and(SuperWeaponType::has_builtin_rules)
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+                &builtin
+            };
+            if let Some(building) = rules.object_list.iter_mut().find(|object| {
+                object.category == ObjectCategory::Building && object.id.eq_ignore_ascii_case(name)
+            }) {
+                building.project_additional_super_weapons(supers);
             }
         }
         for (name, settings) in processed.hunter_seeker_states() {
@@ -829,7 +859,9 @@ impl RuleSet {
                 .values_mut()
                 .find(|sw| sw.id.eq_ignore_ascii_case(name))
             {
-                sw.hunter_seeker = settings.cloned();
+                if ares_way {
+                    sw.hunter_seeker = settings.cloned();
+                }
             }
         }
         for (name, delivery) in processed.unit_delivery_states() {
@@ -838,7 +870,12 @@ impl RuleSet {
                 .values_mut()
                 .find(|sw| sw.id.eq_ignore_ascii_case(name))
             {
-                sw.unit_delivery = delivery.cloned();
+                if ares_way
+                    || (sw.has_builtin_rules()
+                        && sw.kind == crate::rules::superweapon_type::SuperWeaponKind::UnitDelivery)
+                {
+                    sw.unit_delivery = delivery.cloned();
+                }
             }
         }
         // Equal truncated stored IDs share one projected type, which the last
@@ -1149,7 +1186,7 @@ impl RuleSet {
         }
         for sw in self.super_weapons.values_mut() {
             let section = ini.section(&sw.id);
-            if crate::rules::ares_switch::ares_way() {
+            if crate::rules::ares_switch::ares_way() || sw.has_builtin_rules() {
                 // SWTypeExt::LoadFromINI10033522 -> NullableIdx<Voc>
                 // 1000E9D0: successful names/none set presence; unknown
                 // retains. Read against fixed SOUNDMD, in rules-pass order.
@@ -1165,7 +1202,7 @@ impl RuleSet {
                 .and_then(|section| sounds.read_rules_reference(section, "SpecialSound", None));
             sw.start_sound = section
                 .and_then(|section| sounds.read_rules_reference(section, "StartSound", None));
-            if crate::rules::ares_switch::ares_way()
+            if (crate::rules::ares_switch::ares_way() || sw.has_builtin_rules())
                 && let Some(delivery) = sw.unit_delivery.as_mut()
             {
                 // Ares NullableIdx<VocClass>: unknown retains the previous
@@ -1178,10 +1215,12 @@ impl RuleSet {
         }
         // WarheadTypeExt ReadINI10051D80: DieSound.Override/VoiceDie.Override
         // are NullableIdx<Voc> 1000E9D0 reads against the fixed SOUNDMD.
-        for warhead in &mut self.warhead_types {
-            let section = ini.section(&warhead.id);
-            if let Some(ares) = warhead.ares_rules_mut() {
-                ares.combat_mut().bind_sound_overrides(section, sounds);
+        if self.ares_form() {
+            for warhead in &mut self.warhead_types {
+                let section = ini.section(&warhead.id);
+                if let Some(ares) = warhead.ares_rules_mut() {
+                    ares.combat_mut().bind_sound_overrides(section, sounds);
+                }
             }
         }
         let type_array_indices = &self.type_array_indices;
@@ -1295,8 +1334,9 @@ impl RuleSet {
         ini: &IniFile,
         eva: &crate::rules::sound_ini::EvaRegistry,
     ) {
-        if crate::rules::ares_switch::ares_way() {
-            for sw in self.super_weapons.values_mut() {
+        let ares_way = crate::rules::ares_switch::ares_way();
+        for sw in self.super_weapons.values_mut() {
+            if ares_way || sw.has_builtin_rules() {
                 // LoadFromINI10033370 reads these ValueableIdx<VoxClass> in this
                 // order after Ready/Activated/Detected; neither has a handler
                 // Initialize write. Ctor10031460: Impatient -1, SelectTarget
@@ -1314,6 +1354,8 @@ impl RuleSet {
                     "EVA_SelectTarget",
                 );
             }
+        }
+        if ares_way {
             for object in &mut self.object_list {
                 // TypeExt LoadFromINI1003DFB0 reads both ValueableIdx<VoxClass>
                 // after the promotion sounds; Initialize1003DEC0 seeds each with
@@ -1766,27 +1808,35 @@ impl RuleSet {
         }
 
         // Step 5: Parse superweapon type registry.
-        let ares_super_weapon_metadata: BTreeMap<_, _> = if crate::rules::ares_switch::ares_way() {
-            processed
-                .super_weapon_availability_states()
-                .map(|(name, metadata)| (name.to_ascii_uppercase(), metadata))
-                .collect()
-        } else {
-            BTreeMap::new()
-        };
+        use crate::rules::superweapon_targeting::AiTargetingMode;
+        let ares_way = crate::rules::ares_switch::ares_way();
+        let mut ares_super_weapon_metadata: BTreeMap<_, _> = processed
+            .super_weapon_availability_states()
+            .map(|(name, metadata)| (name.to_ascii_uppercase(), metadata))
+            .collect();
         let mut super_weapons: HashMap<String, SuperWeaponType> = HashMap::new();
         let sw_ids: Vec<String> = parse_registry(ini, "SuperWeaponTypes");
         let super_weapon_order: Vec<String> = sw_ids.clone();
         for sw_id in &sw_ids {
             if let Some(section) = ini.section(sw_id) {
+                let key = sw_id.to_ascii_uppercase();
+                let metadata = ares_super_weapon_metadata.get(&key);
+                let base_targeting = metadata.is_some_and(|ext| {
+                    matches!(
+                        ext.targeting().mode(),
+                        AiTargetingMode::Base | AiTargetingMode::EnemyBase
+                    )
+                });
                 let sw = SuperWeaponType::from_ini_section_with_range(
                     sw_id,
                     section,
-                    ares_super_weapon_metadata
-                        .get(&sw_id.to_ascii_uppercase())
-                        .map(|ext| ext.launch().range()),
+                    metadata.map(|ext| ext.launch().range()),
+                    base_targeting,
                     general.psychic_reveal_radius,
                 );
+                if !ares_way && !sw.has_builtin_rules() {
+                    ares_super_weapon_metadata.remove(&key);
+                }
                 super_weapons.insert(sw_id.clone(), sw);
             } else {
                 log::trace!(
@@ -1993,6 +2043,8 @@ impl RuleSet {
             emp_sparkles: None,
             // Decided by `from_processed_rules` once its readers ran.
             ares: false,
+            builtin_attach_effects: false,
+            builtin_tunnel_emp: false,
             phobos: false,
             reads_ares_way: false,
             ares_global_controls: processed.ares_global_controls().clone(),

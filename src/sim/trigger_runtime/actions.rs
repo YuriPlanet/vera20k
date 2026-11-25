@@ -555,7 +555,7 @@ impl Simulation {
                         if online {
                             self.go_building_online(id, rules, frame_effects);
                         } else {
-                            self.go_building_offline(id, rules, frame_effects);
+                            self.go_building_offline(id, rules, frame_effects, false);
                         }
                         matched = true;
                     }

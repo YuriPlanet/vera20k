@@ -443,10 +443,6 @@ impl ObjectType {
             phobos_insignia: crate::rules::insignia_type::PhobosInsignia::default(),
             ares_insignia: crate::rules::insignia_type::AresInsignia::default(),
             #[cfg(feature = "phobos")]
-            phobos_passengers_by_size: crate::rules::ares_switch::not_ares_read(|| {
-                section.read_ares_bool("Passengers.BySize", true)
-            }),
-            #[cfg(feature = "phobos")]
             phobos_invulnerability:
                 crate::rules::invulnerability_rules::PhobosInvulnerability::parse(section),
             // Replaced by the ordered retained Type reader in RuleSet.
@@ -592,12 +588,16 @@ impl ObjectType {
             // Default yes (retaliation allowed unless the type opts out).
             can_retaliate: section.read_bool("CanRetaliate", true),
             no_manual_fire: ares_way && section.read_ares_bool("NoManualFire", false),
-            // TechnoTypeExt +0x304 and +0x4C4 (constructor false/true), and
-            // +0x46C below: read in every Rules mode, and only Ares code
-            // consumes them.
+            // TechnoTypeExt +0x304 and +0x46C below are read in every Rules
+            // mode for their Ares consumers.
             ares_immune_to_abduction: section.read_ares_bool("ImmuneToAbduction", false),
-            ignores_firestorm: ares_way && section.read_bool("IgnoresFirestorm", false),
-            ares_passengers_by_size: section.read_ares_bool("Passengers.BySize", true),
+            ignores_firestorm: section.read_bool("IgnoresFirestorm", false),
+            // Ares 3.0p1 `0x1003FC36 -> 0x1003FC47` reads its retained bool
+            // (+0x4C4, initially true). The projected section's pass history
+            // keeps earlier values on absent or invalid reads.
+            passengers_by_size: crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_bool("Passengers.BySize", true)
+            }),
             saboteur: section.read_ares_bool("Saboteur", false),
             infiltration: Default::default(),
             building_type_ext: Default::default(),
@@ -875,7 +875,7 @@ impl ObjectType {
                 .read_phobos_nullable_bool("MindControl.IgnoreSize", None),
             #[cfg(feature = "phobos")]
             mind_control_size: crate::rules::ares_switch::not_ares_read(|| {
-                section.read_ares_int("MindControlSize", 1)
+                section.read_phobos_scalar_int("MindControlSize", 1)
             }),
             #[cfg(feature = "phobos")]
             mind_control_link_visible_to_house: section.read_phobos_nullable_with(
@@ -1225,7 +1225,7 @@ impl ObjectType {
                 as i32,
             #[cfg(feature = "phobos")]
             power_plant_enhancer_amount: crate::rules::ares_switch::not_ares_read(|| {
-                section.read_ares_int("PowerPlantEnhancer.Amount", 0)
+                section.read_phobos_scalar_int("PowerPlantEnhancer.Amount", 0)
             }),
             #[cfg(feature = "phobos")]
             power_plant_enhancer_factor: section
@@ -1233,7 +1233,7 @@ impl ObjectType {
                 .map_or(0.0, |factor| factor as f32),
             #[cfg(feature = "phobos")]
             power_plant_enhancer_max_count: crate::rules::ares_switch::not_ares_read(|| {
-                section.read_ares_int("PowerPlantEnhancer.MaxCount", -1)
+                section.read_phobos_scalar_int("PowerPlantEnhancer.MaxCount", -1)
             }),
             #[cfg(feature = "phobos")]
             power_plant_damage_factor: section.read_phobos_double("PowerPlant.DamageFactor", 1.0),

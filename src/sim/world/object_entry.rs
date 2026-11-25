@@ -1390,7 +1390,7 @@ fn full_foot_entry<'a>(
             if live.rules.ares() && infantry && bt.building_type_ext().is_passable {
                 continue;
             }
-            if live.rules.ares() && infantry && bt.building_type_ext().firestorm_wall {
+            if infantry && bt.building_type_ext().firestorm_wall {
                 if live.sim.ares_firestorm.is_active(b.owner) {
                     return Ok(7);
                 }
@@ -1441,7 +1441,7 @@ fn full_foot_entry<'a>(
                 if live.rules.ares() && bt.building_type_ext().is_passable {
                     continue;
                 }
-                if live.rules.ares() && bt.building_type_ext().firestorm_wall {
+                if bt.building_type_ext().firestorm_wall {
                     if live.sim.ares_firestorm.is_active(b.owner) {
                         return Ok(7);
                     }

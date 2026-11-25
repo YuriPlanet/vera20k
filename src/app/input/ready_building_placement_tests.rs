@@ -664,6 +664,82 @@ fn ares_ready_buildings_wait_for_a_powered_construction_yard() {
     );
 }
 
+#[test]
+fn manual_power_toggle_holds_an_already_finished_building() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[General]\nTogglePowerAllowed=yes\n[GACNST]\nPowered=yes\nTogglePower=yes\n",
+        ),
+    ) else {
+        return;
+    };
+    let mut fixture = paid_ready_fixture_from(retail).unwrap();
+    assert!(!fixture.rules.ares());
+    assert!(fixture.rules.toggle_power_allowed());
+    assert!(fixture.rules.object("GACNST").unwrap().can_toggle_power());
+    let product = ready_product(&fixture, "GAPOWR");
+    let yard = production::object_find_factory(&fixture.sim, &fixture.rules, product, false, false)
+        .unwrap();
+    assert_eq!(
+        fixture
+            .sim
+            .resolve(fixture.sim.entities().get(yard).unwrap().type_ref()),
+        "GACNST",
+    );
+    let ready = |fixture: &Fixture| {
+        let power_plant = fixture.sim.interner().get("GAPOWR").unwrap();
+        fixture
+            .projection
+            .factory_statuses(&fixture.sim, &fixture.rules, fixture.owner)
+            .iter()
+            .any(|status| status.type_id == power_plant && status.is_ready)
+    };
+    assert!(ready(&fixture));
+    fixture
+        .sim
+        .entity_mut_for_test(yard)
+        .unwrap()
+        .set_building_online_for_test(false);
+    assert!(
+        ready(&fixture),
+        "an ordinary offline latch keeps stock readiness"
+    );
+    fixture
+        .sim
+        .entity_mut_for_test(yard)
+        .unwrap()
+        .set_building_online_for_test(true);
+    assert!(fixture.sim.apply_command(
+        "Americans",
+        &Command::SetBuildingOnLine {
+            entity_id: yard,
+            on: false,
+        },
+        Some(&fixture.rules),
+    ));
+    assert!(fixture.sim.entities().get(yard).unwrap().ares_toggled_off());
+    assert!(!ready(&fixture));
+    assert_eq!(
+        crate::app::input::dispatch::ready_tab_factory(&fixture.sim, &fixture.rules, product),
+        None,
+    );
+    assert_eq!(
+        crate::app::input::dispatch::ready_cameo_factory(&fixture.sim, &fixture.rules, product),
+        None,
+    );
+    assert!(fixture.sim.apply_command(
+        "Americans",
+        &Command::SetBuildingOnLine {
+            entity_id: yard,
+            on: true,
+        },
+        Some(&fixture.rules),
+    ));
+    assert!(ready(&fixture));
+}
+
 fn submit_ready_building(
     fixture: &mut Fixture,
     name: &str,

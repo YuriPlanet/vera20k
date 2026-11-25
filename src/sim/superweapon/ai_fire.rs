@@ -170,14 +170,10 @@ pub(crate) fn try_fire(
 ) {
     #[cfg(any(test, feature = "test-support"))]
     observe(AiFireEvent::TryFire);
-    let ares = rules.ares_form();
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
     let human = house.is_controlled_by_human(sim.session.rule_policy());
-    if !ares && human {
-        return;
-    }
     for name in &rules.super_weapon_order {
         let Some(sw) = rules.super_weapon(name) else {
             continue;
@@ -185,11 +181,12 @@ pub(crate) fn try_fire(
         let Some(sw_type_id) = sim.interner.get(name) else {
             continue;
         };
-        if ares
-            && human
-            && rules
-                .super_weapon_target_policy(name)
-                .is_none_or(|policy| !policy.auto_fire())
+        let ares = sw.uses_extension_rules(rules);
+        if human
+            && (!ares
+                || rules
+                    .super_weapon_target_policy(name)
+                    .is_none_or(|policy| !policy.auto_fire()))
         {
             continue;
         }
@@ -425,6 +422,21 @@ fn extension_target(
                 .is_ok()
                 .then_some(cell)
         }
+        M::Base | M::EnemyBase => {
+            // P1 PickTarget 0x100395AE / 0x10039636: prefer House+5494,
+            // fall back to +5490, then reject the empty cell or a failed
+            // automatic CanFireAt (0x100395F2 / 0x10039688).
+            let target_house = if policy.mode() == M::EnemyBase {
+                sim.houses.get(&house.enemy_house()?)?
+            } else {
+                house
+            };
+            let cell = target_house.base_origin();
+            (cell != (0, 0)
+                && super::targeting::check_with_data(sim, rules, owner, sw, cell, true, &data)
+                    .is_ok())
+            .then_some(cell)
+        }
         // PickTarget10038640's case 0x13 (Ares `Mode::DropPod`): a Scenario
         // RandomRanged(1, 4) zone, House501AC0's random cell in it, and the
         // nearby Foot cell there (FNPC 0x56DC20: no zone, Normal, 1x1,
@@ -480,7 +492,7 @@ fn extension_target(
             }),
         // These distinct3.0 selectors are still pending native ports. Do not
         // silently replace a parsed mode with Offensive or another behavior.
-        M::Stealth | M::Base | M::MultiMissile | M::EnemyBase | M::LightningRandom => None,
+        M::Stealth | M::MultiMissile | M::LightningRandom => None,
     }
 }
 

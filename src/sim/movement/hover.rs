@@ -287,8 +287,8 @@ impl HoverRuntime {
     ///   HoverHeight below.
     /// - `id`: the Foot's AbstractClass ID (Fetch_ID), which phases and
     ///   scales the bob period (0x00513DF6..0x00513E20).
-    /// - `powered`: the base `Is_Powered` byte (0x0055A930), not Hover's
-    ///   airborne override.
+    /// - `powered`: whether to use powered lift. The caller checks base
+    ///   Is_Powered (0x0055A930) and the deploy landing request.
     fn altitude_step(
         &mut self,
         height: i32,

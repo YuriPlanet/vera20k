@@ -97,7 +97,7 @@ impl PhobosWarheadAnimRules {
             section.read_ares_bool("SplashList.PickRandom", value.splash_list_pick_random);
         value.splash_list_create_all =
             section.read_ares_bool("SplashList.CreateAll", value.splash_list_create_all);
-        value.splash_list_creation_interval = section.read_ares_int(
+        value.splash_list_creation_interval = section.read_phobos_scalar_int(
             "SplashList.CreationInterval",
             value.splash_list_creation_interval,
         );
@@ -109,7 +109,7 @@ impl PhobosWarheadAnimRules {
             section.read_ares_bool("AnimList.PickRandom", value.anim_list_pick_random);
         value.anim_list_create_all =
             section.read_ares_bool("AnimList.CreateAll", value.anim_list_create_all);
-        value.anim_list_creation_interval = section.read_ares_int(
+        value.anim_list_creation_interval = section.read_phobos_scalar_int(
             "AnimList.CreationInterval",
             value.anim_list_creation_interval,
         );
@@ -206,7 +206,7 @@ impl PhobosWarheadAnimGlobals {
         }
         if let Some(section) = ini.section("AudioVisual") {
             value.warhead_anim_z_adjust =
-                section.read_ares_int("WarheadAnimZAdjust", value.warhead_anim_z_adjust);
+                section.read_phobos_scalar_int("WarheadAnimZAdjust", value.warhead_anim_z_adjust);
         }
         value
     }

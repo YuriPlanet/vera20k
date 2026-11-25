@@ -1272,7 +1272,7 @@ pub fn building_image(entity: &GameEntity, has_buildup: bool) -> BuildingImage {
 /// constructor's 0); the Ares hook replaces the test
 /// ([`crate::sim::ares_firestorm::firewall_body_frame`]).
 fn firestorm_body_frame(entity: &GameEntity, object: &ObjectType, rules: &RuleSet) -> Option<i32> {
-    if rules.ares_form() {
+    if rules.ares_form() || object.ares_firestorm_wall() {
         crate::sim::ares_firestorm::firewall_body_frame(entity, object)
     } else {
         object.firestorm_wall.then_some(0)

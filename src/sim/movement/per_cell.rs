@@ -656,7 +656,7 @@ impl Simulation {
             //defer it across this native boundary.
             effects.flush_sound(self, rules);
         }
-        self.apply_wall_damage(target, -1, registry);
+        self.apply_wall_damage(target, -1, registry, rules);
         if let Some(actor) = self.substrate.entities.get_mut(id) {
             actor.rocking_mut().recoil_after_overlay_crush();
             //73B067 clears Foot+6B5 after the damage call, even when the
@@ -1021,11 +1021,13 @@ impl Simulation {
             let at = position_world_coord(&entity.position);
             ((at.x / 256) as i16 as u16, (at.y / 256) as i16 as u16)
         });
-        if rules.ares_form() && reason == PerCellReason::Arrival {
-            //519675 ->10049820: Capture only; exact NavCom equality with
-            //the first Unit, then Aircraft, then vehicle-like Building.
+        if reason == PerCellReason::Arrival {
+            // Ares 3.0p1 0x519675 -> 0x1004A480: Capture only, with exact
+            // NavCom equality for the first Unit, Aircraft or vehicle-like Building.
             let capture_target = self.substrate.entities.get(id).and_then(|actor| {
-                if actor.mission.current().known() != Some(MissionType::Capture) {
+                if actor.mission.current().known() != Some(MissionType::Capture)
+                    || (!rules.ares_form() && !self.following_script_vehicle_capture(actor, rules))
+                {
                     return None;
                 }
                 let NavTargetRef::Object { id: target } = actor.navigation.nav_com()? else {
@@ -1365,16 +1367,7 @@ impl Simulation {
             if rules.ares_form()
                 && let Some(tunnel) = self.ares_tunnel_type(candidate, rules)
             {
-                let house = self
-                    .substrate
-                    .entities
-                    .get(candidate)
-                    .map(|building| building.owner());
-                if let Some(house) = house
-                    && self.ares_can_enter_tunnel(
-                        id, candidate, house, tunnel, rules, registry, effects,
-                    )
-                {
+                if self.ares_can_enter_tunnel(id, candidate, tunnel, rules, registry, effects) {
                     return Ok(Some(false));
                 }
                 return self.infantry_per_cell_enter_refused(id, rules, registry, effects);
@@ -1475,17 +1468,16 @@ impl Simulation {
         ) else {
             return false;
         };
-        // Ares 3.0 10017870 (hook 0x73A23F), before the `UnitAbsorb=` test:
+        // Ares 3.0p1 10017F60 (hook 0x73A23F), before the `UnitAbsorb=` test:
         // on Enter with a `Tunnel=` building as its NavCom, the unit asks it
-        // CAN_LOAD and enters its own House's network (`sim::ares_tunnel`);
+        // CAN_LOAD and enters the entrance owner's network (`sim::ares_tunnel`);
         // a refusal takes the refusal below (`0x0073A796`).
         if rules.ares_form()
             && let Some(tunnel) = self.ares_tunnel_type(building, rules)
             && unit.mission.effective() == MissionId::from_known(MissionType::Enter)
             && nav_com_is(unit, building)
         {
-            let house = unit.owner();
-            if !self.ares_can_enter_tunnel(id, building, house, tunnel, rules, registry, effects) {
+            if !self.ares_can_enter_tunnel(id, building, tunnel, rules, registry, effects) {
                 self.unit_per_cell_enter_refused(id, rules, registry, effects);
             }
             return true;

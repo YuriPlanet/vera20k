@@ -1,16 +1,18 @@
 # Ares ground, airborne and building EMP
 
-Every build runs this chain when the game plays Ares ([Ares](ares.md)). Other
-games do not use the extension keys or run its Bullet/AI producers. It covers every Foot
-victim but a Tunnel mover: Drive, Walk, Hover, Ship, Teleport, Fly, Jumpjet and
-Rocket, human or AI, in or out of a Team, with Spawn, Slave or Capture managers,
+Every build runs the full chain when the game plays Ares ([Ares](ares.md)).
+On Base-for-modders, a warhead with a nonzero `EMP.Duration` can also affect
+fully surfaced Tunnel movers with Ares off. Drive, Walk, Hover, Ship, Teleport,
+Fly, Jumpjet, Rocket and fully surfaced Tunnel victims use the same EMP timer
+and disable/restore path. It covers human and AI units, in or out of a Team,
+with Spawn, Slave or Capture managers,
 a held Magnetron victim or a Temporal warp, harvesters, falling and
 mind-controlled victims, and the EMP.Threshold deaths. It admits every
 EMP-prone building: powered ones, Radar and SpySat providers, factories and
 construction yards, Gap generators, superweapon, PowersUnit, Sensors, cloning,
 LaserFence, Tesla-charged, garrisonable, undeploying and Prism-linked ones. It
 spares a tank in a Tank Bunker and announces a hit on the player's miners and
-base (announceAttack). A Tunnel mover is the one victim still refused.
+base (announceAttack).
 
 ## Building kinds
 
@@ -179,9 +181,12 @@ the same queued EMPAIRecoverMission/Hunt as AI Drive.
 
 ## Every mover, miners, falling and controlled victims
 
-Delivery10062320 tests no mover, so neither does the Rust admission, except a
-Tunnel mover, whose dig and underground states are not traced under Deactivate.
-Each admitted mover reaches only shared owners: Deactivate's Power_Off (Hover's
+P1 delivery `0x10063070` uses the same immunity check for a fully surfaced
+Tunnel mover. The first hit (`0x10063213` → `0x100638A0`) calls Deactivate
+through the mover's inherited ILocomotion power slots (`0x0055A910` off and
+`0x0055A8F0` on). The Bullet applies the configured duration and the Techno
+visit advances the same EMP timer in either game mode.
+Each admitted mover reaches shared owners: Deactivate's Power_Off (Hover's
 override516BF0 spins it down and settles it), the Ares deactivated-Unit stop of
 TechnoClass_Update1004B320, Teleport's deactivated MoveTo refusal1005D3E0, and
 for a flying Aircraft, a V3 or Dreadnought rocket included, the crash of
@@ -209,8 +214,10 @@ drain (IsTypeEMPProne inlined in10062D90).
 
 ## announceAttack
 
-enableEMPEffect10062B40 ends with announceAttack10062150. Native first tests
-Owner == PlayerPtr (10062162); Rust tests whether the owner is a human House,
+Ares 3.0p1 moves announceAttack to delivery (`10063220..1006322A`), after
+enableEMPEffect and before the EMP events. A warhead with `Malicious=yes`
+announces a victim that survives enableEMPEffect. The announcement tests
+Owner == PlayerPtr (10062162 in 3.0). Rust tests whether the owner is a human House,
 because the House Tags NotifyUnderAttack raises are state every peer shares, and
 the app plays the radar event and EVA for the local owner alone. With several
 humans native raises those Tags on the victim's client only, which this
@@ -221,10 +228,9 @@ Tags. Another building that is neither Insignificant (+232) nor BaseNormal=no
 (+154F) gets NotifyUnderAttack4F93E0 for PlayerPtr (100621B3..100621CB): the
 base cue, the siren and House Tag event 6, but no ally line, since only the
 owner's client calls it; a 1x1 undeployer returns at once (4F93EB..4F93FB).
-The Malicious hook10053980 reads the global only ReceiveDamage sets
-(100536A0), so the own line plays. A flying Aircraft that crashes returns
-before the announcement. `UnderAttackLine` records which call raised a
-warning; the existing damage and Temporal producers keep theirs.
+Delivery now owns the EMP warhead's `Malicious` check. The separate ReceiveDamage
+hook10053980 reads its own warhead global (100536A0). `UnderAttackLine` records
+which call raised a warning.
 
 ## Input and state ownership
 
@@ -459,9 +465,9 @@ Delivery's bunker test (10062357..10062376) spares a victim whose
 BunkerLinkedItem is a Building, a tank in a Tank Bunker, unless the Warhead
 PenetratesBunker; the bunker itself is an ordinary building victim.
 
-Still open: a Tunnel mover, which the delivery reports as unsupported and
-leaves unaffected (trigger: an EMP hit on a Tunnel unit in a mod; effect: no
-EMP there). A landed Aircraft's Deactivate reaches Fly's Power_Off
+Tunnel movement transitions and underground states remain open. Delivery
+skips a Tunnel unit during those states, so a hit then leaves its movement and
+EMP counter as they were. A landed Aircraft's Deactivate reaches Fly's Power_Off
 override4CFD20, whose Random(20, 30) spin and stop are not ported
 (`locomotor_power_off`); the base flag write runs instead, without those two
 scenario draws. A LaserFencePost's fence sections are neither dropped by

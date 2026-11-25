@@ -139,6 +139,50 @@ fn launches(sim: &Simulation) -> usize {
 }
 
 #[test]
+fn holding_a_draining_superweapon_converts_and_restores_recharge() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let mut layers = layers();
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[DrainShield]\nIsPowered=yes\n[General]\nChargeToDrainRatio=0.5\n"),
+    );
+    let (_, rules) = process(&layers);
+    assert!(!rules.ares_form());
+    let (mut sim, owner, _, id, _) = world(&rules);
+    sim.super_weapons
+        .instance_mut(&owner, &id)
+        .unwrap()
+        .set_recharge_time(600);
+    sim.session.set_binary_frame_for_test(5000);
+    let mut effects = FrameEffects::default();
+    tick_house_superweapon_instances(&mut sim, &rules, owner, &mut effects);
+    assert!(sim.fire_super_weapon(&rules, owner, id, (10, 10), None, &mut effects, false));
+    assert_eq!(sim.super_weapons[&owner][&id].charge_duration(), 300);
+
+    sim.session.set_binary_frame_for_test(5050);
+    sim.power_states
+        .get_mut(&owner)
+        .unwrap()
+        .set_is_low_power_for_test(true);
+    update_owned_supers(&mut sim, &rules, owner, &mut effects);
+    let instance = &sim.super_weapons[&owner][&id];
+    assert!(instance.is_suspended());
+    assert_eq!(instance.charge_drain_state(), -1);
+    assert_eq!(instance.charge_remaining(5050), 100);
+
+    sim.session.set_binary_frame_for_test(5060);
+    sim.power_states
+        .get_mut(&owner)
+        .unwrap()
+        .set_is_low_power_for_test(false);
+    update_owned_supers(&mut sim, &rules, owner, &mut effects);
+    let instance = &sim.super_weapons[&owner][&id];
+    assert!(!instance.is_suspended());
+    assert_eq!(instance.charge_drain_state(), 0);
+    assert_eq!(instance.charge_remaining(5060), 600);
+}
+
+#[test]
 fn authored_drain_provider_commands_effects_and_saved_phase_follow_native_conversions() {
     let mut sources = layers();
     assert_eq!(

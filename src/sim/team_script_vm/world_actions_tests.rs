@@ -67,6 +67,168 @@ fn run(sim: &mut Simulation, rules: &RuleSet, team: u64) {
 
 const SCRIPTS: &str = "[ScriptTypes]\n0=RUN\n1=IDLE\n[IDLE]\n0=5,9\n";
 
+#[test]
+fn ares_team_script_67_drives_using_explicit_rules() {
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::runtime::{SimResources, SimRuntime};
+
+    let _stock_rules = crate::rules::ares_switch::read_ares_way(false);
+    let (mut sim, rules, owner) = scene_with(
+        &format!("{SCRIPTS}[RUN]\n0=67,0\n1=29,0\n"),
+        "[InfantryTypes]\n0=DRIVER\n[DRIVER]\nStrength=75\nCanDrive=yes\nSpeed=4\n\
+         SpeedType=Foot\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+         [Russians]\nCanBeDriven=yes\n",
+    );
+    assert!(!rules.ares_form());
+    assert!(!rules.ares());
+    let driver = sim
+        .spawn_object("DRIVER", "Americans", 8, 8, 0, &rules)
+        .unwrap();
+    let vehicle = sim
+        .spawn_object("TRUCKA", "Russians", 9, 8, 0, &rules)
+        .unwrap();
+    let team = team(&mut sim, owner, &[driver]);
+
+    run(&mut sim, &rules, team);
+
+    assert_eq!(
+        sim.entities().get(driver).unwrap().navigation.nav_com(),
+        Some(NavTargetRef::object(vehicle)),
+    );
+    let state = sim.team_script_vm.team(team).unwrap();
+    assert!(state.members().next().is_none());
+    assert!(state.advance_pending());
+    run(&mut sim, &rules, team);
+    assert!(sim.houses[&owner].ai_activation().production);
+
+    sim.session.publish_started();
+    let mut runtime = SimRuntime {
+        simulation: sim,
+        resources: std::sync::Arc::new(SimResources::new(rules)),
+    };
+    for _ in 0..150 {
+        runtime.advance_frame_for_tooling(&[], 22).unwrap();
+        if runtime.simulation.entities().get(vehicle).unwrap().owner() == owner {
+            break;
+        }
+    }
+    assert_eq!(
+        runtime.simulation.entities().get(vehicle).unwrap().owner(),
+        owner
+    );
+    assert!(runtime.simulation.entities().get(driver).is_none());
+}
+
+#[test]
+fn ares_script_vehicle_capture_keeps_its_event_and_one_time_captor_rule() {
+    use crate::map::map_file::MapFile;
+    use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
+    use crate::sim::world::UninitContext;
+
+    let _stock_rules = crate::rules::ares_switch::read_ares_way(false);
+    let (mut sim, rules, owner) = scene_with(
+        SCRIPTS,
+        "[InfantryTypes]\n0=THIEF\n[THIEF]\nStrength=80\nVehicleThief=yes\n\
+         VehicleThief.OneTime=yes\nSpeed=4\nSpeedType=Foot\n\
+         Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+         [Warheads]\n0=CAPTUREWH\n[CAPTUREWH]\nVerses=100%\n",
+    );
+    assert!(!rules.ares());
+    assert!(rules.object("THIEF").unwrap().driver_rules().one_time());
+    let map = MapFile::from_bytes(
+        b"[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+          [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n[Basic]\nNewINIFormat=4\n\
+          [Triggers]\nTAKEN=Americans,<none>,Vehicle taken,0,1,1,1,0\n\
+          [Events]\nTAKEN=1,69,0,0\n[Actions]\nTAKEN=1,28,0,17,0,0,0,0,A\n\
+          [Tags]\nTAKEN_TAG=0,Vehicle taken,TAKEN\n",
+    )
+    .unwrap();
+    let teams =
+        TeamAiIniRegistry::from_sources(&IniFile::empty(), &map.ini, RulePolicy::stock_campaign());
+    sim.initialize_trigger_definitions(&map, &teams, None, None, None);
+    sim.classify_map_triggers(&rules);
+    let thief = sim
+        .spawn_object("THIEF", "Americans", 8, 8, 0, &rules)
+        .unwrap();
+    let vehicle = sim
+        .spawn_object("TRUCKA", "Russians", 9, 8, 0, &rules)
+        .unwrap();
+    sim.attach_object_trigger_tag(vehicle, Some("TAKEN_TAG"));
+    sim.session.publish_started();
+
+    sim.dispatch_object_tag_event(vehicle, 48, Some(thief), None, UninitContext::new(&rules));
+    let before_capture = sim.trigger_runtime.global_variable_is_set(17);
+    let registry = Some(rules.overlay_registry());
+    let mut effects = FrameEffects::empty();
+    let outcome = sim
+        .ares_capture_vehicle(thief, vehicle, &rules, registry, &mut effects)
+        .unwrap();
+    assert!(outcome.consumed);
+    assert_eq!(sim.entities().get(vehicle).unwrap().owner(), owner);
+    sim.uninit_with_context(thief, UninitContext::new(&rules));
+    let after_capture = sim.trigger_runtime.global_variable_is_set(17);
+
+    let warhead = sim.interner.intern("CAPTUREWH");
+    let hit = EntityDamageEvent::direct_receiver(
+        vehicle,
+        100_000,
+        0,
+        RAD_NO_ATTACKER,
+        None,
+        warhead,
+        ReceiverCallFlags {
+            ignore_defenses: false,
+            arg6: false,
+        },
+    );
+    sim.commit_noncombat_aoe_hits(&rules, registry, &[hit], &mut effects);
+    assert!(
+        sim.entities()
+            .get(vehicle)
+            .is_none_or(|unit| !unit.lifecycle.object_alive())
+    );
+    let thief_type = sim.interner.get("THIEF").unwrap();
+    let captor_returned = sim
+        .entities()
+        .values()
+        .any(|entity| entity.stable_id() != thief && entity.type_ref() == thief_type);
+    assert_eq!(
+        (before_capture, after_capture, captor_returned),
+        (false, true, false)
+    );
+}
+
+#[test]
+fn ares_team_script_65_applies_auxiliary_drain_once() {
+    use crate::sim::runtime::{SimResources, SimRuntime};
+
+    let _stock_rules = crate::rules::ares_switch::read_ares_way(false);
+    let (mut sim, rules, owner) = scene(&format!("{SCRIPTS}[RUN]\n0=65,-50\n1=29,0\n"));
+    assert!(!rules.ares());
+    let member = sim
+        .spawn_object("TRUCKA", "Americans", 8, 8, 0, &rules)
+        .unwrap();
+    sim.spawn_object("TRUCKB", "Russians", 14, 8, 0, &rules)
+        .unwrap();
+    let team = team(&mut sim, owner, &[member]);
+
+    run(&mut sim, &rules, team);
+    run(&mut sim, &rules, team);
+    assert!(sim.houses[&owner].ai_activation().production);
+
+    sim.session.publish_started();
+    let mut runtime = SimRuntime {
+        simulation: sim,
+        resources: std::sync::Arc::new(SimResources::new(rules)),
+    };
+    runtime.advance_frame_for_tooling(&[], 22).unwrap();
+    let sim = &runtime.simulation;
+    assert_eq!(sim.power_states.get(&owner).unwrap().total_drain(), 50);
+    let other = sim.interner.get("Russians").unwrap();
+    let other_power = sim.power_states.get(&other);
+    assert_eq!(other_power.map_or(0, |state| state.total_drain()), 0);
+}
+
 /// Case 18 builds TeamType::Array[1] for the team's House, moves every member
 /// over and deletes the old team, ignoring the new TeamType's `Max=0`.
 #[test]

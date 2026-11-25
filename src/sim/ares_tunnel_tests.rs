@@ -47,16 +47,7 @@ fn in_limbo(sim: &Simulation, id: u64) -> bool {
 }
 
 fn enter(sim: &mut Simulation, rules: &RuleSet, foot: u64, tunnel: u64) -> bool {
-    let owner = americans(sim);
-    sim.ares_can_enter_tunnel(
-        foot,
-        tunnel,
-        owner,
-        0,
-        rules,
-        None,
-        &mut FrameEffects::default(),
-    )
+    sim.ares_can_enter_tunnel(foot, tunnel, 0, rules, None, &mut FrameEffects::default())
 }
 
 /// `Tunnel=` resolves case-insensitively against `[TunnelTypes]` (an
@@ -113,8 +104,8 @@ fn a_foot_enters_one_tunnel_and_leaves_from_another() {
 
 /// A unit ordered into a tunnel parks it as its pending entry like a
 /// `UnitAbsorb=` building (hook `0x741CE5`); on arrival the Unit PerCell
-/// arm asks it CAN_LOAD and the unit enters its own House's network (hook
-/// `0x73A23F`).
+/// arm asks it CAN_LOAD and the unit enters the entrance owner's network
+/// (hook `0x73A23F`).
 #[test]
 fn a_unit_ordered_into_a_tunnel_enters_on_arrival() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -122,6 +113,54 @@ fn a_unit_ordered_into_a_tunnel_enters_on_arrival() {
     let owner = americans(&sim);
     let tunnel = spawn(&mut sim, &rules, "TUNA", 16, 10);
     let tank = spawn(&mut sim, &rules, "LTNK", 12, 10);
+    order_unit_into_entrance(&mut sim, &rules, tank, tunnel);
+
+    assert!(in_limbo(&sim, tank));
+    assert_eq!(sim.ares_tunnels.members(owner, 0), [tank]);
+}
+
+#[test]
+fn ares_p1_vehicle_exits_its_allied_tunnel_network() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let (mut sim, rules) = arena();
+    let tank_owner = americans(&sim);
+    let entrance_owner = sim.interner.get("Russians").unwrap();
+    *sim.house_alliances_mut_for_test() = [
+        ("AMERICANS".into(), ["RUSSIANS".into()].into()),
+        ("RUSSIANS".into(), ["AMERICANS".into()].into()),
+    ]
+    .into();
+    let west = sim
+        .spawn_object("TUNA", "Russians", 16, 10, 0, &rules)
+        .unwrap();
+    let east = sim
+        .spawn_object("TUNA", "Russians", 20, 10, 0, &rules)
+        .unwrap();
+    let tank = spawn(&mut sim, &rules, "LTNK", 12, 10);
+    order_unit_into_entrance(&mut sim, &rules, tank, west);
+
+    assert!(in_limbo(&sim, tank));
+    assert_eq!(sim.ares_tunnels.members(entrance_owner, 0), [tank]);
+    assert!(sim.ares_tunnels.members(tank_owner, 0).is_empty());
+    assert!(
+        crate::sim::transport_unload::ares_tunnel_mission_unload(
+            &mut sim,
+            &rules,
+            east,
+            &mut FrameEffects::default(),
+        )
+        .is_some()
+    );
+    assert!(!in_limbo(&sim, tank));
+    assert_eq!(
+        sim.substrate.entities.get(tank).unwrap().owner(),
+        tank_owner
+    );
+}
+
+fn order_unit_into_entrance(sim: &mut Simulation, rules: &RuleSet, tank: u64, tunnel: u64) {
+    let entrance = &sim.substrate.entities.get(tunnel).unwrap().position;
+    let (rx, ry) = (i32::from(entrance.rx()), i32::from(entrance.ry()));
     assert!(sim.apply_command(
         "Americans",
         &crate::sim::command::Command::clicked_mission(
@@ -129,40 +168,37 @@ fn a_unit_ordered_into_a_tunnel_enters_on_arrival() {
             MissionType::Enter,
             crate::sim::combat::TargetKind::Entity(tunnel),
         ),
-        Some(&rules),
+        Some(rules),
     ));
     assert_eq!(
         sim.substrate.entities.get(tank).unwrap().pending_entry(),
         Some(tunnel)
     );
     crate::sim::docking::building_dock::try_pending_entry(
-        &mut sim,
-        &rules,
+        sim,
+        rules,
         tank,
         &mut FrameEffects::default(),
     );
     sim.foot_set_location_marked(
         tank,
         crate::sim::components::DriveCoord {
-            x: 16 * 256 + 128,
-            y: 10 * 256 + 128,
+            x: rx * 256 + 128,
+            y: ry * 256 + 128,
             z: 0,
         },
-        &rules,
+        rules,
         None,
         &mut FrameEffects::default(),
     );
     sim.per_cell_process(
         tank,
         crate::sim::movement::PerCellReason::Arrival,
-        &rules,
+        rules,
         None,
         &mut FrameEffects::default(),
     )
     .unwrap();
-
-    assert!(in_limbo(&sim, tank));
-    assert_eq!(sim.ares_tunnels.members(owner, 0), [tank]);
 }
 
 /// While another entrance stands, neither a sale (hook `0x44A37F`) nor a

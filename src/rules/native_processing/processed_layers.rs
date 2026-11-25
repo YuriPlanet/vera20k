@@ -4,7 +4,7 @@
 use super::{
     AresGlobalControls, CountryVeterancyState, NativeRulesRegistryState,
     NativeTypeConstructionEvent, ProcessedRulesLayers, ProcessedType, RulesTypeFamily,
-    anim_type_runtime_keys, find_or_construct_type,
+    anim_type_runtime_keys, find_existing_type, find_or_construct_type,
 };
 use crate::rules::aircraft_trailer::AircraftTrailer;
 use crate::rules::ares_armor::ArmorCatalog;
@@ -388,12 +388,57 @@ impl ProcessedRulesLayers {
                 "saved Rules require a different compiled extension capability",
             ));
         }
-        // Only a read the Ares way fills these SuperWeaponType fields.
+        let families = &registry.families;
+        // Stock passes retain arguments for a later per-type opt-in. Only
+        // real SuperWeapon declarations may carry these staging fields.
+        // RuleSet projects them only for eligible definitions. Creating an
+        // Ares GenericWarhead pointer still requires the Ares reader.
         if !registry.reads_ares_way
-            && registry.families.values().flatten().any(|member| {
-                member.super_weapon_building_requirements.is_some()
-                    || member.generic_super_weapon_warhead.is_some()
-                    || member.unit_delivery.is_some()
+            && families.iter().any(|(&family, members)| {
+                members.iter().any(|member| {
+                    member.generic_super_weapon_warhead.is_some()
+                        || member
+                            .super_weapon_building_requirements
+                            .as_ref()
+                            .is_some_and(|requirements| {
+                                family != RulesTypeFamily::SuperWeapon
+                                    || !["SW.AuxBuildings", "SW.NegBuildings"].iter().any(|key| {
+                                        member.body.read_string_with(key, 0x800, false, |_, _| true)
+                                    })
+                                    || requirements
+                                        .auxiliary
+                                        .iter()
+                                        .chain(&requirements.negative)
+                                        .any(|id| {
+                                            find_existing_type(
+                                                families,
+                                                RulesTypeFamily::Building,
+                                                id,
+                                            )
+                                            .is_none()
+                                        })
+                            })
+                        || member.unit_delivery.as_ref().is_some_and(|delivery| {
+                            family != RulesTypeFamily::SuperWeapon
+                                || !member.body.read_string_with(
+                                    "Type",
+                                    0x28,
+                                    false,
+                                    |seen, value| {
+                                        seen || value.eq_ignore_ascii_case("UnitDelivery")
+                                    },
+                                )
+                                || delivery.types.iter().any(|payload| {
+                                    let family = match payload.category {
+                                        ObjectCategory::Infantry => RulesTypeFamily::Infantry,
+                                        ObjectCategory::Vehicle => RulesTypeFamily::Vehicle,
+                                        ObjectCategory::Aircraft => RulesTypeFamily::Aircraft,
+                                        ObjectCategory::Building => RulesTypeFamily::Building,
+                                    };
+                                    find_existing_type(families, family, &payload.id).is_none()
+                                })
+                        })
+                })
             })
         {
             return Err(RulesError::InvalidSavedState(
@@ -403,7 +448,6 @@ impl ProcessedRulesLayers {
         if !registry.model_plan.validate() {
             return Err(RulesError::InvalidSavedState("invalid voxel model plan"));
         }
-        let families = &registry.families;
         if registry.ares_armors.is_some() != registry.reads_ares_way {
             return Err(RulesError::InvalidSavedState(
                 "saved armor catalog differs from the saved Ares mode",

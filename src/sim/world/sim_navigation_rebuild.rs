@@ -5,11 +5,15 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use crate::map::entities::EntityCategory;
 use crate::map::overlay::OverlayEntry;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::overlay_grid::damage_wall_overlay_with_runtime_host;
-use crate::sim::overlay_grid::recalc_overlay_passability;
+use crate::sim::cell_kernel::WallGateConnections;
+use crate::sim::overlay_grid::{
+    OverlayGrid, damage_wall_overlay_with_runtime_host, recalc_overlay_passability,
+    refresh_wall_neighborhood_with_host,
+};
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::terrain_speed;
 use crate::sim::pathfinding::zone_incremental::ZoneRepairKind;
@@ -481,6 +485,78 @@ impl Simulation {
         }
     }
 
+    /// The borrow-split wall observer over this Simulation's live owners.
+    pub(crate) fn with_wall_host<R>(
+        &mut self,
+        rules: &RuleSet,
+        apply: impl FnOnce(
+            &mut OverlayGrid,
+            &mut ResolvedTerrainGrid,
+            &mut SimulationWallRuntimeHost<'_>,
+        ) -> R,
+    ) -> Option<R> {
+        let grid = self.overlay_grid.as_mut()?;
+        let terrain = self.resolved_terrain.as_mut()?;
+        let mut host = SimulationWallRuntimeHost {
+            wall_gates: WallGateConnections::new(&self.substrate, &self.interner, rules),
+            dirty_cells: &mut self.dirty_cells,
+            zone_grid: &mut self.zone_grid,
+            path_grid: &mut self.path_grid,
+            bridge_state: self.bridge_state.as_ref(),
+            playfield_bounds: self.playfield_bounds,
+        };
+        Some(apply(grid, terrain, &mut host))
+    }
+
+    /// BuildingClass::Unlimbo 0x0044104D..0x0044115E and BuildingClass::Limbo
+    /// 0x00445B81..0x00445C73 call CellClass::PostDestructionWallCleanup
+    /// at the two fixed endpoints of each applicable gate orientation.
+    pub(crate) fn refresh_gate_wall_connections(&mut self, id: u64, rules: &RuleSet) {
+        let Some(gate) = self
+            .substrate
+            .entities
+            .get(id)
+            .filter(|entity| entity.category() == EntityCategory::Structure)
+        else {
+            return;
+        };
+        let x = i32::from(gate.position.rx());
+        let y = i32::from(gate.position.ry());
+        let type_id = gate.type_ref();
+        let gate_types = &rules.general.building_types;
+        let matches_type = |names: [&Option<String>; 2]| {
+            names
+                .into_iter()
+                .flatten()
+                .any(|name| self.interner.get(name) == Some(type_id))
+        };
+        let east_west = matches_type([&gate_types.gdi_gate_one, &gate_types.nod_gate_one]);
+        let north_south = matches_type([&gate_types.gdi_gate_two, &gate_types.nod_gate_two]);
+        if !east_west && !north_south {
+            return;
+        }
+        let registry = rules.overlay_registry();
+        self.with_wall_host(rules, |grid, terrain, host| {
+            let mut refresh = |anchor| {
+                refresh_wall_neighborhood_with_host(
+                    grid,
+                    registry,
+                    Some(terrain),
+                    anchor,
+                    Some(host),
+                );
+            };
+            if east_west {
+                refresh((x - 1, y));
+                refresh((x + 3, y));
+            }
+            if north_south {
+                refresh((x, y - 1));
+                refresh((x, y + 3));
+            }
+        });
+    }
+
     /// Direct Cell480CB0 caller, retaining its receiver across synchronous
     /// callbacks. Unit73B056 uses the same transaction host as AreaDamage;
     /// the latter's additional outer detach belongs to its own caller.
@@ -489,11 +565,13 @@ impl Simulation {
         target: crate::sim::overlay_grid::WallPointerTarget,
         damage: i32,
         overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+        rules: &RuleSet,
     ) {
         let Some(grid) = self.overlay_grid.as_mut() else {
             return;
         };
         let mut host = SimulationWallRuntimeHost {
+            wall_gates: WallGateConnections::new(&self.substrate, &self.interner, rules),
             dirty_cells: &mut self.dirty_cells,
             zone_grid: &mut self.zone_grid,
             path_grid: &mut self.path_grid,

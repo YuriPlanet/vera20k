@@ -339,15 +339,15 @@ impl RuntimeDefinitions {
 }
 
 /// An event's Tag flags in this game: the stock table
-/// ([`event_classification`]), behind Ares' own answer when Ares plays
-/// (`RuleSet::ares_form`).
+/// ([`event_classification`]) for stock events and the matching extension
+/// classification for enabled events.
 fn event_flags(kind: i32, ares: bool) -> u8 {
-    // Ares 3.0 TEventExt::GetFlags 1004F6A0 (hook 0x71F683) answers its own
+    // Ares 3.0p1 TEventExt::GetFlags 0x10051040 (hook 0x71F683) answers its own
     // events before the stock table: the object events 62..74, 79, 80, 83
     // and 84 are attached-object (2); the superweapon, reverse-engineered
     // type, owned type, destroyed-by-House and KeepAlive events are House
     // Tags (8); 86 is a Logic Tag (16). Other kinds keep the stock flags.
-    if ares {
+    if super::ares::event_hooks_enabled(kind, ares) {
         match kind {
             62..=74 | 79 | 80 | 83 | 84 => return 2,
             75..=78 | 81 | 82 | 85 | 87 | 88 => return 8,

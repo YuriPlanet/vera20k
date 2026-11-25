@@ -10,17 +10,23 @@ pub(crate) struct PromotionAbilities {
 }
 
 impl PromotionAbilities {
-    pub(crate) fn read_pass(&mut self, section: &crate::rules::ini_parser::IniSection) {
+    pub(crate) fn read_pass(
+        &mut self,
+        section: &crate::rules::ini_parser::IniSection,
+        ares_way: bool,
+    ) {
         let _ares = crate::rules::ares_switch::ares_reads();
         // TypeExt1003E4FA/1003E510 -> ReadAbilities100405A0. An absent or
         // empty ReadString2048 keeps the tier. A nonempty value clears all
         // seven bytes before comma-only tokenization and table lookup.
-        Self::read_tier(section, "VeteranAbilities", &mut self.veteran);
-        Self::read_tier(section, "EliteAbilities", &mut self.elite);
+        // P1's EMPIMMUNE entry at 0x1009DE70 is the only flag used by the
+        // built-in Tunnel victim path.
+        let count = if ares_way { self.veteran.len() } else { 1 };
+        Self::read_tier(section, "VeteranAbilities", &mut self.veteran[..count]);
+        Self::read_tier(section, "EliteAbilities", &mut self.elite[..count]);
     }
 
-    fn read_tier(section: &crate::rules::ini_parser::IniSection, key: &str, flags: &mut [bool; 7]) {
-        let _ares = crate::rules::ares_switch::ares_reads();
+    fn read_tier(section: &crate::rules::ini_parser::IniSection, key: &str, flags: &mut [bool]) {
         const NAMES: [&str; 7] = [
             "empimmune",
             "radimmune",
@@ -31,7 +37,9 @@ impl PromotionAbilities {
             "psionicweaponimmune",
         ]; // Installed string table1009CDC4.
         if let Some(tokens) = section.read_list(key, 2048) {
-            *flags = NAMES.map(|name| tokens.iter().any(|token| token.eq_ignore_ascii_case(name)));
+            for (flag, name) in flags.iter_mut().zip(NAMES) {
+                *flag = tokens.iter().any(|token| token.eq_ignore_ascii_case(name));
+            }
         }
     }
 

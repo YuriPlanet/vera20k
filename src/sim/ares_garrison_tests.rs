@@ -128,6 +128,42 @@ fn an_occupier_raids_an_empty_raidable_building_until_it_empties() {
     assert_eq!(owner(&sim, bunker), "Russians", "returned when empty");
 }
 
+#[test]
+fn ares_p1_campaign_player_houses_share_garrisons_without_raiding() {
+    use crate::sim::passenger::{add_garrison_occupant, building_can_be_occupied_by};
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    for ares in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares);
+        let rules = rules();
+        let (mut sim, _grid) = arena(&rules);
+        let russians = sim.interner.get("Russians").unwrap();
+        sim.houses
+            .get_mut(&russians)
+            .unwrap()
+            .set_player_control_for_test(true);
+        let bunker = spawn(&mut sim, &rules, "BNK", "Russians", 10, 10);
+        let occupant = spawn(&mut sim, &rules, "GI", "Russians", 12, 10);
+        let visitor = spawn(&mut sim, &rules, "GI", "Americans", 12, 11);
+        let mut effects = FrameEffects::default();
+        assert!(
+            add_garrison_occupant(&mut sim, &rules, occupant, bunker, None, &mut effects).unwrap()
+        );
+
+        sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+        assert!(!building_can_be_occupied_by(&sim, &rules, bunker, visitor));
+        sim.session.set_game_mode(ScenarioGameMode::Campaign);
+        assert!(building_can_be_occupied_by(&sim, &rules, bunker, visitor));
+        assert!(
+            add_garrison_occupant(&mut sim, &rules, visitor, bunker, None, &mut effects).unwrap()
+        );
+        assert_eq!(owner(&sim, bunker), "Russians");
+        let building = sim.substrate.entities.get(bunker).unwrap();
+        assert_eq!(building.passenger_role().occupants().count(), 2);
+        assert!(!building.seldom.ares.ares_raid.raided());
+    }
+}
+
 /// With `UC.PassThrough=100%` and a projectile that is not
 /// `SubjectToTrenches`, the shot passes through to the occupant with
 /// `UC.DamageMultiplier=50%` of its damage, and the building takes none.

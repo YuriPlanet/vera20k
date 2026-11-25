@@ -361,7 +361,7 @@ pub(super) fn entry_orders(
     consumed.then_some(orders)
 }
 
-/// Ares 3.0 `10049690` (hook `0x51E7BF`): whether `actor` captures the
+/// Ares 3.0p1 `1004A2E0` (hook `0x51E7BF`): whether `actor` captures the
 /// vehicle `target`, for the cursor and the click alike, while Ares plays.
 pub(in crate::app::input) fn vehicle_capture_action(
     sim: &crate::sim::world::Simulation,

@@ -81,7 +81,7 @@ pub use self::production_tech::{
     construction_options_for_owner, initial_construction_options,
 };
 pub use self::production_tech::{
-    building_base_foundation_cells, building_movement_blocking_cells,
+    active_factory_product_at, building_base_foundation_cells, building_movement_blocking_cells,
     producer_candidates_for_owner_category,
 };
 pub use self::production_types::*;
@@ -93,8 +93,8 @@ pub(crate) use self::can_build::owns_prerequisites;
 pub use self::can_build::{CanBuild, can_build, primary_factory_category};
 pub(crate) use self::can_build::{RequirementStatus, requirements_met};
 pub use self::can_build::{
-    AresObjectFactory, ares_object_factory, can_select_factory_primary, find_factory,
-    object_find_factory,
+    ReadyObjectFactory, can_select_factory_primary, find_factory, object_find_factory,
+    ready_object_factory,
 };
 pub(crate) use self::can_build::{initialize_factory_primary, toggle_factory_primary};
 pub(crate) use self::factory_ai::{

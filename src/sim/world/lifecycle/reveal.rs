@@ -686,20 +686,12 @@ impl Simulation {
         // Ares 3.0 BuildingClass_Put_FirestormWall (10014A70, hook
         // 0x440D01) connects a placed firestorm wall section to its
         // neighbours (`UpdateFirewallLinks`).
-        if context.rules.ares()
-            && self
-                .substrate
-                .entities
-                .get(stable_id)
-                .is_some_and(|entity| entity.category() == EntityCategory::Structure)
-        {
-            self.ares_update_firewall_links(
-                stable_id,
-                context.rules(),
-                context.registry(),
-                context.effects(),
-            );
-        }
+        self.ares_update_firewall_links(
+            stable_id,
+            context.rules(),
+            context.registry(),
+            context.effects(),
+        );
         // Building440D07: recompute from the PRE-append House+68. Failed
         // Mark and the earlier dead arms never reach it.
         if let Some(owner) = self
@@ -754,6 +746,7 @@ impl Simulation {
         {
             self.construct_natural_particle_system(stable_id, context.rules());
         }
+        self.refresh_gate_wall_connections(stable_id, context.rules());
         // While Ares plays, BuildingClass_Put_DontSpawnSpotlight (1004EA10,
         // hook 0x441163) skips this: TechnoClass's Put hook built the light.
         if !context.rules.ares() {
@@ -828,6 +821,7 @@ impl Simulation {
                 owner,
                 category,
                 context.effects(),
+                false,
             );
         }
         RevealOutcome::Revealed { logic_registered }

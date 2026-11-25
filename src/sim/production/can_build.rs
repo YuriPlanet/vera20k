@@ -131,7 +131,16 @@ pub fn can_build(
         return CanBuild::No;
     }
     if ares {
-        match query_factory(sim, rules, owner, obj, true, true, false, true) {
+        match query_factory(
+            sim,
+            rules,
+            owner,
+            obj,
+            true,
+            FactoryPower::Online,
+            false,
+            true,
+        ) {
             FactorySearch::Missing | FactorySearch::BuildLimitRefused => return CanBuild::No,
             FactorySearch::Offline => return CanBuild::AtLimit,
             FactorySearch::Online(_) | FactorySearch::Primary(_) => {}
@@ -760,7 +769,16 @@ fn ares_check_build_limit(
     });
     ares_build_limit_remaining(sim, rules, owner, obj).wrapping_sub(queued) <= 0
         || !matches!(
-            query_factory(sim, rules, owner, obj, true, true, false, true),
+            query_factory(
+                sim,
+                rules,
+                owner,
+                obj,
+                true,
+                FactoryPower::Online,
+                false,
+                true
+            ),
             FactorySearch::Online(_) | FactorySearch::Primary(_)
         )
 }
@@ -862,10 +880,9 @@ pub fn object_find_factory(
     )
 }
 
-/// What `HouseExt::FindFactory` (Ares.dll `10020D40`) finds for an object's
-/// type among its owner's factories ([`ares_object_factory`]).
+/// Whether a factory can deliver the ready object ([`ready_object_factory`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AresObjectFactory {
+pub enum ReadyObjectFactory {
     /// No factory fits (state 1).
     Missing,
     /// Only factories without power or deactivated fit (state 2).
@@ -874,33 +891,53 @@ pub enum AresObjectFactory {
     Found(u64),
 }
 
-/// Ares' sidebar cameo click asks `HouseExt::FindFactory(owner, type, false,
-/// true, false, true)` (`10020D40`) for the ready product `object_id` itself
-/// (SidebarClass_ProcessCameoClick_Power, Ares.dll `10025170`, hook
-/// `0x006AB312`, in place of the stock `FindFactory(0, 0)`): any fitting
-/// factory without power or deactivated only counts as
-/// [`AresObjectFactory::Unpowered`], and the first powered one or the
-/// primary answers.
-pub fn ares_object_factory(sim: &Simulation, rules: &RuleSet, object_id: u64) -> AresObjectFactory {
+impl ReadyObjectFactory {
+    pub fn available(self) -> Option<u64> {
+        match self {
+            Self::Found(id) => Some(id),
+            Self::Missing | Self::Unpowered => None,
+        }
+    }
+}
+
+/// The completed product's factory for a cameo click (Ares 3.0p1
+/// `0x006AB312 -> 0x10025C90`), tab hotkey
+/// (`0x00535DB6/0x00535E76 -> 0x10025C70/0x10025C50`) or Ready label
+/// (`0x006A9822 -> 0x10025CF0`). Outside the Ares reader, these paths
+/// rule out a factory switched off by a TogglePower event.
+pub fn ready_object_factory(
+    sim: &Simulation,
+    rules: &RuleSet,
+    object_id: u64,
+    skip_busy_airfield: bool,
+    from_cameo: bool,
+) -> ReadyObjectFactory {
     let Some(object) = sim.entities().get(object_id) else {
-        return AresObjectFactory::Missing;
+        return ReadyObjectFactory::Missing;
     };
     let Some(object_type) = sim.entity_object_type(object, rules) else {
-        return AresObjectFactory::Missing;
+        return ReadyObjectFactory::Missing;
+    };
+    let power = if rules.ares_form() {
+        FactoryPower::Online
+    } else if rules.toggle_power_allowed() {
+        FactoryPower::ManualSwitch
+    } else {
+        FactoryPower::Any
     };
     match query_factory(
         sim,
         rules,
         object.owner(),
         object_type,
+        skip_busy_airfield,
+        power,
         false,
-        true,
-        false,
-        true,
+        from_cameo,
     ) {
-        FactorySearch::Online(id) | FactorySearch::Primary(id) => AresObjectFactory::Found(id),
-        FactorySearch::Offline => AresObjectFactory::Unpowered,
-        FactorySearch::Missing | FactorySearch::BuildLimitRefused => AresObjectFactory::Missing,
+        FactorySearch::Online(id) | FactorySearch::Primary(id) => ReadyObjectFactory::Found(id),
+        FactorySearch::Offline => ReadyObjectFactory::Unpowered,
+        FactorySearch::Missing | FactorySearch::BuildLimitRefused => ReadyObjectFactory::Missing,
     }
 }
 
@@ -923,11 +960,24 @@ pub fn find_factory(
         owner,
         obj,
         skip_busy_airfield,
-        require_online,
+        FactoryPower::online_if(require_online),
         require_can_build,
         false,
     )
     .available_factory()
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FactoryPower {
+    Any,
+    Online,
+    ManualSwitch,
+}
+
+impl FactoryPower {
+    fn online_if(required: bool) -> Self {
+        if required { Self::Online } else { Self::Any }
+    }
 }
 
 /// The shared factory search preserves the distinction needed by Ares
@@ -1021,7 +1071,7 @@ pub(crate) fn find_factory_among(
         roster.0.iter().copied(),
         obj,
         skip_busy_airfield,
-        require_online,
+        FactoryPower::online_if(require_online),
         require_can_build,
         false,
     )
@@ -1037,7 +1087,7 @@ fn query_factory(
     owner: InternedId,
     obj: &ObjectType,
     skip_busy_airfield: bool,
-    require_online: bool,
+    power: FactoryPower,
     require_can_build: bool,
     stop_first: bool,
 ) -> FactorySearch {
@@ -1051,7 +1101,7 @@ fn query_factory(
         factory_candidates(sim, rules, house),
         obj,
         skip_busy_airfield,
-        require_online,
+        power,
         require_can_build,
         stop_first,
     )
@@ -1065,7 +1115,7 @@ fn scan_factories<'a>(
     candidates: impl Iterator<Item = FactoryCandidate<'a>>,
     obj: &ObjectType,
     skip_busy_airfield: bool,
-    require_online: bool,
+    power: FactoryPower,
     require_can_build: bool,
     stop_first: bool,
 ) -> FactorySearch {
@@ -1073,6 +1123,7 @@ fn scan_factories<'a>(
     // The first flag bypasses qualification and this factory query, so this
     // does not recurse through either admission gate.
     let ares = rules.ares_form();
+    let require_online = power == FactoryPower::Online;
     if ares && require_can_build && can_build(sim, rules, owner, obj, true, true) != CanBuild::Yes {
         return FactorySearch::BuildLimitRefused;
     }
@@ -1108,24 +1159,24 @@ fn scan_factories<'a>(
                 building_type.naval == naval_unit
             }
         {
-            if ares {
-                //10020E65 ->1003D9A0.
-                if !ares_can_be_built_at(rules, obj, building_type) {
-                    continue;
+            //10020E65 ->1003D9A0.
+            if ares && !ares_can_be_built_at(rules, obj, building_type) {
+                continue;
+            }
+            //10020E73..10020E92 preserves offline availability separately
+            // from an earlier online candidate; it cannot downgrade one.
+            if (ares
+                && require_online
+                && (!building.building_online() || building.deactivated.is_offline()))
+                || (power == FactoryPower::ManualSwitch && building.ares_toggled_off())
+            {
+                if !matches!(
+                    candidate,
+                    FactorySearch::Online(_) | FactorySearch::Primary(_)
+                ) {
+                    candidate = FactorySearch::Offline;
                 }
-                //10020E73..10020E92 preserves offline availability separately
-                // from an earlier online candidate; it cannot downgrade one.
-                if require_online
-                    && (!building.building_online() || building.deactivated.is_offline())
-                {
-                    if !matches!(
-                        candidate,
-                        FactorySearch::Online(_) | FactorySearch::Primary(_)
-                    ) {
-                        candidate = FactorySearch::Offline;
-                    }
-                    continue;
-                }
+                continue;
             }
             let primary = sim.production.is_primary_factory(id);
             candidate = if primary {
@@ -1133,7 +1184,7 @@ fn scan_factories<'a>(
             } else {
                 FactorySearch::Online(id)
             };
-            if primary || (rules.ares_form() && stop_first) {
+            if primary || (ares && stop_first) {
                 break;
             }
         }

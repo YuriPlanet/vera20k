@@ -1,5 +1,5 @@
-//! Installed Ares survivor hooks: Unit737F97 ->1004C0E0 and
-//! Aircraft41668B ->10048C50 share100464C0.
+//! Ares 3.0p1 survivor hooks: Unit 0x737F97 -> 0x1004CD40 and
+//! Aircraft 0x41668B -> 0x100498A0 share 0x10047030.
 //! Cargo, placement, veterancy, mind control and destruction retain their
 //! existing owners; this module owns only the optional survivor transaction.
 
@@ -217,7 +217,17 @@ impl Simulation {
         self.discard_constructed_limbo(id, rules, effects);
     }
 
-    /// Ares100464C0: the incoming flag is ReceiveDamage IgnoreDefenses (arg5),
+    /// An extended capture records both an InfantryType and the captor's
+    /// saved state. The vehicle keeps that survivor path after Script67.
+    pub(crate) fn uses_ares_vehicle_survivors(&self, unit_id: u64, rules: &RuleSet) -> bool {
+        rules.ares()
+            || self.substrate.entities.get(unit_id).is_some_and(|unit| {
+                unit.seldom.capture_infantry_type_index.get() >= 0
+                    && unit.seldom.ares.vehicle_driver.captured().owner().is_some()
+            })
+    }
+
+    /// Ares 3.0p1 0x10047030: the incoming flag is ReceiveDamage IgnoreDefenses (arg5),
     /// not arg6 PreventCrewEscape. Captor/pilots precede ordinary passengers.
     pub(crate) fn release_ares_vehicle_survivors(
         &mut self,

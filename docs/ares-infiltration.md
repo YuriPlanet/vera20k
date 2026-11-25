@@ -40,6 +40,11 @@ Saboteur=yes                            ; plants a C4Delay charge and is spent
   the click (`0x0051EE6B`), the walk to the target (`0x0051B2CB`), the
   attack rung (`0x007004AD`) and the arrival (`0x00519FF8`);
   `sim/c4_plant.rs` plants a Saboteur's charge.
+- `app/presentation/ui_overlays.rs` draws a revealed, selected factory's
+  current product cameo for a spy or observer before the status text can
+  draw (3.0p1 `10016130`, hook `0x43E7B0`, resume `0x43E8F2`). It uses
+  the product's ordinary PCX when loaded (`10016254`). Otherwise it uses
+  the product's SHP selected for the viewer by GetCameo (`10016381`).
 
 ## Not covered
 
@@ -47,8 +52,7 @@ Saboteur=yes                            ; plants a C4Delay charge and is spent
   DisplayProductionTo only: VERA keeps no RadarVisibleTo, so the spy does
   not see the owner's sight.
 - `Cursor.Spy` other than its default `Enter`.
-- The revealed factory's production cameo, `EnemyUIName` and the observer
-  arms of the status text.
+- `EnemyUIName` and the observer arms of the status text.
 
 `SpyEffect.StolenTechIndex` (BuildingTypeExt +0xBC, read in `1000DD40` after
 `SpyEffect.SuperWeaponPermanent`) is ported: a nonempty list replaces the

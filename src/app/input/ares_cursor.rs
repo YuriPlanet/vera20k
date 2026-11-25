@@ -79,6 +79,8 @@ pub(crate) mod action {
     pub(crate) const NO_DEPLOY: u8 = 0x1E;
     pub(crate) const NO_ENTER: u8 = 0x1F;
     pub(crate) const NO_GREPAIR: u8 = 0x20;
+    pub(crate) const TOGGLE_POWER: u8 = 0x21;
+    pub(crate) const NO_TOGGLE_POWER: u8 = 0x22;
     pub(crate) const AREA_ATTACK: u8 = 0x34;
     pub(crate) const IVAN_BOMB: u8 = 0x35;
     pub(crate) const NO_IVAN_BOMB: u8 = 0x36;
@@ -201,7 +203,9 @@ impl CursorOverrides {
             Kind::Detonate => DETONATE,
             Kind::Deploy => SELF_DEPLOY,
             Kind::NoDeploy => NO_DEPLOY,
-            // DetermineAction's own modes and the cursor's, never a What_Action
+            Kind::TogglePower(true) => TOGGLE_POWER,
+            Kind::TogglePower(false) => NO_TOGGLE_POWER,
+            // DetermineAction's other modes and the cursor's, never a What_Action
             // answer.
             _ => return None,
         })
@@ -389,7 +393,7 @@ pub(crate) fn radar_action(
 /// the cursor whatever the shroud mode does to the action. `None` for the
 /// other types, and without the Ares superweapons.
 pub(crate) fn super_weapon_cursor(rules: &RuleSet, section: &str, allowed: bool) -> Option<i32> {
-    if !rules.ares_form() {
+    if !rules.super_weapon(section)?.uses_extension_rules(rules) {
         return None;
     }
     let cursors = rules.ares_super_weapon_cursors(section)?;
@@ -414,8 +418,11 @@ pub(crate) fn radar_super_weapon(
     cell: (u16, u16),
     vanilla: Option<crate::app::input::radar::RadarAction>,
 ) -> Option<Option<crate::app::input::radar::RadarAction>> {
-    let rules = query.rules.filter(|rules| rules.ares_form())?;
+    let rules = query.rules?;
     let section = rules.super_weapon_order.get(armed)?;
+    if !rules.super_weapon(section)?.uses_extension_rules(rules) {
+        return None;
+    }
     rules.ares_super_weapon_cursors(section)?;
     let allowed = query
         .viewer

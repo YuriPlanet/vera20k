@@ -58,8 +58,7 @@ pub(super) struct DrawPassData<'a> {
     pub bridge_shadows: &'a [SpriteInstance],
     pub object_layers: &'a [super::draw_plan_lowering::ObjectLayerPass; 5],
     pub fogged_objects: &'a super::draw_plan_lowering::ObjectLayerPass,
-    pub building_status_text:
-        &'a crate::app::presentation::ui_overlays::BuildingStatusTextInstances,
+    pub building_status: &'a crate::app::presentation::ui_overlays::BuildingStatusInstances,
     pub surface_effects: crate::render::terrain_draw::SurfaceLineBatch,
     pub tactical_lines: crate::render::terrain_draw::SurfaceLineBatch,
     pub persistent_lights: std::ops::Range<usize>,
@@ -779,7 +778,7 @@ pub(super) fn dispatch_draw_passes(
         if layer == 2 && state.renderer.world_zoom_pass.is_none() {
             // Tactical6D9427 admits this BuildingClass::Array sweep only
             // after Ground2, before Air3/Top4 and the late Extras sweep.
-            super::object_extras::draw_building_status_text(
+            super::object_extras::draw_building_status(
                 encoder,
                 view,
                 &world_depth,
@@ -791,9 +790,15 @@ pub(super) fn dispatch_draw_passes(
                     .match_presentation
                     .selection_overlay
                     .as_ref(),
-                pool.get("building_status_text").map(|(buffer, _)| buffer),
+                pool.get("building_status").map(|(buffer, _)| buffer),
                 Some(state.renderer.bit_font.atlas()),
-                &data.building_status_text.runs,
+                state
+                    .match_state
+                    .match_presentation
+                    .sidebar_cameo_atlas
+                    .as_ref()
+                    .map(|atlas| &atlas.texture),
+                &data.building_status.runs,
                 state.renderer.batch_renderer.surface_camera_bind_group(),
             );
         }
@@ -1185,7 +1190,7 @@ pub(super) fn dispatch_draw_passes(
         // Zoomed labels keep GAME.FNT and their backing in frame pixels.
         // Their producer projects the building anchor, then measures/clips
         // the text at native font size. Native zoom retains the Ground2 pass.
-        super::object_extras::draw_building_status_text(
+        super::object_extras::draw_building_status(
             encoder,
             view,
             frame_depth,
@@ -1197,9 +1202,15 @@ pub(super) fn dispatch_draw_passes(
                 .match_presentation
                 .selection_overlay
                 .as_ref(),
-            pool.get("building_status_text").map(|(buffer, _)| buffer),
+            pool.get("building_status").map(|(buffer, _)| buffer),
             Some(state.renderer.bit_font.atlas()),
-            &data.building_status_text.runs,
+            state
+                .match_state
+                .match_presentation
+                .sidebar_cameo_atlas
+                .as_ref()
+                .map(|atlas| &atlas.texture),
+            &data.building_status.runs,
             state.renderer.batch_renderer.ui_camera_bind_group(),
         );
     }

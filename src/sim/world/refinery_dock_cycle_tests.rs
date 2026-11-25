@@ -3,7 +3,7 @@
 //! the hull turn, Mission_Unload's dumps and the departure, on the oracle
 //! replay's scene (a single-dock refinery at NW (6, 9), pad (9, 10)).
 
-use super::refinery_dock_oracle_tests::{Scene, scene, scene_with};
+use super::refinery_dock_oracle_tests::{Scene, scene, scene_with, scene_with_art};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::miner::{CargoBale, MinerState, ResourceType};
 use crate::sim::mission::{MissionId, MissionType};
@@ -134,6 +134,31 @@ fn returning_input() -> serde_json::Value {
 
 fn returning_scene() -> Scene {
     scene(&returning_input())
+}
+
+#[test]
+fn configured_west_refinery_pad_docks_and_pays_with_stock_rules() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let art = crate::rules::ini_parser::IniFile::from_str(
+        "[GAREFN]\nFoundation=4x3\nQueueingCell=4,1\nDockUnloadCell=-1,1\nDockUnloadFacing=24\n\
+         [GAREFX]\nFoundation=4x3\nQueueingCell=4,1\n",
+    );
+    let mut s = scene_with_art(&returning_input(), &art);
+    assert!(!s.rules.ares_form());
+
+    run_until_unloading(&mut s);
+    let docked = sample(&s, s.miner);
+    assert_eq!(docked.contact, Some(s.refinery));
+    assert_eq!(docked.cell, (5, 10));
+    assert_eq!(docked.facing, 0xC000);
+    for _ in 0..60 {
+        frame(&mut s);
+        if credits(&s) > 0 {
+            break;
+        }
+    }
+    assert_eq!(credits(&s), 1000);
+    assert_eq!(sample(&s, s.miner).ore, 0);
 }
 
 /// Original43C366/4DEF0C call Radio65ADF0 against actual slots, not the

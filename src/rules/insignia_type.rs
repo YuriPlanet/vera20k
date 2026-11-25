@@ -15,6 +15,8 @@
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_parser::IniSection;
 use crate::rules::ini_value::parse_ares_int;
+#[cfg(feature = "phobos")]
+use crate::rules::ini_value::parse_phobos_int;
 use crate::rules::ini_value::truncate_native_bytes;
 
 /// `Enumerable` stores `Name[32]` with `_TRUNCATE`.
@@ -95,7 +97,8 @@ impl InsigniaTypeCatalog {
                 "Insignia",
                 normalize_insignia_image,
             );
-            entry.frames = read_insignia_frames(section, entry.frames, "InsigniaFrame");
+            entry.frames =
+                read_insignia_frames(section, entry.frames, "InsigniaFrame", parse_phobos_int);
         }
     }
 }
@@ -210,7 +213,7 @@ impl InsigniaVariant {
         list_base: &str,
     ) {
         read_insignia_images(raw, &mut self.images, image_base, normalize_insignia_image);
-        self.frames = read_insignia_frames(raw, self.frames, frame_base);
+        self.frames = read_insignia_frames(raw, self.frames, frame_base, parse_phobos_int);
         self.frame_lists = raw.read_int_fields::<3>(list_base, 2048, self.frame_lists);
     }
 
@@ -420,16 +423,18 @@ pub(crate) fn read_insignia_images(
 /// `Promotable<int>::Read` (Phobos; Ares `0x1003F750`): the common key's
 /// successful parse sets all three ranks, then the rank keys replace one; a
 /// rejected value keeps its slot.
-pub(crate) fn read_insignia_frames(
+fn read_insignia_frames(
     section: &IniSection,
     mut current: [i32; 3],
     base: &str,
+    parse: fn(&str) -> Option<i32>,
 ) -> [i32; 3] {
-    if let Some(value) = read_int_key(section, base) {
+    let read = |key: &str| section.read_name(key, 2048).and_then(parse);
+    if let Some(value) = read(base) {
         current = [value; 3];
     }
     for (slot, rank) in RANKS.iter().enumerate() {
-        if let Some(value) = read_int_key(section, &format!("{base}.{rank}")) {
+        if let Some(value) = read(&format!("{base}.{rank}")) {
             current[slot] = value;
         }
     }
@@ -451,10 +456,6 @@ pub(crate) fn normalize_insignia_image(name: &str) -> String {
 /// `_snprintf(buf, 0x100, "%s.shp", value)`, whatever the value ends with.
 pub(crate) fn ares_insignia_image(name: &str) -> String {
     truncate_native_bytes(&format!("{name}.shp"), 0xFF).to_owned()
-}
-
-fn read_int_key(section: &IniSection, key: &str) -> Option<i32> {
-    section.read_name(key, 2048).and_then(parse_ares_int)
 }
 
 /// Ares `TechnoTypeExt`'s insignia, read on every reached pass (Ares.dll
@@ -484,7 +485,7 @@ impl Default for AresInsignia {
 impl AresInsignia {
     pub(crate) fn apply_pass(&mut self, raw: &IniSection) {
         read_insignia_images(raw, &mut self.images, "Insignia", ares_insignia_image);
-        self.frames = read_insignia_frames(raw, self.frames, "InsigniaFrame");
+        self.frames = read_insignia_frames(raw, self.frames, "InsigniaFrame", parse_ares_int);
         self.show_enemy = raw.read_ares_nullable_bool("Insignia.ShowEnemy", self.show_enemy);
     }
 }

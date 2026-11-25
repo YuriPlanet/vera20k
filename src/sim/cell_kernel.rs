@@ -47,8 +47,8 @@ pub(crate) enum WallConnectionStep {
 /// The physical ordered registry readers, rather than key-minus-one, own IDs.
 ///
 /// All negative-type LOS/Bullet/bounce/Spark callers and CAFNCB203 cleanup
-/// resolve in this prefix. The distinct Building/Gate continuations stay
-/// explicit rather than pretending this is a whole-function port.
+/// resolve in this prefix. Wall cleanup supplies the live ground list for
+/// the gate continuations.
 ///
 /// `overlays` is the OverlayType array a game read the Ares way (`ares`, the
 /// caller's `rules.ares_form()`) tests instead of the three literals; `None`
@@ -80,8 +80,8 @@ fn any_wall_overlay(
     overlays: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ares: bool,
 ) -> bool {
-    // Ares 3.0 CellClass_AttachesToNeighbourOverlay 10015740 (hook
-    // 0x480534): a nonnegative index whose OverlayType is `Wall=yes`
+    // Ares 3.0p1 CellClass_AttachesToNeighbourOverlay (hook 0x00480534 ->
+    // 0x10015DC0): a nonnegative index whose OverlayType is `Wall=yes`
     // (0x480549), so sandbags, fences and the Kremlin wall count too;
     // anything else continues at 0x480552, which answers false for -1.
     if ares && let Some(overlays) = overlays {
@@ -91,6 +91,57 @@ fn any_wall_overlay(
             .is_some_and(|flags| flags.wall);
     }
     matches!(stored, 2 | 26 | 243)
+}
+
+/// Live inputs to the concrete wall arms of `CellClass::IsWallConnectableInDirection`.
+pub(crate) struct WallGateConnections<'a> {
+    pub(crate) occupancy: &'a crate::sim::occupancy::OccupancyGrid,
+    pub(crate) entities: &'a crate::sim::entity_store::EntityStore,
+    pub(crate) interner: &'a crate::sim::intern::StringInterner,
+    pub(crate) gate_types: &'a crate::rules::ruleset::GeneralBuildingTypes,
+}
+
+impl<'a> WallGateConnections<'a> {
+    pub(crate) fn new(
+        substrate: &'a crate::sim::world::ObjectSubstrate,
+        interner: &'a crate::sim::intern::StringInterner,
+        rules: &'a crate::rules::ruleset::RuleSet,
+    ) -> Self {
+        Self {
+            occupancy: &substrate.occupancy,
+            entities: &substrate.entities,
+            interner,
+            gate_types: &rules.general.building_types,
+        }
+    }
+
+    /// Stock 0x00480552..0x00480620, also reached with Ares 3.0p1. Follow
+    /// the ground object list and accept a Building with positive Health
+    /// whose type matches the Rules gate slot for this wall and direction.
+    pub(crate) fn connects(&self, cell: (u16, u16), wall: u8, east_west: bool) -> bool {
+        let rule_slot = match (wall, east_west) {
+            (2, true) => &self.gate_types.gdi_gate_one,
+            (2, false) => &self.gate_types.gdi_gate_two,
+            (26, true) => &self.gate_types.nod_gate_one,
+            (26, false) => &self.gate_types.nod_gate_two,
+            // Residual: the GASAND and WallTower arms.
+            _ => return false,
+        };
+        let Some(gate) = rule_slot
+            .as_deref()
+            .and_then(|name| self.interner.get(name))
+        else {
+            return false;
+        };
+        let Some(occupants) = self.occupancy.get(cell.0, cell.1) else {
+            return false;
+        };
+        occupants
+            .iter_layer(crate::sim::movement::locomotor::MovementLayer::Ground)
+            .filter(|entry| entry.is_building)
+            .filter_map(|entry| self.entities.get(entry.entity_id))
+            .any(|building| building.type_ref() == gate && building.is_alive())
+    }
 }
 
 /// Cell4848B0: direction of a cliff entered from `previous_world_xy`.

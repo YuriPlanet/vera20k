@@ -73,6 +73,14 @@ impl RulesPassProcessor {
             // original section-admission branch or use final merged text.
             if ares_way {
                 self.process_ares_country(index, pass, _primary_rules);
+            } else if let Some(section) =
+                pass.section(&self.families[&RulesTypeFamily::Country][index].native_stored_id)
+            {
+                // Script67 also uses this explicit override in stock-way rules.
+                let _explicit_driving = crate::rules::ares_switch::not_ares_reads();
+                self.family_mut(RulesTypeFamily::Country)[index]
+                    .country_veterancy
+                    .read_can_be_driven(section);
             }
             index += 1;
         }
@@ -217,14 +225,9 @@ impl RulesPassProcessor {
                 .country_veterancy
                 .ares
                 .degrades = section.read_ares_nullable_bool("Degrades", degrades);
-            let current = self.families[&RulesTypeFamily::Country][index]
-                .country_veterancy
-                .ares
-                .can_be_driven;
             self.family_mut(RulesTypeFamily::Country)[index]
                 .country_veterancy
-                .ares
-                .can_be_driven = section.read_ares_nullable_bool("CanBeDriven", current);
+                .read_can_be_driven(section);
             self.family_mut(RulesTypeFamily::Country)[index]
                 .country_veterancy
                 .ares
@@ -337,20 +340,6 @@ impl RulesPassProcessor {
             if let Some(raw) =
                 self.begin_rules_member_read(RulesTypeFamily::SuperWeapon, index, pass)
             {
-                // `Type=` of every pass so far, as Ares reads it: an Ares
-                // read, so the key stays among the Ares inputs saved with the
-                // rules. An owned copy: the reads below allocate types into
-                // the families the body is read from.
-                let kind = ares_way
-                    .then(|| {
-                        crate::rules::ares_switch::ares_read(|| {
-                            self.families[&RulesTypeFamily::SuperWeapon][index]
-                                .body
-                                .read_name("Type", 0x28)
-                                .map(str::to_owned)
-                        })
-                    })
-                    .flatten();
                 if let Some(weapon) =
                     self.resolve_scalar_from(&raw, "WeaponType", RulesTypeFamily::Weapon, 0x80)
                 {
@@ -387,11 +376,19 @@ impl RulesPassProcessor {
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_phobos_availability = availability;
                 }
-                if ares_way {
+                {
+                    // A later pass may opt this type into a base target or
+                    // an activation price. Retain ordered reads without
+                    // enabling Ares or allocating Ares-only dependencies.
+                    let _builtin = (!ares_way).then(crate::rules::ares_switch::not_ares_reads);
                     let _ares = crate::rules::ares_switch::ares_reads();
                     // LoadFromINIFile10033250: the first call runs the Type
                     // handler's Initialize, then LoadFromINI10033370 reads
                     // EVA.Ready/Activated/Detected before the other fields.
+                    let kind = self.families[&RulesTypeFamily::SuperWeapon][index]
+                        .body
+                        .read_name("Type", 0x28)
+                        .map(str::to_owned);
                     let kind = kind.as_deref();
                     let initialized = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_targeting
@@ -583,7 +580,7 @@ impl RulesPassProcessor {
                         // SW_NuclearMissile::Initialize10073360 allocates its
                         // payload weapon and finds PSIWARN; LoadFromINI
                         // 10073410's reads look the types up only (1000A370).
-                        if initialized {
+                        if initialized && ares_way {
                             let payload = self
                                 .find_or_allocate(RulesTypeFamily::Weapon, "NukePayload")
                                 .map(|index| {
@@ -738,12 +735,14 @@ impl RulesPassProcessor {
                     }
                     // 10033670: Nullable<WarheadTypeClass*> through the
                     // Warhead factory, for every type.
-                    reads.warhead = self.resolve_scalar_from(
-                        &raw,
-                        "SW.Warhead",
-                        RulesTypeFamily::Warhead,
-                        0x80,
-                    );
+                    if ares_way {
+                        reads.warhead = self.resolve_scalar_from(
+                            &raw,
+                            "SW.Warhead",
+                            RulesTypeFamily::Warhead,
+                            0x80,
+                        );
+                    }
                     let generic_warhead_read = reads.warhead.clone();
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_launch
@@ -814,7 +813,7 @@ impl RulesPassProcessor {
                         // retained INI read history rather than an unresolved name.
                     }
                 }
-            } else if ares_way {
+            } else {
                 self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                     .super_weapon_targeting
                     .skip_pass();

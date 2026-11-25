@@ -34,7 +34,7 @@ pub struct IniSourceIdentity {
 #[cfg_attr(any(test, feature = "test-support"), derive(Clone))]
 pub struct SelectedIni {
     pub ini: IniFile,
-    /// Root bytes parsed before optional Ares include expansion. LANGRULE's
+    /// Root bytes parsed before include expansion. LANGRULE's
     /// native Digest covers this physical file, not the composed reader layer.
     pub(crate) physical_ini: IniFile,
     pub source: IniSourceIdentity,
@@ -54,20 +54,15 @@ pub fn select_ini(assets: &AssetManager, name: &str) -> Result<SelectedIni, Stri
     select_game_ini(assets, name, assets.ships_ares())
 }
 
-/// [`select_ini`] for a game that ships `ares.mix` or not: such a game loads
-/// its INIs with Ares' syntax and `[#include]` (`ares_switch::ares_way`), as
-/// its launch does.
+/// [`select_ini`] with the launch's INI syntax. Explicit file includes work
+/// with either syntax.
 pub(crate) fn select_game_ini(
     assets: &AssetManager,
     name: &str,
     ships_ares: bool,
 ) -> Result<SelectedIni, String> {
     let _ares_way = crate::rules::ares_switch::read_ares_way(ships_ares);
-    if ships_ares || crate::rules::PHOBOS_ENABLED {
-        select_ini_with_options(assets, name, DirectiveOptions::production())
-    } else {
-        select_physical_ini(assets, name)
-    }
+    select_ini_with_options(assets, name, DirectiveOptions::production())
 }
 
 /// Explicit file-composition probe. Tool callers may inspect extension syntax
@@ -110,29 +105,26 @@ pub(crate) fn expand_ini_with_assets(
             // including document's host directory or open arbitrary host paths.
             let logical = include_identity(reference);
             let remaining = MAX_INCLUDED_SOURCE_BYTES - included_bytes;
-            let resolved = match assets.resolve_ref_bounded(&logical, remaining) {
-                Ok(Some(resolved)) => resolved,
-                Ok(None) => return Ok(None),
+            match assets.with_include_file_bounded(reference, &logical, remaining, |resolved| {
+                // Charge every physical read before parsing, including repeated
+                // DAG references and existing zero-byte files. The resolution
+                // budget also applies before retaining the first loose snapshot.
+                included_bytes += resolved.bytes.len();
+                log::info!(
+                    "Including {logical} ({} bytes) from {}",
+                    resolved.bytes.len(),
+                    resolved.source_archive
+                );
+                included_sources.push(source_identity(&logical, &resolved));
+                resolved.bytes.to_vec()
+            }) {
+                Ok(bytes) => Ok(bytes),
                 Err(AssetError::ReadLimitExceeded { .. }) => {
                     exceeded_budget = true;
-                    return Err(INCLUDE_BYTES_EXCEEDED.into());
+                    Err(INCLUDE_BYTES_EXCEEDED.into())
                 }
-                Err(error) => return Err(error.to_string()),
-            };
-            // An existing zero-byte file is present, not missing: Phobos loads
-            // it through `CCFileClass`/`ReadCCFile` and Ares also keeps the
-            // read. Only an unresolved reference answers `None`.
-            // Charge every physical read, including repeated DAG references,
-            // before parsing. Resolution enforces the remaining budget before
-            // reading or retaining the first loose snapshot, not afterwards.
-            included_bytes += resolved.bytes.len();
-            log::info!(
-                "Including {logical} ({} bytes) from {}",
-                resolved.bytes.len(),
-                resolved.source_archive
-            );
-            included_sources.push(source_identity(&logical, &resolved));
-            Ok(Some(resolved.bytes.to_vec()))
+                Err(error) => Err(error.to_string()),
+            }
         },
         options,
     );
@@ -559,6 +551,99 @@ mod ini_root_tests;
 mod tests {
     use super::*;
     use crate::map::source::test_support::TestDirectory;
+
+    #[test]
+    fn ares_rules_include_prefers_the_selected_mod_subdirectory() {
+        use crate::assets::asset_manager::{MediaArchiveMode, test_support::audio_test_install};
+
+        let install = audio_test_install("subdirectory-include-install");
+        install.write_mix(
+            "ares.mix",
+            "rules/infantry.ini",
+            b"[General]\nBuildSpeed=.9\n",
+        );
+        std::fs::create_dir(install.path().join("rules")).unwrap();
+        std::fs::write(
+            install.path().join("rules/infantry.ini"),
+            b"[General]\nBuildSpeed=.8\n",
+        )
+        .unwrap();
+        let package = TestDirectory::new("subdirectory-include-mod");
+        package.write("rulesmd.ini", b"[#include]\n0=rules/infantry.ini\n");
+        package.write("artmd.ini", b"[TECH]\nFoundation=2x3\n");
+        std::fs::create_dir(package.path().join("Rules")).unwrap();
+        let child = b"[General]\nBuildSpeed=.4\n";
+        package.write("Rules/Infantry.INI", child);
+
+        let assets = AssetManager::with_mod(
+            install.path(),
+            Some(package.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        let selected = RetailRulesSources::select(&assets).unwrap().rulesmd;
+        assert_eq!(
+            selected
+                .ini
+                .section_or_empty("General")
+                .read_string("BuildSpeed", "", 16),
+            ".4"
+        );
+        let [source] = selected.included_sources.as_slice() else {
+            panic!("expected one physical include");
+        };
+        assert_eq!(source.logical_name, "rules/infantry.ini");
+        let child_path = std::fs::canonicalize(package.path().join("Rules/Infantry.INI")).unwrap();
+        assert_eq!(
+            source.source_archive,
+            format!("loose:{}", child_path.display())
+        );
+        assert_eq!(source.source_sha256, sha256_hex(child));
+    }
+
+    #[test]
+    fn rules_subdirectory_include_uses_the_stock_reader_without_ares() {
+        let directory = TestDirectory::new("stock-subdirectory-include");
+        directory.write(
+            "rulesmd.ini",
+            b"[#include]\n0=config\\rules.ini\n[General]\nRepeat=11\nRepeat=22\n\
+              [VehicleTypes]\n+=TEST\n[Child]:[Base]\nOwn=1\n\
+              [Inherit]\n$Inherits=Base\nOwn=2\n[Base]\nStrength=100\n",
+        );
+        directory.write("artmd.ini", b"[TECH]\nFoundation=2x3\n");
+        std::fs::create_dir(directory.path().join("Config")).unwrap();
+        directory.write("Config/Rules.INI", b"[General]\nBuildSpeed=.4\n");
+        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        assert!(!assets.ships_ares());
+
+        let selected = RetailRulesSources::select(&assets).unwrap().rulesmd;
+        let general = selected.ini.section_or_empty("General");
+        assert_eq!(general.read_string("BuildSpeed", "", 16), ".4");
+        assert_eq!(
+            general.read_int("Repeat", 0),
+            selected
+                .physical_ini
+                .section_or_empty("General")
+                .read_int("Repeat", 0)
+        );
+        let types = selected.ini.section_or_empty("VehicleTypes");
+        assert_eq!(types.read_name("+", 16), Some("TEST"));
+        assert_eq!(types.read_name("var_0", 16), None);
+        assert_eq!(
+            selected
+                .ini
+                .section_or_empty("Child")
+                .read_int("Strength", 0),
+            0
+        );
+        assert_eq!(
+            selected
+                .ini
+                .section_or_empty("Inherit")
+                .read_int("Strength", 0),
+            if crate::rules::PHOBOS_ENABLED { 100 } else { 0 }
+        );
+    }
 
     #[test]
     fn include_byte_limit_refuses_sparse_source_before_retaining_a_snapshot() {
