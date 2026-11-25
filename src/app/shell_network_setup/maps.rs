@@ -340,7 +340,14 @@ fn keep_for_choose_map(
                 crate::util::sha256::sha256_hex(&bytes) == digest,
                 "received map changed"
             );
-            crate::app::map_library::keep_map(state, host_file, &bytes)
+            crate::app::map_library::keep_map(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                host_file,
+                &bytes,
+            )
         });
     match kept {
         Ok(path) => log::info!("Kept the received map {host_file} as {}", path.display()),

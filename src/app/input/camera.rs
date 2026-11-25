@@ -1000,7 +1000,11 @@ pub(crate) fn recall_view_bookmark(state: &mut AppState, slot: usize) {
         ry,
     );
     crate::app::match_runtime::sim_tick::update_building_placement_preview(
-        state,
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
         crate::app::match_runtime::sim_tick::FoundationCentre::Cursor,
     );
 }
@@ -2549,7 +2553,11 @@ pub(crate) fn apply_home_camera(state: &mut AppState, coord: Option<[i32; 3]>) {
         );
     }
     crate::app::match_runtime::sim_tick::update_building_placement_preview(
-        state,
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
         crate::app::match_runtime::sim_tick::FoundationCentre::Cursor,
     );
     state.match_state.input.follow_target = None;

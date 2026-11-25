@@ -775,7 +775,10 @@ impl App {
                             request.game_speed
                         );
                         return crate::app::lan_service::begin_direct_spawn(
-                            state,
+                            state.platform.game_config.as_ref(),
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &mut state.process_assets,
                             network.session,
                             direct,
                             seed,

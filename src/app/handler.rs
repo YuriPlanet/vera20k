@@ -453,7 +453,11 @@ impl App {
                 if down.is_none() && state.frontend.shell_message_box.is_some() =>
             {
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-                crate::app::updater::notes::cursor_moved(state);
+                crate::app::updater::notes::cursor_moved(
+                    &state.renderer.gpu,
+                    &mut state.frontend,
+                    &state.match_state.input,
+                );
             }
             ScreenPage::MainMenu if left => Self::handle_main_menu_shell_mouse(state, down),
             ScreenPage::InGameShell(_) | ScreenPage::Battlefield => match edge {
@@ -493,11 +497,33 @@ impl App {
             (InputLayer::Page(ModalPage::NetworkFailure), input) => {
                 use crate::app::match_runtime::network_failure;
                 match input {
-                    Input::Key(event) => network_failure::key(state, event),
-                    Input::Move => network_failure::cursor_moved(state),
-                    Input::Button(button, edge) => {
-                        network_failure::mouse(state, button, edge.is_pressed())
-                    }
+                    Input::Key(event) => network_failure::key(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                        event,
+                    ),
+                    Input::Move => network_failure::cursor_moved(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                    ),
+                    Input::Button(button, edge) => network_failure::mouse(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                        button,
+                        edge.is_pressed(),
+                    ),
                     Input::Wheel(_) => {}
                 }
                 return;
@@ -575,7 +601,11 @@ impl App {
                     }
                     Input::Move => {
                         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-                        crate::app::updater::notes::cursor_moved(state);
+                        crate::app::updater::notes::cursor_moved(
+                            &state.renderer.gpu,
+                            &mut state.frontend,
+                            &state.match_state.input,
+                        );
                         #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
                         super::shell_mod_import::cursor_moved(state);
                         Self::shell_menu_pointer(state, None);
@@ -592,7 +622,11 @@ impl App {
                     Input::Button(..) => {}
                     Input::Wheel(_lines) => {
                         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-                        crate::app::updater::notes::wheel(state, _lines);
+                        crate::app::updater::notes::wheel(
+                            &state.renderer.gpu,
+                            &mut state.frontend,
+                            _lines,
+                        );
                         #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
                         super::shell_mod_import::wheel(state, _lines);
                     }
@@ -986,7 +1020,7 @@ impl App {
         match screen {
             #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
             ScreenPage::MainMenu => {
-                crate::app::updater::notes::wheel(state, lines);
+                crate::app::updater::notes::wheel(&state.renderer.gpu, &mut state.frontend, lines);
             }
             // Nothing under VERA's enlarged map preview takes it.
             ScreenPage::NetworkSetup | ScreenPage::Skirmish
@@ -1182,7 +1216,7 @@ impl App {
                 // (`updater::launch`); captures and hidden runs never check.
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 if self.shell_capture.is_none() && self.hidden_run.is_none() {
-                    crate::app::updater::launch(&mut state);
+                    crate::app::updater::launch(&mut state.frontend);
                 }
                 // Clip the cursor to the window on first launch (
                 // default). A focus regain re-applies it if the OS dropped it.
@@ -1839,7 +1873,7 @@ impl ApplicationHandler for App {
                 let hidden = size.width == 0
                     || size.height == 0
                     || state.platform.window.is_minimized().unwrap_or(false);
-                Self::set_window_hidden(state, hidden);
+                Self::set_window_hidden(&mut state.platform, &mut state.frontend, hidden);
                 // A minimise carries no usable client size: the surface cannot
                 // be configured to 0x0 and the UI-scale heuristic would read a
                 // zero viewport. The restore edge delivers the real size.
@@ -1943,7 +1977,11 @@ impl ApplicationHandler for App {
                 // deliberately invisible window keeps running as if shown.
                 let invisible_spawn =
                     Self::invisible_spawn_window(&state.platform, &state.frontend);
-                Self::set_window_hidden(state, occluded && !invisible_spawn);
+                Self::set_window_hidden(
+                    &mut state.platform,
+                    &mut state.frontend,
+                    occluded && !invisible_spawn,
+                );
             }
             WindowEvent::CursorEntered { .. } => {
                 state.match_state.input.reset_window_cursor_motion();
@@ -2155,7 +2193,16 @@ impl ApplicationHandler for App {
                     )
                 },
                 |state| {
-                    crate::app::persistence::autosave::poll(state);
+                    crate::app::persistence::autosave::poll(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &mut state.match_state,
+                        &mut state.persistence,
+                        &state.audio,
+                        &state.diag,
+                        &state.process_assets,
+                    );
                     None
                 },
                 crate::app::shell_lan::poll,
@@ -2200,7 +2247,14 @@ impl ApplicationHandler for App {
             // the library, the login page's counts or the map pictures, no
             // box tells them of a mod, and they never check for an update.
             let live_polls: &[Poll] = &[
-                crate::app::map_library::poll,
+                |state| {
+                    crate::app::map_library::poll(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.process_assets,
+                    )
+                },
                 |state| crate::app::shell_wol::login_info::poll(&mut state.frontend),
                 |state| {
                     crate::app::map_picture::poll(
@@ -2468,7 +2522,7 @@ impl ApplicationHandler for App {
         if let Some(state) = self.state.as_mut()
             && let Some(lost) = state.frontend.graphics_lost.take()
         {
-            Self::leave_screen(state);
+            Self::leave_screen(&mut state.platform, &mut state.audio);
             crate::app::system_dialog::report_graphics_lost(&lost);
         }
         // A confirmed quit (its cascade's Theme Stop(0), 0x0052E7EC, has run)

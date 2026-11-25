@@ -7,7 +7,6 @@
 
 use std::time::{Duration, Instant};
 
-use crate::app::AppState;
 use crate::ui::game_screen::GameScreen;
 
 pub(crate) const FILE_NAME: &str = "autosave.sav";
@@ -22,17 +21,25 @@ pub(crate) struct Autosave {
 }
 
 /// Every event-loop turn.
-pub(crate) fn poll(state: &mut AppState) {
-    let minutes = state.persistence.options_profile.autosave_minutes;
-    let frame = state
-        .match_state
+pub(crate) fn poll(
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    screen: &GameScreen,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    persistence: &mut super::PersistenceState,
+    audio: &crate::app::audio_runtime::AppAudioRuntime,
+    diag: &crate::app::diagnostics::state::DiagnosticsState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+) {
+    let minutes = persistence.options_profile.autosave_minutes;
+    let frame = match_state
         .sim_runtime
         .runtime()
         .map(|runtime| runtime.simulation.session().binary_frame());
-    let in_match = state.frontend.screen == GameScreen::InGame && frame.is_some();
-    let single_player = state.match_state.session_mode().is_single_player();
+    let in_match = *screen == GameScreen::InGame && frame.is_some();
+    let single_player = match_state.session_mode().is_single_player();
     let now = Instant::now();
-    let autosave = &mut state.persistence.autosave;
+    let autosave = &mut persistence.autosave;
     if !in_match {
         *autosave = Autosave::default();
         return;
@@ -47,18 +54,27 @@ pub(crate) fn poll(state: &mut AppState) {
     ) {
         return;
     }
-    let map = state
-        .match_state
+    let map = match_state
         .sim_runtime
         .runtime()
         .map(|runtime| runtime.simulation.session().map_name().to_owned())
         .unwrap_or_default();
     let map = map.rsplit_once('.').map_or(map.as_str(), |(stem, _)| stem);
-    match crate::app::persistence::commands::autosave_game(state, &format!("Autosave {map}")) {
+    match crate::app::persistence::commands::autosave_game(
+        platform,
+        renderer,
+        screen,
+        match_state,
+        persistence,
+        audio,
+        diag,
+        process_assets,
+        &format!("Autosave {map}"),
+    ) {
         Ok(path) => log::info!("Autosave: {}", path.display()),
         Err(error) => log::warn!("Autosave failed: {error}"),
     }
-    state.persistence.autosave = Autosave {
+    persistence.autosave = Autosave {
         since: Some(Instant::now()),
         frame,
     };

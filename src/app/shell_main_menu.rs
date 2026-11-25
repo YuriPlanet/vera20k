@@ -48,7 +48,11 @@ impl AppState {
                 csf,
             );
         }
-        crate::app::loading::transitions::resolve_status_texts(self);
+        crate::app::loading::transitions::resolve_status_texts(
+            &self.frontend,
+            &mut self.match_state,
+            &self.process_assets,
+        );
         crate::app::input::keyboard::refresh_title(&mut self.frontend, &self.process_assets);
         // The login form keeps its status line as resolved text; the rest of
         // that page resolves every frame.
@@ -1413,7 +1417,7 @@ impl App {
             return;
         }
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-        crate::app::updater::notes::sync(state);
+        crate::app::updater::notes::sync(&state.renderer.gpu, &mut state.frontend);
         if Self::shell_menu_pointer(state, Some(down)) && down {
             return;
         }
@@ -1524,9 +1528,22 @@ impl App {
                 crate::app::match_runtime::stage_result::answer(state, choice, answer)
             }
             #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-            Purpose::UpdateOffer(_) => crate::app::updater::answer_offer(state, answer),
+            Purpose::UpdateOffer(_) => crate::app::updater::answer_offer(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &mut state.persistence.options_profile,
+                answer,
+            ),
             #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-            Purpose::UpdateProgress => crate::app::updater::cancel_download(state),
+            Purpose::UpdateProgress => crate::app::updater::cancel_download(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+            ),
             #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
             Purpose::UpdateCheck => crate::app::updater::cancel_check(&mut state.frontend),
             Purpose::ModRestart(folder) => Self::answer_mod_restart(state, folder, yes),

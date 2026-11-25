@@ -458,10 +458,18 @@ impl App {
             // ExecuteDoList64CD0C blocks inside ShellMessageBox5D3490. Its
             // message pump still reaches Network_ServiceLoop48D080/audio,
             // while Main_Tick's terminal tests and frame tail wait for Stop.
-            crate::app::match_runtime::network_failure::show(state);
+            crate::app::match_runtime::network_failure::show(
+                &state.platform,
+                &mut state.frontend.shell_controller,
+                &mut state.match_state,
+            );
             crate::app::match_runtime::sim_tick::pump_audio_service(state, scenario_now_ms);
             let frame_stopped = state.match_state.frame_stopped;
-            if crate::app::match_runtime::network_failure::take_acknowledged(state) {
+            if crate::app::match_runtime::network_failure::take_acknowledged(
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+            ) {
                 // A stopped frame has no suspended native frame to finish and
                 // its world must not run again: Stop goes straight to the shell.
                 if !frame_stopped {
@@ -609,7 +617,8 @@ impl App {
         // pumps inside Main_Tick instead, and a parked window not at all;
         // this pass then keeps only the outputs.
         let main_tick_pumps_audio = crate::app::match_runtime::sim_tick::main_tick_owns_audio_pump(
-            state,
+            &state.frontend.screen,
+            &state.match_state,
             simulation_allowed,
         );
         if main_tick_pumps_audio {
@@ -655,7 +664,7 @@ impl App {
                     && !state.focus_freeze_active()
                     && state.match_state.scenario_exit.is_none()
                     && state.match_state.scenario_outcome.is_none()
-                    && !Self::local_outcome_exit_ready(state)))
+                    && !Self::local_outcome_exit_ready(&state.match_state)))
         {
             let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
             // Wait_For_Players runs inside the frame's network service, ahead
@@ -949,7 +958,10 @@ impl App {
             .match_diagnostics
             .begin_presentation_observation();
         crate::app::diagnostics::performance_overlay::observe_simulation(
-            state,
+            &state.renderer.performance_overlay,
+            &state.platform,
+            &state.frontend.screen,
+            &state.match_state,
             hidden_run.is_some(),
         );
         let tooltip_ms = crate::app::input::tooltips::update(state);
@@ -1015,9 +1027,9 @@ impl App {
 
         // Outcome gates, exit cascades, the audio pump and the simulation
         // advance, shared with the hidden-window service loop.
-        let shell_capture_owns_simulation = shell_capture
-            .as_deref()
-            .is_some_and(|capture| capture.owns_simulation_steps(state));
+        let shell_capture_owns_simulation = shell_capture.as_deref().is_some_and(|capture| {
+            capture.owns_simulation_steps(&state.frontend.screen, &state.match_state.sim_runtime)
+        });
         // A capture that checks every committed frame needs one per render.
         let catch_up_allowed = !shell_capture
             .as_deref()
@@ -1054,7 +1066,7 @@ impl App {
         if Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
             || (state.frontend.screen == GameScreen::InGame
                 && state.match_state.scenario_exit.is_some()
-                && Self::local_outcome_exit_ready(state)
+                && Self::local_outcome_exit_ready(&state.match_state)
                 && !showing_verdict)
         {
             // House4F860B/4F8732 and outcome exits685670/685DC0 service
@@ -1138,7 +1150,10 @@ impl App {
             && let Some(session) = shell_capture.as_deref_mut()
             && session.is_entry_sequence()
         {
-            session.complete_entry_sequence_after_wave(state)?;
+            session.complete_entry_sequence_after_wave(
+                &state.renderer.gpu,
+                &state.frontend.shell_first_paint_slide,
+            )?;
             event_loop.exit();
             return Ok(FrameRenderOutcome::Unavailable);
         }
@@ -1619,7 +1634,13 @@ impl App {
             &mut encoder,
             &output.texture,
             &state.renderer.bit_font,
-            crate::app::diagnostics::performance_overlay::match_panel(state),
+            crate::app::diagnostics::performance_overlay::match_panel(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            ),
         );
         if state.frontend.screen == GameScreen::InGame
             && let Some(offset_px) = runtime_pass.screen_shake_offset
@@ -1661,8 +1682,11 @@ impl App {
                 (Some(_), None) | (None, _) => false,
             };
         if let Some(session) = shell_capture.as_deref_mut() {
-            shell_capture_current_frame |=
-                session.should_capture_after_render(state, presented_shell)?;
+            shell_capture_current_frame |= session.should_capture_after_render(
+                &state.renderer.gpu,
+                &state.frontend,
+                presented_shell,
+            )?;
         }
         let replay_capture_current_frame = game_render_output.is_some()
             && state.match_state.match_diagnostics.playback_capture_ready();

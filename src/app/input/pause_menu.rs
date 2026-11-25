@@ -500,7 +500,7 @@ fn close_page(state: &mut AppState, apply_speed: bool) {
         let stored = options.speed_context.stored_speed(i32::from(position));
         options.game_speed = u32::try_from(stored).unwrap_or(0);
         state.persistence.options_profile.game_speed = stored;
-        crate::app::persistence::options::apply_in_game_speed(state);
+        crate::app::persistence::options::apply_in_game_speed(&mut state.match_state);
     }
     if speed.is_some() || !page.untouched(&state.persistence.options_profile) {
         App::commit_in_game_options_page(state, page.dialog, page.opened);

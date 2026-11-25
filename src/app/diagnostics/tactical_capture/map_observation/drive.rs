@@ -4,17 +4,18 @@
 use super::*;
 
 impl TacticalCaptureSession {
-    fn set_map_audio_context(&self, state: &mut AppState) -> Result<()> {
+    fn set_map_audio_context(
+        &self,
+        sim_runtime: &SimHost,
+        sfx_player: Option<&mut crate::audio::sfx::SfxPlayer>,
+    ) -> Result<()> {
         if self
             .request
             .map_profile()
             .is_some_and(|profile| profile.value.observe_audio.is_some())
         {
-            let clock = MapClock::capture(state)?;
-            state
-                .audio
-                .sfx_player
-                .as_mut()
+            let clock = MapClock::capture(sim_runtime)?;
+            sfx_player
                 .context("PCM capture lost its SFX device")?
                 .set_pcm_observation_context(PcmObservationContext {
                     completed_steps: self.exact_step_receipts.len() as u64,
@@ -141,7 +142,7 @@ impl TacticalCaptureSession {
                 state.match_state.local_player_owner() == Some(launch_slots[0].owner_name.as_str()),
                 "loaded local owner differs from requested launch"
             );
-            validate_loaded_resources(state)?;
+            validate_loaded_resources(&state.frontend, &state.match_state, &state.process_assets)?;
             let sim = &state
                 .match_state
                 .sim_runtime
@@ -273,7 +274,8 @@ impl TacticalCaptureSession {
                 state.match_state.input.cursor_x = x as f32;
                 state.match_state.input.cursor_y = y as f32;
             }
-            self.map_state_mut()?.initial = Some(self.map_fingerprint(state)?);
+            self.map_state_mut()?.initial =
+                Some(self.map_fingerprint(&state.match_state.sim_runtime)?);
             self.map_state_mut()?.loaded_session = Some(loaded_session);
             self.map_state_mut()?.rule_types = rule_types;
             self.map_state_mut()?.sample_count += keyboard_bindings.len();
@@ -287,7 +289,10 @@ impl TacticalCaptureSession {
                     .context("PCM observation requires the production SFX device")?
                     .observe_pcm(config)
                     .map_err(anyhow::Error::msg)?;
-                self.set_map_audio_context(state)?;
+                self.set_map_audio_context(
+                    &state.match_state.sim_runtime,
+                    state.audio.sfx_player.as_mut(),
+                )?;
             }
             if let Some([rx, ry]) = camera_cell {
                 crate::app::input::camera::center_camera_on_cell(
@@ -300,7 +305,11 @@ impl TacticalCaptureSession {
                     ry,
                 );
             }
-            self.record_map_frame(state)?;
+            self.record_map_frame(
+                &state.frontend,
+                &state.match_state,
+                state.audio.sfx_player.as_ref(),
+            )?;
             self.post_l0_started_at = Some(Instant::now());
             self.failure_stage = "exact-steps".to_owned();
         }
@@ -322,13 +331,26 @@ impl TacticalCaptureSession {
             // A sealed profile has two distinct producers: already prepared
             // typed commands first, then ordinary local input gestures. Ties
             // retain order within each list; neither producer runs simulation.
-            self.set_map_audio_context(state)?;
-            self.issue_map_commands(state)?;
+            self.set_map_audio_context(
+                &state.match_state.sim_runtime,
+                state.audio.sfx_player.as_mut(),
+            )?;
+            self.issue_map_commands(&state.frontend, &mut state.match_state)?;
             self.issue_map_gestures(state)?;
-            self.set_map_audio_context(state)?;
+            self.set_map_audio_context(
+                &state.match_state.sim_runtime,
+                state.audio.sfx_player.as_mut(),
+            )?;
             self.advance_exact_step(state)?;
-            self.set_map_audio_context(state)?;
-            self.record_map_frame(state)?;
+            self.set_map_audio_context(
+                &state.match_state.sim_runtime,
+                state.audio.sfx_player.as_mut(),
+            )?;
+            self.record_map_frame(
+                &state.frontend,
+                &state.match_state,
+                state.audio.sfx_player.as_ref(),
+            )?;
         }
         if self.exact_step_receipts.len() == requested {
             let tail_limit = self
@@ -375,7 +397,11 @@ impl TacticalCaptureSession {
         Ok(())
     }
 
-    fn issue_map_commands(&mut self, state: &mut AppState) -> Result<()> {
+    fn issue_map_commands(
+        &mut self,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+    ) -> Result<()> {
         let completed_steps = self.exact_step_receipts.len() as u64;
         loop {
             let profile = &self
@@ -390,8 +416,7 @@ impl TacticalCaptureSession {
             else {
                 return Ok(());
             };
-            let issued_tick = state
-                .match_state
+            let issued_tick = match_state
                 .sim_runtime
                 .runtime()
                 .context("command simulation absent")?
@@ -404,13 +429,13 @@ impl TacticalCaptureSession {
             );
             // Resolve against the current owner state at this issue boundary,
             // including objects produced by earlier ordinary commands.
-            let sim = &state
-                .match_state
+            let sim = &match_state
                 .sim_runtime
                 .runtime()
                 .context("command simulation absent")?
                 .simulation;
-            let rules = state.rules().context("command rules absent")?;
+            let rules = crate::app::state::active_rules(frontend, match_state)
+                .context("command rules absent")?;
             let (payload, bindings) = command.resolve(sim, rules)?;
             let sample_count = self
                 .map_state()?
@@ -425,7 +450,7 @@ impl TacticalCaptureSession {
             // and queuing. This diagnostic does not add the input-delay setting
             // or bypass ordinary House/actor admission in the next frame.
             let execute_tick = crate::app::input::commands::try_schedule_command(
-                &mut state.match_state,
+                match_state,
                 &command.owner,
                 payload.clone(),
             )
@@ -491,7 +516,7 @@ impl TacticalCaptureSession {
                 .simulation;
             let issued_simulation_tick = sim.session().tick();
             let issued_binary_frame = sim.session().binary_frame();
-            let clock_before = MapClock::capture(state)?;
+            let clock_before = MapClock::capture(&state.match_state.sim_runtime)?;
             let expected_clock = self.map_state()?.expected_clock(completed_steps, true);
             ensure!(
                 (issued_simulation_tick, issued_binary_frame) == expected_clock,
@@ -499,7 +524,8 @@ impl TacticalCaptureSession {
             );
             let pending_before = sim.pending_command_snapshot();
             let local_input = profile.observes_local_input();
-            let before = MapInputObservation::capture(state, local_input)?;
+            let before =
+                MapInputObservation::capture(&state.frontend, &state.match_state, local_input)?;
             let right = scheduled.gesture.is_right_button();
             let mut minimap = None;
             let mut held_cursor = None;
@@ -531,7 +557,9 @@ impl TacticalCaptureSession {
                 )
             } else {
                 let sidebar_before = match &scheduled.gesture {
-                    MapGesture::Sidebar { .. } => Some(MapSidebarObservation::capture(state)?),
+                    MapGesture::Sidebar { .. } => Some(MapSidebarObservation::capture(
+                        &state.match_state.match_presentation,
+                    )?),
                     _ => None,
                 };
                 let mut command_bar = match &scheduled.gesture {
@@ -598,7 +626,12 @@ impl TacticalCaptureSession {
                     crate::app::input::dispatch::handle_mouse_input(state, mouse_button, edge);
                 };
                 let modifier_keys = literal_modifiers(scheduled.gesture.modifiers())?;
-                literal_modifier_edges(state, &modifier_keys, true);
+                literal_modifier_edges(
+                    &mut state.platform,
+                    &mut state.match_state.input,
+                    &modifier_keys,
+                    true,
+                );
                 move_cursor(state, from);
                 if scheduled.gesture.is_minimap() {
                     let target =
@@ -625,7 +658,10 @@ impl TacticalCaptureSession {
                 if let Some((receipt, handle)) = &mut command_bar
                     && let Some(thumb) = &mut receipt.thumb
                 {
-                    thumb.press = Some(MapCommandBarThumbEdge::capture(state, *handle)?);
+                    thumb.press = Some(MapCommandBarThumbEdge::capture(
+                        &state.match_state,
+                        *handle,
+                    )?);
                 }
                 let mouse = &state.match_state.input.tactical_mouse;
                 let chrome =
@@ -688,17 +724,28 @@ impl TacticalCaptureSession {
                 let band_box_before_release =
                     state.match_state.input.selection_state.is_band_box_active();
                 button(state, ElementState::Released);
-                literal_modifier_edges(state, &modifier_keys, false);
+                literal_modifier_edges(
+                    &mut state.platform,
+                    &mut state.match_state.input,
+                    &modifier_keys,
+                    false,
+                );
                 if let Some((receipt, handle)) = &mut command_bar
                     && let Some(thumb) = &mut receipt.thumb
                 {
-                    thumb.release = Some(MapCommandBarThumbEdge::capture(state, *handle)?);
+                    thumb.release = Some(MapCommandBarThumbEdge::capture(
+                        &state.match_state,
+                        *handle,
+                    )?);
                 }
                 move_cursor(state, neutral);
                 if let Some((receipt, handle)) = &mut command_bar
                     && let Some(thumb) = &mut receipt.thumb
                 {
-                    thumb.after = Some(MapCommandBarThumbState::capture(state, *handle)?);
+                    thumb.after = Some(MapCommandBarThumbState::capture(
+                        &state.match_state,
+                        *handle,
+                    )?);
                 }
                 ensure!(
                     press_captured || locked_thumb,
@@ -706,7 +753,8 @@ impl TacticalCaptureSession {
                 );
                 let sidebar = sidebar_before
                     .map(|before| -> Result<_> {
-                        let after = MapSidebarObservation::capture(state)?;
+                        let after =
+                            MapSidebarObservation::capture(&state.match_state.match_presentation)?;
                         let toggle = match &scheduled.gesture {
                             MapGesture::Sidebar { target, .. } => {
                                 before.toggle(target).map(|toggle| MapSidebarToggleReceipt {
@@ -764,8 +812,9 @@ impl TacticalCaptureSession {
                 neutral_input_restored,
                 "gesture left retained input active after release"
             );
-            let after = MapInputObservation::capture(state, local_input)?;
-            let clock_after = MapClock::capture(state)?;
+            let after =
+                MapInputObservation::capture(&state.frontend, &state.match_state, local_input)?;
+            let clock_after = MapClock::capture(&state.match_state.sim_runtime)?;
             if scheduled.gesture.is_quickload() {
                 ensure!(
                     self.map_state()?.allow_load_segments
@@ -782,7 +831,13 @@ impl TacticalCaptureSession {
                     .request
                     .map_profile()
                     .filter(|profile| profile.value.observe_audio.is_some())
-                    .map(|profile| sound_state(state, &profile.value))
+                    .map(|profile| {
+                        sound_state(
+                            &state.match_state.sim_runtime,
+                            state.audio.sfx_player.as_ref(),
+                            &profile.value,
+                        )
+                    })
                     .transpose()?;
                 let map = self.map_state_mut()?;
                 map.observe_load_segment(MapLoadSegment {

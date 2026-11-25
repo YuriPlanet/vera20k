@@ -679,7 +679,7 @@ pub(crate) fn render_shell_message_box_over_page(
     let parts = sync_shell_message_box(&state.renderer.gpu, &mut state.frontend);
     // The box's lists keep their widgets on the box as it lays out now.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    let _ = crate::app::updater::notes::sync(state);
+    let _ = crate::app::updater::notes::sync(&state.renderer.gpu, &mut state.frontend);
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
     let _ = crate::app::shell_mod_import::sync(state);
     let state = &*state;
@@ -850,35 +850,39 @@ fn build_shell_message_box_overlay(
     // dialog's picture, which has no list backing, so their sprites go over
     // the box's and their text after its own.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    let notes = crate::app::updater::notes::node(state).map(|(node, notes)| {
-        use crate::app::frontend::skirmish_shell_render::gui_paint::{GuiStyle, paint_gui_styled};
-        use crate::app::updater::notes::LIST_ID;
-        // The rows are the list's `Items`, written as it was built.
-        let gui = state.frontend.shell_controller.gui();
-        // A change's further rows hang under its text.
-        let indent_of = |id: i32, row: usize| {
-            (id == LIST_ID)
-                .then(|| notes.row(row).map(|(_, indent)| indent))
-                .flatten()
-        };
-        let style = GuiStyle {
-            indent_of: Some(&indent_of),
-            solid_lists: true,
-            ..Default::default()
-        };
-        paint_gui_styled(
-            &state.platform.ime,
-            &state.renderer.bit_font,
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            gui,
-            node,
-            parts.scale,
-            &[],
-            style,
-        )
-    });
+    let notes = crate::app::updater::notes::node(&state.renderer.gpu, &state.frontend).map(
+        |(node, notes)| {
+            use crate::app::frontend::skirmish_shell_render::gui_paint::{
+                GuiStyle, paint_gui_styled,
+            };
+            use crate::app::updater::notes::LIST_ID;
+            // The rows are the list's `Items`, written as it was built.
+            let gui = state.frontend.shell_controller.gui();
+            // A change's further rows hang under its text.
+            let indent_of = |id: i32, row: usize| {
+                (id == LIST_ID)
+                    .then(|| notes.row(row).map(|(_, indent)| indent))
+                    .flatten()
+            };
+            let style = GuiStyle {
+                indent_of: Some(&indent_of),
+                solid_lists: true,
+                ..Default::default()
+            };
+            paint_gui_styled(
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                gui,
+                node,
+                parts.scale,
+                &[],
+                style,
+            )
+        },
+    );
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     let notes = notes.map(|mut notes| {
         let controls = notes.take_lane(crate::render::hud_paint::Material::Controls);

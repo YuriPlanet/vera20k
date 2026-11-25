@@ -1283,7 +1283,14 @@ impl App {
                 .as_ref(),
         );
         let stem = format!("rmap{seed}");
-        match crate::app::map_library::keep_map(state, &stem, text.as_bytes()) {
+        match crate::app::map_library::keep_map(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &stem,
+            text.as_bytes(),
+        ) {
             Ok(path) => {
                 log::info!("random map: exported {}", path.display());
                 Some(path)
