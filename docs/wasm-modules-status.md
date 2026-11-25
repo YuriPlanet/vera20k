@@ -299,7 +299,9 @@ module (merge timers into one function).
     `AttachAnim` (as team script 51), `AllowType` (checked in CanBuild),
     `AddPassenger`, timed `Convert`. Modifiers wired for ROF, weapon range
     (multiplier and extra), crit (Phobos builds), `Unkillable` (Phobos builds),
-    `Cloakable`, `ForceDecloak`, `DisableWeapons`.
+    `Cloakable`, `ForceDecloak`, `DisableWeapons`, `ImmunityFlags` (preview, see
+    `ext_modules/modifiers.rs`; the modifier `Stat::Immunity` changed the save
+    layout).
   - Properties: most of 7.1 (layer, target, experience, storage, transport,
     passengers, disguise, moving, facings, armor, relation with a viewpoint), 7.6
     `Passable.<SpeedType>`, `Revealed`, `Placeable` (cells `find` with a type), 7.7

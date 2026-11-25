@@ -440,3 +440,80 @@ fn the_jumpjet_speed_factor_scales_its_speed() {
         (f64::from(params.speed()) * 0.5) as i32
     );
 }
+
+/// A Wasm module `ImmunityFlags` override of bit 1 makes a GI immune to a
+/// radiation warhead's direct hit, which hurts it without one, and shows in
+/// the property; the mask takes only an override of its seven bits.
+#[test]
+fn an_immunity_override_nullifies_a_radiation_hit() {
+    use super::modifiers::{Immunity, Modifier, ModifierOp, Stat};
+    assert!(!Stat::Immunity.admits(ModifierOp::Add, 2));
+    assert!(!Stat::Immunity.admits(ModifierOp::Multiply, 1 << 16));
+    assert!(!Stat::Immunity.admits(ModifierOp::Override, 1 << 7));
+    assert!(Stat::Immunity.admits(ModifierOp::Override, 0x7F));
+    // The GI's health before and after the hit, and its `ImmunityFlags`.
+    let hit = |immune: bool| -> Option<(i32, i32, i64)> {
+        let (mut scene, _, target) = super::tests::gi_duel()?;
+        let runtime = &mut scene.runtime;
+        let rules = &runtime.resources.rules;
+        let sim = &mut runtime.simulation;
+        let object = sim.entity_object_type(sim.entities().get(target)?, rules)?;
+        let armor = object.armor_id();
+        let warhead = rules
+            .warheads_iter()
+            .filter(|warhead| {
+                warhead.radiation
+                    && f64::from_bits(warhead.interaction(armor).multiplier().bits()) > 0.0
+            })
+            .map(|warhead| warhead.id.clone())
+            .min()?;
+        if immune {
+            let handle = sim.substrate.allocate_stable_id();
+            let modifier = Modifier {
+                target,
+                stat: Stat::Immunity,
+                op: ModifierOp::Override,
+                value: 1 << Immunity::Radiation as u32,
+                expires: None,
+                source: 0,
+                group: 0,
+                origin: super::ModuleSource::Map,
+            };
+            sim.ext_modules
+                .modifiers
+                .insert(&mut sim.substrate.entities, handle, modifier)
+                .expect("the modifier fits");
+        }
+        let entity = sim.entities().get(target)?;
+        let flags = entity.immunity_flags(object, rules);
+        let before = entity.health.current();
+        let warhead = sim.interner.intern(&warhead);
+        let event = EntityDamageEvent::direct_receiver(
+            target,
+            30,
+            0,
+            RAD_NO_ATTACKER,
+            None,
+            warhead,
+            ReceiverCallFlags {
+                ignore_defenses: false,
+                arg6: false,
+            },
+        );
+        sim.commit_direct_damage_receiver(
+            rules,
+            Some(rules.overlay_registry()),
+            event,
+            &mut FrameEffects::default(),
+        );
+        Some((before, sim.entities().get(target)?.health.current(), flags))
+    };
+    let Some((before, after, flags)) = hit(false) else {
+        return;
+    };
+    assert!(after < before, "the radiation hit hurts a GI");
+    assert_eq!(flags & 0b10, 0, "a GI is not immune to radiation");
+    let (before, after, flags) = hit(true).expect("second scene");
+    assert_eq!(after, before, "immune by the override");
+    assert_eq!(flags, 0b10, "the override replaces the type's flags");
+}

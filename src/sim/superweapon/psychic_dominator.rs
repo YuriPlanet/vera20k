@@ -776,10 +776,13 @@ fn ares_fire(
         let Some(object) = sim.object_type(entity.type_ref(), rules) else {
             continue;
         };
-        let immune = object.immune_to_psionics
-            || object
-                .promotion_abilities()
-                .is_some_and(|abilities| abilities.psionics_immune(entity.veterancy.raw()));
+        let immune = entity.module_immune(
+            crate::sim::ext_modules::modifiers::Immunity::MindControl,
+            object.immune_to_psionics
+                || object
+                    .promotion_abilities()
+                    .is_some_and(|abilities| abilities.psionics_immune(entity.veterancy.raw())),
+        );
         let controlled = entity.seldom.mind_control.controller().is_some();
         if crate::sim::superweapon::invulnerability::is_invulnerable(
             entity.invulnerability.as_ref(),

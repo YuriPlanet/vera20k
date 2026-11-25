@@ -7,6 +7,7 @@
 use super::world_fire::{object_get_coords, retaliation_reaches};
 use super::*;
 use crate::rules::ruleset::SoundName;
+use crate::sim::ext_modules::modifiers::Immunity::Radiation;
 use crate::sim::movement::{DamageRetaliation, ScatterFlags};
 use crate::sim::world::techno_ai_cloak::emit_configured_cloak_sound;
 use crate::sim::world::{FrameEffects, Simulation};
@@ -59,8 +60,7 @@ pub(crate) fn apply_foot_radiation(
         entity.category(),
         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
     ) || !entity.lifecycle.object_alive()
-        || rad_immune
-        || entity.mover_facts.immune_to_radiation()
+        || entity.module_immune(Radiation, rad_immune || entity.mover_facts.immune_to_radiation())
         || crate::sim::movement::air_movement::is_high_flying(
             entity,
             world.resolved_terrain.as_ref(),
@@ -366,7 +366,7 @@ pub(crate) fn apply_building_radiation(
         (
             (entity.position.rx(), entity.position.ry()),
             &object.foundation,
-            object.immune_to_radiation,
+            entity.module_immune(Radiation, object.immune_to_radiation),
         )
     };
     if exempt {

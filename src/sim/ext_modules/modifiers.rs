@@ -54,6 +54,22 @@
 //!   `0x006FC0C5` (`combat::fire_error`). Phobos' own effect flag stays
 //!   unwired there (its residual in `attach_effect::stats`), so it is not the
 //!   base value; the open-topped transport check (`0x006FC5C7`) is not made.
+//! - `ImmunityFlags` (preview): a mask, `Override` only, 0..=127. The most
+//!   recent override replaces, bit by bit, the immunity each native gate
+//!   computes (the type's flag, Ares' rank ability, an EMP type's
+//!   `ImmuneToEMP=`); it can grant and take away. Without one every gate
+//!   keeps its native answer ([`GameEntity::module_immune`]). Bits
+//!   ([`Immunity`]) and their gates: 0 mind control (CanCapture's
+//!   `ImmuneToPsionics=` gate, the Psychic Dominator's capture, Ares'
+//!   permanent mind control and `Abductor.ChangeOwner`); 1 radiation
+//!   (the receiver's Radiation gate, the radiation-field damage of foots and
+//!   buildings); 2 poison and 3 psychic (the receiver's Poison and
+//!   PsychicDamage gates); 4 chrono (`TemporalClass::CanWarpTarget` and the
+//!   Chronosphere's `Warpable=` test); 5 EMP (Ares' EMP delivery); 6 berserk
+//!   (the receiver's Psychedelic gate and GetFireError's gas test, both
+//!   `ImmuneToPsionics=` natively and Ares' `ImmuneToBerserk=`). The read
+//!   value starts from the type's flags ([`GameEntity::immunity_flags`]);
+//!   `DamageIncoming` honours the mask where it pre-checks the gates.
 //!
 //! Each stage starts from the Phobos AttachEffect product (1.0 without
 //! Phobos), scales it by `1 + sum of additions` (an additive property:
@@ -137,7 +153,23 @@ pub enum Stat {
     Cloakable,
     ForceDecloak,
     DisableWeapons,
+    Immunity,
 }
+
+/// `ImmunityFlags` bits (appendix 7.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Immunity {
+    MindControl = 0,
+    Radiation = 1,
+    Poison = 2,
+    Psychic = 3,
+    Chrono = 4,
+    Emp = 5,
+    Berserk = 6,
+}
+
+/// The bits `ImmunityFlags` defines.
+const IMMUNITY_MASK: i64 = 0x7F;
 
 /// How a property's value reads and composes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,10 +182,12 @@ enum Unit {
     Leptons,
     /// A flag, 0 or 1.
     Flag,
+    /// A bit mask, written only with `Override`.
+    Mask,
 }
 
 impl Stat {
-    const COUNT: usize = 12;
+    const COUNT: usize = 13;
 
     pub(super) fn from_property(name: &str) -> Option<Self> {
         Some(match name {
@@ -169,6 +203,7 @@ impl Stat {
             "Cloakable" => Self::Cloakable,
             "ForceDecloak" => Self::ForceDecloak,
             "DisableWeapons" => Self::DisableWeapons,
+            "ImmunityFlags" => Self::Immunity,
             _ => return None,
         })
     }
@@ -192,6 +227,7 @@ impl Stat {
             Self::Cloakable => "Cloakable",
             Self::ForceDecloak => "ForceDecloak",
             Self::DisableWeapons => "DisableWeapons",
+            Self::Immunity => "ImmunityFlags",
         }
     }
 
@@ -223,14 +259,22 @@ impl Stat {
             Self::Unkillable | Self::Cloakable | Self::ForceDecloak | Self::DisableWeapons => {
                 Unit::Flag
             }
+            Self::Immunity => Unit::Mask,
         }
+    }
+
+    /// Whether a module may put `op` with `value` on this property: a mask
+    /// takes only an `Override` of its defined bits.
+    pub(super) fn admits(self, op: ModifierOp, value: i64) -> bool {
+        self.unit() != Unit::Mask
+            || (op == ModifierOp::Override && value & !IMMUNITY_MASK == 0)
     }
 
     /// One unit of the property in its raw module value.
     fn scale(self) -> f64 {
         match self.unit() {
             Unit::Factor | Unit::Fixed => FIXED_ONE,
-            Unit::Leptons | Unit::Flag => 1.0,
+            Unit::Leptons | Unit::Flag | Unit::Mask => 1.0,
         }
     }
 
@@ -242,6 +286,7 @@ impl Stat {
             (_, Unit::Fixed) => (-32768.0, 32768.0),
             (_, Unit::Leptons) => (-16_777_216.0, 16_777_216.0),
             (_, Unit::Flag) => (0.0, 1.0),
+            (_, Unit::Mask) => (0.0, IMMUNITY_MASK as f64),
         }
     }
 
@@ -260,6 +305,8 @@ impl Stat {
             Self::Rof => entity.phobos_rof_multiplier(),
             Self::RangeMultiplier | Self::CritMultiplier => 1.0,
             Self::RangeExtra | Self::CritExtraChance | Self::DisableWeapons => 0.0,
+            // Read through `GameEntity::immunity_flags`, which knows the type.
+            Self::Immunity => 0.0,
             Self::Unkillable => flag(entity.phobos_unkillable()),
             Self::Cloakable => flag(entity.phobos_cloakable()),
             Self::ForceDecloak => flag(entity.phobos_force_decloak()),
@@ -325,7 +372,7 @@ impl Terms {
             None => {
                 let start = match stat.unit() {
                     Unit::Factor => base * (1.0 + self.added),
-                    Unit::Fixed | Unit::Leptons | Unit::Flag => base + self.added,
+                    Unit::Fixed | Unit::Leptons | Unit::Flag | Unit::Mask => base + self.added,
                 };
                 self.multipliers
                     .iter()
@@ -434,6 +481,70 @@ impl GameEntity {
     /// A module `DisableWeapons` modifier holds.
     pub(crate) fn module_weapons_disabled(&self) -> bool {
         self.with_module_flag(Stat::DisableWeapons, false)
+    }
+
+    /// Whether this object is immune per `bit` of `ImmunityFlags`: `native`,
+    /// the gate's own answer, unless a module override sets the mask.
+    pub(crate) fn module_immune(&self, bit: Immunity, native: bool) -> bool {
+        match self
+            .module_terms()
+            .and_then(|terms| terms.stat(Stat::Immunity).replace)
+        {
+            None => native,
+            Some(mask) => (mask as i64) >> (bit as u32) & 1 != 0,
+        }
+    }
+
+    /// The `ImmunityFlags` property: the type's immunities (`object`, this
+    /// object's type), with Ares' rank abilities and EMP rules under Ares,
+    /// or a module override.
+    pub(super) fn immunity_flags(
+        &self,
+        object: &crate::rules::object_type::ObjectType,
+        rules: &RuleSet,
+    ) -> i64 {
+        let ares = rules.ares();
+        let xp = self.veterancy.raw();
+        let rank = object.promotion_abilities().filter(|_| ares);
+        let mind_control = object.immune_to_psionics
+            || rank.is_some_and(|abilities| abilities.psionics_immune(xp));
+        let native = [
+            (Immunity::MindControl, mind_control),
+            (
+                Immunity::Radiation,
+                object.immune_to_radiation || rank.is_some_and(|abilities| abilities.rad_immune(xp)),
+            ),
+            (
+                Immunity::Poison,
+                object.immune_to_poison || rank.is_some_and(|abilities| abilities.poison_immune(xp)),
+            ),
+            (
+                Immunity::Psychic,
+                object.immune_to_psionic_weapons
+                    || rank.is_some_and(|abilities| abilities.psionic_weapon_immune(xp)),
+            ),
+            (
+                Immunity::Chrono,
+                !object.warpable
+                    || (rules.ares_form()
+                        && object
+                            .promotion_abilities()
+                            .is_some_and(|abilities| abilities.unwarpable(xp))),
+            ),
+            (Immunity::Emp, ares && self.ares_emp_immune(object, rules)),
+            (
+                Immunity::Berserk,
+                if ares {
+                    object.techno_combat().combat().immune_to_berserk(mind_control)
+                } else {
+                    mind_control
+                },
+            ),
+        ];
+        native
+            .into_iter()
+            .filter(|&(bit, immune)| self.module_immune(bit, immune))
+            .fold(0, |mask, (bit, _)| mask | 1 << bit as u32)
     }
 
     /// The module range terms: the multiplier and the extra leptons, or
@@ -647,6 +758,7 @@ const ALL_STATS: [Stat; Stat::COUNT] = [
     Stat::Cloakable,
     Stat::ForceDecloak,
     Stat::DisableWeapons,
+    Stat::Immunity,
 ];
 
 impl Modifier {

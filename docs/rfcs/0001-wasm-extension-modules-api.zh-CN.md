@@ -1143,7 +1143,7 @@ AI 文档的读写层次见 [RFC 6d](0001-wasm-extension-modules.zh-CN.md#6d-ai)
 | `IgnoreOrders` | bool | 0 | 覆盖 | 无视玩家指令 | — | later |
 | `Targetable` | bool | 1 | 覆盖 | 为 0 时不可被选为目标 | — | later |
 | `PenetratesForceShield` | bool | 0 | 覆盖 | 穿透力场护盾 | `PenetratesForceShield` | later |
-| `ImmunityFlags` | mask | 类型的免疫 | 覆盖 | 免疫位：0 心灵控制、1 辐射、2 毒素、3 心灵、4 超时空、5 EMP、6 狂暴 | —（`ArmorMultiplier.AllowWarheads` 倍率为 0 可覆盖一部分） | later |
+| `ImmunityFlags` | mask | 类型的免疫（`ImmuneToPsionics=`、`ImmuneToRadiation=`、`ImmuneToPoison=`、`ImmuneToPsionicWeapons=`、`Warpable=no`；有 Ares 时加上等级能力、`ImmuneToEMP=` 及其默认值和 `ImmuneToBerserk=`；无 Ares 时狂暴随 `ImmuneToPsionics=`） | 仅覆盖，位 0..6；其他操作或其他位返回 `Refused` | 免疫位：0 心灵控制、1 辐射、2 毒素、3 心灵、4 超时空、5 EMP、6 狂暴。覆盖逐位取代各处判定算出的免疫，因此也能去掉免疫：0 心灵控制的夺取、心灵控制器（超武）、Ares 永久心控和绑架后的所属方；1、2、3 辐射、毒素、心灵弹头的受伤判定，1 也包括辐射场伤害；4 超时空军团兵的抹除和超时空传送的 `Warpable=` 判定；5 Ares EMP；6 Psychedelic（狂暴）判定和毒气的开火判定 | —（`ArmorMultiplier.AllowWarheads` 倍率为 0 可覆盖一部分） | preview |
 | `TintColor` | int（RGB） | 0 | 覆盖 | 染色；客户端为 `seen` | `Tint.Color` | later |
 | `TintIntensity` | fixed | 0 | 加 | 染色；客户端为 `seen` | `Tint.Intensity`、`Tint.Cumulative` | later |
 | `LaserTrailType` | id | −1 | 覆盖 | 激光拖尾；客户端为 `seen` | `LaserTrail.Type` | later |

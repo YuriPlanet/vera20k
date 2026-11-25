@@ -1114,11 +1114,16 @@ impl SimHost for Host<'_, '_> {
                 },
             ));
         };
+        let op = ModifierOp::from_abi(op);
+        // A mask (`ImmunityFlags`) takes only an override of its bits.
+        if !stat.admits(op, value) {
+            return Ok((0, Status::Refused));
+        }
         let frame = self.sim.session.binary_frame();
         let modifier = Modifier {
             target,
             stat,
-            op: ModifierOp::from_abi(op),
+            op,
             value,
             expires: u32::try_from(frames)
                 .ok()
@@ -1548,6 +1553,10 @@ impl Host<'_, '_> {
                 i64::from(entity.building_online())
             }
             "Online" => return (0, Status::Unsupported),
+            "ImmunityFlags" => match object() {
+                Some(object) => entity.immunity_flags(object, self.rules),
+                None => return (0, Status::Unsupported),
+            },
             _ => match Stat::wired_property(name) {
                 Some(stat) => entity.effective_stat(stat),
                 None => return self.more_object_property(entity, name),
