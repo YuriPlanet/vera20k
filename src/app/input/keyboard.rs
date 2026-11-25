@@ -152,8 +152,8 @@ pub(crate) fn in_game_key_edge(
         && !paused_at_event
         && resolution == hotkeys::HotkeyResolution::Unhandled
     {
-        let modifiers = state.platform.live_modifiers;
-        crate::app::ui_modules::key_unused(state, edge.unmodified, modifiers);
+        let modifiers = state.match_state.input.hotkey_modifiers;
+        crate::app::ui_modules::key_unused(state, binding_key, edge.location, modifiers);
     }
     // Paused capture changes no held-key state, even on the closing Escape.
     if paused_at_event {
@@ -378,6 +378,7 @@ fn reload(state: &mut AppState, reset: bool) {
     } else {
         crate::app::persistence::keyboard::reload(config.paths.settings_dir(), archive)
     };
+    crate::app::ui_modules::rebind_game_keys(state);
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum KeyboardExit {
@@ -492,6 +493,8 @@ fn activate(state: &mut AppState, id: KeyboardButton) {
             // Parent466→465 refreshes current shortcut and clears the capture.
             dialog.captured = 0;
             dialog.current_owner_visible = false;
+            // Module hotkeys yield to the new binding (RFC 0001 section 10).
+            crate::app::ui_modules::rebind_game_keys(state);
         }
     }
 }

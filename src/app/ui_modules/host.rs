@@ -280,7 +280,7 @@ impl ClientHost for FrameHost<'_, '_> {
     ) -> Result<Status, Invalid> {
         self.local.action(
             self.effects,
-            self.view.viewer,
+            self.view,
             self.source,
             kind,
             target,
@@ -293,12 +293,12 @@ impl ClientHost for FrameHost<'_, '_> {
     fn send_order(&mut self, order: &Order) -> Result<Status, Invalid> {
         let automation_allowed = self.automation_allowed();
         self.local
-            .send_order(self.effects, self.view.viewer, automation_allowed, order)
+            .send_order(self.effects, self.view, automation_allowed, order)
     }
 
     fn send_message(&mut self, data: &[u8]) -> Result<Status, Invalid> {
         self.local
-            .send_message(self.effects, self.view.viewer, self.source, data)
+            .send_message(self.effects, self.view, self.source, data)
     }
 
     fn storage_read(&mut self, key: &str) -> Result<(Option<Vec<u8>>, Status), Invalid> {

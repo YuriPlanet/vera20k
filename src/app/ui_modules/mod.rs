@@ -54,7 +54,8 @@
 //!
 //! Input reaches the tree before the game ([`pointer_moved`],
 //! [`pointer_button`], [`key_escape`]); a key the game did not use goes to
-//! the modules' hotkeys ([`key_unused`]).
+//! the modules' hotkeys ([`key_unused`]), which know the game's bound keys
+//! ([`rebind_game_keys`]).
 
 pub(crate) mod host;
 pub(crate) mod local;
@@ -506,6 +507,7 @@ pub(crate) fn install(state: &mut AppState, sources: UiModuleSources) {
     ui.pending_lines = lines;
     if !ui.slots.is_empty() || map_layout.is_some() || !ui.pending_lines.is_empty() {
         state.match_state.ui_modules = Some(ui);
+        rebind_game_keys(state);
     }
 }
 
@@ -702,81 +704,40 @@ pub(crate) fn key_escape(state: &mut AppState) -> bool {
 }
 
 /// A key press the game did not use: the modules' hotkeys (game hotkeys
-/// win, RFC 10). True when a module hotkey fired.
+/// win, RFC 10). `key` is the key the bindings resolve (`hotkeys::
+/// binding_logical_key`) and `modifiers` theirs, so a module hotkey reads the
+/// key word a game binding would (`virtual key | Shift 0x100 | Ctrl 0x200 |
+/// Alt 0x400`). True when a module hotkey fired.
 pub(crate) fn key_unused(
     state: &mut AppState,
     key: &winit::keyboard::Key,
+    location: winit::keyboard::KeyLocation,
     modifiers: winit::keyboard::ModifiersState,
 ) -> bool {
     let Some(ui) = state.match_state.ui_modules.as_mut() else {
         return false;
     };
-    chord_name(key, modifiers).is_some_and(|chord| ui.local.key_down(&chord))
+    let Some(virtual_key) = crate::app::input::hotkeys::logical_virtual_key(key, location) else {
+        return false;
+    };
+    let encoded = virtual_key | crate::app::input::hotkeys::modifier_bits(modifiers);
+    local::key_text(encoded).is_some_and(|text| ui.local.key_down(&text))
 }
 
-/// A key chord as `RegisterHotkey` writes it (appendix 5.4): modifiers in
-/// the order `Ctrl`, `Alt`, `Shift`, then the key, joined by `+`, e.g.
-/// `Ctrl+Alt+K`. A letter is upper case; a named key is its name (`F5`,
-/// `Enter`, `ArrowUp`). A modifier alone is no chord.
-pub(crate) fn chord_name(
-    key: &winit::keyboard::Key,
-    modifiers: winit::keyboard::ModifiersState,
-) -> Option<String> {
-    use winit::keyboard::{Key, NamedKey};
-    let name = match key {
-        Key::Character(text) => text.to_uppercase(),
-        Key::Named(
-            NamedKey::Control
-            | NamedKey::Alt
-            | NamedKey::Shift
-            | NamedKey::Super
-            | NamedKey::Meta
-            | NamedKey::Hyper
-            | NamedKey::AltGraph,
-        ) => return None,
-        Key::Named(NamedKey::Space) => "Space".to_owned(),
-        Key::Named(named) => format!("{named:?}"),
-        _ => return None,
-    };
-    if name.is_empty() {
-        return None;
+/// Tells the modules' hotkeys which keys the game's bindings hold: at the
+/// match's start and whenever the player rebinds (game hotkeys win, RFC 10).
+pub(crate) fn rebind_game_keys(state: &mut AppState) {
+    let crate::app::match_runtime::state::MatchState {
+        ui_modules, input, ..
+    } = &mut state.match_state;
+    if let Some(ui) = ui_modules.as_mut() {
+        ui.local.set_game_keys(input.hotkey_bindings.bound_keys());
     }
-    let mut chord = String::new();
-    if modifiers.control_key() {
-        chord.push_str("Ctrl+");
-    }
-    if modifiers.alt_key() {
-        chord.push_str("Alt+");
-    }
-    if modifiers.shift_key() {
-        chord.push_str("Shift+");
-    }
-    chord.push_str(&name);
-    Some(chord)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use winit::keyboard::{Key, ModifiersState, NamedKey};
-
-    #[test]
-    fn chords_read_as_register_hotkey_writes_them() {
-        let both = ModifiersState::CONTROL | ModifiersState::ALT;
-        assert_eq!(
-            chord_name(&Key::Character("k".into()), both).as_deref(),
-            Some("Ctrl+Alt+K")
-        );
-        assert_eq!(
-            chord_name(&Key::Named(NamedKey::F5), ModifiersState::SHIFT).as_deref(),
-            Some("Shift+F5")
-        );
-        assert_eq!(
-            chord_name(&Key::Named(NamedKey::Control), ModifiersState::CONTROL),
-            None
-        );
-    }
-
     #[test]
     fn map_layout_sections_are_veraui_and_its_parts() {
         assert!(is_map_layout_section("VeraUI"));
