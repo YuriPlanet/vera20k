@@ -159,13 +159,20 @@ impl Simulation {
         } else if answer.mission == MissionStepResult::NO_MISSION {
             None
         } else {
-            match u8::try_from(answer.mission).ok().and_then(MissionType::from_id) {
+            match u8::try_from(answer.mission)
+                .ok()
+                .and_then(MissionType::from_id)
+            {
                 Some(MissionType::None) => None,
                 Some(answer) => Some(answer),
                 None => queue,
             }
         };
-        let delay = if answer.delay >= 1 { answer.delay } else { delay };
+        let delay = if answer.delay >= 1 {
+            answer.delay
+        } else {
+            delay
+        };
         (queue, delay)
     }
 
