@@ -584,8 +584,16 @@ impl ModuleTriggers {
     }
 
     /// The triggers with a decision handler for `kind`: every global one,
-    /// else those bound to `subject` or to `type_id`, in creation order.
-    pub(crate) fn deciders(&self, kind: i32, subject: u64, type_id: Option<u32>) -> Vec<u64> {
+    /// else those bound to `subject`, to `type_id` or to one of the weapon,
+    /// warhead and projectile types in `weapons` (name kind, ID), in
+    /// creation order.
+    pub(crate) fn deciders(
+        &self,
+        kind: i32,
+        subject: u64,
+        type_id: Option<u32>,
+        weapons: &[(i32, u32)],
+    ) -> Vec<u64> {
         let of_kind = |t: &ModuleTrigger| t.decides() && t.events.iter().any(|e| e.kind == kind);
         if kind == EVENT_DEFEAT {
             return self
@@ -600,7 +608,11 @@ impl ModuleTriggers {
             .and_then(|id| self.types.get(&id))
             .into_iter()
             .flatten();
-        let handles: BTreeSet<u64> = by_object.chain(by_type).copied().collect();
+        let by_weapon = weapons
+            .iter()
+            .filter_map(|key| self.weapons.get(key))
+            .flatten();
+        let handles: BTreeSet<u64> = by_object.chain(by_type).chain(by_weapon).copied().collect();
         handles
             .into_iter()
             .filter(|handle| self.triggers.get(handle).is_some_and(of_kind))

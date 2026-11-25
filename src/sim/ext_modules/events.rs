@@ -291,7 +291,11 @@ impl Host<'_, '_> {
             vera20k_wasm_ext::decide::EVENT_PRODUCTION_ALLOWED
             | vera20k_wasm_ext::decide::EVENT_PRODUCTION_QUEUED
             | vera20k_wasm_ext::decide::EVENT_COMMAND_ALLOWED => object,
-            EVENT_FIRE => TriggerScope::Object { weapon: true },
+            // `Fire` and `Launch` also bind the weapon, warhead and
+            // projectile type; `ProjectileFrame` binds the projectile type.
+            EVENT_FIRE
+            | vera20k_wasm_ext::decide::EVENT_LAUNCH
+            | vera20k_wasm_ext::decide::EVENT_PROJECTILE_FRAME => TriggerScope::Object { weapon: true },
             EVENT_TAKE_DAMAGE
             | EVENT_ATTACKED_BY
             | EVENT_FATAL_DAMAGE

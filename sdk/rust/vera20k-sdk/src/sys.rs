@@ -214,7 +214,60 @@ pub struct DecideRecord {
     pub previous_len: i32,
 }
 
+/// `ProjectileSpec`, 48 bytes: one entry of a `Fire` shot plan.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct ProjectileSpec {
+    /// Projectile type ID.
+    pub projectile_type: i32,
+    /// Weapon ID giving damage and warhead; −1 for the shot's own weapon.
+    pub weapon: i32,
+    /// Object or cell reference; 0 for the shot's target.
+    pub target: i64,
+    /// Initial `Data0` (bytes 0..7) and `Data1` (8..15).
+    pub data: [u8; 16],
+    /// Bit 0: `origin` is absolute, otherwise an offset from the native
+    /// launch position.
+    pub flags: i32,
+    /// x, y, z in leptons.
+    pub origin: [i32; 3],
+}
+
+/// `PathSpec`'s 32-byte header; `point_count` points of three `i64`
+/// leptons follow it.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct PathSpecHeader {
+    /// `PathKind`.
+    pub kind: i32,
+    pub point_count: i32,
+    /// Leptons per frame, 16 fraction bits; 0 for the projectile's speed.
+    pub speed: i64,
+    pub param: [i64; 2],
+}
+
+/// `ProjectileStep`, 56 bytes: `ProjectileFrame`'s result.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct ProjectileStep {
+    /// Bit 0 detonate, 1 set velocity, 2 set position, 3 set module data.
+    pub flags: i32,
+    pub reserved: i32,
+    /// Leptons per frame, 16 fraction bits.
+    pub velocity: [i32; 3],
+    pub reserved2: i32,
+    /// Leptons.
+    pub position: [i32; 3],
+    pub reserved3: i32,
+    pub data: [u8; 16],
+}
+
 const _: () = {
+    assert!(size_of::<ProjectileSpec>() == 48);
+    assert!(core::mem::offset_of!(ProjectileSpec, flags) == 32);
+    assert!(size_of::<PathSpecHeader>() == 32);
+    assert!(size_of::<ProjectileStep>() == 56);
+    assert!(core::mem::offset_of!(ProjectileStep, data) == 40);
     assert!(size_of::<ActionParams>() == 72);
     assert!(size_of::<Clause>() == 16);
     assert!(size_of::<Query>() == 64);
