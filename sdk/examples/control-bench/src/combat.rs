@@ -266,6 +266,9 @@ fn upkeep() {
         };
         SPAWNS[slot].fetch_add(1, Relaxed);
         UNIT[slot].store(made.0, Relaxed);
+        if slot == T2 {
+            SHIELD.store(SHIELD_POOL, Relaxed); // a new shield for a new T2
+        }
         for &key in spec.binds {
             let t = trigger(key);
             if t.0 != NO_HANDLE {
@@ -304,7 +307,8 @@ static TD_FRAME: AtomicI64 = AtomicI64::new(0);
 
 /// `DamageIncoming`: the shield pool, T2's health at a fully absorbed hit
 /// and its frame.
-static SHIELD: AtomicI64 = AtomicI64::new(5000);
+const SHIELD_POOL: i64 = 5000;
+static SHIELD: AtomicI64 = AtomicI64::new(SHIELD_POOL);
 static DI_HEALTH: AtomicI64 = AtomicI64::new(0);
 static DI_FRAME: AtomicI64 = AtomicI64::new(0);
 
@@ -321,6 +325,7 @@ static FIRE_HITS: AtomicI64 = AtomicI64::new(0);
 /// The shell's projectile type ID + 1 (0 unknown), and whether `Launch`
 /// and `ProjectileFrame` were bound to it.
 static SHELL_TYPE: AtomicI64 = AtomicI64::new(0);
+/// The shell type value `Launch` and `ProjectileFrame` are bound to.
 static SHELL_BOUND: AtomicI64 = AtomicI64::new(0);
 
 /// `FireAllowed`: refusals so far and the frame fire was allowed.
@@ -341,7 +346,14 @@ const RISE: i64 = 1024;
 const RISE_SPEED: i64 = 96;
 
 /// `ProjectileFrame`: the answered bullet.
-static PF_BULLET: AtomicI64 = AtomicI64::new(0);
+/// `ProjectileFrame`: the bullets answered and not yet checked (a ring),
+/// and counts for the diagnostic line.
+const PF_RING: usize = 4;
+static PF_BULLETS: [AtomicI64; PF_RING] = [const { AtomicI64::new(0) }; PF_RING];
+static PF_NEXT: AtomicI64 = AtomicI64::new(0);
+static PF_ASKED: AtomicI64 = AtomicI64::new(0);
+static PF_MINE: AtomicI64 = AtomicI64::new(0);
+static PF_GONE: AtomicI64 = AtomicI64::new(0);
 const PF_MARKER: i64 = 0x5EED_C0DE;
 
 /// `CrushAllowed`: the spared victim and its frame, the allowed one, and
@@ -352,9 +364,8 @@ static ALLOWED: AtomicI64 = AtomicI64::new(0);
 static CRUSH_SEEN: AtomicI64 = AtomicI64::new(0);
 /// The crusher's leg: even east, odd west.
 static CRUSH_LEG: AtomicI64 = AtomicI64::new(0);
-/// The frame the current leg started, and the crush requests so far.
+/// The frame the current leg started.
 static LEG_SINCE: AtomicI64 = AtomicI64::new(0);
-static CRUSH_ASKED: AtomicI64 = AtomicI64::new(0);
 
 // --------------------------------------------------------------- Exports
 
@@ -405,7 +416,7 @@ pub fn frame(now: i32) {
     check_fatal(now);
     check_retaliate(now);
     check_launch(now);
-    check_projectile_frame();
+    check_projectile_frame(now);
     check_crush(now);
 }
 
@@ -669,8 +680,14 @@ fn check_retaliate(now: i64) {
 /// `SF`'s shot plan named it.
 fn bind_shell_type() {
     let shell = SHELL_TYPE.load(Relaxed);
-    if shell == 0 || SHELL_BOUND.swap(1, Relaxed) != 0 {
+    if shell == 0 || SHELL_BOUND.swap(shell, Relaxed) == shell {
         return;
+    }
+    for key in [LAUNCH, PFRAME] {
+        let old = trigger(key);
+        if old.0 != NO_HANDLE {
+            let _ = old.remove();
+        }
     }
     let ty = TypeRef::new(NameKind::Projectile, (shell - 1) as i32);
     make(
@@ -753,16 +770,23 @@ fn check_launch(now: i64) {
     }
 }
 
-/// One step for one of SP's shells: its own velocity, and module data to
-/// read back.
+/// Shooters whose shells `ProjectileFrame` steps: every player tank on the
+/// range but SL (whose shells follow their `Launch` path).
+const PF_SHOOTERS: [usize; 4] = [SP, SF, SA, AR];
+
+/// One step for each shell of the shooters above, once per shell: its own
+/// velocity, and module data to read back.
 fn projectile_frame(mut d: ProjectileFrameDecision) {
-    let shooter = unit(SP).0;
+    PF_ASKED.fetch_add(1, Relaxed);
     let bullet = d.projectile();
-    if shooter == NO_HANDLE
-        || PF_BULLET.load(Relaxed) != 0
-        || d.frames() < 0
-        || get(bullet, Prop::Source) != Ok(shooter)
-    {
+    let Ok(source) = get(bullet, Prop::Source) else {
+        return;
+    };
+    if source == NO_HANDLE || !PF_SHOOTERS.iter().any(|&slot| unit(slot).0 == source) {
+        return;
+    }
+    PF_MINE.fetch_add(1, Relaxed);
+    if d.frames() < 0 || PF_BULLETS.iter().any(|b| b.load(Relaxed) == bullet.0) {
         return;
     }
     let velocity = |prop: Prop| {
@@ -779,25 +803,57 @@ fn projectile_frame(mut d: ProjectileFrameDecision) {
         ..ProjectileStep::default()
     };
     if d.set_step(&step) {
-        PF_BULLET.store(bullet.0, Relaxed);
+        let at = PF_NEXT.fetch_add(1, Relaxed) as usize % PF_RING;
+        PF_BULLETS[at].store(bullet.0, Relaxed);
     }
 }
 
-fn check_projectile_frame() {
-    let bullet = Projectile(PF_BULLET.load(Relaxed));
-    if bullet.is_none() || marked("combat.projectile_frame") {
+fn check_projectile_frame(now: i64) {
+    if marked("combat.projectile_frame") {
         return;
     }
-    match get(bullet, Prop::Data0) {
-        Ok(PF_MARKER) => mark("combat.projectile_frame"),
-        Ok(_) => {
-            PF_BULLET.store(0, Relaxed);
-            bench_fail(
-                "combat.projectile_frame",
-                "the step's module data was not kept",
-            );
+    for slot in &PF_BULLETS {
+        let bullet = Projectile(slot.load(Relaxed));
+        if bullet.is_none() {
+            continue;
         }
-        Err(_) => PF_BULLET.store(0, Relaxed), // gone: answer the next one
+        match get(bullet, Prop::Data0) {
+            Ok(PF_MARKER) => {
+                mark("combat.projectile_frame");
+                return;
+            }
+            Ok(_) => {
+                slot.store(0, Relaxed);
+                bench_fail(
+                    "combat.projectile_frame",
+                    "the step's module data was not kept",
+                );
+            }
+            Err(_) => {
+                slot.store(0, Relaxed); // gone: the next shell is answered
+                PF_GONE.fetch_add(1, Relaxed);
+            }
+        }
+    }
+    if now % 600 == 0 {
+        let mut line = crate::Line::new();
+        line.text("combat-diag pframe: shell ")
+            .num(SHELL_BOUND.load(Relaxed) - 1)
+            .text(" asked ")
+            .num(PF_ASKED.load(Relaxed))
+            .text(" mine ")
+            .num(PF_MINE.load(Relaxed))
+            .text(" answered ")
+            .num(PF_NEXT.load(Relaxed))
+            .text(" gone ")
+            .num(PF_GONE.load(Relaxed))
+            .text(" sp hp ")
+            .num(unit(SP).health().unwrap_or(-1))
+            .text(" sp target ")
+            .num(unit(SP).target().unwrap_or(-1))
+            .text(" t1 ")
+            .num(unit(T1).0);
+        line.log();
     }
 }
 
@@ -810,7 +866,6 @@ fn crush(mut d: CrushAllowedDecision) {
     if victim == NO_HANDLE || (victim != unit(I1).0 && victim != unit(I2).0) {
         return;
     }
-    CRUSH_ASKED.fetch_add(1, Relaxed);
     let spared = SPARED.load(Relaxed);
     if spared == NO_HANDLE || spared == victim {
         d.set_result(0);
@@ -838,6 +893,9 @@ fn check_crush(now: i64) {
     if marked("combat.crush") {
         return;
     }
+    if CRUSH_SEEN.load(Relaxed) & 1 == 0 && !alive(Techno(SPARED.load(Relaxed))) {
+        SPARED.store(NO_HANDLE, Relaxed); // spare the next GI met instead
+    }
     let at = SPARED_FRAME.load(Relaxed);
     if at != 0 && now > at {
         SPARED_FRAME.store(0, Relaxed);
@@ -859,13 +917,10 @@ fn drive_crusher() {
     if marked("combat.crush") {
         return;
     }
-    let now = clock();
-    if now % 600 == 0 {
-        crush_diagnostics(tank);
-    }
     if !alive(tank) {
         return;
     }
+    let now = clock();
     let mut leg = CRUSH_LEG.load(Relaxed);
     let goal = |leg: i64| {
         let first = if leg % 2 == 0 { I1 } else { I2 };
@@ -887,29 +942,4 @@ fn drive_crusher() {
     if let Some(cell) = goal(leg) {
         let _ = Action::set_mission(tank, Mission::Move, Cell(cell));
     }
-}
-
-/// A temporary line on the crush scene while its mark is missing.
-fn crush_diagnostics(tank: Techno) {
-    let mut line = crate::Line::new();
-    line.text("combat-diag crush: asked ")
-        .num(CRUSH_ASKED.load(Relaxed))
-        .text(" leg ")
-        .num(CRUSH_LEG.load(Relaxed))
-        .text(" seen ")
-        .num(CRUSH_SEEN.load(Relaxed));
-    for (name, who) in [(" tank ", tank), (" gi1 ", unit(I1)), (" gi2 ", unit(I2))] {
-        let cell = Cell(get(who, Prop::Cell).unwrap_or(0));
-        line.text(name)
-            .num(i64::from(cell.x()))
-            .text(",")
-            .num(i64::from(cell.y()))
-            .text(" hp ")
-            .num(who.health().unwrap_or(-1))
-            .text(" m ")
-            .num(who.mission().unwrap_or(-1))
-            .text(" mv ")
-            .num(i64::from(who.moving().unwrap_or(false)));
-    }
-    line.log();
 }
