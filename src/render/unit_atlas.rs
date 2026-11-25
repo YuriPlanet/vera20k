@@ -303,6 +303,10 @@ enum VoxelModel<'a> {
     Ground(&'a str),
     Air(&'a str),
     Turret(&'a str),
+    /// A voxel type drawn from its declared model
+    /// (`docs/picture-model-art.md`): it has no picture here, but the unit
+    /// draw visits objects only while an atlas exists, so it asks for one.
+    Declared,
 }
 
 /// The voxel models `objects` draw with, keyed by rules type, each once
@@ -329,9 +333,10 @@ fn voxel_models<'a>(
         }
         let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
         // A type drawn from a declared model (`docs/picture-model-art.md`)
-        // never draws its VXL; retail art declares none.
+        // never draws its VXL; retail art declares none. A building's
+        // declared guns draw without the atlas.
         if rules.is_some_and(|rules| rules.draws_declared_model(type_str)) {
-            return None;
+            return voxel.then_some(VoxelModel::Declared);
         }
         if voxel {
             return Some(if aircraft {
@@ -348,7 +353,8 @@ fn voxel_models<'a>(
 
 /// Whether `atlas` — None while no unit atlas exists — has admitted every
 /// voxel model the world draws, so no admission is needed. It asks once for
-/// each model and stops at the first miss.
+/// each model and stops at the first miss. A world of voxel objects that all
+/// draw declared models still needs an atlas to exist ([`VoxelModel::Declared`]).
 pub fn atlas_covers_world(
     atlas: Option<&UnitAtlas>,
     entities: &crate::sim::entity_store::EntityStore,
@@ -387,6 +393,7 @@ impl UnitAtlasDemand {
                     VoxelModel::Ground(type_id) => (&mut demand.ground, type_id),
                     VoxelModel::Air(type_id) => (&mut demand.air, type_id),
                     VoxelModel::Turret(type_id) => (&mut demand.turrets, type_id),
+                    VoxelModel::Declared => continue,
                 };
                 set.insert(type_id.to_string());
             }
@@ -399,6 +406,7 @@ impl UnitAtlasDemand {
             VoxelModel::Ground(type_id) => self.ground.contains(type_id),
             VoxelModel::Air(type_id) => self.air.contains(type_id),
             VoxelModel::Turret(type_id) => self.turrets.contains(type_id),
+            VoxelModel::Declared => true,
         }
     }
 
