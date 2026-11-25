@@ -1,0 +1,9 @@
+[package]
+name = "muster-field-data"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Muster Field's tables and the protocol its rules.wasm and ui.wasm share"
+
+[lib]
+path = "src/lib.rs"

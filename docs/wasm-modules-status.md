@@ -55,7 +55,7 @@ content as work lands; do not append a diary.
 | Map embedding (`[VeraWasm]`, `[VeraWasmRulesPack]`) | `src/map/ext_module_pack.rs` |
 | Loading | `headless_scenario.rs`, `app/loading/init.rs`: `PreparedExtModules::load` (mod folder `rules.wasm`, then map) before the rules load, `install_scenario_ext_modules` after the simulation exists |
 | `asset wasm-check / wasm-embed / wasm-extract` | `src/asset_tools/verb_wasm.rs` |
-| Rust SDK | `sdk/rust/vera20k-sdk` (no_std; `props.rs`, `vars.rs`, `triggers.rs`); examples `sdk/examples/minimal-rules`, `modifier-vars`, `panic-triggers`, `actions-demo`, `orders-rules`, `decide-damage`; the tutorial's `tutorial-bounty`; playtest mods `playtest`, `veteran-fury`, `siege-doctrine`, `meteor-storm`, `trigger-lab` (these four split the API by area without overlap, see `docs/wasm-modules.md`); the small game `muster-field` |
+| Rust SDK | `sdk/rust/vera20k-sdk` (no_std; `props.rs`, `vars.rs`, `triggers.rs`); examples `sdk/examples/minimal-rules`, `modifier-vars`, `panic-triggers`, `actions-demo`, `orders-rules`, `decide-damage`; the tutorial's `tutorial-bounty`; playtest mods `playtest`, `veteran-fury`, `siege-doctrine`, `meteor-storm`, `trigger-lab` (these four split the API by area without overlap, see `docs/wasm-modules.md`); the small game `muster-field` (with its `ui.wasm`) |
 
 Build an example: `cd sdk/examples/<name> && cargo build --release` (its
 `.cargo/config.toml` targets wasm32 with the allowlisted features). The engine tests
@@ -705,7 +705,9 @@ python3 -m tools.cargo_run -- test -p vera20k-wasm-ext --lib
 # plays 2000 frames with each (playtest_modules_keep_running, --nocapture prints
 # their logs). VERA20K_TEST_MUSTER_WASM takes muster_field.wasm and plays its first
 # wave from player command records (muster_field_plays_a_round_from_player_orders)
-# and a campaign lost with an empty company (muster_field_ends_when_the_last_banner_falls).
+# and a campaign lost with an empty company (muster_field_ends_when_the_last_banner_falls);
+# VERA20K_TEST_MUSTER_UI_WASM adds its muster_field_ui.wasm and plays a muster from
+# the interface's messages alone (muster_field_plays_from_its_interface).
 # VERA20K_TEST_UI_REINFORCEMENTS takes `rules.wasm|ui.wasm` of
 # sdk/examples/ui-reinforcements (ui_reinforcements_round_trip).
 RA2_DIR=<retail> VERA20K_REQUIRE_RETAIL_ASSETS=1 VERA20K_TEST_..._WASM=... \
