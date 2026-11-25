@@ -31,11 +31,18 @@
 //!   a new plant up to eight times): `BirthSurvivor` (a crewman's `Birth`,
 //!   `other` the plant); each survivor is removed;
 //! - the computer house's own harvesters (`HarvestCell`) and production
-//!   (`ProductionQueued` on the first type its factories start,
-//!   `ProductionAllowed` on a type they started twice; the house gets 10000
-//!   credits early so they keep starting things). The module's own
-//!   `QueueProduction` is not used: a module order checks the player's
-//!   prerequisites.
+//!   (`ProductionQueued` on the first type its factories start; the house
+//!   gets 10000 credits early so they keep starting things);
+//! - `ProductionAllowed` on the module's own `QueueProduction` for the
+//!   computer house, once `ProductionQueued`, `HarvestCell` and the MCV
+//!   scene are done (or late in the run): the house's
+//!   `Production` is claimed for the scene (its AI starts nothing, and a
+//!   house order fills the factory a player's would), a conscript (else a
+//!   Rhino, else a power plant) is forbidden, queued (it must come back
+//!   `OrderRefused` `Prerequisite` or at least not get under way), allowed
+//!   back with its native answer and queued again (its factory's `Type`
+//!   must read it with `Progress` started); then cancelled and the claim
+//!   released.
 //!
 //! A `MoveFrame` decider that never answers (the observer) reads the NavCom
 //! a `DestinationSet`, `ApproachPoint` or `HarvestCell` answer set.
@@ -249,8 +256,6 @@ static MC: V = V::new(0);
 static MC_AT: V = V::new(0);
 static MC_AFTER: V = V::new(0);
 static MC_BUILDING: V = V::new(0);
-static MC_PLACEABLE: V = V::new(0);
-static MC_MISPLACED: V = V::new(0);
 static MC_RUNS: V = V::new(0);
 static MC_TRIES: V = V::new(0);
 static MC_ASKED: V = V::new(0);
@@ -285,11 +290,10 @@ static PA_NO: V = V::new(0);
 static PA_NATIVE: V = V::new(0);
 static PA_YES: V = V::new(0);
 static PA_TYPE: V = V::new(-1);
-static PA_SLOT: V = V::new(0);
-static PA_BASE: V = V::new(0);
-static PA_OTHERS: V = V::new(0);
-/// The slots `ProductionAllowed` already tried (a bit each).
-static PA_TRIED: V = V::new(0);
+static PA_CANDIDATE: V = V::new(0);
+static PA_CLAIM: V = V::new(0);
+/// The latest `OrderRefused` reason for the queued type, plus one (0 none).
+static PA_REFUSED: V = V::new(0);
 
 // --------------------------------------------------------------- Helpers
 
@@ -1428,7 +1432,6 @@ fn place_mcv(mcv: TypeRef, yard: TypeRef) -> Option<Techno> {
         .where_prop(Prop::Placeable, Op::Eq, 1)
         .page(&mut out, MC_AFTER.get());
     let (found, next) = found.unwrap_or((0, 0));
-    MC_PLACEABLE.add(found as i64);
     MC_AFTER.set(next);
     if next == 0 {
         MC_BUILDING.add(1);
@@ -1448,34 +1451,11 @@ fn place_mcv(mcv: TypeRef, yard: TypeRef) -> Option<Techno> {
             Ok(unit) if cell_of(unit) == at => return Some(unit),
             Ok(unit) => {
                 let _ = Action::remove(unit);
-                MC_MISPLACED.add(1);
             }
-            Err(_) => MC_MISPLACED.add(1),
+            Err(_) => {}
         }
     }
     None
-}
-
-/// `BENCH-DIAG` for the MCV scene: why it stopped short.
-fn mcv_diag(why: &str) {
-    let mut line = crate::Line::new();
-    line.text("BENCH-DIAG movement.DeployMcv ")
-        .text(why)
-        .text(": rounds ")
-        .num(MC_TRIES.get())
-        .text(" placeable ")
-        .num(MC_PLACEABLE.get())
-        .text(" misplaced ")
-        .num(MC_MISPLACED.get())
-        .text(" asked ")
-        .num(MC_ASKED.get())
-        .text(" allow ")
-        .num(MC_ALLOW.get())
-        .text(" yard ")
-        .num(i64::from(MC_YARD.get() != 0))
-        .text(" born ")
-        .num(i64::from(MC_BORN.get() != 0));
-    line.log();
 }
 
 /// Spawns the first known MCV of `MCVS` on a placeable spot and binds its
@@ -1539,7 +1519,6 @@ fn deploy_mcv(now: i64, since: i64) {
                 MC_AT.set(now);
                 MC.set(1);
             } else if MC_TRIES.get() >= 3 {
-                mcv_diag("no spot");
                 MC.set(DONE);
             } else if MC_TRIES.get() > rounds {
                 // Every building's block scanned without a spot: again a
@@ -1551,7 +1530,7 @@ fn deploy_mcv(now: i64, since: i64) {
             MC_AT.set(now);
             MC.set(2);
             if !order_deploy(mcv) {
-                mcv_retry(now, "deploy order");
+                mcv_retry(now);
             }
         }
         2 if now >= MC_AT.get() + 90 => {
@@ -1560,10 +1539,10 @@ fn deploy_mcv(now: i64, since: i64) {
                 MC_AT.set(now);
                 MC.set(3);
                 if !order_deploy(mcv) {
-                    mcv_retry(now, "allowed order");
+                    mcv_retry(now);
                 }
             } else if now > MC_AT.get() + 300 || !alive(mcv) {
-                mcv_retry(now, "veto never asked");
+                mcv_retry(now);
             }
         }
         3 => {
@@ -1580,17 +1559,16 @@ fn deploy_mcv(now: i64, since: i64) {
                 }
                 mcv_finish();
             } else if now > MC_AT.get() + 300 {
-                mcv_retry(now, "no deploy after the allow");
+                mcv_retry(now);
             }
         }
         _ => {}
     }
 }
 
-/// A scene that stopped short: logs why and starts again on a new spot,
+/// A scene that stopped short: it starts again on a new spot,
 /// three runs at most.
-fn mcv_retry(now: i64, why: &str) {
-    mcv_diag(why);
+fn mcv_retry(now: i64) {
     mcv_cleanup();
     MC_RUNS.add(1);
     if MC_RUNS.get() >= 3 {
@@ -1776,19 +1754,12 @@ fn type_trigger(kind: i32, ids: &[&str], key: i32) -> i64 {
 // ------------------------------------- ProductionAllowed, ProductionQueued
 
 /// The types the computer house builds (Soviet, and Allied in case):
-/// buildings and units its factories start themselves. The module's own
-/// `QueueProduction` is not used: a module order checks the player's
-/// prerequisites and came back `Prerequisite` for a type the house could
-/// build.
+/// buildings and units its factories start themselves, for
+/// `ProductionQueued`.
 const PROD_TYPES: [&str; 16] = [
     "NAPOWR", "NAREFN", "NAHAND", "NAWEAP", "NARADR", "NALASR", "HTNK", "HARV", "GAPOWR", "GAREFN",
     "GAPILE", "GAWEAP", "GAPILL", "HTK", "E2", "E1",
 ];
-
-/// `PROD_TYPES`' IDs (−1 unknown) and how often the computer's factories
-/// started each (`ProductionQueued` requests not refused).
-static TYPE_IDS: [V; 16] = [const { V::new(-1) }; 16];
-static STARTS: [V; 16] = [const { V::new(0) }; 16];
 
 /// The `ProductionQueued` deciders on every known type of `PROD_TYPES`.
 fn production_open() {
@@ -1798,7 +1769,6 @@ fn production_open() {
     ];
     for (slot, id) in PROD_TYPES.iter().enumerate() {
         if let Ok(ty) = TypeRef::techno_type(id) {
-            TYPE_IDS[slot].set(i64::from(ty.id()));
             let half = &mut halves[slot / 8];
             *half = core::mem::replace(half, Trigger::on(0)).bind(ty);
         }
@@ -1806,15 +1776,6 @@ fn production_open() {
     let [first, second] = halves;
     TR_PQ.set(first.decide_sync(KEY_PQ).map_or(0, |t| t.0));
     TR_PQ2.set(second.decide_sync(KEY_PQ).map_or(0, |t| t.0));
-}
-
-/// All starts counted so far.
-fn total_starts() -> i64 {
-    STARTS.iter().map(V::get).sum()
-}
-
-fn slot_of(ty: i64) -> Option<usize> {
-    TYPE_IDS.iter().position(|id| id.get() == ty)
 }
 
 /// A decision trigger on `kind` bound to `ids`' types; its handle or 0.
@@ -1840,14 +1801,14 @@ fn count_of(ty: TypeRef) -> i64 {
 
 /// `ProductionQueued` first: the first type the computer's factory starts
 /// is refused until it asks again (nothing started), then allowed (one more
-/// must be built). `ProductionAllowed` runs beside it
+/// must be built). `ProductionAllowed` follows it
 /// ([`production_allowed`]).
 fn production(now: i64, since: i64) {
     // Money early, so the computer's factories keep starting things.
     if since == 5 {
         let _ = Action::add_money(enemy(), 10000);
     }
-    production_allowed(now);
+    production_allowed(now, since);
     let ty = TypeRef::new(NameKind::TechnoType, PROD_TYPE.get() as i32);
     match PQ.get() {
         0 if PQ_NO.get() >= 1 && PQ_AT.get() == 0 => {
@@ -1879,96 +1840,165 @@ fn production(now: i64, since: i64) {
     }
 }
 
-/// `ProductionAllowed` on the type the computer's factories have started
-/// at least twice (not the one `ProductionQueued` is refusing): while it
-/// is forbidden and its native answer says the house could build it, no
-/// start of it may be asked (a start is a `bench_fail`), and within the
-/// window (at least 300 frames, at most 1200) the factories must start
-/// another bound type, which shows they were busy and skipped the
-/// forbidden one. Then it is allowed back (answered 1 again).
-fn production_allowed(now: i64) {
-    let slot = PA_SLOT.get() as usize;
+/// The types `ProductionAllowed` queues, with their factory's `Type` and
+/// `Progress`: Soviet, which the computer house builds.
+const PA_CANDIDATES: [(&str, Prop, Prop); 3] = [
+    (
+        "E2",
+        Prop::Factory_Infantry_Type,
+        Prop::Factory_Infantry_Progress,
+    ),
+    (
+        "HTNK",
+        Prop::Factory_Vehicle_Type,
+        Prop::Factory_Vehicle_Progress,
+    ),
+    (
+        "NAPOWR",
+        Prop::Factory_Building_Type,
+        Prop::Factory_Building_Progress,
+    ),
+];
+
+/// The `Production` bit of `ControlDomains` (RFC 0001 6i).
+const PRODUCTION: i64 = 1;
+/// `RefuseReason` `Prerequisite` (appendix 8.3, enum 26).
+const PREREQUISITE: i64 = 4;
+/// Frames each phase of a candidate is watched.
+const PA_WATCH: i64 = 60;
+
+fn claim_production(on: bool) {
+    let them = enemy();
+    let held = get(them, Prop::ControlDomains).unwrap_or(0);
+    let want = if on {
+        held | PRODUCTION
+    } else {
+        held & !PRODUCTION
+    };
+    if set(them, Prop::ControlDomains, want).is_ok() {
+        PA_CLAIM.set(i64::from(on));
+    }
+}
+
+fn queue(ty: TypeRef) -> bool {
+    enemy().order(&Order::queue_production(ty)).is_ok()
+}
+
+/// Forbid, queue (nothing under way), allow back, queue (under way): see
+/// the module docs. A candidate that does not get through gives way to the
+/// next; the claim goes once the last is done.
+fn production_allowed(now: i64, since: i64) {
+    let Some(&(name, ty_prop, progress)) = PA_CANDIDATES.get(PA_CANDIDATE.get() as usize) else {
+        if PA.get() != DONE {
+            pa_end();
+        }
+        return;
+    };
+    let kind = TypeRef::techno_type(name).ok();
+    let reads = |prop: Prop| get(enemy(), prop).unwrap_or(0);
     match PA.get() {
-        0 => {
-            let least = 2;
-            let Some(best) = (0..STARTS.len())
-                .filter(|&s| {
-                    TYPE_IDS[s].get() >= 0
-                        && PA_TRIED.get() & (1 << s) == 0
-                        && (PQ.get() == DONE || TYPE_IDS[s].get() != PROD_TYPE.get())
-                })
-                .max_by_key(|&s| STARTS[s].get())
-                .filter(|&s| STARTS[s].get() >= least)
-            else {
-                return;
+        // After the scenes on the computer's own AI (its claim stops a
+        // harvester's return to Harvest and the AI's MCV deploys), or late.
+        0 if (PQ.get() == DONE && HC.get() == DONE && MC.get() == DONE) || since >= 3200 => {
+            let Some(kind) = kind else {
+                return pa_next();
             };
-            let id = TYPE_IDS[best].get();
-            PA_SLOT.set(best as i64);
-            PA_TYPE.set(id);
+            // The AI's own build of it would read the same.
+            if reads(ty_prop) == kind.0 {
+                return pa_next();
+            }
+            if PA_CLAIM.get() == 0 {
+                claim_production(true);
+                let _ = Action::add_money(enemy(), 5000);
+            }
+            PA_TYPE.set(i64::from(kind.id()));
             TR_PA.set(
                 Trigger::on(Event::PRODUCTION_ALLOWED)
-                    .bind(TypeRef::new(NameKind::TechnoType, id as i32))
+                    .bind(kind)
                     .decide_sync(KEY_PA)
                     .map_or(0, |t| t.0),
             );
-            PA_BASE.set(STARTS[best].get());
-            PA_OTHERS.set(total_starts() - STARTS[best].get());
             PA_AT.set(now);
             PA.set(1);
         }
-        1 => {
-            if STARTS[slot].get() > PA_BASE.get() {
-                bench_fail(
-                    "movement.ProductionAllowed",
-                    "the factory started a forbidden type",
-                );
-                PA.set(DONE);
-            } else if now >= PA_AT.get() + 300
-                && total_starts() - STARTS[slot].get() > PA_OTHERS.get()
-                && PA_NO.get() >= 1
-                && PA_NATIVE.get() >= 1
-            {
-                // The factories were busy and skipped the forbidden type.
-                PA_AT.set(now);
-                PA.set(2);
-            } else if now > PA_AT.get() + 1200 {
-                pa_retry("window");
+        // Forbidden at a step: queue it.
+        1 if PA_NO.get() >= 1 => {
+            PA_REFUSED.set(0);
+            PA_AT.set(now);
+            PA.set(2);
+            if kind.is_none_or(|kind| !queue(kind)) {
+                pa_next();
             }
         }
-        2 if PA_YES.get() >= 1 => {
-            mark("movement.ProductionAllowed");
-            PA.set(DONE);
+        1 if now > PA_AT.get() + PA_WATCH => pa_next(),
+        2 => {
+            let Some(kind) = kind else {
+                return pa_next();
+            };
+            if reads(ty_prop) == kind.0 {
+                bench_fail(
+                    "movement.ProductionAllowed",
+                    "a forbidden type got under way",
+                );
+                return pa_end();
+            }
+            let refused = PA_REFUSED.get() - 1;
+            if refused >= 0 && refused != PREREQUISITE {
+                return pa_next();
+            }
+            if now >= PA_AT.get() + PA_WATCH {
+                PA_AT.set(now);
+                PA.set(3);
+            }
         }
-        2 if now > PA_AT.get() + 1500 => pa_retry("allowed back, never asked"),
-        DONE => disable(&TR_PA),
+        // Allowed back at a step (its native answer, which must be 1):
+        // queue it again.
+        3 if PA_YES.get() >= 1 => {
+            if PA_NATIVE.get() == 0 {
+                return pa_next();
+            }
+            PA_REFUSED.set(0);
+            PA_AT.set(now);
+            PA.set(4);
+            if kind.is_none_or(|kind| !queue(kind)) {
+                pa_next();
+            }
+        }
+        3 if now > PA_AT.get() + PA_WATCH => pa_next(),
+        4 => {
+            let Some(kind) = kind else {
+                return pa_next();
+            };
+            if reads(ty_prop) == kind.0 && reads(progress) >= 1 {
+                mark("movement.ProductionAllowed");
+                let _ = enemy().order(&Order::cancel_production(kind));
+                pa_end();
+            } else if PA_REFUSED.get() != 0 || now > PA_AT.get() + PA_WATCH {
+                pa_next();
+            }
+        }
         _ => {}
     }
 }
 
-/// A window that proved nothing: logs why (`BENCH-DIAG`) and lets the next
-/// most-started type of `PROD_TYPES` try (the AI's choices follow its
-/// TeamTypes and money, so the first pick may be one it stops wanting).
-fn pa_retry(why: &str) {
-    let slot = PA_SLOT.get();
-    let mut line = crate::Line::new();
-    line.text("BENCH-DIAG movement.ProductionAllowed ")
-        .text(why)
-        .text(": type ")
-        .num(PA_TYPE.get())
-        .text(" no ")
-        .num(PA_NO.get())
-        .text(" native ")
-        .num(PA_NATIVE.get())
-        .text(" others ")
-        .num(total_starts() - STARTS[slot as usize].get() - PA_OTHERS.get());
-    line.log();
+/// The next candidate: this one's decider goes.
+fn pa_next() {
     disable(&TR_PA);
-    PA_TRIED.set(PA_TRIED.get() | (1 << slot));
-    PA_NO.set(0);
-    PA_NATIVE.set(0);
-    PA_YES.set(0);
+    for slot in [&PA_NO, &PA_NATIVE, &PA_YES, &PA_REFUSED] {
+        slot.set(0);
+    }
     PA_TYPE.set(-1);
+    PA_CANDIDATE.add(1);
     PA.set(0);
+}
+
+fn pa_end() {
+    disable(&TR_PA);
+    PA_TYPE.set(-1);
+    if PA_CLAIM.get() == 1 {
+        claim_production(false);
+    }
+    PA.set(DONE);
 }
 
 fn decide_production_allowed(mut d: ProductionAllowedDecision) {
@@ -1976,16 +2006,15 @@ fn decide_production_allowed(mut d: ProductionAllowedDecision) {
         return;
     }
     match PA.get() {
-        1 => {
+        1 | 2 => {
             d.set_result(0);
             PA_NO.add(1);
-            if d.native() == 1 {
-                PA_NATIVE.add(1);
-            }
         }
-        2 => {
-            d.set_result(1);
+        3 | 4 => {
+            let native = d.native();
+            d.set_result(native);
             PA_YES.add(1);
+            PA_NATIVE.set(native);
         }
         _ => {}
     }
@@ -2006,9 +2035,6 @@ fn decide_production_queued(mut d: ProductionQueuedDecision) {
             return;
         }
     }
-    if let Some(slot) = slot_of(ty) {
-        STARTS[slot].add(1);
-    }
     if PQ.get() == 1 && ty == PROD_TYPE.get() {
         d.set_result(1);
         PQ_YES.add(1);
@@ -2026,5 +2052,11 @@ fn order_refused(record: &EventRecord) {
     {
         CA.set(2);
         return;
+    }
+    if record.value == Command::QueueProduction as i64
+        && i64::from(record.id) == PA_TYPE.get()
+        && matches!(PA.get(), 2 | 4)
+    {
+        PA_REFUSED.set(record.value2 + 1);
     }
 }
