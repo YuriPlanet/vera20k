@@ -39,6 +39,7 @@ pub(crate) mod crit;
 #[cfg(all(test, tests_sim_combat_a_c, feature = "phobos"))]
 mod crit_tests;
 pub(crate) mod damage;
+mod damage_incoming;
 pub(crate) mod destruction_effects;
 pub(crate) mod detonation_anim;
 mod effects;
