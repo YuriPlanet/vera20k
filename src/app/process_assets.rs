@@ -963,6 +963,7 @@ impl ProcessAssets {
             superweapon_limit: rules.personal_rules().superweapon_limit(),
             building_production_queue: rules.personal_rules().building_production_queue(),
             wasm_budget: rules.personal_rules().wasm_budget(),
+            automation_allowed: rules.personal_rules().automation_allowed(),
             // As the digest counts it.
             ares: match self.agreed_ares(Some(assets)) {
                 crate::util::ares_launch::AresSetting::Auto => "auto",

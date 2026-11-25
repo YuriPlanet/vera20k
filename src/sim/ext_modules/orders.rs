@@ -790,6 +790,8 @@ impl Simulation {
                 house,
                 ..ModuleEvent::new(EVENT_ORDER_REFUSED, subject)
             };
+            // Client modules' `SimEvent` ([`super::client_outbox`]).
+            self.forward_client_event(rules, &event);
             for handle in self
                 .trigger_runtime
                 .module_triggers()

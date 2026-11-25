@@ -865,6 +865,10 @@ pub(crate) fn schedule_command_in_sim(
             let record = sim.encode_cheer_record(owner_id)?;
             CommandEnvelope::synchronized(record, execute_tick)
         }
+        Command::ModuleMessage { source, data } => {
+            let record = sim.encode_module_message_record(owner_id, source, &data)?;
+            CommandEnvelope::synchronized(record, execute_tick)
+        }
         Command::ExitMatch => {
             let record = sim.encode_exit_record(owner_id)?;
             CommandEnvelope::synchronized(record, execute_tick)

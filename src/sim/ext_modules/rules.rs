@@ -81,6 +81,11 @@ pub struct WasmPolicy {
     /// such a seat's house starts with every domain claimed by the mod
     /// module (RFC 6i, `claims`).
     pub controller: bool,
+    /// The room switch "Allow automation" (global `AutomationAllowed`,
+    /// appendix 7.8): a room setting, not a `[VeraWasm]` key; the loader
+    /// sets it from the room's settings
+    /// ([`PreparedExtModules::set_automation_allowed`]).
+    pub automation_allowed: bool,
 }
 
 impl Default for WasmPolicy {
@@ -93,6 +98,7 @@ impl Default for WasmPolicy {
             map_wasm: true,
             map_ui: MapUi::Overlay,
             controller: false,
+            automation_allowed: false,
         }
     }
 }
@@ -125,6 +131,7 @@ impl WasmPolicy {
             map_wasm: section.read_bool("MapWasm", true),
             map_ui,
             controller: section.read_bool("Controller", false),
+            automation_allowed: false,
         })
     }
 
@@ -226,6 +233,11 @@ impl PreparedExtModules {
                 memory_seats: 0,
             });
         }
+        // A map notification whose ID a different mod name has rejects the
+        // map module (RFC 0001 section 3, step 7).
+        if let [first, second] = &modules[..] {
+            check_notify_collision(&first.module, &second.module)?;
+        }
         Ok(Self {
             policy,
             modules,
@@ -238,6 +250,13 @@ impl PreparedExtModules {
 
     pub fn policy(&self) -> &WasmPolicy {
         &self.policy
+    }
+
+    /// The room switch "Allow automation" (`PersonalRules::automation_allowed`;
+    /// a network room plays its host's), read as the global
+    /// `AutomationAllowed`. Off unless set.
+    pub fn set_automation_allowed(&mut self, allowed: bool) {
+        self.policy.automation_allowed = allowed;
     }
 
     /// The variables the modules declare, numbered as the match numbers
@@ -255,6 +274,20 @@ impl PreparedExtModules {
             .iter()
             .find(|m| !m.initialized && m.module.has_export(Export::Rules))
             .map(|m| m.source)
+    }
+}
+
+/// RFC 0001 section 3, step 7: notification names of the mod module
+/// (`first`) and the map module (`second`) that differ but share an ID
+/// reject the map module, naming both. The same name in both is one
+/// notification. Each module's own names were checked at its load.
+pub(super) fn check_notify_collision(first: &SimModule, second: &SimModule) -> Result<(), String> {
+    match vera20k_wasm_ext::sections::notify_collision(second.notify_names(), first.notify_names())
+    {
+        Some((map, mods)) => Err(format!(
+            "the map's rules module: its notification {map} has the same ID as the mod's {mods}"
+        )),
+        None => Ok(()),
     }
 }
 

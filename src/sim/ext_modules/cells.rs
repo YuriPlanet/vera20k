@@ -12,7 +12,7 @@
 //! | `IonStormActive` | `lightning_storm::raging` (LightningStorm::IsActive `0x0053A100`) |
 //! | `Zone.<MovementZone>` | `ZoneGrid::get_zone_id_native` (MapClass::GetZoneID `0x0056D230`, bridge check off): the connected area the pathfinder's zone precheck compares; `Unsupported` before the zones are built |
 //! | `Obstructed` | a building in the cell's ground list (`OccupancyGrid::first_building_on_layer`, Look_up_building_in_cell `0x0047C520`), or an overlay RecalcZoneType (`0x00483C80`) makes Wall or Impassable (`overlay_reduced_zone_type`: walls, rocks, wheel speed 0) |
-//! | `AutomationAllowed` | 0: the room switch "Allow automation" comes with phase 2 (client modules) |
+//! | `AutomationAllowed` | the room switch "Allow automation" (`ExtModules::automation_allowed`, from `PersonalRules::automation_allowed`), 0 by default |
 //!
 //! Residuals:
 //! - `CellTag` reads 0 for a cell without a tag; a tagged cell answers
@@ -206,9 +206,8 @@ impl Host<'_, '_> {
             "IonStormActive" => {
                 i64::from(crate::sim::superweapon::lightning_storm::raging(self.sim))
             }
-            // The room switch "Allow automation" (RFC 0001 6i) arrives with
-            // client modules; until then no room allows automation.
-            "AutomationAllowed" => 0,
+            // The room switch "Allow automation" (RFC 0001 6i, 10).
+            "AutomationAllowed" => i64::from(self.sim.ext_modules.automation_allowed),
             _ => return (0, Status::Unsupported),
         };
         (value, Status::Ok)

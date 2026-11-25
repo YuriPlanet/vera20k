@@ -502,6 +502,8 @@ impl Simulation {
         frame_effects: &mut FrameEffects<'_>,
         event: ModuleEvent,
     ) {
+        // Client modules' `SimEvent` ([`super::client_outbox`]).
+        self.forward_client_event(rules, &event);
         let triggers = self.trigger_runtime.module_triggers();
         let type_id = if triggers.has_type_bindings() {
             self.entities()
@@ -855,11 +857,12 @@ impl Simulation {
 
     /// The module phase's delivery for module `index`: its queued records go
     /// to `on_events` in batches of what the delivery area holds, 16 at most,
-    /// each with a whole budget. The first batch always starts, so
-    /// `ProductionAllowed` spending the frame's budget cannot starve
-    /// delivery; later batches start while the frame's use is below the
-    /// budget, up to [`MAX_RECORDS_PER_FRAME`] records. The rest wait, in
-    /// order, for the next frame. Records of a disabled or removed trigger,
+    /// each with a whole budget. The first batch always starts unless an
+    /// `on_message` call already did this frame (`messaged`, RFC section 5:
+    /// the first of either), so `ProductionAllowed` spending the frame's
+    /// budget cannot starve delivery; later batches start while the frame's
+    /// use is below the budget, up to [`MAX_RECORDS_PER_FRAME`] records.
+    /// The rest wait, in order, for the next frame. Records of a disabled or removed trigger,
     /// and every record once the game has ended, are dropped. The module
     /// stops when producers hit the queue cap or delivery leaves too much backlog.
     pub(super) fn deliver_ext_module_events(
@@ -868,6 +871,7 @@ impl Simulation {
         overlay_registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
         index: usize,
+        messaged: bool,
     ) -> Result<(), Fault> {
         let Some(slot) = self.ext_modules.slots.get(index) else {
             return Ok(());
@@ -887,7 +891,7 @@ impl Simulation {
         let mut delivered = 0;
         while delivered < ready {
             let slot = &mut self.ext_modules.slots[index];
-            if !slot.may_start_call(frame) && delivered > 0 {
+            if !slot.may_start_call(frame) && (delivered > 0 || messaged) {
                 break;
             }
             let budget = slot.frame_budget;
