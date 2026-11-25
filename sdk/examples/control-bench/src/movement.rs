@@ -6,7 +6,8 @@
 //! a delivered `Commanded`, `Deployed` or `OrderRefused`), on objects this
 //! area creates in its arena:
 //! - player tanks (`MTNK`): `MoveFrame` then `Push` then `SetFacing` on one,
-//!   `PathFound`, `IdleMission` and `MissionStep` on one each, driven with
+//!   `PathFound`, `IdleMission`, `MissionStep` and `ApproachPoint` (an
+//!   attack on a sleeping computer GI) on one each, driven with
 //!   `Action::set_mission`. Their decisions come in the units' own turns,
 //!   outside this module's call (a decision raised inside the module's own
 //!   call, such as the receiver of a `SetMission` write, skips the module's
@@ -14,16 +15,15 @@
 //! - computer-house objects, ordered through `House::order` (queued, run in
 //!   the next frame's command step, so `CommandAllowed` and `DestinationSet`
 //!   reach this module): a Chrono Miner for `CommandAllowed` and
-//!   `DestinationSet`, a tank (weapons off) attacking a player tank for
-//!   `ApproachPoint` (beside a player tank attacking a sleeping computer GI,
-//!   the engine test's shape; either one marks), a Siege Chopper (an MCV if it is never asked) on level
+//!   `DestinationSet`, a Siege Chopper (an MCV if it is never asked) on level
 //!   ground for `DeployAllowed`; each removed once done. A GI's deploy
 //!   command is not used: `Mission_Unload` deploys a standing infantryman
 //!   without asking `DeployAllowed` (`src/sim/deploy.rs`
 //!   `infantry_mission_unload`); only the walking one's pending deploy asks;
 //! - the computer house's own harvesters (`HarvestCell`) and production
-//!   (`ProductionQueued` on the first type its factories start, then
-//!   `ProductionAllowed` on the type they started most). The module's own `QueueProduction` is not used: a
+//!   (`ProductionQueued` on the first type its factories start,
+//!   `ProductionAllowed` on a type they started twice; the house gets 10000
+//!   credits early so they keep starting things). The module's own `QueueProduction` is not used: a
 //!   module order checks the player's prerequisites.
 //!
 //! A `MoveFrame` decider that never answers (the observer) reads the NavCom
@@ -169,15 +169,7 @@ static MS: V = V::new(0);
 static MS_AT: V = V::new(0);
 static MS_DEST: V = V::new(0);
 
-// ApproachPoint: the player's tank is the target, a computer tank attacks.
-static T_AP: V = V::new(0);
-static AP_ATTACKER: V = V::new(0);
-static AP: V = V::new(0);
-static AP_AT: V = V::new(0);
-static AP_CELL: V = V::new(0);
-static AP_SEEN: V = V::new(0);
-static AP_NAV_LOGGED: V = V::new(0);
-// The engine test's shape too: a player tank attacks a computer GI (weapons
+// ApproachPoint, the engine test's shape: a player tank attacks a computer GI (weapons
 // off, asleep) seven cells away, inside its sight and out of its range.
 static T_AP2: V = V::new(0);
 static AP2_TARGET: V = V::new(0);
@@ -364,19 +356,6 @@ pub fn open() {
         MS_DEST.set(pick(cell_of(tank), &[(3, -2), (3, 2), (-3, 2), (-3, -2)]).0);
         decider(Event::MISSION_STEP, tank, KEY_MS);
     }
-    if let Some(tank) = put(&T_AP, offset(a, -2, 8), "MTNK", me) {
-        let _ = Modifier::override_(tank, Prop::DisableWeapons, 1, -1);
-        // A computer tank ten cells south attacks it; the module heads that
-        // tank further south instead.
-        if let Some(attacker) = put(&AP_ATTACKER, offset(cell_of(tank), 0, 10), "MTNK", them) {
-            let _ = Modifier::override_(attacker, Prop::DisableWeapons, 1, -1);
-            let from = cell_of(attacker);
-            AP_CELL.set(pick(from, &[(0, 2), (2, 2), (-2, 2), (2, 0), (-2, 0)]).0);
-            decider(Event::APPROACH_POINT, attacker, KEY_AP);
-            observe(attacker);
-        }
-    }
-
     if let Some(tank) = put(&T_AP2, offset(a, 3, 7), "MTNK", me) {
         let at = cell_of(tank);
         if let Some(gi) = put(&AP2_TARGET, offset(at, 0, 7), "E1", them) {
@@ -419,7 +398,6 @@ pub fn frame(now: i32) {
     path_found(now, since);
     idle_mission(now, since);
     mission_step(now, since);
-    approach_point(now, since);
     approach_point_player(now, since);
     command_allowed(now, since);
     destination_set(now);
@@ -857,59 +835,10 @@ fn decide_step(mut d: MissionStepDecision) {
 
 // -------------------------------------------------------- ApproachPoint
 
-/// A computer tank (weapons off) ten cells south of the player's tank is
-/// ordered to attack it (`House::order` Attack, the player command the
-/// engine test drives); every approach answers a cell further south, which
-/// must become its destination (seen by the `MoveFrame` observer) or where
-/// it must arrive. The tank goes afterwards.
-fn approach_point(now: i64, since: i64) {
-    let attacker = AP_ATTACKER.unit();
-    match AP.get() {
-        0 if since >= 15 => {
-            if !alive(attacker) || !alive(T_AP.unit()) {
-                diag_unit("ApproachPoint units missing", attacker, AP_CELL.cell());
-                ap_finish();
-                return;
-            }
-            let units = [attacker];
-            if enemy().order(&Order::attack(&units, T_AP.unit())).is_ok() {
-                AP_AT.set(now);
-                AP.set(1);
-            } else {
-                diag_unit(
-                    "ApproachPoint attack order failed",
-                    attacker,
-                    AP_CELL.cell(),
-                );
-                ap_finish();
-            }
-        }
-        1 if now > AP_AT.get() + 300 => {
-            diag_unit(
-                "ApproachPoint not asked, attacker",
-                attacker,
-                cell_of(T_AP.unit()),
-            );
-            ap_finish();
-        }
-        2 => {
-            if AP_SEEN.get() == 1 || dist(cell_of(attacker), AP_CELL.cell()) <= 1 {
-                mark("movement.ApproachPoint");
-                ap_finish();
-            } else if now > AP_AT.get() + 300 || !alive(attacker) {
-                diag_unit("ApproachPoint answered, attacker", attacker, AP_CELL.cell());
-                bench_fail(
-                    "movement.ApproachPoint",
-                    "the tank did not head for the module cell",
-                );
-                ap_finish();
-            }
-        }
-        _ => {}
-    }
-}
-
-/// The player tank's attack on the GI (see `T_AP2`).
+/// A player tank ordered (`SetMission` Attack) onto a sleeping computer
+/// GI (weapons off) seven cells away, in sight and out of range, as the
+/// engine test does: every approach answers a cell two cells north, which
+/// must become its NavCom (seen by the observer) or where it arrives.
 fn approach_point_player(now: i64, since: i64) {
     let tank = T_AP2.unit();
     let gi = AP2_TARGET.unit();
@@ -935,6 +864,10 @@ fn approach_point_player(now: i64, since: i64) {
                 ap2_finish();
             } else if now > AP2_AT.get() + 300 {
                 diag_unit("ApproachPoint answered, player tank", tank, AP2_CELL.cell());
+                bench_fail(
+                    "movement.ApproachPoint",
+                    "the tank did not head for the module cell",
+                );
                 ap2_finish();
             }
         }
@@ -954,14 +887,6 @@ fn ap2_finish() {
     AP2.set(DONE);
 }
 
-fn ap_finish() {
-    let attacker = AP_ATTACKER.unit();
-    if alive(attacker) {
-        let _ = Action::remove(attacker);
-    }
-    AP.set(DONE);
-}
-
 fn decide_approach(mut d: ApproachPointDecision) {
     if d.unit().0 == T_AP2.get() && matches!(AP2.get(), 1 | 2) {
         if d.target().0 != AP2_TARGET.get() || d.chosen().is_none() {
@@ -972,18 +897,6 @@ fn decide_approach(mut d: ApproachPointDecision) {
             AP2_AT.set(tick());
             AP2.set(2);
         }
-        return;
-    }
-    if d.unit().0 != AP_ATTACKER.get() || !matches!(AP.get(), 1 | 2) {
-        return;
-    }
-    if d.target().0 != T_AP.get() || d.chosen().is_none() {
-        bench_fail("movement.ApproachPoint", "the request named another target");
-    }
-    d.set_cell(AP_CELL.cell());
-    if AP.get() == 1 {
-        AP_AT.set(tick());
-        AP.set(2);
     }
 }
 
@@ -1009,21 +922,6 @@ fn decide_observe(d: MoveFrameDecision) {
         } else if navcom == CMD_NATIVE.cell() {
             DS_NATIVE.set(1);
         }
-    }
-    if unit == AP_ATTACKER.get() && AP.get() == 2 && navcom == AP_CELL.cell() {
-        AP_SEEN.set(1);
-    }
-    if unit == AP_ATTACKER.get() && AP.get() == 1 && AP_NAV_LOGGED.get() == 0 && d.moving() {
-        // Moving without an ApproachPoint request: what is it heading for?
-        AP_NAV_LOGGED.set(1);
-        let mut line = Line::new();
-        line.text("movement diag ApproachPoint attacker moves unasked, NavCom object ")
-            .num(i64::from(d.destination().0 == T_AP.get()))
-            .text(" cell ")
-            .num(i64::from(navcom.x()))
-            .text(",")
-            .num(i64::from(navcom.y()));
-        line.log();
     }
     if unit == T_AP2.get() && AP2.get() == 2 && navcom == AP2_CELL.cell() {
         AP2_SEEN.set(1);
@@ -1487,6 +1385,11 @@ fn prod_diag(what: &str, ty: i64, a: i64, b: i64) {
 /// frames, while its native answer says the house could build it, no start
 /// of it may be asked; allowed back, one more start must come.
 fn production(now: i64, since: i64) {
+    // Money early, so the computer's factories keep starting things.
+    if since == 5 {
+        let _ = Action::add_money(enemy(), 10000);
+    }
+    production_allowed(now, since);
     let ty = TypeRef::new(NameKind::TechnoType, PROD_TYPE.get() as i32);
     match PQ.get() {
         0 if PQ_NO.get() >= 1 && PQ_AT.get() == 0 => {
@@ -1524,22 +1427,49 @@ fn production(now: i64, since: i64) {
         }
         _ => {}
     }
-    if PQ.get() != DONE {
-        return;
+    if PQ.get() == DONE && PA.get() == DONE {
+        disable(&TR_PQ);
+        disable(&TR_PQ2);
+    }
+}
+
+/// `ProductionAllowed` on the type the computer's factories have started
+/// at least twice (not the one `ProductionQueued` is refusing): forbidden
+/// for 300 frames, while its native answer says the house could build it,
+/// no start of it may be asked; allowed back, one more start must come.
+fn production_allowed(now: i64, since: i64) {
+    if since == 5900 && PA.get() != DONE {
+        let best = (0..STARTS.len())
+            .map(|s| STARTS[s].get())
+            .max()
+            .unwrap_or(0);
+        let mut line = Line::new();
+        line.text("movement diag ProductionAllowed at the end: state ")
+            .num(PA.get())
+            .text(" type ")
+            .num(PA_TYPE.get())
+            .text(" most starts ")
+            .num(best)
+            .text(" forbid asks ")
+            .num(PA_NO.get())
+            .text(" native yes ")
+            .num(PA_NATIVE.get())
+            .text(" allow asks ")
+            .num(PA_YES.get());
+        line.log();
     }
     let slot = PA_SLOT.get() as usize;
     match PA.get() {
         0 => {
-            let least = if since > 4000 { 2 } else { 3 };
+            let least = 2;
             let Some(best) = (0..STARTS.len())
-                .filter(|&s| TYPE_IDS[s].get() >= 0)
+                .filter(|&s| {
+                    TYPE_IDS[s].get() >= 0
+                        && (PQ.get() == DONE || TYPE_IDS[s].get() != PROD_TYPE.get())
+                })
                 .max_by_key(|&s| STARTS[s].get())
                 .filter(|&s| STARTS[s].get() >= least)
             else {
-                if since > 5800 {
-                    log("movement diag ProductionAllowed: no type started twice");
-                    PA.set(DONE);
-                }
                 return;
             };
             let id = TYPE_IDS[best].get();
@@ -1597,11 +1527,7 @@ fn production(now: i64, since: i64) {
                 PA.set(DONE);
             }
         }
-        DONE => {
-            disable(&TR_PA);
-            disable(&TR_PQ);
-            disable(&TR_PQ2);
-        }
+        DONE => disable(&TR_PA),
         _ => {}
     }
 }
