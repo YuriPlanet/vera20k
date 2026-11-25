@@ -348,14 +348,16 @@ pub(super) fn build_shell_text_draws(
     shell_draws
 }
 
-/// The words `0x102`'s widgets show ([`crate::ui::skirmish_shell::page::sync`]).
-pub(crate) fn skirmish_labels(
-    frontend: &FrontendState,
-    match_state: &MatchState,
-    process_assets: &ProcessAssets,
-) -> crate::ui::skirmish_shell::page::SkirmishLabels {
-    use crate::skirmish_launch::{NATIVE_TEAMS, SKIRMISH_MAX_SLOT_COUNT};
-    let shell = &frontend.skirmish_shell_state;
+/// The combo entries the page's labels answer for: every item a row's list can
+/// draw, the country catalog, and the two menus. The Team items come from the
+/// same owner as the Team combos ([`crate::ui::skirmish_shell::team_items`]),
+/// so a map past gamemd's eight starts labels E..O instead of leaving them
+/// blank.
+fn label_items(
+    shell: &crate::ui::skirmish_shell::SkirmishShellState,
+    maps: &[crate::map::scenario_menu::MapMenuEntry],
+) -> Vec<SkirmishComboItem> {
+    use crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT;
     let ai = [
         SkirmishAiRowType::None,
         SkirmishAiRowType::Easy,
@@ -366,20 +368,31 @@ pub(crate) fn skirmish_labels(
     let starts = std::iter::once(LaunchStartPosition::Auto)
         .chain((0..SKIRMISH_MAX_SLOT_COUNT as u8).map(LaunchStartPosition::Position))
         .map(SkirmishComboItem::Start);
-    let teams = (-2..i32::from(NATIVE_TEAMS)).map(SkirmishComboItem::Team);
+    let teams = crate::ui::skirmish_shell::team_items(shell, maps);
     // VERA's Quick Team Setup and Bulk Seat Actions: their items as the
     // rows stand now, a greyed one with why.
-    let maps = frontend.scenario_catalog.shell_maps();
     let menus = [SkirmishComboId::TeamMenu, SkirmishComboId::SeatMenu]
         .into_iter()
         .flat_map(|menu| crate::ui::skirmish_shell::combo_items(shell, maps, menu));
-    let items = ai
-        .into_iter()
+    ai.into_iter()
         .chain(shell.country_catalog.items().iter().copied())
         .chain([SkirmishComboItem::ColorSentinel(-2)])
         .chain(starts)
         .chain(teams)
         .chain(menus)
+        .collect()
+}
+
+/// The words `0x102`'s widgets show ([`crate::ui::skirmish_shell::page::sync`]).
+pub(crate) fn skirmish_labels(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) -> crate::ui::skirmish_shell::page::SkirmishLabels {
+    let shell = &frontend.skirmish_shell_state;
+    let maps = frontend.scenario_catalog.shell_maps();
+    let items = label_items(shell, maps)
+        .into_iter()
         .map(|item| {
             (
                 item,
@@ -1025,6 +1038,45 @@ mod tests {
         assert_eq!(room_team_label(3), None);
         assert_eq!(room_team_label(4).as_deref(), Some("E"));
         assert_eq!(room_team_label(14).as_deref(), Some("O"));
+    }
+
+    fn map_entry_with_starts(start_count: usize) -> crate::map::scenario_menu::MapMenuEntry {
+        crate::map::scenario_menu::MapMenuEntry {
+            file_name: "map.mmx".to_string(),
+            display_name: "map.mmx".to_string(),
+            author: None,
+            preview: Default::default(),
+            multiplayer_start_waypoints: (0..start_count)
+                .map(|index| crate::map::waypoints::Waypoint {
+                    index: index as u32,
+                    rx: index as u16,
+                    ry: index as u16,
+                })
+                .collect(),
+            player_capacity: start_count as i32,
+            preview_source_bounds: None,
+        }
+    }
+
+    #[test]
+    fn team_labels_cover_every_item_the_team_combo_offers() {
+        let shell = crate::ui::skirmish_shell::SkirmishShellState::default();
+        let maps = [map_entry_with_starts(13)];
+        let offered =
+            crate::ui::skirmish_shell::combo_items(&shell, &maps, SkirmishComboId::Team(0));
+        assert!(
+            offered.contains(&SkirmishComboItem::Team(14)),
+            "a map past gamemd's eight starts runs teams to O"
+        );
+        let labels = label_items(&shell, &maps);
+        let teams: Vec<_> = labels
+            .into_iter()
+            .filter(|item| matches!(item, SkirmishComboItem::Team(_)))
+            .collect();
+        assert_eq!(
+            teams, offered,
+            "the Team column's labels must name every item its list offers"
+        );
     }
 
     #[test]
