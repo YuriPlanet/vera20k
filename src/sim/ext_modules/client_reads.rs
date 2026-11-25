@@ -162,6 +162,7 @@ const CLIENT_PROPERTIES: &[&str] = &[
     "Items",
     "ItemTooltips",
     "Fill",
+    "Backdrop",
     "Cell",
     "Viewer",
     "IsSpectator",

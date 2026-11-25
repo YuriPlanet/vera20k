@@ -4,7 +4,7 @@
 
 | | |
 | --- | --- |
-| RFC 版本 | 0.0.24 |
+| RFC 版本 | 0.0.25 |
 | 状态 | 草案（Draft） |
 | 创建日期 | 2026-11-16 |
 | 涉及的 API | `vera:sim@1`、`vera:client@1`（提议） |
@@ -1118,6 +1118,7 @@ SDK 与模板按对象或所属方错开周期任务。读多个对象或属性�
 
 - **0.0.22**（2026-11-25）：新增单位控制点事件（附录 4.3、4.5）：只可决定的 `FireAllowed`、`Retaliate`、`DestinationSet`、`CrushAllowed`、`HarvestCell`、`DeployAllowed`（preview），投递的 `Deployed`、`Promoted`、`ExperienceGained`、`Cloaked`、`Decloaked`（v1）和 `MissionChanged`（later），从 100044 起编号。`TargetChanged`、`Detonated`、`Crushed`、`SpiedBy`、`ThievedBy` 升为 v1。`Birth` 覆盖部署、幸存者和乘员，进驻的乘客事件覆盖离开，`FatalDamage` 覆盖没有伤害提交的死亡。`SpeedMultiplier` 也作用于飞行、喷气背包和火箭的移动。
 - **0.0.24**（2026-11-25）：按阶段 2 的实现补全客户端模块的规定（第 10 节）：模块可以给自己新建的节点写一次 `Name`（同一来源内不重名，地图模块与地图的 `[VeraUI]` 部件同属一组），`client_node_find` 因此能找到模块的节点；`client_init` 和 `client_on_start` 各有一份一次性额度；观战者发出的消息被丢弃；本机加载失败的 `ui.wasm` 只停用该模块，不阻止开局；只有 `ui.wasm` 的对局也转发 `SimEvent`；读档后客户端模块重新启动（它们从不存档），本机存储保留；`Art` 按名字在第一次用到时加载。
+- **0.0.25**（2026-11-25）：客户端节点的外观（附录 7.10）：模块节点和地图部件的图片按钮把 `Label` 画在图片上，禁用、悬停、按下时图片分别变暗、变亮、变暗；新增文字属性 `Backdrop`（属性 228），为 0 时战场上的文字不垫黑底。
 - **0.0.23**（2026-11-25）：按引擎能做到的程度定下射击方案和抛射体弹道（第 9 节）：`Fire` 和 `FatalDamage` 的决定形式、`Launch`、`ProjectileFrame` 进入预览；写明模块路径替换制导和 Vertical 分支连同其中的引爆判定、普通尾段对所有模块路径执行、定点数换算和每轴 2,048 的上限、路径的计算方法、射击方案不询问的分支和仍作用于原生目标的效果；`FatalDamage` 的结果改为死亡方案位（附录 4.3），去掉引擎没有的“留下残骸”；新增预览的单位级决定 `IdleMission`、`HarvestCell`；所属方领域认领覆盖此前没有设门的电脑任务分支（第 6i 节）；抛射体属性（附录 7.4）进入预览；删去 Phobos `Trajectory=` 和帧数引信的现行说法。
 - **0.0.21**（2026-11-24）：模块用 `ini_register` 在初始化时注册 INI 键、注册表和模块事件，开局时引擎把规则中出现的已注册名字交给处理函数，新增 `ModuleEvent`、`RaiseEvent` 和带参数的模块动作（第 6h 节）。模块可以按领域认领电脑所属方，客户端模块可以替本玩家操作，新增 `OrderRefused`、`SimEvent` 和驱动所属方的读取面；推翻 0.0.20 的“版本 1 不做所属方接管”（第 6i 节，待定问题 18）。mod 默认额度改为 500,000，新增席位额度和玩家设置的额度。`EventRecord` 增至 120 字节。
 

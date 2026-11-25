@@ -158,6 +158,14 @@ pub(crate) struct Placed {
     /// Drawn greyed out: a client module's button or list it disabled
     /// (`app::ui_modules::paint`). A layout's own part never is.
     pub disabled: bool,
+    /// A node of the client modules' tree (`app::ui_modules::paint`): a
+    /// button with a picture shows its label over it, and the picture dims
+    /// while disabled, brightens under the pointer and darkens while held.
+    /// A layout's own picture button shows its picture alone.
+    pub node: bool,
+    /// A text over the battlefield stands on black (a node's `Backdrop`;
+    /// a layout's own text always does).
+    pub backdrop: bool,
 }
 
 /// A bar's size when the layout gives it none.
@@ -168,6 +176,12 @@ const DISABLED: [f32; 3] = [128.0 / 255.0; 3];
 
 /// How much of the side's colour fills a button under the pointer.
 const HOVER_SHADE: f32 = 0.25;
+
+/// What a node's button picture is multiplied by: disabled, held down and
+/// under the pointer (`Placed::node`).
+const PICTURE_DISABLED: [f32; 3] = [0.45; 3];
+const PICTURE_PRESSED: [f32; 3] = [0.75; 3];
+const PICTURE_HOVERED: [f32; 3] = [1.3; 3];
 
 /// What a client module wrote on part `index`'s node, read as the part
 /// draws: none while the chrome has no node for it.
@@ -352,6 +366,8 @@ pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
                 fill,
                 lines,
                 disabled: false,
+                node: false,
+                backdrop: true,
             }
         })
         .collect();
@@ -578,7 +594,8 @@ impl PartsHud {
     }
 
     /// Bring the tree to `parts`. A picture is not stretched: it draws at
-    /// its own size from the part's corner. A button without one is a fill
+    /// its own size from the part's corner; a node's button draws its label
+    /// over it, one pixel down and right while held. A button without one is a fill
     /// inside a one-pixel frame in `tint`, the fill black and the label in
     /// `tint`, the two swapped while it is held down; under the pointer the
     /// fill is `tint` at a quarter ([`HOVER_SHADE`]). A disabled part draws
@@ -593,15 +610,41 @@ impl PartsHud {
             }
             let tint = if part.disabled { grey } else { side };
             if let Some(picture) = part.picture {
+                let looks = part.node && part.button;
+                let shade = if !looks {
+                    None
+                } else if part.disabled {
+                    Some(PICTURE_DISABLED)
+                } else if part.pressed {
+                    Some(PICTURE_PRESSED)
+                } else if part.hovered {
+                    Some(PICTURE_HOVERED)
+                } else {
+                    None
+                };
                 let draw = NodeDraw {
                     picture: Some(Picture {
                         uv_origin: picture.uv_origin,
                         uv_size: picture.uv_size,
                         pixel_size: picture.pixel_size,
                     }),
+                    tint: shade,
                     ..Default::default()
                 };
                 self.nodes.picture(rect_of(part.rect), draw);
+                if looks && !part.text.is_empty() {
+                    let [x, y, width, height] = part.rect;
+                    let [across, down] = BUTTON_PAD;
+                    let held = i32::from(part.pressed);
+                    let words = [
+                        x.saturating_add(across + held),
+                        y.saturating_add(down + held),
+                        width.saturating_sub(2 * across),
+                        height.saturating_sub(2 * down),
+                    ];
+                    self.nodes
+                        .text(rect_of(words), &part.text, tint, NodeDraw::default());
+                }
                 continue;
             }
             let [x, y, width, height] = part.rect;
@@ -647,7 +690,7 @@ impl PartsHud {
             if part.button {
                 self.fill(part.rect, tint);
                 self.fill(grown(part.rect, -1), fill);
-            } else if self.holder == Holder::Field {
+            } else if self.holder == Holder::Field && part.backdrop {
                 // Over the battlefield a text stands on black, one pixel out
                 // on every side, as the timers' and the messages' text does.
                 self.fill(grown(part.rect, 1), black);
@@ -787,6 +830,8 @@ mod tests {
             fill: None,
             lines: Vec::new(),
             disabled: false,
+            node: false,
+            backdrop: true,
         }
     }
 

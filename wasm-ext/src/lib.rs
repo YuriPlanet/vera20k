@@ -297,6 +297,8 @@ pub const PROPERTIES: &[&str] = &[
     "Obstructed",
     // 7.8 global
     "AutomationAllowed",
+    // 7.10 client nodes (0.0.25)
+    "Backdrop",
 ];
 
 /// `Domain` (appendix 8.3, enum 25): the bits of a house's `ControlDomains`.

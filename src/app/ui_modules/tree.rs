@@ -203,6 +203,9 @@ enum NodeProp {
     ItemProgress,
     ItemTooltips,
     Fill,
+    /// A text's black underlay over the battlefield (1, the default) or
+    /// none (0).
+    Backdrop,
     /// `Decoration`'s (`Anchor`, `Palette`, `Tint`, ...): `later`.
     Decoration,
 }
@@ -245,6 +248,7 @@ fn node_prop(prop: i32) -> Result<Option<NodeProp>, Invalid> {
         "ItemProgress" => NodeProp::ItemProgress,
         "ItemTooltips" => NodeProp::ItemTooltips,
         "Fill" => NodeProp::Fill,
+        "Backdrop" => NodeProp::Backdrop,
         "Anchor" | "Palette" | "Tint" | "TintIntensity" | "Anim" | "HideAnchor" | "Number" => {
             NodeProp::Decoration
         }
@@ -348,6 +352,9 @@ struct Record {
     clickable: bool,
     hoverable: bool,
     dismissable: bool,
+    /// A text over the battlefield stands on black (appendix 7.10
+    /// `Backdrop`).
+    backdrop: bool,
     /// A map's text part's `Value=`, kept up to date by the layout until a
     /// module writes its `Label`.
     value: Option<TextValue>,
@@ -373,6 +380,7 @@ impl Record {
             clickable: kind == Kind::Button,
             hoverable: false,
             dismissable: false,
+            backdrop: true,
             value: None,
             command: None,
             item_tooltips: String::new(),
@@ -479,8 +487,8 @@ pub(crate) struct UiTree {
     /// The button of this tree's a left press went down on, until the
     /// release.
     held: Option<NodeId>,
-    /// Moves whenever [`UiTree::button_look`] may answer otherwise, for the
-    /// redraw gate ([`UiTree::looks`]).
+    /// Moves whenever [`UiTree::button_look`] or [`UiTree::backdrop`] may
+    /// answer otherwise, for the redraw gate ([`UiTree::looks`]).
     looks: u64,
     /// The picture names written on this tree's nodes (`Art`) since the
     /// last take ([`UiTree::take_named_art`]).
@@ -774,6 +782,7 @@ impl UiTree {
             NodeProp::Dismissable => i64::from(record.dismissable),
             NodeProp::Clickable => i64::from(record.clickable),
             NodeProp::Hoverable => i64::from(record.hoverable),
+            NodeProp::Backdrop if record.kind == Kind::Text => i64::from(record.backdrop),
             NodeProp::Fill if record.kind == Kind::Bar => match gui.get(node, Prop::Fill) {
                 Ok(Some(Value::Int(fill))) => i64::from(*fill),
                 _ => 0,
@@ -902,6 +911,14 @@ impl UiTree {
                 record.hoverable = value != 0;
                 Status::Ok
             }
+            NodeProp::Backdrop if record.kind == Kind::Text => {
+                if record.backdrop != (value != 0) {
+                    record.backdrop = value != 0;
+                    // Not the GUI's: the redraw gate learns of it here.
+                    self.looks += 1;
+                }
+                Status::Ok
+            }
             NodeProp::Fill if record.kind == Kind::Bar => {
                 gui_set(gui, Prop::Fill, Value::Int(value.clamp(0, 100) as i32))
             }
@@ -1021,6 +1038,17 @@ impl UiTree {
             hovered: pointed && self.held.is_none(),
             pressed: pointed && self.held == Some(node),
         }
+    }
+
+    /// Whether text `node` stands on black over the battlefield (appendix
+    /// 7.10 `Backdrop`); a node this tree does not know does.
+    pub(crate) fn backdrop(&self, node: NodeId) -> bool {
+        let table = self.table.borrow();
+        table
+            .by_node
+            .get(&node)
+            .and_then(|serial| table.records.get(serial))
+            .is_none_or(|record| record.backdrop)
     }
 
     /// What the buttons' looks are judged by in a redraw

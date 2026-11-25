@@ -525,7 +525,7 @@ the battlefield.
 | `Type` | `Button` or `Text`. `Row`, `Column` and `CameoGrid` are below, `Image`, `Bar` and `List` in [Parts for interface modules](#parts-for-interface-modules) |
 | `Command` | For a button: what a click does. See [Commands](#commands). A button with a `Label` or an `Art` may leave it out: a click then only tells the interface modules |
 | `Label` | For a button without a picture: the words on it. For a text, in place of `Value`: words that stay as written until a module changes them. It is the name of a line in the game's string table, like `GUI:Stop`, and shows that line's text; a name the table doesn't have shows as `MISSING:'name'`, as everywhere else in the game (and the name itself while no table is loaded). Without `Label` the button's label is its command's name, looked up the same way |
-| `Art` | For a button: its picture, an SHP file like `mybutton.shp`. Frame 0 is the button and frame 1 the button held down. It uses the sidebar's palette (`sidebar.pal`), as the command bar's buttons do |
+| `Art` | For a button: its picture, an SHP file like `mybutton.shp`. Frame 0 is the button and frame 1 the button held down. It uses the sidebar's palette (`sidebar.pal`), as the command bar's buttons do. In a map's `[VeraUI]` and on a client module's button, the `Label` is drawn over the picture, and the picture dims while the button is disabled and brightens under the mouse |
 | `Value` | For a text: what it shows. See [Values](#values). A text needs `Value` or `Label` |
 | `Hold` | The corner or edge of `Side` or `Field` the part is measured from: the nine words of [On the battlefield](#on-the-battlefield). `TopLeft` if you leave it out |
 | `X`, `Y` | How far in from there the part sits |

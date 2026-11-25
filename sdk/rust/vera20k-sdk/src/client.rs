@@ -423,6 +423,12 @@ impl Node {
         set(self, Prop::Fill, i64::from(percent))
     }
 
+    /// Whether a `Text` over the battlefield stands on black (the
+    /// default); off for a text on the module's own picture.
+    pub fn set_backdrop(self, backdrop: bool) -> Result<()> {
+        set(self, Prop::Backdrop, i64::from(backdrop))
+    }
+
     /// A `List`'s rows: the entries joined with `\n` in one call.
     /// `Err(Refused)` past 1 KiB in all.
     pub fn set_items(self, items: &[&str]) -> Result<()> {

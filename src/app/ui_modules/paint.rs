@@ -301,6 +301,8 @@ fn node_part(
         fill: None,
         lines: Vec::new(),
         disabled: !gui.enabled(node),
+        node: true,
+        backdrop: true,
     };
     match kind {
         // A map text's `Value=` is the value itself.
@@ -308,7 +310,8 @@ fn node_part(
             part.text = match text(Prop::Text) {
                 Some(value) => value.to_owned(),
                 None => label(text(Prop::Label).unwrap_or_default()),
-            }
+            };
+            part.backdrop = tree.backdrop(node);
         }
         NodeKind::Button => {
             // A disabled button neither hovers nor holds down.
@@ -428,7 +431,7 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::sim::ext_modules::MapUi;
     use vera20k_wasm_ext::client::node_kind;
-    use vera20k_wasm_ext::{NodeInit, property_id};
+    use vera20k_wasm_ext::{NodeInit, Status, property_id};
 
     fn prop(name: &str) -> i32 {
         property_id(name).unwrap_or_else(|| panic!("{name} is a property"))
@@ -622,6 +625,94 @@ mod tests {
         )
         .unwrap();
         assert_eq!(looks(&tree, &gui), (false, false, Some(0.0)));
+    }
+
+    /// A module's picture button draws its label over the picture, the
+    /// picture dimmed while disabled and brightened under the pointer; a
+    /// text with `Backdrop` 0 stands on no black, and the write moves the
+    /// redraw key.
+    #[test]
+    fn a_module_picture_button_shows_its_label_and_a_text_may_drop_its_backdrop() {
+        let (mut gui, mut tree, font) = (Gui::new(256), UiTree::new(), font());
+        let measure = FrameMeasure {
+            font: &font,
+            csf: None,
+            art: None,
+            values: None,
+        };
+        let create = |tree: &mut UiTree, gui: &mut Gui, kind: i32, init: &[NodeInit]| {
+            tree.create(gui, Source::Mod, MapUi::Overlay, kind, 0, init)
+                .unwrap()
+                .0
+        };
+        let buy = create(
+            &mut tree,
+            &mut gui,
+            node_kind::BUTTON,
+            &[init("Width", 40), init("Height", 20)],
+        );
+        for (name, bytes) in [("Art", &b"plate.pcx"[..]), ("Label", &b"aa"[..])] {
+            tree.set_bytes(&mut gui, Source::Mod, MapUi::Overlay, buy, prop(name), bytes)
+                .unwrap();
+        }
+        let words = create(&mut tree, &mut gui, node_kind::TEXT, &[init("Y", 40)]);
+        tree.set_bytes(&mut gui, Source::Mod, MapUi::Overlay, words, prop("Label"), b"a")
+            .unwrap();
+        tree.layout(&mut gui, Rect::new(0, 0, 800, 600), &measure);
+        let plate = |name: &str, _: bool| {
+            (name == "plate.pcx").then_some(SidebarChromeEntry {
+                uv_origin: [0.0; 2],
+                uv_size: [1.0; 2],
+                pixel_size: [40.0, 20.0],
+            })
+        };
+        let paint = |tree: &UiTree, gui: &Gui| {
+            let parts = placed_nodes(gui, tree, Layer::Panels, |label| label.to_owned(), plate);
+            let mut hud = PartsHud::new(Holder::Field);
+            let paint = hud.paint(&parts, [1.0; 3], [0.0; 2], &font);
+            let runs = paint.runs().to_vec();
+            let tints: Vec<_> = paint.instances().iter().map(|quad| quad.tint).collect();
+            (runs, tints)
+        };
+        // The picture, its two-letter label, then the text's black and letter.
+        let (runs, tints) = paint(&tree, &gui);
+        assert_eq!(
+            runs,
+            [
+                (Material::Pictures, 0..1),
+                (Material::Glyphs, 1..3),
+                (Material::Solid, 3..4),
+                (Material::Glyphs, 4..5),
+            ]
+        );
+        assert_eq!(tints[0], [1.0; 3]);
+        tree.pointer_move(&gui, 5, 5, None);
+        assert_eq!(paint(&tree, &gui).1[0], [1.3; 3], "brighter under the pointer");
+        tree.set(&mut gui, Source::Mod, MapUi::Overlay, buy, prop("Enabled"), 0)
+            .unwrap();
+        let (_, tints) = paint(&tree, &gui);
+        assert_eq!(tints[0], [0.45; 3], "dimmed while disabled");
+        assert_eq!(tints[1], [128.0 / 255.0; 3], "its label greyed");
+
+        let key = tree.looks();
+        tree.set(&mut gui, Source::Mod, MapUi::Overlay, words, prop("Backdrop"), 0)
+            .unwrap();
+        assert_ne!(tree.looks(), key, "a backdrop write asks for a redraw");
+        assert_eq!(
+            tree.get(&gui, words, prop("Backdrop")).unwrap(),
+            (0, Status::Ok)
+        );
+        let (runs, _) = paint(&tree, &gui);
+        assert!(
+            runs.iter().all(|(material, _)| *material != Material::Solid),
+            "no black under it: {runs:?}"
+        );
+        // Only a text has one.
+        assert_eq!(
+            tree.set(&mut gui, Source::Mod, MapUi::Overlay, buy, prop("Backdrop"), 0)
+                .unwrap(),
+            Status::Unsupported
+        );
     }
 
     /// The layers' revision moves with a module's write, a new node, a

@@ -236,4 +236,5 @@ impl Prop {
     pub const Zone_CrusherAll: Prop = Prop(225);
     pub const Obstructed: Prop = Prop(226);
     pub const AutomationAllowed: Prop = Prop(227);
+    pub const Backdrop: Prop = Prop(228);
 }
