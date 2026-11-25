@@ -679,7 +679,12 @@ pub(crate) fn render_shell_message_box_over_page(
     // The box's lists keep their widgets on the box as it lays out now.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     let _ = crate::app::updater::notes::sync(state);
-    #[cfg(any(windows, target_os = "macos", target_os = "linux", target_os = "android"))]
+    #[cfg(any(
+        windows,
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "android"
+    ))]
     let _ = crate::app::shell_mod_import::sync(state);
     let state = &*state;
     let (Some(overlay), Some(chrome)) = (
@@ -776,7 +781,12 @@ fn build_shell_message_box_overlay(
         ShellMessageBoxPurpose::UpdateOffer(_)
         | ShellMessageBoxPurpose::UpdateProgress
         | ShellMessageBoxPurpose::UpdateCheck => atlas.ra2_dialog_background,
-        #[cfg(any(windows, target_os = "macos", target_os = "linux", target_os = "android"))]
+        #[cfg(any(
+            windows,
+            target_os = "macos",
+            target_os = "linux",
+            target_os = "android"
+        ))]
         ShellMessageBoxPurpose::ModImport(_) => atlas.ra2_dialog_background,
         ShellMessageBoxPurpose::Notice
         | ShellMessageBoxPurpose::ModRestart(_)
@@ -844,6 +854,48 @@ fn build_shell_message_box_overlay(
         |id| pressed == Some(id),
         look,
     );
+    // Android: New Mod's name row, painted with the box itself so a click that
+    // rebuilds its widgets cannot drop it. It ends one button height above the
+    // buttons' top edge, and its hint uses the box's own text size.
+    #[cfg(target_os = "android")]
+    if matches!(message_box.purpose, ShellMessageBoxPurpose::ModMade(_)) {
+        if let Some(white) = atlas.white_pixel {
+            let ok = parts.button(0);
+            let scale = parts.scale.factor();
+            let row_h = (state.renderer.bit_font.cell_height() * scale).round() as i32;
+            let row_h = row_h.max(34);
+            let rect = RectPx::new(
+                parts.body.x,
+                (ok.y - ok.h - row_h).max(parts.body.y + parts.body.h + 4),
+                parts.body.w,
+                row_h,
+            );
+            shell_paint::push_tinted_entry(
+                &mut draw.sprites,
+                white,
+                rect,
+                [0.04, 0.04, 0.05],
+                EXIT_CONFIRM_MODAL_DEPTHS.button,
+            );
+            let hint = crate::i18n::tr("VERA:ModNewNameHint");
+            draw.text
+                .push(crate::render::shell_text::draw_in_rect_scaled(
+                    &state.renderer.bit_font,
+                    &hint,
+                    crate::render::shell_text::TextRect::of(RectPx::new(
+                        rect.x + 6,
+                        rect.y,
+                        rect.w - 12,
+                        rect.h,
+                    )),
+                    [0.66, 0.66, 0.66],
+                    ShellAlign::NONE,
+                    [0.0, 0.0],
+                    EXIT_CONFIRM_MODAL_DEPTHS.text,
+                    scale,
+                ));
+        }
+    }
     // The updater's offer lists what changed (`app::updater::notes`), and
     // Add Mod its parts, each from its list's widget: the lists lie on the
     // dialog's picture, which has no list backing, so their sprites go over
@@ -898,7 +950,12 @@ fn build_shell_message_box_overlay(
     }
     // Add Mod's parts, each row's text inset 4 pixels from both ends and cut
     // to its row: the list's `Items`, which its sync writes as they change.
-    #[cfg(any(windows, target_os = "macos", target_os = "linux", target_os = "android"))]
+    #[cfg(any(
+        windows,
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "android"
+    ))]
     let import_parts = crate::app::shell_mod_import::node(state).map(|node| {
         use crate::app::frontend::skirmish_shell_render::gui_paint::{GuiStyle, paint_gui_styled};
         let gui = state.frontend.shell_controller.gui();
@@ -919,7 +976,12 @@ fn build_shell_message_box_overlay(
             style,
         )
     });
-    #[cfg(any(windows, target_os = "macos", target_os = "linux", target_os = "android"))]
+    #[cfg(any(
+        windows,
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "android"
+    ))]
     let import_parts = import_parts.map(|mut import_parts| {
         let controls = import_parts.take_lane(crate::render::hud_paint::Material::Controls);
         draw.text.extend(import_parts.texts);
@@ -927,7 +989,12 @@ fn build_shell_message_box_overlay(
     });
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     draw.sprites.extend(notes.into_iter().flatten());
-    #[cfg(any(windows, target_os = "macos", target_os = "linux", target_os = "android"))]
+    #[cfg(any(
+        windows,
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "android"
+    ))]
     draw.sprites.extend(import_parts.into_iter().flatten());
     Some(draw)
 }

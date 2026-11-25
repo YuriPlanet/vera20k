@@ -1953,6 +1953,7 @@ mod sound;
 pub(crate) use sound::render_sound_shell;
 
 pub(crate) use chrome::type3_button_frames;
+pub(crate) use controls::push_new_edit;
 
 mod keyboard;
 mod lan_lobby;

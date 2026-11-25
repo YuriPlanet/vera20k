@@ -177,9 +177,16 @@ impl App {
             #[cfg(target_os = "android")]
             (mods_shell::DELETE, Self::picked_folder(state).is_some()),
             #[cfg(target_os = "android")]
-            (mods_shell::OPEN_FOLDER, Self::picked_folder(state).is_some()),
+            (
+                mods_shell::OPEN_FOLDER,
+                Self::picked_folder(state).is_some(),
+            ),
             #[cfg(target_os = "android")]
             (mods_shell::PIN, Self::picked_folder(state).is_some()),
+            #[cfg(target_os = "android")]
+            (mods_shell::NAME_OK, Self::name_dialog_open()),
+            #[cfg(target_os = "android")]
+            (mods_shell::NAME_CLOSE, Self::name_dialog_open()),
         ];
         let rect_of = |id| layout.rect_of(id);
         let nodes = mods_shell::nodes;
@@ -201,8 +208,17 @@ impl App {
                 &state.process_assets,
                 &state.persistence.options_profile,
             ),
-            #[cfg(any(windows, target_os = "macos", target_os = "linux", target_os = "android"))]
+            #[cfg(any(
+                windows,
+                target_os = "macos",
+                target_os = "linux",
+                target_os = "android"
+            ))]
             Some(mods_shell::ADD) => Self::open_add_mod(state),
+            #[cfg(target_os = "android")]
+            Some(mods_shell::NAME_OK) => Self::answer_name_dialog(state, true),
+            #[cfg(target_os = "android")]
+            Some(mods_shell::NAME_CLOSE) => Self::answer_name_dialog(state, false),
             #[cfg(target_os = "android")]
             Some(mods_shell::DELETE) => Self::delete_picked_mod(state),
             #[cfg(target_os = "android")]
@@ -632,6 +648,15 @@ impl App {
     /// (`app::new_mod`), picked in the list, under a box that says what it
     /// holds and offers to show it.
     fn make_new_mod(state: &mut AppState) {
+        #[cfg(target_os = "android")]
+        Self::open_name_dialog(state);
+        #[cfg(not(target_os = "android"))]
+        Self::make_mod_named(state, &tr("VERA:ModNewFolder"), true);
+    }
+
+    /// Makes a mod named `name` (the default name when it is blank), selects it
+    /// and, when `report`, says what it made.
+    fn make_mod_named(state: &mut AppState, name: &str, report: bool) {
         let Some(config) = state.platform.game_config.as_ref() else {
             return;
         };
@@ -646,9 +671,7 @@ impl App {
         )
         .map_err(std::io::Error::other)
         .and_then(|(original, _)| {
-            crate::app::new_mod::make(&mods_dir, &tr("VERA:ModNewFolder"), |file| {
-                original.get(file)
-            })
+            crate::app::new_mod::make(&mods_dir, name, |file| original.get(file))
         });
         let made = match made {
             Ok(made) => made,
@@ -671,10 +694,11 @@ impl App {
             made.copied.join(", ")
         );
         Self::select_installed_mod(state, &made.folder);
+        if !report {
+            return;
+        }
         let files = made.copied.join(", ");
         let text = tr_fill("VERA:ModMade", &[("mod", &made.folder), ("files", &files)]);
-        // Android has no file manager path into the app's folder, so the box
-        // only reports the folder it made.
         #[cfg(target_os = "android")]
         Self::open_shell_notice(
             &state.platform.window,
@@ -698,7 +722,287 @@ impl App {
         );
     }
 
-    /// Refresh the list and bring a mod we just added into view.
+    /// Android: New Mod's dialog keys: Enter makes the mod, Escape closes it,
+    /// anything else types into its edit.
+    #[cfg(target_os = "android")]
+    pub(crate) fn name_dialog_key(state: &mut AppState, event: &winit::event::KeyEvent) {
+        use winit::keyboard::PhysicalKey;
+        if !event.state.is_pressed() {
+            return;
+        }
+        let code = match event.physical_key {
+            PhysicalKey::Code(code) => code,
+            PhysicalKey::Unidentified(_) => return,
+        };
+        match code {
+            winit::keyboard::KeyCode::Enter | winit::keyboard::KeyCode::NumpadEnter => {
+                Self::answer_name_dialog(state, true);
+                return;
+            }
+            winit::keyboard::KeyCode::Escape => {
+                Self::answer_name_dialog(state, false);
+                return;
+            }
+            _ => {}
+        }
+        let shift = event.text.as_deref().is_none_or(|_| false)
+            || state.platform.live_modifiers.shift_key();
+        let inputs =
+            crate::ui::shell::controller::gui_inputs(Some(code), shift, event.text.as_deref());
+        for input in inputs {
+            state.frontend.shell_controller.on_input(input);
+        }
+        state.platform.window.request_redraw();
+    }
+
+    /// Android: New Mod's hidden edit node, whose live state holds the typed
+    /// name and its caret.
+    #[cfg(target_os = "android")]
+    fn name_edit_node(state: &AppState) -> Option<vera20k_gui::NodeId> {
+        let controller = &state.frontend.shell_controller;
+        let root = controller.root_in(mods_shell::DIALOG)?;
+        let gui = controller.gui();
+        gui.tree()
+            .children(root)
+            .ok()?
+            .iter()
+            .copied()
+            .find(|node| gui.id_of(*node) == Some(mods_shell::NAME_EDIT.into()))
+    }
+
+    /// Android: paints New Mod's dialog over the finished page, in the same
+    /// pass as the message boxes, so its panel, buttons and text sit above the
+    /// page's own text. Its edit is a hidden GUI control that only takes keys.
+    #[cfg(target_os = "android")]
+    pub(crate) fn draw_name_dialog_over(
+        state: &AppState,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Texture,
+    ) {
+        use crate::app::frontend::shell_pass::{ShellComposition, TexturedDraw};
+        use crate::render::shell_paint::{self, ModalButton, ModalDepths};
+        use crate::render::shell_text::TextRect;
+        use crate::ui::shell::geom::ShellAlign;
+        if !Self::name_dialog_open() {
+            return;
+        }
+        let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
+            return;
+        };
+        let layout = mods_layout(&state.renderer.gpu);
+        let scale = layout.page.scale;
+        let (panel, prompt, edit, ok, close) = mods_shell::name_dialog_rects(scale);
+        let mut sprites = Vec::new();
+        if let Some(art) = atlas.ra2_dialog_background {
+            shell_paint::push_entry_sized(
+                &mut sprites,
+                art,
+                panel.x as f32,
+                panel.y as f32,
+                [panel.w as f32, panel.h as f32],
+                0.00070,
+            );
+        } else if let Some(white) = atlas.white_pixel {
+            shell_paint::push_tinted_entry(&mut sprites, white, panel, [0.03, 0.03, 0.04], 0.00070);
+        }
+        let frames = crate::app::frontend::skirmish_shell_render::type3_button_frames(atlas);
+        sprites.extend(shell_paint::paint_modal_sprites(
+            None,
+            frames,
+            panel,
+            &[
+                ModalButton {
+                    rect: ok,
+                    pressed: false,
+                    enabled: true,
+                },
+                ModalButton {
+                    rect: close,
+                    pressed: false,
+                    enabled: true,
+                },
+            ],
+            scale,
+            ModalDepths {
+                background: 0.00072,
+                button: 0.00068,
+                text: 0.00060,
+            },
+        ));
+        let font = &state.renderer.bit_font;
+        let line = |text: &str, rect, rgb, align| {
+            crate::render::shell_text::draw_in_rect_scaled(
+                font,
+                text,
+                TextRect::of(rect),
+                rgb,
+                align,
+                [0.0, 0.0],
+                0.00060,
+                scale.factor(),
+            )
+        };
+        let mut text = Vec::new();
+        // Where the box's own text starts (`body`), as the Mods page's boxes
+        // do: the hint on the first line, the field under it, its height one
+        // line plus twice the text's top inset, and the name centred in it.
+        let body = mods_shell::name_body_rect(scale);
+        let line_h = (font.cell_height() * scale.factor()).round() as i32;
+        let inset = (2.0 * scale.factor()).round() as i32;
+        let prompt_rect = crate::ui::shell::geom::RectPx::new(body.x, body.y, body.w, line_h);
+        let field = crate::ui::shell::geom::RectPx::new(
+            body.x,
+            body.y + line_h + (line_h / 2).max(4),
+            body.w,
+            line_h + 2 * inset,
+        );
+        let _ = edit;
+        let node = Self::name_edit_node(state);
+        let edit_state = node
+            .and_then(|node| state.frontend.shell_controller.gui().edit_state(node))
+            .unwrap_or_default();
+        let caret = node.is_some_and(|node| state.frontend.shell_controller.caret_visible(node));
+        crate::app::frontend::skirmish_shell_render::push_new_edit(
+            &mut sprites,
+            &mut text,
+            atlas,
+            font,
+            &edit_state,
+            None,
+            field,
+            caret,
+            crate::render::shell_paint::SHELL_TEXT_RGB_ENABLED,
+            0.00060,
+            scale,
+        );
+        text.push(line(
+            &crate::i18n::tr("VERA:ModNewNameHint"),
+            prompt_rect,
+            crate::render::shell_paint::SHELL_TEXT_RGB_ENABLED,
+            ShellAlign::NONE,
+        ));
+        let enabled = crate::render::shell_paint::SHELL_TEXT_RGB_ENABLED;
+        text.push(line(
+            &tr("TXT_OK"),
+            ok,
+            enabled,
+            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+        ));
+        text.push(line(
+            &tr("VERA:Close"),
+            close,
+            enabled,
+            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+        ));
+        let draws = [TexturedDraw {
+            texture: &atlas.texture,
+            instances: sprites,
+        }];
+        crate::app::frontend::shell_pass::encode_shell_pass_over_page(
+            &state.renderer,
+            encoder,
+            destination,
+            "Mods Name Dialog",
+            ShellComposition {
+                draws: &draws,
+                text: &text,
+                cursor: None,
+                effects: None,
+                smooth_art: false,
+            },
+        );
+    }
+
+    /// Android: whether New Mod's name dialog is up.
+    #[cfg(target_os = "android")]
+    pub(crate) fn name_dialog_open() -> bool {
+        name_dialog::OPEN.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Android: shows New Mod's name dialog over the page.
+    #[cfg(target_os = "android")]
+    pub(crate) fn open_name_dialog(state: &mut AppState) {
+        name_dialog::OPEN.store(true, std::sync::atomic::Ordering::Relaxed);
+        state.platform.window.request_redraw();
+    }
+
+    /// Android: places the name dialog, hides it when closed and gives its edit
+    /// the keyboard when it opens. The page's own dialog keeps these widgets,
+    /// so typing survives a touch anywhere.
+    #[cfg(target_os = "android")]
+    pub(crate) fn sync_name_dialog(state: &mut AppState) {
+        use vera20k_gui::{Prop, Value};
+        let open = Self::name_dialog_open();
+        let layout = mods_layout(&state.renderer.gpu);
+        let scale = layout.page.scale;
+        let dialog = mods_shell::DIALOG;
+        let controller = &mut state.frontend.shell_controller;
+        controller.set_scale_in(dialog, scale);
+        let Some(root) = controller.root_in(dialog) else {
+            return;
+        };
+        let nodes = name_dialog::find(controller.gui(), root);
+        let Some(nodes) = nodes else {
+            return;
+        };
+        let (_, prompt, edit, ok, close) = mods_shell::name_dialog_rects(scale);
+        let _ = prompt;
+        let gui = controller.gui_mut();
+        // The edit takes keys only: the overlay paints the field, so its own
+        // widget is kept off-screen and never flashes before the overlay.
+        let off_screen =
+            crate::ui::shell::geom::RectPx::new(-4096, -4096, edit.w.max(1), edit.h.max(1));
+        for (node, rect) in [
+            (nodes.prompt, off_screen),
+            (nodes.edit, off_screen),
+            (nodes.ok, ok),
+            (nodes.close, close),
+        ] {
+            let _ = gui.set(node, Prop::Visible, Value::Bool(open));
+            let _ = gui.set(node, Prop::Rect, Value::Rect(rect));
+        }
+        let _ = gui.set(nodes.ok, Prop::Enabled, Value::Bool(open));
+        let _ = gui.set(nodes.close, Prop::Enabled, Value::Bool(open));
+        if open && !name_dialog::CLEARED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            let _ = gui.set(nodes.edit, Prop::Text, Value::Text(String::new()));
+            let _ = gui.set_focus(Some(nodes.edit));
+        }
+        if !open {
+            name_dialog::CLEARED.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    /// Android: OK makes the mod named in the row (the default when blank),
+    /// Close leaves it alone.
+    #[cfg(target_os = "android")]
+    pub(crate) fn answer_name_dialog(state: &mut AppState, ok: bool) {
+        use vera20k_gui::Prop;
+        name_dialog::OPEN.store(false, std::sync::atomic::Ordering::Relaxed);
+        let dialog = mods_shell::DIALOG;
+        let controller = &mut state.frontend.shell_controller;
+        let text = controller
+            .root_in(dialog)
+            .and_then(|root| name_dialog::find(controller.gui(), root))
+            .and_then(|nodes| match controller.gui().get(nodes.edit, Prop::Text) {
+                Ok(Some(vera20k_gui::Value::Text(text))) => Some(text.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        state.platform.window.request_redraw();
+        if !ok {
+            return;
+        }
+        let name = text.trim().to_owned();
+        let name = if name.is_empty() {
+            tr("VERA:ModNewFolder")
+        } else {
+            name
+        };
+        // The mod's own notice box reports it, as it always has.
+        Self::make_mod_named(state, &name, true);
+    }
+
+    /// Refresh the list and bring a mod we just added into view.    /// Refresh the list and bring a mod we just added into view.    /// Refresh the list and bring a mod we just added into view.
     pub(super) fn select_installed_mod(state: &mut AppState, folder: &str) {
         Self::refresh_mods_page(state);
         let selected = state.frontend.mods.page.as_ref().and_then(|rows| {
@@ -734,7 +1038,14 @@ impl App {
             );
         }
         #[cfg(target_os = "android")]
-        let _ = (window, renderer, frontend, process_assets, options_profile, dir);
+        let _ = (
+            window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            dir,
+        );
     }
 
     /// The page is gone and the route is the main menu's again. Back builds
@@ -846,5 +1157,42 @@ impl App {
             Self::close_mods_page(state);
             Self::confirm_quit(state);
         }
+    }
+}
+
+/// Android: New Mod's name dialog' open flag and whether its edit was cleared
+/// since it opened.
+#[cfg(target_os = "android")]
+mod name_dialog {
+    use std::sync::atomic::AtomicBool;
+    use vera20k_gui::{Gui, NodeId};
+
+    pub(super) static OPEN: AtomicBool = AtomicBool::new(false);
+    pub(super) static CLEARED: AtomicBool = AtomicBool::new(false);
+
+    /// New Mod's dialog widgets under the page's root, once the page built
+    /// them. They sit flat in the page's dialog so its painter draws them.
+    pub(super) struct Nodes {
+        pub(super) prompt: NodeId,
+        pub(super) edit: NodeId,
+        pub(super) ok: NodeId,
+        pub(super) close: NodeId,
+    }
+
+    pub(super) fn find(gui: &Gui, root: NodeId) -> Option<Nodes> {
+        let child = |id: i32| {
+            gui.tree()
+                .children(root)
+                .ok()?
+                .iter()
+                .copied()
+                .find(|node| gui.id_of(*node) == Some(id))
+        };
+        Some(Nodes {
+            prompt: child(super::mods_shell::NAME_PROMPT.into())?,
+            edit: child(super::mods_shell::NAME_EDIT.into())?,
+            ok: child(super::mods_shell::NAME_OK.into())?,
+            close: child(super::mods_shell::NAME_CLOSE.into())?,
+        })
     }
 }

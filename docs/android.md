@@ -78,11 +78,13 @@ right column's remaining rows become Android's own:
 | Export Mod | Hands the selected folder to the system file manager's folder picker (`VeraActivity.exportMod`), which copies it out as a new folder. Hint: "export the selected mod folder". |
 | Add Desktop Entry | `ShortcutManager.requestPinShortcut` pins a home-screen shortcut whose intent carries `mod:<folder>`, the entry the launch path already reads (`VeraActivity.pinMod`). Hint: "add a shortcut for the selected mod to the home screen". |
 
-New Mod's box offers Import Mod instead of Open Folder: the folder picker's
-result is copied into `files/Mods/<name>` (`VeraActivity.importMod`), and the box
-keeps Close. Import, export and pin all show a toast with their outcome; the
-engine reaches them through `util::mod_actions`, whose hooks only the Android
-crate installs.
+New Mod's box keeps only OK and Close: it cannot hand the folder to a file
+manager, and the row above its buttons is where a name for the new mod goes. The
+row is painted with the box (`main_menu_shell_render`), so a click that rebuilds
+the box's widgets leaves it in place; its hint `VERA:ModNewNameHint` shows until
+the platform's text input arrives with `feature/android-text-input`. Import,
+export and pin all show a toast with their outcome; the engine reaches them
+through `util::mod_actions`, whose hooks only the Android crate installs.
 
 ## Launching a mod from a shortcut
 

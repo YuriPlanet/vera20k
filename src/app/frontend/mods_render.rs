@@ -140,6 +140,8 @@ pub(crate) fn render_mods_page(
         rect_of,
         &enabled,
     );
+    #[cfg(target_os = "android")]
+    crate::app::App::sync_name_dialog(state);
     sync_texts(&mut state.frontend, selected);
     let status =
         |state: &AppState| mods_status_key(&state.frontend.shell_controller).map(str::to_owned);
@@ -154,6 +156,36 @@ pub(crate) fn render_mods_page(
         &tree,
     );
     frame.backdrop = true;
+    // Android: the name dialog's geometry comes from the message box template,
+    // so it lands where the Mods page's own boxes do; the dialog itself is
+    // drawn after the page, in `App::draw_name_dialog_over`.
+    #[cfg(target_os = "android")]
+    if crate::app::App::name_dialog_open()
+        && let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref()
+    {
+        if let Some(art) = atlas.ra2_dialog_background {
+            crate::ui::mods_shell::set_name_aspect(art.pixel_size[1] / art.pixel_size[0]);
+        }
+        // Non-empty captions choose the two-button template (`0x120`), the one
+        // Add Mod's and the Mods page's boxes use.
+        let template = crate::ui::shell::modal::ShellBox::message(
+            String::from(" "),
+            String::from(" "),
+            String::from(" "),
+            String::new(),
+        );
+        let parts =
+            crate::app::frontend::shell_layout::shell_box_parts(&state.renderer.gpu, &template);
+        let window =
+            crate::ui::shell::geom::RectPx::new(0, 0, layout.page.screen.w, layout.page.screen.h);
+        crate::ui::mods_shell::set_name_box(
+            parts.dialog,
+            parts.body,
+            parts.button(0),
+            parts.button(1),
+            window,
+        );
+    }
     let mods = &state.frontend.mods;
     let controller = &state.frontend.shell_controller;
     let gui = controller.gui();
@@ -248,5 +280,9 @@ pub(crate) fn render_mods_page(
         }
     }
     encode_family_page(state, encoder, destination, frame);
+    // Android: New Mod's dialog goes over the finished page, as a message box
+    // would, so the page's own text cannot cover it.
+    #[cfg(target_os = "android")]
+    crate::app::App::draw_name_dialog_over(state, encoder, destination);
     Ok(true)
 }

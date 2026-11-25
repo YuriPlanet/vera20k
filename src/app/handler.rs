@@ -719,6 +719,11 @@ impl App {
         {
             return;
         }
+        #[cfg(target_os = "android")]
+        if screen == ScreenPage::Mods && crate::app::App::name_dialog_open() {
+            crate::app::App::name_dialog_key(state, event);
+            return;
+        }
         match screen {
             ScreenPage::CoopScore => return crate::app::input::coop_score::key(state, event),
             ScreenPage::LanLobby => return crate::app::shell_lan::key(state, event),
