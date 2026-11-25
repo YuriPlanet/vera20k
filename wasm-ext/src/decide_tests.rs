@@ -2,7 +2,8 @@
 //! stops the module.
 
 use crate::decide::{
-    DECIDE_BUDGET, DecideRecord, EVENT_LAUNCH, PathSpec, ProjectileSpec, ProjectileStep, ResultArea,
+    DECIDE_BUDGET, DecideRecord, EVENT_LAUNCH, EVENT_MOVE_FRAME, EVENT_PATH_FOUND, MAX_PATH_CELLS,
+    MoveStep, PathCell, PathSpec, ProjectileSpec, ProjectileStep, ResultArea, result_area_bytes,
     result_len,
 };
 use crate::triggers::{EVENT_FIRE, EVENT_TAKE_DAMAGE, EventRecord};
@@ -176,4 +177,21 @@ fn fixed_layouts_round_trip() {
         data: [1; 16],
     };
     assert_eq!(ProjectileStep::from_bytes(&step.to_bytes()), Some(step));
+    let move_step = MoveStep {
+        flags: MoveStep::MOVE | MoveStep::FACING,
+        facing: 64,
+        displacement: [-32, 48],
+    };
+    assert_eq!(MoveStep::from_bytes(&move_step.to_bytes()), Some(move_step));
+    assert_eq!(result_area_bytes(EVENT_MOVE_FRAME), 16);
+    assert_eq!(result_len(EVENT_MOVE_FRAME, 0, 16), Some(16));
+    let cells = [PathCell { x: 3, y: -4 }, PathCell { x: 4, y: -4 }];
+    let bytes: Vec<u8> = cells.iter().flat_map(PathCell::to_bytes).collect();
+    assert_eq!(PathCell::read_all(&bytes, 2), Some(cells.to_vec()));
+    assert_eq!(PathCell::read_all(&bytes, 3), None);
+    assert_eq!(result_area_bytes(EVENT_PATH_FOUND), 192);
+    assert_eq!(result_len(EVENT_PATH_FOUND, 0, 192), Some(0));
+    assert_eq!(result_len(EVENT_PATH_FOUND, 2, 192), Some(16));
+    assert_eq!(result_len(EVENT_PATH_FOUND, MAX_PATH_CELLS as i64 + 1, 192), None);
+    assert_eq!(result_len(EVENT_PATH_FOUND, -1, 192), None);
 }

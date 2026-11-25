@@ -70,6 +70,8 @@ pub const ATOMIC_ACTIONS: &[&str] = &[
     "ApplyEffect", "RaiseEvent",
     // RFC 0001 6i: engine-side routines, reserved (later)
     "AttachRoutine", "DetachRoutine",
+    // Movement (RFC 0001 0.0.23): the body facing (1045)
+    "SetFacing",
 ];
 
 /// An action kind's ID by name, ASCII case-insensitive.
