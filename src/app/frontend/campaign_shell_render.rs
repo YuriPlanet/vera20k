@@ -145,9 +145,14 @@ fn campaign_labels<'a>(
         rgb: SHELL_TEXT_RGB_ENABLED,
         path_a_reveal: None,
     };
-    // Original RA2 shows a third Boot Camp caption; YR shows only the two
-    // campaign emblems. `active()` returns three under `-ra2`, two otherwise.
-    let captions = CampaignSide::active().iter().map(|side| {
+    // game.exe RT_DIALOG 0x94 (0x00BBE210) has no emblem caption statics.
+    // gamemd.exe has 0x7A7 and 0x7A8 for the Allied and Soviet captions.
+    let caption_sides: &[CampaignSide] = if crate::util::ra2_launch::enabled() {
+        &[]
+    } else {
+        &CampaignSide::ALL
+    };
+    let captions = caption_sides.iter().map(|side| {
         label(
             side.caption_key(),
             layout.caption(*side),
@@ -209,4 +214,42 @@ pub(crate) fn render_campaign_page(
     );
     encode_family_page(state, encoder, destination, frame);
     Ok(true)
+}
+
+#[cfg(all(test, tests_app_frontend))]
+mod tests {
+    use super::*;
+    use crate::assets::asset_manager::MediaArchiveMode;
+    use crate::util::ra2_launch;
+
+    #[test]
+    fn campaign_labels_follow_the_launch_mode() {
+        let campaign = Some(CampaignShellState::open(1));
+        let assets = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
+
+        ra2_launch::set_override(true);
+        let ra2_layout = crate::ui::campaign_shell::compute_layout(800, 600);
+        let ra2_labels = campaign_labels(&campaign, &assets, &ra2_layout, true);
+        ra2_launch::set_override(false);
+        let yr_layout = crate::ui::campaign_shell::compute_layout(800, 600);
+        let yr_labels = campaign_labels(&campaign, &assets, &yr_layout, true);
+        ra2_launch::clear_override();
+
+        assert_eq!(
+            ra2_labels
+                .iter()
+                .map(|label| label.rect)
+                .collect::<Vec<_>>(),
+            [ra2_layout.difficulty_label, ra2_layout.difficulty_value]
+        );
+        assert_eq!(
+            yr_labels.iter().map(|label| label.rect).collect::<Vec<_>>(),
+            [
+                yr_layout.caption(CampaignSide::Allied),
+                yr_layout.caption(CampaignSide::Soviet),
+                yr_layout.difficulty_label,
+                yr_layout.difficulty_value,
+            ]
+        );
+    }
 }
