@@ -87,7 +87,10 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                     //5E09CD..5E0AC6 services the direct Type10 drain before
                     // leaving. The visit owner bounds VERA's larger FIFO;
                     // its completion resumes this ordinary Back transition.
-                    if let Err(error) = crate::app::lan_service::request_setup_back(state) {
+                    if let Err(error) = crate::app::lan_service::request_setup_back(
+                        &mut state.frontend,
+                        &mut state.match_state,
+                    ) {
                         log::error!("LAN setup departure failed: {error:#}");
                     }
                 } else {

@@ -131,7 +131,16 @@ pub(crate) fn handle_mouse_input(
     // The window path routes these pages in its own handler from the same
     // decision (`input::precedence`); captures enter here directly.
     if modal_page(state) == Some(ModalPage::NetworkFailure) {
-        crate::app::match_runtime::network_failure::mouse(state, button, btn_state.is_pressed());
+        crate::app::match_runtime::network_failure::mouse(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            button,
+            btn_state.is_pressed(),
+        );
         return;
     }
     handle_mouse_input_inner(state, button, btn_state);
@@ -1150,7 +1159,14 @@ fn clamp_tactical_drag_endpoint(
 pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
     match modal_page(state) {
         Some(ModalPage::NetworkFailure) => {
-            crate::app::match_runtime::network_failure::cursor_moved(state);
+            crate::app::match_runtime::network_failure::cursor_moved(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+            );
             return;
         }
         Some(ModalPage::NetworkWait) => {

@@ -35,22 +35,25 @@ impl App {
         if !crate::app::shell_wol::online_cleanup_pending(state) {
             return false;
         }
-        Self::leave_screen(state);
+        Self::leave_screen(&mut state.platform, &mut state.audio);
         state.frontend.network_goodbye_deadline = Some(Instant::now() + GOODBYE_WAIT);
         true
     }
 
     /// Take the closing game off the screen: silence it, free the pointer
     /// and hide the window.
-    pub(super) fn leave_screen(state: &mut AppState) {
-        state.audio.stop_theme();
-        if let Some(sfx) = state.audio.sfx_player.as_mut() {
+    pub(super) fn leave_screen(
+        platform: &mut crate::app::PlatformState,
+        audio: &mut crate::app::audio_runtime::AppAudioRuntime,
+    ) {
+        audio.stop_theme();
+        if let Some(sfx) = audio.sfx_player.as_mut() {
             sfx.stop_all();
         }
         // Window events stop now, so the focus loss that frees the cursor
         // lock never arrives.
-        crate::app::input::cursor::release_cursor_confinement(&mut state.platform);
-        state.platform.window.set_visible(false);
+        crate::app::input::cursor::release_cursor_confinement(platform);
+        platform.window.set_visible(false);
     }
 
     /// While goodbyes are pending, service only them; exit when they finish

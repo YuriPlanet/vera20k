@@ -7,7 +7,6 @@
 //! `0x121` has no list: its placement and caption are VERA's own.
 
 use crate::app::frontend::state::ShellMessageBoxPurpose;
-use crate::app::state::AppState;
 use crate::render::bit_font::BitFont;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W};
@@ -127,11 +126,13 @@ fn wrap_width() -> u32 {
 }
 
 /// The open offer's change list, the box's layout and its dialog.
-fn open_list(state: &AppState) -> Option<(&ReleaseNotes, BoxParts, DialogResourceId)> {
-    let message_box = state.frontend.shell_message_box.as_ref()?;
+fn open_list<'a>(
+    gpu: &crate::render::gpu::GpuContext,
+    frontend: &'a crate::app::frontend::state::FrontendState,
+) -> Option<(&'a ReleaseNotes, BoxParts, DialogResourceId)> {
+    let message_box = frontend.shell_message_box.as_ref()?;
     let shell_box = &message_box.shell_box;
-    let layout =
-        crate::app::frontend::shell_layout::shell_box_parts(&state.renderer.gpu, shell_box);
+    let layout = crate::app::frontend::shell_layout::shell_box_parts(gpu, shell_box);
     match &message_box.purpose {
         ShellMessageBoxPurpose::UpdateOffer(notes) if !notes.rows.is_empty() => {
             Some((notes, layout, shell_box.dialog))
@@ -146,9 +147,12 @@ fn open_list(state: &AppState) -> Option<(&ReleaseNotes, BoxParts, DialogResourc
 pub(crate) const LIST_ID: i32 = 0x1_0001;
 
 /// The open offer's `List` node and its notes, if built.
-pub(crate) fn node(state: &AppState) -> Option<(NodeId, &ReleaseNotes)> {
-    let (notes, _, dialog) = open_list(state)?;
-    Some((list_node(&state.frontend.shell_controller, dialog)?, notes))
+pub(crate) fn node<'a>(
+    gpu: &crate::render::gpu::GpuContext,
+    frontend: &'a crate::app::frontend::state::FrontendState,
+) -> Option<(NodeId, &'a ReleaseNotes)> {
+    let (notes, _, dialog) = open_list(gpu, frontend)?;
+    Some((list_node(&frontend.shell_controller, dialog)?, notes))
 }
 
 /// The offer box's `List` node, if built.
@@ -166,10 +170,13 @@ fn list_node(
 
 /// The open offer's list as it paints: its geometry, top and the scrollbar
 /// arrow drawn pushed.
-pub(crate) fn view(state: &AppState) -> Option<(ShellListGeometry, usize, Option<ListScrollPart>)> {
-    let (notes, layout, dialog) = open_list(state)?;
-    let view = list_node(&state.frontend.shell_controller, dialog)
-        .and_then(|node| state.frontend.shell_controller.gui().list_view(node));
+pub(crate) fn view(
+    gpu: &crate::render::gpu::GpuContext,
+    frontend: &crate::app::frontend::state::FrontendState,
+) -> Option<(ShellListGeometry, usize, Option<ListScrollPart>)> {
+    let (notes, layout, dialog) = open_list(gpu, frontend)?;
+    let view = list_node(&frontend.shell_controller, dialog)
+        .and_then(|node| frontend.shell_controller.gui().list_view(node));
     let top = view.map_or(0, |view| view.top);
     Some((
         notes.geometry(&layout, top)?,
@@ -181,14 +188,16 @@ pub(crate) fn view(state: &AppState) -> Option<(ShellListGeometry, usize, Option
 /// Builds the open offer's list in its box once, after the box's buttons
 /// (its id counts as built), and keeps it on its rect; only its scrollbar
 /// takes the pointer. The box's widgets take the press and release.
-pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
-    let (geometry, _, _) = view(state)?;
-    let (notes, layout, dialog) = open_list(state)?;
+pub(crate) fn sync(
+    gpu: &crate::render::gpu::GpuContext,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+) -> Option<NodeId> {
+    let (geometry, _, _) = view(gpu, frontend)?;
+    let (notes, layout, dialog) = open_list(gpu, frontend)?;
     let scale = layout.scale;
-    let node = list_node(&state.frontend.shell_controller, dialog);
+    let node = list_node(&frontend.shell_controller, dialog);
     // The rows' text goes into the list once, when it is built.
     let items = node.is_none().then(|| notes.items());
-    let frontend = &mut state.frontend;
     let shell_box = &frontend.shell_message_box.as_ref()?.shell_box;
     let controller = &mut frontend.shell_controller;
     // The list's metrics follow the box's scale, as its paint does.
@@ -219,11 +228,15 @@ pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
 }
 
 /// The cursor drags a captured thumb and moves on or off a held arrow.
-pub(crate) fn cursor_moved(state: &mut AppState) {
-    let Some(node) = sync(state) else {
+pub(crate) fn cursor_moved(
+    gpu: &crate::render::gpu::GpuContext,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    input: &crate::app::input::state::MatchInputState,
+) {
+    let Some(node) = sync(gpu, frontend) else {
         return;
     };
-    let controller = &state.frontend.shell_controller;
+    let controller = &frontend.shell_controller;
     if controller
         .top_id()
         .and_then(|top| controller.pressed_node_in(top))
@@ -231,19 +244,23 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     {
         return;
     }
-    let (x, y) = state.match_state.input.cursor_px();
-    let controller = &mut state.frontend.shell_controller;
+    let (x, y) = input.cursor_px();
+    let controller = &mut frontend.shell_controller;
     controller.on_pointer_move(x, y);
     controller.drain_events();
 }
 
 /// Three rows a wheel notch, as the other shell lists scroll. The open offer
 /// takes every wheel turn.
-pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
-    let Some(node) = sync(state) else {
+pub(crate) fn wheel(
+    gpu: &crate::render::gpu::GpuContext,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    lines: f32,
+) -> bool {
+    let Some(node) = sync(gpu, frontend) else {
         return false;
     };
-    let controller = &mut state.frontend.shell_controller;
+    let controller = &mut frontend.shell_controller;
     let now = controller.now();
     let gui = controller.gui_mut();
     let _ = gui.set(node, Prop::WheelStep, Value::Int(1));
@@ -253,11 +270,14 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
 }
 
 /// A held arrow's repeat; the deadline of the next one.
-pub(super) fn poll_scroll(state: &mut AppState) -> Option<Instant> {
-    sync(state)?;
-    let window = &state.platform.window;
-    state
-        .frontend
+pub(super) fn poll_scroll(
+    platform: &crate::app::PlatformState,
+    gpu: &crate::render::gpu::GpuContext,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+) -> Option<Instant> {
+    sync(gpu, frontend)?;
+    let window = &platform.window;
+    frontend
         .shell_controller
         .poll_then(|| window.request_redraw())
 }

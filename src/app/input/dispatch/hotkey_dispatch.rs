@@ -311,7 +311,14 @@ pub(super) fn centre_placement_on_factory(state: &mut AppState, factory: u64) {
     }) else {
         return;
     };
-    update_building_placement_preview(state, FoundationCentre::Cell(cell));
+    update_building_placement_preview(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+        FoundationCentre::Cell(cell),
+    );
 }
 
 fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
@@ -376,7 +383,11 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
                 // With a building armed, its foundation follows the cursor's
                 // new Cell (`Center_View_On_Radar_Event`, `0x00734200`).
                 crate::app::match_runtime::sim_tick::update_building_placement_preview(
-                    state,
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &state.persistence,
                     crate::app::match_runtime::sim_tick::FoundationCentre::Cursor,
                 );
             }

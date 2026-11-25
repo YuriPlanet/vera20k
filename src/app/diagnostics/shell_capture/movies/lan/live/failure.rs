@@ -552,13 +552,38 @@ impl FailureCapture {
             )
             .button(0);
             set_window_pointer_to_rect_center(state, rect);
-            network_failure::cursor_moved(state);
+            network_failure::cursor_moved(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+            );
             if held.pressed_render.is_none() {
-                network_failure::mouse(state, MouseButton::Left, true);
+                network_failure::mouse(
+                    &state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    MouseButton::Left,
+                    true,
+                );
                 held.pressed_render = Some(render);
                 route.push(json!({"render_frame":render,"native_frame":frame,"action":"actual checksum CE Stop pressed; frame and RNG held"}));
             } else if held.released_render.is_none() {
-                network_failure::mouse(state, MouseButton::Left, false);
+                network_failure::mouse(
+                    &state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    MouseButton::Left,
+                    false,
+                );
                 held.released_render = Some(render);
                 route.push(json!({"render_frame":render,"native_frame":frame,"action":"actual checksum CE Stop released through normal input"}));
             }

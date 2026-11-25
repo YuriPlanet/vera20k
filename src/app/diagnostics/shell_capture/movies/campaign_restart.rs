@@ -310,9 +310,19 @@ impl RestartCapture {
                     | RestartTarget::InheritedTimerVictory
             ) {
             state.persistence.isolate_capture_saves(save_directory)?;
-            let path =
-                crate::app::persistence::commands::save_game(state, "Campaign continuation", None)
-                    .context("save the campaign through the ordinary command")?;
+            let path = crate::app::persistence::commands::save_game(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
+                &state.audio,
+                &state.diag,
+                &state.process_assets,
+                "Campaign continuation",
+                None,
+            )
+            .context("save the campaign through the ordinary command")?;
             if let Some((owner, _, target, _)) = saved_counter.as_ref() {
                 state
                     .match_state
@@ -1071,7 +1081,14 @@ impl RestartCapture {
                             "ALL02 did not retain its MAPSELMD stage"
                         );
                         let path = crate::app::persistence::commands::save_game(
-                            state,
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend.screen,
+                            &mut state.match_state,
+                            &state.persistence,
+                            &state.audio,
+                            &state.diag,
+                            &state.process_assets,
                             "Campaign next-stage",
                             None,
                         )?;

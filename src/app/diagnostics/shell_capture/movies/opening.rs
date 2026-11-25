@@ -391,9 +391,19 @@ impl OpeningCapture {
             );
             let depth = state.match_state.input.cursor_visibility.level();
             let saved_runtime = installed_campaign_runtime_receipt(state)?;
-            let path =
-                crate::app::persistence::commands::save_game(state, "SOV01 opening pan", None)
-                    .context("save through ordinary production command")?;
+            let path = crate::app::persistence::commands::save_game(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
+                &state.audio,
+                &state.diag,
+                &state.process_assets,
+                "SOV01 opening pan",
+                None,
+            )
+            .context("save through ordinary production command")?;
             let saved_bytes = std::fs::read(&path).context("read saved capture bytes")?;
             crate::app::persistence::commands::try_load_save_file(state, &path)
                 .context("load through ordinary prepared-load/commit owners")?;
@@ -508,8 +518,18 @@ impl OpeningCapture {
             ring_before.is_some(),
             "authored alert did not enter the review ring"
         );
-        let path =
-            crate::app::persistence::commands::save_game(state, "SOV02 live radar alert", None)?;
+        let path = crate::app::persistence::commands::save_game(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state,
+            &state.persistence,
+            &state.audio,
+            &state.diag,
+            &state.process_assets,
+            "SOV02 live radar alert",
+            None,
+        )?;
         crate::app::persistence::commands::try_load_save_file(state, &path)?;
         let minimap = state
             .match_state
@@ -600,15 +620,37 @@ impl OpeningCapture {
                 .persistence
                 .isolate_capture_saves(&self.save_directory)
                 .context("create isolated campaign capture save directory")?;
-            let path = save_game(state, "ALL01 before opening lock", None)
-                .context("save before the opening lock")?;
+            let path = save_game(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
+                &state.audio,
+                &state.diag,
+                &state.process_assets,
+                "ALL01 before opening lock",
+                None,
+            )
+            .context("save before the opening lock")?;
             self.pre_lock_save = Some(path);
             return Ok(());
         };
         let Some(unlocked) = self.unlocked_save.clone() else {
             if self.saw_unlock && !locked {
-                let path = save_game(state, "ALL01 after opening unlock", None)
-                    .context("save after the opening unlock")?;
+                let path = save_game(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &mut state.match_state,
+                    &state.persistence,
+                    &state.audio,
+                    &state.diag,
+                    &state.process_assets,
+                    "ALL01 after opening unlock",
+                    None,
+                )
+                .context("save after the opening unlock")?;
                 self.unlocked_save = Some(path);
                 try_load_save_file(state, &pre_lock)
                     .context("replay the opening from the pre-lock save")?;
