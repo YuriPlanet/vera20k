@@ -831,9 +831,10 @@ fn build_shell_message_box_overlay(
     );
     let look = crate::app::frontend::skirmish_shell_render::BoxLook {
         covered: &list,
-        // Add Mod's greyed reorder buttons use the shell's disabled text.
+        // Add Mod's greyed reorder buttons keep readable labels: the shell's
+        // disabled red is nearly the button's own colour.
         disabled_rgb: if message_box.is_mod_import() {
-            shell_paint::SHELL_TEXT_RGB_DISABLED
+            [0.62, 0.55, 0.5]
         } else {
             base_look.disabled_rgb
         },

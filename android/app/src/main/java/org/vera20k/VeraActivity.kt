@@ -73,6 +73,7 @@ class VeraActivity : NativeActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pruneModShortcuts()
         val decor = window.decorView
         decor.setOnApplyWindowInsetsListener { _, insets ->
             updateDisplayInsets(insets)
@@ -196,26 +197,65 @@ class VeraActivity : NativeActivity() {
     }
 
     /**
+     * Disables pinned shortcuts whose mod is gone, so an old icon cannot start
+     * the original game as if it were the mod.
+     */
+    private fun pruneModShortcuts() {
+        val manager = getSystemService(ShortcutManager::class.java) ?: return
+        val known = buildSet {
+            File(filesDir, "Mods").listFiles()?.forEach { dir ->
+                if (!dir.isDirectory) return@forEach
+                val id = File(dir, ".vera20k-mod-id")
+                if (id.isFile) {
+                    id.readText().trim().takeIf { it.isNotEmpty() }?.let { add("modid:$it") }
+                }
+            }
+        }
+        val stale = runCatching {
+            manager
+                .getShortcuts(ShortcutManager.FLAG_MATCH_PINNED)
+                .map { it.id }
+                .filter { it.startsWith("modid:") && it !in known }
+        }.getOrElse { return }
+        if (stale.isEmpty()) return
+        runCatching { manager.disableShortcuts(stale, "mod removed") }
+            .onSuccess { android.util.Log.i("Vera20k", "disabled stale shortcuts $stale") }
+    }
+
+    /**
      * Drops `folder`'s home-screen shortcut. Pinned shortcuts are the
      * launcher's, so the app asks for their removal (`removeLongLivedShortcuts`,
      * API 30) and disables them where the launcher keeps them.
      */
     fun forgetModShortcut(folder: String, id: String): Boolean {
         val manager = getSystemService(ShortcutManager::class.java) ?: return false
-        val ids = buildList {
+        val wanted = buildSet {
             if (id.isNotEmpty()) add("modid:$id")
             add("mod:$folder")
         }
-        return try {
-            if (Build.VERSION.SDK_INT >= 30) {
-                manager.removeLongLivedShortcuts(ids)
-            }
-            manager.disableShortcuts(ids, "mod removed")
-            true
+        // Only ids the launcher still lists: removeLongLivedShortcuts and
+        // disableShortcuts throw on an id it does not know.
+        val existing = try {
+            manager
+                .getShortcuts(
+                    ShortcutManager.FLAG_MATCH_PINNED or ShortcutManager.FLAG_MATCH_DYNAMIC,
+                )
+                .map { it.id }
+                .filter { it in wanted }
         } catch (error: Throwable) {
-            android.util.Log.w("Vera20k", "could not forget $folder: $error")
-            false
+            android.util.Log.w("Vera20k", "could not list shortcuts: $error")
+            emptyList()
         }
+        if (existing.isEmpty()) return true
+        var asked = false
+        if (Build.VERSION.SDK_INT >= 30) {
+            asked = runCatching { manager.removeLongLivedShortcuts(existing) }.isSuccess || asked
+        }
+        asked = runCatching { manager.disableShortcuts(existing, "mod removed") }.isSuccess || asked
+        if (!asked) {
+            android.util.Log.w("Vera20k", "could not drop shortcuts $existing")
+        }
+        return asked
     }
 
     /** Adds a home-screen shortcut that starts this activity on `folder`. */
@@ -229,12 +269,17 @@ class VeraActivity : NativeActivity() {
             addCategory(Intent.CATEGORY_LAUNCHER)
             putExtra(EXTRA_ENTRY, key)
         }
-        val shortcut = ShortcutInfo.Builder(this, key)
+        val builder = ShortcutInfo.Builder(this, key)
             .setShortLabel(folder.take(10))
             .setLongLabel(folder)
             .setIcon(Icon.createWithResource(this, R.mipmap.ic_launcher_retail))
             .setIntent(launch)
-            .build()
+        // A long-lived pinned shortcut is the only kind the app may ask the
+        // launcher to remove (`removeLongLivedShortcuts`, API 30).
+        if (Build.VERSION.SDK_INT >= 30) {
+            builder.setLongLived(true)
+        }
+        val shortcut = builder.build()
         return try {
             manager.requestPinShortcut(shortcut, null)
             true

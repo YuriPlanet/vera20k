@@ -281,10 +281,14 @@ impl App {
             .game_config
             .as_ref()
             .map(|config| config.paths.mods_dir().join(&folder));
+        // The id must be read before the folder (and its id file) goes.
+        let id = dir
+            .as_deref()
+            .and_then(crate::app::mods::mod_id)
+            .unwrap_or_default();
         let text = match dir.map(|dir| (std::fs::remove_dir_all(&dir), dir)) {
             Some((Ok(()), dir)) => {
                 log::info!("Mods: deleted {}", dir.display());
-                let id = crate::app::mods::mod_id(&dir).unwrap_or_default();
                 if !crate::util::mod_actions::forget(&folder, &id) {
                     log::warn!("Mods: no shortcut hook to forget {folder}");
                 }
