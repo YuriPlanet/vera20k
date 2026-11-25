@@ -603,9 +603,14 @@ map's `ui.wasm` run under `vera:client@1.0` on the presentation side.
 - Verified: the round trip `ui_reinforcements_round_trip` (message to one Rhino and
   one notification; a second purchase refused); no-module `sim-bench` release builds
   of 60d988324 and this branch give the same final hashes (skirmish 9000 ticks
-  `9d2f3b9e068b45ec`, match 1800 ticks `89503a631feffc5c`) and the same frame times.
+  `9d2f3b9e068b45ec`, match 1800 ticks `89503a631feffc5c`) and the same frame times;
+  a mixed relay room (`tools/spawn/run.sh browser`, `BROWSERS=1`, `MOD=` the
+  `sdk/examples/ui-ping` mod, desktop built `--no-default-features --features
+  wasm-net`): each player's `ui.wasm` sent its message by itself, both machines'
+  `rules.wasm` received both messages (each credits its sender), each player got
+  only its own `Pong`, no desync.
 
-Not yet: a mixed desktop and browser match with client modules; the lobby hint for
+Not yet: a look at the drawn module nodes in a real client; the lobby hint for
 `MapUI=no` and the room switch "allow automation"; `Decoration`, `MapMarker`,
 `ItemProgress` (`later`). Choices to review: one `ItemTooltips` value per grid (the
 last writer wins); a module's `Art` on a `veraui.ini` part shows only pictures that
