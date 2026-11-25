@@ -44,6 +44,7 @@ content as work lands; do not append a diary.
 | The `action` import and trigger actions: `run_action` (atomic actions through their owners, stock actions mapped onto the map trigger executor) | `src/sim/ext_modules/actions.rs`; executor without a live trigger `src/sim/trigger_runtime/untriggered.rs` |
 | House orders: `order` checks and queues per module slot; `take_due_orders` turns them into player commands | `src/sim/ext_modules/orders.rs`; executed by `Simulation::run_ext_module_orders` (`src/sim/world/command_schedule.rs`) from `run_network_command_tail` in `master_frame.rs` |
 | Cell and global properties, `find` over cells | `src/sim/ext_modules/cells.rs` |
+| House domain claims (RFC 6i): `ControlDomains`, the claim store, "mod AI" seats, `Simulation::module_claims` that the native AI asks | `src/sim/ext_modules/claims.rs` (gates listed in its module doc); seats from `SkirmishLaunchSession::mod_ai_slots` in `initialize_skirmish_launch_houses`; tests `ext_modules_claim_tests.rs` |
 | Superweapon references, properties and `find` over superweapons | `src/sim/ext_modules/supers.rs` |
 | 6i reads: `Visible` (`Simulation::object_seen_by`, `techno_ai/common_body.rs`), `Engage` (`Simulation::engage_check`, `techno_ai/target_scan.rs`), factories (`FactoryRegistry::owner_view`, `production/factory.rs`); tests | `src/sim/ext_modules/props.rs`; `ext_modules_drive_tests.rs` |
 | Rules stage: `[VeraWasm]` policy, `VeraMinVersion`, `PreparedExtModules` (the `ExtRulesHook`), `RulesHost` for `vera_init`/`on_rules`, `rules_get`/`rules_set` | `src/sim/ext_modules/rules.rs`; hook trait `ExtRulesHook` and the extra pass in `src/rules/native_processing.rs`; entry `NativeRulesProcessOwner::load_scenario_with_ext_rules` (`process_owner.rs`) |
@@ -495,12 +496,13 @@ budget loop over no slots.
 
 ## Remaining in phase 1
 
-- RFC 0.0.21 section 6i (driving a house: `ControlDomains`, "mod AI" seats,
-  `SimEvent`, `Visible`/`Engage` and the other read properties, the
-  500,000 default budget, `SeatBudget`, `VERA.INI` `WasmBudget`, memory per seat) is
-  specified but not implemented. The implementation still has the old budgets: map
-  default 200,000 (RFC 100,000) and values under 20,000 clamped to 1 (RFC: refuse the
-  start).
+- RFC 0.0.21 section 6i: the simulation side is implemented (claims and native AI
+  gates, "mod AI" seats, `Commanded`/`OrderRefused`, the command table, the read
+  properties, budgets 500,000/100,000/`SeatBudget`, `[VERA] WasmBudget` as a personal
+  rule, 8 MiB per "mod AI" seat). Left: the client side (`SimEvent`,
+  `AutomationAllowed` and the client order rate limit) with phase 2 (`ui.wasm`); the
+  lobby and launcher offering "mod AI" seats (`mod_ai_slots`); a random map's seats get
+  no extra memory.
 
 Phase 1 is complete as far as this engine has owners for the RFC's tables; what is
 left is listed under residuals. Small follow-ups found by the playtest mods:

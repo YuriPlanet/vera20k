@@ -125,7 +125,7 @@ impl WasmPolicy {
             map_wasm: section.read_bool("MapWasm", true),
             map_ui,
             controller: section.read_bool("Controller", false),
-        }
+        })
     }
 
     pub const fn budget_of(&self, source: ModuleSource) -> u64 {
@@ -141,6 +141,8 @@ pub(super) struct PreparedModule {
     pub(super) source: ModuleSource,
     pub(super) module: SimModule,
     pub(super) initialized: bool,
+    /// The "mod AI" seats its memory limit counts ([`vera20k_wasm_ext::Limits::with_seats`]).
+    pub(super) memory_seats: usize,
 }
 
 /// A scenario's modules before the simulation exists: the rules hook.
@@ -180,6 +182,7 @@ impl PreparedExtModules {
         mod_module: Option<&[u8]>,
         map: &IniFile,
         player_budget: u32,
+        mod_ai_seats: usize,
     ) -> Result<Self, String> {
         let current = crate::util::version::GAME_VERSION;
         if let Some(needs) = map
@@ -196,11 +199,15 @@ impl PreparedExtModules {
             .map_err(|e| format!("the mod's rulesmd.ini: {e}"))?;
         let mut modules = Vec::new();
         if let Some(bytes) = mod_module {
+            // A controller mod's module gets memory for each "mod AI" seat
+            // of the room (RFC 0001 15.2, 6i).
+            let seats = if policy.controller { mod_ai_seats } else { 0 };
             modules.push(PreparedModule {
                 source: ModuleSource::Mod,
-                module: SimModule::load(bytes, ModuleSource::Mod.limits())
+                module: SimModule::load(bytes, ModuleSource::Mod.limits().with_seats(seats))
                     .map_err(|e| format!("the mod's rules.wasm: {e}"))?,
                 initialized: false,
+                memory_seats: seats,
             });
         }
         let embedded = crate::map::ext_module_pack::rules_module(map)
@@ -216,6 +223,7 @@ impl PreparedExtModules {
                 module: SimModule::load(&bytes, ModuleSource::Map.limits())
                     .map_err(|e| format!("the map's rules module: {e}"))?,
                 initialized: false,
+                memory_seats: 0,
             });
         }
         Ok(Self {

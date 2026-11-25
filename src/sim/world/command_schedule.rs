@@ -743,7 +743,6 @@ impl Simulation {
         // release it during settlement. Capture only this derived refresh
         // fact now; the production owner remains the placement authority.
         let placed_building_owner = self.successful_non_wall_placement_owner(cmd, true, rules);
-        let cmd_owner_str = self.interner.resolve(cmd.owner).to_string();
         let outcome = self.apply_command_with_overlays(
             sender,
             cmd.owner,

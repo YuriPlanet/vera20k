@@ -201,7 +201,7 @@ impl Simulation {
                 production::cycle_active_producer_for_owner_category(
                     self,
                     rules,
-                    &owner,
+                    owner,
                     event.category,
                 ),
             );
@@ -278,19 +278,22 @@ impl Simulation {
         .is_ok()
     }
 
-    /// The command receiver, `EventClass::Execute @ 0x004C6CB0`: applies one
-    /// command, or says why it refused it ([`CommandRefusal`], VERA-only:
-    /// the reason a Wasm module's `OrderRefused` carries; a refusal changes
-    /// nothing a refusal changed before the reason existed).
-    pub(crate) fn apply_command_with_overlays(
+    /// The command receiver, `EventClass::Execute @ 0x004C6CB0`, for one
+    /// command of `command_owner` (the id the command carries, or a fixture's
+    /// or tool's house name): applies it, or says why it refused it
+    /// ([`CommandRefusal`], VERA-only: the reason a Wasm module's
+    /// `OrderRefused` carries; a refusal changes nothing a refusal changed
+    /// before the reason existed).
+    pub(crate) fn apply_command_with_overlays<'k>(
         &mut self,
         sender: CommandSender,
-        command_owner: &str,
+        command_owner: impl Into<InternKey<'k>>,
         cmd: &Command,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), CommandRefusal> {
+        let command_owner = command_owner.into();
         let (sender, house_order) = match sender {
             CommandSender::Player(source) => (source, false),
             CommandSender::HouseOrder => (None, true),
@@ -434,7 +437,7 @@ impl Simulation {
             Command::SetLatencyFudge { value } => {
                 // Event LATENCYFUDGE4C7F4F stores the unmodified dword; its
                 // network-session owner receives the write after MainTick.
-                let Some(owner) = self.interner.get(command_owner) else {
+                let Some(owner) = self.interner.key_id(command_owner) else {
                     return Err(CommandRefusal::Other);
                 };
                 self.lifecycle_outputs
@@ -888,13 +891,12 @@ impl Simulation {
             // Production events act on the event's own house (the
             // EventClass header's house id); the payload names no owner.
             Command::QueueProduction { type_id } => {
-                let type_s = self.interner.resolve(*type_id).to_string();
                 // VERA: a Wasm module's house order passes the checks its
                 // house's player would (RFC 0001 6g), where a computer
                 // house's own CanBuild asks no prerequisites.
                 if house_order
-                    && let Some(owner) = self.interner.get(command_owner)
-                    && let Some(object) = rules.object(&type_s)
+                    && let Some(owner) = self.interner.key_id(command_owner)
+                    && let Some(object) = self.interner.object_type(*type_id, rules)
                     && !production::buildable_by_player(self, rules, owner, object)
                 {
                     return Err(CommandRefusal::Prerequisite);
@@ -903,7 +905,7 @@ impl Simulation {
                     self,
                     rules,
                     command_owner,
-                    &type_s,
+                    *type_id,
                     frame_effects,
                     false,
                 )
@@ -969,7 +971,6 @@ impl Simulation {
                 )
             }
             Command::CancelProductionByType { type_id, all } => {
-                let type_s = self.interner.resolve(*type_id).to_string();
                 CommandRefusal::Other.unless(production::cancel_production_for_owner(
                     self,
                     rules,
@@ -1081,7 +1082,7 @@ impl Simulation {
             // Stuff flag, factory queue refresh, EVA line for a human house). The
             // dispatch has no owner check; only the VERA network gate above adds one.
             Command::SetBuildingOnLine { entity_id, on } => {
-                let Some(owner) = self.interner.get(command_owner) else {
+                let Some(owner) = self.interner.key_id(command_owner) else {
                     return Err(CommandRefusal::Other);
                 };
                 if !self.houses.contains_key(&owner) {
@@ -1130,7 +1131,7 @@ impl Simulation {
                 CommandRefusal::Other.unless(self.session.apply_in_game_speed(*speed))
             }
             Command::Cheer => {
-                let Some(owner) = self.interner.get(command_owner) else {
+                let Some(owner) = self.interner.key_id(command_owner) else {
                     return Err(CommandRefusal::Other);
                 };
                 if !self.houses.contains_key(&owner) {
@@ -1140,7 +1141,7 @@ impl Simulation {
                 Ok(())
             }
             Command::Destruct => {
-                let Some(owner) = self.interner.get(command_owner) else {
+                let Some(owner) = self.interner.key_id(command_owner) else {
                     return Err(CommandRefusal::Other);
                 };
                 // VERA shared control: one player resigning (B6 Leave beside
@@ -1159,7 +1160,7 @@ impl Simulation {
                 Ok(())
             }
             Command::ExitMatch => {
-                let Some(owner) = self.interner.get(command_owner) else {
+                let Some(owner) = self.interner.key_id(command_owner) else {
                     return Err(CommandRefusal::Other);
                 };
                 if !self.houses.contains_key(&owner) {

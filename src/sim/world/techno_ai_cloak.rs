@@ -48,7 +48,7 @@ fn has_stealth_ability(
         entity.category(),
         object,
         ares,
-    )) || entity.phobos_cloakable()
+    )) || entity.effect_cloakable()
 }
 
 /// `FootClass::IsCloakable @ 0x004DBDA0` (vtable +0x288) while Ares plays:
@@ -940,7 +940,7 @@ pub(crate) fn cloak_producer_ticks(
         .cloak
         .as_ref()
         .is_some_and(|cloak| cloak.state() != 0)
-        || entity.phobos_cloakable()
+        || entity.effect_cloakable()
 }
 
 /// The cloak virtual (vt+0x410): `TechnoClass::CloakingTick @ 0x006FB740`

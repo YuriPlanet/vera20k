@@ -110,7 +110,7 @@ fn retail_paid_two_gap_wall_retains_constructor_identities_until_deferred_drain(
             rules,
             &owner_name,
             crate::sim::production::ProductionPlacement::Building {
-                type_id: "GAWALL",
+                type_id: "GAWALL".into(),
                 cell: *origin,
             },
             Some(registry),
