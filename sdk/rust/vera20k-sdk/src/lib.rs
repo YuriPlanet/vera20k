@@ -23,10 +23,11 @@ pub mod triggers;
 pub mod vars;
 
 pub use decide::{
-    CommandAllowedDecision, DecideRecord, DefeatDecision, FatalDamageDecision, FireDecision,
-    HarvestCellDecision, IdleMissionDecision, LaunchDecision,
-    PathKind, ProductionAllowedDecision, ProductionQueuedDecision, ProjectileFrameDecision,
-    TakeDamageDecision,
+    CommandAllowedDecision, CrushAllowedDecision, DamageIncomingDecision, DecideRecord,
+    DefeatDecision, DeployAllowedDecision, DestinationSetDecision, FatalDamageDecision,
+    FireAllowedDecision, FireDecision, HarvestCellDecision, IdleMissionDecision, LaunchDecision,
+    MissionStepDecision, PathKind, ProductionAllowedDecision, ProductionQueuedDecision,
+    ProjectileFrameDecision, RetaliateDecision, TakeDamageDecision,
 };
 pub use ini::{
     EventScope, IniEntryRecord, IniKeyRecord, IniSection, ModuleEvent, ModuleEventRecord,

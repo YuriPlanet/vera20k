@@ -24,7 +24,7 @@
 //! vera20k_sdk::on_decide!(HALVE => halve);
 //! ```
 
-use crate::{Cell, EventRecord, House, NameKind, Projectile, Techno, TypeRef, sys};
+use crate::{Cell, EventRecord, House, Mission, NameKind, Projectile, Ref, Techno, TypeRef, sys};
 
 /// One decision request (`DecideRecord`), valid during its `on_decide`
 /// call.
@@ -317,17 +317,61 @@ decision!(
 );
 
 decision!(
-    /// `HarvestCell` (appendix 4.5, preview): the ore cell a harvester's
-    /// search settles on. Answer a cell reference, 0 for none; `native` is
-    /// the engine's scan result (0 for a miss).
-    HarvestCellDecision {
-        harvester: Techno = |r| Techno(r.subject),
-        /// The engine's cell; `Cell(NO_HANDLE)` for none.
-        found: Cell = |r| Cell(r.cell),
-        /// The scan range in cells.
-        range: i64 = |r| r.value,
+    /// `MissionStep` (appendix 4.5, preview): after a unit's or
+    /// infantryman's Guard, Area Guard, Hunt or Attack mission body ran.
+    /// The result area holds its outcome (the previous link's answer for a
+    /// later link): change what you want with the setters, each of which
+    /// answers. Without an answer the outcome stands.
+    MissionStepDecision {
+        unit: Techno = |r| Techno(r.subject),
+        /// The mission whose body ran ([`Mission`] number).
+        mission: i64 = |r| r.value,
+        /// The target the body left; `NO_HANDLE` for none or a cell.
+        target: Techno = |r| Techno(r.other),
     }
 );
+
+impl MissionStepDecision<'_> {
+    /// The outcome so far: the body's, or the previous link's answer.
+    pub fn step(&mut self) -> Option<sys::MissionStepResult> {
+        take(self.0.area(), 0)
+    }
+
+    /// Answers `step` whole.
+    pub fn set_step(&mut self, step: &sys::MissionStepResult) -> bool {
+        self.answer_at(0, step)
+    }
+
+    /// Answers with the target `target`, an object or a cell
+    /// (`Techno(NO_HANDLE)` for none).
+    pub fn set_target(&mut self, target: impl Ref) -> bool {
+        self.answer_at(0, &target.raw())
+    }
+
+    /// Answers with the destination `destination`, an object or a cell
+    /// (`Cell(NO_HANDLE)` for none).
+    pub fn set_destination(&mut self, destination: impl Ref) -> bool {
+        self.answer_at(8, &destination.raw())
+    }
+
+    /// Answers with `mission` to queue, `None` to queue nothing.
+    pub fn set_mission(&mut self, mission: Option<Mission>) -> bool {
+        self.answer_at(16, &mission.map_or(-1, |mission| mission as i32))
+    }
+
+    /// Answers with the frames until the body runs again (at least 1).
+    pub fn set_delay(&mut self, frames: i32) -> bool {
+        self.answer_at(20, &frames)
+    }
+
+    fn answer_at<T: Copy>(&mut self, at: usize, value: &T) -> bool {
+        if !put(self.0.area(), at, value) {
+            return false;
+        }
+        self.0.set_result(0);
+        true
+    }
+}
 
 /// `PathKind` (appendix 8.3, enum 22).
 #[repr(i32)]
