@@ -314,8 +314,8 @@ impl Simulation {
             .construct(category == EntityCategory::Structure && rules.has_buildup(&obj.id));
         // Every Foot constructor allocates, constructs and links its type's
         // locomotor without a Speed test: InfantryClass's `0x00517A50` at
-        // `0x517B44..0x517BBA`, UnitClass's at `0x0073563D..0x00735678`,
-        // AircraftClass's at `0x00413FD2..0x00414015`. A zero-`Speed=` Jumpjet
+        // `0x517B44..0x517BBA`, UnitClass's at `0x007354CE..0x00735566`,
+        // AircraftClass's at `0x00413DB1..0x00413E2C`. A zero-`Speed=` Jumpjet
         // Unit is a Foot with an instance all the same; Structures own none.
         if category.is_foot() {
             ge.locomotor = Some(LocomotorState::from_object_type(
@@ -900,7 +900,7 @@ fn zero_speed_infantry_keeps_walk_instance_through_spawn_and_save() {
 
 /// #4974: a map registered `YANH` as `Image=MTNK` with a Jumpjet locomotor
 /// and no `Speed=`, so the type's speed stayed at its default 0. Native's
-/// Unit constructor still creates the instance (`0x0073563D..0x00735678`);
+/// Unit constructor still creates the instance (`0x007354CE..0x00735566`);
 /// VERA's old zero-speed gate left it out and a chrono reinforcement then
 /// panicked on the missing instance.
 #[cfg(test)]
@@ -927,7 +927,7 @@ fn zero_speed_jumpjet_unit_keeps_its_constructed_locomotor() {
             .unwrap()
             .locomotor
             .as_ref()
-            .expect("Unit73563D constructs its instance without a Speed test")
+            .expect("the Unit constructor (0x7354CE) builds its instance without a Speed test")
             .active_kind(),
         LocomotorKind::Jumpjet
     );

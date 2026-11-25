@@ -2557,7 +2557,7 @@ fn a_tunnel_team_arrives_underground_and_digs_out_at_its_cell() {
 
 /// #4974: action 107 placed a Team whose only member is a Unit with a Jumpjet
 /// locomotor and no `Speed=` (its type speed stays 0). The specific Foot
-/// constructor still creates the instance (`0x0073563D..0x00735678`), so
+/// constructor still creates the instance (`0x007354CE..0x00735566`), so
 /// 65EC30 can begin its Teleport piggyback and Move_To instead of panicking.
 #[test]
 fn chrono_reinforcement_places_a_zero_speed_jumpjet_unit() {

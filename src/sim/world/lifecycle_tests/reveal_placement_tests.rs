@@ -541,7 +541,7 @@ fn zero_speed_foot_payloads_survive_all_world_spawn_paths() {
             .unwrap()
             .locomotor
             .as_ref()
-            .expect("Unit73563D constructs its instance at Speed0")
+            .expect("the Unit constructor (0x7354CE) builds its instance at Speed 0")
             .active_kind(),
         LocomotorKind::Walk,
         "a zero-speed Walk Unit keeps its constructed locomotor"
