@@ -142,8 +142,8 @@ const POOL_ENTRY_PINS: &[(&str, usize, &str)] = &[
     (
         "sim/world/techno_ai/scan_batch.rs",
         1,
-        "detached: each target scan runs inside `detached_stamps` and one that \
-         stamped is dropped for its turn; the due check before it reads the object",
+        "detached: the team step's patrol scans. Each runs inside `detached_stamps`, \
+         and one that stamped is dropped for its team's update",
     ),
     (
         "sim/world/world_hash.rs",

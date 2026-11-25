@@ -1385,6 +1385,22 @@ impl Simulation {
     /// Invalid modded periods whose IDIV faults natively skip scanning here
     /// with an error, retaining normal movement. This safety policy does not
     /// affect retail periods and is not claimed as native parity.
+    ///
+    /// Two sim-scale deviations from native order (update order and
+    /// same-frame effects), both on only with batched target scans
+    /// (`Simulation::batch_target_scans`), pending side-by-side play:
+    /// - Each team scans where the frame plus its own phase is a multiple of
+    ///   the period ([`Self::patrol_scan_remainder`]), so the teams' scans
+    ///   spread over the period instead of all falling on one frame. A team
+    ///   still scans once a period, but up to a period less one frame (13
+    ///   frames with retail's 14) sooner or later than natively, so it turns
+    ///   on a threat that much sooner or later.
+    /// - A leader whose scan is due as the team step begins has it answered
+    ///   then, beside the other teams' (`techno_ai::scan_batch`), and its
+    ///   scan here takes that answer while the leader stands as it did. The
+    ///   answer does not see what the step's earlier updates changed, such as
+    ///   an order another team gave its members; the next scan, a period
+    ///   later, does.
     fn team_action_patrol_waypoint(
         &mut self,
         team_id: u64,
@@ -1411,8 +1427,7 @@ impl Simulation {
         }) {
             self.team_assign_mission_target(team_id, Some(waypoint_target), rules, effects);
         }
-        let frame = self.session.binary_frame() as i32;
-        match frame.checked_rem(rules.general.patrol_scan_frames()) {
+        match self.patrol_scan_remainder(team_id, rules) {
             Some(0) => {
                 if let Some(leader) = self.team_leader(team_id, rules) {
                     let threat = crate::sim::world::direct_greatest_threat(
@@ -1458,6 +1473,26 @@ impl Simulation {
         } else {
             self.team_coordinate_move(team_id, rules, registry, effects);
         }
+    }
+
+    /// `0x006ECD40..0x006ECD63`: the signed global frame (`0x00A8ED84`)
+    /// modulo `ftol([AI] PatrolScan= * 900)`, where zero lets `team_id`'s
+    /// Script16 scan; `None` for a period whose IDIV faults. With batched
+    /// target scans the frame first gains the team's phase, its id modulo
+    /// the period's size (a sim-scale deviation, see
+    /// [`Self::team_action_patrol_waypoint`]): team ids rise with
+    /// construction and are saved, so the phase keeps no state of its own.
+    pub(super) fn patrol_scan_remainder(&self, team_id: u64, rules: &RuleSet) -> Option<i32> {
+        let period = rules.general.patrol_scan_frames();
+        let phase = if self.target_scans_batched() {
+            // Below the period's size, at most 2^31, so it fits.
+            (team_id % u64::from(period.unsigned_abs().max(1))) as i32
+        } else {
+            0
+        };
+        (self.session.binary_frame() as i32)
+            .wrapping_add(phase)
+            .checked_rem(period)
     }
 
     /// Script action 11 (`0x006ED7E0`, `first` unread): each live member
