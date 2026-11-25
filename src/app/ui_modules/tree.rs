@@ -1209,6 +1209,16 @@ impl UiTree {
         }
     }
 
+    /// Whether a map's text part shows a `Value=` ([`Measure::value`]),
+    /// which the layout keeps up to date.
+    pub(crate) fn shows_values(&self) -> bool {
+        self.table
+            .borrow()
+            .records
+            .values()
+            .any(|record| record.value.is_some())
+    }
+
     /// Builds the map's own parts (`[VeraUI]`, RFC 10 "Static layouts") at
     /// match start, top level in [`Layer::Overlay`], the same for every
     /// side and out of the player's layout's reach; nothing under

@@ -24,7 +24,7 @@ use crate::app::AppState;
 use crate::app::input::hotkeys::HotkeyCommand;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
-use crate::render::hud_paint::{HudSpace, Material, NodeDraw, Picture};
+use crate::render::hud_paint::{HudPaint, HudSpace, Material, NodeDraw, Picture};
 use crate::render::retained_hud::{Rest, RetainedHud, rounded};
 use crate::render::sidebar_chrome::SidebarChromeEntry;
 use crate::ui::added_parts::{AddedKind, Holder, TextShows, TextValue};
@@ -151,10 +151,16 @@ pub(crate) struct Placed {
     pub fill: Option<i32>,
     /// A list: its lines, top to bottom.
     pub lines: Vec<String>,
+    /// Drawn greyed out: a client module's button or list it disabled
+    /// (`app::ui_modules::paint`). A layout's own part never is.
+    pub disabled: bool,
 }
 
 /// A bar's size when the layout gives it none.
 const BAR_SIZE: [i32; 2] = [100, 8];
+
+/// What a disabled part draws in instead of the side's colour.
+const DISABLED: [f32; 3] = [128.0 / 255.0; 3];
 
 /// What a client module wrote on part `index`'s node, read as the part
 /// draws: none while the chrome has no node for it.
@@ -189,7 +195,7 @@ impl Written<'_> {
 }
 
 /// What a text part shows now.
-fn value_text(state: &AppState, value: TextValue) -> String {
+pub(crate) fn value_text(state: &AppState, value: TextValue) -> String {
     let view = crate::app::presentation::sidebar_render::current_sidebar_view(state);
     let sim = state
         .match_state
@@ -337,6 +343,7 @@ pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
                 hidden: written.is_some_and(Written::hidden),
                 fill,
                 lines,
+                disabled: false,
             }
         })
         .collect();
@@ -510,12 +517,8 @@ impl PartsHud {
         camera: [f32; 2],
         font: &BitFont,
     ) {
-        self.update(parts, tint);
-        let space = HudSpace {
-            origin: camera,
-            scale: 1.0,
-        };
-        let paint = self.nodes.finish(space, Some(font));
+        self.paint(parts, tint, camera, font);
+        let paint = self.nodes.painted();
         for (lane, material) in [
             (&mut self.pictures, Material::Pictures),
             (&mut self.boxes, Material::Solid),
@@ -524,6 +527,30 @@ impl PartsHud {
             lane.clear();
             lane.extend(paint.lane(material).copied());
         }
+    }
+
+    /// Show this frame's `parts` and paint them, as [`Self::draw`] does,
+    /// into one list whose runs keep their order across the lanes: for a
+    /// host that draws the runs one after another, so a part over another
+    /// covers it whatever it is drawn with.
+    pub(crate) fn paint(
+        &mut self,
+        parts: &[Placed],
+        tint: [f32; 3],
+        camera: [f32; 2],
+        font: &BitFont,
+    ) -> &HudPaint {
+        self.update(parts, tint);
+        let space = HudSpace {
+            origin: camera,
+            scale: 1.0,
+        };
+        self.nodes.finish(space, Some(font))
+    }
+
+    /// The last paint's instances and runs.
+    pub(crate) fn painted(&self) -> &HudPaint {
+        self.nodes.painted()
     }
 
     /// The buttons' pictures, for a lane drawn with the sidebar's picture
@@ -545,14 +572,16 @@ impl PartsHud {
     /// Bring the tree to `parts`. A picture is not stretched: it draws at
     /// its own size from the part's corner. A button without one is a fill
     /// inside a one-pixel frame in `tint`, the fill black and the label in
-    /// `tint`, the two swapped while it is held down.
+    /// `tint`, the two swapped while it is held down. A disabled part draws
+    /// in grey instead of `tint`.
     fn update(&mut self, parts: &[Placed], tint: [f32; 3]) {
         self.nodes.begin();
-        let (tint, black) = (rounded(tint), rounded([0.0; 3]));
+        let (side, grey, black) = (rounded(tint), rounded(DISABLED), rounded([0.0; 3]));
         for part in parts {
             if part.group || part.hidden || part.holder != self.holder {
                 continue;
             }
+            let tint = if part.disabled { grey } else { side };
             if let Some(picture) = part.picture {
                 let draw = NodeDraw {
                     picture: Some(Picture {
@@ -743,6 +772,7 @@ mod tests {
             hidden: false,
             fill: None,
             lines: Vec::new(),
+            disabled: false,
         }
     }
 
