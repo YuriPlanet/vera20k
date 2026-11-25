@@ -4012,9 +4012,10 @@ fn terminal_idle_checks_a_move_that_is_still_queued() {
         ai_counter: 0,
         dispatch_timer: MissionDispatchTimer::at_frame(0),
     });
+    let note = actor.note_names();
     actor
         .navigation
-        .publish_nav_com(Some(NavTargetRef::cell(10, 9)));
+        .publish_nav_com(Some(NavTargetRef::cell(10, 9)), note);
     let loco = actor.locomotor.as_mut().unwrap();
     loco.store_track_destination(TrackFamily::Drive, Some(DriveCoord::cell(10, 9, 0)));
     let mut track = loco.track_progress(TrackFamily::Drive).unwrap();

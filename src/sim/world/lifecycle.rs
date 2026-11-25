@@ -63,7 +63,7 @@ impl BuildingLight {
     pub(crate) const fn light(self) -> Option<u64> {
         self.light
     }
-    pub(super) fn attach(&mut self, id: u64) {
+    pub(super) fn attach(&mut self, id: u64, _: crate::sim::game_entity::NameNote) {
         self.light = Some(id);
     }
     pub(super) fn take(&mut self) -> Option<u64> {

@@ -69,6 +69,11 @@ pub(crate) struct AirMembershipAuthority(());
 /// ([`EntityStore::write_held_anim`]).
 pub(super) struct AnimHolderAuthority(());
 
+/// Only this module can read and forget an entity's name note
+/// ([`GameEntity::take_names_unread`]), so no note is lost before the
+/// pointer-expiry index takes it ([`EntityStore::take_unread_names`]).
+pub(crate) struct UnreadNamesAuthority(());
+
 /// What a write to a shared store panics with.
 const SHARED_WRITE: &str = "write to a shared entity store: while shared it is the frozen base its forks read; write through a fork, or unshare it first";
 
@@ -110,9 +115,10 @@ pub struct EntityStore {
     /// through the store, so an entity missing from a log has not changed,
     /// but for the mission AI counter and a building's tint sample, which
     /// change every frame and no reader derives from
-    /// ([`Self::count_mission_ai_visit`], [`Self::capture_building_tint_sample`]).
-    /// A fork's start as a clone's do and note nothing; its commit notes its
-    /// hand-outs in the store's.
+    /// ([`Self::count_mission_ai_visit`], [`Self::capture_building_tint_sample`]),
+    /// and the name note the pointer-expiry index alone reads and forgets
+    /// ([`Self::take_unread_names`]). A fork's start as a clone's do and note
+    /// nothing; its commit notes its hand-outs in the store's.
     touched: TouchLogs<{ TouchReader::COUNT }>,
     /// Which entities may draw differently since the presentation last took
     /// the log ([`Self::take_looks`]): stored, or given a new owner, type or
@@ -214,8 +220,8 @@ struct Columns {
     /// VERA-only: `(Anim, holder)` for each Anim a stored entity may hold in
     /// a field [`GameEntity::held_anims`] names, so an Anim's expiry
     /// (`Simulation::notify_anim_pointer_expired`, through
-    /// [`EntityStore::take_anim_holders`]) visits those entities instead of
-    /// re-reading every entity handed out since the last expiry. A superset;
+    /// [`EntityStore::take_anim_holders`]) visits those entities without
+    /// refreshing the pointer-expiry index. A superset;
     /// the entities' fields are the truth. [`EntityStore::insert`] and
     /// [`EntityStore::write_held_anim`], the only route to storing an Anim in
     /// one of those fields, add pairs; the expiry takes an Anim's pairs, its
@@ -342,7 +348,8 @@ enum ForkWrite {
 pub(crate) enum TouchReader {
     /// The movement pass's kept blocker plane.
     BlockerPlane = 0,
-    /// The pointer-expiry broadcast's listener index.
+    /// The pointer-expiry broadcast's listener index, which re-reads only
+    /// the noted entities among those logged ([`EntityStore::take_unread_names`]).
     ExpiryListeners = 1,
 }
 
@@ -409,6 +416,45 @@ impl EntityStore {
         let broad = self.cols.categories[slot] != EntityCategory::Structure;
         self.touched
             .note_kind(stable_id, broad, self.cols.slot_of.len());
+    }
+
+    /// The entities the pointer-expiry index must re-read (sim-scale;
+    /// results unchanged): of those handed out since it last asked, the
+    /// removed ones and the stored ones noted since
+    /// ([`GameEntity::note_names`]), or every one when the log cannot say
+    /// which. A field that names an object takes an id only through a writer
+    /// that takes that note, so an entity left out names at most what the
+    /// index last read of it. Not a hand-out and no lookup for a caller:
+    /// forgetting the transient note neither wakes an object nor notes it in
+    /// the logs or the lookup counts.
+    ///
+    /// The note is the entity's own: a fork's write notes the fork's copy
+    /// (a copy starts noted), which [`Self::commit_writes`] moves in and logs
+    /// as a hand-out, so this store's next take reads it once. A shared
+    /// store or a fork forgets no note, its entities being its base's: it
+    /// gives its log as it is.
+    pub(crate) fn take_unread_names(&mut self) -> Touched {
+        let logged = self.touched.take(TouchReader::ExpiryListeners as usize);
+        if self.view.is_some() || self.set_aside.is_some() {
+            return logged;
+        }
+        let cols = &mut self.cols;
+        match logged {
+            Touched::All => {
+                for entity in cols.entities.iter_mut().filter_map(entity_mut) {
+                    entity.take_names_unread(UnreadNamesAuthority(()));
+                }
+                Touched::All
+            }
+            Touched::Ids(mut ids) => {
+                ids.retain(|id| match cols.slot_of.get(id) {
+                    Some(&slot) => entity_mut(&mut cols.entities[slot as usize])
+                        .is_some_and(|entity| entity.take_names_unread(UnreadNamesAuthority(()))),
+                    None => true,
+                });
+                Touched::Ids(ids)
+            }
+        }
     }
 
     /// Take the look log, leaving it empty.
@@ -752,9 +798,12 @@ impl EntityStore {
 
     /// Insert an entity, replacing one of the same id (rare — stable_ids are
     /// monotonic). Returns its stable_id.
-    pub fn insert(&mut self, entity: GameEntity) -> u64 {
+    pub fn insert(&mut self, mut entity: GameEntity) -> u64 {
         self.own_columns();
         let id = entity.stable_id();
+        // The pointer-expiry index reads a stored entity whole, whatever
+        // was written to it outside the store.
+        let _ = entity.note_names();
         self.touched.note(id, self.len());
         self.looks.note(id, self.len());
         let category = entity.category();
@@ -1080,10 +1129,14 @@ impl EntityStore {
         entity_mut(&mut self.cols.entities[slot as usize])
     }
 
-    /// Edit one actor when a fixture holds the store directly.
+    /// Edit one actor when a fixture holds the store directly. A fixture's
+    /// setters may store any id, so the entity is noted for the
+    /// pointer-expiry index too ([`GameEntity::note_names`]).
     #[cfg(any(test, feature = "test-support"))]
     pub fn get_mut_for_test(&mut self, stable_id: u64) -> Option<&mut GameEntity> {
-        self.get_mut(stable_id)
+        let entity = self.get_mut(stable_id)?;
+        let _ = entity.note_names();
+        Some(entity)
     }
 
     /// `get_mut` for an entity `admit` accepts, which it reads first: one it
@@ -1476,6 +1529,8 @@ impl EntityStore {
         self.touched.note(holder, self.cols.slot_of.len());
         self.wake_slot(slot as usize);
         let entity = entity_mut(&mut self.cols.entities[slot as usize])?;
+        // A held Anim is one of the names the pointer-expiry index reads.
+        let _ = entity.note_names();
         let written = write(entity, AnimHolderAuthority(()));
         self.cols
             .anim_holders

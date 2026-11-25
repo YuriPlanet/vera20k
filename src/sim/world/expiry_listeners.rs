@@ -8,16 +8,21 @@
 //! nothing. [`Simulation::entity_expiry_holds`] and the other stores'
 //! `expiry_names` describe the fields each callback compares.
 //!
-//! The index re-reads objects from each store's touch log. A fresh, cloned or
-//! restored store triggers a full rebuild ([`ExpiryListeners::asked_of_every`]).
-//! The index is excluded from saves and from the simulation hash.
+//! The index re-reads objects from each store's touch log. Of the entities it
+//! names, only those noted since ([`EntityStore::take_unread_names`]): an
+//! entity field takes an id only through a writer that notes its entity
+//! (`GameEntity::note_names`), so an entity left out holds at most what the
+//! index read, and an entity the index finds is asked before it is answered.
+//! A fresh, cloned or restored store triggers a full rebuild
+//! ([`ExpiryListeners::asked_of_every`]). The index is excluded from saves and
+//! from the simulation hash.
 
 use std::collections::BTreeSet;
 
 use super::Simulation;
 use super::substrate::ObjectKind;
 use crate::sim::anim_class::{AnimStore, AnimTouchReader, is_local_anim_id};
-use crate::sim::entity_store::{EntityStore, TouchReader};
+use crate::sim::entity_store::EntityStore;
 use crate::sim::particles::{ParticleSystemStore, ParticleTouchReader};
 use crate::sim::projectile::ProjectileStore;
 use crate::sim::terrain_object::TerrainObjectStore;
@@ -75,6 +80,10 @@ pub(crate) struct ExpiryListeners {
     projectiles: StoreIndex,
     waves: StoreIndex,
     terrain: StoreIndex,
+    /// Test builds: the fixture notes taken when the entities were last read
+    /// ([`Self::after_fixture_notes`]).
+    #[cfg(any(test, feature = "test-support"))]
+    fixture_notes: u64,
 }
 
 /// The listeners of one store.
@@ -167,11 +176,27 @@ impl ExpiryListeners {
                 .map(|_| named(names, [terrain.next_in_cell(id)]))
         });
 
-        let mut reached: Vec<(u64, ObjectKind)> = self
-            .entities
-            .reaching(expired)
-            .map(|id| (id, ObjectKind::Entity))
-            .collect();
+        // A clear takes no note, so the index may still hold a name an entity
+        // dropped: each entity it finds is asked, and one that no longer acts
+        // is re-read, so the index forgets what it no longer holds.
+        let mut found: Vec<u64> = self.entities.reaching(expired).collect();
+        found.sort_unstable();
+        found.dedup();
+        let mut reached: Vec<(u64, ObjectKind)> = Vec::with_capacity(found.len() + 1);
+        for id in found {
+            if entities
+                .get(id)
+                .is_some_and(|entity| Simulation::entity_expiry_listener_acts(entity, id, expired))
+            {
+                reached.push((id, ObjectKind::Entity));
+            } else {
+                self.entities.reread(&[id], |id, names| {
+                    entities.get(id).map(|entity| {
+                        Simulation::entity_expiry_holds(entity, |name| names.push(name))
+                    })
+                });
+            }
+        }
         if entities.contains(expired) {
             reached.push((expired, ObjectKind::Entity));
         }
@@ -245,19 +270,35 @@ impl ExpiryListeners {
     }
 
     fn refresh_entities(&mut self, entities: &mut EntityStore) {
+        let unread = entities.take_unread_names();
+        #[cfg(any(test, feature = "test-support"))]
+        let unread = self.after_fixture_notes(unread);
         // The ids the worker pool takes stay as logged: sorting thousands
         // of them costs more than re-reading the few that repeat.
-        let ids = self.entities.rereads(
-            entities.take_touched(TouchReader::ExpiryListeners),
-            entities.len(),
-            PARALLEL_FROM,
-            || entities.keys_sorted(),
-        );
+        let ids = self
+            .entities
+            .rereads(unread, entities.len(), PARALLEL_FROM, || {
+                entities.keys_sorted()
+            });
         self.entities.reread_pooled(&ids, |id, names| {
             entities
                 .get(id)
                 .map(|entity| Simulation::entity_expiry_holds(entity, |name| names.push(name)))
         });
+    }
+
+    /// Test builds: every entity once a fixture took a note since the last
+    /// read, since a fixture's note names no entity ([`NameNote::fixture`]).
+    ///
+    /// [`NameNote::fixture`]: crate::sim::game_entity::NameNote::fixture
+    #[cfg(any(test, feature = "test-support"))]
+    fn after_fixture_notes(&mut self, unread: Touched) -> Touched {
+        let notes = crate::sim::game_entity::NameNote::fixture_notes();
+        if std::mem::replace(&mut self.fixture_notes, notes) == notes {
+            unread
+        } else {
+            Touched::All
+        }
     }
 
     /// The Bullet subset of the same index, for Anim4's dedicated holder
@@ -469,6 +510,7 @@ mod tests {
     use crate::sim::anim_class::{AnimObject, AnimRuntime, AnimWorldCoord};
     use crate::sim::capture_manager::CaptureManagerState;
     use crate::sim::combat::{RAD_NO_ATTACKER, TargetKind};
+    use crate::sim::components::NavTargetRef;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::InternedId;
     use crate::sim::particles::ParticleSystem;
@@ -550,6 +592,15 @@ mod tests {
             .construct(id, 0, 0, source, target, payload);
     }
 
+    /// Retarget a stored entity through the class setter's store.
+    fn retarget(entities: &mut EntityStore, id: u64, target: u64) {
+        let entity = entities.get_mut(id).unwrap();
+        let note = entity.note_names();
+        entity
+            .attack_target
+            .set(Some(TargetKind::Entity(target)), note);
+    }
+
     fn attacker(id: u64, target: u64) -> GameEntity {
         let mut entity = GameEntity::test_default(id, "MTNK", "Americans", 10, 10);
         entity
@@ -587,12 +638,7 @@ mod tests {
         assert_eq!(reach(&mut index, &mut stores, 3), [1, 2, 3, 4, 6]);
         assert_eq!(reach(&mut index, &mut stores, 9), [6]);
         // A retarget is read back on the next expiry.
-        stores
-            .entities
-            .get_mut(1)
-            .unwrap()
-            .attack_target
-            .set_for_test(Some(TargetKind::Entity(4)));
+        retarget(&mut stores.entities, 1, 4);
         assert_eq!(reach(&mut index, &mut stores, 3), [2, 3, 4, 6]);
         assert_eq!(reach(&mut index, &mut stores, 4), [1, 4, 6]);
         // An entity inserted after the index was built.
@@ -609,6 +655,87 @@ mod tests {
         }
         assert_eq!(reach(&mut index, &mut stores, 3), [3, 5]);
         assert_eq!(reach(&mut index, &mut stores, 4), [1]);
+    }
+
+    /// Entities 1..=5, read once by `index`.
+    fn read_entities(index: &mut ExpiryListeners) -> Stores {
+        let mut stores = Stores::default();
+        for id in 1..=5 {
+            stores
+                .entities
+                .insert(GameEntity::test_default(id, "MTNK", "Americans", 10, 10));
+        }
+        assert!(reach(index, &mut stores, 20).is_empty());
+        stores
+    }
+
+    #[test]
+    fn a_name_each_kind_of_writer_stores_is_found_at_the_next_expiry() {
+        let mut index = ExpiryListeners::default();
+        let mut stores = read_entities(&mut index);
+        // A field's writer takes its entity's note, an entity's own writer
+        // and the store's held-Anim writer note it themselves, and a forked
+        // turn's note comes with its commit.
+        retarget(&mut stores.entities, 1, 20);
+        let entity = stores.entities.get_mut(2).unwrap();
+        let note = entity.note_names();
+        entity
+            .navigation
+            .publish_nav_com(Some(NavTargetRef::object(21)), note);
+        stores
+            .entities
+            .get_mut(3)
+            .unwrap()
+            .set_archive_target(Some(TargetKind::Entity(22)));
+        stores.entities.hold_parachute_animation(4, 23);
+        stores.entities.share();
+        let mut fork = stores.entities.fork();
+        retarget(&mut fork, 5, 24);
+        let writes = fork.take_fork_writes();
+        drop(fork);
+        stores.entities.unshare();
+        stores.entities.commit_writes(writes);
+        for (expired, namer) in [(20, 1), (21, 2), (22, 3), (23, 4), (24, 5)] {
+            assert_eq!(reach(&mut index, &mut stores, expired), [namer]);
+        }
+    }
+
+    #[test]
+    fn a_cleared_name_is_not_found() {
+        let mut index = ExpiryListeners::default();
+        let mut stores = read_entities(&mut index);
+        let entity = stores.entities.get_mut(1).unwrap();
+        let note = entity.note_names();
+        entity
+            .navigation
+            .publish_nav_com(Some(NavTargetRef::object(20)), note);
+        assert!(reach(&mut index, &mut stores, 30).is_empty());
+        // A clear takes no note: the index still names 1 for 20, asks it,
+        // and forgets it.
+        stores.entities.get_mut(1).unwrap().navigation.stop_moving();
+        assert!(reach(&mut index, &mut stores, 20).is_empty());
+        assert_eq!(
+            index
+                .entities
+                .named_by
+                .range((20, 0)..=(20, u64::MAX))
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn an_entity_stored_again_is_read_whole() {
+        let mut index = ExpiryListeners::default();
+        let mut stores = read_entities(&mut index);
+        retarget(&mut stores.entities, 1, 20);
+        assert_eq!(reach(&mut index, &mut stores, 20), [1]);
+        // A copied field takes no note; storing the entity again reads it.
+        let copied = stores.entities.get(1).unwrap().attack_target;
+        let mut moved = stores.entities.remove(3).unwrap();
+        moved.attack_target = copied;
+        stores.entities.insert(moved);
+        assert_eq!(reach(&mut index, &mut stores, 20), [1, 3]);
     }
 
     #[test]
@@ -639,14 +766,13 @@ mod tests {
         assert_eq!(reach(&mut index, &mut stores, 6), [1]);
         assert!(reach(&mut index, &mut stores, 7).is_empty());
         // A queued entity target is read back on the next expiry.
-        stores
-            .entities
-            .get_mut(1)
-            .unwrap()
+        let launcher = stores.entities.get_mut(1).unwrap();
+        let note = launcher.note_names();
+        launcher
             .spawn_manager
             .as_mut()
             .unwrap()
-            .set_queued_target_for_test(Some(TargetKind::Entity(7)));
+            .queue_target(Some(TargetKind::Entity(7)), note);
         assert_eq!(reach(&mut index, &mut stores, 7), [1]);
     }
 
@@ -662,16 +788,12 @@ mod tests {
         };
         let mut index = ExpiryListeners::default();
         assert_eq!(reach(&mut index, &mut stores, 1000).len(), 200);
-        // More hand-outs than stored entities: every entity is re-read, and
-        // the removed ones drop out.
+        // Every entity handed out and half of them retargeted: those and the
+        // removed ones are re-read, on the worker pool, and the removed ones
+        // drop out.
         for id in 1..=600 {
             if id % 2 == 0 {
-                stores
-                    .entities
-                    .get_mut(id)
-                    .unwrap()
-                    .attack_target
-                    .set_for_test(Some(TargetKind::Entity(1000)));
+                retarget(&mut stores.entities, id, 1000);
             }
             stores.entities.get_mut(id).unwrap();
         }
@@ -683,26 +805,22 @@ mod tests {
         }
         // Fewer than the store holds, but enough for the worker pool.
         for id in 1..=400 {
-            if let Some(entity) = stores.entities.get_mut(id) {
-                entity
-                    .attack_target
-                    .set_for_test(Some(TargetKind::Entity(1001)));
+            if stores.entities.contains(id) {
+                retarget(&mut stores.entities, id, 1001);
             }
         }
         for expired in [1000, 1001, 1002] {
             reach(&mut index, &mut stores, expired);
         }
         // The pool takes a long log as it stands, here descending and then
-        // repeating: a listener read twice reports what it holds now.
+        // repeating: a listener read once reports what it holds now.
         for (id, target) in (1..=250)
             .rev()
             .map(|id| (id, 1002))
             .chain((1..=120).map(|id| (id, 1000 + id % 3)))
         {
-            if let Some(entity) = stores.entities.get_mut(id) {
-                entity
-                    .attack_target
-                    .set_for_test(Some(TargetKind::Entity(target)));
+            if stores.entities.contains(id) {
+                retarget(&mut stores.entities, id, target);
             }
         }
         for expired in [1000, 1001, 1002] {

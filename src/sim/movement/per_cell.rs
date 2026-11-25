@@ -145,8 +145,11 @@ impl Simulation {
             if restore && let Some(unit) = self.substrate.entities.get_mut(id) {
                 // Unit73A4E9 restores only the raw NavCom; unlike the Foot
                 // setter this does not clear NavComAux or change movement.
-                unit.navigation
-                    .store_nav_com(Some(crate::sim::components::NavTargetRef::object(contact)));
+                let note = unit.note_names();
+                unit.navigation.store_nav_com(
+                    Some(crate::sim::components::NavTargetRef::object(contact)),
+                    note,
+                );
             }
             self.foot_per_cell_process(id, PerCellReason::Arrival, rules, registry, effects);
             crate::sim::radio::transmit_to_contact(
