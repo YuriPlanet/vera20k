@@ -447,9 +447,6 @@ pub struct ExtModules {
     /// The merged rules text `rules_get` reads during the match; `None`
     /// without modules.
     rules_ini: Option<IniFile>,
-    /// The mod's `[VeraWasm] MapUI=`, kept for client modules (phase 2).
-    /// Not saved: a loaded match reads the default.
-    map_ui: MapUi,
     /// Decision `random` substreams of the current frame ([`decide`]); not saved.
     decide: decide::DecideState,
     /// Registered INI names and the string table ([`ini_names`]).
@@ -589,11 +586,6 @@ impl ExtModules {
     /// Operations used by each module's latest `on_frame`.
     pub fn last_frame_ops(&self) -> Vec<u64> {
         self.slots.iter().map(|s| s.last_frame_ops).collect()
-    }
-
-    /// How map modules may show interface under the selected mod.
-    pub fn map_ui(&self) -> MapUi {
-        self.map_ui
     }
 
     /// Keeps `line`, dropping the oldest past [`LOG_KEPT`].
@@ -2277,7 +2269,6 @@ impl Simulation {
                 crate::sim::trigger_runtime::TriggerEffect::ExtModuleNotice { text },
             ]);
         }
-        self.ext_modules.map_ui = policy.map_ui;
         self.ext_modules.controller = policy.controller;
         self.ext_modules.automation_allowed = policy.automation_allowed;
         if !modules.is_empty() {

@@ -61,6 +61,23 @@ pub enum MapUi {
     No,
 }
 
+impl MapUi {
+    /// `[VeraWasm] MapUI=` of the mod's own `rulesmd.ini` (the stock one
+    /// without a mod). The client reads it when it installs its modules
+    /// (`app::ui_modules::install`), for a new match and a restored save
+    /// alike: the simulation does not hold it, so a save does not carry it.
+    pub fn read(mod_rules: &IniFile) -> Self {
+        match mod_rules
+            .section_or_empty("VeraWasm")
+            .read_name("MapUI", 16)
+        {
+            Some(name) if name.eq_ignore_ascii_case("full") => Self::Full,
+            Some(name) if name.eq_ignore_ascii_case("no") => Self::No,
+            _ => Self::Overlay,
+        }
+    }
+}
+
 /// The mod's `rulesmd.ini` `[VeraWasm]` keys (appendix "INI keys"), read
 /// from that file alone, without layering.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,7 +93,6 @@ pub struct WasmPolicy {
     pub seat_budget: u64,
     /// `MapWasm=`: whether maps with modules may start under this mod.
     pub map_wasm: bool,
-    pub map_ui: MapUi,
     /// `Controller=`: the lobby offers "mod AI" for computer seats, and
     /// such a seat's house starts with every domain claimed by the mod
     /// module (RFC 6i, `claims`).
@@ -96,7 +112,6 @@ impl Default for WasmPolicy {
             map_budget: MAP_FRAME_BUDGET,
             seat_budget: SEAT_BUDGET,
             map_wasm: true,
-            map_ui: MapUi::Overlay,
             controller: false,
             automation_allowed: false,
         }
@@ -118,18 +133,12 @@ impl WasmPolicy {
             0 => budget("Budget", FRAME_BUDGET, FRAME_BUDGET)?,
             value => checked_budget("WasmBudget", i64::from(value), FRAME_BUDGET)?,
         };
-        let map_ui = match section.read_name("MapUI", 16) {
-            Some(name) if name.eq_ignore_ascii_case("full") => MapUi::Full,
-            Some(name) if name.eq_ignore_ascii_case("no") => MapUi::No,
-            _ => MapUi::Overlay,
-        };
         Ok(Self {
             api: section.read_name("Api", 16).map(str::to_owned),
             budget: mod_budget,
             map_budget: budget("MapBudget", MAP_FRAME_BUDGET, FRAME_BUDGET)?,
             seat_budget: budget("SeatBudget", SEAT_BUDGET, SEAT_BUDGET)?,
             map_wasm: section.read_bool("MapWasm", true),
-            map_ui,
             controller: section.read_bool("Controller", false),
             automation_allowed: false,
         })

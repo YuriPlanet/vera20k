@@ -27,8 +27,14 @@
 //! `[VeraWasm] MapUI=no`), and runs `client_init`. They live in
 //! `MatchState::ui_modules`, an `Option` that stays `None` for a match
 //! without client modules or map `[VeraUI]` parts, so such a match pays
-//! nothing. A new scenario or a restored save drops them
-//! (`reset_scenario_exit_runtime`).
+//! nothing. A new scenario or a restored save drops them and their nodes
+//! ([`drop_modules`], from `reset_scenario_exit_runtime`).
+//!
+//! A save carries no client module (RFC 10): a restored match reads the
+//! same sources again ([`UiModuleSources::read_restored`], the saved map's
+//! file read again) and goes through the same [`install`], so its modules
+//! start afresh, `client_init` then `client_on_start` on its first frame,
+//! with their local storage as they left it.
 //!
 //! ## Frame order
 //!
@@ -144,6 +150,34 @@ impl UiModuleSources {
             .map(str::to_owned)
             .unwrap_or_else(|| map_file_name(map_source));
         sources
+    }
+
+    /// A restored save's sources (`match_runtime::restore`): the mod's
+    /// `ui.wasm` as [`Self::read`] reads it, and the map's parts from the
+    /// saved map's file, read again
+    /// ([`crate::map::source::reread_saved_map_ini`]; a save does not carry
+    /// the map's INI). A map file that is gone or changed leaves the map's
+    /// parts out, logged; the mod's module still loads.
+    pub(crate) fn read_restored(
+        assets: &crate::assets::asset_manager::AssetManager,
+        map_source: &crate::map::source::LoadedMapSource,
+        ra2_dir: Option<&std::path::Path>,
+        launch_dir: Option<&std::path::Path>,
+    ) -> Self {
+        let map = ra2_dir.map_or(Ok(None), |ra2_dir| {
+            crate::map::source::reread_saved_map_ini(map_source, ra2_dir, launch_dir, assets)
+        });
+        let map = match map {
+            Ok(map) => map.unwrap_or_else(IniFile::empty),
+            Err(error) => {
+                log::warn!(
+                    target: "ext_module",
+                    "the saved map is not read again for its client modules: {error:#}"
+                );
+                IniFile::empty()
+            }
+        };
+        Self::read(assets, &map, map_source)
     }
 
     fn is_empty(&self) -> bool {
@@ -427,24 +461,28 @@ fn local_inputs(state: &AppState) -> LocalInputs {
 }
 
 /// Builds the match's client modules once the world and its presentation
-/// are installed (`loading::transitions::apply_map_load_result`): the mod's
-/// `ui.wasm`, then the map's under `[VeraWasm] MapUI=`, the map's `[VeraUI]`
-/// parts, then `client_init` for each module.
+/// are installed (`loading::transitions::apply_map_load_result` for a new
+/// match, `match_runtime::restore::commit_prepared_load` for a restored
+/// save): the mod's `ui.wasm`, then the map's under `[VeraWasm] MapUI=`, the
+/// map's `[VeraUI]` parts, then `client_init` for each module.
 pub(crate) fn install(state: &mut AppState, sources: UiModuleSources) {
-    state.match_state.ui_modules = None;
+    drop_modules(state);
     let mut lines: Vec<(String, bool)> = sources
         .problems
         .iter()
         .map(|problem| (problem.clone(), true))
         .collect();
-    let Some(map_ui) = state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .map(|runtime| runtime.simulation.ext_modules().map_ui())
-    else {
+    if state.match_state.sim_runtime.runtime().is_none() {
         return;
-    };
+    }
+    // Read from the mod's own rulesmd.ini each time, so a restored save
+    // keeps the policy too: the simulation does not hold it.
+    let map_ui = state
+        .process_assets
+        .native_rules()
+        .map_or(MapUi::default(), |rules| {
+            MapUi::read(rules.selected_rules_root())
+        });
     if sources.is_empty() && lines.is_empty() {
         return;
     }
@@ -533,6 +571,20 @@ pub(crate) fn install(state: &mut AppState, sources: UiModuleSources) {
     if !ui.slots.is_empty() || map_layout.is_some() || !ui.pending_lines.is_empty() {
         state.match_state.ui_modules = Some(ui);
         rebind_game_keys(state);
+    }
+}
+
+/// Drops the match's client modules and takes their nodes and the map's
+/// `[VeraUI]` parts off the match's `Gui`: a new scenario or a restored save
+/// (`reset_scenario_exit_runtime`) and [`install`]. A load in the middle of
+/// a match keeps that `Gui`, so the nodes would outlive their modules.
+pub(crate) fn drop_modules(state: &mut AppState) {
+    if state.match_state.ui_modules.take().is_none() {
+        return;
+    }
+    let gui = state.match_state.match_presentation.dialog_ui.gui_mut();
+    for origin in [tree::MOD_MODULE, tree::MAP_MODULE, tree::MAP_LAYOUT] {
+        gui.remove_origin(origin);
     }
 }
 
