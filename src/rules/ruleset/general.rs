@@ -1317,6 +1317,10 @@ pub struct GeneralRules {
     /// computer house's yard deploy runs
     /// `HouseClass::MoveGroundForcesToBase @ 0x0050C920` (`0x00739926`).
     pub gather_when_mcv_deploy: bool,
+    /// Phobos `[General] ArtImageSwap=` (default false): a TechnoType's own
+    /// ART section `Image=` names its visual SHP/VXL files without changing
+    /// the ART keys read from that section.
+    pub art_image_swap: bool,
     /// Phobos `[AudioVisual] TimerBlinkColorScheme=`: the runtime ColorScheme
     /// a finished superweapon timer blinks in, `[Colors]` entry `R / 2`, or -1
     /// for `none`. Constructor 5, the third `[Colors]` entry the game uses.
@@ -2178,6 +2182,7 @@ impl Default for GeneralRules {
             ai_fire_sale_delay: 0,
             ai_all_to_hunt: true,
             gather_when_mcv_deploy: true,
+            art_image_swap: false,
             #[cfg(feature = "phobos")]
             timer_blink_color_scheme: 5,
             harvester_too_far_distance: 5,
@@ -3188,6 +3193,7 @@ impl GeneralRules {
             ai_fire_sale_delay: phobos_read(|| general.read_int("AIFireSaleDelay", 0)),
             ai_all_to_hunt: phobos_read(|| general.read_bool("AIAllToHunt", true)),
             gather_when_mcv_deploy: phobos_read(|| general.read_bool("GatherWhenMCVDeploy", true)),
+            art_image_swap: phobos_read(|| general.read_bool("ArtImageSwap", false)),
             harvester_too_far_distance: general.read_int("HarvesterTooFarDistance", 5),
             approach_target_reset_multiplier: general.read_int("ApproachTargetResetMultiplier", 1),
             chrono_harv_too_far_distance: general.read_int("ChronoHarvTooFarDistance", 50),
