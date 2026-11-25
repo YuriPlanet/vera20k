@@ -21,11 +21,11 @@ const SEED: u32 = 0x1269;
 /// draw `random(0, 999_999)` into memory and halve; answer 0; answer 0 to
 /// the first request whose `value` is 2 (`CommandAllowed`'s Stop) and leave
 /// the others alone, counting those requests at 696.
-const HALVE: i32 = 1;
+pub(super) const HALVE: i32 = 1;
 const IGNORE: i32 = 2;
 const WRITE: i32 = 3;
 const DRAW: i32 = 4;
-const REFUSE: i32 = 5;
+pub(super) const REFUSE: i32 = 5;
 const REFUSE_FIRST_STOP: i32 = 6;
 
 fn scenario() -> Option<HeadlessScenario> {
@@ -49,7 +49,7 @@ fn decide_def(kind: i32, key: i32) -> Vec<u8> {
 /// (statuses at 72 and 76). `on_decide` copies its record to 512, then
 /// answers by key; `DRAW` appends each draw to 700 and counts them at 696.
 /// Its delivery area is one `DecideRecord` at 1024.
-fn module(kind: i32, key: i32, target: i64) -> Vec<u8> {
+pub(super) fn module(kind: i32, key: i32, target: i64) -> Vec<u8> {
     let def = decide_def(kind, key);
     let bytes = def.iter().map(|b| format!("\\{b:02x}")).collect::<String>();
     wat::parse_str(format!(
@@ -108,7 +108,7 @@ fn sturdy_object(scene: &HeadlessScenario) -> u64 {
 }
 
 /// The first live, placed unit or infantryman on the map, with its owner.
-fn ground_unit(scene: &HeadlessScenario) -> (u64, String) {
+pub(super) fn ground_unit(scene: &HeadlessScenario) -> (u64, String) {
     use crate::map::entities::EntityCategory;
     let sim = scene.sim();
     sim.entities()
@@ -127,7 +127,7 @@ fn ground_unit(scene: &HeadlessScenario) -> (u64, String) {
 
 /// Installs a map module whose decider for `kind` with `key` binds to
 /// `target`, and runs the frame of its `on_scenario_start`.
-fn install_decider(scene: &mut HeadlessScenario, kind: i32, key: i32, target: i64) {
+pub(super) fn install_decider(scene: &mut HeadlessScenario, kind: i32, key: i32, target: i64) {
     scene
         .runtime
         .simulation

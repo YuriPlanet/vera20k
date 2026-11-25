@@ -80,7 +80,7 @@ pub(super) fn def(
 /// unless `target` is 0, binds it to `target` (status at 72); `on_events`
 /// copies the first record it gets to 512 and counts records at 80, as
 /// `trigger_tests` modules do.
-fn module(def: &[u8], target: i64, sections: &str) -> Vec<u8> {
+pub(super) fn module(def: &[u8], target: i64, sections: &str) -> Vec<u8> {
     let bytes = |b: &[u8]| b.iter().map(|b| format!("\\{b:02x}")).collect::<String>();
     let bind = if target == 0 {
         String::new()
@@ -112,7 +112,7 @@ fn module(def: &[u8], target: i64, sections: &str) -> Vec<u8> {
 
 /// Installs `module` as the map's and runs the frame that creates its
 /// trigger; create and bind answered `Ok`.
-fn installed(mut scene: HeadlessScenario, module: &[u8]) -> HeadlessScenario {
+pub(super) fn installed(mut scene: HeadlessScenario, module: &[u8]) -> HeadlessScenario {
     scene
         .runtime
         .simulation
@@ -128,7 +128,7 @@ fn installed(mut scene: HeadlessScenario, module: &[u8]) -> HeadlessScenario {
 }
 
 /// The first delivered record's `(kind, subject, house, value, id)`.
-fn first_record(scene: &HeadlessScenario) -> (i32, i64, i64, i64, i32) {
+pub(super) fn first_record(scene: &HeadlessScenario) -> (i32, i64, i64, i64, i32) {
     let m = memory(scene);
     let i32_at = |at: usize| i32::from_le_bytes(m[at..at + 4].try_into().expect("4 bytes"));
     let i64_at = |at: usize| i64::from_le_bytes(m[at..at + 8].try_into().expect("8 bytes"));
