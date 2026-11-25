@@ -16,6 +16,8 @@
 //!   the command stream.
 //! - [`storage`]: each source's local key-value store.
 //!
+//! The tree's nodes are laid out and drawn with the frame ([`paint`]).
+//!
 //! ## Lifetime
 //!
 //! The loader reads the modules' bytes with the scenario
@@ -59,6 +61,7 @@
 
 pub(crate) mod host;
 pub(crate) mod local;
+pub(crate) mod paint;
 pub(crate) mod reads;
 pub(crate) mod storage;
 pub(crate) mod tree;
@@ -196,6 +199,8 @@ pub(crate) struct UiModules {
     /// (`MatchPresentationState::dialog_ui`), beside the engine's and the
     /// `veraui.ini` parts (RFC 10, "Node ownership").
     tree: UiTree,
+    /// What the tree's layers draw ([`paint`]).
+    huds: paint::ModuleHuds,
     local: LocalState,
     /// `client_on_start` given since load or the last catch-up.
     started: bool,
@@ -225,6 +230,7 @@ impl UiModules {
             slots: Vec::new(),
             map_ui,
             tree: UiTree::new(),
+            huds: paint::ModuleHuds::default(),
             local: LocalState::new(),
             started: false,
             outbox: ClientOutbox::default(),

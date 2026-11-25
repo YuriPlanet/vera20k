@@ -1423,13 +1423,41 @@ pub(super) fn dispatch_draw_passes(
         .selection_overlay
         .as_ref()
         .map(|o| o.white_texture());
+    // VERA: the client modules' panels (`ui.wasm`, RFC 0001 section 10)
+    // over the battlefield and the sidebar, where the pointer reaches them
+    // before the chrome (`ui_modules::tree`), under the message rows.
+    crate::app::ui_modules::paint::draw(
+        &mut pass,
+        state,
+        pool,
+        crate::app::ui_modules::paint::ModuleLayer::Panels,
+    );
+    let font = Some(state.renderer.bit_font.atlas());
+    if text_in_frame {
+        for (texture, key) in [(solid, "message_fill"), (font, "message_text")] {
+            draw_pooled_ui(
+                &mut pass,
+                &state.renderer.batch_renderer,
+                pool,
+                texture,
+                key,
+            );
+        }
+    }
+    // VERA: the map's overlay (its module's nodes under `MapUI=overlay` and
+    // its `[VeraUI]` parts), above the whole match interface; the tooltip
+    // and the in-match dialogs go over it.
+    crate::app::ui_modules::paint::draw(
+        &mut pass,
+        state,
+        pool,
+        crate::app::ui_modules::paint::ModuleLayer::Overlay,
+    );
     if text_in_frame {
         for (texture, key) in [
-            (solid, "message_fill"),
-            (Some(state.renderer.bit_font.atlas()), "message_text"),
             (solid, "tooltip_fill"),
             (solid, "tooltip_border"),
-            (Some(state.renderer.bit_font.atlas()), "tooltip_text"),
+            (font, "tooltip_text"),
         ] {
             draw_pooled_ui(
                 &mut pass,
