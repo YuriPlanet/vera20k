@@ -128,6 +128,14 @@ the source tree). Its Wasm verbs need no game install:
   `preview` and may change. `MISSION_CHANGED` is numbered but not raised yet; check
   with `has_kind`. A `SpeedMultiplier` modifier also slows or speeds up aircraft,
   jumpjets and rockets.
+- Unit AI decisions (preview): `Event::IDLE_MISSION` picks the mission a unit idles
+  into; `Event::MISSION_STEP` is asked after each Guard, Area Guard, Hunt or Attack
+  mission body of a bound infantryman or vehicle. Its `MissionStepDecision` arrives
+  holding what the body decided; `set_target`, `set_destination`, `set_mission` and
+  `set_delay` replace parts of it (for example a guard that walks to a post, or an
+  attacker that picks its own target). The body has already run, so its shots and
+  deploys stand; a cleared Guard target may be picked up again by the unit's own
+  acquisition.
 - INI names: `ini::key`, `ini::registry` and `ini::event` let modders configure the
   module in INI ([below](#ini-names-a-module-registers)).
 
