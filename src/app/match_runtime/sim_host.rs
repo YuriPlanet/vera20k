@@ -865,6 +865,22 @@ mod tests {
         assert_eq!((host.lent_jobs, host.early_returns), (2, 1));
     }
 
+    /// Drawing reads no trigger, so a lent tick's world copy holds none:
+    /// debug builds refuse the read, and the live world keeps its own.
+    #[test]
+    fn the_world_copy_leaves_the_triggers_with_the_live_world() {
+        let mut runtime = SimRuntime::from_simulation(Simulation::new());
+        runtime
+            .simulation
+            .set_trigger_variable_for_test(true, 3, true);
+        let copy = runtime.presentation_copy(None, None);
+        let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            copy.simulation.global_variables()
+        }));
+        assert_eq!(refused.is_err(), cfg!(debug_assertions));
+        assert!(runtime.simulation.global_variables()[3]);
+    }
+
     /// A frame answers every type the sidebar has asked of the scenario. A
     /// new one drops a home frame but not a lent tick's, whose successor
     /// answers it; another scenario starts with none asked.
