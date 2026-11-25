@@ -1029,6 +1029,7 @@ impl Simulation {
             }
             sim.sleep_after_turn(stable_id, rules);
             sim.quiet_after_turn(stable_id, rules);
+            sim.steady_after_turn(stable_id, rules);
             #[cfg(feature = "debug-tools")]
             if let Some(before) = debug_before
                 && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
@@ -1090,7 +1091,8 @@ impl Simulation {
         }
         let _building_area = was_structure
             .then(|| crate::sim::frame_profile::area(crate::sim::frame_profile::phase::BUILDINGS));
-        let mut ai = sim.object_ai_visit_one_with_effects(stable_id, rules, object_ctx);
+        // A steady object's visit may be counted (`world::steady_ai`).
+        let mut ai = sim.steady_ai_visit(stable_id, rules, object_ctx);
         if let Some(error) = ai.frame_error.take() {
             return Err(error);
         }
