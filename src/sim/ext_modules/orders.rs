@@ -75,7 +75,7 @@ use serde::{Deserialize, Serialize};
 use vera20k_wasm_ext::triggers::{EVENT_COMMANDED, EVENT_ORDER_REFUSED};
 use vera20k_wasm_ext::{Invalid, NAME_SUPER_WEAPON, NAME_TECHNO_TYPE, Order, Status};
 
-use super::{Host, ModuleEvent, Reader, Ref, decode_ref, techno_type};
+use super::{Host, ModuleEvent, Reader, Ref, decode_ref};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::{Command, CommandEnvelope, CommandRefusal};

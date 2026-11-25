@@ -600,8 +600,11 @@ pub(crate) fn render_frame(state: &mut AppState) {
         };
         let gui = match_state.match_presentation.dialog_ui.gui_mut();
         if ui.slots.is_empty() {
-            // Static map parts only: the tree's events have no reader.
+            // Static map parts only: the tree's events have no reader, but
+            // their buttons' commands run.
             ui.tree.take_events(&mut Vec::new());
+            drop(match_state);
+            run_map_part_commands(state);
             return;
         }
         let dt = ui
@@ -622,6 +625,23 @@ pub(crate) fn render_frame(state: &mut AppState) {
     }
     post_lines(state, out.lines);
     apply_effects(state, out.effects);
+    run_map_part_commands(state);
+}
+
+/// The map's `[VeraUI]` buttons clicked this frame run their `Command=` as
+/// the `veraui.ini` buttons do (`presentation::layout_parts::run`).
+fn run_map_part_commands(state: &mut AppState) {
+    let commands = state
+        .match_state
+        .ui_modules
+        .as_mut()
+        .map(|ui| ui.tree.take_commands())
+        .unwrap_or_default();
+    for name in commands {
+        if let Some(command) = crate::app::presentation::layout_parts::command_named(&name) {
+            crate::app::presentation::layout_parts::run(state, command, false);
+        }
+    }
 }
 
 /// The modules' log lines and faults in the in-game console, as the
