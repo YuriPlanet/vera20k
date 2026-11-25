@@ -415,6 +415,12 @@ const DEREF_TYPES: &[(&str, &str, &str)] = &[
         "a projection of the LAN I/O owner's mutex guard; its drop wakes the I/O worker",
     ),
     (
+        "SeldomPart",
+        "sim/game_entity.rs",
+        "an owning handle on an object's seldom part, as the box it replaced, shared by \
+         copies of the record: `deref_mut` gives the record its own copy first",
+    ),
+    (
         "StashedLocomotor",
         "sim/movement/locomotion/piggyback.rs",
         "an owning box of the one nested locomotor, read only",

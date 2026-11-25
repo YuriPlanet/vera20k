@@ -530,7 +530,7 @@ pub struct GameEntity {
     #[serde(skip)]
     names_unread: NamesUnread,
     /// The state this object's turn does not read each step, stored apart.
-    pub seldom: Box<Seldom>,
+    pub seldom: SeldomPart,
 }
 
 /// The `BuildingClass` state. A [`Sparse`] in [`GameEntity::building`] holds
@@ -677,6 +677,48 @@ impl crate::util::sparse::SparseDefault for BuildingPart {
         static DEFAULT: std::sync::LazyLock<BuildingPart> =
             std::sync::LazyLock::new(BuildingPart::default);
         &DEFAULT
+    }
+}
+
+/// [`Seldom`] behind a handle that copies of a record share until one of
+/// them writes it ([`std::sync::Arc::make_mut`]): a copy of the record, as a
+/// fork of the world makes for each object whose turn it runs
+/// (`world::speculation`), copies the main part alone. Saves and `Debug`
+/// see the `Seldom` itself.
+#[derive(Clone)]
+pub struct SeldomPart(std::sync::Arc<Seldom>);
+
+impl std::ops::Deref for SeldomPart {
+    type Target = Seldom;
+
+    #[inline]
+    fn deref(&self) -> &Seldom {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for SeldomPart {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Seldom {
+        std::sync::Arc::make_mut(&mut self.0)
+    }
+}
+
+impl std::fmt::Debug for SeldomPart {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl serde::Serialize for SeldomPart {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for SeldomPart {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Seldom::deserialize(deserializer).map(|seldom| Self(std::sync::Arc::new(seldom)))
     }
 }
 
@@ -2555,7 +2597,7 @@ impl GameEntity {
             cached_spatial_threat: Default::default(),
             turret_anim_frame: Default::default(),
             names_unread: NamesUnread::default(),
-            seldom: Box::new(Seldom {
+            seldom: SeldomPart(std::sync::Arc::new(Seldom {
                 tracking_facts: Default::default(),
                 house_tracking_latches: Default::default(),
                 #[cfg(feature = "phobos")]
@@ -2653,7 +2695,7 @@ impl GameEntity {
                 web: Default::default(),
                 #[cfg(feature = "phobos")]
                 shield: None,
-            }),
+            })),
         }
     }
 

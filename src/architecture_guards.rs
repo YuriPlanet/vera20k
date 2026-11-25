@@ -2124,6 +2124,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         ("sim/combat/laser.rs", "create", LASER),
         ("sim/combat/laser.rs", "construct", LASER),
         (
+            "sim/game_entity.rs",
+            "deref_mut",
+            "SeldomPart, the handle copies of an object's record share its seldom part \
+             through: `entity.seldom.field` reaches the part as the box it replaced did",
+        ),
+        (
             "sim/pathfinding/zone_hierarchy.rs",
             "cell_zone_ids_mut",
             "the zone build writes a level's cell zone ids (zone_build/hierarchy.rs)",
