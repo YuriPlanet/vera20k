@@ -14,15 +14,14 @@ pub struct Hooks {
     pub export: fn(folder: &str) -> bool,
     /// Let the player pick a folder in the system file manager to copy in.
     pub import: fn() -> bool,
-    /// Add the named folder as a home-screen shortcut.
-    pub pin: fn(folder: &str) -> bool,
+    /// Add `folder` as a home-screen shortcut for `id`.
+    pub pin: fn(folder: &str, id: &str) -> bool,
     /// Let the player pick a mod ZIP in the system file manager.
     pub pick_zip: fn() -> bool,
     /// Let the player pick a mod folder in the system file manager.
     pub pick_folder: fn() -> bool,
-    /// Forget a home-screen shortcut for the named folder, when the platform
-    /// can remove one.
-    pub forget: fn(folder: &str) -> bool,
+    /// Forget `folder`'s shortcuts, keyed by `id` and by its old name.
+    pub forget: fn(folder: &str, id: &str) -> bool,
     /// The part the picker copied in, once; the caller takes it.
     pub take_picked: fn() -> Option<String>,
 }
@@ -73,11 +72,11 @@ pub fn take_picked() -> Option<std::path::PathBuf> {
 }
 
 /// Ask the platform to drop `folder`'s shortcut; false when it cannot.
-pub fn forget(folder: &str) -> bool {
-    HOOKS.get().is_some_and(|hooks| (hooks.forget)(folder))
+pub fn forget(folder: &str, id: &str) -> bool {
+    HOOKS.get().is_some_and(|hooks| (hooks.forget)(folder, id))
 }
 
 /// Ask the platform to pin `folder`; false when it cannot.
-pub fn pin(folder: &str) -> bool {
-    HOOKS.get().is_some_and(|hooks| (hooks.pin)(folder))
+pub fn pin(folder: &str, id: &str) -> bool {
+    HOOKS.get().is_some_and(|hooks| (hooks.pin)(folder, id))
 }

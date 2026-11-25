@@ -118,14 +118,59 @@ fn mod_take_picked() -> Option<String> {
     .filter(|part| !part.is_empty())
 }
 
-/// Mods page: forget `folder`'s home-screen shortcut.
-fn mod_forget(folder: &str) -> bool {
-    activity_flag("forgetModShortcut", Some(folder))
+/// Mods page: forget `folder`'s home-screen shortcuts (`id` and its old name).
+fn mod_forget(folder: &str, id: &str) -> bool {
+    let call = |env: &mut jni::JNIEnv, activity: &jni::objects::JObject| {
+        let (folder, id) = (env.new_string(folder).ok()?, env.new_string(id).ok()?);
+        let args = [(&folder).into(), (&id).into()];
+        env.call_method(
+            activity,
+            "forgetModShortcut",
+            "(Ljava/lang/String;Ljava/lang/String;)Z",
+            &args,
+        )
+        .ok()?
+        .z()
+        .ok()
+    };
+    with_activity(call).flatten().unwrap_or(false)
 }
 
-/// Mods page: add a home-screen shortcut for `folder`.
-fn mod_pin(folder: &str) -> bool {
-    activity_flag("pinMod", Some(folder))
+/// Mods page: add a home-screen shortcut for `folder` under `id`.
+fn mod_pin(folder: &str, id: &str) -> bool {
+    let call = |env: &mut jni::JNIEnv, activity: &jni::objects::JObject| {
+        let (folder, id) = (env.new_string(folder).ok()?, env.new_string(id).ok()?);
+        let args = [(&folder).into(), (&id).into()];
+        env.call_method(activity, "pinMod", "(Ljava/lang/String;Ljava/lang/String;)Z", &args)
+            .ok()?
+            .z()
+            .ok()
+    };
+    with_activity(call).flatten().unwrap_or(false)
+}
+
+/// Resolves a `modid:<id>` entry to its folder by the id file the Mods folder
+/// keeps, so a shortcut survives a rename.
+fn folder_for_mod_id(data_dir: &std::path::Path, entry: &str) -> Option<String> {
+    let id = entry.strip_prefix("modid:")?.trim();
+    if id.is_empty() {
+        return None;
+    }
+    let mods = data_dir.join("Mods");
+    let entries = std::fs::read_dir(mods).ok()?;
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(dir.join(".vera20k-mod-id")) else {
+            continue;
+        };
+        if text.trim() == id {
+            return entry.file_name().to_str().map(|name| format!("mod:{name}"));
+        }
+    }
+    None
 }
 
 /// The entry a launcher shortcut handed over (`VeraActivity.takeLaunchEntry`),
@@ -486,6 +531,7 @@ fn android_main(app: AndroidApp) {
     // private folder to the engine before anything opens a file: it becomes
     // both the working directory and the settings folder, so logs, config.toml,
     // VERA.INI, saves and replays all persist there.
+    let data_dir = app.internal_data_path();
     match app.internal_data_path() {
         Some(dir) => {
             if let Err(error) = vera20k::entry::adopt_android_data_dir(&dir) {
@@ -547,9 +593,18 @@ fn android_main(app: AndroidApp) {
 
     // A pinned shortcut can name the mod this launch plays; `config.toml` keeps
     // the player's own choice untouched.
-    let entry = launch_entry();
+    let mut entry = launch_entry();
     if let Some(entry) = entry.as_deref() {
         log::info!("Launch entry: {entry}");
+    }
+    if let Some(id_entry) = entry.clone().filter(|entry| entry.starts_with("modid:")) {
+        match folder_for_mod_id(data_dir.as_deref().unwrap_or(std::path::Path::new(".")), &id_entry) {
+            Some(folder_entry) => {
+                log::info!("Launch entry {id_entry} is {folder_entry}");
+                entry = Some(folder_entry);
+            }
+            None => log::warn!("Launch entry {id_entry} names no mod here"),
+        }
     }
     match vera20k::entry::run_with_loop_and_entry(launch_mode, false, event_loop, entry.as_deref())
     {

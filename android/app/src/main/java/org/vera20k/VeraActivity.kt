@@ -200,14 +200,17 @@ class VeraActivity : NativeActivity() {
      * launcher's, so the app asks for their removal (`removeLongLivedShortcuts`,
      * API 30) and disables them where the launcher keeps them.
      */
-    fun forgetModShortcut(folder: String): Boolean {
+    fun forgetModShortcut(folder: String, id: String): Boolean {
         val manager = getSystemService(ShortcutManager::class.java) ?: return false
-        val id = "mod:$folder"
+        val ids = buildList {
+            if (id.isNotEmpty()) add("modid:$id")
+            add("mod:$folder")
+        }
         return try {
             if (Build.VERSION.SDK_INT >= 30) {
-                manager.removeLongLivedShortcuts(listOf(id))
+                manager.removeLongLivedShortcuts(ids)
             }
-            manager.disableShortcuts(listOf(id), "mod removed")
+            manager.disableShortcuts(ids, "mod removed")
             true
         } catch (error: Throwable) {
             android.util.Log.w("Vera20k", "could not forget $folder: $error")
@@ -216,15 +219,17 @@ class VeraActivity : NativeActivity() {
     }
 
     /** Adds a home-screen shortcut that starts this activity on `folder`. */
-    fun pinMod(folder: String): Boolean {
+    fun pinMod(folder: String, id: String): Boolean {
         val manager = getSystemService(ShortcutManager::class.java) ?: return false
         if (!manager.isRequestPinShortcutSupported) return false
+        // The id, not the folder name, is what survives a rename.
+        val key = if (id.isEmpty()) "mod:$folder" else "modid:$id"
         val launch = Intent(this, VeraActivity::class.java).apply {
             action = Intent.ACTION_MAIN
             addCategory(Intent.CATEGORY_LAUNCHER)
-            putExtra(EXTRA_ENTRY, "mod:$folder")
+            putExtra(EXTRA_ENTRY, key)
         }
-        val shortcut = ShortcutInfo.Builder(this, "mod:$folder")
+        val shortcut = ShortcutInfo.Builder(this, key)
             .setShortLabel(folder.take(10))
             .setLongLabel(folder)
             .setIcon(Icon.createWithResource(this, R.mipmap.ic_launcher_retail))

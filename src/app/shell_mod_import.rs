@@ -829,6 +829,14 @@ impl App {
     }
 
     fn mod_imported(state: &mut AppState, folder: String, play: bool) {
+        if let Some(dir) = state
+            .platform
+            .game_config
+            .as_ref()
+            .map(|config| config.paths.mods_dir().join(&folder))
+        {
+            let _ = crate::app::mods::ensure_mod_id(&dir);
+        }
         Self::select_installed_mod(state, &folder);
         let selected = Self::mods_selected(&state.frontend.shell_controller);
         if play && state.frontend.mods.switch_to(selected).is_some() {

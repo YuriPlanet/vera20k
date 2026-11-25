@@ -77,6 +77,40 @@ impl ModSwitch {
 /// The entry a platform's launcher handed over: `mod:<folder>` picks that
 /// folder for this launch, anything else (including an empty string) picks
 /// nothing. Android shortcuts pass it as an intent extra (`docs/android.md`).
+/// The file in a mod's folder that carries its stable id, so a launcher
+/// shortcut keeps working when the folder is renamed.
+pub const MOD_ID_FILE: &str = ".vera20k-mod-id";
+
+/// `dir`'s stable id, or `None` when it has no file and one cannot be made.
+pub(crate) fn mod_id(dir: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(dir.join(MOD_ID_FILE)).ok()?;
+    let id = text.trim();
+    (!id.is_empty() && id.chars().all(|c| c.is_ascii_hexdigit())).then(|| id.to_owned())
+}
+
+/// Writes a stable id into `dir` when it has none, and returns it.
+pub(crate) fn ensure_mod_id(dir: &Path) -> Option<String> {
+    if let Some(id) = mod_id(dir) {
+        return Some(id);
+    }
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    use std::hash::{Hash, Hasher};
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0)
+        .hash(&mut hasher);
+    std::process::id().hash(&mut hasher);
+    dir.hash(&mut hasher);
+    let id = format!(
+        "{:016x}{:016x}",
+        hasher.finish(),
+        hasher.finish().rotate_left(17)
+    );
+    std::fs::write(dir.join(MOD_ID_FILE), &id).ok()?;
+    Some(id)
+}
+
 pub fn launch_entry_switch(entry: &str) -> Option<ModSwitch> {
     let folder = entry.strip_prefix("mod:")?.trim();
     (!folder.is_empty()).then(|| ModSwitch::Use(folder.to_owned()))
@@ -160,7 +194,11 @@ impl Mods {
         base: &IniRootConfig,
         setting: AresSetting,
         kratos: crate::util::kratos_launch::KratosSetting,
-    ) -> (ResourceConfig, AresSetting, crate::util::kratos_launch::KratosSetting) {
+    ) -> (
+        ResourceConfig,
+        AresSetting,
+        crate::util::kratos_launch::KratosSetting,
+    ) {
         match resources_for(self.active.as_ref(), base, setting, kratos) {
             Ok(selected) => selected,
             Err(error) => {
@@ -849,12 +887,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_mod_id_is_made_once_and_survives_a_rename() {
+        let root = std::env::temp_dir().join(format!("vera20k-mod-id-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join("Old Name");
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(mod_id(&dir), None);
+        let id = ensure_mod_id(&dir).expect("an id");
+        assert_eq!(ensure_mod_id(&dir).as_deref(), Some(id.as_str()));
+        let renamed = root.join("New Name");
+        std::fs::rename(&dir, &renamed).unwrap();
+        assert_eq!(mod_id(&renamed).as_deref(), Some(id.as_str()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     fn a_launcher_entry_picks_a_mod_folder_and_nothing_else() {
         assert_eq!(
             launch_entry_switch("mod:Winter War"),
             Some(ModSwitch::Use("Winter War".into()))
         );
-        assert_eq!(launch_entry_switch("mod:  spaced  "), Some(ModSwitch::Use("spaced".into())));
+        assert_eq!(
+            launch_entry_switch("mod:  spaced  "),
+            Some(ModSwitch::Use("spaced".into()))
+        );
         assert_eq!(launch_entry_switch("mod:"), None);
         assert_eq!(launch_entry_switch(""), None);
         assert_eq!(launch_entry_switch("profile:work"), None);

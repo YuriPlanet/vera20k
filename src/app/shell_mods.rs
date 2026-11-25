@@ -284,7 +284,8 @@ impl App {
         let text = match dir.map(|dir| (std::fs::remove_dir_all(&dir), dir)) {
             Some((Ok(()), dir)) => {
                 log::info!("Mods: deleted {}", dir.display());
-                if !crate::util::mod_actions::forget(&folder) {
+                let id = crate::app::mods::mod_id(&dir).unwrap_or_default();
+                if !crate::util::mod_actions::forget(&folder, &id) {
                     log::warn!("Mods: no shortcut hook to forget {folder}");
                 }
                 tr_fill("VERA:ModDeleted", &[("mod", &folder)])
@@ -324,7 +325,16 @@ impl App {
         let Some(folder) = Self::picked_folder(state) else {
             return;
         };
-        if !crate::util::mod_actions::pin(&folder) {
+        let dir = state
+            .platform
+            .game_config
+            .as_ref()
+            .map(|config| config.paths.mods_dir().join(&folder));
+        let id = dir
+            .as_deref()
+            .and_then(crate::app::mods::ensure_mod_id)
+            .unwrap_or_default();
+        if !crate::util::mod_actions::pin(&folder, &id) {
             log::warn!("Mods: no shortcut hook for {folder}");
             Self::mod_action_failed(state);
         }
@@ -700,6 +710,9 @@ impl App {
             made.dir.display(),
             made.copied.join(", ")
         );
+        if let Some(id) = crate::app::mods::ensure_mod_id(&made.dir) {
+            log::info!("Mods: {} has id {id}", made.folder);
+        }
         Self::select_installed_mod(state, &made.folder);
         if !report {
             return;
@@ -1060,9 +1073,6 @@ impl App {
         Self::set_mod_name(&to, &name);
         if paths.mod_name() == Some(from) {
             let _ = state.frontend.mods.keep_choice(paths, Some(&name));
-        }
-        if !crate::util::mod_actions::forget(from) {
-            log::warn!("Mods: no shortcut hook to forget {from}");
         }
         log::info!("Mods: renamed {from} to {name}");
         Self::select_installed_mod(state, &name);
