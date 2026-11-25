@@ -517,14 +517,10 @@ impl LoadingRequest {
         {
             loaded = loaded.with_mod_additions(&additions)?;
         }
-        let mut loaded = match map_additions {
-            Some(additions) => loaded.with_mod_additions(additions)?,
-            None => loaded,
-        };
-        if !matches!(self.startup(), LoadingStartup::Network(_)) {
-            loaded = loaded.with_ra2_campaign_fixups(map_file)?;
+        match map_additions {
+            Some(additions) => loaded.with_mod_additions(additions),
+            None => Ok(loaded),
         }
-        Ok(loaded)
     }
 
     fn skirmish_launch_session(&self) -> Option<&SkirmishLaunchSession> {
