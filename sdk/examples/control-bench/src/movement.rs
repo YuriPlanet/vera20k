@@ -15,14 +15,15 @@
 //!   the next frame's command step, so `CommandAllowed` and `DestinationSet`
 //!   reach this module): a Chrono Miner for `CommandAllowed` and
 //!   `DestinationSet`, a tank (weapons off) attacking a player tank for
-//!   `ApproachPoint`, a Siege Chopper (an MCV if it is never asked) on level
+//!   `ApproachPoint` (beside a player tank attacking a sleeping computer GI,
+//!   the engine test's shape; either one marks), a Siege Chopper (an MCV if it is never asked) on level
 //!   ground for `DeployAllowed`; each removed once done. A GI's deploy
 //!   command is not used: `Mission_Unload` deploys a standing infantryman
 //!   without asking `DeployAllowed` (`src/sim/deploy.rs`
 //!   `infantry_mission_unload`); only the walking one's pending deploy asks;
 //! - the computer house's own harvesters (`HarvestCell`) and production
-//!   (`ProductionQueued`, then `ProductionAllowed`, on the first type its
-//!   factories start). The module's own `QueueProduction` is not used: a
+//!   (`ProductionQueued` on the first type its factories start, then
+//!   `ProductionAllowed` on the type they started most). The module's own `QueueProduction` is not used: a
 //!   module order checks the player's prerequisites.
 //!
 //! A `MoveFrame` decider that never answers (the observer) reads the NavCom
@@ -175,6 +176,15 @@ static AP: V = V::new(0);
 static AP_AT: V = V::new(0);
 static AP_CELL: V = V::new(0);
 static AP_SEEN: V = V::new(0);
+static AP_NAV_LOGGED: V = V::new(0);
+// The engine test's shape too: a player tank attacks a computer GI (weapons
+// off, asleep) seven cells away, inside its sight and out of its range.
+static T_AP2: V = V::new(0);
+static AP2_TARGET: V = V::new(0);
+static AP2: V = V::new(0);
+static AP2_AT: V = V::new(0);
+static AP2_CELL: V = V::new(0);
+static AP2_SEEN: V = V::new(0);
 
 // The MoveFrame observer (never answers).
 static TR_OBS: V = V::new(0);
@@ -217,7 +227,6 @@ static DA_BECAME: V = V::new(0);
 // ProductionQueued, then ProductionAllowed, on the computer house's own
 // production.
 static TR_PA: V = V::new(0);
-static TR_PA2: V = V::new(0);
 static TR_PQ: V = V::new(0);
 static TR_PQ2: V = V::new(0);
 static PROD_TYPE: V = V::new(-1);
@@ -231,9 +240,9 @@ static PA_AT: V = V::new(0);
 static PA_NO: V = V::new(0);
 static PA_NATIVE: V = V::new(0);
 static PA_YES: V = V::new(0);
-static PA_DURING: V = V::new(0);
-static PA_AFTER: V = V::new(0);
-static PA_COUNT: V = V::new(0);
+static PA_TYPE: V = V::new(-1);
+static PA_SLOT: V = V::new(0);
+static PA_BASE: V = V::new(0);
 
 // --------------------------------------------------------------- Helpers
 
@@ -368,6 +377,17 @@ pub fn open() {
         }
     }
 
+    if let Some(tank) = put(&T_AP2, offset(a, 3, 7), "MTNK", me) {
+        let at = cell_of(tank);
+        if let Some(gi) = put(&AP2_TARGET, offset(at, 0, 7), "E1", them) {
+            let _ = Modifier::override_(gi, Prop::DisableWeapons, 1, -1);
+            let _ = Action::set_mission(gi, Mission::Sleep, no_cell());
+            AP2_CELL.set(pick(at, &[(0, -2), (2, -2), (-2, -2), (2, 0), (-2, 0)]).0);
+            decider(Event::APPROACH_POINT, tank, KEY_AP);
+            observe(tank);
+        }
+    }
+
     // The computer house's objects, east half (unarmed or weapons off).
     if let Some(miner) = put(&U_CMD, offset(a, 7, -6), "CMIN", them) {
         let at = cell_of(miner);
@@ -386,26 +406,7 @@ pub fn open() {
         .done();
 
     // The computer house's own production and harvesters.
-    TR_PA.set(type_decider(
-        Event::PRODUCTION_ALLOWED,
-        &PROD_TYPES[0],
-        KEY_PA,
-    ));
-    TR_PA2.set(type_decider(
-        Event::PRODUCTION_ALLOWED,
-        &PROD_TYPES[1],
-        KEY_PA,
-    ));
-    TR_PQ.set(type_decider(
-        Event::PRODUCTION_QUEUED,
-        &PROD_TYPES[0],
-        KEY_PQ,
-    ));
-    TR_PQ2.set(type_decider(
-        Event::PRODUCTION_QUEUED,
-        &PROD_TYPES[1],
-        KEY_PQ,
-    ));
+    production_open();
     type_decider(Event::HARVEST_CELL, &["HARV", "CMIN", "SMIN"], KEY_HC);
 }
 
@@ -419,11 +420,12 @@ pub fn frame(now: i32) {
     idle_mission(now, since);
     mission_step(now, since);
     approach_point(now, since);
+    approach_point_player(now, since);
     command_allowed(now, since);
     destination_set(now);
     harvest_cell(now, since);
     deploy_allowed(now, since);
-    production(now);
+    production(now, since);
 }
 
 /// Records whose key is in this area's range.
@@ -907,6 +909,51 @@ fn approach_point(now: i64, since: i64) {
     }
 }
 
+/// The player tank's attack on the GI (see `T_AP2`).
+fn approach_point_player(now: i64, since: i64) {
+    let tank = T_AP2.unit();
+    let gi = AP2_TARGET.unit();
+    match AP2.get() {
+        0 if since >= 15 => {
+            if !alive(tank) || !alive(gi) {
+                AP2.set(DONE);
+            } else if Action::set_mission_on(tank, Mission::Attack, gi).is_ok() {
+                AP2_AT.set(now);
+                AP2.set(1);
+            } else {
+                diag_unit("ApproachPoint player attack not taken", tank, cell_of(gi));
+                ap2_finish();
+            }
+        }
+        1 if now > AP2_AT.get() + 300 => {
+            diag_unit("ApproachPoint player tank not asked", tank, cell_of(gi));
+            ap2_finish();
+        }
+        2 => {
+            if AP2_SEEN.get() == 1 || dist(cell_of(tank), AP2_CELL.cell()) <= 1 {
+                mark("movement.ApproachPoint");
+                ap2_finish();
+            } else if now > AP2_AT.get() + 300 {
+                diag_unit("ApproachPoint answered, player tank", tank, AP2_CELL.cell());
+                ap2_finish();
+            }
+        }
+        _ => {}
+    }
+}
+
+fn ap2_finish() {
+    let tank = T_AP2.unit();
+    if alive(tank) {
+        let _ = Action::set_mission(tank, Mission::Guard, no_cell());
+    }
+    let gi = AP2_TARGET.unit();
+    if alive(gi) {
+        let _ = Action::remove(gi);
+    }
+    AP2.set(DONE);
+}
+
 fn ap_finish() {
     let attacker = AP_ATTACKER.unit();
     if alive(attacker) {
@@ -916,6 +963,17 @@ fn ap_finish() {
 }
 
 fn decide_approach(mut d: ApproachPointDecision) {
+    if d.unit().0 == T_AP2.get() && matches!(AP2.get(), 1 | 2) {
+        if d.target().0 != AP2_TARGET.get() || d.chosen().is_none() {
+            bench_fail("movement.ApproachPoint", "the request named another target");
+        }
+        d.set_cell(AP2_CELL.cell());
+        if AP2.get() == 1 {
+            AP2_AT.set(tick());
+            AP2.set(2);
+        }
+        return;
+    }
     if d.unit().0 != AP_ATTACKER.get() || !matches!(AP.get(), 1 | 2) {
         return;
     }
@@ -954,6 +1012,21 @@ fn decide_observe(d: MoveFrameDecision) {
     }
     if unit == AP_ATTACKER.get() && AP.get() == 2 && navcom == AP_CELL.cell() {
         AP_SEEN.set(1);
+    }
+    if unit == AP_ATTACKER.get() && AP.get() == 1 && AP_NAV_LOGGED.get() == 0 && d.moving() {
+        // Moving without an ApproachPoint request: what is it heading for?
+        AP_NAV_LOGGED.set(1);
+        let mut line = Line::new();
+        line.text("movement diag ApproachPoint attacker moves unasked, NavCom object ")
+            .num(i64::from(d.destination().0 == T_AP.get()))
+            .text(" cell ")
+            .num(i64::from(navcom.x()))
+            .text(",")
+            .num(i64::from(navcom.y()));
+        line.log();
+    }
+    if unit == T_AP2.get() && AP2.get() == 2 && navcom == AP2_CELL.cell() {
+        AP2_SEEN.set(1);
     }
     if unit == HC_UNIT.get() && HC.get() == 2 {
         if navcom == HC_CELL.cell() {
@@ -1336,19 +1409,42 @@ fn decide_deploy(mut d: DeployAllowedDecision) {
 
 // ------------------------------------- ProductionAllowed, ProductionQueued
 
-/// The types the computer house builds early (Soviet, and Allied in case):
+/// The types the computer house builds (Soviet, and Allied in case):
 /// buildings and units its factories start themselves. The module's own
 /// `QueueProduction` is not used: a module order checks the player's
 /// prerequisites and came back `Prerequisite` for a type the house could
 /// build.
-const PROD_TYPES: [[&str; 8]; 2] = [
-    [
-        "NAPOWR", "NAREFN", "NAHAND", "NAWEAP", "NARADR", "NALASR", "HTNK", "HARV",
-    ],
-    [
-        "GAPOWR", "GAREFN", "GAPILE", "GAWEAP", "GAPILL", "HTK", "E2", "E1",
-    ],
+const PROD_TYPES: [&str; 16] = [
+    "NAPOWR", "NAREFN", "NAHAND", "NAWEAP", "NARADR", "NALASR", "HTNK", "HARV", "GAPOWR", "GAREFN",
+    "GAPILE", "GAWEAP", "GAPILL", "HTK", "E2", "E1",
 ];
+
+/// `PROD_TYPES`' IDs (−1 unknown) and how often the computer's factories
+/// started each (`ProductionQueued` requests not refused).
+static TYPE_IDS: [V; 16] = [const { V::new(-1) }; 16];
+static STARTS: [V; 16] = [const { V::new(0) }; 16];
+
+/// The `ProductionQueued` deciders on every known type of `PROD_TYPES`.
+fn production_open() {
+    let mut halves = [
+        Trigger::on(Event::PRODUCTION_QUEUED),
+        Trigger::on(Event::PRODUCTION_QUEUED),
+    ];
+    for (slot, id) in PROD_TYPES.iter().enumerate() {
+        if let Ok(ty) = TypeRef::techno_type(id) {
+            TYPE_IDS[slot].set(i64::from(ty.id()));
+            let half = &mut halves[slot / 8];
+            *half = core::mem::replace(half, Trigger::on(0)).bind(ty);
+        }
+    }
+    let [first, second] = halves;
+    TR_PQ.set(first.decide_sync(KEY_PQ).map_or(0, |t| t.0));
+    TR_PQ2.set(second.decide_sync(KEY_PQ).map_or(0, |t| t.0));
+}
+
+fn slot_of(ty: i64) -> Option<usize> {
+    TYPE_IDS.iter().position(|id| id.get() == ty)
+}
 
 /// A decision trigger on `kind` bound to `ids`' types; its handle or 0.
 fn type_decider(kind: i32, ids: &[&str], key: i32) -> i64 {
@@ -1371,12 +1467,12 @@ fn count_of(ty: TypeRef) -> i64 {
         .map_or(0, |(count, _)| count as i64)
 }
 
-fn prod_diag(what: &str, a: i64, b: i64) {
+fn prod_diag(what: &str, ty: i64, a: i64, b: i64) {
     let mut line = Line::new();
     line.text("movement diag ")
         .text(what)
         .text(" type ")
-        .num(PROD_TYPE.get())
+        .num(ty)
         .text(": ")
         .num(a)
         .text(", ")
@@ -1386,11 +1482,11 @@ fn prod_diag(what: &str, a: i64, b: i64) {
 
 /// `ProductionQueued` first: the first type the computer's factory starts
 /// is refused until it asks again (nothing started), then allowed (one more
-/// must be built). Then `ProductionAllowed` on that type: forbidden for 300
-/// frames its factory must not try to start it (no `ProductionQueued`
-/// request) while the native answer says it could; allowed back, it must
-/// start one again (a request, or one more built).
-fn production(now: i64) {
+/// must be built). Then `ProductionAllowed` on the type the factories have
+/// started most (at least 3 times, 2 late in the match): forbidden for 300
+/// frames, while its native answer says the house could build it, no start
+/// of it may be asked; allowed back, one more start must come.
+fn production(now: i64, since: i64) {
     let ty = TypeRef::new(NameKind::TechnoType, PROD_TYPE.get() as i32);
     match PQ.get() {
         0 if PQ_NO.get() >= 1 && PQ_AT.get() == 0 => {
@@ -1403,7 +1499,12 @@ fn production(now: i64) {
             PQ.set(1);
         }
         0 if PQ_AT.get() > 0 && now > PQ_AT.get() + 1500 => {
-            prod_diag("ProductionQueued asked once in 1500 frames", PQ_NO.get(), 0);
+            prod_diag(
+                "ProductionQueued asked once",
+                PROD_TYPE.get(),
+                PQ_NO.get(),
+                0,
+            );
             PQ.set(DONE);
         }
         1 => {
@@ -1413,7 +1514,8 @@ fn production(now: i64) {
                 PQ.set(DONE);
             } else if now > PQ_AT.get() + 2000 {
                 prod_diag(
-                    "ProductionQueued allowed, count then/now",
+                    "ProductionQueued allowed, count",
+                    PROD_TYPE.get(),
                     PQ_COUNT.get(),
                     count,
                 );
@@ -1422,20 +1524,45 @@ fn production(now: i64) {
         }
         _ => {}
     }
-    if PQ.get() != DONE || PROD_TYPE.get() < 0 {
+    if PQ.get() != DONE {
         return;
     }
+    let slot = PA_SLOT.get() as usize;
     match PA.get() {
         0 => {
-            PA.set(1);
+            let least = if since > 4000 { 2 } else { 3 };
+            let Some(best) = (0..STARTS.len())
+                .filter(|&s| TYPE_IDS[s].get() >= 0)
+                .max_by_key(|&s| STARTS[s].get())
+                .filter(|&s| STARTS[s].get() >= least)
+            else {
+                if since > 5800 {
+                    log("movement diag ProductionAllowed: no type started twice");
+                    PA.set(DONE);
+                }
+                return;
+            };
+            let id = TYPE_IDS[best].get();
+            PA_SLOT.set(best as i64);
+            PA_TYPE.set(id);
+            TR_PA.set(
+                Trigger::on(Event::PRODUCTION_ALLOWED)
+                    .bind(TypeRef::new(NameKind::TechnoType, id as i32))
+                    .decide_sync(KEY_PA)
+                    .map_or(0, |t| t.0),
+            );
+            PA_BASE.set(STARTS[best].get());
             PA_AT.set(now);
+            PA.set(1);
         }
         1 if now >= PA_AT.get() + 300 => {
-            if PA_DURING.get() > 0 {
+            let during = STARTS[slot].get() - PA_BASE.get();
+            if during > 0 {
                 prod_diag(
-                    "ProductionAllowed forbidden, asks",
+                    "ProductionAllowed forbidden, starts",
+                    PA_TYPE.get(),
                     PA_NO.get(),
-                    PA_DURING.get(),
+                    during,
                 );
                 bench_fail(
                     "movement.ProductionAllowed",
@@ -1443,12 +1570,13 @@ fn production(now: i64) {
                 );
                 PA.set(DONE);
             } else if PA_NO.get() >= 1 && PA_NATIVE.get() >= 1 {
-                PA_COUNT.set(count_of(ty));
+                PA_BASE.set(STARTS[slot].get());
                 PA_AT.set(now);
                 PA.set(2);
             } else {
                 prod_diag(
-                    "ProductionAllowed forbid asks, native yes",
+                    "ProductionAllowed forbid asks, native",
+                    PA_TYPE.get(),
                     PA_NO.get(),
                     PA_NATIVE.get(),
                 );
@@ -1456,22 +1584,21 @@ fn production(now: i64) {
             }
         }
         2 => {
-            let count = count_of(ty);
-            if PA_YES.get() >= 1 && (PA_AFTER.get() >= 1 || count > PA_COUNT.get()) {
+            if PA_YES.get() >= 1 && STARTS[slot].get() > PA_BASE.get() {
                 mark("movement.ProductionAllowed");
                 PA.set(DONE);
             } else if now > PA_AT.get() + 2500 {
                 prod_diag(
-                    "ProductionAllowed allowed, starts",
+                    "ProductionAllowed allowed, asks",
+                    PA_TYPE.get(),
                     PA_YES.get(),
-                    PA_AFTER.get(),
+                    0,
                 );
                 PA.set(DONE);
             }
         }
         DONE => {
             disable(&TR_PA);
-            disable(&TR_PA2);
             disable(&TR_PQ);
             disable(&TR_PQ2);
         }
@@ -1480,7 +1607,7 @@ fn production(now: i64) {
 }
 
 fn decide_production_allowed(mut d: ProductionAllowedDecision) {
-    if d.house() != enemy() || i64::from(d.techno_type().id()) != PROD_TYPE.get() {
+    if d.house() != enemy() || i64::from(d.techno_type().id()) != PA_TYPE.get() {
         return;
     }
     match PA.get() {
@@ -1511,21 +1638,15 @@ fn decide_production_queued(mut d: ProductionQueuedDecision) {
         if ty == PROD_TYPE.get() {
             d.set_result(0);
             PQ_NO.add(1);
+            return;
         }
-        return;
     }
-    if ty != PROD_TYPE.get() {
-        return;
+    if let Some(slot) = slot_of(ty) {
+        STARTS[slot].add(1);
     }
-    if PQ.get() == 1 {
+    if PQ.get() == 1 && ty == PROD_TYPE.get() {
         d.set_result(1);
         PQ_YES.add(1);
-    } else {
-        match PA.get() {
-            1 => PA_DURING.add(1),
-            2 => PA_AFTER.add(1),
-            _ => {}
-        }
     }
 }
 
