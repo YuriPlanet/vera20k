@@ -295,6 +295,12 @@ struct ProjectileStep {   // 56 字节：ProjectileFrame 的结果区
     reserved3: i32,       // 36  0
     data: [u8; 16],       // 40  新的模块数据（Data0 为第 0..7 字节，Data1 为第 8..15 字节）
 }
+struct MissionStepResult { // 24 字节：MissionStep 的结果区；第一环收到任务主体的结果
+    target: i64,          // 0   目标：对象或格子引用；0 为没有
+    destination: i64,     // 8   目的地：对象或格子引用；0 为没有
+    mission: i32,         // 16  要排入的任务（Mission）；-1 为不排
+    delay: i32,           // 20  任务主体下次运行前的帧数（≥ 1）
+}
 ```
 
 `get_many` 和 `client_get_many` 的 `out` 是按行排列的 `n × m` 个 `i64`：第 `i` 个引用的第 `j` 个属性在 `out[i * m + j]`；空引用或已消失的引用整行写 0，状态为 `Gone`。各项沿用单项读取的空值和状态；写入的槽数（含空值）写入 `count_out`，返回行优先顺序的首个非 `Ok` 状态，全部成功时为 `Ok`。有效空批次返回 `(0, Ok)`。
@@ -689,7 +695,7 @@ TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）�
 | 100036 | `ProjectileFrame` | `subject` 和 `projectile` 为抛射体，`value` 已飞行帧数 | 每帧引擎推进抛射体时，按引擎的顺序，在等待动画、目标解析和帧数引信之后、计算候选位置之前，每个本帧要移动的绑定抛射体一次 | 抛射体类型 | 不用；结果区为一个 `ProjectileStep`；`handled` 为 0 时按 `Launch` 的路径或原生推进 | preview |
 | 100039 | `DamageIncoming` | `subject`，`other` 来源（可为 0），`id` 弹头，`value` 入射伤害（有符号），`value2` 把 `previous` 按触发器 `EventDef.id` 的护甲（−1 为主体的护甲）经距离衰减、Verses 和上限算出的伤害，符号同 `previous`；`EventDef.value` 位 0 为 1 时，正值先按主体护甲倍率的乘积相除并向零取整；`x`、`y`、`z` 主体位置（lepton） | Techno 受伤入口：步兵卧倒、寄生前缀和引擎自己的护盾之后，阻止死亡、主体护甲和最小伤害 1 之前。入射为 0、无视防御、狂暴或超时空弹头，以及会被免疫、铁幕或敌我许可拒绝的命中不询问；主体护甲的 Verses 为 0 不影响询问 | 对象 | 继续进入原生流程的入射伤害：须为 0 或与 `previous` 同号，否则保留上一环；每一环按自己的 `previous` 重算 `value2`；变成 0 时不再施加最小伤害 1 | preview |
 | 100060 | `IdleMission` | `subject` | 步兵或车辆进入空闲、引擎选定要排入的任务之后、排入之前；不排任务时不询问；飞机和建筑不询问 | 对象 | 要排入的任务（`Mission`），255 不排；`native` 为引擎的选择 | preview |
-| 100061 | `HarvestCell` | `subject` 矿车，`cell` 引擎找到的矿格（没有为 0），`value` 搜索半径（格） | 矿车找矿并前往时，引擎的扫描之后、设目的地之前；奴隶矿工不询问 | 对象 | 矿格的格子引用，0 为没有；地图外的格子保留引擎的结果 | preview |
+| 100062 | `MissionStep` | `subject`，`value` 运行的任务（`Mission`），`other` 目标对象（格子或没有时为 0），`cell` 目标格子 | 步兵或车辆的 Guard、Sticky、AreaGuard、Hunt、Attack 任务主体每次运行之后（主体和它的随机数抽取都已完成）、写任务计时器和排入任务之前；飞机和建筑不询问 | 对象 | 不使用。结果区中为一条 `MissionStepResult`，进来时是主体的结果：它留下的目标和目的地、它要排入的任务（−1 为不排）和它的延迟。改动的字段经引擎自己的设置器生效（目的地经 `DestinationSet`）；已消失的对象、地图外的格子、未知的任务或小于 1 的延迟保留主体的结果。主体做的其他事（开火、部署、进入空闲时排入的任务）照常 | preview |
 
 ### 4.6 客户端事件种类
 
