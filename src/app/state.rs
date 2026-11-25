@@ -193,18 +193,10 @@ impl AppState {
         self.match_state.input.armed_super_weapon_type()
     }
 
-    pub(crate) fn sim_view(&self) -> Option<crate::sim::runtime::SimView<'_>> {
-        self.match_state.sim_view()
-    }
-
     pub(crate) fn resolved_terrain(
         &self,
     ) -> Option<&crate::map::resolved_terrain::ResolvedTerrainGrid> {
         self.match_state.resolved_terrain()
-    }
-
-    pub(crate) fn overlay_registry(&self) -> Option<&OverlayTypeRegistry> {
-        active_overlay_registry(&self.frontend, &self.match_state)
     }
 
     pub(crate) fn rules(&self) -> Option<&crate::rules::ruleset::RuleSet> {
