@@ -453,7 +453,13 @@ pub(crate) fn pump_saved_game_load(state: &mut AppState) -> Option<bool> {
         .is_some();
     let result = restore_save_file(state, path);
     if from_menu {
-        crate::app::App::finish_load_saved_game_from_menu(state, path, result);
+        crate::app::App::finish_load_saved_game_from_menu(
+            &mut state.frontend,
+            &mut state.match_state.match_presentation,
+            &state.process_assets,
+            path,
+            result,
+        );
     } else if from_browser {
         crate::app::App::finish_saved_game_load(state, path, result);
     } else if let Err(error) = result {

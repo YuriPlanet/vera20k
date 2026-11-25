@@ -97,7 +97,9 @@ fn setup_requests(state: &mut AppState) -> Vec<NetworkSetupRequest> {
     if state.match_state.session_mode() != SessionMode::Wol
         || !(state.frontend.shell_route == ShellRoute::NetworkSetup
             || super::lobby::visiting(state.frontend.wol.as_ref())
-            || crate::app::shell_network_setup::quick_match(state))
+            || crate::app::shell_network_setup::quick_match(
+                state.frontend.network_setup_protocol.as_ref(),
+            ))
     {
         return Vec::new();
     }
@@ -344,7 +346,12 @@ fn host_options(
         }
     }
     launch.selected_map_file = Some(file.clone());
-    let map_metadata = crate::app::shell_network_setup::local_map_metadata(state, &file)?;
+    let map_metadata = crate::app::shell_network_setup::local_map_metadata(
+        state.platform.game_config.as_ref(),
+        &state.frontend.scenario_catalog,
+        &state.process_assets,
+        &file,
+    )?;
     crate::app::shell_network_setup::service_event(
         state,
         NetworkSetupEvent::HostSetup(crate::app::shell_network_setup::HostOptions {

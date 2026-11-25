@@ -37,11 +37,22 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
     {
         return Ok(false);
     }
-    let campaign = campaign_room::publication(state)?;
+    let campaign = campaign_room::publication(
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+    )?;
     if let Some(room) = &campaign {
-        campaign_room::verify_current(state, room)?;
+        campaign_room::verify_current(
+            state.platform.game_config.as_ref(),
+            &state.process_assets,
+            room,
+        )?;
     }
-    let agreement = crate::app::shell_network_setup::agreement::local(state)?;
+    let agreement = crate::app::shell_network_setup::agreement::local(
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+        &mut state.process_assets,
+    )?;
     // The room carries the applied speed, the world's while one is installed:
     // another player's speed event in the last match changed only the world.
     // Build_Options_String reads that global, [0xA8EB60], at 0x005DBC68.
@@ -66,7 +77,11 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
                 .ok_or_else(|| anyhow!("host seed is not initialized"))?,
         },
         None => TaggedOptionsBody::Stock {
-            random_map: crate::app::shell_network_setup::maps::host_generated_manifest(state)?,
+            random_map: crate::app::shell_network_setup::maps::host_generated_manifest(
+                state.platform.game_config.as_ref(),
+                &state.frontend.multiplayer_shell_runtime,
+                &state.match_state.session,
+            )?,
             room: projected_room(
                 session,
                 state
@@ -105,7 +120,10 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
         payload,
     )?;
     if admitted {
-        crate::app::shell_network_setup::invalidate_network_agreement(state)?;
+        crate::app::shell_network_setup::invalidate_network_agreement(
+            &mut state.frontend.network_setup_protocol,
+            &mut state.match_state.session,
+        )?;
         let service = state
             .match_state
             .lan_service
@@ -391,7 +409,11 @@ fn apply_host_room(
                 .session
                 .accept_campaign_room(Some(room.clone()), envelope.game_speed)?;
             state.match_state.session.set_network_start_seed(*seed)?;
-            let verified = campaign_room::verify_current(state, room);
+            let verified = campaign_room::verify_current(
+                state.platform.game_config.as_ref(),
+                &state.process_assets,
+                room,
+            );
             if let Err(error) = &verified {
                 log::info!("Campaign room files refused: {error:#}");
             }
@@ -542,7 +564,10 @@ fn receive_host_options(
             )?;
         }
     }
-    crate::app::shell_network_setup::invalidate_network_agreement(state)?;
+    crate::app::shell_network_setup::invalidate_network_agreement(
+        &mut state.frontend.network_setup_protocol,
+        &mut state.match_state.session,
+    )?;
     apply_host_room(state, &options, host_setup)?;
     match &options.body {
         TaggedOptionsBody::Stock { random_map, .. } => {

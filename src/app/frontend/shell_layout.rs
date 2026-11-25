@@ -69,7 +69,7 @@ pub(crate) fn menu_cursor_scale(state: &AppState) -> f32 {
         return wol_lobby_cursor_scale(fitted, &visit.page, visible, dialog);
     }
     if route == ShellRoute::NetworkSetup {
-        let dialog = crate::app::shell_network_setup::dialog(state);
+        let dialog = crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state);
         if dialog.wol() && dialog.modern {
             return fitted * 0.5;
         }

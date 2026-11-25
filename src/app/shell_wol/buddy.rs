@@ -131,7 +131,12 @@ pub(super) fn open_dialog(state: &mut AppState) {
         refresh_at: None,
     }));
     state.frontend.shell_route = ShellRoute::Wol;
-    let _ = App::ensure_skirmish_shell_chrome(state);
+    let _ = App::ensure_skirmish_shell_chrome(
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+    );
     super::leaf::open_art(state, DIALOG);
     state.frontend.shell_controller.reset_to(DIALOG);
     super::buddies::restart(&mut state.frontend);
@@ -553,7 +558,13 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         };
         let (action, doubled) = match event {
             PageEvent::Cue(cue) => {
-                App::play_page_cue(state, cue);
+                App::play_page_cue(
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    cue,
+                );
                 continue;
             }
             // LBN_SELCHANGE runs first, then LBN_DBLCLK.
@@ -563,7 +574,13 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
             _ => continue,
         };
         if doubled {
-            App::play_page_cue(state, PageCue::ListClick);
+            App::play_page_cue(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                PageCue::ListClick,
+            );
         }
         if let Some(action) = action {
             apply(state, action);

@@ -50,7 +50,9 @@ pub(super) fn poll_setup_leases(state: &mut AppState, now: u32) {
         };
         let host_left = service.retire_setup_peer(endpoint);
         let event = if host_left {
-            super::shell_network_setup::lock_lan_departure(state);
+            super::shell_network_setup::lock_lan_departure(
+                &mut state.frontend.network_setup_protocol,
+            );
             super::shell_network_setup::NetworkSetupEvent::HostLeft
         } else {
             super::shell_network_setup::NetworkSetupEvent::ParticipantLeft { index }
@@ -178,7 +180,9 @@ pub(super) fn drain_setup_requests(state: &mut AppState, now: u32) {
             Err(error) => {
                 log::warn!("LAN setup request failed: {error:#}");
                 // A direct spawn has no dialog to retry from.
-                if super::shell_network_setup::external(state) {
+                if super::shell_network_setup::external(
+                    state.frontend.network_setup_protocol.as_ref(),
+                ) {
                     super::App::fail_external_launch(
                         state,
                         &crate::i18n::tr("VERA:StartRefusedSetup"),
@@ -272,7 +276,10 @@ fn setup_request(
             let now = super::match_runtime::frame_pacer::frame_bucket(
                 super::match_runtime::frame_pacer::wall_clock_ms(),
             );
-            super::shell_network_setup::mark_lan_go_packets_queued(state, now)?;
+            super::shell_network_setup::mark_lan_go_packets_queued(
+                &mut state.frontend.network_setup_protocol,
+                now,
+            )?;
             return Ok(true);
         }
         NetworkSetupRequest::RequestAcceptance => {
@@ -401,7 +408,10 @@ fn setup_request(
             let now = super::match_runtime::frame_pacer::frame_bucket(
                 super::match_runtime::frame_pacer::wall_clock_ms(),
             );
-            super::shell_network_setup::mark_lan_go_packets_queued(state, now)?;
+            super::shell_network_setup::mark_lan_go_packets_queued(
+                &mut state.frontend.network_setup_protocol,
+                now,
+            )?;
             return Ok(true);
         }
         // None of these reaches a LAN service. The rest are WOL's requests, and

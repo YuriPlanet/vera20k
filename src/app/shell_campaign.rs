@@ -8,10 +8,13 @@ use crate::util::time::Instant;
 use super::{App, AppState};
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::process_assets::ProcessAssets;
 use crate::app::shell_route::ShellRoute;
+use crate::audio::sfx::SfxPlayer;
 use crate::ui::campaign_shell::{
     BACK_BUTTON, CAMPAIGN_DIALOG, CampaignShellState, CampaignSide, DIFFICULTY_SLIDER,
 };
+use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::menu_page;
 use crate::ui::shell::page::{PageCue, PageEvent};
 
@@ -27,7 +30,7 @@ impl App {
         state.frontend.campaign = Some(CampaignShellState::open(
             state.persistence.options_profile.difficulty,
         ));
-        Self::show_shell_page(state, ShellRoute::Campaign, CAMPAIGN_DIALOG);
+        Self::show_shell_page(&mut state.frontend, ShellRoute::Campaign, CAMPAIGN_DIALOG);
     }
 
     /// Back's teardown has run: the art is freed (`0x0072DAA0`) and state 1
@@ -96,14 +99,26 @@ impl App {
             state.frontend.shell_status_line.repaint();
         }
         let mut rest = Vec::new();
-        for event in Self::shell_page_events(state, true) {
+        for event in Self::shell_page_events(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            true,
+        ) {
             match event {
                 PageEvent::Slid { value, .. } => {
                     let moved = (state.frontend.campaign.as_mut())
                         .is_some_and(|campaign| campaign.set_difficulty(value));
                     if moved {
                         // 0x0061E6DD: mouse-driven position changes click.
-                        Self::play_page_cue(state, PageCue::ListClick);
+                        Self::play_page_cue(
+                            &state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
+                            PageCue::ListClick,
+                        );
                     }
                 }
                 event => rest.push(event),
@@ -113,14 +128,13 @@ impl App {
     }
 
     /// The control holding the mouse since a press on it.
-    fn campaign_captured(state: &AppState) -> Option<u16> {
-        menu_page::pressed_id(&state.frontend.shell_controller, CAMPAIGN_DIALOG)
+    fn campaign_captured(controller: &DialogController) -> Option<u16> {
+        menu_page::pressed_id(controller, CAMPAIGN_DIALOG)
     }
 
     /// The emblem under the pointer.
-    fn campaign_emblem_hovered(state: &AppState) -> Option<CampaignSide> {
-        menu_page::hovered_id(&state.frontend.shell_controller, CAMPAIGN_DIALOG)
-            .and_then(CampaignSide::from_emblem)
+    fn campaign_emblem_hovered(controller: &DialogController) -> Option<CampaignSide> {
+        menu_page::hovered_id(controller, CAMPAIGN_DIALOG).and_then(CampaignSide::from_emblem)
     }
 
     /// A move: the slider holding the mouse follows it, and no control sees
@@ -128,8 +142,8 @@ impl App {
     /// animates the emblem under it.
     pub(super) fn handle_campaign_mouse_move(state: &mut AppState) {
         Self::campaign_pointer(state, None);
-        if Self::campaign_captured(state).is_none() {
-            let under = Self::campaign_emblem_hovered(state);
+        if Self::campaign_captured(&state.frontend.shell_controller).is_none() {
+            let under = Self::campaign_emblem_hovered(&state.frontend.shell_controller);
             if let Some(campaign) = state.frontend.campaign.as_mut() {
                 campaign.pointer_moved(under, Instant::now());
             }
@@ -143,7 +157,7 @@ impl App {
     }
 
     pub(super) fn handle_campaign_mouse_up(state: &mut AppState) {
-        let captured = Self::campaign_captured(state);
+        let captured = Self::campaign_captured(&state.frontend.shell_controller);
         let hovered = menu_page::hovered_id(&state.frontend.shell_controller, CAMPAIGN_DIALOG);
         let events = Self::campaign_pointer(state, Some(false));
         if captured == Some(DIFFICULTY_SLIDER) {
@@ -190,9 +204,9 @@ impl App {
 
     /// A press is no longer held (the window lost the focus): the slider
     /// lets go of the mouse (`0x0061E3AF`).
-    pub(crate) fn release_campaign_slider(state: &mut AppState) {
-        if Self::campaign_captured(state) == Some(DIFFICULTY_SLIDER) {
-            state.frontend.shell_controller.gui_mut().cancel_pointer();
+    pub(crate) fn release_campaign_slider(controller: &mut DialogController) {
+        if Self::campaign_captured(controller) == Some(DIFFICULTY_SLIDER) {
+            controller.gui_mut().cancel_pointer();
         }
     }
 
@@ -210,7 +224,7 @@ impl App {
         state.persistence.arm_initial_campaign_save();
         state.persistence.options_profile.difficulty = difficulty;
         if let Some(voice) = voice {
-            Self::play_campaign_voice(state, voice);
+            Self::play_campaign_voice(&state.process_assets, &mut state.audio.sfx_player, voice);
         }
         Self::leave_shell_dialog(state, ShellSlideKind::Campaign, move |state| {
             App::commit_campaign_start(state, side)
@@ -308,11 +322,12 @@ impl App {
         }
     }
 
-    fn play_campaign_voice(state: &mut AppState, side: CampaignSide) {
-        let (Some(sfx), Some(catalog)) = (
-            &mut state.audio.sfx_player,
-            state.process_assets.audio_catalog(),
-        ) else {
+    fn play_campaign_voice(
+        process_assets: &ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
+        side: CampaignSide,
+    ) {
+        let (Some(sfx), Some(catalog)) = (sfx_player, process_assets.audio_catalog()) else {
             return;
         };
         sfx.play_animation_sound_spatial(
@@ -324,10 +339,8 @@ impl App {
     }
 
     /// Whether the campaign voice still plays (`0x00406130` on `0x00A8F300`).
-    pub(crate) fn campaign_voice_playing(state: &mut AppState) -> bool {
-        state
-            .audio
-            .sfx_player
+    pub(crate) fn campaign_voice_playing(sfx_player: &mut Option<SfxPlayer>) -> bool {
+        sfx_player
             .as_mut()
             .is_some_and(|sfx| sfx.owner_sound_live(CAMPAIGN_VOICE_OWNER))
     }
@@ -347,7 +360,7 @@ impl App {
         campaign.advance_emblems(now, frame_counts);
         let deadline = campaign.next_deadline();
         if let Some(voice) = voice {
-            Self::play_campaign_voice(state, voice);
+            Self::play_campaign_voice(&state.process_assets, &mut state.audio.sfx_player, voice);
         }
         deadline
     }

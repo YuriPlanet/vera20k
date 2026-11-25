@@ -251,7 +251,10 @@ pub(crate) fn begin_direct_spawn(
         .map(|human| human.name.clone())
         .collect();
     super::shell_network_setup::install_external_setup(
-        state,
+        state.platform.game_config.as_ref(),
+        &mut state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
         launch,
         super::match_runtime::session::NetworkReturnContext::LanLobby,
     )?;
@@ -270,7 +273,11 @@ pub(crate) fn begin_direct_spawn(
     service.start_io_pump()?;
     // The agreement reads the installed setup, not the service, so it is
     // made first and installed with the service.
-    service.setup_agreement = Some(super::shell_network_setup::agreement::local(state)?);
+    service.setup_agreement = Some(super::shell_network_setup::agreement::local(
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+        &mut state.process_assets,
+    )?);
     state.match_state.lan_service = Some(service);
     Ok(())
 }
@@ -281,7 +288,7 @@ pub(crate) fn begin_direct_spawn(
 pub(super) fn poll_direct_start(state: &mut AppState) {
     if !state.match_state.session.host()
         || state.frontend.external_launch_error.is_some()
-        || !super::shell_network_setup::external(state)
+        || !super::shell_network_setup::external(state.frontend.network_setup_protocol.as_ref())
         || !state
             .frontend
             .network_setup_protocol

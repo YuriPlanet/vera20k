@@ -573,7 +573,12 @@ pub(crate) fn render_menu_page(
 /// Skirmish family's that the pages' buttons and lists paint with.
 pub(crate) fn family_art_ready(state: &mut AppState) -> bool {
     state.frontend.main_menu_shell_chrome.is_some()
-        && crate::app::App::ensure_skirmish_shell_chrome(state)
+        && crate::app::App::ensure_skirmish_shell_chrome(
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+        )
 }
 
 /// One family page frame for [`encode_family_page`].

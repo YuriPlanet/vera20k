@@ -10,7 +10,7 @@ use crate::skirmish_modes::ModeStartEffect;
 use super::super::chat_notice as message;
 
 pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
-    let dialog = super::super::dialog(state);
+    let dialog = super::super::dialog(&state.frontend, &state.match_state);
     let wol = dialog.wol();
     anyhow::ensure!(
         state.match_state.session.host(),
@@ -25,13 +25,13 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         "setup is locked"
     );
     // C2 ignores Start while its StartGame request is pending (00B77DEC).
-    if super::super::start_phase(state).in_progress() {
+    if super::super::start_phase(state.frontend.network_setup_protocol.as_ref()).in_progress() {
         return Ok(());
     }
     if state.match_state.session.campaign_room().is_some() {
         return request_campaign_start(state);
     }
-    super::super::remember_setup(state);
+    super::super::remember_setup(&mut state.frontend, &state.match_state);
     let launch = state
         .match_state
         .session
@@ -68,9 +68,12 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
                 .unwrap_or(0)
                 == 0
         {
-            let map_name = super::super::map_display_name(state)
-                .unwrap_or_default()
-                .to_owned();
+            let map_name = super::super::map_display_name(
+                &state.frontend.scenario_catalog,
+                &state.match_state.session,
+            )
+            .unwrap_or_default()
+            .to_owned();
             message(
                 state,
                 "GUI:HostNoMap",
@@ -99,7 +102,7 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         // C2 0x79071E..0x7908D5: allies, readiness, then capacity. VERA's
         // explicit AI rows share the map with human players, even though
         // only humans belong to the network/relay roster.
-        if all_allied(state) {
+        if all_allied(&state.match_state.session) {
             message(state, "TXT_CANNOT_ALLY", &[]);
             return Ok(());
         }
@@ -160,7 +163,7 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         if !capacity_ok || !mode_ok {
             return Ok(());
         }
-        if all_allied(state) {
+        if all_allied(&state.match_state.session) {
             message(state, "TXT_CANNOT_ALLY", &[]);
             return Ok(());
         }
@@ -215,15 +218,24 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .apply_network_ai_preparation(preparation.declared_count, preparation.opponents)?;
     // VERA's room with Teams set gives each player still on a Random start
     // one by team before the assignment's farthest free start would.
-    super::super::teams::team_starts(state, true)?;
+    super::super::teams::team_starts(
+        state.platform.game_config.as_ref(),
+        &state.frontend,
+        &mut state.match_state.session,
+        &mut state.process_assets,
+        true,
+    )?;
     let launch = state
         .match_state
         .session
         .network_setup()
         .expect("mode callback retains setup")
         .clone();
-    let banned =
-        crate::app::shell_network_setup::bans::banned_countries(state, launch.options.bans);
+    let banned = crate::app::shell_network_setup::bans::banned_countries(
+        &state.frontend,
+        &state.match_state,
+        launch.options.bans,
+    );
     let resolved = state
         .frontend
         .multiplayer_shell_runtime
@@ -234,11 +246,23 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .accept_network_assignments(resolved)?;
     if wol {
         // C2: slot names 77DB90 before options 5E32D0(1,1).
-        queue(state, NetworkSetupRequest::PublishRoster);
-        queue(state, NetworkSetupRequest::PublishOptions);
+        queue(
+            &mut state.frontend.network_setup_protocol,
+            NetworkSetupRequest::PublishRoster,
+        );
+        queue(
+            &mut state.frontend.network_setup_protocol,
+            NetworkSetupRequest::PublishOptions,
+        );
     } else {
-        queue(state, NetworkSetupRequest::PublishOptions);
-        queue(state, NetworkSetupRequest::PublishRoster);
+        queue(
+            &mut state.frontend.network_setup_protocol,
+            NetworkSetupRequest::PublishOptions,
+        );
+        queue(
+            &mut state.frontend.network_setup_protocol,
+            NetworkSetupRequest::PublishRoster,
+        );
     }
     // Native mode+64 follows the resolved options/name publication, before
     // preview disposal and GO. Only Cooperative consumes Scenario RNG here.
@@ -287,12 +311,15 @@ pub(in crate::app::shell_network_setup) fn request_campaign_start(
     state: &mut AppState,
 ) -> anyhow::Result<()> {
     use super::super::campaign_room;
-    let wol = super::super::dialog(state).wol();
+    let wol = super::super::dialog(&state.frontend, &state.match_state).wol();
     if wol && !crate::app::shell_wol::lobby_campaign_rooms(state.frontend.wol.as_ref()) {
         message(state, "VERA:CampaignRoomOnlineUnsupported", &[]);
         return Ok(());
     }
-    let room = match campaign_room::publication(state) {
+    let room = match campaign_room::publication(
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+    ) {
         Ok(Some(room)) => room,
         Ok(None) => return Ok(()),
         Err(error) => {
@@ -315,7 +342,12 @@ pub(in crate::app::shell_network_setup) fn request_campaign_start(
         super::super::room_notice(state, &notice);
         return Ok(());
     }
-    if let Err(error) = campaign_room::prepare_current(state, &room) {
+    if let Err(error) = campaign_room::prepare_current(
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+        &state.process_assets,
+        &room,
+    ) {
         log::warn!("Campaign start refused: {error:#}");
         message(state, "VERA:CampaignRoomRoster", &[]);
         return Ok(());
@@ -394,7 +426,8 @@ fn queue_lan_go(
 /// completion are the ordinary LAN owners'.
 pub(crate) fn begin_external_lan_go(state: &mut AppState) -> anyhow::Result<()> {
     anyhow::ensure!(
-        super::super::external(state) && !super::super::dialog(state).wol(),
+        super::super::external(state.frontend.network_setup_protocol.as_ref())
+            && !super::super::dialog(&state.frontend, &state.match_state).wol(),
         "no direct spawn setup"
     );
     anyhow::ensure!(
@@ -450,10 +483,8 @@ fn has_minimum_players(launch: &SkirmishLaunchSession, watch_ai: bool) -> bool {
     (houses >= 1 || watch_ai) && houses + launch.opponents.len() >= 2
 }
 
-fn all_allied(state: &AppState) -> bool {
-    state
-        .match_state
-        .session
+fn all_allied(session: &MatchSession) -> bool {
+    session
         .network_setup()
         .expect("validated setup")
         .all_allied()
@@ -472,7 +503,10 @@ fn all_ready(state: &mut AppState) -> bool {
     if (0..count).all(|index| state.match_state.session.network_player_ready(index)) {
         return true;
     }
-    queue(state, NetworkSetupRequest::RequestAcceptance);
+    queue(
+        &mut state.frontend.network_setup_protocol,
+        NetworkSetupRequest::RequestAcceptance,
+    );
     message(state, "GUI:HostGameStartHost", &[]);
     false
 }

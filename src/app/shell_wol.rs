@@ -598,7 +598,9 @@ pub(crate) fn reenter_after_match(state: &mut AppState) {
     }
     live_service::match_returned(state);
     if !App::prepare_multiplayer_settings(
-        state,
+        &mut state.frontend,
+        &mut state.match_state,
+        &mut state.process_assets,
         crate::app::match_runtime::session::SessionMode::Wol,
     ) {
         return;
@@ -621,10 +623,18 @@ impl App {
     /// (`0x0077B2D7..0x0077B31D`) and `0x10E` is created after the empty
     /// backdrop (`0x00798DE0`); the normal online visit signs in instead.
     pub(super) fn open_wol_welcome_page(state: &mut AppState) {
-        crate::app::shell_main_menu::clear_typed_codes_for_network_session(state);
+        crate::app::shell_main_menu::clear_typed_codes_for_network_session(
+            &mut state.frontend.main_menu_shell_state,
+            &mut state.persistence.options_profile,
+        );
         Self::destroy_current_shell_dialog(state);
         // The message boxes paint from the skirmish chrome atlas.
-        let _ = Self::ensure_skirmish_shell_chrome(state);
+        let _ = Self::ensure_skirmish_shell_chrome(
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+        );
         read_wol_settings(&mut state.frontend, &state.persistence.options_profile);
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         let lobby_music = state.frontend.wol_preferences.lobby_music != 0;
@@ -728,8 +738,16 @@ impl App {
                     leaf::Pointer::Down => Some(true),
                     leaf::Pointer::Up => Some(false),
                 };
-                if let Some(answer) = Self::shell_box_pointer(state, &shell_box, &parts, down)
-                    .and_then(|id| shell_box.answer(id))
+                if let Some(answer) = Self::shell_box_pointer(
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    &shell_box,
+                    &parts,
+                    down,
+                )
+                .and_then(|id| shell_box.answer(id))
                 {
                     service::box_command(state, answer);
                 }
@@ -786,8 +804,11 @@ impl App {
 
     /// Start Game Now's `0x130` over Quick Match's backdrop takes the input.
     fn wol_quick_match_verify(state: &AppState) -> bool {
-        crate::app::shell_network_setup::quick_match(state)
-            && crate::app::shell_network_setup::verify(state).is_some()
+        crate::app::shell_network_setup::quick_match(state.frontend.network_setup_protocol.as_ref())
+            && crate::app::shell_network_setup::verify(
+                state.frontend.network_setup_protocol.as_ref(),
+            )
+            .is_some()
     }
 
     pub(super) fn handle_wol_mouse_move(state: &mut AppState) {

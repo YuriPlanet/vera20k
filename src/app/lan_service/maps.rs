@@ -410,7 +410,8 @@ impl Transfers {
             return Ok(());
         }
         shared::accept_generated_manifest(
-            state,
+            &mut state.frontend.multiplayer_shell_runtime,
+            &mut state.match_state.session,
             self.key.as_ref().and_then(|key| key.generated.as_ref()),
             key.generated.as_ref(),
         )?;
@@ -425,7 +426,11 @@ impl Transfers {
         self.host_bytes.clear();
         self.peers.clear();
         if !key.host {
-            setup::set_network_map_progress(state, Some((0, key.assets[0].total as u32)));
+            setup::set_network_map_progress(
+                &mut state.frontend.network_setup_protocol,
+                &state.match_state.session,
+                Some((0, key.assets[0].total as u32)),
+            );
         }
         self.key = Some(key);
         Ok(())
@@ -452,7 +457,13 @@ impl Transfers {
         let key = self.key.as_ref().expect("selected LAN asset");
         let asset = key.assets[self.resource].clone();
         let host = key.host;
-        let local = shared::local_transfer_source(state, asset.resource)?;
+        let local = shared::local_transfer_source(
+            state.platform.game_config.as_ref(),
+            &mut state.frontend,
+            &state.match_state.session,
+            &state.process_assets,
+            asset.resource,
+        )?;
         if let Some(source) = &local {
             ensure!(
                 source.physical_identity() == Some((asset.total, asset.digest.as_str())),
@@ -502,7 +513,8 @@ impl Transfers {
             self.deadline = Some(Instant::now() + TRANSFER_TIMEOUT);
             if !key.host {
                 setup::set_network_map_progress(
-                    state,
+                    &mut state.frontend.network_setup_protocol,
+                    &state.match_state.session,
                     Some((0, key.assets[self.resource].total as u32)),
                 );
             }
@@ -539,8 +551,14 @@ impl Transfers {
             (Flow::AwaitRead(expected), IoValue::Bytes(bytes)) if *expected == resource => {
                 let key = self.key.as_ref().expect("selected LAN asset");
                 if resource == TransferResource::Preview {
-                    let source = shared::local_transfer_source(state, resource)?
-                        .ok_or_else(|| anyhow!("generated preview disappeared"))?;
+                    let source = shared::local_transfer_source(
+                        state.platform.game_config.as_ref(),
+                        &mut state.frontend,
+                        &state.match_state.session,
+                        &state.process_assets,
+                        resource,
+                    )?
+                    .ok_or_else(|| anyhow!("generated preview disappeared"))?;
                     let asset = key.asset(resource).expect("preview manifest");
                     ensure!(
                         source.physical_identity() == Some((asset.total, asset.digest.as_str())),
@@ -800,7 +818,8 @@ impl Transfers {
         }
         let complete = download.receive(packet.offset, packet.bytes)?;
         setup::set_network_map_progress(
-            state,
+            &mut state.frontend.network_setup_protocol,
+            &state.match_state.session,
             Some((
                 download.completed_bytes() as u32,
                 download.asset.total as u32,
@@ -835,7 +854,11 @@ impl Transfers {
         self.worker = None;
         self.host_bytes.clear();
         self.peers.clear();
-        setup::set_network_map_progress(state, None);
+        setup::set_network_map_progress(
+            &mut state.frontend.network_setup_protocol,
+            &state.match_state.session,
+            None,
+        );
         setup::fail_go_handoff(state);
     }
 }
@@ -881,7 +904,11 @@ pub(super) fn clear_campaign_transfer(state: &mut AppState) {
     if let Some(service) = &mut state.match_state.lan_service {
         service.maps.cancel();
     }
-    setup::set_network_map_progress(state, None);
+    setup::set_network_map_progress(
+        &mut state.frontend.network_setup_protocol,
+        &state.match_state.session,
+        None,
+    );
 }
 
 pub(super) fn poll(state: &mut AppState) {
@@ -910,7 +937,11 @@ pub(super) fn poll(state: &mut AppState) {
         let Some(scope) = scope.filter(|scope| scope.revision > 0) else {
             if maps.key.is_some() || maps.worker.is_some() {
                 maps.cancel();
-                setup::set_network_map_progress(state, None);
+                setup::set_network_map_progress(
+                    &mut state.frontend.network_setup_protocol,
+                    &state.match_state.session,
+                    None,
+                );
             }
             return Ok(());
         };
@@ -919,19 +950,31 @@ pub(super) fn poll(state: &mut AppState) {
         {
             if maps.key.is_some() || maps.worker.is_some() {
                 maps.cancel();
-                setup::set_network_map_progress(state, None);
+                setup::set_network_map_progress(
+                    &mut state.frontend.network_setup_protocol,
+                    &state.match_state.session,
+                    None,
+                );
             }
             return Ok(());
         }
         if state.match_state.session.host()
             && maps.key.as_ref().is_none_or(|key| key.scope != scope)
         {
-            let generated = shared::host_generated_manifest(state)?;
+            let generated = shared::host_generated_manifest(
+                state.platform.game_config.as_ref(),
+                &state.frontend.multiplayer_shell_runtime,
+                &state.match_state.session,
+            )?;
             maps.selected(state, scope, generated)?;
         }
         if maps.key.as_ref().is_some_and(|key| key.scope != scope) {
             maps.cancel();
-            setup::set_network_map_progress(state, None);
+            setup::set_network_map_progress(
+                &mut state.frontend.network_setup_protocol,
+                &state.match_state.session,
+                None,
+            );
         }
         maps.pump(state)
     })();

@@ -219,7 +219,8 @@ fn run_options_page(state: &mut AppState) {
         refit_match(state);
     }
     if language {
-        let labels = App::launcher_options_labels(state);
+        let labels =
+            App::launcher_options_labels(state.frontend.shell_route, &state.process_assets);
         if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
             page.dialog.set_labels(labels);
         }
@@ -444,7 +445,14 @@ pub(crate) fn on_open(state: &mut AppState) {
         .collect();
     let speed_caption = label("GUI:GameSpeed", "Game Speed");
     let sound_label = label("GUI:Sound", "Sound");
-    let mut dialog = App::launcher_options_from_state(state);
+    let mut dialog = App::launcher_options_from_state(
+        &state.platform,
+        &state.renderer.performance_overlay,
+        state.frontend.shell_route,
+        &state.process_assets,
+        state.audio.launcher_audio_available,
+        &state.persistence.options_profile,
+    );
     dialog.set_in_game_controls(speed_caption, speed_names, speed_position, sound_label);
     dialog.select_category(category);
     let opened = dialog.pack();
@@ -647,7 +655,13 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
                         .internet_pause
                         .set(slider, value)
                 {
-                    App::play_page_cue(state, crate::ui::shell::page::PageCue::ListClick);
+                    App::play_page_cue(
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                        crate::ui::shell::page::PageCue::ListClick,
+                    );
                 }
             }
             _ => {}

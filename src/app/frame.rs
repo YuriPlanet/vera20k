@@ -1128,7 +1128,7 @@ impl App {
         // next screen's first frame. Native queues/maintains [INTRO] before
         // arming the 0xE2 first-paint owner.
         Self::drive_shell_exit(state);
-        Self::maintain_main_menu_intro(state);
+        Self::maintain_main_menu_intro(&state.frontend, &state.process_assets, &mut state.audio);
         let entry_completed =
             crate::app::frontend::shell_transition::drive_shell_entry(state, Instant::now());
         if entry_completed == Some(crate::app::frontend::shell_transition::ShellSlideKind::MainMenu)
@@ -1193,7 +1193,12 @@ impl App {
                 &state.match_state,
             )
         {
-            Self::ensure_skirmish_shell_chrome(state);
+            Self::ensure_skirmish_shell_chrome(
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+            );
         }
         // The main menu's chrome, dropped for the match: back before a shell
         // screen (the menu pages, the score page) draws or hit-tests with it.
@@ -1201,7 +1206,11 @@ impl App {
             state.frontend.screen,
             GameScreen::MainMenu | GameScreen::MissionResult { .. }
         ) {
-            Self::ensure_main_menu_shell_chrome(state);
+            Self::ensure_main_menu_shell_chrome(
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+            );
         }
         Self::update_saved_game_browser(state, false);
         // Input routes to these same pages (`input::precedence`).

@@ -678,15 +678,20 @@ pub(crate) fn render_wol_page(
     };
     // Start Game Now's 0x130 over Quick Match's backdrop (0x117 closed at
     // OnGameStart; no C2/C9 exists).
-    let verify = crate::app::shell_network_setup::verify(state)
-        .filter(|_| crate::app::shell_network_setup::quick_match(state))
-        .map(|verify| {
-            crate::app::frontend::skirmish_shell_render::paint_wol_verify(
-                state,
-                verify,
-                &crate::app::shell_network_setup::verify_layout(state),
-            )
-        });
+    let verify =
+        crate::app::shell_network_setup::verify(state.frontend.network_setup_protocol.as_ref())
+            .filter(|_| {
+                crate::app::shell_network_setup::quick_match(
+                    state.frontend.network_setup_protocol.as_ref(),
+                )
+            })
+            .map(|verify| {
+                crate::app::frontend::skirmish_shell_render::paint_wol_verify(
+                    state,
+                    verify,
+                    &crate::app::shell_network_setup::verify_layout(state),
+                )
+            });
 
     let page_dialogs = page_dialogs_paint(state);
 

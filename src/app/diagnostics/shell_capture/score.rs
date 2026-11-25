@@ -215,7 +215,7 @@ impl CampaignScoreCapture {
             "campaign capture did not render the production score page"
         );
         ensure!(
-            App::campaign_score_shell_active(state),
+            App::campaign_score_shell_active(&state.frontend),
             "campaign score capture left the 0x103 page"
         );
         if self.phase == CampaignScorePhase::CampaignScore
@@ -278,7 +278,8 @@ impl CampaignScoreCapture {
             | CampaignAnimationPhase::WaitingForFirstSample
             | CampaignAnimationPhase::WaitingForNextFrame => {
                 ensure!(
-                    rendered == PresentedShell::Score && App::campaign_score_shell_active(state),
+                    rendered == PresentedShell::Score
+                        && App::campaign_score_shell_active(&state.frontend),
                     "campaign animation sequence left the production 0x103 page"
                 );
                 if animation.phase == CampaignAnimationPhase::WaitingForFirstFrame
@@ -298,7 +299,8 @@ impl CampaignScoreCapture {
             }
             CampaignAnimationPhase::Continue => {
                 ensure!(
-                    rendered == PresentedShell::Score && App::campaign_score_shell_active(state),
+                    rendered == PresentedShell::Score
+                        && App::campaign_score_shell_active(&state.frontend),
                     "campaign Continue probe did not start on dialog 0x103"
                 );
                 click_campaign_continue(state)?;
@@ -352,7 +354,8 @@ impl CampaignScoreCapture {
             }
             CampaignAnimationPhase::WaitingForReopenedFrame => {
                 ensure!(
-                    rendered == PresentedShell::Score && App::campaign_score_shell_active(state),
+                    rendered == PresentedShell::Score
+                        && App::campaign_score_shell_active(&state.frontend),
                     "campaign animation reopen did not render dialog 0x103"
                 );
             }
@@ -395,7 +398,7 @@ impl CampaignScoreCapture {
             _ => return Ok(false),
         };
         ensure!(
-            rendered == PresentedShell::Score && App::campaign_score_shell_active(state),
+            rendered == PresentedShell::Score && App::campaign_score_shell_active(&state.frontend),
             "campaign animation sample was requested outside rendered dialog 0x103"
         );
         let Some(emblem_frame) = state
@@ -455,7 +458,7 @@ impl CampaignScoreCapture {
             .take()
             .context("campaign animation readback has no post-render snapshot")?;
         ensure!(
-            App::campaign_score_shell_active(state),
+            App::campaign_score_shell_active(&state.frontend),
             "campaign score page closed before its sample readback completed"
         );
         let roi_pixels = crop_bgra_roi(pixels, width, height, pending.roi)?;
@@ -612,7 +615,7 @@ impl CampaignScoreCapture {
             return Ok(false);
         }
         ensure!(
-            App::campaign_score_shell_active(state),
+            App::campaign_score_shell_active(&state.frontend),
             "campaign score capture left the 0x103 page"
         );
         ensure!(
@@ -828,7 +831,7 @@ impl ScoreCapture {
             return Ok(());
         }
         ensure!(
-            App::score_shell_active(state),
+            App::score_shell_active(&state.frontend),
             "score capture left the score page"
         );
         let entry_tick = state
@@ -927,7 +930,7 @@ impl ScoreCapture {
             return Ok(false);
         }
         ensure!(
-            App::score_shell_active(state),
+            App::score_shell_active(&state.frontend),
             "score capture left the score page"
         );
         Ok(match self.target {

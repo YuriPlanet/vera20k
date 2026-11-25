@@ -194,7 +194,13 @@ pub(crate) fn play_cues(state: &mut AppState, events: Vec<PageEvent>) -> Vec<Pag
     let mut rest = Vec::with_capacity(events.len());
     for event in events {
         match event {
-            PageEvent::Cue(cue) => App::play_page_cue(state, cue),
+            PageEvent::Cue(cue) => App::play_page_cue(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                cue,
+            ),
             event => rest.push(event),
         }
     }

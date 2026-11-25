@@ -640,7 +640,7 @@ impl SkirmishCapture {
     fn lose_the_game(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         if matches!(state.frontend.screen, GameScreen::MissionResult { .. }) {
             ensure!(
-                App::score_shell_active(state),
+                App::score_shell_active(&state.frontend),
                 "the defeat reached a result screen without the score page"
             );
             let page = state
@@ -1321,7 +1321,7 @@ impl SkirmishCapture {
                         App::leave_shell_dialog(
                             state,
                             crate::app::frontend::shell_transition::ShellSlideKind::ChooseMap,
-                            App::close_choose_map_modal,
+                            |state| App::close_choose_map_modal(&mut state.frontend),
                         );
                         ensure!(
                             state.frontend.shell_exit.is_some(),
@@ -1860,7 +1860,7 @@ impl SkirmishCapture {
         if self.loading == Some(LoadingTarget::DefeatScore) {
             return Ok(self.phase == Phase::Scoring
                 && self.last_presented == Some(PresentedShell::Score)
-                && App::score_shell_active(state)
+                && App::score_shell_active(&state.frontend)
                 && Self::score_settled(state));
         }
         if self.loading == Some(LoadingTarget::DefeatContinue) {

@@ -314,11 +314,18 @@ pub(super) fn local_agreement(state: &mut AppState, revision: u64) -> Result<Val
             let effective = session
                 .network_local_map_effective_digest()
                 .map(str::to_owned);
-            let staging = crate::app::shell_network_setup::maps::staging_digest(state);
+            let staging = crate::app::shell_network_setup::maps::staging_digest(
+                &state.frontend.multiplayer_shell_runtime,
+                &state.match_state.session,
+            );
             (map, effective, staging)
         };
     let effective_map_digest = effective_map_digest.unwrap_or_else(|| "0".repeat(64));
-    let agreement = crate::app::shell_network_setup::agreement::local(state)?;
+    let agreement = crate::app::shell_network_setup::agreement::local(
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+        &mut state.process_assets,
+    )?;
     Ok(
         json!({"revision":revision,"version":agreement.version,"rules_digest":agreement.rules_digest,"map_digest":map_digest,"effective_map_digest":effective_map_digest,"staging_digest":staging_digest}),
     )
@@ -387,9 +394,16 @@ pub(super) fn options(state: &AppState) -> Result<wire::Options> {
         .network_setup()
         .ok_or_else(|| anyhow!("no online setup"))?
         .clone();
-    let campaign = campaign_room::publication(state)?;
+    let campaign = campaign_room::publication(
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+    )?;
     let map_metadata = if let Some(room) = &campaign {
-        let (file, metadata) = campaign_room::online_map_metadata(state, room)?;
+        let (file, metadata) = campaign_room::online_map_metadata(
+            state.platform.game_config.as_ref(),
+            &state.process_assets,
+            room,
+        )?;
         launch.selected_map_file = Some(file);
         launch.mode = crate::skirmish_launch::SkirmishLaunchMode::stock(
             crate::skirmish_launch::BATTLE_MODE_ID,
@@ -413,7 +427,11 @@ pub(super) fn options(state: &AppState) -> Result<wire::Options> {
         launch,
         map_metadata,
         random_map: if campaign.is_none() {
-            crate::app::shell_network_setup::maps::host_generated_manifest(state)?
+            crate::app::shell_network_setup::maps::host_generated_manifest(
+                state.platform.game_config.as_ref(),
+                &state.frontend.multiplayer_shell_runtime,
+                &state.match_state.session,
+            )?
         } else {
             None
         },
@@ -436,7 +454,10 @@ pub(super) fn options(state: &AppState) -> Result<wire::Options> {
                 )
             })
             .flatten(),
-        seed: Some(crate::app::shell_network_setup::resident_seed(state)),
+        seed: Some(crate::app::shell_network_setup::resident_seed(
+            state.frontend.startup_rng_seed,
+            &state.match_state.sim_runtime,
+        )),
         // Only a host's VERA room has one; a guest publishes no options.
         watching: state
             .frontend
@@ -628,7 +649,9 @@ pub(super) fn request_setup(
             );
             // A Quick Match host drops `R` (`0x007A8260`), so no options
             // answer it.
-            let answered = !crate::app::shell_network_setup::quick_match(state);
+            let answered = !crate::app::shell_network_setup::quick_match(
+                state.frontend.network_setup_protocol.as_ref(),
+            );
             service.room.pending_choices = (answered
                 && !switch
                 && !service
@@ -660,7 +683,10 @@ pub(super) fn request_setup(
             if requested && !ready {
                 // The guest's automatic Accept waits for the verified map
                 // instead of repeating this request every frame.
-                crate::app::shell_network_setup::refuse_local_acceptance(state)?;
+                crate::app::shell_network_setup::refuse_local_acceptance(
+                    &mut state.frontend.network_setup_protocol,
+                    &mut state.match_state.session,
+                )?;
                 if !withdrawn {
                     // Only the Quick Match guest's accept (`0x007A7F72`)
                     // leaves its node unaccepted. It withdraws nothing, so

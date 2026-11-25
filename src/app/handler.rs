@@ -383,7 +383,7 @@ impl App {
             // Play_Movie reads and ignores mouse buttons; Show_Credits
             // queues them as ordinary Keyboard entries.
             ScreenPage::CreditsRoll if down.is_some() => Self::credits_roll_input(
-                state,
+                &mut state.frontend.credits_roll,
                 crate::app::frontend::credits_roll::CreditsInput::Other,
             ),
             ScreenPage::LanLobby => match edge {
@@ -564,7 +564,7 @@ impl App {
                 match input {
                     Input::Key(event) => {
                         if let PhysicalKey::Code(code) = event.physical_key {
-                            Self::raise_shell_message_box(state);
+                            Self::raise_shell_message_box(&mut state.frontend);
                             Self::handle_main_menu_dialog_key(
                                 state,
                                 code,
@@ -581,7 +581,7 @@ impl App {
                         Self::shell_menu_pointer(state, None);
                     }
                     Input::Button(MouseButton::Left, edge) => {
-                        Self::raise_shell_message_box(state);
+                        Self::raise_shell_message_box(&mut state.frontend);
                         // Add Mod's parts list takes its own presses.
                         #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
                         if super::shell_mod_import::pointer_button(state, edge.is_pressed()) {
@@ -732,7 +732,15 @@ impl App {
             ScreenPage::NetworkSetup => {
                 if fresh_press
                     && let PhysicalKey::Code(code) = event.physical_key
-                    && !Self::route_validation_modal_key(state, code)
+                    && !Self::route_validation_modal_key(
+                        &state.platform.window,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                        code,
+                    )
                     && matches!(
                         code,
                         KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter
@@ -813,7 +821,14 @@ impl App {
             return;
         }
         match screen {
-            ScreenPage::FullscreenMovie => return Self::fullscreen_movie_key(state, code, pressed),
+            ScreenPage::FullscreenMovie => {
+                return Self::fullscreen_movie_key(
+                    state.platform.live_modifiers,
+                    &mut state.frontend.fullscreen_movie,
+                    code,
+                    pressed,
+                );
+            }
             ScreenPage::CreditsRoll => {
                 use crate::app::frontend::credits_roll::CreditsInput;
                 // Keyboard::Get() == 0x1B: a bare Escape press. Releases
@@ -825,17 +840,31 @@ impl App {
                 } else {
                     CreditsInput::Other
                 };
-                return Self::credits_roll_input(state, input);
+                return Self::credits_roll_input(&mut state.frontend.credits_roll, input);
             }
             _ => {}
         }
         if Self::handle_main_menu_dialog_key(state, code, pressed, event.repeat)
-            || Self::handle_main_menu_typed_code_key(state, event)
+            || Self::handle_main_menu_typed_code_key(
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &mut state.persistence.options_profile,
+                event,
+            )
             || (screen == ScreenPage::Skirmish
                 && fresh_press
-                && (Self::route_validation_modal_key(state, code)
-                    || (enter_or_escape
-                        && Self::answer_choose_map_prompt_key(state, code != KeyCode::Escape))))
+                && (Self::route_validation_modal_key(
+                    &state.platform.window,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    code,
+                ) || (enter_or_escape
+                    && Self::answer_choose_map_prompt_key(state, code != KeyCode::Escape))))
         {
             return;
         }
@@ -910,7 +939,13 @@ impl App {
         ) || (screen == ScreenPage::Skirmish
             && pressed
             && !is_escape
-            && Self::handle_skirmish_shell_key_input(state, code, event.text.as_deref()))
+            && Self::handle_skirmish_shell_key_input(
+                &state.platform,
+                &state.renderer.bit_font,
+                &mut state.frontend,
+                code,
+                event.text.as_deref(),
+            ))
             || !in_game
         {
             return;
@@ -993,7 +1028,9 @@ impl App {
     /// The timers of the page the shell route shows; the next wake.
     fn poll_route_page(state: &mut AppState) -> Option<Instant> {
         match crate::app::input::precedence::route_page(state) {
-            ScreenPage::MovieList | ScreenPage::Mods => Self::poll_family_list(state),
+            ScreenPage::MovieList | ScreenPage::Mods => {
+                Self::poll_family_list(&state.platform.window, &mut state.frontend.shell_controller)
+            }
             ScreenPage::Campaign => Self::poll_campaign(state),
             ScreenPage::LoadSavedGame => {
                 Self::update_load_saved_game_scroll(state);
@@ -1004,7 +1041,7 @@ impl App {
     }
 
     fn campaign_score_animation_deadline(state: &AppState) -> Option<Instant> {
-        if Self::campaign_score_shell_active(state) {
+        if Self::campaign_score_shell_active(&state.frontend) {
             state
                 .frontend
                 .campaign_score_page
@@ -1829,7 +1866,7 @@ impl ApplicationHandler for App {
                     {
                         state.frontend.shell_controller.gui_mut().cancel_pointer();
                     }
-                    Self::release_campaign_slider(state);
+                    Self::release_campaign_slider(&mut state.frontend.shell_controller);
                 }
                 Self::set_window_active(state, active);
             }
@@ -2049,7 +2086,15 @@ impl ApplicationHandler for App {
                 },
                 crate::app::input::sound::poll_scroll_repeat,
                 Self::poll_route_page,
-                Self::poll_mod_files,
+                |state| {
+                    Self::poll_mod_files(
+                        &state.platform.window,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.process_assets,
+                        &state.persistence.options_profile,
+                    )
+                },
                 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
                 Self::poll_mod_import,
                 Self::poll_choose_map_scroll,

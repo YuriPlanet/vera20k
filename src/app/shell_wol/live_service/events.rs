@@ -301,7 +301,10 @@ pub(super) fn apply_event(
             let authored = p.options.campaign.is_some();
             if changed {
                 service.room.last_ready_request = None;
-                crate::app::shell_network_setup::invalidate_network_agreement(state)?;
+                crate::app::shell_network_setup::invalidate_network_agreement(
+                    &mut state.frontend.network_setup_protocol,
+                    &mut state.match_state.session,
+                )?;
             }
             let generated = p.options.random_map.clone();
             if !state.match_state.session.host() {
@@ -628,7 +631,10 @@ pub(super) fn apply_event(
                 names.as_deref().unwrap_or_default()
             );
             if service.pending.is_none()
-                && crate::app::shell_network_setup::verify(state).is_none()
+                && crate::app::shell_network_setup::verify(
+                    state.frontend.network_setup_protocol.as_ref(),
+                )
+                .is_none()
                 && state.frontend.network_setup_protocol.is_none()
             {
                 // This game already failed the start and left the room: only

@@ -47,7 +47,11 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     // VERA: the start every player's game certifies names its build and
     // rules too, so a launcher's relay match, which no lobby compared,
     // refuses games that would desync.
-    let mut multiplayer = super::shell_network_setup::agreement::local(state)?;
+    let mut multiplayer = super::shell_network_setup::agreement::local(
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+        &mut state.process_assets,
+    )?;
     // VERA: and whether Ares plays in the match as it loaded, which the
     // room's digest leaves to the start (`agreement::start_rules`).
     let rules = &state
@@ -68,14 +72,20 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     // games would take their battles apart in mid-match.
     let file_inputs = rules.file_inputs_hash();
     // The refusal's box names three files; the log names them all.
-    let picture_files = super::shell_network_setup::agreement::match_picture_files(state);
+    let picture_files = super::shell_network_setup::agreement::match_picture_files(
+        &state.match_state.sim_runtime,
+        &state.process_assets,
+    );
     if !picture_files.is_empty() {
         log::info!(
             "Game files that change what this start certifies of pictures and models: {}",
             picture_files.join(", ")
         );
     }
-    super::shell_network_setup::agreement::log_rules_parts(state);
+    super::shell_network_setup::agreement::log_rules_parts(
+        &state.match_state.session,
+        &state.process_assets,
+    );
     let sim = &state
         .match_state
         .sim_runtime

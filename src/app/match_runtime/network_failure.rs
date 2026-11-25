@@ -111,12 +111,17 @@ fn start_mismatch_text(state: &AppState) -> String {
     let mut text = crate::i18n::tr("VERA:MatchStartMismatch");
     text.push_str("\n\n");
     text.push_str(
-        &start_changes_text(state).unwrap_or_else(|| crate::i18n::tr("VERA:RulesDifferOriginal")),
+        &start_changes_text(
+            &state.frontend.mods,
+            &state.match_state.sim_runtime,
+            &state.process_assets,
+        )
+        .unwrap_or_else(|| crate::i18n::tr("VERA:RulesDifferOriginal")),
     );
     if state.frontend.external_launch
         && !state.process_assets.match_reads_folder_terrain()
-        && !match_keeps_ares_off(state)
-        && match_picture_files(state).is_empty()
+        && !match_keeps_ares_off(&state.match_state.sim_runtime)
+        && match_picture_files(&state.match_state.sim_runtime, &state.process_assets).is_empty()
     {
         text.push('\n');
         text.push_str(&crate::i18n::tr("VERA:LauncherShowsMismatch"));

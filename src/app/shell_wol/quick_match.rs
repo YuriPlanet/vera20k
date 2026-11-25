@@ -470,7 +470,12 @@ fn open_dialog(state: &mut AppState) {
         help: None,
     }));
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
-    let _ = App::ensure_skirmish_shell_chrome(state);
+    let _ = App::ensure_skirmish_shell_chrome(
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+    );
     super::leaf::open_art(state, DIALOG);
     state.frontend.shell_controller.reset_to(DIALOG);
 }
@@ -941,7 +946,14 @@ pub(crate) fn host_options(
             .skirmish_shell_state
             .launch_options_base
             .clone(),
-        |file| crate::app::shell_network_setup::local_map_metadata(state, file),
+        |file| {
+            crate::app::shell_network_setup::local_map_metadata(
+                state.platform.game_config.as_ref(),
+                &state.frontend.scenario_catalog,
+                &state.process_assets,
+                file,
+            )
+        },
     )
 }
 
@@ -1425,7 +1437,11 @@ fn pump(state: &mut AppState) {
             // Under Start Game Now's 0x130 the pump runs from its loops
             // (0x00793D20, 0x007947B0): event 5 waits for the runner, and
             // the start goes on.
-            if crate::app::shell_network_setup::verify(state).is_some() {
+            if crate::app::shell_network_setup::verify(
+                state.frontend.network_setup_protocol.as_ref(),
+            )
+            .is_some()
+            {
                 return;
             }
             // The guest search ends with its stage; the rejoin's leave

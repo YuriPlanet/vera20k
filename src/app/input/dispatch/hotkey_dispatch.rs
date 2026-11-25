@@ -547,7 +547,10 @@ fn follow_performance_stats(state: &mut AppState, shown: bool) {
     if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
         page.dialog.sync_performance_stats(shown);
     }
-    crate::app::App::shell_menu_follow_performance_stats(state, shown);
+    crate::app::App::shell_menu_follow_performance_stats(
+        &mut state.frontend.shell_message_box,
+        shown,
+    );
     log::info!(
         "Performance stats: {}",
         if shown { "shown" } else { "hidden" }
@@ -618,9 +621,13 @@ pub(super) fn press_super_weapon(
         right,
     );
     if gui_sound && click.gui_sound() {
-        crate::app::App::play_shell_rules_sound(state, |rules| {
-            rules.general.gui_build_sound.as_deref()
-        });
+        crate::app::App::play_shell_rules_sound(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            |rules| rules.general.gui_build_sound.as_deref(),
+        );
     }
     match click {
         super::superweapon_cameo::SuperWeaponClick::Refused

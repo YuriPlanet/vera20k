@@ -206,7 +206,13 @@ impl TacticalCaptureSession {
                 modal.begin_generate();
                 state.frontend.skirmish_shell_state.random_map_setup_modal = Some(modal);
                 ensure!(
-                    crate::app::App::start_random_map_generation(state, &options, false),
+                    crate::app::App::start_random_map_generation(
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &mut state.process_assets,
+                        &options,
+                        false
+                    ),
                     "cannot start normal random-map setup generation"
                 );
                 self.preparing_random_map = true;

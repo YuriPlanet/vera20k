@@ -352,7 +352,14 @@ fn finish_or_wait(state: &mut AppState, chrono: bool, wall_ms: u64) {
         }
         App::finish_fullscreen_movie(state);
         App::return_disconnected_to_main_menu(state);
-        App::open_shell_notice(state, crate::i18n::tr("VERA:CampaignNarrativeTimeout"));
+        App::open_shell_notice(
+            &state.platform.window,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+            crate::i18n::tr("VERA:CampaignNarrativeTimeout"),
+        );
         return;
     }
     let ready = state.frontend.fullscreen_movie.is_none()
