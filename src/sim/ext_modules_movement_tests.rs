@@ -117,8 +117,11 @@ fn tank_scene() -> Option<(HeadlessScenario, u64, (u16, u16))> {
     let rules = &resources.rules;
     for (name, side) in [("Americans", 0), ("Russians", 1)] {
         let house = sim.interner.intern(name);
+        // Named, so that a save of the scene restores.
         sim.houses.get_or_register_for_test(house, || {
-            HouseState::new(house, side, None, true, 10_000, 10)
+            let mut state = HouseState::new(house, side, None, true, 10_000, 10);
+            state.initialize_scenario_name(name);
+            state
         });
     }
     let occupied: Vec<(u16, u16)> = sim
@@ -292,7 +295,8 @@ fn a_path_found_refusal_keeps_the_tank_in_its_cell() {
 }
 
 /// A `Push` of 32 leptons toward a cell three east over two frames moves
-/// the tank by its whole displacement in those frames, then ends. While it
+/// the tank by its whole displacement in its next two movement frames, then
+/// ends. While it
 /// runs it is in the state hash and survives a save.
 #[test]
 fn a_push_moves_the_tank_over_its_frames() {
@@ -319,8 +323,11 @@ fn a_push_moves_the_tank_over_its_frames() {
     let dy = i64::from(goal.1) * 256 + 128 - i64::from(before.y);
     let length = ((dx * dx + dy * dy) as f64).sqrt() as i64;
     let total = [dx * 32 / length, dy * 32 / length];
-    scene.tick();
-    scene.tick();
+    // The push takes the tank's next two movement frames; the first tick
+    // after it starts may come before the tank's own turn.
+    for _ in 0..3 {
+        scene.tick();
+    }
     let after = at(&scene, tank);
     assert_eq!(
         [i64::from(after.x - before.x), i64::from(after.y - before.y)],
