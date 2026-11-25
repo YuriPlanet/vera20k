@@ -1368,7 +1368,7 @@ fn maybe_post_chat_hint(state: &mut AppState) {
 fn post_chat_hint(state: &mut AppState) {
     sync_view(state);
     let text = crate::i18n::tr("VERA:TouchToChat");
-    let now = message_now_ms(state);
+    let now = message_now_ms(&state.diag, &state.match_state);
     let font = &state.renderer.bit_font;
     state
         .match_state
