@@ -694,6 +694,11 @@ impl MatchSession {
         options: SkirmishLaunchOptions,
     ) -> anyhow::Result<()> {
         anyhow::ensure!(self.host, "only the host may change game options");
+        let mut options = options;
+        // A Teams count this build does not offer leaves Teams Off.
+        options.teams = options
+            .teams
+            .filter(|teams| crate::skirmish_launch::ROOM_TEAMS.contains(teams));
         self.editable_network_setup()?.options = options;
         // Native host publishes changes; a guest later invalidates its own
         // readiness and sends A0. Do not optimistically clear every peer here.

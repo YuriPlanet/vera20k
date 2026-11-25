@@ -376,9 +376,15 @@ impl Simulation {
             b"path-batch-v2".hash(hasher);
             batch.hash(hasher);
         }
-        // Whether target scans are batched; their answers live within a pass.
+        // Whether target scans are batched, which also spreads the patrol
+        // scans and updates teams on their own turns; the scans' answers live
+        // within a pass.
         if self.scan_batch.is_some() {
             b"scan-batch-v1".hash(hasher);
+        }
+        // Whether turns draw from their own streams (`turn_streams`).
+        if *self.turn_streams {
+            b"turn-streams-v1".hash(hasher);
         }
 
         self.substrate.fold_raw_cell_occupation(hasher);

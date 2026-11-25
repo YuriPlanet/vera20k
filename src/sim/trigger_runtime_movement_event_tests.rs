@@ -807,10 +807,16 @@ fn infantry_map_event_survives_unfilled_team_timeout_and_tag_compaction() {
     let Some((mut sim, move_tag, clear_tag)) = dissolve_unfilled_infantry_team(0) else {
         return;
     };
-    assert!(
-        sim.trigger_runtime.globals_set.contains(&9),
-        "the revisit of the fired one-shot Tag springs LATE"
-    );
+    // 6E5484 finishes the linked chain before the one-shot tag detaches.
+    // Logic55B880 removes it before 6E5531 queues its storage for deletion.
+    // TeamAI's next read of this slot therefore cannot revisit CLEAR.
+    let raised: Vec<_> = sim
+        .tag_dispatch_trace_for_test()
+        .iter()
+        .filter_map(|&(tag, event)| (event == 23).then_some(tag))
+        .collect();
+    assert_eq!(raised, [move_tag, clear_tag]);
+    assert!(!sim.trigger_runtime.globals_set.contains(&9));
     sim.flush_pending_delete();
     assert!(sim.trigger_runtime.tag(move_tag).is_none());
     assert!(sim.trigger_runtime.tag(clear_tag).is_none());

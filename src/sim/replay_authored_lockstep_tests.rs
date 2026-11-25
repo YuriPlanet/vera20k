@@ -350,6 +350,7 @@ impl AuthoredReplay {
         sim.batch_path_searches();
         sim.batch_target_scans();
         sim.present_effect_anims();
+        sim.separate_turn_streams(true);
         sim.sleep_idle_objects_in_match();
         if let Some(record) = &options.campaign_carry_over {
             sim.restore_campaign_carry_over(record, &scene.runtime.resources.rules);

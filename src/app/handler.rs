@@ -2103,6 +2103,10 @@ impl ApplicationHandler for App {
                         &mut state.frontend,
                     )
                 },
+                |state| {
+                    crate::app::persistence::autosave::poll(state);
+                    None
+                },
                 crate::app::shell_lan::poll,
                 crate::app::shell_wol::poll,
                 crate::app::shell_network_setup::poll,

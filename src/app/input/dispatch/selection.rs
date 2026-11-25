@@ -245,9 +245,13 @@ fn admit_missing_selected_ids(
     let mut members: HashSet<_> = ordered.iter().copied().collect();
     let mut ordered = VecDeque::from(ordered);
     admit_logic_selects(&mut ordered, &mut members, sim, rules, logic_selects, true);
-    for entity in sim.entities().values() {
-        if entity.seldom.selection.is_selected() && members.insert(entity.stable_id()) {
-            insert_selected_id(&mut ordered, entity.stable_id(), sim, rules);
+    // The pool finds the few selected objects among the many, in store order.
+    let selected = sim
+        .entities()
+        .par_filter_map(|id, entity| entity.seldom.selection.is_selected().then_some(id));
+    for id in selected {
+        if members.insert(id) {
+            insert_selected_id(&mut ordered, id, sim, rules);
         }
     }
     ordered.into()

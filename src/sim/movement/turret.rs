@@ -222,7 +222,15 @@ pub(crate) fn facing_update(
     // Native tests Type+0xD21 after arm A and directly jumps to the spin Set,
     // bypassing the ordinary latch and idle-return path. The second Set must
     // remain in the writer so it samples Current after arm A's optional Set.
-    if has_turret && obj.is_some_and(|object| object.turret_spins) {
+    //
+    // Kratos `Wreck` (`kratos_freeze`) hooks that test at `0x00736A95` and
+    // jumps to `0x00736AD5` while the techno is frozen
+    // (`UnitClass_Rotation_Update_Freezing_TurretSpins` in
+    // `src/Hooks/TechnoExtHook.cpp`). `0x00736AD5` is arm C's latch clear, so
+    // the spin arm is skipped and the ordinary idle path still runs — the
+    // turret stops spinning rather than freezing in place.
+    let frozen = rules.kratos() && obj.is_some_and(|object| object.kratos_freeze().frozen());
+    if has_turret && obj.is_some_and(|object| object.turret_spins) && !frozen {
         out.turret_spins = true;
         return out;
     }

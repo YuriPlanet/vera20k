@@ -348,14 +348,16 @@ pub(super) fn build_shell_text_draws(
     shell_draws
 }
 
-/// The words `0x102`'s widgets show ([`crate::ui::skirmish_shell::page::sync`]).
-pub(crate) fn skirmish_labels(
-    frontend: &FrontendState,
-    match_state: &MatchState,
-    process_assets: &ProcessAssets,
-) -> crate::ui::skirmish_shell::page::SkirmishLabels {
-    use crate::skirmish_launch::{NATIVE_TEAMS, SKIRMISH_MAX_SLOT_COUNT};
-    let shell = &frontend.skirmish_shell_state;
+/// The combo entries the page's labels answer for: every item a row's list can
+/// draw, the country catalog, and the two menus. The Team items come from the
+/// same owner as the Team combos ([`crate::ui::skirmish_shell::team_items`]),
+/// so a map past gamemd's eight starts labels E..O instead of leaving them
+/// blank.
+fn label_items(
+    shell: &crate::ui::skirmish_shell::SkirmishShellState,
+    maps: &[crate::map::scenario_menu::MapMenuEntry],
+) -> Vec<SkirmishComboItem> {
+    use crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT;
     let ai = [
         SkirmishAiRowType::None,
         SkirmishAiRowType::Easy,
@@ -366,20 +368,31 @@ pub(crate) fn skirmish_labels(
     let starts = std::iter::once(LaunchStartPosition::Auto)
         .chain((0..SKIRMISH_MAX_SLOT_COUNT as u8).map(LaunchStartPosition::Position))
         .map(SkirmishComboItem::Start);
-    let teams = (-2..i32::from(NATIVE_TEAMS)).map(SkirmishComboItem::Team);
+    let teams = crate::ui::skirmish_shell::team_items(shell, maps);
     // VERA's Quick Team Setup and Bulk Seat Actions: their items as the
     // rows stand now, a greyed one with why.
-    let maps = frontend.scenario_catalog.shell_maps();
     let menus = [SkirmishComboId::TeamMenu, SkirmishComboId::SeatMenu]
         .into_iter()
         .flat_map(|menu| crate::ui::skirmish_shell::combo_items(shell, maps, menu));
-    let items = ai
-        .into_iter()
+    ai.into_iter()
         .chain(shell.country_catalog.items().iter().copied())
         .chain([SkirmishComboItem::ColorSentinel(-2)])
         .chain(starts)
         .chain(teams)
         .chain(menus)
+        .collect()
+}
+
+/// The words `0x102`'s widgets show ([`crate::ui::skirmish_shell::page::sync`]).
+pub(crate) fn skirmish_labels(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) -> crate::ui::skirmish_shell::page::SkirmishLabels {
+    let shell = &frontend.skirmish_shell_state;
+    let maps = frontend.scenario_catalog.shell_maps();
+    let items = label_items(shell, maps)
+        .into_iter()
         .map(|item| {
             (
                 item,
@@ -449,6 +462,15 @@ pub(super) fn random_map_paint(
 ) -> Option<HudPaint> {
     use crate::ui::skirmish_shell::random_map_page;
     use crate::ui::skirmish_shell::{RandomMapSetupControl as C, SetupCombo};
+    // DrawFill (0x00643470) uses the DarkRed scheme for the dialog outline.
+    let progress_outline = {
+        use crate::rules::color_scheme::{hsv_to_rgb, scheme_entry_by_name, scheme_hsv_by_entry};
+        crate::app::state::active_rules(frontend, match_state).and_then(|rules| {
+            let schemes = &rules.color_schemes;
+            let index = scheme_entry_by_name(schemes, "DarkRed")?;
+            Some(hsv_to_rgb(scheme_hsv_by_entry(schemes, index)?).map(|v| f32::from(v) / 255.0))
+        })
+    };
     let modal = frontend
         .skirmish_shell_state
         .random_map_setup_modal
@@ -502,16 +524,23 @@ pub(super) fn random_map_paint(
         }),
         _ => None,
     };
-    // The progress well while a map generates: the panel colour in the
-    // owner-draw dark outline.
     let frame_of = |id: i32| {
-        (id == i32::from(RandomMapSetupLayout::PROGRESS_BAR)).then_some(FrameArt::Filled {
-            fill: super::SHELL_MODAL_PANEL_RGB,
-            outline: super::OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68,
-            depths: [
-                super::SHELL_DROPDOWN_DEPTH - 0.00013,
-                super::SHELL_DROPDOWN_DEPTH - 0.00014,
-            ],
+        if id != i32::from(RandomMapSetupLayout::PROGRESS_BAR) {
+            return None;
+        }
+        let outline = progress_outline;
+        Some(match atlas.random_map_progress {
+            Some(shape) => FrameArt::RandomMapProgress {
+                shape,
+                outline,
+                percent: modal.progress_percent,
+            },
+            None => FrameArt::Progress {
+                rgb: outline.unwrap_or(SHELL_LABEL_TEXT_RGB),
+                done: u64::from(modal.progress_percent),
+                total: 100,
+                depth: super::SHELL_DROPDOWN_DEPTH - 0.00014,
+            },
         })
     };
     let style = GuiStyle {
@@ -1025,6 +1054,45 @@ mod tests {
         assert_eq!(room_team_label(3), None);
         assert_eq!(room_team_label(4).as_deref(), Some("E"));
         assert_eq!(room_team_label(14).as_deref(), Some("O"));
+    }
+
+    fn map_entry_with_starts(start_count: usize) -> crate::map::scenario_menu::MapMenuEntry {
+        crate::map::scenario_menu::MapMenuEntry {
+            file_name: "map.mmx".to_string(),
+            display_name: "map.mmx".to_string(),
+            author: None,
+            preview: Default::default(),
+            multiplayer_start_waypoints: (0..start_count)
+                .map(|index| crate::map::waypoints::Waypoint {
+                    index: index as u32,
+                    rx: index as u16,
+                    ry: index as u16,
+                })
+                .collect(),
+            player_capacity: start_count as i32,
+            preview_source_bounds: None,
+        }
+    }
+
+    #[test]
+    fn team_labels_cover_every_item_the_team_combo_offers() {
+        let shell = crate::ui::skirmish_shell::SkirmishShellState::default();
+        let maps = [map_entry_with_starts(13)];
+        let offered =
+            crate::ui::skirmish_shell::combo_items(&shell, &maps, SkirmishComboId::Team(0));
+        assert!(
+            offered.contains(&SkirmishComboItem::Team(14)),
+            "a map past gamemd's eight starts runs teams to O"
+        );
+        let labels = label_items(&shell, &maps);
+        let teams: Vec<_> = labels
+            .into_iter()
+            .filter(|item| matches!(item, SkirmishComboItem::Team(_)))
+            .collect();
+        assert_eq!(
+            teams, offered,
+            "the Team column's labels must name every item its list offers"
+        );
     }
 
     #[test]

@@ -55,7 +55,7 @@ const SCROLLBAR: u16 = 0x7430;
 const LABEL: u16 = 0x7440;
 /// Ares' Urban Areas caption, beside its box like `0x102`'s.
 pub const URBAN_CAPTION: u16 = 0x7450;
-/// Status text widget. Its VERA layout entry fits multiline results.
+/// Status text (retail 0x638). VERA widens it for multiline results after generation.
 const PROGRESS: u16 = 0x7451;
 /// The preview static, which hovers with no help: a press on it enlarges
 /// the map (`preview_zoom`).

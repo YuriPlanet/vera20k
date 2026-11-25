@@ -401,13 +401,27 @@ impl RuleSet {
     /// before its registry ID (`+0x24`), ignoring case. The shared owner
     /// retains `<random>`=-2 and unknown=-1; this typed projection returns
     /// only registered Country identities.
+    ///
+    /// VERA-only: the answer comes from `country_name_indices`, which holds
+    /// the first Country of the scan for every alias and identity, so a
+    /// lookup compares no names. A debug build under the live-read check runs
+    /// the scan beside it.
     pub(crate) fn country_index_of_name(&self, name: &str) -> Option<CountryIdx> {
-        let index = house_type_index_of_name(name, self.country_lookup_members());
-        (index >= 0).then(|| {
-            CountryIdx(
-                u16::try_from(index).expect("COUNTRY_LIMIT keeps the Country registry within u16"),
-            )
-        })
+        // The shared owner answers `<random>` with -2 before its scan.
+        let found = (!name.eq_ignore_ascii_case("<random>"))
+            .then(|| {
+                crate::util::native_string::with_ascii_uppercase(name, |key| {
+                    self.country_name_indices.get(key).copied()
+                })
+            })
+            .flatten();
+        debug_assert!(
+            !crate::util::debug_checks::live_read_check_enabled()
+                || found.map_or(-1, |index| i32::from(index.0)).max(-1)
+                    == house_type_index_of_name(name, self.country_lookup_members()).max(-1),
+            "the Country name index answers {found:?} for {name:?}, unlike the scan"
+        );
+        found
     }
 
     /// Cooperative5C34F0/5C35F0 draw over the complete retained HouseType

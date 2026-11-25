@@ -3,6 +3,10 @@ package org.vera20k
 import android.app.Activity
 import android.app.ActivityManager.TaskDescription
 import android.app.NativeActivity
+import android.os.Build
+import android.os.Bundle
+import android.view.RoundedCorner
+import android.view.WindowInsets
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -46,6 +50,52 @@ class VeraActivity : NativeActivity() {
         const val LAUNCHER_RETAIL = "org.vera20k.LauncherRetail"
         const val LAUNCHER_VERA = "org.vera20k.LauncherVera"
     }
+
+    /** The cutout and corner radius hiding the window's top left, in screen px. */
+    @Volatile
+    private var displayInsetLeft = 0
+
+    /** The cutout's top inset, in screen px; the corner never adds to it. */
+    @Volatile
+    private var displayInsetTop = 0
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val decor = window.decorView
+        decor.setOnApplyWindowInsetsListener { _, insets ->
+            updateDisplayInsets(insets)
+            insets
+        }
+        // The listener only fires when the window dispatches insets; read the
+        // ones it already applied after the first layout as well, so the first
+        // frames of a match are not drawn under the corner.
+        decor.post { decor.rootWindowInsets?.let { updateDisplayInsets(it) } }
+    }
+
+    /**
+     * Reads what the screen hides at the top left: the cutout's safe insets and,
+     * from API 31, the top-left rounded corner's radius. The engine moves the
+     * message lane and the performance panel in by these (`util::display_insets`).
+     */
+    private fun updateDisplayInsets(insets: WindowInsets) {
+        val cutout = insets.displayCutout
+        var left = cutout?.safeInsetLeft ?: 0
+        val top = cutout?.safeInsetTop ?: 0
+        if (Build.VERSION.SDK_INT >= 31) {
+            val corner = insets.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)
+            if (corner != null) {
+                left = maxOf(left, corner.radius)
+            }
+        }
+        displayInsetLeft = left
+        displayInsetTop = top
+    }
+
+    /** JNI: the left inset, read by `android/src/lib.rs` before the event loop. */
+    fun displayInsetLeft(): Int = displayInsetLeft
+
+    /** JNI: the top inset. */
+    fun displayInsetTop(): Int = displayInsetTop
 
     /**
      * Opens the system folder picker. Called from Rust on the UI thread

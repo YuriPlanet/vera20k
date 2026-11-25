@@ -86,7 +86,7 @@ fn normal_test_service_keeps_the_simplified_ui_and_only_vera20k_online() {
     lobby.set_lobbies(channels.clone());
     assert_eq!(lobby.lobbies.len(), 1);
     assert_eq!(lobby.lobbies[0].name, "Lob_41_2");
-    assert_eq!(lobby.ui.page_spec().stacked.len(), 6);
+    assert_eq!(lobby.ui.page_spec().stacked.len(), 5);
     let names = lobby_base_names(visit.modern_ui(), str::to_owned);
     assert_eq!(WolLobbyRow::joined_name(2, &names), "VERA20K Online");
     visit.set_legacy_ui(true);

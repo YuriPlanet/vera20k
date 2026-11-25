@@ -251,6 +251,10 @@ pub(crate) struct RetailOptionsProfile {
     /// `[VERA] WasmBudget=`: the Wasm mod module's operations per frame in
     /// place of the mod's own (RFC 0001 15.4); 0, the mod's, by default.
     pub(crate) wasm_budget: u32,
+    /// `[VERA] AutosaveMinutes=`: an offline match is saved every this many
+    /// minutes of play (`persistence::autosave`), 0 never. 0 by default;
+    /// read clamped to 0..=60.
+    pub(crate) autosave_minutes: u8,
     /// `[VERA] SoloSkirmish=`: Start accepts a skirmish that has fewer than two
     /// sides for an undisturbed test match — either no AI row enabled, or every
     /// enabled AI on the local player's own explicit team. Off by default, so
@@ -455,6 +459,7 @@ impl Default for RetailOptionsProfile {
             skirmish_cheats: false,
             superweapon_limit: 0,
             wasm_budget: 0,
+            autosave_minutes: 0,
             solo_skirmish: false,
             commander_feedback: true,
             custom_end_game_banner: false,
@@ -492,7 +497,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 46],
+    pub(crate) vera: [(&'static str, String); 47],
 }
 
 impl RetailOptionsLoad {
@@ -744,6 +749,9 @@ impl RetailOptionsProfile {
             self.auto_repair = vera.read_bool("AutoRepair", self.auto_repair);
             self.ra2_mode = vera.read_bool("RA2Mode", self.ra2_mode);
             self.minimap_beacons = vera.read_bool("MinimapBeacons", self.minimap_beacons);
+            self.autosave_minutes = vera
+                .read_int("AutosaveMinutes", i32::from(self.autosave_minutes))
+                .clamp(0, 60) as u8;
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
             self.custom_end_game_banner =
@@ -776,12 +784,9 @@ impl RetailOptionsProfile {
                 16,
             ));
             // Absent keeps the current value; an unknown one reads as Auto.
-            self.kratos =
-                crate::util::kratos_launch::KratosSetting::from_ini_text(&vera.read_string(
-                    "Kratos",
-                    self.kratos.ini_value(),
-                    16,
-                ));
+            self.kratos = crate::util::kratos_launch::KratosSetting::from_ini_text(
+                &vera.read_string("Kratos", self.kratos.ini_value(), 16),
+            );
             // Absent keeps the current value; a value this build does not know
             // reads as Off instead of enabling a filter with no matrix.
             self.color_vision =
@@ -909,6 +914,7 @@ impl RetailOptionsProfile {
                 ("ShiftQueue", format_bool(self.shift_queue).to_string()),
                 ("ShiftQueueCount", self.shift_queue_count.to_string()),
                 ("SoloSkirmish", format_bool(self.solo_skirmish).to_string()),
+                ("AutosaveMinutes", self.autosave_minutes.to_string()),
                 (
                     "CommanderFeedback",
                     format_bool(self.commander_feedback).to_string(),
