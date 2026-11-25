@@ -214,13 +214,18 @@ wat = "1"
 # getrandom's std and sys_rng, and its handshake's sha1 -> hybrid-array enables
 # typenum's const generics. The client's image -> png enables the defaults of
 # flate2, miniz_oxide and (through fdeflate) simd-adler32. Core reaches these and
-# getrandom 0.4 only through its native zip and tempfile.
+# getrandom 0.4 only through its native zip and tempfile. It reaches hashbrown
+# 0.17 and smallvec only through the native Wasmtime. The client's wgpu and naga
+# enable hashbrown's inline-more and its parley hashbrown's raw-entry; its ICU
+# fixed_decimal enables smallvec's const_new.
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dev-dependencies]
 chacha20 = { version = "0.10", default-features = false, features = ["rng"] }
 flate2 = "1"
 getrandom = { version = "0.4", default-features = false, features = ["std", "sys_rng"] }
+hashbrown-0-17 = { package = "hashbrown", version = "0.17", default-features = false, features = ["inline-more", "raw-entry"] }
 miniz_oxide = "0.8"
 simd-adler32 = "0.3"
+smallvec = { version = "1", features = ["const_new"] }
 typenum = { version = "1", features = ["const-generics"] }
 
 # wgpu's Vulkan/DX12 platform package enables gpu-allocator's hashbrown defaults.
@@ -241,6 +246,14 @@ rustix = { version = "1", features = ["event", "net", "pipe", "process", "shm", 
 # rustls-platform-verifier enable more of it.
 [target.'cfg(windows)'.dev-dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Graphics_Gdi", "Win32_Security_Cryptography", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Ole", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+
+# Not used by core's build script: like the dev-dependencies above, this
+# aligns features with the workspace build. Proc macros and their dependencies
+# resolve features as host dependencies, apart from dev-dependencies. The
+# client's ICU derive crates (yoke, zerofrom, zerovec and synstructure) enable
+# more of the syn 3 that core reaches only through Wasmtime's macros.
+[build-dependencies]
+syn = { version = "3", default-features = false, features = ["extra-traits", "fold", "visit"] }
 
 [lints]
 workspace = true
