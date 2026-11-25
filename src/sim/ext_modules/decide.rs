@@ -59,6 +59,8 @@
 //!   Process with no step in flight (`ext_modules::motion`).
 //! - `PathFound` (preview) → a count of `PathCell`s: a Find_Path search's
 //!   adoption (`ext_modules::paths`).
+//! - `ApproachPoint` (preview) → a cell reference: the cell Approach chose,
+//!   before it becomes the destination (`ext_modules::paths`).
 //!
 //! Result areas (`Fire`, `Launch`, `ProjectileFrame`, `MissionStep`,
 //! `MoveFrame`, `PathFound`; RFC 15.4 sizes): the

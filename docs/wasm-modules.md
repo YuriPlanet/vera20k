@@ -148,6 +148,9 @@ the source tree). Its Wasm verbs need no game install:
   no answer leaves it to its locomotor. `Event::PATH_FOUND` asks when a path search's
   route is adopted: `PathFoundDecision::set_cells` replaces the route with your
   cells (each next to the one before, up to 24), `no_route` makes the search fail.
+  `Event::APPROACH_POINT` asks, when a unit chasing a target out of range has picked
+  the cell to drive to, whether it should go elsewhere:
+  `ApproachPointDecision::set_cell` sends it to your cell instead.
   `Action::push` shoves a ground unit some leptons toward or away from a cell over a
   few frames, on top of its own movement; `Action::set_facing` turns it. Aircraft,
   jumpjets, rockets, tunnelling and teleporting units are not covered.

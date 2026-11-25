@@ -882,6 +882,9 @@ impl Simulation {
             radius -= 256;
         }
         if let Some(cell) = chosen {
+            // A Wasm module's `ApproachPoint` (`ext_modules::paths`), after
+            // the search and its draws, before the destination is set.
+            let cell = self.module_approach_point(rules, id, target, cell);
             self.assign_destination_represented(
                 id,
                 Some(NavTargetRef::cell(cell.0 as u16, cell.1 as u16)),

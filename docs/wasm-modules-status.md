@@ -475,7 +475,8 @@ Branch `feature/wasm-control-points` (items 1 and 2 of the control-point plan):
   (`ProductionAllowed` 1031, `ProductionQueued` 1032, `Defeat` 1033, `CommandAllowed`
   1034, `Launch` 1035, `ProjectileFrame` 1036); unit-level decision-only events
   from 1060 (`IdleMission` 1060, RFC 100060; `MissionStep` 1062, RFC 100062;
-  `MoveFrame` 1063 and `PathFound` 1064, RFC 100063/100064; no INI names yet);
+  `MoveFrame` 1063, `PathFound` 1064 and `ApproachPoint` 1065, RFC
+  100063..100065; no INI names yet);
   `HarvestCell` is
   1049 (RFC 100049), asked in every ore scan. Stock events keep 0..88. One name table: `wasm-ext/src/event_kinds.rs`.
 - `Passable.<SpeedType>` properties are appended to `PROPERTIES` (IDs 173..180).
@@ -598,6 +599,14 @@ modules, external modders, freeze), and the later items (peer calls,
   the path batch stays on (the decision is at the adoption, in the Foot's turn).
   SDK `MoveFrameDecision`, `PathFoundDecision`, `Action::push`,
   `Action::set_facing`. Tests `ext_modules_movement_tests.rs`.
+- `ApproachPoint` (MOV-S18, preview, a cell reference): in
+  `src/sim/ext_modules/paths.rs` (`module_approach_point`), asked in
+  `movement/foot_approach.rs` `approach_foot_target` (FootClass::Approach_Target
+  `0x004D5690`) once the ring search, a CloseRange= spot or a Jumpjet's first
+  candidate chose the cell (`0x004D689A`), before the destination is set. The
+  search and its spot draws run in full first. Not asked when the approach ends
+  without a chosen cell. SDK `ApproachPointDecision`; test
+  `ext_modules_movement_tests.rs`.
 - `ROTMultiplier` (MOV-S14, preview), the body facing's turn rate:
   `src/sim/ext_modules/modifiers.rs` (`ModifierStore::apply_rot`,
   `Simulation::set_body_rot`). Event-driven: written to the body's

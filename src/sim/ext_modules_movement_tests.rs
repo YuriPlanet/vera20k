@@ -3,11 +3,14 @@
 //! a held step keeps it from its move order, a `Push` spreads its distance
 //! over its frames (saved and hashed while it runs), `SetFacing` turns it,
 //! a `PathFound` refusal keeps it from leaving its cell, and a
-//! `ROTMultiplier` scales its body rate; plus what `has_kind` lists and the
-//! push arithmetic.
+//! `ROTMultiplier` scales its body rate, and an `ApproachPoint` answer
+//! sends it to another cell than its approach search chose; plus what
+//! `has_kind` lists and the push arithmetic.
 
 use vera20k_wasm_ext::Status;
-use vera20k_wasm_ext::decide::{EVENT_MOVE_FRAME, EVENT_PATH_FOUND, MoveStep};
+use vera20k_wasm_ext::decide::{
+    EVENT_APPROACH_POINT, EVENT_MOVE_FRAME, EVENT_PATH_FOUND, MoveStep,
+};
 
 use super::ModuleSource;
 use super::motion::tests_support;
@@ -36,9 +39,9 @@ fn decide_def(kind: i32, key: i32) -> Vec<u8> {
 
 /// Creates the trigger in `on_scenario_start` and binds it to `target`
 /// (statuses at 72 and 76). `on_decide` copies its record to 512, counts
-/// requests at 696 and answers by key. Its delivery area is 1024 bytes at
-/// 1024.
-fn module(kind: i32, key: i32, target: i64) -> Vec<u8> {
+/// requests at 696 and answers by key, with `result` `answer`. Its delivery
+/// area is 1024 bytes at 1024.
+fn module(kind: i32, key: i32, target: i64, answer: i64) -> Vec<u8> {
     let def = decide_def(kind, key);
     let bytes = def.iter().map(|b| format!("\\{b:02x}")).collect::<String>();
     wat::parse_str(format!(
@@ -67,7 +70,7 @@ fn module(kind: i32, key: i32, target: i64) -> Vec<u8> {
       (then (call $step (local.get $area) (i32.const 256))))
     (if (i32.eq (local.get $key) (i32.const {HOLD}))
       (then (call $step (local.get $area) (i32.const 0))))
-    (i64.store offset=136 (local.get $ptr) (i64.const 0))
+    (i64.store offset=136 (local.get $ptr) (i64.const {answer}))
     (i32.store offset=144 (local.get $ptr) (i32.const 1))))"#,
         len = def.len(),
         MOVE = MoveStep::MOVE,
@@ -76,13 +79,18 @@ fn module(kind: i32, key: i32, target: i64) -> Vec<u8> {
 }
 
 fn install(scene: &mut HeadlessScenario, kind: i32, key: i32, target: u64) {
+    install_answering(scene, kind, key, target, 0);
+}
+
+/// [`install`] with a module whose answers' `result` is `answer`.
+fn install_answering(scene: &mut HeadlessScenario, kind: i32, key: i32, target: u64, answer: i64) {
     scene
         .runtime
         .simulation
         .install_ext_module(
             &scene.runtime.resources.rules,
             ModuleSource::Map,
-            &module(kind, key, target as i64),
+            &module(kind, key, target as i64, answer),
         )
         .expect("module installs");
     scene.tick();
@@ -205,6 +213,7 @@ fn has_kind_lists_the_movement_kinds() {
     let rules = &scene.runtime.resources.rules;
     assert!(super::has_kind(rules, 0, EVENT_MOVE_FRAME));
     assert!(super::has_kind(rules, 0, EVENT_PATH_FOUND));
+    assert!(super::has_kind(rules, 0, EVENT_APPROACH_POINT));
     assert!(super::has_kind(rules, 1, super::actions::PUSH));
     assert!(super::has_kind(rules, 1, super::actions::SET_FACING));
     assert_eq!(
@@ -425,4 +434,75 @@ fn a_rot_multiplier_scales_the_body_rate() {
     }
     assert_eq!(body_rate(&scene, tank), native);
     assert!(scene.sim().ext_modules.modifiers.is_empty());
+}
+
+/// The tank ordered to attack a Russian infantryman eight cells east, out
+/// of its range, approaches it; an `ApproachPoint` decider bound to the
+/// tank answers the cell two east of it, which becomes the tank's
+/// destination in place of the search's cell. The request carried the
+/// target and its cell, and the chosen cell as `cell` and `value`.
+#[test]
+fn an_approach_point_answer_replaces_the_approach_cell() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::components::NavTargetRef;
+    let Some((mut scene, tank, (x, y))) = tank_scene() else {
+        return;
+    };
+    let Some(enemy) = ({
+        let runtime = &mut scene.runtime;
+        let enemy = runtime.simulation.spawn_object(
+            "E1",
+            "Russians",
+            x + 8,
+            y,
+            0,
+            &runtime.resources.rules,
+        );
+        runtime
+            .simulation
+            .resolve_type_handles(&runtime.resources.rules);
+        enemy
+    }) else {
+        return;
+    };
+    let answer = super::cell_ref(x + 2, y);
+    install_answering(&mut scene, EVENT_APPROACH_POINT, NO_PATH, tank, answer);
+    let order = CommandEnvelope::new(
+        scene.sim().interner.get("Americans").expect("Americans house"),
+        scene.sim().session.tick() + 1,
+        Command::clicked_mission(
+            tank,
+            crate::sim::mission::MissionType::Attack,
+            crate::sim::combat::TargetKind::Entity(enemy),
+        ),
+    );
+    let mut orders = vec![order];
+    for _ in 0..60 {
+        scene
+            .runtime
+            .advance_frame(
+                &std::mem::take(&mut orders),
+                crate::headless_scenario::SIM_TICK_MS,
+                crate::sim::world::TickLane::Ordinary,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .expect("frame advances");
+        if requests(&scene) > 0 {
+            break;
+        }
+    }
+    assert!(requests(&scene) > 0, "the tank's approach asked");
+    let record = &memory(&scene)[512..672];
+    assert_eq!(i32_at(record, 4), EVENT_APPROACH_POINT);
+    assert_eq!(i64_at(record, 24), tank as i64, "subject");
+    assert_eq!(i64_at(record, 32), enemy as i64, "the target");
+    assert_eq!(i64_at(record, 80), super::cell_ref(x + 8, y), "its cell");
+    assert_ne!(i64_at(record, 64), 0, "the chosen cell");
+    assert_eq!(i64_at(record, 64), i64_at(record, 72));
+    let entity = scene.sim().entities().get(tank).expect("tank");
+    assert_eq!(
+        entity.navigation.nav_com(),
+        Some(NavTargetRef::cell(x + 2, y))
+    );
+    assert_eq!(scene.sim().ext_modules().status()[0].1, None);
 }

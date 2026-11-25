@@ -1,5 +1,8 @@
-//! `PathFound` (RFC 0001 appendix 4.5, preview): a module's say over the
-//! route a Find_Path search hands a Foot.
+//! `PathFound` and `ApproachPoint` (RFC 0001 appendix 4.5, preview): a
+//! module's say over the route a Find_Path search hands a Foot, and over
+//! the cell a Foot approaching its target heads for.
+//!
+//! ## `PathFound`
 //!
 //! Where: `FootClass::Find_Path @ 0x004D3920`'s core
 //! (`movement::foot_path`, `search_foot_path`), once the search answered
@@ -38,11 +41,34 @@
 //!   when the queue runs short, as the native one searches again.
 //! - The Foot's track or step logic still refuses a cell it cannot enter;
 //!   a module route through blocked cells ends in the native refusal arms.
+//!
+//! ## `ApproachPoint`
+//!
+//! Where: the Foot body of Approach (`FootClass::Approach_Target @
+//! 0x004D5690`, `movement::foot_approach`, `approach_foot_target`; Unit
+//! `0x007414E0` and Infantry `0x00522340` call it from Attack, Hunt, Area
+//! Guard, Rescue, Patrol and TechnoClass::AI's reach block), once the ring
+//! search, a CloseRange= spot or a Jumpjet's first candidate chose the cell
+//! (`0x004D689A`), before the destination is set (vt+0x480 with that cell).
+//! The search runs in full first, so its scenario draws (a CloseRange=
+//! infantryman's PlaceInfantryInCell spots) are unchanged (list 4.4). Not
+//! asked when Approach ends before or without a chosen cell: the target in
+//! range, a queued destination taken, the drop arms, a HunterSeeker's or
+//! VehicleThief's target destination, the exhausted fallback.
+//!
+//! `subject` the Foot, `x`, `y`, `z` its position, `other` the target
+//! object (0 for a cell target), `value2` the target's cell reference,
+//! `cell` the chosen cell and `value` (and `native`) its reference. The
+//! result is a cell reference: a cell on the map replaces the chosen cell;
+//! 0, an object or a cell off the map is not an answer and keeps the
+//! previous link's (the native cell for the first). The destination setter
+//! then takes it as it takes the native one (`DestinationSet` included).
 
-use vera20k_wasm_ext::decide::{EVENT_PATH_FOUND, MAX_PATH_CELLS, PathCell};
+use vera20k_wasm_ext::decide::{EVENT_APPROACH_POINT, EVENT_PATH_FOUND, MAX_PATH_CELLS, PathCell};
 
-use super::ModuleEvent;
+use super::{ModuleEvent, Ref, cell_ref, decode_ref};
 use crate::rules::ruleset::RuleSet;
+use crate::sim::combat::TargetKind;
 use crate::sim::components::DriveCoord;
 use crate::sim::world::Simulation;
 use crate::util::direction::{direction_delta, direction_from_delta};
@@ -112,4 +138,47 @@ impl Simulation {
         }
         Some(Some(directions))
     }
+
+    /// `ApproachPoint` for Foot `id` approaching `target`, whose search
+    /// chose `native` (module docs): the cell it heads for.
+    pub(crate) fn module_approach_point(
+        &mut self,
+        rules: &RuleSet,
+        id: u64,
+        target: TargetKind,
+        native: (i16, i16),
+    ) -> (i16, i16) {
+        if !self.trigger_runtime.module_decides(EVENT_APPROACH_POINT) {
+            return native;
+        }
+        let (Ok(x), Ok(y)) = (u16::try_from(native.0), u16::try_from(native.1)) else {
+            return native;
+        };
+        let native_ref = cell_ref(x, y);
+        let (other, target_cell) = super::control::target_fields(self, Some(target));
+        let event = ModuleEvent {
+            other,
+            cell: Some((x, y)),
+            value: native_ref,
+            value2: target_cell.map_or(0, |(x, y)| cell_ref(x, y)),
+            at_subject: true,
+            ..ModuleEvent::new(EVENT_APPROACH_POINT, id)
+        };
+        let Some(answer) =
+            self.decide_module_event(rules, &event, None, None, native_ref, only_cell)
+        else {
+            return native;
+        };
+        match decode_ref(answer) {
+            Ok(Some(Ref::Cell { x, y })) if self.map_cell_in_bounds((x as i16, y as i16)) => {
+                (x as i16, y as i16)
+            }
+            _ => native,
+        }
+    }
+}
+
+/// A cell reference; anything else is not an `ApproachPoint` answer.
+fn only_cell(answer: i64) -> Option<i64> {
+    matches!(decode_ref(answer), Ok(Some(Ref::Cell { .. }))).then_some(answer)
 }

@@ -34,7 +34,9 @@
 //!   frame a bound ground mover's locomotor would start a step;
 //! - `PathFound` (4.5, preview): the cells of a found route in the result
 //!   area, their count in `result` (0 for no route), when a Find_Path search
-//!   is adopted.
+//!   is adopted;
+//! - `ApproachPoint` (4.5, preview): the cell reference a mover approaching
+//!   its target heads for, when the approach search chose one.
 //!
 //! Provisional numbering (open question 5): new events continue from 1000
 //! in appendix order, 4.3 (1000..1025), then 4.4 (1026..1030), then 4.5
@@ -69,9 +71,12 @@ pub const EVENT_MISSION_STEP: i32 = 1062;
 /// ground mover's per-frame step and an adopted route.
 pub const EVENT_MOVE_FRAME: i32 = 1063;
 pub const EVENT_PATH_FOUND: i32 = 1064;
+/// Movement (appendix 4.5, preview; RFC number 100065): the cell a mover
+/// approaching its target heads for.
+pub const EVENT_APPROACH_POINT: i32 = 1065;
 
 /// Events with a decision form in this engine.
-pub const DECIDABLE_EVENTS: [i32; 20] = [
+pub const DECIDABLE_EVENTS: [i32; 21] = [
     EVENT_TAKE_DAMAGE,
     EVENT_FATAL_DAMAGE,
     EVENT_FIRE,
@@ -92,10 +97,11 @@ pub const DECIDABLE_EVENTS: [i32; 20] = [
     EVENT_MISSION_STEP,
     EVENT_MOVE_FRAME,
     EVENT_PATH_FOUND,
+    EVENT_APPROACH_POINT,
 ];
 /// Of those, the decision-only ones (appendix 4.5): they need a decision
 /// handler and are never delivered.
-pub const DECISION_ONLY_EVENTS: [i32; 17] = [
+pub const DECISION_ONLY_EVENTS: [i32; 18] = [
     EVENT_PRODUCTION_ALLOWED,
     EVENT_PRODUCTION_QUEUED,
     EVENT_DEFEAT,
@@ -113,6 +119,7 @@ pub const DECISION_ONLY_EVENTS: [i32; 17] = [
     EVENT_MISSION_STEP,
     EVENT_MOVE_FRAME,
     EVENT_PATH_FOUND,
+    EVENT_APPROACH_POINT,
 ];
 
 /// Plan entries one `Fire` decision may hold (RFC 15.4: 768 bytes).

@@ -641,6 +641,31 @@ impl PathFoundDecision<'_> {
     }
 }
 
+decision!(
+    /// `ApproachPoint` (appendix 4.5, preview): when a unit approaching its
+    /// target has chosen the cell to move to, before it is set as the
+    /// destination. The result is a cell reference on the map; anything
+    /// else (0 included) keeps the previous link's cell, the native one
+    /// ([`Self::native`]) for the first.
+    ApproachPointDecision {
+        unit: Techno = |r| Techno(r.subject),
+        /// The cell the engine chose.
+        chosen: Cell = |r| Cell(r.cell),
+        /// The target object; `NO_HANDLE` for a cell target.
+        target: Techno = |r| Techno(r.other),
+        /// The target's cell.
+        target_cell: Cell = |r| Cell(r.value2),
+        position: [i32; 3] = |r| [r.x, r.y, r.z],
+    }
+);
+
+impl ApproachPointDecision<'_> {
+    /// Heads for `cell` instead.
+    pub fn set_cell(&mut self, cell: Cell) {
+        self.0.set_result(cell.0)
+    }
+}
+
 /// Exports `on_decide`, calling the handler whose key (the trigger's
 /// `decide_sync` key) matches each request. A handler takes
 /// `&mut DecideRecord` or a decision view. The macro also declares the

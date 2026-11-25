@@ -23,7 +23,7 @@ pub mod triggers;
 pub mod vars;
 
 pub use decide::{
-    CommandAllowedDecision, CrushAllowedDecision, DamageIncomingDecision, DecideRecord,
+    ApproachPointDecision, CommandAllowedDecision, CrushAllowedDecision, DamageIncomingDecision, DecideRecord,
     DefeatDecision, DeployAllowedDecision, DestinationSetDecision, FatalDamageDecision,
     FireAllowedDecision, FireDecision, HarvestCellDecision, IdleMissionDecision, LaunchDecision,
     MissionStepDecision, MoveFrameDecision, PathFoundDecision, PathKind,
@@ -48,7 +48,8 @@ pub use triggers::{
 pub mod prelude {
     pub use crate::vars::{GlobalVar, HouseVar, ObjectVar};
     pub use crate::{
-        Action, ActionDef, Blocked, Category, Cell, Command, CommandAllowedDecision, DecideRecord,
+        Action, ActionDef, ApproachPointDecision, Blocked, Category, Cell, Command,
+        CommandAllowedDecision, DecideRecord,
         DefeatDecision, Event, EventRecord, EventScope, FIXED_ONE, FatalDamageDecision, Find,
         FireDecision, FireEvent,
         Global, House, LaunchDecision, MoveFrameDecision, PathFoundDecision, PathKind, Projectile,
