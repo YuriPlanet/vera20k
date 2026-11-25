@@ -45,10 +45,17 @@ const KRATOS_FLH: u32 = 0x9F1B_D701;
 // webbed, end frame 0 has passed, no warhead webs and no type has Struggle
 // frames.
 const TS_WEBS: u32 = 0xF215_BF3A;
-// The Wasm extension modules (RFC 0001): the world stores its modules, their
-// modifiers, variables and claims, and the trigger runtime the triggers they
-// made. Older worlds ran no module: both convert empty.
+// The Wasm extension modules (RFC 0001), as their branch's writer `a33fcac81`
+// stored them: the world stores its modules, their modifiers, variables and
+// claims, and the trigger runtime the triggers they made. Older worlds ran no
+// module: both convert empty.
 const WASM_MODULES: u32 = 0xE18E_A373;
+// Beside them, main's writer from #5205 stores each object image's Phobos
+// ArtImageSwap name (`ObjectImageState::image_swap`). Older worlds swapped no
+// image, as they played when saved.
+const ART_IMAGE_SWAP: u32 = 0x8C73_B1B3;
+// The current writer stores both the modules and the image swap.
+const MODULES_AND_IMAGE_SWAP: u32 = 0xB65C_0664;
 
 /// The rules digest a converted save carries: the loader takes the rules the
 /// game has instead of proving the digest the old writer computed, whose
@@ -82,7 +89,7 @@ pub fn supports(header: &GameSnapshotHeader) -> bool {
         && previous_layout(header.layout).is_some()
         && header.compatibility().matches_build()
         && SNAPSHOT_ENVELOPE_VERSION == MIGRATION_ENVELOPE_VERSION
-        && snapshot_layout() == WASM_MODULES
+        && snapshot_layout() == MODULES_AND_IMAGE_SWAP
 }
 
 fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
@@ -108,6 +115,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     const STRUGGLE: (&str, &[&str]) = ("InfantrySequenceBank", &["struggle"]);
     const EXT_MODULES: (&str, &[&str]) = ("Simulation", &["ext_modules"]);
     const MODULE_TRIGGERS: (&str, &[&str]) = ("TriggerRuntime", &["module"]);
+    const IMAGE_SWAP: (&str, &[&str]) = ("ObjectImageState", &["image_swap"]);
     let absent_fields: &'static [_] = match source {
         V0_3_8_AND_0_3_9 | V0_4_0 => &[
             IMAGE_FLAGS,
@@ -131,6 +139,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             STRUGGLE,
             EXT_MODULES,
             MODULE_TRIGGERS,
+            IMAGE_SWAP,
         ],
         ALPHA_SHAPE_LISTENER => &[
             IMAGE_FLAGS,
@@ -153,6 +162,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             STRUGGLE,
             EXT_MODULES,
             MODULE_TRIGGERS,
+            IMAGE_SWAP,
         ],
         ALTERNATE_THEATER_ART => &[
             DECK,
@@ -174,6 +184,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             STRUGGLE,
             EXT_MODULES,
             MODULE_TRIGGERS,
+            IMAGE_SWAP,
         ],
         BRIDGE_DECK_AND_FLY_SPIN => &[
             DEGRADES,
@@ -192,6 +203,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             STRUGGLE,
             EXT_MODULES,
             MODULE_TRIGGERS,
+            IMAGE_SWAP,
         ],
         HOUSE_DEGRADES => &[
             ICE_TIMER,
@@ -209,6 +221,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             STRUGGLE,
             EXT_MODULES,
             MODULE_TRIGGERS,
+            IMAGE_SWAP,
         ],
         TS_ICE => &[
             DENT,
@@ -223,6 +236,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             STRUGGLE,
             EXT_MODULES,
             MODULE_TRIGGERS,
+            IMAGE_SWAP,
         ],
         TERRAIN_DENT => &[
             LIMPETS,
@@ -236,6 +250,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             STRUGGLE,
             EXT_MODULES,
             MODULE_TRIGGERS,
+            IMAGE_SWAP,
         ],
         TS_LIMPETS => &[
             ANIM_SOUNDS,
@@ -247,6 +262,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             STRUGGLE,
             EXT_MODULES,
             MODULE_TRIGGERS,
+            IMAGE_SWAP,
         ],
         TS_ANIM_SOUNDS => &[
             KRATOS_INPUTS,
@@ -257,6 +273,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             STRUGGLE,
             EXT_MODULES,
             MODULE_TRIGGERS,
+            IMAGE_SWAP,
         ],
         KRATOS_FLH => &[
             WEB,
@@ -265,8 +282,11 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             STRUGGLE,
             EXT_MODULES,
             MODULE_TRIGGERS,
+            IMAGE_SWAP,
         ],
-        TS_WEBS => &[EXT_MODULES, MODULE_TRIGGERS],
+        TS_WEBS => &[EXT_MODULES, MODULE_TRIGGERS, IMAGE_SWAP],
+        WASM_MODULES => &[IMAGE_SWAP],
+        ART_IMAGE_SWAP => &[EXT_MODULES, MODULE_TRIGGERS],
         _ => return None,
     };
     Some(save_codec::PreviousLayout {
@@ -282,7 +302,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
 /// only its stock Arctic setting and latch. Keep both exactly as saved.
 pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     let target = snapshot_layout();
-    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != WASM_MODULES {
+    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != MODULES_AND_IMAGE_SWAP {
         return Err(MigrationError::UnsupportedTarget(target));
     }
 
@@ -415,7 +435,7 @@ mod tests {
         let error = migrate(&mut bytes).unwrap_err();
         assert_eq!(bytes, original);
         if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
-            || snapshot_layout() != WASM_MODULES
+            || snapshot_layout() != MODULES_AND_IMAGE_SWAP
         {
             assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
             return;
