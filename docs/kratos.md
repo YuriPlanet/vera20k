@@ -141,7 +141,7 @@ every place the original refuses to advance a frozen techno, which is what the k
 VERA20K implements the behavior in Rust. It does not load `Kratos.dll` and does not redistribute
 Kratos binaries; each ported piece is translated from the Kratos source named beside it.
 
-This product includes software developed by the Kratos PP author.
+This product includes software developed by the Kratos Authors.
 
 [Kratos PP](https://github.com/ChrisLv-CN/KratosPP) is the C++ port of **DPKratos**, created by
 **双杀步枪 (ChrisLv_CN)** (developer), with **艾木魁 (M.Kenosis)** (design) and

@@ -140,7 +140,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
-This product includes software developed by the [Kratos PP author](docs/kratos.md#original-project-and-authors).
+This product includes software developed by the [Kratos Authors](docs/kratos.md#original-project-and-authors).
 
 **Read the [legal notice](LEGAL.md) before you share, sell or fork VERA20K.**
 
