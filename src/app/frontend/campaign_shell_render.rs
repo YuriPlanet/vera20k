@@ -182,8 +182,7 @@ pub(crate) fn render_campaign_page(
         &state.renderer,
         &mut state.frontend,
         &state.process_assets,
-    )
-    {
+    ) {
         return Ok(false);
     }
     let layout = shell_layout::campaign_layout(&state.renderer.gpu);
