@@ -1093,7 +1093,10 @@ impl TacticalCaptureSession {
                 SidebarTheme::Yuri
             }
         };
-        let actual_theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
+        let actual_theme = crate::app::presentation::sidebar_render::current_sidebar_theme(
+            &state.frontend,
+            &state.match_state,
+        );
         let radar_phase_online = state
             .match_state
             .match_presentation
@@ -1107,7 +1110,13 @@ impl TacticalCaptureSession {
             .as_ref()
             .context("radar animation lacks construction provenance")?;
         let source_evidence = SidebarSourceEvidence::from_identity(radar_source);
-        let aperture = crate::app::presentation::sidebar_render::active_minimap_screen_rect(state);
+        let aperture = crate::app::presentation::sidebar_render::active_minimap_screen_rect(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        );
         let insets = state
             .match_state
             .match_presentation

@@ -173,12 +173,16 @@ pub(crate) fn render_campaign_page(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<bool> {
-    if !family_art_ready(state)
-        || !crate::app::App::ensure_campaign_art(
-            &state.renderer,
-            &mut state.frontend,
-            &state.process_assets,
-        )
+    if !family_art_ready(
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+    ) || !crate::app::App::ensure_campaign_art(
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+    )
     {
         return Ok(false);
     }

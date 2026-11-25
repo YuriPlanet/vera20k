@@ -1319,7 +1319,11 @@ fn sync_view(state: &mut AppState) {
     // VERA's performance panel holds the viewport's top left while it shows, and the
     // list and its edit line start below it.
     let [x, y, width, _] = crate::app::presentation::field_parts::rect(
-        state,
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
         crate::ui::field_layout::FieldPart::Messages,
     );
     let (_, tactical_y, _, _) = crate::app::input::camera::tactical_viewport_px(

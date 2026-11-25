@@ -1107,7 +1107,14 @@ impl App {
                 if !state.match_state.paused()
                     && !crate::app::input::campaign_input::is_locked(&state.match_state) =>
             {
-                if crate::app::presentation::super_timers::wheel(state, lines) {
+                if crate::app::presentation::super_timers::wheel(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &mut state.match_state,
+                    &state.persistence,
+                    lines,
+                ) {
                     return;
                 }
                 // Optional player setting: over the battlefield the wheel

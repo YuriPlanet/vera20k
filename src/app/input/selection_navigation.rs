@@ -258,7 +258,13 @@ pub(super) fn execute_combatant_selection(state: &mut AppState) {
         combatant_selection(
             sim,
             rules,
-            &crate::app::presentation::instances::tactical_screen_entity_encounter_order(state),
+            &crate::app::presentation::instances::tactical_screen_entity_encounter_order(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            ),
             &super::map_entity_creation_order(sim.entities()),
             &selected,
             !state.match_state.input.hotkey_modifiers.shift_key(),
@@ -507,7 +513,13 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         .category_navigation_continues(kind)
         && current.is_empty()
     {
-        crate::app::presentation::instances::tactical_screen_entity_encounter_order(state)
+        crate::app::presentation::instances::tactical_screen_entity_encounter_order(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence,
+        )
     } else {
         Vec::new()
     };

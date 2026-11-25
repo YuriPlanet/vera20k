@@ -709,7 +709,11 @@ fn tactical_left_up(state: &mut AppState) {
     {
         let order =
             crate::app::presentation::instances::tactical_band_preflight_entity_encounter_order(
-                state,
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
             );
         if band_caught_drawn_object(state, &order, min_x, min_y, max_x, max_y) {
             band_preflight_order = Some(order);
@@ -795,7 +799,13 @@ fn tactical_left_up(state: &mut AppState) {
         .map(|rt| &rt.simulation)
     {
         let screen_order =
-            crate::app::presentation::instances::tactical_screen_entity_encounter_order(state);
+            crate::app::presentation::instances::tactical_screen_entity_encounter_order(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            );
         let current_selection = selected_stable_ids_in_order(
             state
                 .match_state
@@ -988,8 +998,13 @@ fn double_click_type_select(state: &AppState, sx: f32, sy: f32) -> Option<Select
     }
     let click_order =
         crate::app::presentation::instances::tactical_entity_encounter_order(sim, state.rules());
-    let screen_order =
-        crate::app::presentation::instances::tactical_screen_entity_encounter_order(state);
+    let screen_order = crate::app::presentation::instances::tactical_screen_entity_encounter_order(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     let world_x = sx / state.match_state.input.zoom_level + state.match_state.input.camera_x;
     let world_y = sy / state.match_state.input.zoom_level + state.match_state.input.camera_y;
     let fog = (!state.match_state.sandbox_full_visibility)

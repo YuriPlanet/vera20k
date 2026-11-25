@@ -7,6 +7,7 @@ use super::planning_lines::{
     stroke_rgb,
 };
 use crate::app::AppState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::presentation::target_lines::TacticalViewport;
 use crate::render::surface_line::SurfaceStroke;
 use crate::sim::components::DriveCoord;
@@ -85,16 +86,16 @@ impl PathStrokes {
 /// committed. Unlike Planning Mode's own lines these show without the mode:
 /// the ferry keeps its own waypoints.
 pub(super) fn build_paths(
-    state: &AppState,
+    match_state: &MatchState,
     view: TacticalViewport,
     wall_ms: u32,
 ) -> Vec<SurfaceStroke> {
     let mut out = Vec::new();
-    let paths = crate::app::input::ferry::waypoint_paths(&state.match_state);
+    let paths = crate::app::input::ferry::waypoint_paths(match_state);
     if paths.is_empty() {
         return out;
     }
-    let Some(rt) = state.match_state.sim_runtime.presentation() else {
+    let Some(rt) = match_state.sim_runtime.presentation() else {
         return out;
     };
     let sim = &rt.simulation;
@@ -120,7 +121,7 @@ pub(super) fn build_paths(
     let phase = stroke_phase(wall_ms);
     let color = |pending| {
         stroke_rgb(
-            &state.match_state.match_presentation,
+            &match_state.match_presentation,
             sim,
             &rt.resources.rules,
             viewer,

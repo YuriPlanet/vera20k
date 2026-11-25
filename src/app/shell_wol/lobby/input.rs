@@ -69,7 +69,7 @@ pub(crate) fn ime_gui(state: &AppState) -> Option<&vera20k_gui::Gui> {
 pub(crate) fn ime_edit_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
     let routed = crate::app::input::precedence::route_page(&state.frontend)
         == crate::app::input::precedence::ScreenPage::Wol
-        && !shell_transition::blocks_shell_input(state)
+        && !shell_transition::blocks_shell_input(&state.frontend)
         && !App::wol_quick_match_verify(state.frontend.network_setup_protocol.as_ref())
         && !super::page::open(state.frontend.wol.as_ref())
         && App::wol_page_is_lobby(state.frontend.wol.as_ref());
@@ -120,7 +120,7 @@ fn apply(state: &mut AppState, effects: Vec<WolLobbyEffect>) {
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
     use vera20k_gui::{InputEvent, Key};
-    if shell_transition::blocks_shell_input(state)
+    if shell_transition::blocks_shell_input(&state.frontend)
         || !lobby(state.frontend.wol.as_ref()).is_some_and(WolLobby::interactive)
         || super::player_card::key_press(state.frontend.wol.as_ref(), code)
     {
@@ -199,7 +199,7 @@ pub(in crate::app::shell_wol) fn cursor_moved(state: &mut AppState) {
 }
 
 pub(in crate::app::shell_wol) fn mouse(state: &mut AppState, pressed: bool) {
-    if shell_transition::blocks_shell_input(state)
+    if shell_transition::blocks_shell_input(&state.frontend)
         || !lobby(state.frontend.wol.as_ref()).is_some_and(WolLobby::interactive)
     {
         return;

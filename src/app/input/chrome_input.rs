@@ -514,7 +514,13 @@ fn places(state: &AppState, view: &SidebarView) -> Places {
     let minimap = minimap_available(&state.match_state.match_presentation).then(|| {
         rect_px(
             frame,
-            crate::app::presentation::sidebar_render::active_minimap_content_screen_rect(state),
+            crate::app::presentation::sidebar_render::active_minimap_content_screen_rect(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.persistence,
+            ),
         )
     });
     Places {
@@ -558,7 +564,11 @@ fn timer_rect(state: &AppState) -> Option<Rect> {
         .super_timer_dock
         .toggle_rect()?;
     let [left, top, _, _] = crate::app::presentation::field_parts::rect(
-        state,
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
         crate::ui::field_layout::FieldPart::Timers,
     );
     Some(Rect::new(rect.x + left, rect.y + top, rect.w, rect.h))
@@ -567,23 +577,30 @@ fn timer_rect(state: &AppState) -> Option<Rect> {
 /// The buttons the side's layout adds take clicks where they are drawn: a
 /// rect per added part, `None` for a part that takes no click.
 fn layout_rects(state: &AppState) -> Vec<Option<Rect>> {
-    crate::app::presentation::layout_parts::placed(state)
-        .iter()
-        .take(LAYOUT_BUTTONS_MAX)
-        .map(|part| {
-            part.button.then(|| {
-                let [x, y, w, h] = crate::app::presentation::layout_parts::click_rect(
-                    &state.platform,
-                    &state.renderer,
-                    &state.frontend.screen,
-                    &state.match_state.match_presentation,
-                    &state.persistence,
-                    part,
-                );
-                Rect::new(x, y, w, h)
-            })
+    crate::app::presentation::layout_parts::placed(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &state.persistence,
+    )
+    .iter()
+    .take(LAYOUT_BUTTONS_MAX)
+    .map(|part| {
+        part.button.then(|| {
+            let [x, y, w, h] = crate::app::presentation::layout_parts::click_rect(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state.match_presentation,
+                &state.persistence,
+                part,
+            );
+            Rect::new(x, y, w, h)
         })
-        .collect()
+    })
+    .collect()
 }
 
 fn sync_key(state: &AppState) -> SyncKey {

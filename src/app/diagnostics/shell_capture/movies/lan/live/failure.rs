@@ -264,7 +264,11 @@ impl FailureCapture {
             if self.mode == Mode::Quit {
                 let layout =
                     crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
-                        state,
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence,
                     )
                     .map(|shell| {
                         crate::ui::shell::connection::connection_layout(

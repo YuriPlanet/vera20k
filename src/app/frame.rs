@@ -1259,7 +1259,11 @@ impl App {
             }
             _ if page == Some(ModalPage::NetworkWait)
                 && crate::app::frontend::skirmish_shell_render::connection_shell_drawable(
-                    state,
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
                 ) =>
             {
                 // 0xEA is pushed over whatever the game shows, in-game A3 included.
@@ -1563,7 +1567,15 @@ impl App {
                         .as_ref()
                         .unwrap()
                         .draw(&mut encoder, &view);
-                    render::draw_world_window_copy(state, &mut encoder, &view);
+                    render::draw_world_window_copy(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &state.match_state.match_presentation,
+                        &state.persistence,
+                        &mut encoder,
+                        &view,
+                    );
                     crate::app::presentation::sidebar_surface::draw_window_copy(
                         &state.renderer,
                         &state.frontend.screen,
@@ -1572,7 +1584,11 @@ impl App {
                         &view,
                     );
                     crate::app::presentation::window_ui::draw_battlefield(
-                        state,
+                        &state.platform,
+                        &mut state.renderer,
+                        &state.frontend.screen,
+                        &state.match_state,
+                        &state.persistence,
                         &mut encoder,
                         &view,
                         render_output.software_cursor,
@@ -1772,7 +1788,11 @@ impl App {
         {
             if game_render_output.is_some() {
                 render::draw_world_window_copy(
-                    state,
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &state.match_state.match_presentation,
+                    &state.persistence,
                     &mut encoder,
                     &copy.create_view(&Default::default()),
                 );

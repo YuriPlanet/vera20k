@@ -23,6 +23,11 @@ use crate::app::frontend::skirmish_shell_render::gui_paint::{
     ButtonArt, FrameArt, GuiStyle, Picture, paint_gui_ids, paint_gui_into, paint_gui_styled,
 };
 use crate::app::frontend::skirmish_shell_render::{BoxLook, controller_tree, paint_shell_box};
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::ime::ImeState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_wol::WolPage;
 use crate::app::shell_wol::WolVisit;
 use crate::render::hud_paint::{HudPaint, Material};
@@ -59,20 +64,45 @@ pub(crate) fn presented_wol_page(wol: &Option<WolVisit>) -> PresentedShell {
 }
 
 /// `0xCF` or `0x11E` over whatever the page shows, and where it sits.
-pub(crate) fn page_dialogs_paint(state: &AppState) -> Option<(RectPx, WolLobbyPaint)> {
+pub(crate) fn page_dialogs_paint(
+    ime: &ImeState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) -> Option<(RectPx, WolLobbyPaint)> {
     use crate::app::frontend::skirmish_shell_render::{
         paint_wol_page_dialog, paint_wol_page_received,
     };
     use crate::app::shell_wol::page;
-    if let Some(dialog) = page::page_dialog(state.frontend.wol.as_ref()) {
-        let layout = page::page_layout(&state.renderer, &state.frontend.screen);
-        return Some((layout.dialog, paint_wol_page_dialog(state, dialog, &layout)));
+    if let Some(dialog) = page::page_dialog(frontend.wol.as_ref()) {
+        let layout = page::page_layout(renderer, &frontend.screen);
+        return Some((
+            layout.dialog,
+            paint_wol_page_dialog(
+                ime,
+                &renderer.bit_font,
+                frontend,
+                match_state,
+                process_assets,
+                dialog,
+                &layout,
+            ),
+        ));
     }
-    let received = page::page_received(state.frontend.wol.as_ref())?;
-    let layout = page::received_layout(&state.renderer, &state.frontend.screen);
+    let received = page::page_received(frontend.wol.as_ref())?;
+    let layout = page::received_layout(renderer, &frontend.screen);
     Some((
         layout.dialog,
-        paint_wol_page_received(state, received, &layout),
+        paint_wol_page_received(
+            ime,
+            &renderer.bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            received,
+            &layout,
+        ),
     ))
 }
 
@@ -549,7 +579,11 @@ pub(crate) fn render_wol_page(
         .and_then(|dialog| dialog.ui.add.as_ref())
         .map(|_| {
             crate::app::frontend::skirmish_shell_render::paint_wol_add_buddy(
-                state,
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
                 &crate::ui::shell::modal::wol_add_buddy_layout(screen_w, screen_h),
             )
         });
@@ -729,13 +763,23 @@ pub(crate) fn render_wol_page(
             })
             .map(|verify| {
                 crate::app::frontend::skirmish_shell_render::paint_wol_verify(
-                    state,
+                    &state.platform.ime,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
                     verify,
                     &crate::app::shell_network_setup::verify_layout(state),
                 )
             });
 
-    let page_dialogs = page_dialogs_paint(state);
+    let page_dialogs = page_dialogs_paint(
+        &state.platform.ime,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    );
 
     // The column: the slide engine draws it while a slide runs, the empty
     // backdrop draws it shut, otherwise the page's buttons paint from their

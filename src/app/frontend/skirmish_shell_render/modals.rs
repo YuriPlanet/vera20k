@@ -67,8 +67,12 @@ pub(crate) fn render_saved_game_loading(
     // 559D60 shows F0 before 69BB40 clears Session+30D8. An active load thus
     // starts with its current side; a menu load starts with the neutral assets.
     let in_match = state.frontend.screen == crate::ui::game_screen::GameScreen::InGame;
-    let side =
-        in_match.then(|| crate::app::presentation::sidebar_render::current_sidebar_theme(state));
+    let side = in_match.then(|| {
+        crate::app::presentation::sidebar_render::current_sidebar_theme(
+            &state.frontend,
+            &state.match_state,
+        )
+    });
     let (width, height) = (frame.0 as i32, frame.1 as i32);
     // F0 is CE's box: its body over a Cancel it keeps hidden.
     let area = match in_match {

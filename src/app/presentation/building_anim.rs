@@ -6,11 +6,12 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::preferred_local_owner_name;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::PersistenceState;
 use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::app::state::PlatformState;
 use crate::audio::sfx::SfxPlayer;
@@ -18,48 +19,61 @@ use crate::sim::production;
 use crate::ui::game_screen::GameScreen;
 
 /// The tactical listener shared by inline and frame-tail sound consumption.
-pub(crate) fn sound_listener(state: &AppState) -> crate::audio::sfx::SpatialListener {
+pub(crate) fn sound_listener(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> crate::audio::sfx::SpatialListener {
     let (tactical_width, tactical_height) = crate::app::input::camera::tactical_viewport_size(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation,
-        &state.persistence,
+        platform,
+        renderer,
+        screen,
+        &match_state.match_presentation,
+        persistence,
     );
     // The listener sits at the battlefield's corner, which a layout may set
     // in from the frame's corner, where the camera is.
     let origin = crate::app::input::camera::tactical_origin_world(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        screen,
+        match_state,
+        persistence,
     );
     crate::audio::sfx::SpatialListener {
         tactical_width: tactical_width as i32,
         tactical_height: tactical_height as i32,
-        origin_x: state.match_state.input.camera_x + origin.0,
-        origin_y: state.match_state.input.camera_y + origin.1,
-        zoom: state.match_state.input.zoom_level,
+        origin_x: match_state.input.camera_x + origin.0,
+        origin_y: match_state.input.camera_y + origin.1,
+        zoom: match_state.input.zoom_level,
     }
 }
 
 /// Refresh retained750E20 sources using the same spatial decision owner
 /// as inline delivery, before the common audio pump (including paused frames).
-pub(crate) fn refresh_coordinate_sound_gains(state: &mut AppState) {
-    let listener = sound_listener(state);
-    let sim = state
-        .match_state
+pub(crate) fn refresh_coordinate_sound_gains(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    let listener = sound_listener(platform, renderer, screen, match_state, persistence);
+    let sim = match_state
         .sim_runtime
         .presentation()
         .map(|runtime| &runtime.simulation);
-    let local_owner = preferred_local_owner_name(&state.match_state);
-    let Some(catalog) = state.process_assets.audio_catalog() else {
+    let local_owner = preferred_local_owner_name(match_state);
+    let Some(catalog) = process_assets.audio_catalog() else {
         return;
     };
     let spatial =
         SoundSpatialContext::new(catalog.sounds(), &listener, sim, local_owner.as_deref());
-    if let Some(sfx) = state.audio.sfx_player.as_mut() {
+    if let Some(sfx) = sfx_player.as_mut() {
         sfx.refresh_coordinate_sound_gains(|key, source| spatial.gain_for(key, Some(source)));
     }
 }
@@ -401,22 +415,30 @@ impl SoundPlaybackInputs<'_> {
 
 /// Run the power bar's AnimationTick 63FEA0 for each of this pass's Sidebar
 /// Action `visits` ([`super::sidebar_gadgets::sidebar_action_visits`]).
-pub(crate) fn update_power_bar_anim(state: &mut AppState, wall_ms: u64, visits: u64) {
-    let owner_name = preferred_local_owner_name(&state.match_state);
+pub(crate) fn update_power_bar_anim(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+    wall_ms: u64,
+    visits: u64,
+) {
+    let owner_name = preferred_local_owner_name(match_state);
     let bar_height_px = power_bar_budget_px(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation,
-        &state.persistence,
+        platform,
+        renderer,
+        screen,
+        &match_state.match_presentation,
+        persistence,
     );
     // The theoretical total walks the house's buildings: the frame's answer.
-    state.match_state.sim_runtime.ensure_frame();
+    match_state.sim_runtime.ensure_frame();
 
-    let anim = &mut state.match_state.match_presentation.power_bar_anim;
+    let anim = &mut match_state.match_presentation.power_bar_anim;
     match (
-        state.match_state.sim_runtime.presentation(),
-        state.match_state.sim_runtime.frame(),
+        match_state.sim_runtime.presentation(),
+        match_state.sim_runtime.frame(),
         owner_name.as_deref(),
     ) {
         (Some(runtime), Some(frame), Some(owner)) => {
@@ -484,15 +506,14 @@ fn radar_availability_sound(
 }
 
 /// Whether the local player's House has the tactical radar.
-pub(crate) fn local_has_radar(state: &AppState) -> bool {
+pub(crate) fn local_has_radar(frontend: &FrontendState, match_state: &MatchState) -> bool {
     match (
-        state
-            .match_state
+        match_state
             .sim_runtime
             .presentation()
             .map(|rt| &rt.simulation),
-        state.rules(),
-        preferred_local_owner_name(&state.match_state).as_deref(),
+        crate::app::state::active_rules(frontend, match_state),
+        preferred_local_owner_name(match_state).as_deref(),
     ) {
         (Some(sim), Some(rules), Some(owner)) => {
             crate::sim::radar::has_radar_for_owner(sim, rules, owner)
@@ -566,35 +587,78 @@ pub(crate) fn set_local_tactical_radar(
 /// and `SpatialListener::view_extent` converts the rect into the world frame
 /// the positions already use — see that method for why the world frame is the
 /// side that is scaled.
-pub(crate) fn drain_sound_events(state: &mut AppState) {
-    drain_sound_events_inner(state, true);
+pub(crate) fn drain_sound_events(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    drain_sound_events_inner(
+        platform,
+        renderer,
+        screen,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        true,
+    );
 }
 
 /// Admit pending input effects before the frame's derived voice-interest
 /// view. This does not redrive positional owners.
-pub(crate) fn drain_pending_sound_events(state: &mut AppState) {
-    drain_sound_events_inner(state, false);
+pub(crate) fn drain_pending_sound_events(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    drain_sound_events_inner(
+        platform,
+        renderer,
+        screen,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        false,
+    );
 }
 
-fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
+fn drain_sound_events_inner(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    redrive_owners: bool,
+) {
     use crate::audio::sfx::{SpatialSource, spatial_gain};
 
-    let events = state.match_state.match_audio.sound_events.drain();
-    let listener = sound_listener(state);
-    let local_owner = preferred_local_owner_name(&state.match_state);
+    let events = match_state.match_audio.sound_events.drain();
+    let listener = sound_listener(platform, renderer, screen, match_state, persistence);
+    let local_owner = preferred_local_owner_name(match_state);
     // The bombs' and owners' coordinates are the frame's
     // (`presentation::frame`).
-    state.match_state.sim_runtime.ensure_frame();
-    let runtime = state.match_state.sim_runtime.presentation();
+    match_state.sim_runtime.ensure_frame();
+    let runtime = match_state.sim_runtime.presentation();
     let sim = runtime.map(|rt| &rt.simulation);
     // The queue's sounds name the match rules' table: every producer runs
     // in the match ([`crate::rules::ruleset::SoundNames`]).
     let names = runtime.map(|rt| rt.resources.rules.sound_names());
-    let frame = state.match_state.sim_runtime.frame();
+    let frame = match_state.sim_runtime.frame();
     let (Some(sfx), Some(assets), Some(catalog)) = (
-        &mut state.audio.sfx_player,
-        state.process_assets.manager(),
-        state.process_assets.audio_catalog(),
+        sfx_player,
+        process_assets.manager(),
+        process_assets.audio_catalog(),
     ) else {
         return;
     };

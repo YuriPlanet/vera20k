@@ -589,15 +589,19 @@ pub(crate) fn launch_super_weapon_at_cursor(state: &mut AppState, section: &str)
     // Guard: arming click's RELEASE lands on the cameo. Don't fire the SW
     // at a bogus off-map cell behind the sidebar panel; leave the mode
     // armed so the next real map click fires.
-    if crate::app::presentation::sidebar_render::is_cursor_over_minimap(state)
-        || crate::app::input::cursor::current_sidebar_view_hit(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &state.match_state,
-            &state.persistence,
-        )
-    {
+    if crate::app::presentation::sidebar_render::is_cursor_over_minimap(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) || crate::app::input::cursor::current_sidebar_view_hit(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    ) {
         return;
     }
 

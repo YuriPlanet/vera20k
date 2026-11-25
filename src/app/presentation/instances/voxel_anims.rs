@@ -23,10 +23,14 @@
 use glam::IVec3;
 
 use super::helpers::{TacticalAdmission, projection_admitted};
-use crate::app::AppState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::render::draw_plan_lowering::{
     NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjects,
 };
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::map::houses::HouseColorMap;
 use crate::map::lighting::CellLightGrid;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -40,6 +44,7 @@ use crate::rules::house_colors::NO_REMAP;
 use crate::rules::voxel_anim_type::VoxelAnimType;
 use crate::sim::voxel_anim::VoxelAnimObject;
 use crate::sim::world::Simulation;
+use crate::ui::game_screen::GameScreen;
 use crate::util::lepton::absolute_leptons_to_screen;
 use crate::util::native_x87::adjust_for_z_standard;
 
@@ -145,12 +150,17 @@ impl DebrisView<'_> {
 /// One Display member's piece, if `id` names one that draws. The caller
 /// visits the members in Display order.
 pub(crate) fn voxel_anim_visitor<'a>(
-    state: &'a AppState,
+    platform: &'a PlatformState,
+    renderer: &'a RendererState,
+    screen: &'a GameScreen,
+    match_state: &'a MatchState,
+    process_assets: &'a ProcessAssets,
+    persistence: &'a PersistenceState,
     order: &'a NativeDisplayOrder,
 ) -> Option<impl FnMut(&mut PlannedObjects, u64) + 'a> {
     let (Some(rt), Some(assets)) = (
-        state.match_state.sim_runtime.presentation(),
-        state.process_assets.manager(),
+        match_state.sim_runtime.presentation(),
+        process_assets.manager(),
     ) else {
         return None;
     };
@@ -162,10 +172,16 @@ pub(crate) fn voxel_anim_visitor<'a>(
     let rules = &rt.resources.rules;
     let view = DebrisView {
         terrain,
-        admission: TacticalAdmission::of_state(state),
-        axis: super::helpers::depth_axis(&state.match_state.match_presentation),
+        admission: TacticalAdmission::of_state(
+            platform,
+            renderer,
+            screen,
+            match_state,
+            persistence,
+        ),
+        axis: super::helpers::depth_axis(&match_state.match_presentation),
     };
-    let presentation = &state.match_state.match_presentation;
+    let presentation = &match_state.match_presentation;
     Some(move |objects: &mut PlannedObjects, id: u64| {
         // A piece off the view is passed by before its type, palette and
         // floor are looked up.
@@ -195,7 +211,7 @@ pub(crate) fn voxel_anim_visitor<'a>(
             // shadow renders, then its body (`0x00749CBE`, `0x00749DA8`).
             |section, matrix| {
                 let mut images = presentation.voxel_images.borrow_mut();
-                let mut cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
+                let mut cache = renderer.vxl_pose_frame_cache.borrow_mut();
                 let depth_tested = images.part_style(false);
                 let (body, shadow) =
                     cache.render_tumble(assets, model, section, matrix, depth_tested, None)?;

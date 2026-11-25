@@ -1578,7 +1578,7 @@ pub(super) fn cursor_moved(
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
-    if shell_transition::blocks_shell_input(state)
+    if shell_transition::blocks_shell_input(&state.frontend)
         || sync(&mut state.frontend, &state.renderer).is_none()
     {
         return;

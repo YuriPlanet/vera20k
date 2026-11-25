@@ -182,16 +182,15 @@ impl MainMenuCover {
         }
     }
 
-    fn of(state: &AppState) -> Self {
+    fn of(frontend: &FrontendState) -> Self {
         Self::new(
-            state
-                .frontend
+            frontend
                 .shell_message_box
                 .as_ref()
                 .is_some_and(|message_box| !message_box.keeps_page())
-                || state.frontend.quit_cascade.is_some()
-                || crate::app::frontend::shell_transition::update_check_holds_main_menu(state),
-            external_menu_wait(state),
+                || frontend.quit_cascade.is_some()
+                || crate::app::frontend::shell_transition::update_check_holds_main_menu(frontend),
+            external_menu_wait(frontend),
         )
     }
 }
@@ -560,7 +559,7 @@ fn render_main_menu(
     // through the quit fade (nothing repaints after OK); here the backdrop
     // shows alone (evidence note residual).
     sync_shell_menu_settings(&state.renderer, &mut state.frontend.shell_message_box);
-    let cover = MainMenuCover::of(state);
+    let cover = MainMenuCover::of(&state.frontend);
     let backdrop = cover != MainMenuCover::Live;
     if !backdrop {
         ensure_movie_for_current_layout(
@@ -572,7 +571,12 @@ fn render_main_menu(
         )?;
     }
     if state.frontend.main_menu_shell_error.is_some()
-        || !super::menu_page_render::family_art_ready(state)
+        || !super::menu_page_render::family_art_ready(
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+        )
     {
         state
             .frontend

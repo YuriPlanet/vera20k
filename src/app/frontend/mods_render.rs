@@ -119,7 +119,12 @@ pub(crate) fn render_mods_page(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<bool> {
-    if !family_art_ready(state) {
+    if !family_art_ready(
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+    ) {
         return Ok(false);
     }
     let layout = crate::app::frontend::shell_layout::mods_layout(&state.renderer.gpu);

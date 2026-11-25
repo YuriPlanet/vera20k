@@ -6,6 +6,8 @@
 //! with what it draws under and over them. [`FamilyPage`] names the pages
 //! whose buttons are `ui::shell::menu_page` specs.
 
+use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_route::ShellRoute;
 use crate::util::time::Instant;
 
@@ -523,7 +525,14 @@ pub(crate) fn render_menu_page(
         &state.persistence.options_profile,
         page.movie_owner(),
     )?;
-    if state.frontend.main_menu_shell_error.is_some() || !family_art_ready(state) {
+    if state.frontend.main_menu_shell_error.is_some()
+        || !family_art_ready(
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+        )
+    {
         state
             .frontend
             .main_menu_shell_error
@@ -571,13 +580,18 @@ pub(crate) fn render_menu_page(
 
 /// Whether the family shell's art is ready: the right panel's, and the
 /// Skirmish family's that the pages' buttons and lists paint with.
-pub(crate) fn family_art_ready(state: &mut AppState) -> bool {
-    state.frontend.main_menu_shell_chrome.is_some()
+pub(crate) fn family_art_ready(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    options_profile: &RetailOptionsProfile,
+) -> bool {
+    frontend.main_menu_shell_chrome.is_some()
         && crate::app::App::ensure_skirmish_shell_chrome(
-            &state.renderer,
-            &mut state.frontend,
-            &state.process_assets,
-            &state.persistence.options_profile,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
         )
 }
 

@@ -936,8 +936,9 @@ impl RestartCapture {
                         // Exercise the exact owner called by WindowEvent's
                         // physical-key branch, including ignored key edges.
                         ensure!(
-                            !crate::app::frontend::shell_transition::blocks_shell_input(state)
-                                && state.frontend.keyboard_dialog.is_none()
+                            !crate::app::frontend::shell_transition::blocks_shell_input(
+                                &state.frontend
+                            ) && state.frontend.keyboard_dialog.is_none()
                                 && state.frontend.fullscreen_movie.is_none()
                                 && state.frontend.credits_roll.is_none(),
                             "an earlier WindowEvent owner would block the replay key"

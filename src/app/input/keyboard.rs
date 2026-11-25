@@ -188,8 +188,13 @@ pub(crate) fn layout(state: &AppState) -> Option<KeyboardLayout> {
 fn layout_and_pointer(state: &AppState) -> Option<(KeyboardLayout, (i32, i32))> {
     let dialog = state.frontend.keyboard_dialog.as_ref()?;
     let (width, height, shell, pointer) = if dialog.parent == KeyboardParent::GameControls {
-        let shell =
-            crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
+        let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        )?;
         (
             shell.width,
             shell.height,

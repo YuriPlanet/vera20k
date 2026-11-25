@@ -1860,8 +1860,10 @@ impl MoviesCapture {
                 ..
             } => {
                 state.frontend.shell_exit.is_none()
-                    && crate::app::frontend::shell_transition::current_shell_slide_target(state)
-                        == Some(ShellSlideKind::MainMenu)
+                    && crate::app::frontend::shell_transition::current_shell_slide_target(
+                        &state.frontend,
+                        &state.match_state,
+                    ) == Some(ShellSlideKind::MainMenu)
             }
             MoviesTarget::WolWelcome {
                 press: WolPress::MyInformation,

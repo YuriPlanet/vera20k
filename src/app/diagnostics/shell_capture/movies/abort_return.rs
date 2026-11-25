@@ -170,7 +170,11 @@ impl AbortReturnInput {
                 ensure!(
                     state.match_state.match_presentation.in_game_menu == InGameMenuState::Menu
                         && crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(
-                            state
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.persistence
                         ),
                     "the in-game menu did not present with its required loaded artwork"
                 );
@@ -307,7 +311,11 @@ impl AbortReturnInput {
                     state.match_state.match_presentation.in_game_menu
                         == InGameMenuState::AbortConfirm
                         && crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(
-                            state
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.persistence
                         ),
                     "B6 did not present with its required loaded artwork"
                 );

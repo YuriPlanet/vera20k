@@ -205,7 +205,13 @@ fn find_cursor_feedback_kind(
     ) {
         return state.match_state.input.sidebar_cursor();
     }
-    let (x, y) = crate::app::presentation::super_timers::cursor_in_view(state);
+    let (x, y) = crate::app::presentation::super_timers::cursor_in_view(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     if state
         .match_state
         .match_presentation

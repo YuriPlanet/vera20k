@@ -1590,7 +1590,11 @@ impl SkirmishCapture {
                     // line shows that static's help.
                     let shell =
                         crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
-                            state,
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.persistence,
                         )
                         .context("Diplomacy has no loaded geometry")?;
                     let name = crate::ui::shell::diplomacy::diplomacy_layout(
@@ -1620,7 +1624,11 @@ impl SkirmishCapture {
                     state.match_state.match_presentation.in_game_menu
                         == crate::ui::pause_menu::InGameMenuState::Diplomacy
                         && crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(
-                            state
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.persistence
                         ),
                     "Diplomacy did not present with its required loaded artwork"
                 );
@@ -1721,7 +1729,11 @@ impl SkirmishCapture {
             ensure!(
                 state.match_state.match_presentation.in_game_menu == target.state()
                     && crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(
-                        state
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence
                     ),
                 "{target:?} did not present with its required loaded artwork"
             );

@@ -17,7 +17,12 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use crate::app::AppState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::render::batch::SpriteInstance;
 
 /// `MeasureText(.., 200)` (`0x004303CE`) and DrawText's width (`0x0043054E`).
@@ -93,14 +98,19 @@ fn quad(rect: [i32; 4], tint: [f32; 3], camera: [f32; 2]) -> SpriteInstance {
 /// Every visible labelled beacon's fill, outline and text quads, in the
 /// frame's pixels plus the world camera the UI pass subtracts.
 pub(crate) fn instances(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
 ) -> (
     Vec<SpriteInstance>,
     Vec<SpriteInstance>,
     Vec<SpriteInstance>,
 ) {
     let (mut fills, mut outlines, mut texts) = (Vec::new(), Vec::new(), Vec::new());
-    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+    let Some(runtime) = match_state.sim_runtime.runtime() else {
         return (fills, outlines, texts);
     };
     // The labels' built-in template (`health_templates`) may hide or move them.
@@ -108,21 +118,18 @@ pub(crate) fn instances(
     let Some(offset) = family(Mark::BeaconLabel) else {
         return (fills, outlines, texts);
     };
-    let presentation = &state.match_state.match_presentation;
+    let presentation = &match_state.match_presentation;
     let editing = presentation.message_list.editing();
-    let now_ms = crate::app::input::tooltips::now_ms(&state.diag, &state.match_state);
-    let font = &state.renderer.bit_font;
-    let camera = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ];
-    let zoom = state.match_state.input.zoom_level;
+    let now_ms = crate::app::input::tooltips::now_ms(diag, match_state);
+    let font = &renderer.bit_font;
+    let camera = [match_state.input.camera_x, match_state.input.camera_y];
+    let zoom = match_state.input.zoom_level;
     let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
     );
     let bounds = [left as i32, top as i32, width as i32, height as i32];
     let rgb565 = crate::render::native_surface_format::RGB565;
@@ -130,7 +137,7 @@ pub(crate) fn instances(
         // 0x004302FB..0x00430309: a record with no label draws no box.
         if beacon.label().is_empty()
             || !crate::app::match_runtime::beacons::visible_to_player(
-                &state.match_state.sim_runtime,
+                &match_state.sim_runtime,
                 house,
                 beacon,
             )
@@ -163,12 +170,8 @@ pub(crate) fn instances(
         let Some(clipped) = intersect(rect, bounds) else {
             continue;
         };
-        let rgb = crate::app::input::messages::player_line_rgb(
-            &state.frontend,
-            &state.match_state,
-            owner,
-        )
-        .map(|channel| (channel * 255.0).round() as u8);
+        let rgb = crate::app::input::messages::player_line_rgb(frontend, match_state, owner)
+            .map(|channel| (channel * 255.0).round() as u8);
         let tint = rgb565
             .unpack_rgb8(rgb565.pack_rgb8(rgb))
             .map(|channel| f32::from(channel) / 255.0);

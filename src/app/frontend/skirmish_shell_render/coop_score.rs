@@ -39,7 +39,15 @@ pub(crate) fn render_coop_score(
     match map_index.filter(|_| can_continue) {
         Some(index) => {
             let preview = layout.control_rect(PREVIEW).unwrap_or_default();
-            ensure_map_preview_texture(state, index, preview)
+            ensure_map_preview_texture(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence,
+                index,
+                preview,
+            )
         }
         None => state.frontend.skirmish_preview_texture = None,
     }

@@ -5,8 +5,13 @@
 //! Membership is rebuilt at the same seams as the ordinary sidebar; draw
 //! state is refreshed from the live `SuperWeaponView` every frame.
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::rules::phobos_sw_sidebar::SuperWeaponSidebarUi;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
@@ -129,28 +134,31 @@ pub(crate) fn select<'a>(
 /// AddButton/SortButtons owner; render and input only read `entries` and
 /// `layout`. Returning a plan keeps the caller's simulation borrow intact.
 pub(crate) fn plan(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     owner: InternedId,
     views: &[SuperWeaponView],
 ) -> (SwSidebarLayout, Vec<SwSidebarRuntimeEntry>) {
-    let Some(rules) = state.rules() else {
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return (SwSidebarLayout::default(), Vec::new());
     };
-    let Some(sim) = state
-        .match_state
+    let Some(sim) = match_state
         .sim_runtime
         .presentation()
         .map(|runtime| &runtime.simulation)
     else {
         return (SwSidebarLayout::default(), Vec::new());
     };
-    let ui = state.match_state.match_presentation.sw_sidebar.ui;
-    let required_significance = state
-        .match_state
+    let ui = match_state.match_presentation.sw_sidebar.ui;
+    let required_significance = match_state
         .match_presentation
         .sw_sidebar
         .required_significance;
-    let art = state.match_state.match_presentation.sw_sidebar_art.as_ref();
+    let art = match_state.match_presentation.sw_sidebar_art.as_ref();
     let (top, bottom, toggle) = art.map_or((0, 0, None), |art| {
         (
             art.top_size().map_or(0, |s| s[1]),
@@ -161,7 +169,7 @@ pub(crate) fn plan(
     use crate::app::presentation::field_parts;
     use crate::ui::field_layout::FieldPart;
     // A layout that leaves the column out has no buttons to place.
-    if !field_parts::shows(&state.match_state.match_presentation, FieldPart::Powers) {
+    if !field_parts::shows(&match_state.match_presentation, FieldPart::Powers) {
         return (SwSidebarLayout::default(), Vec::new());
     }
     // Phobos lays the left sidebar out on `DSurface::ViewBounds`, so it stays
@@ -170,8 +178,21 @@ pub(crate) fn plan(
     // layout that moves the sidebar or the bar centres it on the battlefield,
     // and the column starts at the battlefield's corner plus the layout's
     // offset.
-    let frame = state.sidebar_frame();
-    let [field_x, field_y, _, field_height] = field_parts::rect(state, FieldPart::Powers);
+    let frame = crate::app::state::sidebar_frame(
+        platform,
+        persistence,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation.sidebar_layout_spec,
+    );
+    let [field_x, field_y, _, field_height] = field_parts::rect(
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
+        FieldPart::Powers,
+    );
     let screen_height = if frame.places() == crate::ui::sidebar::PanelPlaces::ORIGINAL {
         frame.frame_size().1 as i32
     } else {
@@ -180,7 +201,7 @@ pub(crate) fn plan(
     let owner_mask = owner_house_mask(sim, rules, &owner);
     let selected = select(
         rules,
-        state.process_assets.csf.as_ref(),
+        process_assets.csf.as_ref(),
         sim.interner(),
         views,
         owner_mask,
@@ -190,8 +211,7 @@ pub(crate) fn plan(
         .iter()
         .map(|view| sim.interner().resolve(view.type_id).to_string())
         .collect();
-    let expanded = state
-        .match_state
+    let expanded = match_state
         .match_presentation
         .sidebar_projection
         .model
@@ -215,12 +235,11 @@ pub(crate) fn plan(
 
 /// Per-frame `can_fire`/progress/readiness refresh, matching `SWButtonClass::Draw`
 /// reading the live `SuperClass`.
-pub(crate) fn refresh_draw_state(state: &mut AppState) {
-    let Some(runtime) = state.match_state.sim_runtime.presentation() else {
+pub(crate) fn refresh_draw_state(match_state: &mut MatchState) {
+    let Some(runtime) = match_state.sim_runtime.presentation() else {
         return;
     };
-    let Some(owner_name) =
-        crate::app::input::commands::preferred_local_owner_name(&state.match_state)
+    let Some(owner_name) = crate::app::input::commands::preferred_local_owner_name(match_state)
     else {
         return;
     };
@@ -228,7 +247,7 @@ pub(crate) fn refresh_draw_state(state: &mut AppState) {
     let owner = sim.interner().get(&owner_name).unwrap_or_default();
     let rules = &runtime.resources.rules;
     let views = crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner);
-    let sw = &mut state.match_state.match_presentation.sw_sidebar;
+    let sw = &mut match_state.match_presentation.sw_sidebar;
     for entry in &mut sw.entries {
         if let Some(view) = views.iter().find(|view| {
             sim.interner()
@@ -286,14 +305,13 @@ pub(crate) fn positional_entry(
 
 /// Immediate cameo hover for `SWButtonClass::OnMouseEnter`'s outline. Phobos
 /// darkens/outlines on the gadget's hover state, not after the tooltip delay.
-pub(crate) fn hovered_entry_rect(state: &AppState) -> Option<Rect> {
-    let sw = &state.match_state.match_presentation.sw_sidebar;
-    if !sw.ui.enabled || !expanded(&state.match_state.match_presentation) {
+pub(crate) fn hovered_entry_rect(presentation: &MatchPresentationState) -> Option<Rect> {
+    let sw = &presentation.sw_sidebar;
+    if !sw.ui.enabled || !expanded(presentation) {
         return None;
     }
     // The chrome's hover (`SWButtonClass::OnMouseEnter`).
-    let index =
-        crate::app::input::chrome_input::hovered_sw_button(&state.match_state.match_presentation)?;
+    let index = crate::app::input::chrome_input::hovered_sw_button(presentation)?;
     sw.entries.get(index).map(|entry| entry.rect)
 }
 

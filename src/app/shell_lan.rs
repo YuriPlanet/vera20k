@@ -1002,7 +1002,7 @@ pub(crate) fn leaves_escape(lan: Option<&LanShellRuntime>) -> bool {
 }
 
 pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
-    if event.state.is_pressed() && !shell_transition::blocks_shell_input(state) {
+    if event.state.is_pressed() && !shell_transition::blocks_shell_input(&state.frontend) {
         let code = match event.physical_key {
             PhysicalKey::Code(code) => Some(code),
             _ => None,
@@ -1018,7 +1018,7 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
 pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
     let routed = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
         && state.frontend.shell_route == ShellRoute::LanLobby
-        && !shell_transition::blocks_shell_input(state);
+        && !shell_transition::blocks_shell_input(&state.frontend);
     let chat = state.frontend.shell_controller.focused_control(PAGE.dialog) == Some(CHAT);
     state
         .frontend
@@ -1186,7 +1186,7 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
 }
 
 pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    if button != MouseButton::Left || shell_transition::blocks_shell_input(state) {
+    if button != MouseButton::Left || shell_transition::blocks_shell_input(&state.frontend) {
         return;
     }
     sync_gui(&state.renderer, &mut state.frontend);

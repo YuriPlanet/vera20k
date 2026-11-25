@@ -11,15 +11,19 @@
 //! slots per game load (`Game_LoadUI_LoadSideData` 0x1002F4A0), each slot
 //! falling back to the literal file on its own.
 
-use crate::app::AppState;
 use crate::app::match_runtime::scenario_exit::ScenarioExitCascade;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::assets::{asset_manager::AssetManager, pal_file::Palette, shp_file::ShpFile};
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::gpu::GpuContext;
 use crate::render::shell_ui_style_assets::{decode_ui_shp, ui_art_candidates};
 use crate::sim::house_state::HouseOutcomeKind;
+use crate::ui::game_screen::GameScreen;
 
 /// The verdict in the last battlefield picture handed off for presentation.
 #[derive(Default)]
@@ -446,15 +450,28 @@ impl BannerHuds {
 }
 
 pub(crate) fn instances(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     outcome_kind: HouseOutcomeKind,
     huds: &mut BannerHuds,
 ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
-    let quad = banner_quad(state, outcome_kind);
+    let quad = banner_quad(
+        platform,
+        renderer,
+        screen,
+        match_state,
+        process_assets,
+        persistence,
+        outcome_kind,
+    );
     huds.picture.begin();
     huds.picture.part(BANNER);
     huds.text.begin();
-    let font = &state.renderer.bit_font;
+    let font = &renderer.bit_font;
     let result = match quad {
         BannerQuad::Picture(quad, camera) => {
             let [x, y] = [quad.position[0] - camera[0], quad.position[1] - camera[1]];
@@ -494,9 +511,16 @@ enum BannerQuad {
     Text(String, [i32; 2], [f32; 2]),
 }
 
-fn banner_quad(state: &AppState, outcome_kind: HouseOutcomeKind) -> BannerQuad {
-    let campaign = !state
-        .match_state
+fn banner_quad(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    outcome_kind: HouseOutcomeKind,
+) -> BannerQuad {
+    let campaign = !match_state
         .sim_runtime
         .presentation()
         .is_some_and(|runtime| runtime.simulation.session().game_mode_nonzero());
@@ -505,26 +529,39 @@ fn banner_quad(state: &AppState, outcome_kind: HouseOutcomeKind) -> BannerQuad {
     use crate::ui::field_layout::FieldPart;
     // The banner is centred in its box, the battlefield in the original
     // interface, and laid out in the box's own pixels.
-    let [_, _, width, height] = field_parts::rect(state, FieldPart::Banner);
+    let [_, _, width, height] = field_parts::rect(
+        platform,
+        renderer,
+        screen,
+        &match_state.match_presentation,
+        persistence,
+        FieldPart::Banner,
+    );
     let view = [width, height];
-    let camera = field_parts::lane_camera(state, FieldPart::Banner);
-    if let Some(quad) = active_art(&state.match_state, &state.persistence.options_profile)
+    let camera = field_parts::lane_camera(
+        platform,
+        renderer,
+        screen,
+        match_state,
+        persistence,
+        FieldPart::Banner,
+    );
+    if let Some(quad) = active_art(match_state, &persistence.options_profile)
         .and_then(|art| art.fit_quad(view, camera))
     {
         return BannerQuad::Picture(quad, camera);
     }
-    if let Some(quad) = state
-        .match_state
+    if let Some(quad) = match_state
         .match_presentation
         .outcome_banner_side_art
         .as_ref()
-        .or(state.renderer.outcome_banner_art.as_ref())
+        .or(renderer.outcome_banner_art.as_ref())
         .and_then(|art| art.quad(frame, view, camera))
     {
         return BannerQuad::Picture(quad, camera);
     }
-    let text = state.csf_text(label);
-    let font = &state.renderer.bit_font;
+    let text = process_assets.csf_text(label);
+    let font = &renderer.bit_font;
     let origin = centered_origin(
         view,
         [font.text_width(&text) as i32, font.cell_height() as i32],

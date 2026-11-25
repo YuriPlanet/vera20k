@@ -172,7 +172,7 @@ fn enabled_in(
 }
 
 pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
-    if !event.state.is_pressed() || shell_transition::blocks_shell_input(state) {
+    if !event.state.is_pressed() || shell_transition::blocks_shell_input(&state.frontend) {
         return;
     }
     let code = if let PhysicalKey::Code(code) = event.physical_key {
@@ -226,7 +226,7 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
 }
 
 pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    if button != MouseButton::Left || shell_transition::blocks_shell_input(state) {
+    if button != MouseButton::Left || shell_transition::blocks_shell_input(&state.frontend) {
         return;
     }
     if crate::app::cooperative_round::view(state).is_none()

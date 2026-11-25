@@ -76,7 +76,12 @@ pub(crate) fn render_score_page(
 ) -> Result<bool> {
     if state.frontend.score_page.is_none()
         || state.frontend.score_art.is_none()
-        || !family_art_ready(state)
+        || !family_art_ready(
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+        )
     {
         return Ok(false);
     }

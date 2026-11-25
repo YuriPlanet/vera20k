@@ -194,7 +194,9 @@ fn finish(state: &mut AppState, save: bool) {
 /// Reset: the side's layout leaves the player's file, so its parts stand as
 /// the mod, or the original, has them. Save keeps it.
 fn reset(state: &mut AppState) {
-    let Some(side) = sidebar_render::local_side_name(state).map(str::to_owned) else {
+    let Some(side) =
+        sidebar_render::local_side_name(&state.frontend, &state.match_state).map(str::to_owned)
+    else {
         return;
     };
     let presentation = &mut state.match_state.match_presentation;
@@ -211,7 +213,13 @@ fn reset(state: &mut AppState) {
 /// Read the layouts again from the player's text and lay the match out by
 /// them.
 fn relayout(state: &mut AppState) {
-    crate::app::presentation::player_layout::rebuild(state, false);
+    crate::app::presentation::player_layout::rebuild(
+        &state.platform,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+        false,
+    );
     sidebar_render::refresh_sidebar_projection(state);
 }
 
@@ -249,7 +257,7 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
         &state.match_state.match_presentation,
         &state.persistence,
     );
-    let atlas = sidebar_render::current_sidebar_chrome(state);
+    let atlas = sidebar_render::current_sidebar_chrome(&state.frontend, &state.match_state);
     let view = sidebar_render::current_sidebar_view(&state.match_state.match_presentation);
     let size = |part, key| {
         atlas
@@ -297,7 +305,14 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
         if !field.shows(part) {
             continue;
         }
-        let [x, y, w, h] = field_parts::rect(state, part);
+        let [x, y, w, h] = field_parts::rect(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+            part,
+        );
         let rect = match part {
             FieldPart::Messages => [x, y, w.min(220), h.min(19)],
             FieldPart::Timers => {
@@ -324,7 +339,14 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
 
     // What the layout added: buttons, texts, rows and columns as a whole,
     // and grids of build pictures.
-    let placed = layout_parts::placed(state);
+    let placed = layout_parts::placed(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &state.persistence,
+    );
     let view = sidebar_render::current_sidebar_view(&state.match_state.match_presentation);
     for (index, part) in presentation.added_parts.iter().enumerate() {
         let part_scale = match part.holder {
@@ -538,7 +560,9 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     }
     grab.at = at;
     let name = grab.name.clone();
-    let Some(side) = sidebar_render::local_side_name(state).map(str::to_owned) else {
+    let Some(side) =
+        sidebar_render::local_side_name(&state.frontend, &state.match_state).map(str::to_owned)
+    else {
         return;
     };
     let presentation = &mut state.match_state.match_presentation;

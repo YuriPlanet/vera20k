@@ -977,7 +977,15 @@ pub(crate) fn pump_audio_service(state: &mut AppState, now_ms: u64) {
         );
         return;
     }
-    crate::app::presentation::building_anim::refresh_coordinate_sound_gains(state);
+    crate::app::presentation::building_anim::refresh_coordinate_sound_gains(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        &state.persistence,
+    );
     // The process audio service remains live while the loading job holds the
     // asset-manager lease. Retained simulations still own Main on the shell;
     // only the process before its first scenario uses the frontend cursor.
@@ -1691,10 +1699,12 @@ fn after_frame(state: &mut AppState, frame_committed: bool) {
             // The rebuilt view takes the same drawn state.
             crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
         } else {
-            crate::app::presentation::sidebar_render::refresh_sidebar_cameo_draw_state(state);
+            crate::app::presentation::sidebar_render::refresh_sidebar_cameo_draw_state(
+                &mut state.match_state,
+            );
         }
         #[cfg(feature = "phobos")]
-        crate::app::presentation::sw_sidebar::refresh_draw_state(state);
+        crate::app::presentation::sw_sidebar::refresh_draw_state(&mut state.match_state);
     }
 }
 
@@ -1722,7 +1732,15 @@ pub(crate) fn finish_threaded_frame(state: &mut AppState) {
         .match_presentation
         .tactical_composite
         .note_main_tick();
-    crate::app::presentation::building_anim::drain_sound_events(state);
+    crate::app::presentation::building_anim::drain_sound_events(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        &state.persistence,
+    );
     if main_tick_owns_audio_pump(&state.frontend.screen, &state.match_state, true) {
         pump_audio_service(state, super::frame_pacer::wall_clock_ms());
     }
@@ -1830,9 +1848,25 @@ fn after_simulation_pass(
         &state.match_state,
         decision.sidebar_action,
     );
-    crate::app::presentation::building_anim::update_power_bar_anim(state, wall_ms, sidebar_visits);
-    crate::app::presentation::sidebar_render::advance_sidebar_credits(state, sidebar_visits);
-    crate::app::presentation::sidebar_gadgets::update_sidebar_gadget_state(state, sidebar_visits);
+    crate::app::presentation::building_anim::update_power_bar_anim(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state,
+        &state.persistence,
+        wall_ms,
+        sidebar_visits,
+    );
+    crate::app::presentation::sidebar_render::advance_sidebar_credits(
+        &state.frontend,
+        &mut state.match_state,
+        sidebar_visits,
+    );
+    crate::app::presentation::sidebar_gadgets::update_sidebar_gadget_state(
+        &state.frontend,
+        &mut state.match_state,
+        sidebar_visits,
+    );
     // Every unlocked pass republishes the complete sidebar projection,
     // including the retained House power pair the tooltip driver reads.
     if state
@@ -1861,7 +1895,15 @@ fn after_simulation_pass(
     // -1 -> `Queue_Song(-2)`; `InGameMusic == 0` -> `Stop(1)` + `Queue(-3)`)
     // belongs to the in-game frame.
     let music_now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-    crate::app::presentation::building_anim::drain_sound_events(state);
+    crate::app::presentation::building_anim::drain_sound_events(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        &state.persistence,
+    );
     let in_game_music = state.persistence.options_profile.in_game_music;
     state.audio.main_tick_theme(in_game_music, music_now_ms);
     // Main_Tick's Network_ServiceLoop after Logic (`0x0055DE4A`). Logic's
@@ -2168,7 +2210,15 @@ fn advance_one_simulation_frame(
     // only admits queued requests; positional redrive/EVA service remain at
     // their existing owners, and voices wait for actual Techno-head markers.
     if !resuming {
-        crate::app::presentation::building_anim::drain_pending_sound_events(state);
+        crate::app::presentation::building_anim::drain_pending_sound_events(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            &state.persistence,
+        );
     }
 
     prepare_replay_recording(&mut state.match_state, &state.process_assets);
@@ -2184,7 +2234,13 @@ fn advance_one_simulation_frame(
     // Cache local owner name before mutable sim borrow (avoids borrow conflict).
     let local_owner_name =
         crate::app::input::commands::preferred_local_owner_name(&state.match_state);
-    let sound_listener = crate::app::presentation::building_anim::sound_listener(state);
+    let sound_listener = crate::app::presentation::building_anim::sound_listener(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     let session_mode = state.match_state.session_mode();
     let other_local_pause = state.match_state.local_paused();
     let rules_owner = state.process_assets.native_rules();

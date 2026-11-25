@@ -195,8 +195,14 @@ pub(crate) fn layout<L>(
     layout: impl FnOnce(i32, i32, crate::ui::shell::in_game_shell::InGameShellLayout, [i32; 2]) -> L,
 ) -> Option<L> {
     Some(
-        crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?
-            .place(layout),
+        crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        )?
+        .place(layout),
     )
 }
 
