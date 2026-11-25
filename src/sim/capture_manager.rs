@@ -1603,6 +1603,12 @@ impl Simulation {
         let reason = self.capture_reason(controller_owner, health, strength, rules);
         // 0x004724E3: `RandomRanged(1, 100)` on the Scenario stream.
         let roll = self.scenario_rng.next_range_i32_inclusive(1, 100);
+        // A house whose `Forces` a Wasm module claims (RFC 0001 6i) keeps
+        // the unit's orders, as a human's does; the roll is still drawn so
+        // the Scenario stream does not move.
+        if self.module_claims(unit_owner, vera20k_wasm_ext::DOMAIN_FORCES) {
+            return;
+        }
         let Some(choice) = capture_decision(rules.mind_control.ai_capture_table(reason), roll)
         else {
             return;
