@@ -165,8 +165,7 @@ impl Event {
     pub const DISTANCE_POLL: i32 = 1029;
     pub const VARIABLE_POLL: i32 = 1030;
 
-    // Decision-only events (appendix 4.5); `Launch` (1035) and
-    // `ProjectileFrame` (1036) are not decided yet.
+    // Decision-only events (appendix 4.5).
     /// Decision-only (appendix 4.5): needs [`Trigger::decide_sync`] and a
     /// type binding. Asked once per frame for each house and bound type.
     pub const PRODUCTION_ALLOWED: i32 = 1031;
@@ -177,6 +176,15 @@ impl Event {
     /// Decision-only (appendix 4.5): needs [`Trigger::decide_sync`] and an
     /// object or type binding. Asked for each command on a bound object.
     pub const COMMAND_ALLOWED: i32 = 1034;
+    /// Decision-only (appendix 4.5, preview): needs [`Trigger::decide_sync`]
+    /// and a weapon, warhead or projectile type binding (or the launcher's
+    /// object or type). Asked once per launched bullet: answer with
+    /// [`crate::LaunchDecision::set_path`].
+    pub const LAUNCH: i32 = 1035;
+    /// Decision-only (appendix 4.5, preview): needs [`Trigger::decide_sync`]
+    /// and a projectile type binding. Asked every frame a bound bullet
+    /// moves: answer with [`crate::ProjectileFrameDecision::set_step`].
+    pub const PROJECTILE_FRAME: i32 = 1036;
 
     // Module INI (RFC 0001 section 6h).
     /// A module event ([`crate::ini::event`]): the trigger's `id` is the

@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use wasmparser::{Payload, TypeRef, Validator, WasmFeatures};
 
-use crate::decide::DecideRecord;
+use crate::decide::{DecideRecord, ResultArea};
 use crate::host::Ctx;
 use crate::instrument::{self, DEPTH, METER, STOP, STOP_BUDGET, STOP_DEPTH};
 use crate::sections::{Delivery, Sections};
@@ -326,22 +326,52 @@ impl<R: Runtime> SimModuleOn<R> {
     /// ([`DecideRecord::answer`]) and the operations used. Without the
     /// export no call is made and the answer is `None`. During the call a
     /// write import stops the module.
+    ///
+    /// `result` is the request's result area (RFC 6f, appendix "Fixed
+    /// layouts"): it follows the record in the delivery area, its `cap`
+    /// lowered to what the area holds there (0 when nothing fits), and holds
+    /// the previous link's bytes, the rest zeroed. After a handled call
+    /// `result.bytes` is the whole area as the handler left it.
     pub fn decide(
         &mut self,
         record: &DecideRecord,
+        result: &mut ResultArea,
         budget: u64,
         host: &mut dyn SimHost,
     ) -> Result<(Option<i64>, u64), Fault> {
         let (true, Some(area)) = (self.on_decide, self.delivery) else {
             return Ok((None, 0));
         };
-        self.write_delivery(area, &record.to_bytes())?;
+        let room = (area.bytes as usize).saturating_sub(DecideRecord::SIZE);
+        result.cap = result.cap.min(room);
+        let previous_len = result.bytes.len().min(result.cap);
+        let at = area.offset as usize + DecideRecord::SIZE;
+        let (area_at, cap) = match result.cap {
+            0 => (0, 0),
+            cap => (at as i32, cap as i32),
+        };
+        self.write_delivery(area, &record.to_bytes(area_at, cap, previous_len as i32))?;
+        if result.cap > 0 {
+            let mut bytes = vec![0u8; result.cap];
+            bytes[..previous_len].copy_from_slice(&result.bytes[..previous_len]);
+            if !self.rt.write_memory(at, &bytes) {
+                return Err(Fault::Trap("delivery area: out of bounds".into()));
+            }
+        }
         let used = self.run(Export::Decide, budget, host, &[area.offset as i32, 1])?;
         let mut bytes = [0u8; DecideRecord::SIZE];
         if !self.rt.read_memory(area.offset as usize, &mut bytes) {
             return Err(Fault::Trap("delivery area: out of bounds".into()));
         }
-        Ok((DecideRecord::answer(&bytes), used))
+        let answer = DecideRecord::answer(&bytes);
+        if answer.is_some() && result.cap > 0 {
+            let mut bytes = vec![0u8; result.cap];
+            if !self.rt.read_memory(at, &mut bytes) {
+                return Err(Fault::Trap("delivery area: out of bounds".into()));
+            }
+            result.bytes = bytes;
+        }
+        Ok((answer, used))
     }
 
     /// Load checked the area lies inside memory, which never shrinks.

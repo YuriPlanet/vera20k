@@ -24,7 +24,7 @@
 //! vera20k_sdk::on_decide!(HALVE => halve);
 //! ```
 
-use crate::{Cell, EventRecord, House, NameKind, Techno, TypeRef, sys};
+use crate::{Cell, EventRecord, House, NameKind, Projectile, Techno, TypeRef, sys};
 
 /// One decision request (`DecideRecord`), valid during its `on_decide`
 /// call.
@@ -65,6 +65,47 @@ impl DecideRecord {
         self.result = value;
         self.handled = 1;
     }
+
+    /// The result area (`area`, `area_cap` bytes), empty for a kind
+    /// without one. It holds the previous link's result in its first
+    /// `previous_len` bytes, the rest zeroed.
+    pub fn area(&mut self) -> &mut [u8] {
+        if self.area == 0 || self.area_cap <= 0 {
+            return &mut [];
+        }
+        // SAFETY: the engine placed `area_cap` bytes at `area`, in the
+        // delivery area past this record, for this call only.
+        unsafe {
+            core::slice::from_raw_parts_mut(self.area as usize as *mut u8, self.area_cap as usize)
+        }
+    }
+}
+
+/// Copies `value`'s bytes to `area` at `at`; false when they do not fit.
+fn put<T: Copy>(area: &mut [u8], at: usize, value: &T) -> bool {
+    let size = size_of::<T>();
+    let Some(out) = area.get_mut(at..at + size) else {
+        return false;
+    };
+    // SAFETY: `T` is a plain `repr(C)` layout of integers and bytes.
+    let bytes = unsafe { core::slice::from_raw_parts(value as *const T as *const u8, size) };
+    out.copy_from_slice(bytes);
+    true
+}
+
+/// Reads a `T` from `area` at `at`.
+fn take<T: Copy + Default>(area: &[u8], at: usize) -> Option<T> {
+    let bytes = area.get(at..at + size_of::<T>())?;
+    let mut value = T::default();
+    // SAFETY: as in `put`; any bit pattern is a valid `T`.
+    unsafe {
+        core::ptr::copy_nonoverlapping(
+            bytes.as_ptr(),
+            &mut value as *mut T as *mut u8,
+            size_of::<T>(),
+        )
+    };
+    Some(value)
 }
 
 macro_rules! decision {
@@ -167,6 +208,141 @@ decision!(
         target_cell: Cell = |r| Cell(r.cell),
     }
 );
+
+decision!(
+    /// `Fire` (appendix 4.3, preview): the shot plan, just before the
+    /// shooter's weapon launches its bullet. The result is the number of
+    /// [`sys::ProjectileSpec`] entries in the result area; the first link
+    /// gets the native shot as one entry (its projectile type and weapon,
+    /// target and offset 0). The engine launches the plan's projectiles in
+    /// place of the native one; an empty plan launches nothing. Every other
+    /// effect of the shot (rearm, ammo, burst, report, recoil) stays.
+    FireDecision {
+        shooter: Techno = |r| Techno(r.subject),
+        /// The target object; `NO_HANDLE` for a cell.
+        target: Techno = |r| Techno(r.other),
+        target_cell: Cell = |r| Cell(r.cell),
+        /// The weapon slot.
+        slot: i64 = |r| r.value,
+        /// The weapon's type ID.
+        weapon: i32 = |r| r.id,
+    }
+);
+
+impl FireDecision<'_> {
+    /// The previous link's plan entry `index`.
+    pub fn previous_entry(&mut self, index: usize) -> Option<sys::ProjectileSpec> {
+        let count = usize::try_from(self.0.previous).ok()?;
+        let len = usize::try_from(self.0.previous_len).ok()?;
+        let at = index * size_of::<sys::ProjectileSpec>();
+        if index >= count || at >= len {
+            return None;
+        }
+        take(self.0.area(), at)
+    }
+
+    /// Answers `plan`; false (answering nothing) when it does not fit the
+    /// result area.
+    pub fn set_plan(&mut self, plan: &[sys::ProjectileSpec]) -> bool {
+        let area = self.0.area();
+        for (i, entry) in plan.iter().enumerate() {
+            if !put(area, i * size_of::<sys::ProjectileSpec>(), entry) {
+                return false;
+            }
+        }
+        self.0.set_result(plan.len() as i64);
+        true
+    }
+}
+
+/// `PathKind` (appendix 8.3, enum 22).
+#[repr(i32)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PathKind {
+    /// Control points after the launch position; ends on the last.
+    Bezier = 0,
+    /// To the one point; `param[0]` is the apex height in leptons.
+    Parabola = 1,
+    /// Along the line to the one point; `param[0]` radius in leptons,
+    /// `param[1]` frames per turn.
+    Spiral = 2,
+    /// Straight through each point in turn.
+    Waypoints = 3,
+}
+
+decision!(
+    /// `Launch` (appendix 4.5, preview): the bullet's path, once, when a
+    /// bullet of a bound type is launched. Without an answer the bullet
+    /// flies natively.
+    LaunchDecision {
+        projectile: Projectile = |r| Projectile(r.projectile),
+        launcher: Techno = |r| Techno(r.subject),
+        target: Techno = |r| Techno(r.other),
+        target_cell: Cell = |r| Cell(r.cell),
+    }
+);
+
+impl LaunchDecision<'_> {
+    /// Answers a path of `kind` through `points` (leptons) at `speed`
+    /// leptons per frame with 16 fraction bits (0 for the bullet's own);
+    /// false when it does not fit the result area.
+    pub fn set_path(
+        &mut self,
+        kind: PathKind,
+        speed: i64,
+        param: [i64; 2],
+        points: &[[i64; 3]],
+    ) -> bool {
+        let header = sys::PathSpecHeader {
+            kind: kind as i32,
+            point_count: points.len() as i32,
+            speed,
+            param,
+        };
+        let area = self.0.area();
+        if !put(area, 0, &header) {
+            return false;
+        }
+        for (i, point) in points.iter().enumerate() {
+            if !put(area, size_of::<sys::PathSpecHeader>() + i * 24, point) {
+                return false;
+            }
+        }
+        self.0
+            .set_result((size_of::<sys::PathSpecHeader>() + points.len() * 24) as i64);
+        true
+    }
+}
+
+decision!(
+    /// `ProjectileFrame` (appendix 4.5, preview): before a bound bullet's
+    /// candidate position is computed, every frame it moves. Read its
+    /// `X`..`Z`, `VX`..`VZ`, `Data0`, `Data1`; answer a step. Without an
+    /// answer it moves natively (or along its `Launch` path).
+    ProjectileFrameDecision {
+        projectile: Projectile = |r| Projectile(r.projectile),
+        /// Frames since it was launched.
+        frames: i64 = |r| r.value,
+    }
+);
+
+impl ProjectileFrameDecision<'_> {
+    /// Answers `step` (the previous link's, if any, is replaced).
+    pub fn set_step(&mut self, step: &sys::ProjectileStep) -> bool {
+        if !put(self.0.area(), 0, step) {
+            return false;
+        }
+        self.0.set_result(0);
+        true
+    }
+
+    /// The previous link's step, when one answered.
+    pub fn previous_step(&mut self) -> Option<sys::ProjectileStep> {
+        (self.0.previous_len > 0)
+            .then(|| take(self.0.area(), 0))
+            .flatten()
+    }
+}
 
 /// Exports `on_decide`, calling the handler whose key (the trigger's
 /// `decide_sync` key) matches each request. A handler takes
