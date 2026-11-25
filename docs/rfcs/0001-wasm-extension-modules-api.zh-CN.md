@@ -295,6 +295,12 @@ struct ProjectileStep {   // 56 字节：ProjectileFrame 的结果区
     reserved3: i32,       // 36  0
     data: [u8; 16],       // 40  新的模块数据（Data0 为第 0..7 字节，Data1 为第 8..15 字节）
 }
+struct MissionStepResult { // 24 字节：MissionStep 的结果区；第一环收到任务主体的结果
+    target: i64,          // 0   目标：对象或格子引用；0 为没有
+    destination: i64,     // 8   目的地：对象或格子引用；0 为没有
+    mission: i32,         // 16  要排入的任务（Mission）；-1 为不排
+    delay: i32,           // 20  任务主体下次运行前的帧数（≥ 1）
+}
 struct MoveStep {         // 16 字节：MoveFrame 的结果区
     flags: i32,           // 0   位 0 接管本帧并按 displacement 移动，位 1 转向 facing，位 2 停止原生移动（空目的地）
     facing: i32,          // 4   车体朝向 0..255（同 Facing 属性）
@@ -618,14 +624,14 @@ TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）�
 
 修饰器事件按目标绑定：对象绑定该对象；所属方为全局事件，填 `house`。
 
-在安全点引发；`对象+武器` 也可绑定到武器、弹头或抛射体类型（[RFC 6a](0001-wasm-extension-modules.zh-CN.md#6a-触发器事件筛选子句和动作)）。层级属于投递形式；决定形式只有 `TakeDamage` 为 `v1`，`Fire`、`FatalDamage` 的为 `preview`，`TargetChanged` 的为 `later`。100037、100038 保留（`OnBehavior`、`OnBehaviorExpire`）。
+在安全点引发；`对象+武器` 也可绑定到武器、弹头或抛射体类型（[RFC 6a](0001-wasm-extension-modules.zh-CN.md#6a-触发器事件筛选子句和动作)）。层级属于投递形式；决定形式只有 `TakeDamage` 为 `v1`，`Fire`、`FatalDamage` 的为 `preview`，`TargetChanged` 的为 `later`。100037、100038 保留（`OnBehavior`、`OnBehaviorExpire`）。100044 起与 4.5 共用一套编号。
 
 | # | 事件 | 字段 | 引发时机 | 绑定 | 决定时机 → 结果（— 为不可决定） | 层级 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 100000 | `TakeDamage` | `other` 来源（可为 0），`value` 结算后的正伤害：已经过护甲倍率、免疫、距离衰减、主体护甲的 Verses、上限、建筑最小值和 Ares 处决；投递时已按受击前生命截断，决定时尚未截断；`id` 弹头，`x`、`y`、`z` 主体位置（lepton） | 伤害提交后 | 对象 | 伤害提交前，且只在这个值大于 0 时 → 截断前的最终伤害（钳制到 0..2^31−1）；零伤害和治疗不询问 | v1 |
 | 100001 | `HitByWarhead` | `id` 弹头，`value` 最终伤害，`other` 来源，`x`、`y`、`z` 主体位置（lepton） | 伤害被接收后；免疫的命中不算 | 对象 | — | later |
 | 100002 | `AttackedBy` | `other` 攻击者，`value` 武器槽位（−1 无），`projectile`（可为 0） | 开火步骤后，在目标上 | 对象 | — | v1 |
-| 100003 | `FatalDamage` | `other` 攻击者（可为 0），`value` 伤害，`id` 弹头，`x`、`y`、`z` 主体位置（lepton） | 致命伤害提交后、死亡流程前；死亡流程重新检查 | 对象 | 受伤流程的死亡分支入口，其中任何效果之前 → 死亡方案（下表的位）；碾压、超时空抹除等不经受伤流程的死亡不询问 | v1 |
+| 100003 | `FatalDamage` | `other` 攻击者（可为 0），`value` 伤害，`id` 弹头，`x`、`y`、`z` 主体位置（lepton） | 致命伤害提交后、死亡流程前；死亡流程重新检查。没有伤害提交的死亡（碾压、超时空抹除、坠毁、乘客和奴隶在内部死亡、摔落）在记录击杀前引发，`value` 为剩余生命值，`id` 为 −1；出售不算死亡 | 对象 | 受伤流程的死亡分支入口，其中任何效果之前 → 死亡方案（下表的位）；不经受伤流程的死亡不询问 | v1 |
 | 100004 | `Killed` | `other` 击杀者（可为 0），`id` 致死弹头（无为 −1），`x`、`y`、`z` 死亡位置（lepton） | 击杀记录后 | 对象 | — | v1 |
 | 100005 | `Fire` | `other` 目标（可为 0），`cell` 目标格子（总会填入），`value` 武器槽位，`id` 武器，`projectile`（可为 0） | 射击完成后 | 对象+武器 | 射出前：发射有解、弹体负载已建好之后 → 射击方案条数（0..16）；方案是结果区中的 `ProjectileSpec` 数组，首环收到原生射击的一条（[RFC 9](0001-wasm-extension-modules.zh-CN.md#9-示例抛射体弹道)） | v1 |
 | 100006 | `SpawnFire` | `other` 子机，`value` 武器槽位，`projectile`；目标在 `cell` 或子机的 `Target` 属性 | 子机射击后 | 对象 | — | later |
@@ -698,7 +704,14 @@ TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）�
 | 100035 | `Launch` | `projectile`，`subject` 发射者（不存在时为 0），`other` 目标对象，`cell` 目标坐标所在的格子 | 每个会飞行的抛射体射出时一次，在它进入游戏之后：开火、射击方案、子弹分裂、空爆、超级武器和触发器打击；`Inviso=` 不询问 | 对象+武器 | `PathSpec` 的字节数（32 + 24 × 点数）；结果区为一个 `PathSpec`；未处理时按原生弹道飞行 | preview |
 | 100036 | `ProjectileFrame` | `subject` 和 `projectile` 为抛射体，`value` 已飞行帧数 | 每帧引擎推进抛射体时，按引擎的顺序，在等待动画、目标解析和帧数引信之后、计算候选位置之前，每个本帧要移动的绑定抛射体一次 | 抛射体类型 | 不用；结果区为一个 `ProjectileStep`；`handled` 为 0 时按 `Launch` 的路径或原生推进 | preview |
 | 100039 | `DamageIncoming` | `subject`，`other` 来源（可为 0），`id` 弹头，`value` 入射伤害（有符号），`value2` 把 `previous` 按触发器 `EventDef.id` 的护甲（−1 为主体的护甲）经距离衰减、Verses 和上限算出的伤害，符号同 `previous`；`EventDef.value` 位 0 为 1 时，正值先按主体护甲倍率的乘积相除并向零取整；`x`、`y`、`z` 主体位置（lepton） | Techno 受伤入口：步兵卧倒、寄生前缀和引擎自己的护盾之后，阻止死亡、主体护甲和最小伤害 1 之前。入射为 0、无视防御、狂暴或超时空弹头，以及会被免疫、铁幕或敌我许可拒绝的命中不询问；主体护甲的 Verses 为 0 不影响询问 | 对象 | 继续进入原生流程的入射伤害：须为 0 或与 `previous` 同号，否则保留上一环；每一环按自己的 `previous` 重算 `value2`；变成 0 时不再施加最小伤害 1 | preview |
+| 100044 | `FireAllowed` | `subject` 射手，`other` 目标对象（格子为 0），`cell` 目标格，`value` 武器槽位，`id` 武器 | 开火流程的开火检查允许一发之后、开火之前 | 对象 | 1 允许，0 否决（射手像装填一样等待） | preview |
+| 100045 | `Retaliate` | `subject` 受伤对象，`other` 来源，`id` 弹头 | 引擎对有来源的命中决定是否反击之后 | 对象 | 1 反击，0 不反击；`native` 为引擎的答案。反击仍要求来源在可及范围内 | preview |
+| 100046 | `DestinationSet` | `subject`，`other` 原生目的地对象（格子为 0），`cell` 其格子，`value` 原生目的地引用 | 目的地设定函数收到非空目的地时 | 对象 | 目的地引用（对象或格子），0 为无；不存在的对象、地图外的格子或设定函数拒绝的目的地保留原生目的地 | preview |
+| 100047 | `CrushAllowed` | `subject` 被碾者，`other` 碾压者 | 碾压者进格、即将碾压某个占用者时；进格判定（寻路查询）不询问 | 对象 | 1 允许，0 放过（被碾者留在格子里） | preview |
+| 100049 | `HarvestCell` | `subject` 矿车或奴隶矿场，`cell` 扫描到的格子，`value` 其引用（无为 0） | 矿石扫描给出答案时 | 对象 | 要采的格子引用，0 为无；地图外的格子保留原生答案 | preview |
+| 100050 | `DeployAllowed` | `subject` | 单位部署成建筑、简单部署单位开始部署或步兵部署之前 | 对象 | 1 允许，0 拒绝（同部署受阻） | preview |
 | 100060 | `IdleMission` | `subject` | 步兵或车辆进入空闲、引擎选定要排入的任务之后、排入之前；不排任务时不询问；飞机和建筑不询问 | 对象 | 要排入的任务（`Mission`），255 不排；`native` 为引擎的选择 | preview |
+| 100062 | `MissionStep` | `subject`，`value` 运行的任务（`Mission`），`other` 目标对象（格子或没有时为 0），`cell` 目标格子 | 步兵或车辆的 Guard、Sticky、AreaGuard、Hunt、Attack 任务主体每次运行之后（主体和它的随机数抽取都已完成）、写任务计时器和排入任务之前；飞机和建筑不询问 | 对象 | 不使用。结果区中为一条 `MissionStepResult`，进来时是主体的结果：它留下的目标和目的地、它要排入的任务（−1 为不排）和它的延迟。改动的字段经引擎自己的设置器生效（目的地经 `DestinationSet`）；已消失的对象、地图外的格子、未知的任务或小于 1 的延迟保留主体的结果。主体做的其他事（开火、部署、进入空闲时排入的任务）照常 | preview |
 | 100063 | `MoveFrame` | `subject`，`x`、`y`、`z` 其位置，`value` 移动方式正在移动时为 1，`other`、`cell` 其导航目标（对象或格子） | 使用 Drive、Ship、Walk、Mech 或 Hover 移动方式的车辆或步兵每帧到达移动方式的处理、且没有进行中的一步时（轨道或子格一步先走完），在进行中的 `Push` 那一帧之后；被运载、正在传送、列车对象不询问，其他移动方式不询问 | 对象 | 不用；结果区为一个 `MoveStep`，首环全为 0。位 0 接管本帧：原生处理不运行，对象按位移移动；进入另一格时只检查那一格（在地图内、不是从桥面出发、对象自己的进入格子判定答空闲），否则留在原地。引擎保持离地高度、迁移占格、清空路径队列，进入新格子时执行到达格子的处理。`handled` 为 0 或没有位 0 时本帧交给移动方式 | preview |
 | 100064 | `PathFound` | `subject`，`x`、`y`、`z` 其位置，`cell` 寻路目标所在格子，`value` 原生路径的格子数（无路为 0） | 采用一次寻路的路径（或失败）时，寻路之后、复制路径之前，无论寻路在哪里运行（路径批处理只是提前算出）；列车延长已排路径、含管道一步的路径不询问 | 对象 | 格子数（0..24）；结果区为这么多个 `PathCell`，首环为原生路径的格子。0 为无路（随后走原生的失败处理）；否则这些格子（每格与前一格相邻、第一格与对象所在格相邻、都在地图内）替换路径，不满足时保留原生路径 | preview |
 

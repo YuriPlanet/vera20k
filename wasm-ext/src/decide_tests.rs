@@ -2,9 +2,9 @@
 //! stops the module.
 
 use crate::decide::{
-    DECIDE_BUDGET, DecideRecord, EVENT_LAUNCH, EVENT_MOVE_FRAME, EVENT_PATH_FOUND, MAX_PATH_CELLS,
-    MoveStep, PathCell, PathSpec, ProjectileSpec, ProjectileStep, ResultArea, result_area_bytes,
-    result_len,
+    DECIDE_BUDGET, DecideRecord, EVENT_LAUNCH, EVENT_MISSION_STEP, EVENT_MOVE_FRAME,
+    EVENT_PATH_FOUND, MAX_PATH_CELLS, MissionStepResult, MoveStep, PathCell, PathSpec,
+    ProjectileSpec, ProjectileStep, ResultArea, result_area_bytes, result_len,
 };
 use crate::triggers::{EVENT_FIRE, EVENT_TAKE_DAMAGE, EventRecord};
 use crate::{ActionParams, Fault, FindPage, Invalid, Limits, Query, SimHost, SimModule, Status};
@@ -177,6 +177,16 @@ fn fixed_layouts_round_trip() {
         data: [1; 16],
     };
     assert_eq!(ProjectileStep::from_bytes(&step.to_bytes()), Some(step));
+    let mission = MissionStepResult {
+        target: 7,
+        destination: (2 << 48) | (3 << 16) | 4,
+        mission: MissionStepResult::NO_MISSION,
+        delay: 30,
+    };
+    assert_eq!(MissionStepResult::from_bytes(&mission.to_bytes()), Some(mission));
+    assert_eq!(result_area_bytes(EVENT_MISSION_STEP), 24);
+    assert_eq!(result_len(EVENT_MISSION_STEP, 0, 24), Some(24));
+    assert_eq!(result_len(EVENT_MISSION_STEP, 0, 16), None);
     let move_step = MoveStep {
         flags: MoveStep::MOVE | MoveStep::FACING,
         facing: 64,

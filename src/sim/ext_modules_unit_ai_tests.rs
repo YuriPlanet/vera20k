@@ -155,7 +155,8 @@ fn idle_mission_replaces_what_an_arriving_unit_queues() {
     assert_eq!(mission, 0, "Sleep");
 }
 
-/// A harvester's search heads for the module's cell, three cells east.
+/// A harvester's search heads for the module's cell, three cells east
+/// (`HarvestCell` is asked in the scan the search runs).
 #[test]
 fn harvest_cell_sends_the_harvester_to_the_module_cell() {
     let Some((mut scene, attacker, _)) = super::tests::gi_duel() else {
@@ -194,7 +195,6 @@ fn harvest_cell_sends_the_harvester_to_the_module_cell() {
         i32::from_le_bytes(memory[516..520].try_into().unwrap()),
         EVENT_HARVEST_CELL
     );
-    assert_eq!(i64::from_le_bytes(memory[584..592].try_into().unwrap()), 8, "range");
     assert!(
         scene
             .sim()

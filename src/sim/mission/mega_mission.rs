@@ -314,12 +314,9 @@ impl Simulation {
         // write goes through the class setter, which raises it.
         if drop_tarcom {
             let before = self.module_target_before(id);
-            self.substrate
-                .entities
-                .get_mut(id)
-                .unwrap()
-                .attack_target
-                .set(None);
+            let entity = self.substrate.entities.get_mut(id).unwrap();
+            let note = entity.note_names();
+            entity.attack_target.set(None, note);
             self.raise_module_target_changed(rules, &mut ctx.effects, id, before);
         }
         let found = crate::sim::world::retaliate_and_scan(

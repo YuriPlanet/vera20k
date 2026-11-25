@@ -262,6 +262,21 @@ pub struct ProjectileStep {
     pub data: [u8; 16],
 }
 
+/// `MissionStepResult`, 24 bytes: `MissionStep`'s result. It comes holding
+/// the mission body's outcome (or the previous link's answer).
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct MissionStepResult {
+    /// Object or cell reference, 0 for none.
+    pub target: i64,
+    /// Object or cell reference, 0 for none.
+    pub destination: i64,
+    /// `Mission` number to queue, −1 for none.
+    pub mission: i32,
+    /// Frames until the mission body runs again (at least 1).
+    pub delay: i32,
+}
+
 /// `MoveStep`, 16 bytes: `MoveFrame`'s result.
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
@@ -284,6 +299,7 @@ pub struct PathCell {
 }
 
 const _: () = {
+    assert!(size_of::<MissionStepResult>() == 24);
     assert!(size_of::<MoveStep>() == 16);
     assert!(size_of::<PathCell>() == 8);
     assert!(size_of::<ProjectileSpec>() == 48);

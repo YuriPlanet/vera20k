@@ -26,8 +26,9 @@ pub use decide::{
     CommandAllowedDecision, CrushAllowedDecision, DamageIncomingDecision, DecideRecord,
     DefeatDecision, DeployAllowedDecision, DestinationSetDecision, FatalDamageDecision,
     FireAllowedDecision, FireDecision, HarvestCellDecision, IdleMissionDecision, LaunchDecision,
-    MoveFrameDecision, PathFoundDecision, PathKind, ProductionAllowedDecision,
-    ProductionQueuedDecision, ProjectileFrameDecision, RetaliateDecision, TakeDamageDecision,
+    MissionStepDecision, MoveFrameDecision, PathFoundDecision, PathKind,
+    ProductionAllowedDecision, ProductionQueuedDecision, ProjectileFrameDecision,
+    RetaliateDecision, TakeDamageDecision,
 };
 pub use ini::{
     EventScope, IniEntryRecord, IniKeyRecord, IniSection, ModuleEvent, ModuleEventRecord,

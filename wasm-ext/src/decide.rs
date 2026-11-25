@@ -13,6 +13,12 @@
 //!   to defeat a house;
 //! - `CommandAllowed` (4.5): 1 allow, 0 refuse, when the simulation
 //!   executes a player command (a module order included) on a bound object;
+//! - `DamageIncoming` (4.5, preview): the incoming damage at the Techno
+//!   receiver's entry, after the shield and before death prevention;
+//! - `FireAllowed`, `Retaliate`, `DestinationSet`, `CrushAllowed`,
+//!   `HarvestCell` and `DeployAllowed` (4.5, RFC 0001 0.0.22): 1 allow, 0
+//!   refuse at their commit points; `DestinationSet` and `HarvestCell`
+//!   answer a reference (0 for none);
 //! - `FatalDamage` (4.3, preview): the death plan's bits, at the entry of
 //!   the receiver's death arm;
 //! - `Fire` (4.3, preview): the shot plan, a count of [`ProjectileSpec`]s in
@@ -22,6 +28,8 @@
 //! - `ProjectileFrame` (4.5, preview): a [`ProjectileStep`] in the result
 //!   area, before a bound bullet's candidate position is computed;
 //! - `IdleMission` (4.5, preview): the mission an object idles into;
+//! - `MissionStep` (4.5, preview): a [`MissionStepResult`] in the result
+//!   area, the outcome of a Guard, Area Guard, Hunt or Attack mission body;
 //! - `MoveFrame` (4.5, preview): a [`MoveStep`] in the result area, each
 //!   frame a bound ground mover's locomotor would start a step;
 //! - `PathFound` (4.5, preview): the cells of a found route in the result
@@ -38,18 +46,32 @@ pub const EVENT_PRODUCTION_ALLOWED: i32 = 1031;
 pub const EVENT_PRODUCTION_QUEUED: i32 = 1032;
 pub const EVENT_DEFEAT: i32 = 1033;
 pub const EVENT_COMMAND_ALLOWED: i32 = 1034;
+/// The preview shield event (appendix 4.5, 100039).
+pub const EVENT_DAMAGE_INCOMING: i32 = 1039;
+/// Decision-only events RFC 0001 0.0.22 added to appendix 4.5 (100044 on;
+/// the delivered ones of that version are in [`crate::triggers`]).
+pub const EVENT_FIRE_ALLOWED: i32 = 1044;
+pub const EVENT_RETALIATE: i32 = 1045;
+pub const EVENT_DESTINATION_SET: i32 = 1046;
+pub const EVENT_CRUSH_ALLOWED: i32 = 1047;
+pub const EVENT_HARVEST_CELL: i32 = 1049;
+pub const EVENT_DEPLOY_ALLOWED: i32 = 1050;
 pub const EVENT_LAUNCH: i32 = 1035;
 pub const EVENT_PROJECTILE_FRAME: i32 = 1036;
-/// Unit-level AI (appendix 4.5, preview; RFC numbers 100060, 100061):
-/// the mission an object idles into, and the ore cell a harvester heads for.
+/// Unit-level AI (appendix 4.5, preview; RFC number 100060): the mission an
+/// object idles into.
 pub const EVENT_IDLE_MISSION: i32 = 1060;
+/// Unit-level AI (appendix 4.5, preview; RFC number 100062): the outcome of
+/// a Guard, Area Guard, Hunt or Attack mission body, a
+/// [`MissionStepResult`] in the result area.
+pub const EVENT_MISSION_STEP: i32 = 1062;
 /// Movement (appendix 4.5, preview; RFC numbers 100063, 100064): a bound
 /// ground mover's per-frame step and an adopted route.
 pub const EVENT_MOVE_FRAME: i32 = 1063;
 pub const EVENT_PATH_FOUND: i32 = 1064;
 
 /// Events with a decision form in this engine.
-pub const DECIDABLE_EVENTS: [i32; 19] = [
+pub const DECIDABLE_EVENTS: [i32; 20] = [
     EVENT_TAKE_DAMAGE,
     EVENT_FATAL_DAMAGE,
     EVENT_FIRE,
@@ -57,22 +79,38 @@ pub const DECIDABLE_EVENTS: [i32; 19] = [
     EVENT_PRODUCTION_QUEUED,
     EVENT_DEFEAT,
     EVENT_COMMAND_ALLOWED,
+    EVENT_DAMAGE_INCOMING,
+    EVENT_FIRE_ALLOWED,
+    EVENT_RETALIATE,
+    EVENT_DESTINATION_SET,
+    EVENT_CRUSH_ALLOWED,
+    EVENT_HARVEST_CELL,
+    EVENT_DEPLOY_ALLOWED,
     EVENT_LAUNCH,
     EVENT_PROJECTILE_FRAME,
     EVENT_IDLE_MISSION,
+    EVENT_MISSION_STEP,
     EVENT_MOVE_FRAME,
     EVENT_PATH_FOUND,
 ];
 /// Of those, the decision-only ones (appendix 4.5): they need a decision
 /// handler and are never delivered.
-pub const DECISION_ONLY_EVENTS: [i32; 16] = [
+pub const DECISION_ONLY_EVENTS: [i32; 17] = [
     EVENT_PRODUCTION_ALLOWED,
     EVENT_PRODUCTION_QUEUED,
     EVENT_DEFEAT,
     EVENT_COMMAND_ALLOWED,
+    EVENT_DAMAGE_INCOMING,
+    EVENT_FIRE_ALLOWED,
+    EVENT_RETALIATE,
+    EVENT_DESTINATION_SET,
+    EVENT_CRUSH_ALLOWED,
+    EVENT_HARVEST_CELL,
+    EVENT_DEPLOY_ALLOWED,
     EVENT_LAUNCH,
     EVENT_PROJECTILE_FRAME,
     EVENT_IDLE_MISSION,
+    EVENT_MISSION_STEP,
     EVENT_MOVE_FRAME,
     EVENT_PATH_FOUND,
 ];
@@ -91,6 +129,7 @@ pub const fn result_area_bytes(kind: i32) -> usize {
         EVENT_FIRE => MAX_FIRE_PLAN * ProjectileSpec::SIZE,
         EVENT_LAUNCH => PathSpec::HEADER + MAX_PATH_POINTS * PathSpec::POINT,
         EVENT_PROJECTILE_FRAME => ProjectileStep::SIZE,
+        EVENT_MISSION_STEP => MissionStepResult::SIZE,
         EVENT_MOVE_FRAME => MoveStep::SIZE,
         EVENT_PATH_FOUND => MAX_PATH_CELLS * PathCell::SIZE,
         _ => 0,
@@ -99,8 +138,8 @@ pub const fn result_area_bytes(kind: i32) -> usize {
 
 /// The bytes of the result area a handled answer `result` of `kind` uses,
 /// within `cap`: `Fire`'s plan entries, `Launch`'s `PathSpec`, the one
-/// `ProjectileStep`, the one `MoveStep`, `PathFound`'s cells, 0 for the
-/// kinds without an area. `None` rejects the
+/// `ProjectileStep`, the one `MissionStepResult`, the one `MoveStep`,
+/// `PathFound`'s cells, 0 for the kinds without an area. `None` rejects the
 /// answer: the previous result stands.
 pub fn result_len(kind: i32, result: i64, cap: usize) -> Option<usize> {
     let len = match kind {
@@ -113,6 +152,7 @@ pub fn result_len(kind: i32, result: i64, cap: usize) -> Option<usize> {
                 && (*len - PathSpec::HEADER) % PathSpec::POINT == 0
         })?,
         EVENT_PROJECTILE_FRAME => ProjectileStep::SIZE,
+        EVENT_MISSION_STEP => MissionStepResult::SIZE,
         EVENT_MOVE_FRAME => MoveStep::SIZE,
         EVENT_PATH_FOUND => usize::try_from(result)
             .ok()
@@ -308,6 +348,46 @@ impl ProjectileStep {
     }
 }
 
+/// `MissionStepResult` (appendix "Fixed layouts"), 24 bytes: `MissionStep`'s
+/// result. The first link gets the native outcome; a handled answer's
+/// fields that differ from it replace it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MissionStepResult {
+    /// Object or cell reference, 0 for none: the target.
+    pub target: i64,
+    /// Object or cell reference, 0 for none: the destination.
+    pub destination: i64,
+    /// `Mission` number to queue, −1 for none.
+    pub mission: i32,
+    /// Frames until the mission body runs again (at least 1).
+    pub delay: i32,
+}
+
+impl MissionStepResult {
+    pub const SIZE: usize = 24;
+    /// [`Self::mission`]: queue nothing.
+    pub const NO_MISSION: i32 = -1;
+
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        let bytes: &[u8; Self::SIZE] = bytes.get(..Self::SIZE)?.try_into().ok()?;
+        Some(Self {
+            target: crate::le_i64(bytes, 0),
+            destination: crate::le_i64(bytes, 8),
+            mission: crate::le_i32(bytes, 16),
+            delay: crate::le_i32(bytes, 20),
+        })
+    }
+
+    pub fn to_bytes(&self) -> [u8; Self::SIZE] {
+        let mut out = [0u8; Self::SIZE];
+        out[0..8].copy_from_slice(&self.target.to_le_bytes());
+        out[8..16].copy_from_slice(&self.destination.to_le_bytes());
+        out[16..20].copy_from_slice(&self.mission.to_le_bytes());
+        out[20..24].copy_from_slice(&self.delay.to_le_bytes());
+        out
+    }
+}
+
 /// `MoveStep` (appendix "Fixed layouts"), 16 bytes: `MoveFrame`'s result.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MoveStep {
@@ -388,7 +468,7 @@ pub const DECIDE_BUDGET: u64 = 20_000;
 ///
 /// The result area (`area`, `area_cap`, `previous_len`) follows the record
 /// in the module's delivery area, for the kinds that have one (`Fire`,
-/// `Launch`, `ProjectileFrame`, `MoveFrame`, `PathFound`);
+/// `Launch`, `ProjectileFrame`, `MissionStep`, `MoveFrame`, `PathFound`);
 /// [`crate::SimModule::decide`] places it and
 /// fills those fields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

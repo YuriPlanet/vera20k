@@ -125,9 +125,20 @@ the source tree). Its Wasm verbs need no game install:
   `DESTINATION_SET`, `CRUSH_ALLOWED`, `HARVEST_CELL`, `DEPLOY_ALLOWED` and
   `DAMAGE_INCOMING` are decisions only: bind them with `Trigger::decide_sync` and
   answer in `on_decide!` (`FireAllowedDecision::set_result(0)` vetoes a shot). They are
-  `preview` and may change. `MISSION_CHANGED` is numbered but not raised yet; check
-  with `has_kind`. A `SpeedMultiplier` modifier also slows or speeds up aircraft,
-  jumpjets and rockets.
+  `preview` and may change. `MISSION_CHANGED` is numbered but deferred (not raised);
+  check with `has_kind`. A `SpeedMultiplier` modifier also slows or speeds up
+  aircraft, jumpjets and rockets. An `ImmunityFlags` override (preview; `Override`
+  only, bits 0..6) grants or removes immunity to mind control, radiation, poison,
+  psychic damage, chrono, EMP and berserk. `FatalDamageDecision::TIBERIUM_REMAINS`
+  leaves Riparius where the object died.
+- Unit AI decisions (preview): `Event::IDLE_MISSION` picks the mission a unit idles
+  into; `Event::MISSION_STEP` is asked after each Guard, Area Guard, Hunt or Attack
+  mission body of a bound infantryman or vehicle. Its `MissionStepDecision` arrives
+  holding what the body decided; `set_target`, `set_destination`, `set_mission` and
+  `set_delay` replace parts of it (for example a guard that walks to a post, or an
+  attacker that picks its own target). The body has already run, so its shots and
+  deploys stand; a cleared Guard target may be picked up again by the unit's own
+  acquisition.
 - Movement (`preview`, may change): `Event::MOVE_FRAME` asks, every frame a bound
   vehicle or infantryman on the ground (Drive, Ship, Walk, Mech or Hover) could
   start a step, whether the module moves it instead: `MoveFrameDecision::step_by(dx,

@@ -52,13 +52,16 @@
 //! - `Launch` and `ProjectileFrame` (preview) → a `PathSpec` (its byte count
 //!   in `result`) and a `ProjectileStep`: a bullet's launch and its flight
 //!   visit (`ext_modules::projectiles`).
+//! - `IdleMission` and `MissionStep` (preview) → a `Mission` number and a
+//!   `MissionStepResult`: an object going idle and the outcome of its Guard,
+//!   Area Guard, Hunt or Attack body (`ext_modules::unit_ai`).
 //! - `MoveFrame` (preview) → a `MoveStep`: a bound ground mover's locomotor
 //!   Process with no step in flight (`ext_modules::motion`).
 //! - `PathFound` (preview) → a count of `PathCell`s: a Find_Path search's
 //!   adoption (`ext_modules::paths`).
 //!
-//! Result areas (`Fire`, `Launch`, `ProjectileFrame`, `MoveFrame`,
-//! `PathFound`; RFC 15.4 sizes): the
+//! Result areas (`Fire`, `Launch`, `ProjectileFrame`, `MissionStep`,
+//! `MoveFrame`, `PathFound`; RFC 15.4 sizes): the
 //! area follows the record in the module's delivery area, smaller when that
 //! area is (0 when nothing fits). Each link gets the last accepted result's
 //! bytes (`previous_len`), the rest zeroed; an answer whose size does not fit
@@ -134,6 +137,7 @@ use vera20k_wasm_ext::decide::{
 use vera20k_wasm_ext::{
     EventRecord, Export, Invalid, NAME_PROJECTILE, NAME_WARHEAD, NAME_WEAPON, Status, TriggerDef,
 };
+use vera20k_wasm_ext::triggers::EventDef;
 
 use super::{ModuleEvent, ModuleSource, techno_type};
 use crate::rules::object_type::ObjectType;
@@ -265,12 +269,28 @@ impl Simulation {
         accept: impl Fn(i64) -> Option<i64>,
     ) -> Option<i64> {
         let mut area = ResultArea::none();
-        self.decide_chain(rules, event, house, type_id, native, None, &mut area, accept)
+        self.decide_chain(rules, event, house, type_id, native, None, None, &mut area, accept)
+            .answer
+    }
+
+    /// [`Self::decide_module_event`] whose records each link shapes with
+    /// `shape` (`DamageIncoming`): its `value` and `value2` from the link's
+    /// own trigger event and its `previous`.
+    pub(crate) fn decide_module_event_shaped(
+        &mut self,
+        rules: &RuleSet,
+        event: &ModuleEvent,
+        native: i64,
+        shape: &LinkShape<'_>,
+        accept: impl Fn(i64) -> Option<i64>,
+    ) -> Option<i64> {
+        let mut area = ResultArea::none();
+        self.decide_chain(rules, event, None, None, native, None, Some(shape), &mut area, accept)
             .answer
     }
 
     /// The decision chain for a kind with a result area (`Fire`, `Launch`,
-    /// `ProjectileFrame`, `MoveFrame`, `PathFound`; module docs): `area` goes in holding the native
+    /// `ProjectileFrame`, `MissionStep`, `MoveFrame`, `PathFound`; module docs): `area` goes in holding the native
     /// result's bytes (or none) and comes out holding the last accepted
     /// link's, cut to the bytes its answer uses. `None` when no link
     /// answered; `area` is then as it went in.
@@ -283,7 +303,7 @@ impl Simulation {
     ) -> Option<i64> {
         let mut result = ResultArea::of(event.kind, std::mem::take(area));
         let answer = self
-            .decide_chain(rules, event, None, None, native, None, &mut result, Some)
+            .decide_chain(rules, event, None, None, native, None, None, &mut result, Some)
             .answer;
         *area = result.bytes;
         answer
@@ -303,6 +323,7 @@ impl Simulation {
         type_id: Option<u32>,
         native: i64,
         cached: Option<i64>,
+        shape: Option<&LinkShape<'_>>,
         area: &mut ResultArea,
         accept: impl Fn(i64) -> Option<i64>,
     ) -> Decided {
@@ -342,9 +363,14 @@ impl Simulation {
         for handle in handles {
             let previous = decided.answer.unwrap_or(native);
             let before = (result_area_bytes(event.kind) > 0).then(|| area.bytes.clone());
-            match self.ask_decider(rules, handle, event, house, native, previous, area) {
+            match self.ask_decider(rules, handle, event, house, native, previous, shape, area) {
+                // A shaped chain (`DamageIncoming`) takes 0 or an answer with
+                // the sign of the link's `previous`.
                 Some(Link::Answered(answer)) => {
-                    match accept(answer).zip(result_len(event.kind, answer, area.cap)) {
+                    let accepted = accept(answer).filter(|&answer| {
+                        shape.is_none() || answer == 0 || answer.signum() == previous.signum()
+                    });
+                    match accepted.zip(result_len(event.kind, answer, area.cap)) {
                         Some((answer, len)) => {
                             area.bytes.truncate(len);
                             decided.answer = Some(answer);
@@ -378,6 +404,7 @@ impl Simulation {
         house: Option<u32>,
         native: i64,
         previous: i64,
+        shape: Option<&LinkShape<'_>>,
         area: &mut ResultArea,
     ) -> Option<Link> {
         let difficulty = self.trigger_difficulty();
@@ -508,6 +535,7 @@ impl Simulation {
             None,
             1,
             None,
+            None,
             &mut ResultArea::none(),
             allow,
         );
@@ -559,6 +587,7 @@ impl Simulation {
                     i64::from(native),
                     // A refusal does not lapse because the budget did.
                     last.contains(&(house, type_id)).then_some(0),
+                    None,
                     &mut ResultArea::none(),
                     allow,
                 );

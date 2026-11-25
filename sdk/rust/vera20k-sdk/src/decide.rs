@@ -210,6 +210,86 @@ decision!(
 );
 
 decision!(
+    /// `DamageIncoming` (appendix 4.5, preview): the incoming damage
+    /// continuing into the native flow, at the receiver's entry. The result
+    /// must be 0 or keep the sign of [`Self::previous`]; 0 also suppresses
+    /// the minimum of 1.
+    DamageIncomingDecision {
+        victim: Techno = |r| Techno(r.subject),
+        /// The source; `NO_HANDLE` without one.
+        attacker: Techno = |r| Techno(r.other),
+        /// Warhead ID.
+        warhead: i32 = |r| r.id,
+        /// This link's incoming damage (its `previous`).
+        incoming: i64 = |r| r.value,
+        /// `incoming` through falloff, Verses and the cap (see the event).
+        preview: i64 = |r| r.value2,
+        position: [i32; 3] = |r| [r.x, r.y, r.z],
+    }
+);
+
+decision!(
+    /// `FireAllowed` (RFC 0001 0.0.22, appendix 4.5): 0 vetoes this shot
+    /// (the shooter waits as if rearming); 1 leaves it.
+    FireAllowedDecision {
+        shooter: Techno = |r| Techno(r.subject),
+        /// The target object; `NO_HANDLE` for a cell.
+        target: Techno = |r| Techno(r.other),
+        target_cell: Cell = |r| Cell(r.cell),
+        weapon_slot: i64 = |r| r.value,
+        /// Weapon ID, -1 unknown.
+        weapon: i32 = |r| r.id,
+    }
+);
+
+decision!(
+    /// `Retaliate` (appendix 4.5): 1 retaliates against the hit's source, 0
+    /// does not; `native` is the engine's answer.
+    RetaliateDecision {
+        victim: Techno = |r| Techno(r.subject),
+        source: Techno = |r| Techno(r.other),
+        /// Warhead ID.
+        warhead: i32 = |r| r.id,
+    }
+);
+
+decision!(
+    /// `DestinationSet` (appendix 4.5): the destination reference (an
+    /// object or a cell), or 0 for none; `native` is the engine's.
+    DestinationSetDecision {
+        object: Techno = |r| Techno(r.subject),
+        /// The native destination object; `NO_HANDLE` for a cell.
+        destination: Techno = |r| Techno(r.other),
+        destination_cell: Cell = |r| Cell(r.cell),
+    }
+);
+
+decision!(
+    /// `CrushAllowed` (appendix 4.5): 0 spares the victim; 1 leaves it.
+    CrushAllowedDecision {
+        victim: Techno = |r| Techno(r.subject),
+        crusher: Techno = |r| Techno(r.other),
+    }
+);
+
+decision!(
+    /// `HarvestCell` (appendix 4.5): the cell reference to harvest, or 0 for
+    /// none; `native` is the scan's.
+    HarvestCellDecision {
+        harvester: Techno = |r| Techno(r.subject),
+        /// The scanned cell; `Cell(NO_HANDLE)` without one.
+        scanned: Cell = |r| Cell(r.cell),
+    }
+);
+
+decision!(
+    /// `DeployAllowed` (appendix 4.5): 0 refuses the deploy; 1 leaves it.
+    DeployAllowedDecision {
+        object: Techno = |r| Techno(r.subject),
+    }
+);
+
+decision!(
     /// `Fire` (appendix 4.3, preview): the shot plan, just before the
     /// shooter's weapon launches its bullet. The result is the number of
     /// [`sys::ProjectileSpec`] entries in the result area; the first link
