@@ -75,6 +75,36 @@ and add `-t x86_64` when you need it. Drop it for releases. On macOS/Linux, use
 for `CARGO_PROFILE_SHIPPING_STRIP`, and
 `./android/gradlew -p android :app:assembleDebug`.
 
+### Build caches across checkouts
+
+One checkout's Rust cache is large (a debug profile alone can pass 100 GB) and a
+second worktree gets its own: `tools/cargo_run` keeps every checkout's cache
+under the primary checkout's `target/owned-worktrees/<checkout-hash>`, so the
+directory is shared but the artifacts are not. What is shared already:
+`CARGO_HOME` (registry, git checkouts, crates) and `GRADLE_USER_HOME`.
+
+To share compiled crates between worktrees, put `sccache` in front of `rustc`:
+
+```powershell
+cargo install sccache --locked        # once
+$env:RUSTC_WRAPPER      = 'sccache'
+$env:CARGO_INCREMENTAL  = '0'         # incremental output is never cached
+$env:SCCACHE_DIR        = 'D:\Programming\cargo-cache\sccache'  # all worktrees
+$env:SCCACHE_CACHE_SIZE = '20G'
+sccache --show-stats                  # hits, misses, cache location
+```
+
+`sccache` caches library and dependency compilations, including the
+`aarch64-linux-android` and `wasm32` targets, so a second worktree's first build
+reuses them. It never caches the final binary or cdylib (the server logs
+`CannotCache(crate-type, bin)` — a dependency-free crate therefore shows no hits
+at all) and it does not cache linking.
+
+Reclaiming space: delete `target/owned-worktrees/<hash>` for a retired checkout,
+`target/aarch64-linux-android` (the `cargo ndk` default target, regenerated on
+the next native build) and `target/debug`; the `fast` profile used for device
+builds stays small.
+
 ## Launcher icon
 
 The desktop picks its window icon at run time (`src/app/window_icon.rs`): the
