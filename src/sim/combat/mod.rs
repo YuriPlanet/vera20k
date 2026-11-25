@@ -183,7 +183,6 @@ use attack_target::{attack_world_z_leptons, cell_center_coords, target_coords};
 use projectile_delivery::{
     ProjectileDelivery, bullet_type, classify_projectile_delivery, projectile_arm_delay,
 };
-#[cfg(feature = "phobos")]
 use receiver_call::resolve_receive_damage_with_input;
 use receiver_call::{
     BuildingReceivePrelude, ResolvedReceiveDamage, apply_building_receive_prelude,

@@ -113,6 +113,7 @@ use vera20k_wasm_ext::decide::{
     DECIDABLE_EVENTS, DECIDE_BUDGET, DECISION_ONLY_EVENTS, DecideRecord, EVENT_COMMAND_ALLOWED,
     EVENT_DEFEAT, EVENT_PRODUCTION_ALLOWED, EVENT_PRODUCTION_QUEUED,
 };
+use vera20k_wasm_ext::triggers::EventDef;
 use vera20k_wasm_ext::{EventRecord, Export, Invalid, Status, TriggerDef};
 
 use super::{ModuleEvent, ModuleSource, techno_type};
@@ -148,6 +149,10 @@ struct Decided {
 
 /// (module, subject creation serial, event kind).
 type StreamKey = (ModuleSource, u64, i32);
+
+/// A link's record `value` and `value2` from its trigger's event and its
+/// `previous` ([`Simulation::decide_module_event_shaped`]).
+pub(crate) type LinkShape<'s> = dyn Fn(&EventDef, i64) -> (i64, i64) + 's;
 
 impl DecideState {
     fn roll_to(&mut self, frame: u32) {
@@ -240,7 +245,22 @@ impl Simulation {
         native: i64,
         accept: impl Fn(i64) -> Option<i64>,
     ) -> Option<i64> {
-        self.decide_chain(rules, event, house, type_id, native, None, accept)
+        self.decide_chain(rules, event, house, type_id, native, None, None, accept)
+            .answer
+    }
+
+    /// [`Self::decide_module_event`] whose records each link shapes with
+    /// `shape` (`DamageIncoming`): its `value` and `value2` from the link's
+    /// own trigger event and its `previous`.
+    pub(crate) fn decide_module_event_shaped(
+        &mut self,
+        rules: &RuleSet,
+        event: &ModuleEvent,
+        native: i64,
+        shape: &LinkShape<'_>,
+        accept: impl Fn(i64) -> Option<i64>,
+    ) -> Option<i64> {
+        self.decide_chain(rules, event, None, None, native, None, Some(shape), accept)
             .answer
     }
 
@@ -255,6 +275,7 @@ impl Simulation {
         type_id: Option<u32>,
         native: i64,
         cached: Option<i64>,
+        shape: Option<&LinkShape<'_>>,
         accept: impl Fn(i64) -> Option<i64>,
     ) -> Decided {
         let mut decided = Decided {
@@ -278,8 +299,16 @@ impl Simulation {
         handles.sort_by_key(|handle| triggers.get(*handle).map(|t| t.source));
         for handle in handles {
             let previous = decided.answer.unwrap_or(native);
-            match self.ask_decider(rules, handle, event, house, native, previous) {
-                Some(Link::Answered(answer)) => decided.answer = accept(answer).or(decided.answer),
+            match self.ask_decider(rules, handle, event, house, native, previous, shape) {
+                // A shaped chain (`DamageIncoming`) takes 0 or an answer with
+                // the sign of the link's `previous`.
+                Some(Link::Answered(answer)) => {
+                    decided.answer = accept(answer)
+                        .filter(|&answer| {
+                            shape.is_none() || answer == 0 || answer.signum() == previous.signum()
+                        })
+                        .or(decided.answer);
+                }
                 Some(Link::Unasked) => {
                     decided.unasked = true;
                     decided.answer = cached.or(decided.answer);
@@ -301,6 +330,7 @@ impl Simulation {
         house: Option<u32>,
         native: i64,
         previous: i64,
+        shape: Option<&LinkShape<'_>>,
     ) -> Option<Link> {
         let difficulty = self.trigger_difficulty();
         let trigger = self.trigger_runtime.module_triggers().get(handle)?;
@@ -308,7 +338,8 @@ impl Simulation {
             return None;
         }
         let (source, key, fixed_house) = (trigger.source, trigger.decide_key, trigger.house);
-        let clauses = trigger.events.first()?.clauses.clone();
+        let def = trigger.events.first()?.clone();
+        let clauses = def.clauses.clone();
         let index = self
             .ext_modules
             .slots
@@ -343,7 +374,7 @@ impl Simulation {
         {
             return None;
         }
-        let record = DecideRecord {
+        let mut record = DecideRecord {
             event: EventRecord {
                 key,
                 ..self.module_event_record(rules, source, handle, event.subject, event, house)
@@ -351,6 +382,9 @@ impl Simulation {
             native,
             previous,
         };
+        if let Some(shape) = shape {
+            (record.event.value, record.event.value2) = shape(&def, previous);
+        }
         let stream_key = (source, event.subject, event.kind);
         let seed = self.session.seed();
         let decide = &mut self.ext_modules.decide;
@@ -415,7 +449,16 @@ impl Simulation {
             return true;
         };
         let event = ModuleEvent::new(EVENT_DEFEAT, 0);
-        let decided = self.decide_chain(rules, &event, Some(house as u32), None, 1, None, allow);
+        let decided = self.decide_chain(
+            rules,
+            &event,
+            Some(house as u32),
+            None,
+            1,
+            None,
+            None,
+            allow,
+        );
         !decided.unasked && decided.answer != Some(0)
     }
 }
@@ -464,6 +507,7 @@ impl Simulation {
                     i64::from(native),
                     // A refusal does not lapse because the budget did.
                     last.contains(&(house, type_id)).then_some(0),
+                    None,
                     allow,
                 );
                 // The sidebar's native answer is the input to the decision.
@@ -552,6 +596,6 @@ pub(crate) enum CommandAdmission {
 }
 
 /// A yes/no result: 1 or 0; anything else keeps the previous result.
-fn allow(answer: i64) -> Option<i64> {
+pub(crate) fn allow(answer: i64) -> Option<i64> {
     matches!(answer, 0 | 1).then_some(answer)
 }
