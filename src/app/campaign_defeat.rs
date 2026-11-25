@@ -56,22 +56,36 @@ impl App {
                     defeat,
                 )),
             ),
-            None => Self::open_campaign_replay_prompt(state, defeat),
+            None => Self::open_campaign_replay_prompt(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+                defeat,
+            ),
         }
     }
 
     /// The Lose movie has returned: ask over the empty shell backdrop.
-    pub(super) fn open_campaign_replay_prompt(state: &mut AppState, defeat: CampaignDefeat) {
-        let csf = |key: &str, fallback: &str| state.csf_label(key, fallback);
+    pub(super) fn open_campaign_replay_prompt(
+        window: &winit::window::Window,
+        renderer: &crate::app::renderer_state::RendererState,
+        frontend: &mut crate::app::frontend::state::FrontendState,
+        process_assets: &crate::app::process_assets::ProcessAssets,
+        options_profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+        defeat: CampaignDefeat,
+    ) {
+        let csf = |key: &str, fallback: &str| process_assets.csf_label(key, fallback);
         let shell_box = crate::ui::main_menu_dialogs::campaign_replay(&csf);
-        Self::destroy_current_shell_dialog(state);
-        state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
+        Self::destroy_current_shell_dialog(frontend);
+        frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
         Self::open_shell_message_box(
-            &state.platform.window,
-            &state.renderer,
-            &mut state.frontend,
-            &state.process_assets,
-            &state.persistence.options_profile,
+            window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
             shell_box,
             crate::app::frontend::state::ShellMessageBoxPurpose::CampaignReplay(defeat.retry),
         );
@@ -103,7 +117,7 @@ impl App {
 
     /// `0x006863C3` clears g_GameActive; PrepareSession rebuilds the shell.
     fn resume_shell_after_campaign_defeat(state: &mut AppState) {
-        Self::destroy_current_shell_dialog(state);
+        Self::destroy_current_shell_dialog(&mut state.frontend);
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
         Self::resume_shell_after_match(state);
     }

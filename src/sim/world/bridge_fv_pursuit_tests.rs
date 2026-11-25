@@ -334,8 +334,8 @@ fn command_paid_fv(
     let sim = &mut runtime.simulation;
     sim.session.set_binary_frame_for_test(1);
     let owner = sim.resolve(sim.session.current_house().unwrap()).to_owned();
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         &owner,
         &Command::ForceAttackCell {
             attacker_id: id,
@@ -345,7 +345,7 @@ fn command_paid_fv(
         &runtime.resources.rules,
         Some(runtime.resources.rules.overlay_registry()),
         &mut crate::sim::world::FrameEffects::default(),
-    ));
+    )).is_ok());
     id
 }
 
@@ -425,14 +425,14 @@ fn retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native() {
                         let owner = sim
                             .resolve(sim.substrate.entities.get(id).unwrap().owner())
                             .to_owned();
-                        assert!(sim.apply_command_with_overlays(
-                            None,
+                        assert!((sim.apply_command_with_overlays(
+                            crate::sim::command::CommandSender::Player(None),
                             &owner,
                             &Command::Stop { entity_id: id },
                             &runtime.resources.rules,
                             Some(runtime.resources.rules.overlay_registry()),
                             &mut crate::sim::world::FrameEffects::default(),
-                        ));
+                        )).is_ok());
                     }
                     let calls = &outside_frames[frame as usize - 1];
                     assert_eq!(calls["logic_frame"], frame);

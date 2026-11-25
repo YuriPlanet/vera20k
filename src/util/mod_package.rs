@@ -198,7 +198,8 @@ mod native {
     }
 
     fn asset_directory(name: &str) -> bool {
-        ["ini", "resources", "maps", "mixfiles", "taunts"]
+        // `hd_art`: an HD art pack (`render::hd_art`), alone or in a mod.
+        ["ini", "resources", "maps", "mixfiles", "taunts", "hd_art"]
             .iter()
             .any(|asset| asset.eq_ignore_ascii_case(name))
     }
@@ -370,14 +371,6 @@ mod native {
                 )));
             }
             for entry in fs::read_dir(source)? {
-                {
-                    use std::sync::atomic::{AtomicU64, Ordering};
-                    static SEEN: AtomicU64 = AtomicU64::new(0);
-                    let seen = SEEN.fetch_add(1, Ordering::Relaxed) + 1;
-                    if seen % 2048 == 0 {
-                        log::info!("mod import: {seen} folder entries written");
-                    }
-                }
                 self.entry()?;
                 let entry = entry?;
                 let name = entry
@@ -423,15 +416,7 @@ mod native {
                 )));
             }
             let entries = zip.files()?;
-            let mut seen = 0u64;
             while let Some(entry) = entries.next() {
-                seen += 1;
-                if seen % 2048 == 0 {
-                    log::info!(
-                        "mod import: {seen} zip entries written, {} MiB left of budget",
-                        self.bytes_left >> 20
-                    );
-                }
                 self.entry()?;
                 let entry = entry?;
                 let mut name = entry.name()?;
@@ -866,8 +851,10 @@ mod native {
                     libc::RENAME_NOREPLACE,
                 )
             };
-            // An Android folder name is checked before the rename; bionic has no
-            // renameat2 to make it exclusive there.
+            // Android: bionic has no exclusive rename. The folder sits in the
+            // app's private storage, which no other program writes, and the
+            // name was looked up under the import lock.
+            // SAFETY: both arguments are NUL-terminated and live for the call.
             #[cfg(target_os = "android")]
             let result = unsafe { libc::rename(from.as_ptr(), to.as_ptr()) };
             if result == 0 {
@@ -904,7 +891,6 @@ mod native {
     not(all(target_arch = "wasm32", target_os = "unknown"))
 ))]
 mod tests {
-
     use super::*;
     use std::fs::{self, File};
     use std::io::Write;

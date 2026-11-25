@@ -188,8 +188,8 @@ pub(crate) fn select_at_cell(state: &mut AppState, cell: (u16, u16)) {
 
 /// `DeleteCommand 0x00731A10`'s beacon arm: with no planning node to delete,
 /// `DeleteBeacon(-1, -1)` (`0x00731A24`).
-pub(crate) fn delete_selected(state: &mut AppState) {
-    beacons::delete_beacon(&mut state.match_state, BeaconTarget::Selected);
+pub(crate) fn delete_selected(match_state: &mut MatchState) {
+    beacons::delete_beacon(match_state, BeaconTarget::Selected);
 }
 
 #[cfg(all(test, tests_app_input_a_c))]

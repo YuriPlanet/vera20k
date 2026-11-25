@@ -71,24 +71,24 @@ impl ModSwitch {
     }
 }
 
-/// Take `--mod <folder>` or `--no-mod` out of the process arguments, wherever
-/// it stands. The retail switch table matches by substring (`-CD`) and must
-/// never see a folder's name, and the other modes' parsers take exact lists.
-/// The entry a platform's launcher handed over: `mod:<folder>` picks that
-/// folder for this launch, anything else (including an empty string) picks
-/// nothing. Android shortcuts pass it as an intent extra (`docs/android.md`).
-/// The file in a mod's folder that carries its stable id, so a launcher
-/// shortcut keeps working when the folder is renamed.
-pub const MOD_ID_FILE: &str = ".vera20k-mod-id";
+/// Android: the file in a mod's folder that carries its stable id, so a
+/// launcher shortcut keeps working when the folder is renamed. The activity
+/// and the Android crate read the same name (`VeraActivity`,
+/// `android/src/lib.rs`). A dot-file: Check Files and a mod's digest skip it
+/// ([`left_by_a_system`]).
+#[cfg(any(target_os = "android", test))]
+const MOD_ID_FILE: &str = ".vera20k-mod-id";
 
-/// `dir`'s stable id, or `None` when it has no file and one cannot be made.
+/// Android: `dir`'s stable id, or `None` when it has none.
+#[cfg(any(target_os = "android", test))]
 pub(crate) fn mod_id(dir: &Path) -> Option<String> {
     let text = std::fs::read_to_string(dir.join(MOD_ID_FILE)).ok()?;
     let id = text.trim();
     (!id.is_empty() && id.chars().all(|c| c.is_ascii_hexdigit())).then(|| id.to_owned())
 }
 
-/// Writes a stable id into `dir` when it has none, and returns it.
+/// Android: writes a stable id into `dir` when it has none, and returns it.
+#[cfg(any(target_os = "android", test))]
 pub(crate) fn ensure_mod_id(dir: &Path) -> Option<String> {
     if let Some(id) = mod_id(dir) {
         return Some(id);
@@ -111,11 +111,17 @@ pub(crate) fn ensure_mod_id(dir: &Path) -> Option<String> {
     Some(id)
 }
 
+/// The entry a platform's launcher handed over: `mod:<folder>` picks that
+/// folder for this launch, anything else (including an empty string) picks
+/// nothing. Android shortcuts pass it as an intent extra (`docs/android.md`).
 pub fn launch_entry_switch(entry: &str) -> Option<ModSwitch> {
     let folder = entry.strip_prefix("mod:")?.trim();
     (!folder.is_empty()).then(|| ModSwitch::Use(folder.to_owned()))
 }
 
+/// Take `--mod <folder>` or `--no-mod` out of the process arguments, wherever
+/// it stands. The retail switch table matches by substring (`-CD`) and must
+/// never see a folder's name, and the other modes' parsers take exact lists.
 pub fn take_switch(args: Vec<OsString>) -> Result<(Option<ModSwitch>, Vec<OsString>)> {
     let mut switch = None;
     let mut rest = Vec::with_capacity(args.len());
@@ -179,6 +185,18 @@ pub(crate) struct Mods {
     pub(crate) page: Option<Vec<Listed>>,
     /// The page's Check Files, from its button to its last box.
     pub(crate) files_check: Option<crate::app::mod_files::PageCheck>,
+    /// Android: the page's name dialog while it is up (`App::open_name_dialog`).
+    #[cfg(target_os = "android")]
+    pub(crate) name_dialog: Option<NameDialog>,
+}
+
+/// Android: what the Mods page's name dialog names: a new mod, or this folder
+/// under a new name.
+#[cfg(target_os = "android")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum NameDialog {
+    New,
+    Rename(String),
 }
 
 impl Mods {
@@ -298,36 +316,7 @@ pub(crate) fn name_and_version(dir: &Path, folder: &str) -> (String, String) {
     )
 }
 
-/// `1`, `1.2` or `1.2.3` as three numbers, absent ones 0; anything else,
-/// such as a later scheme this build does not know, is `None`.
-fn version_parts(text: &str) -> Option<[u32; 3]> {
-    let mut parts = [0; 3];
-    let mut given = text.trim().split('.');
-    for part in &mut parts {
-        match given.next() {
-            Some(digits) if digits.len() <= 9 && !digits.is_empty() => {
-                *part = digits
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit())
-                    .then(|| digits.parse().ok())
-                    .flatten()?;
-            }
-            Some(_) => return None,
-            None => break,
-        }
-    }
-    given.next().is_none().then_some(parts)
-}
-
-/// Whether this build, `current`, can play a mod that needs `needs`. A build
-/// whose own version does not read as three numbers refuses nothing.
-fn version_serves(current: &str, needs: &str) -> bool {
-    match (version_parts(current), version_parts(needs)) {
-        (Some(current), Some(needs)) => current >= needs,
-        (None, _) => true,
-        (Some(_), None) => false,
-    }
-}
+use crate::util::version::version_serves;
 
 /// The folder in `mods_dir` that `name` names, whatever its case: its own
 /// spelling and its path. A name that is not one plain folder name (empty, a
@@ -901,6 +890,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[test]
     fn a_launcher_entry_picks_a_mod_folder_and_nothing_else() {
         assert_eq!(
             launch_entry_switch("mod:Winter War"),

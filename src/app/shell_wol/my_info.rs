@@ -10,14 +10,21 @@ use super::leaf::{self, Pointer};
 use super::service::{self, WolServiceRequest};
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::persistence::wol_profile::WolPersona;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_wol::WolVisit;
 use crate::app::{App, AppState};
+use crate::audio::sfx::SfxPlayer;
+use crate::render::gpu::GpuContext;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::page::PageEvent;
 use crate::ui::skirmish_shell::{SkirmishComboItem, SkirmishCountryChoice};
 use crate::ui::wol_my_info::*;
 use crate::util::config::GameConfig;
+use winit::window::Window;
 
 fn view(persona: &WolPersona) -> MyInfoPersona {
     MyInfoPersona {
@@ -40,9 +47,12 @@ fn auto_login_names(frontend: &FrontendState, game_config: Option<&GameConfig>) 
 
 /// `0x4E3A00`'s rows: `GUI:RandomEx` (-2), then the multiplayer countries
 /// by their item data.
-fn country_rows(state: &AppState) -> Vec<MyInfoRow> {
-    let items = state
-        .rules()
+fn country_rows(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) -> Vec<MyInfoRow> {
+    let items = crate::app::state::active_rules(frontend, match_state)
         .map(crate::ui::skirmish_shell::country_choices)
         .unwrap_or_default();
     items
@@ -50,14 +60,14 @@ fn country_rows(state: &AppState) -> Vec<MyInfoRow> {
         .map(|item| match item {
             SkirmishComboItem::Country(SkirmishCountryChoice::Country(country)) => MyInfoRow::text(
                 crate::app::frontend::skirmish_shell_render::combo_item_label(
-                    &state.frontend,
-                    &state.match_state,
-                    &state.process_assets,
+                    frontend,
+                    match_state,
+                    process_assets,
                     item,
                 ),
                 crate::app::frontend::skirmish_shell_render::side_item_data_for_country(country),
             ),
-            _ => MyInfoRow::text(state.csf_text("GUI:RandomEx"), -2),
+            _ => MyInfoRow::text(process_assets.csf_text("GUI:RandomEx"), -2),
         })
         .collect()
 }
@@ -65,47 +75,62 @@ fn country_rows(state: &AppState) -> Vec<MyInfoRow> {
 /// `0x4E43C0` releases every colour, so `0x4E45A0` lists
 /// `GUI:RandomAsSymbols` (-2) and every swatch: gamemd's eight, then VERA's
 /// extra lobby colours.
-fn color_rows(state: &AppState) -> Vec<MyInfoRow> {
-    crate::ui::skirmish_shell::available_color_choices(state.lobby_colors(), None, [])
-        .into_iter()
-        .map(|item| match item {
-            SkirmishComboItem::Color(index) => MyInfoRow {
-                text: String::new(),
-                data: index as i32,
-                swatch: Some(index),
-            },
-            _ => MyInfoRow::text(
-                crate::app::frontend::skirmish_shell_render::combo_item_label(
-                    &state.frontend,
-                    &state.match_state,
-                    &state.process_assets,
-                    item,
-                ),
-                -2,
+fn color_rows(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) -> Vec<MyInfoRow> {
+    crate::ui::skirmish_shell::available_color_choices(
+        crate::app::state::lobby_colors(frontend, match_state),
+        None,
+        [],
+    )
+    .into_iter()
+    .map(|item| match item {
+        SkirmishComboItem::Color(index) => MyInfoRow {
+            text: String::new(),
+            data: index as i32,
+            swatch: Some(index),
+        },
+        _ => MyInfoRow::text(
+            crate::app::frontend::skirmish_shell_render::combo_item_label(
+                frontend,
+                match_state,
+                process_assets,
+                item,
             ),
-        })
-        .collect()
+            -2,
+        ),
+    })
+    .collect()
 }
 
 /// The driver past `0x797640` (`0x00799E47..0x00799E70`): the art, then
 /// `0x114`. Its locale combo asks the service for the count (API+0xD0).
 /// The ladder requests (`0x00799DAD..0x00799E47`) need the ladder service
 /// `[0xAC1170]`; none is modelled, so none is sent.
-pub(super) fn open(state: &mut AppState) {
-    let nickname = state.frontend.wol_account.nickname.clone();
+pub(super) fn open(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+) {
+    let nickname = frontend.wol_account.nickname.clone();
     let persona = super::persona::load(
-        state.frontend.wol.as_ref(),
-        state.platform.game_config.as_ref(),
-        &state.process_assets,
+        frontend.wol.as_ref(),
+        game_config,
+        process_assets,
         &nickname,
     );
-    let texts = super::persona::profile_texts(&state.process_assets, &nickname, &persona);
-    let auto_login = auto_login_names(&state.frontend, state.platform.game_config.as_ref());
-    let default_text = state.csf_text(DEFAULT_KEY);
-    let unknown = state.csf_text(UNKNOWN_STATS_KEY);
-    let countries = country_rows(state);
-    let colors = color_rows(state);
-    let Some(visit) = state.frontend.wol.as_ref() else {
+    let texts = super::persona::profile_texts(process_assets, &nickname, &persona);
+    let auto_login = auto_login_names(frontend, game_config);
+    let default_text = process_assets.csf_text(DEFAULT_KEY);
+    let unknown = process_assets.csf_text(UNKNOWN_STATS_KEY);
+    let countries = country_rows(frontend, match_state, process_assets);
+    let colors = color_rows(frontend, match_state, process_assets);
+    let Some(visit) = frontend.wol.as_ref() else {
         return;
     };
     let nicknames = visit
@@ -132,18 +157,12 @@ pub(super) fn open(state: &mut AppState) {
         countries,
         colors,
     };
-    super::leaf::open_art(state, DIALOG);
-    let _ = App::ensure_skirmish_shell_chrome(
-        &state.renderer,
-        &mut state.frontend,
-        &state.process_assets,
-        &state.persistence.options_profile,
-    );
-    state.frontend.shell_controller.reset_to(DIALOG);
-    let Some(root) = sync(state) else {
+    super::leaf::open_art(frontend, process_assets, renderer, DIALOG);
+    let _ = App::ensure_skirmish_shell_chrome(renderer, frontend, process_assets, options_profile);
+    frontend.shell_controller.reset_to(DIALOG);
+    let Some(root) = sync(&mut frontend.shell_controller, renderer) else {
         return;
     };
-    let frontend = &mut state.frontend;
     let gui = frontend.shell_controller.gui_mut();
     let persona = view(&persona);
     let page = WolMyInfoPage::open(
@@ -157,21 +176,30 @@ pub(super) fn open(state: &mut AppState) {
 
 /// API+0xD0's count fills `0x62A` (`0x00798F50`) and selects the persona's
 /// locale.
-pub(super) fn locale_count(state: &mut AppState, count: i32) {
-    let nickname = state.frontend.wol_account.nickname.clone();
+pub(super) fn locale_count(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    count: i32,
+) {
+    let nickname = frontend.wol_account.nickname.clone();
     let persona = super::persona::load(
-        state.frontend.wol.as_ref(),
-        state.platform.game_config.as_ref(),
-        &state.process_assets,
+        frontend.wol.as_ref(),
+        game_config,
+        process_assets,
         &nickname,
     );
-    let rows = crate::ui::wol_persona::locale_rows(
-        (0..count.max(0)).map(|locale| (locale, state.csf_text(&format!("WOL:Locale{locale:02}")))),
-    );
+    let rows = crate::ui::wol_persona::locale_rows((0..count.max(0)).map(|locale| {
+        (
+            locale,
+            process_assets.csf_text(&format!("WOL:Locale{locale:02}")),
+        )
+    }));
     let rows = (rows.into_iter())
         .map(|row| MyInfoRow::text(row.text, row.locale))
         .collect();
-    with_page(state, |page, gui, root| {
+    with_page(frontend, renderer, |page, gui, root| {
         page.fill_locales(gui, root, rows, persona.locale)
     });
 }
@@ -185,11 +213,11 @@ pub(crate) fn page(wol: Option<&WolVisit>) -> Option<&WolMyInfoPage> {
 
 /// Runs `f` on the page and its widgets.
 fn with_page<R>(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
+    renderer: &RendererState,
     f: impl FnOnce(&mut WolMyInfoPage, &mut vera20k_gui::Gui, NodeId) -> R,
 ) -> Option<R> {
-    let root = sync(state)?;
-    let frontend = &mut state.frontend;
+    let root = sync(&mut frontend.shell_controller, renderer)?;
     match &mut frontend.wol.as_mut()?.page {
         WolPage::MyInformation(page) => Some(f(page, frontend.shell_controller.gui_mut(), root)),
         _ => None,
@@ -205,16 +233,16 @@ pub(super) fn page_open(wol: Option<&WolVisit>) -> bool {
     page(wol).is_some()
 }
 
-pub(crate) fn layout(state: &AppState) -> WolMyInfoLayout {
-    shell_layout::on(&state.renderer.gpu, WolMyInfoLayout::new)
+pub(crate) fn layout(gpu: &GpuContext) -> WolMyInfoLayout {
+    shell_layout::on(gpu, WolMyInfoLayout::new)
 }
 
 /// Builds and places `0x114`'s widgets; the root.
-pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
-    let layout = layout(state);
+pub(crate) fn sync(controller: &mut DialogController, renderer: &RendererState) -> Option<NodeId> {
+    let layout = layout(&renderer.gpu);
     leaf::sync(
-        &mut state.frontend.shell_controller,
-        &state.renderer.bit_font,
+        controller,
+        &renderer.bit_font,
         DIALOG,
         layout.page.scale,
         spec,
@@ -281,7 +309,7 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
             let texts = super::persona::profile_texts(&state.process_assets, &name, &persona);
             let auto_login = auto_login_names(&state.frontend, state.platform.game_config.as_ref());
             let persona = view(&persona);
-            with_page(state, |page, gui, root| {
+            with_page(&mut state.frontend, &state.renderer, |page, gui, root| {
                 page.nickname_changed(gui, root, &persona, texts, !name.is_empty(), auto_login)
             });
         }
@@ -348,7 +376,7 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
             );
             let texts = super::persona::profile_texts(&state.process_assets, "", &default);
             let default = view(&default);
-            with_page(state, |page, gui, root| {
+            with_page(&mut state.frontend, &state.renderer, |page, gui, root| {
                 page.refresh(gui, root, &default, texts)
             });
         }
@@ -383,25 +411,50 @@ pub(crate) fn commit_close(state: &mut AppState, control: u16) {
     service::begin_flow(state);
 }
 
-pub(super) fn cursor_moved(state: &mut AppState) {
-    sync(state);
-    leaf::pointer(state, Pointer::Move);
+pub(super) fn cursor_moved(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    sync(&mut frontend.shell_controller, renderer);
+    leaf::pointer(
+        frontend,
+        window,
+        match_state,
+        process_assets,
+        sfx_player,
+        Pointer::Move,
+    );
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
-    if sync(state).is_none() {
+    if sync(&mut state.frontend.shell_controller, &state.renderer).is_none() {
         return;
     }
-    for event in leaf::pointer(state, if pressed { Pointer::Down } else { Pointer::Up }) {
+    for event in leaf::pointer(
+        &mut state.frontend,
+        &state.platform.window,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        if pressed { Pointer::Down } else { Pointer::Up },
+    ) {
         // CBN_SELCHANGE, a box's BS_AUTOCHECKBOX flip, a released button.
-        let action = with_page(state, |page, gui, root| match event {
-            PageEvent::Picked(id, row) => usize::try_from(row)
-                .ok()
-                .and_then(|row| page.select(id, row)),
-            PageEvent::Toggled(id, checked) => WolMyInfoPage::toggle(id, checked),
-            PageEvent::Activated(id) => page.activate(gui, root, id),
-            _ => None,
-        });
+        let action = with_page(
+            &mut state.frontend,
+            &state.renderer,
+            |page, gui, root| match event {
+                PageEvent::Picked(id, row) => usize::try_from(row)
+                    .ok()
+                    .and_then(|row| page.select(id, row)),
+                PageEvent::Toggled(id, checked) => WolMyInfoPage::toggle(id, checked),
+                PageEvent::Activated(id) => page.activate(gui, root, id),
+                _ => None,
+            },
+        );
         match action {
             Some(Some(action)) => apply(state, action),
             Some(None) => {}

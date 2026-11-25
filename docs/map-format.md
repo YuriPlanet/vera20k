@@ -14,11 +14,11 @@ shorter.
 A map plays in both games when:
 
 - the width plus height in `[Map] Size=` is 512 or less,
-- it has at most eight start waypoints (0 to 7), and
+- it has at most eight start waypoints (0 to 7),
+- all waypoints fit the original range (0 to 701), and
 - its painted terrain exists in the original game.
 
-Maps past either size or player limit, and maps that use VERA’s ice tiles,
-require VERA20k.
+Maps outside these limits require VERA20k.
 
 ## Bundled ice for snow maps
 
@@ -89,12 +89,19 @@ can use waypoints 0 to 7 on any map. On a map for 30 players, waypoint 12 is pla
 still seat at most thirty players; the larger counts are for offline Skirmish.
 
 What a map can't do is put a waypoint below `MaxPlayers` anywhere other than a
-start. On a new map, number other points from `MaxPlayers` up. Keys go to 701,
-and 699 is the home cell unless `[Basic] HomeCell=` names another. An older map
+start. On a new map, number other points from `MaxPlayers` up. An older map
 that uses waypoints 8 and up for its own points needs those points renumbered,
 everywhere they are used, before it can take more players. Editors should warn
 when a trigger, team or script uses a waypoint that more players would turn into
 a start.
+
+`[Waypoints]` accepts decimal keys from `0` through `18277`. Alphabetic fields,
+such as trigger destinations and a team's `Waypoint=` or `TransportWaypoint=`,
+use `A` through `ZZZ` without regard to case. `ZZ` is `701`, `AAA` is `702`,
+and `ZZZ` is `18277`. Three-letter labels allow surrounding whitespace.
+Maps and saves that rely on `AAA` through `ZZZ` need a VERA20k build with
+extended waypoint support. The home cell defaults to `699` and can be set
+with `[Basic] HomeCell=`.
 
 ### Houses for players 9 to 120
 

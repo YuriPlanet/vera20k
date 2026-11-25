@@ -7,12 +7,15 @@
 //! the panel's own widgets
 //! ([`crate::app::frontend::menu_page_render::paint_panel_statics`]); the
 //! frame stays here.
+use super::SHELL_CONTROL_DEPTH;
+use super::chrome::push_slide_column;
 #[cfg(test)]
 use super::controls::{frame_segments, group_box_geometry, push_group_or_plain_frame};
 use super::gui_paint::{ButtonArt, ComboArt, FrameArt, GuiStyle, HostRows, SideButtons};
 use super::in_game_shell::{self, InGameShellFrame, ShellFrameArt, ShellFrameOverlay};
 use crate::app::AppState;
 use crate::app::frontend::menu_page_render::{PanelStatic, paint_panel_statics};
+use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::shell::geom::{RETAIL_SCALE, RectPx, ShellScale};
@@ -37,15 +40,39 @@ pub(crate) fn render_keyboard_shell(
         .parent
         == KeyboardParent::GameControls;
     // The in-game A3 sits in the active-game shell's pixels.
-    let shell = active
-        .then(|| in_game_shell::current_in_game_shell_layout(state).expect("active A3 frame"));
+    let shell = active.then(|| {
+        in_game_shell::current_in_game_shell_layout(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        )
+        .expect("active A3 frame")
+    });
     let (width, height) = shell.map_or(
         (state.render_width() as i32, state.render_height() as i32),
         |shell| (shell.width, shell.height),
     );
-    // VERA opens and closes the front-end page in place, like a page of its
-    // Options window (`shell_transition::moves_in_place`, `exits_in_place`):
-    // no slide reaches this draw.
+    // The front-end page slides like its family: the teardown slide keeps
+    // every child blank, and the entry slide suppresses the heading, status
+    // line and Back (`0x00606800`) while the left-side controls paint.
+    let exit_wave = (!active)
+        .then(|| {
+            crate::app::frontend::shell_transition::shell_exit_wave(
+                &state.frontend.shell_exit,
+                ShellSlideKind::Keyboard,
+            )
+            .cloned()
+        })
+        .flatten();
+    let leaving = exit_wave.is_some();
+    let wave = exit_wave.or_else(|| {
+        (!active)
+            .then(|| state.frontend.shell_first_paint_slide.clone())
+            .flatten()
+    });
+    let sliding = wave.is_some();
     let title = if active {
         let dialog = state
             .frontend
@@ -57,11 +84,14 @@ pub(crate) fn render_keyboard_shell(
         dialog.title.start(now);
         dialog.title.paint(now)
     } else {
-        // Heading and status line are the family statics.
-        state.frontend.shell_page_title.paint(now)
+        // Heading and status line are the family statics: their reveals
+        // start when the entry slide ends.
+        (!sliding)
+            .then(|| state.frontend.shell_page_title.paint(now))
+            .flatten()
     };
     let layout = crate::app::input::keyboard::sync(state).expect("active A3 geometry");
-    let status_label = if active {
+    let status_label = if active || sliding {
         None
     } else {
         let help = state
@@ -89,13 +119,19 @@ pub(crate) fn render_keyboard_shell(
         .expect("A3 control art");
     // In game Back is a node on the right panel's type-2 art.
     let mut side = None;
-    let art = if active {
-        let sidebar = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
-            .expect("active A3 side art");
+    let mut art = if active {
+        let sidebar = crate::app::presentation::sidebar_render::current_sidebar_chrome(
+            &state.frontend,
+            &state.match_state,
+        )
+        .expect("active A3 side art");
         let shell = shell.expect("active A3 frame");
         side = Some(SideButtons {
             frames: sidebar.in_game_shell.buttons,
-            theme: crate::app::presentation::sidebar_render::current_sidebar_theme(state),
+            theme: crate::app::presentation::sidebar_render::current_sidebar_theme(
+                &state.frontend,
+                &state.match_state,
+            ),
             clip: RectPx::new(0, 0, width, height),
         });
         in_game_shell::background_instances(sidebar, shell.layout, width, height)
@@ -107,6 +143,37 @@ pub(crate) fn render_keyboard_shell(
             layout.scale,
         )
     };
+    if let Some(wave) = wave.as_ref() {
+        push_slide_column(
+            &mut art,
+            atlas,
+            &crate::ui::skirmish_shell::compute_layout_on(
+                layout.scale,
+                width as u32,
+                height as u32,
+            ),
+            &wave.button_draws(),
+            SHELL_CONTROL_DEPTH,
+        );
+    }
+    if leaving {
+        in_game_shell::render_shell_frame(
+            state,
+            encoder,
+            destination,
+            InGameShellFrame {
+                art,
+                controls: Vec::new(),
+                texts: Vec::new(),
+                label: "Keyboard A3",
+            },
+            ShellFrameArt::Launcher,
+            ShellFrameOverlay::default(),
+            in_game_shell::ShellFrameCursor::Visible,
+        )?;
+        state.platform.window.request_redraw();
+        return Ok(());
+    }
     let mut paint = HudPaint::default();
     // The painter's closures read the state while the frame is built.
     let shared: &AppState = state;
@@ -214,9 +281,12 @@ pub(crate) fn render_keyboard_shell(
         layout.scale,
     );
     paint_ids(&[CAPTURE_FRAME], RETAIL_SCALE);
+    // A slide's column stands in for Back while it runs.
+    if !sliding {
+        paint_ids(&[button(KeyboardButton::Back)], layout.scale);
+    }
     paint_ids(
         &[
-            button(KeyboardButton::Back),
             button(KeyboardButton::Assign),
             button(KeyboardButton::ResetAll),
         ],
@@ -236,7 +306,6 @@ pub(crate) fn render_keyboard_shell(
     );
     // The type-2 Back over the art; the open category list paints over
     // every control and text.
-    let mut art = art;
     paint.drain_lane(Material::Side, &mut art);
     let popup = paint.take_lane(Material::Popup);
     let controls = paint.take_lane(Material::Controls);

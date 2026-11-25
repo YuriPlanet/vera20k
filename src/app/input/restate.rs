@@ -101,7 +101,13 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
     };
     let rect = |id| layout.rect(id);
     let events = DIALOG.route(
-        state,
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        &state.persistence,
         down,
         restate::spec,
         rect,

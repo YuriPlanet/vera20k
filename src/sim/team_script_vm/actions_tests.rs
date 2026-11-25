@@ -233,14 +233,14 @@ fn wall_sale_detach_clears_only_matching_team_target_fields() {
         state.zone = sold;
         teams.push((team, expected_target, expected_focus, id));
     }
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Receiver",
         &Command::SellWallAtCell { x: 4, y: 4 },
         &rules,
         Some(&overlays),
         &mut FrameEffects::default(),
-    ));
+    )).is_ok());
     for (team, expected_target, expected_focus, id) in teams {
         let state = sim.team_script_vm.team(team).unwrap();
         assert_eq!(state.mission_target, expected_target);
@@ -461,7 +461,7 @@ fn patrol_scan_retains_across_type_reset_and_changes_configuration_identity() {
     assert_ne!(hashes[0].1, hashes[1].1);
 }
 
-fn patrol_team_fixture(armed: bool) -> (Simulation, RuleSet, u64, Vec<u64>) {
+fn patrol_team_fixture(armed: bool, waypoint: i32) -> (Simulation, RuleSet, u64, Vec<u64>) {
     let text = if armed {
         let base = RULES.replace(
             "Strength=125\n",
@@ -483,12 +483,13 @@ fn patrol_team_fixture(armed: bool) -> (Simulation, RuleSet, u64, Vec<u64>) {
     .unwrap();
     let mut sim = Simulation::with_seed(0x6ECCE0);
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-    let (team, members, _) = building_team(&mut sim, &rules, &[(16, 11), (2, 0)], &[]);
+    let (team, members, _) = building_team(&mut sim, &rules, &[(16, waypoint), (2, 0)], &[]);
+    let index = waypoint as u32;
     sim.session.install_waypoints(
         &[(
-            11,
+            index,
             crate::map::waypoints::Waypoint {
-                index: 11,
+                index,
                 rx: 30,
                 ry: 20,
             },
@@ -506,7 +507,7 @@ fn patrol_team_fixture(armed: bool) -> (Simulation, RuleSet, u64, Vec<u64>) {
 
 #[test]
 fn patrol_clears_a_lost_target_then_returns_to_the_waypoint_on_the_next_visit() {
-    let (mut sim, rules, team, members) = patrol_team_fixture(false);
+    let (mut sim, rules, team, members) = patrol_team_fixture(false, 18277);
     let old = sim
         .spawn_object_at_height("GAPOWR", "Americans", 20, 10, 0, 0, &rules)
         .unwrap();
@@ -559,7 +560,7 @@ fn patrol_clears_a_lost_target_then_returns_to_the_waypoint_on_the_next_visit() 
 
 #[test]
 fn patrol_scans_on_the_global_period_and_orders_members_to_attack() {
-    let (mut sim, rules, team, members) = patrol_team_fixture(true);
+    let (mut sim, rules, team, members) = patrol_team_fixture(true, 11);
     let enemy = sim
         .spawn_object_at_height("E1", "Americans", 14, 10, 0, 0, &rules)
         .unwrap();
@@ -594,7 +595,7 @@ fn patrol_scans_on_the_global_period_and_orders_members_to_attack() {
 /// four rows apart, each with an American E1 at (14, its row) that its scan
 /// finds. Answers the teams.
 fn patrol_scene(teams: u16) -> (Simulation, RuleSet, Vec<u64>) {
-    let (mut sim, rules, first, _) = patrol_team_fixture(true);
+    let (mut sim, rules, first, _) = patrol_team_fixture(true, 11);
     let russians = sim.interner.get("Russians").unwrap();
     let script = sim.interner.get("BUILDING SCRIPT").unwrap();
     let rows: Vec<u16> = (0..teams).map(|index| 10 + 4 * index).collect();

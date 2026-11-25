@@ -180,8 +180,8 @@ def cargo_args(args: list[str], label: str | None, focus: tuple[str, list[str]] 
 
 # `cargo test --workspace` builds core's tests with the features the client
 # enables on core. A core-only test run gets the same ones, so both reuse one
-# core test executable and its incremental cache; src/Cargo.toml's
-# dev-dependencies align the dependency features the same way.
+# core test executable and its incremental cache; src/Cargo.toml's dev- and
+# build-dependencies align the dependency features the same way.
 WORKSPACE_CORE_FEATURES = ('dev-overlays', 'test-support')
 
 

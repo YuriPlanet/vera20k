@@ -273,7 +273,11 @@ pub(crate) fn launcher_options_layout(
     } else {
         LauncherOptionsLayout::new(width, height, category)
     };
-    let battle = crate::app::App::match_zoom_geometry(state);
+    let battle = crate::app::App::match_zoom_geometry(
+        &state.platform,
+        &state.renderer.gpu,
+        &state.persistence.options_profile,
+    );
     layout.with_battle_frame((battle.src_width, battle.src_height))
 }
 

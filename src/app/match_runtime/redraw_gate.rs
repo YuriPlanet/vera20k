@@ -201,7 +201,7 @@ pub(crate) fn still_frame(
                 || (presentation.ares_fps_counter
                     && state.rules().is_some_and(crate::rules::ruleset::RuleSet::ares))
                 || (state.use_software_cursor() && input.software_cursor_step_due())
-                || crate::app::presentation::super_timers::blink_due(state);
+                || crate::app::presentation::super_timers::blink_due(&state.diag, &state.match_state);
             (!moving).then(|| StillFrame::Battlefield {
                 revision,
                 composite: presentation.tactical_composite.ticks(),

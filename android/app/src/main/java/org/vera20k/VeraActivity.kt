@@ -2,11 +2,6 @@ package org.vera20k
 
 import android.app.Activity
 import android.app.ActivityManager.TaskDescription
-import android.app.NativeActivity
-import android.os.Build
-import android.os.Bundle
-import android.view.RoundedCorner
-import android.view.WindowInsets
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.ShortcutInfo
@@ -19,29 +14,122 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.Uri
+import android.os.Build
+import android.os.Bundle
 import android.os.Process
 import android.provider.DocumentsContract
 import android.provider.Settings
+import android.text.InputType
+import android.view.RoundedCorner
+import android.view.WindowInsets
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
+import com.google.androidgamesdk.GameActivity
 import java.io.File
 import java.io.IOException
 
 /**
- * The app's activity: [NativeActivity] plus the one Android feature the NDK
+ * The app's activity: [GameActivity] plus the one Android feature the NDK
  * cannot reach on its own — the system folder picker.
  *
- * The engine runs on [NativeActivity]'s surface and thread; this class adds no
- * UI. It starts `ACTION_OPEN_DOCUMENT_TREE` for the asset-import dialog and
+ * The engine runs on [GameActivity]'s surface and thread; this class adds no
+ * UI beyond the platform's. GameActivity is the backend that carries text
+ * input, so the engine's chat edits can take IME events here. It starts
+ * `ACTION_OPEN_DOCUMENT_TREE` for the asset-import dialog and
  * hands the chosen tree back to Rust through [nativeOnFolderPicked], because a
  * Storage Access Framework tree has no filesystem path: only Java's
  * `ContentResolver` can read it.
  */
-class VeraActivity : NativeActivity() {
+class VeraActivity : GameActivity() {
+    /** How far the screen's top-left corner hides the game, in screen pixels.
+     * The UI thread writes them and the game thread reads them. */
+    @Volatile
+    private var displayInsetLeft = 0
+    @Volatile
+    private var displayInsetTop = 0
+
+    /** The cutout and corner radius at the window's top-left (`display_insets`). */
+    fun displayInsetLeft(): Int = displayInsetLeft
+
+    fun displayInsetTop(): Int = displayInsetTop
+
+    /**
+     * Mark the focused edit as a password box (or not), so the keyboard's
+     * dictionary and suggestions never learn it. Called from Rust through
+     * [org.vera20k]'s `ime_secret` hook as the login page's focus moves.
+     *
+     * A keyboard that is already up keeps the editor info it attached with, so
+     * the input method has to be restarted to read the new one; without that the
+     * password field would keep the previous field's mode and the other way
+     * round.
+     */
+    fun setImeKind(secret: Boolean) {
+        val inputType = if (secret) {
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        } else {
+            InputType.TYPE_CLASS_TEXT
+        }
+        val imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN or
+            if (secret) EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING else 0
+        setImeEditorInfoFields(inputType, EditorInfo.IME_ACTION_DONE, imeOptions)
+        val view = mSurfaceView ?: return
+        getSystemService(InputMethodManager::class.java)?.restartInput(view)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        // GameActivity defaults to TYPE_NULL (0), which puts its InputConnection
+        // into raw-key mode (fullEditor = false, mForwardKeyEvents = true). Its
+        // sendKeyEvent then dispatches KEYCODE_DEL to the view's OnKeyListener
+        // and also calls processKeyEvent itself, deleting two characters per
+        // backspace and leaving Chinese IMEs without a text editor.
+        setImeEditorInfoFields(
+            InputType.TYPE_CLASS_TEXT,
+            EditorInfo.IME_ACTION_DONE,
+            EditorInfo.IME_FLAG_NO_FULLSCREEN,
+        )
+        super.onCreate(savedInstanceState)
+        window.decorView.setOnApplyWindowInsetsListener { _, insets ->
+            updateDisplayInsets(insets)
+            insets
+        }
+        window.decorView.requestApplyInsets()
+        pruneModShortcuts()
+        clearPickedModParts()
+    }
+
+    private fun updateDisplayInsets(insets: WindowInsets) {
+        if (Build.VERSION.SDK_INT < 28) {
+            return
+        }
+        val cutout = insets.displayCutout
+        var left = cutout?.safeInsetLeft ?: 0
+        // Vertical only the cutout: the rounded corner stays inside `x < radius`
+        // and the horizontal offset already clears it, so the top stays flush
+        // like the desktop.
+        val top = cutout?.safeInsetTop ?: 0
+        if (Build.VERSION.SDK_INT >= 31) {
+            val corner = insets.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)
+            if (corner != null) {
+                left = maxOf(left, corner.radius)
+            }
+        }
+        displayInsetLeft = left
+        displayInsetTop = top
+    }
+
     private companion object {
+        init {
+            // GameActivity calls initializeNativeCode from onCreate, so the
+            // game's library has to be loaded first. NativeActivity loaded it
+            // from the manifest's `android.app.lib_name`; GameActivity has no
+            // such metadata.
+            System.loadLibrary("vera20k_android")
+        }
+
         /** Unique within this activity; "VR" in ASCII. */
         const val REQUEST_PICK_FOLDER = 0x5652
 
         /** The Mods page's system file manager pickers. */
-        const val REQUEST_IMPORT_MOD = 0x5653
         const val REQUEST_EXPORT_MOD = 0x5654
         const val REQUEST_MOD_ZIP = 0x5655
         const val REQUEST_MOD_FOLDER = 0x5656
@@ -58,66 +146,31 @@ class VeraActivity : NativeActivity() {
         /** The intent extra a pinned shortcut carries (`docs/android.md`). */
         const val EXTRA_ENTRY = "org.vera20k.ENTRY"
 
+        /** The folders under `tmp/` that hold what Add Mod's pickers copied in. */
+        const val PICKED_PREFIX = "mod-import-"
+
         /** The two launcher entries; exactly one is enabled at a time. */
         const val LAUNCHER_RETAIL = "org.vera20k.LauncherRetail"
         const val LAUNCHER_VERA = "org.vera20k.LauncherVera"
     }
 
-    /** The cutout and corner radius hiding the window's top left, in screen px. */
-    @Volatile
-    private var displayInsetLeft = 0
-
-    /** The cutout's top inset, in screen px; the corner never adds to it. */
-    @Volatile
-    private var displayInsetTop = 0
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        pruneModShortcuts()
-        val decor = window.decorView
-        decor.setOnApplyWindowInsetsListener { _, insets ->
-            updateDisplayInsets(insets)
-            insets
-        }
-        // The listener only fires when the window dispatches insets; read the
-        // ones it already applied after the first layout as well, so the first
-        // frames of a match are not drawn under the corner.
-        decor.post { decor.rootWindowInsets?.let { updateDisplayInsets(it) } }
-    }
-
-    /**
-     * Reads what the screen hides at the top left: the cutout's safe insets and,
-     * from API 31, the top-left rounded corner's radius. The engine moves the
-     * message lane and the performance panel in by these (`util::display_insets`).
-     */
-    private fun updateDisplayInsets(insets: WindowInsets) {
-        val cutout = insets.displayCutout
-        var left = cutout?.safeInsetLeft ?: 0
-        val top = cutout?.safeInsetTop ?: 0
-        if (Build.VERSION.SDK_INT >= 31) {
-            val corner = insets.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)
-            if (corner != null) {
-                left = maxOf(left, corner.radius)
-            }
-        }
-        displayInsetLeft = left
-        displayInsetTop = top
-    }
-
-    /** JNI: the left inset, read by `android/src/lib.rs` before the event loop. */
-    fun displayInsetLeft(): Int = displayInsetLeft
-
-    /** JNI: the top inset. */
-    fun displayInsetTop(): Int = displayInsetTop
     /** The folder an export picker is waiting for; empty when none is. */
     private var pendingExport = ""
+
+    /** The export's two toasts, in the player's language (`VERA:ModExported`). */
+    private var exportDone = ""
+    private var exportFailed = ""
+
+    /** The pickers' toast when a copy fails (`VERA:ModActionFailed`). */
+    private var pickFailed = ""
 
     /** A mod part a picker copied in, waiting for the engine to take it. */
     @Volatile
     private var pickedModPart = ""
 
     /** Lets the player pick a mod ZIP; the copy lands in `tmp/`. */
-    fun pickModZip(): Boolean {
+    fun pickModZip(failed: String): Boolean {
+        pickFailed = failed
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "application/zip"
@@ -133,7 +186,8 @@ class VeraActivity : NativeActivity() {
     }
 
     /** Lets the player pick a mod folder; the copy lands in `tmp/`. */
-    fun pickModFolder(): Boolean {
+    fun pickModFolder(failed: String): Boolean {
+        pickFailed = failed
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or
@@ -157,29 +211,24 @@ class VeraActivity : NativeActivity() {
     }
 
     /**
-     * Imports a mod: the system picker chooses a folder, which is copied into
-     * the app's own `Mods` folder. The activity owns that storage, so the copy
-     * runs here and reports with a toast.
+     * Deletes the copies the pickers made in `tmp/`. The engine calls it once
+     * Add Mod is done with them (installed, failed or closed), and a new
+     * activity clears what a killed process left.
      */
-    fun importMod(): Boolean {
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-            addFlags(
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
-            )
-        }
-        return try {
-            startActivityForResult(intent, REQUEST_IMPORT_MOD)
-            true
-        } catch (error: Throwable) {
-            android.util.Log.w("Vera20k", "no folder picker for import: $error")
-            false
+    fun clearPickedModParts() {
+        pickedModPart = ""
+        File(filesDir, "tmp").listFiles()?.forEach { part ->
+            if (part.name.startsWith(PICKED_PREFIX)) {
+                part.deleteRecursively()
+            }
         }
     }
 
     /** Exports `folder` from the app's `Mods` into a picked folder. */
-    fun exportMod(folder: String): Boolean {
+    fun exportMod(folder: String, done: String, failed: String): Boolean {
         pendingExport = folder
+        exportDone = done
+        exportFailed = failed
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or
@@ -349,10 +398,6 @@ class VeraActivity : NativeActivity() {
                 // "cancelled" without needing a second callback shape.
                 nativeOnFolderPicked(tree?.toString() ?: "")
             }
-            REQUEST_IMPORT_MOD -> {
-                val tree = if (resultCode == Activity.RESULT_OK) data?.data else null
-                if (tree != null) importModTree(tree)
-            }
             REQUEST_EXPORT_MOD -> {
                 val tree = if (resultCode == Activity.RESULT_OK) data?.data else null
                 val folder = pendingExport
@@ -374,40 +419,29 @@ class VeraActivity : NativeActivity() {
         android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_SHORT).show()
     }
 
-    private fun treeName(tree: Uri): String {
-        val id = DocumentsContract.getTreeDocumentId(tree)
-        return id.substringAfterLast('/').substringAfterLast(':').ifBlank { "Mod" }
-    }
+    /**
+     * A fresh folder under `tmp/` for one pick. The part inside keeps the
+     * picked file's or folder's own name, which Add Mod lists and names the
+     * mod after.
+     */
+    private fun pickFolder(): File =
+        File(File(filesDir, "tmp"), "$PICKED_PREFIX${System.nanoTime()}").apply { mkdirs() }
 
-    /** Copies the picked tree into `filesDir/Mods/<name>`, off the UI thread. */
-    private fun importModTree(tree: Uri) {
-        Thread {
-            val ok = try {
-                val mods = File(filesDir, "Mods").apply { mkdirs() }
-                var name = treeName(tree)
-                var dest = File(mods, name)
-                var suffix = 2
-                while (dest.exists()) {
-                    dest = File(mods, "$name $suffix")
-                    suffix += 1
-                }
-                copyTreeTo(tree, dest)
-                true
-            } catch (error: Throwable) {
-                android.util.Log.w("Vera20k", "mod import failed: $error")
-                false
-            }
-            runOnUiThread { toast(if (ok) "Mod imported" else "Mod import failed") }
-        }.start()
-    }
-
-    private fun tmpPart(name: String): File =
-        File(filesDir, "tmp").apply { mkdirs() }.let { File(it, name) }
+    /** `name` when it is one plain file name, else `fallback`. */
+    private fun plainName(name: String?, fallback: String): String =
+        name?.takeIf { it.isNotBlank() && it != "." && it != ".." && '/' !in it } ?: fallback
 
     private fun pickModZipInto(uri: Uri) {
         Thread {
             val ok = try {
-                val target = tmpPart("mod-import-${System.currentTimeMillis()}.zip")
+                val display = contentResolver.query(
+                    uri,
+                    arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                    null,
+                    null,
+                    null,
+                )?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+                val target = File(pickFolder(), plainName(display, "Mod.zip"))
                 contentResolver.openInputStream(uri)?.use { input ->
                     target.outputStream().use { input.copyTo(it) }
                 } ?: error("no stream")
@@ -417,14 +451,16 @@ class VeraActivity : NativeActivity() {
                 android.util.Log.w("Vera20k", "mod zip pick failed: $error")
                 false
             }
-            runOnUiThread { toast(if (ok) "Mod ZIP picked" else "Mod ZIP failed") }
+            if (!ok) runOnUiThread { toast(pickFailed) }
         }.start()
     }
 
     private fun pickModFolderInto(tree: Uri) {
         Thread {
             val ok = try {
-                val target = tmpPart("mod-import-${System.currentTimeMillis()}")
+                val id = DocumentsContract.getTreeDocumentId(tree)
+                val name = plainName(id.substringAfterLast('/').substringAfterLast(':'), "Mod")
+                val target = File(pickFolder(), name)
                 copyTreeTo(tree, target)
                 pickedModPart = target.absolutePath
                 true
@@ -432,7 +468,7 @@ class VeraActivity : NativeActivity() {
                 android.util.Log.w("Vera20k", "mod folder pick failed: $error")
                 false
             }
-            runOnUiThread { toast(if (ok) "Mod folder picked" else "Mod folder failed") }
+            if (!ok) runOnUiThread { toast(pickFailed) }
         }.start()
     }
 
@@ -457,7 +493,11 @@ class VeraActivity : NativeActivity() {
         )?.use { cursor ->
             while (cursor.moveToNext()) {
                 val id = cursor.getString(0)
+                // A document provider names its files; one that is not a
+                // plain name must not reach outside the copy.
                 val name = cursor.getString(1)
+                    ?.takeIf { it.isNotBlank() && it != "." && it != ".." && '/' !in it }
+                    ?: continue
                 val mime = cursor.getString(2)
                 if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                     val sub = File(dir, name)
@@ -493,7 +533,7 @@ class VeraActivity : NativeActivity() {
                 android.util.Log.w("Vera20k", "mod export failed: $error")
                 false
             }
-            runOnUiThread { toast(if (ok) "Mod exported" else "Mod export failed") }
+            runOnUiThread { toast(if (ok) exportDone else exportFailed) }
         }.start()
     }
 

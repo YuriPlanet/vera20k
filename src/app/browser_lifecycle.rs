@@ -83,7 +83,7 @@ impl App {
             return false;
         }
         let deadline = crate::app::shell_wol::poll(state);
-        if crate::app::shell_wol::online_cleanup_pending(state)
+        if crate::app::shell_wol::online_cleanup_pending(&state.frontend, &state.match_state)
             || state.match_state.lan_service.is_some()
         {
             event_loop.set_control_flow(ControlFlow::WaitUntil(

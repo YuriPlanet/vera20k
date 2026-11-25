@@ -177,7 +177,10 @@ pub(crate) fn toggle_heightmap_overlay(diag: &mut DiagnosticsState) {
 #[cfg(feature = "dev-overlays")]
 pub(crate) fn cycle_terrain_cost_speed_type(state: &mut AppState, forward: bool) {
     if state.diag.debug_show_pathgrid {
-        let current = crate::app::diagnostics::debug_overlays::resolve_debug_speed_type(state);
+        let current = crate::app::diagnostics::debug_overlays::resolve_debug_speed_type(
+            &state.diag,
+            &state.match_state.sim_runtime,
+        );
         let next = if forward {
             current.cycle_next()
         } else {
@@ -219,7 +222,16 @@ pub(crate) fn toggle_debug_pause(frame_pacer: &mut LocalFramePacer, match_state:
 pub(super) fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCode) {
     match code {
         KeyCode::KeyM => {
-            crate::app::persistence::commands::quicksave(state);
+            crate::app::persistence::commands::quicksave(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
+                &state.audio,
+                &state.diag,
+                &state.process_assets,
+            );
         }
         KeyCode::KeyN => {
             crate::app::persistence::commands::quickload(&state.platform, &mut state.persistence);

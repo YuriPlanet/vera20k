@@ -11,18 +11,36 @@
 use super::gui_paint::{ButtonArt, GuiStyle, HostRows};
 use super::in_game_shell;
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::connection::DIALOG;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::ui::shell::connection::{CONNECTION_ROWS, ConnectionControl, PAINT_ORDER};
 use crate::ui::shell::paging;
 
 /// 0xEA can be drawn: it needs the same art as every active-game page.
-pub(crate) fn connection_shell_drawable(state: &AppState) -> bool {
-    state.frontend.screen == crate::app::GameScreen::InGame
-        && state.match_state.network_wait.dialog_open()
-        && state.frontend.skirmish_shell_chrome.is_some()
-        && crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
+pub(crate) fn connection_shell_drawable(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> bool {
+    frontend.screen == crate::app::GameScreen::InGame
+        && match_state.network_wait.dialog_open()
+        && frontend.skirmish_shell_chrome.is_some()
+        && crate::app::presentation::sidebar_render::current_sidebar_chrome(frontend, match_state)
             .is_some_and(|atlas| atlas.in_game_shell.panel_tile.is_some())
-        && in_game_shell::current_in_game_shell_layout(state).is_some()
+        && in_game_shell::current_in_game_shell_layout(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+        )
+        .is_some()
 }
 
 pub(crate) fn render_connection_shell(

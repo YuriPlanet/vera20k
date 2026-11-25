@@ -245,7 +245,7 @@ fn superweapon_launch_and_deactivation_spring_the_owner_house_tags() {
     );
     let fire = |sim: &mut Simulation| {
         sim.apply_command_with_overlays(
-            None,
+            crate::sim::command::CommandSender::Player(None),
             "House0",
             &crate::sim::command::Command::LaunchSuperWeapon {
                 sw_type_id: cell,
@@ -257,9 +257,9 @@ fn superweapon_launch_and_deactivation_spring_the_owner_house_tags() {
             &mut FrameEffects::default(),
         )
     };
-    assert!(fire(&mut sim));
+    assert!((fire(&mut sim)).is_ok());
     assert_eq!(locals(&sim, 5), [true, false, true, false, false]);
-    fire(&mut sim);
+    let _ = fire(&mut sim);
     assert_eq!(locals(&sim, 5), [true, false, true, false, true]);
 }
 
@@ -302,7 +302,7 @@ fn battery_expiry_places_the_same_house_tag_crate_as_manual_deactivation() {
         let mut effects = FrameEffects::default();
         let mut click = |sim: &mut Simulation| {
             sim.apply_command_with_overlays(
-                None,
+                crate::sim::command::CommandSender::Player(None),
                 "House0",
                 &command,
                 &rules,
@@ -310,7 +310,7 @@ fn battery_expiry_places_the_same_house_tag_crate_as_manual_deactivation() {
                 &mut effects,
             )
         };
-        assert!(click(&mut sim));
+        assert!((click(&mut sim)).is_ok());
         assert!(sim.power_states[&owner].has_battery());
         if expire {
             let duration = sim.super_weapons[&owner][&cell].charge_duration();
@@ -327,7 +327,7 @@ fn battery_expiry_places_the_same_house_tag_crate_as_manual_deactivation() {
             assert!(instance.is_suspended());
             assert_eq!(instance.charge_drain_state(), -1);
         } else {
-            click(&mut sim);
+            let _ = click(&mut sim);
         }
         assert!(!sim.power_states[&owner].has_battery());
         assert!(

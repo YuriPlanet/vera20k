@@ -234,14 +234,17 @@ impl Simulation {
                     frame_effects,
                 )
             };
-            if placed.is_none() {
+            match placed {
+                // Wasm module `Birth` (RFC 0001 appendix 4.3) for the
+                // recreated object.
+                Some(placed) => self.raise_module_birth(rules, frame_effects, placed, None),
                 //50D421/50D507 call F8 even after the placement method
                 // has already uninitialized a failed new object. Preserve
                 // the shared owner's repeated lifecycle/queue semantics.
-                self.uninit_with_context(
+                None => self.uninit_with_context(
                     created,
                     UninitContext::new(rules).with_effects(frame_effects),
-                );
+                ),
             }
         }
         true

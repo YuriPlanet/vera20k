@@ -273,6 +273,13 @@ impl Simulation {
             overlay_registry,
             frame_effects,
         );
+        // Wasm module triggers on the same raise (RFC 0001 appendix 4.2),
+        // after the owner's House Tags.
+        let stock = super::StockInput {
+            ares_source: Some(source),
+            ..super::StockInput::NONE
+        };
+        self.raise_module_global_stock_event(rules, frame_effects, kind, Some(owner), stock);
     }
 
     /// TActionExt::Execute (Ares.dll 100396C0, hook 0x6DD8D7) for Ares' own

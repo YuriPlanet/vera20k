@@ -16,7 +16,7 @@ oracle families index their own fixtures and producers.
 | Inspect process audio definitions, sample sources and retention evidence | [Process audio catalog owner](audio_catalog_owner.md), `asset sound` |
 | Wait for builds; test, check, lint or build the current checkout; preserve A/B binaries | `python -m tools.cargo_run` (below) |
 | Avoid shell traps that make a failed run look clean | [shell pitfalls](#shell-pitfalls) |
-| Compile and test one optional capability (`phobos`, `npatch`, diagnostic builds), or all of them | [capabilities](../docs/capabilities.md), `python -m tools.capability_tests` |
+| Compile and test one optional capability (`phobos`, `npbug`, diagnostic builds), or all of them | [capabilities](../docs/capabilities.md), `python -m tools.capability_tests` |
 | Run a committed test map headless or interactive, by scenario name | [capabilities](../docs/capabilities.md#test-maps), `python -m tools.run_test_map` |
 | Generate a large map, such as 500×500 with 30 starts | `python -m tools.scale_map large500.map --size 500 --starts 30` |
 | Time the 20,000-unit, 30-house battle: the simulation tick and the client frame, on the shipping profile | [the scale benchmark](../docs/scale-benchmark.md), `python -m tools.scale_bench` |
@@ -498,7 +498,9 @@ and unmet targets, each cache profile's last use and the profiles whose working
 sets it evicted, in eviction order, and the checkouts whose held lock alone kept
 an otherwise reclaimable executable alive. Releasing one of those locks makes
 that executable reclaimable, so a later pass stops trusting the receipt while
-the lock is gone. A pass removes receipts older than seven days. Dry runs never remove files; their projected space is an estimate.
+the lock is gone. A pass removes receipts older than seven days, and an applied
+pass removes the inspection record of each executable that no longer exists.
+Dry runs never remove files; their projected space is an estimate.
 APFS clones/snapshots and unrelated volume activity can make observed reclamation
 differ from file allocation; applying a plan rechecks real free space and tries
 additional eligible cold entries when necessary. Plans are never reused for deletion.

@@ -8,6 +8,7 @@ use crate::app::match_runtime::session::MatchSession;
 use crate::app::match_runtime::session::{NetworkRowKind, PeerChoicesChange};
 use crate::app::match_runtime::state::MatchState;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_network_setup::NetworkSetupProtocol;
 use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition, LaunchTeam};
 use crate::ui::multiplayer_setup::*;
@@ -87,7 +88,10 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                     //5E09CD..5E0AC6 services the direct Type10 drain before
                     // leaving. The visit owner bounds VERA's larger FIFO;
                     // its completion resumes this ordinary Back transition.
-                    if let Err(error) = crate::app::lan_service::request_setup_back(state) {
+                    if let Err(error) = crate::app::lan_service::request_setup_back(
+                        &mut state.frontend,
+                        &mut state.match_state,
+                    ) {
                         log::error!("LAN setup departure failed: {error:#}");
                     }
                 } else {
@@ -126,7 +130,15 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 App::leave_shell_dialog(
                     state,
                     crate::app::frontend::shell_transition::ShellSlideKind::NetworkSetup(dialog),
-                    crate::app::shell_network_setup::open_choose_map,
+                    |state| {
+                        crate::app::shell_network_setup::open_choose_map(
+                            &state.platform,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &state.match_state,
+                            &mut state.process_assets,
+                        )
+                    },
                 );
             }
             Ok(())
@@ -151,23 +163,35 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 && let Some(ui) = state.frontend.multiplayer_setup.as_mut()
             {
                 ui.page_rows(&view.pages, forward);
-                crate::app::input::multiplayer_setup::drop_pointer(state, true);
+                crate::app::input::multiplayer_setup::drop_pointer(
+                    &mut state.frontend,
+                    &state.match_state,
+                    true,
+                );
             }
             Ok(())
         }
         SetupAction::GameOptions(open) => {
-            crate::app::input::multiplayer_setup::drop_pointer(state, true);
+            crate::app::input::multiplayer_setup::drop_pointer(
+                &mut state.frontend,
+                &state.match_state,
+                true,
+            );
             if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
                 ui.show_game_options(open);
             }
             Ok(())
         }
         SetupAction::Lobby => {
-            crate::app::shell_wol::lobby::visit_lobby(state);
+            crate::app::shell_wol::lobby::visit_lobby(&mut state.frontend);
             Ok(())
         }
         SetupAction::MapOffer { download } => {
-            crate::app::input::multiplayer_setup::drop_pointer(state, false);
+            crate::app::input::multiplayer_setup::drop_pointer(
+                &mut state.frontend,
+                &state.match_state,
+                false,
+            );
             let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
                 return;
             };
@@ -234,9 +258,7 @@ fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
         0x54E => {
             crate::skirmish_launch::click_short_game(&mut options.short_game, &mut options.bases)
         }
-        BASES => {
-            crate::skirmish_launch::click_bases(&mut options.bases, &mut options.short_game)
-        }
+        BASES => crate::skirmish_launch::click_bases(&mut options.bases, &mut options.short_game),
         // C2's other hidden session checkboxes: Multi-Engineer (0x78FB2B),
         // Harvester Truce (0x78FBBB) and Fog of War (0x78FC07).
         MULTI_ENGINEER => options.multi_engineer = !options.multi_engineer,
@@ -941,23 +963,36 @@ pub(super) fn try_commit_start(state: &mut AppState, agreed_seed: u32) -> anyhow
     Ok(())
 }
 
-pub(crate) fn open_choose_map(state: &mut AppState) {
+pub(crate) fn open_choose_map(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &mut ProcessAssets,
+) {
     // The shared chooser remains a transaction over the selected map. The
     // admitted setup is not edited until Use Map commits its result, and the
     // offline Skirmish dialog's retained selection is never touched.
-    let Some(launch) = state.match_state.session.network_setup() else {
+    let Some(launch) = match_state.session.network_setup() else {
         return;
     };
     let mode_id = launch.mode.id;
     let record_index = launch.selected_map_file.as_deref().and_then(|file| {
-        state
-            .frontend
+        frontend
             .scenario_catalog
             .records()
             .iter()
             .position(|record| record.file_name.eq_ignore_ascii_case(file))
     });
-    App::open_choose_map_modal(state, mode_id, record_index);
+    App::open_choose_map_modal(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        mode_id,
+        record_index,
+    );
 }
 
 /// Use Map commits the shared chooser transaction into the admitted session.

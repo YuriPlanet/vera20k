@@ -624,14 +624,14 @@ fn retail_chrono_warped_harrier_takes_off_at_its_next_order() {
         target_rx: TARGET.0 + 8,
         target_ry: TARGET.1,
     };
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &command,
         &rules,
         None,
         &mut crate::sim::world::FrameEffects::default()
-    ));
+    )).is_ok());
     let mut flew = false;
     for _ in 0..30 {
         step(&mut sim, &rules);
@@ -679,14 +679,14 @@ fn retail_chrono_warp_carries_a_driving_chrono_miner() {
             target_rx: rx,
             target_ry: ry,
         };
-        assert!(sim.apply_command_with_overlays(
-            None,
+        assert!((sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             "Americans",
             &command,
             &rules,
             None,
             &mut crate::sim::world::FrameEffects::default()
-        ));
+        )).is_ok());
     };
     order(&mut sim, (30, 20));
     step(&mut sim, &rules);
@@ -765,14 +765,14 @@ fn retail_chrono_warp_forces_a_sailing_ships_track_to_its_landing() {
         target_rx: 30,
         target_ry: 20,
     };
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &command,
         &rules,
         None,
         &mut crate::sim::world::FrameEffects::default()
-    ));
+    )).is_ok());
     charge_chronosphere(&mut sim, americans);
     click(&mut sim, &rules, americans, "ChronoSphereSpecial", SOURCE);
     step(&mut sim, &rules);

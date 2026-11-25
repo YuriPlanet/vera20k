@@ -54,7 +54,7 @@ pub(crate) struct RendererState {
         Option<crate::app::presentation::outcome_banner::OutcomeBannerArt>,
     /// This frame's posed bodies: crash tilts and pitched rockets
     /// (`render::unit_pose_cache`). A `RefCell`: the unit and building
-    /// visitors, alive at once over `&AppState`, pose bodies through it.
+    /// visitors, alive at once over the shared renderer, pose bodies through it.
     pub(crate) vxl_pose_frame_cache:
         std::cell::RefCell<crate::render::unit_pose_cache::VxlPoseFrameCache>,
     /// Previous presented pre-cursor composition, retained for input-time
@@ -65,6 +65,21 @@ pub(crate) struct RendererState {
     /// gamemd's Z-buffer row seed, which lives as long as its Z buffer: one
     /// per process, until the view's size changes.
     pub(crate) native_z_seed: crate::render::native_z::ZSeed,
+    /// VERA's HD art pack: `None` until a zoomed frame first wants it,
+    /// then whatever opening the pack gave (`render::hd_art`).
+    pub(crate) hd_art: Option<Option<crate::render::hd_art::HdArt>>,
+    /// VERA's HD art terrain pack, as `hd_art` (`render::hd_terrain`).
+    pub(crate) hd_terrain: Option<Option<crate::render::hd_terrain::HdTerrain>>,
+    /// VERA's HD art voxel pass, made on its first draw (`render::hd_voxel`).
+    pub(crate) hd_voxel: Option<crate::render::hd_voxel::HdVoxelPass>,
+    /// Whether HD art (`render::hd_switch`) has been on in this run: voxels then
+    /// keep making their HD pictures while it is off, so turning it on again
+    /// shows them at once.
+    pub(crate) hd_art_seen: bool,
+    /// Set when a match is still to show its first frame: with HD art on, that
+    /// frame eases the wheel zoom to `render::hd_switch::DEFAULT_ZOOM`. A loaded
+    /// game keeps its saved zoom.
+    pub(crate) hd_art_zoom_pending: bool,
 }
 
 impl RendererState {

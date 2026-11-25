@@ -17,6 +17,7 @@ use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::ui::shell::saved_file_input::{self, BrowserInputResult};
 use crate::ui::skirmish_shell::SkirmishShellState;
 use crate::util::config::GameConfig;
@@ -34,38 +35,43 @@ impl App {
     }
 
     /// The open browser's layout.
-    fn saved_seed_layout(state: &AppState) -> Option<SavedSeedLayout> {
-        let browser = state
-            .frontend
-            .skirmish_shell_state
-            .saved_seed_browser
-            .as_ref()?;
+    fn saved_seed_layout(
+        renderer: &RendererState,
+        frontend: &FrontendState,
+    ) -> Option<SavedSeedLayout> {
+        let browser = frontend.skirmish_shell_state.saved_seed_browser.as_ref()?;
         Some(shell_layout::saved_seed_layout(
-            &state.renderer,
-            &state.frontend.screen,
+            renderer,
+            &frontend.screen,
             browser.mode,
         ))
     }
 
-    pub(super) fn open_saved_seed_browser(state: &mut AppState, mode: SavedSeedMode) {
-        let entries = Self::random_map_dir(state.platform.game_config.as_ref())
+    pub(super) fn open_saved_seed_browser(
+        game_config: Option<&GameConfig>,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        mode: SavedSeedMode,
+    ) {
+        let entries = Self::random_map_dir(game_config)
             .map(|dir| saved_seeds::list_saved_seeds(&dir))
             .unwrap_or_default();
-        let shell = &state.frontend.skirmish_shell_state;
+        let shell = &frontend.skirmish_shell_state;
         let modal = shell.random_map_setup_modal.as_ref();
         let current = modal
             .map(|modal| modal.options.description.clone())
             .unwrap_or_default();
-        let empty = state.csf_label("TXT_EMPTY_SLOT", "[EMPTY SLOT]");
+        let empty = process_assets.csf_label("TXT_EMPTY_SLOT", "[EMPTY SLOT]");
         let rows = saved_browser_rows(&shell_layout::saved_seed_layout(
-            &state.renderer,
-            &state.frontend.screen,
+            renderer,
+            &frontend.screen,
             mode,
         ));
         let time = saved_seeds::new_slot_file_time(crate::util::time::SystemTime::now());
         let browser = SavedSeedBrowserState::open(mode, entries, current, empty.into(), time, rows);
-        state.frontend.skirmish_shell_state.saved_seed_browser = Some(browser);
-        Self::blur_player_name(&mut state.frontend.shell_controller);
+        frontend.skirmish_shell_state.saved_seed_browser = Some(browser);
+        Self::blur_player_name(&mut frontend.shell_controller);
     }
 
     fn close_saved_seed_browser(
@@ -118,20 +124,23 @@ impl App {
     }
 
     fn finish_saved_seed_write(
-        state: &mut AppState,
+        game_config: Option<&GameConfig>,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
         file_name: SavedSeedFile,
         description: SeedDescription,
         action: SeedWrite,
     ) {
-        let Some(dir) = Self::random_map_dir(state.platform.game_config.as_ref()) else {
+        let Some(dir) = Self::random_map_dir(game_config) else {
             Self::show_saved_seed_error(
-                &mut state.frontend.skirmish_shell_state,
-                &state.process_assets,
+                &mut frontend.skirmish_shell_state,
+                process_assets,
                 "VERA:RandomMapSaveFailed",
             );
             return;
         };
-        let Some(modal) = random_map_dialog(&mut state.frontend.skirmish_shell_state) else {
+        let Some(modal) = random_map_dialog(&mut frontend.skirmish_shell_state) else {
             return;
         };
         // MapSeed Save 0x00597804 updates the working description before file I/O.
@@ -141,25 +150,31 @@ impl App {
         {
             log::warn!("saved seed: could not save {file_name}: {error}");
             Self::show_saved_seed_error(
-                &mut state.frontend.skirmish_shell_state,
-                &state.process_assets,
+                &mut frontend.skirmish_shell_state,
+                process_assets,
                 "VERA:RandomMapSaveFailed",
             );
             return;
         }
-        Self::refresh_saved_random_maps(state);
-        let body = state.csf_label("GUI:MapSaved", "Map Saved");
+        Self::refresh_saved_random_maps(game_config, renderer, frontend);
+        let body = process_assets.csf_label("GUI:MapSaved", "Map Saved");
         Self::show_saved_seed_prompt(
-            &mut state.frontend.skirmish_shell_state,
-            &state.process_assets,
+            &mut frontend.skirmish_shell_state,
+            process_assets,
             SavedSeedPromptPurpose::Saved,
             body,
             false,
         );
     }
 
-    fn resolve_saved_seed_prompt(state: &mut AppState, affirmative: bool) {
-        let Some(prompt) = Self::saved_seed_browser(&mut state.frontend.skirmish_shell_state)
+    fn resolve_saved_seed_prompt(
+        game_config: Option<&GameConfig>,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        affirmative: bool,
+    ) {
+        let Some(prompt) = Self::saved_seed_browser(&mut frontend.skirmish_shell_state)
             .and_then(|browser| browser.take_prompt())
         else {
             return;
@@ -167,47 +182,50 @@ impl App {
         match prompt.purpose {
             // 0x00559269 explicitly restores the edit focus after this warning.
             SavedSeedPromptPurpose::EmptyDescription => {
-                if let Some(browser) =
-                    Self::saved_seed_browser(&mut state.frontend.skirmish_shell_state)
+                if let Some(browser) = Self::saved_seed_browser(&mut frontend.skirmish_shell_state)
                 {
                     browser.focus_edit();
                 }
             }
-            SavedSeedPromptPurpose::Saved => Self::close_saved_seed_browser(
-                state.platform.game_config.as_ref(),
-                &mut state.frontend.skirmish_shell_state,
-            ),
+            SavedSeedPromptPurpose::Saved => {
+                Self::close_saved_seed_browser(game_config, &mut frontend.skirmish_shell_state)
+            }
             SavedSeedPromptPurpose::Overwrite {
                 file_name,
                 description,
             } if affirmative => {
-                Self::finish_saved_seed_write(state, file_name, description, SeedWrite::Overwrite);
+                Self::finish_saved_seed_write(
+                    game_config,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    file_name,
+                    description,
+                    SeedWrite::Overwrite,
+                );
             }
             SavedSeedPromptPurpose::Delete { file_name } if affirmative => {
-                if let Some(dir) = Self::random_map_dir(state.platform.game_config.as_ref())
+                if let Some(dir) = Self::random_map_dir(game_config)
                     && let Err(error) = file_name.delete(&dir)
                 {
                     log::warn!("saved seed: could not delete {file_name}: {error}");
                 }
                 // As in driver 0x00558DD0 the browser drops the row after the
                 // attempt. The chooser reflects the files still on disk.
-                Self::refresh_saved_random_maps(state);
+                Self::refresh_saved_random_maps(game_config, renderer, frontend);
                 let layout = shell_layout::saved_seed_layout(
-                    &state.renderer,
-                    &state.frontend.screen,
+                    renderer,
+                    &frontend.screen,
                     SavedSeedMode::Delete,
                 );
                 let rows = saved_browser_rows(&layout);
-                let empty = Self::saved_seed_browser(&mut state.frontend.skirmish_shell_state)
+                let empty = Self::saved_seed_browser(&mut frontend.skirmish_shell_state)
                     .is_some_and(|browser| {
                         browser.remove_entry(&file_name, rows);
                         browser.entries.is_empty()
                     });
                 if empty {
-                    Self::close_saved_seed_browser(
-                        state.platform.game_config.as_ref(),
-                        &mut state.frontend.skirmish_shell_state,
-                    );
+                    Self::close_saved_seed_browser(game_config, &mut frontend.skirmish_shell_state);
                 }
             }
             _ => {} // Message-box dismissal focuses the parent dialog, not its old edit.
@@ -314,18 +332,24 @@ impl App {
         }
     }
 
-    fn apply_saved_seed_outcome(state: &mut AppState, outcome: SavedSeedOutcome) {
+    fn apply_saved_seed_outcome(
+        game_config: Option<&GameConfig>,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
+        outcome: SavedSeedOutcome,
+    ) {
         match outcome {
-            SavedSeedOutcome::Close => Self::close_saved_seed_browser(
-                state.platform.game_config.as_ref(),
-                &mut state.frontend.skirmish_shell_state,
-            ),
+            SavedSeedOutcome::Close => {
+                Self::close_saved_seed_browser(game_config, &mut frontend.skirmish_shell_state)
+            }
             SavedSeedOutcome::BeginConvert(_) => {}
             SavedSeedOutcome::Load(file_name) => Self::load_random_map_seed(
-                state.platform.game_config.as_ref(),
-                &mut state.frontend,
-                &mut state.match_state,
-                &mut state.process_assets,
+                game_config,
+                frontend,
+                match_state,
+                process_assets,
                 &file_name,
                 false,
             ),
@@ -334,12 +358,12 @@ impl App {
                 description,
             } => {
                 if description.is_empty() {
-                    let body = state
+                    let body = process_assets
                         .csf_label("TXT_MUSTENTER_DESCRIPTION", "You must enter a description!");
                     let purpose = SavedSeedPromptPurpose::EmptyDescription;
                     Self::show_saved_seed_prompt(
-                        &mut state.frontend.skirmish_shell_state,
-                        &state.process_assets,
+                        &mut frontend.skirmish_shell_state,
+                        process_assets,
                         purpose,
                         body,
                         false,
@@ -347,61 +371,64 @@ impl App {
                     return;
                 }
                 if let Some(file_name) = file_name {
-                    let body = state.csf_label("TXT_CONFIRM_SAVE", "Overwrite existing save game?");
+                    let body = process_assets
+                        .csf_label("TXT_CONFIRM_SAVE", "Overwrite existing save game?");
                     let purpose = SavedSeedPromptPurpose::Overwrite {
                         file_name,
                         description,
                     };
                     Self::show_saved_seed_prompt(
-                        &mut state.frontend.skirmish_shell_state,
-                        &state.process_assets,
+                        &mut frontend.skirmish_shell_state,
+                        process_assets,
                         purpose,
                         body,
                         true,
                     );
                     return;
                 }
-                let Some(dir) = Self::random_map_dir(state.platform.game_config.as_ref()) else {
+                let Some(dir) = Self::random_map_dir(game_config) else {
                     Self::show_saved_seed_error(
-                        &mut state.frontend.skirmish_shell_state,
-                        &state.process_assets,
+                        &mut frontend.skirmish_shell_state,
+                        process_assets,
                         "VERA:RandomMapSaveFailed",
                     );
                     return;
                 };
-                let assets = state.process_assets.manager();
+                let assets = process_assets.manager();
                 match saved_seeds::allocate_seed_file_name(
                     &dir,
-                    &mut state.frontend.legacy_crt_rng,
+                    &mut frontend.legacy_crt_rng,
                     |name| assets.is_some_and(|assets| assets.contains(name)),
                 ) {
-                    Ok(file_name) => {
-                        Self::finish_saved_seed_write(state, file_name, description, SeedWrite::New)
-                    }
+                    Ok(file_name) => Self::finish_saved_seed_write(
+                        game_config,
+                        renderer,
+                        frontend,
+                        process_assets,
+                        file_name,
+                        description,
+                        SeedWrite::New,
+                    ),
                     Err(error) => {
                         log::warn!("saved seed: could not create a new slot: {error}");
                         Self::show_saved_seed_error(
-                            &mut state.frontend.skirmish_shell_state,
-                            &state.process_assets,
+                            &mut frontend.skirmish_shell_state,
+                            process_assets,
                             "VERA:RandomMapSaveFailed",
                         );
                     }
                 }
             }
             SavedSeedOutcome::Delete(file_name) => {
-                let prefix = state.csf_label("TXT_DELETE_FILE_QUERY", "Delete this file?");
-                let browser = state
-                    .frontend
-                    .skirmish_shell_state
-                    .saved_seed_browser
-                    .as_ref();
+                let prefix = process_assets.csf_label("TXT_DELETE_FILE_QUERY", "Delete this file?");
+                let browser = frontend.skirmish_shell_state.saved_seed_browser.as_ref();
                 let row = browser.and_then(|browser| browser.selected_entry());
                 let description = row.map(|row| row.description.display_text());
                 let body = format!("{prefix}\n\n{}", description.unwrap_or_default());
                 let purpose = SavedSeedPromptPurpose::Delete { file_name };
                 Self::show_saved_seed_prompt(
-                    &mut state.frontend.skirmish_shell_state,
-                    &state.process_assets,
+                    &mut frontend.skirmish_shell_state,
+                    process_assets,
                     purpose,
                     body,
                     true,
@@ -411,71 +438,127 @@ impl App {
     }
 
     fn apply_saved_seed_input(
-        state: &mut AppState,
+        game_config: Option<&GameConfig>,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
         results: Vec<BrowserInputResult<SavedSeedFile>>,
     ) {
         for result in results {
             match result {
-                BrowserInputResult::Outcome(outcome) => {
-                    Self::apply_saved_seed_outcome(state, outcome)
-                }
-                BrowserInputResult::PromptAnswer(answer) => {
-                    Self::resolve_saved_seed_prompt(state, answer)
-                }
-                BrowserInputResult::Cue(cue) => Self::play_page_cue(
-                    &state.frontend,
-                    &state.match_state,
-                    &state.process_assets,
-                    &mut state.audio.sfx_player,
-                    cue,
+                BrowserInputResult::Outcome(outcome) => Self::apply_saved_seed_outcome(
+                    game_config,
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    outcome,
                 ),
+                BrowserInputResult::PromptAnswer(answer) => Self::resolve_saved_seed_prompt(
+                    game_config,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    answer,
+                ),
+                BrowserInputResult::Cue(cue) => {
+                    Self::play_page_cue(frontend, match_state, process_assets, sfx_player, cue)
+                }
             }
         }
     }
 
     pub(super) fn handle_saved_seed_browser_key(
-        state: &mut AppState,
+        game_config: Option<&GameConfig>,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
         code: Option<KeyCode>,
         text: Option<&str>,
     ) {
-        if let Some(browser) = Self::saved_seed_browser(&mut state.frontend.skirmish_shell_state) {
+        if let Some(browser) = Self::saved_seed_browser(&mut frontend.skirmish_shell_state) {
             let results = saved_file_input::key(browser, code, text);
-            Self::apply_saved_seed_input(state, results);
+            Self::apply_saved_seed_input(
+                game_config,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                results,
+            );
         }
     }
 
     /// One pointer message on the browser (`down`: `None` moves); false
     /// when none is open.
-    pub(super) fn saved_seed_browser_pointer(state: &mut AppState, down: Option<bool>) -> bool {
-        let Some(layout) = Self::saved_seed_layout(state) else {
+    pub(super) fn saved_seed_browser_pointer(
+        game_config: Option<&GameConfig>,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
+        down: Option<bool>,
+    ) -> bool {
+        let Some(layout) = Self::saved_seed_layout(renderer, frontend) else {
             return false;
         };
-        let extent = (state.render_width(), state.render_height());
-        let pointer = state.match_state.input.cursor_px();
-        if let Some(browser) = Self::saved_seed_browser(&mut state.frontend.skirmish_shell_state) {
+        let extent = (
+            renderer.render_width(&frontend.screen),
+            renderer.render_height(&frontend.screen),
+        );
+        let pointer = match_state.input.cursor_px();
+        if let Some(browser) = Self::saved_seed_browser(&mut frontend.skirmish_shell_state) {
             let results = saved_file_input::pointer(browser, &layout, extent, pointer, down);
-            Self::apply_saved_seed_input(state, results);
+            Self::apply_saved_seed_input(
+                game_config,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                results,
+            );
         }
         true
     }
 
     /// Each frame, and on a pointer move: the scroll repeat, a held thumb
     /// and the edit's scroll.
-    pub(super) fn update_saved_seed_browser_scroll(state: &mut AppState, pointer_moved: bool) {
+    pub(super) fn update_saved_seed_browser_scroll(
+        game_config: Option<&GameConfig>,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
+        pointer_moved: bool,
+    ) {
         if pointer_moved {
-            Self::saved_seed_browser_pointer(state, None);
+            Self::saved_seed_browser_pointer(
+                game_config,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                None,
+            );
         }
-        let Some(layout) = Self::saved_seed_layout(state) else {
+        let Some(layout) = Self::saved_seed_layout(renderer, frontend) else {
             return;
         };
-        let extent = (state.render_width(), state.render_height());
-        let font = &state.renderer.bit_font;
-        if let Some(browser) = state
-            .frontend
-            .skirmish_shell_state
-            .saved_seed_browser
-            .as_mut()
-        {
+        let extent = (
+            renderer.render_width(&frontend.screen),
+            renderer.render_height(&frontend.screen),
+        );
+        let font = &renderer.bit_font;
+        if let Some(browser) = frontend.skirmish_shell_state.saved_seed_browser.as_mut() {
             saved_file_input::update(browser, &layout, extent, |text| font.text_width(text));
         }
     }

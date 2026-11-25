@@ -2,28 +2,32 @@
 //!
 //! Android keeps the player's folders inside the app's private storage, so the
 //! page cannot hand a path to a file manager: the activity exports a folder
-//! through the system picker, imports one the same way, and pins a short-cut
-//! for one on the home screen. Deleting a folder needs no help — the app owns
-//! it. Hooks stay uninstalled elsewhere, and every call answers false there.
+//! through the system picker, copies the ZIPs and folders Add Mod picks into
+//! its own `tmp/`, and pins a shortcut for a mod on the home screen. Deleting
+//! a folder needs no help: the app owns it. Hooks stay uninstalled elsewhere,
+//! and every call answers false or nothing there.
 
 use std::sync::OnceLock;
 
-/// What the Android crate reports for this module.
+/// What the Android crate reports for this module. Texts are the toasts the
+/// activity shows, in the player's language.
 pub struct Hooks {
-    /// Hand the named `Mods` folder to the system file manager to copy out.
-    pub export: fn(folder: &str) -> bool,
-    /// Let the player pick a folder in the system file manager to copy in.
-    pub import: fn() -> bool,
+    /// Hand the named `Mods` folder to the system file manager to copy out;
+    /// the toast says `done` or `failed`.
+    pub export: fn(folder: &str, done: &str, failed: &str) -> bool,
     /// Add `folder` as a home-screen shortcut for `id`.
     pub pin: fn(folder: &str, id: &str) -> bool,
-    /// Let the player pick a mod ZIP in the system file manager.
-    pub pick_zip: fn() -> bool,
+    /// Let the player pick a mod ZIP in the system file manager; the toast
+    /// says `failed` when the copy fails.
+    pub pick_zip: fn(failed: &str) -> bool,
     /// Let the player pick a mod folder in the system file manager.
-    pub pick_folder: fn() -> bool,
+    pub pick_folder: fn(failed: &str) -> bool,
     /// Forget `folder`'s shortcuts, keyed by `id` and by its old name.
     pub forget: fn(folder: &str, id: &str) -> bool,
     /// The part the picker copied in, once; the caller takes it.
     pub take_picked: fn() -> Option<String>,
+    /// Delete every copy the pickers made.
+    pub clear_picked: fn(),
 }
 
 static HOOKS: OnceLock<Hooks> = OnceLock::new();
@@ -33,34 +37,26 @@ pub fn install(hooks: Hooks) {
     let _ = HOOKS.set(hooks);
 }
 
-/// Whether a platform action can run at all (an installed hook).
+/// Whether the platform's actions can run at all (an installed hook).
 pub fn available() -> bool {
     HOOKS.get().is_some()
 }
 
 /// Ask the platform to export `folder`; false when it cannot.
-pub fn export(folder: &str) -> bool {
-    HOOKS.get().is_some_and(|hooks| (hooks.export)(folder))
-}
-
-/// Ask the platform for a folder to import; false when it cannot.
-pub fn import() -> bool {
-    HOOKS.get().is_some_and(|hooks| (hooks.import)())
-}
-
-/// Whether the platform can pick a mod ZIP or folder at all.
-pub fn picker_available() -> bool {
-    HOOKS.get().is_some()
+pub fn export(folder: &str, done: &str, failed: &str) -> bool {
+    HOOKS
+        .get()
+        .is_some_and(|hooks| (hooks.export)(folder, done, failed))
 }
 
 /// Ask for a mod ZIP; false when the platform cannot show a picker.
-pub fn pick_zip() -> bool {
-    HOOKS.get().is_some_and(|hooks| (hooks.pick_zip)())
+pub fn pick_zip(failed: &str) -> bool {
+    HOOKS.get().is_some_and(|hooks| (hooks.pick_zip)(failed))
 }
 
 /// Ask for a mod folder; false when the platform cannot show a picker.
-pub fn pick_folder() -> bool {
-    HOOKS.get().is_some_and(|hooks| (hooks.pick_folder)())
+pub fn pick_folder(failed: &str) -> bool {
+    HOOKS.get().is_some_and(|hooks| (hooks.pick_folder)(failed))
 }
 
 /// Take the part a picker copied in, if one arrived.
@@ -69,6 +65,13 @@ pub fn take_picked() -> Option<std::path::PathBuf> {
         .get()
         .and_then(|hooks| (hooks.take_picked)())
         .map(std::path::PathBuf::from)
+}
+
+/// Delete the copies the pickers made, once Add Mod is done with them.
+pub fn clear_picked() {
+    if let Some(hooks) = HOOKS.get() {
+        (hooks.clear_picked)();
+    }
 }
 
 /// Ask the platform to drop `folder`'s shortcut; false when it cannot.

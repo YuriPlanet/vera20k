@@ -6,7 +6,8 @@
 import '/network.js';
 import '/lobby.js';
 import init, {
-  fonts_ready, import_file, import_spawn_file, prepare_audio, set_lifecycle_callback, spawn_leave, start_spawn,
+  fonts_ready, import_file, import_mod_file, import_spawn_file, prepare_audio, set_lifecycle_callback, set_mod,
+  spawn_leave, start_spawn,
 } from '/pkg/vera20k.js';
 // Only a --threads package exports initThreadPool.
 import * as engine from '/pkg/vera20k.js';
@@ -62,6 +63,14 @@ try {
   const files = await (await fetch('/e2e/retail.json')).json();
   for (const path of files) {
     import_file(path, new Uint8Array(await (await fetch(`/e2e/retail/${path}`)).arrayBuffer()));
+  }
+  const mod = await (await fetch('/e2e/mod.json')).json();
+  for (const path of mod.files) {
+    import_mod_file(mod.name, path, new Uint8Array(await (await fetch(`/e2e/mod/${path}`)).arrayBuffer()));
+  }
+  if (mod.name) {
+    set_mod(mod.name);
+    note('info', [`host imported mod ${mod.name} (${mod.files.length} files)`]);
   }
   import_spawn_file('spawnmap.ini', new Uint8Array(await (await fetch(`/e2e/p${source}/spawnmap.ini`)).arrayBuffer()));
   const spawn = await (await fetch(`/e2e/p${source}/spawn.ini`)).text();

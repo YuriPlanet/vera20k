@@ -51,6 +51,7 @@ struct LooseAsset {
     source_name: String,
     bytes: OnceLock<Option<Arc<[u8]>>>,
     installation_copy: Option<Box<LooseAsset>>,
+    case_collision: bool,
 }
 
 impl LooseAsset {
@@ -66,33 +67,33 @@ impl LooseAsset {
         })
     }
 
-    fn read_snapshot(&self, maximum: Option<usize>) -> Result<Option<Arc<[u8]>>, AssetError> {
-        let read = || -> Result<Vec<u8>, AssetError> {
-            let Some(maximum) = maximum else {
-                return Ok(crate::util::file_system::read(&self.path)?);
-            };
-            #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-            {
-                let bytes = crate::util::file_system::read_shared(&self.path)?;
-                check_asset_read_limit(bytes.len() as u64, maximum)?;
-                Ok(bytes.to_vec())
-            }
-            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-            {
-                use std::io::Read;
-                let file = std::fs::File::open(&self.path)?;
-                check_asset_read_limit(file.metadata()?.len(), maximum)?;
-                let mut bytes = Vec::new();
-                // A file can grow after metadata inspection. Never allocate or
-                // read the rest of that growth before refusing the source.
-                file.take((maximum as u64).saturating_add(1))
-                    .read_to_end(&mut bytes)?;
-                check_asset_read_limit(bytes.len() as u64, maximum)?;
-                Ok(bytes)
-            }
+    fn read(&self, maximum: Option<usize>) -> Result<Arc<[u8]>, AssetError> {
+        let Some(maximum) = maximum else {
+            return Ok(crate::util::file_system::read(&self.path)?.into());
         };
-        match read() {
-            Ok(bytes) => Ok(Some(bytes.into())),
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        {
+            let bytes = crate::util::file_system::read_shared(&self.path)?;
+            check_asset_read_limit(bytes.len() as u64, maximum)?;
+            Ok(bytes)
+        }
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        {
+            use std::io::Read;
+            let file = std::fs::File::open(&self.path)?;
+            check_asset_read_limit(file.metadata()?.len(), maximum)?;
+            let mut bytes = Vec::new();
+            // The file can grow after metadata inspection, so bound the read.
+            file.take((maximum as u64).saturating_add(1))
+                .read_to_end(&mut bytes)?;
+            check_asset_read_limit(bytes.len() as u64, maximum)?;
+            Ok(bytes.into())
+        }
+    }
+
+    fn read_snapshot(&self, maximum: Option<usize>) -> Result<Option<Arc<[u8]>>, AssetError> {
+        match self.read(maximum) {
+            Ok(bytes) => Ok(Some(bytes)),
             Err(AssetError::Io(err)) => {
                 log::debug!("Skipping loose {}: {}", self.path.display(), err);
                 Ok(None)
@@ -691,10 +692,28 @@ impl AssetManager {
     /// or an archive, `retail_sources::game_folder_file`), is read from the
     /// selected mod's folder rather than the installation's.
     pub fn from_mod_folder(&self, file: &str) -> bool {
-        self.mod_dir.as_deref().is_some_and(|dir| {
-            self.installed_loose_asset(file)
-                .is_some_and(|asset| asset.path.starts_with(dir))
-        })
+        self.mod_loose_asset(file).is_some()
+    }
+
+    /// Read a loose file from the selected mod using the asset catalogue's
+    /// case-insensitive lookup. Ambiguous spellings, unreadable files and
+    /// oversized files are errors.
+    pub fn read_mod_file_bounded(
+        &self,
+        name: &str,
+        maximum: usize,
+    ) -> Result<Option<Arc<[u8]>>, AssetError> {
+        let Some(asset) = self.mod_loose_asset(name) else {
+            return Ok(None);
+        };
+        // Room agreement ignores ASCII case. If two spellings exist, the
+        // same digest can cover different bytes at the winning spelling.
+        if asset.case_collision {
+            return Err(AssetError::AmbiguousLooseName {
+                name: name.to_owned(),
+            });
+        }
+        asset.read(Some(maximum)).map(Some)
     }
 
     /// The selected overlay for this provider, including asset tools that do
@@ -2369,7 +2388,7 @@ impl AssetManager {
     }
 
     fn open_loose_root(ra2_dir: &Path) -> Result<HashMap<String, LooseAsset>, AssetError> {
-        let mut files = HashMap::new();
+        let mut files: HashMap<String, LooseAsset> = HashMap::new();
 
         for entry in crate::util::file_system::read_dir(ra2_dir)? {
             let entry = entry?;
@@ -2383,12 +2402,15 @@ impl AssetManager {
             let key = file_name.to_ascii_lowercase();
             // Two spellings of one name exist only on a case-sensitive file
             // system: keep the first in byte order, not in directory order.
-            if files
-                .get(&key)
-                .is_some_and(|kept: &LooseAsset| kept.path.file_name() <= path.file_name())
-            {
-                continue;
-            }
+            let case_collision = if let Some(kept) = files.get_mut(&key) {
+                if kept.path.file_name() <= path.file_name() {
+                    kept.case_collision = true;
+                    continue;
+                }
+                true
+            } else {
+                false
+            };
 
             files.insert(
                 key,
@@ -2397,6 +2419,7 @@ impl AssetManager {
                     source_name: format!("loose:{}", path.display()),
                     bytes: OnceLock::new(),
                     installation_copy: None,
+                    case_collision,
                 },
             );
         }
@@ -2414,6 +2437,12 @@ impl AssetManager {
     fn installed_loose_asset(&self, name: &str) -> Option<&LooseAsset> {
         let key = loose_lookup_key(name)?;
         self.loose_files.get(&key)
+    }
+
+    fn mod_loose_asset(&self, name: &str) -> Option<&LooseAsset> {
+        let directory = self.mod_dir()?;
+        self.installed_loose_asset(name)
+            .filter(|asset| asset.path.parent() == Some(directory))
     }
 
     /// Unreadable catalogued files must not hide a readable MIX fallback.
@@ -2871,6 +2900,60 @@ mod tests {
         }
         let manager = empty_manager(dir.path());
         assert_eq!(manager.get_ref("rulesmd.ini"), Some(&b"RULESMD.INI"[..]));
+    }
+
+    #[test]
+    fn mod_file_reads_match_case_and_refuse_oversized_files() {
+        let install = TestDirectory::new("bounded-mod-install");
+        let mod_dir = TestDirectory::new("bounded-mod");
+        std::fs::write(install.path().join("rules.wasm"), b"base").unwrap();
+        let assets = AssetManager::from_roots(install.path(), Some(mod_dir.path())).unwrap();
+        assert!(
+            assets
+                .read_mod_file_bounded("rules.wasm", 4)
+                .unwrap()
+                .is_none()
+        );
+
+        std::fs::write(mod_dir.path().join("Rules.WASM"), b"module").unwrap();
+        let assets = AssetManager::from_roots(install.path(), Some(mod_dir.path())).unwrap();
+        assert!(matches!(
+            assets.read_mod_file_bounded("rules.wasm", 5),
+            Err(AssetError::ReadLimitExceeded {
+                maximum: 5,
+                actual: 6
+            })
+        ));
+        assert_eq!(
+            assets
+                .read_mod_file_bounded("rules.wasm", 6)
+                .unwrap()
+                .as_deref(),
+            Some(b"module".as_slice())
+        );
+    }
+
+    #[test]
+    fn mod_file_read_refuses_multiple_case_spellings() {
+        let install = TestDirectory::new("ambiguous-mod-install");
+        let mod_dir = TestDirectory::new("ambiguous-mod");
+        std::fs::write(mod_dir.path().join("Rules.WASM"), b"first").unwrap();
+        let second = std::fs::File::create_new(mod_dir.path().join("rules.wasm"));
+        match second {
+            Ok(mut file) => {
+                use std::io::Write;
+                file.write_all(b"second").unwrap();
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return,
+            Err(error) => panic!("create lowercase spelling: {error}"),
+        }
+
+        let assets = AssetManager::from_roots(install.path(), Some(mod_dir.path())).unwrap();
+        assert!(matches!(
+            assets.read_mod_file_bounded("rules.wasm", 64),
+            Err(AssetError::AmbiguousLooseName { name }) if name == "rules.wasm"
+        ));
+        assert_eq!(assets.get_ref("rules.wasm"), Some(b"first".as_slice()));
     }
 
     #[test]
@@ -3650,6 +3733,7 @@ mod tests {
                     source_name: "loose:RA2MD.CSF".to_string(),
                     bytes: OnceLock::from(Some(Arc::from(&b"loose"[..]))),
                     installation_copy: None,
+                    case_collision: false,
                 },
             )]),
             audio_pairs: Vec::new(),

@@ -518,8 +518,11 @@ fn tactical_tip_at_cursor(state: &AppState, view: crate::sim::runtime::SimView<'
         input.cursor_x,
         input.cursor_y,
     );
-    let translucent_viewer =
-        crate::app::presentation::instances::translucent_fog_viewer(state, view.simulation());
+    let translucent_viewer = crate::app::presentation::instances::translucent_fog_viewer(
+        &state.platform,
+        &state.match_state,
+        view.simulation(),
+    );
     tactical_world_tip_text_for_viewer(
         view,
         rules,
@@ -910,7 +913,7 @@ pub(crate) fn build_tooltip_instances(
             runtime
                 .resources
                 .rules
-                .side_tooltip_color(current_sidebar_side(state))
+                .side_tooltip_color(current_sidebar_side(&state.frontend, &state.match_state))
         })
         .map(|rgb| rgb.map(|channel| f32::from(channel) / 255.0))
         .unwrap_or_else(|| {

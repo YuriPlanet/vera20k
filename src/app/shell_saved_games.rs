@@ -21,8 +21,13 @@ impl App {
         state: &AppState,
         mode: SavedSeedMode,
     ) -> Option<SavedSeedLayout> {
-        let shell =
-            crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
+        let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        )?;
         Some(crate::ui::shell::saved_games::saved_game_layout(
             mode,
             shell.width,
@@ -119,7 +124,9 @@ impl App {
             Self::return_to_saved_game_list(state, source);
         } else if state.frontend.screen == GameScreen::MainMenu {
             let slide = crate::app::frontend::shell_transition::ShellSlideKind::LoadSavedGame;
-            Self::leave_shell_dialog(state, slide, App::commit_load_saved_game_back);
+            Self::leave_shell_dialog(state, slide, |state| {
+                App::commit_load_saved_game_back(&mut state.frontend, &state.persistence.repository)
+            });
         } else {
             state.match_state.match_presentation.saved_game_browser = None;
             Self::enter_in_game_menu_state(state, InGameMenuState::Menu);
@@ -174,7 +181,14 @@ impl App {
             return;
         }
         match crate::app::persistence::commands::save_game(
-            state,
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state,
+            &state.persistence,
+            &state.audio,
+            &state.diag,
+            &state.process_assets,
             &description.display_text(),
             path.as_deref(),
         ) {

@@ -2,11 +2,15 @@
 //! FF; rendering and hit-testing share the loaded side-art geometry
 //! (72FC60,60B000,60B350,60B7A0).
 
+use crate::app::PlatformState;
+use crate::app::diagnostics::performance_overlay::PerformanceOverlay;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::{PauseEventLimiters, SessionMode, WallBucketTimer};
 use crate::app::match_runtime::sim_host::SimHost;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
 use crate::app::{App, AppState};
 use crate::ui::main_menu_dialogs::OptionsDialogState;
 use crate::ui::main_menu_dialogs::options::shell::{IN_GAME_KEYBOARD_HELP, LauncherOptionsLayout};
@@ -102,7 +106,11 @@ impl InGameOptionsPage {
 /// Fit the match to changed display choices, as a window resize does: the
 /// zoom pass, then the sidebar laid out again for the new frame.
 fn refit_match(state: &mut AppState) {
-    App::sync_zoom_pass(state);
+    App::sync_zoom_pass(
+        &state.platform,
+        &mut state.renderer,
+        &state.persistence.options_profile,
+    );
     crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
 }
 
@@ -126,7 +134,13 @@ fn select_template(match_state: &MatchState) -> PauseMenuTemplate {
 }
 
 pub(crate) fn current_layout(state: &AppState) -> Option<PauseMenuLayout> {
-    let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
+    let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    )?;
     let mut layout = pause_menu_layout(
         shell.width,
         shell.height,
@@ -161,8 +175,18 @@ pub(crate) fn current_layout(state: &AppState) -> Option<PauseMenuLayout> {
 /// The Options page showing on the open in-game menu, in the shell's pixels.
 pub(crate) fn options_page_layout(state: &AppState) -> Option<LauncherOptionsLayout> {
     let page = state.match_state.match_presentation.options_page.as_ref()?;
-    let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
-    let battle = App::match_zoom_geometry(state);
+    let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    )?;
+    let battle = App::match_zoom_geometry(
+        &state.platform,
+        &state.renderer.gpu,
+        &state.persistence.options_profile,
+    );
     let menu = current_layout(state)?;
     Some(
         LauncherOptionsLayout::in_game(
@@ -415,45 +439,52 @@ fn current_game_speed(sim_runtime: &SimHost) -> i32 {
 
 /// Entering state 1 recreates the dialog: 4F10E0 picks its template and FF's
 /// init reads the live values.
-pub(crate) fn on_open(state: &mut AppState) {
-    state.match_state.match_presentation.pause_menu_template = select_template(&state.match_state);
-    state.match_state.match_presentation.internet_pause = InternetPauseControls::open(
-        state.match_state.session.latency_fudge(),
-        current_game_speed(&state.match_state.sim_runtime),
+pub(crate) fn on_open(
+    platform: &PlatformState,
+    performance_overlay: &PerformanceOverlay,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    launcher_audio_available: bool,
+    options_profile: &RetailOptionsProfile,
+) {
+    match_state.match_presentation.pause_menu_template = select_template(match_state);
+    match_state.match_presentation.internet_pause = InternetPauseControls::open(
+        match_state.session.latency_fudge(),
+        current_game_speed(&match_state.sim_runtime),
     );
     // Escape opens on Game Controls, the settings a player most often reaches
     // for mid-match. Back from one of the menu's dialogs shows the page it
     // left (`App::enter_in_game_menu_state` forgets it on the way to play).
-    let category = state
-        .match_state
+    let category = match_state
         .match_presentation
         .options_page_category
         .unwrap_or(Category::GameControls);
     // BBB's init (4E1FE0, message 0x497) decides the Game Speed row and
     // reads the speed in effect.
-    crate::app::input::in_game_options::on_open(&state.frontend, &mut state.match_state);
-    let options = &state.match_state.match_presentation.in_game_options;
+    crate::app::input::in_game_options::on_open(frontend, match_state);
+    let options = &match_state.match_presentation.in_game_options;
     let (context, game_speed_shown) = (options.speed_context, !options.game_speed_hidden);
     let speed_position = u8::try_from(options.game_speed_position()).unwrap_or(0);
-    let label = |key: &str, fallback: &str| state.csf_label(key, fallback);
+    let label = |key: &str, fallback: &str| process_assets.csf_label(key, fallback);
     let speed_names = (0..=crate::ui::shell::game_speed::MAX_POSITION)
         .map(|position| label(context.label_key(context.stored_speed(position)), ""))
         .collect();
     let speed_caption = label("GUI:GameSpeed", "Game Speed");
     let sound_label = label("GUI:Sound", "Sound");
     let mut dialog = App::launcher_options_from_state(
-        &state.platform,
-        &state.renderer.performance_overlay,
-        state.frontend.shell_route,
-        &state.process_assets,
-        state.audio.launcher_audio_available,
-        &state.persistence.options_profile,
+        platform,
+        performance_overlay,
+        frontend.shell_route,
+        process_assets,
+        launcher_audio_available,
+        options_profile,
     );
     dialog.set_in_game_controls(speed_caption, speed_names, speed_position, sound_label);
     dialog.select_category(category);
     let opened = dialog.pack();
-    let opened_profile = state.persistence.options_profile.clone();
-    state.match_state.match_presentation.options_page = Some(InGameOptionsPage {
+    let opened_profile = options_profile.clone();
+    match_state.match_presentation.options_page = Some(InGameOptionsPage {
         opened_speed_position: dialog.trackbar_position(LauncherTrackbarId::GameSpeed),
         dialog,
         opened,
@@ -489,7 +520,7 @@ fn close_page(state: &mut AppState, apply_speed: bool) {
         let stored = options.speed_context.stored_speed(i32::from(position));
         options.game_speed = u32::try_from(stored).unwrap_or(0);
         state.persistence.options_profile.game_speed = stored;
-        crate::app::persistence::options::apply_in_game_speed(state);
+        crate::app::persistence::options::apply_in_game_speed(&mut state.match_state);
     }
     if speed.is_some() || !page.untouched(&state.persistence.options_profile) {
         App::commit_in_game_options_page(state, page.dialog, page.opened);
@@ -611,7 +642,14 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
         .match_presentation
         .internet_pause
         .positions;
-    let event = super::dialog_page::shell_event(state, down);
+    let event = super::dialog_page::shell_event(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+        down,
+    );
     let ui = &mut state.match_state.match_presentation.dialog_ui;
     let rect = |id| {
         let enabled = template
@@ -629,7 +667,13 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
     );
     // Owner-draw button-down: GUIMainButtonSound (Rules+0x188,
     // 0x0061374B..0x00613771).
-    for event in super::dialog_page::play_cues(state, events) {
+    for event in super::dialog_page::play_cues(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        events,
+    ) {
         match event {
             PageEvent::Activated(id) => {
                 if let Some(button) = template.button(id) {

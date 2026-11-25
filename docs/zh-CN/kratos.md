@@ -135,7 +135,7 @@ VERA 在 `rules::kratos_freeze` 里从类型推导该状态，这对 `Wreck` 是
 VERA20K 用 Rust 重新实现行为，不加载 `Kratos.dll`，也不重新分发 Kratos 二进制；每个已移植的
 功能都按代码旁注明的 Kratos 源码翻译。
 
-This product includes software developed by the Kratos PP author.
+This product includes software developed by the Kratos Authors.
 
 [Kratos PP](https://github.com/ChrisLv-CN/KratosPP) 是 **DPKratos** 的 C++ 移植版，作者
 **双杀步枪（ChrisLv_CN）**（开发者），策划 **艾木魁（M.Kenosis）**，测试 **冲冲冲14782**。

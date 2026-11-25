@@ -2,7 +2,7 @@
 
 [简体中文](0001-wasm-extension-modules-api.zh-CN.md)
 
-Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.0.20, revised in the same commit as the main text, which takes precedence. Rules are stated only in the main text. Version 1 contents are in [section 9](#9-version-1-inventory) and the tier columns.
+Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.0.21, revised in the same commit as the main text, which takes precedence. Rules are stated only in the main text. Version 1 contents are in [section 9](#9-version-1-inventory) and the tier columns.
 
 ## Contents
 
@@ -113,7 +113,7 @@ Little endian, with natural field alignment. Numbers in comments are byte offset
 **Event record**. Read in place in an `on_events` batch.
 
 ```rust
-struct EventRecord {      // 112 bytes
+struct EventRecord {      // 120 bytes
     key: i32,             // 0   Dispatch key for the module action or decision handler
     kind: i32,            // 4   Event kind (section 4)
     trigger: i64,         // 8   Trigger that fired, always set
@@ -131,24 +131,26 @@ struct EventRecord {      // 112 bytes
     x: i32,               // 96  Position of event in leptons where listed
     y: i32,               // 100
     z: i32,               // 104
-    reserved: i32,        // 108 0
+    args: i32,            // 108 String ID (name kind String): argument text of a module action, entry name of IniEntry, value of IniKey. Otherwise 0
+    target: i32,          // 112 Target of a module action (ActionTarget, in 5.1 order). 0 for other records
+    reserved: i32,        // 116 0
 }
 ```
 
-Every record sets `key`, `kind`, `trigger`, `holder` and `frame`. Reference fields omitted in section 4 are 0 (except `house`, as above). Unlisted integer payload fields are −1. `reserved` is always 0.
+Every record sets `key`, `kind`, `trigger`, `holder` and `frame`. Reference fields omitted in section 4 are 0 (except `house`, as above). Unlisted integer payload fields are −1. `args` and `target` are nonzero only where listed. `reserved` is always 0.
 
 **Decision record**. Read and write in place in `on_decide` ([RFC 6f](0001-wasm-extension-modules.md#6f-decidable-events)).
 
 ```rust
-struct DecideRecord {     // 152 bytes
+struct DecideRecord {     // 160 bytes
     event: EventRecord,   // 0    As above
-    native: i64,          // 112  Engine's own result
-    previous: i64,        // 120  Previous link's result, or native value for first link
-    result: i64,          // 128  Written by handler
-    handled: i32,         // 136  Handler sets to 1. Zero preserves previous link's result
-    area: i32,            // 140  Result area in module memory, or 0 if unused by this kind
-    area_cap: i32,        // 144  Bytes available in result area
-    previous_len: i32,    // 148  Size in bytes of previous link's result, already copied into area
+    native: i64,          // 120  Engine's own result
+    previous: i64,        // 128  Previous link's result, or native value for first link
+    result: i64,          // 136  Written by handler
+    handled: i32,         // 144  Handler sets to 1. Zero preserves previous link's result
+    area: i32,            // 148  Result area in module memory, or 0 if unused by this kind
+    area_cap: i32,        // 152  Bytes available in result area
+    previous_len: i32,    // 156  Size in bytes of previous link's result, already copied into area
 }
 ```
 
@@ -176,7 +178,7 @@ struct Query {            // 64 bytes followed by clause_count Clause records
     height: i32,          // 20  Area 2 height in cells
     type: i64,            // 24  Type reference. Types requires a kind wildcard or concrete type (8.2). For other scopes 0 allows any type
     owner: i64,           // 32  House reference, 0 for any
-    viewpoint: i64,       // 40  House for viewpoint-dependent properties (section 7), 0 for none
+    viewpoint: i64,       // 40  House for viewpoint-dependent properties (section 7), or an object: object viewpoint properties (Engage) use it as the viewpoint, house viewpoint properties use its owner. 0 for none
     after: i64,           // 48  Pagination: next returned by previous page, 0 for first page
     clause_count: i32,    // 56  at most 16
     reserved: i32,        // 60  0
@@ -244,7 +246,7 @@ struct ClientEventRecord { // 32 bytes
     id: i32,               // 16  Hotkey ID for Hotkey, notification ID for Notify, otherwise -1
     value: i32,            // 20  Hover: 1 enter, 0 leave. Click: List row number or CameoGrid item index, otherwise −1
                            //     MapClick: 0 left, 1 right
-    data: i32,             // 24  Notify: data in the delivery area
+    data: i32,             // 24  Notify: data. SimEvent: one EventRecord. Both in the delivery area
     data_len: i32,         // 28
 }
 ```
@@ -337,7 +339,10 @@ See [RFC 6a](0001-wasm-extension-modules.md#6a-triggers-events-filter-clauses-an
 | Map `[VeraWasm]` | `StorageId` | ASCII name | Map filename |
 | Map `[VeraWasmRulesPack]`, `[VeraWasmUIPack]` | `1`, `2`, … | Standard base64, 70 characters per value (readers accept up to 127 bytes). Keys are consecutive decimals from 1 without leading zeros. Join by number, not file order. A repeated, missing or non-numeric key or an overlong value refuses the match. Decompress as chunked LZO in the `IsoMapPack5` format. | — |
 | Mod `rulesmd.ini` `[VeraWasm]` | `Api` | `major.minor`, matching the mod module's import version | Required with modules |
-| Mod `rulesmd.ini` `[VeraWasm]` | `Budget`, `MapBudget` | Per-frame budgets for mod and map modules, respectively | Engine default and ceiling |
+| Mod `rulesmd.ini` `[VeraWasm]` | `Budget`, `MapBudget` | Per-frame budgets for mod and map modules, respectively ([RFC 15.4](0001-wasm-extension-modules.md#154-preview-values)) | 500,000 and 100,000. Ceiling 500,000. Below 20,000 refuses the match. |
+| Mod `rulesmd.ini` `[VeraWasm]` | `SeatBudget` | Budget added per claimed seat | 500,000. Ceiling 500,000. |
+| Mod `rulesmd.ini` `[VeraWasm]` | `Controller` | `yes` makes the lobby offer a "mod AI" option for computer seats ([RFC 6i](0001-wasm-extension-modules.md#6i-driving-a-house)) | `no` |
+| `VERA.INI` `[VERA]` | `WasmBudget` | Overrides the mod's `Budget`. Online, the host's value becomes a room setting. | None |
 | Mod `rulesmd.ini` `[VeraWasm]` | `MapWasm` | `yes`, `no` | `yes` |
 | Mod `rulesmd.ini` `[VeraWasm]` | `MapUI` | `overlay`, `full`, `no` | `overlay` |
 | Mod `rulesmd.ini`, TechnoType, Weapon, Warhead or Projectile section | `Vera.Tags` | Comma-separated tag section names | None |
@@ -345,9 +350,9 @@ See [RFC 6a](0001-wasm-extension-modules.md#6a-triggers-events-filter-clauses-an
 | Map `[VeraUI]`, `[VeraUI.<part>]` | `Parts`, part keys | As added `veraui.ini` parts (7.10) | None |
 | Map `[Actions]` | Action kind 100036 | `100036,4,name,0,0,0,0,A`. The name may have `mod.` or `map.` | — |
 | Tag section | `Trigger` | Comma-separated trigger section names | — |
-| Trigger section | `Event`, `Event<n>` | `name` or `name(op,interval,id,value)` (`EventDef` fields, trailing arguments optional). All events must hold. | At least one |
+| Trigger section | `Event`, `Event<n>` | `name` or `name(op,interval,id,value)` (`EventDef` fields, trailing arguments optional). `Wasm:name` is a registered module event (`ModuleEvent`). All events must hold. | At least one |
 | Trigger section | `Where<n>`, `Event<k>.Where<n>` | Filter clause ([RFC 6a](0001-wasm-extension-modules.md#6a-triggers-events-filter-clauses-and-actions)). `Where<n>` belongs to the first event. | None |
-| Trigger section | `Action`, `Action<n>` | `Wasm:name` for a module action. Otherwise `name(target,params…)`, with an `ActionTarget` name and parameters in section 5 table order. | None |
+| Trigger section | `Action`, `Action<n>` | `Wasm:name` or `Wasm:name(target,text)` for a module action (the text becomes the record's `args` verbatim and may contain commas). The event in `RaiseEvent` is written by name. Otherwise `name(target,params…)`, with an `ActionTarget` name and parameters in section 5 table order. | None |
 | Trigger section | `Decide` | `Wasm:name`, a decision handler | None |
 | Trigger section | `House` | Country name | 0 (subject's current house, or Neutral without a subject) |
 | Trigger section | `Difficulty` | Comma-separated `Easy`, `Normal`, `Hard` | All |
@@ -387,9 +392,10 @@ In the availability column, `init` means `vera_init`, `rules` means `on_rules`, 
 | 21 | `action` | `(kind: i32, target: i64, params: ptr, len, out: ptr) -> i32` | Execute an action (section 5, `ActionParams`). Write the created object (`i64`), otherwise 0. | all |
 | 22 | `send_notify` | `(to: i64, id: i32, ptr, len) -> i32` | Notify players of house `to`, or observers when `to` is 0. Exceeding the size or per-frame count limit returns `Refused`. | all |
 | 23 | `order` | `(house: i64, ptr, len) -> i32` | Queue a standard player command (`Order`) for computer house `house`. It executes next frame, validated like that house's player input ([RFC 6g](0001-wasm-extension-modules.md#6g-house-orders)). | all |
+| 24 | `ini_register` | `(kind: i32, section: i32, name: ptr, len, key: i32, out: ptr) -> i32` | Register an INI name (`IniKind`, [RFC 6h](0001-wasm-extension-modules.md#6h-ini-registration)). `section` is an `IniSection` for `Key`, 0 for an object event or 1 for a global event for `Event`, and 0 for `Registry`. `key` is the handler's dispatch key (ignored for `Event`). `out` receives an `i32`: the event ID for `Event`, otherwise 0. A name already registered or beginning with `Vera.` returns `Refused`. An invalid name, exceeding the count limit or calling outside the initialization function is an invalid argument. | init |
 
 - In `on_rules`, `set` on type and global rules references is equivalent to `rules_set` with the value in INI text form. `get` reads values processed up to that point in the current layer. Trigger, action, variable, modifier and `find` calls and reads or writes on other references return `Unsupported`.
-- Write functions are `set`, `modify`, `unmodify`, `rules_set`, `var_set`, `trigger_create`, `trigger_remove`, `trigger_bind`, `trigger_unbind`, `action`, `send_notify` and `order`.
+- Write functions are `set`, `modify`, `unmodify`, `rules_set`, `var_set`, `trigger_create`, `trigger_remove`, `trigger_bind`, `trigger_unbind`, `action`, `send_notify`, `order` and `ini_register`.
 
 ### 1.2 Exports
 
@@ -473,6 +479,8 @@ The table uses TypeScript. Rust uses newtypes and snake case (`where_prop`). Nam
 | Rules | `Rules.get(section, key)`, `Rules.set(section, key, value)` | `rules_get`, `rules_set` |
 | Searches | `.first()` or `.page(buffer, after)`. `.country(americans)` filters by country. | One `find` per `.page` call. first uses capacity 1, calls again from `next` until it has a match or `next=0`, and then returns 0 for no match. country takes a resolved country type reference and generates a Country equality clause. |
 | Other | `Cell.at(x, y)`, `Waypoint.cell(n)` only encode references. `Notify.id(name)`, `Notify.send(to, id, data)` | No call for references. Notifications use `lookup`, `send_notify`. |
+| INI registration | In initialization, `Ini.key(name, IniSection.TechnoType, key)`, `Ini.registry(name, key)`, `Ini.event(name, EventScope.Object)`. Handlers receive `IniKeyRecord` (`typeRef`, `value`) and `IniEntryRecord` (`position`, `entryName`). | One `ini_register` each. One `name_of` (`String`) to read a value. |
+| Module events | `Trigger.onModuleEvent(ev)`, `Action.raiseEvent(ev, target, other, value, value2)`, `ActionDef.module(key, target, text)` | `trigger_create`. `action` (`RaiseEvent`). |
 | Registration | Top-level `onScenarioStart(fn)`, `onFrame(new Every(N), fn)`, `onMessage(fn)`, `namedAction(name, fn)`. Client `onStart(fn)`, `onRender(fn)`, `onClientEvent(ClientEvent.Click, fn)` | SDK-generated exports |
 | Client | `Ui.find(name)`, `Ui.create(NodeKind.Text, parent)`, `Node.setLabel(n, text)`, `Node.setVisible(n, v)`, `Client.viewer()`, `Client.sendMessage(data)`, `Client.order(...)`, `Storage.read(key)`, `Node.setItems(n, items)` | One `client_*` call each. `Storage.read` calls twice if the value exceeds its buffer. `Node.setItems` joins entries with `\n` and calls `client_set_bytes`. |
 
@@ -621,7 +629,7 @@ These events fire at safe points. **Object + weapon** also permits binding to we
 | 100013 | `TransportExited` | As `TransportEntered` | After exit completes | Object | — | v1 |
 | 100014 | `PassengerAdded` | On transport or building (`subject`). `other` passenger, `value` occupied space, `value2` garrison flag | As `TransportEntered` | Object | — | v1 |
 | 100015 | `PassengerRemoved` | As `PassengerAdded` | As `TransportExited` | Object | — | v1 |
-| 100016 | `Commanded` | On unit (`subject`). `value` command (`Command`), `other` target object (may be 0), `cell` target cell (may be 0), `value2` command serial shared by units receiving the same order from one click | After simulation executes player or AI command for bound object | Object | — | later |
+| 100016 | `Commanded` | On unit (`subject`). `value` command (`Command`), `other` target object (may be 0), `cell` target cell (may be 0), `value2` command serial shared by units receiving the same order from one click | After simulation executes player or AI command for bound object | Object | — | v1 |
 | 100017 | `Crushed` | `other` crusher, `x`, `y`, `z` position in leptons | After crushing | Object | — | later |
 | 100018 | `HouseTransfer` | `house` new house, `value` 1 for mind control | Before transfer, which rechecks | Object | — | later |
 | 100019 | `HouseTransferred` | `house` old house, `value` 1 for mind control | After transfer | Object | — | v1 |
@@ -631,6 +639,8 @@ These events fire at safe points. **Object + weapon** also permits binding to we
 | 100023 | `Timer` | `value` frame of last firing | Every `interval` frames | Global | — | v1 |
 | 100024 | `SuperWeaponLaunched` | `id` superweapon type, `house`, `cell` target | After superweapon launch | Global | — | v1 |
 | 100025 | `ProductionCancelled` | `house`, `id` type, `value` credits refunded | After player or AI cancels production queue entry | Type | — | later |
+| 100040 | `ModuleEvent` | `id` event ID (same as `EventDef.id`), `subject` (0 for a global event), `other`, `value`, `value2`, `house` from the `RaiseEvent` parameters ([RFC 6h](0001-wasm-extension-modules.md#6h-ini-registration)) | When `RaiseEvent` executes | Object when registered as an object event, otherwise global | — | v1 |
+| 100043 | `OrderRefused` | `subject` refused unit (0 for a house-level order), `house` house that issued the order, `value` command (`Command`), `value2` reason (`RefuseReason`), `other` and `cell` the order's target, `id` type for a house-level order (otherwise −1) ([RFC 6i](0001-wasm-extension-modules.md#6i-driving-a-house)) | After an order is refused in the execution step, once per unit, or once for a house-level order | Global | — | v1 |
 
 ### 4.4 New polling events
 
@@ -671,6 +681,16 @@ Delivered in render-frame batches to `client_on_events` (`ClientEventRecord`). A
 | `MapClick` | `ref` cell, `value` 0 left / 1 right | Map click, excluding clicks that generated `Click` or `Dismiss` | Always. When cursor `CaptureMapClick` is 1 the click does not reach the game. |
 | `SelectionChanged` | — | Local selection changes. Read with `client_find` and a `Selected=1` clause. | Always |
 | `Notify` | `source`, `id` notification ID, `data`, `data_len` | Notification addressed to this machine arrives ([RFC 10](0001-wasm-extension-modules.md#10-client-modules)) | Always |
+| `SimEvent` | `data`, `data_len`: one `EventRecord` in the delivery area | `Commanded`, `OrderRefused`, `TakeDamage`, `Killed`, `Birth` and `AttackedBy` whose subject is the player's own object, and house events addressed to the player's house. `other` the local player cannot see is 0. Not delivered while catching up frames ([RFC 10](0001-wasm-extension-modules.md#10-client-modules)) | Always |
+
+### 4.7 Scenario-start delivery records
+
+Delivered only at scenario start, to the module that registered them, before that module's `on_scenario_start` ([RFC 6h](0001-wasm-extension-modules.md#6h-ini-registration)). They cannot be used in triggers. Using them in `EventDef` is an invalid argument. `key` is the dispatch key from registration, `trigger`, `holder` and `target` are 0, and `id` is −1. All are `v1`.
+
+| # | Record | Fields |
+| --- | --- | --- |
+| 100041 | `IniEntry` | `args` entry section name, `value` position in the merged list (from 0; a repeated entry name is delivered only the first time) |
+| 100042 | `IniKey` | `subject` type reference of the section (global rules reference for `General`), `args` merged value |
 
 ## 5. Action kinds
 
@@ -853,7 +873,7 @@ Ares actions return `Unsupported` when Ares is disabled.
 
 ### 5.3 Atomic actions
 
-Numbers are the identity and are appended only. 100041 is reserved (`ApplyEffect`). Code-only actions pass variable-length data through `action`. Actions not documented as returning a handle give a value of 0, and the status is returned by the same call. In version 1 `Modify` and `RemoveModifiers` apply only to objects.
+Numbers are the identity and are appended only. 100041 is reserved (`ApplyEffect`). 100043 and 100044 are reserved (`AttachRoutine`, `DetachRoutine`, engine-side micro routines, later). Code-only actions pass variable-length data through `action`. Actions not documented as returning a handle give a value of 0, and the status is returned by the same call. In version 1 `Modify` and `RemoveModifiers` apply only to objects.
 
 | # | Name | Target | Parameters | Effect and nonzero result | RNG | Tier |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -893,11 +913,12 @@ Numbers are the identity and are appended only. 100041 is reserved (`ApplyEffect
 | 100033 | `Log` | — | `text` | Writes one line to the in-game log | none | v1 |
 | 100034 | `Convert` | Object | `id` type, `value2` frames (0 for permanent, positive to revert on expiry) | Changes type using Ares conversion rules. Mutually exclusive with teleportation and forced motion | native | v1 |
 | 100035 | `Push` | Object | `cell` directional target, `value` force | Pushes or launches the object in addition to its movement. Mutually exclusive with conversion and teleportation | native | later |
-| 100036 | `Module` | Any | `id` dispatch key | Queues a module action for the module phase. INI spelling is `Action=Wasm:name` in named sections, action 100036 in maps | none | v1 |
+| 100036 | `Module` | Any | `id` dispatch key, `text` argument text (optional) | Queues a module action for the module phase. The record's `target` is the trigger's target selection and `args` the string ID of the argument text. INI spelling is `Action=Wasm:name` or `Action=Wasm:name(target,text)` in named sections, action 100036 in maps (no arguments) | none | v1 |
 | 100037 | `CreateTeamUnlimited` | `House` | `id` TeamType | Starts and returns a team without checking Max, like script action 18 | native | later |
 | 100038 | `DisbandTeam` | — | `other` team | Destroys the team, records the AI trigger outcome and releases its members | none | later |
 | 100039 | `AddTeamMember` | Object | `other` team | Joins a team subject to admission checks | none | later |
 | 100040 | `RemoveTeamMember` | Object | — | Leaves the current team | none | later |
+| 100042 | `RaiseEvent` | Object (object event) or any (global event) | `id` event ID. `other`, `value`, `value2`, `house` are written to the record | Raises module event `ModuleEvent` ([RFC 6h](0001-wasm-extension-modules.md#6h-ini-registration)). `Gone` if the target of an object event is not an existing object. An unregistered event ID is an invalid argument. INI spelling is `RaiseEvent(target,event name,value,value2)` | none | v1 |
 
 ### 5.4 Client action kinds
 
@@ -1050,8 +1071,16 @@ Properties of a `Techno`. Only the final row supports modifiers.
 | `Moving` | bool | R | own | v1 |  |
 | `Facing` | int 0..255 | R | own | v1 | Body facing, in the same units as map unit facing and the `ForceFacing` script action |
 | `TurretFacing` | int 0..255 | R | own | v1 | Turret facing in `Facing` units. `Unsupported` without a turret |
-| `Armor` | id (`Armor`) | R | own | later |  |
+| `Armor` | id (`Armor`) | R | own | v1 |  |
 | `Online` | bool | W | own | v1 | Buildings, equivalent to stock actions 61 and 62 |
+| `Destination` | ref | R | own | v1 | Move destination (cell or object), or 0 |
+| `WeaponReady` | bool | R | own | v1 | Primary weapon cooldown finished |
+| `Deployed` | bool | R | own | v1 | Deployed |
+| `UnderConstruction` | bool | R | seen | v1 | Building is in its construction animation |
+| `Parasite` | ref | R | own | v1 | Parasite unit attached to it, or 0 |
+| `ControlGroup` | int | R | Client only | v1 (phase 2) | Local control group number, or −1. `Unsupported` in the simulation |
+| `Visible` | bool | R (viewpoint) | own | v1 | The viewpoint house can see it at this moment: fog, cloaking and detection consistent with that player's client ([RFC 6i](0001-wasm-extension-modules.md#6i-driving-a-house)) |
+| `Engage` | enum `EngageResult` | R (viewpoint object, derived, high) | own | v1 | Whether the viewpoint object as shooter can strike it. The viewpoint must be an object, otherwise `Unsupported`. Reuses the engine's fire permission and damage checks |
 | `Selected` | bool | R | Client only | v1 (phase 2) | Local selection. `Unsupported` in the simulation |
 | `Relation` | enum `Relation` | R (viewpoint) | own | v1 | Relationship to the viewpoint house |
 | `NearbyEnemyCount` | int | R (derived, high) | own | later | Number of enemy objects within sight (`Sight`) |
@@ -1160,6 +1189,11 @@ All are `later`.
 | `IsDefeated`, `IsHuman`, `IsCivilian` | bool | R | all | v1 |  |
 | `Kills`, `Losses` | int | R | own | later | Statistic |
 | `AiTriggersActive` | bool | W | sim | later | Same as stock actions 74 and 75 |
+| `ControlDomains` | mask (`Domain`) | W | sim | v1 | Claimed domains ([RFC 6i](0001-wasm-extension-modules.md#6i-driving-a-house)). `Refused` for a human house, a defeated house or a bit claimed by another module. Saved and hashed |
+| `Factory.<Kind>.Type` | ref | R | own | v1 | `<Kind>` is `Building`, `Defense`, `Infantry`, `Vehicle`, `Naval` or `Aircraft`. Type in production, or 0 |
+| `Factory.<Kind>.Progress` | int 0..100 | R | own | v1 |  |
+| `Factory.<Kind>.Ready` | bool | R | own | v1 | Finished, awaiting placement or exit |
+| `Factory.<Kind>.Queued` | int | R | own | v1 | Number of queued entries |
 | `Relation` | enum `Relation` | R (viewpoint) | all | v1 | List allies and enemies with a `Relation` clause in `find` |
 | `PowerOutage` | bool | R | own | later | Modifiable (7.2) |
 
@@ -1176,6 +1210,8 @@ All are `later`.
 | `Placeable` | bool | R (viewpoint) | own | v1 | Whether the viewpoint house can place the query's `type` here. Valid in `find` and `client_find`. Elsewhere returns `Unsupported` |
 | `CellTag` | ref (tag) | R | sim | v1 | 0 if absent |
 | `Waypoint` | int | R | all | v1 | Waypoint number at this cell, or −1 if absent |
+| `Zone.<MovementZone>` | int | R | all | v1 | Connected-area number for this movement zone: two cells with equal numbers are mutually reachable. One per `MovementZone` |
+| `Obstructed` | bool | R | seen | v1 | Occupied by a building, wall or impassable overlay |
 
 ### 7.7 Types and rules
 
@@ -1256,6 +1292,7 @@ Global rules reference (kind 4) for scenario and global state.
 | `AmbientLight` | int | R | all | v1 |
 | `IonStormActive` | bool | R | all | v1 |
 | `GameSpeed` | int | R | all | v1 |
+| `AutomationAllowed` | bool | R | all | v1 |
 | Numeric global keys | See 7.7 | R | all | later |
 
 `GameSpeed` uses the game speed levels of the game options. Read-only in version 1.
@@ -1278,10 +1315,10 @@ Client access is `sim` for triggers, tags and teams, and `own` for superweapons.
 | Team | `Cursor` | int | W | later | Script cursor. Writing jumps to that line |
 | Team | `Succeeded` | bool | R | later |  |
 | Team | `MemberCount` | int | R | later | List members using `find` with a `Team = t` clause |
-| Superweapon | `Type` | ref | R | later |  |
-| Superweapon | `Owner` | ref | R | later |  |
-| Superweapon | `Ready` | bool | R | later |  |
-| Superweapon | `ChargePercent` | int | W | later | Same as stock action 129 |
+| Superweapon | `Type` | ref | R | v1 |  |
+| Superweapon | `Owner` | ref | R | v1 |  |
+| Superweapon | `Ready` | bool | R | v1 |  |
+| Superweapon | `ChargePercent` | int | W | v1 | Same as stock action 129 |
 | Superweapon | `RechargeTime` | frames | W | later | Same as stock action 132 |
 
 ### 7.10 Client nodes
@@ -1374,12 +1411,13 @@ Client-only references, writable with `client_set` and `client_set_bytes`. They 
 | 15 | `Variable` | Variable (`vera.vars`). The `mod.` and `map.` prefixes address the other origin. Returns the variable ID |
 | 16 | `Notify` | Notification (`vera.notify`). Returns the FNV-1a hash of the lowercase-folded name |
 | 17 | `ModuleAction` | Module action or decision handler in this module's `vera.actions`. No prefixes. Returns the dispatch key |
-| 18 | `String` | Strings the engine already holds identically on every machine: strings returned by `string` properties, music, EVA names, map trigger and tag IDs. `NotFound` if absent. Creates no strings. The simulation never looks up CSF or translation tables: CSF entry names pass unchanged as text arguments and `lookup` does not test whether they exist. |
+| 18 | `String` | Strings the engine already holds identically on every machine: strings returned by `string` properties, music, EVA names, map trigger and tag IDs, and argument texts in the string table and the names and values of `IniEntry` and `IniKey` (`args`). `NotFound` if absent. Creates no strings. The simulation never looks up CSF or translation tables: CSF entry names pass unchanged as text arguments and `lookup` does not test whether they exist. |
 | 19 | `Property` | Property name. Returns the property ID |
 | 20 | `EventKind` | Event kind name |
 | 21 | `ActionKind` | Action kind name |
 | 22 | `Hotkey` | Hotkey registered by this module (client) |
 | 23 | `VeraEffect` | Reserved |
+| 24 | `ModuleEvent` | Registered module event (any source, [RFC 6h](0001-wasm-extension-modules.md#6h-ini-registration)). Returns the event ID |
 
 ### 8.2 Search scopes (`find`)
 
@@ -1424,6 +1462,11 @@ Where numbers are omitted, the interface definition assigns values in declaratio
 | 20 | `Command` | See the command table below |
 | 21 | `Hold` | `TopLeft`, `Top`, `TopRight`, `Left`, `Middle`, `Right`, `BottomLeft`, `Bottom`, `BottomRight` (`Hold` values in `veraui.ini`) |
 | 22 | `PathKind` | 0 `Bezier`, 1 `Parabola`, 2 `Spiral`, 3 `Waypoints` |
+| 23 | `IniKind` | 0 `Key`, 1 `Registry`, 2 `Event` |
+| 24 | `IniSection` | 0 `TechnoType`, 1 `Weapon`, 2 `Warhead`, 3 `Projectile`, 4 `SuperWeapon`, 5 `Country`, 6 `General` (only the `[General]` section) |
+| 25 | `Domain` | Bits: 0 `Production`, 1 `Forces`, 2 `Abilities`, 3 `SuperWeapons` ([RFC 6i](0001-wasm-extension-modules.md#6i-driving-a-house)) |
+| 26 | `RefuseReason` | 0 `Other`, 1 `Gone`, 2 `IgnoresOrders`, 3 `IllegalTarget`, 4 `Prerequisite`, 5 `CannotAfford`, 6 `QueueFull`, 7 `CannotPlace`, 8 `NotReady`, 9 `Vetoed` (vetoed by `CommandAllowed` or `ProductionQueued`), 10 `RateLimited` |
+| 27 | `EngageResult` | 0 `Ok`, 1 `Illegal`, 2 `OutOfRange`, 3 `NoDamage` |
 
 **Commands** (`Command` and the fields of `Order`, for `order` and `client_send_order`). Fields marked — are zero. An order that violates this table returns `Refused`. See section 9 for tiers.
 
@@ -1434,7 +1477,7 @@ Where numbers are omitted, the interface definition assigns values in declaratio
 | 2 | `Stop` | — | — | Units |
 | 3 | `Attack` | Object | — | Units |
 | 4 | `AttackMove` | Cell | — | Units |
-| 5 | `Guard` | Object or 0 (in place) | — | Units |
+| 5 | `Guard` | Object, cell (guard the area) or 0 (in place) | — | Units |
 | 6 | `DeployMcv` | — | — | MCV |
 | 7 | `UndeployBuilding` | — | — | Building |
 | 8 | `SetRally` | Cell | — | Factory building |
@@ -1455,6 +1498,8 @@ Where numbers are omitted, the interface definition assigns values in declaratio
 | 23 | `Scatter` | — | — | Units |
 | 24 | `TogglePrimaryFactory` | — | — | Factory building |
 | 25 | `Enter` | Object | — | Units |
+| 26 | `Harvest` | Cell | — | Harvester |
+| 27 | `TakeProduct` | — | Factory kind (index of `Factory.<Kind>`: 0 `Building` … 5 `Aircraft`) | None |
 
 `Scatter` moves units a short distance aside, as the scatter key does. `TogglePrimaryFactory` toggles a factory's primary flag, as clicking a factory that is not primary does. `Enter` boards a transport or enters a bunker, repair depot, refinery or Grinder, as clicking it does.
 
@@ -1464,13 +1509,13 @@ Tables with a tier column follow that column. This section covers the rest. Each
 
 | Table | `v1` | `later` or with phase 2 |
 | --- | --- | --- |
-| Simulation imports | All 22 other than `send_notify` | `send_notify` with phase 2 |
+| Simulation imports | All 23 other than `send_notify` | `send_notify` with phase 2 |
 | Simulation exports | All other than `on_message` | `on_message` with phase 2 |
 | Stock and Ares actions | 1, 2, 4, 5, 7, 8, 10..12, 14, 16..18, 20..35, 41..48, 51, 53..73, 76..80, 82..90, 92..97, 100..110, 112, 114..118, 125, 127..129, 131..145, 148, 149 | The rest |
 | TechnoType properties | `Category`, `Strength`, `Cost`, `Soylent`, `Speed`, `ROT`, `Crushable`, `Selfhealing`, `Explodes`, `Power`, `Sight`, `Ammo`, `InitialAmmo`, `Storage`, `Passengers`, `SizeLimit`, `TechLevel` | The rest |
 | Weapon properties | `Damage`, `ROF`, `Burst`, `MinimumRange`, `Range` | The rest |
 | Warhead properties | `CellSpread`, `PercentAtMax`, `Wall`, `Wood`, `Sparky`, `Fire`, `Conventional`, `Rocker`, `InfDeath` | The rest |
-| Name kinds | `TechnoType`, `Weapon`, `Warhead`, `Projectile`, `Anim`, `VoxelAnim`, `ParticleSystem`, `SuperWeapon`, `Country`, `TeamType`, `Variable`, `ModuleAction`, `Property`, `ActionKind`. Phase 2: `Notify`, `Hotkey` | The rest. `Armor` previews with `TargetArmor` |
-| Search scopes | `Objects` (no projectiles), `Houses` (no area, type or owner filter), `Cells`, `Modifiers` | The rest |
-| Commands | All in 8.3 except the right column | `SuspendProduction`, `EjectBunker`, `Enter` |
+| Name kinds | `TechnoType`, `Weapon`, `Warhead`, `Projectile`, `Anim`, `VoxelAnim`, `ParticleSystem`, `SuperWeapon`, `Country`, `TeamType`, `Variable`, `ModuleAction`, `Property`, `ActionKind`, `String`, `ModuleEvent`. Phase 2: `Notify`, `Hotkey` | The rest. `Armor` previews with `TargetArmor` |
+| Search scopes | `Objects` (no projectiles), `Houses` (no area, type or owner filter), `Cells`, `Modifiers`, `SuperWeapons` | The rest |
+| Commands | All in 8.3 except the right column | `EjectBunker` |
 | Client node properties | All in 7.10 except the right column | Properties only of `Decoration`, `ItemProgress`, writing `Items` of a `CameoGrid` |

@@ -6,6 +6,7 @@ use super::{
     queue_deploy_undeploy_for_selected, queue_selection_snapshot_command,
 };
 use crate::app::AppState;
+use crate::app::PlatformState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::{
     cancel_build_by_type, preferred_command_owner, queue_build_by_type, schedule_command,
@@ -15,9 +16,12 @@ use crate::app::input::sidebar_eva;
 use crate::app::match_audio::MatchAudioState;
 use crate::app::match_runtime::sim_host::SimHost;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::sidebar_render::current_sidebar_view;
+use crate::app::renderer_state::RendererState;
 use crate::map::entities::EntityCategory;
 use crate::sim::command::Command;
+use crate::ui::game_screen::GameScreen;
 use crate::ui::sidebar::SidebarAction;
 
 /// The sidebar command one wheel notch resolves to.
@@ -63,11 +67,18 @@ pub(crate) fn wheel_notch(delta_lines: f32) -> Option<WheelAction> {
 /// retail binding is a window message routed straight to a command, not a
 /// hit-tested gadget, so the wheel scrolls the sidebar from anywhere on the
 /// screen — and there is no world zoom in gamemd for the wheel to reach instead.
-pub(crate) fn sidebar_scroll_command(state: &mut AppState, action: WheelAction) {
-    if crate::app::input::campaign_input::is_locked(&state.match_state) {
+pub(crate) fn sidebar_scroll_command(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+    action: WheelAction,
+) {
+    if crate::app::input::campaign_input::is_locked(match_state) {
         return;
     }
-    let Some(visible_rows) = current_sidebar_view(&state.match_state.match_presentation)
+    let Some(visible_rows) = current_sidebar_view(&match_state.match_presentation)
         .map(|view| view.layout.side2_tile_count)
     else {
         return;
@@ -75,18 +86,22 @@ pub(crate) fn sidebar_scroll_command(state: &mut AppState, action: WheelAction) 
     // VERA: over a grid of build pictures the side's layout added, the wheel
     // scrolls that grid, a row a notch; anywhere else it scrolls the
     // sidebar's own strip as the original does.
-    let (x, y) = state.sidebar_frame().point_to_layout(
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
-    );
-    let over = current_sidebar_view(&state.match_state.match_presentation).and_then(|view| {
+    let (x, y) = crate::app::state::sidebar_frame(
+        platform,
+        persistence,
+        renderer,
+        screen,
+        &match_state.match_presentation.sidebar_layout_spec,
+    )
+    .point_to_layout(match_state.input.cursor_x, match_state.input.cursor_y);
+    let over = current_sidebar_view(&match_state.match_presentation).and_then(|view| {
         view.added_grids
             .iter()
             .find(|grid| grid.rect.contains(x, y))
             .copied()
     });
     if let Some(grid) = over {
-        let scroll = &mut state.match_state.match_presentation.added_grid_scroll;
+        let scroll = &mut match_state.match_presentation.added_grid_scroll;
         if scroll.len() <= grid.part {
             scroll.resize(grid.part + 1, 0);
         }
@@ -97,7 +112,7 @@ pub(crate) fn sidebar_scroll_command(state: &mut AppState, action: WheelAction) 
         };
         return;
     }
-    let presentation = &mut state.match_state.match_presentation;
+    let presentation = &mut match_state.match_presentation;
     presentation.sidebar_projection.model.queue_scroll(
         presentation.active_sidebar_tab,
         action == WheelAction::SidebarDown,

@@ -8,7 +8,7 @@ use super::*;
 impl WolCapture {
     pub(super) fn my_info_open(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         use crate::ui::wol_shell::WolMode;
-        let requests = self.requests(state, frame)?;
+        let requests = self.requests(&mut state.frontend.wol, frame)?;
         ensure!(
             requests == [WolServiceRequest::EnsureApi],
             "0x799D30 did not start with the WOLAPI object: {requests:?}"
@@ -19,7 +19,7 @@ impl WolCapture {
             "My Information did not write mode 6"
         );
         service_event(state, WolServiceEvent::Api(WolApiStatus::Available));
-        let requests = self.requests(state, frame)?;
+        let requests = self.requests(&mut state.frontend.wol, frame)?;
         ensure!(
             requests
                 == [
@@ -49,7 +49,7 @@ impl WolCapture {
             crate::app::shell_wol::my_info::page(state.frontend.wol.as_ref()).is_some(),
             "the server list did not open 0x114"
         );
-        let requests = self.requests(state, frame)?;
+        let requests = self.requests(&mut state.frontend.wol, frame)?;
         ensure!(
             requests == [WolServiceRequest::LocaleCount],
             "0x114's locale combo did not ask for the count: {requests:?}"
@@ -76,7 +76,7 @@ impl WolCapture {
             AUTO_LOGIN, BACK, COUNTRY, FORGET, HEADING, LOCALE, NICKNAME as NICKNAME_COMBO, SERVER,
             WINS,
         };
-        let page = my_info_shown(state)?;
+        let page = my_info_shown(&state.frontend)?;
         let data = page.data.clone();
         let snapshot = json!({
             "selected_data": data,
@@ -121,7 +121,7 @@ impl WolCapture {
             );
         }
         self.event(frame, json!({"0x114 init": snapshot}));
-        let file = info_file(state)?;
+        let file = info_file(&state.platform.game_config)?;
         let persona = |_: &AppState| file.load_persona(NICKNAME, &|key| key.to_owned());
         match self.target {
             WolTarget::MyInfoServer => {
@@ -162,10 +162,10 @@ impl WolCapture {
                 self.event(frame, json!({"0x6FF AutoLogin": seen}));
             }
             WolTarget::MyInfoForget => {
-                let rect = layout_button(state, FORGET)?;
+                let rect = layout_button(&state.renderer.gpu, FORGET)?;
                 welcome_click(state, rect);
-                let requests = self.requests(state, frame)?;
-                let page = my_info_shown(state)?;
+                let requests = self.requests(&mut state.frontend.wol, frame)?;
+                let page = my_info_shown(&state.frontend)?;
                 let names: Vec<&str> = page.nicknames.iter().map(String::as_str).collect();
                 ensure!(
                     requests == [WolServiceRequest::ForgetCredential { slot: 1 }]
@@ -187,7 +187,7 @@ impl WolCapture {
                     state.frontend.wol_account.nickname == PEER,
                     "the nickname combo did not set [0xB73E40]"
                 );
-                let rect = layout_button(state, BACK)?;
+                let rect = layout_button(&state.renderer.gpu, BACK)?;
                 welcome_click(state, rect);
                 ensure!(
                     state.frontend.shell_exit.is_some(),
@@ -212,7 +212,7 @@ impl WolCapture {
         matches: impl Fn(&crate::ui::wol_my_info::MyInfoRow) -> bool,
     ) -> Result<usize> {
         use crate::app::shell_wol::my_info;
-        let layout = my_info::layout(state);
+        let layout = my_info::layout(&state.renderer.gpu);
         let face = layout.rect_of(control).context("combo face")?;
         let arrow = crate::ui::skirmish_shell::combo_arrow_hit_rect(face, layout.page.scale);
         welcome_click(state, arrow);
@@ -241,7 +241,7 @@ impl WolCapture {
 
     /// A click on a checkbox's icon.
     fn my_info_check(&mut self, state: &mut AppState, control: u16) -> Result<()> {
-        let layout = crate::app::shell_wol::my_info::layout(state);
+        let layout = crate::app::shell_wol::my_info::layout(&state.renderer.gpu);
         let rect = layout.rect_of(control).context("checkbox")?;
         welcome_click(
             state,

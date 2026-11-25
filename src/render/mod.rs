@@ -36,6 +36,10 @@ pub mod cell_window;
 pub mod chrome_atlas;
 pub(crate) mod chrono_screen;
 pub(crate) mod color_vision;
+pub(crate) mod hd_art;
+pub(crate) mod hd_terrain;
+pub(crate) mod hd_voxel;
+pub(crate) mod hd_switch;
 pub mod combat_light;
 pub mod cursor_atlas;
 #[cfg(all(test, any(tests_render_a_r, tests_app_presentation, tests_render_s_z)))]

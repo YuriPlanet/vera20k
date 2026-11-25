@@ -720,7 +720,7 @@ impl App {
             }
         }
         state.persistence.options_profile.game_speed = request.game_speed;
-        Self::destroy_current_shell_dialog(state);
+        Self::destroy_current_shell_dialog(&mut state.frontend);
         state.frontend.shell_first_paint_slide = None;
         let mut clock = SpawnSeedClock { seed: request.seed };
         match request.game {
@@ -775,7 +775,10 @@ impl App {
                             request.game_speed
                         );
                         return crate::app::lan_service::begin_direct_spawn(
-                            state,
+                            state.platform.game_config.as_ref(),
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &mut state.process_assets,
                             network.session,
                             direct,
                             seed,
@@ -981,7 +984,7 @@ impl App {
             state.match_state.session.leave_network();
         }
         state.frontend.network_setup_protocol = None;
-        Self::destroy_current_shell_dialog(state);
+        Self::destroy_current_shell_dialog(&mut state.frontend);
         state.frontend.browser_exit_pending = true;
     }
 

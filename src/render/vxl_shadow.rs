@@ -235,6 +235,7 @@ pub(crate) fn render_raster(vxl: &VxlFile, raster: &StencilRaster) -> Option<Vxl
         height: h as u32,
         offset_x: ox as f32,
         offset_y: oy as f32,
+        hd: None,
     })
 }
 

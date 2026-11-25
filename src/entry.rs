@@ -71,10 +71,7 @@ pub fn log_banner(log_path: Option<&Path>) {
         "Phobos support compiled in: {}",
         crate::rules::PHOBOS_ENABLED
     );
-    log::info!(
-        "NPatch support compiled in: {}",
-        crate::rules::NPATCH_ENABLED
-    );
+    log::info!("NPatch support: in every build, from the game's data");
     log::info!("VeraX support compiled in: {}", crate::rules::VERAX_ENABLED);
     log::info!("NPBUG support compiled in: {}", crate::rules::NPBUG_ENABLED);
     if let Some(path) = log_path {

@@ -19,13 +19,22 @@ pub(crate) const OPEN_FOLDER: u16 = 0x7E32;
 pub(crate) const BACK: u16 = 0x7E33;
 pub(crate) const CHECK: u16 = 0x7E34;
 pub(crate) const NEW: u16 = 0x7E35;
-/// Android: remove the selected mod's folder (the app owns it).
-pub(crate) const DELETE: u16 = 0x7E37;
-/// Android: rename the selected mod's folder.
-pub(crate) const RENAME: u16 = 0x7E39;
-/// Android: add a home-screen shortcut for the selected mod.
-pub(crate) const PIN: u16 = 0x7E38;
+#[cfg(any(
+    windows,
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "android"
+))]
 pub(crate) const ADD: u16 = 0x7E36;
+/// Android: remove the selected mod's folder (the app owns it).
+#[cfg(target_os = "android")]
+pub(crate) const DELETE: u16 = 0x7E37;
+/// Android: add a home-screen shortcut for the selected mod.
+#[cfg(target_os = "android")]
+pub(crate) const PIN: u16 = 0x7E38;
+/// Android: rename the selected mod's folder.
+#[cfg(target_os = "android")]
+pub(crate) const RENAME: u16 = 0x7E39;
 
 /// The Options button's caption and the page's heading.
 pub(crate) const TITLE_KEY: &str = "VERA:Mods";
@@ -45,11 +54,9 @@ pub(crate) const HINT_TEXT: u16 = 0x7E40;
 pub(crate) const DETAIL_TEXTS: [u16; 5] = [0x7E41, 0x7E42, 0x7E43, 0x7E44, 0x7E45];
 pub(crate) const PROMPT_TEXT: u16 = 0x7E46;
 
-/// Android: New Mod's name dialog, a page dialog rather than a message box so
-/// the edit keeps its text and focus across frames. Hidden until New Mod opens
-/// it (`app::shell_mods`).
-#[cfg(target_os = "android")]
-pub(crate) const NAME_PROMPT: u16 = 0x7E61;
+/// Android: New Mod's and Rename Mod's name dialog, a page dialog rather than
+/// a message box so the edit keeps its text and focus across frames. Hidden
+/// until one of them opens it (`app::shell_mods`).
 #[cfg(target_os = "android")]
 pub(crate) const NAME_EDIT: u16 = 0x7E62;
 #[cfg(target_os = "android")]
@@ -74,170 +81,64 @@ pub(crate) fn nodes() -> NodeSpec {
     page
 }
 
-/// Android: New Mod's dialog parts in window pixels, on the box template's
-/// own dialog rect so it sits where Add Mod's and the Mods page's boxes do.
-/// The panel keeps `PUDLGBGN.SHP`'s shape: its height follows the art's
-/// aspect, which the renderer sets from the loaded entry.
+/// Android: the name dialog in window pixels, on the message box template's
+/// dialog, text body and two buttons, so it sits where the Mods page's boxes
+/// do (`App::name_dialog_parts`).
 #[cfg(target_os = "android")]
-pub(crate) fn name_dialog_rects(
-    scale: crate::ui::shell::geom::ShellScale,
-) -> (
-    crate::ui::shell::geom::RectPx,
-    crate::ui::shell::geom::RectPx,
-    crate::ui::shell::geom::RectPx,
-    crate::ui::shell::geom::RectPx,
-    crate::ui::shell::geom::RectPx,
-) {
-    use crate::ui::shell::geom::RectPx;
-    let (dx, dy, dw, dh) = name_box();
-    let (ox, oy, ow, oh) = name_button(0);
-    let (cx, cy, cw, ch) = name_button(1);
-    let window = scale.window();
-    let windowed = |x: f32, y: f32, w: f32, h: f32| {
-        RectPx::new(
-            (x * window.w as f32).round() as i32,
-            (y * window.h as f32).round() as i32,
-            (w * window.w as f32).round() as i32,
-            (h * window.h as f32).round() as i32,
-        )
-    };
-    let dialog = windowed(dx, dy, dw, dh);
-    let aspect = name_aspect();
-    let h = ((dialog.w as f32 * aspect).round() as i32).max(80);
-    let y = dialog.y + (dialog.h - h) / 2;
-    let panel = RectPx::new(dialog.x, y.max(0), dialog.w, h);
-    let inset = (panel.w as f32 * 0.03).round() as i32;
-    let at = |x: i32, y: i32, w: i32, h: i32| RectPx::new(x, y, w, h);
-    (
-        panel,
-        at(
-            panel.x + inset,
-            panel.y + inset,
-            panel.w - 2 * inset,
-            (panel.h as f32 * 0.12) as i32,
-        ),
-        at(
-            panel.x + inset,
-            panel.y + inset + (panel.h as f32 * 0.16) as i32,
-            panel.w - 2 * inset,
-            (panel.h as f32 * 0.16) as i32,
-        ),
-        windowed(ox, oy, ow, oh),
-        windowed(cx, cy, cw, ch),
-    )
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NameDialogRects {
+    /// The panel: the template's dialog in `PUDLGBGN.SHP`'s shape.
+    pub(crate) panel: RectPx,
+    /// Where the hint and the name field start, as a box's text does.
+    pub(crate) body: RectPx,
+    pub(crate) ok: RectPx,
+    pub(crate) close: RectPx,
 }
 
-/// Android: the message box template's dialog and its first two buttons, as
-/// fractions of the window, written by the renderer once a frame.
 #[cfg(target_os = "android")]
-pub(crate) fn set_name_box(
-    dialog: crate::ui::shell::geom::RectPx,
-    body: crate::ui::shell::geom::RectPx,
-    ok: crate::ui::shell::geom::RectPx,
-    close: crate::ui::shell::geom::RectPx,
-    window: crate::ui::shell::geom::RectPx,
-) {
-    let write = |base: usize, rect: crate::ui::shell::geom::RectPx| {
-        let values = [
-            rect.x as f32 / window.w.max(1) as f32,
-            rect.y as f32 / window.h.max(1) as f32,
-            rect.w as f32 / window.w.max(1) as f32,
-            rect.h as f32 / window.h.max(1) as f32,
-        ];
-        for (index, value) in values.iter().enumerate() {
-            NAME_BOX[base + index].store(value.to_bits(), std::sync::atomic::Ordering::Relaxed);
+impl NameDialogRects {
+    /// `aspect`: the panel art's height over its width, when it is loaded;
+    /// the panel keeps that shape, centred on the template's dialog.
+    pub(crate) fn new(
+        dialog: RectPx,
+        body: RectPx,
+        ok: RectPx,
+        close: RectPx,
+        aspect: Option<f32>,
+    ) -> Self {
+        let h = aspect
+            .filter(|aspect| aspect.is_finite() && *aspect > 0.0)
+            .map_or(dialog.h, |aspect| {
+                ((dialog.w as f32 * aspect).round() as i32).max(80)
+            });
+        let y = dialog.y + (dialog.h - h) / 2;
+        Self {
+            panel: RectPx::new(dialog.x, y.max(0), dialog.w, h),
+            body,
+            ok,
+            close,
         }
-    };
-    write(0, dialog);
-    write(4, ok);
-    write(8, close);
-    write(12, body);
-}
+    }
 
-#[cfg(target_os = "android")]
-fn read_box(base: usize) -> (f32, f32, f32, f32) {
-    let read = |index: usize| {
-        f32::from_bits(NAME_BOX[base + index].load(std::sync::atomic::Ordering::Relaxed))
-    };
-    (read(0), read(1), read(2), read(3))
-}
-
-#[cfg(target_os = "android")]
-fn name_box() -> (f32, f32, f32, f32) {
-    read_box(0)
-}
-
-/// Android: the box template's body rect, where the message boxes' text starts.
-#[cfg(target_os = "android")]
-pub(crate) fn name_body_rect(
-    scale: crate::ui::shell::geom::ShellScale,
-) -> crate::ui::shell::geom::RectPx {
-    let (x, y, w, h) = read_box(12);
-    let window = scale.window();
-    crate::ui::shell::geom::RectPx::new(
-        (x * window.w as f32).round() as i32,
-        (y * window.h as f32).round() as i32,
-        (w * window.w as f32).round() as i32,
-        (h * window.h as f32).round() as i32,
-    )
-}
-
-#[cfg(target_os = "android")]
-fn name_button(index: usize) -> (f32, f32, f32, f32) {
-    read_box(if index == 0 { 4 } else { 8 })
-}
-
-/// Android: the art's height over its width, as the renderer last read it.
-#[cfg(target_os = "android")]
-pub(crate) fn set_name_aspect(aspect: f32) {
-    if aspect.is_finite() && aspect > 0.0 {
-        NAME_ASPECT.store(aspect.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    /// OK's or Close's window.
+    pub(crate) fn rect_of(&self, id: u16) -> Option<RectPx> {
+        match id {
+            NAME_OK => Some(self.ok),
+            NAME_CLOSE => Some(self.close),
+            _ => None,
+        }
     }
 }
 
+/// Android: the name dialog's widgets, flat under the page's dialog: the edit,
+/// which only takes keys (the overlay paints its field and the hint), OK and
+/// Close. `app::shell_mods` shows them and places them.
 #[cfg(target_os = "android")]
-fn name_aspect() -> f32 {
-    f32::from_bits(NAME_ASPECT.load(std::sync::atomic::Ordering::Relaxed))
-}
-
-#[cfg(target_os = "android")]
-static NAME_ASPECT: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(0.75f32.to_bits());
-
-#[cfg(target_os = "android")]
-static NAME_BOX: [std::sync::atomic::AtomicU32; 16] = [
-    std::sync::atomic::AtomicU32::new(0.2f32.to_bits()),
-    std::sync::atomic::AtomicU32::new(0.3f32.to_bits()),
-    std::sync::atomic::AtomicU32::new(0.6f32.to_bits()),
-    std::sync::atomic::AtomicU32::new(0.4f32.to_bits()),
-    std::sync::atomic::AtomicU32::new(0.22f32.to_bits()),
-    std::sync::atomic::AtomicU32::new(0.62f32.to_bits()),
-    std::sync::atomic::AtomicU32::new(0.16f32.to_bits()),
-    std::sync::atomic::AtomicU32::new(0.06f32.to_bits()),
-    std::sync::atomic::AtomicU32::new(0.62f32.to_bits()),
-    std::sync::atomic::AtomicU32::new(0.62f32.to_bits()),
-    std::sync::atomic::AtomicU32::new(0.16f32.to_bits()),
-    std::sync::atomic::AtomicU32::new(0.06f32.to_bits()),
-    std::sync::atomic::AtomicU32::new(0.25f32.to_bits()),
-    std::sync::atomic::AtomicU32::new(0.38f32.to_bits()),
-    std::sync::atomic::AtomicU32::new(0.50f32.to_bits()),
-    std::sync::atomic::AtomicU32::new(0.20f32.to_bits()),
-];
-
-/// New Mod's name dialog widgets, flat under the page's dialog so the page
-/// painter draws them: the hint, the edit, OK and Close. `app::shell_mods`
-/// shows them and places them.
-#[cfg(target_os = "android")]
-fn name_dialog_nodes() -> [NodeSpec; 4] {
+fn name_dialog_nodes() -> [NodeSpec; 3] {
     let hidden = |spec: NodeSpec| spec.with(Prop::Visible, Value::Bool(false));
     let button =
         |id: u16, key: &str| hidden(NodeSpec::new(NodeKind::Button).id(id.into()).label(key));
     [
-        hidden(
-            NodeSpec::new(NodeKind::Text)
-                .id(NAME_PROMPT.into())
-                .label("VERA:ModNewNameHint"),
-        ),
         hidden(NodeSpec::new(NodeKind::Edit).id(NAME_EDIT.into())),
         button(NAME_OK, "TXT_OK"),
         button(NAME_CLOSE, "VERA:Close"),
@@ -246,10 +147,10 @@ fn name_dialog_nodes() -> [NodeSpec; 4] {
 
 /// The mod actions in the right column, Back on the bottom row.
 ///
-/// Android has no file manager path into the app's storage: `ADD`'s desktop
-/// drag-and-drop is replaced by Import Mod inside New Mod, Open Folder becomes
-/// Export Mod through the system picker, and Delete and Add Desktop Entry join
-/// the column (`docs/android.md`).
+/// Android has no file manager path into the app's storage: Add Mod picks
+/// through the system file manager, Open Folder becomes Export Mod through
+/// its folder picker, and Rename, Delete and Add Desktop Entry join the
+/// column (`docs/android.md`).
 #[cfg(target_os = "android")]
 pub(crate) const ACTIONS: &[MenuPageButtonSpec] = &[
     MenuPageButtonSpec::new(USE, 122, "VERA:ModUse", "VERA:ModUseHelp"),
@@ -369,16 +270,6 @@ impl ModsLayout {
     pub(crate) fn rect_of(&self, id: u16) -> Option<RectPx> {
         if let Some(index) = DETAIL_TEXTS.iter().position(|text| *text == id) {
             return Some([self.name, self.state, self.author, self.about, self.terms][index]);
-        }
-        #[cfg(target_os = "android")]
-        {
-            let (_, prompt, _, ok, close) = name_dialog_rects(self.page.scale);
-            match id {
-                NAME_PROMPT => return Some(prompt),
-                NAME_OK => return Some(ok),
-                NAME_CLOSE => return Some(close),
-                _ => {}
-            }
         }
         match id {
             PROMPT_TEXT => Some(self.prompt),

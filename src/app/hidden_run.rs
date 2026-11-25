@@ -92,7 +92,13 @@ impl HiddenRun {
     pub(crate) fn drive_before_render(&mut self, state: &mut AppState) -> Result<()> {
         match self {
             Self::Capture(session) => session.drive_before_render(state),
-            Self::Picture(session) => session.drive_before_render(state),
+            Self::Picture(session) => session.drive_before_render(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
+            ),
         }
     }
 
@@ -104,7 +110,9 @@ impl HiddenRun {
     ) -> Result<bool> {
         match self {
             Self::Capture(session) => session.observe_after_render(state, output),
-            Self::Picture(session) => session.observe_after_render(state, output),
+            Self::Picture(session) => {
+                session.observe_after_render(&state.frontend, &state.match_state, output)
+            }
         }
     }
 

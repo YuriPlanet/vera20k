@@ -188,8 +188,13 @@ pub(crate) fn layout(state: &AppState) -> Option<KeyboardLayout> {
 fn layout_and_pointer(state: &AppState) -> Option<(KeyboardLayout, (i32, i32))> {
     let dialog = state.frontend.keyboard_dialog.as_ref()?;
     let (width, height, shell, pointer) = if dialog.parent == KeyboardParent::GameControls {
-        let shell =
-            crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
+        let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        )?;
         (
             shell.width,
             shell.height,
@@ -471,7 +476,14 @@ pub(crate) fn commit_close(state: &mut AppState, exit: KeyboardExit) {
         return;
     }
     match dialog.parent {
-        KeyboardParent::Launcher => App::open_launcher_options_dialog(state),
+        KeyboardParent::Launcher => App::open_launcher_options_dialog(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.audio,
+            &state.persistence.options_profile,
+        ),
         // State_Machine 0x0048CA0D writes state 5 after A3 returns, where
         // gamemd recreates BBB. VERA's Game Controls is the in-game menu's
         // page, so the menu is what comes back.
@@ -523,7 +535,13 @@ fn activate(state: &mut AppState, id: KeyboardButton) {
 /// A3's control events, after their cues: a button's action, a command
 /// row's selection, a category pick.
 fn apply(state: &mut AppState, events: Vec<PageEvent>) {
-    for event in super::dialog_page::play_cues(state, events) {
+    for event in super::dialog_page::play_cues(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        events,
+    ) {
         match event {
             PageEvent::Activated(CANCEL) => close(state, KeyboardExit::Cancel),
             PageEvent::Activated(id) => {

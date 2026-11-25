@@ -16,6 +16,8 @@ use crate::app::frontend::shell_transition::{
 };
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::state::ShellMessageBox;
+use crate::app::input::ime::ImeState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::mods::Mods;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
@@ -182,15 +184,15 @@ impl MainMenuCover {
         }
     }
 
-    fn of(state: &AppState) -> Self {
+    fn of(frontend: &FrontendState) -> Self {
         Self::new(
-            state
-                .frontend
+            frontend
                 .shell_message_box
                 .as_ref()
                 .is_some_and(|message_box| !message_box.keeps_page())
-                || state.frontend.quit_cascade.is_some(),
-            external_menu_wait(state),
+                || frontend.quit_cascade.is_some()
+                || crate::app::frontend::shell_transition::update_check_holds_main_menu(frontend),
+            external_menu_wait(frontend),
         )
     }
 }
@@ -559,7 +561,7 @@ fn render_main_menu(
     // through the quit fade (nothing repaints after OK); here the backdrop
     // shows alone (evidence note residual).
     sync_shell_menu_settings(&state.renderer, &mut state.frontend.shell_message_box);
-    let cover = MainMenuCover::of(state);
+    let cover = MainMenuCover::of(&state.frontend);
     let backdrop = cover != MainMenuCover::Live;
     if !backdrop {
         ensure_movie_for_current_layout(
@@ -571,7 +573,12 @@ fn render_main_menu(
         )?;
     }
     if state.frontend.main_menu_shell_error.is_some()
-        || !super::menu_page_render::family_art_ready(state)
+        || !super::menu_page_render::family_art_ready(
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+        )
     {
         state
             .frontend
@@ -678,17 +685,26 @@ pub(crate) fn render_shell_message_box_over_page(
     let parts = sync_shell_message_box(&state.renderer.gpu, &mut state.frontend);
     // The box's lists keep their widgets on the box as it lays out now.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    let _ = crate::app::updater::notes::sync(state);
+    let _ = crate::app::updater::notes::sync(&state.renderer.gpu, &mut state.frontend);
     #[cfg(any(
         windows,
         target_os = "macos",
         target_os = "linux",
         target_os = "android"
     ))]
-    let _ = crate::app::shell_mod_import::sync(state);
+    let _ = crate::app::shell_mod_import::sync(&state.renderer, &mut state.frontend);
     let state = &*state;
     let (Some(overlay), Some(chrome)) = (
-        parts.and_then(|parts| build_shell_message_box_overlay(state, &parts)),
+        parts.and_then(|parts| {
+            build_shell_message_box_overlay(
+                &state.platform.ime,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &parts,
+            )
+        }),
         state.frontend.skirmish_shell_chrome.as_ref(),
     ) else {
         return;
@@ -765,12 +781,16 @@ fn sync_shell_menu_settings(
 /// pressed button is read from the shared shell controller (its top dialog is the
 /// modal while open). Returns `None` when the modal is closed or its art is absent.
 fn build_shell_message_box_overlay(
-    state: &AppState,
+    ime: &ImeState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     parts: &crate::ui::shell::modal::BoxParts,
 ) -> Option<shell_paint::ModalDraw> {
     use crate::app::frontend::state::ShellMessageBoxPurpose;
-    let message_box = state.frontend.shell_message_box.as_ref()?;
-    let atlas = state.frontend.skirmish_shell_chrome.as_ref()?;
+    let message_box = frontend.shell_message_box.as_ref()?;
+    let atlas = frontend.skirmish_shell_chrome.as_ref()?;
     // VERA's own boxes pick their art: the Esc menu the Allied eagle, the
     // updater's Red Alert 2's. The others draw gamemd's.
     let background = match message_box.purpose {
@@ -807,14 +827,14 @@ fn build_shell_message_box_overlay(
     })
     .or_else(|| atlas.mode_two_dialog_background(None));
     let shell_box = &message_box.shell_box;
-    let controller = &state.frontend.shell_controller;
+    let controller = &frontend.shell_controller;
     let pressed = controller
         .top_id()
         .and_then(|top| crate::ui::shell::menu_page::pressed_id(controller, top));
     let menu = message_box.menu_settings().map(|settings| {
         let controls = shell_layout::shell_menu_settings_layout(
-            shell_layout::shell_screen_size(&state.renderer.gpu),
-            &state.renderer.bit_font,
+            shell_layout::shell_screen_size(&renderer.gpu),
+            &renderer.bit_font,
         );
         (settings, controls)
     });
@@ -831,10 +851,18 @@ fn build_shell_message_box_overlay(
     );
     let look = crate::app::frontend::skirmish_shell_render::BoxLook {
         covered: &list,
-        // Add Mod's greyed reorder buttons keep readable labels: the shell's
-        // disabled red is nearly the button's own colour.
+        // Add Mod's greyed reorder buttons use the shell's disabled text. On
+        // Android's screens that red is nearly the button's own colour, so
+        // the labels stay readable in a grey.
         disabled_rgb: if message_box.is_mod_import() {
-            [0.62, 0.55, 0.5]
+            #[cfg(not(target_os = "android"))]
+            {
+                shell_paint::SHELL_TEXT_RGB_DISABLED
+            }
+            #[cfg(target_os = "android")]
+            {
+                [0.62, 0.55, 0.5]
+            }
         } else {
             base_look.disabled_rgb
         },
@@ -843,11 +871,11 @@ fn build_shell_message_box_overlay(
     let tree =
         crate::app::frontend::skirmish_shell_render::controller_tree(controller, shell_box.dialog);
     let mut draw = crate::app::frontend::skirmish_shell_render::paint_shell_box(
-        &state.platform.ime,
-        &state.renderer.bit_font,
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
+        ime,
+        &renderer.bit_font,
+        frontend,
+        match_state,
+        process_assets,
         Some(atlas),
         tree,
         shell_box,
@@ -855,58 +883,16 @@ fn build_shell_message_box_overlay(
         |id| pressed == Some(id),
         look,
     );
-    // Android: New Mod's name row, painted with the box itself so a click that
-    // rebuilds its widgets cannot drop it. It ends one button height above the
-    // buttons' top edge, and its hint uses the box's own text size.
-    #[cfg(target_os = "android")]
-    if matches!(message_box.purpose, ShellMessageBoxPurpose::ModMade(_)) {
-        if let Some(white) = atlas.white_pixel {
-            let ok = parts.button(0);
-            let scale = parts.scale.factor();
-            let row_h = (state.renderer.bit_font.cell_height() * scale).round() as i32;
-            let row_h = row_h.max(34);
-            let rect = RectPx::new(
-                parts.body.x,
-                (ok.y - ok.h - row_h).max(parts.body.y + parts.body.h + 4),
-                parts.body.w,
-                row_h,
-            );
-            shell_paint::push_tinted_entry(
-                &mut draw.sprites,
-                white,
-                rect,
-                [0.04, 0.04, 0.05],
-                EXIT_CONFIRM_MODAL_DEPTHS.button,
-            );
-            let hint = crate::i18n::tr("VERA:ModNewNameHint");
-            draw.text
-                .push(crate::render::shell_text::draw_in_rect_scaled(
-                    &state.renderer.bit_font,
-                    &hint,
-                    crate::render::shell_text::TextRect::of(RectPx::new(
-                        rect.x + 6,
-                        rect.y,
-                        rect.w - 12,
-                        rect.h,
-                    )),
-                    [0.66, 0.66, 0.66],
-                    ShellAlign::NONE,
-                    [0.0, 0.0],
-                    EXIT_CONFIRM_MODAL_DEPTHS.text,
-                    scale,
-                ));
-        }
-    }
     // The updater's offer lists what changed (`app::updater::notes`), and
     // Add Mod its parts, each from its list's widget: the lists lie on the
     // dialog's picture, which has no list backing, so their sprites go over
     // the box's and their text after its own.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    let notes = crate::app::updater::notes::node(state).map(|(node, notes)| {
+    let notes = crate::app::updater::notes::node(&renderer.gpu, frontend).map(|(node, notes)| {
         use crate::app::frontend::skirmish_shell_render::gui_paint::{GuiStyle, paint_gui_styled};
         use crate::app::updater::notes::LIST_ID;
         // The rows are the list's `Items`, written as it was built.
-        let gui = state.frontend.shell_controller.gui();
+        let gui = frontend.shell_controller.gui();
         // A change's further rows hang under its text.
         let indent_of = |id: i32, row: usize| {
             (id == LIST_ID)
@@ -919,11 +905,11 @@ fn build_shell_message_box_overlay(
             ..Default::default()
         };
         paint_gui_styled(
-            &state.platform.ime,
-            &state.renderer.bit_font,
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
+            ime,
+            &renderer.bit_font,
+            frontend,
+            match_state,
+            process_assets,
             gui,
             node,
             parts.scale,
@@ -940,11 +926,11 @@ fn build_shell_message_box_overlay(
     if let Some((settings, controls)) = menu {
         crate::app::frontend::skirmish_shell_render::paint_options_settings(
             &mut draw,
-            &state.platform.ime,
-            &state.renderer.bit_font,
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
+            ime,
+            &renderer.bit_font,
+            frontend,
+            match_state,
+            process_assets,
             &controls,
             settings,
         );
@@ -957,19 +943,19 @@ fn build_shell_message_box_overlay(
         target_os = "linux",
         target_os = "android"
     ))]
-    let import_parts = crate::app::shell_mod_import::node(state).map(|node| {
+    let import_parts = crate::app::shell_mod_import::node(&renderer.gpu, frontend).map(|node| {
         use crate::app::frontend::skirmish_shell_render::gui_paint::{GuiStyle, paint_gui_styled};
-        let gui = state.frontend.shell_controller.gui();
+        let gui = frontend.shell_controller.gui();
         let style = GuiStyle {
             solid_lists: true,
             ..Default::default()
         };
         paint_gui_styled(
-            &state.platform.ime,
-            &state.renderer.bit_font,
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
+            ime,
+            &renderer.bit_font,
+            frontend,
+            match_state,
+            process_assets,
             gui,
             node,
             parts.scale,

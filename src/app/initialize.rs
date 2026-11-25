@@ -432,6 +432,7 @@ impl App {
         personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
         personal_rules.set_superweapon_limit(i32::from(options_profile.superweapon_limit));
         personal_rules.set_building_production_queue(options_profile.building_production_queue);
+        personal_rules.set_wasm_budget(options_profile.wasm_budget);
         // The Ares setting holds for the whole launch, as the mod does.
         let ares_setting = spawn_ares.unwrap_or(options_profile.ares);
         if ares_setting != crate::util::ares_launch::AresSetting::Auto {
@@ -481,6 +482,8 @@ impl App {
             mods.add_rules_file_notice(text);
         }
         crate::map::source::set_mod_dir(mods.dir().map(std::path::Path::to_owned));
+        // HD art can be on only when the mod brings an HD art pack.
+        crate::render::hd_art::refresh_pack_available();
         let (window_width, window_height, window_visible) =
             startup_window_projection(profile_screen, capture_dimensions);
         let window_visible = window_visible && !hidden_spawn_window;
@@ -1474,6 +1477,11 @@ impl App {
                 retail_screenshot_frame_cache: Default::default(),
                 terrain_picture: Default::default(),
                 native_z_seed: Default::default(),
+                hd_art: None,
+                hd_terrain: None,
+                hd_voxel: None,
+                hd_art_seen: false,
+                hd_art_zoom_pending: true,
             },
             process_assets,
             audio: startup_audio_runtime,
@@ -1514,8 +1522,16 @@ impl App {
                         );
                     }
                 }
-                Self::sync_zoom_pass(&mut state);
-                Self::sync_present_mode(&mut state);
+                Self::sync_zoom_pass(
+                    &state.platform,
+                    &mut state.renderer,
+                    &state.persistence.options_profile,
+                );
+                Self::sync_present_mode(
+                    &state.platform,
+                    &mut state.renderer.gpu,
+                    &state.persistence.options_profile,
+                );
                 #[cfg(feature = "telemetry-dashboard")]
                 attach_dashboard(&mut state.diag);
 

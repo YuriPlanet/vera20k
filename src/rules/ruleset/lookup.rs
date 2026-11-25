@@ -528,6 +528,41 @@ impl RuleSet {
         Self::lookup_ci(&self.weapons, id).copied()
     }
 
+    /// Weapon `id`'s position in this set's weapons, in the order the native
+    /// Weapon family allocated them: the Weapon ID Wasm extension modules
+    /// see (RFC 0001 appendix 8.1; provisional numbering).
+    pub fn weapon_index(&self, id: &str) -> Option<u32> {
+        self.weapon_handle(id).map(|handle| handle.0)
+    }
+
+    /// The weapon at [`Self::weapon_index`] `index`.
+    pub fn weapon_at(&self, index: u32) -> Option<&WeaponType> {
+        self.weapon_types.get(index as usize)
+    }
+
+    /// Warhead `id`'s position in this set's warheads, as
+    /// [`Self::weapon_index`] numbers weapons.
+    pub fn warhead_index(&self, id: &str) -> Option<u32> {
+        self.warhead_handle(id).map(|handle| handle.0)
+    }
+
+    /// The warhead at [`Self::warhead_index`] `index`.
+    pub fn warhead_at(&self, index: u32) -> Option<&WarheadType> {
+        self.warhead_types.get(index as usize)
+    }
+
+    /// Projectile `id`'s position in this set's projectiles (their handle
+    /// order, which follows the weapons that name them): the Projectile ID
+    /// Wasm extension modules see (RFC 0001 appendix 8.1; provisional).
+    pub fn projectile_index(&self, id: &str) -> Option<u32> {
+        self.projectile_handle(id).map(|handle| handle.0)
+    }
+
+    /// The projectile at [`Self::projectile_index`] `index`.
+    pub fn projectile_at(&self, index: u32) -> Option<&ProjectileType> {
+        self.projectile_types.get(index as usize)
+    }
+
     /// The weapon `handle` names in this set, which made it.
     #[inline]
     pub(crate) fn weapon_by_handle(&self, handle: WeaponHandle) -> &WeaponType {
@@ -857,6 +892,14 @@ impl RuleSet {
     #[inline]
     pub fn kratos(&self) -> bool {
         self.kratos
+    }
+
+    /// Whether NPatch plays in this game: its Rules layers or map hold a key
+    /// of an NPatch piece that runs in every build
+    /// (`rules::npatch_switch`). Sim and presentation read this one answer.
+    #[inline]
+    pub fn npatch(&self) -> bool {
+        self.npatch
     }
 
     /// VERA: whether this game plays RA2 Mode (docs/ra2-mode.md): original

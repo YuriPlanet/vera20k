@@ -746,6 +746,8 @@ impl Simulation {
         // SetTag(nullptr): the shared Tag owner preserves its native counter.
         self.trigger_runtime
             .finalize_object_trigger_tag_attachment(stable_id);
+        // Wasm module modifiers and object variables go with the object.
+        self.forget_ext_module_object(stable_id);
         // Display registration never outlives the object. Fly's phase tail
         // (4CD4DE) resubmits even an owner concealed earlier in the frame.
         self.substrate.display.remove(stable_id);

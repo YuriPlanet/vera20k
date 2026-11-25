@@ -90,6 +90,11 @@ pub enum TriggerEffect {
     LocalizedMessage {
         csf_label: String,
     },
+    /// A Wasm extension module stopped (`sim::ext_modules`); the players are
+    /// told which and why (RFC 0001 section 3).
+    ExtModuleStopped {
+        reason: String,
+    },
     /// Execute114 asks the retained client sidebar to select a nonempty strip.
     SelectSidebarTab {
         index: i32,
@@ -149,6 +154,12 @@ pub enum TriggerEffect {
     /// announcer owns, which applies the voice-count bound.
     EvaVoice {
         index: i32,
+    },
+    /// Something about the scenario's Wasm extension modules the players
+    /// should know at the start, such as a map's ignored `Wasm.Tags` (RFC
+    /// 0001 section 2). Last, so saved effects keep their variant numbers.
+    ExtModuleNotice {
+        text: String,
     },
 }
 
@@ -314,8 +325,22 @@ mod definitions;
 mod dispatch;
 mod events;
 mod lifecycle;
+mod module_events;
+mod module_triggers;
 #[cfg(any(test, feature = "dev-overlays"))]
 mod trace;
+mod untriggered;
+
+pub(crate) use untriggered::{StockActionCall, StockReference, StockReferenceKind};
+
+pub(crate) use module_events::{
+    StockClass, StockInput, StockReading, stock_class, stock_poll_due, value_filters_actor_house,
+    value_names_house,
+};
+pub(crate) use module_triggers::{
+    DeferredFiring, MAX_BACKLOG_RECORDS, MAX_QUEUED_RECORDS, MAX_RECORDS_PER_FRAME, ModuleTrigger,
+    ModuleTriggers, TriggerScope,
+};
 
 #[cfg(test)]
 use definitions::event_classification;
@@ -391,6 +416,9 @@ pub struct TriggerRuntime {
     map_cursor: i32,
     definitions_prepared: bool,
     classified: bool,
+    /// Triggers Wasm extension modules made, with their bindings and queued
+    /// records (RFC 0001 section 7). Empty without modules.
+    module: ModuleTriggers,
     /// The empty stand-in of a presentation copy of the world
     /// ([`Self::detached`]). Debug builds refuse reads of it.
     #[serde(skip)]
@@ -451,6 +479,7 @@ impl PartialEq for TriggerRuntime {
             && self.map_cursor == other.map_cursor
             && self.definitions_prepared == other.definitions_prepared
             && self.classified == other.classified
+            && self.module == other.module
     }
 }
 impl Eq for TriggerRuntime {}
@@ -594,6 +623,34 @@ impl TriggerRuntime {
         self.map_cursor.hash(hasher);
         self.definitions_prepared.hash(hasher);
         self.classified.hash(hasher);
+        // Stock play has no module triggers and folds nothing new.
+        if !self.module.is_empty() {
+            b"module-triggers-v1".hash(hasher);
+            self.module.hash(hasher);
+        }
+    }
+
+    /// The module trigger registry (`module_triggers`).
+    pub(crate) fn module_triggers(&self) -> &ModuleTriggers {
+        &self.module
+    }
+
+    pub(crate) fn module_triggers_mut(&mut self) -> &mut ModuleTriggers {
+        &mut self.module
+    }
+
+    /// Whether a module trigger listens for event `kind`: the one check an
+    /// event site makes before it builds a payload (RFC 0001 section 15).
+    #[inline]
+    pub(crate) fn module_listens(&self, kind: i32) -> bool {
+        self.module.listens(kind)
+    }
+
+    /// Whether a module trigger decides event `kind`: the one check a
+    /// decision point makes before it builds a request (RFC 0001 15.1).
+    #[inline]
+    pub(crate) fn module_decides(&self, kind: i32) -> bool {
+        self.module.decides(kind)
     }
 
     /// VERA-only match-checksum terms
@@ -626,6 +683,7 @@ impl TriggerRuntime {
             checksum.fold_value(tag.type_index as u32);
             checksum.fold_value(u32::from(tag.pending));
         }
+        self.module.fold_match_checksum(checksum);
     }
     fn tag(&self, index: usize) -> Option<&LiveTag> {
         self.tags.get(index)?.as_ref()
@@ -803,6 +861,8 @@ impl TriggerRuntime {
     /// counter write, pending ticket, RNG draw or timer change belongs here.
     pub(crate) fn finalize_object_trigger_tag_attachment(&mut self, object: u64) {
         self.attachments.remove(&TagAttachment::Object(object));
+        // A module trigger binding goes with its object (RFC 0001 section 7).
+        self.module.forget_object(object);
     }
     pub(crate) fn attach_team_member_trigger_tag(&mut self, team: u64, object: u64) {
         // AddMember6EA582..6EA587 skips attachment when Team+70 is NULL,
@@ -1120,6 +1180,18 @@ impl TriggerRuntime {
                 .unwrap_or_default(),
             None => Vec::new(),
         }
+    }
+
+    /// The tag attached to a cell, as its tag-storage index.
+    pub(crate) fn cell_tag(&self, cell: NativeCellIdentity) -> Option<usize> {
+        self.cell_tags.get(&cell).copied()
+    }
+
+    /// The tag attached to an object, as its tag-storage index.
+    pub(crate) fn object_tag(&self, object: u64) -> Option<usize> {
+        self.attachments
+            .get(&TagAttachment::Object(object))
+            .copied()
     }
 
     /// A global trigger variable's current value. Out-of-range indices read

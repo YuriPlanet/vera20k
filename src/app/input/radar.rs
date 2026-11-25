@@ -355,10 +355,22 @@ struct Hover {
 /// The radar pixel under the cursor and its action; `None` off the radar
 /// image, with the radar offline, or on the empty Cell (0,0).
 fn hover(state: &AppState) -> Option<Hover> {
-    if !crate::app::presentation::sidebar_render::is_cursor_over_minimap(state) {
+    if !crate::app::presentation::sidebar_render::is_cursor_over_minimap(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) {
         return None;
     }
-    let target = crate::app::presentation::sidebar_render::minimap_input_target(state)?;
+    let target = crate::app::presentation::sidebar_render::minimap_input_target(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    )?;
     if target.cell == (0, 0) {
         return None;
     }
@@ -420,13 +432,25 @@ pub(crate) enum RadarCursor {
 /// there.
 pub(crate) fn cursor(state: &AppState) -> Option<RadarCursor> {
     use crate::app::presentation::sidebar_render as sidebar;
-    if !sidebar::is_cursor_over_radar_gadget(state) {
+    if !sidebar::is_cursor_over_radar_gadget(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) {
         return None;
     }
     Some(written_cursor(
         state.match_state.input.tactical_mouse.left_held(),
         sidebar::minimap_shown(&state.match_state.match_presentation),
-        sidebar::is_cursor_over_minimap(state),
+        sidebar::is_cursor_over_minimap(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        ),
         || {
             hover(state).map(|hover| {
                 hover.action.map_or(CursorId::DefaultMini, |action| {
@@ -461,7 +485,13 @@ fn written_cursor(
 /// releases. Hit admission is Radar6539E6..653A83; MatchInputState owns the
 /// pending button and selection-drag cancellation.
 pub(crate) fn begin_order_press(state: &mut AppState, button: MouseButton) -> bool {
-    if !crate::app::presentation::sidebar_render::is_cursor_over_minimap(state) {
+    if !crate::app::presentation::sidebar_render::is_cursor_over_minimap(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) {
         return false;
     }
     state.match_state.input.begin_minimap_press(button)
@@ -523,7 +553,13 @@ pub(crate) fn finish_order_press(state: &mut AppState, button: MouseButton) {
 /// Centre the camera immediately on the radar pixel under the cursor,
 /// independent of the selection's action. Retail binds this to right press.
 pub(crate) fn centre_view_at_cursor(state: &mut AppState) {
-    if crate::app::presentation::sidebar_render::is_cursor_over_minimap(state) {
+    if crate::app::presentation::sidebar_render::is_cursor_over_minimap(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) {
         centre_view_on_pick(state);
     }
 }
@@ -531,12 +567,24 @@ pub(crate) fn centre_view_at_cursor(state: &mut AppState) {
 /// The view centres on the pick's clamped Cell (`0x00653D7A..0x00653EA0`),
 /// except on the empty Cell (0,0) (`0x00653D84..0x00653D8C`).
 fn centre_view_on_pick(state: &mut AppState) {
-    if crate::app::presentation::sidebar_render::minimap_input_target(state)
-        .is_some_and(|target| target.cell == (0, 0))
+    if crate::app::presentation::sidebar_render::minimap_input_target(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    )
+    .is_some_and(|target| target.cell == (0, 0))
     {
         return;
     }
-    crate::app::presentation::sidebar_render::update_camera_from_minimap_cursor(state);
+    crate::app::presentation::sidebar_render::update_camera_from_minimap_cursor(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+    );
     // A complete redraw, and the Z seed back to DEFAULT_Z (`0x00653EA5..0x00653EBA`).
     state.renderer.native_z_seed.reset();
 }

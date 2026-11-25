@@ -5,7 +5,7 @@
 //! owners; match-scoped input and presentation live inside MatchState.
 //! The architecture guards keep unrelated flat fields from returning.
 
-use super::{OverlayTypeRegistry, ResolvedTerrainGrid};
+use super::OverlayTypeRegistry;
 use crate::app::shell_route::ShellRoute;
 
 mod platform;
@@ -42,17 +42,18 @@ pub(crate) struct AppState {
 /// ClearScene685213..68521F and ordinary load cleanup69BB40 reset the shared
 /// 87E758 output scalar, not Theme's slots/fading. ThemeLoad721040 must see
 /// that process state unchanged; fresh-start request cancellation stays there.
-pub(crate) fn reset_scenario_exit_runtime(state: &mut AppState) {
-    state.match_state.scenario_outcome = None;
-    state.match_state.scenario_exit = None;
-    state
-        .match_state
-        .match_presentation
-        .outcome_banner_presentation = Default::default();
-    state.match_state.network_failure = None;
-    state.match_state.frame_stopped = false;
-    crate::app::lan_service::return_transport(&mut state.frontend, &mut state.match_state);
-    state.audio.restore_sound_master();
+pub(crate) fn reset_scenario_exit_runtime(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    audio: &mut crate::app::audio_runtime::AppAudioRuntime,
+) {
+    match_state.scenario_outcome = None;
+    match_state.scenario_exit = None;
+    match_state.match_presentation.outcome_banner_presentation = Default::default();
+    match_state.network_failure = None;
+    match_state.frame_stopped = false;
+    crate::app::lan_service::return_transport(frontend, match_state);
+    audio.restore_sound_master();
 }
 
 /// The correction matrix for `[VERA] ColorVisionMode=`, or `None` for `Off`.
@@ -76,20 +77,12 @@ impl AppState {
         self.platform.translucent_fog_enabled()
     }
 
-    pub(crate) fn health_bar_mode(&self) -> crate::ui::main_menu_dialogs::options::HealthBarMode {
-        self.persistence.health_bar_mode()
-    }
-
     pub(crate) fn color_vision_matrix(&self) -> Option<crate::render::color_vision::Mat3> {
         self.persistence.color_vision_matrix()
     }
 
     pub(crate) fn focus_freeze_active(&self) -> bool {
         focus_freeze_active(&self.platform, &self.match_state)
-    }
-
-    pub(crate) fn ra2_dir(&self) -> Option<&std::path::Path> {
-        ra2_dir(&self.platform, &self.process_assets)
     }
 
     pub(crate) fn render_width(&self) -> u32 {
@@ -110,23 +103,16 @@ impl AppState {
         )
     }
 
-    pub(crate) fn hd_radar(&self) -> bool {
-        self.persistence.hd_radar(self.platform.capture_choices())
-    }
-
-    pub(crate) fn smooth_sidebar(&self) -> bool {
-        self.persistence
-            .smooth_sidebar(self.platform.capture_choices())
+    /// Whether HD art is on (`render::hd_switch`), and whether its debug tint is:
+    /// the `VERA20K_HD_ART` capture override, else `[VERA] HdArt=`, which the
+    /// Options list and the HD art key (Page Up) set.
+    pub(crate) fn hd_art_on(&self) -> (bool, bool) {
+        hd_art_on(&self.persistence)
     }
 
     pub(crate) fn smooth_online_menus(&self) -> bool {
         self.persistence
             .smooth_online_menus(self.frontend.native_shell_ui)
-    }
-
-    pub(crate) fn hd_map_previews(&self) -> bool {
-        self.persistence
-            .hd_map_previews(self.platform.capture_choices())
     }
 
     pub(crate) fn match_zoom_pass(&self) -> Option<&crate::render::upscale_pass::UpscalePass> {
@@ -168,29 +154,14 @@ impl AppState {
             .window_cursor_position(self.renderer.tactical_zoom(&self.frontend.screen))
     }
 
-    /// Whether the software cursor (mouse.shp) should be active this frame.
-    /// Asset-independent status cards and diagnostic modals use the OS cursor,
-    /// and so does the pointer once it leaves the client area: mouse.shp has no
-    /// art for the title bar or resize border, and the OS arrow is drawn there
-    /// whether VERA asks for it or not. The same holds over an inactive window. Main-menu dialogs (Options, Keyboard,
-    /// the exit confirm) are shell pages that draw mouse.shp themselves, so
-    /// they keep it; excluding them showed the OS arrow beside it.
     pub(crate) fn use_software_cursor(&self) -> bool {
-        self.platform.owns_pointer()
-            && !(self.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-                && self.frontend.main_menu_shell_error.is_some())
-            && self
-                .match_state
-                .match_presentation
-                .software_cursor
-                .is_some()
-            && (!self.match_state.paused()
-                || crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(self)
-                || self
-                    .match_state
-                    .match_presentation
-                    .in_game_menu
-                    .draws_over_battlefield())
+        use_software_cursor(
+            &self.platform,
+            &self.renderer,
+            &self.frontend,
+            &self.match_state,
+            &self.persistence,
+        )
     }
 
     /// The main menu at rest, where a box may ask or tell the player
@@ -237,10 +208,6 @@ impl AppState {
     pub(crate) fn lobby_colors(&self) -> crate::rules::skirmish_colors::SkirmishColorMode {
         lobby_colors(&self.frontend, &self.match_state)
     }
-
-    pub(crate) fn terrain_template(&self) -> Option<&ResolvedTerrainGrid> {
-        self.match_state.terrain_template()
-    }
 }
 
 /// Is the match frozen because the window is not the foreground? Only the
@@ -252,6 +219,52 @@ pub(crate) fn focus_freeze_active(
     match_state: &crate::app::match_runtime::state::MatchState,
 ) -> bool {
     platform.focus_freeze_configured() && match_state.session_mode().is_single_player()
+}
+
+/// VERA: the main menu is the page to show but has not started to slide
+/// in: behind the startup logo and splash, or while the startup update
+/// check holds it. A box asks over the empty backdrop at once, with no
+/// slide in or out; its menu slides in once it closes.
+pub(crate) fn main_menu_not_shown(frontend: &crate::app::frontend::state::FrontendState) -> bool {
+    use crate::ui::game_screen::GameScreen;
+    frontend.screen == GameScreen::MainMenu
+        && frontend.shell_route == ShellRoute::MainMenu
+        && frontend.shell_slide_active_shell.is_none()
+        && frontend.main_menu_shell_error.is_none()
+        && frontend.quit_cascade.is_none()
+        && !frontend.main_menu_dialog_open()
+}
+
+/// Whether the software cursor (mouse.shp) should be active this frame.
+/// Asset-independent status cards and diagnostic modals use the OS cursor,
+/// and so does the pointer once it leaves the client area: mouse.shp has no
+/// art for the title bar or resize border, and the OS arrow is drawn there
+/// whether VERA asks for it or not. The same holds over an inactive window. Main-menu dialogs (Options, Keyboard,
+/// the exit confirm) are shell pages that draw mouse.shp themselves, so
+/// they keep it; excluding them showed the OS arrow beside it.
+pub(crate) fn use_software_cursor(
+    platform: &PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+    persistence: &crate::app::persistence::PersistenceState,
+) -> bool {
+    platform.owns_pointer()
+        && !(frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
+            && frontend.main_menu_shell_error.is_some())
+        && match_state.match_presentation.software_cursor.is_some()
+        && (!match_state.paused()
+            || crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
+            )
+            || match_state
+                .match_presentation
+                .in_game_menu
+                .draws_over_battlefield())
 }
 
 /// The game folder map lookups start from: the configured one, else the
@@ -282,10 +295,30 @@ pub(crate) fn sidebar_frame(
         .map_or(100, |pass| pass.geometry().percent);
     let capture = platform.capture_choices();
     let (width, height) = renderer.render_size(screen);
-    sidebar_frame_for(platform, persistence, spec, width, height).in_window(
+    let frame = sidebar_frame_for(platform, persistence, spec, width, height).in_window(
         zoom,
         persistence.hd_radar(capture) || persistence.smooth_sidebar(capture),
-    )
+    );
+    // VERA's HD sidebar draws Normal at 2 and Large at 3 and halves them: its
+    // pictures need a whole scale of 2 or more (`render::sidebar_smoothing`).
+    if hd_art_on(persistence).0 {
+        frame.with_whole_draw_scale()
+    } else {
+        frame
+    }
+}
+
+/// Whether HD art is on (`render::hd_switch`), and whether its debug tint is: the
+/// `VERA20K_HD_ART` capture override, else `[VERA] HdArt=`, which the Options
+/// list and the HD art key (Page Up) set. Either way only with an HD art pack
+/// (`render::hd_art::pack_available`): without one the setting is kept but
+/// draws nothing.
+pub(crate) fn hd_art_on(persistence: &crate::app::persistence::PersistenceState) -> (bool, bool) {
+    if !crate::render::hd_art::pack_available() {
+        return (false, false);
+    }
+    crate::render::hd_switch::env_override()
+        .unwrap_or((persistence.options_profile.hd_art_on, false))
 }
 
 /// [`sidebar_frame`] for a frame of `width` x `height`. Captures take their

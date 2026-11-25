@@ -48,7 +48,14 @@ pub(super) fn join_failed_tail(state: &mut AppState, close: bool) {
             lobby.current = None;
             lobby.members.clear();
         }
-        super::buddy::stopped(state);
+        super::buddy::stopped(
+            &mut state.frontend,
+            &state.platform.window,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &state.persistence.options_profile,
+        );
         return;
     }
     let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) else {
@@ -163,7 +170,7 @@ pub(super) fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
         }
     };
     if switching_room(state.frontend.wol.as_ref()) {
-        take_visit(state);
+        take_visit(&mut state.frontend, &mut state.match_state);
         lobby_mut(state.frontend.wol.as_mut())
             .expect("checked")
             .shown = false;
@@ -447,7 +454,14 @@ pub(super) fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>)
                     }
                     super::quick_match::created(state, false);
                 } else {
-                    create_ended(state);
+                    create_ended(
+                        &mut state.frontend,
+                        &state.platform.window,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        &state.persistence.options_profile,
+                    );
                 }
                 return;
             }

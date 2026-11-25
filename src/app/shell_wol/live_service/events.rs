@@ -103,7 +103,14 @@ pub(super) fn apply_event(
                 Ok(start)
             }) {
                 log::warn!("Could not watch the match: {error:#}");
-                fail_watch(state, service, "VERA:WatchCouldNotStart");
+                fail_watch(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    service,
+                    "VERA:WatchCouldNotStart",
+                );
             }
         }
         "watch_renewed" => {
@@ -182,7 +189,12 @@ pub(super) fn apply_event(
                     &tr("VERA:OnlineRoomClosedWhileLoading"),
                 );
             }
-            end_room(state, service);
+            end_room(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                service,
+            );
             service.room = RoomAgreement::default();
             if state
                 .frontend
@@ -231,7 +243,12 @@ pub(super) fn apply_event(
             let p: Payload = decode(payload)?;
             service.room = RoomAgreement::default();
             service.start_preparation = None;
-            maps::cancel(state, service);
+            maps::cancel(
+                &mut state.frontend,
+                &state.platform.window,
+                &state.match_state.session,
+                service,
+            );
             service_event(
                 state,
                 WolServiceEvent::HostChanged {
@@ -339,9 +356,19 @@ pub(super) fn apply_event(
                 }
             }
             if authored {
-                maps::cancel(state, service);
+                maps::cancel(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.match_state.session,
+                    service,
+                );
             } else {
-                maps::received_options(state, service, generated)?;
+                maps::received_options(
+                    &mut state.frontend,
+                    &mut state.match_state.session,
+                    service,
+                    generated,
+                )?;
                 // VERA: a guest checks the map these options name before
                 // reporting on it, or one that has it reports 0 first and the
                 // host's room says it lacks the map. The host's own upload
@@ -352,7 +379,13 @@ pub(super) fn apply_event(
             }
             // The owner is ready without a guest Accept button, but still proves its
             // own local map and rules to the same server admission gate.
-            let agreement = local_agreement(state, service.revision)?;
+            let agreement = local_agreement(
+                &state.frontend,
+                state.platform.game_config.as_ref(),
+                &state.match_state.session,
+                &mut state.process_assets,
+                service.revision,
+            )?;
             let status = local_map_status(
                 &state.match_state.session,
                 state.frontend.wol.as_ref(),
@@ -457,11 +490,17 @@ pub(super) fn apply_event(
                 );
                 return Ok(());
             }
-            let options = p
-                .hosted_pairing(&local)
-                .and_then(|pairing| super::quick_match::online_start_options(state, pairing));
+            let options = p.hosted_pairing(&local).and_then(|pairing| {
+                super::quick_match::online_start_options(
+                    &state.frontend,
+                    state.platform.game_config.as_ref(),
+                    &state.match_state,
+                    &state.process_assets,
+                    pairing,
+                )
+            });
             if p.announces_release() {
-                lobby_says_outdated(state);
+                lobby_says_outdated(&mut state.frontend);
             }
             let warning = p.warns_of_other_game();
             service_event(
@@ -646,7 +685,7 @@ pub(super) fn apply_event(
             }
             let line = tr(service.start_rejected_line(reason));
             let text = names.map_or_else(|| line.clone(), |names| format!("{line} {names}"));
-            cancel_pending(state, service);
+            cancel_pending(&mut state.frontend, &mut state.match_state, service);
             fail_start(state, &text);
         }
         "error" => notice(state, &tr("VERA:OnlineServiceRefused")),

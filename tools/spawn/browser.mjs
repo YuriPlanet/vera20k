@@ -3,6 +3,8 @@
 //
 //   node tools/spawn/browser.mjs --out DIR --dist target/wasm-dist --ra2 RETAIL
 //        [--port 8000] [--leave 40] [--bound 30] [--timeout 300] [--chrome PATH]
+//        [--sources 1,2] (only these players are pages; run.sh starts the
+//        others as desktop clients) [--mod FOLDER] (imported and played)
 //
 // DIR holds the player directories spawn-e2e.mjs wrote (relay mode, with
 // --gateway and --cors http://localhost:PORT). This serves the online package,
@@ -45,9 +47,15 @@ function files(root) {
 
 const opts = options(process.argv.slice(2));
 const out = resolve(opts.out);
-const players = readdirSync(out).filter((name) => /^p\d+$/.test(name)).length;
-if (players < 2) throw new Error(`${out} holds no relay player directories`);
+const all = readdirSync(out).filter((name) => /^p\d+$/.test(name)).length;
+if (all < 2) throw new Error(`${out} holds no relay player directories`);
+const sources = opts.sources === undefined
+  ? Array.from({ length: all }, (_, source) => source)
+  : String(opts.sources).split(',').map(Number);
+const players = sources.length;
 const retail = files(resolve(opts.ra2));
+const modFiles = opts.mod ? files(resolve(opts.mod)) : [];
+const modName = opts.mod ? resolve(opts.mod).split(sep).pop() : '';
 // A --threads package needs shared memory, so the pages are cross-origin
 // isolated (as tools/wasm/serve.py serves them) and start the worker pool.
 const threads = readFileSync(join(resolve(opts.dist), 'pkg', 'vera20k.js'), 'utf8').includes('initThreadPool');
@@ -109,6 +117,12 @@ const server = createServer((request, response) => {
     return;
   }
   if (url.pathname.startsWith('/e2e/retail/')) return serve(response, under(opts.ra2, url.pathname.slice('/e2e/retail'.length)));
+  if (url.pathname === '/e2e/mod.json') {
+    response.writeHead(200, { 'content-type': 'application/json', ...isolation });
+    response.end(JSON.stringify({ name: modName, files: modFiles }));
+    return;
+  }
+  if (url.pathname.startsWith('/e2e/mod/')) return serve(response, under(opts.mod, url.pathname.slice('/e2e/mod'.length)));
   const launch = /^\/e2e\/p(\d+)\/(spawn\.ini|spawnmap\.ini)$/.exec(url.pathname);
   if (launch) return serve(response, join(out, `p${launch[1]}`, launch[2]));
   return serve(response, under(opts.dist, url.pathname === '/' ? '/index.html' : url.pathname));
@@ -125,7 +139,7 @@ process.on('SIGTERM', () => stop(143));
 
 server.listen(opts.port, '127.0.0.1', () => {
   log(`serving ${opts.dist}${threads ? ' (threads)' : ''} and ${retail.length} retail files on http://localhost:${opts.port}`);
-  for (let source = 0; source < players; source++) {
+  for (const source of sources) {
     const profile = join(out, `p${source}`, 'chrome-profile');
     rmSync(profile, { recursive: true, force: true });
     mkdirSync(profile);

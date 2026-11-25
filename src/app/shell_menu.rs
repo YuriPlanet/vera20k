@@ -40,7 +40,8 @@ impl App {
             || !event.state.is_pressed()
             || event.repeat
             || state.frontend.shell_message_box.is_some()
-            || shell_transition::current_shell_slide_target(state).is_none()
+            || shell_transition::current_shell_slide_target(&state.frontend, &state.match_state)
+                .is_none()
             || !Self::page_leaves_escape(state, screen)
         {
             return false;
@@ -98,7 +99,7 @@ impl App {
             ScreenPage::Skirmish | ScreenPage::NetworkSetup => {
                 Self::skirmish_leaves_escape(&state.frontend.skirmish_shell_state)
             }
-            ScreenPage::Wol => Self::wol_leaves_escape(state),
+            ScreenPage::Wol => Self::wol_leaves_escape(&state.frontend),
             _ => false,
         }
     }
@@ -211,20 +212,18 @@ impl App {
     /// The menu's box shows what the window is. A change is written once the
     /// window has made it, which is what the box and the profile follow.
     pub(super) fn shell_menu_follow_full_screen(
-        state: &mut AppState,
+        platform: &PlatformState,
+        shell_message_box: &mut Option<ShellMessageBox>,
+        options_profile: &RetailOptionsProfile,
         full_screen: bool,
         changed: bool,
     ) {
-        let Some(settings) = Self::shell_menu_settings(&mut state.frontend.shell_message_box)
-        else {
+        let Some(settings) = Self::shell_menu_settings(shell_message_box) else {
             return;
         };
         settings.sync_full_screen(full_screen);
         if changed {
-            crate::app::persistence::options::persist_options_profile(
-                &state.platform,
-                &state.persistence.options_profile,
-            );
+            crate::app::persistence::options::persist_options_profile(platform, options_profile);
         }
     }
 
@@ -243,11 +242,30 @@ impl App {
     /// its own, and slides back in when Options closes.
     pub(super) fn answer_shell_menu(state: &mut AppState, answer: usize) {
         match answer {
-            0 => match shell_transition::current_shell_slide_target(state) {
+            0 => match shell_transition::current_shell_slide_target(
+                &state.frontend,
+                &state.match_state,
+            ) {
                 Some(kind) => {
-                    Self::leave_shell_dialog(state, kind, App::open_launcher_options_dialog);
+                    Self::leave_shell_dialog(state, kind, |state| {
+                        App::open_launcher_options_dialog(
+                            &state.platform,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &state.process_assets,
+                            &state.audio,
+                            &state.persistence.options_profile,
+                        )
+                    });
                 }
-                None => Self::open_launcher_options_dialog(state),
+                None => Self::open_launcher_options_dialog(
+                    &state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.audio,
+                    &state.persistence.options_profile,
+                ),
             },
             2 => {
                 Self::prepare_shell_terminal_exit(state);

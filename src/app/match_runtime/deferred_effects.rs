@@ -26,7 +26,6 @@
 //! Replay, a campaign's initial save and command observation still need the
 //! lent owners, so those frames stay on the borrowing path.
 
-use crate::app::AppState;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::{CommandEnvelope, CommandRecord};
 use crate::sim::intern::InternedId;
@@ -133,45 +132,46 @@ impl DeferredClientEffects {
 
     /// Write the record to the client owners on the main thread, after the
     /// tick, in the order the tick asked.
-    pub(crate) fn apply(self, state: &mut AppState) {
-        state.match_state.scenario_outcome = self.outcome_wait;
+    pub(crate) fn apply(
+        self,
+        match_state: &mut crate::app::match_runtime::state::MatchState,
+        sfx_player: &mut Option<crate::audio::sfx::SfxPlayer>,
+    ) {
+        match_state.scenario_outcome = self.outcome_wait;
         for effect in self.recorded {
             match effect {
                 DeferredEffect::TacticalRadar(available) => {
                     crate::app::presentation::building_anim::set_local_tactical_radar(
-                        &mut state.match_state,
-                        &mut state.audio.sfx_player,
+                        match_state,
+                        sfx_player,
                         available,
                     );
                 }
                 DeferredEffect::PlanningLeft => {
-                    let rules = state
-                        .match_state
+                    let rules = match_state
                         .sim_runtime
                         .runtime()
                         .map(|rt| &rt.resources.rules);
                     // The tick already issued the PLANCOMMIT; without a world
                     // this leaves the mode and queues EndPlanningModeSound only.
-                    let input = &mut state.match_state.input;
+                    let input = &mut match_state.input;
                     let _ = input.planning.set_active(
                         false,
                         None,
                         rules,
                         &mut input.selection_state,
-                        &mut state.match_state.match_audio.sound_events,
+                        &mut match_state.match_audio.sound_events,
                     );
                 }
-                DeferredEffect::ProductionRequestCleared(type_id) => state
-                    .match_state
+                DeferredEffect::ProductionRequestCleared(type_id) => match_state
                     .match_presentation
                     .sidebar_projection
                     .model
                     .clear_production_request(type_id),
                 // Recorded only when the sim emits Ares bounty text, so this runs in every game.
                 DeferredEffect::Bounty(text) => {
-                    if let Some(rt) = state.match_state.sim_runtime.runtime() {
-                        state
-                            .match_state
+                    if let Some(rt) = match_state.sim_runtime.runtime() {
+                        match_state
                             .match_presentation
                             .flying_credits
                             .borrow_mut()
@@ -179,7 +179,7 @@ impl DeferredClientEffects {
                     }
                 }
                 DeferredEffect::FrameChecksum { frame, checksum } => {
-                    if let Some((_, checksums)) = state.match_state.sim_runtime.tick_parts() {
+                    if let Some((_, checksums)) = match_state.sim_runtime.tick_parts() {
                         checksums.record_frame_checksum(frame, checksum);
                     }
                 }

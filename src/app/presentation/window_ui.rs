@@ -23,9 +23,6 @@
 //! ([`WindowUi::draw_screenshot_text`]). Outside a zoomed match, at the
 //! Normal Sidebar size, the frame is the window and everything stays in it.
 
-use std::cell::RefCell;
-
-use crate::app::AppState;
 use crate::app::input::state::MatchInputState;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::PersistenceState;
@@ -41,12 +38,15 @@ use crate::ui::game_screen::GameScreen;
 pub(crate) struct WindowUi {
     camera_buffer: wgpu::Buffer,
     camera: wgpu::BindGroup,
-    /// The in-match page's text, laid out for the window. A `RefCell`, like
-    /// `drawn`: the window passes record into it through `&RendererState`.
-    page_texts: RefCell<Vec<(ScissorRect, Option<(wgpu::Buffer, u32)>)>>,
-    /// This frame's draws but the cursor's.
-    drawn: RefCell<Vec<WindowDraw>>,
+    /// The in-match page's text, laid out for the window.
+    page_texts: PageTexts,
+    /// This frame's draws but the cursor's, which each window pass hands
+    /// back when it ends ([`WindowUi::keep`]).
+    drawn: Vec<WindowDraw>,
 }
+
+/// The in-match page's text for the window: each run's clip and buffer.
+pub(crate) type PageTexts = Vec<(ScissorRect, Option<(wgpu::Buffer, u32)>)>;
 
 /// A draw in the window, kept for the screenshot key's copy.
 struct WindowDraw {
@@ -62,27 +62,27 @@ impl WindowUi {
         Self {
             camera_buffer,
             camera,
-            page_texts: RefCell::default(),
-            drawn: RefCell::default(),
+            page_texts: Vec::new(),
+            drawn: Vec::new(),
         }
     }
 
     /// Forget the previous frame's draws.
-    pub(crate) fn begin_frame(&self) {
-        self.page_texts.borrow_mut().clear();
-        self.drawn.borrow_mut().clear();
+    pub(crate) fn begin_frame(&mut self) {
+        self.page_texts.clear();
+        self.drawn.clear();
     }
 
     /// The in-match page's text, laid out for the window, to draw after the
     /// zoom ([`draw_battlefield`]).
-    pub(crate) fn set_page_texts(&self, texts: Vec<(ScissorRect, Option<(wgpu::Buffer, u32)>)>) {
-        *self.page_texts.borrow_mut() = texts;
+    pub(crate) fn set_page_texts(&mut self, texts: PageTexts) {
+        self.page_texts = texts;
     }
 
     /// Whether this frame drew here what a screenshot's copy of the frame
     /// lacks.
     pub(crate) fn drew_text(&self) -> bool {
-        !self.drawn.borrow().is_empty()
+        !self.drawn.is_empty()
     }
 
     /// A pass over the window `view`, after everything drawn there, its
@@ -132,10 +132,16 @@ impl WindowUi {
         });
         WindowPass {
             pass,
-            ui: self,
+            camera: &self.camera,
             batch: &renderer.batch_renderer,
             window,
+            drawn: Vec::new(),
         }
+    }
+
+    /// Keep an ended pass's draws for the screenshot key's copy.
+    pub(crate) fn keep(&mut self, draws: WindowDraws) {
+        self.drawn.extend(draws.0);
     }
 
     /// This frame's draws but the cursor's, over `target`, a screenshot's
@@ -149,7 +155,7 @@ impl WindowUi {
     ) {
         let view = target.create_view(&Default::default());
         let mut pass = self.begin_pass(renderer, encoder, &view);
-        for draw in self.drawn.borrow().iter() {
+        for draw in &self.drawn {
             pass.draw_group(&draw.texture, &draw.buffer, draw.count, draw.scissor);
         }
     }
@@ -158,10 +164,15 @@ impl WindowUi {
 /// A render pass over the window ([`WindowUi::begin_pass`]).
 pub(crate) struct WindowPass<'a> {
     pass: wgpu::RenderPass<'a>,
-    ui: &'a WindowUi,
+    camera: &'a wgpu::BindGroup,
     batch: &'a BatchRenderer,
     window: (u32, u32),
+    /// The draws a screenshot takes, handed back by [`WindowPass::end`].
+    drawn: Vec<WindowDraw>,
 }
+
+/// An ended window pass's draws, for [`WindowUi::keep`].
+pub(crate) struct WindowDraws(Vec<WindowDraw>);
 
 impl WindowPass<'_> {
     /// `count` sprites of `buffer`, from `texture`, within `scissor` in
@@ -177,7 +188,7 @@ impl WindowPass<'_> {
             return;
         };
         self.draw_group(&texture.bind_group, buffer, count, scissor);
-        self.ui.drawn.borrow_mut().push(WindowDraw {
+        self.drawn.push(WindowDraw {
             texture: texture.bind_group.clone(),
             buffer: buffer.clone(),
             count,
@@ -199,6 +210,11 @@ impl WindowPass<'_> {
         }
     }
 
+    /// End the pass, handing back the draws a screenshot takes.
+    pub(crate) fn end(self) -> WindowDraws {
+        WindowDraws(self.drawn)
+    }
+
     /// `rect` cut to the window; `None` when nothing of it is left.
     fn cut(&self, rect: ScissorRect) -> Option<[u32; 4]> {
         let (width, height) = self.window;
@@ -216,13 +232,8 @@ impl WindowPass<'_> {
         [x, y, w, h]: [u32; 4],
     ) {
         self.pass.set_scissor_rect(x, y, w, h);
-        self.batch.draw_passthrough_group(
-            &mut self.pass,
-            texture,
-            buffer,
-            &self.ui.camera,
-            0..count,
-        );
+        self.batch
+            .draw_passthrough_group(&mut self.pass, texture, buffer, self.camera, 0..count);
     }
 }
 
@@ -328,53 +339,51 @@ fn window_rect(raster: TextRaster, (x, y, width, height): (u32, u32, u32, u32)) 
 /// page's text, then the software cursor: after the zoom pass and the
 /// sidebar's window copy put the frame in the window `view` (`app::frame`).
 pub(crate) fn draw_battlefield(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &mut RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
     software_cursor: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
 ) {
-    let Some(zoom) = zoom_raster(
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.input,
-    ) else {
+    let Some(zoom) = zoom_raster(renderer, screen, &match_state.input) else {
         return;
     };
-    let renderer = &state.renderer;
     let pool = &renderer.instance_pool;
-    let white = state
-        .match_state
+    let white = match_state
         .match_presentation
         .selection_overlay
         .as_ref()
         .map(|overlay| overlay.white_texture());
     let atlas = renderer.bit_font.atlas();
-    let frame = frame_rect(
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.input,
-    );
+    let frame = frame_rect(renderer, screen, &match_state.input);
     let layer = |pass: &mut WindowPass<'_>, texture: Option<&BatchTexture>, key, scissor| {
         if let (Some(texture), Some((buffer, count))) = (texture, pool.get(key)) {
             pass.draw(texture, buffer, count, scissor);
         }
     };
-    let mut pass = renderer
-        .window_ui
-        .begin_pass(&state.renderer, encoder, view);
-    if battlefield_raster(&state.renderer, &state.frontend.screen, &state.match_state).is_some() {
+    let mut pass = renderer.window_ui.begin_pass(renderer, encoder, view);
+    if battlefield_raster(renderer, screen, match_state).is_some() {
         use crate::app::presentation::sidebar_surface::{self, ColumnText};
         // The sidebar column's text, where its copy would resample it, over
         // the window copy within the column; the timers keep to the
         // tactical view, so drawing them after it changes nothing.
-        if let ColumnText::Window(_) = sidebar_surface::column_text(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &state.match_state,
-            &state.persistence,
-        ) {
-            let column = window_rect(zoom, state.sidebar_frame().column());
+        if let ColumnText::Window(_) =
+            sidebar_surface::column_text(platform, renderer, screen, match_state, persistence)
+        {
+            let column = window_rect(
+                zoom,
+                crate::app::state::sidebar_frame(
+                    platform,
+                    persistence,
+                    renderer,
+                    screen,
+                    &match_state.match_presentation.sidebar_layout_spec,
+                )
+                .column(),
+            );
             for key in sidebar_surface::TEXT_LAYERS {
                 layer(&mut pass, Some(atlas), key, column);
             }
@@ -383,11 +392,11 @@ pub(crate) fn draw_battlefield(
         let tactical = window_rect(
             zoom,
             crate::app::input::camera::tactical_viewport_px(
-                &state.platform,
-                &state.renderer,
-                &state.frontend.screen,
-                &state.match_state.match_presentation,
-                &state.persistence,
+                platform,
+                renderer,
+                screen,
+                &match_state.match_presentation,
+                persistence,
             ),
         );
         layer(&mut pass, white, "super_timer_fill", tactical);
@@ -405,7 +414,7 @@ pub(crate) fn draw_battlefield(
             layer(&mut pass, texture, key, frame);
         }
     }
-    for (scissor, buffer) in renderer.window_ui.page_texts.borrow().iter() {
+    for (scissor, buffer) in &renderer.window_ui.page_texts {
         if let Some((buffer, count)) = buffer {
             pass.draw(atlas, buffer, *count, *scissor);
         }
@@ -413,7 +422,7 @@ pub(crate) fn draw_battlefield(
     if let (Some(texture), Some((buffer, count))) = (
         software_cursor.and_then(|draw| {
             crate::app::presentation::ui_overlays::software_cursor_texture(
-                &state.match_state.match_presentation,
+                &match_state.match_presentation,
                 draw,
             )
         }),
@@ -421,6 +430,8 @@ pub(crate) fn draw_battlefield(
     ) {
         pass.draw_cursor(texture, buffer, count, frame);
     }
+    let draws = pass.end();
+    renderer.window_ui.keep(draws);
 }
 
 /// The frame's rect in the window, where a zoomed match shows it; the

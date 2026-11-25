@@ -92,6 +92,7 @@ pub(crate) fn spec() -> NodeSpec {
         .children(crate::ui::shell::page::menu_buttons(&PAGE))
         .child(
             node(NodeKind::Edit, NAME)
+                .with(Prop::ByteOnly, Value::Bool(true))
                 .with(Prop::MaxBytes, Value::Int(NAME_LIMIT as i32))
                 .with(Prop::Rejected, Value::Text(",".into())),
         )
@@ -620,13 +621,18 @@ impl LanLobbyState {
     /// (`0x4D1` at `0x5DE0E3`), which drops units from 0x100 up
     /// (`0x61525E..0x61526A`). Typed keys reach gamemd, an ANSI program, as
     /// code-page bytes and get in, but input-method characters arrive widened
-    /// (`0x6151F6..0x61520C`) and stay out; VERA offers no input method here
-    /// either. VERA gets keys as text, so the edit keeps the text (typed
-    /// through the code page, [`name_input`]) and admits a character while
-    /// the name's code-page bytes fit in 16 (`MaxBytes`); commas stay out
-    /// (`Rejected`). BB narrows its edit's units by their low byte
-    /// (`0x5DDE07`), which gives back the code-page bytes its ANSI edit was
-    /// typed in; the app saves the text through the code page instead.
+    /// (`0x6151F6..0x61520C`) and stay out. VERA gets keys as UTF-16 text
+    /// and its edit applies the same filter to it (`ByteOnly`): `é` gets in,
+    /// while an input method's Chinese or an emoji stays out instead of
+    /// turning into `?`. A name set rather than typed keeps what it holds, as
+    /// in gamemd. The edit admits a character while the name's code-page bytes
+    /// fit in 16 (`MaxBytes`); commas stay out (`Rejected`). BB narrows its
+    /// edit's units by their low byte (`0x5DDE07`), which gives back the
+    /// code-page bytes its ANSI edit was typed in; the app saves the text
+    /// through the code page instead. RESIDUAL: gamemd's units are code-page
+    /// bytes, so it also takes a code page's letters beyond Latin-1 (`€` in
+    /// 1252, Cyrillic in 1251); VERA's are Unicode, so those stay out, and the
+    /// wire's low-byte name (`net::lan_messages`) could not carry them.
     pub(crate) fn name_edited(&mut self, text: &str) -> (Option<String>, Option<LanLobbyAction>) {
         let collapse = !text.is_empty() && text.chars().all(|c| c == ' ');
         let value = if collapse { "" } else { text };
@@ -668,7 +674,7 @@ pub(crate) fn key(
         return actions;
     }
     // Each typed character's EN_CHANGE announces the name (`0x5DDD90`).
-    for input in edit_inputs(code, Some(&name_input(text.unwrap_or_default()))) {
+    for input in edit_inputs(code, text) {
         controller.on_input(input);
         for event in controller.drain_events() {
             if let vera20k_gui::UiEvent::TextChanged { text, .. } = event {
@@ -681,16 +687,6 @@ pub(crate) fn key(
         }
     }
     actions
-}
-
-/// Typed text for the name edit, as the code page passes it (`?` for a
-/// character it cannot hold); a character of two UTF-16 units, such as an
-/// emoji, stays out, so the edit's one-unit keys never split one.
-pub(crate) fn name_input(text: &str) -> String {
-    crate::util::native_string::acp_round_trip(text)
-        .chars()
-        .filter(|c| c.len_utf16() == 1)
-        .collect()
 }
 
 /// One port of the shared5EDD00 chat-length prepass (BB/BC/BD and WOL).
@@ -750,6 +746,46 @@ impl LanLobbyLayout {
             )),
             _ => self.rect(id),
         }
+    }
+
+    /// Android: the chat row moved down to the room's spacing, beside VERA's
+    /// send key: the gap between the chat log's bottom edge and the input
+    /// row's top edge matches the LAN room's chat area (5 authored px).
+    #[cfg(target_os = "android")]
+    fn chat_row(&self) -> Option<RectPx> {
+        let chat = self.rect(CHAT)?;
+        let log = self.rect(CHAT_LOG)?;
+        let scale = self.page.scale;
+        let y = log.y + log.h + (5.0 * scale.factor()).round() as i32;
+        Some(RectPx::new(chat.x, y, chat.w, chat.h))
+    }
+
+    /// Android: VERA's send key beside the chat box, at the LAN room's slot.
+    #[cfg(target_os = "android")]
+    pub(crate) fn chat_send(&self) -> Option<RectPx> {
+        let chat = self.chat_row()?;
+        let log = self.rect(CHAT_LOG)?;
+        Some(
+            crate::app::frontend::skirmish_shell_render::room_chat_send_rect(
+                chat,
+                log,
+                self.page.scale,
+            ),
+        )
+    }
+
+    /// Android: the chat edit's rect, the room's width and row position.
+    #[cfg(target_os = "android")]
+    pub(crate) fn chat_text(&self) -> Option<RectPx> {
+        let chat = self.chat_row()?;
+        let log = self.rect(CHAT_LOG)?;
+        Some(
+            crate::app::frontend::skirmish_shell_render::room_chat_text_rect(
+                chat,
+                log,
+                self.page.scale,
+            ),
+        )
     }
 }
 
@@ -924,7 +960,7 @@ mod tests {
     }
 
     #[test]
-    fn name_input_takes_16_code_page_bytes_rejects_commas_and_keeps_literal_spaces() {
+    fn name_edit_drops_units_from_0x100_takes_16_bytes_rejects_commas_and_keeps_spaces() {
         let (mut controller, _) = bb();
         let mut lobby = LanLobbyState::new("");
         controller.set_text(PAGE.dialog, NAME, "");
@@ -935,8 +971,9 @@ mod tests {
             None,
         );
         assert_eq!(controller.focused_control(PAGE.dialog), Some(NAME));
-        type_text(&mut controller, &mut lobby, "  A,é€B");
-        assert_eq!(controller.text(PAGE.dialog, NAME), "Aé€B");
+        // Latin-1 gets in; Chinese, an emoji and `€` (U+20AC) stay out, no `?`.
+        type_text(&mut controller, &mut lobby, "  A,é€玩😀B");
+        assert_eq!(controller.text(PAGE.dialog, NAME), "AéB");
         type_text(&mut controller, &mut lobby, "12345678901234567890");
         let saved = crate::util::native_string::acp_encode(&controller.text(PAGE.dialog, NAME));
         assert_eq!(saved.len(), 16);

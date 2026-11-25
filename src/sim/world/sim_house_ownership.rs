@@ -393,6 +393,7 @@ impl Simulation {
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             &mut FrameEffects::default(),
+            false,
         );
     }
 
@@ -462,7 +463,23 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: &mut FrameEffects<'_>,
     ) {
-        self.change_owner_impl(stable_id, new_owner, rules, registry, effects);
+        self.change_owner_impl(stable_id, new_owner, rules, registry, effects, false);
+    }
+
+    /// [`Self::change_owner_with_rules`] for a mind control taking or
+    /// releasing the object: CaptureManager's Capture (`0x00471DB8`) and
+    /// FreeUnit (`0x004720D5`), PsyDom's permanent capture, Ares'
+    /// ApplyPermaMC and Dominator transfer. The transfer is the same; only
+    /// the Wasm module `HouseTransferred` record says why (`value` 1).
+    pub(crate) fn change_owner_by_mind_control(
+        &mut self,
+        stable_id: u64,
+        new_owner: InternedId,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        self.change_owner_impl(stable_id, new_owner, rules, registry, effects, true);
     }
 
     fn change_owner_impl(
@@ -472,12 +489,20 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: &mut FrameEffects<'_>,
+        mind_control: bool,
     ) {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
         };
         if entity.category() != EntityCategory::Unit {
-            self.change_owner_inherited(stable_id, new_owner, rules, registry, effects);
+            self.change_owner_inherited(
+                stable_id,
+                new_owner,
+                rules,
+                registry,
+                effects,
+                mind_control,
+            );
             return;
         }
         // UnitClass::ChangeOwner7463A0..7463F2 (original gamemd instructions)
@@ -535,7 +560,7 @@ impl Simulation {
                     .unwrap()
                     .set_is_unit_follower(true);
             }
-            self.change_owner_inherited(id, new_owner, rules, registry, effects);
+            self.change_owner_inherited(id, new_owner, rules, registry, effects, mind_control);
         }
     }
 
@@ -548,6 +573,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: &mut FrameEffects<'_>,
+        mind_control: bool,
     ) {
         let Some((old_owner, category, has_spawn_manager, build_const_eligible)) =
             self.substrate.entities.get(stable_id).map(|entity| {
@@ -1063,6 +1089,9 @@ impl Simulation {
             self.houses.request_house_tech_tree_recheck(old_owner);
             self.houses.request_house_tech_tree_recheck(new_owner);
         }
+        // Wasm module `HouseTransferred` (RFC 0001 appendix 4.3), after the
+        // transfer completed.
+        self.raise_module_house_transferred(rules, effects, stable_id, old_owner, mind_control);
     }
 
     /// `BuildingClass::ChangeOwner @ 0x00448260`'s docked objects
@@ -1142,7 +1171,7 @@ impl Simulation {
                     .entities
                     .get(contact)
                     .is_some_and(|entity| entity.seldom.tether.partner().is_some());
-                self.change_owner_impl(contact, new_owner, rules, registry, effects);
+                self.change_owner_impl(contact, new_owner, rules, registry, effects, false);
                 taken.push((contact, tethered));
             } else {
                 for message in [RadioMessage::RunAway, RadioMessage::Break] {

@@ -8,9 +8,12 @@ use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::match_runtime::session::{
     LanRoomRejoin, MatchSession, NetworkReturnContext, NetworkRoomReturn,
 };
+use crate::app::match_runtime::state::MatchState;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_route::ShellRoute;
 use crate::net::lan_messages::setup;
+use crate::render::gpu::GpuContext;
 use crate::skirmish_launch::SkirmishHumanSlot;
 use crate::ui::lan_shell::*;
 use crate::ui::room_limits::RoomLimits;
@@ -201,15 +204,12 @@ impl LanShellRuntime {
     }
 }
 
-pub(crate) fn layout(state: &AppState) -> LanLobbyLayout {
-    shell_layout::on(&state.renderer.gpu, LanLobbyLayout::new)
+pub(crate) fn layout(gpu: &GpuContext) -> LanLobbyLayout {
+    shell_layout::on(gpu, LanLobbyLayout::new)
 }
 
-pub(crate) fn create_box_layout(state: &AppState) -> crate::ui::shell::modal::LanCreateGameLayout {
-    shell_layout::on(
-        &state.renderer.gpu,
-        crate::ui::shell::modal::lan_create_game_layout_on,
-    )
+pub(crate) fn create_box_layout(gpu: &GpuContext) -> crate::ui::shell::modal::LanCreateGameLayout {
+    shell_layout::on(gpu, crate::ui::shell::modal::lan_create_game_layout_on)
 }
 
 impl App {
@@ -256,29 +256,23 @@ impl App {
         #[cfg(target_os = "android")]
         crate::util::lan_network::acquire();
         crate::app::lan_service::open(state);
-        App::destroy_current_shell_dialog(state);
+        App::destroy_current_shell_dialog(&mut state.frontend);
         let route = ShellRoute::LanLobby;
         App::show_shell_page(&mut state.frontend, route, PAGE.dialog);
         state.frontend.shell_first_paint_slide = None;
     }
 
     /// Called only after BB's ordinary teardown slide finishes.
-    pub(crate) fn commit_lan_back(state: &mut AppState) {
-        state
-            .frontend
-            .multiplayer_shell_runtime
-            .persist_lan_preferences();
-        state.frontend.lan = None;
-        crate::app::lan_service::close(&state.frontend, &mut state.match_state);
+    pub(crate) fn commit_lan_back(frontend: &mut FrontendState, match_state: &mut MatchState) {
+        frontend.multiplayer_shell_runtime.persist_lan_preferences();
+        frontend.lan = None;
+        crate::app::lan_service::close(frontend, match_state);
         #[cfg(target_os = "android")]
         crate::util::lan_network::release();
-        state.match_state.session.leave_network();
-        Self::close_single_player_shell(state);
-        state
-            .frontend
-            .shell_controller
-            .reset_to(DialogResourceId(0xE2));
-        state.frontend.shell_first_paint_slide = None;
+        match_state.session.leave_network();
+        Self::close_single_player_shell(frontend);
+        frontend.shell_controller.reset_to(DialogResourceId(0xE2));
+        frontend.shell_first_paint_slide = None;
     }
 
     /// After a match: a new BB as always, which the host of VERA's room
@@ -424,11 +418,11 @@ fn denial_modal(reason: u32, observer: bool) -> Option<&'static str> {
     }
 }
 
-fn show_modal(state: &mut AppState, key: &'static str) {
-    let runtime = state.frontend.lan.as_mut().expect("active BB");
+fn show_modal(renderer: &RendererState, frontend: &mut FrontendState, key: &'static str) {
+    let runtime = frontend.lan.as_mut().expect("active BB");
     runtime.modal = Some(key);
     runtime.modal_body = None;
-    push_box(state, box_spec(&[OK]));
+    push_box(renderer, frontend, box_spec(&[OK]));
 }
 
 /// A box's root with its buttons.
@@ -452,14 +446,14 @@ fn box_spec(buttons: &[u16]) -> NodeSpec {
 
 /// Pushes the box `0xCE` with its widgets over BB, which lets go of the
 /// pointer.
-fn push_box(state: &mut AppState, spec: NodeSpec) {
-    let controller = &mut state.frontend.shell_controller;
+fn push_box(renderer: &RendererState, frontend: &mut FrontendState, spec: NodeSpec) {
+    let controller = &mut frontend.shell_controller;
     controller.gui_mut().cancel_pointer();
     controller.push_modal(MODAL);
     if let Some(root) = controller.root_in(MODAL) {
         page::ensure_built(controller.gui_mut(), root, || spec);
     }
-    sync_gui(state);
+    sync_gui(renderer, frontend);
 }
 
 /// Select the active LAN dialog's transcript; the shared chat owner retains
@@ -476,7 +470,7 @@ pub(crate) fn append_chat_sent_at(state: &mut AppState, line: LanChatLine, sent_
     if route == ShellRoute::Wol
         && crate::app::shell_wol::quick_match::page_open(state.frontend.wol.as_ref())
     {
-        crate::app::shell_wol::quick_match::append_line(state, line);
+        crate::app::shell_wol::quick_match::append_line(&mut state.frontend, &state.renderer, line);
         return;
     }
     let setup = route == ShellRoute::NetworkSetup;
@@ -544,11 +538,14 @@ fn append_chat_to(
     } else if wol_lobby {
         // The online page's chat may be hidden behind its games: wrap to
         // the log of its chat view.
-        let layout = crate::app::shell_wol::lobby::chat_layout(state);
+        let layout = crate::app::shell_wol::lobby::chat_layout(
+            state.frontend.wol.as_ref(),
+            &state.renderer.gpu,
+        );
         let chat_log = layout.control_rect(crate::ui::wol_lobby::CHAT_LOG);
         (chat_log.unwrap_or_default(), layout.page.scale, 1.0)
     } else {
-        let layout = layout(state);
+        let layout = layout(&state.renderer.gpu);
         (
             layout.rect(CHAT_LOG).unwrap_or_default(),
             layout.page.scale,
@@ -657,7 +654,8 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                 align,
             );
             push_box(
-                state,
+                &state.renderer,
+                &mut state.frontend,
                 box_spec(&[OK, CANCEL]).children(choices).child(caption),
             );
         }
@@ -693,11 +691,11 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                     .push(LanServiceRequest::Join { game_id, observe });
             }
         }
-        LanLobbyAction::Back => App::leave_shell_dialog(
-            state,
-            shell_transition::ShellSlideKind::LanLobby,
-            App::commit_lan_back,
-        ),
+        LanLobbyAction::Back => {
+            App::leave_shell_dialog(state, shell_transition::ShellSlideKind::LanLobby, |state| {
+                App::commit_lan_back(&mut state.frontend, &mut state.match_state)
+            })
+        }
         LanLobbyAction::ObserverChanged(value) => state
             .frontend
             .multiplayer_shell_runtime
@@ -799,7 +797,7 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
             runtime.release_request();
             report_error(state, "TXT_REQUEST_DENIED");
             if let Some(message) = message {
-                show_modal(state, message);
+                show_modal(&state.renderer, &mut state.frontend, message);
             }
             // VERA: the host compared the rules hash, and retail's text for
             // it sends the player to Westwood. Say what this game changes.
@@ -953,7 +951,7 @@ fn create(state: &mut AppState, name: &str) {
             .expect("active BB")
             .lobby
             .set_enabled(true);
-        show_modal(state, key);
+        show_modal(&state.renderer, &mut state.frontend, key);
     } else {
         App::leave_shell_dialog(
             state,
@@ -1004,7 +1002,7 @@ pub(crate) fn leaves_escape(lan: Option<&LanShellRuntime>) -> bool {
 }
 
 pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
-    if event.state.is_pressed() && !shell_transition::blocks_shell_input(state) {
+    if event.state.is_pressed() && !shell_transition::blocks_shell_input(&state.frontend) {
         let code = match event.physical_key {
             PhysicalKey::Code(code) => Some(code),
             _ => None,
@@ -1015,11 +1013,12 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
 
 /// The chat NewEdit while it takes keys, for the input method
 /// (`app::input::ime`). The name edit takes byte text only, so it keeps
-/// plain key text.
+/// plain key text. Android routes every GUI edit through `ImeTarget::Gui`.
+#[cfg(not(target_os = "android"))]
 pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
     let routed = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
         && state.frontend.shell_route == ShellRoute::LanLobby
-        && !shell_transition::blocks_shell_input(state);
+        && !shell_transition::blocks_shell_input(&state.frontend);
     let chat = state.frontend.shell_controller.focused_control(PAGE.dialog) == Some(CHAT);
     state
         .frontend
@@ -1028,7 +1027,7 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
         .filter(|runtime| {
             routed && runtime.modal.is_none() && !runtime.creating && runtime.lobby.enabled && chat
         })
-        .map(|_| layout(state).rect(CHAT).unwrap_or_default())
+        .map(|_| layout(&state.renderer.gpu).rect(CHAT).unwrap_or_default())
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
@@ -1039,7 +1038,7 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     if runtime.creating || runtime.modal.is_some() {
         if let Some(key) = code.and_then(|code| crate::ui::shell::controller::gui_key(code, false))
         {
-            sync_gui(state);
+            sync_gui(&state.renderer, &mut state.frontend);
             state
                 .frontend
                 .shell_controller
@@ -1052,7 +1051,7 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     if code == Some(KeyCode::Escape) {
         return;
     }
-    sync_gui(state);
+    sync_gui(&state.renderer, &mut state.frontend);
     let Some(runtime) = state.frontend.lan.as_mut() else {
         return;
     };
@@ -1068,16 +1067,19 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
 /// rows, selections and tops (the chat log's follows new lines), the edits'
 /// view of their caret, the observer box and whether the page takes input;
 /// and the box over it, if any, on its layout.
-pub(crate) fn sync_gui(state: &mut AppState) {
-    let layout = layout(state);
-    let create = create_box_layout(state);
-    let (width, height) = (state.render_width() as i32, state.render_height() as i32);
-    let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
-    let font = &state.renderer.bit_font;
-    let Some(runtime) = state.frontend.lan.as_mut() else {
+pub(crate) fn sync_gui(renderer: &RendererState, frontend: &mut FrontendState) {
+    let layout = layout(&renderer.gpu);
+    let create = create_box_layout(&renderer.gpu);
+    let (width, height) = (
+        renderer.render_width(&frontend.screen) as i32,
+        renderer.render_height(&frontend.screen) as i32,
+    );
+    let observer = frontend.multiplayer_shell_runtime.lan_observer();
+    let font = &renderer.bit_font;
+    let Some(runtime) = frontend.lan.as_mut() else {
         return;
     };
-    let controller = &mut state.frontend.shell_controller;
+    let controller = &mut frontend.shell_controller;
     let (Some(root), boxed) = (controller.root_in(PAGE.dialog), controller.root_in(MODAL)) else {
         return;
     };
@@ -1088,7 +1090,16 @@ pub(crate) fn sync_gui(state: &mut AppState) {
         controller.focus_control(PAGE.dialog, Some(CHAT));
     }
     let gui = controller.gui_mut();
-    page::sync_rects(gui, root, |id| layout.widget_rect(id));
+    page::sync_rects(gui, root, |id| {
+        // Android: the chat edit takes the room's row, beside the send key.
+        #[cfg(target_os = "android")]
+        if id == CHAT
+            && let Some(rect) = layout.chat_text()
+        {
+            return Some(rect);
+        }
+        layout.widget_rect(id)
+    });
     let lobby = &mut runtime.lobby;
     let _ = gui.set(root, Prop::Enabled, Value::Bool(lobby.enabled));
     // The observer image `0x75F` toggles like its box, anywhere on it.
@@ -1168,18 +1179,29 @@ fn on_top(controller: &DialogController) -> bool {
 }
 
 pub(crate) fn cursor_moved(state: &mut AppState) {
-    sync_gui(state);
+    sync_gui(&state.renderer, &mut state.frontend);
     let (x, y) = state.match_state.input.cursor_px();
     state.frontend.shell_controller.on_pointer_move(x, y);
     handle_events(state);
 }
 
 pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    if button != MouseButton::Left || shell_transition::blocks_shell_input(state) {
+    if button != MouseButton::Left || shell_transition::blocks_shell_input(&state.frontend) {
         return;
     }
-    sync_gui(state);
+    sync_gui(&state.renderer, &mut state.frontend);
     let (x, y) = state.match_state.input.cursor_px();
+    // VERA's send key: a phone has no Enter to press, so the button on the
+    // chat box sends the line.
+    #[cfg(target_os = "android")]
+    if pressed
+        && layout(&state.renderer.gpu)
+            .chat_send()
+            .is_some_and(|rect| rect.contains(x, y))
+    {
+        key_press(state, Some(KeyCode::Enter), None);
+        return;
+    }
     let controller = &mut state.frontend.shell_controller;
     if !pressed {
         controller.on_pointer_up(x, y);

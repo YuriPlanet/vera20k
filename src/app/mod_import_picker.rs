@@ -1,27 +1,18 @@
 //! The desktop's chooser for Add Mod. The Mods page owns the selection and
-//! passes it to the same importer as files dropped on the window.
+//! passes it to the same importer as files dropped on the window. Android
+//! picks through the activity instead (`App::browse_mod_parts`).
 
+#[cfg(not(target_os = "android"))]
 use std::{io, path::PathBuf};
 
+#[cfg(not(target_os = "android"))]
 use winit::window::Window;
 
+/// Android: the system file manager, through the activity
+/// (`util::mod_actions`); its copy reaches Add Mod later.
 #[cfg(target_os = "android")]
-pub(super) const fn available() -> bool {
-    false
-}
-
-#[cfg(target_os = "android")]
-pub(super) fn pick(_window: &Window, _title: &str) -> io::Result<Vec<PathBuf>> {
-    Err(io::Error::other(
-        "the Android Add Mod dialog picks through the system file manager",
-    ))
-}
-
-#[cfg(target_os = "android")]
-pub(super) fn pick_folders(_window: &Window, _title: &str) -> io::Result<Vec<PathBuf>> {
-    Err(io::Error::other(
-        "the Android Add Mod dialog picks through the system file manager",
-    ))
+pub(super) fn available() -> bool {
+    crate::util::mod_actions::available()
 }
 
 #[cfg(any(windows, target_os = "macos"))]

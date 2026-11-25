@@ -45,7 +45,11 @@ pub(crate) fn commit_prepared_load(
     );
     // The outgoing replay closes before the process dummy and runtime change.
     crate::app::match_runtime::sim_tick::close_replay_segment_for_new_timeline(state);
-    crate::app::reset_scenario_exit_runtime(state);
+    crate::app::reset_scenario_exit_runtime(
+        &mut state.frontend,
+        &mut state.match_state,
+        &mut state.audio,
+    );
     let committed = prepared.commit_into(
         &mut state.process_assets,
         &state.frontend.frontend_main_rng,
@@ -91,7 +95,11 @@ pub(crate) fn commit_prepared_load(
         // after shell admission, including a successful Load Saved Game.
         // The previous match's Abort may have cleared it at 0x0048CAA1.
         state.match_state.match_presentation.modal_latch = true;
-        crate::app::loading::pump::present_game_mode_blank(state);
+        crate::app::loading::pump::present_game_mode_blank(
+            &state.platform,
+            &state.renderer,
+            &state.match_state,
+        );
     }
 
     // Load_Game 0x0067E4E8 restores GameMode from the save header; VERA's
@@ -158,14 +166,22 @@ pub(crate) fn commit_prepared_load(
         theater_ext,
     };
     crate::app::loading::transitions::install_world_presentation(
-        state,
+        &state.platform,
+        &mut state.renderer,
+        &mut state.frontend,
+        &mut state.match_state,
+        &mut state.process_assets,
+        &state.persistence,
         map,
         committed.presentation,
     );
     // MouseLoad5BE092 restores the radar as saved, TacticalMapAvailable
     // included, so the rebuilt radar starts from the loaded House's radar.
     state.match_state.match_presentation.has_radar =
-        crate::app::presentation::building_anim::local_has_radar(state);
+        crate::app::presentation::building_anim::local_has_radar(
+            &state.frontend,
+            &state.match_state,
+        );
     state.match_state.match_presentation.loaded_radar_housing = committed.radar_housing;
     // Load_Game's Set_View_Dimensions (`0x0067E7F9`): Init `0x005D3A60`
     // deletes every row and an open edit, and SetWidth `0x005D4AD0` leaves

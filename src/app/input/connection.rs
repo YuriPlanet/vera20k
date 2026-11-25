@@ -60,7 +60,14 @@ fn pointer(state: &mut AppState, down: Option<bool>) {
     let Some(layout) = super::dialog_page::layout(state, connection_layout) else {
         return;
     };
-    let event = super::dialog_page::shell_event(state, down);
+    let event = super::dialog_page::shell_event(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+        down,
+    );
     if !open_controls(&mut state.match_state) {
         return;
     }
@@ -80,7 +87,13 @@ fn pointer(state: &mut AppState, down: Option<bool>) {
     );
     // Owner-draw buttons play GUIMainButtonSound at button-down
     // (0x0061374B..0x00613771).
-    for event in super::dialog_page::play_cues(state, events) {
+    for event in super::dialog_page::play_cues(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        events,
+    ) {
         let PageEvent::Activated(id) = event else {
             continue;
         };
@@ -97,7 +110,15 @@ fn pointer(state: &mut AppState, down: Option<bool>) {
                 &mut state.match_state.network_wait,
             ),
             ConnectionButton::Player(row) => {
-                crate::app::match_runtime::network_match::propose_kick(state, row)
+                crate::app::match_runtime::network_match::propose_kick(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &mut state.match_state,
+                    &state.persistence,
+                    &state.process_assets,
+                    row,
+                )
             }
             ConnectionButton::PreviousPage | ConnectionButton::NextPage => {
                 if let Some(page) = state.match_state.network_wait.page_mut()

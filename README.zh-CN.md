@@ -91,7 +91,15 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 
 VERA20K 默认使用《尤里的复仇》原版规则。你可以在 **Options** 菜单中调整声音、画面和操作设置，也可以开启 VERA 专属功能。游戏会将设置保存在 `VERA.INI` 中，其中 VERA 专属选项位于 `[VERA]` 节。
 
-大厅设置、模组和地图都能改变对局规则。模组和地图可以通过 INI 文件启用 VERA20K 支持的 [Ares](docs/ares.md) 和 [Phobos](docs/phobos.md) 功能。模组也可以通过附带 `ares.mix` 来启用 Ares。部分 Phobos 功能仍需在编译时加上 `--features phobos`。
+你可以添加自己的模组、地图、音乐等内容。这些文件放在 VERA20K 文件夹中：Windows 上是安装文件夹，macOS 上是 `~/Library/Application Support/VERA20k`，Linux 上是 `~/.local/share/VERA20k`。
+
+- **模组：** 在 **Options → Mods** 中，**Add Mod** 可以安装你下载的模组，**New Mod** 可以开始制作你自己的模组。每个模组在 `Mods` 中都有自己的文件夹。
+- **地图：** 把 `.map`、`.mpr` 或 `.yrm` 文件放进 `Maps`，即可在遭遇战中游玩。在线下载的地图也会保存在这里。
+- **音乐：** 把 WAV 或 AUD 文件放进 `musics`，并在其中添加 `music.ini`，在 `[Music]` 下写入 `enable=yes`。你的音乐会在对局中与游戏音乐一起播放；设置 `ExclusiveMode=yes` 则只播放你的音乐。
+- **高清美术：** [高清美术包](docs/hd-art.md)的安装和选择方式与模组相同。之后在 **Options** 中开启 **HD art**。
+- **语言：** `vera20k.<language>.ini` 文件可以添加语言或修改游戏文本。参见[翻译指南](src/i18n/README.md)。
+
+大厅设置、模组和地图都能改变对局规则。模组和地图可以通过 INI 文件启用 VERA20K 支持的 [Ares](docs/ares.md)、[Phobos](docs/phobos.md) 和 [Kratos](docs/zh-CN/kratos.md) 功能。模组也可以通过附带 `ares.mix` 来启用 Ares。部分 Phobos 功能仍需在编译时加上 `--features phobos`。
 
 想制作自己的模组，可以从[模组制作指南](docs/modding.md)开始。
 
@@ -121,7 +129,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
-This product includes software developed by the [Kratos PP author](docs/zh-CN/kratos.md).
+This product includes software developed by the [Kratos Authors](docs/zh-CN/kratos.md).
 
 **在分享、出售或复刻（fork）VERA20K 之前，请先阅读[法律声明](LEGAL.md)。**
 

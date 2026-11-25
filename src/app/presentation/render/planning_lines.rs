@@ -4,9 +4,13 @@
 //! Color caches are derived afresh; native cache invalidation equivalence remains
 //! unproven. No presentation result feeds back into synchronized state.
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::state::MatchPresentationState;
 use crate::app::presentation::target_lines::{TacticalViewport, push_rect};
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::render::native_surface_format::{RGB565, interpolate_rgb8};
 use crate::render::surface_line::{StoreGate, SurfaceStroke, clip_line};
 use crate::rules::ruleset::RuleSet;
@@ -19,24 +23,28 @@ const PATTERN: [u8; 16] = [1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0];
 
 /// `wall_ms` is the last tactical composite's timeGetTime.
 pub(super) fn build(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
     view: TacticalViewport,
     wall_ms: u32,
 ) -> (Vec<SurfaceStroke>, Vec<SurfaceStroke>) {
     let mut out = Vec::new();
     let mut highlights = Vec::new();
     // Tactical6D46DD calls both PlanMgr drawing passes only while active.
-    if !state.match_state.input.planning.active() {
+    if !match_state.input.planning.active() {
         return (out, highlights);
     }
-    let Some(rt) = state.match_state.sim_runtime.presentation() else {
+    let Some(rt) = match_state.sim_runtime.presentation() else {
         return (out, highlights);
     };
     let sim = &rt.simulation;
     let Some(viewer) = sim.session().current_house() else {
         return (out, highlights);
     };
-    let Some(frame) = state.match_state.sim_runtime.frame() else {
+    let Some(frame) = match_state.sim_runtime.frame() else {
         return (out, highlights);
     };
     // The captured graph has no hovered or highlighted node: those are
@@ -52,17 +60,17 @@ pub(super) fn build(
     };
     let node = |id: Option<u64>| id.and_then(|id| graph.nodes.iter().find(|node| node.id == id));
     let hovered = node(crate::app::input::planning_mode::hover_node(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
     ));
-    let highlighted = node(state.match_state.input.planning.highlighted_node());
+    let highlighted = node(match_state.input.planning.highlighted_node());
     let phase = stroke_phase(wall_ms);
     let color = |owner, bright| {
         stroke_rgb(
-            &state.match_state.match_presentation,
+            &match_state.match_presentation,
             sim,
             &rt.resources.rules,
             owner,
@@ -157,7 +165,7 @@ pub(super) fn build(
             emit_segment(&mut out, from, to, rgb, phase, 2, view);
             emit_badge(
                 &mut out,
-                &state.match_state.match_presentation,
+                &match_state.match_presentation,
                 node.badge,
                 [from, to],
                 rgb,
@@ -195,7 +203,7 @@ pub(super) fn build(
             emit_segment(&mut out, from, to, rgb, phase, 1, view);
             emit_badge(
                 &mut out,
-                &state.match_state.match_presentation,
+                &match_state.match_presentation,
                 actor.current_badge,
                 [from, to],
                 rgb,
@@ -211,7 +219,7 @@ pub(super) fn build(
             emit_segment(&mut out, from, to, rgb, phase, 1, view);
             emit_badge(
                 &mut out,
-                &state.match_state.match_presentation,
+                &match_state.match_presentation,
                 actor.mega_badge,
                 [from, to],
                 rgb,
@@ -238,7 +246,7 @@ pub(super) fn build(
         );
         emit_badge(
             &mut out,
-            &state.match_state.match_presentation,
+            &match_state.match_presentation,
             actor.badge,
             [from, to],
             rgb,

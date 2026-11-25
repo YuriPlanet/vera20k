@@ -7,13 +7,15 @@
 //! words), whose nodes are the pieces in drawing order. Screen-fixed
 //! coordinates, so callers draw these in the full-window pass.
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::presentation::picture_hud::{PictureHud, covering};
 use crate::app::presentation::sidebar_build::{
     CameoStatusLabels, OUTLINE_DEPTH, READY_PAD_X, READY_PAD_Y, build_gclock_stage_instance,
     place_canvas_crop_in_slot, rect_outline_edges, status_label_fit, superweapon_status_label,
 };
 use crate::app::presentation::text_hud::{TextHud, rgb, rounded};
+use crate::app::renderer_state::RendererState;
 use crate::render::batch::SpriteInstance;
 use crate::render::sidebar_chrome::SidebarChromeEntry;
 use crate::render::sw_sidebar_art::SwSidebarArtKind;
@@ -56,7 +58,9 @@ const DEPTH_TEXT: f32 = 0.00041;
 /// The column this frame, through `huds`: nothing while `shown` is false
 /// (no sidebar). The labels' text draws at the font's raster of now.
 pub(crate) fn build(
-    state: &AppState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
     huds: &mut SwSidebarHuds,
     shown: bool,
     labels: CameoStatusLabels<'_>,
@@ -68,9 +72,9 @@ pub(crate) fn build(
     huds.hover.begin();
     huds.labels.begin();
     if shown {
-        draw(state, huds, labels, ready_tint);
+        draw(renderer, frontend, match_state, huds, labels, ready_tint);
     }
-    let font = &state.renderer.bit_font;
+    let font = &renderer.bit_font;
     huds.hover.finish(font);
     huds.labels.finish(font);
     SwSidebarInstances {
@@ -106,27 +110,28 @@ fn outline(hud: &mut TextHud, rect: Rect, tint: [f32; 3]) {
 }
 
 fn draw(
-    state: &AppState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
     huds: &mut SwSidebarHuds,
     labels: CameoStatusLabels<'_>,
     ready_tint: [f32; 3],
 ) {
-    let sw = &state.match_state.match_presentation.sw_sidebar;
+    let sw = &match_state.match_presentation.sw_sidebar;
     if !sw.ui.enabled {
         return;
     }
-    let art = state.match_state.match_presentation.sw_sidebar_art.as_ref();
+    let art = match_state.match_presentation.sw_sidebar_art.as_ref();
     // The cameo labels' colour of the layout (`[Cameos] LabelColor=`).
     let hover_tint = crate::render::sidebar_text::side_text_tint(
-        state
-            .match_state
+        match_state
             .match_presentation
             .sidebar_layout_spec
             .label_text,
     );
-    let (cursor_x, cursor_y) = state.match_state.input.cursor_px();
+    let (cursor_x, cursor_y) = match_state.input.cursor_px();
     if let (Some(entry), Some(toggle)) = (
-        crate::app::presentation::sw_sidebar::toggle_art(&state.match_state.match_presentation),
+        crate::app::presentation::sw_sidebar::toggle_art(&match_state.match_presentation),
         sw.layout.toggle,
     ) {
         picture(&mut huds.chrome, sprite_art(entry, toggle, DEPTH_ART));
@@ -135,10 +140,12 @@ fn draw(
             outline(&mut huds.hover, toggle, hover_tint);
         }
     }
-    if !crate::app::presentation::sw_sidebar::expanded(&state.match_state.match_presentation) {
+    if !crate::app::presentation::sw_sidebar::expanded(&match_state.match_presentation) {
         return;
     }
-    if let Some(rect) = crate::app::presentation::sw_sidebar::hovered_entry_rect(state) {
+    if let Some(rect) =
+        crate::app::presentation::sw_sidebar::hovered_entry_rect(&match_state.match_presentation)
+    {
         outline(&mut huds.hover, rect, hover_tint);
     }
     if let Some(art) = art {
@@ -204,17 +211,13 @@ fn draw(
         }
     }
 
-    let atlas = state
-        .match_state
-        .match_presentation
-        .sidebar_cameo_atlas
-        .as_ref();
-    let chrome = crate::app::presentation::sidebar_render::current_sidebar_chrome(state);
+    let atlas = match_state.match_presentation.sidebar_cameo_atlas.as_ref();
+    let chrome =
+        crate::app::presentation::sidebar_render::current_sidebar_chrome(frontend, match_state);
     let gclock_frames: &[SidebarChromeEntry] = chrome
         .map(|atlas| atlas.gclock_frames.as_slice())
         .unwrap_or(&[]);
-    let keys_enabled = state
-        .rules()
+    let keys_enabled = crate::app::state::active_rules(frontend, match_state)
         .is_some_and(|rules| rules.sw_sidebar.keys_enabled);
     for entry in &sw.entries {
         let slot = entry.rect;
@@ -264,8 +267,7 @@ fn draw(
             && entry.column == 0
             && entry.column_button < crate::rules::phobos_sw_sidebar::SUPER_WEAPON_SIDEBAR_KEYS)
             .then(|| {
-                state
-                    .match_state
+                match_state
                     .input
                     .hotkey_bindings
                     .first_key(crate::app::input::hotkeys::HotkeyCommand::FireTacticalSw(
@@ -276,11 +278,11 @@ fn draw(
             .flatten()
             .filter(|name| !name.is_empty());
         if let Some(text) = hotkey.as_deref().or(readiness)
-            && state.renderer.bit_font.darken_texture().is_some()
+            && renderer.bit_font.darken_texture().is_some()
         {
             // Native screen pixels, like `SWButtonClass::Draw` on
             // `DSurface::Composite`.
-            let font = &state.renderer.bit_font;
+            let font = &renderer.bit_font;
             let fit = status_label_fit(font, text, slot.w, None);
             let text_w = font.fitted(fit, |font| font.text_width(text)) as f32;
             let strip_w = text_w + READY_PAD_X * 2.0;

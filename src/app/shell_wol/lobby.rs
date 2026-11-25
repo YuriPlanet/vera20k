@@ -53,7 +53,10 @@ use super::{
 use crate::app::frontend::skirmish_session::MultiplayerShellRuntime;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::MatchSession;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::render::gpu::GpuContext;
 use crate::ui::wol_login::WolAccountGlobals;
 #[cfg(test)]
 use create::republished_limit;
@@ -70,7 +73,11 @@ pub(super) use events::{
 };
 pub(super) use help::locale_name;
 pub(crate) use help::{badge_help, player_badge, status_help};
-pub(crate) use input::{create_layout, ime_edit_rect, key_press, popup_scale, sync};
+#[cfg(not(target_os = "android"))]
+pub(crate) use input::ime_edit_rect;
+#[cfg(target_os = "android")]
+pub(crate) use input::ime_gui;
+pub(crate) use input::{create_layout, key_press, popup_scale, sync};
 pub(super) use input::{cursor_moved, mouse};
 #[cfg(test)]
 use join::JoinErrorReply;
@@ -531,23 +538,19 @@ impl WolLobby {
     }
 }
 
-pub(crate) fn layout(state: &AppState) -> WolLobbyLayout {
-    shell_layout::on(&state.renderer.gpu, |w, h, scale| {
-        match lobby(state.frontend.wol.as_ref()) {
-            Some(lobby) => lobby.ui.layout(w, h, scale),
-            None => WolLobbyLayout::new(w, h, scale, &PAGE),
-        }
+pub(crate) fn layout(wol: Option<&WolVisit>, gpu: &GpuContext) -> WolLobbyLayout {
+    shell_layout::on(gpu, |w, h, scale| match lobby(wol) {
+        Some(lobby) => lobby.ui.layout(w, h, scale),
+        None => WolLobbyLayout::new(w, h, scale, &PAGE),
     })
 }
 
 /// [`layout`] as the online page's chat view lays it out, whichever view
 /// shows: the log the lobby's chat wraps its messages to.
-pub(crate) fn chat_layout(state: &AppState) -> WolLobbyLayout {
-    shell_layout::on(&state.renderer.gpu, |w, h, scale| {
-        match lobby(state.frontend.wol.as_ref()) {
-            Some(lobby) => lobby.ui.chat_layout(w, h, scale),
-            None => WolLobbyLayout::new(w, h, scale, &PAGE),
-        }
+pub(crate) fn chat_layout(wol: Option<&WolVisit>, gpu: &GpuContext) -> WolLobbyLayout {
+    shell_layout::on(gpu, |w, h, scale| match lobby(wol) {
+        Some(lobby) => lobby.ui.chat_layout(w, h, scale),
+        None => WolLobbyLayout::new(w, h, scale, &PAGE),
     })
 }
 
@@ -1019,12 +1022,15 @@ pub(super) fn high_scores_received(
 
 /// `[0xA8EB84]`: Options' ScreenWidth, the running shell width while the
 /// profile holds none.
-pub(super) fn options_screen(state: &AppState) -> (i32, i32) {
-    let profile = &state.persistence.options_profile;
+pub(super) fn options_screen(
+    gpu: &GpuContext,
+    options_profile: &RetailOptionsProfile,
+) -> (i32, i32) {
+    let profile = options_profile;
     if profile.screen_width > 0 && profile.screen_height > 0 {
         (profile.screen_width, profile.screen_height)
     } else {
-        let (w, h) = shell_layout::shell_screen_size(&state.renderer.gpu);
+        let (w, h) = shell_layout::shell_screen_size(gpu);
         (w as i32, h as i32)
     }
 }
@@ -1191,7 +1197,12 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         &state.process_assets,
         &state.persistence.options_profile,
     );
-    super::leaf::open_art(state, DIALOG);
+    super::leaf::open_art(
+        &mut state.frontend,
+        &state.process_assets,
+        &state.renderer,
+        DIALOG,
+    );
     // The MOTD [0xB73AE0], and the global is cleared.
     if let Some(motd) = motd.filter(|motd| !motd.is_empty()) {
         let modern = state
@@ -1460,7 +1471,7 @@ fn host_changed(state: &mut AppState, name: String, channel: Option<WolChannel>)
     }
     let old = pass_room(&mut runner.members, &name);
     refill_players(&mut state.frontend);
-    if !in_setup_channel(state) || quick_match_runner(state.frontend.wol.as_ref()) {
+    if !in_setup_channel(&state.frontend) || quick_match_runner(state.frontend.wol.as_ref()) {
         return;
     }
     let chat = state
@@ -2019,7 +2030,14 @@ fn leave_finished(state: &mut AppState, left: bool) {
 /// The Buddy List runner goes back to its dialog loop.
 fn join_failed_locally(state: &mut AppState, game: bool) {
     if buddy_runner(state.frontend.wol.as_ref()) {
-        super::buddy::stopped(state);
+        super::buddy::stopped(
+            &mut state.frontend,
+            &state.platform.window,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &state.persistence.options_profile,
+        );
         return;
     }
     if quick_match_runner(state.frontend.wol.as_ref()) {
@@ -2049,7 +2067,7 @@ fn join_failed_locally(state: &mut AppState, game: bool) {
 /// slide and `WOL_Main` shows the welcome (mode 0), or the online lobby
 /// again for a Quick Match runner that lobby started.
 fn close_runner(state: &mut AppState) {
-    take_visit(state);
+    take_visit(&mut state.frontend, &mut state.match_state);
     let quick_match = quick_match_runner(state.frontend.wol.as_ref());
     if quick_match {
         super::quick_match::runner_closed(state.frontend.wol.as_mut());
@@ -2147,33 +2165,6 @@ fn begin_join(state: &mut AppState, row: usize, show: bool) {
     };
     lobby.ui.set_commands(false, false, false);
     continue_join(state, channel);
-}
-
-/// VERA: Join Any Game joins the first room the list shows that admits this
-/// player without a password, as Join on its row does. With none, Create Game
-/// opens instead.
-fn join_any(state: &mut AppState) {
-    let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
-    let Some(lobby) = lobby(state.frontend.wol.as_ref()) else {
-        return;
-    };
-    let open: Vec<usize> = (lobby.ui.game_rows.iter().enumerate())
-        .filter(|(_, row)| !row.watch && !row.keyed)
-        .map(|(row, _)| row)
-        .collect();
-    let Some(row) = open
-        .into_iter()
-        .find(|&row| admit_row(state, row, observer, false))
-    else {
-        begin_create(state);
-        return;
-    };
-    let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) else {
-        return;
-    };
-    lobby.ui.select_row(GAMES, Some(row));
-    lobby.ui.admitted_name = lobby.ui.game_rows.get(row).map(|row| row.name.clone());
-    begin_join(state, row, false);
 }
 
 /// VERA: the match of the selected watch row.
@@ -2276,7 +2267,7 @@ pub(super) fn watch_refusal_key(code: u32) -> &'static str {
 /// `0x00789960` past admission: the resolution limit, then the password.
 fn continue_join(state: &mut AppState, channel: WolChannel) {
     let limit = channel.screen_limit();
-    if limit < options_screen(state).0 {
+    if limit < options_screen(&state.renderer.gpu, &state.persistence.options_profile).0 {
         let key = if channel.game_flags & GAME_LIMIT_800 != 0 {
             "WOL:ResolutionLimited800"
         } else {
@@ -2299,7 +2290,7 @@ fn continue_join(state: &mut AppState, channel: WolChannel) {
             lobby.joining = Some(channel);
         }
         state.frontend.shell_controller.reset_to(PASSWORD_DIALOG);
-        sync(state);
+        sync(&mut state.frontend, &state.process_assets, &state.renderer);
         return;
     }
     join_channel(state, channel, "", true, false);
@@ -2318,7 +2309,7 @@ fn answer_resolution(state: &mut AppState, channel: WolChannel, yes: bool) {
             &state.persistence.options_profile,
         );
     }
-    if limit < options_screen(state).0 {
+    if limit < options_screen(&state.renderer.gpu, &state.persistence.options_profile).0 {
         join_failed_locally(state, true);
         return;
     }
@@ -2360,13 +2351,33 @@ fn popup_action(state: &mut AppState, action: WolPopupAction) {
             let name = name.filter(|name| *name != default);
             state.frontend.wol_room_name = name.clone();
             let ranked = ranked.unwrap_or(true);
-            create_confirmed(state, password, name, clan, limit, observe, ranked)
+            create_confirmed(
+                &mut state.frontend,
+                state.platform.game_config.as_ref(),
+                &state.match_state.session,
+                &state.process_assets,
+                &state.renderer.gpu,
+                &state.persistence.options_profile,
+                password,
+                name,
+                clan,
+                limit,
+                observe,
+                ranked,
+            )
         }
         WolPopupAction::CreateCancelled => {
             if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
                 lobby.ui.close_popup();
             }
-            create_ended(state);
+            create_ended(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &state.persistence.options_profile,
+            );
         }
         WolPopupAction::PasswordConfirmed(password) => {
             let channel = lobby_mut(state.frontend.wol.as_mut()).and_then(|lobby| {
@@ -2527,24 +2538,28 @@ fn send_emote(state: &mut AppState, text: Vec<u16>) {
 /// `0x00789B60` up to its popup: Limit Screen Resolution is cleared on a
 /// wide screen, the commands go off and `0xC3` shows over the empty
 /// backdrop.
-pub(super) fn begin_create(state: &mut AppState) {
-    let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
-    let (width, _) = options_screen(state);
-    let globals = &mut state.frontend.wol_lobby_globals;
+pub(super) fn begin_create(
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+) {
+    let observer = frontend.multiplayer_shell_runtime.lan_observer();
+    let (width, _) = options_screen(&renderer.gpu, options_profile);
+    let globals = &mut frontend.wol_lobby_globals;
     if width > 0x3FF {
         globals.limit_resolution = false;
     }
     let limit = globals.limit_resolution;
-    let squad = squad_id(state.frontend.wol.as_ref());
-    let room = state.frontend.room_limits;
-    let ranked = !state.frontend.wol_room_unranked;
-    let watching = state.frontend.wol_room_watching;
-    let name = state
-        .frontend
+    let squad = squad_id(frontend.wol.as_ref());
+    let room = frontend.room_limits;
+    let ranked = !frontend.wol_room_unranked;
+    let watching = frontend.wol_room_watching;
+    let name = frontend
         .wol_room_name
         .clone()
-        .unwrap_or_else(|| default_room_name(&nickname(&state.frontend.wol_account)));
-    let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) else {
+        .unwrap_or_else(|| default_room_name(&nickname(&frontend.wol_account)));
+    let Some(lobby) = lobby_mut(frontend.wol.as_mut()) else {
         return;
     };
     lobby.ui.set_commands(false, false, false);
@@ -2557,14 +2572,19 @@ pub(super) fn begin_create(state: &mut AppState) {
         .is_modern()
         .then_some((room, name.as_str(), ranked, watching));
     lobby.ui.open_create(width, limit, squad, observer, room);
-    state.frontend.shell_controller.reset_to(CREATE_DIALOG);
+    frontend.shell_controller.reset_to(CREATE_DIALOG);
     // Its widgets on their layout before it paints.
-    sync(state);
+    sync(frontend, process_assets, renderer);
 }
 
 fn dispatch(state: &mut AppState, action: WolLobbyAction) {
     match action {
-        WolLobbyAction::Create => begin_create(state),
+        WolLobbyAction::Create => begin_create(
+            &mut state.frontend,
+            &state.process_assets,
+            &state.renderer,
+            &state.persistence.options_profile,
+        ),
         WolLobbyAction::Join => {
             let Some(lobby) = lobby(state.frontend.wol.as_ref()) else {
                 return;
@@ -2662,11 +2682,15 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
             .set_lan_observer(observer),
         // 0x0078B829: 0x113 slides out over the empty backdrop before 0x2BC.
         WolLobbyAction::Options => {
-            App::leave_shell_dialog(
-                state,
-                shell_transition::ShellSlideKind::WolLobby,
-                crate::app::shell_wol::options::commit_open,
-            );
+            App::leave_shell_dialog(state, shell_transition::ShellSlideKind::WolLobby, |state| {
+                crate::app::shell_wol::options::commit_open(
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.renderer,
+                    &state.persistence.options_profile,
+                    &state.audio,
+                )
+            });
         }
         WolLobbyAction::Page => super::page::open_page_dialog(state),
         // 0x0078BF7D: mode 5 with return mode 4; event 6 then ends the
@@ -2684,19 +2708,18 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
         WolLobbyAction::BackToRoom => back_to_room(state),
         // VERA: the other view's lists and edit take the pointer's place.
         WolLobbyAction::View => {
-            sync(state);
+            sync(&mut state.frontend, &state.process_assets, &state.renderer);
             cursor_moved(state);
         }
-        WolLobbyAction::JoinAny => join_any(state),
         // VERA: a shorter list keeps its top row within the rows it shows.
         WolLobbyAction::FilterToggled(control) => {
             state.frontend.wol_lobby_globals.room_filter.toggle(control);
             refill_games(&mut state.frontend, &state.process_assets);
-            sync(state);
+            sync(&mut state.frontend, &state.process_assets, &state.renderer);
         }
         WolLobbyAction::SearchChanged => {
             refill_games(&mut state.frontend, &state.process_assets);
-            sync(state);
+            sync(&mut state.frontend, &state.process_assets, &state.renderer);
         }
         // VERA: the online page's Quick Match ends the runner as Buddy List
         // does, with return mode 4, and the Quick Match runner follows.
@@ -2732,7 +2755,14 @@ pub(super) fn box_command(state: &mut AppState, answer: usize) {
         match then {
             BoxThen::QuickMatch(then) => super::quick_match::box_closed(state, then),
             BoxThen::JoinFailed { close } => join_failed_tail(state, close),
-            BoxThen::CreateFailed => create_ended(state),
+            BoxThen::CreateFailed => create_ended(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &state.persistence.options_profile,
+            ),
             BoxThen::WatchFailed => {
                 if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
                     lobby
@@ -2769,7 +2799,14 @@ pub(super) fn box_command(state: &mut AppState, answer: usize) {
         // runner searches again, finds nothing and loops.
         Step::FindingGame { .. } => {
             request(state.frontend.wol.as_mut(), WolServiceRequest::CancelWait);
-            super::buddy::stopped(state);
+            super::buddy::stopped(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &state.persistence.options_profile,
+            );
         }
         _ if returning_to_room => room_not_returned(state, false),
         // Event 0: the Quick Match runner's exit.
@@ -2836,7 +2873,14 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
         Step::FindingGame { deadline, .. } if now >= deadline => {
             lobby.step = Step::Ready;
             close_wait(&mut state.frontend);
-            super::buddy::stopped(state);
+            super::buddy::stopped(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &state.persistence.options_profile,
+            );
             return None;
         }
         Step::Leaving { deadline, .. } if now >= deadline => {

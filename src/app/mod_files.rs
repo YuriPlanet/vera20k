@@ -39,6 +39,9 @@ const UNCOMPARED: [&str; 3] = [
     crate::ui::match_layout::FILE_NAME,
     "MOD-FILES.TXT",
 ];
+/// The folder in a mod's folder itself that holds an HD art pack, by
+/// [`name_key`]: neither compared nor listed (`collect_files`).
+const HD_ART_FOLDER: &str = "HD_ART";
 /// `name`, a file in a mod's folder itself, is one that players need not
 /// share ([`UNCOMPARED`]).
 pub(crate) fn uncompared(name: &str) -> bool {
@@ -386,6 +389,12 @@ fn collect_files(
             continue;
         };
         if kind.is_dir() {
+            // An HD art pack (`render::hd_art`, docs/hd-art.md): tens of
+            // thousands of pictures only the screen draws, which players need
+            // not share and the check need not read.
+            if prefix.1.is_empty() && key == HD_ART_FOLDER {
+                continue;
+            }
             if depth > 0 {
                 let below = (format!("{spelled}/"), format!("{key}/"));
                 collect_files(&path, (&below.0, &below.1), depth - 1, files)?;
@@ -626,6 +635,33 @@ mod tests {
             assert_ne!(found("One").digest(), found("Two").digest(), "{path}");
             std::fs::remove_file(root.join(path)).unwrap();
         }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// An HD art pack in a mod's folder is neither compared nor listed:
+    /// players with and without it play together, and its pictures are not
+    /// read before a match.
+    #[test]
+    fn an_hd_art_pack_is_neither_compared_nor_listed() {
+        let (root, write) = folder("hd-art");
+        write(
+            "One/rulesmd.ini",
+            b"[General]
+",
+        );
+        write(
+            "Two/rulesmd.ini",
+            b"[General]
+",
+        );
+        write("Two/hd_art/pack/0123456789abcdef.png", b"picture");
+        write("Two/HD_ART/pack/terrain/fedcba9876543210.png", b"picture");
+        let found = |folder: &str| checked(&root.join(folder)).found;
+        assert_eq!(found("One").digest(), found("Two").digest());
+        assert_eq!((found("One").len(), found("Two").len()), (1, 1));
+        // A folder of that name below the mod's own still counts.
+        write("Two/Art/hd_art/tank.vxl", b"model");
+        assert_ne!(found("One").digest(), found("Two").digest());
         std::fs::remove_dir_all(root).unwrap();
     }
 

@@ -1656,28 +1656,29 @@ fn advance_departure(state: &mut AppState, now: u32, service_ok: bool) -> bool {
     true
 }
 
-pub(crate) fn request_setup_back(state: &mut AppState) -> anyhow::Result<()> {
+pub(crate) fn request_setup_back(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) -> anyhow::Result<()> {
     let now = super::match_runtime::frame_pacer::frame_bucket(
         super::match_runtime::frame_pacer::wall_clock_ms(),
     );
-    state
-        .match_state
+    match_state
         .lan_service
         .as_mut()
         .ok_or_else(|| anyhow::anyhow!("no LAN service"))?
-        .begin_departure(&state.match_state.session, DepartureReason::Back, now)?;
+        .begin_departure(&match_state.session, DepartureReason::Back, now)?;
     // LAN host Back (BC WndProc005DE520, original5DE733..5DE742) calls
     // Snapshot5ED400 before publishing result2. Preserve that same profile
     // before VERA's asynchronous departure lock makes teardown read-only.
-    if state
-        .frontend
+    if frontend
         .network_setup_protocol
         .as_ref()
         .is_some_and(|protocol| protocol.editable())
     {
-        super::shell_network_setup::remember_setup(&mut state.frontend, &state.match_state);
+        super::shell_network_setup::remember_setup(frontend, match_state);
     }
-    super::shell_network_setup::lock_lan_departure(&mut state.frontend.network_setup_protocol);
+    super::shell_network_setup::lock_lan_departure(&mut frontend.network_setup_protocol);
     Ok(())
 }
 
@@ -1717,7 +1718,13 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             state.match_state.session_mode() == SessionMode::Lan,
             "LAN map packet outside a LAN visit"
         );
-        return maps::receive(state, incoming.source, &incoming.payload);
+        return maps::receive(
+            state.platform.game_config.as_ref(),
+            &mut state.frontend,
+            &mut state.match_state,
+            incoming.source,
+            &incoming.payload,
+        );
     }
     if incoming
         .payload

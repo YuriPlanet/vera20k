@@ -39,7 +39,13 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
                 lobby.games = channels;
                 refill_games(&mut state.frontend, &state.process_assets);
                 // The channel-list sink rebuilds an open 0x116's rows.
-                super::buddy::buddies_changed(state, false);
+                super::buddy::buddies_changed(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.process_assets,
+                    &state.renderer,
+                    false,
+                );
                 let lobby = lobby_mut(state.frontend.wol.as_mut()).expect("checked");
                 if let Step::FindingGame { name, .. } = &lobby.step {
                     let name = name.clone();
@@ -60,7 +66,13 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
             {
                 lobby.step = Step::Ready;
                 close_wait(&mut state.frontend);
-                super::buddy::lobbies_listed(state);
+                super::buddy::lobbies_listed(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.process_assets,
+                    &state.renderer,
+                    &state.persistence.options_profile,
+                );
             } else if let Step::ListingLobbies { .. } = lobby.step {
                 show_wait(&mut state.frontend, &state.process_assets, "TXT_JOINLOB");
                 let skip_full = state
@@ -119,7 +131,7 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
                     lobby.user_joined(member, sort, rank)
                 });
                 refill_players(&mut state.frontend);
-                if in_setup_channel(state)
+                if in_setup_channel(&state.frontend)
                     && let Err(error) = setup::user_joined(state, name)
                 {
                     log::warn!("WOL game-channel join: {error:#}");
@@ -134,7 +146,7 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
                 .any(|member| member.name == name && member.flags & MEMBER_OPERATOR != 0);
             lobby.members.retain(|member| member.name != name);
             refill_players(&mut state.frontend);
-            if in_setup_channel(state)
+            if in_setup_channel(&state.frontend)
                 && let Err(error) = setup::user_left(state, &name, operator)
             {
                 log::warn!("WOL game-channel leave: {error:#}");
@@ -148,7 +160,9 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
         WolServiceEvent::ChannelLeft if awaiting_room(&state.match_state.session) => {
             room_not_returned(state, true)
         }
-        WolServiceEvent::ChannelLeft if in_setup_channel(state) => setup_channel_left(state),
+        WolServiceEvent::ChannelLeft if in_setup_channel(&state.frontend) => {
+            setup_channel_left(state)
+        }
         WolServiceEvent::ChannelLeft => leave_finished(state, true),
         WolServiceEvent::PlayerChoices {
             from,
@@ -162,21 +176,21 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
                 .iter()
                 .any(|member| member.name.eq_ignore_ascii_case(&from));
             if member
-                && in_setup_channel(state)
+                && in_setup_channel(&state.frontend)
                 && let Err(error) = setup::player_choices(state, &from, slot, observer)
             {
                 log::warn!("WOL choices from {from}: {error:#}");
             }
         }
         WolServiceEvent::PlayerReady { from, value } => {
-            if in_setup_channel(state)
+            if in_setup_channel(&state.frontend)
                 && let Err(error) = setup::player_ready(state, &from, value)
             {
                 log::warn!("WOL readiness from {from}: {error:#}");
             }
         }
         WolServiceEvent::MapStatus { from, status } => {
-            if in_setup_channel(state)
+            if in_setup_channel(&state.frontend)
                 && let Err(error) = setup::map_status(state, &from, status)
             {
                 log::warn!("WOL map status from {from}: {error:#}");
@@ -198,12 +212,12 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
 
 /// The runner is in a game channel with C2/C9 open over the hidden `0x113`,
 /// or with Quick Match's setup under `0x117`.
-pub(super) fn in_setup_channel(state: &AppState) -> bool {
+pub(super) fn in_setup_channel(frontend: &FrontendState) -> bool {
     // A visitor's room goes on while the lobby page shows.
-    (state.frontend.shell_route == ShellRoute::NetworkSetup
-        || setup::quick_match(state.frontend.network_setup_protocol.as_ref())
-        || visiting(state.frontend.wol.as_ref()))
-        && lobby(state.frontend.wol.as_ref())
+    (frontend.shell_route == ShellRoute::NetworkSetup
+        || setup::quick_match(frontend.network_setup_protocol.as_ref())
+        || visiting(frontend.wol.as_ref()))
+        && lobby(frontend.wol.as_ref())
             .and_then(|lobby| lobby.current.as_ref())
             .is_some_and(|current| current.kind == GAME_CHANNEL)
 }
@@ -362,7 +376,13 @@ pub(in crate::app::shell_wol) fn message_received(state: &mut AppState, message:
 /// RESIDUAL: in a match the line is a MessageList row (WOL in-match chain).
 pub(in crate::app::shell_wol) fn located(state: &mut AppState, result: Result<WolChannel, u32>) {
     // 0x007A9986: a pending buddy locate takes any answer first.
-    if super::buddies::located(state, &result) {
+    if super::buddies::located(
+        &mut state.frontend,
+        &state.platform.window,
+        &state.process_assets,
+        &state.renderer,
+        &result,
+    ) {
         return;
     }
     // 0x007A997A: with 0xCF in the stack its status takes the answer.
@@ -499,7 +519,10 @@ pub(in crate::app::shell_wol) fn net_status(state: &mut AppState, status: u32) {
         // slide and TXT_YOURE_DISCON shows before the welcome. Over C2/C9
         // the setup is dropped first, as for the lobby.
         if state.frontend.shell_route == ShellRoute::NetworkSetup {
-            crate::app::shell_network_setup::abandon_for_wol_runner(state);
+            crate::app::shell_network_setup::abandon_for_wol_runner(
+                &mut state.frontend,
+                &mut state.match_state,
+            );
         }
         super::buddy::dialog_ended(&mut state.frontend);
         show_box(
@@ -512,13 +535,21 @@ pub(in crate::app::shell_wol) fn net_status(state: &mut AppState, status: u32) {
         return;
     }
     if state.frontend.shell_route == ShellRoute::NetworkSetup {
-        crate::app::shell_network_setup::abandon_for_wol_runner(state);
+        crate::app::shell_network_setup::abandon_for_wol_runner(
+            &mut state.frontend,
+            &mut state.match_state,
+        );
         state.frontend.shell_route = ShellRoute::WolLobby;
         if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
             lobby.shown = true;
             lobby.covered = false;
         }
-        super::leaf::open_art(state, DIALOG);
+        super::leaf::open_art(
+            &mut state.frontend,
+            &state.process_assets,
+            &state.renderer,
+            DIALOG,
+        );
     }
     // The records are zeroed without a list refill; the box shows over the
     // lists as they were, and the runner then closes.

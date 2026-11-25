@@ -137,7 +137,7 @@ pub(crate) fn current_cursor_feedback_kind(
 pub(crate) fn answer_kept_questions(state: &AppState) {
     let targets = CursorTargets::read(state);
     current_cursor_feedback_kind(state, &targets);
-    crate::app::input::ferry::armed_click_accepted(state);
+    crate::app::input::ferry::armed_click_accepted(&state.match_state);
     crate::app::input::planning_mode::hover_node(
         &state.platform,
         &state.renderer,
@@ -163,7 +163,13 @@ fn find_cursor_feedback_kind(
         state.match_state.input.cursor_y,
     );
     if let Some(kind) = scroll_or_arrow_cursor(
-        over_radar_top_button(state) || command_bar_arrow_hit(state.sidebar_frame(), x, y),
+        over_radar_top_button(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence,
+        ) || command_bar_arrow_hit(state.sidebar_frame(), x, y),
         crate::app::input::camera::right_drag_pan_cursor_state(
             &state.platform,
             &state.renderer,
@@ -199,7 +205,13 @@ fn find_cursor_feedback_kind(
     ) {
         return state.match_state.input.sidebar_cursor();
     }
-    let (x, y) = crate::app::presentation::super_timers::cursor_in_view(state);
+    let (x, y) = crate::app::presentation::super_timers::cursor_in_view(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     if state
         .match_state
         .match_presentation
@@ -209,7 +221,14 @@ fn find_cursor_feedback_kind(
         return Some(CursorFeedbackKind::Default);
     }
     if state.match_state.input.skirmish_spawn.is_some()
-        && super::camera::spawn_pointer_world_point(state).is_some()
+        && super::camera::spawn_pointer_world_point(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence,
+        )
+        .is_some()
     {
         return Some(CursorFeedbackKind::Deploy);
     }
@@ -352,7 +371,8 @@ fn find_cursor_feedback_kind(
     // waypoint key held the click is a waypoint: the Move cursor, or its
     // refusal on a cell no selected transport can move to.
     if state.match_state.input.ferry.armed() {
-        let refused = crate::app::input::ferry::armed_click_accepted(state) == Some(false);
+        let refused =
+            crate::app::input::ferry::armed_click_accepted(&state.match_state) == Some(false);
         let waypoint = state.match_state.input.ferry.waypoint_click();
         return Some(match (waypoint, refused) {
             (true, false) => CursorFeedbackKind::Move,
@@ -2259,18 +2279,28 @@ fn command_bar_arrow_hit(frame: crate::ui::sidebar::SidebarFrame, x: f32, y: f32
 /// (`0x00653865..0x006538F3`), on every pass and with any button held, after
 /// the radar's own press drew its row: a radar press dragged onto them shows
 /// the arrow too.
-fn over_radar_top_button(state: &AppState) -> bool {
-    crate::app::presentation::sidebar_render::current_sidebar_view(
-        &state.match_state.match_presentation,
-    )
-    .is_some_and(|view| {
-        top_button_hit(
-            state.sidebar_frame(),
-            view.top_buttons.iter().map(|button| button.rect),
-            state.match_state.input.cursor_x,
-            state.match_state.input.cursor_y,
-        )
-    })
+fn over_radar_top_button(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> bool {
+    crate::app::presentation::sidebar_render::current_sidebar_view(&match_state.match_presentation)
+        .is_some_and(|view| {
+            top_button_hit(
+                crate::app::state::sidebar_frame(
+                    platform,
+                    persistence,
+                    renderer,
+                    screen,
+                    &match_state.match_presentation.sidebar_layout_spec,
+                ),
+                view.top_buttons.iter().map(|button| button.rect),
+                match_state.input.cursor_x,
+                match_state.input.cursor_y,
+            )
+        })
 }
 
 /// Whether (`x`, `y`) lies in one of `rects`, placed by `frame`: left and

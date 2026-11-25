@@ -1018,7 +1018,15 @@ fn tell_moved(state: &mut AppState, mode_changed: bool) {
             "VERA:HostMovedYouToTeam",
             &[
                 ("name", name),
-                ("letter", &super::view::team_letter(state, team)),
+                (
+                    "letter",
+                    &super::view::team_letter(
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        team,
+                    ),
+                ),
             ],
         ),
         (Some(HostMove::OffTeam), _) => {

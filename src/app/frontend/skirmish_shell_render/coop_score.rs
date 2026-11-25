@@ -24,11 +24,15 @@ pub(crate) fn render_coop_score(
     if state.frontend.skirmish_shell_chrome.is_none() {
         return Ok(false);
     }
-    let Some(view) = crate::app::cooperative_round::view(state) else {
+    let Some(view) = crate::app::cooperative_round::view(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    ) else {
         return Ok(false);
     };
     crate::app::input::coop_score::update_geometry(state);
-    let layout = crate::app::input::coop_score::layout(state);
+    let layout = crate::app::input::coop_score::layout(&state.renderer.gpu);
     let scale = layout.page.scale;
     let (width, height) = (state.render_width(), state.render_height());
     let fills = crate::app::frontend::shell_layout::fills_window(&state.renderer.gpu);
@@ -39,7 +43,15 @@ pub(crate) fn render_coop_score(
     match map_index.filter(|_| can_continue) {
         Some(index) => {
             let preview = layout.control_rect(PREVIEW).unwrap_or_default();
-            ensure_map_preview_texture(state, index, preview)
+            ensure_map_preview_texture(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence,
+                index,
+                preview,
+            )
         }
         None => state.frontend.skirmish_preview_texture = None,
     }

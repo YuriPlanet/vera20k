@@ -14,6 +14,7 @@
 use winit::event::{ElementState, MouseButton};
 
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::{place_ready_building_at_cell, preferred_local_owner_name};
 use crate::app::input::context_order::{ContextClick, ContextOrderTarget, try_queue_context_order};
 use crate::app::input::entity_pick::{
@@ -26,6 +27,7 @@ use crate::app::input::entity_pick::{
 };
 use crate::app::input::precedence::{ModalPage, modal_page};
 use crate::app::input::state::MatchInputState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::types::OrderMode;
 #[cfg(test)]
@@ -91,8 +93,6 @@ use selection::{
 };
 pub(super) use sidebar::local_has_manageable_building;
 #[cfg(test)]
-pub(super) use {hotkey_dispatch::ready_tab_factory, sidebar::ready_cameo_factory};
-#[cfg(test)]
 pub(crate) use sidebar::wheel_action;
 pub(crate) use sidebar::{
     WheelAction, apply_sidebar_action, local_queue_view, push_local_eva, sidebar_scroll_command,
@@ -108,6 +108,8 @@ use unit_orders::{
     queue_deploy_undeploy_for_selected, queue_guard_for_selected, queue_scatter_for_selected,
     queue_stop_for_selected,
 };
+#[cfg(test)]
+pub(super) use {hotkey_dispatch::ready_tab_factory, sidebar::ready_cameo_factory};
 
 /// Handle mouse button press/release for selection and move commands.
 ///
@@ -129,7 +131,16 @@ pub(crate) fn handle_mouse_input(
     // The window path routes these pages in its own handler from the same
     // decision (`input::precedence`); captures enter here directly.
     if modal_page(state) == Some(ModalPage::NetworkFailure) {
-        crate::app::match_runtime::network_failure::mouse(state, button, btn_state.is_pressed());
+        crate::app::match_runtime::network_failure::mouse(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            button,
+            btn_state.is_pressed(),
+        );
         return;
     }
     handle_mouse_input_inner(state, button, btn_state);
@@ -384,7 +395,7 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                 }
                 // VERA formation line: with its key held and a group
                 // selected, the drag draws a line and no band box.
-                if begin_formation_line(state) {
+                if begin_formation_line(&state.frontend, &mut state.match_state) {
                     return;
                 }
                 state.match_state.input.selection_state.begin_drag(
@@ -465,24 +476,22 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
 /// when its key is held and at least two units that take a point are
 /// selected ([`crate::app::input::context_order::formation_unit_count`]). Fewer leave
 /// the press to the band box, so the key alone never blocks selecting.
-fn begin_formation_line(state: &mut AppState) -> bool {
-    if !state.match_state.input.formation_line.key_held() {
+fn begin_formation_line(frontend: &FrontendState, match_state: &mut MatchState) -> bool {
+    if !match_state.input.formation_line.key_held() {
         return false;
     }
-    let selected =
-        crate::app::input::context_order::formation_unit_count(&state.frontend, &state.match_state);
+    let selected = crate::app::input::context_order::formation_unit_count(frontend, match_state);
     if selected < 2 {
         return false;
     }
     let world = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        &state.match_state.input,
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
+        &match_state.input,
+        match_state.input.cursor_x,
+        match_state.input.cursor_y,
     );
     // Shift held as well: the drag is a block's front row.
-    let block = state.match_state.input.hotkey_modifiers.shift_key();
-    state
-        .match_state
+    let block = match_state.input.hotkey_modifiers.shift_key();
+    match_state
         .input
         .formation_line
         .begin(world, selected, block);
@@ -614,7 +623,7 @@ fn tactical_left_up(state: &mut AppState) {
     }
     // VERA ferry: the armed click sets the selected transports' route, a
     // left-button tool in both control schemes like the ones around it.
-    if crate::app::input::ferry::drop_click(state) {
+    if crate::app::input::ferry::drop_click(&mut state.match_state) {
         return;
     }
     // Planning-node editing stays a left-button tool in both control schemes,
@@ -700,7 +709,11 @@ fn tactical_left_up(state: &mut AppState) {
     {
         let order =
             crate::app::presentation::instances::tactical_band_preflight_entity_encounter_order(
-                state,
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
             );
         if band_caught_drawn_object(state, &order, min_x, min_y, max_x, max_y) {
             band_preflight_order = Some(order);
@@ -786,7 +799,13 @@ fn tactical_left_up(state: &mut AppState) {
         .map(|rt| &rt.simulation)
     {
         let screen_order =
-            crate::app::presentation::instances::tactical_screen_entity_encounter_order(state);
+            crate::app::presentation::instances::tactical_screen_entity_encounter_order(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            );
         let current_selection = selected_stable_ids_in_order(
             state
                 .match_state
@@ -979,8 +998,13 @@ fn double_click_type_select(state: &AppState, sx: f32, sy: f32) -> Option<Select
     }
     let click_order =
         crate::app::presentation::instances::tactical_entity_encounter_order(sim, state.rules());
-    let screen_order =
-        crate::app::presentation::instances::tactical_screen_entity_encounter_order(state);
+    let screen_order = crate::app::presentation::instances::tactical_screen_entity_encounter_order(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     let world_x = sx / state.match_state.input.zoom_level + state.match_state.input.camera_x;
     let world_y = sy / state.match_state.input.zoom_level + state.match_state.input.camera_y;
     let fog = (!state.match_state.sandbox_full_visibility)
@@ -1150,7 +1174,14 @@ fn clamp_tactical_drag_endpoint(
 pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
     match modal_page(state) {
         Some(ModalPage::NetworkFailure) => {
-            crate::app::match_runtime::network_failure::cursor_moved(state);
+            crate::app::match_runtime::network_failure::cursor_moved(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+            );
             return;
         }
         Some(ModalPage::NetworkWait) => {
@@ -1181,7 +1212,14 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
     if state.match_state.paused() {
         match state.match_state.match_presentation.in_game_menu {
             crate::ui::pause_menu::InGameMenuState::Page => {
-                crate::app::shell_wol::page::cursor_moved(state);
+                crate::app::shell_wol::page::cursor_moved(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    &mut state.audio.sfx_player,
+                );
             }
             crate::ui::pause_menu::InGameMenuState::SavedGame(_) => {
                 crate::app::App::update_saved_game_browser(state, true);

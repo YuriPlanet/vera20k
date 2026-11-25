@@ -75,7 +75,9 @@ class Capability:
 
 # The single stated home of the capability list (see the module docstring).
 # `test=False` means no capability-specific suite exists yet: the capability is
-# compile-covered only, as `npatch` is until its first chain lands.
+# compile-covered only. Ares and NPatch are not capabilities: every build holds
+# them and a game's data switches them on (`rules::ares_switch`,
+# `rules::npatch_switch`).
 CAPABILITIES: tuple[Capability, ...] = (
     Capability(
         "phobos",
@@ -88,13 +90,6 @@ CAPABILITIES: tuple[Capability, ...] = (
             "a_bound_radiation_type",
             "build_text",
         ),
-    ),
-    Capability(
-        "npatch",
-        ("npatch",),
-        "NPatch placeholder; no behaviour is compiled in yet, so compile "
-        "coverage is the whole job until the first chain lands.",
-        test=False,
     ),
     Capability(
         "verax",
@@ -162,15 +157,13 @@ CAPABILITIES: tuple[Capability, ...] = (
 
 # The capability mixes #2797 declares meaningful: the extension flags are
 # orthogonal, so every pair of them is compiled, then all of them together, and
-# the diagnostic build over all of them. Ares needs no flag: it is in every
-# build and switches on from a game's data. Combinations are compile-covered;
-# each capability is tested on its own so the matrix stays bounded.
+# the diagnostic build over all of them. Ares and NPatch need no flag: both are
+# in every build and switch on from a game's data. Combinations are
+# compile-covered; each capability is tested on its own so the matrix stays
+# bounded.
 COMBINATIONS: tuple[tuple[str, ...], ...] = (
-    ("phobos", "npatch"),
     ("phobos", "npbug"),
-    ("npatch", "npbug"),
-    ("phobos", "npatch", "npbug"),
-    ("debug-tools", "phobos", "npatch", "npbug"),
+    ("debug-tools", "phobos", "npbug"),
 )
 
 BY_NAME = {capability.name: capability for capability in CAPABILITIES}

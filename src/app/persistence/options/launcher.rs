@@ -70,6 +70,11 @@ pub(crate) fn launcher_values_from_profile(
         kratos: profile.kratos,
         graphics_api: profile.graphics_api,
         color_vision: profile.color_vision,
+        // Without an HD art pack the list shows Off whatever was saved.
+        hd_look: crate::ui::main_menu_dialogs::options::HdLook::from_on(
+            profile.hd_art_on && crate::render::hd_art::pack_available(),
+        ),
+        hd_look_available: crate::render::hd_art::pack_available(),
         ..Default::default()
     };
     let mut stored = profile.clone();
@@ -133,7 +138,7 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
     match event {
         E::ZoomSelected(zoom) => {
             profile.zoom = zoom;
-            App::sync_zoom_pass(state);
+            App::sync_zoom_pass(&state.platform, &mut state.renderer, profile);
         }
         E::SidebarSelected(size) => profile.sidebar = size,
         E::SidebarColumnsSelected(columns) => profile.sidebar_columns = columns,
@@ -148,6 +153,8 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
         // The final-frame pass reads the profile every frame; no atlas or
         // ramp has to be rebuilt.
         E::ColorVisionModeSelected(mode) => profile.color_vision = mode,
+        // The frame reads the switch every frame.
+        E::HdLookSelected(look) => profile.hd_art_on = look.is_on(),
         // Applied at once, like Full Screen: the window moves to the picked
         // screen (or back to the system's choice) before the page is accepted.
         E::DisplaySelected(display) => {
@@ -162,7 +169,7 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
                 state.persistence.options_profile.language = Some(tag);
             }
         }
-        E::SetWindowSizeRequested => App::restore_launch_window(state),
+        E::SetWindowSizeRequested => App::restore_launch_window(&mut state.platform),
         // The in-game menu opens these dialogs, and starts the layout edit
         // mode, itself (`app::input::pause_menu`).
         E::InGameKeyboardRequested | E::InGameSoundRequested | E::EditLayoutRequested => {}
@@ -215,8 +222,14 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
 /// A VERA box's change beyond the profile value it stores.
 fn apply_box(state: &mut AppState, id: C, on: bool) {
     match id {
-        C::FullScreen => App::set_full_screen(state, on),
-        C::OriginalShape => App::sync_zoom_pass(state),
+        C::FullScreen => {
+            App::set_full_screen(&mut state.platform, &state.persistence.options_profile, on)
+        }
+        C::OriginalShape => App::sync_zoom_pass(
+            &state.platform,
+            &mut state.renderer,
+            &state.persistence.options_profile,
+        ),
         // The menu movie's session identity carries the choice, so its next
         // paint loads the selected game copy; the splash follows next launch.
         // The shell atlas carries the same profile value; it is rebuilt (or
@@ -241,7 +254,11 @@ fn apply_box(state: &mut AppState, id: C, on: bool) {
             crate::app::input::cursor::apply_cursor_confinement(&mut state.platform);
         }
         C::VeraIcon => show_vera_icon(&state.platform, &state.persistence.options_profile, on),
-        C::VSync => App::sync_present_mode(state),
+        C::VSync => App::sync_present_mode(
+            &state.platform,
+            &mut state.renderer.gpu,
+            &state.persistence.options_profile,
+        ),
         // Live state only; no profile stores it, so each launch starts hidden.
         C::PerformanceStats => state.renderer.performance_overlay.set_visible(on),
         // The box arms the hotkey but leaves the texts showing, so ticking it
@@ -407,14 +424,25 @@ pub(crate) fn dispatch_launcher_parent_result(
             // Native caller blocks in A3. Our asynchronous child resumes this
             // continuation when it closes (after its teardown slide).
             if state.frontend.keyboard_dialog.is_none() {
-                App::open_launcher_options_dialog(state);
+                App::open_launcher_options_dialog(
+                    &state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.audio,
+                    &state.persistence.options_profile,
+                );
             }
         }
         // VERA's own. Written first: Use This Mod leaves the game from the
         // Mods page, whose Back builds the parent again.
         LauncherParentResult::Mods => {
             super::persist_options_profile(&state.platform, &state.persistence.options_profile);
-            App::open_mods_page(state);
+            App::open_mods_page(
+                state.platform.game_config.as_ref(),
+                &state.renderer.gpu,
+                &mut state.frontend,
+            );
         }
     }
 }

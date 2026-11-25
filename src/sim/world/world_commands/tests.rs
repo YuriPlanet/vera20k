@@ -153,7 +153,14 @@ fn lockstep_subject_gate_refuses_an_unrecognized_native_opcode() {
     let command = Command::SynchronizedRecord {
         record: CommandRecord::encode(0xff, 0, 0, &[]).unwrap(),
     };
-    assert!(sim.network_command_actor_foreign("Americans".into(), None, &command, rules, None));
+    assert!(sim.network_command_actor_foreign(
+        "Americans".into(),
+        None,
+        &command,
+        rules,
+        None,
+        false
+    ));
 }
 
 /// Event IDLE admits its actor on `+0x90` and `+0x81` alone
@@ -344,13 +351,14 @@ fn network_match_refuses_selling_another_houses_wall() {
     let sale = Command::SellWallAtCell { x: 1, y: 1 };
     let sell = |sim: &mut Simulation, house: &str| {
         sim.apply_command_with_overlays(
-            None,
+            CommandSender::Player(None),
             house,
             &sale,
             &rules,
             Some(&overlays),
             &mut FrameEffects::default(),
         )
+        .is_ok()
     };
     let wall = |sim: &Simulation| sim.overlay_grid.as_ref().unwrap().cell(1, 1).overlay_id;
 

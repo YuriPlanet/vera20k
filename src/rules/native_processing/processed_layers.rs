@@ -39,6 +39,10 @@ impl ProcessedRulesLayers {
         &self.kratos_inputs
     }
 
+    pub(crate) fn npatch_inputs(&self) -> &crate::rules::npatch_switch::NPatchInputs {
+        &self.npatch_inputs
+    }
+
     pub(crate) fn ares_global_controls(&self) -> &AresGlobalControls {
         &self
             .native_type_construction_trace

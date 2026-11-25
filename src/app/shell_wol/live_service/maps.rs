@@ -2,6 +2,7 @@
 //! Existing source, staging, generation and UI owners decide what those bytes mean.
 use super::{LiveService, http};
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::MatchSession;
 use crate::app::shell_network_setup::maps::{self as shared_maps, GeneratedMapManifest};
 use crate::app::shell_network_setup::{accept_network_map_source, set_network_map_progress};
@@ -11,6 +12,7 @@ use crate::util::time::{Duration, Instant};
 use anyhow::{Result, anyhow, ensure};
 use std::path::PathBuf;
 use std::sync::Arc;
+use winit::window::Window;
 /// The lobby's map transfer chunk (docs/lobby-protocol.md, `map_upload`):
 /// each chunk but a transfer's last holds exactly this many bytes, which
 /// [`Transfer::append_chunk`] alone checks.
@@ -118,13 +120,14 @@ pub(super) struct Transfers {
 }
 
 pub(super) fn received_options(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
     service: &mut LiveService,
     generated: Option<GeneratedMapManifest>,
 ) -> Result<()> {
     shared_maps::accept_generated_manifest(
-        &mut state.frontend.multiplayer_shell_runtime,
-        &mut state.match_state.session,
+        &mut frontend.multiplayer_shell_runtime,
+        session,
         service.maps.generated.as_ref(),
         generated.as_ref(),
     )?;
@@ -141,7 +144,12 @@ pub(super) fn watch(service: &mut LiveService, match_id: String) {
     service.maps.active = true;
 }
 
-pub(super) fn cancel(state: &mut AppState, service: &mut LiveService) {
+pub(super) fn cancel(
+    frontend: &mut FrontendState,
+    window: &Window,
+    session: &MatchSession,
+    service: &mut LiveService,
+) {
     service.maps.active = false;
     service.maps.watching = None;
     service.maps.generation = service.maps.generation.wrapping_add(1);
@@ -154,14 +162,10 @@ pub(super) fn cancel(state: &mut AppState, service: &mut LiveService) {
     service.maps.complete = false;
     service.maps.asking = false;
     crate::app::shell_network_setup::close_missing_map_offer(
-        &state.platform.window,
-        &mut state.frontend.multiplayer_setup,
+        window,
+        &mut frontend.multiplayer_setup,
     );
-    set_network_map_progress(
-        &mut state.frontend.network_setup_protocol,
-        &state.match_state.session,
-        None,
-    );
+    set_network_map_progress(&mut frontend.network_setup_protocol, session, None);
 }
 pub(super) fn poll(state: &mut AppState, service: &mut LiveService) {
     let mut maps = std::mem::take(&mut service.maps);
