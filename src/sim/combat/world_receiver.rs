@@ -1604,10 +1604,30 @@ fn commit_entity(
             .map_or(event.damage > 0, |receipt| receipt.remaining > 0);
         #[cfg(not(feature = "phobos"))]
         let ares_initially_positive = event.damage > 0;
+        // Wasm module `DamageIncoming` (RFC 0001 appendix 4.5, preview):
+        // after the infantry head, Foot's parasite prefix and the Phobos
+        // shield, before the Unkillable arm (death prevention), the subject
+        // armor divides and their minimum of 1. Without Phobos this is the
+        // same point: the receiver body's entry.
         #[cfg(feature = "phobos")]
-        let post_shield_input = shield_receipt
+        let incoming = shield_receipt
             .as_ref()
             .map_or(event.damage, |receipt| receipt.remaining);
+        #[cfg(not(feature = "phobos"))]
+        let incoming = event.damage;
+        let decided_incoming = decide_damage_incoming(
+            world,
+            rules,
+            event,
+            incoming,
+            scenario_no_damage,
+            current_tick,
+        );
+        if let Some(decided) = decided_incoming {
+            caller_damage.write(world, rules, decided);
+        }
+        #[cfg(feature = "phobos")]
+        let post_shield_input = decided_incoming.unwrap_or(incoming);
         // The Phobos wrapper's Unkillable arm runs after the shield and
         // before the original ReceiveDamage body.
         #[cfg(feature = "phobos")]
@@ -1652,9 +1672,11 @@ fn commit_entity(
         } else {
             (
                 post_shield_input,
-                shield_receipt
-                    .as_ref()
-                    .is_some_and(|receipt| receipt.remaining == 0),
+                // A module's 0 suppresses the minimum as the shield's does.
+                decided_incoming == Some(0)
+                    || shield_receipt
+                        .as_ref()
+                        .is_some_and(|receipt| receipt.remaining == 0),
             )
         };
         #[cfg(feature = "phobos")]
@@ -1672,19 +1694,37 @@ fn commit_entity(
             skip_low_damage_check,
             receiver_ae_armor,
         );
+        // A module's incoming damage enters as the shield's surviving damage
+        // does; its 0 suppresses the minimum.
         #[cfg(not(feature = "phobos"))]
-        let receiver_outcome = resolve_receive_damage(
-            event,
-            &world.substrate.entities,
-            rules,
-            &world.interner,
-            &world.houses,
-            &world.house_alliances,
-            scenario_no_damage,
-            current_tick,
-            world.resolved_terrain.as_ref(),
-            None,
-        );
+        let receiver_outcome = match decided_incoming {
+            Some(decided) => resolve_receive_damage_with_input(
+                event,
+                &world.substrate.entities,
+                rules,
+                &world.interner,
+                &world.houses,
+                &world.house_alliances,
+                scenario_no_damage,
+                current_tick,
+                world.resolved_terrain.as_ref(),
+                decided,
+                decided == 0,
+                None,
+            ),
+            None => resolve_receive_damage(
+                event,
+                &world.substrate.entities,
+                rules,
+                &world.interner,
+                &world.houses,
+                &world.house_alliances,
+                scenario_no_damage,
+                current_tick,
+                world.resolved_terrain.as_ref(),
+                None,
+            ),
+        };
         // Techno701ADB..701B62 precedes bunker/warhead/Object gates, even
         // when those gates suppress the HP write. It also runs for healing
         // and IgnoreDefenses; only the earlier receiver exits skip it.
@@ -3823,6 +3863,117 @@ fn ares_snapped_target(
 /// of the bullet's warhead from its owner (not ignoring defences, no
 /// passenger escape). The firing index is fixed up and the raid status
 /// evaluated. True when the shot passed through.
+/// Wasm module `DamageIncoming` (RFC 0001 appendix 4.5, preview) at the
+/// Techno receiver's entry: the incoming damage continuing into the native
+/// flow, or `None` for the native one. One flag check without a decider.
+///
+/// Not asked for zero incoming damage, IgnoreDefenses hits, Psychedelic or
+/// Temporal warheads, or hits the receiver's gates would reject: the
+/// subject's `ImmuneToRadiation=`/`ImmuneToPsionicWeapons=`/`ImmuneToPoison=`
+/// against such a warhead, an allied attacker for a warhead without
+/// `AffectsAllies=`, an active Iron Curtain for positive damage. Residual:
+/// Ares' rank immunities and CanTargetHouse, TypeImmune and the bunker and
+/// warp gates are not consulted, so such a hit is asked and then rejected
+/// natively.
+///
+/// Each link's record carries its own `previous` as `value` and, as
+/// `value2`, that `previous` through the warhead kernel (falloff, the
+/// Verses of the armor its trigger event's `id` names, −1 or a non-retail
+/// index for the subject's, and `MaxDamage=`); with bit 0 of the event's
+/// `value` a positive `previous` first goes through the subject's armor
+/// divides, truncated toward zero, without their minimum of 1.
+fn decide_damage_incoming(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    event: &EntityDamageEvent,
+    incoming: i32,
+    scenario_no_damage: bool,
+    current_tick: u64,
+) -> Option<i32> {
+    use crate::rules::armor::{ArmorId, RETAIL_ARMOR_NAMES};
+    use vera20k_wasm_ext::decide::EVENT_DAMAGE_INCOMING;
+    if !world.trigger_runtime.module_decides(EVENT_DAMAGE_INCOMING)
+        || incoming == 0
+        || event.receiver_flags.ignore_defenses
+    {
+        return None;
+    }
+    let warhead = world.interner.warhead_type(event.warhead_ref, rules)?;
+    if warhead.psychedelic || warhead.temporal {
+        return None;
+    }
+    let target = world.substrate.entities.get(event.target_id)?;
+    let target_type = world.interner.object_type(target.type_ref(), rules);
+    let attacker = (event.attacker_id != RAD_NO_ATTACKER)
+        .then(|| world.substrate.entities.get(event.attacker_id))
+        .flatten();
+    let allied_attacker = attacker.is_some_and(|attacker| {
+        world
+            .house_alliances
+            .is_allied(&world.interner, attacker.owner(), target.owner())
+    });
+    let immune = target_type.is_some_and(|object| {
+        (warhead.radiation && object.immune_to_radiation)
+            || (warhead.psychic_damage && object.immune_to_psionic_weapons)
+            || (warhead.poison && object.immune_to_poison)
+    });
+    let curtained = incoming > 0
+        && crate::sim::superweapon::invulnerability::is_invulnerable(
+            target.invulnerability.as_ref(),
+            current_tick as u32,
+        );
+    if immune || curtained || (allied_attacker && !warhead.affects_allies) {
+        return None;
+    }
+    let divisors = super::receiver_divisors(
+        target,
+        target_type,
+        rules,
+        &world.interner,
+        &world.houses,
+        target.phobos_armor_multiplier(),
+    );
+    let subject_armor = target_type.map_or(ArmorId::NONE, |object| object.armor_id());
+    let warhead_id = rules
+        .warhead_index(world.interner.resolve(event.warhead_ref))
+        .map_or(-1, |index| index as i32);
+    let distance = event.distance_leptons;
+    let max_damage = rules.combat_damage.max_damage;
+    let shape = move |def: &vera20k_wasm_ext::triggers::EventDef, previous: i64| {
+        let previous = previous.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+        let input = if def.value & 1 != 0 && previous > 0 {
+            super::damage::receive::defence_divides_unfloored(previous, &divisors)
+        } else {
+            previous
+        };
+        let armor = usize::try_from(def.id)
+            .ok()
+            .filter(|&index| index < RETAIL_ARMOR_NAMES.len())
+            .map_or(subject_armor, ArmorId::from_index);
+        let preview = super::damage::kernel::apply_warhead_damage(
+            input,
+            warhead.cell_spread_f64,
+            warhead.percent_at_max_f64,
+            warhead.interaction(armor).multiplier(),
+            distance,
+            scenario_no_damage,
+            max_damage,
+        );
+        (i64::from(previous), i64::from(preview))
+    };
+    let request = crate::sim::ext_modules::ModuleEvent {
+        other: attacker.map_or(0, |_| event.attacker_id),
+        id: warhead_id,
+        at_subject: true,
+        ..crate::sim::ext_modules::ModuleEvent::new(EVENT_DAMAGE_INCOMING, event.target_id)
+    };
+    world
+        .decide_module_event_shaped(rules, &request, i64::from(incoming), &shape, |answer| {
+            i32::try_from(answer).ok().map(i64::from)
+        })
+        .and_then(|answer| i32::try_from(answer).ok())
+}
+
 fn ares_damage_occupants(
     world: &mut Simulation,
     run: &mut ReceiverRun<'_>,
