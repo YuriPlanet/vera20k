@@ -965,10 +965,12 @@ pub(crate) fn sell_complete(
     // may change the owner, detach the Tag or remove the receiver. The
     // retained sentinel also applies to their nested accounting callbacks.
     building.suppress_building_sale_loss();
-    sim.record_the_kill(
+    // A sale is no death: no Wasm module `FatalDamage` (`record_the_kill`).
+    sim.record_the_kill_by_warhead(
         id,
         KillSource::Techno(None),
         KillCallback::Terminal,
+        -1,
         context.reborrow(),
     );
     // Ares BuildingClass_Mi_Selling_DetonatePostBuildup (hook 0x44A1FF),

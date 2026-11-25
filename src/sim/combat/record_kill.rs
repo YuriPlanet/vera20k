@@ -473,14 +473,65 @@ impl crate::sim::world::Simulation {
     /// Source/control flow: active Steam gamemd instruction bodies; existing
     /// object_health/house_statistics/veterancy corpora own the arithmetic.
     /// No own RNG, timer or detach; nested Tag actions use their existing owners.
+    ///
+    /// Every caller of this entry is a death without a damage commit (a
+    /// crush, a Temporal erase, a crash's live prefix, a passenger or slave
+    /// dying inside, a Magnetron drop, a warp sink) or a callback that
+    /// leaves the victim alive; the receiver's kill takes
+    /// [`Self::record_the_kill_by_warhead`] and a sale passes it as well,
+    /// as a sale is no death. A terminal one first raises the Wasm module
+    /// `FatalDamage` (RFC 0001 appendix 4.3) on a victim that still has
+    /// Strength: `value` that Strength, `id` −1, `other` the killer.
     pub(crate) fn record_the_kill(
         &mut self,
         victim_id: u64,
         source: KillSource,
         callback: KillCallback,
-        context: crate::sim::world::UninitContext<'_>,
+        mut context: crate::sim::world::UninitContext<'_>,
     ) {
+        if matches!(callback, KillCallback::Terminal) {
+            self.raise_module_fatal_without_damage(victim_id, source, &mut context);
+        }
         self.record_the_kill_by_warhead(victim_id, source, callback, -1, context);
+    }
+
+    /// The Wasm module `FatalDamage` of [`Self::record_the_kill`]: one flag
+    /// check without a listener; nothing for a victim whose Strength a
+    /// damage commit already zeroed (that commit raised it).
+    fn raise_module_fatal_without_damage(
+        &mut self,
+        victim_id: u64,
+        source: KillSource,
+        context: &mut crate::sim::world::UninitContext<'_>,
+    ) {
+        use vera20k_wasm_ext::triggers::EVENT_FATAL_DAMAGE;
+        if !self.trigger_runtime.module_listens(EVENT_FATAL_DAMAGE) {
+            return;
+        }
+        let Some(health) = self
+            .substrate
+            .entities
+            .get(victim_id)
+            .map(|victim| victim.health.current())
+            .filter(|&health| health > 0)
+        else {
+            return;
+        };
+        let killer = match source {
+            KillSource::Techno(Some(killer)) => killer,
+            _ => 0,
+        };
+        let rules = context.rules();
+        self.raise_module_event(
+            rules,
+            context.effects(),
+            crate::sim::ext_modules::ModuleEvent {
+                other: killer,
+                value: i64::from(health),
+                at_subject: true,
+                ..crate::sim::ext_modules::ModuleEvent::new(EVENT_FATAL_DAMAGE, victim_id)
+            },
+        );
     }
 
     /// [`Self::record_the_kill`] from a kill path that knows the lethal
