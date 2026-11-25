@@ -262,7 +262,30 @@ pub struct ProjectileStep {
     pub data: [u8; 16],
 }
 
+/// `MoveStep`, 16 bytes: `MoveFrame`'s result.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct MoveStep {
+    /// Bit 0 take the frame and move by `displacement`, 1 turn to
+    /// `facing`, 2 stop the native movement.
+    pub flags: i32,
+    /// Body facing 0..255.
+    pub facing: i32,
+    /// x, y in leptons, each at most 2,048 either way.
+    pub displacement: [i32; 2],
+}
+
+/// `PathCell`, 8 bytes: one cell of a `PathFound` route.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct PathCell {
+    pub x: i32,
+    pub y: i32,
+}
+
 const _: () = {
+    assert!(size_of::<MoveStep>() == 16);
+    assert!(size_of::<PathCell>() == 8);
     assert!(size_of::<ProjectileSpec>() == 48);
     assert!(core::mem::offset_of!(ProjectileSpec, flags) == 32);
     assert!(size_of::<PathSpecHeader>() == 32);

@@ -190,9 +190,15 @@ impl Event {
     /// into ([`crate::Mission`], 255 for none).
     pub const IDLE_MISSION: i32 = 1060;
     /// Decision-only (appendix 4.5, preview): needs [`Trigger::decide_sync`]
-    /// and an object or type binding. Answer the ore cell a harvester's
-    /// search settles on (a cell reference, 0 for none).
-    pub const HARVEST_CELL: i32 = 1061;
+    /// and an object or type binding. Asked each frame a bound vehicle or
+    /// infantryman (Drive, Ship, Walk, Mech, Hover) could start a step:
+    /// answer with [`crate::MoveFrameDecision::set_step`].
+    pub const MOVE_FRAME: i32 = 1063;
+    /// Decision-only (appendix 4.5, preview): needs [`Trigger::decide_sync`]
+    /// and an object or type binding. Asked when a path search's route is
+    /// adopted: answer with [`crate::PathFoundDecision::set_cells`] or
+    /// [`crate::PathFoundDecision::no_route`].
+    pub const PATH_FOUND: i32 = 1064;
 
     // Module INI (RFC 0001 section 6h).
     /// A module event ([`crate::ini::event`]): the trigger's `id` is the

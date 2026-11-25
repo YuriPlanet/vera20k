@@ -418,6 +418,102 @@ impl ProjectileFrameDecision<'_> {
     }
 }
 
+decision!(
+    /// `MoveFrame` (appendix 4.5, preview): each frame a bound vehicle or
+    /// infantryman's locomotor (Drive, Ship, Walk, Mech, Hover) could start
+    /// a step. Answer a [`sys::MoveStep`]: [`Self::MOVE`] takes the frame
+    /// and moves it by the displacement (the engine checks the cell it
+    /// enters), [`Self::FACING`] turns it, [`Self::STOP`] drops its
+    /// destination. Without an answer, or without [`Self::MOVE`], its
+    /// locomotor moves it natively.
+    MoveFrameDecision {
+        unit: Techno = |r| Techno(r.subject),
+        /// 1 while its locomotor is moving.
+        moving: bool = |r| r.value == 1,
+        /// Its NavCom object; `NO_HANDLE` for a cell or none.
+        destination: Techno = |r| Techno(r.other),
+        /// Its NavCom cell; `Cell(NO_HANDLE)` for an object or none.
+        destination_cell: Cell = |r| Cell(r.cell),
+        position: [i32; 3] = |r| [r.x, r.y, r.z],
+    }
+);
+
+impl MoveFrameDecision<'_> {
+    pub const MOVE: i32 = 1;
+    pub const FACING: i32 = 2;
+    pub const STOP: i32 = 4;
+
+    /// Answers `step` (the previous link's is replaced).
+    pub fn set_step(&mut self, step: &sys::MoveStep) -> bool {
+        if !put(self.0.area(), 0, step) {
+            return false;
+        }
+        self.0.set_result(0);
+        true
+    }
+
+    /// Takes the frame and moves by `dx`, `dy` leptons.
+    pub fn step_by(&mut self, dx: i32, dy: i32) -> bool {
+        self.set_step(&sys::MoveStep {
+            flags: Self::MOVE,
+            facing: 0,
+            displacement: [dx, dy],
+        })
+    }
+
+    /// The previous link's step (all zero for the first link).
+    pub fn previous_step(&mut self) -> Option<sys::MoveStep> {
+        (self.0.previous_len > 0)
+            .then(|| take(self.0.area(), 0))
+            .flatten()
+    }
+}
+
+decision!(
+    /// `PathFound` (appendix 4.5, preview): when a path search's route is
+    /// adopted. The area holds the route's cells (up to 24), the first link
+    /// the native ones; `native` is their count, 0 for no route. Answer up
+    /// to 24 cells, each next to the one before (the first next to the
+    /// unit's cell), or no route.
+    PathFoundDecision {
+        unit: Techno = |r| Techno(r.subject),
+        /// The search's goal cell.
+        goal: Cell = |r| Cell(r.cell),
+        position: [i32; 3] = |r| [r.x, r.y, r.z],
+    }
+);
+
+impl PathFoundDecision<'_> {
+    /// Cell `index` of the previous link's route.
+    pub fn previous_cell(&mut self, index: usize) -> Option<sys::PathCell> {
+        let count = usize::try_from(self.0.previous).ok()?;
+        let len = usize::try_from(self.0.previous_len).ok()?;
+        let at = index * size_of::<sys::PathCell>();
+        if index >= count || at >= len {
+            return None;
+        }
+        take(self.0.area(), at)
+    }
+
+    /// Answers the route `cells`; false (answering nothing) when it does
+    /// not fit the result area.
+    pub fn set_cells(&mut self, cells: &[sys::PathCell]) -> bool {
+        let area = self.0.area();
+        for (i, cell) in cells.iter().enumerate() {
+            if !put(area, i * size_of::<sys::PathCell>(), cell) {
+                return false;
+            }
+        }
+        self.0.set_result(cells.len() as i64);
+        true
+    }
+
+    /// Answers no route: the search fails.
+    pub fn no_route(&mut self) {
+        self.0.set_result(0);
+    }
+}
+
 /// Exports `on_decide`, calling the handler whose key (the trigger's
 /// `decide_sync` key) matches each request. A handler takes
 /// `&mut DecideRecord` or a decision view. The macro also declares the
