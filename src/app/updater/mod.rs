@@ -397,7 +397,7 @@ const CHECK_FAILED: &str = "VERA:UpdateCheckFailed";
 /// under way, or a new one) answers in a box, offering a skipped version too.
 pub(crate) fn open_check(state: &mut AppState) {
     // Over the empty shell backdrop, as the offer asks.
-    App::destroy_current_shell_dialog(state);
+    App::destroy_current_shell_dialog(&mut state.frontend);
     match std::mem::take(&mut state.frontend.updater.phase) {
         Phase::Found { package, offer } => {
             state.frontend.updater.phase = Phase::Offered { package, offer };
@@ -529,7 +529,7 @@ pub(crate) fn open_offer(state: &mut AppState) {
         skip.map(tr).unwrap_or_default(),
     );
     let notes = notes::ReleaseNotes::new(&state.renderer.bit_font, changes);
-    App::destroy_current_shell_dialog(state);
+    App::destroy_current_shell_dialog(&mut state.frontend);
     App::open_shell_message_box(
         &state.platform.window,
         &state.renderer,

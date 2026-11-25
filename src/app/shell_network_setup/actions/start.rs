@@ -424,45 +424,40 @@ fn queue_lan_go(
 /// validated the roster, teams and map, so only BC's tail runs: LAN start
 /// timing, then GO to every admitted guest. GO's replies, drain and
 /// completion are the ordinary LAN owners'.
-pub(crate) fn begin_external_lan_go(state: &mut AppState) -> anyhow::Result<()> {
+pub(crate) fn begin_external_lan_go(
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+) -> anyhow::Result<()> {
     anyhow::ensure!(
-        super::super::external(state.frontend.network_setup_protocol.as_ref())
-            && !super::super::dialog(&state.frontend, &state.match_state).wol(),
+        super::super::external(frontend.network_setup_protocol.as_ref())
+            && !super::super::dialog(frontend, match_state).wol(),
         "no direct spawn setup"
     );
+    anyhow::ensure!(match_state.session.host(), "only the direct host sends GO");
     anyhow::ensure!(
-        state.match_state.session.host(),
-        "only the direct host sends GO"
-    );
-    anyhow::ensure!(
-        state
-            .frontend
+        frontend
             .network_setup_protocol
             .as_ref()
             .is_some_and(|protocol| !protocol.locked),
         "setup is locked"
     );
-    crate::app::lan_service::prepare_host_timing(&mut state.match_state)?;
-    let max_ahead_frames = state
-        .match_state
+    crate::app::lan_service::prepare_host_timing(match_state)?;
+    let max_ahead_frames = match_state
         .session
         .network_max_ahead_frames()
         .ok_or_else(|| anyhow::anyhow!("host start has no admitted LAN protocol timing"))?;
-    let agreed_seed = state
-        .match_state
+    let agreed_seed = match_state
         .session
         .network_start_seed()
         .ok_or_else(|| anyhow::anyhow!("direct setup has no seed"))?;
-    let launch = state
-        .match_state
+    let launch = match_state
         .session
         .network_setup()
         .ok_or_else(|| anyhow::anyhow!("no setup"))?;
     log::info!(
         "Direct spawn: every guest answered; GO with MaxAhead {max_ahead_frames}, seed {agreed_seed}"
     );
-    let protocol = state
-        .frontend
+    let protocol = frontend
         .network_setup_protocol
         .as_mut()
         .expect("checked setup");

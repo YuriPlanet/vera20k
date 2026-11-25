@@ -1024,9 +1024,10 @@ impl WolCapture {
                 .is_some_and(|card| card.name == NICKNAME),
             "a click on your own name did not open your card"
         );
-        let message = player_card::layout(state).message;
+        let message = player_card::layout(state.frontend.wol.as_ref(), &state.renderer.gpu).message;
         let countries = |state: &AppState| {
-            player_card::view(state).and_then(|view| view.countries.map(|list| (view.rows, list)))
+            player_card::view(&state.frontend, &state.process_assets, &state.renderer.gpu)
+                .and_then(|view| view.countries.map(|list| (view.rows, list)))
         };
         // The open list's row for `locale` and the top row it should open at.
         let opens_at = |state: &AppState, locale: i32| -> Result<(usize, usize)> {
@@ -1388,7 +1389,8 @@ fn wol_setup_settled(frontend: &FrontendState, host: bool) -> bool {
 
 /// A press on one `0x2BC` checkbox's 18x18 icon.
 fn options_checkbox(state: &mut AppState, id: u16) -> Result<()> {
-    let layout = crate::app::shell_wol::options::layout(state);
+    let layout =
+        crate::app::shell_wol::options::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
     let rect = layout.checkbox_rect(id).context("0x2BC checkbox")?;
     welcome_click(
         state,
@@ -1398,7 +1400,8 @@ fn options_checkbox(state: &mut AppState, id: u16) -> Result<()> {
 }
 
 fn options_button(state: &mut AppState, id: u16) -> Result<()> {
-    let layout = crate::app::shell_wol::options::layout(state);
+    let layout =
+        crate::app::shell_wol::options::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
     welcome_click(state, layout.page.button_rect(id).context("0x2BC button")?);
     Ok(())
 }
@@ -1461,7 +1464,8 @@ fn show_lobby_chat(state: &mut AppState) -> Result<()> {
             .is_some_and(|lobby| lobby.ui.shows_chat())
     };
     if !shows_chat(state) {
-        let layout = crate::app::shell_wol::lobby::layout(state);
+        let layout =
+            crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
         lobby_button(state, &layout, lobby_ui::VIEW)?;
     }
     ensure!(shows_chat(state), "the view button did not show the chat");
@@ -1470,7 +1474,8 @@ fn show_lobby_chat(state: &mut AppState) -> Result<()> {
 
 /// A click on one visible game row.
 fn game_row_click(state: &mut AppState, row: usize) -> Result<()> {
-    let layout = crate::app::shell_wol::lobby::layout(state);
+    let layout =
+        crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
     let lobby = state
         .frontend
         .wol
@@ -1500,7 +1505,8 @@ fn player_row_click(state: &mut AppState, name: &str) -> Result<()> {
 
 /// The modern player list's row of `name`.
 fn player_row_rect(state: &AppState, name: &str) -> Result<RectPx> {
-    let layout = crate::app::shell_wol::lobby::layout(state);
+    let layout =
+        crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
     let lobby = state
         .frontend
         .wol
@@ -1739,7 +1745,7 @@ fn my_info_shown(frontend: &FrontendState) -> Result<MyInfoShown> {
 }
 
 fn layout_button(state: &AppState, id: u16) -> Result<RectPx> {
-    crate::app::shell_wol::my_info::layout(state)
+    crate::app::shell_wol::my_info::layout(&state.renderer.gpu)
         .page
         .button_rect(id)
         .context("0x114 button")

@@ -9,19 +9,26 @@ use crate::ui::wol_lobby::*;
 use winit::keyboard::KeyCode;
 
 use super::{WolLobby, dispatch, layout, lobby, lobby_mut, modern_lobby};
+use crate::app::frontend::state::FrontendState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::shell_wol::WolVisit;
 use crate::render::gpu::GpuContext;
 
 /// Puts `0x113`'s children and the open popup's on their layouts, the
 /// lists in range and the edits' carets in view (text widths in the box's
 /// authored pixels).
-pub(crate) fn sync(state: &mut AppState) {
-    let layout = layout(state);
-    let create = create_layout(state);
-    let password = password_layout(state);
-    let filter = state.frontend.wol_lobby_globals.room_filter;
-    let font = &state.renderer.bit_font;
-    let Some(lobby) = state
-        .frontend
+pub(crate) fn sync(
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+) {
+    let layout = layout(frontend.wol.as_ref(), &renderer.gpu);
+    let create = create_layout(frontend.wol.as_ref(), &renderer.gpu);
+    let password = password_layout(frontend.wol.as_ref(), &renderer.gpu);
+    let filter = frontend.wol_lobby_globals.room_filter;
+    let font = &renderer.bit_font;
+    let Some(lobby) = frontend
         .wol
         .as_mut()
         .and_then(|visit| visit.lobby.as_deref_mut())
@@ -40,7 +47,7 @@ pub(crate) fn sync(state: &mut AppState) {
         false => password.rect_of(id),
     });
     ui.scroll_edits(&|text| font.text_width(text));
-    super::player_card::sync(state);
+    super::player_card::sync(frontend, process_assets, &renderer.gpu);
 }
 
 /// The lobby's own dialog tree (`0x113` and its popups), while the lobby page
@@ -63,7 +70,7 @@ pub(crate) fn ime_edit_rect(state: &AppState) -> Option<crate::ui::shell::geom::
     let routed = crate::app::input::precedence::route_page(&state.frontend)
         == crate::app::input::precedence::ScreenPage::Wol
         && !shell_transition::blocks_shell_input(state)
-        && !App::wol_quick_match_verify(state)
+        && !App::wol_quick_match_verify(state.frontend.network_setup_protocol.as_ref())
         && !super::page::open(state.frontend.wol.as_ref())
         && App::wol_page_is_lobby(state.frontend.wol.as_ref());
     lobby(state.frontend.wol.as_ref())
@@ -72,7 +79,9 @@ pub(crate) fn ime_edit_rect(state: &AppState) -> Option<crate::ui::shell::geom::
         })
         .map(|lobby| {
             let edit = if lobby.ui.shows_chat() { CHAT } else { SEARCH };
-            layout(state).control_rect(edit).unwrap_or_default()
+            layout(state.frontend.wol.as_ref(), &state.renderer.gpu)
+                .control_rect(edit)
+                .unwrap_or_default()
         })
 }
 
@@ -127,43 +136,49 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
         Some(InputEvent::Text(text)) => (None, Some(text)),
         Some(_) => (None, None),
     };
-    sync(state);
+    sync(&mut state.frontend, &state.process_assets, &state.renderer);
     let effects = lobby_mut(state.frontend.wol.as_mut())
         .expect("checked")
         .ui
         .key(key, text.as_deref());
-    sync(state);
+    sync(&mut state.frontend, &state.process_assets, &state.renderer);
     apply(state, effects);
 }
 
 /// The popups follow the lobby page's shell mapping, so they grow with it.
-pub(crate) fn popup_scale(state: &AppState) -> ShellScale {
-    layout(state).page.scale
+pub(crate) fn popup_scale(wol: Option<&WolVisit>, gpu: &GpuContext) -> ShellScale {
+    layout(wol, gpu).page.scale
 }
 
 fn popup_screen(gpu: &GpuContext) -> (i32, i32) {
     (gpu.config.width as i32, gpu.config.height as i32)
 }
 
-pub(crate) fn create_layout(state: &AppState) -> crate::ui::shell::modal::WolCreateGameLayout {
-    let (width, height) = popup_screen(&state.renderer.gpu);
+pub(crate) fn create_layout(
+    wol: Option<&WolVisit>,
+    gpu: &GpuContext,
+) -> crate::ui::shell::modal::WolCreateGameLayout {
+    let (width, height) = popup_screen(gpu);
     crate::ui::shell::modal::wol_create_game_layout_on(
         width,
         height,
-        modern_lobby(state.frontend.wol.as_ref()),
-        popup_scale(state),
+        modern_lobby(wol),
+        popup_scale(wol, gpu),
     )
 }
 
-pub(crate) fn password_layout(state: &AppState) -> crate::ui::shell::modal::WolPageLayout {
-    let (width, height) = popup_screen(&state.renderer.gpu);
-    crate::ui::shell::modal::wol_channel_password_layout_on(width, height, popup_scale(state))
+pub(crate) fn password_layout(
+    wol: Option<&WolVisit>,
+    gpu: &GpuContext,
+) -> crate::ui::shell::modal::WolPageLayout {
+    let (width, height) = popup_screen(gpu);
+    crate::ui::shell::modal::wol_channel_password_layout_on(width, height, popup_scale(wol, gpu))
 }
 
 /// The pointer moved, pressed or released over the popup, else the open
 /// player card, else `0x113`'s children.
 fn pointer(state: &mut AppState, press: Option<bool>) {
-    sync(state);
+    sync(&mut state.frontend, &state.process_assets, &state.renderer);
     let (x, y) = state.match_state.input.cursor_px();
     let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) else {
         return;

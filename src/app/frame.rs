@@ -1240,7 +1240,15 @@ impl App {
         }
         match &state.frontend.screen {
             _ if page == Some(ModalPage::ShellError) => {
-                Self::render_shell_error(state, &mut encoder, &view)?;
+                Self::render_shell_error(
+                    state.platform.game_config.as_ref(),
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state.input,
+                    &state.process_assets,
+                    &mut encoder,
+                    &view,
+                )?;
             }
             _ if page == Some(ModalPage::NetworkFailure) => {
                 crate::app::frontend::skirmish_shell_render::render_network_failure(
@@ -1394,7 +1402,15 @@ impl App {
                     // A page's entry-slide frames are not its steady page.
                     Some(_) if state.frontend.shell_first_paint_slide.is_some() => {}
                     Some(shell) => presented_shell = shell,
-                    None => Self::render_shell_error(state, encoder, &view)?,
+                    None => Self::render_shell_error(
+                        state.platform.game_config.as_ref(),
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.match_state.input,
+                        &state.process_assets,
+                        encoder,
+                        &view,
+                    )?,
                 }
                 if page == Some(ModalPage::ShellMessageBox) {
                     main_menu_shell_render::render_shell_message_box_over_page(

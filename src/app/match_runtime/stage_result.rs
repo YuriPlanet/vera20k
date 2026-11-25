@@ -30,7 +30,7 @@ pub(crate) fn open(state: &mut AppState, outcome: HouseOutcomeKind) {
         return;
     }
     super::sim_tick::flush_replay_log(state);
-    App::destroy_current_shell_dialog(state);
+    App::destroy_current_shell_dialog(&mut state.frontend);
     state.frontend.screen = GameScreen::MainMenu;
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
     let initial = usize::from(

@@ -1071,7 +1071,7 @@ impl LanCapture {
                     "BB acquired a competing setup"
                 );
                 let name = self.human(!self.target.guest())?.name;
-                let rect = lobby::layout(state)
+                let rect = lobby::layout(&state.renderer.gpu)
                     .rect(crate::ui::lan_shell::NAME)
                     .unwrap_or_default();
                 lobby_click(state, rect);
@@ -1092,7 +1092,7 @@ impl LanCapture {
                             .multiplayer_shell_runtime
                             .lan_create_observer())
                 {
-                    let rect = lobby::layout(state)
+                    let rect = lobby::layout(&state.renderer.gpu)
                         .rect(crate::ui::lan_shell::OBSERVER_TOGGLE)
                         .unwrap_or_default();
                     lobby_click(state, rect);
@@ -1102,7 +1102,7 @@ impl LanCapture {
                             .multiplayer_shell_runtime
                             .lan_create_observer()
                     {
-                        let rect = lobby::layout(state)
+                        let rect = lobby::layout(&state.renderer.gpu)
                             .rect(crate::ui::lan_shell::OBSERVER_TOGGLE)
                             .unwrap_or_default();
                         lobby_click(state, rect);
@@ -1122,7 +1122,7 @@ impl LanCapture {
                         self.phase = LanPhase::MainReturn;
                     }
                     LanTarget::Chat => {
-                        let rect = lobby::layout(state)
+                        let rect = lobby::layout(&state.renderer.gpu)
                             .rect(crate::ui::lan_shell::CHAT)
                             .unwrap_or_default();
                         lobby_click(state, rect);
@@ -1169,7 +1169,7 @@ impl LanCapture {
                                 open: true,
                             }]),
                         );
-                        let rect = lobby::layout(state)
+                        let rect = lobby::layout(&state.renderer.gpu)
                             .rect(crate::ui::lan_shell::GAMES)
                             .unwrap_or_default();
                         lobby_click(state, RectPx::new(rect.x + 8, rect.y + 26, 4, 4));
@@ -3895,7 +3895,14 @@ fn random_map_click(state: &mut AppState, point: (i32, i32), chooser: bool) {
         App::handle_choose_map_modal_mouse_down(state);
         App::handle_choose_map_modal_mouse_up(state);
     } else {
-        App::handle_random_map_setup_mouse_down(state);
+        App::handle_random_map_setup_mouse_down(
+            &state.platform.window,
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+        );
         App::handle_random_map_setup_mouse_up(state);
     }
 }
@@ -3933,13 +3940,13 @@ fn create_lan_game(state: &mut AppState) -> Result<()> {
         .as_ref()
         .is_some_and(|runtime| runtime.creating)
     {
-        let ok = lobby::create_box_layout(state).ok;
+        let ok = lobby::create_box_layout(&state.renderer.gpu).ok;
         lobby_click(state, ok);
     }
     Ok(())
 }
 fn lobby_button(state: &mut AppState, id: u16) -> Result<()> {
-    let rect = lobby::layout(state)
+    let rect = lobby::layout(&state.renderer.gpu)
         .page
         .buttons
         .into_iter()

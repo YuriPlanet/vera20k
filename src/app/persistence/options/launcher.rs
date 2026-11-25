@@ -414,14 +414,25 @@ pub(crate) fn dispatch_launcher_parent_result(
             // Native caller blocks in A3. Our asynchronous child resumes this
             // continuation when it closes (after its teardown slide).
             if state.frontend.keyboard_dialog.is_none() {
-                App::open_launcher_options_dialog(state);
+                App::open_launcher_options_dialog(
+                    &state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.audio,
+                    &state.persistence.options_profile,
+                );
             }
         }
         // VERA's own. Written first: Use This Mod leaves the game from the
         // Mods page, whose Back builds the parent again.
         LauncherParentResult::Mods => {
             super::persist_options_profile(&state.platform, &state.persistence.options_profile);
-            App::open_mods_page(state);
+            App::open_mods_page(
+                state.platform.game_config.as_ref(),
+                &state.renderer.gpu,
+                &mut state.frontend,
+            );
         }
     }
 }

@@ -64,7 +64,7 @@ impl App {
     pub(super) fn open_campaign_replay_prompt(state: &mut AppState, defeat: CampaignDefeat) {
         let csf = |key: &str, fallback: &str| state.csf_label(key, fallback);
         let shell_box = crate::ui::main_menu_dialogs::campaign_replay(&csf);
-        Self::destroy_current_shell_dialog(state);
+        Self::destroy_current_shell_dialog(&mut state.frontend);
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
         Self::open_shell_message_box(
             &state.platform.window,
@@ -103,7 +103,7 @@ impl App {
 
     /// `0x006863C3` clears g_GameActive; PrepareSession rebuilds the shell.
     fn resume_shell_after_campaign_defeat(state: &mut AppState) {
-        Self::destroy_current_shell_dialog(state);
+        Self::destroy_current_shell_dialog(&mut state.frontend);
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
         Self::resume_shell_after_match(state);
     }

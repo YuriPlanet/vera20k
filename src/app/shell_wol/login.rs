@@ -10,31 +10,37 @@ use super::{WolPage, WolVisit};
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::input::state::MatchInputState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::{App, AppState};
+use crate::audio::sfx::SfxPlayer;
+use crate::render::gpu::GpuContext;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::modal::WolAccountFormLayout;
 use crate::ui::wol_account::{AccountSuccess, POPUP, WolAccountForm};
 use crate::ui::wol_login::*;
+use crate::util::config::GameConfig;
 use winit::keyboard::KeyCode;
+use winit::window::Window;
 
-pub(crate) fn login_layout(state: &AppState) -> WolLoginLayout {
+pub(crate) fn login_layout(wol: Option<&WolVisit>, gpu: &GpuContext) -> WolLoginLayout {
     // The page's own step: the legacy WOL page, or VERA online's entry
     // chooser or account page.
-    let policy = state
-        .frontend
-        .wol
-        .as_ref()
+    let policy = wol
         .and_then(WolVisit::login)
         .map_or(LoginPolicy::Legacy, |login| login.policy);
-    shell_layout::on(&state.renderer.gpu, |w, h, scale| {
-        WolLoginLayout::new(w, h, scale, policy)
-    })
+    shell_layout::on(gpu, |w, h, scale| WolLoginLayout::new(w, h, scale, policy))
 }
 
 /// The open popup's rects on the login page's shell mapping.
-pub(crate) fn account_form_layout(state: &AppState) -> Option<WolAccountFormLayout> {
-    let form = state.frontend.wol.as_ref()?.login()?.account.as_ref()?;
-    let scale = login_layout(state).page.scale;
+pub(crate) fn account_form_layout(
+    wol: Option<&WolVisit>,
+    gpu: &GpuContext,
+) -> Option<WolAccountFormLayout> {
+    let form = wol?.login()?.account.as_ref()?;
+    let scale = login_layout(wol, gpu).page.scale;
     Some(crate::ui::shell::modal::wol_account_form_layout_on(
         POPUP_AREA,
         form.fields.len(),
@@ -45,13 +51,15 @@ pub(crate) fn account_form_layout(state: &AppState) -> Option<WolAccountFormLayo
 /// After `0x00787010`'s silent steps (`0x007873CC..0x0078741B`): `0x72C600`
 /// art, the empty backdrop and `UI__BeginDialog(0x10F)`. The nickname is the
 /// process global the flow prefilled.
-pub(super) fn open(state: &mut AppState) {
-    let remembered = super::live_service::remembered_name(
-        state.frontend.wol.as_ref(),
-        state.platform.game_config.as_ref(),
-    );
-    let last = &state.persistence.options_profile.online_name;
-    let frontend = &mut state.frontend;
+pub(super) fn open(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+) {
+    let remembered = super::live_service::remembered_name(frontend.wol.as_ref(), game_config);
+    let last = &options_profile.online_name;
     let Some(visit) = frontend.wol.as_mut() else {
         return;
     };
@@ -70,16 +78,11 @@ pub(super) fn open(state: &mut AppState) {
     };
     visit.page = WolPage::Login(Box::new(login));
     if online {
-        super::login_info::refresh(&mut state.frontend.login_info);
+        super::login_info::refresh(&mut frontend.login_info);
     }
-    super::leaf::open_art(state, DIALOG);
-    let _ = App::ensure_skirmish_shell_chrome(
-        &state.renderer,
-        &mut state.frontend,
-        &state.process_assets,
-        &state.persistence.options_profile,
-    );
-    sync(state);
+    super::leaf::open_art(frontend, process_assets, renderer, DIALOG);
+    let _ = App::ensure_skirmish_shell_chrome(renderer, frontend, process_assets, options_profile);
+    sync(frontend, renderer);
 }
 
 /// The login page and what it works on; what the tree shows from the model
@@ -104,14 +107,14 @@ fn with_login<R>(
 }
 
 /// Puts the top dialog's widgets, the page's or its popup's, on the layout.
-fn sync(state: &mut AppState) {
-    let layout = login_layout(state);
+fn sync(frontend: &mut FrontendState, renderer: &RendererState) {
+    let layout = login_layout(frontend.wol.as_ref(), &renderer.gpu);
     let scale = layout.page.scale;
-    if let Some(rects) = account_form_layout(state) {
+    if let Some(rects) = account_form_layout(frontend.wol.as_ref(), &renderer.gpu) {
         // Its form built the popup's nodes.
         leaf::sync(
-            &mut state.frontend.shell_controller,
-            &state.renderer.bit_font,
+            &mut frontend.shell_controller,
+            &renderer.bit_font,
             POPUP,
             scale,
             || NodeSpec::new(NodeKind::Dialog),
@@ -120,8 +123,8 @@ fn sync(state: &mut AppState) {
         return;
     }
     if leaf::sync(
-        &mut state.frontend.shell_controller,
-        &state.renderer.bit_font,
+        &mut frontend.shell_controller,
+        &renderer.bit_font,
         DIALOG,
         scale,
         || spec(layout.policy),
@@ -131,7 +134,7 @@ fn sync(state: &mut AppState) {
     {
         return;
     }
-    let ui = &mut state.frontend.shell_controller;
+    let ui = &mut frontend.shell_controller;
     ui.set_prop(
         DIALOG,
         NICKNAME,
@@ -149,7 +152,7 @@ fn sync(state: &mut AppState) {
 /// The widgets back on the layout (edits scrolled to their carets), then
 /// what the input asked for.
 fn finish(state: &mut AppState, action: Option<WolLoginAction>) {
-    sync(state);
+    sync(&mut state.frontend, &state.renderer);
     if let Some(action) = action {
         dispatch(state, action);
     }
@@ -243,7 +246,7 @@ pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     let shift = state.platform.live_modifiers.shift_key();
     let key = code.and_then(|code| crate::ui::shell::controller::gui_key(code, shift));
     if matches!(key, Some(Key::Enter | Key::Escape)) {
-        sync(state);
+        sync(&mut state.frontend, &state.renderer);
     }
     let action = with_login(&mut state.frontend, |login, cx| match key {
         Some(key @ (Key::Enter | Key::Escape)) => login.dialog_key(cx, key),
@@ -259,16 +262,37 @@ pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     finish(state, action.flatten());
 }
 
-pub(super) fn cursor_moved(state: &mut AppState) {
-    sync(state);
-    leaf::pointer(state, Pointer::Move);
+pub(super) fn cursor_moved(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    sync(frontend, renderer);
+    leaf::pointer(
+        frontend,
+        window,
+        match_state,
+        process_assets,
+        sfx_player,
+        Pointer::Move,
+    );
     // VERA online's chooser: the button under the pointer takes the focus.
-    with_login(&mut state.frontend, |login, cx| login.pointer_moved(cx.ui));
+    with_login(frontend, |login, cx| login.pointer_moved(cx.ui));
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
-    sync(state);
-    let events = leaf::pointer(state, if pressed { Pointer::Down } else { Pointer::Up });
+    sync(&mut state.frontend, &state.renderer);
+    let events = leaf::pointer(
+        &mut state.frontend,
+        &state.platform.window,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        if pressed { Pointer::Down } else { Pointer::Up },
+    );
     let action = with_login(&mut state.frontend, |login, cx| login.handle(cx, events));
     finish(state, action.flatten());
 }

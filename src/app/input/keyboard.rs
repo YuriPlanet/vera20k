@@ -471,7 +471,14 @@ pub(crate) fn commit_close(state: &mut AppState, exit: KeyboardExit) {
         return;
     }
     match dialog.parent {
-        KeyboardParent::Launcher => App::open_launcher_options_dialog(state),
+        KeyboardParent::Launcher => App::open_launcher_options_dialog(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.audio,
+            &state.persistence.options_profile,
+        ),
         // State_Machine 0x0048CA0D writes state 5 after A3 returns, where
         // gamemd recreates BBB. VERA's Game Controls is the in-game menu's
         // page, so the menu is what comes back.

@@ -164,7 +164,12 @@ fn painted(state: &mut AppState) -> Option<Painted> {
         WolPage::QuickMatch(_) => wol_quick_match::DIALOG,
         WolPage::Backdrop { .. } | WolPage::Message { .. } => return None,
     };
-    leaf::open_art(state, dialog);
+    leaf::open_art(
+        &mut state.frontend,
+        &state.process_assets,
+        &state.renderer,
+        dialog,
+    );
     let painted = |page, status_help, spec, body| Painted {
         dialog,
         page,
@@ -174,7 +179,11 @@ fn painted(state: &mut AppState) -> Option<Painted> {
     };
     Some(match dialog {
         WOL_WELCOME_DIALOG => {
-            crate::app::App::wol_welcome_sync(state, &[]);
+            crate::app::App::wol_welcome_sync(
+                &mut state.frontend.shell_controller,
+                &state.renderer,
+                &[],
+            );
             let layout =
                 crate::app::frontend::shell_layout::wol_welcome_layout(&state.renderer.gpu);
             let spec = layout.page_spec();
@@ -186,7 +195,10 @@ fn painted(state: &mut AppState) -> Option<Painted> {
             )
         }
         wol_login::DIALOG => {
-            let layout = crate::app::shell_wol::login_layout(state);
+            let layout = crate::app::shell_wol::login_layout(
+                state.frontend.wol.as_ref(),
+                &state.renderer.gpu,
+            );
             let spec = layout.page_spec();
             painted(
                 layout.page.clone(),
@@ -203,8 +215,8 @@ fn painted(state: &mut AppState) -> Option<Painted> {
                 return None;
             }
             let spec = lobby_ui.map_or(&wol_lobby::PAGE, |lobby| lobby.ui.page_spec());
-            lobby::sync(state);
-            let layout = lobby::layout(state);
+            lobby::sync(&mut state.frontend, &state.process_assets, &state.renderer);
+            let layout = lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
             painted(
                 layout.page.clone(),
                 layout.page.status_help,
@@ -214,8 +226,14 @@ fn painted(state: &mut AppState) -> Option<Painted> {
         }
         wol_options::DIALOG => {
             let spec = options::menu_spec(state.frontend.wol.as_ref());
-            let layout = options::layout(state);
-            options::sync_gui(state);
+            let layout = options::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
+            options::sync_gui(
+                &mut state.frontend,
+                &state.process_assets,
+                &state.renderer.gpu,
+                &state.persistence.options_profile,
+                &state.audio,
+            );
             painted(
                 layout.page.clone(),
                 layout.page.status_help,
@@ -224,8 +242,14 @@ fn painted(state: &mut AppState) -> Option<Painted> {
             )
         }
         SOUND_DIALOG => {
-            let layout = options::sound_layout(state);
-            options::sync_gui(state);
+            let layout = options::sound_layout(&state.renderer.gpu);
+            options::sync_gui(
+                &mut state.frontend,
+                &state.process_assets,
+                &state.renderer.gpu,
+                &state.persistence.options_profile,
+                &state.audio,
+            );
             painted(
                 layout.page.clone(),
                 layout.page.status_help,
@@ -234,14 +258,14 @@ fn painted(state: &mut AppState) -> Option<Painted> {
             )
         }
         wol_my_info::DIALOG => {
-            my_info::sync(state);
-            let layout = my_info::layout(state);
+            my_info::sync(&mut state.frontend.shell_controller, &state.renderer);
+            let layout = my_info::layout(&state.renderer.gpu);
             let help = layout.page.status_help;
             painted(layout.page.clone(), help, &wol_my_info::PAGE, Body::MyInfo)
         }
         wol_buddy::DIALOG => {
-            buddy::sync(state);
-            let layout = buddy::layout(state);
+            buddy::sync(&mut state.frontend, &state.renderer);
+            let layout = buddy::layout(&state.renderer.gpu);
             painted(
                 layout.page.clone(),
                 layout.page.status_help,
@@ -250,8 +274,8 @@ fn painted(state: &mut AppState) -> Option<Painted> {
             )
         }
         wol_quick_match::DIALOG => {
-            quick_match::sync(state);
-            let layout = quick_match::layout(state);
+            quick_match::sync(&mut state.frontend, &state.renderer);
+            let layout = quick_match::layout(&state.renderer.gpu);
             let spec = &wol_quick_match::PAGE;
             painted(
                 layout.page.clone(),
@@ -261,8 +285,8 @@ fn painted(state: &mut AppState) -> Option<Painted> {
             )
         }
         _ => {
-            persona::sync(state);
-            let layout = persona::layout(state)?;
+            persona::sync(&mut state.frontend, &state.renderer);
+            let layout = persona::layout(state.frontend.wol.as_ref(), &state.renderer.gpu)?;
             let spec = crate::ui::wol_persona::WolPersonaLayout::spec(dialog);
             painted(
                 layout.page.clone(),
@@ -538,9 +562,17 @@ pub(crate) fn render_wol_page(
     };
     // The pages drawn by their widgets alone.
     let widget_children = match (&painted, shown) {
-        (Some(painted), Some(Body::MyInfo | Body::Widgets)) => Some(
-            crate::app::shell_wol::leaf::paint(state, painted.dialog, painted.page.scale),
-        ),
+        (Some(painted), Some(Body::MyInfo | Body::Widgets)) => {
+            Some(crate::app::shell_wol::leaf::paint(
+                &state.frontend,
+                &state.platform.ime,
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer.bit_font,
+                painted.dialog,
+                painted.page.scale,
+            ))
+        }
         _ => None,
     };
     let login = state.frontend.wol.as_ref().and_then(|visit| visit.login());
@@ -560,23 +592,25 @@ pub(crate) fn render_wol_page(
     };
     // VERA online's account popup over the login page.
     let account_form = match (shown, login.and_then(|login| login.account.as_ref())) {
-        (Some(Body::Login(layout)), Some(form)) => {
-            crate::app::shell_wol::account_form_layout(state).map(|rects| {
-                (
-                    rects.dialog,
-                    crate::app::frontend::skirmish_shell_render::paint_wol_account_form(
-                        &state.platform.ime,
-                        &state.renderer.bit_font,
-                        &state.frontend,
-                        &state.match_state,
-                        &state.process_assets,
-                        form,
-                        &rects,
-                        layout.page.scale,
-                    ),
-                )
-            })
-        }
+        (Some(Body::Login(layout)), Some(form)) => crate::app::shell_wol::account_form_layout(
+            state.frontend.wol.as_ref(),
+            &state.renderer.gpu,
+        )
+        .map(|rects| {
+            (
+                rects.dialog,
+                crate::app::frontend::skirmish_shell_render::paint_wol_account_form(
+                    &state.platform.ime,
+                    &state.renderer.bit_font,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    form,
+                    &rects,
+                    layout.page.scale,
+                ),
+            )
+        }),
         _ => None,
     };
     let lobby = state.frontend.wol.as_ref().and_then(|visit| visit.lobby());
@@ -604,7 +638,12 @@ pub(crate) fn render_wol_page(
     };
     // VERA's player card over the modern lobby.
     let player_card = match shown {
-        Some(Body::Lobby(layout)) => crate::app::shell_wol::player_card::view(state).map(|view| {
+        Some(Body::Lobby(layout)) => crate::app::shell_wol::player_card::view(
+            &state.frontend,
+            &state.process_assets,
+            &state.renderer.gpu,
+        )
+        .map(|view| {
             let scale = layout.page.scale;
             (
                 view.layout.dialog,
@@ -655,7 +694,10 @@ pub(crate) fn render_wol_page(
                 &lobby.ui,
                 screen_w,
                 screen_h,
-                crate::app::shell_wol::lobby::popup_scale(state),
+                crate::app::shell_wol::lobby::popup_scale(
+                    state.frontend.wol.as_ref(),
+                    &state.renderer.gpu,
+                ),
                 &status,
             ),
         )

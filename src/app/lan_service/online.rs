@@ -302,7 +302,10 @@ pub(super) fn poll_direct_start(state: &mut AppState) {
     {
         return;
     }
-    if let Err(error) = super::shell_network_setup::begin_external_lan_go(state) {
+    if let Err(error) = super::shell_network_setup::begin_external_lan_go(
+        &mut state.frontend,
+        &mut state.match_state,
+    ) {
         log::warn!("Direct LAN start failed: {error:#}");
         super::App::fail_external_launch(state, &crate::i18n::tr("VERA:StartRefusedSetup"));
     }

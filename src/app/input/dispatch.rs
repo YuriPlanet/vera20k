@@ -93,8 +93,6 @@ use selection::{
 };
 pub(super) use sidebar::local_has_manageable_building;
 #[cfg(test)]
-pub(super) use {hotkey_dispatch::ready_tab_factory, sidebar::ready_cameo_factory};
-#[cfg(test)]
 pub(crate) use sidebar::wheel_action;
 pub(crate) use sidebar::{
     WheelAction, apply_sidebar_action, local_queue_view, push_local_eva, sidebar_scroll_command,
@@ -110,6 +108,8 @@ use unit_orders::{
     queue_deploy_undeploy_for_selected, queue_guard_for_selected, queue_scatter_for_selected,
     queue_stop_for_selected,
 };
+#[cfg(test)]
+pub(super) use {hotkey_dispatch::ready_tab_factory, sidebar::ready_cameo_factory};
 
 /// Handle mouse button press/release for selection and move commands.
 ///
@@ -1197,7 +1197,14 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
     if state.match_state.paused() {
         match state.match_state.match_presentation.in_game_menu {
             crate::ui::pause_menu::InGameMenuState::Page => {
-                crate::app::shell_wol::page::cursor_moved(state);
+                crate::app::shell_wol::page::cursor_moved(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    &mut state.audio.sfx_player,
+                );
             }
             crate::ui::pause_menu::InGameMenuState::SavedGame(_) => {
                 crate::app::App::update_saved_game_browser(state, true);

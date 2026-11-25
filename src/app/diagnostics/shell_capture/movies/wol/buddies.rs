@@ -61,7 +61,7 @@ impl WolCapture {
     }
 
     fn buddy_row_click(state: &mut AppState, name: &str) -> Result<()> {
-        let layout = crate::app::shell_wol::buddy::layout(state);
+        let layout = crate::app::shell_wol::buddy::layout(&state.renderer.gpu);
         let dialog =
             crate::app::shell_wol::buddy::page(state.frontend.wol.as_ref()).context("0x116")?;
         let ui = &dialog.ui;
@@ -97,7 +97,7 @@ impl WolCapture {
     }
 
     fn buddy_button(state: &mut AppState, id: u16) -> Result<()> {
-        let rect = crate::app::shell_wol::buddy::layout(state)
+        let rect = crate::app::shell_wol::buddy::layout(&state.renderer.gpu)
             .page
             .button_rect(id)
             .context("0x116 button")?;

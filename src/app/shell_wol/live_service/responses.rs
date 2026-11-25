@@ -42,7 +42,7 @@ pub(super) fn apply_response(
             {
                 return;
             }
-            cancel_pending(state, service);
+            cancel_pending(&mut state.frontend, &mut state.match_state, service);
             let mut text = tr(if retryable {
                 "VERA:StartLobbyBusy"
             } else {
@@ -157,12 +157,12 @@ pub(super) fn apply_response(
             ) {
                 notice(state, &text);
             }
-            lobby_says_outdated(state);
+            lobby_says_outdated(&mut state.frontend);
         }
         http::Response::Outdated { message } => {
             if let Some(text) = service.outdated_notice(message.as_deref()) {
                 notice(state, &text);
-                lobby_says_outdated(state);
+                lobby_says_outdated(&mut state.frontend);
             }
         }
         http::Response::Channels(list) => service_event(
@@ -187,7 +187,14 @@ pub(super) fn apply_response(
             // field in the options we originally sent.
             let legacy_refusal = refused_options.is_some_and(|id| {
                 service.take_legacy_refusal(id, watches, || {
-                    options(state).ok().map(|room| json!(room))
+                    options(
+                        &state.frontend,
+                        state.platform.game_config.as_ref(),
+                        &state.match_state,
+                        &state.process_assets,
+                    )
+                    .ok()
+                    .map(|room| json!(room))
                 })
             });
             let before = state
@@ -448,7 +455,12 @@ pub(super) fn apply_response(
             {
                 return;
             }
-            end_room(state, service);
+            end_room(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                service,
+            );
             // The native disconnect: a box over the lobby, or none where the
             // runner has no lobby (Quick Match), which then gets one at the
             // welcome.
@@ -470,7 +482,12 @@ pub(super) fn apply_response(
                 state,
                 &tr("VERA:OnlineSessionEndedWhileLoading"),
             );
-            end_room(state, service);
+            end_room(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                service,
+            );
             // The bearer session is definitively gone; a new login has no
             // authority to retry cleanup for the old server session.
             service.clear_cleanup();

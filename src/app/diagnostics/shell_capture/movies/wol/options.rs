@@ -56,9 +56,12 @@ impl WolCapture {
                     live == WolPreferences::default(),
                     "the isolated VERA.INI holds [WOnline] values: {live:?}"
                 );
-                let rect = crate::app::shell_wol::options::layout(state)
-                    .checkbox_rect(PAGES)
-                    .context("Pages")?;
+                let rect = crate::app::shell_wol::options::layout(
+                    state.frontend.wol.as_ref(),
+                    &state.renderer.gpu,
+                )
+                .checkbox_rect(PAGES)
+                .context("Pages")?;
                 set_window_pointer_to_rect_center(
                     &state.renderer,
                     &state.frontend.screen,
@@ -74,7 +77,10 @@ impl WolCapture {
                 self.settle();
             }
             WolTarget::ModernOptions => {
-                let layout = crate::app::shell_wol::options::layout(state);
+                let layout = crate::app::shell_wol::options::layout(
+                    state.frontend.wol.as_ref(),
+                    &state.renderer.gpu,
+                );
                 ensure!(
                     CHECKBOXES.iter().all(|checkbox| {
                         layout.checkbox_rect(checkbox.id).is_some() == (checkbox.id == MUSIC)
@@ -162,7 +168,7 @@ impl WolCapture {
             read_settings(&state.platform.game_config)?,
             state.frontend.wol_preferences,
         ));
-        let layout = options::layout(state);
+        let layout = options::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
         ensure!(
             layout.rect(OK).is_none() && layout.rect(SOUND_OPTIONS).is_none(),
             "the modern page still offers OK or Sound Options"
@@ -288,14 +294,18 @@ impl WolCapture {
             "translation settings are missing from VERA.INI after Previous"
         );
         self.event(frame, "the lobby again: the settings are saved");
-        let layout = crate::app::shell_wol::lobby::layout(state);
+        let layout =
+            crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
         lobby_button(state, &layout, lobby_ui::OPTIONS)?;
         self.phase = WolPhase::TranslationReopened;
         Ok(())
     }
 
     pub(super) fn translation_reopened(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let layout = crate::app::shell_wol::options::layout(state);
+        let layout = crate::app::shell_wol::options::layout(
+            state.frontend.wol.as_ref(),
+            &state.renderer.gpu,
+        );
         let shown = crate::app::shell_wol::options::shown(&state.frontend);
         ensure!(
             shown.is_some_and(|(preferences, chat)| {
@@ -432,7 +442,8 @@ impl WolCapture {
             .take(12)
             .collect::<Vec<_>>()}),
         );
-        let layout = crate::app::shell_wol::lobby::layout(state);
+        let layout =
+            crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
         lobby_button(state, &layout, lobby_ui::OPTIONS)?;
         self.phase = WolPhase::OptionsReopened;
         Ok(())
@@ -445,7 +456,7 @@ impl WolCapture {
         let shown = crate::app::shell_wol::options::sound_positions(&state.frontend);
         ensure!(shown == Some(positions), "0xD6 init positions differ");
         // A press on the music rail near its left end jumps once.
-        let rail = crate::app::shell_wol::options::sound_layout(state).sliders[0];
+        let rail = crate::app::shell_wol::options::sound_layout(&state.renderer.gpu).sliders[0];
         welcome_click(state, RectPx::new(rail.x + 8, rail.y, 4, rail.h));
         let moved = crate::app::shell_wol::options::sound_positions(&state.frontend)
             .context("0xD6 state")?;
@@ -458,7 +469,7 @@ impl WolCapture {
             json!({"0xD6 settled": positions, "after rail press": moved}),
         );
         if self.target == WolTarget::SoundOptionsBack {
-            let back = crate::app::shell_wol::options::sound_layout(state).back();
+            let back = crate::app::shell_wol::options::sound_layout(&state.renderer.gpu).back();
             welcome_click(state, back);
             ensure!(
                 state.frontend.shell_exit.is_some(),

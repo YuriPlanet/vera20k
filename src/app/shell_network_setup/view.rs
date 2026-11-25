@@ -7,6 +7,7 @@ use crate::app::frontend::skirmish_shell_render::{
 };
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::{MatchSession, NetworkVacancy};
+use crate::app::match_runtime::state::MatchState;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::shell_network_setup::NetworkSetupProtocol;
 use crate::app::shell_wol::lobby::{WolLobbyGlobals, player_badge};
@@ -21,7 +22,12 @@ use vera20k_gui::shell::trackbar::TrackbarRange;
 fn label(process_assets: &ProcessAssets, key: &str) -> String {
     process_assets.csf_label(key, key)
 }
-pub(crate) fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
+pub(crate) fn choice(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    item: SkirmishComboItem,
+) -> SetupChoice {
     let value = match item {
         SkirmishComboItem::Country(SkirmishCountryChoice::Random) => -2,
         SkirmishComboItem::Country(SkirmishCountryChoice::Country(country)) => {
@@ -39,12 +45,7 @@ pub(crate) fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
     };
     SetupChoice {
         value,
-        text: combo_item_label(
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            item,
-        ),
+        text: combo_item_label(frontend, match_state, process_assets, item),
         swatch: if let SkirmishComboItem::Color(index) = item {
             Some(index)
         } else {
@@ -55,11 +56,16 @@ pub(crate) fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
 }
 
 /// A team's letter as the Team list shows it.
-pub(super) fn team_letter(state: &AppState, team: u8) -> String {
+pub(super) fn team_letter(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    team: u8,
+) -> String {
     combo_item_label(
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
+        frontend,
+        match_state,
+        process_assets,
         SkirmishComboItem::Team(i32::from(team)),
     )
 }
@@ -397,7 +403,15 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     SetupGroup::Team(team) => (
                         crate::i18n::tr_fill(
                             "VERA:TeamGroup",
-                            &[("letter", &team_letter(state, team))],
+                            &[(
+                                "letter",
+                                &team_letter(
+                                    &state.frontend,
+                                    &state.match_state,
+                                    &state.process_assets,
+                                    team,
+                                ),
+                            )],
                         ),
                         joins(LaunchTeam::Team(team)).then(join),
                     ),
@@ -686,7 +700,14 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 !matches!(item, SkirmishComboItem::Country(SkirmishCountryChoice::Country(country))
                     if banned.contains(country))
             })
-            .map(|item| choice(state, item))
+            .map(|item| {
+                choice(
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    item,
+                )
+            })
             .collect();
         if let Some(player_countries) = coop.as_ref().and_then(|coop| coop.player_countries) {
             //5C23B0 rebuilds country entries in the campaign's authored order.
@@ -706,7 +727,9 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 .unwrap_or_default()
             {
                 allowed.push(choice(
-                    state,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
                     SkirmishComboItem::Country(SkirmishCountryChoice::Country(country)),
                 ));
             }
@@ -758,7 +781,14 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             color_claims,
         )
         .into_iter()
-        .map(|item| choice(state, item))
+        .map(|item| {
+            choice(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                item,
+            )
+        })
         .collect::<Vec<_>>();
         // VERA shared control: when the mode policy allows shared start
         // positions, a player may pick a start another player holds to join
@@ -784,7 +814,12 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         let starts = skirmish_shell::available_start_choices(Some(start), start_claims, capacity)
             .into_iter()
             .map(|item| {
-                let mut choice = choice(state, item);
+                let mut choice = choice(
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    item,
+                );
                 if shares
                     && let SkirmishComboItem::Start(held @ LaunchStartPosition::Position(_)) = item
                     && human_starts.contains(&held)
@@ -807,7 +842,14 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         };
         let team_items = team_items
             .into_iter()
-            .map(|item| choice(state, item))
+            .map(|item| {
+                choice(
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    item,
+                )
+            })
             .collect::<Vec<_>>();
         for (column, value, choices) in [
             (SetupColumn::Country, country, countries),

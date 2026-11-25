@@ -117,7 +117,10 @@ impl WolCapture {
                 },
             );
             game_row_click(state, 0)?;
-            let layout = crate::app::shell_wol::lobby::layout(state);
+            let layout = crate::app::shell_wol::lobby::layout(
+                state.frontend.wol.as_ref(),
+                &state.renderer.gpu,
+            );
             lobby_button(state, &layout, lobby_ui::JOIN)?;
             let requests = movie.requests(&mut state.frontend.wol, frame)?;
             ensure!(
@@ -198,7 +201,8 @@ impl WolCapture {
             names(state)
         );
         self.event(frame, "the hidden room seats Golf and lets Natasha go");
-        let layout = crate::app::shell_wol::lobby::layout(state);
+        let layout =
+            crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
         lobby_button(state, &layout, lobby_ui::BACK_TO_ROOM)?;
         let requests = self.requests(&mut state.frontend.wol, frame)?;
         ensure!(
@@ -956,7 +960,8 @@ impl WolCapture {
 
     /// `0x113` shown and settled: drive the target's interaction.
     pub(super) fn lobby_settled(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let layout = crate::app::shell_wol::lobby::layout(state);
+        let layout =
+            crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
         let (width, height) = (
             state.renderer.gpu.config.width as i32,
             state.renderer.gpu.config.height as i32,

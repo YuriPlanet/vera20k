@@ -234,7 +234,12 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
         log::warn!("co-op round countries: {error:#}");
     }
     // 0x0072D300 (Scenario+0x34B8's palette) and 0x0060CF00's SCRBK.
-    App::prepare_campaign_score_art(state, model.side);
+    App::prepare_campaign_score_art(
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        model.side,
+    );
     state.frontend.score_page = None;
     state.frontend.score_art = None;
     state.frontend.campaign_score_page = None;
@@ -516,7 +521,9 @@ pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
         } else {
             (
                 choice(
-                    state,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
                     SkirmishComboItem::Country(SkirmishCountryChoice::Country(slot.country)),
                 ),
                 side_item_data_for_country(slot.country),
@@ -543,8 +550,18 @@ pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
             name: human.name.clone(),
             country,
             flag,
-            color: choice(state, color_item),
-            start: choice(state, SkirmishComboItem::Start(slot.start_position)),
+            color: choice(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                color_item,
+            ),
+            start: choice(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                SkirmishComboItem::Start(slot.start_position),
+            ),
             ready: session.cooperative_round_slot_ready(index),
             enabled: index == launch.local_player_index && !round.local_ready(),
         });
@@ -773,7 +790,12 @@ fn finish(state: &mut AppState) {
     match campaign_end {
         Some(model) => {
             crate::app::lan_service::cooperative::release_transport(state);
-            App::open_campaign_end_page(state, model);
+            App::open_campaign_end_page(
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                model,
+            );
         }
         None => return_to_shell(state),
     }

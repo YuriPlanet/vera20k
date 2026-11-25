@@ -573,7 +573,14 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         return;
     }
     if crate::app::shell_wol::page::open(state.frontend.wol.as_ref()) {
-        crate::app::shell_wol::page::cursor_moved(state);
+        crate::app::shell_wol::page::cursor_moved(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &mut state.audio.sfx_player,
+        );
         return;
     }
     let Some((view, _layout)) = synced(state, true) else {

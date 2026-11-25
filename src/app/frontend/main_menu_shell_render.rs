@@ -681,7 +681,7 @@ pub(crate) fn render_shell_message_box_over_page(
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     let _ = crate::app::updater::notes::sync(&state.renderer.gpu, &mut state.frontend);
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-    let _ = crate::app::shell_mod_import::sync(state);
+    let _ = crate::app::shell_mod_import::sync(&state.renderer, &mut state.frontend);
     let state = &*state;
     let (Some(overlay), Some(chrome)) = (
         parts.and_then(|parts| build_shell_message_box_overlay(state, &parts)),
@@ -904,26 +904,29 @@ fn build_shell_message_box_overlay(
     // Add Mod's parts, each row's text inset 4 pixels from both ends and cut
     // to its row: the list's `Items`, which its sync writes as they change.
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-    let import_parts = crate::app::shell_mod_import::node(state).map(|node| {
-        use crate::app::frontend::skirmish_shell_render::gui_paint::{GuiStyle, paint_gui_styled};
-        let gui = state.frontend.shell_controller.gui();
-        let style = GuiStyle {
-            solid_lists: true,
-            ..Default::default()
-        };
-        paint_gui_styled(
-            &state.platform.ime,
-            &state.renderer.bit_font,
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            gui,
-            node,
-            parts.scale,
-            &[],
-            style,
-        )
-    });
+    let import_parts = crate::app::shell_mod_import::node(&state.renderer.gpu, &state.frontend)
+        .map(|node| {
+            use crate::app::frontend::skirmish_shell_render::gui_paint::{
+                GuiStyle, paint_gui_styled,
+            };
+            let gui = state.frontend.shell_controller.gui();
+            let style = GuiStyle {
+                solid_lists: true,
+                ..Default::default()
+            };
+            paint_gui_styled(
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                gui,
+                node,
+                parts.scale,
+                &[],
+                style,
+            )
+        });
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
     let import_parts = import_parts.map(|mut import_parts| {
         let controls = import_parts.take_lane(crate::render::hud_paint::Material::Controls);

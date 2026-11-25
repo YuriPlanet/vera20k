@@ -551,9 +551,27 @@ fn gui_key(state: &mut AppState, code: Option<winit::keyboard::KeyCode>, text: O
         }
         GuiScreen::Setups => {
             if state.frontend.skirmish_shell_state.setups_browser.is_some() {
-                crate::app::App::handle_skirmish_setups_key(state, code, text);
+                crate::app::App::handle_skirmish_setups_key(
+                    &state.platform.window,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    code,
+                    text,
+                );
             } else {
-                crate::app::App::handle_saved_seed_browser_key(state, code, text);
+                crate::app::App::handle_saved_seed_browser_key(
+                    state.platform.game_config.as_ref(),
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &mut state.process_assets,
+                    &mut state.audio.sfx_player,
+                    code,
+                    text,
+                );
             }
         }
         GuiScreen::ChooseMap => match code {

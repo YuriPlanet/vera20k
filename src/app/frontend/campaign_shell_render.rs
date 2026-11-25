@@ -173,7 +173,13 @@ pub(crate) fn render_campaign_page(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<bool> {
-    if !family_art_ready(state) || !crate::app::App::ensure_campaign_art(state) {
+    if !family_art_ready(state)
+        || !crate::app::App::ensure_campaign_art(
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+        )
+    {
         return Ok(false);
     }
     let layout = shell_layout::campaign_layout(&state.renderer.gpu);

@@ -31,7 +31,9 @@ use super::{
 };
 use super::{WolProvider, WolServiceRequest, service_event};
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::SessionMode;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::scenario_catalog::ScenarioCatalog;
 use crate::app::shell_network_setup::{NetworkSetupEvent, NetworkSetupRequest};
@@ -43,6 +45,7 @@ use crate::ui::wol_lobby::{
 };
 use crate::ui::wol_login::WolAccountGlobals;
 use crate::ui::wol_login::WolCredential;
+use crate::util::config::GameConfig;
 use crate::util::time::Instant;
 
 /// Replies per poll; each may queue further requests (a list reply asks to
@@ -73,7 +76,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             .as_mut()
             .map(|visit| visit.take_service_requests())
             .unwrap_or_default();
-        let setup = setup_requests(state);
+        let setup = setup_requests(&mut state.frontend, &state.match_state);
         if requests.is_empty() && setup.is_empty() {
             return None;
         }
@@ -93,18 +96,20 @@ fn pending(wol: Option<&WolVisit>) -> bool {
 
 /// The WOL setup's own requests; this service answers a locate, the
 /// guest's leave and, as the joined game's host, the guest's choices.
-fn setup_requests(state: &mut AppState) -> Vec<NetworkSetupRequest> {
-    if state.match_state.session_mode() != SessionMode::Wol
-        || !(state.frontend.shell_route == ShellRoute::NetworkSetup
-            || super::lobby::visiting(state.frontend.wol.as_ref())
+fn setup_requests(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+) -> Vec<NetworkSetupRequest> {
+    if match_state.session_mode() != SessionMode::Wol
+        || !(frontend.shell_route == ShellRoute::NetworkSetup
+            || super::lobby::visiting(frontend.wol.as_ref())
             || crate::app::shell_network_setup::quick_match(
-                state.frontend.network_setup_protocol.as_ref(),
+                frontend.network_setup_protocol.as_ref(),
             ))
     {
         return Vec::new();
     }
-    state
-        .frontend
+    frontend
         .network_setup_protocol
         .as_mut()
         .map(|protocol| protocol.take_service_requests())
@@ -805,7 +810,14 @@ fn quick_match_members() -> Vec<WolMember> {
 /// (Great Britain) in colour 3, both on automatic starts.
 fn match_requested(state: &mut AppState) {
     let local = nickname(&state.frontend.wol_account);
-    let options = match matchbot_options(state, &local, GUEST) {
+    let options = match matchbot_options(
+        &state.frontend,
+        state.platform.game_config.as_ref(),
+        &state.match_state,
+        &state.process_assets,
+        &local,
+        GUEST,
+    ) {
         Ok(options) => Some(Box::new(options)),
         Err(error) => {
             log::warn!("WOL test service: no matchbot options: {error:#}");
@@ -837,7 +849,10 @@ fn match_requested(state: &mut AppState) {
 /// `guest`, as the host receives them (`local_player_index` 0): its fixed
 /// picks through the Quick Match owner's builder.
 pub(crate) fn matchbot_options(
-    state: &AppState,
+    frontend: &FrontendState,
+    game_config: Option<&GameConfig>,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     host: &str,
     guest: &str,
 ) -> anyhow::Result<crate::app::shell_network_setup::HostOptions> {
@@ -846,7 +861,7 @@ pub(crate) fn matchbot_options(
     // Allied one, whose stage admits only Americans (index 0); a peer
     // country outside it turns Random, which the shell never resolves.
     let ((host_country, guest_country), map) =
-        if super::quick_match::quick_coop(state.frontend.wol.as_ref()) {
+        if super::quick_match::quick_coop(frontend.wol.as_ref()) {
             ((0, 0), MatchMap::Named(QUICK_COOP_MAP))
         } else {
             ((5, 4), MatchMap::First)
@@ -861,7 +876,14 @@ pub(crate) fn matchbot_options(
         host: player(host, host_country, 1),
         guest: player(guest, guest_country, 3),
     };
-    super::quick_match::host_options(state, &pairing, map)
+    super::quick_match::host_options(
+        frontend,
+        game_config,
+        match_state,
+        process_assets,
+        &pairing,
+        map,
+    )
 }
 
 fn lobby_members() -> Vec<WolMember> {
