@@ -8,7 +8,7 @@ use super::{CargoBale, MinerState, ResourceType};
 use crate::rules::tiberium_type::TiberiumTypeId;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::tiberium::test_support::{overlay_registry_with_land, place_tiberium_on_map};
-use crate::sim::world::FrameEffects;
+use crate::sim::world::{FrameEffects, Simulation};
 
 /// A War Miner standing in an ore field, a refinery at NW (22, 10) and a
 /// farther one at NW (4, 24) on the miner's ground, with the cells `water`
@@ -180,28 +180,7 @@ fn a_512_map_war_miner_returns_to_the_near_refinery_and_deposits() {
     let _ =
         sim.substrate
             .mission_assign_exact(miner, MissionId::from_known(MissionType::Harvest), 100);
-    // A full hold already asking for a refinery, as the harvest mission leaves
-    // a miner that filled up.
-    {
-        let capacity = sim
-            .substrate
-            .entities
-            .get(miner)
-            .and_then(|entity| entity.miner.as_ref())
-            .expect("miner component")
-            .capacity_bales;
-        let entity = sim.substrate.entities.get_mut(miner).expect("miner");
-        let bales = (0..capacity)
-            .map(|_| {
-                CargoBale::of_type(TiberiumTypeId(0), ResourceType::Ore, &rules)
-                    .expect("rules list the first Tiberium type")
-            })
-            .collect();
-        entity.miner.as_mut().expect("miner component").cargo = bales;
-        entity
-            .mission
-            .set_handler_state(MinerState::ReturnToRefinery.cursor());
-    }
+    arm_full_ore_return(&mut sim, miner, &rules);
     let credits_before = crate::sim::production::credits_for_owner(&sim, "Americans");
 
     let mut contacted_near = false;
@@ -255,4 +234,127 @@ fn a_512_map_war_miner_returns_to_the_near_refinery_and_deposits() {
             * i32::from(capacity),
         "the whole hold is paid at the near refinery (deposited on tick {deposited_at})"
     );
+}
+
+/// The Chrono Miner half of #4997 on the same 512x512 map: a loaded CMIN
+/// 23 cells from the near refinery, with the far one 176 cells away so the
+/// native 32-bit pair wraps negative. The fixed scan must pick the near
+/// refinery, warp the miner onto its pad and unload the hold.
+#[test]
+fn a_512_map_chrono_miner_warps_to_the_near_refinery_and_deposits() {
+    let Some((mut sim, rules, _)) = scene_with_size(300) else {
+        return;
+    };
+    sim.session.set_map_width_for_test(1024);
+    sim.session.set_map_height_for_test(1024);
+    sim.set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
+        base: 0,
+        off_fc: -1000,
+        off_100: -1000,
+        off_104: 2000,
+        off_108: 2000,
+    }));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(300, 300));
+    let near = spawn(&mut sim, &rules, "NAREFN", "Americans", 20, 20);
+    let _far = spawn(&mut sim, &rules, "NAREFN", "Americans", 196, 196);
+    let pad = crate::sim::radio::receive::dock_pad_cell(20, 20);
+    let miner = spawn(&mut sim, &rules, "CMIN", "Americans", 43, 43);
+    assert_eq!(
+        find_docking_bay(
+            &mut sim,
+            &rules,
+            miner,
+            &rules.object("CMIN").unwrap().dock,
+            false,
+            false,
+            &mut FrameEffects::default(),
+        ),
+        Some(near),
+        "the Chrono return pass picks the refinery beside it, not the far one"
+    );
+    let _ =
+        sim.substrate
+            .mission_assign_exact(miner, MissionId::from_known(MissionType::Harvest), 100);
+    arm_full_ore_return(&mut sim, miner, &rules);
+    assert!(sim.rebuild_dynamic_navigation(&rules));
+    let grid = sim
+        .path_grid_snapshot()
+        .map(|grid| (*grid).clone())
+        .expect("navigation grid");
+
+    let credits_before = crate::sim::production::credits_for_owner(&sim, "Americans");
+    let mut warped = false;
+    let mut deposited = false;
+    for _ in 0..1200u32 {
+        let sounds_before = sim.sound_events.len();
+        let commands = sim.take_due_commands();
+        sim.advance_tick(
+            &commands,
+            Some(&rules),
+            Some(&grid),
+            Some(overlay_registry_with_land()),
+            33,
+        );
+        for event in &sim.sound_events[sounds_before..] {
+            if let crate::sim::world::SimSoundEvent::ChronoTeleport { world, .. } = event {
+                let (rx, ry, ..) = world.to_cell_sub_z();
+                warped |= (rx, ry) == pad;
+            }
+        }
+        let entity = sim.substrate.entities.get(miner).expect("miner");
+        if entity
+            .miner
+            .as_ref()
+            .expect("miner component")
+            .cargo
+            .is_empty()
+        {
+            deposited = true;
+            break;
+        }
+    }
+    assert!(
+        warped,
+        "the dock's MOVE_HERE warps the Chrono Miner onto the pad"
+    );
+    assert!(deposited, "the warped Chrono Miner unloads its hold");
+    let paid = crate::sim::production::credits_for_owner(&sim, "Americans") - credits_before;
+    let capacity = sim
+        .substrate
+        .entities
+        .get(miner)
+        .and_then(|entity| entity.miner.as_ref())
+        .expect("miner component")
+        .capacity_bales;
+    assert_eq!(
+        paid,
+        rules
+            .tiberium_types
+            .get(TiberiumTypeId(0))
+            .expect("first Tiberium type")
+            .value
+            * i32::from(capacity),
+        "the whole hold is paid at the near refinery"
+    );
+}
+
+fn arm_full_ore_return(sim: &mut Simulation, miner: u64, rules: &crate::rules::ruleset::RuleSet) {
+    let capacity = sim
+        .substrate
+        .entities
+        .get(miner)
+        .and_then(|entity| entity.miner.as_ref())
+        .expect("miner component")
+        .capacity_bales;
+    let entity = sim.substrate.entities.get_mut(miner).expect("miner");
+    let bales = (0..capacity)
+        .map(|_| {
+            CargoBale::of_type(TiberiumTypeId(0), ResourceType::Ore, rules)
+                .expect("rules list the first Tiberium type")
+        })
+        .collect();
+    entity.miner.as_mut().expect("miner component").cargo = bales;
+    entity
+        .mission
+        .set_handler_state(MinerState::ReturnToRefinery.cursor());
 }
