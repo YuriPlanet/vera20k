@@ -33,7 +33,7 @@ pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
         return ObjectLayerPass::default();
     }
     let sim = &runtime.simulation;
-    let Some(viewer) = crate::app::input::commands::preferred_local_owner_name(state)
+    let Some(viewer) = crate::app::input::commands::preferred_local_owner_name(&state.match_state)
         .and_then(|owner| sim.interner().get(&owner))
     else {
         return ObjectLayerPass::default();

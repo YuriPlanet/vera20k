@@ -8,12 +8,19 @@
 //! - Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::input::chrome_input::{
     ID_DIPLOMACY, ID_OPTIONS, ID_SCROLL_DOWN, ID_SCROLL_UP, ID_TAB_BASE,
 };
 use crate::app::input::cursor::CursorVisibility;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::sidebar_render::{current_sidebar_side, current_sidebar_view};
+use crate::app::presentation::state::MatchPresentationState;
 use crate::app::presentation::text_hud::{self, TextHud};
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::assets::csf_file::{CsfArg, format_csf};
 use crate::map::entities::EntityCategory;
 use crate::render::batch::SpriteInstance;
@@ -86,20 +93,21 @@ const TIP_DRAW_PAD: [f32; 2] = [8.0, 4.0];
 /// `0x00479024..0x00479029`: text starts at x+4/y+2, not x+2/y+4.
 pub(crate) const TIP_TEXT_INSET: [f32; 2] = [4.0, 2.0];
 
-pub(crate) fn now_ms(state: &AppState) -> u64 {
-    state.diagnostic_presentation_ms().unwrap_or_else(|| {
-        state
-            .match_state
-            .match_presentation
-            .tooltip_epoch
-            .elapsed()
-            .as_millis() as u64
-    })
+pub(crate) fn now_ms(diag: &DiagnosticsState, match_state: &MatchState) -> u64 {
+    crate::app::diagnostics::state::diagnostic_presentation_ms(diag, match_state).unwrap_or_else(
+        || {
+            match_state
+                .match_presentation
+                .tooltip_epoch
+                .elapsed()
+                .as_millis() as u64
+        },
+    )
 }
 
 /// CursorMoved feed (all screens).
 pub(crate) fn on_mouse_move(state: &mut AppState) {
-    let now = now_ms(state);
+    let now = now_ms(&state.diag, &state.match_state);
     if state.match_state.paused() || state.frontend.keyboard_dialog.is_some() {
         state.match_state.match_presentation.tooltips.on_button(now);
         return;
@@ -155,15 +163,15 @@ impl TextDemand {
 }
 
 /// MouseInput feed — ANY button, press or release, kills tip + timer.
-pub(crate) fn on_button_event(state: &mut AppState) {
-    let now = now_ms(state);
-    state.match_state.match_presentation.tooltips.on_button(now);
+pub(crate) fn on_button_event(diag: &DiagnosticsState, match_state: &mut MatchState) {
+    let now = now_ms(diag, match_state);
+    match_state.match_presentation.tooltips.on_button(now);
 }
 
 /// Per-frame update: refresh regions for the live in-game surface, then pump
 /// the delayed-tooltip timer.
 pub(crate) fn update(state: &mut AppState) -> u64 {
-    let now = now_ms(state);
+    let now = now_ms(&state.diag, &state.match_state);
     if state.frontend.screen == GameScreen::InGame
         && !state.match_state.paused()
         && state.frontend.keyboard_dialog.is_none()
@@ -531,7 +539,16 @@ pub(crate) fn answer_kept_tactical_tip(state: &AppState) {
         && state.frontend.keyboard_dialog.is_none()
         && input.cursor_visibility.is_visible()
         && !input.cursor_coordinates
-        && tips.may_read_text(ID_TACTICAL_TIP, tactical_tip_rect(state))
+        && tips.may_read_text(
+            ID_TACTICAL_TIP,
+            tactical_tip_rect(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state.match_presentation,
+                &state.persistence,
+            ),
+        )
     {
         // Prepare during the show delay as well. It can expire while the
         // tick owns the world, before the next opportunity to pick.
@@ -542,8 +559,20 @@ pub(crate) fn answer_kept_tactical_tip(state: &AppState) {
     }
 }
 
-fn tactical_tip_rect(state: &AppState) -> TipRect {
-    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+fn tactical_tip_rect(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    presentation: &MatchPresentationState,
+    persistence: &PersistenceState,
+) -> TipRect {
+    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(
+        platform,
+        renderer,
+        screen,
+        presentation,
+        persistence,
+    );
     TipRect::new(x as i32, y as i32, width as i32, height as i32)
 }
 
@@ -568,11 +597,11 @@ fn dynamic_tip_text(
 /// gadget's enable test fails. Cameo tips return before this step, and the
 /// repair/sell ids never reach it. `disabled == false` returns the tip
 /// unchanged, so this is the native branch, not an added gate.
-fn with_disabled_suffix(state: &AppState, tip: String, disabled: bool) -> String {
+fn with_disabled_suffix(process_assets: &ProcessAssets, tip: String, disabled: bool) -> String {
     if !disabled || tip.is_empty() {
         return tip;
     }
-    let suffix = state.csf_text(TIP_LABEL_DISABLED);
+    let suffix = process_assets.csf_text(TIP_LABEL_DISABLED);
     format_csf(
         TIP_DISABLED_FORMAT,
         &[CsfArg::Str(&tip), CsfArg::Str(&suffix)],
@@ -595,14 +624,16 @@ fn sidebar_button_tip(view: &SidebarView, id: u16) -> Option<(&'static str, bool
 }
 
 fn sidebar_button_tip_text(
-    state: &AppState,
+    process_assets: &ProcessAssets,
     cursor: CursorVisibility,
     view: &SidebarView,
     id: u16,
 ) -> String {
     dynamic_tip_text(cursor, || {
         sidebar_button_tip(view, id)
-            .map(|(label, disabled)| with_disabled_suffix(state, state.csf_text(label), disabled))
+            .map(|(label, disabled)| {
+                with_disabled_suffix(process_assets, process_assets.csf_text(label), disabled)
+            })
             .unwrap_or_default()
     })
 }
@@ -689,9 +720,17 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
     // Set_View_Dimensions4A8960 (registration4A8B50) registers the viewport as
     // dynamic region500. CursorCheat537EF0 toggles its coordinate text at
     // 4AE580, before the ordinary object/shroud tooltip lookup.
-    regions.push(region(ID_TACTICAL_TIP, tactical_tip_rect(state), &|| {
-        dynamic_tip_text(cursor, || tactical_tip_text(state))
-    }));
+    regions.push(region(
+        ID_TACTICAL_TIP,
+        tactical_tip_rect(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+        ),
+        &|| dynamic_tip_text(cursor, || tactical_tip_text(state)),
+    ));
     // Power meter first: gamemd asks the power bar for a tip before the
     // sidebar gadget ids, and registration order decides the hit here.
     // Each unlocked frame pass republishes these retained House values.
@@ -720,7 +759,7 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
     for (i, tab) in view.tabs.iter().enumerate() {
         let id = ID_TAB_BASE + i as u16;
         regions.push(region(u32::from(id), tip_rect(frame, tab.rect), &|| {
-            sidebar_button_tip_text(state, cursor, view, id)
+            sidebar_button_tip_text(&state.process_assets, cursor, view, id)
         }));
     }
     regions.push(region(
@@ -738,7 +777,7 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
         (ID_SCROLL_UP, &view.scroll_up_button),
     ] {
         regions.push(region(u32::from(id), tip_rect(frame, button.rect), &|| {
-            sidebar_button_tip_text(state, cursor, view, id)
+            sidebar_button_tip_text(&state.process_assets, cursor, view, id)
         }));
     }
     let game_mode_nonzero = state.match_state.session_mode().is_nonzero();

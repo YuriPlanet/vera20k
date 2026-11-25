@@ -112,14 +112,26 @@ pub(crate) fn build_instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<Spr
         .as_ref()
         .and_then(|csf| csf.get(RELEASE_NOTE_LABEL));
     let font = &state.renderer.bit_font;
-    let (_, view_height) = crate::app::input::camera::tactical_viewport_size(state);
+    let (_, view_height) = crate::app::input::camera::tactical_viewport_size(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let lines = place_lines(release_note, fps, view_height as i32, |text| {
         let [_, _, width, height] = font.compute_text_rect(text, [0, 0], 0, [0, 0]);
         [width, height]
     });
     // Screen-space lanes add back the world camera the UI shader subtracts,
     // and the battlefield's corner: the lines are in the view's own pixels.
-    let camera = crate::app::input::camera::battlefield_lane_camera(state);
+    let camera = crate::app::input::camera::battlefield_lane_camera(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     let mut fills = Vec::with_capacity(lines.len());
     let mut texts = Vec::new();
     for line in &lines {

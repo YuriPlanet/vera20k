@@ -49,7 +49,7 @@ impl App {
         }
         // Window events stop now, so the focus loss that frees the cursor
         // lock never arrives.
-        crate::app::input::cursor::release_cursor_confinement(state);
+        crate::app::input::cursor::release_cursor_confinement(&mut state.platform);
         state.platform.window.set_visible(false);
     }
 

@@ -1,13 +1,16 @@
 //! BC6 (`0xBC6`) window input adapter. The dialog produces intents;
 //! `app::cooperative_round` and `MatchSession` decide their effects.
 
+use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::{App, AppState};
 use crate::ui::coop_score_shell::*;
+use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::page::PageEvent;
 use crate::util::time::Instant;
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::window::Window;
 
 pub(crate) fn layout(state: &AppState) -> CoopScoreLayout {
     let (w, h) = shell_layout::shell_screen_size(&state.renderer.gpu);
@@ -19,11 +22,11 @@ pub(crate) fn layout(state: &AppState) -> CoopScoreLayout {
 }
 
 /// BC6 owns the result screen while its page is open.
-pub(crate) fn active(state: &AppState) -> bool {
+pub(crate) fn active(frontend: &FrontendState) -> bool {
     matches!(
-        state.frontend.screen,
+        frontend.screen,
         crate::app::GameScreen::MissionResult { .. }
-    ) && state.frontend.coop_score_page.is_some()
+    ) && frontend.coop_score_page.is_some()
 }
 
 /// BC6's page is the active dialog, its nodes on `layout` and the round:
@@ -139,7 +142,7 @@ fn sync_values(
 }
 
 pub(crate) fn update_geometry(state: &mut AppState) {
-    if active(state) {
+    if active(&state.frontend) {
         let layout = layout(state);
         sync(state, &layout);
     }
@@ -254,10 +257,6 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
 }
 
 /// The chat list's scrollbar repeat timer.
-pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
-    let window = &state.platform.window;
-    state
-        .frontend
-        .shell_controller
-        .poll_then(|| window.request_redraw())
+pub(crate) fn poll(window: &Window, controller: &mut DialogController) -> Option<Instant> {
+    controller.poll_then(|| window.request_redraw())
 }

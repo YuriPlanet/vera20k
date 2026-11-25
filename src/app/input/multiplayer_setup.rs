@@ -1,10 +1,13 @@
 //! BC/BD/C2/C9 window input adapter. The dialog produces intents;
 //! MatchSession and the setup lifecycle adapter decide admission and effects.
 
+use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::{shell_layout, shell_transition};
+use crate::app::input::state::MatchInputState;
 use crate::app::shell_route::ShellRoute;
 use crate::app::{App, AppState};
 use crate::ui::multiplayer_setup::*;
+use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::page::{PageCue, PageEvent};
 use crate::util::time::Instant;
 use winit::event::{KeyEvent, MouseButton};
@@ -188,9 +191,8 @@ fn preview_box_shows(state: &AppState, view: &SetupView) -> bool {
         && open_list(state).is_none()
 }
 
-fn notice_active(state: &AppState) -> bool {
-    state
-        .frontend
+fn notice_active(frontend: &FrontendState) -> bool {
+    frontend
         .multiplayer_setup
         .as_ref()
         .is_some_and(|ui| ui.notice.is_some())
@@ -214,7 +216,7 @@ fn room_takes_keys(state: &AppState) -> bool {
     crate::app::shell_network_setup::verify(state.frontend.network_setup_protocol.as_ref())
         .is_none()
         && !crate::app::shell_wol::page::open(state.frontend.wol.as_ref())
-        && !notice_active(state)
+        && !notice_active(&state.frontend)
         && crate::app::shell_network_setup::view(state).is_some()
 }
 
@@ -267,7 +269,7 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     // The native 5D3490 message box owns all input while its CE runs, and
     // VERA's boxes (Game Options, the map offer) take the keys before the
     // chat: their Default/Cancel buttons answer Enter and Escape.
-    let boxed = notice_active(state)
+    let boxed = notice_active(&state.frontend)
         || state
             .frontend
             .multiplayer_setup
@@ -338,29 +340,38 @@ pub(crate) fn open_list(state: &AppState) -> Option<(u16, vera20k_gui::ComboDrop
 }
 
 /// Whether a trackbar of the room holds the pointer.
-pub(crate) fn slider_held(state: &AppState) -> bool {
-    crate::ui::skirmish_shell::page::slider_held(state.frontend.shell_controller.gui())
+pub(crate) fn slider_held(controller: &DialogController) -> bool {
+    crate::ui::skirmish_shell::page::slider_held(controller.gui())
 }
 
 /// What the room paints of its widgets at the pointer: VERA's roster
 /// lights the control a press works, the original rooms the one under it.
-pub(crate) fn room_look(state: &AppState, view: &SetupView) -> RoomLook {
-    if state.frontend.multiplayer_setup.is_none() {
+pub(crate) fn room_look(
+    frontend: &FrontendState,
+    input: &MatchInputState,
+    view: &SetupView,
+) -> RoomLook {
+    if frontend.multiplayer_setup.is_none() {
         return RoomLook::default();
     }
-    let controller = &state.frontend.shell_controller;
+    let controller = &frontend.shell_controller;
     let carrying = row_drag(controller, view).is_some_and(|drag| drag.carrying);
-    let still = carrying || slider_held(state) || notice_active(state);
-    let target = pointer_target(state, view, !view.dialog.modern).filter(|_| !still);
-    look(&state.frontend.shell_controller, view, target)
+    let still = carrying || slider_held(&frontend.shell_controller) || notice_active(frontend);
+    let target = pointer_target(&frontend.shell_controller, input, view, !view.dialog.modern)
+        .filter(|_| !still);
+    look(&frontend.shell_controller, view, target)
 }
 
 /// The control at the pointer that a press works (enabled) on the top
 /// dialog; with `help`, the one whose status help shows (VERA's roster
 /// keeps the press's).
-fn pointer_target(state: &AppState, view: &SetupView, help: bool) -> Option<u16> {
-    let (x, y) = state.match_state.input.cursor_px();
-    let controller = &state.frontend.shell_controller;
+fn pointer_target(
+    controller: &DialogController,
+    input: &MatchInputState,
+    view: &SetupView,
+    help: bool,
+) -> Option<u16> {
+    let (x, y) = input.cursor_px();
     let root = controller.root_in(controller.top_id()?)?;
     let at = |press| control_at(controller.gui(), root, x, y, press);
     match help {
@@ -534,7 +545,7 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     };
     let (x, y) = state.match_state.input.cursor_px();
     // A held trackbar keeps the pointer from the status help too.
-    let held = slider_held(state) || notice_active(state);
+    let held = slider_held(&state.frontend.shell_controller) || notice_active(&state.frontend);
     state.frontend.shell_controller.on_pointer_move(x, y);
     if !held {
         let help = hovered_help(state, &view);
@@ -570,7 +581,13 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
             &state.match_state.input,
             view.page().dialog,
         );
-        if pointer_target(state, &view, false).is_none()
+        if pointer_target(
+            &state.frontend.shell_controller,
+            &state.match_state.input,
+            &view,
+            false,
+        )
+        .is_none()
             && preview_box_shows(state, &view)
             && crate::app::frontend::preview_zoom::press_on_box(
                 &mut state.frontend,
@@ -608,7 +625,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
             &mut state.frontend.network_setup_protocol,
         );
     }
-    if notice_active(state) {
+    if notice_active(&state.frontend) {
         return None;
     }
     let (view, _) = synced(state, false)?;
@@ -628,7 +645,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
 /// Route wheel input to VERA's room when it owns the pointer.
 pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
     if lines == 0.0
-        || notice_active(state)
+        || notice_active(&state.frontend)
         || crate::app::shell_network_setup::verify(state.frontend.network_setup_protocol.as_ref())
             .is_some()
         || crate::app::shell_wol::page::open(state.frontend.wol.as_ref())

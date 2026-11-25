@@ -85,7 +85,7 @@ pub(crate) fn projectile_visitor<'a>(
         .match_state
         .match_presentation
         .effective_house_color_map();
-    let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+    let local_owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state);
     let local_scheme = local_owner
         .as_deref()
         .and_then(|owner| house_colors.get(owner).copied())

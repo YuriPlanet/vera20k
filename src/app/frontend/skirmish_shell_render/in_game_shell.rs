@@ -314,7 +314,8 @@ pub(super) fn paint_dialog(
     use crate::ui::shell::in_game_shell::{FOOTER, TITLE};
     let frame = {
         let state: &AppState = state;
-        let ui = (dialog.ui)(state).expect("the open dialog's controls");
+        let ui =
+            (dialog.ui)(&state.match_state.match_presentation).expect("the open dialog's controls");
         let mut paint = InGamePaint::new(state);
         let (lower, (key, fallback)) = dialog.lower;
         let under = dialog.help_under_held.then(|| {

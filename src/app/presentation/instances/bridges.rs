@@ -486,7 +486,13 @@ pub(crate) fn build_bridge_shadow_instances(state: &AppState, out: &mut Vec<Spri
     );
     // The shadow window is cut from the camera, the frame's corner, so it
     // takes the centring size: the battlefield and its offset on both sides.
-    let (width, height) = crate::app::input::camera::tactical_centring_size(state);
+    let (width, height) = crate::app::input::camera::tactical_centring_size(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let zoom = state.match_state.input.zoom_level.max(f32::EPSILON);
     let (sw, sh) = (width as f32 / zoom, height as f32 / zoom);
     let window = bridge_shadow_window(terrain, atlas.shadow_extent(), cam_x, cam_y, sw, sh);
@@ -496,7 +502,7 @@ pub(crate) fn build_bridge_shadow_instances(state: &AppState, out: &mut Vec<Spri
         && !state.match_state.sandbox_full_visibility)
         .then(|| {
             (
-                crate::app::input::commands::preferred_local_owner_name(state)
+                crate::app::input::commands::preferred_local_owner_name(&state.match_state)
                     .as_deref()
                     .and_then(|name| sim.interner().get(name)),
                 state.overlay_registry(),

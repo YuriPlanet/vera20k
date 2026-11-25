@@ -219,7 +219,9 @@ pub(crate) fn refresh_draw_state(state: &mut AppState) {
     let Some(runtime) = state.match_state.sim_runtime.presentation() else {
         return;
     };
-    let Some(owner_name) = crate::app::input::commands::preferred_local_owner_name(state) else {
+    let Some(owner_name) =
+        crate::app::input::commands::preferred_local_owner_name(&state.match_state)
+    else {
         return;
     };
     let sim = &runtime.simulation;
@@ -290,7 +292,8 @@ pub(crate) fn hovered_entry_rect(state: &AppState) -> Option<Rect> {
         return None;
     }
     // The chrome's hover (`SWButtonClass::OnMouseEnter`).
-    let index = crate::app::input::chrome_input::hovered_sw_button(state)?;
+    let index =
+        crate::app::input::chrome_input::hovered_sw_button(&state.match_state.match_presentation)?;
     sw.entries.get(index).map(|entry| entry.rect)
 }
 

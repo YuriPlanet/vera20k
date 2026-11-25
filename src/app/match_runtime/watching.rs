@@ -96,8 +96,13 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     }
     match button {
         MouseButton::Right
-            if crate::app::input::camera::cursor_over_battlefield(state)
-                && state.match_state.input.tactical_mouse.press_may_arm() =>
+            if crate::app::input::camera::cursor_over_battlefield(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            ) && state.match_state.input.tactical_mouse.press_may_arm() =>
         {
             let cursor = (
                 state.match_state.input.cursor_x,
@@ -110,7 +115,13 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 .begin_right_drag(cursor);
         }
         MouseButton::Middle => {
-            crate::app::input::camera::middle_press_resets_view_distance(state);
+            crate::app::input::camera::middle_press_resets_view_distance(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
+            );
         }
         _ => {}
     }

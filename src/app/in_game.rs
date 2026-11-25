@@ -252,7 +252,7 @@ impl App {
         else {
             return false;
         };
-        crate::app::input::commands::preferred_local_owner(state)
+        crate::app::input::commands::preferred_local_owner(&state.match_state)
             .as_deref()
             .and_then(|owner| sim.interner().get(owner))
             .is_some_and(|owner| sim.ready_outcome_for_owner(owner).is_some())
@@ -379,7 +379,9 @@ impl App {
         let current = state.match_state.match_presentation.in_game_menu;
         if current == InGameMenuState::Menu
             && (crate::app::input::pause_menu::close_options_list(state)
-                || crate::app::input::pause_menu::back_from_options(state))
+                || crate::app::input::pause_menu::back_from_options(
+                    &mut state.match_state.match_presentation,
+                ))
         {
             return;
         }
@@ -434,7 +436,7 @@ impl App {
             );
         }
         if was_open != will_be_open {
-            let locked = crate::app::input::campaign_input::is_locked(state);
+            let locked = crate::app::input::campaign_input::is_locked(&state.match_state);
             let cursor = &mut state.match_state.input.cursor_visibility;
             if will_be_open {
                 cursor.show_for_menus();
@@ -492,7 +494,7 @@ impl App {
             // chrome's capture went with `dialog_ui.close_all` above; its
             // pushed looks go here.
             state.match_state.input.cancel_tactical_drag();
-            crate::app::input::chrome_input::cancel(state);
+            crate::app::input::chrome_input::cancel(&mut state.match_state.match_presentation);
         }
         if next == InGameMenuState::Menu {
             state.match_state.match_presentation.pause_menu_has_saves =
@@ -500,7 +502,7 @@ impl App {
             crate::app::input::pause_menu::on_open(state);
         }
         if next == InGameMenuState::AbortConfirm {
-            crate::app::input::abort::on_open(state);
+            crate::app::input::abort::on_open(&mut state.match_state);
         }
 
         // An open modal is the pause (`MatchState::paused`); any transition
@@ -613,12 +615,13 @@ impl App {
     /// `0x0048CAB2`) and add it to the ring only while it holds fewer than
     /// 0x80 events; the latch is cleared either way.
     fn queue_local_destruct(state: &mut AppState) {
-        let Some(owner) = crate::app::input::commands::preferred_local_owner(state) else {
+        let Some(owner) = crate::app::input::commands::preferred_local_owner(&state.match_state)
+        else {
             log::warn!("Abort DESTRUCT has no local command owner");
             return;
         };
         if crate::app::input::commands::try_schedule_command(
-            state,
+            &mut state.match_state,
             &owner,
             crate::sim::command::Command::Destruct,
         )
@@ -659,12 +662,13 @@ impl App {
         if state.match_state.scenario_exit.is_some() {
             return;
         }
-        let Some(owner) = crate::app::input::commands::preferred_local_owner(state) else {
+        let Some(owner) = crate::app::input::commands::preferred_local_owner(&state.match_state)
+        else {
             log::warn!("Abort Mission confirmation has no local command owner");
             return;
         };
         if crate::app::input::commands::try_schedule_command(
-            state,
+            &mut state.match_state,
             &owner,
             crate::sim::command::Command::ExitMatch,
         )
@@ -694,7 +698,7 @@ impl App {
         crate::app::match_runtime::network_match::post_pause_changes(state);
         crate::app::match_runtime::network_match::post_connection_changes(state);
         crate::app::match_runtime::network_match::post_caught_up(state);
-        let local_owner = crate::app::input::commands::preferred_local_owner(state);
+        let local_owner = crate::app::input::commands::preferred_local_owner(&state.match_state);
         let local_owner_id = local_owner.as_deref().and_then(|owner| {
             state
                 .match_state

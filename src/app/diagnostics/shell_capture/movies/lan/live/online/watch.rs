@@ -501,7 +501,13 @@ fn shown_view(state: &AppState) -> Result<String> {
 fn begin_pan(state: &mut AppState) -> Result<(f32, f32)> {
     MoviesCapture::restore_neutral_pointer(state);
     ensure!(
-        crate::app::input::camera::cursor_over_battlefield(state),
+        crate::app::input::camera::cursor_over_battlefield(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence
+        ),
         "the resting pointer is off the battlefield"
     );
     let from = (

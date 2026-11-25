@@ -1827,7 +1827,13 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             return Ok(());
         }
         if let Some(taunt) = message.in_game_taunt_fields() {
-            super::input::taunt::receive(state, taunt.byte);
+            super::input::taunt::receive(
+                &state.frontend.multiplayer_shell_runtime,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                taunt.byte,
+            );
             return Ok(());
         }
         if let Some(text) = message.beacon_text_fields() {

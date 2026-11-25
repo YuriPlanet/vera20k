@@ -49,7 +49,9 @@ pub(crate) fn build_sidebar_chrome_instances(state: &mut AppState) -> Vec<Sprite
     {
         return Vec::new();
     }
-    let Some(nodes) = crate::app::input::chrome_input::paint_nodes(state) else {
+    let Some(nodes) =
+        crate::app::input::chrome_input::paint_nodes(&mut state.match_state.match_presentation)
+    else {
         return Vec::new();
     };
     let presentation = &mut state.match_state.match_presentation;
@@ -109,7 +111,9 @@ pub(crate) fn build_command_bar_instances(state: &mut AppState) -> Vec<SpriteIns
         return Vec::new();
     }
     let bar = command_bar::layout_and_slots(state);
-    let Some(nodes) = crate::app::input::chrome_input::paint_nodes(state) else {
+    let Some(nodes) =
+        crate::app::input::chrome_input::paint_nodes(&mut state.match_state.match_presentation)
+    else {
         return Vec::new();
     };
     let slots = bar.as_ref().map_or(&[][..], |(_, slots)| slots.as_slice());
@@ -814,9 +818,9 @@ pub(crate) fn build_sidebar_cameo_instances(
         chrome.map(|a| a.gclock_frames.as_slice()).unwrap_or(&[]);
     let mut hover = Vec::new();
     let hovered_slot = hovered_cameo_slot(
-        crate::app::input::chrome_input::hovered_cameo(state),
+        crate::app::input::chrome_input::hovered_cameo(&state.match_state.match_presentation),
         view.items.len(),
-        crate::app::input::campaign_input::is_locked(state),
+        crate::app::input::campaign_input::is_locked(&state.match_state),
     );
     // SetSidebarTextColor72F440 writes B0FA1C, which Draw packs at 6A9A4F.
     // The layout's `[Cameos] LabelColor=`, by default the side text colour.

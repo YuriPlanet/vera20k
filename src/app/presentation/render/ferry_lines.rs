@@ -90,7 +90,7 @@ pub(super) fn build_paths(
     wall_ms: u32,
 ) -> Vec<SurfaceStroke> {
     let mut out = Vec::new();
-    let paths = crate::app::input::ferry::waypoint_paths(state);
+    let paths = crate::app::input::ferry::waypoint_paths(&state.match_state);
     if paths.is_empty() {
         return out;
     }

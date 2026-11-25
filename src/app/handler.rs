@@ -133,7 +133,7 @@ impl App {
         // inhibit, so it dies on the same edge as the rest of the pointer
         // state.
         state.match_state.input.touch_mapper.reset();
-        crate::app::input::chrome_input::cancel(state);
+        crate::app::input::chrome_input::cancel(&mut state.match_state.match_presentation);
         let presentation = &mut state.match_state.match_presentation;
         presentation.dialog_ui.gui_mut().cancel_pointer();
         presentation.diplomacy_page = Default::default();
@@ -356,7 +356,7 @@ impl App {
             config.height
         );
         Self::resize_surface_for_window_size(state, size);
-        crate::app::input::cursor::apply_cursor_confinement(state);
+        crate::app::input::cursor::apply_cursor_confinement(&mut state.platform);
     }
 
     /// The screen page's pointer route: a move (`edge` `None`) or a button
@@ -527,7 +527,7 @@ impl App {
             // hides a visible tip, and any button edge (middle too) kills a
             // visible tip and its timer (study S1).
             Input::Move => tooltips::on_mouse_move(state),
-            Input::Button(..) => tooltips::on_button_event(state),
+            Input::Button(..) => tooltips::on_button_event(&state.diag, &mut state.match_state),
             Input::Key(_) | Input::Wheel(_) => {}
         }
         let screen = match layer {
@@ -813,10 +813,13 @@ impl App {
                 || modifiers.control_key()
                 || modifiers.alt_key()
                 || modifiers.super_key())
-            && crate::app::input::pause_menu::multiplayer_control(state).is_some()
+            && crate::app::input::pause_menu::multiplayer_control(&state.match_state).is_some()
         {
             if fresh_press {
-                crate::app::input::pause_menu::toggle_multiplayer_pause(state);
+                crate::app::input::pause_menu::toggle_multiplayer_pause(
+                    &state.platform.window,
+                    &mut state.match_state,
+                );
             }
             return;
         }
@@ -1000,7 +1003,7 @@ impl App {
             }
             ScreenPage::InGameShell(_) | ScreenPage::Battlefield
                 if !state.match_state.paused()
-                    && !crate::app::input::campaign_input::is_locked(state) =>
+                    && !crate::app::input::campaign_input::is_locked(&state.match_state) =>
             {
                 if crate::app::presentation::super_timers::wheel(state, lines) {
                     return;
@@ -1010,9 +1013,22 @@ impl App {
                 // centre. Over the sidebar and the bottom strip it keeps
                 // gamemd's native SidebarUp/SidebarDown routing.
                 if state.persistence.options_profile.mouse_wheel_zoom
-                    && crate::app::input::camera::cursor_over_battlefield(state)
+                    && crate::app::input::camera::cursor_over_battlefield(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &state.match_state,
+                        &state.persistence,
+                    )
                 {
-                    crate::app::input::camera::cycle_view_distance(state, lines);
+                    crate::app::input::camera::cycle_view_distance(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &mut state.match_state,
+                        &state.persistence,
+                        lines,
+                    );
                 } else if let Some(action) = dispatch::wheel_notch(lines) {
                     // Every wheel notch scrolls the active build strip by
                     // one row. gamemd routes the wheel message straight to
@@ -1027,7 +1043,7 @@ impl App {
 
     /// The timers of the page the shell route shows; the next wake.
     fn poll_route_page(state: &mut AppState) -> Option<Instant> {
-        match crate::app::input::precedence::route_page(state) {
+        match crate::app::input::precedence::route_page(&state.frontend) {
             ScreenPage::MovieList | ScreenPage::Mods => {
                 Self::poll_family_list(&state.platform.window, &mut state.frontend.shell_controller)
             }
@@ -1162,7 +1178,7 @@ impl App {
                     self.window_event(event_loop, window_id, event);
                 }
                 if let Some(state) = self.state.as_mut() {
-                    crate::app::input::cursor::apply_cursor_confinement(state);
+                    crate::app::input::cursor::apply_cursor_confinement(&mut state.platform);
                 }
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                 crate::web::status(
@@ -1536,7 +1552,7 @@ impl ApplicationHandler for App {
                             (position.y as f32 / 30.0).clamp(-3.0, 3.0)
                         }
                     };
-                    crate::app::input::camera::apply_zoom(state, lines);
+                    crate::app::input::camera::apply_zoom(&mut state.match_state.input, lines);
                     return;
                 }
                 // A watcher's window closes as a player's does.
@@ -1784,7 +1800,7 @@ impl ApplicationHandler for App {
                     Self::resize_surface_for_window_size(state, size);
                     // A resized window changes the rectangle the cursor is
                     // clipped to, so re-apply the lock (no-op if it is off).
-                    crate::app::input::cursor::apply_cursor_confinement(state);
+                    crate::app::input::cursor::apply_cursor_confinement(&mut state.platform);
                 }
             }
             WindowEvent::ScaleFactorChanged { .. } => {
@@ -1797,19 +1813,19 @@ impl ApplicationHandler for App {
                 // The OS drops the cursor clip on alt-tab, so re-apply the
                 // player's confinement choice whenever the window returns.
                 if active {
-                    crate::app::input::cursor::refresh_pointer_in_client(state);
-                    crate::app::input::cursor::apply_cursor_confinement(state);
+                    crate::app::input::cursor::refresh_pointer_in_client(&mut state.platform);
+                    crate::app::input::cursor::apply_cursor_confinement(&mut state.platform);
                     // Back from the folder, perhaps with a new mod in it.
                     Self::refresh_mods_page(state);
                 }
                 if !active {
                     // Give the arrow back at once: a backgrounded window may
                     // draw no frame that would.
-                    crate::app::input::hardware_cursor::give_back_arrow(state);
+                    crate::app::input::hardware_cursor::give_back_arrow(&mut state.platform);
                     // `release_in_game_pointer_state` also drops a touch stream
                     // that ended without an `Ended`, so no phantom finger turns
                     // the next tap into a two-finger pan.
-                    crate::app::input::cursor::release_cursor_confinement(state);
+                    crate::app::input::cursor::release_cursor_confinement(&mut state.platform);
                     Self::release_in_game_pointer_state(state);
                     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
                     super::shell_mod_import::pointer_button(state, false);
@@ -1889,7 +1905,12 @@ impl ApplicationHandler for App {
             WindowEvent::CursorLeft { .. } => {
                 // macOS's cursor lock, or the strip beside a camera housing:
                 // the pointer goes straight back in.
-                if crate::app::input::cursor::hold_pointer_in_window(state) {
+                if crate::app::input::cursor::hold_pointer_in_window(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &mut state.match_state.input,
+                ) {
                     state.platform.window.request_redraw();
                     return;
                 }
@@ -1901,7 +1922,7 @@ impl ApplicationHandler for App {
                 // `WM_SETCURSOR` with it), so VERA stops drawing mouse.shp rather
                 // than fighting it for the same pixel.
                 state.platform.pointer_in_client = false;
-                crate::app::input::tooltips::on_button_event(state);
+                crate::app::input::tooltips::on_button_event(&state.diag, &mut state.match_state);
                 state.platform.window.request_redraw();
             }
             WindowEvent::ModifiersChanged(_) => {
@@ -1935,7 +1956,10 @@ impl ApplicationHandler for App {
                 // freed it, when the Options box keeps it locked. The click
                 // still reaches the game.
                 if edge.is_pressed() {
-                    crate::app::input::cursor::relock_cursor_on_click(state);
+                    crate::app::input::cursor::relock_cursor_on_click(
+                        &mut state.platform,
+                        &state.persistence.options_profile,
+                    );
                 }
                 Self::route_input(state, Input::Button(button, edge));
             }
@@ -2053,7 +2077,7 @@ impl ApplicationHandler for App {
             // cursor lock: the OS drops the clip on focus loss /
             // Windows key, so re-assert the player's choice every frame while
             // the window is focused. Presentation-only, never part of the sim.
-            crate::app::input::cursor::reassert_cursor_confinement(state);
+            crate::app::input::cursor::reassert_cursor_confinement(&mut state.platform);
             // Captures keep their sealed input; they never ask for an IME.
             // The browser's composed text waits with the window events a
             // tick on the simulation worker holds, so it cannot overtake a
@@ -2073,18 +2097,33 @@ impl ApplicationHandler for App {
             Self::update_skirmish_setups_scroll(state, false);
             type Poll = fn(&mut AppState) -> Option<Instant>;
             let polls: &[Poll] = &[
-                crate::app::input::keyboard::poll_scroll_repeat,
+                |state| {
+                    crate::app::input::keyboard::poll_scroll_repeat(
+                        &state.platform.window,
+                        &mut state.frontend,
+                    )
+                },
                 crate::app::shell_lan::poll,
                 crate::app::shell_wol::poll,
                 crate::app::shell_network_setup::poll,
                 crate::app::input::multiplayer_setup::poll,
                 |state| {
                     use crate::app::input::coop_score;
-                    coop_score::active(state)
-                        .then(|| coop_score::poll(state))
+                    coop_score::active(&state.frontend)
+                        .then(|| {
+                            coop_score::poll(
+                                &state.platform.window,
+                                &mut state.frontend.shell_controller,
+                            )
+                        })
                         .flatten()
                 },
-                crate::app::input::sound::poll_scroll_repeat,
+                |state| {
+                    crate::app::input::sound::poll_scroll_repeat(
+                        &state.platform.window,
+                        &mut state.match_state.match_presentation,
+                    )
+                },
                 Self::poll_route_page,
                 |state| {
                     Self::poll_mod_files(

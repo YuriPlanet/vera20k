@@ -174,7 +174,14 @@ impl MapPictureSession {
             (camera.0 as f32, camera.1 as f32),
         );
         // Only the zoom: a map picture's camera stays where it is put.
-        crate::app::input::camera::clamp_camera_to_playable_area(state, width, height);
+        crate::app::input::camera::clamp_camera_to_playable_area(
+            &state.platform,
+            &state.renderer,
+            &mut state.match_state,
+            &state.persistence,
+            width,
+            height,
+        );
         Ok(())
     }
 
@@ -183,7 +190,7 @@ impl MapPictureSession {
     /// rectangle, drawn at twice the picture's size so the part kept is as
     /// sharp as a picture of it alone.
     fn plan(&self, state: &AppState) -> Result<Plan> {
-        let view = crate::app::input::camera::tactical_view_area(state)
+        let view = crate::app::input::camera::tactical_view_area(&state.match_state.sim_runtime)
             .and_then(WorldRect::of_view_area)
             .context("the loaded map has no visible area")?;
         let (fallback, candidates) = match (self.request.area, &self.own) {
@@ -202,7 +209,13 @@ impl MapPictureSession {
             ),
             None => (fallback, self.request.max_size),
         };
-        let battlefield = crate::app::input::camera::tactical_viewport_size(state);
+        let battlefield = crate::app::input::camera::tactical_viewport_size(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+        );
         let tiles = tiles(area, battlefield);
         let canvas = Canvas::new(area, largest).context("the picture's area is empty")?;
         log::info!(

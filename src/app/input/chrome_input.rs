@@ -54,6 +54,7 @@ pub(crate) use command_bar::{places as command_bar_places, tooltips as command_b
 
 use crate::app::AppState;
 use crate::app::presentation::sidebar_render::current_sidebar_view;
+use crate::app::presentation::state::MatchPresentationState;
 use crate::render::retained_hud::PICTURE;
 use crate::ui::sidebar::{self, SidebarAction, SidebarPart, SidebarTab, SidebarView};
 
@@ -220,8 +221,7 @@ impl InGameChrome {
 }
 
 /// The match's chrome nodes and the GUI they live in.
-pub(crate) fn chrome(state: &AppState) -> Option<(&Gui, &ChromeNodes)> {
-    let presentation = &state.match_state.match_presentation;
+pub(crate) fn chrome(presentation: &MatchPresentationState) -> Option<(&Gui, &ChromeNodes)> {
     let gui = presentation.dialog_ui.gui();
     Some((gui, presentation.in_game_chrome.nodes(gui)?))
 }
@@ -371,8 +371,7 @@ fn ensure<'a>(chrome: &'a mut InGameChrome, gui: &mut Gui) -> Option<&'a mut Chr
 
 /// Builds the match's chrome as the match starts; it then stays until the
 /// match ends.
-pub(crate) fn build_for_match(state: &mut AppState) {
-    let presentation = &mut state.match_state.match_presentation;
+pub(crate) fn build_for_match(presentation: &mut MatchPresentationState) {
     ensure(
         &mut presentation.in_game_chrome,
         presentation.dialog_ui.gui_mut(),
@@ -381,8 +380,7 @@ pub(crate) fn build_for_match(state: &mut AppState) {
 
 /// The chrome's nodes the sidebar and the command bar draw into, built if
 /// the match's GUI has none.
-pub(crate) fn paint_nodes(state: &mut AppState) -> Option<ChromePaintNodes> {
-    let presentation = &mut state.match_state.match_presentation;
+pub(crate) fn paint_nodes(presentation: &mut MatchPresentationState) -> Option<ChromePaintNodes> {
     let gui = presentation.dialog_ui.gui_mut();
     Some(ensure(&mut presentation.in_game_chrome, gui)?.paint())
 }
@@ -502,7 +500,13 @@ fn places(state: &AppState, view: &SidebarView) -> Places {
     // Rust equivalent of gamemd's g_RadarViewport*). Always on in game — we
     // have no in-game map editor (gamemd registers it only when
     // !g_IsMapEditor).
-    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(state);
+    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     // Minimap region rect = the live minimap screen rect; off when the radar
     // is offline or the minimap is absent (the gate `is_cursor_over_minimap`
     // uses, `presentation::sidebar_render`).
@@ -631,9 +635,9 @@ fn sync(state: &mut AppState, force: bool) -> bool {
         changed || force,
     ) {
         if held.is_some() {
-            publish_pressed_visuals(state);
+            publish_pressed_visuals(&mut state.match_state.match_presentation);
         }
-        apply_cameo_hover_tooltip(state, hovered);
+        apply_cameo_hover_tooltip(&mut state.match_state.match_presentation, hovered);
     }
     true
 }
@@ -768,10 +772,9 @@ fn write_layout_buttons(gui: &mut Gui, nodes: &mut ChromeNodes, rects: &[Option<
 /// Routes one pointer message to the chrome while no in-game dialog is up,
 /// with its events, the hover before it and the holder before it.
 fn route(
-    state: &mut AppState,
+    presentation: &mut MatchPresentationState,
     event: InputEvent,
 ) -> Option<(InputResult, Vec<UiEvent>, Option<NodeId>, Option<NodeId>)> {
-    let presentation = &mut state.match_state.match_presentation;
     let layer = presentation
         .in_game_chrome
         .nodes(presentation.dialog_ui.gui())?
@@ -790,7 +793,7 @@ pub(crate) fn mouse_button(
     button: MouseButton,
     pressed: bool,
 ) -> ChromeRoute {
-    if crate::app::input::campaign_input::is_locked(state) {
+    if crate::app::input::campaign_input::is_locked(&state.match_state) {
         return ChromeRoute::Consumed;
     }
     // VERA's radar order owns one button. The retail gadget's sticky byte
@@ -820,7 +823,9 @@ pub(crate) fn mouse_button(
         true => InputEvent::PointerDown { x, y, button },
         false => InputEvent::PointerUp { x, y, button },
     };
-    let Some((result, events, hovered, held)) = route(state, event) else {
+    let Some((result, events, hovered, held)) =
+        route(&mut state.match_state.match_presentation, event)
+    else {
         return ChromeRoute::NotConsumed;
     };
     let fired = events.iter().find_map(|event| match *event {
@@ -839,15 +844,16 @@ pub(crate) fn mouse_button(
         .or(pressed_node)
         .or(held);
     kept.last_fired = fired;
-    let routed = classify(state, result);
+    let routed = classify(&state.match_state.match_presentation, result);
     if let Some((node, right)) = fired
         && !apply_sw(state, node, right)
-        && let Some(id) = chrome(state).and_then(|(gui, _)| gui.id_of(node))
+        && let Some(id) =
+            chrome(&state.match_state.match_presentation).and_then(|(gui, _)| gui.id_of(node))
     {
         apply_result(state, id as u16, right);
     }
-    publish_pressed_visuals(state);
-    apply_cameo_hover_tooltip(state, hovered);
+    publish_pressed_visuals(&mut state.match_state.match_presentation);
+    apply_cameo_hover_tooltip(&mut state.match_state.match_presentation, hovered);
     routed
 }
 
@@ -859,7 +865,7 @@ pub(crate) fn refresh(state: &mut AppState) -> bool {
 
 /// Reconcile the hit regions and pointer when either may have changed.
 pub(crate) fn refresh_pointer(state: &mut AppState) {
-    if !crate::app::input::campaign_input::is_locked(state) {
+    if !crate::app::input::campaign_input::is_locked(&state.match_state) {
         sync(state, false);
     }
 }
@@ -867,8 +873,7 @@ pub(crate) fn refresh_pointer(state: &mut AppState) {
 /// Cancel the chrome's pointer gesture after the display loses capture or a
 /// modal takes the pointer. No delayed release may fire the pre-lock button;
 /// toggle/mode state stays with its sidebar owner.
-pub(crate) fn cancel(state: &mut AppState) {
-    let presentation = &mut state.match_state.match_presentation;
+pub(crate) fn cancel(presentation: &mut MatchPresentationState) {
     presentation.in_game_chrome.hover_point = None;
     if let Some(layer) = presentation
         .in_game_chrome
@@ -877,14 +882,14 @@ pub(crate) fn cancel(state: &mut AppState) {
     {
         presentation.dialog_ui.gui_mut().drop_pointer_in(layer);
     }
-    publish_pressed_visuals(state);
+    publish_pressed_visuals(presentation);
 }
 
 /// Map the passthrough or consumed result to a route. Cameo fires and
 /// button captures are `Consumed` (the caller returns); the catchers run
 /// their own body.
-fn classify(state: &AppState, result: InputResult) -> ChromeRoute {
-    let Some((_, nodes)) = chrome(state) else {
+fn classify(presentation: &MatchPresentationState, result: InputResult) -> ChromeRoute {
+    let Some((_, nodes)) = chrome(presentation) else {
         return ChromeRoute::NotConsumed;
     };
     match result.passthrough {
@@ -899,16 +904,16 @@ fn classify(state: &AppState, result: InputResult) -> ChromeRoute {
 /// Whether a live control, including a layout button over the battlefield,
 /// owns this frame pixel: what the chrome hovers there (G14). The full-map
 /// tactical catcher is terrain.
-pub(crate) fn control_at(state: &AppState, x: i32, y: i32) -> bool {
-    chrome(state).is_some_and(|(gui, nodes)| {
+pub(crate) fn control_at(presentation: &MatchPresentationState, x: i32, y: i32) -> bool {
+    chrome(presentation).is_some_and(|(gui, nodes)| {
         gui.chrome_hit(x, y)
             .is_some_and(|node| node != nodes.tactical)
     })
 }
 
 /// The visible slot whose cameo the chrome hovers.
-pub(crate) fn hovered_cameo(state: &AppState) -> Option<usize> {
-    let (gui, nodes) = chrome(state)?;
+pub(crate) fn hovered_cameo(presentation: &MatchPresentationState) -> Option<usize> {
+    let (gui, nodes) = chrome(presentation)?;
     let hovered = gui.hovered_in(nodes.layer)?;
     nodes.cameos.iter().position(|&node| node == hovered)
 }
@@ -916,15 +921,15 @@ pub(crate) fn hovered_cameo(state: &AppState) -> Option<usize> {
 /// The `sw_sidebar.entries` index of the superweapon button the chrome
 /// hovers.
 #[cfg(feature = "phobos")]
-pub(crate) fn hovered_sw_button(state: &AppState) -> Option<usize> {
-    let (gui, nodes) = chrome(state)?;
+pub(crate) fn hovered_sw_button(presentation: &MatchPresentationState) -> Option<usize> {
+    let (gui, nodes) = chrome(presentation)?;
     let hovered = gui.hovered_in(nodes.layer)?;
     nodes.sw_index(hovered)
 }
 
 /// Whether the layout's added part `index` is a button held down now.
-pub(crate) fn layout_button_pressed(state: &AppState, index: usize) -> bool {
-    chrome(state).is_some_and(|(gui, nodes)| {
+pub(crate) fn layout_button_pressed(presentation: &MatchPresentationState, index: usize) -> bool {
+    chrome(presentation).is_some_and(|(gui, nodes)| {
         nodes
             .layout_buttons
             .get(index)
@@ -933,16 +938,16 @@ pub(crate) fn layout_button_pressed(state: &AppState, index: usize) -> bool {
 }
 
 /// Whether `node` is a button the side's layout added.
-pub(crate) fn is_layout_button(state: &AppState, node: NodeId) -> bool {
-    chrome(state).is_some_and(|(_, nodes)| nodes.layout_buttons.contains(&node))
+pub(crate) fn is_layout_button(presentation: &MatchPresentationState, node: NodeId) -> bool {
+    chrome(presentation).is_some_and(|(_, nodes)| nodes.layout_buttons.contains(&node))
 }
 
 /// G7 hover hook (study cameo lane §4): entering a cameo forces the tooltip
 /// delay to 0 (cameo tips show immediately on the next mouse-move); leaving a
 /// cameo for a non-cameo (or nothing) restores the default 1000 ms —
 /// SelectClass::Mouse_Enter/Leave's save-and-zero / restore.
-fn apply_cameo_hover_tooltip(state: &mut AppState, before: Option<NodeId>) {
-    let Some((gui, nodes)) = chrome(state) else {
+fn apply_cameo_hover_tooltip(presentation: &mut MatchPresentationState, before: Option<NodeId>) {
+    let Some((gui, nodes)) = chrome(presentation) else {
         return;
     };
     let after = gui.hovered_in(nodes.layer);
@@ -951,7 +956,7 @@ fn apply_cameo_hover_tooltip(state: &mut AppState, before: Option<NodeId>) {
     }
     let is_cameo = |node: Option<NodeId>| node.is_some_and(|node| nodes.cameos.contains(&node));
     let (entered_cameo, left_cameo) = (is_cameo(after), is_cameo(before));
-    let tooltips = &mut state.match_state.match_presentation.tooltips;
+    let tooltips = &mut presentation.tooltips;
     if entered_cameo {
         tooltips.set_delay_override(Some(0));
     } else if left_cameo {
@@ -1080,7 +1085,7 @@ fn apply_result(state: &mut AppState, id: u16, right: bool) {
         // decision plays `GUIBuildSound` itself (`dispatch::sidebar_cameo_press`).
         _ if (ID_CAMEO_BASE..ID_CAMEO_BASE.saturating_add(cameos as u16)).contains(&id) => {
             let slot = (id - ID_CAMEO_BASE) as usize;
-            let shift = crate::app::input::dispatch::is_shift_held(state);
+            let shift = crate::app::input::dispatch::is_shift_held(&state.match_state.input);
             let action = current_sidebar_view(&state.match_state.match_presentation)
                 .and_then(|view| view.items.get(slot))
                 .map(|item| crate::ui::sidebar::hit_test_item(item, right, shift));
@@ -1098,7 +1103,7 @@ fn apply_result(state: &mut AppState, id: u16, right: bool) {
 /// of the column's.
 #[cfg(feature = "phobos")]
 fn apply_sw(state: &mut AppState, node: NodeId, right: bool) -> bool {
-    let Some((_, nodes)) = chrome(state) else {
+    let Some((_, nodes)) = chrome(&state.match_state.match_presentation) else {
         return false;
     };
     if node == nodes.sw_toggle {
@@ -1135,8 +1140,8 @@ fn apply_sw(_: &mut AppState, _: NodeId, _: bool) -> bool {
 /// Publish the transient pushed looks of the buttons whose frame shows them
 /// (`shape_button_frame`): the scroll pair, Diplomacy/Options and the
 /// command bar. Without the chrome nothing shows pushed.
-fn publish_pressed_visuals(state: &mut AppState) {
-    let looks = chrome(state).map(|(gui, nodes)| {
+fn publish_pressed_visuals(presentation: &mut MatchPresentationState) {
+    let looks = chrome(presentation).map(|(gui, nodes)| {
         let pressed = |node: NodeId| gui.shows_pressed_in(nodes.layer, node);
         (
             pressed(nodes.scroll_down),
@@ -1146,8 +1151,8 @@ fn publish_pressed_visuals(state: &mut AppState) {
         )
     });
     let (down, up, top, bar) = looks.unwrap_or_default();
-    command_bar::publish(state, bar);
-    let gs = &mut state.match_state.match_presentation.sidebar_gadget_state;
+    command_bar::publish(presentation, bar);
+    let gs = &mut presentation.sidebar_gadget_state;
     gs.scroll_down_pressed = down;
     gs.scroll_up_pressed = up;
     gs.top_pressed = top;

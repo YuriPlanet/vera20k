@@ -467,7 +467,7 @@ impl WolCapture {
             (names, sim.pending_command_snapshot().len())
         };
         // 0x731850: FixedAlliance refuses the Ally request.
-        crate::app::input::diplomacy::ally(state, peer);
+        crate::app::input::diplomacy::ally(&mut state.match_state.sim_runtime, peer);
         let after = state
             .match_state
             .sim_runtime

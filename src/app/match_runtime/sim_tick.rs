@@ -767,7 +767,7 @@ fn build_score_screen_model(
     );
     // Scenario +0x34B8: the side of session player 0's country, the local
     // player in a skirmish (0x0068779A..0x0068782D).
-    let local_owner = crate::app::input::commands::preferred_local_owner_name(state)
+    let local_owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state)
         .as_deref()
         .and_then(|owner| sim.interner().get(owner));
     let local_house = local_owner.and_then(|owner| sim.houses().get(&owner));
@@ -1303,7 +1303,7 @@ fn advance_in_game_runtime_mode(
             .sync_multiplayer_pause_clock(crate::app::match_runtime::frame_pacer::wall_clock_ms());
         return completed;
     }
-    crate::app::input::commands::reconcile_paid_super_weapon_cursor(state);
+    crate::app::input::commands::reconcile_paid_super_weapon_cursor(&mut state.match_state);
     // VERA's canonical pause barrier is authoritative even for diagnostic
     // exact stepping. The derived predicate becomes true only after the
     // entire barrier frame, including a retained network transaction, finishes.
@@ -1472,8 +1472,15 @@ fn advance_in_game_runtime_mode(
     };
     // Sample the gesture once, before simulation. Apply its request at the
     // native Tactical__AI/pre-follow seam, after this frame's bounds writers.
-    let mouse_scroll =
-        crate::app::input::camera::sample_mouse_scroll(state, decision.scroll_input, scroll_steps);
+    let mouse_scroll = crate::app::input::camera::sample_mouse_scroll(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+        decision.scroll_input,
+        scroll_steps,
+    );
     if decision.run_sim {
         let tick_lane = decision.tick_lane;
         let resume = if resume_wait {
@@ -1601,7 +1608,14 @@ fn advance_in_game_runtime_mode(
             after_frame(state, frame_committed);
         }
     } else if let Some(request) = mouse_scroll {
-        crate::app::input::camera::commit_camera_scroll(state, request);
+        crate::app::input::camera::commit_camera_scroll(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state,
+            &state.persistence,
+            request,
+        );
     }
     after_simulation_pass(
         state,
@@ -1723,10 +1737,23 @@ pub(crate) fn service_beside_tick(state: &mut AppState) {
         decision.frames_running,
         false,
     );
-    if let Some(request) =
-        crate::app::input::camera::sample_mouse_scroll(state, decision.scroll_input, scroll_steps)
-    {
-        crate::app::input::camera::commit_camera_scroll(state, request);
+    if let Some(request) = crate::app::input::camera::sample_mouse_scroll(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+        decision.scroll_input,
+        scroll_steps,
+    ) {
+        crate::app::input::camera::commit_camera_scroll(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state,
+            &state.persistence,
+            request,
+        );
     }
     // A held key release has not reached the keys yet: an arrow it lets go
     // must not keep scrolling until the tick is back.
@@ -1787,7 +1814,7 @@ fn after_simulation_pass(
         .sidebar_projection
         .view()
         .is_some()
-        && !crate::app::input::campaign_input::is_locked(state)
+        && !crate::app::input::campaign_input::is_locked(&state.match_state)
     {
         crate::app::presentation::sidebar_render::republish_sidebar_projection(state);
         crate::app::input::chrome_input::refresh_pointer(state);
@@ -1818,9 +1845,15 @@ fn after_simulation_pass(
     if decision.run_sim && main_tick_pumps_audio && !state.match_state.sim_runtime.is_lent() {
         pump_audio_service(state, music_now_ms);
     }
-    crate::app::input::camera::queue_keyboard_scroll(state, scroll_steps);
+    crate::app::input::camera::queue_keyboard_scroll(&mut state.match_state, scroll_steps);
     if decision.tactical_mutation || replaying {
-        crate::app::input::camera::animate_zoom(state);
+        crate::app::input::camera::animate_zoom(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state,
+            &state.persistence,
+        );
     }
     if decision.tactical_mutation {
         update_building_placement_preview(state, FoundationCentre::Tactical);
@@ -2113,9 +2146,10 @@ fn advance_one_simulation_frame(
         .map(|sfx| sfx.pending_unit_voice_owners())
         .unwrap_or_default();
     // Compute local owner before mutable borrow of simulation.
-    let local_owner_for_fog = preferred_local_owner_name(state);
+    let local_owner_for_fog = preferred_local_owner_name(&state.match_state);
     // Cache local owner name before mutable sim borrow (avoids borrow conflict).
-    let local_owner_name = crate::app::input::commands::preferred_local_owner_name(state);
+    let local_owner_name =
+        crate::app::input::commands::preferred_local_owner_name(&state.match_state);
     let sound_listener = crate::app::presentation::building_anim::sound_listener(state);
     let session_mode = state.match_state.session_mode();
     let other_local_pause = state.match_state.local_paused();
@@ -2279,7 +2313,14 @@ fn advance_one_simulation_frame(
         crate::app::input::cursor::answer_kept_questions(state);
         state.match_state.sim_runtime.lend(Box::new(job));
         if let Some(request) = mouse_scroll {
-            crate::app::input::camera::commit_camera_scroll(state, request);
+            crate::app::input::camera::commit_camera_scroll(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
+                request,
+            );
         }
         return threaded_finished.unwrap_or(false);
     }
@@ -2945,7 +2986,7 @@ fn finish_simulation_frame(
                 .commit_frame(drained_combat_lights);
         }
         crate::app::input::dispatch::reconcile_selection_order_after_sim(
-            state,
+            &mut state.match_state,
             &drained_lifecycle_outputs,
         );
         // Authored Team/trigger Focus and lock effects precede TacticalAI in this Logic visit.
@@ -2957,21 +2998,39 @@ fn finish_simulation_frame(
         // Applying here also uses any LocalSize changes from this frame.
         if let Some(frame) = camera_logic_frame {
             crate::app::input::camera::advance_camera_ai(
-                state,
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
                 mouse_scroll.unwrap_or((0.0, 0.0)),
                 frame,
             );
         } else if let Some(request) = mouse_scroll {
-            crate::app::input::camera::commit_camera_scroll(state, request);
+            crate::app::input::camera::commit_camera_scroll(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
+                request,
+            );
         }
         // Native drives the follow camera from the tail of
         // LogicClass__PerTickUpdate 0x0055B6B8, after every object has updated,
         // so the view lands on this tick's position rather than the last one's.
-        crate::app::input::camera::update_follow_camera(state, &drained_lifecycle_outputs);
+        crate::app::input::camera::update_follow_camera(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state,
+            &state.persistence,
+            &drained_lifecycle_outputs,
+        );
         // Rendering is rebuilt from lifecycle facts every frame. Replay the
         // app-owned transactions in native emission order for state that has a
         // direct attachment or retained audio handle.
-        let local_house = preferred_local_owner_name(state).and_then(|owner| {
+        let local_house = preferred_local_owner_name(&state.match_state).and_then(|owner| {
             state
                 .match_state
                 .sim_runtime
@@ -3176,12 +3235,15 @@ fn finish_simulation_frame(
             crate::app::input::planning_mode::frame_pass(state);
             // VERA ferry: the routes' orders, as ordinary input for a later
             // frame.
-            crate::app::input::ferry::frame_pass(state);
+            crate::app::input::ferry::frame_pass(&mut state.match_state);
             // VERA Auto Repair: Repair orders for damaged buildings, the same
             // way.
-            crate::app::input::auto_repair::frame_pass(state);
+            crate::app::input::auto_repair::frame_pass(
+                &mut state.match_state,
+                &state.persistence.options_profile,
+            );
             // VERA primary rotation: the factory groups' turns.
-            crate::app::input::primary_rotation::frame_pass(state);
+            crate::app::input::primary_rotation::frame_pass(&mut state.match_state);
         }
         // Black-cell census, on a schedule rather than a keypress: nobody hits a debug key
         // at the exact moment they notice the artifact. Spread-out ticks give a time series,
@@ -3192,7 +3254,7 @@ fn finish_simulation_frame(
         // early ticks missed the symptom entirely: the interesting state is a mostly-explored
         // map with holes left in it, which only appears well into a session.
         if census_tick.is_some_and(|tick| tick == 150 || (tick > 150 && tick % 900 == 0)) {
-            crate::app::input::dispatch::report_black_cell_causes(state);
+            crate::app::input::dispatch::report_black_cell_causes(&state.match_state);
         }
 
         for message in hud_messages {
@@ -3397,7 +3459,15 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                 crate::app::input::camera::apply_home_camera(state, *coord);
             }
             TriggerEffect::CameraAtCoord { coord, velocity } => {
-                crate::app::input::camera::apply_trigger_camera(state, *coord, *velocity);
+                crate::app::input::camera::apply_trigger_camera(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &mut state.match_state,
+                    &state.persistence,
+                    *coord,
+                    *velocity,
+                );
             }
             TriggerEffect::InputLockChanged { locked, was_locked } => {
                 crate::app::input::campaign_input::apply_lock_effect(state, *locked, *was_locked);
@@ -3517,7 +3587,13 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState, centre: Fo
         if !state.match_state.sim_runtime.is_lent()
             && let Some(cell) = centre.cell(
                 state.match_state.input.foundation_latch.origin().is_some(),
-                crate::app::input::camera::cursor_over_battlefield(state),
+                crate::app::input::camera::cursor_over_battlefield(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &state.match_state,
+                    &state.persistence,
+                ),
                 || cursor_cell(state),
             )
         {
@@ -3544,7 +3620,7 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState, centre: Fo
     if state.match_state.sim_runtime.is_lent() {
         return;
     }
-    let owner = preferred_local_owner(state);
+    let owner = preferred_local_owner(&state.match_state);
     let (Some(owner), Some(sim), Some(rules)) = (
         owner,
         state
@@ -3590,7 +3666,13 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState, centre: Fo
     let origin = centre
         .cell(
             latch.origin().is_some(),
-            crate::app::input::camera::cursor_over_battlefield(state),
+            crate::app::input::camera::cursor_over_battlefield(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            ),
             || cursor_cell(state),
         )
         .map(|cell| foundation_str.placement_origin_at_cursor(cell));

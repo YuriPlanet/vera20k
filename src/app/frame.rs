@@ -799,7 +799,7 @@ impl App {
         use crate::ui::pause_menu::InGameMenuState;
         match page {
             ScreenPage::InGameShell(InGameMenuState::Menu) => {
-                let buttons = crate::app::input::pause_menu::button_states(state);
+                let buttons = crate::app::input::pause_menu::button_states(&state.match_state);
                 shell::render_pause_menu_shell(state, encoder, destination, buttons)
             }
             ScreenPage::InGameShell(InGameMenuState::AbortConfirm) => {
@@ -906,7 +906,7 @@ impl App {
                     .playback_capture_requested(),
         );
         if let Some(presented) = crate::app::persistence::commands::pump_saved_game_load(state) {
-            crate::app::input::hardware_cursor::hide_game_cursor(state);
+            crate::app::input::hardware_cursor::hide_game_cursor(&mut state.platform);
             return Ok(if presented {
                 FrameRenderOutcome::Presented
             } else {
@@ -1459,7 +1459,13 @@ impl App {
             GameScreen::InGame => {
                 //53B460 copies the already-composed surface, before this
                 //frame's world replaces it. The effect owns the retained copy.
-                let chrono_tactical = crate::app::input::camera::tactical_viewport_px(state);
+                let chrono_tactical = crate::app::input::camera::tactical_viewport_px(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &state.match_state.match_presentation,
+                    &state.persistence,
+                );
                 state
                     .match_state
                     .match_presentation

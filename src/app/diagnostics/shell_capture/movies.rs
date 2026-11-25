@@ -465,7 +465,7 @@ impl MoviesCapture {
             && state.frontend.screen == GameScreen::InGame
         {
             self.observed_campaign_runtime = Some(campaign_runtime_receipt(state)?);
-            let owner = crate::app::input::commands::preferred_local_owner_name(state)
+            let owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state)
                 .context("initial save control has no local player")?;
             // The ordinary Options producer queues this before the admitted
             // frame. The automatic file must contain its consumed value.
@@ -2456,7 +2456,7 @@ fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
         "rng": {"main": rng_receipt(&rng.main), "scenario": rng_receipt(&rng.scenario), "mapgen": rng_receipt(&rng.mapgen)},
         "camera": {"world_pixel_origin": [state.match_state.input.camera_x, state.match_state.input.camera_y],
             "zoom": state.match_state.input.zoom_level,
-            "tactical_centre_cell": crate::app::input::camera::tactical_centre_cell(state),
+            "tactical_centre_cell": crate::app::input::camera::tactical_centre_cell(&state.platform, &state.renderer, &state.frontend.screen, &state.match_state, &state.persistence),
             "view_bookmarks": (0..crate::app::input::camera::VIEW_BOOKMARK_SLOTS)
                 .map(|slot| state.match_state.input.view_bookmarks.get(slot)).collect::<Vec<_>>()},
     }))

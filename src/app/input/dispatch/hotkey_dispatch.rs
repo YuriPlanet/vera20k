@@ -48,7 +48,7 @@ pub(crate) fn handle_type_select_key_edge(
     element_state: ElementState,
     repeat: bool,
 ) -> bool {
-    if crate::app::input::campaign_input::is_locked(state) {
+    if crate::app::input::campaign_input::is_locked(&state.match_state) {
         return false;
     }
     let is_type_select = resolution == HotkeyResolution::Command(HotkeyCommand::TypeSelect);
@@ -119,7 +119,7 @@ fn execute_type_select_tap(state: &mut AppState) {
             &map_order,
             &current,
             fog,
-            preferred_local_owner_name(state).as_deref(),
+            preferred_local_owner_name(&state.match_state).as_deref(),
             state.rules(),
             Some(sim.interner()),
             state.match_state.input.type_select.across_map,
@@ -138,7 +138,7 @@ fn execute_type_select_tap(state: &mut AppState) {
     // Native marks the tactical display dirty here but does not start action
     // lines. The visible-window event loop already requests a redraw from
     // `about_to_wait`, so the tap needs no duplicate redraw request.
-    apply_selection_action_line_policy(state, TYPE_SELECT_TAP_ACTION_LINE_POLICY);
+    apply_selection_action_line_policy(&mut state.match_state, TYPE_SELECT_TAP_ACTION_LINE_POLICY);
 }
 
 pub(crate) fn handle_hotkey_pressed(
@@ -153,7 +153,7 @@ pub(crate) fn handle_hotkey_pressed(
         return;
     }
     handle_hotkey_pressed_inner(state, resolution, physical_code);
-    super::commands::reconcile_paid_super_weapon_cursor(state);
+    super::commands::reconcile_paid_super_weapon_cursor(&mut state.match_state);
 }
 
 fn handle_hotkey_pressed_inner(
@@ -161,7 +161,7 @@ fn handle_hotkey_pressed_inner(
     resolution: HotkeyResolution,
     physical_code: winit::keyboard::KeyCode,
 ) {
-    if crate::app::input::campaign_input::is_locked(state)
+    if crate::app::input::campaign_input::is_locked(&state.match_state)
         && resolution != HotkeyResolution::Command(HotkeyCommand::Options)
     {
         return;
@@ -205,7 +205,7 @@ fn handle_hotkey_pressed_inner(
 /// their completed-building tail; a tab that is already active still runs it,
 /// because native only skips the switch, not the tail.
 fn select_sidebar_tab_command(state: &mut AppState, index: i32) {
-    if crate::app::input::campaign_input::is_locked(state) {
+    if crate::app::input::campaign_input::is_locked(&state.match_state) {
         return;
     }
     let Some(tab) = state
@@ -231,7 +231,7 @@ fn select_sidebar_tab_command(state: &mut AppState, index: i32) {
 /// (`BuildingClass::SetSidebarTabObject` 734250 by the type's BuildCat),
 /// which is this owner's ready building for that tab.
 fn place_ready_building_for_tab(state: &mut AppState, tab: SidebarTab) {
-    let Some(owner_name) = preferred_command_owner(state) else {
+    let Some(owner_name) = preferred_command_owner(&state.match_state.sim_runtime) else {
         return;
     };
     let ready_target = {
@@ -362,7 +362,15 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
                 .as_mut()
                 .and_then(|minimap| minimap.cycle_radar_event(crate::util::time::Instant::now()));
             if let Some((rx, ry)) = event {
-                crate::app::input::camera::center_camera_on_cell(state, rx, ry);
+                crate::app::input::camera::center_camera_on_cell(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &mut state.match_state,
+                    &state.persistence,
+                    rx,
+                    ry,
+                );
                 // With a building armed, its foundation follows the cursor's
                 // new Cell (`Center_View_On_Radar_Event`, `0x00734200`).
                 crate::app::match_runtime::sim_tick::update_building_placement_preview(
@@ -376,7 +384,14 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
             state.platform.window.request_redraw();
         }
         HotkeyCommand::View(slot) => crate::app::input::camera::recall_view_bookmark(state, slot),
-        HotkeyCommand::SetView(slot) => crate::app::input::camera::set_view_bookmark(state, slot),
+        HotkeyCommand::SetView(slot) => crate::app::input::camera::set_view_bookmark(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state,
+            &state.persistence,
+            slot,
+        ),
         HotkeyCommand::TeamSelect(slot) => {
             handle_control_group_command(state, slot, GroupPress::Key)
         }
@@ -398,33 +413,46 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         // VERA: Esc leaves the layout edit mode without saving, before it
         // would open the menu.
         HotkeyCommand::Options
-            if crate::app::input::layout_edit::active(state) && !state.match_state.paused() =>
+            if crate::app::input::layout_edit::active(&state.match_state.match_presentation)
+                && !state.match_state.paused() =>
         {
             crate::app::input::layout_edit::cancel(state)
         }
         HotkeyCommand::Options => handle_options_hotkey(state),
-        HotkeyCommand::CenterView => crate::app::input::camera::center_view_on_selection(state),
-        HotkeyCommand::Follow => crate::app::input::camera::toggle_follow_target(state),
+        HotkeyCommand::CenterView => crate::app::input::camera::center_view_on_selection(
+            &state.platform,
+            &mut state.renderer,
+            &state.frontend,
+            &mut state.match_state,
+            &state.persistence,
+        ),
+        HotkeyCommand::Follow => {
+            crate::app::input::camera::toggle_follow_target(&state.frontend, &mut state.match_state)
+        }
         HotkeyCommand::PlanningMode => crate::app::input::planning_mode::toggle(state, false),
         // DeleteCommand731A10: the retained planning node, else the selected beacon.
         HotkeyCommand::Delete => {
-            if !crate::app::input::planning_mode::delete_highlighted(state) {
+            if !crate::app::input::planning_mode::delete_highlighted(&mut state.match_state) {
                 crate::app::input::beacon::delete_selected(state);
             }
         }
         HotkeyCommand::ScatterObject => queue_scatter_for_selected(state),
-        HotkeyCommand::AllToCheer => queue_house_cheer(state),
+        HotkeyCommand::AllToCheer => queue_house_cheer(&mut state.match_state),
         HotkeyCommand::VeterancyNav => selection_navigation::execute_category_navigation(
             state,
             crate::app::types::CategoryNavigationKind::Veterancy,
         ),
-        HotkeyCommand::ToggleAlliance => {
-            crate::app::input::diplomacy::toggle_alliance_hotkey(state)
-        }
+        HotkeyCommand::ToggleAlliance => crate::app::input::diplomacy::toggle_alliance_hotkey(
+            &state.frontend,
+            &mut state.match_state,
+        ),
         // `TauntCommandClass::Execute 0x00536350`; the command's +4
         // parameter is the catalog's `n + 1`.
         HotkeyCommand::Taunt(n) => crate::app::input::taunt::execute(
-            state,
+            &mut state.frontend.multiplayer_shell_runtime,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
             n as u8 + 1,
             crate::app::match_runtime::frame_pacer::wall_clock_ms(),
         ),
@@ -520,7 +548,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
             crate::app::input::context_order::toggle_formation_lock(state);
         }
         // VERA: the next left click names the drop spot.
-        HotkeyCommand::Ferry => crate::app::input::ferry::hotkey_pressed(state),
+        HotkeyCommand::Ferry => crate::app::input::ferry::hotkey_pressed(&mut state.match_state),
         // VERA: the selected factories take turns being primary.
         HotkeyCommand::RotatePrimary => {
             crate::app::input::primary_rotation::hotkey_pressed(state);
@@ -564,7 +592,9 @@ fn follow_performance_stats(state: &mut AppState, shown: bool) {
 /// [`HotkeyBindings::window_command`]: crate::app::input::hotkeys::HotkeyBindings::window_command
 pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
     match command {
-        HotkeyCommand::LockCursor => crate::app::input::cursor::toggle_cursor_confinement(state),
+        HotkeyCommand::LockCursor => {
+            crate::app::input::cursor::toggle_cursor_confinement(&mut state.platform)
+        }
         // A capture keeps its fixed surface.
         HotkeyCommand::FullScreen if state.platform.capture_client_size.is_none() => {
             let full_screen = state.platform.window.fullscreen().is_none();
@@ -649,7 +679,7 @@ pub(super) fn press_super_weapon(
                 })
                 .and_then(|sw| sw.insufficient_funds_eva.clone());
             if let Some(cue) = cue {
-                push_local_eva(state, &cue);
+                push_local_eva(&mut state.match_state.match_audio, &cue);
             }
         }
         super::superweapon_cameo::SuperWeaponClick::Target => {
@@ -666,13 +696,13 @@ pub(super) fn press_super_weapon(
                 Some(sidebar_eva::EVA_SELECT_TARGET.to_owned())
             };
             if let Some(cue) = cue {
-                push_local_eva(state, &cue);
+                push_local_eva(&mut state.match_state.match_audio, &cue);
             }
         }
         super::superweapon_cameo::SuperWeaponClick::Launch(sw_type_id) => {
-            if let Some(owner) = preferred_command_owner(state) {
+            if let Some(owner) = preferred_command_owner(&state.match_state.sim_runtime) {
                 crate::app::input::commands::queue_super_weapon_click(
-                    state,
+                    &mut state.match_state,
                     &owner,
                     sw_type_id,
                     (0, 0),
@@ -692,7 +722,7 @@ pub(super) fn press_super_weapon(
                 .and_then(|rules| rules.super_weapon(section))
                 .and_then(|sw| sw.impatient_eva.clone())
         {
-            push_local_eva(state, &cue);
+            push_local_eva(&mut state.match_state.match_audio, &cue);
         }
         crate::app::input::messages::post_ares_superweapon_refusal(state, section, refusal);
     }
@@ -702,14 +732,18 @@ pub(super) fn press_super_weapon(
 /// Team right-click clears its group (6D0660); the other source actions reuse
 /// the existing input owners rather than introducing a second gameplay path.
 pub(crate) fn dispatch_command_bar(state: &mut AppState, command: usize, right: bool) {
-    if crate::app::input::campaign_input::is_locked(state) {
+    if crate::app::input::campaign_input::is_locked(&state.match_state) {
         return;
     }
     let action = match command {
         0..=2 => {
             let group = command + 1;
             if right {
-                queue_control_group_assignment(state, group, Vec::new());
+                queue_control_group_assignment(
+                    &mut state.match_state.sim_runtime,
+                    group,
+                    Vec::new(),
+                );
                 return;
             }
             handle_control_group_command(state, group, GroupPress::CommandBar);

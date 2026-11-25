@@ -138,7 +138,7 @@ pub(crate) fn commit_close(
 /// `0x2BC` has slid out for Sound Options: the art, then `0x6B6230` runs
 /// `0xD6` because the handler cleared `g_GameActive` (`0x0078EEAD`).
 pub(crate) fn commit_open_sound(state: &mut AppState) {
-    let positions = crate::app::input::sound::volume_positions(state);
+    let positions = crate::app::input::sound::volume_positions(&state.persistence.options_profile);
     let sliders_enabled = state.audio.launcher_audio_available;
     let Some(page) = page_mut(state.frontend.wol.as_mut()) else {
         return;
@@ -292,7 +292,7 @@ pub(crate) fn sync_gui(state: &mut AppState) {
     };
     let audio = modern(state.frontend.wol.as_ref()).then(|| {
         (
-            crate::app::input::sound::volume_positions(state),
+            crate::app::input::sound::volume_positions(&state.persistence.options_profile),
             state.audio.launcher_audio_available,
         )
     });

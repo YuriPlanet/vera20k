@@ -24,11 +24,16 @@
 use vera20k_gui::{NodeId, NodeKind, Prop, Value};
 
 use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::persistence::PersistenceState;
+use crate::app::presentation::state::MatchPresentationState;
 use crate::app::presentation::text_hud::{self, TextHud};
 use crate::app::presentation::{field_parts, layout_parts, sidebar_render};
+use crate::app::renderer_state::RendererState;
 use crate::render::batch::SpriteInstance;
 use crate::ui::added_parts::{AddedKind, Holder};
 use crate::ui::field_layout::{Along, FieldPart, Hold};
+use crate::ui::game_screen::GameScreen;
 use crate::ui::sidebar::{ArtKey, PartKind, Rect};
 
 /// The mode's state while it is on.
@@ -111,14 +116,14 @@ pub(crate) struct Target {
     per_pixel: [f32; 2],
 }
 
-pub(crate) fn active(state: &AppState) -> bool {
-    state.match_state.match_presentation.layout_edit.is_some()
+pub(crate) fn active(presentation: &MatchPresentationState) -> bool {
+    presentation.layout_edit.is_some()
 }
 
 /// The Edit Layout key: turn the mode on, or leave it without saving. It
 /// exists in a match only.
 pub(crate) fn toggle(state: &mut AppState) {
-    if active(state) {
+    if active(&state.match_state.match_presentation) {
         finish(state, false);
     } else {
         start(state);
@@ -128,7 +133,9 @@ pub(crate) fn toggle(state: &mut AppState) {
 /// Turn the mode on, for the key or Options' Edit Layout button. A match only,
 /// and a mode already on stays as it is.
 pub(crate) fn start(state: &mut AppState) {
-    if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame || active(state) {
+    if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame
+        || active(&state.match_state.match_presentation)
+    {
         return;
     }
     let presentation = &mut state.match_state.match_presentation;
@@ -139,7 +146,7 @@ pub(crate) fn start(state: &mut AppState) {
     // Whatever the mouse was doing in the match ends here; the mode's dialog
     // takes the pointer over the chrome.
     state.match_state.input.cancel_tactical_drag();
-    crate::app::input::chrome_input::cancel(state);
+    crate::app::input::chrome_input::cancel(&mut state.match_state.match_presentation);
     state
         .match_state
         .match_presentation
@@ -361,8 +368,14 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
 /// The Save and Reset buttons with their labels, in frame pixels: side by
 /// side in the middle of the battlefield, just under the banner's handle
 /// where the original layout centres it.
-fn buttons(state: &AppState) -> [(EditButton, String, [i32; 4]); 2] {
-    let font = &state.renderer.bit_font;
+fn buttons(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    presentation: &MatchPresentationState,
+    persistence: &PersistenceState,
+) -> [(EditButton, String, [i32; 4]); 2] {
+    let font = &renderer.bit_font;
     let labels = [
         (EditButton::Save, crate::i18n::tr("VERA:LayoutEditSave")),
         (EditButton::Reset, crate::i18n::tr("VERA:LayoutEditReset")),
@@ -375,7 +388,13 @@ fn buttons(state: &AppState) -> [(EditButton, String, [i32; 4]); 2] {
         .max(56);
     let height = font.cell_height().round() as i32 + 8;
     let gap = 8;
-    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(state);
+    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(
+        platform,
+        renderer,
+        screen,
+        presentation,
+        persistence,
+    );
     let [x, y, w, h] = [x, y, w, h].map(|v| v as i32);
     let left = x + (w - 2 * width - gap) / 2;
     // `targets` gives the banner a handle up to 60 high round the middle.
@@ -395,7 +414,13 @@ fn buttons(state: &AppState) -> [(EditButton, String, [i32; 4]); 2] {
 /// parts by their node's `id - ID_TARGET_BASE`.
 fn sync_nodes(state: &mut AppState) -> Vec<Target> {
     let targets = targets(state);
-    let buttons = buttons(state);
+    let buttons = buttons(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let ui = &mut state.match_state.match_presentation.dialog_ui;
     if ui.root_in(EDIT_DIALOG).is_none() {
         ui.push_modal(EDIT_DIALOG);
@@ -438,8 +463,8 @@ fn sync_nodes(state: &mut AppState) -> Vec<Target> {
 }
 
 /// The button the mode's dialog holds pressed.
-fn pressed_button(state: &AppState) -> Option<EditButton> {
-    let ui = &state.match_state.match_presentation.dialog_ui;
+fn pressed_button(presentation: &MatchPresentationState) -> Option<EditButton> {
+    let ui = &presentation.dialog_ui;
     let node = ui.pressed_node_in(EDIT_DIALOG)?;
     EditButton::of(ui.gui().id_of(node)?)
 }
@@ -645,9 +670,15 @@ fn pieces(state: &AppState) -> Vec<EditPiece> {
             colour,
         ));
     }
-    for (button, label, rect) in buttons(state) {
+    for (button, label, rect) in buttons(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    ) {
         let [x, y, w, h] = rect.map(|v| v as f32);
-        let colour = if pressed_button(state) == Some(button) {
+        let colour = if pressed_button(&state.match_state.match_presentation) == Some(button) {
             [1.0; 3]
         } else {
             tint

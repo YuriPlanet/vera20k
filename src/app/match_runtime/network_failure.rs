@@ -248,7 +248,7 @@ pub(crate) fn show(state: &mut AppState) {
         state.match_state.network_failure = Some(NetworkFailureModal::default());
         state.match_state.input.cancel_tactical_drag();
         state.match_state.input.keys_held.clear();
-        crate::app::input::chrome_input::cancel(state);
+        crate::app::input::chrome_input::cancel(&mut state.match_state.match_presentation);
     }
     state.frontend.shell_controller.ensure_active(DIALOG);
     state.platform.window.request_redraw();

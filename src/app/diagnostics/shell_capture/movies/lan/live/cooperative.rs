@@ -308,7 +308,7 @@ impl CooperativeRun {
                 }
             }
             CoopPhase::AwaitResult => {
-                if !crate::app::input::coop_score::active(state) {
+                if !crate::app::input::coop_score::active(&state.frontend) {
                     return Ok(());
                 }
                 let opened = *self.result_frame.get_or_insert(frame);

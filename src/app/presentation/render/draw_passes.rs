@@ -397,7 +397,11 @@ pub(super) fn dispatch_draw_passes(
     // screen-fixed block copies it in.
     draw_sidebar_surface(state, encoder, data);
     // The Surrender box paints from its nodes, kept on its layout.
-    crate::app::input::surrender::sync(state);
+    crate::app::input::surrender::sync(
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state.match_presentation,
+    );
     let pool: &InstanceBufferPool = &state.renderer.instance_pool;
     let pose_cache = state.renderer.vxl_pose_frame_cache.borrow();
     let world_depth = state
@@ -417,7 +421,13 @@ pub(super) fn dispatch_draw_passes(
     // Keep the native surface boundary independent of chrome coverage. The
     // ordinary sidebar now uses the resolved stock side archive, real source
     // canvas heights, and one pixel per source pixel in every theme.
-    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(state);
+    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let [tac_x, tac_y, tac_w, tac_h] = state
         .renderer
         .world_zoom_pass
@@ -1177,7 +1187,13 @@ pub(super) fn dispatch_draw_passes(
     // Resolve wheel zoom once, after every world/depth/destination operation.
     // Timers, sidebar, messages and cursor then draw in frame pixels.
     drop(pass);
-    let (tac_x, tac_y, tac_w, tac_h) = crate::app::input::camera::tactical_viewport_px(state);
+    let (tac_x, tac_y, tac_w, tac_h) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let view = if let Some(zoom) = state.renderer.world_zoom_pass.as_ref() {
         composite_world_with_drag_rect(
             &state.renderer.gpu.device,
@@ -1720,7 +1736,13 @@ pub(crate) fn draw_world_window_copy(
         view,
         state.renderer.combat_light_renderer.composition_texture(),
         zoom,
-        crate::app::input::camera::tactical_viewport_px(state),
+        crate::app::input::camera::tactical_viewport_px(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+        ),
     );
 }
 

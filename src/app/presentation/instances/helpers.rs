@@ -314,7 +314,7 @@ fn tactical_bounded_entity_encounter_order(
     else {
         return Vec::new();
     };
-    let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+    let local_owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state);
     // Screen selection takes what the battlefield shows.
     let Some(frame) = state.match_state.sim_runtime.frame() else {
         return Vec::new();
@@ -328,8 +328,13 @@ fn tactical_bounded_entity_encounter_order(
     let margin = 32.0 / zoom;
     // The world rectangle the battlefield shows: from the camera, the
     // frame's corner, in by the battlefield's own corner.
-    let (left_px, top_px, width_px, height_px) =
-        crate::app::input::camera::tactical_viewport_px(state);
+    let (left_px, top_px, width_px, height_px) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let left = state.match_state.input.camera_x + left_px as f32 / zoom;
     let top = state.match_state.input.camera_y + top_px as f32 / zoom;
     let min_x = left - margin;
@@ -651,7 +656,7 @@ pub(crate) fn translucent_fog_viewer(
     if !state.translucent_fog_enabled() || state.match_state.sandbox_full_visibility {
         return None;
     }
-    let name = crate::app::input::commands::preferred_local_owner_name(state)?;
+    let name = crate::app::input::commands::preferred_local_owner_name(&state.match_state)?;
     sim.interner().get(&name)
 }
 
@@ -819,7 +824,13 @@ impl TacticalAdmission {
     /// This draw's battlefield (`camera::tactical_viewport_px`).
     pub(crate) fn of_state(state: &AppState) -> Self {
         let input = &state.match_state.input;
-        let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+        let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+        );
         Self::of(
             [input.camera_x, input.camera_y],
             [x, y, width, height],
@@ -909,8 +920,13 @@ impl PassByWindow {
         let input = &state.match_state.input;
         let camera = [input.camera_x, input.camera_y];
         let zoom = input.zoom_level;
-        let (centring_width, centring_height) =
-            crate::app::input::camera::tactical_centring_size(state);
+        let (centring_width, centring_height) = crate::app::input::camera::tactical_centring_size(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+        );
         let from_camera = |width: u32, height: u32| {
             [
                 camera[0],

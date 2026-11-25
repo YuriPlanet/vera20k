@@ -17,6 +17,7 @@
 //! diverge that peer, and VERA keeps the flag in the lockstep sim.
 
 use super::dialog_page::InGameDialog;
+use crate::app::match_runtime::sim_host::SimHost;
 use crate::app::{App, AppState};
 use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::page::PageEvent;
@@ -26,14 +27,14 @@ use crate::ui::shell::restate::{self, RestateControl};
 /// scenario's file name, which a save carries. The section lookup is exact
 /// case, so a Cooperative launch must name its map as MISSIONMD spells it
 /// (`[C1A01MD.MAP]`); that spelling is unverified until Cooperative launches.
-fn scenario_file_name(state: &AppState) -> Option<String> {
-    let runtime = state.match_state.sim_runtime.runtime()?;
+fn scenario_file_name(sim_runtime: &SimHost) -> Option<String> {
+    let runtime = sim_runtime.runtime()?;
     Some(runtime.simulation.session().map_name().to_owned())
 }
 
 /// `0x0065F520`: read the briefing, then open 0x10C.
 pub(crate) fn open(state: &mut AppState) {
-    let Some(file_name) = scenario_file_name(state) else {
+    let Some(file_name) = scenario_file_name(&state.match_state.sim_runtime) else {
         log::info!("Mission briefing: no scenario file name to read MISSIONMD under");
         return;
     };
@@ -74,10 +75,21 @@ pub(crate) fn sync(state: &mut AppState) -> Option<restate::RestateLayout> {
     // text steps out of the state while the dialog's controller is borrowed.
     let presentation = &mut state.match_state.match_presentation;
     let briefing = std::mem::take(&mut presentation.restate_text);
-    DIALOG.sync(state, restate::spec, rect, |gui, root| {
-        let content = RestateControl::Content.id();
-        crate::ui::shell::page::set_text(gui, root, content, vera20k_gui::Prop::Text, &briefing);
-    });
+    DIALOG.sync(
+        &mut state.match_state.match_presentation,
+        restate::spec,
+        rect,
+        |gui, root| {
+            let content = RestateControl::Content.id();
+            crate::ui::shell::page::set_text(
+                gui,
+                root,
+                content,
+                vera20k_gui::Prop::Text,
+                &briefing,
+            );
+        },
+    );
     state.match_state.match_presentation.restate_text = briefing;
     Some(layout)
 }

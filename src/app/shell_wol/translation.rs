@@ -98,7 +98,11 @@ pub(super) fn show(
             state.platform.window.request_redraw();
         }
         TranslatedLine::Match { name, color } if in_match => {
-            let rgb = crate::app::input::messages::packet_player_line_rgb(state, color);
+            let rgb = crate::app::input::messages::packet_player_line_rgb(
+                &state.frontend,
+                &state.match_state,
+                color,
+            );
             crate::app::input::messages::post_chat_line(
                 state,
                 &name,

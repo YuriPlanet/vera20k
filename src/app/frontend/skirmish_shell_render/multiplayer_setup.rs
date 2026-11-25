@@ -134,7 +134,11 @@ pub(crate) fn render_multiplayer_setup(
         ))
         .collect::<Vec<_>>()
     };
-    let look = crate::app::input::multiplayer_setup::room_look(state, &view);
+    let look = crate::app::input::multiplayer_setup::room_look(
+        &state.frontend,
+        &state.match_state.input,
+        &view,
+    );
     let ui = state
         .frontend
         .multiplayer_setup

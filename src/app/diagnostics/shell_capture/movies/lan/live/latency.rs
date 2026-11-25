@@ -403,7 +403,13 @@ impl LatencyCapture {
                         frame,
                         camera: (input.camera_x, input.camera_y),
                         zoom: input.zoom_level,
-                        viewport: crate::app::input::camera::tactical_viewport_px(state),
+                        viewport: crate::app::input::camera::tactical_viewport_px(
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend.screen,
+                            &state.match_state.match_presentation,
+                            &state.persistence,
+                        ),
                         first_draw: None,
                         maintained: true,
                     });
@@ -449,7 +455,14 @@ impl LatencyCapture {
             if prepared.maintained
                 && (prepared.camera != (input.camera_x, input.camera_y)
                     || prepared.zoom != input.zoom_level
-                    || prepared.viewport != crate::app::input::camera::tactical_viewport_px(state))
+                    || prepared.viewport
+                        != crate::app::input::camera::tactical_viewport_px(
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend.screen,
+                            &state.match_state.match_presentation,
+                            &state.persistence,
+                        ))
             {
                 prepared.maintained = false;
                 self.errors

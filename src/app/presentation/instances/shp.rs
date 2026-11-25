@@ -2020,7 +2020,7 @@ pub(crate) fn build_building_anim_instances(
         return;
     };
     let grid = state.match_state.match_presentation.lighting.grid();
-    let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+    let local_owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state);
     let local_owner_id = local_owner
         .as_deref()
         .and_then(|name| sim.interner().get(name));

@@ -355,7 +355,8 @@ impl TacticalCaptureSession {
                 row
             })
             .collect();
-        let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+        let local_owner =
+            crate::app::input::commands::preferred_local_owner_name(&state.match_state);
         let local_visibility_owner = local_owner
             .as_deref()
             .and_then(|owner| sim.interner().get(owner).map(|id| (owner, id)));
@@ -665,7 +666,11 @@ impl TacticalCaptureSession {
             && self.input_violations == 0;
         let static_default_cursor =
             crate::app::presentation::ui_overlays::static_default_cursor(state);
-        let camera_input_idle = crate::app::input::camera::camera_input_idle(state);
+        let camera_input_idle = crate::app::input::camera::camera_input_idle(
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.input,
+        );
         let cursor_position = [
             state.match_state.input.cursor_x,
             state.match_state.input.cursor_y,

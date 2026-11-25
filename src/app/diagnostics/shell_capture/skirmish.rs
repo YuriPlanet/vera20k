@@ -620,7 +620,7 @@ impl SkirmishCapture {
         state: &AppState,
         wanted: impl Fn(&crate::rules::object_type::ObjectType) -> bool,
     ) -> Option<u64> {
-        let owner = crate::app::input::commands::preferred_local_owner_name(state)?;
+        let owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state)?;
         let sim = &state.match_state.sim_runtime.runtime()?.simulation;
         let rules = state.rules()?;
         sim.entities()
@@ -665,7 +665,7 @@ impl SkirmishCapture {
             self.phase = Phase::Scoring;
             return Ok(());
         }
-        let owner = crate::app::input::commands::preferred_local_owner_name(state)
+        let owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state)
             .context("no local owner in the game")?;
         if !self.deploy_sent {
             let mcv = Self::local_entity(state, |object| object.deploys_into.is_some())

@@ -163,7 +163,8 @@ impl WolCapture {
             "Play Music did not apply in place"
         );
         if state.audio.launcher_audio_available {
-            let mut expected = crate::app::input::sound::volume_positions(state);
+            let mut expected =
+                crate::app::input::sound::volume_positions(&state.persistence.options_profile);
             for (index, id) in SHELL_SOUND_SLIDERS.into_iter().enumerate() {
                 let rail = layout.rect(id).context("volume trackbar")?;
                 let base = layout.page.scale.base_rect(rail);
@@ -179,7 +180,8 @@ impl WolCapture {
                 welcome_click(state, press);
                 expected[index] = if index == 1 { 10 } else { 0 };
                 ensure!(
-                    crate::app::input::sound::volume_positions(state) == expected
+                    crate::app::input::sound::volume_positions(&state.persistence.options_profile)
+                        == expected
                         && options::sound_positions(&state.frontend) == Some(expected),
                     "volume {id:#x} did not update the corresponding channel in place"
                 );
@@ -410,7 +412,8 @@ impl WolCapture {
 
     /// `0xD6` shown and settled over the hidden `0x2BC`.
     pub(super) fn sound_settled(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let positions = crate::app::input::sound::volume_positions(state);
+        let positions =
+            crate::app::input::sound::volume_positions(&state.persistence.options_profile);
         let shown = crate::app::shell_wol::options::sound_positions(&state.frontend);
         ensure!(shown == Some(positions), "0xD6 init positions differ");
         // A press on the music rail near its left end jumps once.
