@@ -288,7 +288,18 @@ fn list_rect(layout: &BoxParts) -> RectPx {
             LIST_ROWS * ROW_HEIGHT + 1,
         )
     });
-    RectPx::new(list.x, list.y, list.w + 1, list.h + 1)
+    // More/Up/Down stand above the footer buttons; the list stops short of
+    // them so its backing cannot cover their captions.
+    let bottom = layout
+        .rect_of(ADD_MORE)
+        .map(|raised| raised.y - 6)
+        .unwrap_or(list.y + list.h);
+    RectPx::new(
+        list.x,
+        list.y,
+        list.w + 1,
+        (bottom - list.y).max(ROW_HEIGHT),
+    )
 }
 
 /// The open preview's box layout and dialog.
@@ -297,6 +308,19 @@ fn preview_box(state: &AppState) -> Option<(&Selection, BoxParts, DialogResource
     let shell_box = &state.frontend.shell_message_box.as_ref()?.shell_box;
     let layout =
         crate::app::frontend::shell_layout::shell_box_parts(&state.renderer.gpu, shell_box);
+    {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        if N.fetch_add(1, Ordering::Relaxed) % 240 == 0 {
+            log::info!(
+                "IMPORTBOX ids={:?} add_more={:?} dialog={:?} body={:?}",
+                layout.buttons.iter().map(|(id, _)| id).collect::<Vec<_>>(),
+                layout.rect_of(ADD_MORE),
+                layout.dialog,
+                layout.body
+            );
+        }
+    }
     Some((selection, layout, shell_box.dialog))
 }
 
@@ -330,6 +354,16 @@ pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
     App::drain_picked_part(state);
     let (selection, layout, dialog) = preview_box(state)?;
     let rect = list_rect(&layout);
+    {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        if N.fetch_add(1, Ordering::Relaxed) % 240 == 0 {
+            log::info!(
+                "IMPORTLIST rect={rect:?} add_more={:?}",
+                layout.rect_of(ADD_MORE)
+            );
+        }
+    }
     let (rows, selected, top) = (selection.rows.len(), selection.selected, selection.top);
     let scale = layout.scale;
     let built = list_node(&state.frontend.shell_controller, dialog);
@@ -558,6 +592,9 @@ impl App {
             return;
         };
         selection.add(vec![path]);
+        // The old box's tree has no More/Up/Down button nodes: drop its dialog so
+        // the box built below makes a fresh one with them.
+        Self::close_shell_message_box_from_controller(&mut state.frontend);
         Self::show_import_selection(state, selection);
     }
 
