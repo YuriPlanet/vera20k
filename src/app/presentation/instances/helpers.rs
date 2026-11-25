@@ -373,7 +373,7 @@ fn compose_tactical_screen_entity_encounter_order(
     // band box and the T key's screen pass reach only the first 500 drawn.
     // VERA registers all.
     let mut candidates: Vec<u64> = frame
-        .display_order(sim)
+        .display_order()
         .ordered()
         .iter()
         .map(|&(_, id)| id)
@@ -454,17 +454,16 @@ pub(crate) fn layer_draw_band(
 }
 
 /// The Display's entities that draw a body, in Tactical's order, with their bands.
-pub(crate) fn drawn_display_entities<'a>(
-    sim: &'a crate::sim::world::Simulation,
-    frame: &'a crate::app::presentation::frame::PresentationFrame,
+pub(crate) fn drawn_display_entities(
+    frame: &crate::app::presentation::frame::PresentationFrame,
 ) -> impl Iterator<
     Item = (
-        &'a crate::app::presentation::frame::ObjectRecord,
+        &crate::app::presentation::frame::ObjectRecord,
         EntityDrawBand,
     ),
 > {
     frame
-        .display_order(sim)
+        .display_order()
         .ordered()
         .iter()
         .filter_map(|&(layer, id)| Some((frame.object(id)?, layer_draw_band(layer)?)))

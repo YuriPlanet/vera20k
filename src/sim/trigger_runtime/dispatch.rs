@@ -880,6 +880,7 @@ impl Simulation {
     /// The 50 Scenario global values, read as the campaign carry-over record
     /// copies their bytes (`0x004C6187..0x004C61A1`).
     pub fn global_variables(&self) -> [bool; SCENARIO_GLOBAL_COUNT] {
+        self.trigger_runtime.check_attached();
         std::array::from_fn(|index| self.trigger_runtime.globals_set.contains(&(index as u32)))
     }
 

@@ -1,5 +1,5 @@
 //! Single-threaded wasm execution of the existing independent work items.
-pub(crate) fn map<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) -> Vec<R> {
+pub fn map<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) -> Vec<R> {
     items.iter().map(work).collect()
 }
 pub(crate) fn map_in_order_then_filter_map_indices<T: Sync, A: Send, B: Send>(

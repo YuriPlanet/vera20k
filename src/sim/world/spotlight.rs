@@ -347,6 +347,12 @@ impl Simulation {
         })
     }
 
+    /// Every stored spotlight's id, ascending: what
+    /// [`Self::building_spotlight`] answers.
+    pub fn spotlight_ids(&self) -> impl Iterator<Item = u64> + '_ {
+        self.substrate.spotlights.iter().map(|(&id, _)| id)
+    }
+
     pub(super) fn spotlight_alive(&self, id: u64) -> Option<bool> {
         self.substrate.spotlights.get(id).map(|l| l.alive)
     }

@@ -375,10 +375,12 @@ impl Simulation {
     ///
     /// - it holds no objects (its entity store is [`EntityStore::detached`];
     ///   the presentation frame holds their draw records), and none of the
-    ///   state only gameplay reads (the zone and path grids, the team script
-    ///   VM, the movement pass's kept products, the reveal pass's answers,
-    ///   the Houses' spatial threat grids, the AI's base reservations and the
-    ///   structures' navigation cells);
+    ///   state only gameplay reads (the triggers and the pointer-expiry index,
+    ///   both refusing reads in debug builds like the entity store, the zone
+    ///   and path grids, the team script VM, the movement pass's kept
+    ///   products, the reveal pass's answers, the Houses' spatial threat
+    ///   grids, the AI's base reservations and the structures' navigation
+    ///   cells);
     /// - its fog is only what `viewer`, the local player, sees
     ///   ([`FogState::presentation_copy`]);
     /// - its terrain, overlays, smudges, terrain objects, interner and
@@ -394,6 +396,16 @@ impl Simulation {
         // What the copy leaves out.
         let mut fog = std::mem::take(&mut *self.fog);
         let entities = std::mem::replace(&mut *self.substrate.entities, EntityStore::detached());
+        // In the scale benchmark's battle the triggers took half the copy's
+        // time and the expiry index a seventh.
+        let trigger_runtime = std::mem::replace(
+            &mut *self.trigger_runtime,
+            crate::sim::trigger_runtime::TriggerRuntime::detached(),
+        );
+        let expiry_listeners = std::mem::replace(
+            &mut *self.expiry_listeners,
+            super::expiry_listeners::ExpiryListeners::detached(),
+        );
         let zone_grid = self.zone_grid.take();
         let path_grid = self.path_grid.take();
         let team_script_vm = std::mem::take(&mut *self.team_script_vm);
@@ -426,17 +438,26 @@ impl Simulation {
             crate::sim::parallel::drop_on_pool(old);
             (theirs, old_fog)
         });
+        // The Anim store, which took half the clone of the rest in the scale
+        // benchmark's battle, is cloned beside it.
+        let anims = std::mem::take(&mut *self.substrate.anims);
         let mut copy = None;
         let mut fog_copy = None;
+        let mut anims_copy = None;
         let this = &*self;
         let fog_ref = &mut fog;
-        // The three parts share only reads, so they run at once: the syncs
-        // and the viewer's fog on the pool, the clone of the rest here.
+        let anims_ref = &anims;
+        // The parts share only reads, so they run at once: the syncs, and
+        // the viewer's fog then the anims, on the pool, the clone of the
+        // rest here.
         crate::sim::parallel::alongside(
             || synced.sync_into(&mut theirs),
             || {
                 crate::sim::parallel::alongside(
-                    || fog_copy = Some(fog_ref.presentation_copy(viewer, old_fog)),
+                    || {
+                        fog_copy = Some(fog_ref.presentation_copy(viewer, old_fog));
+                        anims_copy = Some(anims_ref.clone());
+                    },
                     || copy = Some(this.clone()),
                 )
             },
@@ -449,12 +470,16 @@ impl Simulation {
         synced.put(self);
         theirs.put(&mut copy);
         *copy.fog = fog_copy;
+        *copy.substrate.anims = anims_copy.expect("anims cloned beside the rest");
         *copy.house_alliances = self
             .house_alliances
             .detached(&self.interner, &copy.interner);
         *copy.shared_cell_dummy = copy.shared_cell_dummy.fork_query_identity();
         *self.fog = fog;
+        *self.substrate.anims = anims;
         *self.substrate.entities = entities;
+        *self.trigger_runtime = trigger_runtime;
+        *self.expiry_listeners = expiry_listeners;
         *self.zone_grid = zone_grid;
         *self.path_grid = path_grid;
         *self.team_script_vm = team_script_vm;

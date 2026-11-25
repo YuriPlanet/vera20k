@@ -85,6 +85,49 @@ fn each_display_member_is_filed_under_its_store_and_terrain_is_left_out() {
     assert!(std::ptr::eq(members, frame.display_members(&sim)));
 }
 
+/// A frame's Display order is its world's at capture: a Ground object that
+/// moves past the others afterwards keeps its place. The members, filed a
+/// run at a time, keep that order across runs.
+#[test]
+fn a_frame_files_its_members_in_the_order_its_world_had_at_capture() {
+    let mut sim = Simulation::new();
+    let owner = sim.intern("Americans");
+    let tank = sim.intern("MTNK");
+    // A run and two more, each a cell further along the Ground sort.
+    let ids: Vec<u64> = (1..=FILED_RUN as u64 + 2).collect();
+    for &id in &ids {
+        sim.entities_mut_for_test()
+            .insert(GameEntity::new_at_frame_zero_for_test(
+                id,
+                10 + id as u16,
+                10,
+                0,
+                0,
+                owner,
+                Health::new(100),
+                tank,
+                EntityCategory::Unit,
+                0,
+                5,
+                false,
+            ));
+        sim.submit_object_display_for_test(id, DisplayLayer::GROUND);
+    }
+    let frame = PresentationFrame::of_test(&sim, RuleSet::empty_for_test());
+    sim.entities_mut_for_test()
+        .get_mut_for_test(1)
+        .expect("stored")
+        .position
+        .set_rx_for_test(20 + ids.len() as u16);
+    let filed: Vec<u64> = frame
+        .display_members(&sim)
+        .objects()
+        .iter()
+        .map(|member| member.id)
+        .collect();
+    assert_eq!(filed, ids);
+}
+
 /// An aircraft's shadow, drawn on the ground below it, lies in its span for
 /// Fly and for Rocket, whose shadow sinks below the ground by its height:
 /// the pass-by keeps an aircraft over the view's top edge whose shadow is in

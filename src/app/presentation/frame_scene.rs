@@ -53,10 +53,6 @@ pub(crate) struct SceneFrame {
     /// The planning graph the current house draws, without a hovered or
     /// highlighted node (`render::planning_lines`).
     pub(crate) planning: Option<PlanningGraph>,
-    /// Each control group's members, with the queued assignments
-    /// (`Simulation::projected_control_groups`), for the group digits
-    /// (`ui_overlays`).
-    pub(crate) control_groups: [Vec<u64>; 10],
 }
 
 /// `Simulation::planning_draw_graph` for `viewer`, with no hovered or
@@ -73,7 +69,6 @@ impl SceneFrame {
             ui: crate::app::presentation::sidebar_render::UiFrame::capture(at),
             spotlights: spotlights(at),
             psi_warnings_detected: psi_warnings_detected(at),
-            control_groups: at.sim.projected_control_groups(),
             planning: at
                 .sim
                 .session()
@@ -87,14 +82,13 @@ impl SceneFrame {
 }
 
 /// The spotlights among the Display members, with what drawing reads of
-/// each: every object store shares one id namespace, and
-/// `Simulation::building_spotlight` answers only a spotlight's id.
+/// each. The spotlights are few and the Display members many, so the
+/// spotlights are asked whether they are members.
 fn spotlights(at: &Capture<'_>) -> HashMap<u64, crate::sim::world::BuildingSpotlight> {
     let sim = at.sim;
-    sim.display_layers()
-        .ordered_ids()
-        .filter(|&&id| !sim.entities().contains(id) && sim.anim(id).is_none())
-        .filter_map(|&id| Some((id, sim.building_spotlight(id, at.observer_id, at.rules())?)))
+    sim.spotlight_ids()
+        .filter(|&id| sim.display_layers().layer_of(id).is_some())
+        .filter_map(|id| Some((id, sim.building_spotlight(id, at.observer_id, at.rules())?)))
         .collect()
 }
 
