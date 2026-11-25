@@ -25,7 +25,7 @@ Launch
 ├─ Startup failure card (game files not found / menu failed to load / config.toml unreadable / settings folder unusable)
 │   ├─ Quit
 │   └─ Import Game Files (Android only) → Choose Folder / Cancel / Close
-├─ Update offer (desktop only, appears once the main menu is idle): Update or Download / Skip Version【[VERA] SkipUpdate】/ Later
+├─ Update offer (desktop only, appears before the main menu at startup, or once it is idle): Update or Download / Skip Version【[VERA] SkipUpdate】/ Later
 │
 └─ Main Menu
     ├─ Single Player
