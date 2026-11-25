@@ -306,7 +306,7 @@ pub(crate) struct PaintWrite {
     /// VERA-internal auxiliary depth for existing independently baked part
     /// composition. The native opaque leaf writes no per-pixel Z value.
     pub depth: f32,
-    /// VERA's HD-2.5D voxels: the cursor's first fraction bit of X (bit 0)
+    /// VERA's HD art voxels: the cursor's first fraction bit of X (bit 0)
     /// and of Y (bit 1), the half pixel the store reached. Native ignores it.
     pub half: u8,
 }
@@ -832,7 +832,7 @@ impl PreparedDraw {
         })
     }
 
-    /// VERA's HD-2.5D voxels ([`super::VxlHd`]): the same stores in the same
+    /// VERA's HD art voxels ([`super::VxlHd`]): the same stores in the same
     /// order on a 512-square buffer, each two by two pixels at its half
     /// pixel, cropped to twice this draw's crop.
     fn render_hd(&self) -> super::VxlHd {
@@ -863,7 +863,10 @@ impl PreparedDraw {
             palette_indices.extend_from_slice(&visibility[start..end]);
             cropped_depth.extend_from_slice(&depth[start..end]);
             palette_indices.resize(palette_indices.len() + (2 * width - (end - start)), 0);
-            cropped_depth.resize(cropped_depth.len() + (2 * width - (end - start)), f32::NEG_INFINITY);
+            cropped_depth.resize(
+                cropped_depth.len() + (2 * width - (end - start)),
+                f32::NEG_INFINITY,
+            );
         }
         super::VxlHd {
             palette_indices,
@@ -888,7 +891,12 @@ mod tests {
         let draw = PreparedDraw {
             // Native pixel (1, 1) on its right and lower half, then (0, 0)
             // on its corner, then a later zero store erasing (3, 3).
-            writes: vec![write(1, 1, 3, 5), write(0, 0, 0, 7), write(3, 3, 0, 9), write(3, 3, 0, 0)],
+            writes: vec![
+                write(1, 1, 3, 5),
+                write(0, 0, 0, 7),
+                write(3, 3, 0, 9),
+                write(3, 3, 0, 0),
+            ],
             rect: [0, 0, 0, 0, 4, 4],
             depth_map: None,
         };

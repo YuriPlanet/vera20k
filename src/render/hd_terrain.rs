@@ -1,7 +1,7 @@
-//! VERA's HD-2.5D terrain: 2x upscaled theater tiles drawn over the
+//! VERA's HD art terrain: 2x upscaled theater tiles drawn over the
 //! wheel-zoomed world.
 //!
-//! VERA-only presentation extension, part of HD-2D (`[VERA] Hd2d=`, `render::hd2d`) (off by
+//! VERA-only presentation extension, part of HD art (`[VERA] HdArt=`, `render::hd_switch`) (off by
 //! default). The world is still composed at native pixels, exactly as before;
 //! when the wheel zoom magnifies it 1.5x or more, this pass replaces the pixels
 //! of the zoomed copy that the native world still shows as a tile's own colour
@@ -16,7 +16,7 @@
 //! tile finds its picture whatever map, set or variant uses it.
 //! `VERA20K_HD_DUMP_TERRAIN=<folder>` writes `<hash>.rgba` (u16 width,
 //! u16 height, RGBA) for every tile of the loaded theater the pack lacks, for
-//! the offline upscaler (`hd_art/tools/build_terrain.py`).
+//! an offline upscaler.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -44,7 +44,9 @@ fn pack_dir() -> Option<PathBuf> {
 /// `VERA20K_HD_DUMP_TERRAIN` folder. Nothing when it is unset.
 pub(crate) fn dump_tiles<'a>(images: impl IntoIterator<Item = &'a crate::map::theater::TileImage>) {
     dump_rgba(
-        images.into_iter().map(|tile| (tile.width, tile.height, tile.rgba.as_slice())),
+        images
+            .into_iter()
+            .map(|tile| (tile.width, tile.height, tile.rgba.as_slice())),
         "rgba",
     );
 }
@@ -53,8 +55,14 @@ pub(crate) fn dump_tiles<'a>(images: impl IntoIterator<Item = &'a crate::map::th
 /// `<hash>.<extension>` into the `VERA20K_HD_DUMP_TERRAIN` folder: `rgba` for
 /// tiles, which the upscaler pads with copies of themselves, `srgba` for
 /// overlay and terrain object sprites, padded with their edge colours.
-pub(crate) fn dump_rgba<'a>(pictures: impl IntoIterator<Item = (u32, u32, &'a [u8])>, extension: &str) {
-    let Some(dump) = std::env::var("VERA20K_HD_DUMP_TERRAIN").ok().map(PathBuf::from) else {
+pub(crate) fn dump_rgba<'a>(
+    pictures: impl IntoIterator<Item = (u32, u32, &'a [u8])>,
+    extension: &str,
+) {
+    let Some(dump) = std::env::var("VERA20K_HD_DUMP_TERRAIN")
+        .ok()
+        .map(PathBuf::from)
+    else {
         return;
     };
     let pack = pack_dir();
@@ -65,7 +73,10 @@ pub(crate) fn dump_rgba<'a>(pictures: impl IntoIterator<Item = (u32, u32, &'a [u
             continue;
         }
         let name = format!("{:016x}", tile_hash(width, height, rgba));
-        if pack.as_ref().is_some_and(|pack| pack.join(format!("{name}.png")).exists()) {
+        if pack
+            .as_ref()
+            .is_some_and(|pack| pack.join(format!("{name}.png")).exists())
+        {
             continue;
         }
         let path = dump.join(format!("{name}.{extension}"));
@@ -80,7 +91,10 @@ pub(crate) fn dump_rgba<'a>(pictures: impl IntoIterator<Item = (u32, u32, &'a [u
             written += 1;
         }
     }
-    log::info!("HD-2.5D terrain dump: {written} new .{extension} in {}", dump.display());
+    log::info!(
+        "HD art terrain dump: {written} new .{extension} in {}",
+        dump.display()
+    );
 }
 
 /// One visible tile or overlay sprite: where its atlas holds it, and where
@@ -133,7 +147,7 @@ impl HdTerrain {
     /// then never runs.
     pub(crate) fn open() -> Option<Self> {
         let dir = pack_dir().filter(|dir| dir.is_dir())?;
-        log::info!("HD-2.5D terrain pack: {}", dir.display());
+        log::info!("HD art terrain pack: {}", dir.display());
         Some(Self {
             dir,
             tiles: HashMap::new(),
@@ -153,7 +167,11 @@ impl HdTerrain {
     ) -> Vec<HdTerrainDraw> {
         self.ensure_gpu(device);
         // A capture shows one frame: it reads everything on screen at once.
-        let budget = if super::hd2d::capture_zoom().is_some() { usize::MAX } else { LOADS_PER_FRAME };
+        let budget = if super::hd_switch::capture_zoom().is_some() {
+            usize::MAX
+        } else {
+            LOADS_PER_FRAME
+        };
         let mut loads = 0;
         let mut draws = Vec::with_capacity(pieces.len());
         let (mut unknown, mut resized) = (0, 0);
@@ -176,7 +194,7 @@ impl HdTerrain {
                     let origin = match self.load(queue, hash, size) {
                         Ok(origin) => origin,
                         Err(()) => {
-                            log::info!("HD-2.5D terrain page full; reloading the tiles on screen");
+                            log::info!("HD art terrain page full; reloading the tiles on screen");
                             self.tiles.retain(|_, origin| origin.is_none());
                             self.shelf = [0, 0, 0];
                             draws.clear();
@@ -197,7 +215,7 @@ impl HdTerrain {
             }
         }
         log::debug!(
-            "HD-2.5D terrain: {} pieces, {} draws, {unknown} not atlas tiles, {resized} resized",
+            "HD art terrain: {} pieces, {} draws, {unknown} not atlas tiles, {resized} resized",
             pieces.len(),
             draws.len()
         );
@@ -206,13 +224,21 @@ impl HdTerrain {
 
     /// Read `<hash>.png` and place it: `Ok(None)` when the pack lacks it,
     /// `Err` when the page is full.
-    fn load(&mut self, queue: &wgpu::Queue, hash: u64, [width, height]: [u32; 2]) -> Result<Option<[u32; 2]>, ()> {
+    fn load(
+        &mut self,
+        queue: &wgpu::Queue,
+        hash: u64,
+        [width, height]: [u32; 2],
+    ) -> Result<Option<[u32; 2]>, ()> {
         let art = std::fs::read(self.dir.join(format!("{hash:016x}.png")))
             .ok()
-            .and_then(|bytes| image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).ok())
+            .and_then(|bytes| {
+                image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).ok()
+            })
             .map(|image| image.into_rgba8());
-        let Some(art) = art.filter(|art| art.width() == width * 2 && art.height() == height * 2) else {
-            log::debug!("HD-2.5D terrain: no picture for {hash:016x} ({width}x{height})");
+        let Some(art) = art.filter(|art| art.width() == width * 2 && art.height() == height * 2)
+        else {
+            log::debug!("HD art terrain: no picture for {hash:016x} ({width}x{height})");
             return Ok(None);
         };
         let [w, h] = [width * 2, height * 2];
@@ -242,7 +268,11 @@ impl HdTerrain {
         }
         let page = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("HD terrain page"),
-            size: wgpu::Extent3d { width: PAGE, height: PAGE, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: PAGE,
+                height: PAGE,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -320,8 +350,15 @@ impl HdTerrain {
             return;
         }
         let format = target.format();
-        if gpu.pipeline.as_ref().is_none_or(|(cached, _)| *cached != format) {
-            gpu.pipeline = Some((format, create_pipeline(device, &gpu.pipeline_layout, &gpu.shader, format)));
+        if gpu
+            .pipeline
+            .as_ref()
+            .is_none_or(|(cached, _)| *cached != format)
+        {
+            gpu.pipeline = Some((
+                format,
+                create_pipeline(device, &gpu.pipeline_layout, &gpu.shader, format),
+            ));
         }
         // Fresh buffers per call: the tiles and the overlays encode in one
         // submission, and a shared buffer written twice would leave both
@@ -334,7 +371,12 @@ impl HdTerrain {
         });
         let size = target.size();
         let params = Params {
-            frame: [size.width as f32, size.height as f32, scale, if debug { 1.0 } else { 0.0 }],
+            frame: [
+                size.width as f32,
+                size.height as f32,
+                scale,
+                if debug { 1.0 } else { 0.0 },
+            ],
             mode: [if linear { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0],
         };
         let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -348,10 +390,22 @@ impl HdTerrain {
             label: Some("HD terrain"),
             layout: &gpu.layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&composition_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(tiles) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&page_view) },
-                wgpu::BindGroupEntry { binding: 3, resource: uniform.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&composition_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(tiles),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&page_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: uniform.as_entire_binding(),
+                },
             ],
         });
         let right = (scissor[0] + scissor[2]).min(size.width);
@@ -366,14 +420,22 @@ impl HdTerrain {
                 view: &target_view,
                 resolve_target: None,
                 depth_slice: None,
-                ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
             })],
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
             multiview_mask: None,
         });
-        pass.set_scissor_rect(scissor[0], scissor[1], right - scissor[0], bottom - scissor[1]);
+        pass.set_scissor_rect(
+            scissor[0],
+            scissor[1],
+            right - scissor[0],
+            bottom - scissor[1],
+        );
         pass.set_pipeline(&gpu.pipeline.as_ref().expect("pipeline").1);
         pass.set_bind_group(0, &group, &[]);
         pass.set_vertex_buffer(0, instances.slice(..));
@@ -382,7 +444,11 @@ impl HdTerrain {
 }
 
 fn shader_source() -> String {
-    format!("{}\n{}", super::webgl::srgb_wgsl(), include_str!("hd_terrain.wgsl"))
+    format!(
+        "{}\n{}",
+        super::webgl::srgb_wgsl(),
+        include_str!("hd_terrain.wgsl")
+    )
 }
 
 fn create_pipeline(
@@ -391,7 +457,8 @@ fn create_pipeline(
     shader: &wgpu::ShaderModule,
     format: wgpu::TextureFormat,
 ) -> wgpu::RenderPipeline {
-    let attributes = wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Uint32x2, 3 => Uint32x2];
+    let attributes =
+        wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Uint32x2, 3 => Uint32x2];
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("HD terrain"),
         layout: Some(layout),
@@ -433,9 +500,13 @@ mod tests {
     #[test]
     fn hd_terrain_shader_parses_and_validates() {
         use wgpu::naga;
-        let module = naga::front::wgsl::parse_str(&shader_source()).expect("HD terrain shader parses");
-        naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::empty())
-            .validate(&module)
-            .expect("HD terrain shader validates");
+        let module =
+            naga::front::wgsl::parse_str(&shader_source()).expect("HD terrain shader parses");
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("HD terrain shader validates");
     }
 }

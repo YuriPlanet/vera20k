@@ -39,7 +39,7 @@ const UNCOMPARED: [&str; 3] = [
     crate::ui::match_layout::FILE_NAME,
     "MOD-FILES.TXT",
 ];
-/// The folder in a mod's folder itself that holds an HD-2D art pack, by
+/// The folder in a mod's folder itself that holds an HD art pack, by
 /// [`name_key`]: neither compared nor listed (`collect_files`).
 const HD_ART_FOLDER: &str = "HD_ART";
 /// `name`, a file in a mod's folder itself, is one that players need not
@@ -389,7 +389,7 @@ fn collect_files(
             continue;
         };
         if kind.is_dir() {
-            // An HD-2D art pack (`render::hd_art`, docs/hd-2d.md): tens of
+            // An HD art pack (`render::hd_art`, docs/hd-art.md): tens of
             // thousands of pictures only the screen draws, which players need
             // not share and the check need not read.
             if prefix.1.is_empty() && key == HD_ART_FOLDER {
@@ -638,16 +638,22 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
-    /// An HD-2D art pack in a mod's folder is neither compared nor listed:
+    /// An HD art pack in a mod's folder is neither compared nor listed:
     /// players with and without it play together, and its pictures are not
     /// read before a match.
     #[test]
     fn an_hd_art_pack_is_neither_compared_nor_listed() {
         let (root, write) = folder("hd-art");
-        write("One/rulesmd.ini", b"[General]
-");
-        write("Two/rulesmd.ini", b"[General]
-");
+        write(
+            "One/rulesmd.ini",
+            b"[General]
+",
+        );
+        write(
+            "Two/rulesmd.ini",
+            b"[General]
+",
+        );
         write("Two/hd_art/pack/0123456789abcdef.png", b"picture");
         write("Two/HD_ART/pack/terrain/fedcba9876543210.png", b"picture");
         let found = |folder: &str| checked(&root.join(folder)).found;

@@ -9,13 +9,13 @@
 //! Text, the names baked into the cameos, the darken and flash masks, the
 //! build clock and the radar keep their own pixels. Presentation only.
 //!
-//! VERA's HD-2D sidebar: with HD-2D on (`render::hd2d`), a piece the art
+//! VERA's HD art sidebar: with HD art on (`render::hd_switch`), a piece the art
 //! pack's `sidebar`
 //! folder has a picture for (`<hash>.png`, 4x the piece, the hash being
 //! `hd_art::frame_hash` of its size and RGBA) draws from that picture,
 //! resampled to the scale, instead of xBR. `VERA20K_HD_DUMP_SIDEBAR=<folder>`
 //! writes each piece the pack lacks as `<hash>.rgba` (u16 width, u16 height,
-//! RGBA) for the offline upscaler (`hd_art/tools/build_sidebar.py`).
+//! RGBA) for an offline upscaler.
 
 use crate::assets::pal_file::Palette;
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
@@ -195,7 +195,7 @@ fn piece_pixels(rgba: &[u8], stride: usize, piece: [u32; 4]) -> Vec<u8> {
     pixels
 }
 
-/// The HD-2.5D picture of a piece at `factor`: the pack's 4x picture,
+/// The HD art picture of a piece at `factor`: the pack's 4x picture,
 /// resampled, alpha kept as the piece's own (blocks), or None.
 fn hd_picture(pixels: &[u8], width: usize, height: usize, factor: usize) -> Option<Vec<u8>> {
     if !crate::render::hd_art::sidebar_active() {
@@ -228,7 +228,8 @@ fn hd_picture(pixels: &[u8], width: usize, height: usize, factor: usize) -> Opti
 
 /// `VERA20K_HD_DUMP_SIDEBAR`: write each piece the pack lacks.
 fn dump_pieces(rgba: &[u8], stride: usize, pieces: &[[u32; 4]]) {
-    let Some(dump) = std::env::var_os("VERA20K_HD_DUMP_SIDEBAR").map(std::path::PathBuf::from) else {
+    let Some(dump) = std::env::var_os("VERA20K_HD_DUMP_SIDEBAR").map(std::path::PathBuf::from)
+    else {
         return;
     };
     let pack = crate::render::hd_art::pack_subdir("sidebar");
@@ -239,8 +240,14 @@ fn dump_pieces(rgba: &[u8], stride: usize, pieces: &[[u32; 4]]) {
             continue;
         }
         let pixels = piece_pixels(rgba, stride, piece);
-        let name = format!("{:016x}", crate::render::hd_art::frame_hash(width, height, &pixels));
-        if pack.as_ref().is_some_and(|pack| pack.join(format!("{name}.png")).exists()) {
+        let name = format!(
+            "{:016x}",
+            crate::render::hd_art::frame_hash(width, height, &pixels)
+        );
+        if pack
+            .as_ref()
+            .is_some_and(|pack| pack.join(format!("{name}.png")).exists())
+        {
             continue;
         }
         let mut bytes = Vec::with_capacity(4 + pixels.len());
@@ -254,7 +261,7 @@ fn dump_pieces(rgba: &[u8], stride: usize, pieces: &[[u32; 4]]) {
 /// A [`SmoothSource`] scaled for the sidebar's draw scale.
 pub struct SmoothCopy {
     scale: u32,
-    /// Whether it was made with the HD-2D pictures
+    /// Whether it was made with the HD art pictures
     /// ([`crate::render::hd_art::sidebar_active`]): switching them on or off
     /// makes it again.
     hd: bool,
@@ -283,7 +290,10 @@ pub fn follow_scale(
         return;
     };
     let hd = crate::render::hd_art::sidebar_active();
-    if copy.as_ref().is_some_and(|copy| copy.scale == scale && copy.hd == hd) {
+    if copy
+        .as_ref()
+        .is_some_and(|copy| copy.scale == scale && copy.hd == hd)
+    {
         return;
     }
     let [width, height] = source.size.map(|value| value.saturating_mul(scale));

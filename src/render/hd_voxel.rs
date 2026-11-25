@@ -1,7 +1,7 @@
-//! VERA's HD-2.5D voxels: the unit atlas's twice-resolution pictures drawn
+//! VERA's HD art voxels: the unit atlas's twice-resolution pictures drawn
 //! over the wheel-zoomed world.
 //!
-//! VERA-only presentation extension (HD-2D (`[VERA] Hd2d=`, `render::hd2d`), off by default), the
+//! VERA-only presentation extension (HD art (`[VERA] HdArt=`, `render::hd_switch`), off by default), the
 //! voxel side of [`super::hd_art`]. With it on, every voxel picture the unit
 //! atlas rasterizes also gets a picture at twice the resolution from the
 //! same native stores ([`super::vxl_raster::VxlHd`]), on a twice-size page
@@ -49,7 +49,11 @@ pub(crate) struct HdVoxelPass {
 }
 
 fn shader_source() -> String {
-    format!("{}\n{}", super::webgl::srgb_wgsl(), include_str!("hd_voxel.wgsl"))
+    format!(
+        "{}\n{}",
+        super::webgl::srgb_wgsl(),
+        include_str!("hd_voxel.wgsl")
+    )
 }
 
 impl HdVoxelPass {
@@ -146,8 +150,15 @@ impl HdVoxelPass {
             return;
         }
         let format = target.format();
-        if self.pipeline.as_ref().is_none_or(|(cached, _)| *cached != format) {
-            self.pipeline = Some((format, create_pipeline(device, &self.pipeline_layout, &self.shader, format)));
+        if self
+            .pipeline
+            .as_ref()
+            .is_none_or(|(cached, _)| *cached != format)
+        {
+            self.pipeline = Some((
+                format,
+                create_pipeline(device, &self.pipeline_layout, &self.shader, format),
+            ));
         }
         if total > self.instance_capacity {
             self.instance_capacity = total.next_power_of_two();
@@ -158,10 +169,18 @@ impl HdVoxelPass {
                 mapped_at_creation: false,
             });
         }
-        let all: Vec<HdVoxelDraw> = pages.iter().flat_map(|page| page.draws.iter().copied()).collect();
+        let all: Vec<HdVoxelDraw> = pages
+            .iter()
+            .flat_map(|page| page.draws.iter().copied())
+            .collect();
         queue.write_buffer(&self.instances, 0, bytemuck::cast_slice(&all));
         let params = Params {
-            frame: [size.width as f32, size.height as f32, scale, if debug { 1.0 } else { 0.0 }],
+            frame: [
+                size.width as f32,
+                size.height as f32,
+                scale,
+                if debug { 1.0 } else { 0.0 },
+            ],
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&params));
         let composition = composition.create_view(&Default::default());
@@ -172,12 +191,30 @@ impl HdVoxelPass {
                     label: Some("HD voxels"),
                     layout: &self.layout,
                     entries: &[
-                        wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&composition) },
-                        wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(page.native) },
-                        wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(page.hd) },
-                        wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(palette) },
-                        wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(house_ramp) },
-                        wgpu::BindGroupEntry { binding: 5, resource: self.uniform.as_entire_binding() },
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(&composition),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(page.native),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::TextureView(page.hd),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: wgpu::BindingResource::TextureView(palette),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: wgpu::BindingResource::TextureView(house_ramp),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 5,
+                            resource: self.uniform.as_entire_binding(),
+                        },
                     ],
                 })
             })
@@ -189,14 +226,22 @@ impl HdVoxelPass {
                 view: &target_view,
                 resolve_target: None,
                 depth_slice: None,
-                ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
             })],
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
             multiview_mask: None,
         });
-        pass.set_scissor_rect(scissor[0], scissor[1], right - scissor[0], bottom - scissor[1]);
+        pass.set_scissor_rect(
+            scissor[0],
+            scissor[1],
+            right - scissor[0],
+            bottom - scissor[1],
+        );
         pass.set_pipeline(&self.pipeline.as_ref().expect("pipeline").1);
         pass.set_vertex_buffer(0, self.instances.slice(..));
         let mut first = 0u32;

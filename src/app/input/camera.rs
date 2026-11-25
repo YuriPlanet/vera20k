@@ -143,8 +143,8 @@ pub(crate) fn restore_tactical_view(
     let Some(saved) = saved else {
         return;
     };
-    // A loaded game keeps its saved zoom, HD-2D or not.
-    renderer.hd_2d_zoom_pending = false;
+    // A loaded game keeps its saved zoom, HD art or not.
+    renderer.hd_art_zoom_pending = false;
     let viewport = tactical_centring_size(
         platform,
         renderer,
@@ -1875,8 +1875,8 @@ pub(crate) fn apply_zoom(input: &mut MatchInputState, delta_lines: f32) {
 /// resolution at a 1280x800 reference frame while the frame stays the window's.
 ///
 /// Wheel up selects the next smaller view distance (zoom in); wheel down
-/// selects the next larger one. Cycling clamps at both ends. VERA's HD-2D
-/// (`render::hd2d`) adds Close (150%) and Closest (200%), where its art has
+/// selects the next larger one. Cycling clamps at both ends. VERA's HD art
+/// (`render::hd_switch`) adds Close (150%) and Closest (200%), where its art has
 /// the pixels to show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum ViewDistanceTier {
@@ -2080,8 +2080,8 @@ fn set_view_distance_in(
 }
 
 /// Ease the wheel zoom to `zoom` around the battlefield's centre
-/// (`animate_zoom` keeps it in place): HD-2D's zoomed view
-/// (`render::hd2d::DEFAULT_ZOOM`).
+/// (`animate_zoom` keeps it in place): HD art's zoomed view
+/// (`render::hd_switch::DEFAULT_ZOOM`).
 pub(crate) fn ease_zoom_to_centre(
     platform: &PlatformState,
     renderer: &RendererState,
@@ -3877,7 +3877,10 @@ fn view_distance_tiers_match_the_1280_reference_and_clamp_at_the_ends() {
             "{tier:?}"
         );
     }
-    assert_eq!(ViewDistanceTier::Closest.smaller(), ViewDistanceTier::Closest);
+    assert_eq!(
+        ViewDistanceTier::Closest.smaller(),
+        ViewDistanceTier::Closest
+    );
     assert_eq!(ViewDistanceTier::Close.smaller(), ViewDistanceTier::Closest);
     assert_eq!(ViewDistanceTier::Close.larger(), ViewDistanceTier::Small);
     assert_eq!(ViewDistanceTier::Small.smaller(), ViewDistanceTier::Close);

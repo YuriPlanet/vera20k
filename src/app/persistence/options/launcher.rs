@@ -72,7 +72,7 @@ pub(crate) fn launcher_values_from_profile(
         color_vision: profile.color_vision,
         // Without an HD art pack the list shows Off whatever was saved.
         hd_look: crate::ui::main_menu_dialogs::options::HdLook::from_on(
-            profile.hd_2d && crate::render::hd_art::pack_available(),
+            profile.hd_art_on && crate::render::hd_art::pack_available(),
         ),
         hd_look_available: crate::render::hd_art::pack_available(),
         ..Default::default()
@@ -154,7 +154,7 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
         // ramp has to be rebuilt.
         E::ColorVisionModeSelected(mode) => profile.color_vision = mode,
         // The frame reads the switch every frame.
-        E::HdLookSelected(look) => profile.hd_2d = look.is_on(),
+        E::HdLookSelected(look) => profile.hd_art_on = look.is_on(),
         // Applied at once, like Full Screen: the window moves to the picked
         // screen (or back to the system's choice) before the page is accepted.
         E::DisplaySelected(display) => {

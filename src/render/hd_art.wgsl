@@ -1,4 +1,4 @@
-// VERA's HD-2.5D art, VERA-only: no gamemd counterpart. Draws the 2x
+// VERA's HD art, VERA-only: no gamemd counterpart. Draws the 2x
 // upscaled art of buildings over the wheel-zoomed frame, where the native
 // world still shows that building's own pixel.
 //

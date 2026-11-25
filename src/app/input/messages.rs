@@ -1156,12 +1156,12 @@ pub(crate) fn post_primary_rotation(state: &mut AppState, factories: usize) {
     post_grey_row(state, &text, false, true);
 }
 
-/// VERA's HD-2D key (`render::hd2d`): say that HD-2D is now on or off, or,
+/// VERA's HD art key (`render::hd_switch`): say that HD art is now on or off, or,
 /// for None, that it needs an HD art pack mod. gamemd has no such line.
-pub(crate) fn post_hd_2d(state: &mut AppState, on: Option<bool>) {
+pub(crate) fn post_hd_art(state: &mut AppState, on: Option<bool>) {
     let text = crate::i18n::tr(match on {
-        Some(true) => "VERA:Hd2dOnLine",
-        Some(false) => "VERA:Hd2dOffLine",
+        Some(true) => "VERA:HdArtOnLine",
+        Some(false) => "VERA:HdArtOffLine",
         None => "VERA:HdLookNeedsPack",
     });
     post_grey_row(state, &text, false, true);

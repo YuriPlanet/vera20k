@@ -217,7 +217,7 @@ pub struct UnitAtlas {
     vpl: Option<VplFile>,
     /// The device's 2D texture limit, which bounds pages and pictures.
     max_texture_dim: u32,
-    /// VERA's HD-2.5D pages: each page's pictures at twice the resolution
+    /// VERA's HD art pages: each page's pictures at twice the resolution
     /// (`render::hd_art`), made with the first HD picture placed on it.
     hd_pages: Vec<Option<wgpu::TextureView>>,
 }
@@ -253,7 +253,7 @@ struct Resident {
     page_sizes: Vec<[u32; 2]>,
     /// Texels placed since the last upload, in the order they were placed.
     uploads: Vec<PendingTexels>,
-    /// VERA's HD-2.5D pictures of those, at twice the page coordinates.
+    /// VERA's HD art pictures of those, at twice the page coordinates.
     hd_uploads: Vec<PendingTexels>,
     /// Sprites rasterized so far.
     rendered: u32,
@@ -535,7 +535,7 @@ impl UnitAtlas {
             let view = self.hd_pages[texels.page].get_or_insert_with(|| {
                 device
                     .create_texture(&wgpu::TextureDescriptor {
-                        label: Some("HD-2.5D unit atlas page"),
+                        label: Some("HD art unit atlas page"),
                         size: wgpu::Extent3d {
                             width,
                             height,
@@ -545,8 +545,7 @@ impl UnitAtlas {
                         sample_count: 1,
                         dimension: wgpu::TextureDimension::D2,
                         format: wgpu::TextureFormat::R8Uint,
-                        usage: wgpu::TextureUsages::TEXTURE_BINDING
-                            | wgpu::TextureUsages::COPY_DST,
+                        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
                         view_formats: &[],
                     })
                     .create_view(&Default::default())
@@ -562,7 +561,7 @@ impl UnitAtlas {
         }
     }
 
-    /// VERA's HD-2.5D page of `page`: its pictures at twice the resolution,
+    /// VERA's HD art page of `page`: its pictures at twice the resolution,
     /// 0 where a picture has none.
     pub(crate) fn hd_page(&self, page: usize) -> Option<&wgpu::TextureView> {
         self.hd_pages.get(page)?.as_ref()
@@ -908,7 +907,7 @@ struct CachedUnitSprite {
     /// ([`crate::render::voxel_image_cache::sprite_pool_bytes`]), counted
     /// once where the sprite is rasterized.
     pool_bytes: u32,
-    /// VERA's HD-2.5D picture, until [`Resident::place`] stages it.
+    /// VERA's HD art picture, until [`Resident::place`] stages it.
     hd: Option<std::sync::Arc<vxl_raster::VxlHd>>,
 }
 
@@ -2004,7 +2003,7 @@ fn composite_vxl_layers(layers: &[VxlSprite]) -> VxlSprite {
     }
 }
 
-/// VERA's HD-2.5D voxels: `layers`' HD pictures merged by depth on a canvas
+/// VERA's HD art voxels: `layers`' HD pictures merged by depth on a canvas
 /// twice the native `size` at native `corner`, as [`composite_vxl_layers`]
 /// merges the native ones. None unless every layer has one.
 fn hd_union<'a>(

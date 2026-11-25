@@ -351,23 +351,23 @@ pub(crate) fn render_game(
     // around the view (ALL06, SOV03) or jump the camera in the same trigger
     // (SOV01 SP3.6, action 112); only SOV01's SP4.5b and base-gained shrinks
     // can leave the view outside, until the player scrolls. VERA moves it at once.
-    // VERA's HD-2D (`render::hd2d`): pictures the unit atlas rasterizes from
+    // VERA's HD art (`render::hd_switch`): pictures the unit atlas rasterizes from
     // here on (this frame's first draws included) also make their HD picture,
-    // and keep doing so once HD-2D has been on in this run, so turning it off
+    // and keep doing so once HD art has been on in this run, so turning it off
     // and on again (Page Up) shows them at once.
-    let hd_2d = state.hd_2d().0;
-    state.renderer.hd_2d_seen |= hd_2d;
-    crate::render::vxl_raster::set_hd_voxels(state.renderer.hd_2d_seen);
-    crate::render::hd_art::set_active(hd_2d);
-    if let Some(zoom) = crate::render::hd2d::capture_zoom() {
+    let hd_art_on = state.hd_art_on().0;
+    state.renderer.hd_art_seen |= hd_art_on;
+    crate::render::vxl_raster::set_hd_voxels(state.renderer.hd_art_seen);
+    crate::render::hd_art::set_active(hd_art_on);
+    if let Some(zoom) = crate::render::hd_switch::capture_zoom() {
         state.match_state.input.zoom_level = zoom;
         state.match_state.input.zoom_target = zoom;
-    } else if std::mem::take(&mut state.renderer.hd_2d_zoom_pending)
-        && hd_2d
+    } else if std::mem::take(&mut state.renderer.hd_art_zoom_pending)
+        && hd_art_on
         && state.persistence.options_profile.mouse_wheel_zoom
-        && state.match_state.input.zoom_target < crate::render::hd2d::EASE_BELOW
+        && state.match_state.input.zoom_target < crate::render::hd_switch::EASE_BELOW
     {
-        // A match's first frame with HD-2D on starts zoomed in, so the HD
+        // A match's first frame with HD art on starts zoomed in, so the HD
         // art shows; the wheel zooms out as ever.
         crate::app::input::camera::ease_zoom_to_centre(
             &state.platform,
@@ -375,12 +375,12 @@ pub(crate) fn render_game(
             &state.frontend.screen,
             &mut state.match_state,
             &state.persistence,
-            crate::render::hd2d::DEFAULT_ZOOM,
+            crate::render::hd_switch::DEFAULT_ZOOM,
         );
     }
     // Posed voxels are drawn afresh each frame: make their HD picture only
-    // while HD-2D is on.
-    crate::render::vxl_raster::set_hd_poses(hd_2d);
+    // while HD art is on.
+    crate::render::vxl_raster::set_hd_poses(hd_art_on);
     crate::app::input::camera::clamp_camera_to_playable_area(
         &state.platform,
         &state.renderer,
@@ -413,9 +413,9 @@ pub(crate) fn render_game(
     // Wheel zoom is a presentation copy of the fully resolved world. Keep all
     // native source/depth/packed operations on the same one-texel lattice;
     // filtering each sprite (or its palette indices) loses edges and details.
-    // HD-2D (`render::hd2d`) draws its art on the zoom's copy, so it keeps
+    // HD art (`render::hd_switch`) draws its art on the zoom's copy, so it keeps
     // one at 100% too.
-    if z == 1.0 && !hd_2d {
+    if z == 1.0 && !hd_art_on {
         state.renderer.world_zoom_pass = None;
     } else {
         // When the Options zoom scales the frame, the world also goes

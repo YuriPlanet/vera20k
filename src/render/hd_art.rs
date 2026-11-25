@@ -1,7 +1,7 @@
-//! VERA's HD-2.5D art: 2x upscaled building frames drawn over the
+//! VERA's HD art: 2x upscaled building frames drawn over the
 //! wheel-zoomed world.
 //!
-//! VERA-only presentation extension (HD-2D (`[VERA] Hd2d=`, `render::hd2d`), off by default). The
+//! VERA-only presentation extension (HD art (`[VERA] HdArt=`, `render::hd_switch`), off by default). The
 //! world is still composed at native pixels, exactly as before; when the
 //! wheel zoom magnifies it, this pass replaces the pixels of the zoomed copy
 //! that the native world still shows as a building frame's own colour with
@@ -52,7 +52,11 @@ pub(crate) fn frame_hash(width: u32, height: u32, indices: &[u8]) -> u64 {
         hash ^= u64::from(byte);
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     };
-    for byte in (width as u16).to_le_bytes().into_iter().chain((height as u16).to_le_bytes()) {
+    for byte in (width as u16)
+        .to_le_bytes()
+        .into_iter()
+        .chain((height as u16).to_le_bytes())
+    {
         eat(byte);
     }
     for &byte in indices {
@@ -62,7 +66,7 @@ pub(crate) fn frame_hash(width: u32, height: u32, indices: &[u8]) -> u64 {
 }
 
 /// The pack folder: `VERA20K_HD_ART_PACK`, else the selected mod's
-/// `hd_art/pack` (`Mods/<mod>/hd_art/pack`, docs/hd-2d.md): an HD pack
+/// `hd_art/pack` (`Mods/<mod>/hd_art/pack`, docs/hd-art.md): an HD pack
 /// installs like any mod. None without either.
 pub(crate) fn pack_dir() -> Option<PathBuf> {
     if let Ok(dir) = std::env::var("VERA20K_HD_ART_PACK") {
@@ -83,7 +87,7 @@ pub(crate) fn refresh_pack_available() {
 }
 
 /// Whether this start has an HD art pack ([`refresh_pack_available`]):
-/// HD-2D can be on only with one.
+/// HD art can be on only with one.
 pub(crate) fn pack_available() -> bool {
     PACK_AVAILABLE.load(std::sync::atomic::Ordering::Relaxed)
 }
@@ -95,12 +99,12 @@ pub(crate) fn pack_subdir(name: &str) -> Option<PathBuf> {
 
 static ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// HD-2D's state (`render::hd2d`), set at the start of each frame.
+/// HD art's state (`render::hd_switch`), set at the start of each frame.
 pub(crate) fn set_active(on: bool) {
     ACTIVE.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Whether HD-2D is on this frame: the sidebar then draws its HD pictures.
+/// Whether HD art is on this frame: the sidebar then draws its HD pictures.
 pub(crate) fn sidebar_active() -> bool {
     ACTIVE.load(std::sync::atomic::Ordering::Relaxed)
 }
@@ -177,7 +181,7 @@ impl HdArt {
     pub(crate) fn open() -> Option<Self> {
         let dir = pack_dir()?;
         let reference = load_reference_palette(&dir)?;
-        log::info!("HD-2.5D art pack: {}", dir.display());
+        log::info!("HD art pack: {}", dir.display());
         Some(Self {
             dir,
             dump: std::env::var("VERA20K_HD_DUMP").ok().map(PathBuf::from),
@@ -255,7 +259,7 @@ impl HdArt {
                         Err(PageFull) => {
                             // Start the page over: what is on screen now
                             // comes back over the next frames.
-                            log::info!("HD-2.5D art page full; reloading the frames on screen");
+                            log::info!("HD art page full; reloading the frames on screen");
                             self.entries.retain(|_, rect| rect.is_none());
                             self.frames.retain(|_, rect| rect.is_none());
                             self.shelf = [0, 0, 0];
@@ -269,7 +273,14 @@ impl HdArt {
         }
         let gpu = self.gpu.as_ref().expect("HD art GPU resources");
         for (rect, indices, art) in uploads {
-            super::atlas_growth::write_texels(queue, &gpu.indices, [rect[0], rect[1]], [rect[2], rect[3]], 1, &indices);
+            super::atlas_growth::write_texels(
+                queue,
+                &gpu.indices,
+                [rect[0], rect[1]],
+                [rect[2], rect[3]],
+                1,
+                &indices,
+            );
             super::atlas_growth::write_texels(
                 queue,
                 &gpu.art,
@@ -295,9 +306,12 @@ impl HdArt {
         let name = format!("{hash:016x}");
         let art = std::fs::read(self.dir.join(format!("{name}.png")))
             .ok()
-            .and_then(|bytes| image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).ok())
+            .and_then(|bytes| {
+                image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).ok()
+            })
             .map(|image| image.into_rgba8());
-        let Some(art) = art.filter(|art| art.width() == width * 2 && art.height() == height * 2) else {
+        let Some(art) = art.filter(|art| art.width() == width * 2 && art.height() == height * 2)
+        else {
             if let Some(dump) = &self.dump {
                 let mut bytes = Vec::with_capacity(4 + indices.len());
                 bytes.extend_from_slice(&(width as u16).to_le_bytes());
@@ -336,12 +350,21 @@ impl HdArt {
     fn upload_rows(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, atlas: &SpriteAtlas) {
         let rows = atlas.palette_rows();
         let gpu = self.gpu.as_mut().expect("HD art GPU resources");
-        if rows.is_empty() || gpu.rows.as_ref().is_some_and(|(_, count)| *count == rows.len()) {
+        if rows.is_empty()
+            || gpu
+                .rows
+                .as_ref()
+                .is_some_and(|(_, count)| *count == rows.len())
+        {
             return;
         }
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("HD art palette rows"),
-            size: wgpu::Extent3d { width: 256, height: rows.len() as u32, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: 256,
+                height: rows.len() as u32,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -350,7 +373,14 @@ impl HdArt {
             view_formats: &[],
         });
         for (row, colors) in rows.iter().enumerate() {
-            super::atlas_growth::write_texels(queue, &texture, [0, row as u32], [256, 1], 4, colors);
+            super::atlas_growth::write_texels(
+                queue,
+                &texture,
+                [0, row as u32],
+                [256, 1],
+                4,
+                colors,
+            );
         }
         gpu.rows = Some((texture, rows.len()));
     }
@@ -362,7 +392,11 @@ impl HdArt {
         let texture = |label, size: u32, format| {
             device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
-                size: wgpu::Extent3d { width: size, height: size, depth_or_array_layers: 1 },
+                size: wgpu::Extent3d {
+                    width: size,
+                    height: size,
+                    depth_or_array_layers: 1,
+                },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
@@ -375,7 +409,11 @@ impl HdArt {
         let art = texture("HD art", PAGE * 2, wgpu::TextureFormat::Rgba8UnormSrgb);
         let reference = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("HD art reference palette"),
-            size: wgpu::Extent3d { width: 256, height: 1, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: 256,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -402,7 +440,10 @@ impl HdArt {
                 entry(0, tex(unfiltered)),
                 entry(1, tex(wgpu::TextureSampleType::Uint)),
                 entry(2, tex(wgpu::TextureSampleType::Float { filterable: true })),
-                entry(3, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
+                entry(
+                    3,
+                    wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                ),
                 entry(4, tex(unfiltered)),
                 entry(5, tex(unfiltered)),
                 entry(
@@ -496,8 +537,15 @@ impl HdArt {
             return;
         }
         let format = target.format();
-        if gpu.pipeline.as_ref().is_none_or(|(cached, _)| *cached != format) {
-            gpu.pipeline = Some((format, create_pipeline(device, &gpu.pipeline_layout, &gpu.shader, format)));
+        if gpu
+            .pipeline
+            .as_ref()
+            .is_none_or(|(cached, _)| *cached != format)
+        {
+            gpu.pipeline = Some((
+                format,
+                create_pipeline(device, &gpu.pipeline_layout, &gpu.shader, format),
+            ));
         }
         if draws.len() > gpu.instance_capacity {
             gpu.instance_capacity = draws.len().next_power_of_two();
@@ -511,22 +559,54 @@ impl HdArt {
         queue.write_buffer(&gpu.instances, 0, bytemuck::cast_slice(draws));
         let size = target.size();
         let params = Params {
-            frame: [size.width as f32, size.height as f32, scale, if debug { 1.0 } else { 0.0 }],
+            frame: [
+                size.width as f32,
+                size.height as f32,
+                scale,
+                if debug { 1.0 } else { 0.0 },
+            ],
         };
         queue.write_buffer(&gpu.uniform, 0, bytemuck::bytes_of(&params));
         let view = |texture: &wgpu::Texture| texture.create_view(&Default::default());
-        let views = [view(composition), view(&gpu.indices), view(&gpu.art), view(rows), view(&gpu.reference)];
+        let views = [
+            view(composition),
+            view(&gpu.indices),
+            view(&gpu.art),
+            view(rows),
+            view(&gpu.reference),
+        ];
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("HD art"),
             layout: &gpu.layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&views[0]) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&views[1]) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&views[2]) },
-                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&gpu.sampler) },
-                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&views[3]) },
-                wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(&views[4]) },
-                wgpu::BindGroupEntry { binding: 6, resource: gpu.uniform.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&views[0]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&views[1]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&views[2]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&gpu.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&views[3]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&views[4]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: gpu.uniform.as_entire_binding(),
+                },
             ],
         });
         let target_view = target.create_view(&Default::default());
@@ -536,7 +616,10 @@ impl HdArt {
                 view: &target_view,
                 resolve_target: None,
                 depth_slice: None,
-                ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
             })],
             depth_stencil_attachment: None,
             timestamp_writes: None,
@@ -548,7 +631,12 @@ impl HdArt {
         if right <= scissor[0] || bottom <= scissor[1] {
             return;
         }
-        pass.set_scissor_rect(scissor[0], scissor[1], right - scissor[0], bottom - scissor[1]);
+        pass.set_scissor_rect(
+            scissor[0],
+            scissor[1],
+            right - scissor[0],
+            bottom - scissor[1],
+        );
         pass.set_pipeline(&gpu.pipeline.as_ref().expect("pipeline").1);
         pass.set_bind_group(0, &group, &[]);
         pass.set_vertex_buffer(0, gpu.instances.slice(..));
@@ -557,7 +645,11 @@ impl HdArt {
 }
 
 fn shader_source() -> String {
-    format!("{}\n{}", super::webgl::srgb_wgsl(), include_str!("hd_art.wgsl"))
+    format!(
+        "{}\n{}",
+        super::webgl::srgb_wgsl(),
+        include_str!("hd_art.wgsl")
+    )
 }
 
 fn create_pipeline(
@@ -566,7 +658,8 @@ fn create_pipeline(
     shader: &wgpu::ShaderModule,
     format: wgpu::TextureFormat,
 ) -> wgpu::RenderPipeline {
-    let attributes = wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Uint32x2, 3 => Uint32];
+    let attributes =
+        wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Uint32x2, 3 => Uint32];
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("HD art"),
         layout: Some(layout),
@@ -609,9 +702,12 @@ mod tests {
     fn hd_art_shader_parses_and_validates() {
         use wgpu::naga;
         let module = naga::front::wgsl::parse_str(&shader_source()).expect("HD art shader parses");
-        naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::empty())
-            .validate(&module)
-            .expect("HD art shader validates");
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("HD art shader validates");
     }
 
     /// The offline upscaler (`hd_art/tools`) names files by the same hash;

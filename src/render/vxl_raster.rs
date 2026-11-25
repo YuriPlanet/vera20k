@@ -699,12 +699,12 @@ pub struct VxlSprite {
     pub offset_x: f32,
     /// Y offset from model center to sprite top-left.
     pub offset_y: f32,
-    /// VERA's HD-2.5D voxels ([`set_hd_voxels`]): the same draw at twice
+    /// VERA's HD art voxels ([`set_hd_voxels`]): the same draw at twice
     /// the resolution, `2 * width` by `2 * height`, aligned with this one.
     pub hd: Option<std::sync::Arc<VxlHd>>,
 }
 
-/// VERA's HD-2.5D voxels, VERA-only: no gamemd counterpart. A draw's stores
+/// VERA's HD art voxels, VERA-only: no gamemd counterpart. A draw's stores
 /// placed at twice the resolution, each covering two by two pixels at the
 /// half pixel its cursor reached ([`native::PaintWrite::half`]), so a model
 /// with more voxels than its native picture has pixels shows them when the
@@ -721,7 +721,7 @@ pub struct VxlHd {
 static HD_VOXELS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Whether voxel draws also make their [`VxlHd`] picture. Set from the
-/// HD-2.5D art level; pictures made before it was on stay native.
+/// HD art switch; pictures made before it was on stay native.
 pub fn set_hd_voxels(on: bool) {
     HD_VOXELS.store(on, std::sync::atomic::Ordering::Relaxed);
 }

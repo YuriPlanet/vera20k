@@ -1,8 +1,8 @@
-//! VERA's HD-2D switch: the original picture, or the HD art over the
+//! VERA's HD art switch: the original picture, or the HD art over the
 //! wheel-zoomed world.
 //!
-//! VERA-only presentation extension, `[VERA] Hd2d=` (off by default), the
-//! Options page's HD-2D list and the HD-2D key (Page Up), which flip the same
+//! VERA-only presentation extension, `[VERA] HdArt=` (off by default), the
+//! Options page's HD art list and the HD art key (Page Up), which flip the same
 //! setting. On, every wheel zoom draws buildings, infantry, effects,
 //! terrain, overlays and voxels from the 2x HD art pack, resampled below 200%
 //! (`render::hd_art`, `hd_terrain`, `hd_voxel`), and the smooth sidebar its
@@ -10,22 +10,22 @@
 //! picture is the original, byte for byte. Nothing here reaches `sim/`, the
 //! network, a save or a replay, so clients may differ without a desync.
 
-/// The wheel zoom a match starts at with HD-2D on, from below
-/// [`EASE_BELOW`]: the 2x art shows all its pixels there. The HD-2D key
+/// The wheel zoom a match starts at with HD art on, from below
+/// [`EASE_BELOW`]: the 2x art shows all its pixels there. The HD art key
 /// leaves the zoom as it is.
 pub(crate) const DEFAULT_ZOOM: f32 = 2.0;
 
 /// The wheel zoom below which a match's start eases in to [`DEFAULT_ZOOM`].
 pub(crate) const EASE_BELOW: f32 = 1.5;
 
-/// `VERA20K_HD2D=0|1|debug` replaces the profile's switch for this process,
+/// `VERA20K_HD_ART=0|1|debug` replaces the profile's switch for this process,
 /// so a tactical capture (which runs with a private settings folder) can take
 /// before and after pictures with one build. `debug` is on with the HD art
 /// tinted green, the HD voxels cyan and the HD terrain magenta.
 /// Returns (on, debug tint).
 pub(crate) fn env_override() -> Option<(bool, bool)> {
     static ENV: std::sync::OnceLock<Option<(bool, bool)>> = std::sync::OnceLock::new();
-    *ENV.get_or_init(|| parse_env(&std::env::var("VERA20K_HD2D").ok()?))
+    *ENV.get_or_init(|| parse_env(&std::env::var("VERA20K_HD_ART").ok()?))
 }
 
 fn parse_env(text: &str) -> Option<(bool, bool)> {

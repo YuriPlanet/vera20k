@@ -682,7 +682,7 @@ pub struct SpriteAtlas {
     building_type_bounds: HashMap<String, [i32; 4]>,
     /// Upper-case names of every building animation (ActiveAnim, IdleAnim,
     /// their variants, SHP turrets), bib and infantry type registered so
-    /// far: VERA's HD-2.5D art (`render::hd_art`) redraws their frames as
+    /// far: VERA's HD art (`render::hd_art`) redraws their frames as
     /// well as building bodies'.
     hd_images: HashSet<String>,
     /// Keys with nothing to draw: the SHP is missing or fails to decode, or
@@ -825,7 +825,7 @@ impl SpriteAtlas {
         self.building_type_bounds.get(type_id).copied()
     }
 
-    /// VERA's HD-2.5D art (`render::hd_art`): every resident frame with its
+    /// VERA's HD art (`render::hd_art`): every resident frame with its
     /// entry. Buildings, their animations and bibs, infantry, and every
     /// other SHP the atlas holds (explosions, fire, smoke, projectiles); a
     /// frame the pack has no art for simply stays native.
@@ -842,7 +842,11 @@ impl SpriteAtlas {
     /// A cheap change signal for consumers that derive data from the
     /// entries: grows whenever a refresh adds pages, entries or rows.
     pub(crate) fn generation(&self) -> (usize, usize, usize) {
-        (self.pages.len(), self.entries.len(), self.palettes.colors.len())
+        (
+            self.pages.len(),
+            self.entries.len(),
+            self.palettes.colors.len(),
+        )
     }
 
     /// Exact frame lookup; an absent frame is not substituted or wrapped.
@@ -2591,9 +2595,12 @@ pub(crate) fn prepare_sprite_atlas(
         }
     }
     for (type_id, _) in &new_objects {
-        if rules.and_then(|rules| rules.object(type_id)).is_some_and(|object| {
-            object.category == crate::rules::object_type::ObjectCategory::Infantry
-        }) {
+        if rules
+            .and_then(|rules| rules.object(type_id))
+            .is_some_and(|object| {
+                object.category == crate::rules::object_type::ObjectCategory::Infantry
+            })
+        {
             hd_images.insert(type_id.to_ascii_uppercase());
         }
     }

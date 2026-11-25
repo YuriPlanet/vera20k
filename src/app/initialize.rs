@@ -481,7 +481,7 @@ impl App {
             mods.add_rules_file_notice(text);
         }
         crate::map::source::set_mod_dir(mods.dir().map(std::path::Path::to_owned));
-        // HD-2D can be on only when the mod brings an HD art pack.
+        // HD art can be on only when the mod brings an HD art pack.
         crate::render::hd_art::refresh_pack_available();
         let (window_width, window_height, window_visible) =
             startup_window_projection(profile_screen, capture_dimensions);
@@ -1479,8 +1479,8 @@ impl App {
                 hd_art: None,
                 hd_terrain: None,
                 hd_voxel: None,
-                hd_2d_seen: false,
-                hd_2d_zoom_pending: true,
+                hd_art_seen: false,
+                hd_art_zoom_pending: true,
             },
             process_assets,
             audio: startup_audio_runtime,

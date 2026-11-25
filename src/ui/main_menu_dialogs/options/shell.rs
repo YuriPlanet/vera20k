@@ -275,7 +275,7 @@ pub(crate) const IN_GAME_KEYBOARD_HELP: &str = "STT:IGGameOptButtonKeyboard";
 /// What a greyed control says on the in-game menu: a setting the next game
 /// starts with ([`LauncherTrackbarId::fixed_in_match`]), or Check for Updates.
 const NOT_IN_MATCH_HELP: &str = "VERA:NotInMatchHelp";
-/// The HD-2D list's help while no HD art pack runs: what it needs.
+/// The HD art list's help while no HD art pack runs: what it needs.
 const HD_LOOK_NEEDS_PACK_HELP: &str = "VERA:HdLookNeedsPack";
 const SET_WINDOW_SIZE_LABEL: &str = "VERA:SetWindowSize";
 /// The in-game page's first row. 8 DLUs below the main menu's to clear the
@@ -1030,7 +1030,7 @@ impl OptionsDialogState {
             Control::Setting(Setting::Slider(id)) if self.in_match && id.fixed_in_match() => {
                 return Some(NOT_IN_MATCH_HELP);
             }
-            // Without an HD art pack the HD-2D list says what it needs.
+            // Without an HD art pack the HD art list says what it needs.
             Control::Setting(Setting::List(LauncherComboId::HdLook))
                 if !self.values.hd_look_available =>
             {

@@ -1,4 +1,4 @@
-// VERA's HD-2.5D terrain, VERA-only: no gamemd counterpart. Draws the 2x
+// VERA's HD art terrain, VERA-only: no gamemd counterpart. Draws the 2x
 // upscaled theater tiles over the wheel-zoomed frame, where the native world
 // still shows that tile's own pixel.
 //

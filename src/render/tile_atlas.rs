@@ -55,14 +55,14 @@ pub struct TileAtlas {
     /// Tile key → UV rectangle + rendering metadata. Lookup-only: the
     /// terrain instance build reads it for every visible cell each draw.
     uv_map: LookupMap<TileKey, TileUV>,
-    /// VERA's HD-2.5D terrain (`render::hd_terrain`): each tile's UV origin
+    /// VERA's HD art terrain (`render::hd_terrain`): each tile's UV origin
     /// bits → its [`crate::render::hd_terrain::tile_hash`], its atlas pixel
     /// origin and size.
     hd_tiles: HashMap<[u32; 2], (u64, [u32; 2], [u32; 2])>,
 }
 
 impl TileAtlas {
-    /// The HD-2.5D key of the tile at `uv_origin`: its hash, atlas pixel
+    /// The HD art lookup of the tile at `uv_origin`: its hash, atlas pixel
     /// origin and size.
     pub(crate) fn hd_tile(&self, uv_origin: [f32; 2]) -> Option<(u64, [u32; 2], [u32; 2])> {
         self.hd_tiles.get(&uv_origin.map(f32::to_bits)).copied()

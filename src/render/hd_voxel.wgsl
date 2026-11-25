@@ -1,4 +1,4 @@
-// VERA's HD-2.5D voxels, VERA-only: no gamemd counterpart. Draws the unit
+// VERA's HD art voxels, VERA-only: no gamemd counterpart. Draws the unit
 // atlas's twice-resolution pictures (`vxl_raster::VxlHd`) over the
 // wheel-zoomed frame, where the native world still shows that picture's own
 // pixel.

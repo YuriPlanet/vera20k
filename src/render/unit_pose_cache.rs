@@ -68,7 +68,7 @@ struct PosePage {
     /// Holds stable raster-style variants for the whole match.
     retained: bool,
     texture: Option<BatchTexture>,
-    /// VERA's HD-2.5D page: the images' [`crate::render::vxl_raster::VxlHd`]
+    /// VERA's HD art page: the images' [`crate::render::vxl_raster::VxlHd`]
     /// pictures at twice the resolution, 0 where an image has none. Made with
     /// the first HD picture placed on the page.
     hd_texture: Option<wgpu::TextureView>,
@@ -603,7 +603,7 @@ impl VxlPoseFrameCache {
         self.pages.get(page)?.texture.as_ref()
     }
 
-    /// VERA's HD-2.5D page of `page` ([`PosePage::hd_texture`]).
+    /// VERA's HD art page of `page` ([`PosePage::hd_texture`]).
     pub(crate) fn hd_page(&self, page: usize) -> Option<&wgpu::TextureView> {
         self.pages.get(page)?.hd_texture.as_ref()
     }
@@ -684,7 +684,7 @@ fn write_padded(
     crate::render::atlas_growth::write_texels(queue, texture, [x, y], padded, 1, &texels);
 }
 
-/// VERA's HD-2.5D page for `image`: its HD picture, or zeros over its
+/// VERA's HD art page for `image`: its HD picture, or zeros over its
 /// rectangle where it has none, so an earlier image's picture never shows.
 /// Nothing until a page holds an HD picture.
 fn write_hd(
@@ -704,7 +704,7 @@ fn write_hd(
     let view = hd_texture.get_or_insert_with(|| {
         device
             .create_texture(&wgpu::TextureDescriptor {
-                label: Some("HD-2.5D unit pose page"),
+                label: Some("HD art unit pose page"),
                 size: wgpu::Extent3d {
                     width: PAGE_SIZE * 2,
                     height: PAGE_SIZE * 2,
@@ -773,7 +773,15 @@ fn place_sprite(
         indices: sprite.palette_indices,
         written: false,
     };
-    place_on(pages, pixels, size, offset, native_draw_bounds, retained, sprite.hd)
+    place_on(
+        pages,
+        pixels,
+        size,
+        offset,
+        native_draw_bounds,
+        retained,
+        sprite.hd,
+    )
 }
 
 /// Put one image on a frame-local or retained page.

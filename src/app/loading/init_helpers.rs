@@ -274,7 +274,7 @@ pub(crate) fn build_tile_atlas(
 
     let images: HashMap<TileKey, TileImage> =
         theater::load_tile_images(asset_manager, lookup, palette, &needed);
-    // VERA's HD-2.5D terrain collection: every tile of the theater, not only
+    // VERA's HD art terrain collection: every tile of the theater, not only
     // the map's, for the offline upscaler (`render::hd_terrain`).
     if std::env::var_os("VERA20K_HD_DUMP_TERRAIN").is_some() {
         let mut all: HashSet<TileKey> = HashSet::new();

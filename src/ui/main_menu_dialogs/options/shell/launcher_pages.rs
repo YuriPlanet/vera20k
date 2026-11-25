@@ -151,7 +151,7 @@ pub(super) fn controls(
                 RectPx::new(x, 86, OPTIONS_COMBO_W, COMBO_FACE_H),
             );
             combo(&mut row, Combo::Kratos, right, 86);
-            // VERA's HD-2D switch (`render::hd2d`).
+            // VERA's HD art switch (`render::hd_switch`).
             combo(&mut row, Combo::HdLook, right, 193);
             heading(&mut row, "VERA:ExtensionsVeraHeading", 166);
             for (i, id) in [

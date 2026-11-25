@@ -215,11 +215,11 @@ const SHORTCUT_COMMANDS: [CommandMetadata; 14] = [
         None
     ),
     command!(
-        HotkeyCommand::ToggleHd2d,
-        "ToggleHd2d",
-        "VERA:ToggleHd2d",
+        HotkeyCommand::ToggleHdArt,
+        "ToggleHdArt",
+        "VERA:ToggleHdArt",
         "VERA:HotkeyCategory",
-        "VERA:ToggleHd2dDesc",
+        "VERA:ToggleHdArtDesc",
         None
     ),
 ];

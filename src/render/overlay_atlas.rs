@@ -421,13 +421,13 @@ pub struct OverlayAtlas {
     /// Union of every entry's rectangle, fixed with `entries` at construction.
     art_extent: crate::render::cell_window::ArtExtent,
     zshapes: Option<OverlayZShapes>,
-    /// VERA's HD-2.5D ground (`render::hd_terrain`): each sprite's UV origin
+    /// VERA's HD art ground (`render::hd_terrain`): each sprite's UV origin
     /// bits → its RGBA hash, atlas pixel origin and size.
     hd_sprites: HashMap<[u32; 2], (u64, [u32; 2], [u32; 2])>,
 }
 
 impl OverlayAtlas {
-    /// The HD-2.5D key of the sprite at `uv_origin`: its hash, atlas pixel
+    /// The HD art lookup of the sprite at `uv_origin`: its hash, atlas pixel
     /// origin and size.
     pub(crate) fn hd_sprite(&self, uv_origin: [f32; 2]) -> Option<(u64, [u32; 2], [u32; 2])> {
         self.hd_sprites.get(&uv_origin.map(f32::to_bits)).copied()
@@ -842,7 +842,7 @@ pub(crate) fn build_overlay_atlas_on_device(
         return None;
     }
 
-    // VERA's HD-2.5D collection: every overlay frame and terrain object of
+    // VERA's HD art collection: every overlay frame and terrain object of
     // the theater, not only the map's, for the offline upscaler.
     if std::env::var_os("VERA20K_HD_DUMP_TERRAIN").is_some() {
         let mut every: Vec<RenderedOverlay> = Vec::new();
@@ -882,8 +882,17 @@ pub(crate) fn build_overlay_atlas_on_device(
             ) else {
                 continue;
             };
-            let palette = if terrain_type.spawns_tiberium { unit_palette } else { theater_palette };
-            every.extend(render_terrain_sprites(asset_manager, palette, terrain_type, shape));
+            let palette = if terrain_type.spawns_tiberium {
+                unit_palette
+            } else {
+                theater_palette
+            };
+            every.extend(render_terrain_sprites(
+                asset_manager,
+                palette,
+                terrain_type,
+                shape,
+            ));
         }
         crate::render::hd_terrain::dump_rgba(
             every
@@ -1413,7 +1422,11 @@ fn pack_overlay_pixels(sprites: &[RenderedOverlay], max_texture_dim: u32) -> Pac
         if spr.rgba.len() == (w * h * 4) as usize {
             hd_sprites.insert(
                 [px as f32 / aw, py as f32 / ah].map(f32::to_bits),
-                (crate::render::hd_terrain::tile_hash(w, h, &spr.rgba), [px, py], [w, h]),
+                (
+                    crate::render::hd_terrain::tile_hash(w, h, &spr.rgba),
+                    [px, py],
+                    [w, h],
+                ),
             );
         }
 

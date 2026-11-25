@@ -615,8 +615,8 @@ impl HealthBarMode {
     }
 }
 
-/// The HD-2D list (`render::hd2d`, `[VERA] Hd2d=`): Off, the original
-/// picture, or On, the HD art over the world and the HD sidebar. The HD-2D
+/// The HD art list (`render::hd_switch`, `[VERA] HdArt=`): Off, the original
+/// picture, or On, the HD art over the world and the HD sidebar. The HD art
 /// key (Page Up) flips the same setting in a match. Presentation only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum HdLook {
@@ -633,7 +633,7 @@ impl HdLook {
         Self::ALL.to_vec()
     }
 
-    /// Whether the row turns HD-2D on.
+    /// Whether the row turns HD art on.
     pub(crate) const fn is_on(self) -> bool {
         matches!(self, Self::On)
     }
@@ -805,7 +805,7 @@ pub(crate) enum LauncherComboId {
     HealthBars,
     /// The whole-viewport colour filter.
     ColorVision,
-    /// HD-2D, Off or On (`[VERA] Hd2d=`).
+    /// HD art, Off or On (`[VERA] HdArt=`).
     HdLook,
     /// VERA's interface language. Its rows are each language's own name for
     /// itself, so they need no translation.
@@ -1220,7 +1220,7 @@ pub(crate) const ROWS: &[Row] = {
         row!(Controls, Checkbox(MouseWheelZoom), "MouseWheelZoom"),
         row!(Controls, Checkbox(LockCursor), "LockCursor"),
         row!(General, List(Language), "Language"),
-        // VERA's HD-2D switch; Display is full at 640x480.
+        // VERA's HD art switch; Display is full at 640x480.
         row!(General, List(HdLook), "HdLook"),
         row!(General, Checkbox(YrOriginalStyle), "YrOriginalStyle"),
         row!(General, Checkbox(SmoothOnlineMenus), "SmoothOnlineMenus"),
@@ -1352,7 +1352,7 @@ pub(crate) enum LauncherOptionsEvent {
     /// The `[VERA] GraphicsAPI=` list's pick, read at the next start.
     GraphicsApiSelected(GraphicsApi),
     ColorVisionModeSelected(ColorVisionMode),
-    /// The HD-2D list's pick, applied to the next frame.
+    /// The HD art list's pick, applied to the next frame.
     HdLookSelected(HdLook),
     DisplaySelected(DisplayTarget),
     /// A language tag.
@@ -1417,7 +1417,7 @@ pub(crate) struct LauncherOptionsValues {
     /// The Graphics API list's choice; it applies from the next start.
     pub(crate) graphics_api: GraphicsApi,
     pub(crate) color_vision: ColorVisionMode,
-    /// Whether HD-2D is on.
+    /// Whether HD art is on.
     pub(crate) hd_look: HdLook,
     /// Whether the running mod brings an HD art pack: without one the list
     /// offers only Off and its help names what it needs.
@@ -2558,7 +2558,7 @@ mod tests {
     /// leaves out could not be reached, and one listed twice would show
     /// twice. The in-game Game Controls page repeats rows of the column,
 
-    /// HD-2D is Off or On, and Off alone while no HD art pack runs, so it
+    /// HD art is Off or On, and Off alone while no HD art pack runs, so it
     /// cannot be turned on without one; the list starts Off.
     #[test]
     fn hd_look_offers_on_only_with_a_pack() {
@@ -2591,7 +2591,7 @@ mod tests {
         );
         assert_eq!(
             count(|s| matches!(s, Setting::List(_))),
-            // HD-2D's list included.
+            // HD art's list included.
             10 + usize::from(HAS_GRAPHICS_API)
         );
         for (index, setting) in placed.iter().enumerate() {

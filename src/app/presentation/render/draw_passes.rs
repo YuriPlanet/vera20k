@@ -1187,11 +1187,11 @@ pub(super) fn dispatch_draw_passes(
     // Resolve wheel zoom once, after every world/depth/destination operation.
     // Timers, sidebar, messages and cursor then draw in frame pixels.
     drop(pass);
-    // VERA's HD-2D (`render::hd2d`): at every wheel zoom, the HD art
+    // VERA's HD art (`render::hd_switch`): at every wheel zoom, the HD art
     // replaces the zoomed copy's terrain, overlay, building and voxel pixels
     // (resampled below 200%). It goes over the finished world only; everything
     // screen-fixed below stays sharp. Off encodes nothing.
-    let (hd_2d, hd_debug) = state.hd_2d();
+    let (hd_art_on, hd_debug) = state.hd_art_on();
     let (tac_x, tac_y, tac_w, tac_h) = crate::app::input::camera::tactical_viewport_px(
         &state.platform,
         &state.renderer,
@@ -1203,8 +1203,14 @@ pub(super) fn dispatch_draw_passes(
         let gpu = &state.renderer.gpu;
         let composition = state.renderer.combat_light_renderer.composition_texture();
         let frame_tactical = [tac_x, tac_y, tac_w, tac_h];
-        zoom.composite(&gpu.device, encoder, composition, frame_tactical, super::CLEAR_COLOR);
-        if hd_2d {
+        zoom.composite(
+            &gpu.device,
+            encoder,
+            composition,
+            frame_tactical,
+            super::CLEAR_COLOR,
+        );
+        if hd_art_on {
             if let Some(tiles) = state.match_state.match_presentation.tile_atlas.as_ref()
                 && let Some(terrain) = state
                     .renderer
@@ -1215,7 +1221,8 @@ pub(super) fn dispatch_draw_passes(
                 let camera = state.renderer.batch_renderer.camera_uniform();
                 let clip = zoom.world_clip(frame_tactical);
                 let pieces = hd_terrain_pieces(data.terrain.iter(), camera.camera_pos, clip);
-                let draws = terrain.prepare(&gpu.device, &gpu.queue, &|uv| tiles.hd_tile(uv), &pieces);
+                let draws =
+                    terrain.prepare(&gpu.device, &gpu.queue, &|uv| tiles.hd_tile(uv), &pieces);
                 terrain.encode(
                     &gpu.device,
                     &gpu.queue,
@@ -1231,8 +1238,12 @@ pub(super) fn dispatch_draw_passes(
                 );
                 // Ore, gems, walls, rocks and the other overlays, then trees
                 // and the other terrain objects: the overlay atlas's bodies.
-                if let Some(overlays) = state.match_state.match_presentation.overlay_atlas.as_ref() {
-                    let bodies = &state.match_state.match_presentation.cached_cell_body_instances;
+                if let Some(overlays) = state.match_state.match_presentation.overlay_atlas.as_ref()
+                {
+                    let bodies = &state
+                        .match_state
+                        .match_presentation
+                        .cached_cell_body_instances;
                     let overlay_bodies = bodies
                         .iter()
                         .zip(data.cell_body_draws)
@@ -1258,11 +1269,19 @@ pub(super) fn dispatch_draw_passes(
                     // Smudges (craters, scorch marks) draw first, right after
                     // the tiles, as the native pass draws them.
                     let pieces = hd_terrain_pieces(
-                        data.smudge.iter().chain(overlay_bodies).chain(terrain_objects),
+                        data.smudge
+                            .iter()
+                            .chain(overlay_bodies)
+                            .chain(terrain_objects),
                         camera.camera_pos,
                         clip,
                     );
-                    let draws = terrain.prepare(&gpu.device, &gpu.queue, &|uv| overlays.hd_sprite(uv), &pieces);
+                    let draws = terrain.prepare(
+                        &gpu.device,
+                        &gpu.queue,
+                        &|uv| overlays.hd_sprite(uv),
+                        &pieces,
+                    );
                     terrain.encode(
                         &gpu.device,
                         &gpu.queue,
@@ -1293,7 +1312,10 @@ pub(super) fn dispatch_draw_passes(
                     zoom.world_clip(frame_tactical),
                 );
                 art.prepare(&gpu.device, &gpu.queue, atlas, &pieces);
-                let draws: Vec<_> = pieces.iter().filter_map(|piece| art.placement(piece)).collect();
+                let draws: Vec<_> = pieces
+                    .iter()
+                    .filter_map(|piece| art.placement(piece))
+                    .collect();
                 art.encode(
                     &gpu.device,
                     &gpu.queue,
@@ -1338,7 +1360,14 @@ pub(super) fn dispatch_draw_passes(
                     );
             }
         }
-        draw_zoomed_drag_rect(zoom, encoder, frame_tactical, &state.renderer.batch_renderer, pool, drag_tex);
+        draw_zoomed_drag_rect(
+            zoom,
+            encoder,
+            frame_tactical,
+            &state.renderer.batch_renderer,
+            pool,
+            drag_tex,
+        );
         zoom.color_view()
     } else {
         view
@@ -1841,7 +1870,7 @@ fn draw_zoomed_drag_rect(
     }
 }
 
-/// VERA's HD-2.5D terrain: every tile the terrain pass drew inside the
+/// VERA's HD art terrain: every tile the terrain pass drew inside the
 /// native rect `clip`, in walk order, placed in native composition pixels.
 fn hd_terrain_pieces<'a>(
     terrain: impl Iterator<Item = &'a SpriteInstance>,
@@ -1869,7 +1898,7 @@ fn hd_terrain_pieces<'a>(
         .collect()
 }
 
-/// VERA's HD-2.5D art: every building body, bib and animation piece drawn
+/// VERA's HD art: every building body, bib and animation piece drawn
 /// from an SHP atlas page inside the native rect `clip`, placed in native
 /// composition pixels as the SHP blitter places it. Bodies first, then
 /// everything drawn after them: powered and active animations sit in the
@@ -1914,7 +1943,7 @@ fn hd_art_pieces(
     pieces
 }
 
-/// VERA's HD-2.5D voxels: every unit atlas piece inside the native rect
+/// VERA's HD art voxels: every unit atlas piece inside the native rect
 /// `clip` whose page has an HD page, grouped by page, placed in native
 /// composition pixels as the voxel blitter places it unzoomed.
 fn hd_voxel_pages<'a>(
@@ -1939,8 +1968,14 @@ fn hd_voxel_pages<'a>(
             };
             let slot = *slots.entry(key).or_insert_with(|| {
                 let (native, hd) = match key {
-                    (false, page) => (units.page_texture(page).map(|t| &t.view), units.hd_page(page)),
-                    (true, page) => (poses.page_texture(page).map(|t| &t.view), poses.hd_page(page)),
+                    (false, page) => (
+                        units.page_texture(page).map(|t| &t.view),
+                        units.hd_page(page),
+                    ),
+                    (true, page) => (
+                        poses.page_texture(page).map(|t| &t.view),
+                        poses.hd_page(page),
+                    ),
                 };
                 let (native, hd) = (native?, hd?);
                 pages.push(crate::render::hd_voxel::HdVoxelPage {
@@ -1967,14 +2002,16 @@ fn hd_voxel_pages<'a>(
                 {
                     continue;
                 }
-                pages[slot].draws.push(crate::render::hd_voxel::HdVoxelDraw {
-                    origin,
-                    size,
-                    uv_origin: instance.uv_origin,
-                    uv_size: instance.uv_size,
-                    remap_row: instance.draw_state.remap_row,
-                    source_palette: instance.source_palette,
-                });
+                pages[slot]
+                    .draws
+                    .push(crate::render::hd_voxel::HdVoxelDraw {
+                        origin,
+                        size,
+                        uv_origin: instance.uv_origin,
+                        uv_size: instance.uv_size,
+                        remap_row: instance.draw_state.remap_row,
+                        source_palette: instance.source_palette,
+                    });
             }
         }
     }
