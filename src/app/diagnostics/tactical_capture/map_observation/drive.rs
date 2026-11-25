@@ -42,7 +42,11 @@ impl TacticalCaptureSession {
 
     pub(in crate::app::diagnostics::tactical_capture::session) fn prepare_map_observation(
         &mut self,
-        state: &mut AppState,
+        platform: &mut PlatformState,
+        renderer: &mut RendererState,
+        diag: &mut DiagnosticsState,
+        match_state: &mut MatchState,
+        options_profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
     ) -> Result<()> {
         let profile = &self
             .request
@@ -50,16 +54,15 @@ impl TacticalCaptureSession {
             .context("map profile missing")?
             .value;
         ensure!(
-            state.renderer.gpu.config.width == profile.width
-                && state.renderer.gpu.config.height == profile.height,
+            renderer.gpu.config.width == profile.width
+                && renderer.gpu.config.height == profile.height,
             "map observation surface extent differs from request"
         );
         ensure!(
             matches!(
-                state.renderer.gpu.config.format,
+                renderer.gpu.config.format,
                 wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
-            ) && state
-                .renderer
+            ) && renderer
                 .gpu
                 .config
                 .usage
@@ -67,20 +70,19 @@ impl TacticalCaptureSession {
             "map observation requires BGRA8 COPY_SRC surface"
         );
         ensure!(
-            state.match_state.configured_input_delay_ticks == u64::from(profile.input_delay_ticks),
+            match_state.configured_input_delay_ticks == u64::from(profile.input_delay_ticks),
             "configured input delay differs from observation profile"
         );
-        state
-            .platform
+        platform
             .game_config
             .as_ref()
             .context("map observation requires config.toml")?;
         ensure!(
-            state.renderer.upscale_pass.is_none(),
+            renderer.upscale_pass.is_none(),
             "map observation requires native-resolution rendering (no zoom)"
         );
         if let Some(presentation) = profile.presentation {
-            presentation.apply(state);
+            presentation.apply(platform, renderer, options_profile);
         }
         let cwd = std::env::current_dir()?;
         let inputs = json!({
@@ -88,11 +90,11 @@ impl TacticalCaptureSession {
             "executable": artifact(&std::env::current_exe()?, "capture executable")?,
         });
         self.map_state_mut()?.inputs = Some(inputs);
-        state.diag.use_map_presentation_clock()?;
-        state.match_state.input.cursor_x = 0.0;
-        state.match_state.input.cursor_y = 0.0;
+        diag.use_map_presentation_clock()?;
+        match_state.input.cursor_x = 0.0;
+        match_state.input.cursor_y = 0.0;
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-        state.platform.frame_pacer.reanchor(now_ms);
+        platform.frame_pacer.reanchor(now_ms);
         Ok(())
     }
 

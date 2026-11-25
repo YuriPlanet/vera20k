@@ -577,7 +577,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // Start_Scenario 00683D21 completes Read_Scenario before switching video
     // mode at 00683DF3. VERA keeps the window the player gave it: the match
     // takes the zoom pass's source size, already current for this window.
-    crate::app::loading::pump::present_game_mode_blank(state);
+    crate::app::loading::pump::present_game_mode_blank(
+        &state.platform,
+        &state.renderer,
+        &state.match_state,
+    );
     // Only fresh startup cancels its outgoing scenario-owned request. Saved
     // loading preserves the process Theme state until ThemeLoad721040.
     state.audio.cancel_scenario_theme_request();
