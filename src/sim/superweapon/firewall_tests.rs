@@ -29,8 +29,8 @@ fn rules() -> RuleSet {
 
 fn click(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, sw: InternedId) {
     let name = sim.interner.resolve(owner).to_owned();
-    sim.apply_command_with_overlays(
-        None,
+    let _ = sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         &name,
         &Command::LaunchSuperWeapon {
             sw_type_id: sw,

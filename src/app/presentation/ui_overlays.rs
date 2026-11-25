@@ -478,9 +478,8 @@ fn health_strip_widened(
     let Some(viewer) = player else {
         return true;
     };
-    crate::app::presentation::instances::cell_shows_objects(
+    sim.fog().shows_objects_to(
         viewer,
-        sim.fog(),
         entity.position.rx(),
         entity.position.ry(),
         sim.session().game_options().fog_of_war,
@@ -1116,9 +1115,8 @@ pub(crate) fn build_building_status_render_instances(
         // building the player cannot see draws none: a timer over the shroud
         // would give away a silo scouting has not found. The lines were
         // captured with the frame, so this pass reads no simulation state.
-        let visible = crate::app::presentation::instances::cell_shows_objects(
+        let visible = sim.fog().shows_objects_to(
             current_house_id,
-            sim.fog(),
             entity.position.rx(),
             entity.position.ry(),
             sim.session().game_options().fog_of_war,

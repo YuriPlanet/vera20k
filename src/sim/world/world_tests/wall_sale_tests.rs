@@ -65,14 +65,14 @@ fn wall_sale_detach_restores_without_resetting_the_archived_targets_burst() {
             .weapon_burst
             .complete_shot(2);
     }
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &Command::SellWallAtCell { x: 4, y: 4 },
         &rules,
         Some(&overlays),
         &mut FrameEffects::default(),
-    ));
+    )).is_ok());
     for id in actors {
         let actor = sim.substrate.entities.get(id).unwrap();
         assert_eq!(actor.attack_target.target(), Some(TargetKind::Cell(6, 6)));
@@ -199,14 +199,14 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     let hash_before_sale = sim.state_hash();
     super::world_commands::clear_wall_sell_zone_repair_test_trace();
 
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Receiver",
         &Command::SellWallAtCell { x: 4, y: 4 },
         &rules,
         Some(&overlays),
         &mut crate::sim::world::FrameEffects::default(),
-    ));
+    )).is_ok());
 
     let sold = sim.overlay_grid.as_ref().unwrap().cell(4, 4);
     assert_eq!(
@@ -425,14 +425,14 @@ fn wall_sale_cleanup_reaches_fixed_stride_alias_and_reverses_that_source_only() 
     *sim.overlay_grid = Some(grid);
     *sim.resolved_terrain = Some(terrain);
 
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Receiver",
         &Command::SellWallAtCell { x: 0, y: 1 },
         &rules,
         Some(&overlays),
         &mut crate::sim::world::FrameEffects::default(),
-    ));
+    )).is_ok());
     let grid = sim.overlay_grid.as_ref().expect("overlay authority");
     assert_eq!(grid.cell(0, 1).overlay_id, None);
     assert_eq!(grid.cell(511, 0).overlay_id, None);
@@ -454,7 +454,7 @@ fn gsi_04_07_wall_sell_eligibility_gate_matrix_rejects_without_mutation() {
 
     let sell = |sim: &mut Simulation, rules: &RuleSet| {
         sim.apply_command_with_overlays(
-            None,
+            crate::sim::command::CommandSender::Player(None),
             "Receiver",
             &Command::SellWallAtCell { x: 1, y: 1 },
             rules,
@@ -463,22 +463,22 @@ fn gsi_04_07_wall_sell_eligibility_gate_matrix_rejects_without_mutation() {
         )
     };
 
-    assert!(!sell(&mut sim, &rules), "absent overlay rejects");
+    assert!((sell(&mut sim, &rules)).is_err(), "absent overlay rejects");
     sim.overlay_grid.as_mut().unwrap().place_overlay(1, 1, 2, 0);
-    assert!(!sell(&mut sim, &rules), "absent owner rejects");
+    assert!((sell(&mut sim, &rules)).is_err(), "absent owner rejects");
 
     let missing_house = sim.interner.intern("MissingHouse");
     sim.overlay_grid
         .as_mut()
         .unwrap()
         .place_owned_wall(1, 1, 2, 0, missing_house);
-    assert!(!sell(&mut sim, &rules), "unregistered owner rejects");
+    assert!((sell(&mut sim, &rules)).is_err(), "unregistered owner rejects");
 
     sim.overlay_grid
         .as_mut()
         .unwrap()
         .place_owned_wall(1, 1, 0, 0, wall_owner);
-    assert!(!sell(&mut sim, &rules), "non-wall overlay rejects");
+    assert!((sell(&mut sim, &rules)).is_err(), "non-wall overlay rejects");
 
     sim.overlay_grid
         .as_mut()
@@ -491,7 +491,7 @@ fn gsi_04_07_wall_sell_eligibility_gate_matrix_rejects_without_mutation() {
     ))
     .unwrap();
     assert!(
-        !sell(&mut sim, &no_art_match),
+        (sell(&mut sim, &no_art_match)).is_err(),
         "missing ToOverlay match rejects"
     );
     assert_eq!(
@@ -508,28 +508,28 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
     let mut grid = crate::sim::overlay_grid::OverlayGrid::new(3, 3);
     grid.place_owned_wall(0, 2, 2, 0, wall_owner);
     *sim.overlay_grid = Some(grid);
-    assert!(!sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Receiver",
         &Command::SellWallAtCell { x: 0, y: 2 },
         &unsellable_rules,
         Some(&overlays),
         &mut crate::sim::world::FrameEffects::default(),
-    ));
+    )).is_err());
     assert_eq!(
         sim.overlay_grid.as_ref().unwrap().cell(0, 2).overlay_id,
         Some(2)
     );
 
     let (rules, overlays) = gsi_04_07_wall_sell_rules(false, false);
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Receiver",
         &Command::SellWallAtCell { x: 0, y: 2 },
         &rules,
         Some(&overlays),
         &mut crate::sim::world::FrameEffects::default(),
-    ));
+    )).is_ok());
     assert!(sim.sound_events.is_empty());
 
     sim.overlay_grid
@@ -538,32 +538,32 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
         .place_owned_wall(0, 2, 2, 0, wall_owner);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    assert!(!sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Receiver",
         &Command::SellWallAtCell { x: 0, y: 2 },
         &rules,
         Some(&overlays),
         &mut crate::sim::world::FrameEffects::default(),
-    ));
+    )).is_err());
     sim.houses
         .get_mut(&wall_owner)
         .unwrap()
         .set_is_human_for_test(true);
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Receiver",
         &Command::SellWallAtCell { x: 0, y: 2 },
         &rules,
         Some(&overlays),
         &mut crate::sim::world::FrameEffects::default(),
-    ));
-    assert!(!sim.apply_command_with_overlays(
-        None,
+    )).is_ok());
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Receiver",
         &Command::SellWallAtCell { x: 0, y: 0 },
         &rules,
         Some(&overlays),
         &mut crate::sim::world::FrameEffects::default(),
-    ));
+    )).is_err());
 }

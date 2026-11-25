@@ -113,6 +113,12 @@ pub(crate) fn factory_ai(
         abandon_stopped_factory(sim, rules, building, owner, effects);
         return;
     }
+    // VERA: a Wasm module that claimed `Production` starts the house's
+    // production itself, through orders (RFC 0001 6i,
+    // `sim::ext_modules::claims`).
+    if sim.module_claims(owner, vera20k_wasm_ext::DOMAIN_PRODUCTION) {
+        return;
+    }
     start_factory(sim, rules, building, owner, factory_rtti, effects);
 }
 
@@ -182,6 +188,9 @@ fn exit_finished_object(
                 owner,
                 object,
             );
+            // Wasm module `Birth` (RFC 0001 appendix 4.3), the factory as
+            // producer.
+            sim.raise_module_birth(rules, effects, product, Some(building));
             // CompletedProduction lets the placed object go; the delete
             // finds none to abandon.
             sim.production
@@ -303,6 +312,12 @@ fn start_factory(
         return;
     }
     if object.category == ObjectCategory::Vehicle && object.naval != factory_naval {
+        return;
+    }
+    // VERA: a Wasm module `ProductionQueued` decision may refuse the start
+    // before the FactoryClass constructor (RFC 0001 6f,
+    // `sim::ext_modules::decide`).
+    if !sim.module_allows_production(rules, owner, object) {
         return;
     }
     let type_id = sim.interner.intern(&object.id);

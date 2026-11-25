@@ -49,8 +49,10 @@ pub enum CanBuild {
 
 /// `HouseClass::CanBuild @ 0x004F7870` for house `owner` and type `obj`.
 ///
-/// A type VERA's room bans ([`crate::sim::game_options::RoomBans`]) is
-/// refused first, whatever the flags. With `skip_tech` (the first flag),
+/// A type VERA's room bans ([`crate::sim::game_options::RoomBans`]) or a
+/// Wasm module's `ProductionAllowed` answer disallows, or a module's
+/// `AllowType` forbids, is refused first, whatever the flags. With
+/// `skip_tech` (the first flag),
 /// only the build limit is asked ([`build_limit`]). Otherwise, in order (`0x004F7889..0x004F7BE5`):
 /// - `TechnoType+0xC98` refuses; only the constructor writes it, with 0
 ///   (`0x007113CC`);
@@ -104,6 +106,17 @@ pub fn can_build(
     if sim.session.game_options().bans.bans_type(obj) {
         return CanBuild::No;
     }
+    // VERA extension, Wasm module `ProductionAllowed` (RFC 0001 appendix
+    // 4.5, `sim::ext_modules::decide`): a type a module disallowed to this
+    // house at the latest once-per-frame step is refused here, at
+    // CanBuild's entry, whatever the flags, as a room ban is. Without a
+    // refusal kept this is one branch.
+    // A Wasm module's `AllowType` forbid (RFC 0001 appendix 5.3, VERA-only)
+    // refuses the type to this house the same way, on every route.
+    if sim.module_refuses_production(rules, owner, obj) || sim.ext_module_forbids(rules, owner, obj)
+    {
+        return CanBuild::No;
+    }
     if skip_tech {
         return build_limit(sim, rules, owner, obj, count_in_production);
     }
@@ -138,6 +151,30 @@ pub fn can_build(
         }
     }
     build_limit(sim, rules, owner, obj, count_in_production)
+}
+
+/// VERA, for a Wasm module's house order (RFC 0001 6g): whether `owner`'s
+/// player could choose `obj`, as [`can_build`]'s human arm asks it. A house
+/// no human controls is answered Yes there without its prerequisites, so a
+/// module's order adds the human arm's requirements and prerequisites
+/// (`0x004F7BF1..0x004F7F52`) to CanBuild's own answer.
+pub(crate) fn buildable_by_player(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    obj: &ObjectType,
+) -> bool {
+    if can_build(sim, rules, owner, obj, false, true) == CanBuild::No {
+        return false;
+    }
+    let Some(house) = sim.houses.get(&owner) else {
+        return false;
+    };
+    match requirements_met(sim, rules, owner, house, obj) {
+        RequirementStatus::Overridden => true,
+        RequirementStatus::Complete => owns_prerequisites(sim, rules, house, obj),
+        _ => false,
+    }
 }
 
 /// `HouseClass::CanBuild`'s qualification ahead of the prerequisites

@@ -252,36 +252,7 @@ pub(crate) fn name_and_version(dir: &Path, folder: &str) -> (String, String) {
     )
 }
 
-/// `1`, `1.2` or `1.2.3` as three numbers, absent ones 0; anything else,
-/// such as a later scheme this build does not know, is `None`.
-fn version_parts(text: &str) -> Option<[u32; 3]> {
-    let mut parts = [0; 3];
-    let mut given = text.trim().split('.');
-    for part in &mut parts {
-        match given.next() {
-            Some(digits) if digits.len() <= 9 && !digits.is_empty() => {
-                *part = digits
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit())
-                    .then(|| digits.parse().ok())
-                    .flatten()?;
-            }
-            Some(_) => return None,
-            None => break,
-        }
-    }
-    given.next().is_none().then_some(parts)
-}
-
-/// Whether this build, `current`, can play a mod that needs `needs`. A build
-/// whose own version does not read as three numbers refuses nothing.
-fn version_serves(current: &str, needs: &str) -> bool {
-    match (version_parts(current), version_parts(needs)) {
-        (Some(current), Some(needs)) => current >= needs,
-        (None, _) => true,
-        (Some(_), None) => false,
-    }
-}
+use crate::util::version::version_serves;
 
 /// The folder in `mods_dir` that `name` names, whatever its case: its own
 /// spelling and its path. A name that is not one plain folder name (empty, a

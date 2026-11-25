@@ -369,8 +369,8 @@ fn ordinary_friendly_repair_uses_capture_event_without_hut_exception() {
         );
         assert_eq!(sim.state_hash(), before, "object-action query is read-only");
         assert!(
-            sim.apply_command_with_overlays(
-                None,
+            (sim.apply_command_with_overlays(
+                crate::sim::command::CommandSender::Player(None),
                 "Americans",
                 &Command::CaptureBuilding {
                     engineer_id: engineer,
@@ -379,7 +379,7 @@ fn ordinary_friendly_repair_uses_capture_event_without_hut_exception() {
                 &rules,
                 Some(&registry),
                 &mut crate::sim::world::FrameEffects::default(),
-            ),
+            )).is_ok(),
             "target_owner={target_owner}"
         );
         let actor = sim.substrate.entities.get(engineer).unwrap();
@@ -462,14 +462,14 @@ fn queued_hut_capture_survives_repair_before_event_execution() {
             sim.mapgen_rng.logical_state(),
         );
         assert!(
-            sim.apply_command_with_overlays(
-                None,
+            (sim.apply_command_with_overlays(
+                crate::sim::command::CommandSender::Player(None),
                 "Americans",
                 &due[0].payload,
                 &rules,
                 Some(&registry),
                 &mut crate::sim::world::FrameEffects::default(),
-            ),
+            )).is_ok(),
             "relation={relation}"
         );
         let actor = sim.substrate.entities.get(engineer).unwrap();

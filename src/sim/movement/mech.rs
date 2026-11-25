@@ -180,7 +180,7 @@ impl Simulation {
         let speed = super::foot_speed::owner_current_speed_from_native_fraction(
             adjusted,
             actor.foot_speed.native_applied_fraction(),
-            actor.phobos_speed_multiplier(),
+            actor.effect_speed_multiplier(),
         );
         let facing = crate::util::direction_tables::facing16_from_delta(
             head.x.wrapping_sub(current.x),

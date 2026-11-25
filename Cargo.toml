@@ -13,7 +13,9 @@ publish = false
 # asset tools and the game binary). The core manifest sits in `src/`, so rustc
 # still names every source file `src/...`.
 [workspace]
-members = ["src", "gui", "services/relay-protocol", "services/relay", "android"]
+members = ["src", "gui", "services/relay-protocol", "services/relay", "android", "wasm-ext"]
+# Module SDK examples build for wasm32 in their own workspace.
+exclude = ["sdk"]
 # Plain `cargo build`/`cargo test --lib` cover both crates.
 default-members = [".", "src"]
 
@@ -120,6 +122,8 @@ tests-ui = []
 # The GPU-free engine. Its dev features follow this package's.
 vera20k-core = { path = "src" }
 vera20k-gui = { path = "gui" }
+# Wasm module load checks for `asset wasm-*` (RFC 0001).
+vera20k-wasm-ext = { path = "wasm-ext" }
 
 # Background HTTPS lobby I/O; verified TLS is independent of simulation.
 base64 = "0.22"

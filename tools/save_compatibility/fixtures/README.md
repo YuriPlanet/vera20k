@@ -27,9 +27,13 @@ and executes the saved command before it accepts the fixture.
 | `main-8852f7a76.sav` | `8852f7a76` (pre-release) | `skirmish` |
 | `main-bc55c35e7.sav` | `bc55c35e7` (pre-release) | `skirmish` |
 | `main-30e9a0f38.sav` | `30e9a0f38` (pre-release) | `skirmish` |
+| `main-a33fcac81.sav` | `a33fcac81` (Wasm extension modules) | `skirmish` |
+| `main-2e39b88dd.sav` | `2e39b88dd` (Wasm modules and ArtImageSwap) | `skirmish` |
 
 The Kratos writer revision is in PR #5080. In a fresh clone, fetch it with
-`git fetch origin pull/5080/head` before checking out `bc55c35e7`.
+`git fetch origin pull/5080/head` before checking out `bc55c35e7`. The Wasm
+modules writers are in PR #5183: fetch `pull/5183/head` before checking out
+`a33fcac81` or `2e39b88dd`.
 
 The ordinary worlds use `compat.map`, a flat 3×3 terrain and an authored
 APC type. At tick 91 the Americans player has 1,000 credits. The pending

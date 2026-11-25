@@ -50,12 +50,14 @@ to 512 and `[AI] AIBaseSpacing` to −16 through 16 cells.
   See [More detail](#more-detail).
 - Large conversions. Selecting their data does not establish support for all their
   extension features.
+- New behaviour in code. A mod or map can carry a [Wasm module](wasm-modules.md), a
+  sandboxed program that changes the game through its own rules. It is a preview.
 
 **You can't:**
 
 - Load DLLs, Syringe or a patched `gamemd.exe`.
-- Add new behaviour with a script or plugin. VERA20k has neither, so that means changing
-  its code.
+- Add new behaviour with a DLL, script or plugin outside the [Wasm modules](wasm-modules.md),
+  which have no files, network or clock.
 - Play without the original game.
 
 ## Where things go
@@ -506,6 +508,8 @@ don't matter: its matches read the original terrain.
 
 - [INI roots and archive names](ini-roots.md): select your own resource filenames.
 - [Interface layout](interface-layout.md): lay out the match screen with `veraui.ini`.
+- [Wasm modules](wasm-modules.md): build a `rules.wasm`, put it in a mod or a map, and
+  declare its triggers in `rulesmd.ini`.
 - [Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md), [VeraX](verax.md) and
   [Kratos](kratos.md): what each extension covers and how to turn it on or build VERA20k with
   it. The official downloads hold all of Ares, which a game's data turns on, and none of the

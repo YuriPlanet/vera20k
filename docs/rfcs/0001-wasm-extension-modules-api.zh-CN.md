@@ -2,7 +2,7 @@
 
 [English](0001-wasm-extension-modules-api.md)
 
-[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.0.20，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单见[第 9 节](#9-版本-1-清单)和各表的层级列。
+[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.0.21，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单见[第 9 节](#9-版本-1-清单)和各表的层级列。
 
 ## 目录
 
@@ -113,7 +113,7 @@ enum Status {
 **事件记录**，在 `on_events` 的批次中原地读取：
 
 ```rust
-struct EventRecord {      // 112 字节
+struct EventRecord {      // 120 字节
     key: i32,             // 0   模块动作或决定处理函数的分派键
     kind: i32,            // 4   事件种类（第 4 节）
     trigger: i64,         // 8   触发的触发器；总会设置
@@ -131,24 +131,26 @@ struct EventRecord {      // 112 字节
     x: i32,               // 96  表中列出时：事件发生的坐标（lepton）
     y: i32,               // 100
     z: i32,               // 104
-    reserved: i32,        // 108 0
+    args: i32,            // 108 字符串 ID（名字种类 String）：模块动作的参数文本，IniEntry 的条目名，IniKey 的值；没有为 0
+    target: i32,          // 112 模块动作的目标（ActionTarget，5.1 的顺序）；其他记录为 0
+    reserved: i32,        // 116 0
 }
 ```
 
-每条都填 `key`、`kind`、`trigger`、`holder`、`frame`；第 4 节未列出的引用字段为 0（`house` 除外，见上），整型载荷字段为 −1；`reserved` 始终为 0。
+每条都填 `key`、`kind`、`trigger`、`holder`、`frame`；第 4 节未列出的引用字段为 0（`house` 除外，见上），整型载荷字段为 −1；`args`、`target` 只在表中列出时不为 0；`reserved` 始终为 0。
 
 **决定记录**，在 `on_decide` 中原地读写（[RFC 6f](0001-wasm-extension-modules.zh-CN.md#6f-可决定事件)）：
 
 ```rust
-struct DecideRecord {     // 152 字节
+struct DecideRecord {     // 160 字节
     event: EventRecord,   // 0    同上
-    native: i64,          // 112  引擎自己的结果
-    previous: i64,        // 120  上一环的结果；第一环为原生值
-    result: i64,          // 128  由处理函数写入
-    handled: i32,         // 136  处理函数设为 1；为 0 时保留上一环的结果
-    area: i32,            // 140  模块内存中的结果区；该种类没有时为 0
-    area_cap: i32,        // 144  结果区的可用字节数
-    previous_len: i32,    // 148  上一环结果的字节数，已复制进结果区
+    native: i64,          // 120  引擎自己的结果
+    previous: i64,        // 128  上一环的结果；第一环为原生值
+    result: i64,          // 136  由处理函数写入
+    handled: i32,         // 144  处理函数设为 1；为 0 时保留上一环的结果
+    area: i32,            // 148  模块内存中的结果区；该种类没有时为 0
+    area_cap: i32,        // 152  结果区的可用字节数
+    previous_len: i32,    // 156  上一环结果的字节数，已复制进结果区
 }
 ```
 
@@ -176,7 +178,7 @@ struct Query {            // 64 字节，后接 clause_count 条 Clause
     height: i32,          // 20  area 2：高（格）
     type: i64,            // 24  类型引用；Types 范围须为种类通配引用或具体类型（8.2）；其他范围 0 表示不限类型
     owner: i64,           // 32  所属方引用；0 为任意
-    viewpoint: i64,       // 40  视点属性用的所属方（第 7 节）；0 为没有
+    viewpoint: i64,       // 40  视点属性用的所属方（第 7 节），或对象：对象视点属性（Engage）以它为视点，所属方视点属性以它的所属方为视点；0 为没有
     after: i64,           // 48  分页：上一页返回的 next；0 为首页
     clause_count: i32,    // 56  至多 16
     reserved: i32,        // 60  0
@@ -244,7 +246,7 @@ struct ClientEventRecord { // 32 字节
     id: i32,               // 16  Hotkey：热键 ID；Notify：通知 ID；否则为 -1
     value: i32,            // 20  Hover：1 进入，0 离开；Click：List 的行号或 CameoGrid 的条目下标，其他为 −1；
                            //     MapClick：0 左键，1 右键
-    data: i32,             // 24  Notify：数据，位于投递区
+    data: i32,             // 24  Notify：数据；SimEvent：一条 EventRecord；都位于投递区
     data_len: i32,         // 28
 }
 ```
@@ -337,7 +339,10 @@ bytes: u32,               // 投递区的字节数
 | 地图 `[VeraWasm]` | `StorageId` | ASCII 名字 | 地图的文件名 |
 | 地图 `[VeraWasmRulesPack]`、`[VeraWasmUIPack]` | `1`、`2`…… | 标准 base64，每个值 70 个字符（读取最多接受 127 字节）；键为从 1 连续编号、无前导零的十进制数；按编号而不是按文件中的顺序拼接，重复、缺号、非数字键或超长的值拒绝开局；解码后按 `IsoMapPack5` 的分块 LZO 格式解压 | — |
 | mod `rulesmd.ini` `[VeraWasm]` | `Api` | `主.次`，与该 mod 模块的导入版本一致 | 有模块时必需 |
-| mod `rulesmd.ini` `[VeraWasm]` | `Budget`、`MapBudget` | mod 模块、地图模块每帧的额度 | 引擎默认值；引擎设上限 |
+| mod `rulesmd.ini` `[VeraWasm]` | `Budget`、`MapBudget` | mod 模块、地图模块每帧的额度（[RFC 15.4](0001-wasm-extension-modules.zh-CN.md#154-预览期取值)） | 500,000、100,000；上限 500,000，低于 20,000 拒绝开局 |
+| mod `rulesmd.ini` `[VeraWasm]` | `SeatBudget` | 每个认领席位增加的额度 | 500,000；上限 500,000 |
+| mod `rulesmd.ini` `[VeraWasm]` | `Controller` | `yes` 时大厅为电脑席位提供“mod AI”选项（[RFC 6i](0001-wasm-extension-modules.zh-CN.md#6i-驱动所属方)） | `no` |
+| `VERA.INI` `[VERA]` | `WasmBudget` | 覆盖 mod 的 `Budget`；联机时由房主的值成为房间设置 | 没有 |
 | mod `rulesmd.ini` `[VeraWasm]` | `MapWasm` | `yes`、`no` | `yes` |
 | mod `rulesmd.ini` `[VeraWasm]` | `MapUI` | `overlay`、`full`、`no` | `overlay` |
 | mod `rulesmd.ini` 的 TechnoType、Weapon、Warhead、Projectile 节 | `Vera.Tags` | 逗号分隔的标签节名 | 没有 |
@@ -345,9 +350,9 @@ bytes: u32,               // 投递区的字节数
 | 地图 `[VeraUI]`、`[VeraUI.<部件名>]` | `Parts`；部件键 | 同 `veraui.ini` 的新增部件（7.10） | 没有 |
 | 地图 `[Actions]` | 动作种类 100036 | `100036,4,名字,0,0,0,0,A`；名字可带 `mod.`、`map.` | — |
 | 标签节 | `Trigger` | 逗号分隔的触发器节名 | — |
-| 触发器节 | `Event`、`Event<n>` | `名字` 或 `名字(op,interval,id,value)`（`EventDef` 字段，可省略末尾的）；多个事件全部成立 | 至少一个 |
+| 触发器节 | `Event`、`Event<n>` | `名字` 或 `名字(op,interval,id,value)`（`EventDef` 字段，可省略末尾的）；`Wasm:名字` 为已注册的模块事件（`ModuleEvent`）；多个事件全部成立 | 至少一个 |
 | 触发器节 | `Where<n>`、`Event<k>.Where<n>` | 筛选子句（[RFC 6a](0001-wasm-extension-modules.zh-CN.md#6a-触发器事件筛选子句和动作)）；`Where<n>` 属于第一个事件 | 没有 |
-| 触发器节 | `Action`、`Action<n>` | `Wasm:名字` 为模块动作；其他写作 `名字(目标,参数……)`，目标为 `ActionTarget` 名，参数按第 5 节“参数”列的顺序 | 没有 |
+| 触发器节 | `Action`、`Action<n>` | `Wasm:名字` 或 `Wasm:名字(目标,文本)` 为模块动作（文本原样成为记录的 `args`，可含逗号）；`RaiseEvent` 的事件写名字；其他写作 `名字(目标,参数……)`，目标为 `ActionTarget` 名，参数按第 5 节“参数”列的顺序 | 没有 |
 | 触发器节 | `Decide` | `Wasm:名字`，决定处理函数 | 没有 |
 | 触发器节 | `House` | 国家名 | 0（主体当时的所属方；无主体时为 Neutral） |
 | 触发器节 | `Difficulty` | `Easy`、`Normal`、`Hard` 的逗号列表 | 全部 |
@@ -387,9 +392,10 @@ bytes: u32,               // 投递区的字节数
 | 21 | `action` | `(kind: i32, target: i64, params: ptr, len, out: ptr) -> i32` | 执行动作（第 5 节，`ActionParams`）；写入创建的对象（`i64`），否则为 0 | all |
 | 22 | `send_notify` | `(to: i64, id: i32, ptr, len) -> i32` | 通知所属方 `to` 的玩家；`to` 为 0 时发给观战者；超出大小或每帧条数为 `Refused` | all |
 | 23 | `order` | `(house: i64, ptr, len) -> i32` | 为电脑所属方 `house` 排入一条标准玩家指令（`Order`），下一帧执行，像该所属方的玩家输入一样校验（[RFC 6g](0001-wasm-extension-modules.zh-CN.md#6g-所属方指令)） | all |
+| 24 | `ini_register` | `(kind: i32, section: i32, name: ptr, len, key: i32, out: ptr) -> i32` | 注册一个 INI 名字（`IniKind`，[RFC 6h](0001-wasm-extension-modules.zh-CN.md#6h-ini-注册)）；`section` 对 `Key` 为 `IniSection`，对 `Event` 为 0 对象事件、1 全局事件，对 `Registry` 为 0；`key` 为处理函数的分派键（`Event` 忽略）；`out` 写入 `i32`：`Event` 为事件 ID，其他为 0。名字已被注册或以 `Vera.` 开头为 `Refused`；名字不合法、超过数量上限或不在初始化函数中调用为非法参数 | init |
 
 - `on_rules` 中对类型引用和全局规则引用的 `set` 等于以值的 INI 文本调用 `rules_set`；`get` 读到本层之前处理过的值。触发器、动作、变量、修饰器、`find` 和其他引用的读写返回 `Unsupported`。
-- 写入函数：`set`、`modify`、`unmodify`、`rules_set`、`var_set`、`trigger_create`、`trigger_remove`、`trigger_bind`、`trigger_unbind`、`action`、`send_notify`、`order`。
+- 写入函数：`set`、`modify`、`unmodify`、`rules_set`、`var_set`、`trigger_create`、`trigger_remove`、`trigger_bind`、`trigger_unbind`、`action`、`send_notify`、`order`、`ini_register`。
 
 ### 1.2 导出
 
@@ -473,6 +479,8 @@ TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）�
 | 规则 | `Rules.get(section, key)`、`Rules.set(section, key, value)` | `rules_get`、`rules_set` |
 | 搜索 | `.first()` 或 `.page(buffer, after)`；`.country(americans)` 按国家筛选 | 每次 `.page` 一次 `find`；first 使用容量 1，沿 `next` 继续，直到找到或 `next=0`，没有匹配时返回 0。country 接受已解析的国家类型引用，生成 Country 相等子句 |
 | 其他 | `Cell.at(x, y)`、`Waypoint.cell(n)`（只编码引用）；`Notify.id(name)`、`Notify.send(to, id, data)` | —；`lookup`、`send_notify` |
+| INI 注册 | 初始化中 `Ini.key(name, IniSection.TechnoType, key)`、`Ini.registry(name, key)`、`Ini.event(name, EventScope.Object)`；处理函数收到 `IniKeyRecord`（`typeRef`、`value`）、`IniEntryRecord`（`position`、`entryName`） | 各一次 `ini_register`；读值时一次 `name_of`（`String`） |
+| 模块事件 | `Trigger.onModuleEvent(ev)`、`Action.raiseEvent(ev, target, other, value, value2)`、`ActionDef.module(key, target, text)` | `trigger_create`；`action`（`RaiseEvent`） |
 | 注册 | 顶层的 `onScenarioStart(fn)`、`onFrame(new Every(N), fn)`、`onMessage(fn)`、`namedAction(name, fn)`；客户端的 `onStart(fn)`、`onRender(fn)`、`onClientEvent(ClientEvent.Click, fn)` | SDK 生成的导出 |
 | 客户端 | `Ui.find(name)`、`Ui.create(NodeKind.Text, parent)`、`Node.setLabel(n, text)`、`Node.setVisible(n, v)`、`Client.viewer()`、`Client.sendMessage(data)`、`Client.order(...)`、`Storage.read(key)`、`Node.setItems(n, items)` | `client_*`，各一次；`Storage.read` 的值大于缓冲区时调用两次；`Node.setItems` 用 `\n` 连接条目后调用 `client_set_bytes` |
 
@@ -621,7 +629,7 @@ TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）�
 | 100013 | `TransportExited` | 同 `TransportEntered` | 离开完成后 | 对象 | — | v1 |
 | 100014 | `PassengerAdded` | 在载具或建筑（`subject`）上；`other` 乘客，`value` 已占空间，`value2` 驻军标志 | 同 `TransportEntered` | 对象 | — | v1 |
 | 100015 | `PassengerRemoved` | 同 `PassengerAdded` | 同 `TransportExited` | 对象 | — | v1 |
-| 100016 | `Commanded` | 在单位（`subject`）上；`value` 指令（`Command`），`other` 目标对象（可为 0），`cell` 目标格子（可为 0），`value2` 指令序号（一次点击下给多个单位的同一条指令共用） | 模拟执行绑定对象的玩家或 AI 指令后 | 对象 | — | later |
+| 100016 | `Commanded` | 在单位（`subject`）上；`value` 指令（`Command`），`other` 目标对象（可为 0），`cell` 目标格子（可为 0），`value2` 指令序号（一次点击下给多个单位的同一条指令共用） | 模拟执行绑定对象的玩家或 AI 指令后 | 对象 | — | v1 |
 | 100017 | `Crushed` | `other` 碾压者，`x`、`y`、`z` 位置（lepton） | 碾压后 | 对象 | — | later |
 | 100018 | `HouseTransfer` | `house` 新所属方，`value` 1 为心控 | 转移前；转移重新检查 | 对象 | — | later |
 | 100019 | `HouseTransferred` | `house` 原所属方，`value` 1 为心控 | 转移后 | 对象 | — | v1 |
@@ -631,6 +639,8 @@ TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）�
 | 100023 | `Timer` | `value` 上次触发的帧 | 每 `interval` 帧 | 全局 | — | v1 |
 | 100024 | `SuperWeaponLaunched` | `id` 超级武器类型，`house`，`cell` 目标 | 超级武器发射后 | 全局 | — | v1 |
 | 100025 | `ProductionCancelled` | `house`，`id` 类型，`value` 退还的金钱 | 玩家或 AI 取消生产队列中的条目后 | 类型 | — | later |
+| 100040 | `ModuleEvent` | `id` 事件 ID（`EventDef.id` 同此），`subject`（全局事件为 0），`other`、`value`、`value2`、`house` 取自 `RaiseEvent` 的参数（[RFC 6h](0001-wasm-extension-modules.zh-CN.md#6h-ini-注册)） | `RaiseEvent` 执行时 | 注册为对象事件时为对象，否则为全局 | — | v1 |
+| 100043 | `OrderRefused` | `subject` 被拒绝的单位（所属方级指令为 0），`house` 发出指令的所属方，`value` 指令（`Command`），`value2` 原因（`RefuseReason`），`other`、`cell` 指令的目标，`id` 所属方级指令的类型（其他为 −1）（[RFC 6i](0001-wasm-extension-modules.zh-CN.md#6i-驱动所属方)） | 指令在执行步骤中被拒绝后，每个单位一次，所属方级指令一次 | 全局 | — | v1 |
 
 ### 4.4 新的轮询型事件
 
@@ -671,6 +681,16 @@ TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）�
 | `MapClick` | `ref` 格子，`value` 0 左键 / 1 右键 | 在地图上点击；已产生 `Click` 或 `Dismiss` 的点击除外 | 总是；光标 `CaptureMapClick` 为 1 时点击不再传给游戏 |
 | `SelectionChanged` | — | 本地选择变化；用带 `Selected=1` 子句的 `client_find` 读取 | 总是 |
 | `Notify` | `source`，`id` 通知 ID，`data`、`data_len` | 发给本机的通知到达（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)） | 总是 |
+| `SimEvent` | `data`、`data_len`：投递区中的一条 `EventRecord` | 本方对象为主体的 `Commanded`、`OrderRefused`、`TakeDamage`、`Killed`、`Birth`、`AttackedBy`，以及发给本方的所属方事件；本玩家看不到的 `other` 填 0；追帧期间不投递（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)） | 总是 |
+
+### 4.7 开局投递记录
+
+只在场景开始时投递给注册了它们的模块，位于该模块的 `on_scenario_start` 之前（[RFC 6h](0001-wasm-extension-modules.zh-CN.md#6h-ini-注册)）；不能用于触发器，在 `EventDef` 中使用为非法参数。`key` 为注册时的分派键，`trigger`、`holder`、`target` 为 0，`id` 为 −1。全部 `v1`。
+
+| # | 记录 | 字段 |
+| --- | --- | --- |
+| 100041 | `IniEntry` | `args` 条目节名，`value` 在合并后列表中的位置（从 0 开始，同名条目只投递第一次） |
+| 100042 | `IniKey` | `subject` 该节的类型引用（`General` 为全局规则引用），`args` 合并后的值 |
 
 ## 5. 动作种类
 
@@ -853,7 +873,7 @@ Ares 动作（未启用 Ares 时为 `Unsupported`）：
 
 ### 5.3 原子动作
 
-编号是标识，只在末尾追加；100041 保留（`ApplyEffect`）。“仅代码”动作通过 `action` 传变长数据。未注明返回句柄的动作值为 0，状态随调用返回。`Modify`、`RemoveModifiers` 在版本 1 中只对对象。
+编号是标识，只在末尾追加；100041 保留（`ApplyEffect`），100043、100044 保留（`AttachRoutine`、`DetachRoutine`，引擎侧微操例程，later）。“仅代码”动作通过 `action` 传变长数据。未注明返回句柄的动作值为 0，状态随调用返回。`Modify`、`RemoveModifiers` 在版本 1 中只对对象。
 
 | # | 名称 | 目标 | 参数 | 语义及非零返回值 | 随机数 | 层级 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -893,11 +913,12 @@ Ares 动作（未启用 Ares 时为 `Unsupported`）：
 | 100033 | `Log` | — | `text` | 写一行游戏内日志 | none | v1 |
 | 100034 | `Convert` | 对象 | `id` 类型，`value2` 帧数（0 永久；大于 0 时到期变回） | 改变类型，同 Ares 类型转换；与传送和运动互斥 | native | v1 |
 | 100035 | `Push` | 对象 | `cell` 方向目标，`value` 力度 | 被推动或抛起，叠加到移动上；与变形和传送互斥 | native | later |
-| 100036 | `Module` | 不限 | `id` 分派键 | 运行模块动作，在模块阶段排队；具名节写作 `Action=Wasm:name`，地图写作动作 100036 | none | v1 |
+| 100036 | `Module` | 不限 | `id` 分派键；`text` 参数文本（可省略） | 运行模块动作，在模块阶段排队；记录的 `target` 为触发器中的目标选择，`args` 为参数文本的字符串 ID；具名节写作 `Action=Wasm:name` 或 `Action=Wasm:name(目标,文本)`，地图写作动作 100036（不带参数） | none | v1 |
 | 100037 | `CreateTeamUnlimited` | `House` | `id` TeamType | 启动小队，不受 Max 限制（同脚本动作 18）；返回小队 | native | later |
 | 100038 | `DisbandTeam` | — | `other` 小队 | 销毁小队，记录 AI 触发器结果，释放成员 | none | later |
 | 100039 | `AddTeamMember` | 对象 | `other` 小队 | 加入小队，执行准入检查 | none | later |
 | 100040 | `RemoveTeamMember` | 对象 | — | 离开所在小队 | none | later |
+| 100042 | `RaiseEvent` | 对象（对象事件）或不限（全局事件） | `id` 事件 ID；`other`、`value`、`value2`、`house` 写入记录 | 引发模块事件 `ModuleEvent`（[RFC 6h](0001-wasm-extension-modules.zh-CN.md#6h-ini-注册)）；对象事件的目标不是存在的对象为 `Gone`；事件 ID 未注册为非法参数；INI 写作 `RaiseEvent(目标,事件名,value,value2)` | none | v1 |
 
 ### 5.4 客户端动作种类
 
@@ -1050,8 +1071,16 @@ AI 文档的读写层次见 [RFC 6d](0001-wasm-extension-modules.zh-CN.md#6d-ai)
 | `Moving` | bool | R | own | v1 |  |
 | `Facing` | int 0..255 | R | own | v1 | 车体朝向，刻度同地图单位的朝向和脚本动作 `ForceFacing` |
 | `TurretFacing` | int 0..255 | R | own | v1 | 炮塔朝向，刻度同 `Facing`；没有炮塔为 `Unsupported` |
-| `Armor` | id（`Armor`） | R | own | later |  |
+| `Armor` | id（`Armor`） | R | own | v1 |  |
 | `Online` | bool | W | own | v1 | 建筑；同原版动作 61、62 |
+| `Destination` | ref | R | own | v1 | 移动目的地（格子或对象），没有为 0 |
+| `WeaponReady` | bool | R | own | v1 | 主武器冷却完毕 |
+| `Deployed` | bool | R | own | v1 | 已部署 |
+| `UnderConstruction` | bool | R | seen | v1 | 建筑正在建造动画中 |
+| `Parasite` | ref | R | own | v1 | 附着在它身上的寄生单位，没有为 0 |
+| `ControlGroup` | int | R | 客户端专用 | v1（阶段 2） | 本地编队号，没有为 −1；模拟中为 `Unsupported` |
+| `Visible` | bool | R（视点） | own | v1 | 视点所属方此刻能看到它：迷雾、隐形和侦测与该玩家的客户端一致（[RFC 6i](0001-wasm-extension-modules.zh-CN.md#6i-驱动所属方)） |
+| `Engage` | enum `EngageResult` | R（视点为对象，派生·高） | own | v1 | 视点对象作为射手能否打击它；视点须是对象，否则为 `Unsupported`；复用引擎的开火许可和伤害判定 |
 | `Selected` | bool | R | 客户端专用 | v1（阶段 2） | 本地选择；模拟中为 `Unsupported` |
 | `Relation` | enum `Relation` | R（视点） | own | v1 | 与视点所属方的关系 |
 | `NearbyEnemyCount` | int | R（派生，高） | own | later | 视野（`Sight`）内的敌方对象数 |
@@ -1160,6 +1189,11 @@ Phobos 键为 `—` 的属性随模块功能开启（[RFC 14](0001-wasm-extensio
 | `IsDefeated`、`IsHuman`、`IsCivilian` | bool | R | all | v1 |  |
 | `Kills`、`Losses` | int | R | own | later | 统计 |
 | `AiTriggersActive` | bool | W | sim | later | 同原版动作 74、75 |
+| `ControlDomains` | mask（`Domain`） | W | sim | v1 | 认领的领域（[RFC 6i](0001-wasm-extension-modules.zh-CN.md#6i-驱动所属方)）；对人类所属方、已战败所属方或被另一模块认领的位为 `Refused`；存档、计入哈希 |
+| `Factory.<Kind>.Type` | ref | R | own | v1 | `<Kind>` 为 `Building`、`Defense`、`Infantry`、`Vehicle`、`Naval`、`Aircraft`；正在生产的类型，没有为 0 |
+| `Factory.<Kind>.Progress` | int 0..100 | R | own | v1 |  |
+| `Factory.<Kind>.Ready` | bool | R | own | v1 | 已完成，待放置或待出厂 |
+| `Factory.<Kind>.Queued` | int | R | own | v1 | 队列中的条目数 |
 | `Relation` | enum `Relation` | R（视点） | all | v1 | 盟友和敌人用带 `Relation` 子句的 `find` 列出 |
 | `PowerOutage` | bool | R | own | later | 可修饰（7.2） |
 
@@ -1176,6 +1210,8 @@ Phobos 键为 `—` 的属性随模块功能开启（[RFC 14](0001-wasm-extensio
 | `Placeable` | bool | R（视点） | own | v1 | 查询的 `type` 能否由视点所属方放在该格；只在 `find`、`client_find` 中有效，其他地方为 `Unsupported` |
 | `CellTag` | ref（标签） | R | sim | v1 | 没有为 0 |
 | `Waypoint` | int | R | all | v1 | 该格的路径点编号，没有为 −1 |
+| `Zone.<MovementZone>` | int | R | all | v1 | 该移动区域下的连通编号：两格编号相等即可达；每个 `MovementZone` 一个 |
+| `Obstructed` | bool | R | seen | v1 | 被建筑、墙或不可通过的覆盖物占据 |
 
 ### 7.7 类型与规则
 
@@ -1256,6 +1292,7 @@ Ares 和 Phobos 的键尚未分类。
 | `AmbientLight` | int | R | all | v1 |
 | `IonStormActive` | bool | R | all | v1 |
 | `GameSpeed` | int | R | all | v1 |
+| `AutomationAllowed` | bool | R | all | v1 |
 | 全局数值键 | 见 7.7 | R | all | later |
 
 `GameSpeed` 取值同游戏选项中的游戏速度档位；版本 1 中只读。
@@ -1278,10 +1315,10 @@ Ares 和 Phobos 的键尚未分类。
 | 小队 | `Cursor` | int | W | later | 脚本游标；写入即跳到该行 |
 | 小队 | `Succeeded` | bool | R | later |  |
 | 小队 | `MemberCount` | int | R | later | 成员用带 `Team = t` 子句的 `find` |
-| 超级武器 | `Type` | ref | R | later |  |
-| 超级武器 | `Owner` | ref | R | later |  |
-| 超级武器 | `Ready` | bool | R | later |  |
-| 超级武器 | `ChargePercent` | int | W | later | 同原版动作 129 |
+| 超级武器 | `Type` | ref | R | v1 |  |
+| 超级武器 | `Owner` | ref | R | v1 |  |
+| 超级武器 | `Ready` | bool | R | v1 |  |
+| 超级武器 | `ChargePercent` | int | W | v1 | 同原版动作 129 |
 | 超级武器 | `RechargeTime` | frames | W | later | 同原版动作 132 |
 
 ### 7.10 客户端节点
@@ -1374,12 +1411,13 @@ Ares 和 Phobos 的键尚未分类。
 | 15 | `Variable` | 变量（`vera.vars`；前缀 `mod.`、`map.` 指向另一方）；返回变量 ID |
 | 16 | `Notify` | 通知（`vera.notify`）；返回小写折叠后名字的 FNV-1a 哈希 |
 | 17 | `ModuleAction` | 模块动作和决定处理函数（本模块的 `vera.actions`；不接受前缀）；返回分派键 |
-| 18 | `String` | 引擎已持有、且在所有机器上相同的字符串：`string` 属性返回的字符串、音乐、EVA 名称、地图中的触发器和标签 ID；不存在为 `NotFound`；不新建字符串。模拟中不查询 CSF 或任何翻译表：CSF 条目名作为文字参数原样传递，`lookup` 不判断它是否存在 |
+| 18 | `String` | 引擎已持有、且在所有机器上相同的字符串：`string` 属性返回的字符串、音乐、EVA 名称、地图中的触发器和标签 ID，以及字符串表中的参数文本和 `IniEntry`、`IniKey` 的名字和值（`args`）；不存在为 `NotFound`；不新建字符串。模拟中不查询 CSF 或任何翻译表：CSF 条目名作为文字参数原样传递，`lookup` 不判断它是否存在 |
 | 19 | `Property` | 属性名；返回属性 ID |
 | 20 | `EventKind` | 事件种类名 |
 | 21 | `ActionKind` | 动作种类名 |
 | 22 | `Hotkey` | 本模块注册的热键（客户端） |
 | 23 | `VeraEffect` | 保留 |
+| 24 | `ModuleEvent` | 已注册的模块事件（任何来源，[RFC 6h](0001-wasm-extension-modules.zh-CN.md#6h-ini-注册)）；返回事件 ID |
 
 ### 8.2 搜索范围（`find`）
 
@@ -1424,6 +1462,11 @@ Ares 和 Phobos 的键尚未分类。
 | 20 | `Command` | 见下面的指令表 |
 | 21 | `Hold` | `TopLeft`、`Top`、`TopRight`、`Left`、`Middle`、`Right`、`BottomLeft`、`Bottom`、`BottomRight`（`veraui.ini` 的 `Hold` 取值） |
 | 22 | `PathKind` | 0 `Bezier`、1 `Parabola`、2 `Spiral`、3 `Waypoints` |
+| 23 | `IniKind` | 0 `Key`、1 `Registry`、2 `Event` |
+| 24 | `IniSection` | 0 `TechnoType`、1 `Weapon`、2 `Warhead`、3 `Projectile`、4 `SuperWeapon`、5 `Country`、6 `General`（只有 `[General]` 节） |
+| 25 | `Domain` | 位：0 `Production`、1 `Forces`、2 `Abilities`、3 `SuperWeapons`（[RFC 6i](0001-wasm-extension-modules.zh-CN.md#6i-驱动所属方)） |
+| 26 | `RefuseReason` | 0 `Other`、1 `Gone`、2 `IgnoresOrders`、3 `IllegalTarget`、4 `Prerequisite`、5 `CannotAfford`、6 `QueueFull`、7 `CannotPlace`、8 `NotReady`、9 `Vetoed`（`CommandAllowed` 或 `ProductionQueued` 否决）、10 `RateLimited` |
+| 27 | `EngageResult` | 0 `Ok`、1 `Illegal`、2 `OutOfRange`、3 `NoDamage` |
 
 **指令**（`Command`，`Order` 的字段，用于 `order` 和 `client_send_order`）；`—` 的字段为 0，不符合本表的指令为 `Refused`；层级见第 9 节：
 
@@ -1434,7 +1477,7 @@ Ares 和 Phobos 的键尚未分类。
 | 2 | `Stop` | — | — | 单位 |
 | 3 | `Attack` | 对象 | — | 单位 |
 | 4 | `AttackMove` | 格子 | — | 单位 |
-| 5 | `Guard` | 对象或 0（原地） | — | 单位 |
+| 5 | `Guard` | 对象、格子（守卫该区域）或 0（原地） | — | 单位 |
 | 6 | `DeployMcv` | — | — | 基地车 |
 | 7 | `UndeployBuilding` | — | — | 建筑 |
 | 8 | `SetRally` | 格子 | — | 工厂建筑 |
@@ -1455,6 +1498,8 @@ Ares 和 Phobos 的键尚未分类。
 | 23 | `Scatter` | — | — | 单位 |
 | 24 | `TogglePrimaryFactory` | — | — | 工厂建筑 |
 | 25 | `Enter` | 对象 | — | 单位 |
+| 26 | `Harvest` | 格子 | — | 采矿车 |
+| 27 | `TakeProduct` | — | 工厂种类（`Factory.<Kind>` 的序号：0 `Building` … 5 `Aircraft`） | 无 |
 
 `Scatter` 让单位向旁边让开一小段，和散开键一样。`TogglePrimaryFactory` 切换工厂的主工厂标记，和点击一座非主工厂一样。`Enter` 登上运输载具，或进入碉堡、维修厂、矿石精炼厂、回收厂（Grinder），和点击目标一样。
 
@@ -1464,13 +1509,13 @@ Ares 和 Phobos 的键尚未分类。
 
 | 表 | `v1` | `later` 或随阶段 2 |
 | --- | --- | --- |
-| 模拟导入 | 除 `send_notify` 外的全部 22 个 | `send_notify` 随阶段 2 |
+| 模拟导入 | 除 `send_notify` 外的全部 23 个 | `send_notify` 随阶段 2 |
 | 模拟导出 | 除 `on_message` 外的全部 | `on_message` 随阶段 2 |
 | 原版和 Ares 动作 | 1、2、4、5、7、8、10..12、14、16..18、20..35、41..48、51、53..73、76..80、82..90、92..97、100..110、112、114..118、125、127..129、131..145、148、149 | 其余 |
 | TechnoType 属性 | `Category`、`Strength`、`Cost`、`Soylent`、`Speed`、`ROT`、`Crushable`、`Selfhealing`、`Explodes`、`Power`、`Sight`、`Ammo`、`InitialAmmo`、`Storage`、`Passengers`、`SizeLimit`、`TechLevel` | 其余 |
 | Weapon 属性 | `Damage`、`ROF`、`Burst`、`MinimumRange`、`Range` | 其余 |
 | Warhead 属性 | `CellSpread`、`PercentAtMax`、`Wall`、`Wood`、`Sparky`、`Fire`、`Conventional`、`Rocker`、`InfDeath` | 其余 |
-| 名字种类 | `TechnoType`、`Weapon`、`Warhead`、`Projectile`、`Anim`、`VoxelAnim`、`ParticleSystem`、`SuperWeapon`、`Country`、`TeamType`、`Variable`、`ModuleAction`、`Property`、`ActionKind`；阶段 2：`Notify`、`Hotkey` | 其余；`Armor` 随 `TargetArmor` 预览 |
-| 搜索范围 | `Objects`（不含抛射体）、`Houses`（不按区域、类型、所属方筛选）、`Cells`、`Modifiers` | 其余 |
-| 指令 | 8.3 中除右列外的全部 | `SuspendProduction`、`EjectBunker`、`Enter` |
+| 名字种类 | `TechnoType`、`Weapon`、`Warhead`、`Projectile`、`Anim`、`VoxelAnim`、`ParticleSystem`、`SuperWeapon`、`Country`、`TeamType`、`Variable`、`ModuleAction`、`Property`、`ActionKind`、`String`、`ModuleEvent`；阶段 2：`Notify`、`Hotkey` | 其余；`Armor` 随 `TargetArmor` 预览 |
+| 搜索范围 | `Objects`（不含抛射体）、`Houses`（不按区域、类型、所属方筛选）、`Cells`、`Modifiers`、`SuperWeapons` | 其余 |
+| 指令 | 8.3 中除右列外的全部 | `EjectBunker` |
 | 客户端节点属性 | 7.10 中除右列外的全部 | 只属于 `Decoration` 的属性、`ItemProgress`、写 `CameoGrid` 的 `Items` |

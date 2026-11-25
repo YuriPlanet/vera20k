@@ -424,6 +424,15 @@ pub(crate) fn pickup_crate(
             return false;
         }
         sim.trigger_runtime.mark_crate_pickup_event();
+        // Wasm module triggers on event 50 (RFC 0001 appendix 4.1), at the
+        // pickup the Scenario byte records.
+        sim.raise_module_global_stock_event(
+            rules,
+            frame_effects,
+            50,
+            None,
+            crate::sim::trigger_runtime::StockInput::NONE,
+        );
     }
     //481AC8/481B3D..481B90 reread Cell data/images;4824A7..4824CE
     //reread the actor's House. A synchronous Tag can change all three.
