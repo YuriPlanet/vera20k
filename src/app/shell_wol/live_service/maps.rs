@@ -2,8 +2,10 @@
 //! Existing source, staging, generation and UI owners decide what those bytes mean.
 use super::{LiveService, http};
 use crate::app::AppState;
+use crate::app::match_runtime::session::MatchSession;
 use crate::app::shell_network_setup::maps::{self as shared_maps, GeneratedMapManifest};
 use crate::app::shell_network_setup::{accept_network_map_source, set_network_map_progress};
+use crate::app::shell_wol::WolVisit;
 use crate::map::source::{LoadedTransferAsset, TransferResource};
 use crate::util::time::{Duration, Instant};
 use anyhow::{Result, anyhow, ensure};
@@ -121,7 +123,8 @@ pub(super) fn received_options(
     generated: Option<GeneratedMapManifest>,
 ) -> Result<()> {
     shared_maps::accept_generated_manifest(
-        state,
+        &mut state.frontend.multiplayer_shell_runtime,
+        &mut state.match_state.session,
         service.maps.generated.as_ref(),
         generated.as_ref(),
     )?;
@@ -150,8 +153,15 @@ pub(super) fn cancel(state: &mut AppState, service: &mut LiveService) {
     service.maps.failed = false;
     service.maps.complete = false;
     service.maps.asking = false;
-    crate::app::shell_network_setup::close_missing_map_offer(state);
-    set_network_map_progress(state, None);
+    crate::app::shell_network_setup::close_missing_map_offer(
+        &state.platform.window,
+        &mut state.frontend.multiplayer_setup,
+    );
+    set_network_map_progress(
+        &mut state.frontend.network_setup_protocol,
+        &state.match_state.session,
+        None,
+    );
 }
 pub(super) fn poll(state: &mut AppState, service: &mut LiveService) {
     let mut maps = std::mem::take(&mut service.maps);
@@ -161,12 +171,12 @@ pub(super) fn poll(state: &mut AppState, service: &mut LiveService) {
     service.maps = maps;
 }
 impl Transfers {
-    pub(super) fn current_verified(&self, state: &AppState) -> bool {
-        self.complete && self.matches_selection(state)
+    pub(super) fn current_verified(&self, session: &MatchSession, wol: Option<&WolVisit>) -> bool {
+        self.complete && self.matches_selection(session, wol)
     }
 
-    fn matches_selection(&self, state: &AppState) -> bool {
-        let Some(metadata) = state.match_state.session.network_map_metadata() else {
+    fn matches_selection(&self, session: &MatchSession, wol: Option<&WolVisit>) -> bool {
+        let Some(metadata) = session.network_map_metadata() else {
             return false;
         };
         self.key.as_ref().is_some_and(|key| {
@@ -174,7 +184,7 @@ impl Transfers {
                 && key.total == usize::try_from(metadata.byte_length).unwrap_or(0)
                 && key.effective_digest == metadata.effective_digest
                 && key.random == self.generated
-                && self.scope(state).is_some_and(|scope| scope == key.room)
+                && self.scope(wol).is_some_and(|scope| scope == key.room)
         })
     }
     /// The current attempt failed and cannot advance.
@@ -183,16 +193,20 @@ impl Transfers {
     }
     /// What the transfer belongs to: the room this game is in, or the match
     /// it watches.
-    fn scope(&self, state: &AppState) -> Option<String> {
+    fn scope(&self, wol: Option<&WolVisit>) -> Option<String> {
         self.watching.clone().or_else(|| {
-            super::super::lobby::current_channel(state).map(|channel| channel.name.clone())
+            super::super::lobby::current_channel(wol).map(|channel| channel.name.clone())
         })
     }
     fn fail(&mut self, state: &mut AppState) {
         let can_retry = !state.match_state.session.host()
-            && !crate::app::shell_network_setup::quick_match(state)
-            && !crate::app::shell_network_setup::external(state)
-            && self.matches_selection(state);
+            && !crate::app::shell_network_setup::quick_match(
+                state.frontend.network_setup_protocol.as_ref(),
+            )
+            && !crate::app::shell_network_setup::external(
+                state.frontend.network_setup_protocol.as_ref(),
+            )
+            && self.matches_selection(&state.match_state.session, state.frontend.wol.as_ref());
         let map = state
             .match_state
             .session
@@ -211,12 +225,19 @@ impl Transfers {
                 );
             }
             Some(FailureNotice::Notice(key)) => {
-                crate::app::shell_network_setup::close_missing_map_offer(state);
+                crate::app::shell_network_setup::close_missing_map_offer(
+                    &state.platform.window,
+                    &mut state.frontend.multiplayer_setup,
+                );
                 super::notice(state, &crate::i18n::tr(key));
             }
             None => {}
         }
-        set_network_map_progress(state, None);
+        set_network_map_progress(
+            &mut state.frontend.network_setup_protocol,
+            &state.match_state.session,
+            None,
+        );
     }
 
     fn stop_failed<'a>(&mut self, retry_map: Option<&'a str>) -> Option<FailureNotice<'a>> {
@@ -256,7 +277,7 @@ impl Transfers {
         let Some(metadata) = state.match_state.session.network_map_metadata().cloned() else {
             return Ok(());
         };
-        let Some(scope) = self.scope(state) else {
+        let Some(scope) = self.scope(state.frontend.wol.as_ref()) else {
             return Ok(());
         };
         let seed = shared_maps::generated_selection(&state.match_state.session);
@@ -272,9 +293,14 @@ impl Transfers {
         };
         if self.select_map(
             key,
-            crate::app::shell_network_setup::missing_map_download_agreed(state),
+            crate::app::shell_network_setup::missing_map_download_agreed(
+                state.frontend.multiplayer_setup.as_ref(),
+            ),
         ) {
-            crate::app::shell_network_setup::close_missing_map_offer(state);
+            crate::app::shell_network_setup::close_missing_map_offer(
+                &state.platform.window,
+                &mut state.frontend.multiplayer_setup,
+            );
         }
         self.recheck_lost_source(&state.match_state.session, seed);
         if self.failed || self.complete {
@@ -284,11 +310,17 @@ impl Transfers {
             self.begin_resource(state, service, resource)?;
         }
         if self.asking {
-            if !crate::app::shell_network_setup::missing_map_download_agreed(state) {
+            if !crate::app::shell_network_setup::missing_map_download_agreed(
+                state.frontend.multiplayer_setup.as_ref(),
+            ) {
                 return Ok(());
             }
             self.agreed_to_download();
-            set_network_map_progress(state, Some((0, metadata.byte_length.max(0) as u32)));
+            set_network_map_progress(
+                &mut state.frontend.network_setup_protocol,
+                &state.match_state.session,
+                Some((0, metadata.byte_length.max(0) as u32)),
+            );
         }
         let Some(transfer) = self.transfer.as_mut() else {
             return Ok(());
@@ -362,7 +394,13 @@ impl Transfers {
             .ok_or_else(|| anyhow!("no asset directory"))?;
         let directory = config.paths.settings_dir().join("NetworkMaps");
         let host = state.match_state.session.host();
-        let local = shared_maps::local_transfer_source(state, resource)?;
+        let local = shared_maps::local_transfer_source(
+            state.platform.game_config.as_ref(),
+            &mut state.frontend,
+            &state.match_state.session,
+            &state.process_assets,
+            resource,
+        )?;
         let assets = state
             .process_assets
             .manager()
@@ -418,7 +456,11 @@ impl Transfers {
             retries: 0,
             directory: directory.clone(),
         });
-        set_network_map_progress(state, Some((0, total as u32)));
+        set_network_map_progress(
+            &mut state.frontend.network_setup_protocol,
+            &state.match_state.session,
+            Some((0, total as u32)),
+        );
         let io = if let Some(source) = upload {
             http::MapIo::ReadMapUpload {
                 source,
@@ -502,7 +544,11 @@ impl Transfers {
             .map(|transfer| transfer.resource);
         match uploading {
             Some(resource) if self.lobby_holds(resource) => {
-                set_network_map_progress(state, Some((total as u32, total as u32)));
+                set_network_map_progress(
+                    &mut state.frontend.network_setup_protocol,
+                    &state.match_state.session,
+                    Some((total as u32, total as u32)),
+                );
                 self.finish_resource(state, resource)
             }
             _ => Ok(()),
@@ -531,7 +577,10 @@ impl Transfers {
         accept_network_map_source(state, source, effective)?;
         self.complete = true;
         // The map arrived: the offer showing its download closes.
-        crate::app::shell_network_setup::close_missing_map_offer(state);
+        crate::app::shell_network_setup::close_missing_map_offer(
+            &state.platform.window,
+            &mut state.frontend.multiplayer_setup,
+        );
         Ok(())
     }
     fn accept_download(
@@ -569,7 +618,7 @@ impl Transfers {
         let Some(resource) = self.transfer_for_response(generation).map(|t| t.resource) else {
             return Ok(());
         };
-        if !self.matches_selection(state) {
+        if !self.matches_selection(&state.match_state.session, state.frontend.wol.as_ref()) {
             return Ok(());
         }
         let key = self.key.as_ref().expect("current transfer key");
@@ -591,13 +640,22 @@ impl Transfers {
             http::Response::CachedMap { loaded: None, .. } => {
                 self.transfer.as_mut().unwrap().in_flight = false;
                 // Quick Match and launcher-started games show no room to ask in.
-                let dialog = !crate::app::shell_network_setup::quick_match(state)
-                    && !crate::app::shell_network_setup::external(state);
+                let dialog = !crate::app::shell_network_setup::quick_match(
+                    state.frontend.network_setup_protocol.as_ref(),
+                ) && !crate::app::shell_network_setup::external(
+                    state.frontend.network_setup_protocol.as_ref(),
+                );
                 if dialog
-                    && !crate::app::shell_network_setup::missing_map_download_agreed(state)
+                    && !crate::app::shell_network_setup::missing_map_download_agreed(
+                        state.frontend.multiplayer_setup.as_ref(),
+                    )
                     && self.ask_before_download()
                 {
-                    set_network_map_progress(state, None);
+                    set_network_map_progress(
+                        &mut state.frontend.network_setup_protocol,
+                        &state.match_state.session,
+                        None,
+                    );
                     let metadata = state
                         .match_state
                         .session
@@ -633,7 +691,11 @@ impl Transfers {
                     "upload offset differs"
                 );
                 transfer.advanced_to(completed);
-                set_network_map_progress(state, Some((completed as u32, total as u32)));
+                set_network_map_progress(
+                    &mut state.frontend.network_setup_protocol,
+                    &state.match_state.session,
+                    Some((completed as u32, total as u32)),
+                );
                 if completed == total {
                     if resource == TransferResource::Preview {
                         let config = state
@@ -668,7 +730,11 @@ impl Transfers {
             } => {
                 let transfer = self.transfer.as_mut().unwrap();
                 transfer.append_chunk(key, &received, received_total, offset, &bytes, complete)?;
-                set_network_map_progress(state, Some((transfer.offset as u32, total as u32)));
+                set_network_map_progress(
+                    &mut state.frontend.network_setup_protocol,
+                    &state.match_state.session,
+                    Some((transfer.offset as u32, total as u32)),
+                );
                 if complete {
                     service.request_map(
                         self.generation,
@@ -713,7 +779,8 @@ pub(super) fn available(
     digest: &str,
     total: usize,
 ) {
-    let room = super::super::lobby::current_channel(state).map(|channel| channel.name.clone());
+    let room = super::super::lobby::current_channel(state.frontend.wol.as_ref())
+        .map(|channel| channel.name.clone());
     let mut maps = std::mem::take(&mut service.maps);
     if maps.heard_available(state, room, digest, total).is_err() {
         maps.fail(state);

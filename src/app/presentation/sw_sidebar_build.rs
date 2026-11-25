@@ -118,11 +118,15 @@ fn draw(
     let art = state.match_state.match_presentation.sw_sidebar_art.as_ref();
     // The cameo labels' colour of the layout (`[Cameos] LabelColor=`).
     let hover_tint = crate::render::sidebar_text::side_text_tint(
-        state.match_state.match_presentation.sidebar_layout_spec.label_text,
+        state
+            .match_state
+            .match_presentation
+            .sidebar_layout_spec
+            .label_text,
     );
     let (cursor_x, cursor_y) = state.match_state.input.cursor_px();
     if let (Some(entry), Some(toggle)) = (
-        crate::app::presentation::sw_sidebar::toggle_art(state),
+        crate::app::presentation::sw_sidebar::toggle_art(&state.match_state.match_presentation),
         sw.layout.toggle,
     ) {
         picture(&mut huds.chrome, sprite_art(entry, toggle, DEPTH_ART));
@@ -131,7 +135,7 @@ fn draw(
             outline(&mut huds.hover, toggle, hover_tint);
         }
     }
-    if !crate::app::presentation::sw_sidebar::expanded(state) {
+    if !crate::app::presentation::sw_sidebar::expanded(&state.match_state.match_presentation) {
         return;
     }
     if let Some(rect) = crate::app::presentation::sw_sidebar::hovered_entry_rect(state) {
@@ -147,28 +151,34 @@ fn draw(
                 h: column.height as f32,
             };
             if let Some(entry) = art.entry(SwSidebarArtKind::Top) {
-                picture(&mut huds.chrome, sprite_art(
-                    entry,
-                    Rect {
-                        x: column_rect.x,
-                        y: column_rect.y,
-                        w: column_rect.w,
-                        h: entry.pixel_size[1],
-                    },
-                    DEPTH_ART,
-                ));
+                picture(
+                    &mut huds.chrome,
+                    sprite_art(
+                        entry,
+                        Rect {
+                            x: column_rect.x,
+                            y: column_rect.y,
+                            w: column_rect.w,
+                            h: entry.pixel_size[1],
+                        },
+                        DEPTH_ART,
+                    ),
+                );
             }
             if let Some(entry) = art.entry(SwSidebarArtKind::Bottom) {
-                picture(&mut huds.chrome, sprite_art(
-                    entry,
-                    Rect {
-                        x: column_rect.x,
-                        y: column_rect.y + column_rect.h - entry.pixel_size[1],
-                        w: column_rect.w,
-                        h: entry.pixel_size[1],
-                    },
-                    DEPTH_ART,
-                ));
+                picture(
+                    &mut huds.chrome,
+                    sprite_art(
+                        entry,
+                        Rect {
+                            x: column_rect.x,
+                            y: column_rect.y + column_rect.h - entry.pixel_size[1],
+                            w: column_rect.w,
+                            h: entry.pixel_size[1],
+                        },
+                        DEPTH_ART,
+                    ),
+                );
             }
             if let Some(entry) = art.entry(SwSidebarArtKind::Center) {
                 // Each column's center strip repeats behind its buttons.
@@ -176,16 +186,19 @@ fn draw(
                 let end = first + column.button_count;
                 for placed in sw.layout.entries.iter().take(end).skip(first) {
                     let half_gap = (center_height - 48.0) / 2.0;
-                    picture(&mut huds.chrome, sprite_art(
-                        entry,
-                        Rect {
-                            x: column.x as f32,
-                            y: placed.rect.y - half_gap,
-                            w: column.width as f32,
-                            h: center_height,
-                        },
-                        DEPTH_ART,
-                    ));
+                    picture(
+                        &mut huds.chrome,
+                        sprite_art(
+                            entry,
+                            Rect {
+                                x: column.x as f32,
+                                y: placed.rect.y - half_gap,
+                                w: column.width as f32,
+                                h: center_height,
+                            },
+                            DEPTH_ART,
+                        ),
+                    );
                 }
             }
         }

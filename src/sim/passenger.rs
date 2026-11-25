@@ -79,6 +79,8 @@ pub use departure::{
     DepartureRoute, depart_cargo_head, exit_cell_position, reveal_unloaded_passenger,
 };
 
+use vera20k_wasm_ext::triggers::{EVENT_PASSENGER_ADDED, EVENT_TRANSPORT_ENTERED};
+
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
@@ -570,6 +572,13 @@ impl Simulation {
                 carrier,
                 head,
             );
+        }
+        // Wasm module `TransportEntered` and `PassengerAdded` (RFC 0001
+        // appendix 4.3), after the entry completed.
+        if self.trigger_runtime.module_listens(EVENT_TRANSPORT_ENTERED)
+            || self.trigger_runtime.module_listens(EVENT_PASSENGER_ADDED)
+        {
+            self.raise_module_passengers_added(rules, context.effects(), carrier, head_first);
         }
         true
     }
@@ -1567,6 +1576,9 @@ pub fn add_garrison_occupant(
         sim.ares_occupier_entered(building_id, owner, rules, registry, effects);
     }
     sim.refresh_spatial_threat(building_id, rules, None);
+    // Wasm module `TransportEntered` and `PassengerAdded` in their garrison
+    // form (RFC 0001 appendix 4.3, `value2` 1).
+    sim.raise_module_garrison_entered(rules, effects, building_id, pax_id, count);
     if count == 1 {
         let type_id = sim
             .substrate

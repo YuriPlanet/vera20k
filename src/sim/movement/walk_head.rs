@@ -10,6 +10,7 @@ use crate::sim::{
     pathfinding::PathGrid,
 };
 use crate::util::fixed_math::SimFixed;
+use crate::util::forked::Forked;
 
 pub(crate) fn selected_head(
     input: DriveCoord,
@@ -407,7 +408,7 @@ mod tests {
         let mut raw = RawCellOccupationGrid::default();
         raw.mark_ground(4, 4, 0x40);
         raw_at(&mut raw, owner, current, true, Some(&terrain), None);
-        let mut rng = crate::sim::rng::SimRng::new(31);
+        let mut rng = Forked::new(crate::sim::rng::SimRng::new(31));
         let rng_before = rng.logical_state();
         assert!(!prepare_step_head(
             &mut entities,
@@ -503,7 +504,7 @@ mod tests {
             let mut raw = RawCellOccupationGrid::default();
             raw.mark_ground(10, 10, ground);
             raw.mark_deck(10, 10, deck);
-            let mut rng = crate::sim::rng::SimRng::new(i["seed"].as_u64().unwrap());
+            let mut rng = Forked::new(crate::sim::rng::SimRng::new(i["seed"].as_u64().unwrap()));
             let layer = if bridge {
                 super::super::locomotor::MovementLayer::Bridge
             } else {
@@ -720,7 +721,9 @@ mod tests {
             );
             let mut entities = EntityStore::new();
             entities.insert(entity);
-            let mut rng = crate::sim::rng::SimRng::new(input["seed"].as_u64().unwrap_or(31));
+            let mut rng = Forked::new(crate::sim::rng::SimRng::new(
+                input["seed"].as_u64().unwrap_or(31),
+            ));
             assert_native_rng(&rng, row["rng_before"].as_str().unwrap());
             assert!(prepare_step_head(
                 &mut entities,
@@ -895,7 +898,7 @@ pub(super) fn prepare_step_head(
     grid: Option<&PathGrid>,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     interner: &crate::sim::intern::StringInterner,
-    rng: &mut crate::sim::rng::SimRng,
+    rng: &mut Forked<crate::sim::rng::SimRng>,
 ) -> bool {
     use crate::rules::locomotor_type::LocomotorKind;
     let Some(entity) = entities.get(id) else {
@@ -955,7 +958,7 @@ pub(super) fn select_step_head_at(
     grid: Option<&PathGrid>,
     rules: &crate::rules::ruleset::RuleSet,
     interner: &crate::sim::intern::StringInterner,
-    rng: &mut crate::sim::rng::SimRng,
+    rng: &mut Forked<crate::sim::rng::SimRng>,
     input: Option<DriveCoord>,
 ) -> StepHead {
     use super::locomotor::MovementLayer;
@@ -1147,7 +1150,7 @@ pub(super) fn prepare_step_head_at(
     grid: Option<&PathGrid>,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     interner: &crate::sim::intern::StringInterner,
-    rng: &mut crate::sim::rng::SimRng,
+    rng: &mut Forked<crate::sim::rng::SimRng>,
     input: DriveCoord,
 ) -> bool {
     match select_step_head_at(

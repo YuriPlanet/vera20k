@@ -286,9 +286,10 @@ fn retail_production_world(history: &Value) -> Option<(SimRuntime, InternedId)> 
     // These are complete observed Random2 objects at the production boundary,
     // after original setup. Importing them does not assert constructor parity.
     let random = &history["rng_seed_states"];
-    sim.scenario_rng = SimRng::from_native_state_hex_for_test(random["scenario"].as_str().unwrap());
-    sim.main_rng = SimRng::from_native_state_hex_for_test(random["main"].as_str().unwrap());
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(random["mapgen"].as_str().unwrap());
+    *sim.scenario_rng =
+        SimRng::from_native_state_hex_for_test(random["scenario"].as_str().unwrap());
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(random["main"].as_str().unwrap());
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(random["mapgen"].as_str().unwrap());
     let mut resources = SimResources::empty();
     resources.rules = rules;
     Some((
@@ -319,14 +320,17 @@ fn retail_all05_type_tech_level_recheck_cancels_paid_harrier_and_unlocks_black_e
         history["initial_state"]["rng"],
         "complete native Random2 objects are the declared production prior"
     );
-    assert!(production::enqueue_by_type(
-        &mut runtime.simulation,
-        &runtime.resources.rules,
-        input["house"].as_str().unwrap(),
-        "ORCA",
-        &mut FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        production::enqueue_by_type(
+            &mut runtime.simulation,
+            &runtime.resources.rules,
+            input["house"].as_str().unwrap(),
+            "ORCA",
+            &mut FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let held = runtime
         .simulation
         .production
@@ -350,10 +354,8 @@ fn retail_all05_type_tech_level_recheck_cancels_paid_harrier_and_unlocks_black_e
     let paid_frame = u32::try_from(number(&paid["frame"])).unwrap();
     assert!(paid_frame >= runtime.simulation.session.binary_frame());
     while runtime.simulation.session.binary_frame() < paid_frame {
-        runtime
-            .simulation
-            .session
-            .set_binary_frame_for_test(runtime.simulation.session.binary_frame() + 1);
+        let session = &mut *runtime.simulation.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         production::step_factories(&mut runtime.simulation);
     }
     assert_production_state(

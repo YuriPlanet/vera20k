@@ -125,7 +125,7 @@ pub(crate) fn top_up(state: &mut AppState) {
     else {
         return;
     };
-    let queue = super::dispatch::local_queue_view(state);
+    let queue = super::dispatch::local_queue_view(&state.frontend, &state.match_state);
     let due = {
         let sim = state
             .match_state

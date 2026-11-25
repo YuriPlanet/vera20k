@@ -9,8 +9,8 @@ fn complete(
     cell: (u16, u16),
 ) -> bool {
     let name = sim.interner.resolve(owner).to_owned();
-    sim.apply_command_with_overlays(
-        None,
+    (sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         &name,
         &Command::CompletePaidSuperWeapon {
             selection,
@@ -20,7 +20,7 @@ fn complete(
         rules,
         None,
         &mut FrameEffects::default(),
-    )
+    )).is_ok()
 }
 
 fn cancel(
@@ -30,14 +30,14 @@ fn cancel(
     selection: PaidSuperWeaponSelection,
 ) -> bool {
     let name = sim.interner.resolve(owner).to_owned();
-    sim.apply_command_with_overlays(
-        None,
+    (sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         &name,
         &Command::CancelPaidSuperWeapon { selection },
         rules,
         None,
         &mut FrameEffects::default(),
-    )
+    )).is_ok()
 }
 
 #[test]
@@ -52,8 +52,8 @@ fn superweapon_money_two_stage_settles_source_once_not_destination() {
         assert!(fire(&mut sim, &rules, owner, source, (10, 10)));
         assert_eq!(sim.houses[&owner].economy().credits(), 1000);
         let ticket = sim.paid_super_weapon_selection(owner).unwrap();
-        sim.session
-            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+        let session = &mut *sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         superweapon::tick_house_superweapon_instances(
             &mut sim,
             &rules,
@@ -387,13 +387,14 @@ fn superweapon_money_two_stage_begin_cancel_reselect_in_one_saved_command_batch(
     for (index, command) in commands.iter().enumerate() {
         assert_eq!(
             loaded.apply_command_with_overlays(
-                None,
+                crate::sim::command::CommandSender::Player(None),
                 "Americans",
                 &command.payload,
                 &rules,
                 None,
                 &mut FrameEffects::default()
-            ),
+            )
+            .is_ok(),
             index != 4
         );
     }
@@ -401,14 +402,14 @@ fn superweapon_money_two_stage_begin_cancel_reselect_in_one_saved_command_batch(
     assert!(!complete(&mut loaded, &rules, owner, first, (15, 15)));
     assert!(!complete(&mut loaded, &rules, owner, second, (15, 15)));
     let hash = loaded.state_hash();
-    assert!(!loaded.apply_command_with_overlays(
-        None,
+    assert!((loaded.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &commands[0].payload,
         &rules,
         None,
         &mut FrameEffects::default()
-    ));
+    )).is_err());
     assert_eq!(loaded.state_hash(), hash);
 }
 
@@ -483,14 +484,14 @@ fn superweapon_money_two_stage_refused_source_request_id_is_never_reused() {
         target_rx: 10,
         target_ry: 10,
     };
-    assert!(!sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &request,
         &rules,
         None,
         &mut FrameEffects::default()
-    ));
+    )).is_err());
     assert!(sim.paid_super_weapon_selection(owner).is_none());
     assert!(sim.super_weapons[&owner][&source].is_ready);
     assert_eq!(sim.houses[&owner].economy().credits(), 499);
@@ -505,14 +506,14 @@ fn superweapon_money_two_stage_refused_source_request_id_is_never_reused() {
         target_rx: 10,
         target_ry: 10,
     };
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &request,
         &rules,
         None,
         &mut FrameEffects::default()
-    ));
+    )).is_ok());
     assert!(!cancel(&mut sim, &rules, owner, old));
     assert!(!complete(&mut sim, &rules, owner, old, (15, 15)));
     assert!(complete(&mut sim, &rules, owner, new, (15, 15)));

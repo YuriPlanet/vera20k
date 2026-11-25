@@ -46,7 +46,7 @@ impl WolCapture {
         service_event(state, WolServiceEvent::NetStatus(SERVER_STATUS_READY));
         service_event(state, WolServiceEvent::ServerList(Ok(server_list())));
         ensure!(
-            crate::app::shell_wol::my_info::page(state).is_some(),
+            crate::app::shell_wol::my_info::page(state.frontend.wol.as_ref()).is_some(),
             "the server list did not open 0x114"
         );
         let requests = self.requests(state, frame)?;
@@ -216,14 +216,14 @@ impl WolCapture {
         let face = layout.rect_of(control).context("combo face")?;
         let arrow = crate::ui::skirmish_shell::combo_arrow_hit_rect(face, layout.page.scale);
         welcome_click(state, arrow);
-        let page = my_info::page(state).context("0x114")?;
+        let page = my_info::page(state.frontend.wol.as_ref()).context("0x114")?;
         let index = crate::ui::wol_my_info::COMBOS
             .iter()
             .position(|id| *id == control);
         let row = index
             .and_then(|index| page.combos[index].iter().position(&matches))
             .context("no matching row")?;
-        let popup = my_info::drop_down(state, control)
+        let popup = my_info::drop_down(&state.frontend.shell_controller, control)
             .context("the drop list did not open")?
             .popup;
         // A row below the first page: step the bar's down arrow there.
@@ -231,7 +231,7 @@ impl WolCapture {
             let bar = popup.scrollbar().context("drop list scrollbar")?;
             welcome_click(state, RectPx::new(bar.x, bar.y + bar.h - 3, bar.w, 2));
         }
-        let popup = my_info::drop_down(state, control)
+        let popup = my_info::drop_down(&state.frontend.shell_controller, control)
             .context("drop list")?
             .popup;
         let rect = popup.row_rect(row).context("row rect")?;

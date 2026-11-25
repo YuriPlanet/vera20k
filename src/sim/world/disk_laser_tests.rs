@@ -34,10 +34,10 @@ fn xyz(value: &Value) -> [i32; 3] {
 }
 
 fn install_rng(sim: &mut Simulation, expected: &Value) {
-    sim.main_rng = SimRng::from_native_state_hex_for_test(expected["main"].as_str().unwrap());
-    sim.scenario_rng =
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(expected["main"].as_str().unwrap());
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(expected["scenario"].as_str().unwrap());
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(expected["mapgen"].as_str().unwrap());
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(expected["mapgen"].as_str().unwrap());
 }
 
 fn rng(sim: &Simulation) -> Value {
@@ -71,7 +71,7 @@ impl Scene {
     fn new(rules: &RuleSet, row: &Value) -> Self {
         let input = &row["input"];
         let mut sim = crate::sim::arena_fixture::rival_arena(rules, 31);
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
         let mut actors = Vec::new();
         for (kind, owner, at) in [
             ("DISK", "Americans", input["source"].clone()),
@@ -108,8 +108,8 @@ impl Scene {
         sim.resolve_type_handles(rules);
         sim.session
             .set_binary_frame_for_test(int(&input["frame"]) as u32);
-        sim.session
-            .set_tick_for_test(u64::from(sim.session.binary_frame()));
+        let session = &mut *sim.session;
+        session.set_tick_for_test(u64::from(session.binary_frame()));
         install_rng(&mut sim, &row["rng_before"]);
         let cursor = sim.native_identity_cursor().unwrap();
         Self {
@@ -628,10 +628,10 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
         // This is a Rust save/resume regression, not native RNG persistence:
         // retail's existing load owner resets Scenario to Seed0. Main/MapGen
         // are retained through that owner's process-state seam.
-        scene.sim.scenario_rng = SimRng::new(0);
+        *scene.sim.scenario_rng = SimRng::new(0);
         let mut resumed = snapshot_copy(&scene.sim);
         resumed.retain_process_state_for_load(super::SnapshotProcessState::Live(&scene.sim));
-        resumed.resolved_terrain = scene.sim.resolved_terrain.clone();
+        *resumed.resolved_terrain = (*scene.sim.resolved_terrain).clone();
         resumed.restore_after_snapshot_load().unwrap();
         resumed.resolve_type_handles(rules);
         resumed
@@ -716,7 +716,7 @@ fn retail_disk_attack_delivers_without_ordinary_bullet_fire() {
     };
     let rules = retail.rules;
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let source = sim
         .spawn_object_with_map_overlays("DISK", "Americans", 10, 10, 64, &rules)
         .expect("stock DISK enters through the ordinary constructor");
@@ -796,7 +796,7 @@ fn ares_disk_hit_flashes_and_plays_the_enabled_damage_anim() {
         // The anim's SHP binding comes from the asset loader in the game.
         rules.bind_anim_frame_count_for_test("XGRYMED1", 10);
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
         let source = sim
             .spawn_object_with_map_overlays("DISK", "Americans", 10, 10, 64, &rules)
             .unwrap();

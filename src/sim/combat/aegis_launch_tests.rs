@@ -29,7 +29,7 @@ impl AegisScene {
         let aegis = world
             .spawn_object("AEGIS", "Americans", 10, 20, 0, &rules)
             .expect("admitted retail Aegis");
-        world.resolved_terrain = terrain;
+        *world.resolved_terrain = terrain;
         let target = world
             .spawn_object("ZEP", "Russians", 15, 20, 0, &rules)
             .expect("retail airborne target");
@@ -276,7 +276,7 @@ fn mid_fan_snapshot_retains_counter_hash_and_continued_shots() {
         scene.fire(100 + shot * 40);
     }
     assert_eq!((scene.radial_index(), scene.burst_index()), (5, 1));
-    scene.world.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *scene.world.scenario_rng = crate::sim::rng::SimRng::new(0);
     let terrain = scene.world.resolved_terrain.as_ref().unwrap().clone();
     let bytes = crate::sim::snapshot::GameSnapshot::save(&scene.world, 0, 0, "aegis", 0);
     let mut loaded = crate::sim::snapshot::GameSnapshot::load(&bytes)

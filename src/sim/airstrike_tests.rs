@@ -117,8 +117,8 @@ fn retail_boris_building_attack_enters_designation_pose_and_starts_sortie() {
         .unwrap()
         .health
         .current();
-    assert!(f.sim.apply_command_with_overlays(
-        None,
+    assert!((f.sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &crate::sim::command::Command::Attack {
             attacker_id: f.boris,
@@ -127,7 +127,7 @@ fn retail_boris_building_attack_enters_designation_pose_and_starts_sortie() {
         &f.rules,
         None,
         &mut FrameEffects::default(),
-    ));
+    )).is_ok());
     f.sim.advance_tick(&[], Some(&f.rules), None, None, 67);
     let boris = f.sim.substrate.entities.get(f.boris).unwrap();
     // Original Infantry52083E..5208FE requests SecondaryFire on the first

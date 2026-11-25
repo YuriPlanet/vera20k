@@ -40,7 +40,7 @@ pub(crate) fn render_pause_menu_shell(
         let state = paint.state;
         let ui = &state.match_state.match_presentation.dialog_ui;
         let pause = &state.match_state.match_presentation.internet_pause;
-        let shared_pause = crate::app::input::pause_menu::multiplayer_control(state)
+        let shared_pause = crate::app::input::pause_menu::multiplayer_control(&state.match_state)
             .map(|control| control.caption);
         let slot = |ids: [u16; 2], id: u16| -> Option<InternetSlider> {
             let index = ids.iter().position(|of| *of == id)?;
@@ -71,10 +71,14 @@ pub(crate) fn render_pause_menu_shell(
                 TITLE => Some(caption(template.title().caption())),
                 // The common handler shows the hovered control's 6040B0 help
                 // in 0x695.
-                FOOTER => Some(match crate::app::input::pause_menu::hovered_help(state) {
-                    Some(key) => caption((key, "")),
-                    None => caption(PAUSE_MENU_FOOTER.caption()),
-                }),
+                FOOTER => Some(
+                    match crate::app::input::pause_menu::hovered_help(
+                        &state.match_state.match_presentation,
+                    ) {
+                        Some(key) => caption((key, "")),
+                        None => caption(PAUSE_MENU_FOOTER.caption()),
+                    },
+                ),
                 INTERNET_GROUP => Some(caption(INTERNET_GROUP_LABEL)),
                 // The trackbars show their position.
                 _ => None,
@@ -105,8 +109,17 @@ pub(crate) fn render_pause_menu_shell(
             // own buttons still work. The open list paints after every
             // control and text.
             let column = launcher_options::ColumnArt::Side(paint.side_buttons());
-            let mut widgets =
-                launcher_options::paint_page(state, &page.dialog, page_layout.scale, column, &[]);
+            let mut widgets = launcher_options::paint_page(
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &page.dialog,
+                page_layout.scale,
+                column,
+                &[],
+            );
             widgets.drain_lane(Material::Side, &mut paint.art);
             overlay.controls = widgets.take_lane(Material::Popup);
             widgets.drain_lane(Material::Controls, &mut paint.controls);

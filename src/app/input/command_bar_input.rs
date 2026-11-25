@@ -2,6 +2,7 @@
 //! actions.
 
 use super::*;
+use crate::app::presentation::state::MatchPresentationState;
 
 /// Where the command bar's twelve buttons take the pointer, in frame pixels
 /// (none: no button), and the thumb's id.
@@ -147,13 +148,19 @@ pub(super) fn apply(state: &mut AppState, id: u16, right: bool) -> bool {
         // 6D0860/6D091A call750920 with Rules+198/+194, even when the
         // existing bar state already matches. Programmatic6D1610/6D1660
         // remain separate soundless paths. Reuse the fixed catalog/player.
-        crate::app::App::play_shell_rules_sound(state, |rules| {
-            if opening {
-                rules.general.gui_open_sound()
-            } else {
-                rules.general.gui_close_sound()
-            }
-        });
+        crate::app::App::play_shell_rules_sound(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            |rules| {
+                if opening {
+                    rules.general.gui_open_sound()
+                } else {
+                    rules.general.gui_close_sound()
+                }
+            },
+        );
         state
             .match_state
             .match_presentation
@@ -173,8 +180,8 @@ pub(super) fn apply(state: &mut AppState, id: u16, right: bool) -> bool {
 /// The bar's pushed looks. The PlanningMode button's look (slot 9) is the
 /// PlanMgr owner's mode, written every frame by
 /// `sidebar_gadgets::update_sidebar_gadget_state`.
-pub(super) fn publish(state: &mut AppState, pressed: [bool; 12]) {
-    let out = &mut state.match_state.match_presentation.sidebar_gadget_state;
+pub(super) fn publish(presentation: &mut MatchPresentationState, pressed: [bool; 12]) {
+    let out = &mut presentation.sidebar_gadget_state;
     out.command_pressed[..9].copy_from_slice(&pressed[..9]);
     out.command_pressed[10] = pressed[10];
     out.command_thumb_pressed = pressed[11];

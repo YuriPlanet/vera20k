@@ -338,7 +338,7 @@ fn delegated_trench_redirect_only_checks_occupants_that_would_move() {
         let envelope = sim.decode_native_command_record(&record, 0).unwrap();
         assert_eq!(envelope.owner, alpha);
         sim.apply_command_with_overlays(
-            Some(record.house_id()),
+            crate::sim::command::CommandSender::Player(Some(record.house_id())),
             "Americans",
             &envelope.payload,
             &rules,
@@ -347,10 +347,10 @@ fn delegated_trench_redirect_only_checks_occupants_that_would_move() {
         )
     };
 
-    assert!(!redirect(&mut sim, two_slots));
+    assert!((redirect(&mut sim, two_slots)).is_err());
     assert_eq!(occupants(&sim, source), [authorized, unauthorized]);
     assert!(occupants(&sim, two_slots).is_empty());
-    assert!(redirect(&mut sim, one_slot));
+    assert!((redirect(&mut sim, one_slot)).is_ok());
     assert_eq!(occupants(&sim, source), [unauthorized]);
     assert_eq!(occupants(&sim, one_slot), [resident, authorized]);
 }

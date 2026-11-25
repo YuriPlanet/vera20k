@@ -590,7 +590,7 @@ fn turret_rotate_sound_matches_native_control_corpus() {
                     );
                 }
             }
-            for event in &sim.sound_events {
+            for event in &*sim.sound_events {
                 let world = match event {
                     SimSoundEvent::AnimationStarted { world, .. }
                     | SimSoundEvent::AnimationStopped { world, .. } => world,

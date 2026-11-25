@@ -393,6 +393,7 @@ impl Simulation {
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             &mut FrameEffects::default(),
+            false,
         );
     }
 
@@ -403,13 +404,34 @@ impl Simulation {
         country: crate::rules::ruleset::CountryIdx,
         rules: &RuleSet,
     ) -> Option<InternedId> {
-        self.houses.order().iter().copied().find(|owner| {
+        // VERA-only: a House is of `country` when its Country's name is the
+        // one `RuleSet::country_index` answers `country` for, so the name is
+        // asked of the rules once, not once per House. The index keeps the
+        // first Country of an identity: a later one of the same identity is
+        // no name's answer, and no House's.
+        let identity = rules.country_name(country)?;
+        if rules.country_index(identity) != Some(country) {
+            return None;
+        }
+        let found = self.houses.order().iter().copied().find(|owner| {
             self.houses
                 .get(owner)
                 .and_then(|house| house.country())
-                .and_then(|id| rules.country_index(self.interner.resolve(id)))
-                == Some(country)
-        })
+                .is_some_and(|id| self.interner.resolve(id).eq_ignore_ascii_case(identity))
+        });
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled()
+                || found
+                    == self.houses.order().iter().copied().find(|owner| {
+                        self.houses
+                            .get(owner)
+                            .and_then(|house| house.country())
+                            .and_then(|id| rules.country_index(self.interner.resolve(id)))
+                            == Some(country)
+                    }),
+            "the House of {identity:?} differs from the one its Country index finds"
+        );
+        found
     }
 
     /// Original House510F60 -> Scenario510ED0, otherwise502D30. Only the
@@ -441,7 +463,23 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: &mut FrameEffects<'_>,
     ) {
-        self.change_owner_impl(stable_id, new_owner, rules, registry, effects);
+        self.change_owner_impl(stable_id, new_owner, rules, registry, effects, false);
+    }
+
+    /// [`Self::change_owner_with_rules`] for a mind control taking or
+    /// releasing the object: CaptureManager's Capture (`0x00471DB8`) and
+    /// FreeUnit (`0x004720D5`), PsyDom's permanent capture, Ares'
+    /// ApplyPermaMC and Dominator transfer. The transfer is the same; only
+    /// the Wasm module `HouseTransferred` record says why (`value` 1).
+    pub(crate) fn change_owner_by_mind_control(
+        &mut self,
+        stable_id: u64,
+        new_owner: InternedId,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        self.change_owner_impl(stable_id, new_owner, rules, registry, effects, true);
     }
 
     fn change_owner_impl(
@@ -451,12 +489,20 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: &mut FrameEffects<'_>,
+        mind_control: bool,
     ) {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
         };
         if entity.category() != EntityCategory::Unit {
-            self.change_owner_inherited(stable_id, new_owner, rules, registry, effects);
+            self.change_owner_inherited(
+                stable_id,
+                new_owner,
+                rules,
+                registry,
+                effects,
+                mind_control,
+            );
             return;
         }
         // UnitClass::ChangeOwner7463A0..7463F2 (original gamemd instructions)
@@ -514,7 +560,7 @@ impl Simulation {
                     .unwrap()
                     .set_is_unit_follower(true);
             }
-            self.change_owner_inherited(id, new_owner, rules, registry, effects);
+            self.change_owner_inherited(id, new_owner, rules, registry, effects, mind_control);
         }
     }
 
@@ -527,6 +573,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: &mut FrameEffects<'_>,
+        mind_control: bool,
     ) {
         let Some((old_owner, category, has_spawn_manager, build_const_eligible)) =
             self.substrate.entities.get(stable_id).map(|entity| {
@@ -814,14 +861,13 @@ impl Simulation {
             self.houses.request_house_tech_tree_recheck(old_owner);
             self.houses.request_house_tech_tree_recheck(new_owner);
         }
-        let old_house = self.houses.index_of(old_owner);
         if let Some(entity) = self.substrate.entities.get(stable_id)
             && let Some(house) = self.houses.get_mut(&new_owner)
         {
             //701607..70164D: DontScore suppresses this captured-object
             //count, not the preceding old-House price addition.
             if !entity.tracking_facts().dont_score() {
-                house.stats_mut().record_kill(category, old_house);
+                house.stats_mut().record_kill(category);
             }
         }
         //701674 Mark(UP),70D4A0 detach and701691 Mark(DOWN) all precede
@@ -855,7 +901,7 @@ impl Simulation {
         self.substrate.entities.change_owner(stable_id, new_owner);
         #[cfg(feature = "phobos")]
         self.phobos_attach_effects_on_owner_change(stable_id, old_owner, new_owner, rules);
-        self.ownership_changed_since_output = true;
+        *self.ownership_changed_since_output = true;
         self.spatial_threat_after_owner_change(stable_id, spatial_threat_cell, rules);
         if category == EntityCategory::Structure {
             self.houses
@@ -1043,6 +1089,9 @@ impl Simulation {
             self.houses.request_house_tech_tree_recheck(old_owner);
             self.houses.request_house_tech_tree_recheck(new_owner);
         }
+        // Wasm module `HouseTransferred` (RFC 0001 appendix 4.3), after the
+        // transfer completed.
+        self.raise_module_house_transferred(rules, effects, stable_id, old_owner, mind_control);
     }
 
     /// `BuildingClass::ChangeOwner @ 0x00448260`'s docked objects
@@ -1122,7 +1171,7 @@ impl Simulation {
                     .entities
                     .get(contact)
                     .is_some_and(|entity| entity.seldom.tether.partner().is_some());
-                self.change_owner_impl(contact, new_owner, rules, registry, effects);
+                self.change_owner_impl(contact, new_owner, rules, registry, effects, false);
                 taken.push((contact, tethered));
             } else {
                 for message in [RadioMessage::RunAway, RadioMessage::Break] {

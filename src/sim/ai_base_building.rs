@@ -412,6 +412,11 @@ pub(crate) fn update_production_choices(
     if (sim.session.binary_frame() as i32) % 8 != 0 {
         return;
     }
+    // VERA: a Wasm module that claimed `Production` chooses instead
+    // (RFC 0001 6i, `sim::ext_modules::claims`).
+    if sim.module_claims(owner, vera20k_wasm_ext::DOMAIN_PRODUCTION) {
+        return;
+    }
     let choose_units = |sim: &mut Simulation, kinds: &[UnitChoiceKind]| {
         for &kind in kinds {
             ai_unit_choice::choose(sim, rules, owner, kind);

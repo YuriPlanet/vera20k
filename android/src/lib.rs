@@ -41,6 +41,26 @@ fn with_activity<R>(f: impl FnOnce(&mut jni::JNIEnv, &JObject) -> R) -> Option<R
     Some(f(&mut env, &activity))
 }
 
+/// Display-inset hook for `vera20k::util::display_insets`.
+///
+/// The activity measures the cutout and the top-left rounded corner from the
+/// window insets; the engine moves the message lane and the performance panel in
+/// by them.
+fn display_insets() -> vera20k::util::display_insets::Insets {
+    with_activity(|env, activity| {
+        let inset = |env: &mut jni::JNIEnv, name: &str| -> i32 {
+            env.call_method(activity, name, "()I", &[])
+                .and_then(|value| value.i())
+                .unwrap_or(0)
+        };
+        vera20k::util::display_insets::Insets {
+            left: inset(env, "displayInsetLeft"),
+            top: inset(env, "displayInsetTop"),
+        }
+    })
+    .unwrap_or_default()
+}
+
 /// Folder-picker hook for `vera20k::util::folder_picker`.
 ///
 /// The picker is the one thing the NDK cannot do itself: a Storage Access
@@ -347,6 +367,11 @@ fn install_packaged_map(app: &AndroidApp) -> anyhow::Result<()> {
 fn android_main(app: AndroidApp) {
     keep_screen_on(&app);
     vera20k::util::folder_picker::install(request_folder_picker, cancel_import);
+    // The screen's rounded corner and cutout hide the top-left of what the game
+    // draws there; the activity measures them and the engine moves in by them.
+    vera20k::util::display_insets::install(vera20k::util::display_insets::Hooks {
+        insets: display_insets,
+    });
     // The launcher icon is a compiled resource, so the VERA Icon box's choice
     // reaches the two activity aliases only through PackageManager.
     vera20k::util::app_icon::install(apply_app_icon);

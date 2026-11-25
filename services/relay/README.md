@@ -278,14 +278,17 @@ report, and while every tick-cost reporter holds the next faster rate, the clock
 tries one row faster; a slowdown within 30 seconds of a raise doubles that wait,
 up to 5 minutes. Pauses displace these times like the start. Status keeps the
 certificate's rate. A `VO2C` with flags bit 2 (continuous pacing) instead lets
-the clock seal at any whole rate from the certificate's down to 10: a behind
-player slows it to its holdable rate, at least one frame and at most 25%
-slower per change; a player catching up for 10 seconds straight slows it 5%
-once the last change is 10 seconds old. After a third of the raise wait it goes
-half the way to the slowest raise ceiling, at least one frame and at most a
-tenth of the rate per step. The ceiling is a reporter's tick cost and 95% of
-what it ran in a 10-second backlog or in a second sustained shortfall within
-five minutes, unless its ticks got 10% quicker since.
+the clock seal at any whole rate from the certificate's down to 10, a step at
+most every 2 seconds. A reporter's estimate is what its tick cost holds and,
+while frames wait on it, 90% of what it ran; the relay holds the estimate's low
+point and, after a probe wait (15 seconds, doubled by each failed try up to 2
+minutes, reset by a try that held a minute), grows it 5% every 5 seconds or to
+90% of the most the reporter ran since. The clock aims at the least estimate
+less that reporter's backlog over 10 seconds, at most 40% of the estimate. The
+backlog is the head's frame when a sampled checksum arrives less the
+checksum's frame, less the least such gap while the reporter kept up. A step
+goes down at most 50%, and up half the way, at most 25%, only when that is 3%
+or more.
 Its rate markers carry any rate from 10 to 90; each game checks the rate
 against its certificate. In a federated room the coordinator decides from every
 relay's reports (see below). The relay's

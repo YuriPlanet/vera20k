@@ -21,8 +21,8 @@ holds none of them, so a retail game plays as gamemd. There is no build feature:
 The keys the processing passes read travel with the processed rules
 (`ProcessedRulesLayers::npatch_inputs`), so a save, a replay and every peer decide the same
 answer from the same files. A save written before the switch existed converts with an empty
-read list and keeps NPatch off, as those matches played; that layout change is why the wire
-layout moved from `0x9F1BD701` to `0xA8595079`.
+read list and keeps NPatch off, as those matches played ([save compatibility](save-compatibility.md)
+lists each layout).
 
 `[General] VehicleParachute=` chooses the canopy for airdropped non-infantry, falling back to
 `Parachute=` when unset. Infantry keeps `Parachute=`. The name uses the retained animation

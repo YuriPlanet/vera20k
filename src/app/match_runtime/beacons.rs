@@ -305,8 +305,10 @@ fn coord_cell(coord: [i32; 3]) -> Option<(u16, u16)> {
 }
 
 /// PlayerPtr's House array index (`[PlayerPtr] + 0x30`).
-pub(crate) fn local_house_index(state: &AppState) -> Option<usize> {
-    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
+pub(crate) fn local_house_index(
+    sim_runtime: &crate::app::match_runtime::sim_host::SimHost,
+) -> Option<usize> {
+    let sim = &sim_runtime.runtime()?.simulation;
     let local = sim.session().current_house()?;
     sim.houses().index_of(local)
 }
@@ -315,8 +317,12 @@ pub(crate) fn local_house_index(state: &AppState) -> Option<usize> {
 /// the receive arms share: an active record whose House and PlayerPtr are
 /// allied both ways (`0x004F9A10`, `0x004F9A50`, each true for itself), and
 /// whose House is not defeated (`+0x1F5`).
-pub(crate) fn visible_to_player(state: &AppState, house: usize, beacon: &Beacon) -> bool {
-    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+pub(crate) fn visible_to_player(
+    sim_runtime: &crate::app::match_runtime::sim_host::SimHost,
+    house: usize,
+    beacon: &Beacon,
+) -> bool {
+    let Some(runtime) = sim_runtime.runtime() else {
         return false;
     };
     let sim = &runtime.simulation;
@@ -346,11 +352,13 @@ pub(crate) fn visible_to_player(state: &AppState, house: usize, beacon: &Beacon)
 /// The records the tactical (`0x00430AC0`) and radar (`0x00431700`) loops
 /// draw: [`visible_to_player`]'s inline copies (`0x00430AF2..0x00430B43`,
 /// `0x0043174B..0x0043179C`), House-major.
-pub(crate) fn draws(state: &AppState) -> Vec<crate::render::beacon_art::BeaconDraw> {
-    let manager = &state.match_state.match_presentation.beacons;
+pub(crate) fn draws(
+    match_state: &crate::app::match_runtime::state::MatchState,
+) -> Vec<crate::render::beacon_art::BeaconDraw> {
+    let manager = &match_state.match_presentation.beacons;
     manager
         .iter()
-        .filter(|(house, _, beacon)| visible_to_player(state, *house, beacon))
+        .filter(|(house, _, beacon)| visible_to_player(&match_state.sim_runtime, *house, beacon))
         .map(|(house, _, beacon)| crate::render::beacon_art::BeaconDraw {
             house,
             coord: beacon.coord,
@@ -390,11 +398,15 @@ pub(crate) fn place_beacon(
     else {
         return;
     };
-    let visible = visible_to_player(state, house, &Beacon::placed(coord));
+    let visible = visible_to_player(
+        &state.match_state.sim_runtime,
+        house,
+        &Beacon::placed(coord),
+    );
     match placement_feedback(
         state.match_state.session_mode(),
         house,
-        local_house_index(state),
+        local_house_index(&state.match_state.sim_runtime),
         visible,
         received,
     ) {
@@ -403,7 +415,10 @@ pub(crate) fn place_beacon(
             use crate::app::input::messages::{HudMessage, post_hud_message};
             post_hud_message(state, HudMessage::BeaconHelp("TXT_BEACON_HELP1"));
             post_hud_message(state, HudMessage::BeaconHelp("TXT_BEACON_HELP2"));
-            crate::app::input::dispatch::push_local_eva(state, EVA_BEACON_PLACED);
+            crate::app::input::dispatch::push_local_eva(
+                &mut state.match_state.match_audio,
+                EVA_BEACON_PLACED,
+            );
             if let Some(sound_id) = state.rules().and_then(|rules| {
                 Some(rules.sound_name(rules.general.place_beacon_sound.as_deref()?))
             }) {
@@ -414,7 +429,7 @@ pub(crate) fn place_beacon(
                     .push(crate::audio::events::GameSoundEvent::UiSound { sound_id });
             }
             send(
-                state,
+                &mut state.match_state.session,
                 BeaconRecord::Placed {
                     house: house as i8,
                     slot: slot as i8,
@@ -423,25 +438,30 @@ pub(crate) fn place_beacon(
             );
         }
         PlacementFeedback::Detected => {
-            if admit_radar_event(state, coord) {
-                crate::app::input::dispatch::push_local_eva(state, EVA_BEACON_DETECTED);
+            if admit_radar_event(&mut state.match_state, coord) {
+                crate::app::input::dispatch::push_local_eva(
+                    &mut state.match_state.match_audio,
+                    EVA_BEACON_DETECTED,
+                );
             }
         }
     }
 }
 
 /// `CreateRadarEvent(0xB, cell)` on the client's radar-event array.
-fn admit_radar_event(state: &mut AppState, coord: [i32; 3]) -> bool {
+fn admit_radar_event(
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    coord: [i32; 3],
+) -> bool {
     let Some((rx, ry)) = coord_cell(coord) else {
         return false;
     };
-    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+    let Some(runtime) = match_state.sim_runtime.runtime() else {
         return false;
     };
     let tick = runtime.simulation.session().tick();
     let rules = &runtime.resources.rules;
-    state
-        .match_state
+    match_state
         .match_presentation
         .minimap
         .as_mut()
@@ -458,24 +478,23 @@ fn admit_radar_event(state: &mut AppState, coord: [i32; 3]) -> bool {
 /// selected beacon (`0x00731A24`), a received record (`0x0048D7EA`) or one
 /// of DeleteAllBeacons'. Only the search's own beacon is sent
 /// (`0x00431331..0x004313F5`).
-pub(crate) fn delete_beacon(state: &mut AppState, target: BeaconTarget) {
-    let local = local_house_index(state);
+pub(crate) fn delete_beacon(
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    target: BeaconTarget,
+) {
+    let local = local_house_index(&match_state.sim_runtime);
     // The visible record's radar redraw (`0x00431269..0x004312E6`) has no
     // VERA counterpart: the radar recomposes its beacons every pass.
     if let Deletion::Removed {
         house,
         slot,
         searched: true,
-    } = state
-        .match_state
-        .match_presentation
-        .beacons
-        .delete(target, local)
+    } = match_state.match_presentation.beacons.delete(target, local)
         && Some(house) == local
-        && feedback_mode(state.match_state.session_mode())
+        && feedback_mode(match_state.session_mode())
     {
         send(
-            state,
+            &mut match_state.session,
             BeaconRecord::Deleted {
                 house: house as i8,
                 slot: slot as i8,
@@ -492,36 +511,35 @@ pub(crate) fn delete_beacon(state: &mut AppState, target: BeaconTarget) {
 /// undefeated beacon raises radar event `0xB` instead (`0x00431612..
 /// 0x004316E5`), with no announcement.
 pub(crate) fn edit_beacon_message(
-    state: &mut AppState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
     text: Option<&[u16]>,
     target: BeaconTarget,
     broadcast: bool,
 ) {
-    let Some((house, slot, beacon)) = state
-        .match_state
+    let Some((house, slot, beacon)) = match_state
         .match_presentation
         .beacons
         .set_text(target, text)
     else {
         return;
     };
-    if !feedback_mode(state.match_state.session_mode()) {
+    if !feedback_mode(match_state.session_mode()) {
         return;
     }
-    let local = local_house_index(state);
+    let local = local_house_index(&match_state.sim_runtime);
     if target == BeaconTarget::Selected && Some(house) == local && broadcast {
         // `wcsncpy(.., 0x80)`; a null text sends the empty string `0x00889F64`.
         let units = text.unwrap_or_default();
-        let session = &state.match_state.session;
+        let session = &match_state.session;
         if crate::app::match_runtime::network_match::nodes(session).len() > 1 {
-            state.match_state.session.request_beacon_text(
+            match_state.session.request_beacon_text(
                 house as i8,
                 slot as i8,
                 units.iter().copied().take(BEACON_TEXT_UNITS).collect(),
             );
         }
-    } else if Some(house) != local && visible_to_player(state, house, &beacon) {
-        admit_radar_event(state, beacon.coord);
+    } else if Some(house) != local && visible_to_player(&match_state.sim_runtime, house, &beacon) {
+        admit_radar_event(match_state, beacon.coord);
     }
 }
 
@@ -529,7 +547,12 @@ pub(crate) fn edit_beacon_message(
 /// packet's sign-extended House and slot, so `(-1, -1)` is the search. VERA
 /// drops other indices outside the House's three slots, which native would
 /// read across rows.
-pub(crate) fn receive_text(state: &mut AppState, house: i8, slot: i8, text: &[u16]) {
+pub(crate) fn receive_text(
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    house: i8,
+    slot: i8,
+    text: &[u16],
+) {
     let target = match (house, slot) {
         (-1, -1) => BeaconTarget::Selected,
         (house, slot) => match (usize::try_from(house), usize::try_from(slot)) {
@@ -537,15 +560,14 @@ pub(crate) fn receive_text(state: &mut AppState, house: i8, slot: i8, text: &[u1
             _ => return,
         },
     };
-    edit_beacon_message(state, Some(text), target, false);
+    edit_beacon_message(match_state, Some(text), target, false);
 }
 
 /// `0x00431170(PlayerPtr)`, the pre-hook's test: PlayerPtr's House has a
 /// beacon selected.
-pub(crate) fn own_selected(state: &AppState) -> bool {
-    local_house_index(state).is_some_and(|house| {
-        state
-            .match_state
+pub(crate) fn own_selected(match_state: &crate::app::match_runtime::state::MatchState) -> bool {
+    local_house_index(&match_state.sim_runtime).is_some_and(|house| {
+        match_state
             .match_presentation
             .beacons
             .selected_of(house)
@@ -554,17 +576,20 @@ pub(crate) fn own_selected(state: &AppState) -> bool {
 }
 
 /// `DeleteAllBeacons 0x00431410`: DeleteBeacon for each occupied slot.
-fn delete_all_beacons(state: &mut AppState, house: usize) {
-    for slot in state.match_state.match_presentation.beacons.occupied(house) {
-        delete_beacon(state, BeaconTarget::Slot { house, slot });
+fn delete_all_beacons(
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    house: usize,
+) {
+    for slot in match_state.match_presentation.beacons.occupied(house) {
+        delete_beacon(match_state, BeaconTarget::Slot { house, slot });
     }
 }
 
 /// MPlayer_Defeated's local branch: DeleteAllBeacons for PlayerPtr
 /// (`0x004FC1BD..0x004FC1C6`), then beacon mode off (`0x004FC1FA`).
 pub(crate) fn local_player_defeated(state: &mut AppState) {
-    if let Some(local) = local_house_index(state) {
-        delete_all_beacons(state, local);
+    if let Some(local) = local_house_index(&state.match_state.sim_runtime) {
+        delete_all_beacons(&mut state.match_state, local);
     }
     crate::app::input::beacon::set_place_beacon_mode(
         state,
@@ -587,17 +612,16 @@ pub(crate) fn receive(state: &mut AppState, record: BeaconRecord) {
         }
         BeaconRecord::Deleted { house, slot } => {
             if let (Ok(house), Ok(slot)) = (usize::try_from(house), usize::try_from(slot)) {
-                delete_beacon(state, BeaconTarget::Slot { house, slot });
+                delete_beacon(&mut state.match_state, BeaconTarget::Slot { house, slot });
             }
         }
     }
 }
 
 /// The send loop over nodes 1.. (`[0x00A8DA78]`, count `[0x00A8DA84]`).
-fn send(state: &mut AppState, record: BeaconRecord) {
-    let session = &state.match_state.session;
+fn send(session: &mut crate::app::match_runtime::session::MatchSession, record: BeaconRecord) {
     if crate::app::match_runtime::network_match::nodes(session).len() > 1 {
-        state.match_state.session.request_beacon(record);
+        session.request_beacon(record);
     }
 }
 

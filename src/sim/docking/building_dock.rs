@@ -1072,7 +1072,7 @@ impl PendingEntry {
 
     /// A class destination setter's store of the Techno it waits for (see the
     /// type).
-    pub(crate) fn install(&mut self, target: u64) {
+    pub(crate) fn install(&mut self, target: u64, _: crate::sim::game_entity::NameNote) {
         self.0 = Some(target);
     }
 
@@ -2626,12 +2626,13 @@ mod tests {
     /// Component fixture for unit-only Enter/RNG observations. Depot visits
     /// are explicit so its independent Guard cadence is outside those checks.
     fn tick_units(sim: &mut Simulation, rules: &RuleSet) {
-        sim.session
-            .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+        let session = &mut *sim.session;
+        session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
         visit_units(sim, rules);
         process_units(sim, rules);
         pending_entries(sim, rules);
-        sim.session.set_tick_for_test(sim.session.tick() + 1);
+        let session = &mut *sim.session;
+        session.set_tick_for_test(session.tick() + 1);
     }
 
     fn visit_depot(sim: &mut Simulation, rules: &RuleSet) {
@@ -2868,8 +2869,8 @@ mod tests {
         sim.substrate
             .mission_assign_exact(2, MissionId::from_known(MissionType::Guard), now)
             .expect("assign Guard");
-        sim.session
-            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+        let session = &mut *sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         let ctx = crate::sim::world::ObjectAiCtx::default;
 
         let mut shadow = sim.clone_scenario_rng();
@@ -3220,7 +3221,7 @@ mod tests {
         rules.mission_control = crate::sim::mission::MissionControl::from_ini(&IniFile::from_str(
             "[Enter]\nRate=.1\n[Guard]\nRate=.03\n",
         ));
-        sim.scenario_rng = crate::sim::rng::SimRng::new(1);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(1);
         sim.substrate
             .mission_assign_exact(1, MissionId::from_known(MissionType::Enter), 0)
             .unwrap();
@@ -3270,8 +3271,8 @@ mod tests {
         let mut writes = 0u32;
         let mut prev_timer = dispatch_timer(&sim, MINER);
         for _ in 0..2000 {
-            sim.session
-                .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+            let session = &mut *sim.session;
+            session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
             let now = sim.session.binary_frame();
             let due_at_entry = sim
                 .substrate
@@ -3319,7 +3320,8 @@ mod tests {
             prev_timer = timer;
             visit_depot(&mut sim, &rules);
             process_units(&mut sim, &rules);
-            sim.session.set_tick_for_test(sim.session.tick() + 1);
+            let session = &mut *sim.session;
+            session.set_tick_for_test(session.tick() + 1);
             if servicing(&sim, MINER) {
                 reached_pad = true;
                 assert!(linked(&sim, MINER));

@@ -196,6 +196,7 @@ impl Simulation {
     /// SystemAI62FDC7..62FDE7 calls ObjectLimbo5F4D30 while Alive is still
     /// set, then clears Alive and queues deletion. Limbo's literal control1
     /// dispatch clears Techno+308/+310 synchronously, before the late destructor.
+    /// A presentation system, which nothing lists, leaves its store at once.
     pub(crate) fn retire_particle_system(&mut self, stable_id: u64, context: UninitContext<'_>) {
         let ready = self
             .substrate
@@ -205,6 +206,10 @@ impl Simulation {
                 system.alive() && system.done_spawning() && system.particles().is_empty()
             });
         if !ready {
+            return;
+        }
+        if crate::sim::particles::is_presented_particle_id(stable_id) {
+            self.substrate.particle_systems.retire_presented(stable_id);
             return;
         }
 
@@ -741,6 +746,8 @@ impl Simulation {
         // SetTag(nullptr): the shared Tag owner preserves its native counter.
         self.trigger_runtime
             .finalize_object_trigger_tag_attachment(stable_id);
+        // Wasm module modifiers and object variables go with the object.
+        self.forget_ext_module_object(stable_id);
         // Display registration never outlives the object. Fly's phase tail
         // (4CD4DE) resubmits even an owner concealed earlier in the frame.
         self.substrate.display.remove(stable_id);

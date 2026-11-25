@@ -61,7 +61,7 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
     let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 0x489b49, 64);
     // The arena supplies terrain/navigation; establish this visibility
     // domain before Unlimbo can create source and border viewer planes.
-    sim.fog = crate::sim::vision::FogState::new(64, 64);
+    *sim.fog = crate::sim::vision::FogState::new(64, 64);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.resolve_rule_animation_lists(&rules);
@@ -94,8 +94,8 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
     for id in [target, neighbor] {
         // Establish the AI's guard posture through the class receiver; this
         // fixture does not originate a player event for the computer House.
-        assert!(sim.apply_command_with_overlays(
-            None,
+        assert!((sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             "Russians",
             &Command::Guard {
                 entity_id: id,
@@ -104,7 +104,7 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
             &rules,
             None,
             &mut FrameEffects::default(),
-        ));
+        )).is_ok());
     }
     let source = sim.substrate.entities.get(kirov).unwrap();
     assert_eq!(position_world_coord(&source.position).z, 0);
@@ -783,7 +783,7 @@ fn real_wall_routing_still_reaches_the_area_rocker_continuation() {
         .overlays
         .id_for_name("GAWALL")
         .expect("retail concrete wall");
-    scene.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
+    *scene.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
     scene
         .sim
         .overlay_grid
@@ -859,7 +859,7 @@ fn primary_wall_route_reads_the_fixed_stride_alias_before_the_real_wall_is_remov
         return;
     };
     let wall = scene.overlays.id_for_name("GAWALL").unwrap();
-    scene.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
+    *scene.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
     scene
         .sim
         .overlay_grid

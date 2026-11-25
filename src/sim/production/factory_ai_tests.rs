@@ -147,7 +147,7 @@ fn ai_wall_consumption_keeps_its_accounting_and_one_creation_cue() {
     assert!(wall.wall);
     assert_eq!(wall.to_overlay.as_deref(), Some("PLAIN"));
     let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
-    f.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *f.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let mut held = None;
     for _ in 0..3_000 {
         f.sim
@@ -502,7 +502,7 @@ fn legacy_negative_ai_limit_includes_owned_unproduced_objects() {
 /// through `CanBuild`, but the AI gate has to compare the type's own count.
 #[test]
 fn the_gate_compares_an_airport_bound_aircraft_by_its_own_count() {
-    let mut f = fixture_with(
+    let f = fixture_with(
         "[General]\nEnableAIBuildLimitation=yes\nPlacementDelay=.05\n\
          AIAlternateProductionCreditCutoff=10\n\
          [InfantryTypes]\n[AircraftTypes]\n0=HELI\n[VehicleTypes]\n0=TANK\n\

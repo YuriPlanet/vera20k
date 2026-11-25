@@ -107,6 +107,7 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::FrameChannel;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::util::forked::Forked;
 
 /// `BombListClass` (`0x0087F5D8`): the carriers of the live bombs and the
 /// BombVisible countdown. Nothing here is saved: the records live on their
@@ -836,10 +837,12 @@ impl Simulation {
 
     /// `BombClass::Defuse @ 0x004389B0`: remove the bomb and detach its cue
     /// through VocHandle405FD0 (`0x004389D6`), leaving the current clip's tail.
+    /// Every UnInit asks it, so the sound channel is written only for a
+    /// carrier.
     pub(crate) fn bomb_defuse(
         substrate: &mut ObjectSubstrate,
         bombs: &mut BombList,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
+        sound_events: &mut Forked<FrameChannel<SimSoundEvent>>,
         carrier: u64,
     ) {
         if bombs.carriers.remove(&carrier)

@@ -9,7 +9,7 @@ use crate::ui::shell::abort::{AbortButton, AbortSecondary};
 use crate::ui::shell::pause_menu::{PauseMenuButton, PauseMenuTemplate};
 
 fn menu_dialog(state: &AppState) -> u32 {
-    match crate::app::input::pause_menu::current_template(state) {
+    match crate::app::input::pause_menu::current_template(&state.match_state.match_presentation) {
         PauseMenuTemplate::Offline => 0xb5,
         PauseMenuTemplate::Network => 0xbba,
         PauseMenuTemplate::Internet => 0xff,
@@ -257,7 +257,9 @@ impl AbortReturnInput {
                     .with_context(|| format!("the in-game menu has no {press:?}"))?;
                 let point = press_in_game(state, rect);
                 ensure!(
-                    crate::app::input::pause_menu::button_states(state)[press as usize].pressed,
+                    crate::app::input::pause_menu::button_states(&state.match_state)
+                        [press as usize]
+                        .pressed,
                     "physical {press:?} press missed its loaded control"
                 );
                 route.push(
@@ -269,7 +271,7 @@ impl AbortReturnInput {
             AbortInputPhase::AbortPressed => {
                 ensure!(
                     state.match_state.match_presentation.in_game_menu == InGameMenuState::Menu
-                        && crate::app::input::pause_menu::button_states(state)
+                        && crate::app::input::pause_menu::button_states(&state.match_state)
                             [PauseMenuButton::Abort as usize]
                             .pressed,
                     "the menu press changed before its presented release"
@@ -345,7 +347,8 @@ impl AbortReturnInput {
                         && state.frontend.skirmish_shell_chrome.is_some(),
                     "the Surrender box did not present with its loaded artwork"
                 );
-                let layout = crate::app::input::surrender::layout(state);
+                let layout =
+                    crate::app::input::surrender::layout(&state.renderer, &state.frontend.screen);
                 route.push(json!({"frame": frame, "action": "Surrender box presented",
                     "dialog": 0x120, "rect": [layout.dialog.x, layout.dialog.y,
                     layout.dialog.w, layout.dialog.h]}));
@@ -357,7 +360,7 @@ impl AbortReturnInput {
                 let point = press_in_game(state, layout.button(0));
                 ensure!(
                     crate::app::input::surrender::pressed(
-                        state,
+                        &state.match_state.match_presentation,
                         crate::app::input::surrender::SurrenderButton::Ok
                     ),
                     "the Surrender OK press missed its control"

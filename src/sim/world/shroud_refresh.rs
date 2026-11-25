@@ -589,11 +589,11 @@ impl Simulation {
                 self.restamp_edge_dummy(viewer, order, notified, rank, context.reborrow());
             }
             let cursor = order.cursor_after(rank);
-            self.native_allocated_cell_cursor = Some(cursor);
+            *self.native_allocated_cell_cursor = Some(cursor);
             let mark = self.fog.edge_cells_listed(viewer, refresh);
             notify(self, change, &mut context);
             notified = Some(rank);
-            if self.native_allocated_cell_cursor != Some(cursor) {
+            if *self.native_allocated_cell_cursor != Some(cursor) {
                 // A nested walk moved the shared cursor: the complete walk
                 // goes on from there, and the cells it may skip wait for
                 // the next update.
@@ -619,7 +619,7 @@ impl Simulation {
         if refresh && let Some(last) = order.len().checked_sub(1) {
             self.restamp_edge_dummy(viewer, order, notified, last, context);
         }
-        self.native_allocated_cell_cursor = Some(order.end());
+        *self.native_allocated_cell_cursor = Some(order.end());
     }
 
     /// Leave the canonical Dummy as the complete refresh walk's lookups leave
@@ -756,7 +756,7 @@ impl Simulation {
         }
         let rules = context.rules();
         let (Some(waypoint), Some(bounds)) =
-            (self.session.waypoint_cell(index), self.playfield_bounds)
+            (self.session.waypoint_cell(index), *self.playfield_bounds)
         else {
             return false;
         };
@@ -779,8 +779,8 @@ impl Simulation {
             };
             zone
         };
-        self.native_local_cell_cursor = Some(NativeLocalCellCursor::reset(bounds));
-        let mut height_source = self.path_grid.clone();
+        *self.native_local_cell_cursor = Some(NativeLocalCellCursor::reset(bounds));
+        let mut height_source = (*self.path_grid).clone();
         let mut height_grid = self.sight_height_grid(&self.sight_reveal_config(rules));
         loop {
             // No borrow/cursor snapshot spans a reveal callback. A nested18
@@ -788,7 +788,7 @@ impl Simulation {
             let identity = {
                 let (Some(terrain), Some(bounds), Some(cursor)) = (
                     context.terrain().or(self.resolved_terrain.as_ref()),
-                    self.playfield_bounds,
+                    *self.playfield_bounds,
                     self.native_local_cell_cursor.as_mut(),
                 ) else {
                     return false;
@@ -851,14 +851,14 @@ impl Simulation {
                 // change. Reuse its snapshot across small radius2 passes;
                 // a synchronous discovery callback can republish it, so
                 // invalidate before the very next pass, not just next tick.
-                let same_heights = match (&height_source, &self.path_grid) {
+                let same_heights = match (&height_source, &*self.path_grid) {
                     (Some(before), Some(current)) => std::sync::Arc::ptr_eq(before, current),
                     (None, None) => true,
                     _ => false,
                 };
                 if !same_heights {
                     height_grid = self.sight_height_grid(&config);
-                    height_source = self.path_grid.clone();
+                    height_source = (*self.path_grid).clone();
                 }
                 for &viewer in active_viewers {
                     let _ = self.reveal_area(
@@ -1293,7 +1293,7 @@ impl Simulation {
         let Some((width, _)) = self.map_size_diamond() else {
             return false;
         };
-        self.native_allocated_cell_cursor =
+        *self.native_allocated_cell_cursor =
             Some(crate::map::resolved_terrain::NativeAllocatedCellCursor::reset(width));
         true
     }

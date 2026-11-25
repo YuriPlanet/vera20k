@@ -376,7 +376,7 @@ mod tests {
         sim.session.set_tiberium_grows_flag_for_test(true);
         sim.session.set_tiberium_spreads_flag_for_test(true);
 
-        sim.overlay_grid = Some(grid);
+        *sim.overlay_grid = Some(grid);
         let receipt =
             finish_generated_ore(&mut sim, &rules, &registry, &basic, (MAP_WIDTH, MAP_HEIGHT))
                 .unwrap();

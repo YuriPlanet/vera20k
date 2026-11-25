@@ -4,6 +4,7 @@
 
 use super::dialog_page::InGameDialog;
 use crate::app::AppState;
+use crate::app::match_runtime::state::MatchState;
 use crate::ui::shell::connection::{self, ConnectionButton, ConnectionLayout, connection_layout};
 use crate::ui::shell::page::PageEvent;
 use winit::event::MouseButton;
@@ -15,20 +16,20 @@ pub(crate) const DIALOG: InGameDialog = InGameDialog {
     title: None,
     lower: (0x2, connection::QUIT_LABEL),
     label: "Active Connection Shell EA",
-    ui: |state| Some(&state.match_state.match_presentation.connection_ui),
-    ui_mut: |state| Some(&mut state.match_state.match_presentation.connection_ui),
+    ui: |presentation| Some(&presentation.connection_ui),
+    ui_mut: |presentation| Some(&mut presentation.connection_ui),
     own_checkbox_sound: false,
     help_under_held: false,
     help_fallback: |_| "",
 };
 
 /// Whether 0xEA is open; its controls start afresh on a new dialog.
-fn open_controls(state: &mut AppState) -> bool {
-    let Some(page) = state.match_state.network_wait.page_mut() else {
+fn open_controls(match_state: &mut MatchState) -> bool {
+    let Some(page) = match_state.network_wait.page_mut() else {
         return false;
     };
     if !std::mem::replace(&mut page.controls_built, true) {
-        state.match_state.match_presentation.connection_ui = Default::default();
+        match_state.match_presentation.connection_ui = Default::default();
     }
     true
 }
@@ -37,7 +38,7 @@ fn open_controls(state: &mut AppState) -> bool {
 /// its renderer's call every drawn frame before it paints from them.
 pub(crate) fn sync(state: &mut AppState) -> Option<ConnectionLayout> {
     let layout = super::dialog_page::layout(state, connection_layout)?;
-    if !open_controls(state) {
+    if !open_controls(&mut state.match_state) {
         return None;
     }
     let match_state = &mut state.match_state;
@@ -60,7 +61,7 @@ fn pointer(state: &mut AppState, down: Option<bool>) {
         return;
     };
     let event = super::dialog_page::shell_event(state, down);
-    if !open_controls(state) {
+    if !open_controls(&mut state.match_state) {
         return;
     }
     let match_state = &mut state.match_state;
@@ -92,9 +93,9 @@ fn pointer(state: &mut AppState, down: Option<bool>) {
             continue;
         };
         match button {
-            ConnectionButton::Quit => {
-                crate::app::match_runtime::network_match::request_leave(state)
-            }
+            ConnectionButton::Quit => crate::app::match_runtime::network_match::request_leave(
+                &mut state.match_state.network_wait,
+            ),
             ConnectionButton::Player(row) => {
                 crate::app::match_runtime::network_match::propose_kick(state, row)
             }

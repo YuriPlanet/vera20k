@@ -124,9 +124,9 @@ fn type_tech_level_dispatch_matches_original_identity_signed_values_house_dirty_
             .map(|owner| serde_json::to_value(&sim.houses[owner]).unwrap())
             .collect();
         let seed = row["rng_seed"].as_u64().unwrap();
-        sim.scenario_rng = SimRng::new(seed);
-        sim.main_rng = SimRng::new(seed);
-        sim.mapgen_rng = SimRng::new(seed);
+        *sim.scenario_rng = SimRng::new(seed);
+        *sim.main_rng = SimRng::new(seed);
+        *sim.mapgen_rng = SimRng::new(seed);
         assert_eq!(rng_hashes(&sim), row["rng_before"], "{name}");
         let raw = input["raw_action"].as_str().unwrap();
         let (returned, draws) = crate::sim::rng::trace_draws(|| apply(&mut sim, &rules, raw));

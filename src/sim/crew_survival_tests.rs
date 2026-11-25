@@ -322,7 +322,7 @@ fn nominal_survivor_capture_and_snapshot_retain_counter_drift() {
     assert_eq!(sim.houses[&second].tracking().infantry(), 1);
 
     // The existing decoder resets Scenario RNG; compare the same prior.
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     let expected = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "nominal-survivor", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
@@ -368,7 +368,7 @@ fn building_crew_keeps_distinct_native_caller_placement_and_rng() {
     let id = sim
         .construct_crew_limbo(&rules, "E1", owner, (15, 15), 0, &mut Default::default())
         .unwrap();
-    sim.scenario_rng = SimRng::from_native_state_hex_for_test(row["rng_before"].as_str().unwrap());
+    *sim.scenario_rng = SimRng::from_native_state_hex_for_test(row["rng_before"].as_str().unwrap());
     let unlimbo = CrewUnlimbo::Place {
         cell: (15, 15),
         z: 0,
@@ -542,7 +542,7 @@ fn phase_b_interleaves_each_cells_roll_with_its_mark() {
         let mut sim = sim_with_houses(seed);
         let yard = spawn(&mut sim, &rules, "GACNST", "Americans", 10, 10);
         let before = sim.substrate.entities.keys_sorted();
-        let mut replay: SimRng = sim.scenario_rng.clone();
+        let mut replay: SimRng = (*sim.scenario_rng).clone();
         let mut marks = Vec::new();
         sim.spawn_building_survivors(
             &rules,
@@ -654,7 +654,7 @@ fn pending_house_death_skips_crew_rolls_but_retains_every_cell_mark() {
         if pending {
             assert!(sim.flag_house_to_die(owner));
         }
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"].as_str().unwrap());
         let expected = SimRng::from_native_state_hex_for_test(row["rng_after"].as_str().unwrap())
             .logical_state();
@@ -2425,7 +2425,7 @@ fn signed_country_crew_type_and_rng_match_original() {
     let rules = RuleSet::from_ini(&IniFile::from_str(RULES)).unwrap();
     for row in rows.as_array().unwrap() {
         let mut sim = Simulation::with_seed(1);
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"].as_str().unwrap());
         assert_eq!(
             techno_crew_type(

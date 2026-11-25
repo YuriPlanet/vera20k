@@ -1,0 +1,21 @@
+[package]
+name = "modifier-vars"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "RFC 0001 example: a timed modifier and declared variables from Rust"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+vera20k-sdk = { path = "../../rust/vera20k-sdk" }
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+strip = true
+
+[workspace]

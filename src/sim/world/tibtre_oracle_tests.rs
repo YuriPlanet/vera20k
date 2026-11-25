@@ -211,8 +211,8 @@ fn fixture(input: &Value, stock: &Value) -> (Scene, Vec<(u16, u16)>) {
     }
     // Native controls supply already-constructed adjacent objects and seed
     // Scenario at the measured boundary; exclude Rust fixture constructors.
-    s.sim.scenario_rng = crate::sim::rng::SimRng::new(input["seed"].as_u64().unwrap_or(1));
-    s.sim.native_unique_ids =
+    *s.sim.scenario_rng = crate::sim::rng::SimRng::new(input["seed"].as_u64().unwrap_or(1));
+    *s.sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(0));
     (s, coords)
 }
@@ -337,7 +337,7 @@ fn forced_spread_matches_original_admission_placement_queues_and_rng() {
         s.sim
             .session
             .set_binary_frame_for_test(case["input"]["frame"].as_u64().unwrap_or(200) as u32);
-        s.sim.ore_growth_config = crate::sim::ore_growth::OreGrowthConfig::for_test(
+        *s.sim.ore_growth_config = crate::sim::ore_growth::OreGrowthConfig::for_test(
             true,
             case["input"]["spreads"] != false,
             s.sim.ore_growth_config.tiberium_grows_flag(),
@@ -472,7 +472,7 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
     let corpus = corpus();
     let stock = &corpus["retail_inputs"]["rows"][0];
     let (mut s, _) = fixture(&json!({"seed":4}), stock);
-    s.sim.ore_growth_config = OreGrowthConfig::disabled();
+    *s.sim.ore_growth_config = OreGrowthConfig::disabled();
     let frame = |s: &mut Scene| {
         let path = s.sim.path_grid_snapshot();
         assert!(
@@ -513,7 +513,7 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
     );
     // A queued cell reaches the existing global growth driver; the stock
     // Growth=2200 timer must expire without seeding replacement ore.
-    s.sim.ore_growth_config = OreGrowthConfig::for_test(true, false, true);
+    *s.sim.ore_growth_config = OreGrowthConfig::for_test(true, false, true);
     for _ in 0..1600 {
         frame(&mut s);
         if s.sim
@@ -537,7 +537,7 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
             > 3,
         "spawned ore grows from its actual retained queue"
     );
-    s.sim.ore_growth_config = OreGrowthConfig::disabled();
+    *s.sim.ore_growth_config = OreGrowthConfig::disabled();
     let before = s
         .sim
         .overlay_grid
@@ -545,8 +545,8 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
         .unwrap()
         .cell(at.0, at.1)
         .overlay_data;
-    assert!(s.sim.apply_command_with_overlays(
-        None,
+    assert!((s.sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &Command::clicked_mission(
             s.miner,
@@ -556,7 +556,7 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
         &s.rules,
         Some(registry()),
         &mut crate::sim::world::FrameEffects::default()
-    ));
+    )).is_ok());
     for _ in 0..1600 {
         frame(&mut s);
         if !s
@@ -598,8 +598,8 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
     );
     let owner = s.sim.interner.get("Americans").unwrap();
     let balance = s.sim.houses[&owner].economy().credits();
-    assert!(s.sim.apply_command_with_overlays(
-        None,
+    assert!((s.sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &Command::clicked_mission(
             s.miner,
@@ -609,7 +609,7 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
         &s.rules,
         Some(registry()),
         &mut crate::sim::world::FrameEffects::default()
-    ));
+    )).is_ok());
     for _ in 0..1800 {
         frame(&mut s);
         if s.sim.houses[&owner].economy().credits() > balance {
@@ -629,7 +629,7 @@ fn tibtre_active_stage_survives_snapshot_and_removal_clears_its_owner() {
     use crate::sim::snapshot::GameSnapshot;
     let corpus = corpus();
     let (mut s, coords) = fixture(&json!({"seed":4}), &corpus["retail_inputs"]["rows"][0]);
-    s.sim.ore_growth_config = OreGrowthConfig::disabled();
+    *s.sim.ore_growth_config = OreGrowthConfig::disabled();
     let at = coords[0];
     for _ in 0..2000 {
         let path = s.sim.path_grid_snapshot();
@@ -645,7 +645,7 @@ fn tibtre_active_stage_survives_snapshot_and_removal_clears_its_owner() {
     );
     // Save loading intentionally reseeds Scenario RNG; compare both
     // continuations under that existing owner policy.
-    s.sim.scenario_rng = SimRng::new(0);
+    *s.sim.scenario_rng = SimRng::new(0);
     let base_terrain = s.sim.resolved_terrain.as_ref().unwrap().clone();
     let bytes = GameSnapshot::save(&s.sim, 0, 0, "TIBTRE continuation", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
@@ -695,7 +695,7 @@ fn forced_terrain_enqueue_rebuild_uses_live_scenario_flags_through_advance_tick(
         &json!({"seed":1, "stage":[10,0,0,0,1]}),
         &corpus["retail_inputs"]["rows"][0],
     );
-    s.sim.ore_growth_config = OreGrowthConfig::disabled();
+    *s.sim.ore_growth_config = OreGrowthConfig::disabled();
     let grid = s.sim.overlay_grid.as_mut().unwrap();
     grid.place_overlay(10, 10, registry().id_for_name("TIB01").unwrap(), 2);
     // Prepared drained-heap prestate models a valid long-running append array.
@@ -709,7 +709,7 @@ fn forced_terrain_enqueue_rebuild_uses_live_scenario_flags_through_advance_tick(
     ]);
     saved["native_tiberium"]["classes"][0]["growth"]["heap"]["slots"] = json!([]);
     saved["native_tiberium"]["classes"][0]["growth_bitmap"] = json!([[10, 10]]);
-    s.sim.ore_growth_state = serde_json::from_value(saved).unwrap();
+    *s.sim.ore_growth_state = serde_json::from_value(saved).unwrap();
     let path = s.sim.path_grid_snapshot();
     s.sim
         .advance_tick(&[], Some(&s.rules), path.as_deref(), Some(registry()), 67);

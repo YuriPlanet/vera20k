@@ -73,32 +73,7 @@ impl Simulation {
                 }
                 offset += 1;
             };
-            let terrain = self
-                .resolved_terrain
-                .as_ref()
-                .ok_or("Chronoshift needs map cells")?;
-            let cells = NativeCellQuery::canonical(terrain);
-            let identity = cells.lookup(cell);
-            //Cell vt48 returns its own centre at its ground elevation; the
-            //class ChronoWarpTo adds the structural bridge height later.
-            let [x, y] = crate::sim::cell_kernel::native_cell_own_xy(identity, &cells);
-            let mut coord = DriveCoord { x, y, z: 0 };
-            coord.z = crate::sim::movement::ground_pose::query_ground_height(&cells, coord)?;
-            if infantry {
-                //50D93B passes priority0/false/false to original481180.
-                //Its existing owner pays any sub-cell RNG, even if WarpTo
-                //subsequently refuses. A null result is the zero coordinate.
-                coord = Self::place_infantry_spot_in_cell(
-                    &self.interner,
-                    &mut self.scenario_rng,
-                    &self.substrate,
-                    &self.resolved_terrain,
-                    rules,
-                    identity,
-                    coord,
-                )?
-                .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
-            }
+            let coord = self.chrono_warp_coord(cell, infantry, rules)?;
             if self.foot_chrono_warp_to(id, coord, rules, registry, effects)? {
                 offset += 1;
                 if offset == offsets.len() {
@@ -107,5 +82,42 @@ impl Simulation {
             }
         }
         Ok(())
+    }
+
+    /// The coordinate House50D6D0 hands WarpTo for `cell`; a Wasm module's
+    /// `Teleport` uses it too.
+    pub(crate) fn chrono_warp_coord(
+        &mut self,
+        cell: (i16, i16),
+        infantry: bool,
+        rules: &RuleSet,
+    ) -> Result<DriveCoord, String> {
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or("Chronoshift needs map cells")?;
+        let cells = NativeCellQuery::canonical(terrain);
+        let identity = cells.lookup(cell);
+        //Cell vt48 returns its own centre at its ground elevation; the
+        //class ChronoWarpTo adds the structural bridge height later.
+        let [x, y] = crate::sim::cell_kernel::native_cell_own_xy(identity, &cells);
+        let mut coord = DriveCoord { x, y, z: 0 };
+        coord.z = crate::sim::movement::ground_pose::query_ground_height(&cells, coord)?;
+        if infantry {
+            //50D93B passes priority0/false/false to original481180.
+            //Its existing owner pays any sub-cell RNG, even if WarpTo
+            //subsequently refuses. A null result is the zero coordinate.
+            coord = Self::place_infantry_spot_in_cell(
+                &self.interner,
+                &mut self.scenario_rng,
+                &self.substrate,
+                &self.resolved_terrain,
+                rules,
+                identity,
+                coord,
+            )?
+            .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
+        }
+        Ok(coord)
     }
 }

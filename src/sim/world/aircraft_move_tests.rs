@@ -183,7 +183,7 @@ pub(crate) fn fixture(input: &Value) -> (Simulation, RuleSet) {
         .cloned()
         .unwrap_or_else(|| vec![json!(0), json!(0), json!(64), json!(64)]);
     let local: Vec<i32> = local.iter().map(|v| v.as_i64().unwrap() as i32).collect();
-    sim.playfield_bounds = Some(
+    *sim.playfield_bounds = Some(
         crate::map::playfield::PlayfieldBounds::from_normalized_local_size(
             64, local[0], local[1], local[2], local[3],
         ),

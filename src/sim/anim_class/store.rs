@@ -487,7 +487,9 @@ fn uncount_owner(counts: &mut LookupMap<u64, u32>, owner: Option<u64>) {
 
 impl Simulation {
     /// Run the effect anims that change nothing but their picture as
-    /// presentation anims from now on ([`AnimConstructorInput::Presentation`]).
+    /// presentation anims from now on ([`AnimConstructorInput::Presentation`]),
+    /// and such particle systems as presentation systems
+    /// ([`Self::spawn_effect_particle_system`]).
     /// Simulations start without, in native order, so a comparison with
     /// gamemd's unique ids, Logic order and anim rows holds; real matches,
     /// replays of them and sim-bench turn it on.
@@ -495,8 +497,8 @@ impl Simulation {
         self.effect_anims.presentation = true;
     }
 
-    /// Whether picture-only effect anims run as presentation anims
-    /// ([`Self::present_effect_anims`]).
+    /// Whether picture-only effect anims and particle systems run as
+    /// presentation objects ([`Self::present_effect_anims`]).
     pub(crate) fn effect_anims_presented(&self) -> bool {
         self.effect_anims.presentation
     }

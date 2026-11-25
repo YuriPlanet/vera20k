@@ -209,12 +209,12 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, Vec<u64>, [u64; 2], Opt
         }
         team["advance_pending"] = row["before"]["team"]["advance_pending"].clone();
         team["leaving_map"] = row["before"]["team"]["is_leaving_map"].clone();
-        sim.team_script_vm = serde_json::from_value(vm).unwrap();
+        *sim.team_script_vm = serde_json::from_value(vm).unwrap();
         Some(id)
     };
-    sim.main_rng = serde_json::from_value(row["rng_before"]["main"].clone()).unwrap();
-    sim.scenario_rng = serde_json::from_value(row["rng_before"]["scenario"].clone()).unwrap();
-    sim.mapgen_rng = serde_json::from_value(row["rng_before"]["mapgen"].clone()).unwrap();
+    *sim.main_rng = serde_json::from_value(row["rng_before"]["main"].clone()).unwrap();
+    *sim.scenario_rng = serde_json::from_value(row["rng_before"]["scenario"].clone()).unwrap();
+    *sim.mapgen_rng = serde_json::from_value(row["rng_before"]["mapgen"].clone()).unwrap();
     (sim, members, targets, team)
 }
 
@@ -409,7 +409,7 @@ fn fire_once_tail_matches_12_original_retained_state_and_rng_boundaries() {
             restored.restore_after_snapshot_load().unwrap();
             // Keep the separate save reader's Scenario reseed out of this
             // FireOnce retained-state comparison.
-            restored.scenario_rng = sim.scenario_rng.clone();
+            *restored.scenario_rng = (*sim.scenario_rng).clone();
             assert_boundary(&restored, row, &members, targets, team);
             restored.run_team_ai_pass(
                 &retail.rules,

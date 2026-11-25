@@ -141,7 +141,7 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, u64, InternedId) {
         assert_eq!(native["land"], 0, "fixture has only native land0");
     }
     sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(32, 32, cells));
-    sim.overlay_grid = Some(overlays);
+    *sim.overlay_grid = Some(overlays);
     let owner = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, None, input["human"].as_bool().unwrap(), 0, 10);
     house.set_player_control_for_test(
@@ -334,9 +334,10 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, u64, InternedId) {
 }
 
 fn import_rng(sim: &mut Simulation, native: &Value) {
-    sim.main_rng = SimRng::from_native_state_hex_for_test(native["main"].as_str().unwrap());
-    sim.scenario_rng = SimRng::from_native_state_hex_for_test(native["scenario"].as_str().unwrap());
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(native["mapgen"].as_str().unwrap());
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(native["main"].as_str().unwrap());
+    *sim.scenario_rng =
+        SimRng::from_native_state_hex_for_test(native["scenario"].as_str().unwrap());
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(native["mapgen"].as_str().unwrap());
 }
 
 fn assert_rng(sim: &Simulation, native: &Value, context: &str) {
@@ -974,7 +975,7 @@ fn native_cleg_reservation_survives_snapshot_and_is_hashed() {
                     .begin_piggyback(LocomotorKind::Walk, sim.session.binary_frame())
             );
         }
-        sim.scenario_rng = SimRng::new(0);
+        *sim.scenario_rng = SimRng::new(0);
         let hash = sim.state_hash();
         let bytes = GameSnapshot::save(&sim, 0, 0, "CLEG supplied command cells", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
@@ -1075,8 +1076,8 @@ fn two_ordinary_cleg_moves_publish_class_destinations_before_process() {
         &sim.substrate.entities.get(id).unwrap().position,
     );
     for target_rx in [12, 13] {
-        assert!(sim.apply_command_with_overlays(
-            None,
+        assert!((sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             "Americans",
             &Command::Move {
                 entity_id: id,
@@ -1086,7 +1087,7 @@ fn two_ordinary_cleg_moves_publish_class_destinations_before_process() {
             &rules,
             None,
             &mut crate::sim::world::FrameEffects::default()
-        ));
+        )).is_ok());
         let entity = sim.substrate.entities.get(id).unwrap();
         let runtime = entity
             .locomotor
@@ -1407,8 +1408,8 @@ fn cleg_overlay_cell_requests_match_every_original_command_boundary() {
                     // 718080 below.
                     let (rx, ry) = pair(&boundary["input"]["cell"]);
                     assert!(
-                        sim.apply_command_with_overlays(
-                            None,
+                        (sim.apply_command_with_overlays(
+                            crate::sim::command::CommandSender::Player(None),
                             "Americans",
                             &Command::Move {
                                 entity_id: id,
@@ -1418,7 +1419,7 @@ fn cleg_overlay_cell_requests_match_every_original_command_boundary() {
                             &rules,
                             Some(&registry),
                             &mut crate::sim::world::FrameEffects::default(),
-                        ),
+                        )).is_ok(),
                         "{context}: the Move event runs"
                     );
                 } else {

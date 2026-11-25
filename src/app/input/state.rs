@@ -247,7 +247,7 @@ pub(crate) struct MatchInputState {
     pub(crate) cursor_x: f32,
     pub(crate) cursor_y: f32,
     /// The match zoom `cursor_x`/`cursor_y` are in; `None` is window pixels.
-    /// `AppState::sync_cursor_space` keeps it matching the current screen.
+    /// [`MatchInputState::sync_cursor_space`] keeps it matching the current screen.
     pub(crate) cursor_zoom: Option<crate::ui::main_menu_dialogs::options::ZoomGeometry>,
     /// Last physical window event, used only to measure confined cursor motion.
     /// The source cursor above remains authoritative; this anchor is neither

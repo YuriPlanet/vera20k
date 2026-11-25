@@ -71,7 +71,7 @@ pub(super) fn advance(
     let speed = super::foot_speed::owner_current_speed_from_native_fraction(
         adjusted_speed,
         entity.foot_speed.native_applied_fraction(),
-        entity.phobos_speed_multiplier(),
+        entity.effect_speed_multiplier(),
     );
     let speed = prone_crawls.map_or(speed, |crawls| {
         crate::sim::infantry::apply_prone_speed(SimFixed::from_num(speed), crawls, prone_multiplier)

@@ -51,7 +51,12 @@ pub(super) fn apply_response(
             // VERA: the lobby does not say which player differs; this game
             // can say what it changes.
             if let Some(own) = (!retryable)
-                .then(|| crate::app::shell_network_setup::agreement::own_changes_text(state))
+                .then(|| {
+                    crate::app::shell_network_setup::agreement::own_changes_text(
+                        &state.frontend.mods,
+                        &state.process_assets,
+                    )
+                })
                 .flatten()
             {
                 text.push(' ');
@@ -80,9 +85,18 @@ pub(super) fn apply_response(
             // Only a still-awaited session can set the current name or saved credentials.
             if !generated_guest {
                 if let Some(token) = sign_in_token {
-                    remember_sign_in(settings_dir(state), service, &nickname, token);
+                    remember_sign_in(
+                        settings_dir(state.platform.game_config.as_ref()),
+                        service,
+                        &nickname,
+                        token,
+                    );
                 }
-                remember_online_name(state, &nickname);
+                remember_online_name(
+                    state.platform.game_config.as_ref(),
+                    &mut state.persistence.options_profile,
+                    &nickname,
+                );
             }
             service.player_id = player_id;
             state.frontend.wol_account.nickname = nickname;
@@ -105,7 +119,11 @@ pub(super) fn apply_response(
             service_event(state, WolServiceEvent::Login(Err(code)));
             // Code 0 is no answer or an unexpected one: TXT_CANT_CONNECT.
             if code == 0 {
-                super::service::replace_open_box_body(state, &tr(CANT_CONNECT_TEXT));
+                super::service::replace_open_box_body(
+                    state.frontend.wol.as_mut(),
+                    &state.platform.window,
+                    &tr(CANT_CONNECT_TEXT),
+                );
             }
         }
         http::Response::SignInRefused {
@@ -114,11 +132,15 @@ pub(super) fn apply_response(
             bad_credential,
         } if attempt == service.auth_attempt => {
             if bad_credential && service.signing_in_remembered {
-                forget_sign_in(settings_dir(state), service);
+                forget_sign_in(settings_dir(state.platform.game_config.as_ref()), service);
             }
             state.frontend.wol_account.password.clear();
             service_event(state, WolServiceEvent::Login(Err(0)));
-            if !super::service::replace_open_box_body(state, &message) {
+            if !super::service::replace_open_box_body(
+                state.frontend.wol.as_mut(),
+                &state.platform.window,
+                &message,
+            ) {
                 notice(state, &message);
             }
         }
@@ -128,7 +150,11 @@ pub(super) fn apply_response(
             // The login has no lobby yet, so a chat line would be lost: the
             // failure's own box says why.
             let text = update_required_text(message.as_deref());
-            if !super::service::replace_open_box_body(state, &text) {
+            if !super::service::replace_open_box_body(
+                state.frontend.wol.as_mut(),
+                &state.platform.window,
+                &text,
+            ) {
                 notice(state, &text);
             }
             lobby_says_outdated(state);
@@ -184,7 +210,10 @@ pub(super) fn apply_response(
                 {
                     notice(state, &tr("VERA:WatchingNotTaken"));
                 } else if legacy_refusal
-                    && let Some(key) = crate::app::shell_network_setup::lobby_refused_option(state)
+                    && let Some(key) = crate::app::shell_network_setup::lobby_refused_option(
+                        &mut state.frontend,
+                        &mut state.match_state.session,
+                    )
                 {
                     notice(state, &tr(key));
                 }
@@ -235,7 +264,7 @@ pub(super) fn apply_response(
             failure,
         } => match operation {
             "join" | "create" => {
-                if super::lobby::online_request_pending(state, id) {
+                if super::lobby::online_request_pending(state.frontend.wol.as_ref(), id) {
                     if let Some(switch) = service.switching_room.as_mut()
                         && switch.request_id == id
                         && failure == http::CommandFailure::Retryable
@@ -284,8 +313,10 @@ pub(super) fn apply_response(
             }
             "options" if failure == http::CommandFailure::InvalidOptions => {
                 if service.is_room_publication(id)
-                    && let Some(key) =
-                        crate::app::shell_network_setup::lobby_refused_building_queue(state)
+                    && let Some(key) = crate::app::shell_network_setup::lobby_refused_building_queue(
+                        &mut state.frontend.network_setup_protocol,
+                        &mut state.match_state.session,
+                    )
                 {
                     // The newest room rule first: a lobby from before it lists
                     // matches, so the capability check below cannot tell.
@@ -314,7 +345,10 @@ pub(super) fn apply_response(
                     // The lobby refused these settings, usually because the
                     // room has already moved on: the guest's automatic
                     // Accept waits for the next ones.
-                    let _ = crate::app::shell_network_setup::refuse_local_acceptance(state);
+                    let _ = crate::app::shell_network_setup::refuse_local_acceptance(
+                        &mut state.frontend.network_setup_protocol,
+                        &mut state.match_state.session,
+                    );
                 } else if let Some(index) = state
                     .match_state
                     .session
@@ -375,7 +409,13 @@ pub(super) fn apply_response(
         }
         http::Response::AccountAnswered { attempt, answer } => {
             if let Ok(AccountSuccess::Deleted(name)) = &answer {
-                forget_deleted_account(state, &service.lobby, name);
+                forget_deleted_account(
+                    &mut state.frontend,
+                    state.platform.game_config.as_ref(),
+                    &mut state.persistence.options_profile,
+                    &service.lobby,
+                    name,
+                );
             }
             if state
                 .frontend
@@ -392,7 +432,9 @@ pub(super) fn apply_response(
         http::Response::LobbyLost => {
             // A match keeps its relay through a lobby outage; this asks
             // again after it.
-            if super::in_match(state) || crate::app::loading::pump::network_loading_active(state) {
+            if super::in_match(state.frontend.wol.as_ref())
+                || crate::app::loading::pump::network_loading_active(&state.frontend)
+            {
                 return;
             }
             // The worker keeps the bearer and logs it out at the next
@@ -412,8 +454,13 @@ pub(super) fn apply_response(
             // welcome.
             service_event(state, WolServiceEvent::NetStatus(super::NET_STATUS_LOST));
             let text = tr(LOBBY_LOST_TEXT);
-            if !super::lobby::replace_box_body(state, &text)
-                && !super::service::show_text_box(state, &text)
+            if !super::lobby::replace_box_body(state.frontend.wol.as_mut(), &text)
+                && !super::service::show_text_box(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.process_assets,
+                    &text,
+                )
             {
                 notice(state, &text);
             }
@@ -427,11 +474,11 @@ pub(super) fn apply_response(
             // The bearer session is definitively gone; a new login has no
             // authority to retry cleanup for the old server session.
             service.clear_cleanup();
-            if let Some(spawned) = spawned_visit_mut(state) {
+            if let Some(spawned) = spawned_visit_mut(state.frontend.wol.as_mut()) {
                 // Nothing is left to finish or leave with this bearer. A
                 // running match continues on its relay; an admission ends.
                 spawned.cleanup_begun = true;
-                if !super::in_match(state) {
+                if !super::in_match(state.frontend.wol.as_ref()) {
                     crate::app::App::fail_external_launch(
                         state,
                         "the match service ended this session",

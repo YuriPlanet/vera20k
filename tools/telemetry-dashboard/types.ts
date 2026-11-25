@@ -323,14 +323,18 @@ export interface PathBatchStats {
   searched: number;
   /** Registrations it answered. */
   answered: number;
-  /** Registrations the cap, a re-path turn or a re-path budget left for a later pass. */
+  /** Registrations the cap, a re-path turn, a re-path budget or the urgency-2 limit left for a later pass. */
   left_out: number;
+  /** Of those, the urgency-2 re-paths stopped at their limit, which start their Foots' blockage timers again. */
+  capped: number;
   /** Cells every search of the latest pass expanded. */
   steps: number;
   /** Of those, the urgency-2 re-paths' share. */
   urgency2_steps: number;
   /** Of those, the urgency-1 re-paths' share. */
   urgency1_steps: number;
+  /** The most cells one search of the latest pass expanded. */
+  largest_search: number;
   last_ms: number;
   mean_ms: number;
   peak_ms: number;

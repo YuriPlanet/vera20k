@@ -700,8 +700,8 @@ fn native_reshroud_allocated_cursor_stops_on_null_and_calls_shared_receiver() {
         assert_eq!(json!(cells), row["visits"], "{name}");
         assert!(fog.admit_whole_map_reveal(viewer));
         let mut world = crate::sim::world::Simulation::default();
-        world.fog = fog;
-        world.resolved_terrain = Some(terrain.clone());
+        *world.fog = fog;
+        *world.resolved_terrain = Some(terrain.clone());
         world.transition_whole_map_with_gap_reentry(
             viewer,
             cells,

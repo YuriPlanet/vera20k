@@ -186,6 +186,9 @@ impl Simulation {
             overlay_registry,
             frame_effects,
         );
+        // Wasm module `Birth` (RFC 0001 appendix 4.3) after 6E4200's
+        // Grand_Opening.
+        self.raise_module_birth(rules, frame_effects, created, None);
         true
     }
 

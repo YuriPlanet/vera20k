@@ -415,6 +415,36 @@ pub(crate) fn load_with_registered_scenario_assets(
     .map_err(|error| error.to_string())
 }
 
+/// Test builds: [`load_session`] with `module` as the selected mod's
+/// `rules.wasm` (RFC 0001), its `on_rules` run while the rules are processed.
+#[cfg(any(test, feature = "test-support"))]
+pub fn load_with_mod_module(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    session: SkirmishLaunchSession,
+    module: &[u8],
+) -> Result<HeadlessScenario, String> {
+    let launch = crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(session)
+        .map_err(|error| format!("resolve Battle launch: {error}"))?;
+    let mut assets = AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL)
+        .and_then(|assets| assets.with_ini_roots(&Default::default()))
+        .map_err(|error| format!("open retail MIX archives: {error}"))?;
+    load_with_assets_and_mod_module(
+        retail_dir,
+        map_file_name,
+        seed,
+        HeadlessLaunch::Slots(&launch),
+        &mut assets,
+        crate::sim::scenario_session::ScenarioGameMode::Skirmish,
+        None,
+        None,
+        Some(module),
+    )
+    .map_err(|error| error.to_string())
+}
+
+#[allow(clippy::too_many_arguments)]
 fn load_with_assets(
     retail_dir: &Path,
     map_file_name: &str,
@@ -424,6 +454,33 @@ fn load_with_assets(
     game_mode: crate::sim::scenario_session::ScenarioGameMode,
     accepted_native_id_prefix: Option<u32>,
     process_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
+) -> Result<HeadlessScenario, HeadlessLoadError> {
+    load_with_assets_and_mod_module(
+        retail_dir,
+        map_file_name,
+        seed,
+        launch,
+        assets,
+        game_mode,
+        accepted_native_id_prefix,
+        process_rules,
+        None,
+    )
+}
+
+/// [`load_with_assets`]; `mod_module` stands in for the selected mod's
+/// `rules.wasm`, which is otherwise read from the mod's folder.
+#[allow(clippy::too_many_arguments)]
+fn load_with_assets_and_mod_module(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    launch: HeadlessLaunch<'_>,
+    assets: &mut AssetManager,
+    game_mode: crate::sim::scenario_session::ScenarioGameMode,
+    accepted_native_id_prefix: Option<u32>,
+    process_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
+    mod_module: Option<&[u8]>,
 ) -> Result<HeadlessScenario, HeadlessLoadError> {
     let (slot_launch, campaign, manifest, campaign_speed, logical_map) = match launch {
         HeadlessLaunch::Slots(launch) => (Some(launch), None, None, None, None),
@@ -514,10 +571,37 @@ fn load_with_assets(
     // This headless entry has no MainMenuTypedCodes owner or THETEAM input.
     // It shares the process Rules owner; this no-mod entry skips LANGRULE
     // and cannot admit Full_Init's mode-5 TMCJ4F route.
-    let (mut rules, _, art_ini, native_rules_receipt) = native_rules_owner
-        .load_scenario(rules_prefix, &map.ini)
-        .map_err(|error| format!("load native scenario rules: {error}"))?
-        .into_parts();
+    // Wasm extension modules (RFC 0001): the mod's rules.wasm, then the
+    // map's. Their `on_rules` runs at their layers of this rules load.
+    let mod_file;
+    let mod_module = match mod_module {
+        Some(bytes) => Some(bytes),
+        None => {
+            mod_file = crate::sim::ext_modules::PreparedExtModules::read_mod_file(&assets)?;
+            mod_file.as_deref()
+        }
+    };
+    let mut ext_modules = crate::sim::ext_modules::PreparedExtModules::load(
+        native_rules_owner.selected_rules_root(),
+        mod_module,
+        &map.ini,
+        native_rules_owner.personal_rules().wasm_budget(),
+        slot_launch.map_or(0, |launch| launch.session().mod_ai_slots.len()),
+    )
+    .map_err(|error| format!("Wasm extension module: {error}"))?;
+    let (scenario_rules, _) = native_rules_owner
+        .load_scenario_with_ext_rules(
+            rules_prefix,
+            &map.ini,
+            None::<(
+                &crate::rules::ini_parser::IniFile,
+                fn(crate::rules::ruleset::RuleSet),
+            )>,
+            &mut ext_modules,
+        )
+        .map_err(|error| format!("load native scenario rules: {error}"))?;
+    let (mut rules, processed_rules_ini, art_ini, native_rules_receipt) =
+        scenario_rules.into_parts();
     // The game's later readers (ARTMD, the asset closures) follow the way its
     // Rules were read (`ares_switch::ares_way`).
     let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
@@ -659,6 +743,8 @@ fn load_with_assets(
         Some(audio_definitions.sounds().as_ref()),
         Some(&themes),
     );
+    // The Wasm modules prepared with the rules (RFC 0001).
+    sim.install_scenario_ext_modules(&rules, ext_modules, processed_rules_ini)?;
     let (mut scenario_fill_rng, variant_main_rng) = sim.terrain_load_draws();
     let mut scenario_fill_ranged =
         |low, high| scenario_fill_rng.next_range_u32_inclusive(low, high);
@@ -896,7 +982,7 @@ mod retail_construction_tests {
         };
         let mut sim = ScenarioBootstrapRng::new(descriptor.seed).into_simulation(&descriptor);
         // This synthetic fixture omits the production native Rules prefix.
-        sim.native_unique_ids =
+        *sim.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
         let resolved = {
             let (mut scenario_fill_rng, variant_main_rng) = sim.terrain_load_draws();

@@ -38,7 +38,7 @@ impl WallScene {
         terrain.set_land_speed_rules_for_test(&rules.terrain_rules);
         sim.install_resolved_terrain_for_new_map(terrain);
         crate::sim::arena_fixture::supply_native_map(&mut sim);
-        sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+        *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
         for (name, side) in [("Americans", 0), ("Russians", 1)] {
             let owner = sim.intern(name);
             sim.houses
@@ -192,8 +192,8 @@ fn a_player_attack_order_cannot_keep_a_pillbox_target_behind_a_wall() {
     };
     scene.wall("Russians", (12, 20));
     scene.old_target();
-    assert!(scene.sim.apply_command_with_overlays(
-        None,
+    assert!((scene.sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &Command::Attack {
             attacker_id: scene.building,
@@ -202,7 +202,7 @@ fn a_player_attack_order_cannot_keep_a_pillbox_target_behind_a_wall() {
         &scene.rules,
         Some(&scene.registry),
         &mut crate::sim::world::FrameEffects::default()
-    ));
+    )).is_ok());
     assert_eq!(scene.target(), None);
     let entity = scene.sim.substrate.entities.get(scene.building).unwrap();
     assert_eq!(

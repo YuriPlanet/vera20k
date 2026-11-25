@@ -170,18 +170,9 @@ impl Simulation {
                 if input.kind != 34 || self.buildup_bypass_active() {
                     return false;
                 }
-                let Some(waypoint) = self.trigger_waypoint_location(condition.value) else {
-                    return false;
-                };
-                let Some(actor) = input.actor.and_then(|id| self.substrate.entities.get(id)) else {
-                    return false;
-                };
-                let point = crate::sim::movement::ground_pose::object_get_coords(
-                    actor,
-                    self.resolved_terrain.as_ref(),
-                );
-                crate::util::native_x87::distance_3d_leptons([point.x, point.y, point.z], waypoint)
-                    <= 0x500
+                input
+                    .actor
+                    .is_some_and(|actor| self.near_waypoint(condition.value, actor))
             }
             14 => self.session.scenario_timer_elapsed(),
             // HasOccurred45@71EAE7 /46@71EB06 read Scenario+352C,
@@ -202,31 +193,14 @@ impl Simulation {
                 let Some(owner) = incoming_house else {
                     return !self.event_house_lookup_rejects(condition.value, rules);
                 };
-                let Some(house) = self.houses.get(&owner) else {
-                    return false;
-                };
-                if house.tracking().buildings() <= 0 {
-                    return true;
-                }
-                !house.base_projection().buildings().iter().any(|&id| {
-                    self.substrate.entities.get(id).is_some_and(|building| {
-                        !building.lifecycle.in_limbo()
-                            && self
-                                .object_type(building.type_ref(), rules)
-                                .is_some_and(|ty| ty.has_factory())
-                    })
-                })
+                self.house_event_holds(17, condition.value, owner, rules)
             }
             18 => {
                 // HasOccurred71E940, arm71EF8E: null incoming House is
                 // true, otherwise read its retained CiviliansEvacuated+1F9.
                 // No raised-kind/value gate, persistence or timer write.
                 // Source: original gamemd.exe instructions.
-                incoming_house.is_none_or(|owner| {
-                    self.houses
-                        .get(&owner)
-                        .is_some_and(|house| house.civilians_evacuated())
-                })
+                incoming_house.is_none_or(|owner| self.house_event_holds(18, 0, owner, rules))
             }
             19..=22 => {
                 // Steam gamemd: HasOccurred71EFEB..71F03D reads incoming
@@ -237,18 +211,7 @@ impl Simulation {
                 let Some(owner) = incoming_house else {
                     return !self.event_house_lookup_rejects(condition.value, rules);
                 };
-                use crate::rules::object_type::ObjectCategory;
-                let category = match condition.kind {
-                    19 => ObjectCategory::Building,
-                    20 => ObjectCategory::Vehicle,
-                    21 => ObjectCategory::Infantry,
-                    22 => ObjectCategory::Aircraft,
-                    _ => unreachable!(),
-                };
-                let matched = self
-                    .houses
-                    .get(&owner)
-                    .is_some_and(|house| house.last_built_type_index(category) == condition.value);
+                let matched = self.house_event_holds(condition.kind, condition.value, owner, rules);
                 if matched {
                     *persistence = true;
                 }
@@ -264,12 +227,7 @@ impl Simulation {
                 let Some(owner) = incoming_house else {
                     return !self.event_house_lookup_rejects(condition.value, rules);
                 };
-                let funds = crate::sim::credit_income::available_money(&self.houses, owner);
-                if condition.kind == 12 {
-                    funds >= condition.value
-                } else {
-                    funds <= condition.value
-                }
+                self.house_event_holds(condition.kind, condition.value, owner, rules)
             }
             1 | 24 | 25 | 26 | 59 => {
                 //71ECAF ->71F1BD compares actor6F9DB0's House ArrayIndex
@@ -317,20 +275,9 @@ impl Simulation {
                     );
                     return fallback;
                 };
-                let Some(type_name) = usize::try_from(condition.value).ok().and_then(|index| {
-                    rules
-                        .type_array_ids(crate::rules::object_type::ObjectCategory::Building)
-                        .get(index)
-                }) else {
+                let Some(count) = self.house_building_count(condition.value, owner, rules) else {
                     return false;
                 };
-                let count = self.houses.get(&owner).map_or(0, |house| {
-                    self.interner.get(type_name).map_or(0, |id| {
-                        house
-                            .tracking()
-                            .active_count(crate::map::entities::EntityCategory::Structure, id)
-                    })
-                });
                 let result = (count != 0) == (condition.kind == 32);
                 crate::sim::ra2_all02_diagnostic::on_building_count_event(
                     self,
@@ -356,15 +303,7 @@ impl Simulation {
                 let Some(owner) = incoming_house else {
                     return !self.event_house_lookup_rejects(condition.value, rules);
                 };
-                let Some(house) = self.houses.get(&owner) else {
-                    return false;
-                };
-                let losses = if condition.kind == 15 {
-                    house.stats().buildings_lost()
-                } else {
-                    house.stats().units_lost()
-                };
-                (losses as i32) >= condition.value
+                self.house_event_holds(condition.kind, condition.value, owner, rules)
             }
             3 | 5 | 9 | 10 | 11 | 55 | 56 => {
                 // Steam gamemd,71EC9A/71F0E1/71F0FB:3 requires
@@ -394,25 +333,7 @@ impl Simulation {
                 }
                 let owner = self.event_value_house(condition.value, rules);
                 owner.is_none_or(|owner| {
-                    self.houses
-                        .get(&owner)
-                        .is_none_or(|house| match condition.kind {
-                            3 => house.building_capture_notified(),
-                            5 => house.discovered_by_current_house(),
-                            9 => house.tracking().units_destroyed(),
-                            10 => house.tracking().buildings() <= 0,
-                            11 => house.tracking().all_destroyed(),
-                            55 => house.tracking().navy() <= 0,
-                            56 => {
-                                house
-                                    .tracking()
-                                    .vehicles()
-                                    .wrapping_sub(house.tracking().navy())
-                                    <= 0
-                                    && house.tracking().infantry() <= 0
-                            }
-                            _ => unreachable!(),
-                        })
+                    self.house_event_holds(condition.kind, condition.value, owner, rules)
                 })
             }
             30 | 58 => {
@@ -423,10 +344,7 @@ impl Simulation {
                 }
                 let owner = self.event_value_house(condition.value, rules);
                 owner.is_none_or(|owner| {
-                    self.power_states
-                        .get(&owner)
-                        .is_none_or(crate::sim::power_system::PowerState::has_full_power)
-                        == (condition.kind == 58)
+                    self.house_event_holds(condition.kind, condition.value, owner, rules)
                 })
             }
             44 => {
@@ -498,6 +416,140 @@ impl Simulation {
                 rules,
             ),
         }
+    }
+
+    /// Events 32/57's count: how many of BuildingTypes entry `value`
+    /// house `owner` has active; `None` when `value` names no entry.
+    fn house_building_count(
+        &self,
+        value: i32,
+        owner: crate::sim::intern::InternedId,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> Option<i32> {
+        let type_name = usize::try_from(value).ok().and_then(|index| {
+            rules
+                .type_array_ids(crate::rules::object_type::ObjectCategory::Building)
+                .get(index)
+        })?;
+        Some(self.houses.get(&owner).map_or(0, |house| {
+            self.interner.get(type_name).map_or(0, |id| {
+                house
+                    .tracking()
+                    .active_count(crate::map::entities::EntityCategory::Structure, id)
+            })
+        }))
+    }
+
+    /// The House half of HasOccurred71E940's House events, once the caller
+    /// chose `owner`: the incoming House (12, 15..22, 32, 52, 57) or
+    /// Event.value's (3, 5, 9..11, 30, 55, 56, 58). Persistence and the
+    /// null-House tails stay with the caller. Module triggers
+    /// (`module_events`) read the same predicates. False for other kinds.
+    pub(super) fn house_event_holds(
+        &self,
+        kind: i32,
+        value: i32,
+        owner: crate::sim::intern::InternedId,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> bool {
+        use crate::rules::object_type::ObjectCategory;
+        match kind {
+            17 => {
+                let Some(house) = self.houses.get(&owner) else {
+                    return false;
+                };
+                if house.tracking().buildings() <= 0 {
+                    return true;
+                }
+                !house.base_projection().buildings().iter().any(|&id| {
+                    self.substrate.entities.get(id).is_some_and(|building| {
+                        !building.lifecycle.in_limbo()
+                            && self
+                                .object_type(building.type_ref(), rules)
+                                .is_some_and(|ty| ty.has_factory())
+                    })
+                })
+            }
+            18 => self
+                .houses
+                .get(&owner)
+                .is_some_and(|house| house.civilians_evacuated()),
+            19..=22 => {
+                let category = match kind {
+                    19 => ObjectCategory::Building,
+                    20 => ObjectCategory::Vehicle,
+                    21 => ObjectCategory::Infantry,
+                    _ => ObjectCategory::Aircraft,
+                };
+                self.houses
+                    .get(&owner)
+                    .is_some_and(|house| house.last_built_type_index(category) == value)
+            }
+            12 | 52 => {
+                let funds = crate::sim::credit_income::available_money(&self.houses, owner);
+                if kind == 12 {
+                    funds >= value
+                } else {
+                    funds <= value
+                }
+            }
+            32 | 57 => self
+                .house_building_count(value, owner, rules)
+                .is_some_and(|count| (count != 0) == (kind == 32)),
+            15 | 16 => {
+                let Some(house) = self.houses.get(&owner) else {
+                    return false;
+                };
+                let losses = if kind == 15 {
+                    house.stats().buildings_lost()
+                } else {
+                    house.stats().units_lost()
+                };
+                (losses as i32) >= value
+            }
+            3 | 5 | 9 | 10 | 11 | 55 | 56 => {
+                self.houses.get(&owner).is_none_or(|house| match kind {
+                    3 => house.building_capture_notified(),
+                    5 => house.discovered_by_current_house(),
+                    9 => house.tracking().units_destroyed(),
+                    10 => house.tracking().buildings() <= 0,
+                    11 => house.tracking().all_destroyed(),
+                    55 => house.tracking().navy() <= 0,
+                    _ => {
+                        house
+                            .tracking()
+                            .vehicles()
+                            .wrapping_sub(house.tracking().navy())
+                            <= 0
+                            && house.tracking().infantry() <= 0
+                    }
+                })
+            }
+            30 | 58 => {
+                self.power_states
+                    .get(&owner)
+                    .is_none_or(crate::sim::power_system::PowerState::has_full_power)
+                    == (kind == 58)
+            }
+            _ => false,
+        }
+    }
+
+    /// HasOccurred71EDBB..71EE54's event-34 distance: waypoint `waypoint`'s
+    /// Location (68BD00) against `actor`'s GetCoords, signed wrapping deltas,
+    /// sqrtApprox/ftol, within 0x500 leptons. Module triggers share it.
+    pub(super) fn near_waypoint(&self, waypoint: i32, actor: u64) -> bool {
+        let Some(location) = self.trigger_waypoint_location(waypoint) else {
+            return false;
+        };
+        let Some(actor) = self.substrate.entities.get(actor) else {
+            return false;
+        };
+        let point = crate::sim::movement::ground_pose::object_get_coords(
+            actor,
+            self.resolved_terrain.as_ref(),
+        );
+        crate::util::native_x87::distance_3d_leptons([point.x, point.y, point.z], location) <= 0x500
     }
 
     pub(super) fn register_live_trigger_event(

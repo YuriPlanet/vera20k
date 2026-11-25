@@ -580,7 +580,7 @@ mod tests {
         {
             let (mut sim, bunker, tank) = retail_bunker_entry(&rules, start);
             if batched {
-                sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+                *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
                 sim.batch_path_searches();
             }
             let case = format!("{start:?}, {}", if batched { "batched" } else { "serial" });
@@ -1305,7 +1305,7 @@ mod tests {
                     })
                 })
                 .collect();
-            sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(32, 32, cells));
+            *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(32, 32, cells));
             sim.session.set_binary_frame_for_test(100);
             spawn_bunker(&mut sim, 2);
             spawn_tank_on(&mut sim, 1, 10, 10);
@@ -1533,8 +1533,9 @@ mod tests {
         assert_eq!(rt(&sim, 2).state, BunkerState::TurnToBuilding);
 
         // Let the facing owner finish, then enter TrackStep even at the centre.
-        sim.session.set_binary_frame_for_test(
-            sim.session.binary_frame()
+        let session = &mut *sim.session;
+        session.set_binary_frame_for_test(
+            session.binary_frame()
                 + u32::from(
                     sim.substrate
                         .entities

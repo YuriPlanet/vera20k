@@ -6,7 +6,7 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 
 use anyhow::Result;
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::util::time::{Duration, Instant};
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(60);
@@ -54,21 +54,19 @@ impl LoginInfo {
 }
 
 /// The online login page opened: read the counts again.
-pub(super) fn refresh(state: &mut AppState) {
-    let info = &mut state.frontend.login_info;
-    info.stats = None;
-    info.wanted = true;
+pub(super) fn refresh(login_info: &mut LoginInfo) {
+    login_info.stats = None;
+    login_info.wanted = true;
 }
 
 /// Starts the read the page asked for and takes its answer.
-pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
-    let choosing = state
-        .frontend
+pub(crate) fn poll(frontend: &mut FrontendState) -> Option<Instant> {
+    let choosing = frontend
         .wol
         .as_ref()
         .and_then(|visit| visit.login())
         .is_some_and(|login| login.choosing_entry());
-    let info = &mut state.frontend.login_info;
+    let info = &mut frontend.login_info;
     let now = Instant::now();
     let due = choosing && info.refresh_at.is_some_and(|deadline| now >= deadline);
     if (std::mem::take(&mut info.wanted) || due) && info.read.is_none() {

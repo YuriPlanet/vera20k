@@ -5,11 +5,16 @@
 //! (`0x006071E0`). Every control paints from the dialog's tree.
 
 use super::gui_paint::{ButtonArt, GuiStyle, SideButtons, paint_gui_styled};
-use crate::render::hud_paint::{HudPaint, Material};
 use super::{chrome::*, *};
 use crate::app::AppState;
-use crate::render::batch::SpriteInstance;
 use crate::app::frontend::menu_page_render::{PanelStatic, paint_panel_statics};
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::ime::ImeState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::render::batch::SpriteInstance;
+use crate::render::bit_font::BitFont;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::ui::main_menu_dialogs::options::OptionsDialogState;
 use crate::ui::main_menu_dialogs::options::shell::{Control, LauncherOptionsLayout};
 use crate::ui::shell::geom::{RectPx, ShellAlign, ShellScale};
@@ -35,7 +40,11 @@ pub(crate) enum ColumnArt {
 /// Captions under `covered` are left out: a box draws all its art before its
 /// text, so that text would otherwise show through the list.
 pub(crate) fn paint_page(
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     dialog: &OptionsDialogState,
     scale: ShellScale,
     column: ColumnArt,
@@ -59,21 +68,48 @@ pub(crate) fn paint_page(
         },
         ..Default::default()
     };
-    if state.frontend.skirmish_shell_chrome.is_some() {
-        return paint_gui_styled(state, gui, panel, scale, covered, style);
+    if frontend.skirmish_shell_chrome.is_some() {
+        return paint_gui_styled(
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            gui,
+            panel,
+            scale,
+            covered,
+            style,
+        );
     }
     // Without the control art only the side's column paints: its art is
     // the sidebar's.
     let mut paint = HudPaint::default();
     if let ColumnArt::Side(_) = column {
-        let side = gui.tree().children(panel).unwrap_or_default().iter().copied();
+        let side = gui
+            .tree()
+            .children(panel)
+            .unwrap_or_default()
+            .iter()
+            .copied();
         for node in side.filter(|node| {
             gui.id_of(*node)
                 .and_then(|id| art(id))
                 .is_some_and(|art| art == ButtonArt::Side)
         }) {
             super::gui_paint::paint_gui_into(
-                &mut paint, state, None, gui, node, scale, covered, style,
+                &mut paint,
+                ime,
+                bit_font,
+                frontend,
+                match_state,
+                process_assets,
+                None,
+                gui,
+                node,
+                scale,
+                covered,
+                style,
             );
         }
     }
@@ -84,13 +120,21 @@ pub(crate) fn paint_page(
 /// them. They paint in submission order, after the box and its buttons.
 pub(crate) fn paint_options_settings(
     draw: &mut crate::render::shell_paint::ModalDraw,
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     layout: &LauncherOptionsLayout,
     settings: &OptionsDialogState,
 ) {
     let list = settings.shell_popup_rect();
     let page = paint_page(
-        state,
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
         settings,
         layout.scale,
         ColumnArt::Hidden,
@@ -156,9 +200,11 @@ pub(crate) fn render_launcher_options(
     // pumps no messages until it ends: every child stays blank. The entry
     // slide suppresses the heading, status line, monitor and column buttons
     // (`0x00606800`); the left-side controls paint.
-    let exit_wave =
-        crate::app::frontend::shell_transition::shell_exit_wave(state, ShellSlideKind::Options)
-            .cloned();
+    let exit_wave = crate::app::frontend::shell_transition::shell_exit_wave(
+        &state.frontend.shell_exit,
+        ShellSlideKind::Options,
+    )
+    .cloned();
     let leaving = exit_wave.is_some();
     let wave = exit_wave.or_else(|| state.frontend.shell_first_paint_slide.clone());
     let sliding = wave.is_some();
@@ -186,7 +232,7 @@ pub(crate) fn render_launcher_options(
             .map(|key| state.csf_text(key))
             .unwrap_or_default();
         let status = crate::app::frontend::menu_page_render::paint_shell_status_line(
-            state,
+            &mut state.frontend.shell_status_line,
             status_text,
             layout.status_help,
         );
@@ -237,7 +283,15 @@ pub(crate) fn render_launcher_options(
     });
     let heading_draws = usize::from(heading.as_ref().is_some_and(|h| !h.text.is_empty()));
     let status = status_label.map(PanelStatic::status);
-    let mut statics = paint_panel_statics(state, [heading, status], scale);
+    let mut statics = paint_panel_statics(
+        &state.platform.ime,
+        &state.renderer.bit_font,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        [heading, status],
+        scale,
+    );
     let status_texts = statics.split_off(heading_draws.min(statics.len()));
     texts.extend(statics);
     let column = if sliding {
@@ -245,7 +299,19 @@ pub(crate) fn render_launcher_options(
     } else {
         ColumnArt::Panel
     };
-    let page = (!leaving).then(|| paint_page(state, dialog, scale, column, &[]));
+    let page = (!leaving).then(|| {
+        paint_page(
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            dialog,
+            scale,
+            column,
+            &[],
+        )
+    });
     let mut page = page.unwrap_or_default();
     instances.extend(page.lane(Material::Controls).copied());
     let popup = page.take_lane(Material::Popup);

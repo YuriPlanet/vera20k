@@ -57,7 +57,7 @@ impl GuardScene {
         let mut sim = crate::sim::arena_fixture::rival_water_arena(&rules, 1284, 64);
         // The arena supplies terrain/navigation; establish this visibility
         // domain before Unlimbo can create source and border viewer planes.
-        sim.fog = crate::sim::vision::FogState::new(64, 64);
+        *sim.fog = crate::sim::vision::FogState::new(64, 64);
         sim.session
             .set_current_house_for_test(Some(sim.interner.intern("Americans")));
         let aegis = sim

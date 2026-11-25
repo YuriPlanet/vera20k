@@ -312,7 +312,7 @@ fn flight_fixture(rules: &RuleSet, input: &Value) -> (Simulation, BTreeSet<(u16,
             cell.bridge_facts.native_anchor = Some(anchor);
         }
     }
-    sim.bridge_state = Some(
+    *sim.bridge_state = Some(
         crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain(
             &terrain,
             true,

@@ -21,7 +21,7 @@ fn fixture(topology: &Value) -> (Simulation, InternedId, InternedId) {
     let mut sim = Simulation::with_seed(31);
     // The native fixture explicitly seeds all three streams with31;
     // production Simulation::with_seed leaves MapGen at its own default.
-    sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
+    *sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
     let player = sim.interner.intern("Player");
     let other = sim.interner.intern("Other");
     sim.session.set_current_house_for_test(Some(player));
@@ -37,7 +37,7 @@ fn fixture(topology: &Value) -> (Simulation, InternedId, InternedId) {
     }
     let (fog, terrain) = native_map_cell_fixture(topology, player);
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.fog = fog;
+    *sim.fog = fog;
     (sim, player, other)
 }
 
@@ -917,7 +917,7 @@ fn reveal_entire_map_walks_the_size_diamond_and_notifies_each_cell() {
         side,
         crate::map::resolved_terrain::test_flat_cell,
     ));
-    sim.fog = crate::sim::vision::FogState::new(side, side);
+    *sim.fog = crate::sim::vision::FogState::new(side, side);
     sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
         theater: "TEMPERATE".to_string(),
         fill: "Clear".to_string(),
@@ -1060,7 +1060,7 @@ impl EdgeScript {
             })
             .collect();
         sim.install_resolved_terrain_for_new_map(terrain);
-        sim.fog = crate::sim::vision::FogState::new(side, side);
+        *sim.fog = crate::sim::vision::FogState::new(side, side);
         sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
             theater: "TEMPERATE".to_string(),
             fill: "Clear".to_string(),
@@ -1173,7 +1173,7 @@ fn scripted_edge_updates() -> Vec<Value> {
     let mut records = Vec::new();
     for round in 0..6u32 {
         if round == 3 {
-            script.sim.fog =
+            *script.sim.fog =
                 save_codec::deserialize(&save_codec::serialize(&script.sim.fog).unwrap()).unwrap();
         }
         script.write(round);
@@ -1552,7 +1552,7 @@ fn a_sight_discovery_runs_the_discovered_tags_create_crate_action() {
     let rules = retail.rules;
     let mut sim = Simulation::with_seed(0x143);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     sim.fog.set_width_for_test(32);
     sim.fog.set_height_for_test(32);
     // A campaign: a noncampaign CellPUT discovers every object as it is placed.
@@ -1651,7 +1651,7 @@ fn shroud_selection_fixture(
     let player = sim.interner.get("Americans").unwrap();
     let enemy = sim.interner.get("Russians").unwrap();
     sim.session.set_current_house_for_test(Some(player));
-    sim.fog = FogState::new(33, 33);
+    *sim.fog = FogState::new(33, 33);
     sim.fog.ensure_viewer(player);
     // MapClass::RevealArea's final0/final1 pair maps the cells with no
     // sustained sight source.
@@ -1780,7 +1780,7 @@ fn no_edge_make_enemy_matches_native_human_source_controls() {
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
         let computer = sim.interner.get("Russians").unwrap();
-        sim.fog = vision::FogState::new(64, 64);
+        *sim.fog = vision::FogState::new(64, 64);
         let id = sim
             .spawn_object("SPYP", "Americans", 40, 40, 0, &rules)
             .unwrap();
@@ -1869,7 +1869,7 @@ fn initial_house_sight_matches_original_update_tail() {
         )
         .expect("supplied source rules and art");
         let (rules, mut sim, player) = world_with(rules, 64, &[]);
-        sim.fog = vision::FogState::new(64, 64);
+        *sim.fog = vision::FogState::new(64, 64);
         let other = sim.interner.get("Russians").unwrap();
         sim.houses
             .get_mut(&other)
@@ -2022,7 +2022,7 @@ fn initial_house_sight_pending_survives_snapshot_and_current_house_change() {
             .register(HouseState::new(owner, 0, None, true, 0, 10));
     }
     sim.session.set_current_house_for_test(Some(player));
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     for consumed in [false, true] {
         if consumed {
             sim.update_initial_house_sight(player, UninitContext::default());
@@ -2076,7 +2076,7 @@ fn a_rejected_owner_still_enters_the_client_map_once() {
             .register(HouseState::new(owner, 0, None, human, 0, 10));
     }
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     let id = sim
         .spawn_object("TANK", "Enemy", 8, 8, 0, &rules)
         .expect("the computer house's tank");
@@ -2115,7 +2115,7 @@ fn arrival_scene() -> (
             .register(HouseState::new(owner, 0, None, human, 0, 10));
     }
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     let theirs = sim
         .spawn_object("TANK", "Enemy", 8, 8, 0, &rules)
         .expect("the computer house's tank");

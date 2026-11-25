@@ -53,8 +53,8 @@ fn family_world(
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.bridge_state = Some(state);
-    sim.overlay_grid = Some(grid);
+    *sim.bridge_state = Some(state);
+    *sim.overlay_grid = Some(grid);
     sim
 }
 
@@ -215,7 +215,7 @@ fn collapse_hits_incoming_tank_on_depressed_side_lane() {
 
     let rules = rules();
     let mut sim = family_world(&rules, 15, 25, BridgeStampFamily::Nesw, 4);
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
         base: 0,
         off_fc: -9,
         off_100: -9,
@@ -295,7 +295,7 @@ fn signed_bridge_strength_survives_reader_runtime_dispatch_and_snapshot() {
         assert_eq!(parsed.bridge_rules.strength, strength);
         let rules = rules();
         let mut sim = world(&rules, 9);
-        sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain(
+        *sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain(
             sim.resolved_terrain.as_ref().unwrap(),
             true,
             parsed.bridge_rules.strength,
@@ -310,7 +310,7 @@ fn signed_bridge_strength_survives_reader_runtime_dispatch_and_snapshot() {
         );
         // Snapshots restore map resources separately; exercise the restored
         // authoritative bridge state against the same retained terrain.
-        sim.bridge_state = restored.bridge_state;
+        *sim.bridge_state = restored.bridge_state.into_inner();
         let mut hit = event(&mut sim, (4, 4));
         hit.damage = i32::MAX;
         assert!(!apply_bridge_damage_events(&mut sim, &rules, &[hit]));

@@ -1901,8 +1901,7 @@ impl ScenarioSession {
     }
 
     /// Scenario::GetWaypointCoords68BCC0 copies the packed signed words. An
-    /// unset valid slot is (0,0); reading outside its702-slot allocation is
-    /// not a deterministic malformed-map contract and is rejected here.
+    /// unset slot inside VERA's waypoint allocation is `(0, 0)`.
     pub fn waypoint_cell(&self, index: i32) -> Option<(i16, i16)> {
         let index = crate::map::waypoints::waypoint_slot(index)?;
         Some(self.waypoints.get(&index).copied().unwrap_or((0, 0)))
@@ -1914,6 +1913,14 @@ impl ScenarioSession {
         crate::map::waypoints::waypoint_is_defined(index, |index| {
             self.waypoints.get(&index).copied()
         })
+    }
+
+    /// Defined waypoint cells in ascending slot order, excluding the empty cell.
+    pub(crate) fn defined_waypoint_cells(&self) -> impl Iterator<Item = (i16, i16)> + '_ {
+        self.waypoints
+            .range(..crate::map::waypoints::WAYPOINT_SLOT_COUNT)
+            .map(|(_, &cell)| cell)
+            .filter(|&cell| cell != (0, 0))
     }
 
     pub fn first_multiplayer_start(&self) -> Option<crate::map::waypoints::Waypoint> {
@@ -2678,7 +2685,7 @@ mod tests {
             sim.session.install_current_house(Some(current));
             let hash = sim.state_hash();
             let bytes = serde_json::to_vec(&sim.session).unwrap();
-            sim.session = serde_json::from_slice(&bytes).unwrap();
+            *sim.session = serde_json::from_slice(&bytes).unwrap();
             assert_eq!(sim.session.campaign_mission_counter(), Some(7));
             assert_eq!(sim.session.current_house(), Some(current));
             assert_eq!(sim.state_hash(), hash);
@@ -2772,7 +2779,7 @@ mod tests {
         assert!(!sim.session.game_options.build_off_ally);
         let hash = sim.state_hash();
         let encoded = serde_json::to_vec(&sim.session).unwrap();
-        sim.session = serde_json::from_slice(&encoded).unwrap();
+        *sim.session = serde_json::from_slice(&encoded).unwrap();
         assert_eq!(sim.state_hash(), hash);
         assert_eq!(sim.projected_in_game_options_speed(), Some(5));
         let other = GameOptions {
@@ -2876,7 +2883,7 @@ mod tests {
         assert!(a.native_unique_ids.is_none());
         assert_eq!(b.native_unique_ids.as_ref().unwrap().current_raw(), 0);
         assert_ne!(a.state_hash(), b.state_hash());
-        a.native_unique_ids =
+        *a.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
         assert_eq!(a.state_hash(), b.state_hash());
     }
@@ -2939,7 +2946,7 @@ mod tests {
                 ..Default::default()
             });
             // This synthetic fixture omits the production native Rules prefix.
-            sim.native_unique_ids =
+            *sim.native_unique_ids =
                 Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
             crate::sim::arena_fixture::flat_ground(&mut sim, rules);
             let entity = MapEntity {
@@ -3062,7 +3069,7 @@ mod tests {
         let mut sim = Simulation::from_descriptor(&desc);
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // descriptor persistence on that same post-load cursor.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 1, 2, "tournamentb.map", 0);
         let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .expect("snapshot load")
@@ -3102,7 +3109,7 @@ mod tests {
 
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // waypoint persistence after the independent hash-sensitivity check.
-        a.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *a.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&a, 1, 2, "wp", 0);
         let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .expect("snapshot load")
@@ -3160,7 +3167,7 @@ mod tests {
         assert_eq!(inert.state_hash(), ordinary.state_hash());
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // no-damage persistence after the independent hash-sensitivity check.
-        inert.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *inert.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&inert, 1, 2, "inert.map", 0);
         let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .expect("v61 inert snapshot")
@@ -3196,7 +3203,7 @@ mod tests {
         assert_ne!(forced.state_hash(), grows_only.state_hash());
         assert_ne!(clear.state_hash(), grows_only.state_hash());
 
-        forced.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *forced.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&forced, 1, 2, "skirmish.map", 0);
         let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .expect("snapshot load")
@@ -3227,7 +3234,7 @@ mod tests {
 
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // the bit's persistence after the independent hash check.
-        immune.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *immune.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&immune, 1, 2, "truce.map", 0);
         let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .expect("snapshot load")

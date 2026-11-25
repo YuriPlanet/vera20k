@@ -199,7 +199,7 @@ fn deploy_mcv_on(
     let mcv = sim
         .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
         .expect("spawn MCV");
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     sim.set_playfield_bounds_for_test(Some(crate::sim::arena_fixture::OPEN_PLAYFIELD));
     prepare(&mut sim);
 
@@ -683,7 +683,7 @@ fn base_plan_recalc_deploy_generates_and_anchors_nonhuman_conyard() {
     add_house(&mut sim, "Americans", false);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0x1020_3040);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0x1020_3040);
     let mcv = sim
         .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
         .expect("spawn MCV");
@@ -820,7 +820,7 @@ fn base_plan_recalc_deploy_respects_policy_human_control_and_nonyard_targets() {
             .unwrap()
             .set_ai_activation_for_test(SPLIT_AI_ACTIVATION);
         sim.install_session_admission(mode, None, policy);
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0x5566_7788);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0x5566_7788);
         let mcv = sim
             .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
             .expect("spawn MCV");
@@ -865,7 +865,7 @@ fn base_plan_recalc_deploy_respects_policy_human_control_and_nonyard_targets() {
         .set_ai_activation_for_test(SPLIT_AI_ACTIVATION);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0x99AA_BBCC);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0x99AA_BBCC);
     let miner = sim
         .spawn_object("SMIN", "Americans", 20, 22, 128, &rules)
         .expect("spawn deployable miner");
@@ -948,7 +948,7 @@ fn base_plan_recalc_deploy_countryless_nonempty_plan_only_reanchors_node_zero() 
     add_house(&mut sim, "Americans", false);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0x1357_2468);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0x1357_2468);
     let owner = sim.interner.get("Americans").unwrap();
     let house = sim.houses.get_mut(&owner).unwrap();
     house.set_country_for_test(None);
@@ -1008,7 +1008,7 @@ fn base_plan_recalc_deploy_failures_preserve_source_rng_plan_and_centers() {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0xDEAD_BEEF);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0xDEAD_BEEF);
         let mcv = sim
             .spawn_object("AMCV", "Americans", 20, 22, 128, rules)
             .expect("spawn MCV");
@@ -1213,7 +1213,7 @@ pub(crate) fn native_deploy_fixture(row: &serde_json::Value) -> (Simulation, Rul
     let before = &row["before"];
     let rules = native_deploy_rules(input);
     let mut sim = Simulation::with_seed(31);
-    sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
+    *sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
     sim.session
         .set_binary_frame_for_test(input["now"].as_i64().unwrap_or(100) as u32);
     sim.session.game_options_mut_for_test().game_speed =
@@ -1240,7 +1240,7 @@ pub(crate) fn native_deploy_fixture(row: &serde_json::Value) -> (Simulation, Rul
         0,
         0,
     );
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
         crate::map::resolved_terrain::test_tiberium_cell(x, y)
     }));
     let id = spawn_infantry(
@@ -1804,7 +1804,7 @@ fn transport_may_unload(
         .spawn_object("LCRF", "Americans", 20, 22, 0, &rules)
         .expect("the transport builds");
     prepare(sim.substrate.entities.get_mut(id).unwrap());
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |rx, ry| {
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |rx, ry| {
         let mut cell = crate::map::resolved_terrain::test_tiberium_cell(rx, ry);
         mutate(&mut cell, (rx, ry));
         cell

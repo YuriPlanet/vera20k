@@ -385,7 +385,7 @@ fn original_unit_fire_update_rows() {
                 entity.veterancy.set_elite();
             }
         }
-        sim.main_rng = SimRng::new(0x2A61);
+        *sim.main_rng = SimRng::new(0x2A61);
         sim.sound_events.clear_for_test();
         let mut probe = SimRng::new(0x2A61);
         sim.unit_fire_update_tail(

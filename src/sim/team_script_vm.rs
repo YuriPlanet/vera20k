@@ -1232,7 +1232,9 @@ impl TeamScriptVm {
     ///
     /// Every infantryman in the playfield latches it on every step, so a
     /// team that already has the byte is only read: a team handed out for
-    /// writing is one the teams' index of named objects reads again.
+    /// writing is one the teams' index of named objects reads again. Such a
+    /// caller asks [`Self::member_team_leaving_map`] first, so that the VM
+    /// itself is written only for a new latch (`util::forked`).
     pub(crate) fn mark_member_team_leaving_map(&mut self, entity_id: u64) {
         let Some(team_id) = self.member_team.get(&entity_id) else {
             return;
@@ -1245,6 +1247,14 @@ impl TeamScriptVm {
         {
             team.leaving_map = true;
         }
+    }
+
+    /// Whether `entity_id`'s team (Foot+0x5D4) has latched TeamClass+0x82,
+    /// or `None` outside a team: [`Self::mark_member_team_leaving_map`]
+    /// writes only for `Some(false)`.
+    pub(crate) fn member_team_leaving_map(&self, entity_id: u64) -> Option<bool> {
+        let team_id = self.member_team.get(&entity_id)?;
+        Some(self.teams.get(team_id)?.leaving_map)
     }
 
     /// HasOccurred23 at71EEA9 scans Team+24, head+54 and leaving byte+82.

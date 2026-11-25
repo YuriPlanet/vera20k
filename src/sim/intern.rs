@@ -18,6 +18,7 @@ use self::type_handle_table::TypeHandleTable;
 use crate::rules::art_data::{AnimConfigHandle, AnimTypeRuntimeConfig};
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::{RuleSet, TypeHandle};
+use crate::util::forked::Forked;
 use crate::util::lookup_hash::LookupMap;
 use crate::util::native_string::with_ascii_uppercase;
 use crate::util::synced::Synced;
@@ -396,6 +397,27 @@ impl Default for StringInterner {
     }
 }
 
+/// The world's interner, a copy-on-write field (`util::forked`): a name it
+/// already holds is looked up through a read, so only a name it adds writes
+/// it, and a fork of the world copies the table only then.
+impl Forked<StringInterner> {
+    /// [`StringInterner::intern`], writing only for a new name.
+    pub fn intern(&mut self, s: &str) -> InternedId {
+        match self.get(s) {
+            Some(id) => id,
+            None => StringInterner::intern(self, s),
+        }
+    }
+
+    /// [`StringInterner::intern_key`], writing only for a new name.
+    pub fn intern_key(&mut self, key: InternKey<'_>) -> InternedId {
+        match self.key_id(key) {
+            Some(id) => id,
+            None => StringInterner::intern_key(self, key),
+        }
+    }
+}
+
 impl Clone for StringInterner {
     /// The same strings and ids, under a serial of its own.
     fn clone(&self) -> Self {
@@ -495,6 +517,18 @@ mod tests {
         assert_eq!(b, c);
         // Display string preserves first-seen casing
         assert_eq!(interner.resolve(a), "Americans");
+    }
+
+    #[test]
+    fn the_worlds_interner_is_written_only_for_a_name_it_adds() {
+        let mut sim = crate::sim::world::Simulation::with_seed(1);
+        let held = sim.interner.intern("Americans");
+        sim.clear_written_fields();
+        assert_eq!(sim.interner.intern("AMERICANS"), held);
+        assert_eq!(sim.interner.intern_key(InternKey::Name("americans")), held);
+        assert_eq!(sim.written_fields(), [""; 0]);
+        assert_ne!(sim.interner.intern("Soviet"), held);
+        assert_eq!(sim.written_fields(), ["interner"]);
     }
 
     #[test]

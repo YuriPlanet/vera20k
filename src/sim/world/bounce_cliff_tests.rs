@@ -325,7 +325,7 @@ fn retail_hills_harv_death_admits_a_cliff_tyre_and_retires_its_display() {
             102,
             63,
         ));
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     assert!(matches!(
         sim.reveal(miner),
         crate::sim::world::RevealOutcome::Revealed { .. }

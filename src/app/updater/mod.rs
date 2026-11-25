@@ -1,10 +1,12 @@
 //! The desktop updater.
 //!
 //! A game built by the Release workflow (`VERA20K_COMMIT`) and started from
-//! its release package checks `latest.json` on a worker thread. A newer
-//! release whose manifest verifies against the update key is offered once
-//! the main menu is idle, in the shell's own message boxes: Update, Skip This
-//! Version or Later, beside what changed (`notes`). Update downloads it with
+//! its release package checks `latest.json` on a worker thread from the end
+//! of startup ([`launch`]). A newer release whose manifest verifies against
+//! the update key is offered before the main menu first shows, which waits
+//! for the check up to [`MENU_HOLD`], or else once the main menu is idle, in
+//! the shell's own message boxes: Update, Skip This Version or Later, beside
+//! what changed (`notes`). Update downloads it with
 //! progress in the box, checks its size and SHA-256, installs it and restarts
 //! into it. A release this program cannot install, after an updater or key
 //! change, is offered the same way as a download by hand: from vera20k.org,
@@ -41,6 +43,12 @@ use manifest::{Offer, Release, Version};
 /// How often a pending check or download is polled.
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
+/// VERA: how long the main menu's first entry waits for the startup check
+/// over the empty backdrop ([`Updater::holds_main_menu`]). The check answers
+/// in well under a second when online; a slower one lets the menu slide in,
+/// and a release it finds later waits for the idle menu.
+const MENU_HOLD: Duration = Duration::from_secs(2);
+
 /// Set only for the Release workflow's update test (`tools/update_test.py`):
 /// its runners have no retail game data, so no main menu to ask on, and the
 /// test build updates as soon as it finds a release it can install.
@@ -60,6 +68,42 @@ pub(crate) struct Updater {
 }
 
 impl Updater {
+    /// The run's first check, at the end of startup: the main menu has not
+    /// shown yet, so it waits while the check runs, at most [`MENU_HOLD`].
+    fn begin(&mut self, mut phase: Phase, now: Instant) {
+        if let Phase::Checking { menu_hold, .. } = &mut phase {
+            *menu_hold = Some(now + MENU_HOLD);
+        }
+        self.phase = phase;
+    }
+
+    /// VERA: the main menu's first entry waits for the startup check: no
+    /// slide-in, the empty backdrop and no shell input, so a newer release is
+    /// asked about before the menu slides in rather than after it slid in
+    /// and out again.
+    pub(crate) fn holds_main_menu(&self) -> bool {
+        matches!(
+            self.phase,
+            Phase::Checking {
+                menu_hold: Some(_),
+                ..
+            }
+        )
+    }
+
+    /// The startup check still runs at `now`: the hold ends once its time is
+    /// up. Returns when to poll next.
+    fn wait_for_check(&mut self, now: Instant) -> Instant {
+        let next = now + POLL_INTERVAL;
+        if let Phase::Checking { menu_hold, .. } = &mut self.phase {
+            match *menu_hold {
+                Some(until) if now < until => return next.min(until),
+                _ => *menu_hold = None,
+            }
+        }
+        next
+    }
+
     /// The lobby says this version is behind: a check that ended (nothing
     /// newer then, Later, Skip, a failure) runs again with `check`, and a
     /// check under way or a release waiting for the menu goes on.
@@ -73,9 +117,9 @@ impl Updater {
         }
     }
 
-    /// A newer release from a check that no box waits for: it waits for an
-    /// idle main menu, unless the player skipped it and the lobby has not
-    /// said this version is behind.
+    /// A newer release from a check that no box waits for: it waits for the
+    /// main menu, unless the player skipped it and the lobby has not said
+    /// this version is behind.
     fn found(&mut self, package: Package, offer: Offer, skipped: Option<Version>) {
         self.phase = if skipped == Some(offer.version()) && !self.lobby_outdated {
             log::info!("Updater: VERA20k {} was skipped", offer.version());
@@ -88,7 +132,8 @@ impl Updater {
 
 #[derive(Default)]
 enum Phase {
-    /// The first poll decides whether to check.
+    /// Until startup ends ([`launch`]); shell captures and hidden runs never
+    /// check.
     #[default]
     NotStarted,
     Checking {
@@ -97,8 +142,12 @@ enum Phase {
         /// Vera Options' Check for Updates is waiting in its box: the result
         /// shows there, and a skipped version is offered again.
         asked: bool,
+        /// Until when the main menu's first entry waits for this check: the
+        /// startup check only ([`Updater::begin`]).
+        menu_hold: Option<Instant>,
     },
-    /// A newer release, waiting for an idle main menu.
+    /// A newer release, waiting for the main menu: before it first shows, or
+    /// once it is idle.
     Found { package: Package, offer: Offer },
     /// Its offer is on screen, or the menu is sliding out to show it.
     Offered { package: Package, offer: Offer },
@@ -112,25 +161,39 @@ enum Phase {
     Finished,
 }
 
+/// Start the run's check as startup ends, before the shell's first frame, in
+/// a player's run (not a shell capture or hidden run): the main menu's first
+/// entry waits for it ([`Updater::holds_main_menu`]). A CnCNet-launched match
+/// quits at its end, with no main menu to ask at.
+pub(crate) fn launch(state: &mut AppState) {
+    let phase = if state.frontend.external_launch {
+        Phase::Finished
+    } else {
+        start(false).unwrap_or(Phase::Finished)
+    };
+    state.frontend.updater.begin(phase, Instant::now());
+}
+
 /// Advance the updater; the deadline keeps the event loop polling while a
 /// worker runs.
 pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
+    let held = state.frontend.updater.holds_main_menu();
+    let next = advance(state);
+    // The held menu draws nothing that moves: draw the frame that shows the
+    // offer's backdrop or starts the slide-in.
+    if held && !state.frontend.updater.holds_main_menu() {
+        state.platform.window.request_redraw();
+    }
+    next
+}
+
+fn advance(state: &mut AppState) -> Option<Instant> {
     match std::mem::take(&mut state.frontend.updater.phase) {
-        Phase::NotStarted => {
-            // A CnCNet-launched match quits at its end, with no main menu to
-            // ask at.
-            state.frontend.updater.phase = if state.frontend.external_launch {
-                Phase::Finished
-            } else {
-                start(false).unwrap_or(Phase::Finished)
-            };
-            matches!(state.frontend.updater.phase, Phase::Checking { .. })
-                .then(|| Instant::now() + POLL_INTERVAL)
-        }
         Phase::Checking {
             package,
             result,
             asked,
+            menu_hold,
         } => match result.try_recv() {
             Ok(Ok(Some(offer))) => {
                 let what = match offer {
@@ -143,14 +206,14 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
                     state.frontend.updater.phase = Phase::Offered { package, offer };
                     // The checking box gives way to the offer.
                     if state.frontend.shell_message_box.is_some() {
-                        App::close_shell_message_box_from_controller(state);
+                        App::close_shell_message_box_from_controller(&mut state.frontend);
                     }
                     open_offer(state);
                     return None;
                 }
                 let skipped = Version::parse(&state.persistence.options_profile.skipped_update);
                 state.frontend.updater.found(package, offer, skipped);
-                poll(state)
+                advance(state)
             }
             Ok(Ok(None)) => {
                 log::info!("Updater: no newer release");
@@ -175,8 +238,9 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
                     package,
                     result,
                     asked,
+                    menu_hold,
                 };
-                Some(Instant::now() + POLL_INTERVAL)
+                Some(state.frontend.updater.wait_for_check(Instant::now()))
             }
             Err(TryRecvError::Disconnected) => {
                 state.frontend.updater.phase = Phase::Finished;
@@ -194,7 +258,9 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
             Some(Instant::now() + POLL_INTERVAL)
         }
         Phase::Found { package, offer } => {
-            if state.main_menu_at_rest() {
+            // Before the menu shows, the slide-out below is skipped and the
+            // offer opens at once.
+            if state.main_menu_at_rest() || state.main_menu_not_shown() {
                 state.frontend.updater.phase = Phase::Offered { package, offer };
                 App::leave_shell_dialog(
                     state,
@@ -276,6 +342,7 @@ fn start(asked: bool) -> Result<Phase, &'static str> {
             package,
             result,
             asked,
+            menu_hold: None,
         }),
         Err(error) => {
             log::warn!("Updater: cannot start the check: {error}");
@@ -302,10 +369,12 @@ pub(crate) fn open_check(state: &mut AppState) {
         Phase::Checking {
             package, result, ..
         } => {
+            // The player reached Options, so the menu has shown.
             state.frontend.updater.phase = Phase::Checking {
                 package,
                 result,
                 asked: true,
+                menu_hold: None,
             };
             open_checking(state);
         }
@@ -329,7 +398,11 @@ pub(crate) fn open_check(state: &mut AppState) {
 fn open_checking(state: &mut AppState) {
     let cancel = state.csf_label("TXT_CANCEL", "Cancel");
     App::open_shell_message_box(
-        state,
+        &state.platform.window,
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
         ShellBox::notice(crate::i18n::tr("VERA:UpdateChecking"), cancel),
         ShellMessageBoxPurpose::UpdateCheck,
     );
@@ -339,8 +412,8 @@ fn open_checking(state: &mut AppState) {
 /// ends as the one at startup does, offering a newer release at the idle
 /// main menu unless it was skipped and the lobby has not said this version
 /// is behind.
-pub(crate) fn cancel_check(state: &mut AppState) {
-    if let Phase::Checking { asked, .. } = &mut state.frontend.updater.phase {
+pub(crate) fn cancel_check(frontend: &mut crate::app::frontend::state::FrontendState) {
+    if let Phase::Checking { asked, .. } = &mut frontend.updater.phase {
         *asked = false;
     }
 }
@@ -351,14 +424,14 @@ pub(crate) fn cancel_check(state: &mut AppState) {
 /// equal ones, so the game checks as Check for Updates does: a newer release
 /// is offered at the next idle main menu, even a skipped one. A
 /// CnCNet-launched match has no main menu to ask at.
-pub(crate) fn lobby_outdated(state: &mut AppState) {
-    if !state.frontend.external_launch {
-        state.frontend.updater.lobby_outdated(|| start(false));
+pub(crate) fn lobby_outdated(frontend: &mut crate::app::frontend::state::FrontendState) {
+    if !frontend.external_launch {
+        frontend.updater.lobby_outdated(|| start(false));
     }
 }
 
-/// The menu has slid out: ask over the empty shell backdrop, as Exit Game
-/// does (`App::open_exit_confirm`).
+/// The menu has slid out, or has not shown yet: ask over the empty shell
+/// backdrop, as Exit Game does (`App::open_exit_confirm`).
 pub(crate) fn open_offer(state: &mut AppState) {
     use crate::i18n::{tr, tr_fill};
     let Phase::Offered { offer, .. } = &state.frontend.updater.phase else {
@@ -395,7 +468,15 @@ pub(crate) fn open_offer(state: &mut AppState) {
     );
     let notes = notes::ReleaseNotes::new(&state.renderer.bit_font, changes);
     App::destroy_current_shell_dialog(state);
-    App::open_shell_message_box(state, shell_box, ShellMessageBoxPurpose::UpdateOffer(notes));
+    App::open_shell_message_box(
+        &state.platform.window,
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+        shell_box,
+        ShellMessageBoxPurpose::UpdateOffer(notes),
+    );
 }
 
 /// The offer's answer: 0 Update (or Download), 2 Skip This Version, 1 (or
@@ -462,7 +543,11 @@ fn download(state: &mut AppState, package: Package, release: Release) {
 fn open_progress(state: &mut AppState, release: &Release, received: u64) {
     let cancel = state.csf_label("TXT_CANCEL", "Cancel");
     App::open_shell_message_box(
-        state,
+        &state.platform.window,
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
         ShellBox::notice(
             progress_text(release.version, received, release.size),
             cancel,
@@ -542,7 +627,14 @@ fn show_failure(state: &mut AppState, version: Version, error: &anyhow::Error) {
 /// An OK box in place of the updater's open one: a failure, or what Check
 /// for Updates found.
 fn show_notice(state: &mut AppState, text: String) {
-    App::open_shell_notice(state, text);
+    App::open_shell_notice(
+        &state.platform.window,
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+        text,
+    );
 }
 
 #[cfg(all(test, tests_app))]
@@ -575,6 +667,7 @@ mod tests {
                 package: package.clone(),
                 result,
                 asked: false,
+                menu_hold: None,
             })
         });
         assert!(matches!(
@@ -583,5 +676,35 @@ mod tests {
         ));
         startup.found(package, offer, skipped);
         assert!(matches!(startup.phase, Phase::Found { .. }));
+    }
+
+    /// The startup check holds the main menu's first entry while it runs, up
+    /// to MENU_HOLD and no longer; a later check, as the lobby's word starts,
+    /// holds nothing.
+    #[test]
+    fn only_the_startup_check_holds_the_first_menu_and_only_briefly() {
+        let checking = || {
+            let (_sender, result) = mpsc::channel();
+            Phase::Checking {
+                package: Package::AppImage(Default::default()),
+                result,
+                asked: false,
+                menu_hold: None,
+            }
+        };
+        let start = Instant::now();
+        let mut updater = Updater::default();
+        updater.begin(checking(), start);
+        assert!(updater.holds_main_menu());
+        let before = start + MENU_HOLD - Duration::from_millis(1);
+        assert_eq!(updater.wait_for_check(before), start + MENU_HOLD);
+        assert!(updater.holds_main_menu());
+        updater.wait_for_check(start + MENU_HOLD);
+        assert!(!updater.holds_main_menu());
+
+        updater.phase = Phase::Finished;
+        updater.lobby_outdated(|| Ok(checking()));
+        assert!(matches!(updater.phase, Phase::Checking { .. }));
+        assert!(!updater.holds_main_menu());
     }
 }

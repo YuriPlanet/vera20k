@@ -881,7 +881,7 @@ fn retail_fire_once_ivan_releases_target_on_attach() {
     restored.resolve_type_handles(rules);
     // Snapshot loading has its own Scenario reseed policy; compare retained
     // gameplay after aligning that unrelated owner.
-    restored.scenario_rng = sim.scenario_rng.clone();
+    *restored.scenario_rng = (*sim.scenario_rng).clone();
     assert_eq!(restored.state_hash(), sim.state_hash());
     assert!(entity(&restored, ivan).attack_target.target().is_none());
     assert_eq!(bomb(&restored, tank), bomb(&sim, tank));
@@ -1244,7 +1244,7 @@ fn a_bomb_survives_a_snapshot() {
         .sim;
     restored.restore_after_snapshot_load().unwrap();
     // The envelope reseeds Scenario RNG; that policy is not under test here.
-    restored.scenario_rng = sim.scenario_rng.clone();
+    *restored.scenario_rng = (*sim.scenario_rng).clone();
     assert_eq!(
         bomb(&restored, tank),
         bomb(&sim, tank),

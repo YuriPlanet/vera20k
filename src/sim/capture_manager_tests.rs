@@ -930,7 +930,7 @@ fn native_decide_unit_fate_corpus() {
             .map_mut_for_test()
             .insert(russians, power_state);
         let seed = input["seed"].as_u64().unwrap();
-        sim.scenario_rng = SimRng::new(seed);
+        *sim.scenario_rng = SimRng::new(seed);
         assert_ne!(queued_mission(&sim, unit), Some(MissionType::Hunt));
 
         sim.decide_unit_fate(
@@ -1169,7 +1169,7 @@ fn native_overload_update_corpus() {
         }
         let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
         let location = glam::IVec3::new(location.x, location.y, location.z);
-        sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
+        *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
         let native_location = ints(
             &input
                 .get("location")
@@ -1506,14 +1506,14 @@ fn native_joined_overload_preserves_constructor_rng_ids_and_rate_words() {
                 )
             );
         }
-        world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+        *world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             row["native_cursor_before"].as_u64().unwrap() as u32,
         ));
-        world.main_rng =
+        *world.main_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-        world.scenario_rng =
+        *world.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        world.mapgen_rng =
+        *world.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         compare_actor(&world, mind, &row["before"]);
         assert_eq!(rng_state(&world), row["rng_before"]);

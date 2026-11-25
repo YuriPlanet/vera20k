@@ -129,6 +129,7 @@ pub mod building_select_bracket;
 pub mod digital_display;
 pub mod insignia_type;
 pub mod kratos_crawling_flh;
+pub mod kratos_freeze;
 pub mod kratos_switch;
 pub mod npatch_switch;
 #[cfg(feature = "phobos")]

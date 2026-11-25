@@ -111,7 +111,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet) {
         TargetKind::Cell(x, y) => TargetKind::Cell(x, y),
     }));
     sim.substrate.entities.insert(source);
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     sim.set_next_stable_object_id_for_test(3);
     sim.set_logic_order_for_test(vec![1]);
     (sim, rules)

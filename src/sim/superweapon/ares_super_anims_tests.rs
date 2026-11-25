@@ -46,7 +46,7 @@ fn fixture(extra: &str) -> (Simulation, RuleSet, InternedId, u64) {
     sim.houses
         .register(HouseState::new(owner, 0, Some(owner), true, 0, 10));
     construct_house_supers(&mut sim, &rules, owner, false);
-    sim.resolved_terrain = Some(test_grid(16, 16, test_flat_cell));
+    *sim.resolved_terrain = Some(test_grid(16, 16, test_flat_cell));
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     sim.session.set_binary_frame_for_test(9000);
     let building = sim

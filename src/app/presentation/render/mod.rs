@@ -20,6 +20,10 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
+use crate::app::diagnostics::performance_overlay::PerformanceOverlay;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::presentation::state::MatchPresentationState;
+
 #[cfg(all(test, tests_app_presentation_render))]
 mod anim_translucency_gpu_tests;
 #[cfg(all(test, tests_app_presentation_render))]
@@ -192,8 +196,11 @@ impl GameRenderOutput {
     /// The sidebar view this render drew, read from the retained projection:
     /// `None` when the render drew no sidebar, or when the projection's view
     /// has changed since and the drawn one is gone.
-    pub(crate) fn drawn_sidebar_view<'s>(&self, state: &'s AppState) -> Option<&'s SidebarView> {
-        let projection = &state.match_state.match_presentation.sidebar_projection;
+    pub(crate) fn drawn_sidebar_view<'s>(
+        &self,
+        presentation: &'s MatchPresentationState,
+    ) -> Option<&'s SidebarView> {
+        let projection = &presentation.sidebar_projection;
         projection.view_at(self.sidebar_view_revision?)
     }
 }
@@ -299,15 +306,17 @@ pub(crate) const RENDER_PHASE_KEYS: [&str; RenderPhases::COUNT] = [
 
 /// Whether this render measures its phases: for an attached dashboard, while
 /// the performance panel shows its Most CPU row, or always in a perf build.
-fn render_phases_wanted(state: &AppState) -> bool {
+// `diag` is read only with the telemetry dashboard.
+#[cfg_attr(not(feature = "telemetry-dashboard"), allow(unused_variables))]
+fn render_phases_wanted(performance_overlay: &PerformanceOverlay, diag: &DiagnosticsState) -> bool {
     if cfg!(feature = "perf") {
         return true;
     }
     #[cfg(feature = "telemetry-dashboard")]
-    if state.diag.telemetry_observer.active() {
+    if diag.telemetry_observer.active() {
         return true;
     }
-    state.renderer.performance_overlay.is_visible()
+    performance_overlay.is_visible()
 }
 
 /// Render one in-game frame: terrain, units, overlays, UI, sidebar.
@@ -323,7 +332,8 @@ pub(crate) fn render_game(
     // Phase accounting for the dashboard's render breakdown and the performance panel's
     // Most CPU row. One clock read per phase boundary; the spans are handed
     // back on `GameRenderOutput` and never written into the world here.
-    let render_started = render_phases_wanted(state).then(Instant::now);
+    let render_started =
+        render_phases_wanted(&state.renderer.performance_overlay, &state.diag).then(Instant::now);
     let (sw, sh) = (state.render_width() as f32, state.render_height() as f32);
     // What this picture draws of the world (`presentation::frame`).
     state.match_state.sim_runtime.ensure_frame();
@@ -341,7 +351,44 @@ pub(crate) fn render_game(
     // around the view (ALL06, SOV03) or jump the camera in the same trigger
     // (SOV01 SP3.6, action 112); only SOV01's SP4.5b and base-gained shrinks
     // can leave the view outside, until the player scrolls. VERA moves it at once.
-    crate::app::input::camera::clamp_camera_to_playable_area(state, sw, sh);
+    // VERA's HD art (`render::hd_switch`): pictures the unit atlas rasterizes from
+    // here on (this frame's first draws included) also make their HD picture,
+    // and keep doing so once HD art has been on in this run, so turning it off
+    // and on again (Page Up) shows them at once.
+    let hd_art_on = state.hd_art_on().0;
+    state.renderer.hd_art_seen |= hd_art_on;
+    crate::render::vxl_raster::set_hd_voxels(state.renderer.hd_art_seen);
+    crate::render::hd_art::set_active(hd_art_on);
+    if let Some(zoom) = crate::render::hd_switch::capture_zoom() {
+        state.match_state.input.zoom_level = zoom;
+        state.match_state.input.zoom_target = zoom;
+    } else if std::mem::take(&mut state.renderer.hd_art_zoom_pending)
+        && hd_art_on
+        && state.persistence.options_profile.mouse_wheel_zoom
+        && state.match_state.input.zoom_target < crate::render::hd_switch::EASE_BELOW
+    {
+        // A match's first frame with HD art on starts zoomed in, so the HD
+        // art shows; the wheel zooms out as ever.
+        crate::app::input::camera::ease_zoom_to_centre(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state,
+            &state.persistence,
+            crate::render::hd_switch::DEFAULT_ZOOM,
+        );
+    }
+    // Posed voxels are drawn afresh each frame: make their HD picture only
+    // while HD art is on.
+    crate::render::vxl_raster::set_hd_poses(hd_art_on);
+    crate::app::input::camera::clamp_camera_to_playable_area(
+        &state.platform,
+        &state.renderer,
+        &mut state.match_state,
+        &state.persistence,
+        sw,
+        sh,
+    );
     // Publish the final view once: world instances, CPU A admission and GPU
     // palette sampling must use this frame's clamped camera and zoom.
     state.renderer.batch_renderer.update_camera(
@@ -351,11 +398,11 @@ pub(crate) fn render_game(
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
         state.match_state.input.zoom_level,
-        crate::app::presentation::instances::depth_axis(state),
+        crate::app::presentation::instances::depth_axis(&state.match_state.match_presentation),
     );
     update_native_z_origin(state);
 
-    let local_owner = preferred_local_owner_name(state);
+    let local_owner = preferred_local_owner_name(&state.match_state);
     let translucent_fog = state.translucent_fog_enabled();
     let sandbox = state.match_state.sandbox_full_visibility;
     // Effective viewport in world pixels — zoom shrinks what's visible.
@@ -366,7 +413,9 @@ pub(crate) fn render_game(
     // Wheel zoom is a presentation copy of the fully resolved world. Keep all
     // native source/depth/packed operations on the same one-texel lattice;
     // filtering each sprite (or its palette indices) loses edges and details.
-    if z == 1.0 {
+    // HD art (`render::hd_switch`) draws its art on the zoom's copy, so it keeps
+    // one at 100% too.
+    if z == 1.0 && !hd_art_on {
         state.renderer.world_zoom_pass = None;
     } else {
         // When the Options zoom scales the frame, the world also goes
@@ -554,7 +603,7 @@ pub(crate) fn render_game(
         .as_mut()
         .is_some_and(|radar| radar.tick(steps, times.radar_ms));
     if housing_settled {
-        crate::app::radar_movie::end_radar_sound_loop(state);
+        crate::app::radar_movie::end_radar_sound_loop(&mut state.audio);
     }
     // Ares DisplayCredits ages its labels in the same composite, unless the
     // chrono screen's 4F4480 interception suppresses it. Empty unless the
@@ -663,7 +712,7 @@ pub(crate) fn render_game(
     let armed_building = state.armed_building_type().map(str::to_owned);
     let cursor_cell = (armed_super_weapon.is_some() || armed_building.is_some()).then(|| {
         crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-            state,
+            &state.match_state,
             state.match_state.input.cursor_x,
             state.match_state.input.cursor_y,
         )
@@ -1007,7 +1056,13 @@ pub(crate) fn render_game(
 /// target pixels. Native zoom1 is exact, and scaled views preserve that unit
 /// frame.
 fn update_native_z_origin(state: &mut AppState) {
-    let (_, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+    let (_, y, width, height) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let zoom = state.match_state.input.zoom_level;
     let origin_y = (y as f32 / zoom).floor();
     let camera = state.renderer.batch_renderer.camera_uniform().camera_pos;
@@ -1041,7 +1096,13 @@ pub(crate) fn tactical_surface_line_viewport(
     state: &AppState,
 ) -> crate::render::surface_line::SurfaceLineViewport {
     let z = state.match_state.input.zoom_level;
-    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(state);
+    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let clip = [x, y, w, h].map(|v| (v as f32 / z) as i32);
     crate::render::surface_line::SurfaceLineViewport {
         camera: surface_line_camera(
@@ -1085,7 +1146,11 @@ fn upload_to_gpu(
     // the boxes and frames behind it, at the window's pixels
     // (`window_ui`): its producers lay out in the frame and emit for the
     // window.
-    let window_raster = crate::app::presentation::window_ui::battlefield_raster(state);
+    let window_raster = crate::app::presentation::window_ui::battlefield_raster(
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+    );
     let frame_raster = state
         .renderer
         .bit_font
@@ -1100,7 +1165,7 @@ fn upload_to_gpu(
     let (message_fill, message_text) =
         crate::app::input::messages::build_message_instances(state, &mut message_hud);
     state.match_state.match_presentation.message_hud = message_hud;
-    let verdict = crate::app::presentation::outcome_banner::visible_verdict(state);
+    let verdict = crate::app::presentation::outcome_banner::visible_verdict(&state.match_state);
     let mut banner_huds =
         std::mem::take(&mut state.match_state.match_presentation.outcome_banner_huds);
     let (outcome_shape, outcome_text) = match verdict {
@@ -1113,7 +1178,8 @@ fn upload_to_gpu(
         }
     };
     state.match_state.match_presentation.outcome_banner_huds = banner_huds;
-    let rendered_verdict = verdict.filter(|_| !outcome_shape.is_empty() || !outcome_text.is_empty());
+    let rendered_verdict =
+        verdict.filter(|_| !outcome_shape.is_empty() || !outcome_text.is_empty());
 
     // A4 in-game tooltip: built before the pool borrow (it reads &AppState);
     // fill (darken texture) + text (GAME.FNT atlas), drawn after the chat
@@ -1153,7 +1219,11 @@ fn upload_to_gpu(
     // The buttons and texts the side's layout adds over the battlefield
     // share the timers' lanes: white boxes, then text, inside its clip.
     {
-        let side_text = state.match_state.match_presentation.sidebar_layout_spec.side_text;
+        let side_text = state
+            .match_state
+            .match_presentation
+            .sidebar_layout_spec
+            .side_text;
         let placed = crate::app::presentation::layout_parts::placed(state);
         let layout_parts = &mut state.match_state.match_presentation.added_part_huds.field;
         layout_parts.draw(
@@ -1193,7 +1263,11 @@ fn upload_to_gpu(
     });
     // The software cursor follows them into the window, last.
     let software_cursor: std::borrow::Cow<'_, [crate::render::batch::SpriteInstance]> =
-        match crate::app::presentation::window_ui::zoom_raster(state) {
+        match crate::app::presentation::window_ui::zoom_raster(
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.input,
+        ) {
             Some(raster) => ui
                 .software_cursor
                 .iter()
@@ -1214,7 +1288,13 @@ fn upload_to_gpu(
         if presentation.chrono_screen.overrides_tactical_draw() {
             Vec::new()
         } else {
-            let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+            let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state.match_presentation,
+                &state.persistence,
+            );
             presentation.flying_credits.borrow().build_instances(
                 &state.renderer.bit_font,
                 [
@@ -1233,7 +1313,13 @@ fn upload_to_gpu(
     // unless a raster already placed that on the surface.
     let ui_camera = state.renderer.batch_renderer.ui_camera_uniform().camera_pos;
     let text_camera = if matches!(
-        crate::app::presentation::sidebar_surface::column_text(state),
+        crate::app::presentation::sidebar_surface::column_text(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence
+        ),
         crate::app::presentation::sidebar_surface::ColumnText::Surface(Some(_))
     ) {
         [0.0; 2]
