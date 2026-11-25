@@ -354,9 +354,11 @@ impl PassScans<'_> {
 }
 
 impl Simulation {
-    /// Answer the targeting slots', Area Guard and Hunt handlers' and
-    /// patrolling teams' leaders' scans side by side from now on, and spread
-    /// the patrol scans over their period; see the module docs.
+    /// From now on, answer the targeting slots', Area Guard and Hunt
+    /// handlers' and patrolling teams' leaders' scans side by side (see the
+    /// module docs), spread the patrol scans over their period
+    /// (`Simulation::patrol_scan_due`) and update each team on its own turns
+    /// (`Simulation::run_team_ai_pass`).
     pub fn batch_target_scans(&mut self) {
         self.scan_batch.get_or_insert_with(ScanBatch::default);
     }

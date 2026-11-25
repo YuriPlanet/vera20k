@@ -132,7 +132,10 @@ recorded beside its code as a sim-scale deviation (AGENTS.md) and listed here.
   target once every `[AI] PatrolScan=` (14 frames with the retail rules), as
   in the original, but each team on its own frame of that period, its id
   modulo the period, where the original has every team look on the same
-  frame. A team so turns on a threat up to 13 frames sooner or later.
+  frame. A team so turns on a threat up to 13 frames sooner or later, and,
+  as it looks on its first own turn from that frame (below), up to 16 later.
+  With a modded `PatrolScan=` of fewer than four frames a team looks on every
+  own turn, once every four frames.
 - **Patrol scans answered side by side**
   ([scan_batch.rs](../src/sim/world/techno_ai/scan_batch.rs)). The scans of
   the leaders due in a frame are made side by side as the team step begins,
@@ -155,3 +158,24 @@ recorded beside its code as a sim-scale deviation (AGENTS.md) and listed here.
   hit makes smoke only as it makes the object yellow or red, so a damaged
   object then has none until a hit makes it red, or yellow again after a
   repair.
+- **Teams update on their own turns**
+  ([team_ai.rs](../src/sim/team_script_vm/team_ai.rs), `run_team_ai_pass`).
+  The original updates every team every frame. Here a team updates one frame
+  in four, its own turn (the frame plus its id is a multiple of four), and on
+  the other frames only for what cannot wait, on the frame it happens as in
+  the original: a team forming, recruiting or regrouping, a member joining or
+  leaving, a script action finished or `Coordinate_Attack` restarting, the
+  end of a suspension or of a guard action's time, and a moving or attacking
+  team whose target is gone. A team that is moving or attacking (actions 0,
+  1, 3, 4, 15, 16, 22, 46 to 48, 53, 54, 58 and 59), guarding (5), doing a
+  mission (11) or nothing (2) waits for its turn; every other action runs
+  every frame. A waiting team so gives its members their next orders, sees
+  them arrive and finds its centre up to three frames late, and the members
+  a `Carryall=` aircraft's Move or an aircraft's Patrol sends to Guard by
+  setting the team's target (which neither the retail rules nor the retail AI
+  do) wait as long for the team to send them on. Its patrol scan
+  and `Coordinate_Attack`'s every-eighth-frame check of its leader run on its
+  first own turn from their frame, so each still runs once a period (but a
+  patrol scan of fewer than four frames, above), and no timer a script counts
+  runs longer. In the battle this takes the team step from about 14% of the
+  simulation thread to about 7%.
