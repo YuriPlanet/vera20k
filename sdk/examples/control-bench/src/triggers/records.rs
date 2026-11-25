@@ -32,8 +32,14 @@ pub(super) fn dispatch(r: &EventRecord) {
             }
         }
         K_TIMER => timer(r),
+        // Both events latch on the dummy's instance; whichever comes second
+        // completes it and is the record (a hit before the period's end
+        // leaves the Timer to complete it).
         K_TIMER_OBJECT => {
-            if r.kind == Event::TAKE_DAMAGE && r.subject == ld(DUMMY) {
+            if (r.kind == Event::TAKE_DAMAGE || r.kind == Event::TIMER)
+                && r.subject == ld(DUMMY)
+                && r.holder == ld(DUMMY)
+            {
                 crate::mark("triggers.ev-timer-object");
             }
         }
@@ -231,7 +237,9 @@ fn transport(r: &EventRecord, subject: usize, other: usize, mark: &str) {
 }
 
 /// `HouseTransferred`: the GI given away (value 0, old house the player),
-/// then the engineer the Yuri took (value 1), released at once.
+/// then the engineer the Yuri took (value 1, old house the player),
+/// released at once. The release is a mind-control transfer too (FreeUnit's
+/// ChangeOwner, value 1, old house the computer's), which is left alone.
 fn transferred(r: &EventRecord) {
     if have(SWITCHED) && r.subject == ld(SWITCHED) {
         check(
@@ -239,7 +247,11 @@ fn transferred(r: &EventRecord) {
             r.value == 0 && r.house == crate::player().0,
             "the cause or old house is wrong",
         );
-    } else if have(CONTROLLED) && r.subject == ld(CONTROLLED) && r.value == 1 {
+    } else if have(CONTROLLED)
+        && r.subject == ld(CONTROLLED)
+        && r.value == 1
+        && r.house == crate::player().0
+    {
         crate::mark("triggers.ev-mind-control");
         let controlled = unit(CONTROLLED);
         let freed = Action::clear_mind_control(controlled).is_ok()

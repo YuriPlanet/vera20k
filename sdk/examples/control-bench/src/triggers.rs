@@ -268,7 +268,9 @@ const HOUSE_YES: usize = 49;
 const HOUSE_NO: usize = 50;
 const UNBIND_YES: usize = 51;
 const UNBIND_NO: usize = 52;
-const SLOTS: usize = 53;
+/// The unit `Remove` took, checked on a later frame.
+const REMOVED: usize = 53;
+const SLOTS: usize = 54;
 
 static STATE: [AtomicI64; SLOTS] = [const { AtomicI64::new(0) }; SLOTS];
 

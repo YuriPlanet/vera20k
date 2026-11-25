@@ -27,6 +27,7 @@ pub(super) fn step(t: i64) {
         60 => remove_modifiers(),
         64 => add_experience(),
         66 => ammo_and_remove(),
+        68 => removed_check(),
         70 => kill(),
         72 => kill_by_damage(),
         74 => set_owner(),
@@ -387,11 +388,23 @@ fn ammo_and_remove() {
             crate::spawn(at(2, -12), "E1", p)
         }
     };
+    // Remove queues the object's deletion (UnInit's pending delete, as the
+    // native one does): it reads as gone from the next frame on.
     if let Some(made) = made {
-        let removed = Action::remove(made).is_ok() && made.health().is_err();
+        if Action::remove(made).is_ok() {
+            st(REMOVED, made.0);
+        } else {
+            crate::bench_fail("triggers.act-remove", "Remove answered an error");
+        }
+    }
+}
+
+/// Two frames after `Remove`: the unit reads as gone.
+fn removed_check() {
+    if have(REMOVED) {
         check(
             "triggers.act-remove",
-            removed,
+            unit(REMOVED).health().is_err(),
             "the removed unit still reads",
         );
     }
