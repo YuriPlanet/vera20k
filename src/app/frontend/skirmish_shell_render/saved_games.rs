@@ -135,20 +135,6 @@ pub(crate) fn paint_saved_browser<I>(
     paint
 }
 
-/// game.exe 0x005FF1F5 selects PUDLGBGA or PUDLGBGS from the active
-/// scenario's side flag for the Save and Delete message boxes.
-fn saved_game_prompt_side(
-    ra2: bool,
-    mode: SavedSeedMode,
-    scenario_side: Option<i32>,
-) -> Option<SidebarTheme> {
-    match (ra2, mode, scenario_side) {
-        (true, SavedSeedMode::Save | SavedSeedMode::Delete, Some(0)) => Some(SidebarTheme::Allied),
-        (true, SavedSeedMode::Save | SavedSeedMode::Delete, Some(1)) => Some(SidebarTheme::Soviet),
-        _ => None,
-    }
-}
-
 /// The browser's message box, when one is up: its art after `sprites`, its
 /// texts after `texts`, which give up the box's rect first.
 pub(crate) fn push_saved_browser_box<I>(
@@ -341,16 +327,12 @@ pub(crate) fn render_saved_game_shell(
         if let Some(root) = browser.ui.root_in(BROWSER_DIALOG) {
             paint.nodes_in(browser.ui.gui(), root, &[ACTION, CONVERT, BACK], style);
         }
-        let scenario_side = state
-            .match_state
-            .sim_runtime
-            .presentation()
-            .map(|runtime| runtime.simulation.session().scenario_side());
-        let prompt_side = saved_game_prompt_side(
-            crate::util::ra2_launch::enabled(),
-            browser.mode,
-            scenario_side,
-        );
+        // game.exe's mode-2 paint (0x005FF1F5) draws the player's side
+        // PUDLGBG art while a game runs; classic RA2's Save and Delete
+        // prompts show it.
+        let prompt_side = (crate::util::ra2_launch::enabled()
+            && matches!(browser.mode, SavedSeedMode::Save | SavedSeedMode::Delete))
+        .then_some(paint.theme);
         // The box's clipping excludes all underlying text, the active-game
         // title and column labels included.
         push_saved_browser_box(
@@ -369,32 +351,4 @@ pub(crate) fn render_saved_game_shell(
         paint.finish("Active Saved Game Browser")
     };
     render_in_game_shell_frame(state, encoder, destination, frame)
-}
-
-#[cfg(all(test, tests_app_frontend))]
-mod tests {
-    use super::{SavedSeedMode, SidebarTheme, saved_game_prompt_side};
-
-    #[test]
-    fn classic_save_and_delete_prompts_follow_the_active_scenario_side() {
-        for mode in [SavedSeedMode::Save, SavedSeedMode::Delete] {
-            assert_eq!(
-                saved_game_prompt_side(true, mode, Some(0)),
-                Some(SidebarTheme::Allied)
-            );
-            assert_eq!(
-                saved_game_prompt_side(true, mode, Some(1)),
-                Some(SidebarTheme::Soviet)
-            );
-            assert_eq!(saved_game_prompt_side(false, mode, Some(1)), None);
-        }
-        assert_eq!(
-            saved_game_prompt_side(true, SavedSeedMode::Load, Some(1)),
-            None
-        );
-        assert_eq!(
-            saved_game_prompt_side(true, SavedSeedMode::Delete, None),
-            None
-        );
-    }
 }
