@@ -424,12 +424,12 @@ fn drive_stop_rest_and_departure_survive_production_snapshot_restore() {
     for wait in [false, true] {
         let (mut original, id) = scene(&rules);
         original.substrate.entities.get_mut(id).unwrap().body_facing = FacingClass::new(0x4000, 5);
-        original.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        *original.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
         original
             .restore_map_authority_after_snapshot_load(&rules, &overlays, None)
             .unwrap();
         // Native load resets Scenario from Seed0; compare that documented cursor.
-        original.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *original.scenario_rng = crate::sim::rng::SimRng::new(0);
         original
             .locomotor_stop_moving(id, &rules, None, &mut FrameEffects::default())
             .unwrap();

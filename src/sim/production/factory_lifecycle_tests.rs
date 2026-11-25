@@ -483,10 +483,11 @@ fn record_last_built_matches_native_class_slots_score_gate_and_rng() {
                 built_total(&row["before"])
             );
             let before = &row["observation"]["rng_before"];
-            sim.scenario_rng =
+            *sim.scenario_rng =
                 SimRng::from_native_state_hex_for_test(before["scenario"].as_str().unwrap());
-            sim.main_rng = SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap());
-            sim.mapgen_rng =
+            *sim.main_rng =
+                SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap());
+            *sim.mapgen_rng =
                 SimRng::from_native_state_hex_for_test(before["mapgen"].as_str().unwrap());
 
             super::factory_lifecycle::record_last_built(
@@ -934,7 +935,7 @@ fn offline_backup_recovery_distinguishes_saved_system_and_user_holds() {
 
         // Match Scenario load's native reseed while retaining process RNG and
         // exercising the production save/restore owner, not raw native SAV.
-        sim.scenario_rng = SimRng::new(0);
+        *sim.scenario_rng = SimRng::new(0);
         hold_hashes.push(sim.state_hash());
         let bytes = GameSnapshot::save(sim, 0, rules.simulation_config_hash(), "offline-backup", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
@@ -1118,7 +1119,7 @@ fn selling_last_retail_barracks_keeps_paid_head_before_map_exit() {
         // Native Scenario load deliberately reseeds this stream to zero. Give
         // both branches the same explicit pre-save state, then exercise the live
         // process retention/restore seam used by the app, not native SAV parsing.
-        runtime.simulation.scenario_rng = SimRng::new(0);
+        *runtime.simulation.scenario_rng = SimRng::new(0);
         let rules = &runtime.resources.rules;
         let bytes = crate::sim::snapshot::GameSnapshot::save(
             &runtime.simulation,
@@ -1946,7 +1947,7 @@ fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay_b
     // Full native Scenario load reseeds its saved stream to zero. Isolate the
     // recheck roundtrip from that intentional transition, and retain the live
     // process cursors through the same in-scenario load seam as the app.
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     let bytes = GameSnapshot::save(&sim, 0, rules.simulation_config_hash(), "factory-loss", 0);
     let mut restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
     restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));

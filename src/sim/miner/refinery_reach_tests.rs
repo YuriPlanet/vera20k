@@ -18,7 +18,7 @@ fn pick(water: impl IntoIterator<Item = (u16, u16)>) -> Option<(Option<u64>, u64
     let far = spawn(&mut sim, &rules, "NAREFN", "Russians", 4, 24);
     let miner = spawn(&mut sim, &rules, "HARV", "Russians", 14, 12);
     crate::sim::arena_fixture::flood(&mut sim, &rules, 40, water);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(40, 40));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(40, 40));
     for y in 11..=13 {
         for x in 13..=15 {
             place_tiberium_on_map(&mut sim, (x, y), ResourceType::Ore, 5);

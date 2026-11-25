@@ -205,8 +205,8 @@ fn install_empty_arena_navigation(
             probe_dummy.adopt_prepared_load_state(&dummy);
             assert!(probe.rebuild_dynamic_navigation(rules));
             Some((
-                probe.zone_grid?,
-                probe.path_grid?,
+                probe.zone_grid.into_inner()?,
+                probe.path_grid.into_inner()?,
                 probe_dummy.fork_query_identity(),
             ))
         })
@@ -267,7 +267,7 @@ pub fn supply_native_map(sim: &mut Simulation) {
         // Every supplied clear ground has the same zones; a fixture builds
         // them once per test process and installs a copy.
         static CLEAR_GROUND_ZONES: std::sync::OnceLock<ZoneGrid> = std::sync::OnceLock::new();
-        sim.zone_grid = Some(
+        *sim.zone_grid = Some(
             if supplies_ground {
                 CLEAR_GROUND_ZONES
                     .get_or_init(|| native_zones(&grid, terrain))
@@ -309,7 +309,7 @@ pub fn supply_native_map_keyed<K: Ord + Send + 'static>(sim: &mut Simulation, te
             })
             .expect("keyed fixture zones");
         dummy.adopt_prepared_load_state(&built);
-        sim.zone_grid = Some(zones.into());
+        *sim.zone_grid = Some(zones.into());
     }
     supply_native_map(sim);
 }

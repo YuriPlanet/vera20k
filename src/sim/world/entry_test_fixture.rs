@@ -52,16 +52,16 @@ pub(crate) fn fixture_with_rules_and_fixed_art(
     // building the derived table, including types first spawned after load.
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.playfield_bounds = Some(parts.bounds);
+    *sim.playfield_bounds = Some(parts.bounds);
     // Map Size height, which map load installs with the bounds
     // (`install_playfield_from_map_header`).
-    sim.playfield_size_height = Some(16);
+    *sim.playfield_size_height = Some(16);
     sim.session.set_map_width_for_test(33);
     sim.session.set_map_height_for_test(33);
-    sim.overlay_grid = Some(OverlayGrid::new(33, 33));
-    sim.bridge_state = Some(parts.bridges.clone());
-    sim.zone_grid = Some(parts.zones.clone().into());
-    sim.path_grid = Some(Arc::new(parts.path.clone()));
+    *sim.overlay_grid = Some(OverlayGrid::new(33, 33));
+    *sim.bridge_state = Some(parts.bridges.clone());
+    *sim.zone_grid = Some(parts.zones.clone().into());
+    *sim.path_grid = Some(Arc::new(parts.path.clone()));
     sim.install_resolved_terrain_for_new_map(terrain);
     // Map load also sizes the ore queue stores from the same `[Map] Size`
     // rect (`initialize_native_tiberium_queues`); this map holds no ore.
@@ -74,7 +74,7 @@ pub(crate) fn fixture_with_rules_and_fixed_art(
     for p in [(15, 15), (16, 15), (17, 14), (17, 15), (17, 16)] {
         assert!(crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             (p.0, p.1),
-            sim.playfield_bounds,
+            *sim.playfield_bounds,
             sim.resolved_terrain.as_ref()
         ));
     }

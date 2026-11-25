@@ -315,10 +315,10 @@ mod tests {
     #[test]
     fn automatic_shroud_growth_reaches_the_map_without_fog_and_preserves_saved_cadence() {
         let (mut sim, mut rules, viewer) = world();
-        sim.playfield_bounds = Some(
+        *sim.playfield_bounds = Some(
             crate::sim::cell_rect::PlayfieldBounds::from_normalized_local_size(16, 0, 0, 16, 16),
         );
-        sim.playfield_size_height = Some(16);
+        *sim.playfield_size_height = Some(16);
         rules.general = RuleSet::from_ini_with_fixed_art_for_test(
             &IniFile::from_str("[AudioVisual]\nShroudGrow=yes\nShroudRate=4\n"),
             &IniFile::empty(),

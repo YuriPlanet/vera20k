@@ -1976,7 +1976,7 @@ impl Simulation {
             || self
                 .resolved_terrain
                 .as_ref()
-                .zip(self.playfield_bounds)
+                .zip(*self.playfield_bounds)
                 .is_some_and(|(terrain, bounds)| {
                     !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                         (i32::from(packed_cell.0), i32::from(packed_cell.1)),
@@ -2979,7 +2979,7 @@ impl Simulation {
             new_sid,
             rules,
         );
-        self.mission_spawned_entities = true;
+        *self.mission_spawned_entities = true;
         if recalc_context.is_some() {
             // The new Building's committed north-west anchor is the native
             // `+0x9C/+0xA0` source. This bounded write order is load-bearing:

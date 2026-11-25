@@ -2035,7 +2035,7 @@ mod discovery_tests {
             .register(HouseState::new(player, 0, None, true, 0, 10));
         sim.houses
             .register(HouseState::new(enemy, 1, None, false, 0, 10));
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        *sim.fog = crate::sim::vision::FogState::new(32, 32);
         let type_ref = sim.interner.intern("TEST");
         sim.substrate
             .entities

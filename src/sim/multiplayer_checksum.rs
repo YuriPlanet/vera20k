@@ -910,7 +910,7 @@ mod tests {
             Simulation::reveal_particle(&mut sim.substrate, id);
         }
         let bytes = GameSnapshot::save(&sim, 0, 0, "particles", 0);
-        let rng = sim.scenario_rng.clone();
+        let rng = (*sim.scenario_rng).clone();
         let mut reference = rng.clone();
 
         let frame = sim.compute_retail_multiplayer_checksum().unwrap();
@@ -928,7 +928,7 @@ mod tests {
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
         restored.restore_after_snapshot_load().unwrap();
         // The loader reseeds Scenario; continue the saved stream.
-        restored.scenario_rng = rng;
+        *restored.scenario_rng = rng;
         assert_eq!(restored.compute_retail_multiplayer_checksum(), Ok(frame));
     }
 

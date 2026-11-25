@@ -118,7 +118,7 @@ fn world_queries_match_all_original_foot_coordinate_rows_and_snapshot() {
             _ => unreachable!(),
         };
         let mut sim = Simulation::new();
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let mut e = entity(
             1,
             kind,
@@ -143,7 +143,7 @@ fn world_queries_match_all_original_foot_coordinate_rows_and_snapshot() {
                 tube[0].as_i64().unwrap() as u16,
                 tube[1].as_i64().unwrap() as u16,
             );
-            sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells_with_tubes(
+            *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells_with_tubes(
                 1,
                 1,
                 vec![],
@@ -239,7 +239,7 @@ fn raw_copy_classes_have_foot_coordinates_but_no_at_coord_match() {
 #[test]
 fn production_drive_reaim_reads_retained_target_head() {
     let mut sim = Simulation::new();
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     let mut mover = entity(
         1,
         LocomotorKind::Drive,
@@ -342,8 +342,8 @@ fn flight_queries_follow_live_altitude_producers_and_keep_jumpjet_exact_z() {
         .unwrap()
         .retain_destination(DriveCoord::cell(12, 6, 0), None, || 0);
     sim.substrate.entities.insert(fly);
-    sim.interner = crate::sim::intern::test_interner();
-    sim.resolved_terrain = Some(terrain);
+    *sim.interner = crate::sim::intern::test_interner();
+    *sim.resolved_terrain = Some(terrain);
     sim.tick_air_movement_with_cell_lists_one(
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),

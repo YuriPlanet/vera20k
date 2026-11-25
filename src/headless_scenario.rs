@@ -896,7 +896,7 @@ mod retail_construction_tests {
         };
         let mut sim = ScenarioBootstrapRng::new(descriptor.seed).into_simulation(&descriptor);
         // This synthetic fixture omits the production native Rules prefix.
-        sim.native_unique_ids =
+        *sim.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
         let resolved = {
             let (mut scenario_fill_rng, variant_main_rng) = sim.terrain_load_draws();

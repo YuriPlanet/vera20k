@@ -1081,10 +1081,8 @@ fn original_whole_ai_shot_dynamic_logic_damage_and_deferred_lifetimes_match_nati
             );
             // The original caller increments A8ED84 before725C70. Object AI
             // and both clocks saw the previous absolute frame throughout.
-            fixture
-                .sim
-                .session
-                .set_binary_frame_for_test(fixture.sim.session.binary_frame() + 1);
+            let session = &mut *fixture.sim.session;
+            session.set_binary_frame_for_test(session.binary_frame() + 1);
             fixture.sim.process_pending_delete_with(
                 &rules,
                 &mut crate::sim::world::FrameEffects::default(),

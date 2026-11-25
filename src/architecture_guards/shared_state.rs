@@ -108,6 +108,12 @@ const POOL_ENTRY_PINS: &[(&str, usize, &str)] = &[
         "never looks a cell up: the filter reads each building's type in the rules",
     ),
     (
+        "sim/snapshot.rs",
+        1,
+        "never looks a cell up: the layout trace decodes made-up values on a \
+         thread of its own, for its stack",
+    ),
+    (
         "sim/state_hasher.rs",
         3,
         "never looks a cell up: digests of the items its callers hash",
@@ -416,6 +422,11 @@ const DEREF_TYPES: &[(&str, &str, &str)] = &[
         "HumanPlayerClients",
         "sim/world/shroud_refresh.rs",
         "no client, one or a shared list, read as one slice of clients",
+    ),
+    (
+        "Forked",
+        "util/forked.rs",
+        "a copy-on-write world field: `deref_mut` notes the write and gives a fork its own copy",
     ),
     (
         "ModFolder",

@@ -172,7 +172,7 @@ impl EntryCell {
             Self::Kept(facts) => facts.in_playfield,
             Self::Live(cell) => crate::sim::cell_rect::retained_cell_is_in_playfield(
                 cell,
-                live.sim.playfield_bounds,
+                *live.sim.playfield_bounds,
                 &crate::map::resolved_terrain::NativeCellQuery::canonical(live.terrain()),
             ),
         }
@@ -562,7 +562,7 @@ impl Simulation {
             let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
             if !crate::sim::cell_rect::retained_cell_is_in_playfield(
                 cell,
-                self.playfield_bounds,
+                *self.playfield_bounds,
                 &cells,
             ) {
                 return 0;
@@ -2026,7 +2026,7 @@ mod tests {
             let valid = cells.lookup((15, 15));
             assert!(crate::sim::cell_rect::retained_cell_is_in_playfield(
                 valid,
-                sim.playfield_bounds,
+                *sim.playfield_bounds,
                 &cells,
             ));
             assert!(crate::sim::vision::cell_is_shrouded(
@@ -2063,7 +2063,7 @@ mod tests {
             let outside = cells.lookup((0, 0));
             assert!(!crate::sim::cell_rect::retained_cell_is_in_playfield(
                 outside,
-                sim.playfield_bounds,
+                *sim.playfield_bounds,
                 &cells,
             ));
             assert_eq!(
@@ -2133,7 +2133,7 @@ mod tests {
         mover.set_category_for_test(EntityCategory::Infantry);
         mover.set_in_playfield(true);
         sim.substrate.entities.insert(mover);
-        sim.playfield_bounds = Some(
+        *sim.playfield_bounds = Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(16, 0, 0, 1, 1),
         );
         let cell = sim

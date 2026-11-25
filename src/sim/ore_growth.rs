@@ -1735,7 +1735,7 @@ impl OreGrowthState {
         crate::sim::tiberium::test_support::with_placement_fixture(
             &mut context,
             |sim, rules, registry| {
-                sim.ore_growth_config =
+                *sim.ore_growth_config =
                     OreGrowthConfig::for_test(growth_enabled, spread_enabled, tiberium_grows_flag);
                 sim.tick_native_growth_driver(rules, registry, &mut FrameEffects::default())
             },
@@ -1773,7 +1773,7 @@ impl OreGrowthState {
         crate::sim::tiberium::test_support::with_placement_fixture(
             &mut context,
             |sim, rules, registry| {
-                sim.ore_growth_config = OreGrowthConfig::for_test(true, spread_enabled, false);
+                *sim.ore_growth_config = OreGrowthConfig::for_test(true, spread_enabled, false);
                 sim.process_native_growth_for_type_with_placement(
                     type_id,
                     rules,
@@ -1819,7 +1819,7 @@ impl OreGrowthState {
         crate::sim::tiberium::test_support::with_placement_fixture(
             &mut context,
             |sim, rules, registry| {
-                sim.ore_growth_config =
+                *sim.ore_growth_config =
                     OreGrowthConfig::for_test(growth_enabled, spread_enabled, false);
                 sim.tick_native_spread_driver(rules, registry, &mut FrameEffects::default())
             },
@@ -1860,7 +1860,7 @@ impl OreGrowthState {
         crate::sim::tiberium::test_support::with_placement_fixture(
             &mut context,
             |sim, rules, registry| {
-                sim.ore_growth_config = OreGrowthConfig::for_test(true, spread_enabled, false);
+                *sim.ore_growth_config = OreGrowthConfig::for_test(true, spread_enabled, false);
                 sim.process_native_spread_for_type_with_placement(
                     type_id,
                     rules,

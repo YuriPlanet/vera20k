@@ -146,8 +146,8 @@ mod tests {
         let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()?;
         let (rules, mut sim, _) =
             crate::sim::superweapon::chronosphere_tests::world_with(rules, 64, &[]);
-        sim.playfield_bounds = Some(PlayfieldBounds::from_raw_local_size(32, 32, [2, 4, 28, 22]));
-        sim.playfield_size_height = Some(32);
+        *sim.playfield_bounds = Some(PlayfieldBounds::from_raw_local_size(32, 32, [2, 4, 28, 22]));
+        *sim.playfield_size_height = Some(32);
         let boris = sim
             .spawn_object("BORIS", "Russians", 38, 38, 0, &rules)
             .unwrap();
@@ -240,7 +240,7 @@ mod tests {
         let edge = Edge::authored_or_waypoint(house.authored_edge(), house.waypoint_edge());
         let mut expected = sim.scenario_rng.clone();
         super::super::edge_cell::find_paradrop_edge_cell(
-            sim.playfield_bounds,
+            *sim.playfield_bounds,
             sim.resolved_terrain.as_ref(),
             edge,
             &mut expected,

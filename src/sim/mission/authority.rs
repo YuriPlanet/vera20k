@@ -1428,7 +1428,7 @@ mod tests {
                     ));
                 sim.session
                     .set_binary_frame_for_test(row["input"]["frame"].as_u64().unwrap() as u32);
-                sim.scenario_rng = SimRng::new(row["input"]["seed"].as_u64().unwrap());
+                *sim.scenario_rng = SimRng::new(row["input"]["seed"].as_u64().unwrap());
                 assert_eq!(sim.scenario_rng.native_state_hex(), row["rng_before"]);
 
                 let ran = if damage_response {

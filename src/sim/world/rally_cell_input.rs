@@ -306,11 +306,11 @@ mod tests {
             actor.position.set_sub_y_for_test(SimFixed::from_num(64));
             actor.set_archive_target(Some(TargetKind::Cell(6, 5)));
             sim.substrate.entities.insert(actor);
-            sim.resolved_terrain = Some(terrain);
-            sim.zone_grid = Some(zones.into());
-            sim.substrate.raw_cell_occupation = raw;
-            sim.playfield_bounds = Some(bounds());
-            sim.playfield_size_height = Some(8);
+            *sim.resolved_terrain = Some(terrain);
+            *sim.zone_grid = Some(zones.into());
+            *sim.substrate.raw_cell_occupation = raw;
+            *sim.playfield_bounds = Some(bounds());
+            *sim.playfield_size_height = Some(8);
             sim.session.set_binary_frame_for_test(100);
             let rng = sim.scenario_rng.state();
             let prepared = sim.factory_rally_cell_input(1, (11, 5), &rules).unwrap();

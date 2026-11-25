@@ -805,7 +805,7 @@ impl ScanContext<'_> {
         disguise_detection_roll(
             state
                 .scenario_rng
-                .get_or_insert_with(|| world.scenario_rng.clone()),
+                .get_or_insert_with(|| (*world.scenario_rng).clone()),
             self.standing.house,
             self.rules,
         )

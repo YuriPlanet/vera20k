@@ -30,7 +30,7 @@ fn campaign_fixture(triggers: &str) -> Option<(Simulation, RuleSet, InternedId)>
     let (mut sim, _, _) = entry_test_fixture::fixture();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.fog = vision::FogState::new(33, 33);
+    *sim.fog = vision::FogState::new(33, 33);
     sim.session
         .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED, None)
         .unwrap();

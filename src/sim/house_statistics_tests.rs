@@ -390,7 +390,7 @@ fn native_house_statistics_survive_snapshot_and_retained_ship_terminal_record() 
             .set_map_name_for_test("HOUSE-STATS.MAP".to_owned());
         // Whole Scenario load has its own seed-zero contract. The native
         // comparison here establishes the House fields across its Save/Load.
-        sim.scenario_rng = SimRng::new(0);
+        *sim.scenario_rng = SimRng::new(0);
         let owner = sim.interner.intern("Americans");
         let mut house = HouseState::new(owner, 0, None, false, 0, 10);
         let (stats, score) = native_totals(&row["before"]);
@@ -466,7 +466,7 @@ fn native_house_statistics_survive_snapshot_and_retained_ship_terminal_record() 
 fn saved_live_statistics_preserve_terminal_score_and_rng_continuation() {
     let mut sim = Simulation::new();
     sim.session.set_map_name_for_test("SCORE.MAP".to_owned());
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     let owner = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, None, false, 0, 10);
     house.stats = MatchStatistics {

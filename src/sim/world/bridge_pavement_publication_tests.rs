@@ -82,10 +82,10 @@ fn retail_plain_pavement_native_entry_draw_selection_and_snapshot() {
         .unwrap()
         .sim;
     assert_eq!(
-        restored.dynamic_terrain_cells,
-        live.sim.dynamic_terrain_cells
+        *restored.dynamic_terrain_cells,
+        *live.sim.dynamic_terrain_cells
     );
-    restored.resolved_terrain = Some(initial.clone());
+    *restored.resolved_terrain = Some(initial.clone());
     restored.restore_after_snapshot_load().unwrap();
     restored
         .restore_map_authority_after_snapshot_load(live.rules, live.rules.overlay_registry(), None)

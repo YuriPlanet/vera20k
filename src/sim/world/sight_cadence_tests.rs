@@ -173,7 +173,7 @@ fn aircraft_uncached_ground_sight_uses_one_cell_radius_without_replacing_its_sou
         };
         sim.session
             .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
-        sim.fog = vision::FogState::new(32, 32);
+        *sim.fog = vision::FogState::new(32, 32);
         assert_eq!(rules.object(kind).unwrap().sight, sight);
         let owner = sim.intern("Americans");
         let id = sim
@@ -259,7 +259,7 @@ fn aircraft_uncached_airborne_sight_uses_raw_type_range_and_skips_zero() {
             ..crate::sim::arena_fixture::OPEN_PLAYFIELD
         }));
         sim.set_playfield_size_height_for_test(Some(50));
-        sim.fog = vision::FogState::new(128, 128);
+        *sim.fog = vision::FogState::new(128, 128);
         let id = sim
             .spawn_object(kind, "Americans", 75, 50, 0, &rules)
             .unwrap();
@@ -309,7 +309,7 @@ fn aircraft_uncached_sight_rereads_its_location_between_map_passes() {
         .spawn_object("ORCA", "Americans", 16, 16, 0, &rules)
         .unwrap();
     // Make the first pass produce a fresh CellChangeNotify callback.
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     let rng = sim.scenario_rng.native_state_hex();
     let ((), trace) = trace_reveal_calls(|| {
         with_first_cell_receiver(
@@ -350,7 +350,7 @@ fn aircraft_uncached_sight_rereads_owner_before_the_second_house_admission() {
     let id = sim
         .spawn_object("ORCA", "Americans", 16, 16, 0, &rules)
         .unwrap();
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     let ((), trace) = trace_reveal_calls(|| {
         with_first_cell_receiver(
             move |sim| sim.substrate.entities.change_owner(id, other),
@@ -430,7 +430,7 @@ fn source_release_retains_its_cached_geometry_until_teardown() {
     let Some((mut sim, rules, _)) = retail_arena() else {
         return;
     };
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     let owner = sim.intern("Americans");
     let id = sim
         .spawn_object("AMCV", "Americans", 16, 16, 0, &rules)
@@ -512,7 +512,7 @@ fn exact_zero_sight_gate_differs_from_empty_walk_and_override() {
     .unwrap();
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     let owner = sim.intern("Americans");
     sim.houses
         .register(crate::sim::house_state::HouseState::new(
@@ -560,7 +560,7 @@ fn a_nested_source_release_is_not_resurrected_by_outer_walk_or_next_frame() {
     let Some((mut sim, rules, _)) = retail_arena() else {
         return;
     };
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     let owner = sim.intern("Americans");
     let id = sim
         .spawn_object("AMCV", "Americans", 16, 16, 0, &rules)
@@ -568,7 +568,7 @@ fn a_nested_source_release_is_not_resurrected_by_outer_walk_or_next_frame() {
     sim.techno_limbo_with_rules(id, &rules);
     //Reset the synthetic knowledge fixture, retaining the same real source
     //object in Limbo; its next successful Unlimbo is the producer under test.
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     let callback_rules = rules.clone();
     with_first_cell_receiver(
         move |sim| {
@@ -622,7 +622,7 @@ fn unlimbo_keeps_its_single_alive_admission_across_sight_callbacks() {
     let Some((mut sim, rules, _)) = retail_arena() else {
         return;
     };
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     let owner = sim.intern("Americans");
     let id = sim
         .spawn_object("AMCV", "Americans", 16, 16, 0, &rules)
@@ -633,7 +633,7 @@ fn unlimbo_keeps_its_single_alive_admission_across_sight_callbacks() {
     let before = sim.houses[&owner]
         .tracking()
         .active_count(category, type_id);
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     with_first_cell_receiver(
         move |sim| {
             sim.substrate
@@ -1385,12 +1385,12 @@ fn a_source_event_keeps_one_notification_admission_across_logical_planes() {
         .entry("AMERICANS".into())
         .or_default()
         .insert("ALLIANCE".into());
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     let id = sim
         .spawn_object("AMCV", "Americans", 16, 16, 0, &rules)
         .unwrap();
     sim.techno_limbo_with_rules(id, &rules);
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     let ((), calls) = trace_reveal_calls(|| {
         with_first_cell_receiver(
             move |sim| sim.session.set_current_house_for_test(Some(ally)),
@@ -1504,7 +1504,7 @@ fn retail_goldst_uncached_reveal_border_matches_native_admission_and_transport()
             }
             // Derive the LOS cache through its actual existing terrain reader.
             // Full Rust map vs sparse native crop is bounded to these receivers.
-            sim.path_grid = Some(std::sync::Arc::new(
+            *sim.path_grid = Some(std::sync::Arc::new(
                 PathGrid::from_resolved_terrain_with_bridges(terrain, sim.overlay_grid.as_ref()),
             ));
         }
@@ -1735,7 +1735,7 @@ fn retail_goldst_cold_fire_borders_and_conceal_notifications_match_native() {
             "dummy_prior": vision::discovery_corpus()["cache_controls"]["topology"]["dummy_prior"],
         });
         let (fog, _) = vision::native_map_cell_fixture(&topology, viewer);
-        sim.fog = fog;
+        *sim.fog = fog;
         let actual_xyz = {
             let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(
                 sim.resolved_terrain.as_ref().unwrap(),
@@ -1931,7 +1931,7 @@ fn an_infantry_corpse_keeps_its_sight_until_its_uninit() {
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     let owner = sim.intern("Americans");
     sim.houses
         .register(crate::sim::house_state::HouseState::new(
@@ -1993,7 +1993,7 @@ fn a_reveal_before_navigation_publication_tests_the_cell_heights() {
     let Some((mut sim, rules, _)) = retail_arena() else {
         return;
     };
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     let owner = sim.intern("Americans");
     let id = sim
         .spawn_object("MTNK", "Americans", 12, 16, 0, &rules)
@@ -2006,7 +2006,7 @@ fn a_reveal_before_navigation_publication_tests_the_cell_heights() {
     for y in 0..32 {
         terrain.cell_mut_for_test(15, y).unwrap().level = 8;
     }
-    sim.path_grid = None;
+    *sim.path_grid = None;
     sim.reveal_entity_with_context(id, UninitContext::new(&rules));
     assert!(!sim.substrate.entities.get(id).unwrap().lifecycle.in_limbo());
     let early = sim.fog.sight_admission(id, owner).unwrap().cells.clone();
@@ -2043,7 +2043,7 @@ fn an_owner_change_moves_the_sight_to_the_new_owner_within_the_call() {
     let Some((mut sim, rules, _)) = retail_arena() else {
         return;
     };
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     let americans = sim.intern("Americans");
     let russians = add_computer_house(&mut sim, "Russians");
     let id = sim
@@ -2074,7 +2074,7 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
     let Some((mut sim, rules, _)) = retail_arena() else {
         return;
     };
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     let americans = sim.intern("Americans");
     let russians = add_computer_house(&mut sim, "Russians");
     // Can_Ally refuses an alliance that leaves no live enemy.
@@ -2216,7 +2216,7 @@ fn an_ex_ally_keeps_a_mobile_footprint_after_its_next_cell_arrival() {
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
     sim.session.set_current_house_for_test(Some(americans));
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     let russians = add_computer_house(&mut sim, "Russians");
     add_computer_house(&mut sim, "Confederation");
 
@@ -2303,7 +2303,7 @@ fn a_tank_promoted_into_the_playfield_reveals_at_its_next_arrival() {
     let Some((mut sim, rules, grid)) = retail_arena() else {
         return;
     };
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     let owner = sim.intern("Americans");
     let id = sim
         .spawn_object("MTNK", "Americans", 10, 10, 0, &rules)
@@ -2383,7 +2383,7 @@ fn make_ally_refreshes_own_sight_after_admission_and_skips_a_refused_repeat() {
     let Some((mut sim, rules, _)) = retail_arena() else {
         return;
     };
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     let player = sim.intern("Americans");
     let other = add_computer_house(&mut sim, "Russians");
     add_computer_house(&mut sim, "Confederation");
