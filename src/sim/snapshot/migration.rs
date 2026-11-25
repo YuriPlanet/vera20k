@@ -51,9 +51,10 @@ const TS_WEBS: u32 = 0xF215_BF3A;
 const WASM_MODULES: u32 = 0xE18E_A373;
 // The Wasm modules' control points (RFC 0001 0.0.22, 0.0.23): projectile
 // paths and data words (`Launch`, `ProjectileFrame`), running pushes
-// (`Push`), and the `ImmunityFlags` modifier stat appended to `Stat`. Older
-// worlds hold no path and no push, and no modifier of the new stat.
-const CONTROL_POINTS: u32 = 0x8EAE_A59C;
+// (`Push`), the `ImmunityFlags` and `ROTMultiplier` stats appended to `Stat`
+// and the native body rates the ROT modifier keeps. Older worlds hold no
+// path, no push and no modifier of the new stats.
+const CONTROL_POINTS: u32 = 0x919A_B3CD;
 
 /// The rules digest a converted save carries: the loader takes the rules the
 /// game has instead of proving the digest the old writer computed, whose
@@ -114,6 +115,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     const EXT_MODULES: (&str, &[&str]) = ("Simulation", &["ext_modules"]);
     const MODULE_TRIGGERS: (&str, &[&str]) = ("TriggerRuntime", &["module"]);
     const CONTROL_POINT_STATE: (&str, &[&str]) = ("SavedExtModules", &["projectiles", "motions"]);
+    const NATIVE_ROTS: (&str, &[&str]) = ("ModifierStore", &["native_rots"]);
     let absent_fields: &'static [_] = match source {
         V0_3_8_AND_0_3_9 | V0_4_0 => &[
             IMAGE_FLAGS,
@@ -273,7 +275,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             MODULE_TRIGGERS,
         ],
         TS_WEBS => &[EXT_MODULES, MODULE_TRIGGERS],
-        WASM_MODULES => &[CONTROL_POINT_STATE],
+        WASM_MODULES => &[CONTROL_POINT_STATE, NATIVE_ROTS],
         _ => return None,
     };
     Some(save_codec::PreviousLayout {
