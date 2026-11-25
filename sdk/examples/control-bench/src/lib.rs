@@ -55,7 +55,10 @@ fn area_of(key: i32) -> i32 {
 
 // ----------------------------------------------------------------- Marks
 
-const MAX_MARKS: usize = 512;
+const MAX_MARKS: usize = 1024;
+/// An open-addressed set of name hashes: `marked` and `mark` probe from the
+/// hash's own slot, so a check costs a few operations however many marks
+/// there are (the progress report checks every mark in one frame).
 static MARKED: [AtomicI64; MAX_MARKS] = [const { AtomicI64::new(0) }; MAX_MARKS];
 
 fn hash(name: &str) -> i64 {
@@ -68,49 +71,59 @@ fn hash(name: &str) -> i64 {
     (h | 1) as i64
 }
 
+/// Adds `h` to the set; false when it was there already (or the set is full).
+fn insert(h: i64) -> bool {
+    let first = (h as u64 >> 1) as usize % MAX_MARKS;
+    for step in 0..MAX_MARKS {
+        let slot = &MARKED[(first + step) % MAX_MARKS];
+        match slot.load(Relaxed) {
+            0 => {
+                slot.store(h, Relaxed);
+                return true;
+            }
+            v if v == h => return false,
+            _ => {}
+        }
+    }
+    false
+}
+
+fn contains(h: i64) -> bool {
+    let first = (h as u64 >> 1) as usize % MAX_MARKS;
+    for step in 0..MAX_MARKS {
+        match MARKED[(first + step) % MAX_MARKS].load(Relaxed) {
+            0 => return false,
+            v if v == h => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
 /// Logs `DEMO-OK <name>` the first time `name` is marked. Marks are short
 /// ASCII names, unique across the areas (each area prefixes its own:
 /// `rules.`, `basics.`, `triggers.`, `combat.`, `movement.`, `finale.`).
 pub fn mark(name: &str) {
-    let h = hash(name);
-    for slot in &MARKED {
-        match slot.load(Relaxed) {
-            0 => {
-                slot.store(h, Relaxed);
-                let mut line = Line::new();
-                line.text("DEMO-OK ").text(name);
-                line.log();
-                return;
-            }
-            v if v == h => return,
-            _ => {}
-        }
+    if insert(hash(name)) {
+        let mut line = Line::new();
+        line.text("DEMO-OK ").text(name);
+        line.log();
     }
 }
 
 /// Whether `name` was marked.
 pub fn marked(name: &str) -> bool {
-    let h = hash(name);
-    MARKED.iter().any(|slot| slot.load(Relaxed) == h)
+    contains(hash(name))
 }
 
 /// Logs `BENCH-FAIL <name>: <why>` once per name, for a control point that
 /// answered wrongly (a mark that never comes says only that it was not
 /// reached).
 pub fn bench_fail(name: &str, why: &str) {
-    let mut line = Line::new();
-    line.text("BENCH-FAIL ").text(name).text(": ").text(why);
-    let h = hash(name) ^ 0x5a5a;
-    for slot in &MARKED {
-        match slot.load(Relaxed) {
-            0 => {
-                slot.store(h, Relaxed);
-                line.log();
-                return;
-            }
-            v if v == h => return,
-            _ => {}
-        }
+    if insert(hash(name) ^ 0x5a5a) {
+        let mut line = Line::new();
+        line.text("BENCH-FAIL ").text(name).text(": ").text(why);
+        line.log();
     }
 }
 
