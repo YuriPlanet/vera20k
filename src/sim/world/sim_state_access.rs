@@ -26,11 +26,11 @@ use crate::sim::power_system::PowerState;
 use crate::sim::production::ProductionState;
 use crate::sim::rng::MainRng;
 use crate::sim::rng::SimRng;
+#[cfg(any(test, feature = "test-support"))]
+use crate::sim::scenario_session::ScenarioPauseChange;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::smudge_grid::SmudgeGrid;
 use crate::sim::team_script_vm::TeamScriptVm;
-#[cfg(any(test, feature = "test-support"))]
-use crate::sim::trigger_runtime::TriggerEffect;
 use crate::sim::trigger_runtime::TriggerRuntime;
 use crate::sim::vision::FogState;
 
@@ -717,12 +717,12 @@ impl Simulation {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub fn pause_scenario_for_test(&mut self, duration: i32) -> Vec<TriggerEffect> {
+    pub fn pause_scenario_for_test(&mut self, duration: i32) -> ScenarioPauseChange {
         self.session.pause_scenario(duration)
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub fn expire_scenario_pause_for_test(&mut self) -> Vec<TriggerEffect> {
+    pub fn expire_scenario_pause_for_test(&mut self) -> ScenarioPauseChange {
         self.session.expire_scenario_pause()
     }
 

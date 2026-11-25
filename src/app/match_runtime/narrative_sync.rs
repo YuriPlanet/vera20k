@@ -10,7 +10,7 @@ use crate::app::{App, AppState, GameScreen};
 use crate::net::global::GlobalBatch;
 use crate::net::lan_messages::extended_setup::campaign::Signal;
 use crate::net::live_commands::NarrativeHold;
-use crate::sim::replay::ScenarioServiceInput;
+use crate::sim::replay::ScenarioPauseInput;
 
 use super::network_match;
 use super::scenario_pause;
@@ -240,7 +240,7 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
         state.match_state.scenario_elapsed_clock.pause(wall_ms);
         super::sim_tick::prepare_replay_recording(&mut state.match_state, &state.process_assets);
         if movie_pause {
-            scenario_pause::apply_service(state, ScenarioServiceInput::Pause);
+            scenario_pause::apply_pause_service(state, ScenarioPauseInput::Pause);
         }
     }
     if !state
@@ -255,7 +255,7 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
         let bucket = super::frame_pacer::frame_bucket(wall_ms);
         let sync = &mut state.match_state.match_presentation.narrative_sync;
         if sync.last_chrono_step.replace(bucket) != Some(bucket) {
-            scenario_pause::apply_service(state, ScenarioServiceInput::StepChronoScreen);
+            scenario_pause::apply_chrono_screen_step(state);
         }
     }
     if state.match_state.session.local_connection_watches() {
@@ -452,10 +452,10 @@ fn release(state: &mut AppState, wall_ms: u64) {
     sync.clips.clear();
     sync.last_chrono_step = None;
     if barrier.movie_pause {
-        scenario_pause::apply_service(state, ScenarioServiceInput::Resume);
+        scenario_pause::apply_pause_service(state, ScenarioPauseInput::Resume);
     }
     if barrier.timed {
-        scenario_pause::apply_service(state, ScenarioServiceInput::ExpireTimedPause);
+        scenario_pause::apply_pause_service(state, ScenarioPauseInput::ExpireTimedPause);
     }
     if let Some(live) = state.match_state.live_network.as_mut() {
         live.set_narrative_hold(None);

@@ -28,7 +28,7 @@ use crate::audio::sfx::SpatialGain;
 use crate::render::bink_movie::BinkMovieSurface;
 use crate::render::radar::anim::RadarMovieCommand;
 use crate::rules::sound_ini::{EvaPriority, EvaRegistry, EvaType};
-use crate::sim::replay::ScenarioServiceInput;
+use crate::sim::replay::ScenarioPauseInput;
 
 const INCOMING: &str = "EVA_IncomingTransmission"; //652D6E literal8392C0
 
@@ -115,20 +115,20 @@ impl RadarMovies {
         self.scenario_hold
     }
 
-    fn set_scenario_pause(&mut self, paused: bool) -> Option<ScenarioServiceInput> {
+    fn set_scenario_pause(&mut self, paused: bool) -> Option<ScenarioPauseInput> {
         //657C85..657CD4 compares the requested flag with the retained credit.
         if paused == self.scenario_hold {
             return None;
         }
         self.scenario_hold = paused;
         Some(if paused {
-            ScenarioServiceInput::Pause
+            ScenarioPauseInput::Pause
         } else {
-            ScenarioServiceInput::Resume
+            ScenarioPauseInput::Resume
         })
     }
 
-    fn finish_playing(&mut self) -> (bool, Option<ScenarioServiceInput>) {
+    fn finish_playing(&mut self) -> (bool, Option<ScenarioPauseInput>) {
         self.playing = None;
         self.queue.pop_front();
         let has_next = !self.queue.is_empty();
@@ -371,7 +371,7 @@ fn wind_down_retired(state: &mut AppState, wall_ms: u64) {
     );
     set_detail_floor(&state.frontend, &state.match_state, false);
     if let Some(input) = pause {
-        crate::app::match_runtime::scenario_pause::apply_service(state, input);
+        crate::app::match_runtime::scenario_pause::apply_pause_service(state, input);
     }
     reconcile_pause_clock(&state.frontend.screen, &mut state.match_state, wall_ms);
 }
@@ -523,7 +523,7 @@ fn play_head(state: &mut AppState, wall_ms: u64) {
         .radar_movies
         .set_scenario_pause(pause)
     {
-        crate::app::match_runtime::scenario_pause::apply_service(state, input);
+        crate::app::match_runtime::scenario_pause::apply_pause_service(state, input);
     }
     reconcile_pause_clock(&state.frontend.screen, &mut state.match_state, wall_ms);
     let voice_volume = state
@@ -648,7 +648,7 @@ fn play_head(state: &mut AppState, wall_ms: u64) {
             );
         }
         if let Some(input) = service {
-            crate::app::match_runtime::scenario_pause::apply_service(state, input);
+            crate::app::match_runtime::scenario_pause::apply_pause_service(state, input);
         }
         if !has_next {
             //657C2C..657C5B: ResumeAfterMovie, EndLooping, MovieOff.
@@ -727,9 +727,9 @@ pub(crate) fn retire(state: &mut AppState, wall_ms: u64) {
         radar.retire_movies();
     }
     if held {
-        crate::app::match_runtime::scenario_pause::apply_service(
+        crate::app::match_runtime::scenario_pause::apply_pause_service(
             state,
-            ScenarioServiceInput::Resume,
+            ScenarioPauseInput::Resume,
         );
     }
     state.audio.retire_movie_audio(wall_ms);
@@ -752,7 +752,7 @@ pub(crate) fn release_saved_scenario_hold(
     held: bool,
 ) -> Vec<crate::sim::trigger_runtime::TriggerEffect> {
     if held {
-        sim.resume_scenario()
+        sim.resume_scenario().into()
     } else {
         Vec::new()
     }
@@ -908,8 +908,8 @@ mod tests {
                     "finish" => movies.finish_playing().1,
                     _ => unreachable!(),
                 };
-                let effects = input.map_or_else(Vec::new, |input| {
-                    log.apply_scenario_service(&mut sim, input)
+                let effects: Vec<TriggerEffect> = input.map_or_else(Vec::new, |input| {
+                    log.apply_scenario_pause(&mut sim, input).into()
                 });
                 let events: Vec<_> = effects
                     .iter()

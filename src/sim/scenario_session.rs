@@ -3263,3 +3263,4 @@ mod tests {
 }
 
 mod pause;
+pub use pause::ScenarioPauseChange;

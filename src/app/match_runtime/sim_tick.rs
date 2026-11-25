@@ -25,7 +25,7 @@ use crate::app::renderer_state::RendererState;
 use crate::app::types::SIM_TICK_MS;
 use crate::map::terrain;
 use crate::sim::production;
-use crate::sim::replay::{ReplayLog, ScenarioServiceInput};
+use crate::sim::replay::ReplayLog;
 use crate::sim::trigger_runtime::TriggerEffect;
 use crate::sim::world::{FrameEffects, LifecycleOutput, SimFrameOutput, TickLane};
 use crate::ui::game_screen::GameScreen;
@@ -1451,7 +1451,7 @@ fn advance_in_game_runtime_mode(
                 wall_ms,
             );
         }
-        super::scenario_pause::apply_service(state, ScenarioServiceInput::StepChronoScreen);
+        super::scenario_pause::apply_chrono_screen_step(state);
         state
             .platform
             .frame_pacer
