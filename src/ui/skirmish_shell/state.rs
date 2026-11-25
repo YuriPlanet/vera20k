@@ -18,7 +18,7 @@ pub(crate) use combos::{apply_combo_selection, combo_open};
 pub use combos::{
     available_color_choices, available_start_choices, combo_dropdown_max_visible_rows,
     combo_enabled, combo_items, combo_rect, country_choices, selected_combo_item,
-    selected_combo_item_index, team_choices,
+    selected_combo_item_index, team_choices, team_items,
 };
 pub(crate) use hit_test::status_help_key_for_hover_with_catalog;
 pub use hit_test::{

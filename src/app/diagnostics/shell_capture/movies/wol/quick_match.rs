@@ -66,7 +66,7 @@ impl WolCapture {
                 if grown {
                     ensure!(
                         lines.last().is_some_and(|line| line.ends_with('.'))
-                            && qm::stage(state) == stage::REQUESTED,
+                            && qm::stage(state.frontend.wol.as_ref()) == stage::REQUESTED,
                         "0x117's timer did not add a dot at stage 4: {lines:?}"
                     );
                     self.event(frame, json!({"0x117 after a dot": lines}));
@@ -89,7 +89,7 @@ impl WolCapture {
                     !visit.authenticated()
                         && visit.lobby().is_none()
                         && visit.mode().is_none()
-                        && qm::dialog(state).is_none()
+                        && qm::dialog(state.frontend.wol.as_ref()).is_none()
                         && state.match_state.session.network_setup().is_none(),
                     "the runner's end did not log out to a fresh 0x10E"
                 );
@@ -134,7 +134,7 @@ impl WolCapture {
             "the runner did not list the chat lobbies: {requests:?}"
         );
         ensure!(
-            Self::lobby(state)?.wait.is_some() && qm::dialog(state).is_none(),
+            Self::lobby(state)?.wait.is_some() && qm::dialog(state.frontend.wol.as_ref()).is_none(),
             "the lobby list must wait behind 0xC4 without 0x117"
         );
         let channels = match self.target {
@@ -157,7 +157,10 @@ impl WolCapture {
                 self.phase = WolPhase::Qm(QmPhase::Box("WOL:MatchingServerUnavailable"));
             }
             _ => {
-                ensure!(qm::dialog(state).is_some(), "Lob_40_ did not open 0x117");
+                ensure!(
+                    qm::dialog(state.frontend.wol.as_ref()).is_some(),
+                    "Lob_40_ did not open 0x117"
+                );
                 // 0x0079FEAC: the buddy mirror restarts, then stage 2 joins.
                 let requests = self.requests(state, frame)?;
                 ensure!(
@@ -173,7 +176,7 @@ impl WolCapture {
                 );
                 service_event(state, WolServiceEvent::Buddies(Ok(Vec::new())));
                 ensure!(
-                    qm::stage(state) == stage::IN_LOBBY,
+                    qm::stage(state.frontend.wol.as_ref()) == stage::IN_LOBBY,
                     "the join did not move to stage 3"
                 );
                 self.phase = WolPhase::Qm(QmPhase::Join);
@@ -238,9 +241,9 @@ impl WolCapture {
                 && request.locale == Some(2)
                 && request.width > 0
                 && text.contains(", LOC=2, RAT=0, RES=")
-                && qm::stage(state) == stage::REQUESTED,
+                && qm::stage(state.frontend.wol.as_ref()) == stage::REQUESTED,
             "the request to {matchbot}: {text:?} at stage {}",
-            qm::stage(state)
+            qm::stage(state.frontend.wol.as_ref())
         );
         self.event(
             frame,
@@ -256,7 +259,7 @@ impl WolCapture {
             }
             WolTarget::QmMatchbotLines => self.qm_lines(state, frame)?,
             WolTarget::QmTimeout | WolTarget::QmTimeoutOk => {
-                qm::expire_stage(state);
+                qm::expire_stage(state.frontend.wol.as_mut());
                 self.event(frame, "stage 4's 180 s expired");
                 self.phase = WolPhase::Qm(QmPhase::Box("WOL:MatchTimeout"));
             }
@@ -267,7 +270,10 @@ impl WolCapture {
                     .button_rect(crate::ui::wol_quick_match::CANCEL)
                     .context("0x117 Cancel")?;
                 welcome_click(state, cancel);
-                ensure!(qm::dialog(state).is_none(), "Cancel did not close 0x117");
+                ensure!(
+                    qm::dialog(state.frontend.wol.as_ref()).is_none(),
+                    "Cancel did not close 0x117"
+                );
                 let requests = self.requests(state, frame)?;
                 ensure!(
                     requests == [WolServiceRequest::LeaveChannel],
@@ -319,13 +325,13 @@ impl WolCapture {
             self.expect_rows(state, frame, from, &[expected])?;
             if text == "Working" {
                 ensure!(
-                    qm::stage(state) == stage::WORKING,
+                    qm::stage(state.frontend.wol.as_ref()) == stage::WORKING,
                     "Working did not move stage 4 to 5"
                 );
             }
         }
         ensure!(
-            qm::stage(state) == stage::WORKING,
+            qm::stage(state.frontend.wol.as_ref()) == stage::WORKING,
             "a fail line changed the stage"
         );
         self.event(frame, json!({"0x117 rows": qm_rows(state)?}));
@@ -339,7 +345,7 @@ impl WolCapture {
         let requests = self.requests(state, frame)?;
         match self.target {
             WolTarget::QmNoAgent | WolTarget::QmServerUnavailable => ensure!(
-                requests.is_empty() && qm::dialog(state).is_none(),
+                requests.is_empty() && qm::dialog(state.frontend.wol.as_ref()).is_none(),
                 "the lobby-list box sent {requests:?} or opened 0x117"
             ),
             _ => {
@@ -365,7 +371,7 @@ impl WolCapture {
         let requests = self.requests(state, frame)?;
         ensure!(
             box_body(state).is_none()
-                && qm::dialog(state).is_none()
+                && qm::dialog(state.frontend.wol.as_ref()).is_none()
                 && requests.contains(&WolServiceRequest::Logout),
             "the box's OK did not end the runner: {requests:?}"
         );
@@ -393,7 +399,7 @@ impl WolCapture {
         ];
         self.expect_rows(state, frame, from, &found)?;
         ensure!(
-            qm::stage(state) == stage::CREATING,
+            qm::stage(state.frontend.wol.as_ref()) == stage::CREATING,
             "the host's Start did not move to stage 6"
         );
         let requests = self.requests(state, frame)?;
@@ -432,9 +438,10 @@ impl WolCapture {
         let waiting = csf_name(state, "WOL:MatchWaitingForJoin", PEER);
         self.expect_rows(state, frame, from, &[waiting])?;
         ensure!(
-            crate::app::shell_network_setup::quick_match(state)
-                && state.match_state.session.host()
-                && qm::dialog(state).is_some()
+            crate::app::shell_network_setup::quick_match(
+                state.frontend.network_setup_protocol.as_ref()
+            ) && state.match_state.session.host()
+                && qm::dialog(state.frontend.wol.as_ref()).is_some()
                 && state.frontend.shell_route != ShellRoute::NetworkSetup,
             "the create did not run the host's nodes headless under 0x117"
         );
@@ -554,17 +561,18 @@ impl WolCapture {
             },
         );
         let requests = setup_requests(state);
-        let users: Vec<String> = crate::app::shell_wol::lobby::member_names(state)
-            .rev()
-            .map(str::to_owned)
-            .collect();
+        let users: Vec<String> =
+            crate::app::shell_wol::lobby::member_names(state.frontend.wol.as_ref())
+                .rev()
+                .map(str::to_owned)
+                .collect();
         ensure!(
             users.len() == 2
                 && requests
                     == [NetworkSetupRequest::StartGame {
                         users: users.clone()
                     }]
-                && qm::stage(state) == stage::WAITING,
+                && qm::stage(state.frontend.wol.as_ref()) == stage::WAITING,
             "the guest's A1 did not request the start for {users:?}: {requests:?}"
         );
         self.event(frame, json!({"guest A1: StartGame": users}));
@@ -581,9 +589,10 @@ impl WolCapture {
                 pings: pings.to_vec(),
             },
         )?;
-        let names = setup::verify(state).map(|verify| verify.names.clone());
+        let names = setup::verify(state.frontend.network_setup_protocol.as_ref())
+            .map(|verify| verify.names.clone());
         ensure!(
-            qm::dialog(state).is_none()
+            qm::dialog(state.frontend.wol.as_ref()).is_none()
                 && names.as_deref() == Some(&[NICKNAME.to_owned(), PEER.to_owned()][..]),
             "OnGameStart did not close 0x117 and open 0x130: {names:?}"
         );
@@ -602,7 +611,8 @@ impl WolCapture {
         setup::service_event(state, NetworkSetupEvent::Negotiated { result: 0 })?;
         let requests = self.requests(state, frame)?;
         ensure!(
-            requests.contains(&WolServiceRequest::LeaveChannel) && setup::verify(state).is_none(),
+            requests.contains(&WolServiceRequest::LeaveChannel)
+                && setup::verify(state.frontend.network_setup_protocol.as_ref()).is_none(),
             "the negotiation did not close 0x130 and leave the game channel: {requests:?}"
         );
         MoviesCapture::restore_neutral_pointer(state);
@@ -630,7 +640,7 @@ impl WolCapture {
         ];
         self.expect_rows(state, frame, from, &found)?;
         ensure!(
-            qm::stage(state) == stage::SEARCHING,
+            qm::stage(state.frontend.wol.as_ref()) == stage::SEARCHING,
             "the guest's Start did not move to stage 7"
         );
         let requests = self.requests(state, frame)?;
@@ -652,7 +662,7 @@ impl WolCapture {
             game_flags: 0x800 + QM_LOBBY_NUMBER,
             ex_info: format!(
                 "{EX_INFO_VERSION},{},0,0,0,",
-                crate::app::shell_wol::lobby::local_ini_hash(state).unwrap_or(0)
+                crate::app::shell_wol::lobby::local_ini_hash(&state.process_assets).unwrap_or(0)
             ),
             ..Default::default()
         };
@@ -689,10 +699,12 @@ impl WolCapture {
         let joined = state.csf_text("WOL:MatchJoinedGame");
         self.expect_rows(state, frame, from, &[joined])?;
         ensure!(
-            qm::stage(state) == stage::WAITING
-                && crate::app::shell_network_setup::quick_match(state)
+            qm::stage(state.frontend.wol.as_ref()) == stage::WAITING
+                && crate::app::shell_network_setup::quick_match(
+                    state.frontend.network_setup_protocol.as_ref()
+                )
                 && !state.match_state.session.host()
-                && qm::dialog(state).is_some()
+                && qm::dialog(state.frontend.wol.as_ref()).is_some()
                 && state.frontend.shell_route != ShellRoute::NetworkSetup,
             "the join did not run the guest's nodes headless under 0x117 at stage 9"
         );
@@ -711,8 +723,12 @@ impl WolCapture {
             setup::service_event(state, NetworkSetupEvent::CooperativeCampaign(text.clone()))?;
             self.event(frame, json!({"host C0": text}));
             options.launch.selected_map_file = Some(QC_HOST_MAP.to_owned());
-            options.map_metadata =
-                crate::app::shell_network_setup::local_map_metadata(state, QC_HOST_MAP)?;
+            options.map_metadata = crate::app::shell_network_setup::local_map_metadata(
+                state.platform.game_config.as_ref(),
+                &state.frontend.scenario_catalog,
+                &state.process_assets,
+                QC_HOST_MAP,
+            )?;
         }
         setup::service_event(state, NetworkSetupEvent::HostSetup(options))?;
         let requests = setup_requests(state);
@@ -733,7 +749,10 @@ impl WolCapture {
     /// `0x122` after the match: its question names the opponent; Yes for
     /// the second target.
     fn qm_add_buddy(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let text = crate::app::shell_wol::persona::add_buddy_text(state);
+        let text = crate::app::shell_wol::persona::add_buddy_text(
+            state.frontend.wol.as_ref(),
+            &state.process_assets,
+        );
         let expected = csf_name(state, "WOL:AddBuddyQuery", PEER);
         ensure!(
             text.as_deref() == Some(expected.as_str()),
@@ -859,7 +878,7 @@ fn matchbot_says(
 }
 
 fn qm_rows(state: &AppState) -> Result<Vec<String>> {
-    Ok(qm::dialog(state)
+    Ok(qm::dialog(state.frontend.wol.as_ref())
         .context("0x117")?
         .ui
         .lines

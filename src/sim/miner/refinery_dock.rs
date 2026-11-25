@@ -515,8 +515,7 @@ pub(crate) fn pay_refinery_owner(
     let Some(owner) = sim.substrate.entities.get(building).map(|b| b.owner()) else {
         return;
     };
-    let purifiers =
-        super::miner_system::effective_purifier_count(sim, rules, sim.interner.resolve(owner));
+    let purifiers = super::miner_system::effective_purifier_count(sim, rules, owner);
     let amount = X87::store_f32_masked_chop(X87::load_i32(bales));
     //73E42B..73E441 /522DCD..522DE3: count * bonus * amount,
     //stored to float BEFORE the base payment and positive-bonus test.

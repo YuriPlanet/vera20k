@@ -161,9 +161,10 @@ fn latches(value: &serde_json::Value) -> HouseAiActivationLatches {
 
 fn supply_rng(sim: &mut Simulation, states: &serde_json::Value) {
     use crate::sim::rng::SimRng;
-    sim.scenario_rng = SimRng::from_native_state_hex_for_test(states["scenario"].as_str().unwrap());
-    sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap());
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(states["mapgen"].as_str().unwrap());
+    *sim.scenario_rng =
+        SimRng::from_native_state_hex_for_test(states["scenario"].as_str().unwrap());
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap());
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(states["mapgen"].as_str().unwrap());
 }
 
 fn assert_rng(sim: &Simulation, states: &serde_json::Value, context: &str) {
@@ -931,7 +932,7 @@ fn house_base_control_scene(
 ) -> (Simulation, crate::sim::intern::InternedId) {
     let mut sim = Simulation::with_seed(31);
     crate::sim::arena_fixture::flat_ground(&mut sim, rules);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let owner = sim.interner.intern("AIHouse");
     let country = sim.interner.intern("Americans");
     sim.houses

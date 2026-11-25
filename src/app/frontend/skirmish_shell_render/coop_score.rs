@@ -31,7 +31,7 @@ pub(crate) fn render_coop_score(
     let layout = crate::app::input::coop_score::layout(state);
     let scale = layout.page.scale;
     let (width, height) = (state.render_width(), state.render_height());
-    let fills = crate::app::frontend::shell_layout::fills_window(state);
+    let fills = crate::app::frontend::shell_layout::fills_window(&state.renderer.gpu);
     let (can_continue, map_index) = {
         let model = &state.frontend.coop_score_page.as_ref().expect("view").model;
         (model.can_continue, model.map_index)
@@ -201,7 +201,19 @@ pub(crate) fn render_coop_score(
         ..Default::default()
     };
     let mut body = match controller.root_in(dialog) {
-        Some(root) => super::gui_paint::paint_gui_with(state, atlas, gui, root, scale, &[], style),
+        Some(root) => super::gui_paint::paint_gui_with(
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            atlas,
+            gui,
+            root,
+            scale,
+            &[],
+            style,
+        ),
         None => Default::default(),
     };
     let controls = body.take_lane(Material::Controls);
@@ -228,7 +240,11 @@ pub(crate) fn render_coop_score(
         };
         let ids = layout.page.buttons.iter().map(|button| button.id);
         let buttons = super::gui_paint::paint_gui_ids(
-            state,
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
             controller.gui(),
             root,
             ids.filter(|id| shown(*id)),

@@ -731,24 +731,24 @@ pub(super) fn receiver_anger_delta(final_damage: i32, strength: i32, cost: i32) 
 /// TechnoClass::ReceiveDamage PostMortem interpolation at 0x00701ED0.
 /// `CellSpread` and `DelayKillAtMax` are native binary32 inputs; every other
 /// operand is signed i32 and the two ftol results use their low dword.
+///
+/// For a non-finite or out-of-range duration, the masked conversion in
+/// `Math__ftol @ 0x007C5F00` yields the signed qword's integer indefinite.
+/// The timer receives its low dword, zero.
 fn postmortem_delay_duration(warhead: &WarheadType, distance_leptons: i32) -> i32 {
-    let base = X87Chop53::load_i32(warhead.delay_kill_frames);
-    let at_max = X87Chop53::load_f32(NativeF32Bits::from_bits(
+    use crate::util::native_x87::MaskedX87Chop53 as X87;
+    let base = X87::load_i32(warhead.delay_kill_frames);
+    let at_max = X87::load_f32(NativeF32Bits::from_bits(
         (warhead.delay_kill_at_max_f64 as f32).to_bits(),
-    ))
-    .expect("DelayKillAtMax parser retains a finite native f32");
-    let slope = X87Chop53::sub(X87Chop53::mul(at_max, base), base);
+    ));
+    let slope = X87::sub(X87::mul(at_max, base), base);
     let denominator = cell_spread::whole_cells(warhead.cell_spread_f64).wrapping_shl(8);
-    let Ok(slope_per_lepton) = X87Chop53::div(slope, X87Chop53::load_i32(denominator)) else {
-        // Masked x87 divide-by-zero/non-finite conversion yields the integer
-        // indefinite qword; Math__ftol returns its low dword, which is zero.
-        return 0;
-    };
-    let delay = X87Chop53::add(
+    let slope_per_lepton = X87::div(slope, X87::load_i32(denominator));
+    let delay = X87::add(
         base,
-        X87Chop53::mul(X87Chop53::load_i32(distance_leptons), slope_per_lepton),
+        X87::mul(X87::load_i32(distance_leptons), slope_per_lepton),
     );
-    X87Chop53::ftol_i32_low_masked(delay)
+    X87::ftol_i32_low_masked(delay)
 }
 
 pub(super) fn postmortem_duration_for_event(
@@ -906,5 +906,44 @@ mod house_damage_tests {
             receive("AffectsAllies=yes\nAffectsEnemies=no\n", true, true, None),
             0,
         );
+    }
+}
+
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod postmortem_delay_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+
+    fn armed_duration(delay_kill_at_max: &str) -> i32 {
+        let ini = IniFile::from_str(&format!(
+            "[VehicleTypes]\n\
+             [BuildingTypes]\n0=BARREL\n\
+             [Warheads]\n0=W\n\
+             [BARREL]\nStrength=5\nArmor=concrete\nEligibleForDelayKill=yes\n\
+             [W]\nCellSpread=4\nPercentAtMax=1\nCausesDelayKill=yes\n\
+             DelayKillFrames=5\nDelayKillAtMax={delay_kill_at_max}\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+        ));
+        let rules = RuleSet::from_ini(&ini).expect("PostMortem rules");
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.resolve_type_handles(&rules);
+        let barrel = sim
+            .spawn_object("BARREL", "Neutral", 8, 5, 0, &rules)
+            .expect("barrel spawns");
+        let warhead = sim.interner.intern("W");
+        let hit = EntityDamageEvent::area(barrel, 10, 512, RAD_NO_ATTACKER, None, warhead);
+        sim.commit_noncombat_aoe_hits(&rules, None, &[hit], &mut Default::default());
+        sim.entities()
+            .get(barrel)
+            .and_then(|entity| entity.building.pending_c4_detonation.pending())
+            .expect("a qualifying fatal hit becomes PostMortem")
+            .timer()
+            .duration()
+    }
+
+    #[test]
+    fn postmortem_arms_the_native_duration_for_finite_and_overflowing_multipliers() {
+        assert_eq!(armed_duration("7"), 20);
+        assert_eq!(armed_duration("1e39"), 0);
     }
 }

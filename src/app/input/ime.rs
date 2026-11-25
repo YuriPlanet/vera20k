@@ -109,8 +109,8 @@ impl ImeState {
 /// The dialogs the key dispatch serves first leave none.
 fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
     if state.main_menu_dialog_open()
-        || crate::app::input::coop_score::active(state)
-        || crate::app::frontend::preview_zoom::is_open(state)
+        || crate::app::input::coop_score::active(&state.frontend)
+        || crate::app::frontend::preview_zoom::is_open(&state.frontend.preview_zoom)
     {
         return None;
     }
@@ -132,7 +132,11 @@ fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
         let (target, layout) = match crate::app::input::precedence::input_layer(state) {
             InputLayer::Screen(ScreenPage::LoadSavedGame) => (
                 ImeTarget::MainMenuConversionName,
-                crate::app::frontend::shell_layout::load_saved_game_layout(state).browser,
+                crate::app::frontend::shell_layout::load_saved_game_layout(
+                    &state.renderer.gpu,
+                    &state.frontend,
+                )
+                .browser,
             ),
             InputLayer::Screen(ScreenPage::InGameShell(InGameMenuState::SavedGame(_))) => (
                 ImeTarget::InGameConversionName,
@@ -143,7 +147,14 @@ fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
         let rect = layout.name_edit?;
         // The launcher is in window pixels. An active-game shell's edit
         // shares the text's sidebar and match zoom before it reaches them.
-        let rect = match crate::app::presentation::window_ui::shell_raster(state, true) {
+        let rect = match crate::app::presentation::window_ui::shell_raster(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+            true,
+        ) {
             Some(raster) => {
                 let at = ScissorRect::of(TextRect::of(rect), raster);
                 RectPx::new(at.x as i32, at.y as i32, at.w as i32, at.h as i32)
@@ -155,7 +166,11 @@ fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
     [
         (
             ImeTarget::InGameChat,
-            crate::app::input::messages::ime_edit_rect(state),
+            crate::app::input::messages::ime_edit_rect(
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state.match_presentation,
+            ),
         ),
         (
             ImeTarget::LanLobbyChat,

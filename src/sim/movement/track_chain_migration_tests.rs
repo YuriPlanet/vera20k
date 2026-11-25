@@ -87,9 +87,9 @@ fn chain_fixture(passive: bool) -> (Simulation, RuleSet, TrackInvocation) {
         .position
         .set_sub_y_for_test(SimFixed::from_num(xy[1] % 256));
     sim.substrate.entities.insert(mover);
-    sim.interner = test_interner();
-    sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
-    sim.path_grid = Some(std::sync::Arc::new(PathGrid::test_all_passable(24, 24)));
+    *sim.interner = test_interner();
+    *sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
+    *sim.path_grid = Some(std::sync::Arc::new(PathGrid::test_all_passable(24, 24)));
     (
         sim,
         rules,
@@ -128,8 +128,8 @@ fn add_blocker(sim: &mut Simulation, moving: bool) {
         blocker.set_foot_occupation_enabled(true);
     }
     sim.substrate.entities.insert(blocker);
-    sim.interner = test_interner();
-    sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
+    *sim.interner = test_interner();
+    *sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
 }
 
 fn assert_old_chain_continues(sim: &Simulation) {
@@ -167,8 +167,8 @@ fn production_chain_code3_opens_gate_without_consuming_the_queue() {
     gate.lifecycle.set_in_limbo_for_test(false);
     gate.lifecycle.set_cell_marked_for_test(true);
     sim.substrate.entities.insert(gate);
-    sim.interner = test_interner();
-    sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
+    *sim.interner = test_interner();
+    *sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
     let rng_before = sim.scenario_rng.logical_state();
     let mut per_cell = 0;
     sim.run_track_points_observed(invocation, 8, Some(&rules), None, &mut |_, _, event| {
@@ -196,8 +196,8 @@ fn production_chain_code6_scatters_the_head_cell_without_adopting_the_candidate(
     on_head.lifecycle.set_in_limbo_for_test(false);
     on_head.lifecycle.set_cell_marked_for_test(true);
     sim.substrate.entities.insert(on_head);
-    sim.interner = test_interner();
-    sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
+    *sim.interner = test_interner();
+    *sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
     // The Unit receiver's Find_Nearby_Passable_Cell bounds its search by the
     // map Size.
     sim.set_playfield_bounds_for_test(Some(crate::sim::arena_fixture::OPEN_PLAYFIELD));
@@ -355,8 +355,8 @@ fn accepted_chain_per_cell_crush_finishes_lifecycle_in_list_order_before_continu
         victim.lifecycle.set_cell_marked_for_test(true);
         sim.substrate.entities.insert(victim);
     }
-    sim.interner = test_interner();
-    sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
+    *sim.interner = test_interner();
+    *sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
     let expected = sim
         .substrate
         .occupancy

@@ -268,6 +268,7 @@ impl FootParasite {
 #[cfg(any(test, feature = "test-support"))]
 impl FootParasite {
     pub(crate) fn set_eater_for_test(&mut self, eater: Option<u64>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.eater = eater;
     }
 
@@ -305,9 +306,7 @@ fn weapon_zero<'r>(
     object: &ObjectType,
     veterancy: u16,
 ) -> Option<&'r crate::rules::weapon_type::WeaponType> {
-    super::combat_weapon::weapon_for_index(object, veterancy, 0)
-        .and_then(|record| record.weapon_id)
-        .and_then(|name| rules.weapon(name))
+    super::combat_weapon::weapon_for_index(object, veterancy, 0)?.weapon(rules)
 }
 
 impl Simulation {
@@ -383,12 +382,10 @@ impl Simulation {
             Some(rules.overlay_registry()),
             effects,
         );
-        self.substrate
-            .entities
-            .get_mut(victim)
-            .unwrap()
-            .parasite
-            .eater = Some(owner);
+        let victim_entity = self.substrate.entities.get_mut(victim).unwrap();
+        // The eater is a holding any expiry reaches (the pointer-expiry index).
+        let _ = victim_entity.note_names();
+        victim_entity.parasite.eater = Some(owner);
         if let Some(state) = self
             .substrate
             .entities

@@ -130,7 +130,7 @@ fn native_reveal_zone_dispatch_uses_literal_waypoint_raw_zone_and_radius_two() {
         }))
         .unwrap();
         let mut sim = Simulation::with_seed(31);
-        sim.zone_grid = Some(zones);
+        *sim.zone_grid = Some(zones);
         sim.install_resolved_terrain_for_new_map(terrain);
         sim.install_fixture_path_grid(Some(&path));
         sim.set_playfield_bounds_for_test(Some(bounds(row)));
@@ -138,7 +138,7 @@ fn native_reveal_zone_dispatch_uses_literal_waypoint_raw_zone_and_radius_two() {
         let player = sim.interner.intern("Player");
         let other = sim.interner.intern("Other");
         sim.session.set_current_house_for_test(Some(player));
-        sim.fog = FogState::new(128, 128);
+        *sim.fog = FogState::new(128, 128);
         if row["input"]["latch"] == 1 {
             sim.fog.reveal_all_for_owner(player);
         }
@@ -191,7 +191,7 @@ fn native_reveal_zone_dispatch_uses_literal_waypoint_raw_zone_and_radius_two() {
             "[General]\nRevealTriggerRadius=0\nRevealByHeight=yes\n",
         ))
         .unwrap();
-        sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
+        *sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
         assert_eq!(
             rng_hashes(&sim),
             row["rng_before"],

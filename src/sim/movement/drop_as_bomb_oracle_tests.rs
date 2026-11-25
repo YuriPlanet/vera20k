@@ -57,7 +57,7 @@ mod tests {
             rules.general.parachute_max_fall_rate = int(input, "parachute_cap", -3);
             rules.general.no_parachute_max_fall_rate = int(input, "free_cap", -100);
             let mut sim = Simulation::new();
-            sim.interner = crate::sim::intern::test_interner();
+            *sim.interner = crate::sim::intern::test_interner();
             let mut entity = GameEntity::test_default(1, "E1", "Americans", 10, 10);
             let z = int(input, "z", 416);
             entity.set_fall_rate_for_test(int(input, "rate", 0));
@@ -135,8 +135,8 @@ mod tests {
         use crate::sim::snapshot::GameSnapshot;
 
         let mut sim = Simulation::new();
-        sim.interner = crate::sim::intern::test_interner();
-        sim.scenario_rng = SimRng::new(0);
+        *sim.interner = crate::sim::intern::test_interner();
+        *sim.scenario_rng = SimRng::new(0);
         let house = sim.interner.intern("Americans");
         sim.houses
             .register(HouseState::new(house, 0, None, true, 0, 10));

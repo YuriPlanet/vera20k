@@ -199,6 +199,7 @@ pub(crate) fn calculate_ai_threat_score(
     terrain: Option<&ResolvedTerrainGrid>,
     alliances: Option<&HouseAlliances>,
     scorer_enemy_house: Option<crate::sim::intern::InternedId>,
+    frame: i32,
 ) -> Option<MaskedX87Value> {
     let scorer = entities.get(scorer_id)?;
     let scorer_type = interner.object_type(scorer.type_ref(), rules)?;
@@ -218,6 +219,7 @@ pub(crate) fn calculate_ai_threat_score(
         coefficients,
         super::greatest_threat::ThreatReference::NullCoord,
         scorer_enemy_house,
+        frame,
     )
 }
 
@@ -245,6 +247,7 @@ pub(crate) fn retaliation_weapon_index(
         source_type,
         world.resolved_terrain.as_ref(),
         allied,
+        world.session.binary_frame() as i32,
         rules,
         &world.interner,
     );
@@ -447,6 +450,7 @@ pub(crate) fn should_retaliate(
                 world.resolved_terrain.as_ref(),
                 Some(&world.house_alliances),
                 victim_enemy,
+                world.session.binary_frame() as i32,
             ),
             calculate_ai_threat_score(
                 entities,
@@ -457,6 +461,7 @@ pub(crate) fn should_retaliate(
                 world.resolved_terrain.as_ref(),
                 Some(&world.house_alliances),
                 victim_enemy,
+                world.session.binary_frame() as i32,
             ),
         )
         && retaliation_score_refuses(current_score, source_score)

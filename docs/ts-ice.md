@@ -4,11 +4,98 @@ Firestorm's snow maps had ice that gives way. A heavy unit driving onto ice crac
 a sound; a heavier one, or a unit on ice that is already cracked, breaks it and sinks, and
 so does every other vehicle standing there. A crack freezes over after a while, and open
 water the map marks for ice grows back. Yuri's Revenge still reads the rules keys but has
-no ice code. VERA runs Firestorm's ice on a Snow theater whose theater INI gives the three
-ice sets their 64 tiles each and the ice shore set at least one tile. Retail `SNOWMD.INI`
-names all four sets with no tiles in them, so stock games play as before: no extra random
-draw or timer, and saves carry the ice fields empty. Retail `RULESMD.INI` also sets both
-weights to 50.0, which no retail unit reaches.
+no ice code. Choose **Ice Lake** in Skirmish to try the breakable ice.
+The two bases face each other across a frozen shortcut. Grizzlies crack fresh ice,
+Rhinos and Apocalypse tanks break through, and either shore gives a dry route
+around the lake.
+
+**Arctic Circle 16 - Ice Passages** is also available in Skirmish. Its 30 start
+positions and road bridges come from *Arctic Circle 16*, uploaded to the VERA
+map library by LingGuGu. The ice variant adds a north and south passage to
+each of the three central gem islands and crossings on the northwest and
+southeast flanks. Both maps work offline with the original YR game data.
+The Windows installer puts the [Arctic map](../maps/Arctic_Circle_16_Ice_Passages.map)
+in `VERA20k/Maps`. On macOS and Linux, the game copies it from the app into
+the profile's `Maps` folder on first launch. You can edit the file or remove it.
+Select the map in Skirmish to play with the ice crossings. The map enables them automatically.
+
+## Use the bundled ice in a map
+
+Start from a Yuri's Revenge snow map. Set these keys in the map itself:
+
+```ini
+[Basic]
+NewINIFormat=4
+IceGrowthEnabled=yes
+
+[Map]
+Theater=SNOW
+VeraIce=yes
+
+[General]
+IceCrackingWeight=2.0
+IceBreakingWeight=4.0
+```
+
+This map option loads stock Yuri's Revenge snow terrain plus VERA's ice, even
+when a mod is selected. A map using a mod's own snow tiles should use its
+theater configuration instead. Paint ice where vehicles should be able to cross.
+The four bundled sets use fixed tile numbers. Each tile has one cell, at sub-tile 0.
+
+| Tiles | What to paint |
+| --- | --- |
+| 4096–4159, 4160–4223, 4224–4287 | Three ice styles. The first tile in each set is solid ice. Add 16 for its cracked tile or 63 for open water. Offsets 1–15 smooth the ice and 17–62 draw water beside ice. |
+| 4288–4335 | Three sets of 16 shore tiles. Start at 4288, 4304 or 4320. Add 1 for a snowbank on the north cell edge, 2 east, 4 south and 8 west. Shore uses Beach movement. Leave openings of solid ice where tanks can enter. |
+
+For example, paint tile 4096 across a lake, at least two cells wide, and leave
+a dry route for heavy vehicles. In World-Altering Editor, choose **Edit → Toggle IceGrowth** and brush the
+cells that may refreeze. Use **Clear IceGrowth** on permanent water. The
+last byte of each `IsoMapPack5` cell record holds that flag (1 or 0). A newly made crack
+also has its own solidifying timer. The map's rules can set
+`IceGrowthRate=`, `IceSolidifyFrameTime=` and each vehicle's `Weight=`.
+Retail YR sets both weight thresholds to 50.0. Ice Lake sets the thresholds
+to 2 and 4 and gives `MTNK`, `HTNK` and `APOC` weights 2, 4 and 5.
+[Ice Lake map](../src/map/bundled/vera-ice-lake.map)
+
+### Paint the tiles in an editor
+
+The installer ships `vera_ice.mix` and `vera_ice_tiles.ini` together. On Windows,
+open the `Terrain` folder beside `vera20k.exe`. On macOS and Linux, start the game
+once, then open `Terrain` beside `VERA.INI` in your VERA20k settings folder.
+The defaults are `~/Library/Application Support/VERA20k/Terrain` on macOS and
+`~/.local/share/VERA20k/Terrain` on Linux. VERA maintains these release files.
+Make any edits in your own editor or mod folder.
+
+In World-Altering Editor with a Yuri's Revenge profile:
+
+1. Use a separate editor data directory with access to your YR files. Copy
+   [vera_ice.mix](../Terrain/vera_ice.mix) into a search directory
+   from the profile's `FileManagerConfig.ini`. Under `[MIXFiles]`, add
+   `N=vera_ice.mix`, replacing `N` with the next unused number.
+2. Start with an editor-only copy of stock `SNOWMD.INI`. Replace the four ice
+   entries in its existing `[General]` section with the values in
+   [vera_ice_tiles.ini](../Terrain/vera_ice_tiles.ini). Append the five
+   `[TileSet0083]` through `[TileSet0087]` sections from the same file. Stock
+   snow uses tiles 0–963. The first added section reserves the gap to 4096.
+3. Reopen the editor and load a snow map. Select **VERA Ice 1**, **VERA Ice 2**,
+   **VERA Ice 3** or **VERA Ice Shore** in the tile browser. Save your map with
+   the keys above. You can check the setup by opening the Ice Lake example:
+   its central crossing should show ice on both banks and open pools away
+   from the middle.
+4. Put the finished map in VERA's `Maps` folder. Share just the map file with
+   other players. VERA supplies the artwork when it loads the map. The [game files notice](../LEGAL.md#game-files) covers the bundled tile art.
+
+The editor numbers tiles by their order in the theater and supports named MIX
+archives in its file-manager configuration.
+[World-Altering Editor terrain loader](https://github.com/CnCNet/WorldAlteringEditor/blob/83596ba0b1bdbb5ab6ac229b781c330aac0e4333/src/TSMapEditor/Rendering/TheaterGraphics.cs#L290-L363)
+· [Editor file configuration](https://github.com/CnCNet/WorldAlteringEditor/blob/83596ba0b1bdbb5ab6ac229b781c330aac0e4333/src/TSMapEditor/Config/Default/FileManagerConfig.ini)
+
+## Use a mod's ice theater
+
+A mod can supply its own snow ice graphics. The theater INI gives the three ice
+sets 64 tiles each and the ice shore set at least one tile. Retail `SNOWMD.INI`
+names all four sets with zero tiles. Stock maps therefore run no ice timer or
+extra random draws, and saves carry empty ice fields.
 
 ```ini
 ; SNOWMD.INI (the theater), numbered as Tiberian Sun's SNOW.INI

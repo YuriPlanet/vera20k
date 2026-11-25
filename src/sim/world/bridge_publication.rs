@@ -177,7 +177,7 @@ impl LivePublication<'_> {
         let Cell::Real(index) = cell else { return };
         let terrain = self.sim.resolved_terrain.as_ref().expect("live terrain");
         if !terrain.bridge_flag_authority_matches_shape(&self.sim.real_cell_bridge_flags_0x1180) {
-            self.sim.real_cell_bridge_flags_0x1180 =
+            *self.sim.real_cell_bridge_flags_0x1180 =
                 terrain.capture_real_cell_bridge_flags_0x1180();
         }
         let resolved = &terrain.cells()[index];

@@ -983,6 +983,10 @@ pub struct RuleSet {
     /// Whether Phobos plays in this game, decided once from its Rules
     /// projection by `rules::phobos_switch`. Read through [`Self::phobos`].
     phobos: bool,
+    /// Whether Kratos plays in this game, decided once from the reads its
+    /// processed rules and projection made by `rules::kratos_switch`. Read
+    /// through [`Self::kratos`].
+    kratos: bool,
     /// VERA: whether this game plays RA2 Mode (docs/ra2-mode.md), decided once
     /// at load from the launch's choice (`util::ra2_launch`). Read through
     /// [`Self::ra2`].

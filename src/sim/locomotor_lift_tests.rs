@@ -1595,7 +1595,7 @@ fn lift_links_and_drop_credit_are_saved_and_hashed() {
         .unwrap();
     let house = sim.interner.get("Americans").unwrap();
     // A load restarts the Scenario stream from Seed0; put the source there too.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     type Write = fn(&mut GameEntity, u64, crate::sim::intern::InternedId);
     let writes: [(u64, Write); 6] = [
         (magnetron, |entity, other, _| {

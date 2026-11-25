@@ -126,7 +126,14 @@ impl HiddenRun {
             Self::Capture(session) => session
                 .complete_after_readback(state, format, pixels)
                 .map(|()| true),
-            Self::Picture(session) => session.complete_after_readback(state, format, pixels),
+            Self::Picture(session) => session.complete_after_readback(
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                format,
+                pixels,
+            ),
         }
     }
 

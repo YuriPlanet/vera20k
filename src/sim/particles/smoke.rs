@@ -10,10 +10,13 @@
 
 use super::Particle;
 use super::wind::{SMOKE_WIND_DX, SMOKE_WIND_DY};
-use crate::rules::particle_type::ParticleType;
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::rules::particle_system_type::ParticleSystemType;
+use crate::rules::particle_type::{ParticleBehavesLike, ParticleType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
+use crate::util::forked::Forked;
 use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF32Bits};
 use glam::IVec3;
 
@@ -34,7 +37,7 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         .resolved_terrain
         .as_ref()
         .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-    let followed = sys
+    let mut followed = sys
         .owner_entity
         .filter(|&owner| {
             sim.substrate
@@ -57,45 +60,46 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
                 sys.offset.z,
             )
         });
-    if let Some(coords) = followed {
-        sim.substrate.particle_systems.get_mut(id).unwrap().coords = coords;
-    }
+    let frame = sim.session.binary_frame();
     //62EDC7..62EDDE re-reads Count after each synchronous child AI.
+    // VERA-only, results unchanged: the system is found once for each run of
+    // Smoke children, whose AI reads nothing of the world and runs on the
+    // child where it is stored. Any other child's AI may reach the whole
+    // world (Gas damage can append to this system), so it runs on a copy
+    // that the store takes back, and the system is found again after it.
     let mut index = 0;
-    while let Some(mut p) = sim
-        .particle_systems()
-        .get(id)
-        .and_then(|sys| sys.particles.get(index))
-        .cloned()
-    {
+    let count = loop {
+        let Some((sys, rng)) = sim
+            .substrate
+            .particle_systems
+            .system_and_rng_mut(id, &mut sim.scenario_rng)
+        else {
+            return;
+        };
+        if let Some(coords) = followed.take() {
+            sys.coords = coords;
+        }
+        while let Some(p) = sys.particles.get_mut(index) {
+            let pt = rules.particle_type(p.type_id);
+            if pt.behaves_like != ParticleBehavesLike::Smoke {
+                break;
+            }
+            super::system_ai::tick_smoke_particle(p, pt, frame, rng);
+            index += 1;
+        }
+        let Some(mut p) = sys.particles.get(index).cloned() else {
+            break sys.particles.len();
+        };
         super::system_ai::tick_particle(&mut p, sim, rules, owner_house, owner_entity);
         sim.substrate
             .particle_systems
             .commit_particle_tick(id, index, p);
         index += 1;
-    }
-    let Some(sys) = sim.particle_systems().get(id) else {
-        return;
     };
     //62EDE0 freezes the reverse walk's initial index: newly appended children
     //wait for their next AI visit; parent removal follows both births/fades.
-    for index in (0..sys.particles.len()).rev() {
-        let Some(mut p) = sim
-            .particle_systems()
-            .get(id)
-            .and_then(|sys| sys.particles.get(index))
-            .cloned()
-        else {
-            continue;
-        };
+    super::system_ai::move_or_destroy_children(sim, rules, id, count, |sim, p| {
         let pt = rules.particle_type(p.type_id);
-        if !p.marked_for_deletion {
-            super::system_ai::move_dispatch(&mut p, sim, rules);
-            sim.substrate
-                .particle_systems
-                .commit_particle_tick(id, index, p);
-            continue;
-        }
         if let Some(next) = pt.next_particle {
             let radius = pt.radius >> 3;
             let dx = symmetric_offset(radius, sim.particle_rng());
@@ -124,14 +128,16 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         {
             sim.retire_particle(particle, rules);
         }
-    }
+    });
 
     //62F047: Smoke ignores Spawns and ParticleCap. Offset draws precede
-    //the HoldsWhat lookup, even when the type index is absent.
-    super::system_ai::apply_fire_link_release(sim, id);
-    let Some(sys) = sim.particle_systems().get(id) else {
+    //the HoldsWhat lookup, even when the type index is absent. The owner's
+    //release of +0x304 comes before this read of the done byte.
+    let substrate = &mut sim.substrate;
+    let Some(sys) = substrate.particle_systems.get_mut(id) else {
         return;
     };
+    sys.apply_fire_link_release(&substrate.entities);
     let (done, alive, timer, owner, coords, target_coords) = (
         sys.done_spawning,
         sys.alive(),
@@ -140,58 +146,71 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         sys.coords,
         sys.target_coords,
     );
-    if !done && alive {
-        // gamemd traps on a zero period (`SpawnFrames=0`, or a negative
-        // `Slowdown=` walking the timer through zero); VERA spawns nothing
-        // that frame and the timer below still moves on.
-        let divisor = X87::ftol_i32_low_masked(X87::load_f32(timer));
-        if (sim.session.binary_frame() as i32).checked_rem(divisor) == Some(0)
-            //62F080..62F098: the tube test skips emission BEFORE its
-            //offset/constructor RNG draws. Existing particles, spawn
-            //accumulator and system lifetime still advance.
-            && !owner_in_tube(sim, owner)
-        {
-            // gamemd traps on `SpawnRadius=-1`; the helper's zero modulus
-            // makes VERA spawn at the system's own X and Y, with no draw.
-            let radius = pst.spawn_radius.wrapping_add(1);
-            let dx = sim.particle_rng().next_raw_modulo_signed(radius as u32);
-            let dy = sim.particle_rng().next_raw_modulo_signed(radius as u32);
-            if let Some(holds) = pst.holds_what {
-                let coords = offset_coords(coords, dx, dy, 10);
-                let mut p = Particle::new(holds, coords, target_coords, rules, sim);
-                if X87::compare(
-                    X87::load_f32(timer),
-                    X87::load_f32(pst.spawn_translucency_cutoff),
-                ) == MaskedX87Ordering::Greater
-                {
-                    p.translucency = p.translucency.wrapping_add(25);
-                }
-                //62F198..62F1D6, constant [7EFB50]=stored 0.35.
-                let speed = X87::sub(
-                    X87::load_f32(p.velocity),
-                    X87::mul(
-                        X87::sub(X87::load_f32(timer), X87::load_i32(pst.spawn_frames)),
-                        X87::load_f32(NativeF32Bits::from_bits(0x3EB3_3333)),
-                    ),
-                );
-                p.velocity = X87::store_f32_masked_chop(speed);
-                if X87::compare(speed, X87::load_i32(2)) == MaskedX87Ordering::Less {
-                    p.velocity = NativeF32Bits::from_bits(0x4000_0000);
-                }
-                if let Some(sys) = sim.substrate.particle_systems.get_mut(id) {
-                    sys.particles.push(p);
-                }
+    // gamemd traps on a zero period (`SpawnFrames=0`, or a negative
+    // `Slowdown=` walking the timer through zero); VERA spawns nothing
+    // that frame and the timer still moves on.
+    let due = !done
+        && alive
+        && (frame as i32).checked_rem(X87::ftol_i32_low_masked(X87::load_f32(timer))) == Some(0);
+    if !due {
+        // No birth is due, so nothing stands between this read and the
+        // timer's store: the system at hand takes it.
+        advance_spawn_timer(sys, pst, timer);
+        return;
+    }
+    //62F080..62F098: the tube test skips emission BEFORE its
+    //offset/constructor RNG draws. Existing particles, spawn
+    //accumulator and system lifetime still advance.
+    if !owner_in_tube(sim, owner) {
+        // gamemd traps on `SpawnRadius=-1`; the helper's zero modulus
+        // makes VERA spawn at the system's own X and Y, with no draw.
+        let radius = pst.spawn_radius.wrapping_add(1);
+        let dx = sim.particle_rng().next_raw_modulo_signed(radius as u32);
+        let dy = sim.particle_rng().next_raw_modulo_signed(radius as u32);
+        if let Some(holds) = pst.holds_what {
+            let coords = offset_coords(coords, dx, dy, 10);
+            let mut p = Particle::new(holds, coords, target_coords, rules, sim);
+            if X87::compare(
+                X87::load_f32(timer),
+                X87::load_f32(pst.spawn_translucency_cutoff),
+            ) == MaskedX87Ordering::Greater
+            {
+                p.translucency = p.translucency.wrapping_add(25);
+            }
+            //62F198..62F1D6, constant [7EFB50]=stored 0.35.
+            let speed = X87::sub(
+                X87::load_f32(p.velocity),
+                X87::mul(
+                    X87::sub(X87::load_f32(timer), X87::load_i32(pst.spawn_frames)),
+                    X87::load_f32(NativeF32Bits::from_bits(0x3EB3_3333)),
+                ),
+            );
+            p.velocity = X87::store_f32_masked_chop(speed);
+            if X87::compare(speed, X87::load_i32(2)) == MaskedX87Ordering::Less {
+                p.velocity = NativeF32Bits::from_bits(0x4000_0000);
+            }
+            if let Some(sys) = sim.substrate.particle_systems.get_mut(id) {
+                sys.particles.push(p);
             }
         }
     }
-    //62F1F3..62F218: cutoff compares the UNSTORED sum. It can exceed
-    //cutoff although the chopped binary32 result equals cutoff exactly.
-    let sum = X87::add(X87::load_f32(timer), X87::load_f32(pst.slowdown));
     if let Some(sys) = sim.substrate.particle_systems.get_mut(id) {
-        sys.spawn_timer = X87::store_f32_masked_chop(sum);
-        if X87::compare(sum, X87::load_f32(pst.spawn_cutoff)) == MaskedX87Ordering::Greater {
-            sys.done_spawning = true;
-        }
+        advance_spawn_timer(sys, pst, timer);
+    }
+}
+
+/// 62F1F3..62F218: the spawn accumulator (`+0xE8`) read as `timer` gains
+/// Slowdown. The cutoff compares the UNSTORED sum: it can exceed the cutoff
+/// although the chopped binary32 result equals the cutoff exactly.
+fn advance_spawn_timer(
+    sys: &mut super::ParticleSystem,
+    pst: &ParticleSystemType,
+    timer: NativeF32Bits,
+) {
+    let sum = X87::add(X87::load_f32(timer), X87::load_f32(pst.slowdown));
+    sys.spawn_timer = X87::store_f32_masked_chop(sum);
+    if X87::compare(sum, X87::load_f32(pst.spawn_cutoff)) == MaskedX87Ordering::Greater {
+        sys.done_spawning = true;
     }
 }
 
@@ -205,7 +224,12 @@ pub(super) fn owner_in_tube(sim: &Simulation, owner: Option<u64>) -> bool {
 }
 
 /// SmokeAI62C540 body; the shared dispatcher owns the subsequent EC tail.
-pub(super) fn tick_particle(p: &mut Particle, pt: &ParticleType, frame: u32, rng: &mut SimRng) {
+pub(super) fn tick_particle(
+    p: &mut Particle,
+    pt: &ParticleType,
+    frame: u32,
+    rng: &mut Forked<SimRng>,
+) {
     if frame & 1 != 0 {
         if (rng.next_u32() as i32).wrapping_abs() & 3 == 0 {
             let axis = (rng.next_u32() as i32).wrapping_abs() & 1;
@@ -237,11 +261,12 @@ pub(super) fn tick_particle(p: &mut Particle, pt: &ParticleType, frame: u32, rng
 }
 
 /// MoveSmoke62D3F0: old-cell bridge admission precedes raw-coordinate commit.
+/// The terrain is all it reads of the world.
 pub(super) fn move_smoke(
     p: &mut Particle,
     pt: &ParticleType,
     wind: i32,
-    sim: &Simulation,
+    terrain: Option<&ResolvedTerrainGrid>,
 ) -> Result<(), super::spark_world::SparkWorldError> {
     // MoveSmoke62D3F0 indexes its eight-entry tables with `[General]
     // WindDirection` unchecked, so a missing key (-1) or a value past 7 reads
@@ -257,7 +282,7 @@ pub(super) fn move_smoke(
         wind_dy.wrapping_mul(pt.wind_effect).wrapping_add(p.drift_y),
         rise,
     );
-    let deck = super::spark_world::smoke_bridge_deck(sim, p.coords)?;
+    let deck = super::spark_world::smoke_bridge_deck(terrain, p.coords)?;
     if deck.is_some_and(|deck| {
         p.coords.z < deck
             && next.z >= deck.wrapping_sub(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS * 5 / 2)

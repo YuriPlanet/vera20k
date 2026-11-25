@@ -310,10 +310,11 @@ fn patch_hierarchy_level(
         }
     }
     for &old in old_ids.iter().rev() {
-        for edge in graph.edges(old).to_vec().iter().rev() {
+        // Taken out first: a self-edge's removal would find nothing left in
+        // `old`'s own list, which ends empty either way.
+        for edge in graph.take_edges(old).iter().rev() {
             graph.remove_last_edge_to(edge.neighbor, old);
         }
-        graph.clear_edges(old);
     }
     for y in block.y_min..=block.y_max {
         for x in block.x_min..=block.x_max {

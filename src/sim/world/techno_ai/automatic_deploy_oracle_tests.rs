@@ -229,8 +229,8 @@ fn retail_gi_and_guardian_gi_deploy_then_team_move_in_bound_runtime() {
     sim.session.set_map_width_for_test(64);
     sim.session.set_map_height_for_test(64);
     sim.install_resolved_terrain_for_new_map(terrain.clone());
-    sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
-    sim.playfield_size_height = Some(20);
+    *sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
+    *sim.playfield_size_height = Some(20);
     assert!(sim.rebuild_dynamic_navigation(&rules));
     // Funds and a factory keep the computer's Building strategy from selling
     // off and sending every unit to Hunt.

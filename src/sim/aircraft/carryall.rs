@@ -666,7 +666,7 @@ impl Simulation {
                 self.session.binary_frame(),
                 &crate::sim::mission::authority::LiveReadyInputProvider { rules },
             );
-            if let Some((team, _)) = self.team_script_vm.team_for_member(cargo) {
+            if let Some(team) = self.team_script_vm.team_of(cargo) {
                 self.team_add_member(team, cargo, false, rules, effects);
             }
         }

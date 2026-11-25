@@ -206,7 +206,13 @@ impl TacticalCaptureSession {
                 modal.begin_generate();
                 state.frontend.skirmish_shell_state.random_map_setup_modal = Some(modal);
                 ensure!(
-                    crate::app::App::start_random_map_generation(state, &options, false),
+                    crate::app::App::start_random_map_generation(
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &mut state.process_assets,
+                        &options,
+                        false
+                    ),
                     "cannot start normal random-map setup generation"
                 );
                 self.preparing_random_map = true;
@@ -545,7 +551,11 @@ impl TacticalCaptureSession {
         owner: &str,
         command: Command,
     ) -> Result<()> {
-        let execute_tick = crate::app::input::commands::try_schedule_command(state, owner, command);
+        let execute_tick = crate::app::input::commands::try_schedule_command(
+            &mut state.match_state,
+            owner,
+            command,
+        );
         let script = self
             .controller
             .script_mut()
@@ -1081,7 +1091,7 @@ impl TacticalCaptureSession {
             .match_presentation
             .radar_content_insets
             .context("radar content insets are absent")?;
-        let drawn_sidebar = output.drawn_sidebar_view(state);
+        let drawn_sidebar = output.drawn_sidebar_view(&state.match_state.match_presentation);
         let render_evidence = SidebarRenderEvidence::from_render_output(
             output,
             drawn_sidebar,

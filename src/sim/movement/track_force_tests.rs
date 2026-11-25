@@ -214,7 +214,7 @@ fn fixture(case: &Value) -> Simulation {
             })
         })
         .collect();
-    sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(32, 32, cells));
+    *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(32, 32, cells));
     sim
 }
 

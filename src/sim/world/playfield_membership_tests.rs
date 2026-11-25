@@ -38,7 +38,7 @@ fn rules(balloon: bool) -> Option<crate::rules::retail_ini_fixture::RetailBattle
 
 fn arena(rules: &RuleSet) -> Simulation {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x4DA670);
-    sim.playfield_bounds = Some(PLAYFIELD);
+    *sim.playfield_bounds = Some(PLAYFIELD);
     sim.session.game_options_mut_for_test().short_game = false;
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));

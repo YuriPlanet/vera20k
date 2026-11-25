@@ -46,9 +46,9 @@ fn integer(value: &Value) -> i32 {
 }
 
 fn supply_rng(sim: &mut Simulation, state: &Value) {
-    sim.scenario_rng = SimRng::from_native_state_hex_for_test(state["scenario"].as_str().unwrap());
-    sim.main_rng = SimRng::from_native_state_hex_for_test(state["main"].as_str().unwrap());
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(state["mapgen"].as_str().unwrap());
+    *sim.scenario_rng = SimRng::from_native_state_hex_for_test(state["scenario"].as_str().unwrap());
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(state["main"].as_str().unwrap());
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(state["mapgen"].as_str().unwrap());
 }
 
 fn assert_rng(sim: &Simulation, state: &Value, name: &str) {
@@ -122,7 +122,7 @@ fn authored_placement_matches_eight_original_controls_and_all_rng_streams() {
             input["regen_minutes"].as_f64().unwrap_or(3.0).to_bits(),
         );
         sim.session.set_binary_frame_for_test(100);
-        sim.native_unique_ids =
+        *sim.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(1000));
         zero_slot_priors(&mut sim);
         if input["slots_full"] == true {

@@ -532,7 +532,7 @@ fn land_tail(
         passenger,
         ((landing.x / 256) as i16, (landing.y / 256) as i16),
     );
-    if let Some((team, _)) = sim.team_script_vm.team_for_member(plane) {
+    if let Some(team) = sim.team_script_vm.team_of(plane) {
         #[cfg(any(test, feature = "test-support"))]
         observe(Observed::RemoveMember(passenger));
         sim.team_remove_member(team, passenger, false, rules, effects);

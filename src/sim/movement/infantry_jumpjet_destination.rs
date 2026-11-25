@@ -33,12 +33,9 @@ impl Simulation {
             }
             // 51ADBE..51AE57: the new order goes on the front. For this
             // call use GetOccupiedCellClass2 (5F6A10), or NULL on a bridge.
-            self.substrate
-                .entities
-                .get_mut(id)
-                .unwrap()
-                .navigation
-                .prepend_nav_list(requested);
+            let entity = self.substrate.entities.get_mut(id).unwrap();
+            let note = entity.note_names();
+            entity.navigation.prepend_nav_list(requested, note);
             let here = coord_cell(self.foot_navigation_coordinate(id)?);
             let terrain = self
                 .resolved_terrain

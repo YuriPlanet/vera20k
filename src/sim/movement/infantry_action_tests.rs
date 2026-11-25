@@ -599,7 +599,7 @@ fn retail_teleport_default_action_matches_the_native_sequencer() {
         let input = &row["input"];
         let name = format!("Teleport row {index} {input}");
         let mut sim = Simulation::with_seed(31);
-        sim.resolved_terrain = Some(
+        *sim.resolved_terrain = Some(
             crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(
                 32,
                 32,

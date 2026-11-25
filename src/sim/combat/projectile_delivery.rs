@@ -566,8 +566,10 @@ impl Simulation {
 /// SpawnShrapnel's Fire leaves its children on their target
 /// (`Simulation::admit_projectile_spawns`), unless Ares gave them their
 /// weapon (`Simulation::ares_shrapnel_flak_placement`).
+/// The Scenario stream is the world's field (`util::forked`), written only
+/// by a flak scatter's draws.
 fn inviso_fire_placement(
-    scenario_rng: &mut crate::sim::rng::SimRng,
+    scenario_rng: &mut crate::util::forked::Forked<crate::sim::rng::SimRng>,
     rules: &RuleSet,
     flak_scatter: bool,
     weapon: &WeaponType,

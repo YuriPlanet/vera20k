@@ -146,7 +146,7 @@ impl Simulation {
         if let Some(sound) = sound {
             self.sound_events
                 .emit(crate::sim::world::SimSoundEvent::voc_at_location(
-                    rules.sound_name(&sound),
+                    rules.sound_name(sound),
                     entity,
                     self.resolved_terrain.as_ref(),
                 ));
@@ -166,7 +166,7 @@ impl Simulation {
             z: location.z,
         };
         let (rx, ry, sub_x, sub_y, z) = world.to_cell_sub_z();
-        let type_id = self.interner.intern(&anim);
+        let type_id = self.interner.intern(anim);
         let descriptor = AnimClassSpawnDescriptor {
             delay: 0,
             loop_count: 1,
@@ -185,24 +185,21 @@ impl Simulation {
     /// `PlayDigEffects` (Ares.dll `0x100443E0`; hooks `0x728EF0`, `0x7292CF`,
     /// `0x7297C4`, `0x7299A9`), which asks the type's `DigInSound`/`DigIn`
     /// or `DigOutSound`/`DigOut` first.
-    pub(super) fn tunnel_dig_effect_types(
+    pub(super) fn tunnel_dig_effect_types<'r>(
         &self,
         entity: &crate::sim::game_entity::GameEntity,
         effects: DigEffects,
-        rules: &RuleSet,
-    ) -> (Option<String>, Option<String>) {
+        rules: &'r RuleSet,
+    ) -> (Option<&'r str>, Option<&'r str>) {
         let stock = (
-            rules.general.dig_sound.clone(),
-            rules.general.dig_anim.clone(),
+            rules.general.dig_sound.as_deref(),
+            rules.general.dig_anim.as_deref(),
         );
         if rules.ares_form()
             && let Some(object) = self.object_type(entity.type_ref(), rules)
         {
             let [sound, anim] = object.techno_combat().dig_effects(effects.dig_in);
-            return (
-                sound.map_or(stock.0, |sound| sound.map(str::to_owned)),
-                anim.map_or(stock.1, |anim| anim.map(str::to_owned)),
-            );
+            return (sound.unwrap_or(stock.0), anim.unwrap_or(stock.1));
         }
         stock
     }

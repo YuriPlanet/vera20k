@@ -67,13 +67,13 @@ fn base_sim_sized(ore_id: u8, size: u16, cells: &[(u16, u16)]) -> Simulation {
     sim.session.set_binary_frame_for_test(91);
     sim.session.set_map_width_for_test(size);
     sim.session.set_map_height_for_test(size);
-    sim.ore_growth_config = OreGrowthConfig::for_test(true, true, false);
-    sim.ore_growth_state = OreGrowthState::new(size, size);
+    *sim.ore_growth_config = OreGrowthConfig::for_test(true, true, false);
+    *sim.ore_growth_state = OreGrowthState::new(size, size);
     let mut overlays = OverlayGrid::new(size, size);
     for &(rx, ry) in cells {
         overlays.place_overlay(rx, ry, ore_id, 5);
     }
-    sim.overlay_grid = Some(overlays);
+    *sim.overlay_grid = Some(overlays);
     sim.install_resolved_terrain_for_new_map(flat_terrain(size, size));
     sim
 }
@@ -198,8 +198,7 @@ fn seed_serialized_queue_state(
 }
 
 fn restore_before_map_authority(sim: &Simulation) -> Simulation {
-    let resolved = sim
-        .resolved_terrain
+    let resolved = (*sim.resolved_terrain)
         .clone()
         .expect("fixture resolved terrain cache");
     let bytes = GameSnapshot::save(sim, 0, 0, "gsi_17_04", 0);
@@ -480,8 +479,8 @@ fn gsi_17_04_missing_dependency_rejects_postload_queue_admission() {
             component: "OverlayGrid",
         })
     ));
-    sim.overlay_grid = overlays;
-    sim.resolved_terrain = None;
+    *sim.overlay_grid = overlays;
+    *sim.resolved_terrain = None;
     assert!(matches!(
         sim.restore_map_authority_after_snapshot_load(&rules, &registry, None),
         Err(SnapshotRestoreError::MissingMapAuthorityComponent {

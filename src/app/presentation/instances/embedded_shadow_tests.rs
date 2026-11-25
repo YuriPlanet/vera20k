@@ -398,7 +398,7 @@ fn stock_turreted_shp_pieces(carrier: Option<[f32; 2]>) -> Vec<ObjectPieceInstan
         house_colors: &colors,
         building_zshape: None,
     };
-    let order = frame.display_order(&runtime.simulation);
+    let order = frame.display_order();
     if let Some(carrier) = carrier {
         let mut cargo = record.clone();
         cargo.on_carryall = true;

@@ -12,6 +12,9 @@
 //! - Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::state::MatchInputState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::presentation::picture_hud::{ChromeHud, ChromePieces, PictureHud, covering};
 use crate::app::presentation::sidebar_render::{current_sidebar_chrome, current_sidebar_view};
 use crate::app::presentation::text_hud::TextHud;
@@ -41,18 +44,26 @@ pub(crate) struct ChromePaint {
 /// The sidebar column's chrome this frame, drawn by its nodes on the match's
 /// chrome layer, the buttons by theirs: none without a view or the atlas.
 pub(crate) fn build_sidebar_chrome_instances(state: &mut AppState) -> Vec<SpriteInstance> {
-    if current_sidebar_view(state).is_none() || current_sidebar_chrome(state).is_none() {
+    if current_sidebar_view(&state.match_state.match_presentation).is_none()
+        || current_sidebar_chrome(state).is_none()
+    {
         return Vec::new();
     }
-    let Some(nodes) = crate::app::input::chrome_input::paint_nodes(state) else {
+    let Some(nodes) =
+        crate::app::input::chrome_input::paint_nodes(&mut state.match_state.match_presentation)
+    else {
         return Vec::new();
     };
     let presentation = &mut state.match_state.match_presentation;
-    let (order, drawn) = sidebar_paint_order(&nodes.sidebar_parts, presentation.sidebar_layout_spec);
+    let (order, drawn) =
+        sidebar_paint_order(&nodes.sidebar_parts, presentation.sidebar_layout_spec);
     let mut hud = std::mem::take(&mut presentation.chrome_paint.sidebar);
     let parts = &nodes.sidebar_parts;
     let mut frame = hud.frame(presentation.dialog_ui.gui_mut(), nodes.tree, parts, parts);
-    if let (Some(view), Some(atlas)) = (current_sidebar_view(state), current_sidebar_chrome(state)) {
+    if let (Some(view), Some(atlas)) = (
+        current_sidebar_view(&state.match_state.match_presentation),
+        current_sidebar_chrome(state),
+    ) {
         let presentation = &state.match_state.match_presentation;
         let spec = presentation.sidebar_layout_spec;
         draw_sidebar_chrome(
@@ -100,7 +111,9 @@ pub(crate) fn build_command_bar_instances(state: &mut AppState) -> Vec<SpriteIns
         return Vec::new();
     }
     let bar = command_bar::layout_and_slots(state);
-    let Some(nodes) = crate::app::input::chrome_input::paint_nodes(state) else {
+    let Some(nodes) =
+        crate::app::input::chrome_input::paint_nodes(&mut state.match_state.match_presentation)
+    else {
         return Vec::new();
     };
     let slots = bar.as_ref().map_or(&[][..], |(_, slots)| slots.as_slice());
@@ -178,7 +191,11 @@ pub(crate) fn draw_sidebar_chrome(
                     let top = matches!(part, SidebarPart::Diplomacy | SidebarPart::Options);
                     let entry = art(part, ArtKey::Art, frame)
                         .or_else(|| art(part, ArtKey::Art, 0).filter(|_| !top))?;
-                    let depth = if part.kind() == PartKind::Tab { td } else { btn_depth };
+                    let depth = if part.kind() == PartKind::Tab {
+                        td
+                    } else {
+                        btn_depth
+                    };
                     Some(chrome_piece(
                         entry,
                         rect.x,
@@ -202,15 +219,9 @@ pub(crate) fn draw_sidebar_chrome(
                 draw_cameo_rows(inst, art, spec, layout, part, camera_offset, d);
             }
             // powerp.shp strips stacked from the top.
-            PartKind::PowerBar => render_power_bar(
-                inst,
-                art,
-                spec,
-                layout,
-                power_bar_anim,
-                camera_offset,
-                d,
-            ),
+            PartKind::PowerBar => {
+                render_power_bar(inst, art, spec, layout, power_bar_anim, camera_offset, d)
+            }
             // The credits number is text, drawn with the sidebar's labels;
             // the map picture is drawn with the radar's.
             PartKind::Text | PartKind::Minimap | PartKind::Panel => {}
@@ -331,7 +342,15 @@ fn push_chrome(
     depth: f32,
     camera_offset: [f32; 2],
 ) {
-    push_chrome_sized(pictures, entry, x, y, entry.pixel_size, depth, camera_offset);
+    push_chrome_sized(
+        pictures,
+        entry,
+        x,
+        y,
+        entry.pixel_size,
+        depth,
+        camera_offset,
+    );
 }
 
 fn push_chrome_sized(
@@ -523,10 +542,9 @@ fn status_text_precedes_clock(item: &crate::ui::sidebar::SidebarItem) -> bool {
 /// unconditional under the `phobos` feature; a default build takes it with
 /// `[General] BuildingProductionQueue=`, the switch that lets structure strips
 /// stack copies, so gamemd's single-count badge stays without it.
-fn structure_queue_badges(state: &crate::app::state::AppState) -> bool {
+fn structure_queue_badges(frontend: &FrontendState, match_state: &MatchState) -> bool {
     cfg!(feature = "phobos")
-        || state
-            .rules()
+        || crate::app::state::active_rules(frontend, match_state)
             .is_some_and(|rules| rules.general.building_production_queue)
 }
 
@@ -550,17 +568,11 @@ fn shows_queue_badge(item: &crate::ui::sidebar::SidebarItem, structure_badges: b
 /// The top-right badge text: the queue count, or VERA's endless-build mark
 /// (`build_repeat`, Ctrl + left click) after it. The mark is not native.
 fn queue_badge_text(
-    state: &AppState,
+    input: &MatchInputState,
     item: &crate::ui::sidebar::SidebarItem,
     has_queue_badge: bool,
 ) -> Option<String> {
-    if !item.is_superweapon
-        && state
-            .match_state
-            .input
-            .build_repeat
-            .is_repeating(&item.type_id)
-    {
+    if !item.is_superweapon && input.build_repeat.is_repeating(&item.type_id) {
         return Some(format!("{}{}", item.queued_count, ENDLESS_BUILD_MARK));
     }
     has_queue_badge.then(|| item.queued_count.to_string())
@@ -806,14 +818,18 @@ pub(crate) fn build_sidebar_cameo_instances(
         chrome.map(|a| a.gclock_frames.as_slice()).unwrap_or(&[]);
     let mut hover = Vec::new();
     let hovered_slot = hovered_cameo_slot(
-        crate::app::input::chrome_input::hovered_cameo(state),
+        crate::app::input::chrome_input::hovered_cameo(&state.match_state.match_presentation),
         view.items.len(),
-        crate::app::input::campaign_input::is_locked(state),
+        crate::app::input::campaign_input::is_locked(&state.match_state),
     );
     // SetSidebarTextColor72F440 writes B0FA1C, which Draw packs at 6A9A4F.
     // The layout's `[Cameos] LabelColor=`, by default the side text colour.
     let hover_tint = crate::render::sidebar_text::native_outline_from(
-        state.match_state.match_presentation.sidebar_layout_spec.label_text,
+        state
+            .match_state
+            .match_presentation
+            .sidebar_layout_spec
+            .label_text,
     );
     for (slot_index, item) in view.items.iter().enumerate() {
         let entry = if item.is_superweapon {
@@ -876,7 +892,10 @@ pub(crate) fn build_sidebar_cameo_instances(
             }
         }
 
-        let has_queue_badge = shows_queue_badge(item, structure_queue_badges(state));
+        let has_queue_badge = shows_queue_badge(
+            item,
+            structure_queue_badges(&state.frontend, &state.match_state),
+        );
 
         // Dark strip overlay behind the cameo status text (alpha 0xAF).
         // It follows the label it backs, so only the Hold strip shifts.
@@ -886,7 +905,7 @@ pub(crate) fn build_sidebar_cameo_instances(
             let font = &state.renderer.bit_font;
             let shifts_left = status_text_shifts_left(item, has_queue_badge);
             let badge = shifts_left
-                .then(|| queue_badge_text(state, item, has_queue_badge))
+                .then(|| queue_badge_text(&state.match_state.input, item, has_queue_badge))
                 .flatten();
             let fit = status_label_fit(font, status_text, slot.w, badge.as_deref());
             let text_w = font.fitted(fit, |font| font.text_width(status_text)) as f32;
@@ -920,7 +939,7 @@ pub(crate) fn build_sidebar_cameo_instances(
         // Dark strip overlay behind queue count badge (top-right, same alpha as Ready strip).
         // Original: ComputeTextRect(cameo_x+60, cameo_y+1, 0x242, x_pad=2, y_pad=1)
         // The dark rect extends x_pad (2px) past the cameo right edge.
-        if let Some(count_str) = queue_badge_text(state, item, has_queue_badge)
+        if let Some(count_str) = queue_badge_text(&state.match_state.input, item, has_queue_badge)
             && state.renderer.bit_font.darken_texture().is_some()
         {
             let text_w = state.renderer.bit_font.text_width(&count_str) as f32;
@@ -1064,17 +1083,16 @@ pub(crate) struct SidebarHuds {
 /// the queue counts into `queue`. The caller begins and finishes the trees,
 /// and draws nothing of this without the retail FNT.
 pub(crate) fn draw_cameo_labels(
-    state: &AppState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
     view: &SidebarView,
     labels: CameoStatusLabels<'_>,
     ready_tint: [f32; 3],
     huds: &mut SidebarHuds,
 ) {
-    let co = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ];
-    let font = &state.renderer.bit_font;
+    let co = [match_state.input.camera_x, match_state.input.camera_y];
+    let font = bit_font;
     let height = font.cell_height();
     let cameos = SidebarPart::Cameos.name();
     for hud in [&mut huds.status, &mut huds.queue, &mut huds.label] {
@@ -1084,7 +1102,8 @@ pub(crate) fn draw_cameo_labels(
     for item in &view.items {
         let slot = item.rect;
 
-        let has_queue_badge = shows_queue_badge(item, structure_queue_badges(state));
+        let has_queue_badge =
+            shows_queue_badge(item, structure_queue_badges(frontend, match_state));
 
         // Cameo status text ("Ready" / "On Hold") — at the top of the cameo.
         // Only the Hold label moves to the left edge, and only beside a queue
@@ -1092,7 +1111,7 @@ pub(crate) fn draw_cameo_labels(
         if let Some(status_text) = cameo_status_text(item, labels) {
             let shifts_left = status_text_shifts_left(item, has_queue_badge);
             let badge = shifts_left
-                .then(|| queue_badge_text(state, item, has_queue_badge))
+                .then(|| queue_badge_text(&match_state.input, item, has_queue_badge))
                 .flatten();
             let fit = status_label_fit(font, status_text, slot.w, badge.as_deref());
             let text_w = font.fitted(fit, |font| font.text_width(status_text)) as f32;
@@ -1124,7 +1143,7 @@ pub(crate) fn draw_cameo_labels(
         // Queue count badge — right-aligned at top-right of cameo.
         // Original: ComputeTextRect(cameo_x+60, cameo_y+1, 0x242, 2, 1)
         // 0x242 = right-align. Uses same side-dependent color as Ready text.
-        if let Some(count_str) = queue_badge_text(state, item, has_queue_badge) {
+        if let Some(count_str) = queue_badge_text(&match_state.input, item, has_queue_badge) {
             let text_w = font.text_width(&count_str) as f32;
             // Right-align: text right edge at cameo right edge (anchor = cameo_x + 60).
             let text_x = slot.x + slot.w - text_w;

@@ -4,8 +4,10 @@
 //   node tools/wasm/wasi_run.mjs <program.wasm> [--dir <guest>=<host>]... -- <args...>
 //
 // Each --dir opens a host folder to the program at a guest path, for example
-// `--dir /game=<retail install>`; the program sees no other files. The process
-// exits with the program's exit code.
+// `--dir "/game=$RA2_DIR"`. For ice maps also pass `--dir "/Terrain=$PWD/Terrain"`
+// from the checkout. The program sees only its preopens and returns its exit code.
+// Use Node 24 or newer: Node 22.23.5 crashes (SIGSEGV) running sim-bench.wasm on
+// Linux and macOS.
 import { readFile } from 'node:fs/promises';
 import process from 'node:process';
 import { WASI } from 'node:wasi';

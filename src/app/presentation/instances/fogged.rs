@@ -33,7 +33,7 @@ pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
         return ObjectLayerPass::default();
     }
     let sim = &runtime.simulation;
-    let Some(viewer) = crate::app::input::commands::preferred_local_owner_name(state)
+    let Some(viewer) = crate::app::input::commands::preferred_local_owner_name(&state.match_state)
         .and_then(|owner| sim.interner().get(&owner))
     else {
         return ObjectLayerPass::default();
@@ -45,7 +45,7 @@ pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
         atlas,
         lighting: presentation.lighting.grid(),
         house_colors: presentation.effective_house_color_map(),
-        axis: super::depth_axis(state),
+        axis: super::depth_axis(&state.match_state.match_presentation),
         building_zshape: presentation
             .building_zshape
             .as_ref()

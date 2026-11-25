@@ -24,11 +24,12 @@
 //! not know the order was automatic, hear the click as they would a wrench
 //! click.
 
-use crate::app::AppState;
 use crate::app::input::commands::{
     command_executed_by, preferred_local_owner_name, try_schedule_command,
 };
 use crate::app::match_audio::QuietSound;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::Command;
 use crate::sim::world::Simulation;
@@ -96,16 +97,16 @@ fn start_sounds(sim: &Simulation, rules: &RuleSet, building: u64) -> Vec<QuietSo
 
 /// Once per logic frame: every [`CHECK_INTERVAL`] frames, while the option is
 /// on, send the Repair order to the local player's buildings that want it.
-pub(crate) fn frame_pass(state: &mut AppState) {
-    if !state.persistence.options_profile.auto_repair {
-        state.match_state.input.auto_repair.sent.clear();
+pub(crate) fn frame_pass(match_state: &mut MatchState, options_profile: &RetailOptionsProfile) {
+    if !options_profile.auto_repair {
+        match_state.input.auto_repair.sent.clear();
         return;
     }
-    let Some(owner_name) = preferred_local_owner_name(state) else {
+    let Some(owner_name) = preferred_local_owner_name(match_state) else {
         return;
     };
     let (now, until, orders) = {
-        let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+        let Some(runtime) = match_state.sim_runtime.runtime() else {
             return;
         };
         let sim = &runtime.simulation;
@@ -117,10 +118,9 @@ pub(crate) fn frame_pass(state: &mut AppState) {
         let Some(owner) = sim.interner().get(&owner_name) else {
             return;
         };
-        let until = command_executed_by(state, now);
+        let until = command_executed_by(match_state, now);
         let wanting = crate::sim::production::buildings_wanting_repair(sim, rules, owner);
-        let orders: Vec<_> = state
-            .match_state
+        let orders: Vec<_> = match_state
             .input
             .auto_repair
             .orders(&wanting, now, until)
@@ -130,17 +130,19 @@ pub(crate) fn frame_pass(state: &mut AppState) {
         (now, until, orders)
     };
     for (entity_id, sounds) in orders {
-        if try_schedule_command(state, &owner_name, Command::ToggleRepair { entity_id }).is_none() {
-            state.match_state.input.auto_repair.not_sent(entity_id);
+        if try_schedule_command(
+            match_state,
+            &owner_name,
+            Command::ToggleRepair { entity_id },
+        )
+        .is_none()
+        {
+            match_state.input.auto_repair.not_sent(entity_id);
             continue;
         }
         // The order lands while it holds the building back, or not at all.
         for sound in sounds {
-            state
-                .match_state
-                .match_audio
-                .quiet
-                .expect(sound, now, until);
+            match_state.match_audio.quiet.expect(sound, now, until);
         }
     }
 }

@@ -16,9 +16,16 @@
 //! `HouseClass::Make_Ally @ 0x004F9B70`, `HouseClass::Make_Enemy @
 //! 0x004F9F90`, `HouseClass::Computer_Paranoid @ 0x00501640` and its skirmish
 //! callers: a computer MCV's deploy (`0x007398D9` -> `0x00505180`, Paranoid at
-//! `0x005051AF`) and a computer house's defeat (`0x004FC10D`). Its other
-//! callers are a network player's exit (`0x0064CA0D`, `0x0050A7B4`) and
-//! base initialization (`0x0050C2F0`, reached by TAction30).
+//! `0x005051AF`) and a computer house's defeat (`0x004FC10D`). Base
+//! initialization also calls it (`0x0050C2F0`, reached by TAction30).
+//!
+//! For a remote EXIT, `Execute_DoList` sends GameModes 1 and 2 to `0x005F0180`
+//! (`0x0064C942..0x0064C94A`). That path can call `HouseClass::ComputerTakeover`
+//! (`0x005F031A` -> `0x0050A5C0`), whose BuildConst yard branch calls
+//! Computer_Paranoid (`0x0050A7B4`). LAN and WOL use GameModes 3 and 4 and
+//! take the connection cleanup path (`0x0064C94C..0x0064C9B6`). The later
+//! takeover and Paranoid call (`0x0064C9F4..0x0064CA0D`) require the native
+//! recording-playback bit (`0x0064C9C3` checks `0x00A8D5F8 & 2`).
 //!
 //! MakeAlly and MakeEnemy bracket their work with Map4ADEE0/4ADCD0.
 //! The shared sight visitor walks the Techno registry before and after the
@@ -45,9 +52,9 @@
 //! - The radar redraw (`0x004F42F0`) is presentation; the app re-reads the
 //!   graph and fog each frame.
 //! - IsParanoid (`+0x24A`, `0x005016D5`) has no reader and is not stored.
-//! - Native player takeover on network EXIT also calls Computer_Paranoid
-//!   (`0x0064CA0D`, `0x0050A7B4`). The current EXIT route has no such call.
-//!   On a takeover, the remaining computer alliances can therefore differ.
+//! - VERA's EXIT path covers connection cleanup for LAN and WOL. Native
+//!   recording playback can also convert the departing House to a computer
+//!   and re-form alliances; the EXIT playback gate is unmodeled.
 
 use std::collections::BTreeSet;
 use std::sync::{Arc, OnceLock};

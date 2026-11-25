@@ -69,7 +69,7 @@ fn sim(rules: &RuleSet, human: bool, levels: &[((u16, u16), u8)]) -> Simulation 
     sim.houses
         .register(HouseState::new(owner, 0, None, human, 0, 10));
     sim.session.game_options_mut_for_test().super_weapons = true;
-    sim.resolved_terrain = Some(test_grid(64, 64, |x, y| ResolvedTerrainCell {
+    *sim.resolved_terrain = Some(test_grid(64, 64, |x, y| ResolvedTerrainCell {
         level: levels
             .iter()
             .find(|(at, _)| *at == (x, y))
@@ -122,7 +122,7 @@ fn click_fire_matches_native() {
             .insert(sw_type_id, instance);
         if flag(&row["dominator_active"]) {
             // A Dominator already rises (`PsyDom::Active @ 0x0053B400`).
-            sim.psychic_dominator =
+            *sim.psychic_dominator =
                 super::super::psychic_dominator::PsychicDominatorState::for_test(
                     2,
                     (3, 3),
@@ -284,7 +284,7 @@ fn the_launch_alert_matches_native() {
         }
         sim.session
             .set_binary_frame_for_test(u32::try_from(int(&row["frame"])).unwrap());
-        sim.scenario_rng = SimRng::answering(0, 99, int(&row["answer"]));
+        *sim.scenario_rng = SimRng::answering(0, 99, int(&row["answer"]));
         // RandomRanged's own retries draw more raw words; count its calls by
         // the cursor they leave.
         let mut drawn = sim.scenario_rng.clone();

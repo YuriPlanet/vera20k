@@ -16,6 +16,7 @@ use crate::sim::world::FrameChannel;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::util::forked::Forked;
 
 /// Techno `+0x2A4`, a deployed infantryman's crush immunity, which the crush
 /// test reads (`movement::bump_crush`). Construction clears it. The
@@ -270,7 +271,8 @@ impl Simulation {
     ///   and in a building's cell unless the building is a `Bunker=`
     ///   (`0x00701087..0x007010BB`).
     /// - Building: `0x00465D30` always refuses.
-    /// - Infantry: a type with `UndeployDelay=` above -1 (`0x005224F0`) is
+    /// - Infantry: refused while webbed (Firestorm's Is_Immobilized); a type
+    ///   with `UndeployDelay=` above -1 (`0x005224F0`) is
     ///   refused while deployed (Doing 27..30, `0x00522510`), in Doing 31, or
     ///   while its rearm timer runs (`+0x2EC`); then `Deployer=` decides
     ///   (`0x005224E0`).
@@ -376,6 +378,12 @@ impl Simulation {
             }
             EntityCategory::Structure => false,
             EntityCategory::Infantry => {
+                // Firestorm 2.0 `Can_Deploy_Now` 0x00631EC0 asks a non-Unit
+                // Is_Immobilized (`0x006320BA`), which holds a webbed
+                // infantryman (`0x004D5B10`).
+                if entity.is_webbed(self.session.binary_frame() as i32) {
+                    return false;
+                }
                 if object.undeploy_delay > -1
                     && (entity.infantry_deploy_doing()
                         || entity
@@ -403,11 +411,13 @@ impl Simulation {
     /// it on each admitted updater visit. Every site plays at the actor's own
     /// Location: Infantry `0x0051D94F..0x0051D9CA`, Unit deploy
     /// `0x00739C86..0x00739CB9`, Unit undeploy `0x00739E81..0x00739EB3`.
+    /// The interner and the sound channel are written only by a sound it
+    /// plays (`util::forked`).
     pub(crate) fn emit_deploy_action_sound(
-        interner: &mut StringInterner,
+        interner: &mut Forked<StringInterner>,
         substrate: &ObjectSubstrate,
         terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
+        sound_events: &mut Forked<FrameChannel<SimSoundEvent>>,
         id: u64,
         requested: i32,
         rules: &RuleSet,

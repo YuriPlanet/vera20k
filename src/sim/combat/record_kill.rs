@@ -777,14 +777,11 @@ fn record_kill_credit(
         {
             house.stats_mut().record_loss(victim.category());
         }
-        let victim_house = houses.index_of(victim.owner());
         if count_killer
             && let Some(killer) = killer_owner
             && let Some(house) = houses.get_mut(&killer)
         {
-            house
-                .stats_mut()
-                .record_kill(victim.category(), victim_house);
+            house.stats_mut().record_kill(victim.category());
         }
     }
 }

@@ -155,7 +155,7 @@ impl Simulation {
             actor.body_facing_current(self.session.binary_frame()),
         ));
         let requested = failed_path_requested_action(doing, prone);
-        self.apply_infantry_do_action(id, requested, false, &facts, rules, frame_effects)?;
+        self.apply_infantry_do_action(id, requested, false, false, &facts, rules, frame_effects)?;
 
         let terrain = self
             .resolved_terrain

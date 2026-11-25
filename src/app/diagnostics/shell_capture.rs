@@ -188,10 +188,19 @@ const CHECKPOINT_SKIRMISH_DIPLOMACY: &str = "skirmish-diplomacy";
 /// (B6, without the campaign's Restart).
 const SKIRMISH_IN_GAME_MENU_CHECKPOINTS: [(&str, skirmish::InGameMenuTarget); 5] = [
     ("skirmish-pause-menu", skirmish::InGameMenuTarget::Menu),
-    ("skirmish-pause-options", skirmish::InGameMenuTarget::Options),
+    (
+        "skirmish-pause-options",
+        skirmish::InGameMenuTarget::Options,
+    ),
     ("skirmish-pause-sound", skirmish::InGameMenuTarget::Sound),
-    ("skirmish-pause-keyboard", skirmish::InGameMenuTarget::Keyboard),
-    ("skirmish-abort-confirm", skirmish::InGameMenuTarget::AbortConfirm),
+    (
+        "skirmish-pause-keyboard",
+        skirmish::InGameMenuTarget::Keyboard,
+    ),
+    (
+        "skirmish-abort-confirm",
+        skirmish::InGameMenuTarget::AbortConfirm,
+    ),
 ];
 const CHECKPOINT_SCORE_0X108_STEADY: &str = "score-0x108-steady";
 const CHECKPOINT_CAMPAIGN_SCORE_0X103_STEADY: &str = "campaign-score-0x103-steady";
@@ -1171,12 +1180,10 @@ impl ShellCaptureCheckpoint {
                 target: movies::CampaignStartTarget::Opening(target),
             },
             Self::CampaignBackReturn => movies::MoviesTarget::CampaignBack,
-            Self::LoadSavedGame0xB7Steady => {
-                movies::MoviesTarget::LoadSavedGame0xB7 {
-                    entry_tick: None,
-                    check_sidebar: false,
-                }
-            }
+            Self::LoadSavedGame0xB7Steady => movies::MoviesTarget::LoadSavedGame0xB7 {
+                entry_tick: None,
+                check_sidebar: false,
+            },
             Self::LoadSavedGame0xB7Entry(tick) => movies::MoviesTarget::LoadSavedGame0xB7 {
                 entry_tick: Some(tick),
                 check_sidebar: false,
@@ -2132,7 +2139,8 @@ impl MainMenuCaptureSnapshot {
                 .is_some_and(|identity| identity.base() == MainMenuMovieBase::Ra2tsL),
             movie_base_matches_layout: movie_identity.is_some_and(|identity| {
                 identity.base()
-                    == crate::app::frontend::shell_layout::main_menu_layout(state).movie_base
+                    == crate::app::frontend::shell_layout::main_menu_layout(&state.renderer.gpu)
+                        .movie_base
             }),
             chrome_loaded: state.frontend.main_menu_shell_chrome.is_some(),
             software_cursor_active: state.use_software_cursor(),
@@ -2294,7 +2302,9 @@ impl ShellCaptureSession {
             ShellCaptureCheckpoint::Skirmish0x102GameOptions => {
                 Some(skirmish::SkirmishCapture::game_options())
             }
-            ShellCaptureCheckpoint::Skirmish0x102Setups => Some(skirmish::SkirmishCapture::setups()),
+            ShellCaptureCheckpoint::Skirmish0x102Setups => {
+                Some(skirmish::SkirmishCapture::setups())
+            }
             ShellCaptureCheckpoint::Skirmish0x102BackSlideOut(tick) => {
                 Some(skirmish::SkirmishCapture::slide_out(tick))
             }
@@ -3858,7 +3868,10 @@ mod tests {
     fn skirmish_in_game_menu_checkpoints_round_trip_with_the_game_budget() {
         for (name, target) in SKIRMISH_IN_GAME_MENU_CHECKPOINTS {
             let checkpoint = ShellCaptureCheckpoint::parse(name).expect("in-game menu checkpoint");
-            assert_eq!(checkpoint, ShellCaptureCheckpoint::SkirmishInGameMenu(target));
+            assert_eq!(
+                checkpoint,
+                ShellCaptureCheckpoint::SkirmishInGameMenu(target)
+            );
             assert_eq!(checkpoint.as_str(), name);
         }
         let output = new_output_path("skirmish-pause-menu");

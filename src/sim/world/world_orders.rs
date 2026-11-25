@@ -1523,7 +1523,9 @@ impl Simulation {
             || actor.is_warping_in()
             || actor.seldom.slave.owner().is_some()
             || actor.deactivated.is_offline()
-            || actor.is_under_emp()
+            // Firestorm 2.0 `Can_Player_Move` 0x00631E40 asks Is_Immobilized,
+            // which also holds a webbed infantryman (`0x004D5B10`).
+            || actor.is_immobilized(self.session.binary_frame() as i32)
         {
             return false;
         }
@@ -1568,8 +1570,10 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
+        // Firestorm 2.0 `Can_Player_Fire` 0x00632160 asks Is_Immobilized,
+        // which also refuses a webbed infantryman (`0x004D5B10`).
         !actor.deactivated.is_offline()
-            && !actor.is_under_emp()
+            && !actor.is_immobilized(self.session.binary_frame() as i32)
             && player_actor(actor.owner())
             && self
                 .object_type(actor.type_ref(), rules)
@@ -2680,7 +2684,7 @@ mod repair_notification_tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "notification", 0);
         let restore = || {
             crate::sim::snapshot::GameSnapshot::load(&bytes)

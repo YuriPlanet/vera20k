@@ -215,12 +215,11 @@ impl crate::sim::world::ObjectSubstrate {
     ///
     /// [`TechnoAmmo::set_dock`]: crate::sim::ammo::TechnoAmmo::set_dock
     pub(crate) fn set_aircraft_dock(&mut self, id: u64, dock: Option<u64>) {
-        if let Some(ammo) = self
-            .entities
-            .get_mut(id)
-            .and_then(|entity| entity.ammo_mut())
-        {
-            ammo.set_dock(dock);
+        if let Some(entity) = self.entities.get_mut(id) {
+            let note = entity.note_names();
+            if let Some(ammo) = entity.ammo_mut() {
+                ammo.set_dock(dock, note);
+            }
         }
     }
 }

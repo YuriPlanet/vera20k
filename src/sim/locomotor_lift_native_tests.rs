@@ -148,7 +148,7 @@ impl Scene {
             off_108: 32,
         }));
         sim.set_playfield_size_height_for_test(Some(16));
-        sim.scenario_rng = crate::sim::rng::SimRng::new(data["inputs"]["seed"].as_u64().unwrap());
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(data["inputs"]["seed"].as_u64().unwrap());
         Self {
             sim,
             firer,

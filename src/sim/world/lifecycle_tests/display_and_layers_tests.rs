@@ -7,7 +7,7 @@ use super::*;
 #[test]
 fn production_air_wrapper_keeps_fly_exact_producer_and_reads_live_dummy() {
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(1, 1, Vec::new()));
+    *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(1, 1, Vec::new()));
     sim.resolved_terrain
         .as_ref()
         .unwrap()
@@ -195,11 +195,11 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
 
         let map_terrain = sim.resolved_terrain.as_ref().unwrap().clone();
         // In-scenario load reconstructs Scenario RNG from Seed0.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = GameSnapshot::save(&sim, 0, 0, "Fly terrain landing", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
         restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
-        restored.resolved_terrain = Some(map_terrain);
+        *restored.resolved_terrain = Some(map_terrain);
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(restored.state_hash(), sim.state_hash());
         let mut landed = false;
@@ -384,7 +384,7 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
         let mut sim = Simulation::new();
         // Native Scenario Load reseeds Random(0). These display operations
         // consume no Scenario draws, so the complete saved hash can match.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         for (index, actor) in actors.iter().enumerate() {
             let id = sim.substrate.allocate_stable_id();
             assert_eq!(id, index as u64 + 1);
@@ -678,7 +678,7 @@ fn unlimbo_levels_then_aims_the_barrel_elevation() {
     ] {
         let mut sim = Simulation::with_seed(7);
         sim.session.set_binary_frame_for_test(40);
-        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        *sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 0,
             off_fc: -100,
             off_100: -100,
@@ -742,8 +742,8 @@ fn a_missile_is_tracked_in_the_cell_its_flight_step_reached() {
     let mut sim = Simulation::new();
     install_common_raw_terrain(&mut sim, 32, 32, 0, None);
     // A map Size whose In_Bounds diamond (`0x00568300`) holds the flight.
-    sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
-    sim.playfield_size_height = Some(20);
+    *sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
+    *sim.playfield_size_height = Some(20);
     insert_entity(&mut sim, 1, EntityCategory::Aircraft);
     sim.substrate.entities.get_mut(1).unwrap().locomotor =
         Some(LocomotorState::for_test_kind(LocomotorKind::Rocket));

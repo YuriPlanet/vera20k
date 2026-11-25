@@ -15,7 +15,8 @@
 
 VERA20K es un motor nuevo para Red Alert 2: Yuri's Revenge. Se juega como el original, con las
 mismas unidades, mapas y aspecto, y funciona en Windows, macOS y Linux. Está hecho para batallas
-más grandes, con hasta 30 jugadores y 20 000 unidades en un mapa.
+más grandes, con hasta 20 000 unidades por mapa. Las escaramuzas sin conexión admiten hasta 120 plazas
+para jugadores y las partidas en red local o por internet, hasta 30.
 
 VERA20K está hecho por jugadores y para jugadores, y son los jugadores quienes tienen la última
 palabra sobre su rumbo.
@@ -34,7 +35,7 @@ palabra sobre su rumbo.
 
 1. Conservar la jugabilidad, el aspecto visual y la atmósfera del Red Alert 2: Yuri's Revenge
    original.
-2. Permitir batallas más grandes: hasta **30 jugadores** y **20 000 unidades** en mapas de 500×500.
+2. Permitir batallas más grandes en mapas de 500×500 con hasta **20 000 unidades**, **120 plazas para jugadores** en escaramuzas sin conexión y **30** en partidas en red local o por internet.
 3. Incorporar funciones ya conocidas de otros RTS y algunas nunca vistas.
 4. Cliente multijugador integrado
 
@@ -121,7 +122,9 @@ Ares, Phobos y muchos otros.
 
 Copyright © 2026 Halvor Nikolai Rusten y los colaboradores de VERA20K.
 Distribuido bajo la licencia [GPLv3](LICENSE-GPL) con [términos adicionales](LEGAL.md#additional-terms).
-Este repositorio no contiene archivos del juego.
+VERA20K incluye con permiso las losetas de nieve y hielo de Tiberian Sun: Firestorm,
+que siguen siendo propiedad de Electronic Arts. Cada jugador debe aportar los archivos
+de su propia copia de Red Alert 2: Yuri's Revenge.
 Command & Conquer y Red Alert son marcas comerciales de Electronic Arts Inc., y las capturas de
 pantalla y el icono de la aplicación, la estrella roja de Red Alert 2, muestran arte del juego
 propiedad de Electronic Arts. VERA20K no está afiliado a Electronic Arts ni cuenta con su respaldo.

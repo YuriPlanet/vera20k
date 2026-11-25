@@ -9,7 +9,10 @@
 
 use crate::app::AppState;
 use crate::app::diagnostics::debug_overlays;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::preferred_local_owner;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::instances;
 use crate::app::presentation::sidebar_render::{
     active_minimap_screen_rect, build_command_bar_instances, build_sidebar_cameo_instances,
@@ -19,10 +22,13 @@ use crate::app::presentation::ui_overlays::{
     build_building_status_instances, build_control_group_status_instances,
     build_software_cursor_instances,
 };
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::map::terrain::TilePlacement;
 use crate::map::theater::TileKey;
 use crate::render::batch::SpriteInstance;
 use crate::render::surface_line::SurfaceStroke;
+use crate::ui::game_screen::GameScreen;
 use crate::util::time::{Duration, Instant};
 #[path = "ferry_lines.rs"]
 mod ferry_lines;
@@ -278,7 +284,7 @@ pub(super) fn build_world_instances(
         Some(rt) => {
             let world = rt.view().simulation();
             match state.match_state.sim_runtime.frame() {
-                Some(frame) => frame.display_order(world),
+                Some(frame) => frame.display_order(),
                 None => {
                     own_order = super::draw_plan_lowering::NativeDisplayOrder::from_world(
                         world,
@@ -305,7 +311,7 @@ pub(super) fn build_world_instances(
     );
     // High-bridge bodies read live CellClass bridge fields post-tick (NOT
     // OverlayGrid), then join the ordinary bodies in one native sweep.
-    instances::bridges::build_bridge_body_instances(state, sw, sh, &mut bodies);
+    instances::bridges::build_bridge_body_instances(&state.match_state, sw, sh, &mut bodies);
     let mut cell_bodies: Vec<SpriteInstance> = std::mem::take(
         &mut state
             .match_state
@@ -322,7 +328,7 @@ pub(super) fn build_world_instances(
     // Smudges: static crater/scorch decals on top of terrain, under entities.
     // Registered SmudgeType SHPs share the live OverlayAtlas and Cell light
     // grid with the ordinary ground drawing consumers.
-    let smudges = build_smudge_instances(state, sw, sh);
+    let smudges = build_smudge_instances(&state.frontend, &state.match_state, sw, sh);
     let smudge_cuts = smudges.cuts(&terrain.walk);
     let smudge = smudges.instances;
 
@@ -343,7 +349,8 @@ pub(super) fn build_world_instances(
         state.match_state.sim_runtime.presentation(),
         state.match_state.sim_runtime.frame(),
     ) {
-        let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+        let local_owner =
+            crate::app::input::commands::preferred_local_owner_name(&state.match_state);
         let shp_inputs = instances::shp_inputs(state, local_owner.as_deref());
         let mut units = instances::unit_visitor(state, display_order);
         let mut debris = instances::voxel_anim_visitor(state, display_order);
@@ -425,9 +432,16 @@ pub(super) fn build_world_instances(
         .zip(state.match_state.sim_runtime.frame())
         .map(|(runtime, frame)| {
             let presentation = &state.match_state.match_presentation;
-            let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
-            let local_owner = crate::app::input::commands::preferred_local_owner_name(state)
-                .and_then(|name| runtime.simulation.interner().get(&name));
+            let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state.match_presentation,
+                &state.persistence,
+            );
+            let local_owner =
+                crate::app::input::commands::preferred_local_owner_name(&state.match_state)
+                    .and_then(|name| runtime.simulation.interner().get(&name));
             instances::DisplayEffectInputs {
                 sim: &runtime.simulation,
                 frame,
@@ -439,7 +453,7 @@ pub(super) fn build_world_instances(
                 render_size: [state.render_width(), state.render_height()],
                 tactical: [x, y, width, height],
                 zoom: state.match_state.input.zoom_level,
-                axis: instances::depth_axis(state),
+                axis: instances::depth_axis(&state.match_state.match_presentation),
                 z_seed: state.renderer.native_z_seed.seed(),
                 atlas: presentation.sprite_atlas.as_ref(),
                 detail: &presentation.detail,
@@ -482,7 +496,8 @@ pub(super) fn build_world_instances(
         let camera = super::tactical_surface_line_viewport(state).camera;
         let mut brackets =
             crate::app::presentation::selection_brackets::build_selection_bracket_lines(
-                state,
+                &state.frontend,
+                &state.match_state,
                 camera,
                 palette,
                 planned_objects.iter().map(|parent| parent.parent.id),
@@ -496,7 +511,7 @@ pub(super) fn build_world_instances(
     // storage order and atlas identity never determine their submission order.
     // The frame's cursor pick serves the group labels and every health bar:
     // both read the hover flag the cursor's action target sets.
-    let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+    let local_owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state);
     let hovered = crate::app::presentation::ui_overlays::health_hover_target(hover);
     let mut group_labels =
         build_control_group_status_instances(state, local_owner.as_deref(), hovered, sw, sh);
@@ -597,12 +612,7 @@ pub(super) fn build_world_instances(
                         );
                         status.info_text.push(
                             crate::app::presentation::ui_overlays::status_text_instances(
-                                font,
-                                &text,
-                                origin,
-                                measure,
-                                camera,
-                                tint,
+                                font, &text, origin, measure, camera, tint,
                             ),
                         );
                     }
@@ -758,7 +768,13 @@ pub(super) fn build_world_instances(
     // Bit_Blit seeds a raw frame, and a Unit composite, from its rect clipped
     // to the view (`native_z::Z_GRADIENT_RAW_FRAME_FLAG`,
     // `native_z::unit_composite`), which ends this far down.
-    let view_height = crate::app::input::camera::tactical_view_height(state);
+    let view_height = crate::app::input::camera::tactical_view_height(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     for instance in object_layers
         .iter_mut()
         .flat_map(|layer| &mut layer.instances)
@@ -871,7 +887,8 @@ fn build_pixel_fx_sparkle_instances(state: &AppState, sw: f32, sh: f32) -> Vec<S
                 .detail_level,
         );
 
-    let local_owner_name = crate::app::input::commands::preferred_local_owner_name(state);
+    let local_owner_name =
+        crate::app::input::commands::preferred_local_owner_name(&state.match_state);
     let local_owner_id = match (state.match_state.sandbox_full_visibility, &local_owner_name) {
         (false, Some(owner)) => sim.interner().get(owner),
         _ => None,
@@ -912,17 +929,17 @@ fn build_pixel_fx_sparkle_instances(state: &AppState, sw: f32, sh: f32) -> Vec<S
 /// frame once on the coherent flat uniform-material route. Native recenters
 /// a separate draw from every occupied cell; unequal material remains open.
 fn build_smudge_instances(
-    state: &AppState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
     sw: f32,
     sh: f32,
 ) -> crate::render::smudge::VisibleSmudges {
     let (sim, rules) = match (
-        state
-            .match_state
+        match_state
             .sim_runtime
             .presentation()
             .map(|rt| &rt.simulation),
-        state.rules(),
+        crate::app::state::active_rules(frontend, match_state),
     ) {
         (Some(s), Some(r)) => (s, r),
         _ => return Default::default(),
@@ -933,7 +950,7 @@ fn build_smudge_instances(
     let Some(resolved_terrain) = sim.resolved_terrain() else {
         return Default::default();
     };
-    let Some(atlas) = state.match_state.match_presentation.overlay_atlas.as_ref() else {
+    let Some(atlas) = match_state.match_presentation.overlay_atlas.as_ref() else {
         return Default::default();
     };
     // Resolve (smudge_type_id, frame_offset) → atlas placement.
@@ -966,11 +983,11 @@ fn build_smudge_instances(
         grid,
         &rules.smudge_types,
         resolved_terrain,
-        state.match_state.match_presentation.lighting.grid(),
+        match_state.match_presentation.lighting.grid(),
         &lookup,
         atlas.art_extent(),
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
+        match_state.input.camera_x,
+        match_state.input.camera_y,
         sw,
         sh,
     )
@@ -1025,7 +1042,7 @@ pub(super) fn build_debug_instances(state: &AppState, sw: f32, sh: f32) -> Debug
 /// Update minimap unit dots for the current frame.
 pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>) {
     let (playfield_bounds, playfield_revision) =
-        crate::app::input::camera::playfield_presentation_authority(state);
+        crate::app::input::camera::playfield_presentation_authority(&state.match_state.sim_runtime);
     let needs_playfield_reconcile = state
         .match_state
         .match_presentation
@@ -1077,7 +1094,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
     }
 
     let full_visibility = state.match_state.sandbox_full_visibility;
-    let beacon_draws = crate::app::match_runtime::beacons::draws(state);
+    let beacon_draws = crate::app::match_runtime::beacons::draws(&state.match_state);
     let presentation = &mut state.match_state.match_presentation;
     if let (Some(minimap), Some(runtime), Some(frame)) = (
         presentation.minimap.as_mut(),
@@ -1254,7 +1271,7 @@ pub(super) fn build_ui_instances(
             state.rules(),
             &cursor.selected,
             &state.match_state.match_presentation.house_color_map,
-            preferred_local_owner(state).as_deref(),
+            preferred_local_owner(&state.match_state).as_deref(),
             view,
         );
 
@@ -1281,7 +1298,13 @@ pub(crate) fn tactical_world_view(
     state: &AppState,
 ) -> crate::app::presentation::target_lines::TacticalViewport {
     let input = &state.match_state.input;
-    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     tactical_world_viewport(
         [input.camera_x, input.camera_y],
         [x, y, width, height],
@@ -1321,7 +1344,7 @@ fn build_beacon_instances(state: &AppState) -> Vec<Vec<SpriteInstance>> {
     };
     let mut rows = vec![Vec::new(); art.house_count()];
     let frame = runtime.simulation.session().binary_frame();
-    for beacon in crate::app::match_runtime::beacons::draws(state) {
+    for beacon in crate::app::match_runtime::beacons::draws(&state.match_state) {
         if let (Some(row), Some(instance)) = (
             rows.get_mut(beacon.house),
             art.tactical_instance(&beacon, frame),
@@ -1350,7 +1373,13 @@ fn build_placement_preview(state: &AppState) -> PlacementPreviewInstances {
         ghost: Vec::new(),
     };
     let current = state.match_state.input.building_placement_preview.as_ref();
-    let cursor_in = crate::app::input::camera::cursor_over_battlefield(state);
+    let cursor_in = crate::app::input::camera::cursor_over_battlefield(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     let draws = crate::render::selection_overlay::placement_cell_draws(
         current,
         state.match_state.input.pending_building_placement_preview(),
@@ -1423,7 +1452,7 @@ fn build_placement_ghost(
     let Some(assets) = state.process_assets.manager() else {
         return Vec::new();
     };
-    let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+    let local_owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state);
     // The placement ghost is a building of the local player's, so it follows
     // the relation colours like the finished building will.
     let remap_house = local_owner
@@ -1471,7 +1500,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     // Nothing below changes the retained view; the minimap build and the
     // font raster switches write other fields, so the view is read again
     // after each instead of being copied.
-    let view_revision = current_sidebar_view(state).map(|_| {
+    let view_revision = current_sidebar_view(&state.match_state.match_presentation).map(|_| {
         state
             .match_state
             .match_presentation
@@ -1479,17 +1508,33 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             .view_revision()
     });
     let minimap_rect = active_minimap_screen_rect(state);
-    let (tactical_w, tactical_h) = crate::app::input::camera::tactical_viewport_size(state);
-    let tactical_center_cell = crate::app::input::camera::tactical_centre_cell(state);
+    let (tactical_w, tactical_h) = crate::app::input::camera::tactical_viewport_size(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
+    let tactical_center_cell = crate::app::input::camera::tactical_centre_cell(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     // The side text colour the layout gives (`[Money] Color=`).
     let sidebar_color = crate::render::sidebar_text::native_outline_from(
-        state.match_state.match_presentation.sidebar_layout_spec.side_text,
+        state
+            .match_state
+            .match_presentation
+            .sidebar_layout_spec
+            .side_text,
     );
     // Native g_SidebarSurface is 168 x screen_height in surface-local space;
     // SidebarClass::BlitToScreen @ 0x006A70E0 translates that retained surface
     // to the right-sidebar destination without changing the copied extent.
     // The live view panel is the corresponding outer UI-scaled screen frame.
-    let sidebar_surface = current_sidebar_view(state).map(|view| {
+    let sidebar_surface = current_sidebar_view(&state.match_state.match_presentation).map(|view| {
         [
             view.panel_rect.x,
             view.panel_rect.y,
@@ -1499,7 +1544,9 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     });
 
     // Only show minimap when radar is online (or no radar_anim = legacy fallback).
-    let minimap_visible = crate::app::presentation::sidebar_render::minimap_shown(state);
+    let minimap_visible = crate::app::presentation::sidebar_render::minimap_shown(
+        &state.match_state.match_presentation,
+    );
 
     let (minimap, viewport_rect, content_boundary) = if minimap_visible {
         match &mut state.match_state.match_presentation.minimap {
@@ -1557,17 +1604,25 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
                 (minimap, viewport_rect, content_boundary)
             }
             None => {
-                state.match_state.match_presentation.minimap_hud.draw(MINIMAP_AREA, None);
+                state
+                    .match_state
+                    .match_presentation
+                    .minimap_hud
+                    .draw(MINIMAP_AREA, None);
                 (Vec::new(), Vec::new(), Vec::new())
             }
         }
     } else {
-        state.match_state.match_presentation.minimap_hud.draw(MINIMAP_AREA, None);
+        state
+            .match_state
+            .match_presentation
+            .minimap_hud
+            .draw(MINIMAP_AREA, None);
         (Vec::new(), Vec::new(), Vec::new())
     };
 
     // The bottom bar draws into a surface of its own.
-    let mut command_bar = if current_sidebar_view(state).is_some() {
+    let mut command_bar = if current_sidebar_view(&state.match_state.match_presentation).is_some() {
         build_command_bar_instances(state)
     } else {
         Vec::new()
@@ -1576,7 +1631,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     let mut chrome = build_sidebar_chrome_instances(state);
     // Taken before the frame's view, which borrows the state.
     let mut huds = std::mem::take(&mut state.match_state.match_presentation.sidebar_huds);
-    let view = current_sidebar_view(state);
+    let view = current_sidebar_view(&state.match_state.match_presentation);
     // The smooth sidebar's chrome copy packs the pieces apart from the atlas.
     let chrome_atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state);
     let smooth_command_bar =
@@ -1601,7 +1656,11 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     // format before drawing its labels (6A9BF3..6A9C46).
     // The layout's `[Cameos] LabelColor=`, by default the side text colour.
     let ready_tint = crate::render::sidebar_text::native_outline_from(
-        state.match_state.match_presentation.sidebar_layout_spec.label_text,
+        state
+            .match_state
+            .match_presentation
+            .sidebar_layout_spec
+            .label_text,
     );
     let cameo_layers = view
         .map(|v| build_sidebar_cameo_instances(state, v, status_labels))
@@ -1616,18 +1675,26 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     );
     // The column's text, at the window's pixels wherever it is drawn.
     let frame_raster = state.renderer.bit_font.set_raster(
-        crate::app::presentation::sidebar_surface::column_text(state)
-            .raster()
-            .unwrap_or(crate::render::bit_font::TextRaster::NATIVE),
+        crate::app::presentation::sidebar_surface::column_text(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence,
+        )
+        .raster()
+        .unwrap_or(crate::render::bit_font::TextRaster::NATIVE),
     );
-    let view = current_sidebar_view(state);
+    let view = current_sidebar_view(&state.match_state.match_presentation);
     for hud in [&mut huds.status, &mut huds.queue, &mut huds.label] {
         hud.begin();
     }
     // Without the retail FNT the native sidebar text path is unavailable.
     if let Some(v) = view.filter(|_| state.renderer.bit_font.darken_texture().is_some()) {
         crate::app::presentation::sidebar_build::draw_cameo_labels(
-            state,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
             v,
             status_labels,
             ready_tint,
@@ -1652,7 +1719,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     if let Some(v) = view.filter(|_| layout_spec.shows(crate::ui::sidebar::SidebarPart::Money)) {
         // The layout's `[Money] Value=` and `Align=`, read when it was loaded.
         let money = state.match_state.match_presentation.stock_parts.money;
-        let shown = crate::app::presentation::layout_parts::money_value_text(state);
+        let shown = crate::app::presentation::layout_parts::money_value_text(&state.match_state);
         crate::app::presentation::sidebar_text::draw_credits(
             &mut huds.status,
             &state.renderer.bit_font,
@@ -1660,7 +1727,13 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             layout_spec,
             // The plate is as wide as its picture.
             crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
-                .and_then(|atlas| atlas.art(crate::ui::sidebar::SidebarPart::Credits, crate::ui::sidebar::ArtKey::Art, 0))
+                .and_then(|atlas| {
+                    atlas.art(
+                        crate::ui::sidebar::SidebarPart::Credits,
+                        crate::ui::sidebar::ArtKey::Art,
+                        0,
+                    )
+                })
                 .map_or(layout_spec.sidebar_width, |plate| plate.pixel_size[0]),
             &state.csf_text("TXT_TIME_FORMAT_HOURS"),
             shown.as_deref(),
@@ -1698,11 +1771,13 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     chrome.extend_from_slice(layout_parts.pictures());
     state.renderer.bit_font.set_raster(frame_raster);
     // The observer's strip draws over the strip's tiles from the same atlas.
-    chrome.extend_from_slice(crate::app::presentation::sidebar_build::draw_observer_strip(
-        state,
-        current_sidebar_view(state),
-        &mut huds.observer,
-    ));
+    chrome.extend_from_slice(
+        crate::app::presentation::sidebar_build::draw_observer_strip(
+            state,
+            current_sidebar_view(&state.match_state.match_presentation),
+            &mut huds.observer,
+        ),
+    );
     state.match_state.match_presentation.sidebar_huds = huds;
     let smooth_chrome = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
         .is_some_and(|atlas| atlas.retarget_to_smooth(&mut chrome));
@@ -1710,11 +1785,17 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     // Preserve the pixels actually drawn online for a possible pre-due loss.
     // This is display history, separate from ongoing internal minimap updates.
     // The radar housing's corner, where `build_radar_anim_instance` draws it.
-    let [radar_x, radar_y] = crate::app::presentation::sidebar_render::current_sidebar_layout(state)
-        .origin(
-            &state.match_state.match_presentation.sidebar_layout_spec,
-            crate::ui::sidebar::SidebarPart::Radar,
-        );
+    let [radar_x, radar_y] = crate::app::presentation::sidebar_render::current_sidebar_layout(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    )
+    .origin(
+        &state.match_state.match_presentation.sidebar_layout_spec,
+        crate::ui::sidebar::SidebarPart::Radar,
+    );
     let origin = [
         state.match_state.input.camera_x + radar_x,
         state.match_state.input.camera_y + radar_y,
@@ -1732,7 +1813,13 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             origin,
         );
     }
-    let radar_anim = build_radar_anim_instance(state);
+    let radar_anim = build_radar_anim_instance(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
 
     SidebarInstances {
         chrome,
@@ -1788,23 +1875,35 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
 
 /// Build a SpriteInstance for the animated radar chrome overlay.
 /// Positioned at the same location as the static radar.shp in the sidebar chrome.
-fn build_radar_anim_instance(state: &AppState) -> Vec<SpriteInstance> {
-    let ra = match &state.match_state.match_presentation.radar_anim {
+fn build_radar_anim_instance(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Vec<SpriteInstance> {
+    let ra = match &match_state.match_presentation.radar_anim {
         Some(ra) => ra,
         None => return Vec::new(),
     };
 
-    let spec = state.match_state.match_presentation.sidebar_layout_spec;
+    let spec = match_state.match_presentation.sidebar_layout_spec;
     if !spec.shows(crate::ui::sidebar::SidebarPart::Radar) {
         return Vec::new();
     }
-    let [x, y] = crate::app::presentation::sidebar_render::current_sidebar_layout(state)
-        .origin(&spec, crate::ui::sidebar::SidebarPart::Radar);
+    let [x, y] = crate::app::presentation::sidebar_render::current_sidebar_layout(
+        platform,
+        renderer,
+        screen,
+        &match_state.match_presentation,
+        persistence,
+    )
+    .origin(&spec, crate::ui::sidebar::SidebarPart::Radar);
 
     vec![SpriteInstance {
         position: [
-            state.match_state.input.camera_x + x,
-            state.match_state.input.camera_y + y,
+            match_state.input.camera_x + x,
+            match_state.input.camera_y + y,
         ],
         size: [ra.width as f32, ra.height as f32],
         uv_origin: [0.0, 0.0],

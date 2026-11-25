@@ -195,7 +195,7 @@ fn a_falling_paratrooper_is_marked_again_at_the_head_of_its_cell() {
     use crate::sim::occupancy::CellObjectMember::Entity;
 
     let mut sim = crate::sim::world::Simulation::new();
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(
         25,
         25,

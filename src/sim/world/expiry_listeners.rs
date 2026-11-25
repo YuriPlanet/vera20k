@@ -1,24 +1,28 @@
 //! Which listeners a pointer expiry reaches.
 //!
-//! `DispatchPointerExpiredCleanup @ 0x007258D0` calls every object's
-//! PointerExpired, and most objects hold nothing an expiry changes, so the
-//! broadcast passes over them. This index names, for an expiring id, the
-//! entities, anims, particle systems, bullets and waves that hold something,
-//! instead of asking every object at every expiry. What each holds is what
-//! its callback compares: [`Simulation::entity_expiry_holds`] for an entity,
-//! `expiry_names` for the others. A smudge's callback changes nothing, so no
-//! smudge is a listener. The index is derived from the stores alone and
-//! re-reads an object whenever its store has handed it out mutably (the
-//! store's touch log), so it answers as asking every object would
-//! ([`ExpiryListeners::asked_of_every`]). Never saved, never hashed; a fresh,
-//! cloned or restored store makes it re-read that store's objects.
+//! When a Techno expires, `DispatchPointerExpiredCleanup @ 0x007258D0`
+//! walks registered listeners (`0x00B0F720`) and calls PointerExpired
+//! (`0x00725954`). Most listeners hold nothing the expiry changes.
+//! This index names the entities, anims, particle systems, bullets and
+//! waves whose callbacks use the expiring id. A smudge's callback changes
+//! nothing. [`Simulation::entity_expiry_holds`] and the other stores'
+//! `expiry_names` describe the fields each callback compares.
+//!
+//! The index re-reads objects from each store's touch log. Of the entities it
+//! names, only those noted since ([`EntityStore::take_unread_names`]): an
+//! entity field takes an id only through a writer that notes its entity
+//! (`GameEntity::note_names`), so an entity left out holds at most what the
+//! index read, and an entity the index finds is asked before it is answered.
+//! A fresh, cloned or restored store triggers a full rebuild
+//! ([`ExpiryListeners::asked_of_every`]). The index is excluded from saves and
+//! from the simulation hash.
 
 use std::collections::BTreeSet;
 
 use super::Simulation;
 use super::substrate::ObjectKind;
-use crate::sim::anim_class::{AnimStore, AnimTouchReader};
-use crate::sim::entity_store::{EntityStore, TouchReader};
+use crate::sim::anim_class::{AnimStore, AnimTouchReader, is_local_anim_id};
+use crate::sim::entity_store::EntityStore;
 use crate::sim::particles::{ParticleSystemStore, ParticleTouchReader};
 use crate::sim::projectile::ProjectileStore;
 use crate::sim::terrain_object::TerrainObjectStore;
@@ -28,6 +32,9 @@ use crate::util::lookup_hash::LookupMap;
 
 /// The fewest re-read entities a refresh hands to the worker pool.
 const PARALLEL_FROM: usize = 256;
+
+/// How many of them each of the pool's tasks re-reads.
+const POOLED_TASK: usize = 128;
 
 /// The stores whose objects listen to pointer expiry.
 pub(crate) struct ListenerStores<'a> {
@@ -49,12 +56,12 @@ struct Holds {
 }
 
 impl Holds {
-    /// What a listener naming `names` holds, or `None` when an expiry passes
-    /// it over.
-    fn new(mut names: Vec<u64>, every: bool) -> Option<Self> {
-        names.sort_unstable();
-        names.dedup();
-        (every || !names.is_empty()).then_some(Self { names, every })
+    /// The ids `holds` names: none for a listener an expiry passes over.
+    fn names_of(holds: Option<&Self>) -> &[u64] {
+        match holds {
+            Some(holds) => &holds.names,
+            None => &[],
+        }
     }
 }
 
@@ -73,6 +80,13 @@ pub(crate) struct ExpiryListeners {
     projectiles: StoreIndex,
     waves: StoreIndex,
     terrain: StoreIndex,
+    /// Test builds: the fixture notes taken when the entities were last read
+    /// ([`Self::after_fixture_notes`]).
+    #[cfg(any(test, feature = "test-support"))]
+    fixture_notes: u64,
+    /// The empty stand-in of a presentation copy of the world
+    /// ([`Self::detached`]). Debug builds refuse reads of it.
+    detached: bool,
 }
 
 /// The listeners of one store.
@@ -89,9 +103,32 @@ struct StoreIndex {
     every: BTreeSet<u64>,
     /// Whether every listener has been read.
     built: bool,
+    /// Scratch for the ids a re-read listener names, kept from one refresh
+    /// to the next so only a listener whose holdings changed allocates.
+    /// Empty between refreshes.
+    names: Vec<u64>,
 }
 
 impl ExpiryListeners {
+    /// The empty index a presentation copy of the world holds in place of
+    /// this one (`Simulation::presentation_copy`): only gameplay expires
+    /// pointers. Debug builds panic on a read of it.
+    pub(crate) fn detached() -> Self {
+        Self {
+            detached: true,
+            ..Self::default()
+        }
+    }
+
+    /// Debug builds: refuse a read of a [`Self::detached`] index.
+    #[inline]
+    fn check_attached(&self) {
+        debug_assert!(
+            !self.detached,
+            "read of the pointer-expiry index of a presentation copy of the world: only the live world holds it"
+        );
+    }
+
     /// The listeners `expired`'s expiry reaches, ascending, each with its
     /// store: the entity itself while stored, those naming it, and those any
     /// expiry reaches. The listeners that [`Self::asked_of_every`] selects.
@@ -100,6 +137,7 @@ impl ExpiryListeners {
         stores: ListenerStores<'_>,
         expired: u64,
     ) -> Vec<(u64, ObjectKind)> {
+        self.check_attached();
         let ListenerStores {
             entities,
             anims,
@@ -110,49 +148,78 @@ impl ExpiryListeners {
         } = stores;
         self.refresh_entities(entities);
         let entities = &*entities;
-        // The other listeners hold only a few ids: reading them costs
-        // less than handing them to the worker pool.
-        let ids = self.anims.rereads(
-            anims.take_touched(AnimTouchReader::ExpiryListeners),
-            anims.len(),
-            || anims.iter().map(|(&id, _)| id).collect(),
-        );
-        self.anims.reread(ids, |id, names| {
+        // A full scan visits shared anims. The touch log also names local
+        // anims, including VERA's presentation anims, which keep their owner
+        // link until UnInit. Use the same membership for incremental updates.
+        let touched = match anims.take_touched(AnimTouchReader::ExpiryListeners) {
+            Touched::Ids(ids) => Touched::Ids(
+                ids.into_iter()
+                    .filter(|&id| !is_local_anim_id(id))
+                    .collect(),
+            ),
+            touched => touched,
+        };
+        let ids = self.anims.rereads(touched, anims.len(), usize::MAX, || {
+            anims.iter().map(|(&id, _)| id).collect()
+        });
+        self.anims.reread(&ids, |id, names| {
             anims.get(id).map(|anim| named(names, anim.expiry_names()))
         });
+        // The other listeners hold only a few ids: reading them costs
+        // less than handing them to the worker pool.
         let ids = self.particle_systems.rereads(
             particle_systems.take_touched(ParticleTouchReader::ExpiryListeners),
             particle_systems.len(),
+            usize::MAX,
             || particle_systems.iter().map(|(&id, _)| id).collect(),
         );
-        self.particle_systems.reread(ids, |id, names| {
+        self.particle_systems.reread(&ids, |id, names| {
             particle_systems
                 .get(id)
                 .map(|system| named(names, system.expiry_names()))
         });
         self.refresh_projectiles(projectiles);
-        let ids = self.waves.rereads(waves.take_touched(), waves.len(), || {
-            waves.iter().map(|(&id, _)| id).collect()
-        });
-        self.waves.reread(ids, |id, names| {
+        let ids = self
+            .waves
+            .rereads(waves.take_touched(), waves.len(), usize::MAX, || {
+                waves.iter().map(|(&id, _)| id).collect()
+            });
+        self.waves.reread(&ids, |id, names| {
             waves.get(id).map(|wave| named(names, wave.expiry_names()))
         });
-        let ids = self
-            .terrain
-            .rereads(terrain.take_touched(), terrain.objects().len(), || {
-                terrain.objects().keys().copied().collect()
-            });
-        self.terrain.reread(ids, |id, names| {
+        let ids = self.terrain.rereads(
+            terrain.take_touched(),
+            terrain.objects().len(),
+            usize::MAX,
+            || terrain.objects().keys().copied().collect(),
+        );
+        self.terrain.reread(&ids, |id, names| {
             terrain
                 .get(id)
                 .map(|_| named(names, [terrain.next_in_cell(id)]))
         });
 
-        let mut reached: Vec<(u64, ObjectKind)> = self
-            .entities
-            .reaching(expired)
-            .map(|id| (id, ObjectKind::Entity))
-            .collect();
+        // A clear takes no note, so the index may still hold a name an entity
+        // dropped: each entity it finds is asked, and one that no longer acts
+        // is re-read, so the index forgets what it no longer holds.
+        let mut found: Vec<u64> = self.entities.reaching(expired).collect();
+        found.sort_unstable();
+        found.dedup();
+        let mut reached: Vec<(u64, ObjectKind)> = Vec::with_capacity(found.len() + 1);
+        for id in found {
+            if entities
+                .get(id)
+                .is_some_and(|entity| Simulation::entity_expiry_listener_acts(entity, id, expired))
+            {
+                reached.push((id, ObjectKind::Entity));
+            } else {
+                self.entities.reread(&[id], |id, names| {
+                    entities.get(id).map(|entity| {
+                        Simulation::entity_expiry_holds(entity, |name| names.push(name))
+                    })
+                });
+            }
+        }
         if entities.contains(expired) {
             reached.push((expired, ObjectKind::Entity));
         }
@@ -226,16 +293,35 @@ impl ExpiryListeners {
     }
 
     fn refresh_entities(&mut self, entities: &mut EntityStore) {
-        let ids = self.entities.rereads(
-            entities.take_touched(TouchReader::ExpiryListeners),
-            entities.len(),
-            || entities.keys_sorted(),
-        );
-        self.entities.reread_pooled(ids, |id, names| {
+        let unread = entities.take_unread_names();
+        #[cfg(any(test, feature = "test-support"))]
+        let unread = self.after_fixture_notes(unread);
+        // The ids the worker pool takes stay as logged: sorting thousands
+        // of them costs more than re-reading the few that repeat.
+        let ids = self
+            .entities
+            .rereads(unread, entities.len(), PARALLEL_FROM, || {
+                entities.keys_sorted()
+            });
+        self.entities.reread_pooled(&ids, |id, names| {
             entities
                 .get(id)
                 .map(|entity| Simulation::entity_expiry_holds(entity, |name| names.push(name)))
         });
+    }
+
+    /// Test builds: every entity once a fixture took a note since the last
+    /// read, since a fixture's note names no entity ([`NameNote::fixture`]).
+    ///
+    /// [`NameNote::fixture`]: crate::sim::game_entity::NameNote::fixture
+    #[cfg(any(test, feature = "test-support"))]
+    fn after_fixture_notes(&mut self, unread: Touched) -> Touched {
+        let notes = crate::sim::game_entity::NameNote::fixture_notes();
+        if std::mem::replace(&mut self.fixture_notes, notes) == notes {
+            unread
+        } else {
+            Touched::All
+        }
     }
 
     /// The Bullet subset of the same index, for Anim4's dedicated holder
@@ -245,17 +331,19 @@ impl ExpiryListeners {
         projectiles: &mut ProjectileStore,
         expired: u64,
     ) -> Vec<u64> {
+        self.check_attached();
         self.refresh_projectiles(projectiles);
         self.projectiles.reaching(expired).collect()
     }
 
     fn refresh_projectiles(&mut self, projectiles: &mut ProjectileStore) {
-        let ids = self
-            .projectiles
-            .rereads(projectiles.take_touched(), projectiles.len(), || {
-                projectiles.iter().map(|(&id, _)| id).collect()
-            });
-        self.projectiles.reread(ids, |id, names| {
+        let ids = self.projectiles.rereads(
+            projectiles.take_touched(),
+            projectiles.len(),
+            usize::MAX,
+            || projectiles.iter().map(|(&id, _)| id).collect(),
+        );
+        self.projectiles.reread(&ids, |id, names| {
             projectiles
                 .get(id)
                 .map(|bullet| named(names, bullet.expiry_names()))
@@ -267,17 +355,23 @@ impl StoreIndex {
     /// The listeners to re-read: those `touched` names, or every stored one
     /// (`stored_ids`, ascending) when the log cannot say which or names as
     /// many ids as the store holds (its ids repeat, so sorting them would
-    /// cost more), after dropping what the removed ones held.
+    /// cost more), after dropping what the removed ones held. Fewer than
+    /// `sort_below` logged ids come back ascending without repeats; more
+    /// come back as logged, where a repeat is re-read and reports what its
+    /// first reading did.
     fn rereads(
         &mut self,
         touched: Touched,
         stored: usize,
+        sort_below: usize,
         stored_ids: impl FnOnce() -> Vec<u64>,
     ) -> Vec<u64> {
         match touched {
             Touched::Ids(mut ids) if self.built && ids.len() < stored => {
-                ids.sort_unstable();
-                ids.dedup();
+                if ids.len() < sort_below {
+                    ids.sort_unstable();
+                    ids.dedup();
+                }
                 ids
             }
             _ => {
@@ -301,20 +395,21 @@ impl StoreIndex {
     /// Re-read `ids` with `read`, which pushes the ids a stored listener
     /// names (repeats possible) and says whether any expiry reaches it, or
     /// answers `None` for a removed one, and record what changed.
-    fn reread(&mut self, ids: Vec<u64>, read: impl Fn(u64, &mut Vec<u64>) -> Option<bool>) {
-        let index = &*self;
-        let mut names = Vec::new();
-        let changes: Vec<_> = ids
-            .iter()
-            .map(|&id| index.change(id, &mut names, |names| read(id, names)))
-            .collect();
-        self.record(ids, changes);
+    fn reread(&mut self, ids: &[u64], read: impl Fn(u64, &mut Vec<u64>) -> Option<bool>) {
+        let mut names = std::mem::take(&mut self.names);
+        for &id in ids {
+            if let Some(now) = self.change(id, &mut names, |names| read(id, names)) {
+                self.replace(id, now);
+            }
+        }
+        names.clear();
+        self.names = names;
     }
 
     /// [`Self::reread`], on the worker pool when there are many.
     fn reread_pooled(
         &mut self,
-        ids: Vec<u64>,
+        ids: &[u64],
         read: impl Fn(u64, &mut Vec<u64>) -> Option<bool> + Sync,
     ) {
         // Handing a few ids to the worker pool costs more than reading them.
@@ -322,16 +417,27 @@ impl StoreIndex {
             return self.reread(ids, read);
         }
         let index = &*self;
-        // Each worker names into its own scratch.
-        let changes = crate::sim::parallel::map_with(&ids, Vec::new(), |names, &id| {
-            index.change(id, names, |names| read(id, names))
+        let tasks: Vec<&[u64]> = ids.chunks(POOLED_TASK).collect();
+        // Each worker names into its own scratch, and each task answers only
+        // the listeners whose holdings changed, in the order of its ids.
+        let changes = crate::sim::parallel::map_with(&tasks, Vec::new(), |names, task| {
+            task.iter()
+                .filter_map(|&id| {
+                    index
+                        .change(id, names, |names| read(id, names))
+                        .map(|now| (id, now))
+                })
+                .collect::<Vec<_>>()
         });
-        self.record(ids, changes);
+        for (id, now) in changes.into_iter().flatten() {
+            self.replace(id, now);
+        }
     }
 
     /// What re-reading listener `id` with `read` changes: `None` when it
-    /// holds what the index holds for it, else what it holds now. A listener
-    /// that holds what it held allocates nothing; `names` is scratch.
+    /// holds what the index holds for it, else what it holds now (`None`
+    /// when an expiry passes it over). A listener that holds what it held
+    /// allocates nothing; `names` is scratch.
     fn change(
         &self,
         id: u64,
@@ -349,16 +455,14 @@ impl StoreIndex {
             }),
             None => held.is_none(),
         };
-        (!unchanged).then(|| every.and_then(|every| Holds::new(names.clone(), every)))
-    }
-
-    /// Record what each re-read listener whose holdings changed holds now.
-    fn record(&mut self, ids: Vec<u64>, changes: Vec<Option<Option<Holds>>>) {
-        for (id, now) in ids.into_iter().zip(changes) {
-            if let Some(now) = now {
-                self.replace(id, now);
-            }
-        }
+        (!unchanged).then(|| {
+            every
+                .filter(|&every| every || !names.is_empty())
+                .map(|every| Holds {
+                    names: names.clone(),
+                    every,
+                })
+        })
     }
 
     /// The listeners an expiry of `expired` reaches: those any expiry
@@ -371,25 +475,54 @@ impl StoreIndex {
         )
     }
 
+    /// Record that listener `id` holds `now`, changing only the names and
+    /// the flag that differ from what it held.
     fn replace(&mut self, id: u64, now: Option<Holds>) {
-        if self.holds.get(&id) == now.as_ref() {
+        let old = self.holds.get(&id);
+        if old == now.as_ref() {
             return;
         }
-        if let Some(old) = self.holds.remove(&id) {
-            for &name in &old.names {
-                self.named_by.remove(&(name, id));
-            }
-            if old.every {
-                self.every.remove(&id);
+        let every = |holds: Option<&Holds>| holds.is_some_and(|holds| holds.every);
+        // Both lists ascend without repeats, so one pass finds the names
+        // that left and the names that came.
+        let (mut left, mut came) = (Holds::names_of(old), Holds::names_of(now.as_ref()));
+        loop {
+            match (left.first(), came.first()) {
+                (None, None) => break,
+                (Some(&was), Some(&is)) if was == is => {
+                    left = &left[1..];
+                    came = &came[1..];
+                }
+                (Some(&was), Some(&is)) if was < is => {
+                    self.named_by.remove(&(was, id));
+                    left = &left[1..];
+                }
+                (Some(&was), None) => {
+                    self.named_by.remove(&(was, id));
+                    left = &left[1..];
+                }
+                (_, Some(&is)) => {
+                    self.named_by.insert((is, id));
+                    came = &came[1..];
+                }
             }
         }
-        if let Some(now) = now {
-            self.named_by
-                .extend(now.names.iter().map(|&name| (name, id)));
-            if now.every {
+        match (every(old), every(now.as_ref())) {
+            (true, false) => {
+                self.every.remove(&id);
+            }
+            (false, true) => {
                 self.every.insert(id);
             }
-            self.holds.insert(id, now);
+            _ => {}
+        }
+        match now {
+            Some(now) => {
+                self.holds.insert(id, now);
+            }
+            None => {
+                self.holds.remove(&id);
+            }
         }
     }
 }
@@ -401,6 +534,7 @@ mod tests {
     use crate::sim::anim_class::{AnimObject, AnimRuntime, AnimWorldCoord};
     use crate::sim::capture_manager::CaptureManagerState;
     use crate::sim::combat::{RAD_NO_ATTACKER, TargetKind};
+    use crate::sim::components::NavTargetRef;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::InternedId;
     use crate::sim::particles::ParticleSystem;
@@ -467,11 +601,28 @@ mod tests {
         )
     }
 
+    /// A local anim: a VERA presentation anim, which rides its owner but is
+    /// not in the Anim array.
+    fn presentation_anim(id: u64) -> AnimObject {
+        let mut anim = anim(id);
+        anim.mark_presentation_for_test();
+        anim
+    }
+
     fn bullet(stores: &mut Stores, id: u64, source: u64, target: ProjectileTarget) {
         let payload = ProjectilePayload::new(40, InternedId::from_index(3), None, false);
         stores
             .projectiles
             .construct(id, 0, 0, source, target, payload);
+    }
+
+    /// Retarget a stored entity through the class setter's store.
+    fn retarget(entities: &mut EntityStore, id: u64, target: u64) {
+        let entity = entities.get_mut(id).unwrap();
+        let note = entity.note_names();
+        entity
+            .attack_target
+            .set(Some(TargetKind::Entity(target)), note);
     }
 
     fn attacker(id: u64, target: u64) -> GameEntity {
@@ -511,12 +662,7 @@ mod tests {
         assert_eq!(reach(&mut index, &mut stores, 3), [1, 2, 3, 4, 6]);
         assert_eq!(reach(&mut index, &mut stores, 9), [6]);
         // A retarget is read back on the next expiry.
-        stores
-            .entities
-            .get_mut(1)
-            .unwrap()
-            .attack_target
-            .set_for_test(Some(TargetKind::Entity(4)));
+        retarget(&mut stores.entities, 1, 4);
         assert_eq!(reach(&mut index, &mut stores, 3), [2, 3, 4, 6]);
         assert_eq!(reach(&mut index, &mut stores, 4), [1, 4, 6]);
         // An entity inserted after the index was built.
@@ -533,6 +679,87 @@ mod tests {
         }
         assert_eq!(reach(&mut index, &mut stores, 3), [3, 5]);
         assert_eq!(reach(&mut index, &mut stores, 4), [1]);
+    }
+
+    /// Entities 1..=5, read once by `index`.
+    fn read_entities(index: &mut ExpiryListeners) -> Stores {
+        let mut stores = Stores::default();
+        for id in 1..=5 {
+            stores
+                .entities
+                .insert(GameEntity::test_default(id, "MTNK", "Americans", 10, 10));
+        }
+        assert!(reach(index, &mut stores, 20).is_empty());
+        stores
+    }
+
+    #[test]
+    fn a_name_each_kind_of_writer_stores_is_found_at_the_next_expiry() {
+        let mut index = ExpiryListeners::default();
+        let mut stores = read_entities(&mut index);
+        // A field's writer takes its entity's note, an entity's own writer
+        // and the store's held-Anim writer note it themselves, and a forked
+        // turn's note comes with its commit.
+        retarget(&mut stores.entities, 1, 20);
+        let entity = stores.entities.get_mut(2).unwrap();
+        let note = entity.note_names();
+        entity
+            .navigation
+            .publish_nav_com(Some(NavTargetRef::object(21)), note);
+        stores
+            .entities
+            .get_mut(3)
+            .unwrap()
+            .set_archive_target(Some(TargetKind::Entity(22)));
+        stores.entities.hold_parachute_animation(4, 23);
+        stores.entities.share();
+        let mut fork = stores.entities.fork();
+        retarget(&mut fork, 5, 24);
+        let writes = fork.take_fork_writes();
+        drop(fork);
+        stores.entities.unshare();
+        stores.entities.commit_writes(writes);
+        for (expired, namer) in [(20, 1), (21, 2), (22, 3), (23, 4), (24, 5)] {
+            assert_eq!(reach(&mut index, &mut stores, expired), [namer]);
+        }
+    }
+
+    #[test]
+    fn a_cleared_name_is_not_found() {
+        let mut index = ExpiryListeners::default();
+        let mut stores = read_entities(&mut index);
+        let entity = stores.entities.get_mut(1).unwrap();
+        let note = entity.note_names();
+        entity
+            .navigation
+            .publish_nav_com(Some(NavTargetRef::object(20)), note);
+        assert!(reach(&mut index, &mut stores, 30).is_empty());
+        // A clear takes no note: the index still names 1 for 20, asks it,
+        // and forgets it.
+        stores.entities.get_mut(1).unwrap().navigation.stop_moving();
+        assert!(reach(&mut index, &mut stores, 20).is_empty());
+        assert_eq!(
+            index
+                .entities
+                .named_by
+                .range((20, 0)..=(20, u64::MAX))
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn an_entity_stored_again_is_read_whole() {
+        let mut index = ExpiryListeners::default();
+        let mut stores = read_entities(&mut index);
+        retarget(&mut stores.entities, 1, 20);
+        assert_eq!(reach(&mut index, &mut stores, 20), [1]);
+        // A copied field takes no note; storing the entity again reads it.
+        let copied = stores.entities.get(1).unwrap().attack_target;
+        let mut moved = stores.entities.remove(3).unwrap();
+        moved.attack_target = copied;
+        stores.entities.insert(moved);
+        assert_eq!(reach(&mut index, &mut stores, 20), [1, 3]);
     }
 
     #[test]
@@ -563,14 +790,13 @@ mod tests {
         assert_eq!(reach(&mut index, &mut stores, 6), [1]);
         assert!(reach(&mut index, &mut stores, 7).is_empty());
         // A queued entity target is read back on the next expiry.
-        stores
-            .entities
-            .get_mut(1)
-            .unwrap()
+        let launcher = stores.entities.get_mut(1).unwrap();
+        let note = launcher.note_names();
+        launcher
             .spawn_manager
             .as_mut()
             .unwrap()
-            .set_queued_target_for_test(Some(TargetKind::Entity(7)));
+            .queue_target(Some(TargetKind::Entity(7)), note);
         assert_eq!(reach(&mut index, &mut stores, 7), [1]);
     }
 
@@ -586,16 +812,12 @@ mod tests {
         };
         let mut index = ExpiryListeners::default();
         assert_eq!(reach(&mut index, &mut stores, 1000).len(), 200);
-        // More hand-outs than stored entities: every entity is re-read, and
-        // the removed ones drop out.
+        // Every entity handed out and half of them retargeted: those and the
+        // removed ones are re-read, on the worker pool, and the removed ones
+        // drop out.
         for id in 1..=600 {
             if id % 2 == 0 {
-                stores
-                    .entities
-                    .get_mut(id)
-                    .unwrap()
-                    .attack_target
-                    .set_for_test(Some(TargetKind::Entity(1000)));
+                retarget(&mut stores.entities, id, 1000);
             }
             stores.entities.get_mut(id).unwrap();
         }
@@ -607,10 +829,22 @@ mod tests {
         }
         // Fewer than the store holds, but enough for the worker pool.
         for id in 1..=400 {
-            if let Some(entity) = stores.entities.get_mut(id) {
-                entity
-                    .attack_target
-                    .set_for_test(Some(TargetKind::Entity(1001)));
+            if stores.entities.contains(id) {
+                retarget(&mut stores.entities, id, 1001);
+            }
+        }
+        for expired in [1000, 1001, 1002] {
+            reach(&mut index, &mut stores, expired);
+        }
+        // The pool takes a long log as it stands, here descending and then
+        // repeating: a listener read once reports what it holds now.
+        for (id, target) in (1..=250)
+            .rev()
+            .map(|id| (id, 1002))
+            .chain((1..=120).map(|id| (id, 1000 + id % 3)))
+        {
+            if stores.entities.contains(id) {
+                retarget(&mut stores.entities, id, target);
             }
         }
         for expired in [1000, 1001, 1002] {
@@ -674,6 +908,55 @@ mod tests {
         }
         assert_eq!(reach(&mut index, &mut stores, 3), [3]);
         assert_eq!(reach(&mut index, &mut stores, 6), [30, 31]);
+    }
+
+    #[test]
+    fn a_reread_changes_only_the_names_that_came_and_left() {
+        let mut index = StoreIndex::default();
+        let holds = |names: &[u64], every| {
+            Some(Holds {
+                names: names.to_vec(),
+                every,
+            })
+        };
+        let pairs = |index: &StoreIndex| index.named_by.iter().copied().collect::<Vec<_>>();
+        index.replace(5, holds(&[10, 20, 30], false));
+        index.replace(6, holds(&[20], true));
+        assert_eq!(pairs(&index), [(10, 5), (20, 5), (20, 6), (30, 5)]);
+        // 10 and 30 leave, 15 and 40 come, 20 stays; the other listener's
+        // pair on 20 is not touched.
+        index.replace(5, holds(&[15, 20, 40], true));
+        assert_eq!(pairs(&index), [(15, 5), (20, 5), (20, 6), (40, 5)]);
+        assert_eq!(index.reaching(20).collect::<Vec<_>>(), [5, 6, 5, 6]);
+        // The flag alone, then everything.
+        index.replace(6, holds(&[20], false));
+        assert_eq!(index.every.iter().copied().collect::<Vec<_>>(), [5]);
+        index.replace(5, None);
+        assert_eq!(pairs(&index), [(20, 6)]);
+        assert!(index.every.is_empty() && !index.holds.contains_key(&5));
+    }
+
+    #[test]
+    fn a_local_anim_is_not_a_pointer_expiry_listener() {
+        let mut stores = Stores::default();
+        stores
+            .entities
+            .insert(GameEntity::test_default(3, "HTNK", "Russians", 14, 14));
+        // Two anims in the Anim array, so the index re-reads after the first
+        // expiry only what the touch log names.
+        stores.anims.insert(anim(10));
+        stores.anims.insert(anim(11));
+        let mut index = ExpiryListeners::default();
+        assert_eq!(reach(&mut index, &mut stores, 3), [3]);
+
+        // A presentation anim rides its owner. It is a local anim, outside the
+        // Anim array, so the expiry of its owner does not reach it: it ends
+        // with the owner's UnInit instead.
+        let local = stores.anims.allocate_local_id();
+        stores.anims.insert(presentation_anim(local));
+        stores.anims.set_owner_entity_for_test(local, Some(3));
+        let _ = stores.anims.get_mut(local).expect("the local anim is stored");
+        assert_eq!(reach(&mut index, &mut stores, 3), [3]);
     }
 
     #[test]

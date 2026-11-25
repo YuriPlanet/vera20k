@@ -189,7 +189,7 @@ impl Simulation {
     /// campaign, each other, which its Unlimbo lit (`0x00440D4D`). The
     /// outgoing timeline restarts empty.
     pub(crate) fn rebuild_lighting_sources_after_load(&mut self, rules: &RuleSet) {
-        self.lighting_sources = LightingSources::default();
+        *self.lighting_sources = LightingSources::default();
         let uses_local_shroud = self.session.uses_local_player_shroud();
         let ids: Vec<_> = self
             .entities()

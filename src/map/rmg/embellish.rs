@@ -83,7 +83,8 @@ pub struct EmbellishArgs<'a> {
     /// unpowered combat buildings over open ground.
     pub derelict_amount: i32,
     /// VERA extension: the Advanced Civilians slider, 0 = none; extra
-    /// civilian infantry and vehicles on Neutral over open ground.
+    /// civilian infantry and vehicles on Neutral over open ground. The urban
+    /// pass reads it too: at 0 its districts place no foot traffic.
     pub civilian_amount: i32,
     /// VERA extension: the Advanced Animals slider, 0 = none; `Name=Animal …`
     /// foots on Neutral over open ground.

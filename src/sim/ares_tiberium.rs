@@ -736,8 +736,7 @@ impl Simulation {
                 impact,
                 false,
             ) {
-                let anim = self.interner.resolve(anim).to_owned();
-                self.spawn_named_anim(rules, &anim, anim_coord, 0, 0x600, 0);
+                self.spawn_named_anim(rules, anim, anim_coord, 0, 0x600, 0);
             }
             let warhead_ref = self.interner.intern(&warhead.id);
             crate::sim::combat::world_receiver::apply_area_damage(

@@ -75,6 +75,16 @@ There are at most 256 bindings per command and 1024 per profile; each binding co
 one observation sample. The wrapper checks every substitution and preserves all
 other arguments. `VALID` continues to mean a valid capture, not a successful order.
 
+A scheduled `DeployMcv` command uses the self-click MegaMission Unload
+producer (`0x004C6860`). To exercise the distinct deploy hotkey route, select
+the unit and issue a `D` key gesture (`Selection::IssueDeployCommand`,
+`0x00730AF0`). This routes through Event9 without changing other profiles.
+The two producers admit differently, and the difference is in the original:
+the self-click order reaches `CanDeploySlashUnload` (`0x00700D50`), which
+refuses a tube neighborhood, EMP or a nonnegative tube index, while Event9
+consults the current cell's `WeaponsFactory=` building
+(`0x004C778A..0x004C77DE`) and refuses the deploy there.
+
 The [computer Dreadnought bombard profile](map_observation.ai-dred-bombard.example.json)
 deploys the observer's starting MCV through an actor selector and queues and places
 its NAPOWR, NAREFN and NAYARD by rule name.
@@ -203,12 +213,24 @@ war factory, service depot and AMCV, then request deployment inside the factory'
 ground footprint and again after moving away. Its
 [expectations](map_observation.cell-building-query.expectations.json) check the
 retained Move/NavCom at step7381, queued Unload at8401, the converted yard at40,96,
-and9100 credits spent. Actor1737 and yard2176 belong to this exact launch/command
-sequence; changing it requires discovery again. The initial MCV and production
-types use v3 bindings. The interior request is deliberately after factory contact
-release while the physical cell is still29,92. This is a production integration
-control, not native timing or whole-function parity; marked dying and special
-foundation inputs are separate component regressions.
+and 9,100 credits spent. The profile resolves each MCV and production type by
+name. Assertions identify the new Construction Yard by owner and cell. The
+interior request is deliberately after factory contact
+release while the physical cell is still29,92. The deploy is the D key's Event9
+order, so the interior request meets Event9's weapons-factory cell query
+(`0x004C778A..0x004C77DE`) and keeps the MCV's destination. This is a production
+integration control, not native timing or whole-function parity; marked dying and
+special-foundation inputs are separate component regressions.
+
+The [Save and load profile](map_observation.save-load.example.json) deploys the
+observer's starting MCV, takes a literal `Ctrl+Shift+M` snapshot, starts paying
+for a power plant afterwards and restores the snapshot with a literal
+`Ctrl+Shift+N`. `allow_load_segments` admits the quick load; the capture refuses
+a restore that does not rewind the simulation clock, and its
+[expectations](map_observation.save-load.expectations.json) check that the
+restored economy is the saved one and that the observer still owns its yard.
+Each load starts a new observation epoch, so an actor identity from before the
+restore is not read after it.
 
 Requested terrain cells also report `local_visibility`: the current viewer's
 owner name and retained `revealed`, `visible` and `gap_covered` queries. It is

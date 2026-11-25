@@ -37,6 +37,14 @@ const TS_LIMPETS: u32 = 0xF612_7DC1;
 // references gain both names. Older worlds had neither, which reads as None
 // and plays nothing (docs/ts-anim-sounds.md).
 const TS_ANIM_SOUNDS: u32 = 0x9441_E8D8;
+// Older writers stored neither Kratos inputs nor its infantry firing offsets.
+const KRATOS_FLH: u32 = 0x9F1B_D701;
+// Tiberian Sun webs (docs/ts-webs.md) store the frame an infantryman's web
+// runs out with a byte saying he was webbed, a warhead's web keys and an
+// infantry type's Struggle record. Older worlds hold none: no man was
+// webbed, end frame 0 has passed, no warhead webs and no type has Struggle
+// frames.
+const TS_WEBS: u32 = 0xF215_BF3A;
 
 /// The rules digest a converted save carries: the loader takes the rules the
 /// game has instead of proving the digest the old writer computed, whose
@@ -70,7 +78,7 @@ pub fn supports(header: &GameSnapshotHeader) -> bool {
         && previous_layout(header.layout).is_some()
         && header.compatibility().matches_build()
         && SNAPSHOT_ENVELOPE_VERSION == MIGRATION_ENVELOPE_VERSION
-        && snapshot_layout() == TS_ANIM_SOUNDS
+        && snapshot_layout() == TS_WEBS
 }
 
 fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
@@ -88,6 +96,12 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     const LIMPETS: (&str, &[&str]) = ("Seldom", &["limpets"]);
     const LIMPETED: (&str, &[&str]) = ("FootSpeedState", &["limpeted"]);
     const ANIM_SOUNDS: (&str, &[&str]) = ("AnimTypeReferences", &["bounce_sound", "expire_sound"]);
+    const KRATOS_INPUTS: (&str, &[&str]) = ("ProcessedRulesLayers", &["kratos_inputs"]);
+    const KRATOS_OFFSETS: (&str, &[&str]) = ("WeaponOffsets", &["crawling", "elite_crawling"]);
+    const WEB: (&str, &[&str]) = ("InfantryRuntime", &["webbed"]);
+    const WEB_TIMER: (&str, &[&str]) = ("Seldom", &["web"]);
+    const WARHEAD_WEB: (&str, &[&str]) = ("WarheadAnimReadState", &["web"]);
+    const STRUGGLE: (&str, &[&str]) = ("InfantrySequenceBank", &["struggle"]);
     let absent_fields: &'static [_] = match source {
         V0_3_8_AND_0_3_9 | V0_4_0 => &[
             IMAGE_FLAGS,
@@ -103,6 +117,12 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             LIMPETS,
             LIMPETED,
             ANIM_SOUNDS,
+            KRATOS_INPUTS,
+            KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
         ],
         ALPHA_SHAPE_LISTENER => &[
             IMAGE_FLAGS,
@@ -117,6 +137,12 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             LIMPETS,
             LIMPETED,
             ANIM_SOUNDS,
+            KRATOS_INPUTS,
+            KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
         ],
         ALTERNATE_THEATER_ART => &[
             DECK,
@@ -130,6 +156,12 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             LIMPETS,
             LIMPETED,
             ANIM_SOUNDS,
+            KRATOS_INPUTS,
+            KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
         ],
         BRIDGE_DECK_AND_FLY_SPIN => &[
             DEGRADES,
@@ -140,6 +172,12 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             LIMPETS,
             LIMPETED,
             ANIM_SOUNDS,
+            KRATOS_INPUTS,
+            KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
         ],
         HOUSE_DEGRADES => &[
             ICE_TIMER,
@@ -149,10 +187,54 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             LIMPETS,
             LIMPETED,
             ANIM_SOUNDS,
+            KRATOS_INPUTS,
+            KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
         ],
-        TS_ICE => &[DENT, LIMPETS, LIMPETED, ANIM_SOUNDS],
-        TERRAIN_DENT => &[LIMPETS, LIMPETED, ANIM_SOUNDS],
-        TS_LIMPETS => &[ANIM_SOUNDS],
+        TS_ICE => &[
+            DENT,
+            LIMPETS,
+            LIMPETED,
+            ANIM_SOUNDS,
+            KRATOS_INPUTS,
+            KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+        ],
+        TERRAIN_DENT => &[
+            LIMPETS,
+            LIMPETED,
+            ANIM_SOUNDS,
+            KRATOS_INPUTS,
+            KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+        ],
+        TS_LIMPETS => &[
+            ANIM_SOUNDS,
+            KRATOS_INPUTS,
+            KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+        ],
+        TS_ANIM_SOUNDS => &[
+            KRATOS_INPUTS,
+            KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+        ],
+        KRATOS_FLH => &[WEB, WEB_TIMER, WARHEAD_WEB, STRUGGLE],
         _ => return None,
     };
     Some(save_codec::PreviousLayout {
@@ -168,7 +250,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
 /// only its stock Arctic setting and latch. Keep both exactly as saved.
 pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     let target = snapshot_layout();
-    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != TS_ANIM_SOUNDS {
+    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != TS_WEBS {
         return Err(MigrationError::UnsupportedTarget(target));
     }
 
@@ -300,9 +382,7 @@ mod tests {
         let original = bytes.clone();
         let error = migrate(&mut bytes).unwrap_err();
         assert_eq!(bytes, original);
-        if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
-            || snapshot_layout() != TS_ANIM_SOUNDS
-        {
+        if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || snapshot_layout() != TS_WEBS {
             assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
             return;
         }

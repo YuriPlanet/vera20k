@@ -497,7 +497,7 @@ fn magnetron_temporary_bullet_state_matches_original_construction() {
             };
             sim.session
                 .set_binary_frame_for_test(row["input"]["frame"].as_u64().unwrap() as u32);
-            sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+            *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
                 state["native_id"].as_u64().unwrap() as u32 - 1,
             ));
             let warhead = if index == 0 {
@@ -632,13 +632,13 @@ fn magnetron_temporary_bullet_tails_match_original_rng_lights_and_ids() {
     }
     sim.session
         .set_binary_frame_for_test(row["input"]["frame"].as_u64().unwrap() as u32);
-    sim.main_rng =
+    *sim.main_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-    sim.scenario_rng =
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-    sim.mapgen_rng =
+    *sim.mapgen_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
         row["native_id_before"].as_u64().unwrap() as u32,
     ));
     let native_lights: Vec<_> = row["events"]
@@ -838,17 +838,17 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
             }
         }
     }
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 64,
         off_fc: 0,
         off_100: 0,
         off_104: 64,
         off_108: 64,
     });
-    sim.playfield_size_height = Some(64);
+    *sim.playfield_size_height = Some(64);
     sim.session
         .set_binary_frame_for_test(int(input, "frame", 1000) as u32);
-    sim.scenario_rng = SimRng::new(int(input, "seed", 1) as u64);
+    *sim.scenario_rng = SimRng::new(int(input, "seed", 1) as u64);
     assert_eq!(sim.substrate.allocate_stable_id(), 1);
     insert_entity(&mut sim, 1, EntityCategory::Aircraft);
     sim.substrate.entities.get_mut(1).unwrap().locomotor = Some(LocomotorState::from_object_type(
@@ -1026,8 +1026,8 @@ fn live_null_crash_books_one_loss_through_impact_and_retirement() {
 
     let mut reached_impact = false;
     for _ in 0..128 {
-        sim.session
-            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+        let session = &mut *sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         if sim
             .tick_air_movement_with_cell_lists_one(
                 1,
@@ -1400,11 +1400,11 @@ fn a_crash_saved_in_mid_fall_lands_like_the_original() {
     }
     assert!(sim.substrate.entities.get(1).unwrap().crash.seen());
 
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     let bytes = GameSnapshot::save(&sim, 0, 0, "crash in mid-fall", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
-    restored.resolved_terrain = sim.resolved_terrain.clone();
+    *restored.resolved_terrain = (*sim.resolved_terrain).clone();
     restored.restore_after_snapshot_load().unwrap();
     assert_eq!(restored.state_hash(), sim.state_hash());
 
@@ -1542,14 +1542,14 @@ fn jumpjet_fixture_with_art(balloon: bool, art: &str) -> (Simulation, RuleSet, u
     rules.supply_loaded_voxel_for_test("TEST");
     let mut sim = Simulation::with_seed(0);
     install_common_raw_terrain(&mut sim, 70, 70, 0, None);
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 64,
         off_fc: 0,
         off_100: 0,
         off_104: 64,
         off_108: 64,
     });
-    sim.playfield_size_height = Some(64);
+    *sim.playfield_size_height = Some(64);
     sim.session.set_binary_frame_for_test(1000);
     for (name, human) in [("Americans", true), ("Soviets", false)] {
         let house = sim.interner.intern(name);
@@ -2788,7 +2788,7 @@ fn campaign_player_controlled_house_hears_voice_crashing() {
     );
     orca.crash.set_crashing_for_test(true);
     let mut sim = Simulation::with_seed(0);
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     let mut house = crate::sim::house_state::HouseState::new(orca.owner(), 0, None, false, 0, 10);
     house.set_player_control_for_test(true);
     sim.houses.register(house);

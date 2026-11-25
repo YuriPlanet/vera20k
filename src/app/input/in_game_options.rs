@@ -3,31 +3,30 @@
 //! BBB's settings: which way the Game Speed slider runs, whether its row
 //! shows and the speed it stands at.
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::SessionMode;
+use crate::app::match_runtime::state::MatchState;
 use crate::sim::world::Simulation;
 use crate::ui::shell::game_speed::SpeedContext;
 use crate::ui::shell::in_game_options_state::InGameOptionsState;
 
 /// Every opening of the menu's page runs BBB's init ([`init`]).
-pub(crate) fn on_open(state: &mut AppState) {
-    let sequenced_lockstep = state
-        .match_state
+pub(crate) fn on_open(frontend: &FrontendState, match_state: &mut MatchState) {
+    let sequenced_lockstep = match_state
         .live_network
         .as_ref()
         .is_some_and(|live| live.uses_sequenced_lockstep());
-    let mode = state.match_state.session_mode();
-    let world = state
-        .match_state
+    let mode = match_state.session_mode();
+    let world = match_state
         .sim_runtime
         .runtime()
         .map(|runtime| &runtime.simulation);
     init(
-        &mut state.match_state.match_presentation.in_game_options,
+        &mut match_state.match_presentation.in_game_options,
         world,
         mode,
         sequenced_lockstep,
-        state.frontend.campaign_speed_control,
+        frontend.campaign_speed_control,
     );
 }
 

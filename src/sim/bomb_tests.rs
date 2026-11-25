@@ -881,7 +881,7 @@ fn retail_fire_once_ivan_releases_target_on_attach() {
     restored.resolve_type_handles(rules);
     // Snapshot loading has its own Scenario reseed policy; compare retained
     // gameplay after aligning that unrelated owner.
-    restored.scenario_rng = sim.scenario_rng.clone();
+    *restored.scenario_rng = (*sim.scenario_rng).clone();
     assert_eq!(restored.state_hash(), sim.state_hash());
     assert!(entity(&restored, ivan).attack_target.target().is_none());
     assert_eq!(bomb(&restored, tank), bomb(&sim, tank));
@@ -978,6 +978,28 @@ fn a_bomb_outlives_its_planter_and_credits_no_one() {
     let tank = entity(&sim, tank);
     assert_eq!(tank.health.current(), 0, "450 kills the 300-strength tank");
     assert!(tank.seldom.kill_record.killer().is_none(), "no kill credit");
+}
+
+/// Every object's expiry reaches the bomb list (`0x00725961`), and only a
+/// bomb the expiring object planted is written: the carrier of any other
+/// bomb is read, not handed out.
+#[test]
+fn an_expiry_hands_out_only_the_carriers_of_the_bombs_its_object_planted() {
+    let rules = rules();
+    let mut sim = sim(27);
+    let tank = spawn(&mut sim, &rules, "LTNK", "Americans", 12, 10);
+    let other = spawn(&mut sim, &rules, "HTNK", "Americans", 14, 10);
+    let ivan = spawn(&mut sim, &rules, "IVAN", "Russians", 11, 10);
+    let second = spawn(&mut sim, &rules, "IVAN", "Russians", 13, 10);
+    sim.bomb_attach_for_test(ivan, Some(tank), &rules);
+    sim.bomb_attach_for_test(second, Some(other), &rules);
+    assert_eq!(sim.bomb_carriers().len(), 2);
+
+    let handed_out = sim.substrate.entities.hand_outs();
+    Simulation::bomb_planter_expired(&mut sim.substrate, &sim.bombs, ivan);
+    assert_eq!(sim.substrate.entities.hand_outs() - handed_out, 1);
+    assert_eq!(bomb(&sim, tank).unwrap().planter, None);
+    assert_eq!(bomb(&sim, other).unwrap().planter, Some(second));
 }
 
 /// UnInit defuses silently (`0x005F65F3`); a building changing hands loses
@@ -1222,7 +1244,7 @@ fn a_bomb_survives_a_snapshot() {
         .sim;
     restored.restore_after_snapshot_load().unwrap();
     // The envelope reseeds Scenario RNG; that policy is not under test here.
-    restored.scenario_rng = sim.scenario_rng.clone();
+    *restored.scenario_rng = (*sim.scenario_rng).clone();
     assert_eq!(
         bomb(&restored, tank),
         bomb(&sim, tank),

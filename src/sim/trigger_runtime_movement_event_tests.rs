@@ -1275,7 +1275,7 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
     for (difficulty, whole_map) in [(0, true), (1, true), (2, false)] {
         let mut sim = Simulation::with_seed(3);
         crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        *sim.fog = crate::sim::vision::FogState::new(32, 32);
         // A Size 16x16 diamond fits the arena's 32x32 cell storage.
         sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
             theater: "TEMPERATE".into(),

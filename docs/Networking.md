@@ -400,6 +400,14 @@ are left out, as the rules digest compares them with the mod
 A launcher's match that names such a file does not point at the launcher, whose rules
 parts leave those files out. On LAN the refusal keeps the native text without this
 list. Nothing new is exchanged and the identity stays 32 bytes.
+
+A snow map with `[Map] VeraIce=yes` uses the original Yuri's Revenge snow
+terrain and VERA's installed ice pack. The map agreement covers the switch, the
+painted cells and the map's weights. Both loose `Terrain` files enter the
+multiplayer build identity. Each game checks their lengths and SHA-256 against
+that build before using them. An incomplete or changed pack stops the ice map
+from loading and tells the player to restore the installed files. Ice Lake uses the same map identity and transfer
+as any authored map. A mixed-build room follows the existing build check.
 A game from before this is another build, which the build check refuses first; a
 rollback starts such games together again.
 At each deadline, missing input is empty; a command joins the next unsealed
@@ -502,16 +510,22 @@ Native lockstep instead slows every match to its slowest player (ProcessNetwork
 
 A lobby that turns on continuous pacing (certificate flags bit 2, below) lets the
 relay seal at any whole rate instead of Game Speed rows, as lockstep LAN play
-follows its slowest player: a slow player slows the match to its holdable rate,
-nine tenths of what it ran while behind, at least one frame and at most a
-quarter slower at a time, never below 10 frames a second. A player whose frames
-keep waiting for ten seconds though it runs as many as the relay seals slows it
-a twentieth, so that backlog drains. After a third of the raise wait the match
-speeds up half the way to the slowest player's ceiling, at least one frame and
-at most a tenth of its rate at a time, up to its own speed. The ceiling is the
-player's tick cost and nineteen twentieths of what it ran in a ten-second
-backlog or when it fell behind a second time within five minutes, so a hitch of a
-few seconds holds nothing back. Messages, replays and saves are as above.
+follows its slowest player. The relay estimates what each player can run: what
+its tick cost holds and, while frames wait on it, nine tenths of what it ran. It
+holds the low point of that estimate and, after a wait, tries more: a twentieth
+more every five seconds, or nine tenths of the most the player has run since. A
+try the player cannot hold doubles the wait, from 15 seconds up to two minutes;
+one that held a minute starts it over. The clock aims at the smallest estimate
+less that player's backlog over ten seconds (at most four tenths of the
+estimate), so a backlog always drains. The backlog comes from the sampled
+checksums the games already send: the newest frame when a checksum arrives,
+less the checksum's frame, less the least such gap while the player kept up.
+Every two seconds the clock moves towards that aim: down by at most half, up
+half the way and at most a quarter, and only when that is three percent or
+more; never below 10 frames a second or above the match's own speed. Messages,
+replays and saves are as above. These rules live in the relay alone: games of
+any version play under a relay with either set, and rolling the relay back
+brings back the earlier rules for matches it starts.
 
 The lobby enables continuous pacing only after every participating relay and
 every admitted game build support bit 2. An older game rejects the grant with
@@ -1003,6 +1017,14 @@ other players' games cannot tell why and say only that another game differs. Not
 is exchanged. A game from before this is another version and is refused by the build
 check first; a rollback compares the setting itself again, and one past the setting
 reads none and plays Auto.
+
+The launcher probe and the room compare whether the startup rules enable Kratos.
+The named rules part is `settings.kratos: true`. When Kratos is off both the agreement
+bytes and the rules parts keep their previous form. The final start also compares
+the loaded scenario, which can change the eligible infantry and their art. The client
+names Kratos when it is active. Older lobbies can ignore the optional `kratos` sign-in
+detail. Older clients and a rolled-back client keep the existing version and rules
+checks; a mismatch refuses the start.
 
 [RA2 Mode](ra2-mode.md) (`[VERA] RA2Mode=` or `-ra2`) is not a room rule either: each
 game reads it at start, and it adds its own words to the rules digest

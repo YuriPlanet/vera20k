@@ -170,6 +170,9 @@ pub(super) struct WarheadAnimReadState {
     /// `DebrisTypes=` (+18C, `0x0075DAF5`): ReadString128, then each `strtok`
     /// token's non-null VoxelAnimType replaces the list.
     pub(super) debris_types: Vec<String>,
+    /// Firestorm's web keys (`WarheadWeb::read_pass`); `None` until a pass
+    /// gives them other values than the constructor's.
+    pub(super) web: Option<crate::rules::warhead_type::WarheadWeb>,
 }
 
 /// Installed Ares TechnoTypeExt ctor1003CB1D..1003CB41: empty Country

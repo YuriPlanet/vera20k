@@ -243,7 +243,7 @@ fn wallet_survives_prepared_load_and_active_cancellation_body() {
         &runtime.resources.rules,
         "Americans",
         crate::sim::production::ProductionCancellation::Type {
-            type_id: "PARENT",
+            type_id: "PARENT".into(),
             naval: false
         },
         false,

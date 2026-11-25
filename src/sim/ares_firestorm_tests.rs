@@ -286,7 +286,7 @@ fn a_placed_section_fills_the_gap_to_a_linked_section() {
         .unwrap();
     let owner = house(&sim, "Americans");
     let object = rules.object("FSWALL").unwrap();
-    let terrain = sim.resolved_terrain.clone().unwrap();
+    let terrain = (*sim.resolved_terrain).clone().unwrap();
     let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(&terrain);
     assert_eq!(
         sim.ares_firestorm_placement_shadow(object, (13, 10), owner, &rules, None, &cells),
