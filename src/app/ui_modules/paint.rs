@@ -12,10 +12,21 @@
 //! button a framed box with its label or its picture, a text in the side's
 //! colour on black, a bar a frame filled from the left, a list its rows one
 //! under another, a picture at its own size; what a module disabled in
-//! grey. A `Label` or an item shows its string-table entry when the table
-//! has one, else itself (appendix 7.10); a `Value=` shows as it is.
-//! Pictures are the layout's (`veraui.ini` `Art=`), from the sidebar's
-//! atlas, as an added part's.
+//! grey. A button under the pointer and one held down look as the tree
+//! says ([`UiTree::button_look`](super::tree::UiTree::button_look)): a
+//! shade of the side's colour inside, the colours swapped, a picture's
+//! frame 1 while held. A `Label` or an item shows its string-table entry
+//! when the table has one, else itself (appendix 7.10); a `Value=` shows as
+//! it is.
+//!
+//! A picture is found by its name whenever it is named (appendix 7.10
+//! `Art`): any SHP or PCX the game finds, drawn as the layout's
+//! (`veraui.ini` `Art=`) are, kept with the modules in a texture of their
+//! own (`render::sidebar_chrome::NamedPictures`). The names the tree took
+//! since the last frame (the map's parts' at match start, a module's
+//! `client_set_bytes`) are found before the frame is laid out, so a
+//! picture shows on the frame that named it; a frame naming nothing new
+//! finds nothing.
 //!
 //! The frame draws the panels over the sidebar and under the message rows,
 //! the overlay over those and under the tooltips and the in-match dialogs
@@ -24,9 +35,9 @@
 //! first, then the panels, then the chrome (`tree::POINTER_LAYERS`): the
 //! order they are drawn in.
 //!
-//! The picture judged for a redraw holds the layers' revision
-//! ([`layers_revision`], `match_runtime::redraw_gate::StillFrame`), which
-//! every change to their nodes moves, the layout's included.
+//! The picture judged for a redraw holds the layers' revision and the
+//! buttons' looks ([`layers_key`], `match_runtime::redraw_gate::StillFrame`),
+//! which every change to their nodes moves, the layout's included.
 //!
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
@@ -39,11 +50,11 @@ use crate::assets::csf_file::CsfFile;
 use crate::render::batch::{InstanceBufferPool, RecordedUploads};
 use crate::render::bit_font::BitFont;
 use crate::render::hud_paint::{HudPaint, Material};
-use crate::render::sidebar_chrome::{LayoutArt, SidebarChromeEntry};
+use crate::render::sidebar_chrome::{LayoutArt, PictureSource, SidebarChromeEntry};
 use crate::ui::added_parts::{Holder, TextValue};
 
 use super::UiModules;
-use super::tree::Measure;
+use super::tree::{Measure, UiTree};
 
 /// The two layers the frame draws, bottom to top.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,7 +116,7 @@ impl ModuleHuds {
 }
 
 /// What the layout measures with this frame: the match's font, the
-/// string table, the layout's pictures and the values a map's text parts
+/// string table, the named pictures and the values a map's text parts
 /// show.
 struct FrameMeasure<'a> {
     font: &'a BitFont,
@@ -190,11 +201,25 @@ pub(crate) fn build(state: &mut AppState) {
     let Some(ui) = ui_modules.as_mut() else {
         return;
     };
-    let art = match_presentation
-        .sidebar_chrome
-        .as_ref()
-        .and_then(|set| set.resolve_side(side))
-        .map(|resolved| &resolved.atlas.layout_art);
+    // The pictures named since the last frame, drawn as the side's sidebar
+    // draws its own.
+    let source = match_presentation.sidebar_chrome.as_ref().and_then(|set| {
+        let resolved = set.resolve_side(side)?;
+        Some(PictureSource {
+            theme: resolved.actual_theme,
+            ares: set.ares(),
+        })
+    });
+    if let (Some(source), Some(assets)) = (source, process_assets.manager()) {
+        ui.art.ask(
+            &renderer.gpu,
+            &renderer.batch_renderer,
+            assets,
+            source,
+            ui.tree.take_named_art(),
+        );
+    }
+    let art = Some(ui.art.art());
     let font = &renderer.bit_font;
     let csf = process_assets.csf.as_ref();
     let measure = FrameMeasure {
@@ -206,26 +231,37 @@ pub(crate) fn build(state: &mut AppState) {
     ui.tree
         .layout(match_presentation.dialog_ui.gui_mut(), screen, &measure);
     let gui = match_presentation.dialog_ui.gui();
-    let picture = |name: &str| art?.frames(name).map(|[up, _]| *up);
+    let picture = |name: &str, pressed: bool| {
+        art?.frames(name)
+            .map(|frames| *frames[usize::from(pressed)])
+    };
     for layer in ModuleLayer::ALL {
-        let parts = placed_nodes(gui, layer.gui(), |label| label_text(csf, label), &picture);
+        let parts = placed_nodes(
+            gui,
+            &ui.tree,
+            layer.gui(),
+            |label| label_text(csf, label),
+            &picture,
+        );
         ui.huds.of(layer).paint(&parts, tint, camera, font);
     }
 }
 
 /// Every shown node of `layer`'s roots as a part to draw, in paint order:
-/// each root above the earlier ones, a node above its parent. `label`
-/// resolves a `Label` or an item; `picture` finds an `Art=` picture.
+/// each root above the earlier ones, a node above its parent. `tree` says
+/// how its buttons look; `label` resolves a `Label` or an item; `picture`
+/// finds an `Art=` picture's frame, the held-down one when asked.
 fn placed_nodes(
     gui: &Gui,
+    tree: &UiTree,
     layer: Layer,
     label: impl Fn(&str) -> String,
-    picture: impl Fn(&str) -> Option<SidebarChromeEntry>,
+    picture: impl Fn(&str, bool) -> Option<SidebarChromeEntry>,
 ) -> Vec<Placed> {
     let mut parts = Vec::new();
     for &root in gui.roots(layer) {
         gui.tree().walk_visible(root, |node| {
-            if let Some(part) = node_part(gui, node, &label, &picture) {
+            if let Some(part) = node_part(gui, tree, node, &label, &picture) {
                 parts.push(part);
             }
         });
@@ -236,9 +272,10 @@ fn placed_nodes(
 /// One node as a part to draw, at its place from the last layout.
 fn node_part(
     gui: &Gui,
+    tree: &UiTree,
     node: NodeId,
     label: &impl Fn(&str) -> String,
-    picture: &impl Fn(&str) -> Option<SidebarChromeEntry>,
+    picture: &impl Fn(&str, bool) -> Option<SidebarChromeEntry>,
 ) -> Option<Placed> {
     let kind = gui.tree().kind(node).ok()?;
     let rect = gui.tree().screen_rect(node).ok()?;
@@ -246,10 +283,10 @@ fn node_part(
         Ok(Some(Value::Text(text))) => Some(text.as_str()),
         _ => None,
     };
-    let art = || {
+    let art = |pressed: bool| {
         text(Prop::Art)
             .filter(|name| !name.is_empty())
-            .and_then(picture)
+            .and_then(|name| picture(name, pressed))
     };
     let mut part = Placed {
         holder: Holder::Field,
@@ -258,6 +295,7 @@ fn node_part(
         button: false,
         picture: None,
         pressed: false,
+        hovered: false,
         group: false,
         hidden: false,
         fill: None,
@@ -273,11 +311,15 @@ fn node_part(
             }
         }
         NodeKind::Button => {
+            // A disabled button neither hovers nor holds down.
+            let look = tree.button_look(node);
             part.button = true;
+            part.pressed = look.pressed && !part.disabled;
+            part.hovered = look.hovered && !part.disabled;
             part.text = label(text(Prop::Label).unwrap_or_default());
-            part.picture = art();
+            part.picture = art(part.pressed);
         }
-        NodeKind::Image => part.picture = art(),
+        NodeKind::Image => part.picture = art(false),
         NodeKind::Bar => {
             part.fill = Some(match gui.get(node, Prop::Fill) {
                 Ok(Some(Value::Int(fill))) => (*fill).clamp(0, 100),
@@ -296,8 +338,14 @@ fn node_part(
 }
 
 /// What a picture of the layers is judged by
-/// (`match_runtime::redraw_gate`): how many top-level nodes they hold and
-/// the latest GUI revision any of them changed at. A change anywhere in a
+/// (`match_runtime::redraw_gate`): their [`layers_revision`] and the tree's
+/// buttons' looks ([`UiTree::looks`]), which live beside the GUI.
+pub(crate) fn layers_key(gui: &Gui, ui: &UiModules) -> ((usize, u64), u64) {
+    (layers_revision(gui), ui.tree.looks())
+}
+
+/// How many top-level nodes the layers hold and the latest GUI revision any
+/// of them changed at. A change anywhere in a
 /// root's subtree moves its revision, a new root comes with the latest, and
 /// a root removed changes the count; the chrome's changes move neither.
 pub(crate) fn layers_revision(gui: &Gui) -> (usize, u64) {
@@ -323,7 +371,7 @@ pub(crate) fn upload(ui: &UiModules, pool: &mut RecordedUploads<'_>) {
 
 /// Draws `layer` into `pass` at the frame's pixels, its runs in their
 /// order: the boxes in one white texel, the text from the font's atlas,
-/// the pictures from the sidebar's.
+/// the pictures from the named pictures' texture.
 pub(crate) fn draw<'a>(
     pass: &mut wgpu::RenderPass<'a>,
     state: &'a AppState,
@@ -343,8 +391,7 @@ pub(crate) fn draw<'a>(
         .selection_overlay
         .as_ref()
         .map(|overlay| overlay.white_texture());
-    let pictures = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
-        .map(|atlas| &atlas.texture);
+    let pictures = ui.art.texture();
     for (material, run) in ui.huds.painted(layer).runs() {
         let texture = match material {
             Material::Solid => solid,
@@ -459,8 +506,8 @@ mod tests {
         tree.layout(&mut gui, Rect::new(0, 0, 800, 600), &measure);
 
         let label = |label: &str| label_text(Some(&csf), label);
-        let none = |_: &str| None;
-        let panels = placed_nodes(&gui, Layer::Panels, label, none);
+        let none = |_: &str, _: bool| None;
+        let panels = placed_nodes(&gui, &tree, Layer::Panels, label, none);
         let [button, bar] = &panels[..] else {
             panic!("two shown panels: {panels:?}");
         };
@@ -480,7 +527,7 @@ mod tests {
         assert!(!bar.disabled);
         assert_eq!(bar.rect, [700, 592, 100, 8]);
 
-        let overlay = placed_nodes(&gui, Layer::Overlay, label, none);
+        let overlay = placed_nodes(&gui, &tree, Layer::Overlay, label, none);
         let [score] = &overlay[..] else {
             panic!("one overlay part: {overlay:?}");
         };
@@ -505,6 +552,76 @@ mod tests {
         assert_eq!(tints[0], grey);
         assert!(tints[2..5].iter().all(|tint| *tint == grey));
         assert_eq!(tints[5], [1.0; 3]);
+    }
+
+    /// A module's button shows the tree's looks: hovered under the
+    /// pointer, pressed and its picture's frame 1 while held; disabled,
+    /// neither.
+    #[test]
+    fn a_module_button_shows_hover_and_press() {
+        let (mut gui, mut tree, font) = (Gui::new(256), UiTree::new(), font());
+        let measure = FrameMeasure {
+            font: &font,
+            csf: None,
+            art: None,
+            values: None,
+        };
+        let (buy, _) = tree
+            .create(
+                &mut gui,
+                Source::Mod,
+                MapUi::Overlay,
+                node_kind::BUTTON,
+                0,
+                &[init("Width", 40), init("Height", 20)],
+            )
+            .unwrap();
+        tree.set_bytes(
+            &mut gui,
+            Source::Mod,
+            MapUi::Overlay,
+            buy,
+            prop("Art"),
+            b"buy.shp",
+        )
+        .unwrap();
+        tree.layout(&mut gui, Rect::new(0, 0, 800, 600), &measure);
+        let frame = |name: &str, pressed: bool| {
+            (name == "buy.shp").then_some(SidebarChromeEntry {
+                uv_origin: [0.0, if pressed { 0.5 } else { 0.0 }],
+                uv_size: [1.0, 0.5],
+                pixel_size: [40.0, 20.0],
+            })
+        };
+        let looks = |tree: &UiTree, gui: &Gui| {
+            let parts = placed_nodes(gui, tree, Layer::Panels, |label| label.to_owned(), frame);
+            let [button] = &parts[..] else {
+                panic!("one button: {parts:?}");
+            };
+            (
+                button.hovered,
+                button.pressed,
+                button.picture.map(|picture| picture.uv_origin[1]),
+            )
+        };
+        assert_eq!(looks(&tree, &gui), (false, false, Some(0.0)));
+        tree.pointer_move(&gui, 5, 5, None);
+        assert_eq!(looks(&tree, &gui), (true, false, Some(0.0)));
+        tree.pointer_down(&mut gui, 5, 5, 0, None);
+        assert_eq!(looks(&tree, &gui), (false, true, Some(0.5)));
+        tree.pointer_up(0);
+        assert_eq!(looks(&tree, &gui), (true, false, Some(0.0)));
+        // Disabled while the pointer stays: no look, before a layout too.
+        tree.set(
+            &mut gui,
+            Source::Mod,
+            MapUi::Overlay,
+            buy,
+            prop("Enabled"),
+            0,
+        )
+        .unwrap();
+        assert_eq!(looks(&tree, &gui), (false, false, Some(0.0)));
     }
 
     /// The layers' revision moves with a module's write, a new node, a

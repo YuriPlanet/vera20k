@@ -141,6 +141,10 @@ pub(crate) struct Placed {
     pub picture: Option<SidebarChromeEntry>,
     /// Whether the button is held down.
     pub pressed: bool,
+    /// Whether the pointer is over the button (a client module's or a map
+    /// part's, `app::ui_modules::paint`; a layout's own button has no
+    /// hover look).
+    pub hovered: bool,
     /// A row or a column, which places its parts and draws nothing itself,
     /// or a cameo grid, which the sidebar's view draws and clicks.
     pub group: bool,
@@ -161,6 +165,9 @@ const BAR_SIZE: [i32; 2] = [100, 8];
 
 /// What a disabled part draws in instead of the side's colour.
 const DISABLED: [f32; 3] = [128.0 / 255.0; 3];
+
+/// How much of the side's colour fills a button under the pointer.
+const HOVER_SHADE: f32 = 0.25;
 
 /// What a client module wrote on part `index`'s node, read as the part
 /// draws: none while the chrome has no node for it.
@@ -336,6 +343,7 @@ pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
                 button,
                 picture,
                 pressed,
+                hovered: false,
                 group: matches!(
                     part.kind,
                     AddedKind::Group { .. } | AddedKind::CameoGrid { .. }
@@ -572,11 +580,13 @@ impl PartsHud {
     /// Bring the tree to `parts`. A picture is not stretched: it draws at
     /// its own size from the part's corner. A button without one is a fill
     /// inside a one-pixel frame in `tint`, the fill black and the label in
-    /// `tint`, the two swapped while it is held down. A disabled part draws
+    /// `tint`, the two swapped while it is held down; under the pointer the
+    /// fill is `tint` at a quarter ([`HOVER_SHADE`]). A disabled part draws
     /// in grey instead of `tint`.
     fn update(&mut self, parts: &[Placed], tint: [f32; 3]) {
         self.nodes.begin();
         let (side, grey, black) = (rounded(tint), rounded(DISABLED), rounded([0.0; 3]));
+        let shade = rounded(tint.map(|channel| channel * HOVER_SHADE));
         for part in parts {
             if part.group || part.hidden || part.holder != self.holder {
                 continue;
@@ -625,9 +635,12 @@ impl PartsHud {
                 }
                 continue;
             }
-            // A held button shows its label dark on the side's colour.
+            // A held button shows its label dark on the side's colour; one
+            // under the pointer, on a shade of it.
             let (fill, ink) = if part.pressed {
                 (tint, black)
+            } else if part.hovered && !part.disabled {
+                (shade, tint)
             } else {
                 (black, tint)
             };
@@ -768,6 +781,7 @@ mod tests {
             button,
             picture: None,
             pressed,
+            hovered: false,
             group: false,
             hidden: false,
             fill: None,
@@ -818,5 +832,32 @@ mod tests {
         assert_eq!(hud.boxes().len(), 1);
         assert_eq!(hud.texts().len(), 4);
         assert_eq!(hud.texts()[0].tint, tint);
+    }
+
+    /// A button under the pointer fills with a quarter of the side's
+    /// colour, its label in it; held, the two swap; disabled, no hover.
+    #[test]
+    fn a_hovered_button_fills_with_a_shade() {
+        let mut hud = PartsHud::new(Holder::Field);
+        let (font, tint) = (font(), [1.0, 200.0 / 255.0, 0.0]);
+        let mut button = part([0, 0, 40, 21], true, false);
+        button.hovered = true;
+        hud.draw(std::slice::from_ref(&button), tint, CAMERA, &font);
+        let shade = [64.0 / 255.0, 50.0 / 255.0, 0.0];
+        let tints: Vec<_> = hud.boxes().iter().map(|quad| quad.tint).collect();
+        assert_eq!(tints, [tint, shade]);
+        assert_eq!(hud.texts()[0].tint, tint);
+
+        button.pressed = true;
+        hud.draw(std::slice::from_ref(&button), tint, CAMERA, &font);
+        let tints: Vec<_> = hud.boxes().iter().map(|quad| quad.tint).collect();
+        assert_eq!(tints, [tint, tint]);
+        assert_eq!(hud.texts()[0].tint, [0.0; 3]);
+
+        button.pressed = false;
+        button.disabled = true;
+        hud.draw(std::slice::from_ref(&button), tint, CAMERA, &font);
+        let tints: Vec<_> = hud.boxes().iter().map(|quad| quad.tint).collect();
+        assert_eq!(tints[1], [0.0; 3]);
     }
 }

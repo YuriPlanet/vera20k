@@ -27,9 +27,12 @@
 //!   `client_node_find` finds it first ([`UiTree::set_bytes`]).
 //!
 //! Pointer routing ([`UiTree::pointer_move`], [`UiTree::pointer_down`],
-//! [`UiTree::key_escape`]) turns the pointer into `Click`, `Hover`,
-//! `Dismiss` and `MapClick` (appendix 4.6) for the nodes that ask for them
-//! (`Clickable`, `Hoverable`, `Dismissable`).
+//! [`UiTree::pointer_up`], [`UiTree::key_escape`]) turns the pointer into
+//! `Click`, `Hover`, `Dismiss` and `MapClick` (appendix 4.6) for the nodes
+//! that ask for them (`Clickable`, `Hoverable`, `Dismissable`), and keeps
+//! how the modules' and the map's buttons look under it
+//! ([`UiTree::button_look`]): under the pointer, and held down by a left
+//! press until its release, as the chrome's gadgets do.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
@@ -470,6 +473,31 @@ pub(crate) struct UiTree {
     hovered: Option<NodeId>,
     /// The commands the map's buttons gave since the last take.
     commands: Vec<String>,
+    /// The topmost button of this tree's under the pointer that a press
+    /// would click (shown, enabled, `Clickable`), as the last move left it.
+    pointed: Option<NodeId>,
+    /// The button of this tree's a left press went down on, until the
+    /// release.
+    held: Option<NodeId>,
+    /// Moves whenever [`UiTree::button_look`] may answer otherwise, for the
+    /// redraw gate ([`UiTree::looks`]).
+    looks: u64,
+    /// The picture names written on this tree's nodes (`Art`) since the
+    /// last take ([`UiTree::take_named_art`]).
+    named_art: Vec<String>,
+    /// A pointer move came: `cursor` is where the pointer is.
+    pointer_seen: bool,
+}
+
+/// How one of the tree's buttons looks now ([`UiTree::button_look`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ButtonLook {
+    /// The pointer is over it, and no other button is held.
+    pub hovered: bool,
+    /// Held down by a left press on it, and the pointer is over it (a
+    /// held button the pointer left shows up again, and comes back down
+    /// when the pointer returns).
+    pub pressed: bool,
 }
 
 impl Default for UiTree {
@@ -488,6 +516,11 @@ impl UiTree {
             capture: [false; 2],
             hovered: None,
             commands: Vec::new(),
+            pointed: None,
+            held: None,
+            looks: 0,
+            named_art: Vec::new(),
+            pointer_seen: false,
         }
     }
 
@@ -600,6 +633,7 @@ impl UiTree {
             if self.hovered == Some(node) {
                 self.hovered = None;
             }
+            self.drop_looks(|id| id == node);
             return Ok(Status::Ok);
         }
         self.remove_subtree(gui, node);
@@ -614,7 +648,7 @@ impl UiTree {
             ControlFlow::<()>::Continue(())
         });
         let table = self.table.get_mut();
-        for id in gone {
+        for &id in &gone {
             if let Some(serial) = table.by_node.get(&id).copied() {
                 table.forget(serial);
             }
@@ -626,7 +660,18 @@ impl UiTree {
                 self.hovered = None;
             }
         }
+        self.drop_looks(|look| gone.contains(&look));
         let _ = gui.remove(node);
+    }
+
+    /// Forgets the pointed and the held button where `gone` says so.
+    fn drop_looks(&mut self, gone: impl Fn(NodeId) -> bool) {
+        for look in [&mut self.pointed, &mut self.held] {
+            if look.is_some_and(&gone) {
+                *look = None;
+                self.looks += 1;
+            }
+        }
     }
 
     /// `client_node_find`: this source's nodes first, then the engine's,
@@ -899,7 +944,7 @@ impl UiTree {
         let Some(record) = table.records.get_mut(&serial) else {
             return Ok(Status::Gone);
         };
-        let node = record.node;
+        let (node, placed) = (record.node, record.placed);
         let (gui_prop, value) = match (prop, record.kind) {
             (Some(NodeProp::Label), Kind::Text | Kind::Button) => {
                 // The label replaces a text's value from now on.
@@ -930,7 +975,14 @@ impl UiTree {
             _ => return Ok(Status::Unsupported),
         };
         Ok(match gui.set(node, gui_prop, value) {
-            Ok(()) => Status::Ok,
+            Ok(()) => {
+                // A picture this tree's layers draw is found by its name
+                // (`paint`); the chrome's parts draw the layout's.
+                if placed && gui_prop == Prop::Art && !text.is_empty() {
+                    self.named_art.push(text.to_owned());
+                }
+                Status::Ok
+            }
             Err(refused) => status_of(refused),
         })
     }
@@ -948,6 +1000,43 @@ impl UiTree {
         {
             self.hovered = None;
         }
+        self.drop_looks(|node| gui.tree().kind(node).is_err());
+    }
+
+    /// The picture names written on the nodes this tree places (a module's
+    /// `Art`, a map part's `Art=`) since the last take: what the frame
+    /// finds before it draws (`paint::build`). Empty on most frames.
+    pub(crate) fn take_named_art(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.named_art)
+    }
+
+    /// How button `node` looks now: hovered, pressed (see [`ButtonLook`]).
+    /// Only the buttons this tree places have looks; the chrome's draw
+    /// their own.
+    pub(crate) fn button_look(&self, node: NodeId) -> ButtonLook {
+        let pointed = self.pointed == Some(node);
+        ButtonLook {
+            hovered: pointed && self.held.is_none_or(|held| held == node),
+            pressed: pointed && self.held == Some(node),
+        }
+    }
+
+    /// What the buttons' looks are judged by in a redraw
+    /// (`paint::layers_key`): it moves with every change of
+    /// [`UiTree::button_look`]'s answers.
+    pub(crate) fn looks(&self) -> u64 {
+        self.looks
+    }
+
+    /// The topmost button this tree places at `x`, `y` that a press would
+    /// click.
+    fn button_at(&self, gui: &Gui, x: i32, y: i32) -> Option<NodeId> {
+        let table = self.table.borrow();
+        clicked_at(&table, gui, x, y).filter(|&id| {
+            table
+                .of_node(id)
+                .is_some_and(|record| record.placed && record.kind == Kind::Button)
+        })
     }
 
     /// The frame's `Click`, `Hover`, `Dismiss` and `MapClick` events, for
@@ -991,10 +1080,13 @@ impl UiTree {
     }
 
     /// The pointer moved to `x`, `y` (screen pixels), over map cell `cell`
-    /// (none off the map): the cursor's `X`, `Y` and `Cell`, and `Hover`
-    /// as it enters and leaves `Hoverable` nodes.
+    /// (none off the map): the cursor's `X`, `Y` and `Cell`, `Hover` as it
+    /// enters and leaves `Hoverable` nodes, and the button it is over
+    /// ([`UiTree::button_look`]).
     pub(crate) fn pointer_move(&mut self, gui: &Gui, x: i32, y: i32, cell: Option<(u16, u16)>) {
         self.cursor = Cursor { x, y, cell };
+        self.pointer_seen = true;
+        self.point_at(gui, x, y);
         let table = self.table.get_mut();
         let over = gui.top_at(&POINTER_LAYERS, x, y, |id| {
             table.of_node(id).is_some_and(|record| record.hoverable)
@@ -1038,6 +1130,11 @@ impl UiTree {
         cell: Option<(u16, u16)>,
     ) -> bool {
         let (mut consumed, mut handled) = (false, false);
+        self.point_at(gui, x, y);
+        if button == 0 && self.pointed.is_some() && self.held != self.pointed {
+            self.held = self.pointed;
+            self.looks += 1;
+        }
         let table = self.table.get_mut();
         let dismissed: Vec<u64> = table
             .records
@@ -1053,12 +1150,7 @@ impl UiTree {
             })
             .map(|(serial, _)| *serial)
             .collect();
-        let clicked = gui.top_at(&POINTER_LAYERS, x, y, |id| {
-            table.of_node(id).is_some_and(|record| {
-                record.clickable
-                    && (!matches!(record.kind, Kind::Button | Kind::List) || gui.enabled(id))
-            })
-        });
+        let clicked = clicked_at(table, gui, x, y);
         let clicked = clicked.and_then(|node| {
             let serial = *table.by_node.get(&node)?;
             let record = table.records.get(&serial)?;
@@ -1092,6 +1184,23 @@ impl UiTree {
             consumed = self.capture.contains(&true);
         }
         consumed
+    }
+
+    /// A mouse release (`button` 0 left, 1 right): a held button comes up.
+    /// A release gives no event (a press clicks, appendix 4.6).
+    pub(crate) fn pointer_up(&mut self, button: u8) {
+        if button == 0 && self.held.take().is_some() {
+            self.looks += 1;
+        }
+    }
+
+    /// The button the pointer is over at `x`, `y` now.
+    fn point_at(&mut self, gui: &Gui, x: i32, y: i32) {
+        let pointed = self.button_at(gui, x, y);
+        if pointed != self.pointed {
+            self.pointed = pointed;
+            self.looks += 1;
+        }
     }
 
     /// Esc: `Dismiss` for each shown `Dismissable` node; true when there
@@ -1219,6 +1328,12 @@ impl UiTree {
                 let _ = gui.set(node, Prop::Rect, Value::Rect(rect));
             }
         }
+        // A button that came, went, moved or was disabled under a still
+        // pointer.
+        if self.pointer_seen {
+            let Cursor { x, y, .. } = self.cursor;
+            self.point_at(gui, x, y);
+        }
     }
 
     /// Whether a map's text part shows a `Value=` ([`Measure::value`]),
@@ -1299,6 +1414,12 @@ impl UiTree {
                 .map_or(part.section.as_str(), |(_, name)| name);
             let _ = gui.set(node, Prop::Name, Value::Text(name.to_owned()));
             for (prop, value) in setup {
+                // Its picture is found with the match's first frame's.
+                if let (Prop::Art, Value::Text(art)) = (prop, &value)
+                    && !art.is_empty()
+                {
+                    self.named_art.push(art.clone());
+                }
                 let _ = gui.set(node, prop, value);
             }
             let mut record = Record::new(node, kind, Owner::Map, true);
@@ -1349,6 +1470,17 @@ fn name(gui: &mut Gui, table: &Table, source: Source, serial: u64, text: &str) -
         Ok(()) => Status::Ok,
         Err(refused) => status_of(refused),
     }
+}
+
+/// The topmost node at `x`, `y` a press clicks: a `Clickable` one, an
+/// enabled one for a button or a list.
+fn clicked_at(table: &Table, gui: &Gui, x: i32, y: i32) -> Option<NodeId> {
+    gui.top_at(&POINTER_LAYERS, x, y, |id| {
+        table.of_node(id).is_some_and(|record| {
+            record.clickable
+                && (!matches!(record.kind, Kind::Button | Kind::List) || gui.enabled(id))
+        })
+    })
 }
 
 /// The module whose node `node` is.
@@ -2147,5 +2279,162 @@ mod tests {
             .unwrap(),
             Status::Refused
         );
+}
+
+    /// A shown, enabled, clickable button under the pointer is hovered; a
+    /// left press on it holds it down until the release, shown pressed
+    /// while the pointer is over it. A disabled one, one hidden or removed,
+    /// and a right press give no look; each change moves `looks`.
+    #[test]
+    fn a_button_hovers_and_holds_down_under_the_pointer() {
+        let (mut gui, mut tree) = (Gui::new(256), UiTree::new());
+        let (buy, _) = tree
+            .create(
+                &mut gui,
+                Source::Mod,
+                MapUi::Overlay,
+                node_kind::BUTTON,
+                0,
+                &[init("Width", 40), init("Height", 20)],
+            )
+            .unwrap();
+        let (sell, _) = tree
+            .create(
+                &mut gui,
+                Source::Mod,
+                MapUi::Overlay,
+                node_kind::BUTTON,
+                0,
+                &[init("X", 100), init("Width", 40), init("Height", 20)],
+            )
+            .unwrap();
+        tree.layout(&mut gui, SCREEN, &Fixed);
+        let (buy_node, sell_node) = (node_of(&tree, buy), node_of(&tree, sell));
+        let look = |tree: &UiTree, node| {
+            let ButtonLook { hovered, pressed } = tree.button_look(node);
+            (hovered, pressed)
+        };
+        let start = tree.looks();
+        assert_eq!(look(&tree, buy_node), (false, false));
+
+        tree.pointer_move(&gui, 10, 10, None);
+        assert_eq!(look(&tree, buy_node), (true, false));
+        let hovered = tree.looks();
+        assert_ne!(hovered, start);
+        tree.pointer_move(&gui, 11, 10, None);
+        assert_eq!(tree.looks(), hovered, "the same button: no change");
+
+        // A right press holds nothing.
+        tree.pointer_down(&mut gui, 10, 10, 1, None);
+        assert_eq!(look(&tree, buy_node), (true, false));
+        tree.pointer_down(&mut gui, 10, 10, 0, None);
+        assert_eq!(look(&tree, buy_node), (false, true));
+        // Off it while held: up, and no other button hovers.
+        tree.pointer_move(&gui, 110, 10, None);
+        assert_eq!(look(&tree, buy_node), (false, false));
+        assert_eq!(look(&tree, sell_node), (false, false));
+        tree.pointer_move(&gui, 10, 10, None);
+        assert_eq!(look(&tree, buy_node), (false, true));
+        tree.pointer_up(1);
+        assert_eq!(look(&tree, buy_node), (false, true));
+        tree.pointer_up(0);
+        assert_eq!(look(&tree, buy_node), (true, false));
+
+        // Disabled under a still pointer: the next layout lets go of it.
+        let before = tree.looks();
+        tree.set(
+            &mut gui,
+            Source::Mod,
+            MapUi::Overlay,
+            buy,
+            prop("Enabled"),
+            0,
+        )
+        .unwrap();
+        tree.layout(&mut gui, SCREEN, &Fixed);
+        assert_eq!(look(&tree, buy_node), (false, false));
+        assert_ne!(tree.looks(), before);
+        tree.pointer_down(&mut gui, 10, 10, 0, None);
+        assert_eq!(look(&tree, buy_node), (false, false));
+        tree.pointer_up(0);
+
+        // Not clickable, then removed while held.
+        tree.set(
+            &mut gui,
+            Source::Mod,
+            MapUi::Overlay,
+            sell,
+            prop("Clickable"),
+            0,
+        )
+        .unwrap();
+        tree.pointer_move(&gui, 110, 10, None);
+        assert_eq!(look(&tree, sell_node), (false, false));
+        tree.set(
+            &mut gui,
+            Source::Mod,
+            MapUi::Overlay,
+            sell,
+            prop("Clickable"),
+            1,
+        )
+        .unwrap();
+        tree.pointer_down(&mut gui, 110, 10, 0, None);
+        assert_eq!(look(&tree, sell_node), (false, true));
+        tree.remove(&mut gui, Source::Mod, MapUi::Overlay, sell)
+            .unwrap();
+        assert_eq!((tree.pointed, tree.held), (None, None));
+    }
+
+    /// The pictures written on the tree's nodes are taken once, the map
+    /// parts' first; an engine node's are the chrome's.
+    #[test]
+    fn named_pictures_are_taken_once() {
+        let (mut gui, mut tree) = (Gui::new(256), UiTree::new());
+        let map = IniFile::from_str(
+            "[VeraUI]\nParts=Logo,Go\n[VeraUI.Logo]\nType=Image\nArt=logo.shp\n\
+             [VeraUI.Go]\nType=Button\nLabel=Go\nArt=go.pcx\n",
+        );
+        tree.add_map_parts(&mut gui, &map, MapUi::Overlay, |_| true);
+        let (image, _) = tree
+            .create(
+                &mut gui,
+                Source::Mod,
+                MapUi::Overlay,
+                node_kind::IMAGE,
+                0,
+                &[],
+            )
+            .unwrap();
+        for art in [&b"wave.shp"[..], b""] {
+            tree.set_bytes(
+                &mut gui,
+                Source::Mod,
+                MapUi::Overlay,
+                image,
+                prop("Art"),
+                art,
+            )
+            .unwrap();
+        }
+        assert_eq!(tree.take_named_art(), ["logo.shp", "go.pcx", "wave.shp"]);
+        assert!(tree.take_named_art().is_empty());
+
+        let chrome = gui
+            .create_root(Layer::Modal, Origin::Host, NodeKind::Image)
+            .unwrap();
+        gui.set(chrome, Prop::Name, Value::Text("Chrome".to_owned()))
+            .unwrap();
+        let (found, _) = tree.find(&gui, Source::Mod, "Chrome");
+        tree.set_bytes(
+            &mut gui,
+            Source::Mod,
+            MapUi::Overlay,
+            found,
+            prop("Art"),
+            b"other.shp",
+        )
+        .unwrap();
+        assert!(tree.take_named_art().is_empty());
     }
 }

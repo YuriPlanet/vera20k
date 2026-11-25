@@ -213,8 +213,8 @@ pub(crate) fn still_frame(
                 detail_fps: detail.frame_rate(),
                 talk_bubble: presentation.talk_bubble.shown(clock.wall_ms),
                 atlas_growths: presentation.atlas_growth.published(),
-                modules: state.match_state.ui_modules.as_ref().map(|_| {
-                    crate::app::ui_modules::paint::layers_revision(presentation.dialog_ui.gui())
+                modules: state.match_state.ui_modules.as_ref().map(|ui| {
+                    crate::app::ui_modules::paint::layers_key(presentation.dialog_ui.gui(), ui)
                 }),
                 panel_due,
                 fonts,
@@ -386,11 +386,12 @@ pub(crate) enum StillFrame {
         /// lacked.
         atlas_growths: u64,
         /// The client modules' and the map's layers while the match has
-        /// them (`ui_modules::paint::layers_revision`): a node a module
+        /// them (`ui_modules::paint::layers_key`): a node a module
         /// made, removed, moved or rewrote changes it, and so does the
         /// layout their drawing gives them, which the picture judged after
-        /// the draw already holds.
-        modules: Option<(usize, u64)>,
+        /// the draw already holds, and a button the pointer came over,
+        /// left, held down or let go.
+        modules: Option<((usize, u64), u64)>,
         /// Whether the shown performance panel has new figures.
         panel_due: bool,
         fonts: usize,
