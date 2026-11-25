@@ -24,7 +24,7 @@ pub mod vars;
 
 pub use decide::{
     CommandAllowedDecision, DecideRecord, DefeatDecision, FatalDamageDecision, FireDecision,
-    LaunchDecision,
+    HarvestCellDecision, IdleMissionDecision, LaunchDecision,
     PathKind, ProductionAllowedDecision, ProductionQueuedDecision, ProjectileFrameDecision,
     TakeDamageDecision,
 };

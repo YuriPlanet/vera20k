@@ -137,7 +137,9 @@ pub(crate) fn search_for_tiberium_and_move(
         return Ok(false);
     }
     let own = (entity.position.rx(), entity.position.ry());
-    let Some(cell) = scan_for_tiberium(sim, rules, overlay_registry, id, range)? else {
+    let found = scan_for_tiberium(sim, rules, overlay_registry, id, range)?;
+    // Wasm module `HarvestCell` (`ext_modules::unit_ai`), after the scan.
+    let Some(cell) = sim.module_harvest_cell(rules, id, range, found) else {
         return Ok(false);
     };
     if cell == own {

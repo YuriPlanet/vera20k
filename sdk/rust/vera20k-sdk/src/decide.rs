@@ -307,6 +307,28 @@ impl FatalDamageDecision<'_> {
     }
 }
 
+decision!(
+    /// `IdleMission` (appendix 4.5, preview): the mission a unit or
+    /// infantryman queues as it goes idle. Answer a [`crate::Mission`]
+    /// number, 255 to queue nothing; `native` is the engine's pick.
+    IdleMissionDecision {
+        unit: Techno = |r| Techno(r.subject),
+    }
+);
+
+decision!(
+    /// `HarvestCell` (appendix 4.5, preview): the ore cell a harvester's
+    /// search settles on. Answer a cell reference, 0 for none; `native` is
+    /// the engine's scan result (0 for a miss).
+    HarvestCellDecision {
+        harvester: Techno = |r| Techno(r.subject),
+        /// The engine's cell; `Cell(NO_HANDLE)` for none.
+        found: Cell = |r| Cell(r.cell),
+        /// The scan range in cells.
+        range: i64 = |r| r.value,
+    }
+);
+
 /// `PathKind` (appendix 8.3, enum 22).
 #[repr(i32)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

@@ -90,6 +90,7 @@ pub(crate) mod projectiles;
 mod props;
 mod rules;
 mod supers;
+mod unit_ai;
 pub(crate) mod vars;
 mod writes;
 
@@ -2324,6 +2325,10 @@ mod flight_tests;
 #[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_death_tests.rs"]
 mod death_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_unit_ai_tests.rs"]
+mod unit_ai_tests;
 
 #[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_event_tests.rs"]

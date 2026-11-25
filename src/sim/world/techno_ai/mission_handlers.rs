@@ -1157,6 +1157,12 @@ fn infantry_idle_guard_pick(sim: &Simulation, id: u64, rules: &RuleSet) -> Missi
 }
 
 impl Simulation {
+    /// [`infantry_idle_guard_pick`] for `id`, for the Wasm module tests.
+    #[cfg(test)]
+    pub(crate) fn infantry_idle_guard_pick_for_test(&self, id: u64, rules: &RuleSet) -> MissionType {
+        infantry_idle_guard_pick(self, id, rules)
+    }
+
     /// Infantry EnterIdle51CBA0 after the sole Foot4D82B0 base.
     /// P2/P5 actual human E1 controls execute constructor-empty planning and
     /// stock-false DefaultToGuardArea/GUARD_AREA; the guard pick is
@@ -1200,13 +1206,16 @@ impl Simulation {
             FootIdleSelection::KeepBaseReturn => {}
             FootIdleSelection::ReturnFalse => return false,
             FootIdleSelection::Queue(mission) => {
-                let _ = self.mission_queue_exact(
-                    id,
-                    MissionId::from_known(mission),
-                    0,
-                    self.session.binary_frame(),
-                    &LiveReadyInputProvider { rules },
-                );
+                // Wasm module `IdleMission` (`ext_modules::unit_ai`).
+                if let Some(mission) = self.module_idle_mission(rules, id, Some(mission)) {
+                    let _ = self.mission_queue_exact(
+                        id,
+                        MissionId::from_known(mission),
+                        0,
+                        self.session.binary_frame(),
+                        &LiveReadyInputProvider { rules },
+                    );
+                }
             }
         }
         saved_base_return
