@@ -21,8 +21,9 @@
 //!   count in `result`, when a bullet of a bound type is launched;
 //! - `ProjectileFrame` (4.5, preview): a [`ProjectileStep`] in the result
 //!   area, before a bound bullet's candidate position is computed;
-//! - `IdleMission` and `HarvestCell` (4.5, preview): the mission an object
-//!   idles into, the ore cell a harvester's search settles on.
+//! - `IdleMission` (4.5, preview): the mission an object idles into;
+//! - `MissionStep` (4.5, preview): a [`MissionStepResult`] in the result
+//!   area, the outcome of a Guard, Area Guard, Hunt or Attack mission body.
 //!
 //! Provisional numbering (open question 5): new events continue from 1000
 //! in appendix order, 4.3 (1000..1025), then 4.4 (1026..1030), then 4.5
@@ -39,10 +40,13 @@ pub const EVENT_PROJECTILE_FRAME: i32 = 1036;
 /// Unit-level AI (appendix 4.5, preview; RFC numbers 100060, 100061):
 /// the mission an object idles into, and the ore cell a harvester heads for.
 pub const EVENT_IDLE_MISSION: i32 = 1060;
-pub const EVENT_HARVEST_CELL: i32 = 1061;
+/// Unit-level AI (appendix 4.5, preview; RFC number 100062): the outcome of
+/// a Guard, Area Guard, Hunt or Attack mission body, a
+/// [`MissionStepResult`] in the result area.
+pub const EVENT_MISSION_STEP: i32 = 1062;
 
 /// Events with a decision form in this engine.
-pub const DECIDABLE_EVENTS: [i32; 11] = [
+pub const DECIDABLE_EVENTS: [i32; 18] = [
     EVENT_TAKE_DAMAGE,
     EVENT_FATAL_DAMAGE,
     EVENT_FIRE,
@@ -53,11 +57,11 @@ pub const DECIDABLE_EVENTS: [i32; 11] = [
     EVENT_LAUNCH,
     EVENT_PROJECTILE_FRAME,
     EVENT_IDLE_MISSION,
-    EVENT_HARVEST_CELL,
+    EVENT_MISSION_STEP,
 ];
 /// Of those, the decision-only ones (appendix 4.5): they need a decision
 /// handler and are never delivered.
-pub const DECISION_ONLY_EVENTS: [i32; 8] = [
+pub const DECISION_ONLY_EVENTS: [i32; 15] = [
     EVENT_PRODUCTION_ALLOWED,
     EVENT_PRODUCTION_QUEUED,
     EVENT_DEFEAT,
@@ -65,7 +69,7 @@ pub const DECISION_ONLY_EVENTS: [i32; 8] = [
     EVENT_LAUNCH,
     EVENT_PROJECTILE_FRAME,
     EVENT_IDLE_MISSION,
-    EVENT_HARVEST_CELL,
+    EVENT_MISSION_STEP,
 ];
 
 /// Plan entries one `Fire` decision may hold (RFC 15.4: 768 bytes).
@@ -79,13 +83,15 @@ pub const fn result_area_bytes(kind: i32) -> usize {
         EVENT_FIRE => MAX_FIRE_PLAN * ProjectileSpec::SIZE,
         EVENT_LAUNCH => PathSpec::HEADER + MAX_PATH_POINTS * PathSpec::POINT,
         EVENT_PROJECTILE_FRAME => ProjectileStep::SIZE,
+        EVENT_MISSION_STEP => MissionStepResult::SIZE,
         _ => 0,
     }
 }
 
 /// The bytes of the result area a handled answer `result` of `kind` uses,
 /// within `cap`: `Fire`'s plan entries, `Launch`'s `PathSpec`, the one
-/// `ProjectileStep`, 0 for the kinds without an area. `None` rejects the
+/// `ProjectileStep`, the one `MissionStepResult`, 0 for the kinds without
+/// an area. `None` rejects the
 /// answer: the previous result stands.
 pub fn result_len(kind: i32, result: i64, cap: usize) -> Option<usize> {
     let len = match kind {
@@ -98,6 +104,7 @@ pub fn result_len(kind: i32, result: i64, cap: usize) -> Option<usize> {
                 && (*len - PathSpec::HEADER) % PathSpec::POINT == 0
         })?,
         EVENT_PROJECTILE_FRAME => ProjectileStep::SIZE,
+        EVENT_MISSION_STEP => MissionStepResult::SIZE,
         _ => 0,
     };
     (len <= cap).then_some(len)
@@ -288,6 +295,46 @@ impl ProjectileStep {
     }
 }
 
+/// `MissionStepResult` (appendix "Fixed layouts"), 24 bytes: `MissionStep`'s
+/// result. The first link gets the native outcome; a handled answer's
+/// fields that differ from it replace it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MissionStepResult {
+    /// Object or cell reference, 0 for none: the target.
+    pub target: i64,
+    /// Object or cell reference, 0 for none: the destination.
+    pub destination: i64,
+    /// `Mission` number to queue, −1 for none.
+    pub mission: i32,
+    /// Frames until the mission body runs again (at least 1).
+    pub delay: i32,
+}
+
+impl MissionStepResult {
+    pub const SIZE: usize = 24;
+    /// [`Self::mission`]: queue nothing.
+    pub const NO_MISSION: i32 = -1;
+
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        let bytes: &[u8; Self::SIZE] = bytes.get(..Self::SIZE)?.try_into().ok()?;
+        Some(Self {
+            target: crate::le_i64(bytes, 0),
+            destination: crate::le_i64(bytes, 8),
+            mission: crate::le_i32(bytes, 16),
+            delay: crate::le_i32(bytes, 20),
+        })
+    }
+
+    pub fn to_bytes(&self) -> [u8; Self::SIZE] {
+        let mut out = [0u8; Self::SIZE];
+        out[0..8].copy_from_slice(&self.target.to_le_bytes());
+        out[8..16].copy_from_slice(&self.destination.to_le_bytes());
+        out[16..20].copy_from_slice(&self.mission.to_le_bytes());
+        out[20..24].copy_from_slice(&self.delay.to_le_bytes());
+        out
+    }
+}
+
 /// Operations one `on_decide` call may use (open question 7): a tenth of
 /// the default frame budget, since decisions run inside the engine's own
 /// loops. A call that runs out stops the module.
@@ -298,7 +345,7 @@ pub const DECIDE_BUDGET: u64 = 20_000;
 ///
 /// The result area (`area`, `area_cap`, `previous_len`) follows the record
 /// in the module's delivery area, for the kinds that have one (`Fire`,
-/// `Launch`, `ProjectileFrame`); [`crate::SimModule::decide`] places it and
+/// `Launch`, `ProjectileFrame`, `MissionStep`); [`crate::SimModule::decide`] places it and
 /// fills those fields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DecideRecord {
