@@ -23,16 +23,20 @@ pub mod triggers;
 pub mod vars;
 
 pub use decide::{
-    CommandAllowedDecision, DecideRecord, DefeatDecision, ProductionAllowedDecision,
-    ProductionQueuedDecision, TakeDamageDecision,
+    CommandAllowedDecision, CrushAllowedDecision, DamageIncomingDecision, DecideRecord,
+    DefeatDecision, DeployAllowedDecision, DestinationSetDecision, FireAllowedDecision,
+    HarvestCellDecision, ProductionAllowedDecision, ProductionQueuedDecision, RetaliateDecision,
+    TakeDamageDecision,
 };
 pub use ini::{
     EventScope, IniEntryRecord, IniKeyRecord, IniSection, ModuleEvent, ModuleEventRecord,
 };
 pub use triggers::{
-    AttackedByEvent, BirthEvent, FatalDamageEvent, HouseTransferredEvent, KilledByWarheadEvent,
-    ModifierEvent, ModifierStacksEvent, PassengerAddedEvent, PassengerRemovedEvent, PollEvent,
-    StockEvent, SuperWeaponLaunchedEvent, TransportEnteredEvent, TransportExitedEvent,
+    AttackedByEvent, BirthEvent, CloakEvent, CrushedEvent, DeployedEvent, DetonatedEvent,
+    ExperienceGainedEvent, FatalDamageEvent, HouseTransferredEvent, KilledByWarheadEvent,
+    MissionChangedEvent, ModifierEvent, ModifierStacksEvent, PassengerAddedEvent,
+    PassengerRemovedEvent, PollEvent, PromotedEvent, StockEvent, SuperWeaponLaunchedEvent,
+    TargetChangedEvent, TransportEnteredEvent, TransportExitedEvent,
 };
 pub use triggers::{
     ActionDef, DELIVERY_SECTION, Event, EventRecord, FireEvent, KilledEvent, TakeDamageEvent,
