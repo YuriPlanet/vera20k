@@ -503,7 +503,7 @@ impl GameEntity {
             .and_then(|terms| terms.stat(Stat::Immunity).replace)
         {
             None => native,
-            Some(mask) => (mask as i64) >> (bit as u32) & 1 != 0,
+            Some(mask) => ((mask as i64) >> (bit as u32)) & 1 != 0,
         }
     }
 
@@ -556,7 +556,7 @@ impl GameEntity {
         native
             .into_iter()
             .filter(|&(bit, immune)| self.module_immune(bit, immune))
-            .fold(0, |mask, (bit, _)| mask | 1 << bit as u32)
+            .fold(0, |mask, (bit, _)| mask | (1 << (bit as u32)))
     }
 
     /// The module range terms: the multiplier and the extra leptons, or
