@@ -1,6 +1,7 @@
 //! House statistics, produced items and score (`Economy::score`) through
-//! native House save/load values. Native field retention is compared;
-//! per-house kill-table aggregation is not newly certified by these tests.
+//! native House save/load values. Native field retention is compared; the
+//! Kills total counts every victim House, including those beyond native's
+//! 20-entry kill tables.
 
 use super::*;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
@@ -173,14 +174,19 @@ fn native_change_owner_score_and_kill_counter_wrap() {
     let mut economy = crate::sim::economy::Economy::new(0);
     economy.set_score_for_test(score);
     economy.add_score(i32::try_from(native_price).unwrap());
-    // The table slot that changed is the old owner's House index.
+    // Native increments one entry of the building kill table; VERA keeps the
+    // same total for every victim House, so only the changed slot is checked.
     let slot = row["before"]["new"]["building_kills"]
         .as_array()
         .unwrap()
         .iter()
         .zip(row["after"]["new"]["building_kills"].as_array().unwrap())
         .position(|(before, after)| before != after);
-    stats.record_kill(crate::map::entities::EntityCategory::Structure, slot);
+    assert!(
+        slot.is_some(),
+        "capture_wrap must change a kill table entry"
+    );
+    stats.record_kill(crate::map::entities::EntityCategory::Structure);
     assert_eq!(
         (stats, economy.score()),
         capture_totals(&row["after"]["new"])
@@ -512,21 +518,32 @@ fn saved_live_statistics_preserve_terminal_score_and_rng_continuation() {
     assert_eq!(restored.state_hash(), sim.state_hash());
 }
 
-/// Each 20-entry kill table is followed by its loss counter (`+0x5434`,
-/// `+0x5488`), so kills of House 20 and later land past the tables the score
-/// screen and Diplomacy dialog sum (`0x005C996D`, `0x00658330`).
+/// Kills of House 20 and later are counted by category like any other
+/// victim. Native's two 20-entry tables (`+0x53E4`, `+0x5438`) end before
+/// those Houses, so its write lands in the adjacent loss counter or past the
+/// table entirely (`0x7030AC`, `0x70164D`); VERA seats more Houses than that
+/// and must not turn a kill into a loss or drop it.
 #[test]
-fn kills_of_house_twenty_and_later_land_past_the_kill_tables() {
+fn kills_of_every_house_index_are_counted_by_category() {
     use crate::map::entities::EntityCategory;
     let mut stats = MatchStatistics::default();
-    stats.record_kill(EntityCategory::Unit, Some(19));
-    stats.record_kill(EntityCategory::Structure, Some(19));
-    stats.record_kill(EntityCategory::Unit, Some(20));
-    stats.record_kill(EntityCategory::Structure, Some(20));
-    stats.record_kill(EntityCategory::Infantry, Some(21));
-    stats.record_kill(EntityCategory::Structure, Some(21));
+    // Houses 19, 20, 21, 41 and 119 cover native's last in-table slot, its
+    // first two out-of-table writes and the index it dropped outright. VERA
+    // credits every one by category, with no victim-index table to overflow.
+    for _ in 0..4 {
+        stats.record_kill(EntityCategory::Unit);
+    }
+    for _ in 0..4 {
+        stats.record_kill(EntityCategory::Structure);
+    }
     assert_eq!(
-        (stats.kills(), stats.units_lost(), stats.buildings_lost()),
-        (3, 1, 1)
+        (
+            stats.units_killed(),
+            stats.buildings_killed(),
+            stats.kills(),
+            stats.units_lost(),
+            stats.buildings_lost(),
+        ),
+        (4, 4, 8, 0, 0)
     );
 }
