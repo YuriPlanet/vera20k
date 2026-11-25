@@ -48,6 +48,7 @@ Thumbs.db
 !/docs/capabilities.md
 !/docs/rfcs/
 !/docs/wasm.md
+!/docs/aarch64-linux.md
 !/docs/sim-thread.md
 !/docs/scale-benchmark.md
 !/docs/ares.md
