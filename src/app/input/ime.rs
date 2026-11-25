@@ -377,8 +377,8 @@ fn gui_armed(state: &AppState) -> bool {
 /// shell's stack.
 #[cfg(target_os = "android")]
 fn lobby_shows(state: &AppState) -> bool {
-    crate::app::App::wol_page_is_lobby(state)
-        && !crate::app::shell_wol::page::open(state)
+    crate::app::App::wol_page_is_lobby(state.frontend.wol.as_ref())
+        && !crate::app::shell_wol::page::open(state.frontend.wol.as_ref())
         && !crate::app::frontend::shell_transition::blocks_shell_input(state)
 }
 

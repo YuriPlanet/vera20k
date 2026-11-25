@@ -49,7 +49,7 @@ pub(crate) fn sync(state: &mut AppState) {
 /// (`app::input::ime`).
 #[cfg(target_os = "android")]
 pub(crate) fn ime_gui(state: &AppState) -> Option<&vera20k_gui::Gui> {
-    lobby(state)
+    lobby(state.frontend.wol.as_ref())
         .filter(|lobby| lobby.interactive())
         .map(|lobby| lobby.ui.gui())
 }
