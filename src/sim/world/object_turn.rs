@@ -126,6 +126,18 @@ impl LocomotorProcess {
     }
 }
 
+/// Whether Kratos freezes this object's movement: its type is a `Wreck`
+/// (`kratos_freeze`) in a game that plays Kratos.
+fn frozen_for_movement(sim: &Simulation, stable_id: u64, rules: &RuleSet) -> bool {
+    rules.kratos()
+        && sim
+            .substrate
+            .entities
+            .get(stable_id)
+            .and_then(|entity| sim.entity_object_type(entity, rules))
+            .is_some_and(|object| object.kratos_freeze().frozen())
+}
+
 impl Simulation {
     /// InfantryAI51BCB2..51BDCF, after the complete FootAI visit: an idle
     /// Infantry standing in an ordinary Building scatters through the one
@@ -344,6 +356,11 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: &mut super::FrameEffects<'_>,
     ) -> Result<LocomotorProcess, super::FrameAdvanceError> {
+        // Kratos `Wreck` (`kratos_freeze`): a frozen aircraft holds its
+        // position and heading as the ground arm does.
+        if frozen_for_movement(self, stable_id, rules) {
+            return Ok(LocomotorProcess::admitted());
+        }
         let mut process = LocomotorProcess::admitted();
         self.complete_pending_order(stable_id, rules, effects);
         let jumpjet = self
@@ -622,6 +639,15 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: &mut super::FrameEffects<'_>,
     ) -> Result<GroundLocomotorOutcome, super::FrameAdvanceError> {
+        // Kratos `Wreck` (`kratos_freeze`): a frozen type never advances its
+        // locomotor, so it keeps its coordinate, facing and pending route
+        // untouched (`TechnoStatus::OnUpdate_Freeze` stops it every update).
+        if frozen_for_movement(self, stable_id, rules) {
+            return Ok(GroundLocomotorOutcome {
+                movement: Default::default(),
+                bridge_state_changed: false,
+            });
+        }
         self.complete_pending_order(stable_id, rules, effects);
         // Walk75AC80..75AC93 keeps the walking controller installed for its
         // whole Process, including arrival and new-destination callbacks.
