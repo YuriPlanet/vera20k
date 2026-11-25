@@ -86,6 +86,7 @@ mod ini_start;
 mod ini_triggers;
 pub(crate) mod modifiers;
 mod orders;
+pub(crate) mod projectiles;
 mod props;
 mod rules;
 mod supers;
@@ -441,6 +442,8 @@ pub struct ExtModules {
     ini: ini_names::IniNames,
     /// House domain claims (RFC 6i, [`claims`]).
     claims: claims::DomainClaims,
+    /// Per-projectile module data and `Launch` paths ([`projectiles`]).
+    projectiles: projectiles::ModuleProjectiles,
     /// The mod's `[VeraWasm] Controller=`, for "mod AI" seats
     /// ([`Simulation::seat_mod_ai_houses`]). Not saved: seats are given
     /// when the match starts, and a save carries the claims.
@@ -465,6 +468,8 @@ struct SavedExtModules {
     ini: ini_names::IniNames,
     #[serde(default)]
     claims: claims::DomainClaims,
+    #[serde(default)]
+    projectiles: projectiles::ModuleProjectiles,
 }
 
 impl serde::Serialize for ExtModules {
@@ -495,6 +500,7 @@ impl serde::Serialize for ExtModules {
             held: self.held.clone(),
             ini: self.ini.clone(),
             claims: self.claims.clone(),
+            projectiles: self.projectiles.clone(),
         }
         .serialize(serializer)
     }
@@ -510,6 +516,7 @@ impl<'de> serde::Deserialize<'de> for ExtModules {
             held: saved.held,
             ini: saved.ini,
             claims: saved.claims,
+            projectiles: saved.projectiles,
             ..Self::default()
         };
         modules.vars.values = saved.vars;
@@ -612,10 +619,13 @@ impl ExtModules {
             || !values.object.is_empty();
         let ini = (!self.ini.is_empty()).then(|| fnv1a(self.ini.state_bytes()));
         let claims = (!self.claims.is_empty()).then(|| fnv1a(self.claims.state_bytes()));
+        let projectiles =
+            (!self.projectiles.is_empty()).then(|| fnv1a(self.projectiles.state_bytes()));
         modules
             .chain(held.then(|| fnv1a(self.held_state_bytes())))
             .chain(ini)
             .chain(claims)
+            .chain(projectiles)
     }
 
     /// The modifiers and declared-variable values as checksum bytes.
@@ -685,6 +695,9 @@ impl ExtModules {
         }
         if !self.claims.is_empty() {
             self.claims.hash(hasher);
+        }
+        if !self.projectiles.is_empty() {
+            self.projectiles.hash(hasher);
         }
     }
 }
@@ -1026,6 +1039,12 @@ impl SimHost for Host<'_, '_> {
             return self.write_super_weapon(house, index, name, value);
         }
         if let Some(Ref::Object(id)) = decode_ref(reference)?
+            && self.sim.entities().get(id).is_none()
+            && self.sim.projectiles.get(id).is_some()
+        {
+            return Ok(self.write_projectile_property(id, name, value));
+        }
+        if let Some(Ref::Object(id)) = decode_ref(reference)?
             && self.sim.entities().get(id).is_some()
         {
             match name {
@@ -1273,6 +1292,13 @@ const READABLE: &[&str] = &[
     "Deployed",
     "UnderConstruction",
     "Parasite",
+    // Projectiles (projectiles.rs, appendix 7.4).
+    "VX",
+    "VY",
+    "VZ",
+    "Source",
+    "Data0",
+    "Data1",
     // Viewpoint properties: in filter clauses and queries only.
     "Relation",
     "Revealed",
@@ -1410,6 +1436,9 @@ impl Host<'_, '_> {
                     "Engage" => self.engage(id, view),
                     _ => self.object_property(entity, name),
                 },
+                None if self.sim.projectiles.get(id).is_some() => {
+                    self.projectile_property(id, name)
+                }
                 None => match self.sim.ext_modules.modifiers.get(id) {
                     Some(modifier) => modifier
                         .property(name, self.sim.session.binary_frame())
@@ -2070,6 +2099,7 @@ impl Simulation {
         }
         self.ext_modules.vars.forget_object(stable_id);
         self.ext_modules.held.forget_object(stable_id);
+        self.ext_modules.projectiles.forget(stable_id);
     }
 
     pub fn ext_modules(&self) -> &ExtModules {
