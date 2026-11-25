@@ -2376,3 +2376,7 @@ mod order_tests;
 #[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_control_tests.rs"]
 mod control_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_movement_tests.rs"]
+mod movement_tests;

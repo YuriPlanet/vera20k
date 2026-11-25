@@ -76,7 +76,15 @@
 //! draws alone would move the object. The step itself draws nothing;
 //! `Per_Cell_Process` draws as it does natively.
 //!
+//! Standing infantry do not sleep (`world::idle_sleep`) while a push runs
+//! or a `MoveFrame` decider exists, and a `Push` wakes its object.
+//!
 //! Residuals:
+//! - An infantryman already asleep when the first `MoveFrame` decider is
+//!   made is asked from its next full turn (at most 64 frames later).
+//! - Infantry Scatter's immediate Walk Process (`0x0051D478`) is a
+//!   locomotor Process too: a scattered infantryman may be asked twice in
+//!   a frame.
 //! - Can_Enter_Cell's crush codes (4, 5) and the moving-friendly code (2)
 //!   stop a step like any other refusal: a module step does not crush or
 //!   wait for traffic; a crushable occupant blocks it.
@@ -432,6 +440,8 @@ impl Simulation {
             done: 0,
         };
         self.ext_modules.motions.pushes.insert(id, push);
+        // A sleeping infantryman (`world::idle_sleep`) takes its turns again.
+        self.substrate.entities.wake(id);
         Status::Ok
     }
 
