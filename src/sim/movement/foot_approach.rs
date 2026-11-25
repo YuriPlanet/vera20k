@@ -396,13 +396,9 @@ impl Simulation {
             return;
         }
         if !crate::sim::movement::motion_query::is_moving(actor).unwrap_or(false) {
-            if let Err(cause) = self.infantry_do_action(
-                id,
-                super::infantry_action::DO_DEPLOY,
-                false,
-                rules,
-                frame_effects,
-            ) {
+            // A deploy the Wasm module `DeployAllowed` refuses leaves him
+            // standing; the next Approach asks again.
+            if let Err(cause) = self.infantry_request_deploy(id, false, rules, frame_effects) {
                 log::debug!("infantry {id} Approach deploy: {cause}");
             }
             return;

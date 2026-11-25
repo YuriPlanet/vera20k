@@ -1083,8 +1083,9 @@ fn infantry_automatic_guard_delay(
         return -1;
     };
     if !moving {
-        //521631..521659 returns raw signed Count27 even when DoAction refuses.
-        let _ = sim.infantry_do_action(id, 27, false, rules, effects);
+        //521631..521659 returns raw signed Count27 even when DoAction refuses
+        // (or the Wasm module `DeployAllowed` does).
+        let _ = sim.infantry_request_deploy(id, false, rules, effects);
         return rules
             .animation_sequence_in_category(
                 crate::rules::object_type::ObjectCategory::Infantry,

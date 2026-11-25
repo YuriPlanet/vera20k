@@ -472,6 +472,14 @@ Branch `feature/wasm-control-points` (items 1 and 2 of the control-point plan):
   without 1048); delivered `TargetChanged`, `Deployed`, `Promoted`, `ExperienceGained`,
   `Cloaked`, `Decloaked`. No new saved state: every decision completes at its commit
   point and every event is raised there.
+- `DeployAllowed` is asked before every deploy: an MCV's (after its placement test), a
+  simple deployer's start, and every infantryman's Do_Action(Deploy) through the one
+  gate `deploy::infantry_request_deploy` (pending deploy, Mission_Unload, the
+  computer's automatic deploy, the Approach arm). A refusal leaves a DeploysInto unit
+  queueing Guard, a simple deployer's or infantryman's Unload ending in Guard without
+  deploying, the others standing. Undeploys are not asked (RFC 4.5). Tests: a standing
+  GI's refusal (`ext_modules_control_tests.rs`); the Control Bench's
+  `movement.DeployInfantry`, `movement.DeployMcv`, `movement.DeployAllowed` (chopper).
 - Deferred by the maintainer: `MissionChanged` (1048, tier `later`; no raise
   point: mission transitions are written from many callers without rules or frame
   effects). `has_kind` answers 0 for it (`ext_modules_control_tests.rs`).
@@ -632,11 +640,11 @@ modules, external modders, freeze), and the later items (peer calls,
 
 ## Residuals
 
-- Untested control points (no reliable retail scene in the headless harness):
-  `Deployed` and `DeployAllowed` on an MCV (the duel scene's MCV does not
-  deploy), `Birth` for a deployed yard, building survivors and vehicle crew
-  (crew type and per-cell survivor rolls are random draws). Their code paths
-  are covered only by the native deploy and survival tests.
+- `Deployed` and `DeployAllowed` on an MCV and `Birth` for its yard and for building
+  survivors have no engine test (the duel scene's MCV does not deploy; survivor rolls
+  are random draws); the Control Bench covers them in a Battle (`movement.DeployMcv`,
+  `movement.BirthYard`, `movement.BirthSurvivor`). A vehicle crew's `Birth` is tested
+  by neither.
 
 - The stopped-module notice is translated (`VERA:ModuleStopped`), but the fault
   reason inside it is English only.

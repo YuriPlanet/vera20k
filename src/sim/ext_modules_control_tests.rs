@@ -5,10 +5,9 @@
 //! `SpiedBy`/`ThievedBy` and the garrison exit events at their raises, the
 //! `DamageIncoming`, `DestinationSet` and `FireAllowed` decisions, the
 //! Jumpjet speed factor, an `ImmunityFlags` override at the radiation gate,
-//! an MCV's `Deployed` and its yard's `Birth`, a `DeployAllowed` refusal,
-//! `Crushed` and a `CrushAllowed` refusal, the `Retaliate` request and its
-//! refusal, `Cloaked`/`Decloaked` through the cloak modifiers, survivors'
-//! `Birth`, and Fly's and Rocket's speed factor.
+//! a standing GI's `DeployAllowed` refusal, `Crushed` and a `CrushAllowed`
+//! refusal, the `Retaliate` request and its refusal, `Cloaked`/`Decloaked`
+//! through the cloak modifiers, and Fly's and Rocket's speed factor.
 
 use vera20k_wasm_ext::decide::{
     EVENT_CRUSH_ALLOWED, EVENT_DAMAGE_INCOMING, EVENT_DEPLOY_ALLOWED, EVENT_DESTINATION_SET,
@@ -582,6 +581,65 @@ fn put_modifier(
         .expect("the modifier fits");
 }
 
+/// The duel's American GI alone (the Russian one removed), standing:
+/// (scene, GI).
+fn lone_gi() -> Option<(HeadlessScenario, u64)> {
+    let (mut scene, gi, other) = super::tests::gi_duel()?;
+    let runtime = &mut scene.runtime;
+    runtime
+        .simulation
+        .uninit_with_context(other, UninitContext::new(&runtime.resources.rules));
+    Some((scene, gi))
+}
+
+fn deploying(scene: &HeadlessScenario, id: u64) -> bool {
+    scene
+        .sim()
+        .entities()
+        .get(id)
+        .is_some_and(|entity| entity.infantry_deploy_doing())
+}
+
+/// A standing GI ordered to deploy (its Unload) deploys; with a
+/// `DeployAllowed` decider refusing, the deploy is asked (`subject` the
+/// GI) and he stays standing, his Unload ended in Guard.
+#[test]
+fn a_deploy_allowed_refusal_keeps_a_standing_gi_standing() {
+    use crate::sim::command::Command;
+    use crate::sim::mission::MissionType;
+    let Some((mut scene, gi)) = lone_gi() else {
+        return;
+    };
+    let order = |gi: u64| Command::ToggleInfantryDeploy { entity_id: gi };
+    order_until(&mut scene, order(gi), 60, |scene| deploying(scene, gi));
+    assert!(deploying(&scene, gi), "the GI deploys");
+
+    let (mut scene, gi) = lone_gi().expect("second scene");
+    install_decider(&mut scene, EVENT_DEPLOY_ALLOWED, REFUSE, gi as i64);
+    order_until(&mut scene, order(gi), 60, |_| false);
+    let m = memory(&scene);
+    assert_eq!(
+        i32::from_le_bytes(m[512 + 4..512 + 8].try_into().expect("4 bytes")),
+        EVENT_DEPLOY_ALLOWED,
+        "the deploy was asked"
+    );
+    assert_eq!(
+        i64::from_le_bytes(m[512 + 24..512 + 32].try_into().expect("8 bytes")),
+        gi as i64,
+        "`subject` the GI"
+    );
+    assert!(!deploying(&scene, gi), "refused: he stays standing");
+    let mission = scene
+        .sim()
+        .entities()
+        .get(gi)
+        .expect("the GI lives")
+        .mission
+        .effective()
+        .known();
+    assert_ne!(mission, Some(MissionType::Unload), "the Unload ended");
+}
+
 /// A GI duel scene with an American Grizzly east of the Russian GI and the
 /// Move order that drives it over the GI: (scene, tank, victim, order).
 fn crush_scene() -> Option<(HeadlessScenario, u64, u64, crate::sim::command::Command)> {
@@ -645,12 +703,20 @@ fn a_crush_raises_crushed_and_crush_allowed_can_spare_the_victim() {
         })
     });
     assert_eq!(
-        i32::from_le_bytes(memory(&scene)[512 + 4..512 + 8].try_into().expect("4 bytes")),
+        i32::from_le_bytes(
+            memory(&scene)[512 + 4..512 + 8]
+                .try_into()
+                .expect("4 bytes")
+        ),
         EVENT_CRUSH_ALLOWED,
         "the crush was asked"
     );
     assert_eq!(
-        i64::from_le_bytes(memory(&scene)[512 + 32..512 + 40].try_into().expect("8 bytes")),
+        i64::from_le_bytes(
+            memory(&scene)[512 + 32..512 + 40]
+                .try_into()
+                .expect("8 bytes")
+        ),
         tank as i64,
         "`other` the crusher"
     );
@@ -749,7 +815,13 @@ fn cloakable_and_force_decloak_raise_the_cloak_edges() {
         }
         if decloak {
             // The cloak has had its time; force it off.
-            put_modifier(&mut scene, unit, Stat::ForceDecloak, ModifierOp::Override, 1);
+            put_modifier(
+                &mut scene,
+                unit,
+                Stat::ForceDecloak,
+                ModifierOp::Override,
+                1,
+            );
             for _ in 0..300 {
                 scene.tick();
                 if received(&scene) > 0 {
