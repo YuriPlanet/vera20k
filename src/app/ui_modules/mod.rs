@@ -669,7 +669,6 @@ pub(crate) fn render_frame(state: &mut AppState) {
             // Static map parts only: the tree's events have no reader, but
             // their buttons' commands run.
             ui.tree.take_events(&mut Vec::new());
-            drop(match_state);
             run_map_part_commands(state);
             return;
         }
