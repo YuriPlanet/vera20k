@@ -200,6 +200,19 @@ impl JumpjetFlightParams {
     }
 }
 
+impl JumpjetFlightParams {
+    /// VERA: these parameters with `JumpjetSpeed=` scaled by a Wasm module
+    /// `SpeedMultiplier` (`factor`, truncated toward zero), which the speed
+    /// cap, the target speeds and the speed fraction then read; 1.0 leaves
+    /// them as linked.
+    pub(crate) fn with_speed_factor(mut self, factor: f64) -> Self {
+        if factor != 1.0 {
+            self.speed = (f64::from(self.speed) * factor) as i32;
+        }
+        self
+    }
+}
+
 impl Default for JumpjetFlightParams {
     fn default() -> Self {
         Self::link(&JumpjetParams::default())
@@ -385,6 +398,11 @@ pub(crate) trait JumpjetFlightHost {
     /// whose destination is `cell`.
     fn landing_cell_claimed_by(&self, _cell: (i16, i16)) -> Option<u64> {
         None
+    }
+    /// VERA: the owner's Wasm module `SpeedMultiplier` on `JumpjetSpeed=`
+    /// ([`JumpjetFlightParams::with_speed_factor`]); 1.0 without one.
+    fn speed_factor(&self) -> f64 {
+        1.0
     }
     fn binary_frame(&self) -> u32;
     fn trig(&self) -> &TrigTable;
@@ -830,7 +848,7 @@ pub(crate) fn state3_translate(
     runtime: &mut JumpjetRuntime,
     host: &mut impl JumpjetFlightHost,
 ) -> i32 {
-    let params = runtime.params;
+    let params = runtime.params.with_speed_factor(host.speed_factor());
     let destination = [
         runtime.destination.x,
         runtime.destination.y,
@@ -998,7 +1016,7 @@ pub(crate) fn process(runtime: &mut JumpjetRuntime, host: &mut impl JumpjetFligh
         runtime.destination.y,
         runtime.destination.z,
     ];
-    let params = runtime.params;
+    let params = runtime.params.with_speed_factor(host.speed_factor());
     update_coordinates_and_altitude(state, destination, &params, &mut runtime.flight, host);
     if !host.has_installed_jumpjet() || !host.is_object_alive() {
         return runtime.phase;
@@ -1254,7 +1272,7 @@ pub(crate) fn state1_ascend(
         runtime.destination.y,
         runtime.destination.z,
     ];
-    let params = runtime.params;
+    let params = runtime.params.with_speed_factor(host.speed_factor());
     let frame = host.binary_frame();
     let location = host.location();
     let here = host.cell_of([location[0], location[1]]);
@@ -1385,7 +1403,7 @@ pub(crate) fn state4_descend(
     runtime: &mut JumpjetRuntime,
     host: &mut impl JumpjetFlightHost,
 ) -> i32 {
-    let params = runtime.params;
+    let params = runtime.params.with_speed_factor(host.speed_factor());
     let destination = [
         runtime.destination.x,
         runtime.destination.y,
