@@ -474,8 +474,8 @@ Branch `feature/wasm-control-points` (items 1 and 2 of the control-point plan):
   `ModifierCountPoll`, `DistancePoll`, `VariablePoll`); decision-only 1031..1036
   (`ProductionAllowed` 1031, `ProductionQueued` 1032, `Defeat` 1033, `CommandAllowed`
   1034, `Launch` 1035, `ProjectileFrame` 1036); unit-level decision-only events
-  from 1060 (`IdleMission` 1060, RFC 100060; `MissionStep` 1062, RFC 100062; no INI
-  names yet); `HarvestCell` is
+  from 1060 (`IdleMission` 1060, RFC 100060; `MoveFrame` 1063 and `PathFound`
+  1064, RFC 100063/100064; no INI names yet); `HarvestCell` is
   1049 (RFC 100049), asked in every ore scan. Stock events keep 0..88. One name table: `wasm-ext/src/event_kinds.rs`.
 - `Passable.<SpeedType>` properties are appended to `PROPERTIES` (IDs 173..180).
 - Houses stay on the bit-47 reference: putting them on the shared creation counter
@@ -576,15 +576,18 @@ modules, external modders, freeze), and the later items (peer calls,
   `control.rs`, its test with the idle one); the computer
   mission arms the 6i claims had missed are gated (`claims.rs` module doc);
   tests `ext_modules_unit_ai_tests.rs`.
-- `MissionStep` (MIS-S3..S6, preview), the outcome of the Guard, Sticky, Area
-  Guard, Hunt and Attack bodies of infantry and vehicles: a `MissionStepResult`
-  (target, destination, mission to queue, delay) in the result area, asked in
-  `mission_handlers::dispatch_foot_mission` after the body and before
-  `MissionClass::AI`'s queue and timer write (`0x005B3060`), applied in
-  `src/sim/ext_modules/unit_ai.rs` through the class setters. The body runs in
-  full first, so its scenario draws are unchanged (list 4.4); what else it did
-  (shots, deploys, a mission queued on going idle) stands. No saved state.
-  SDK `MissionStepDecision`; tests `ext_modules_unit_ai_tests.rs`.
+- Movement (step 6): `MoveFrame` (result `MoveStep`), `Push` and `SetFacing`
+  (atomic 1035, 1045) in `src/sim/ext_modules/motion.rs`, raised from
+  `Simulation::process_active_locomotor` (`world/object_turn.rs`, FootClass::AI's
+  Process call `0x004DA877`) for Drive/Ship/Walk/Mech/Hover movers with no step in
+  flight; pushes are saved and hashed (`ExtModules::motions`, save field
+  `motions`); standing infantry stay awake while module movement is active
+  (`world/idle_sleep.rs`). `PathFound` (result `PathCell`s) in
+  `src/sim/ext_modules/paths.rs`, asked in `movement/foot_path.rs`
+  `search_foot_path` (Find_Path `0x004D3920`, before the copy at `0x004D3E82`);
+  the path batch stays on (the decision is at the adoption, in the Foot's turn).
+  SDK `MoveFrameDecision`, `PathFoundDecision`, `Action::push`,
+  `Action::set_facing`. Tests `ext_modules_movement_tests.rs`.
 
 ## Residuals
 
@@ -611,8 +614,19 @@ modules, external modders, freeze), and the later items (peer calls,
 - Decisions: decision triggers cannot have immediate actions; `ProductionAllowed`
   cannot lift CanBuild's own refusal and also asks Neutral/Special; `CommandAllowed`
   asks nothing for commands without an 8.3 number or an actor, nor for the AI's own
-  missions; no kind uses a result area; nested decisions get no merged rules text.
-- Actions unsupported: `RemovePassenger`, `Push`, team and projectile actions,
+  missions; nested decisions get no merged rules text.
+- Movement: `MoveFrame` and `Push` cover Drive, Ship, Walk, Mech and Hover only
+  (not Fly, Jumpjet, Rocket, Tunnel, Teleport, transported, warping or train
+  objects) and wait for a native step in flight to end; a module step checks the
+  end cell only, treats Can_Enter's crush and traffic codes as blocked, never
+  leaves a bridge deck and keeps an infantryman's sub-cell spot; a taken frame
+  skips the native Process's own draws (Walk's sub-cell choice); a standing
+  infantryman asleep when the first `MoveFrame` decider appears is asked from its
+  next full turn; Scatter's immediate Walk Process may ask twice in a frame. No
+  `ROT` modifier; `Push` does not launch into the air. `PathFound` answers the
+  route's first window only, is not asked for a train's queued extension or a
+  route with a tube step, and is asked while the Foot is lifted (Mark0).
+- Actions unsupported: `RemovePassenger`, team and projectile actions,
   `AttachAnim` with a frame count; house modifiers (`PowerOutage`); stock actions that
   need a live trigger (3, 6, 9, 13, 36..38, 52, 74, 75, 81, 91, 111, 113, 119..124,
   126, 130, Ares 146, 147), sound IDs (19, 98, 99), 40, 15, 39, 49, 50.

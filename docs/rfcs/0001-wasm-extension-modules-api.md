@@ -295,11 +295,14 @@ struct ProjectileStep {   // 56 bytes: ProjectileFrame result area
     reserved3: i32,       // 36  0
     data: [u8; 16],       // 40  New module data (Data0 bytes 0..7, Data1 bytes 8..15)
 }
-struct MissionStepResult { // 24 bytes: MissionStep result area. The first link receives the mission body's outcome
-    target: i64,          // 0   Target: object or cell reference, 0 for none
-    destination: i64,     // 8   Destination: object or cell reference, 0 for none
-    mission: i32,         // 16  Mission to queue (Mission), -1 for none
-    delay: i32,           // 20  Frames until the mission body runs again (>= 1)
+struct MoveStep {         // 16 bytes: MoveFrame result area
+    flags: i32,           // 0   Bit 0 take the frame and move by displacement, bit 1 turn to facing, bit 2 stop native movement (null destination)
+    facing: i32,          // 4   Body facing 0..255 (as the Facing property)
+    displacement: [i32; 2], // 8 x, y in leptons, each clamped to 2,048 either way
+}
+struct PathCell {         // 8 bytes: one cell of a PathFound result area (up to 24)
+    x: i32,               // 0   Cell x
+    y: i32,               // 4   Cell y
 }
 ```
 
@@ -696,7 +699,8 @@ Require a trigger with a decision handler. These events have no delivered form.
 | 100036 | `ProjectileFrame` | `subject` and `projectile` the projectile, `value` elapsed flight frames | Each frame as the engine advances projectiles in engine order, after the animation wait, target resolution and the frame fuse, before computing the candidate position, once per bound projectile that moves this frame | Projectile type | Unused. Result area contains one `ProjectileStep`. `handled` of 0 follows the `Launch` path or native advancement | preview |
 | 100039 | `DamageIncoming` | `subject`, `other` source (may be 0), `id` warhead, `value` signed incoming damage, `value2` `previous` put through falloff, the Verses of the armor in the trigger's `EventDef.id` (−1 for the subject's) and the cap, with the sign of `previous`. With bit 0 of `EventDef.value` set, a positive value is first divided by the product of the subject's armor multipliers, truncating toward zero. `x`, `y`, `z` subject position in leptons | Techno receive-damage entry, after infantry prone, the parasite prefix and the engine's own shield, before death prevention, subject armor and the minimum of 1. Not asked for zero incoming damage, ignore-defenses hits, Psychedelic or Temporal warheads, or hits that immunity, Iron Curtain or allegiance would reject. Zero Verses against the subject's armor does not prevent the request. | Object | Incoming damage continuing into the native flow. It must be 0 or have the sign of `previous`, otherwise the previous result stands. Recompute `value2` from each link's own `previous`. A result of 0 suppresses the minimum of 1. | preview |
 | 100060 | `IdleMission` | `subject` | When an infantryman or vehicle goes idle, after the engine picks the mission to queue and before queuing it. Not asked when nothing is queued, nor for aircraft and buildings | Object | Mission to queue (`Mission`), 255 for none. `native` is the engine's pick | preview |
-| 100062 | `MissionStep` | `subject`, `value` the mission whose body ran (`Mission`), `other` target object (0 for a cell or none), `cell` target cell | Each time an infantryman's or vehicle's Guard, Sticky, Area Guard, Hunt or Attack mission body runs, after the body and its random draws, before its mission timer and queued mission are written. Aircraft and buildings are not asked | Object | Unused. Result area contains one `MissionStepResult`, arriving with the body's outcome: the target and destination it left, the mission it queues (−1 for none) and its delay. Each changed field is applied through the engine's own setters (the destination through `DestinationSet`); a gone object, an off-map cell, an unknown mission or a delay below 1 keeps the body's. What else the body did (firing, deploying, a mission queued by going idle) stands | preview |
+| 100063 | `MoveFrame` | `subject`, `x`, `y`, `z` its position, `value` 1 while its locomotor is moving, `other` and `cell` its navigation target (object or cell) | Each frame a vehicle or infantryman on a Drive, Ship, Walk, Mech or Hover locomotor reaches its locomotor's processing with no step in flight (a track or sub-cell step runs to its end first), after an active `Push`'s frame. Not asked for transported, warping or train objects, nor for other locomotors | Object | Unused. Result area contains one `MoveStep`, zero for the first link. Bit 0 takes the frame: the native processing does not run and the object moves by the displacement; a step into another cell checks that cell only (on the map, not from a bridge deck, the object's own cell entry test answering free), otherwise it stays. The engine keeps its height, moves its occupancy, ends its path queue and runs the cell arrival on a new cell. `handled` of 0, or no bit 0, leaves the frame to the locomotor | preview |
+| 100064 | `PathFound` | `subject`, `x`, `y`, `z` its position, `cell` the search goal's cell, `value` the native route's cell count (0 for none) | When a path search's route (or its failure) is adopted, after the search and before the route is copied, wherever the search ran (the path batch only computes it early). Not asked for a train extending its queued route or a route with a tube step | Object | Number of cells (0..24); result area contains that many `PathCell`s, the first link the native route's. 0 is no route (the native failure follows); otherwise the cells, each next to the one before and the first next to the object's cell, all on the map, replace the route, else the native route stands | preview |
 
 ### 4.6 Client event kinds
 
@@ -942,13 +946,14 @@ Numbers are the identity and are appended only. 100041 is reserved (`ApplyEffect
 | 100032 | `AddScore` | `House` | `value` score | Adds to the score | none | v1 |
 | 100033 | `Log` | — | `text` | Writes one line to the in-game log | none | v1 |
 | 100034 | `Convert` | Object | `id` type, `value2` frames (0 for permanent, positive to revert on expiry) | Changes type using Ares conversion rules. Mutually exclusive with teleportation and forced motion | native | v1 |
-| 100035 | `Push` | Object | `cell` directional target, `value` force | Pushes or launches the object in addition to its movement. Mutually exclusive with conversion and teleportation | native | later |
+| 100035 | `Push` | Object | `cell` directional target, `value` distance in leptons (negative pushes away; at most 2,048; 0 ends the push), `value2` frames (1..255; 0 or less for one per 64 leptons) | Pushes a vehicle or infantryman on a Drive, Ship, Walk, Mech or Hover locomotor along the ground in addition to its movement: each frame, at its locomotor's processing with no step in flight, a share of the distance moves it as a `MoveFrame` step does; a refused step ends the push. A new push replaces the old one; teleporting, converting or leaving ends it. Saved and hashed while it runs. `Refused` for other objects and while warping. Not launched into the air | native | preview |
 | 100036 | `Module` | Any | `id` dispatch key, `text` argument text (optional) | Queues a module action for the module phase. The record's `target` is the trigger's target selection and `args` the string ID of the argument text. INI spelling is `Action=Wasm:name` or `Action=Wasm:name(target,text)` in named sections, action 100036 in maps (no arguments) | none | v1 |
 | 100037 | `CreateTeamUnlimited` | `House` | `id` TeamType | Starts and returns a team without checking Max, like script action 18 | native | later |
 | 100038 | `DisbandTeam` | — | `other` team | Destroys the team, records the AI trigger outcome and releases its members | none | later |
 | 100039 | `AddTeamMember` | Object | `other` team | Joins a team subject to admission checks | none | later |
 | 100040 | `RemoveTeamMember` | Object | — | Leaves the current team | none | later |
 | 100042 | `RaiseEvent` | Object (object event) or any (global event) | `id` event ID. `other`, `value`, `value2`, `house` are written to the record | Raises module event `ModuleEvent` ([RFC 6h](0001-wasm-extension-modules.md#6h-ini-registration)). `Gone` if the target of an object event is not an existing object. An unregistered event ID is an invalid argument. INI spelling is `RaiseEvent(target,event name,value,value2)` | none | v1 |
+| 100045 | `SetFacing` | Object | `value` body facing 0..255 | Turns the body through the active locomotor (rotating at its rate where the locomotor does, snapping where it snaps). `Refused` without a locomotor | none | preview |
 
 ### 5.4 Client action kinds
 

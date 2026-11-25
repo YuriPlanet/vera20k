@@ -26,8 +26,8 @@ pub use decide::{
     CommandAllowedDecision, CrushAllowedDecision, DamageIncomingDecision, DecideRecord,
     DefeatDecision, DeployAllowedDecision, DestinationSetDecision, FatalDamageDecision,
     FireAllowedDecision, FireDecision, HarvestCellDecision, IdleMissionDecision, LaunchDecision,
-    MissionStepDecision, PathKind, ProductionAllowedDecision, ProductionQueuedDecision,
-    ProjectileFrameDecision, RetaliateDecision, TakeDamageDecision,
+    MoveFrameDecision, PathFoundDecision, PathKind, ProductionAllowedDecision,
+    ProductionQueuedDecision, ProjectileFrameDecision, RetaliateDecision, TakeDamageDecision,
 };
 pub use ini::{
     EventScope, IniEntryRecord, IniKeyRecord, IniSection, ModuleEvent, ModuleEventRecord,
@@ -50,7 +50,8 @@ pub mod prelude {
         Action, ActionDef, Blocked, Category, Cell, Command, CommandAllowedDecision, DecideRecord,
         DefeatDecision, Event, EventRecord, EventScope, FIXED_ONE, FatalDamageDecision, Find,
         FireDecision, FireEvent,
-        Global, House, LaunchDecision, PathKind, Projectile, ProjectileFrameDecision,
+        Global, House, LaunchDecision, MoveFrameDecision, PathFoundDecision, PathKind, Projectile,
+        ProjectileFrameDecision,
         IniEntryRecord, IniKeyRecord, IniSection, KilledEvent, Layer, Mission, Modifier,
         ModifierOp, ModuleEvent, ModuleEventRecord, NameKind, Op, Order, Outcome,
         ProductionAllowedDecision, ProductionQueuedDecision, Prop, Ref, Relation, Rules, SpeedType,
@@ -779,7 +780,9 @@ impl Action {
     pub const ADD_SCORE: i32 = 1032;
     pub const LOG: i32 = 1033;
     pub const CONVERT: i32 = 1034;
+    pub const PUSH: i32 = 1035;
     pub const RAISE_EVENT: i32 = 1042;
+    pub const SET_FACING: i32 = 1045;
     /// Trigger-only kinds ([`ActionDef::set_var`], [`ActionDef::module`]).
     pub const SET_VAR: i32 = 1024;
     pub const MODULE: i32 = 1036;
@@ -993,6 +996,26 @@ impl Action {
     pub fn convert_for(target: Techno, kind: TypeRef, frames: u32) -> Result<()> {
         let params = params!(id: kind.id(), value2: i64::from(frames));
         Self::run(Self::CONVERT, target.0, &params).map(drop)
+    }
+
+    /// Pushes `target` (a vehicle or infantryman on the ground) `distance`
+    /// leptons toward the center of `toward` (negative: away from it), over
+    /// `frames` frames (0: one per 64 leptons), on top of its own movement.
+    /// 0 ends its push.
+    pub fn push(target: Techno, toward: Cell, distance: i32, frames: u32) -> Result<()> {
+        let params = params!(
+            cell: toward.raw(),
+            value: i64::from(distance),
+            value2: i64::from(frames),
+        );
+        Self::run(Self::PUSH, target.0, &params).map(drop)
+    }
+
+    /// Turns `target`'s body toward `facing` (0..255) through its
+    /// locomotor.
+    pub fn set_facing(target: Techno, facing: u8) -> Result<()> {
+        let params = params!(value: i64::from(facing));
+        Self::run(Self::SET_FACING, target.0, &params).map(drop)
     }
 
     /// Fires `shooter`'s weapon `slot` (0 primary, 1 secondary) at its

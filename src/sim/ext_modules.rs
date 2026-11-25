@@ -86,7 +86,9 @@ mod ini_names;
 mod ini_start;
 mod ini_triggers;
 pub(crate) mod modifiers;
+mod motion;
 mod orders;
+mod paths;
 pub(crate) mod projectiles;
 mod props;
 mod rules;
@@ -446,6 +448,8 @@ pub struct ExtModules {
     claims: claims::DomainClaims,
     /// Per-projectile module data and `Launch` paths ([`projectiles`]).
     projectiles: projectiles::ModuleProjectiles,
+    /// The `Push`es in progress ([`motion`]).
+    motions: motion::ModuleMotions,
     /// The mod's `[VeraWasm] Controller=`, for "mod AI" seats
     /// ([`Simulation::seat_mod_ai_houses`]). Not saved: seats are given
     /// when the match starts, and a save carries the claims.
@@ -472,6 +476,8 @@ struct SavedExtModules {
     claims: claims::DomainClaims,
     #[serde(default)]
     projectiles: projectiles::ModuleProjectiles,
+    #[serde(default)]
+    motions: motion::ModuleMotions,
 }
 
 impl serde::Serialize for ExtModules {
@@ -503,6 +509,7 @@ impl serde::Serialize for ExtModules {
             ini: self.ini.clone(),
             claims: self.claims.clone(),
             projectiles: self.projectiles.clone(),
+            motions: self.motions.clone(),
         }
         .serialize(serializer)
     }
@@ -519,6 +526,7 @@ impl<'de> serde::Deserialize<'de> for ExtModules {
             ini: saved.ini,
             claims: saved.claims,
             projectiles: saved.projectiles,
+            motions: saved.motions,
             ..Self::default()
         };
         modules.vars.values = saved.vars;
@@ -631,11 +639,13 @@ impl ExtModules {
         let claims = (!self.claims.is_empty()).then(|| fnv1a(self.claims.state_bytes()));
         let projectiles =
             (!self.projectiles.is_empty()).then(|| fnv1a(self.projectiles.state_bytes()));
+        let motions = (!self.motions.is_empty()).then(|| fnv1a(self.motions.state_bytes()));
         modules
             .chain(held.then(|| fnv1a(self.held_state_bytes())))
             .chain(ini)
             .chain(claims)
             .chain(projectiles)
+            .chain(motions)
     }
 
     /// The modifiers and declared-variable values as checksum bytes.
@@ -708,6 +718,9 @@ impl ExtModules {
         }
         if !self.projectiles.is_empty() {
             self.projectiles.hash(hasher);
+        }
+        if !self.motions.is_empty() {
+            self.motions.hash(hasher);
         }
     }
 }
@@ -2119,6 +2132,7 @@ impl Simulation {
         self.ext_modules.vars.forget_object(stable_id);
         self.ext_modules.held.forget_object(stable_id);
         self.ext_modules.projectiles.forget(stable_id);
+        self.ext_modules.motions.end_push(stable_id);
     }
 
     pub fn ext_modules(&self) -> &ExtModules {
@@ -2371,3 +2385,7 @@ mod order_tests;
 #[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_control_tests.rs"]
 mod control_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_movement_tests.rs"]
+mod movement_tests;

@@ -344,7 +344,9 @@ impl Host<'_, '_> {
             | vera20k_wasm_ext::decide::EVENT_HARVEST_CELL
             | vera20k_wasm_ext::decide::EVENT_DEPLOY_ALLOWED
             | vera20k_wasm_ext::decide::EVENT_IDLE_MISSION
-            | vera20k_wasm_ext::decide::EVENT_MISSION_STEP => object,
+            // Movement (`motion`, `paths`): the mover or its type.
+            | vera20k_wasm_ext::decide::EVENT_MOVE_FRAME
+            | vera20k_wasm_ext::decide::EVENT_PATH_FOUND => object,
             // `Fire`, `Launch` and `Detonated` also bind the weapon, warhead
             // and projectile type; `ProjectileFrame` binds the projectile type.
             EVENT_FIRE

@@ -2,8 +2,9 @@
 //! stops the module.
 
 use crate::decide::{
-    DECIDE_BUDGET, DecideRecord, EVENT_LAUNCH, EVENT_MISSION_STEP, MissionStepResult, PathSpec,
-    ProjectileSpec, ProjectileStep, ResultArea, result_area_bytes, result_len,
+    DECIDE_BUDGET, DecideRecord, EVENT_LAUNCH, EVENT_MOVE_FRAME, EVENT_PATH_FOUND, MAX_PATH_CELLS,
+    MoveStep, PathCell, PathSpec, ProjectileSpec, ProjectileStep, ResultArea, result_area_bytes,
+    result_len,
 };
 use crate::triggers::{EVENT_FIRE, EVENT_TAKE_DAMAGE, EventRecord};
 use crate::{ActionParams, Fault, FindPage, Invalid, Limits, Query, SimHost, SimModule, Status};
@@ -176,14 +177,21 @@ fn fixed_layouts_round_trip() {
         data: [1; 16],
     };
     assert_eq!(ProjectileStep::from_bytes(&step.to_bytes()), Some(step));
-    let mission = MissionStepResult {
-        target: 7,
-        destination: (2 << 48) | (3 << 16) | 4,
-        mission: MissionStepResult::NO_MISSION,
-        delay: 30,
+    let move_step = MoveStep {
+        flags: MoveStep::MOVE | MoveStep::FACING,
+        facing: 64,
+        displacement: [-32, 48],
     };
-    assert_eq!(MissionStepResult::from_bytes(&mission.to_bytes()), Some(mission));
-    assert_eq!(result_area_bytes(EVENT_MISSION_STEP), 24);
-    assert_eq!(result_len(EVENT_MISSION_STEP, 0, 24), Some(24));
-    assert_eq!(result_len(EVENT_MISSION_STEP, 0, 16), None);
+    assert_eq!(MoveStep::from_bytes(&move_step.to_bytes()), Some(move_step));
+    assert_eq!(result_area_bytes(EVENT_MOVE_FRAME), 16);
+    assert_eq!(result_len(EVENT_MOVE_FRAME, 0, 16), Some(16));
+    let cells = [PathCell { x: 3, y: -4 }, PathCell { x: 4, y: -4 }];
+    let bytes: Vec<u8> = cells.iter().flat_map(PathCell::to_bytes).collect();
+    assert_eq!(PathCell::read_all(&bytes, 2), Some(cells.to_vec()));
+    assert_eq!(PathCell::read_all(&bytes, 3), None);
+    assert_eq!(result_area_bytes(EVENT_PATH_FOUND), 192);
+    assert_eq!(result_len(EVENT_PATH_FOUND, 0, 192), Some(0));
+    assert_eq!(result_len(EVENT_PATH_FOUND, 2, 192), Some(16));
+    assert_eq!(result_len(EVENT_PATH_FOUND, MAX_PATH_CELLS as i64 + 1, 192), None);
+    assert_eq!(result_len(EVENT_PATH_FOUND, -1, 192), None);
 }

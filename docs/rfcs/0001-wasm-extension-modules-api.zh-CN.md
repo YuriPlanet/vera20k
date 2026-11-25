@@ -295,11 +295,14 @@ struct ProjectileStep {   // 56 字节：ProjectileFrame 的结果区
     reserved3: i32,       // 36  0
     data: [u8; 16],       // 40  新的模块数据（Data0 为第 0..7 字节，Data1 为第 8..15 字节）
 }
-struct MissionStepResult { // 24 字节：MissionStep 的结果区；第一环收到任务主体的结果
-    target: i64,          // 0   目标：对象或格子引用；0 为没有
-    destination: i64,     // 8   目的地：对象或格子引用；0 为没有
-    mission: i32,         // 16  要排入的任务（Mission）；-1 为不排
-    delay: i32,           // 20  任务主体下次运行前的帧数（≥ 1）
+struct MoveStep {         // 16 字节：MoveFrame 的结果区
+    flags: i32,           // 0   位 0 接管本帧并按 displacement 移动，位 1 转向 facing，位 2 停止原生移动（空目的地）
+    facing: i32,          // 4   车体朝向 0..255（同 Facing 属性）
+    displacement: [i32; 2], // 8 x、y（lepton），每轴钳制在 ±2,048
+}
+struct PathCell {         // 8 字节：PathFound 结果区中的一个格子（最多 24 个）
+    x: i32,               // 0   格子 x
+    y: i32,               // 4   格子 y
 }
 ```
 
@@ -696,7 +699,8 @@ TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）�
 | 100036 | `ProjectileFrame` | `subject` 和 `projectile` 为抛射体，`value` 已飞行帧数 | 每帧引擎推进抛射体时，按引擎的顺序，在等待动画、目标解析和帧数引信之后、计算候选位置之前，每个本帧要移动的绑定抛射体一次 | 抛射体类型 | 不用；结果区为一个 `ProjectileStep`；`handled` 为 0 时按 `Launch` 的路径或原生推进 | preview |
 | 100039 | `DamageIncoming` | `subject`，`other` 来源（可为 0），`id` 弹头，`value` 入射伤害（有符号），`value2` 把 `previous` 按触发器 `EventDef.id` 的护甲（−1 为主体的护甲）经距离衰减、Verses 和上限算出的伤害，符号同 `previous`；`EventDef.value` 位 0 为 1 时，正值先按主体护甲倍率的乘积相除并向零取整；`x`、`y`、`z` 主体位置（lepton） | Techno 受伤入口：步兵卧倒、寄生前缀和引擎自己的护盾之后，阻止死亡、主体护甲和最小伤害 1 之前。入射为 0、无视防御、狂暴或超时空弹头，以及会被免疫、铁幕或敌我许可拒绝的命中不询问；主体护甲的 Verses 为 0 不影响询问 | 对象 | 继续进入原生流程的入射伤害：须为 0 或与 `previous` 同号，否则保留上一环；每一环按自己的 `previous` 重算 `value2`；变成 0 时不再施加最小伤害 1 | preview |
 | 100060 | `IdleMission` | `subject` | 步兵或车辆进入空闲、引擎选定要排入的任务之后、排入之前；不排任务时不询问；飞机和建筑不询问 | 对象 | 要排入的任务（`Mission`），255 不排；`native` 为引擎的选择 | preview |
-| 100062 | `MissionStep` | `subject`，`value` 运行的任务（`Mission`），`other` 目标对象（格子或没有时为 0），`cell` 目标格子 | 步兵或车辆的 Guard、Sticky、AreaGuard、Hunt、Attack 任务主体每次运行之后（主体和它的随机数抽取都已完成）、写任务计时器和排入任务之前；飞机和建筑不询问 | 对象 | 不使用。结果区中为一条 `MissionStepResult`，进来时是主体的结果：它留下的目标和目的地、它要排入的任务（−1 为不排）和它的延迟。改动的字段经引擎自己的设置器生效（目的地经 `DestinationSet`）；已消失的对象、地图外的格子、未知的任务或小于 1 的延迟保留主体的结果。主体做的其他事（开火、部署、进入空闲时排入的任务）照常 | preview |
+| 100063 | `MoveFrame` | `subject`，`x`、`y`、`z` 其位置，`value` 移动方式正在移动时为 1，`other`、`cell` 其导航目标（对象或格子） | 使用 Drive、Ship、Walk、Mech 或 Hover 移动方式的车辆或步兵每帧到达移动方式的处理、且没有进行中的一步时（轨道或子格一步先走完），在进行中的 `Push` 那一帧之后；被运载、正在传送、列车对象不询问，其他移动方式不询问 | 对象 | 不用；结果区为一个 `MoveStep`，首环全为 0。位 0 接管本帧：原生处理不运行，对象按位移移动；进入另一格时只检查那一格（在地图内、不是从桥面出发、对象自己的进入格子判定答空闲），否则留在原地。引擎保持离地高度、迁移占格、清空路径队列，进入新格子时执行到达格子的处理。`handled` 为 0 或没有位 0 时本帧交给移动方式 | preview |
+| 100064 | `PathFound` | `subject`，`x`、`y`、`z` 其位置，`cell` 寻路目标所在格子，`value` 原生路径的格子数（无路为 0） | 采用一次寻路的路径（或失败）时，寻路之后、复制路径之前，无论寻路在哪里运行（路径批处理只是提前算出）；列车延长已排路径、含管道一步的路径不询问 | 对象 | 格子数（0..24）；结果区为这么多个 `PathCell`，首环为原生路径的格子。0 为无路（随后走原生的失败处理）；否则这些格子（每格与前一格相邻、第一格与对象所在格相邻、都在地图内）替换路径，不满足时保留原生路径 | preview |
 
 ### 4.6 客户端事件种类
 
@@ -942,13 +946,14 @@ Ares 动作（未启用 Ares 时为 `Unsupported`）：
 | 100032 | `AddScore` | `House` | `value` 分数 | 增加分数 | none | v1 |
 | 100033 | `Log` | — | `text` | 写一行游戏内日志 | none | v1 |
 | 100034 | `Convert` | 对象 | `id` 类型，`value2` 帧数（0 永久；大于 0 时到期变回） | 改变类型，同 Ares 类型转换；与传送和运动互斥 | native | v1 |
-| 100035 | `Push` | 对象 | `cell` 方向目标，`value` 力度 | 被推动或抛起，叠加到移动上；与变形和传送互斥 | native | later |
+| 100035 | `Push` | 对象 | `cell` 方向目标，`value` 距离（lepton；负数为远离；至多 2,048；0 结束推动），`value2` 帧数（1..255；0 或负数为每 64 lepton 一帧） | 沿地面推动使用 Drive、Ship、Walk、Mech 或 Hover 移动方式的车辆或步兵，叠加到它自己的移动上：每帧在移动方式的处理处、没有进行中的一步时，按 `MoveFrame` 一步的方式移动一份距离；某一步被拒绝时推动结束。新的推动替换旧的；传送、变形或离开游戏时结束。进行中时存档并计入哈希。其他对象和正在传送时为 `Refused`；不抛起 | native | preview |
 | 100036 | `Module` | 不限 | `id` 分派键；`text` 参数文本（可省略） | 运行模块动作，在模块阶段排队；记录的 `target` 为触发器中的目标选择，`args` 为参数文本的字符串 ID；具名节写作 `Action=Wasm:name` 或 `Action=Wasm:name(目标,文本)`，地图写作动作 100036（不带参数） | none | v1 |
 | 100037 | `CreateTeamUnlimited` | `House` | `id` TeamType | 启动小队，不受 Max 限制（同脚本动作 18）；返回小队 | native | later |
 | 100038 | `DisbandTeam` | — | `other` 小队 | 销毁小队，记录 AI 触发器结果，释放成员 | none | later |
 | 100039 | `AddTeamMember` | 对象 | `other` 小队 | 加入小队，执行准入检查 | none | later |
 | 100040 | `RemoveTeamMember` | 对象 | — | 离开所在小队 | none | later |
 | 100042 | `RaiseEvent` | 对象（对象事件）或不限（全局事件） | `id` 事件 ID；`other`、`value`、`value2`、`house` 写入记录 | 引发模块事件 `ModuleEvent`（[RFC 6h](0001-wasm-extension-modules.zh-CN.md#6h-ini-注册)）；对象事件的目标不是存在的对象为 `Gone`；事件 ID 未注册为非法参数；INI 写作 `RaiseEvent(目标,事件名,value,value2)` | none | v1 |
+| 100045 | `SetFacing` | 对象 | `value` 车体朝向 0..255 | 通过当前移动方式转动车体（移动方式按转速转动的就转动，直接设定的就设定）；没有移动方式时为 `Refused` | none | preview |
 
 ### 5.4 客户端动作种类
 
