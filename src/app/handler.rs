@@ -1034,7 +1034,14 @@ impl App {
                     // one row. gamemd routes the wheel message straight to
                     // the SidebarUp / SidebarDown commands and has no world
                     // zoom.
-                    dispatch::sidebar_scroll_command(state, action);
+                    dispatch::sidebar_scroll_command(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &mut state.match_state,
+                        &state.persistence,
+                        action,
+                    );
                 }
             }
             _ => {}
@@ -1872,7 +1879,11 @@ impl ApplicationHandler for App {
                         lobby.ui.release_buttons();
                     }
                     if state.frontend.multiplayer_setup.is_some() {
-                        crate::app::input::multiplayer_setup::drop_pointer(state, false);
+                        crate::app::input::multiplayer_setup::drop_pointer(
+                            &mut state.frontend,
+                            &state.match_state,
+                            false,
+                        );
                     }
                     if let Some(dialog) = state.frontend.options_dialog.as_mut() {
                         dialog.shell_cancel_pointer_gesture();

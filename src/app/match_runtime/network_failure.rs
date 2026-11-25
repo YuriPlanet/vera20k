@@ -309,7 +309,13 @@ fn route(state: &mut AppState, event: InputEvent) {
         .expect("shown modal")
         .input(&mut state.frontend.shell_controller, event, ok);
     // The box's owner-draw OK plays GUIMainButtonSound (0x0061376B).
-    dialog_page::play_cues(state, events);
+    dialog_page::play_cues(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        events,
+    );
 }
 
 pub(crate) fn cursor_moved(state: &mut AppState) {

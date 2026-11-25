@@ -246,7 +246,10 @@ pub(crate) fn event(state: &mut AppState, event: Ime) {
                     prefix.encode_utf16().count()
                 });
             if target(state).is_some_and(|(target, _)| target == ImeTarget::InGameChat) {
-                crate::app::input::chat::composition_changed(state);
+                crate::app::input::chat::composition_changed(
+                    &state.platform.ime,
+                    &mut state.match_state,
+                );
             }
         }
         Ime::Commit(text) => {

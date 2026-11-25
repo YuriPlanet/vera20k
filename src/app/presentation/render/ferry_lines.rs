@@ -22,7 +22,7 @@ const REFUSED_RGB: [u8; 3] = [255, 64, 51];
 /// finished ground and before the buildings and objects, which cover them.
 pub(super) fn build_rings(state: &AppState, view: TacticalViewport) -> Vec<SurfaceStroke> {
     let mut out = Vec::new();
-    for ring in crate::app::input::ferry::marks(state) {
+    for ring in crate::app::input::ferry::marks(&state.match_state) {
         let rgb = if ring.refused {
             REFUSED_RGB
         } else if ring.drop {

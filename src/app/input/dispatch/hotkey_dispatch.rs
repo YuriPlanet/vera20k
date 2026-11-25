@@ -16,6 +16,7 @@ use super::{
     selected_stable_ids_in_order, sidebar_scroll_command,
 };
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::{
     preferred_command_owner, preferred_local_owner_name, queue_house_cheer,
 };
@@ -25,6 +26,7 @@ use crate::app::input::entity_pick::{
 use crate::app::input::hotkeys::{HotkeyCommand, HotkeyFallback, HotkeyResolution};
 use crate::app::input::sidebar_eva;
 use crate::app::match_runtime::sim_host::SimWrite;
+use crate::app::presentation::state::MatchPresentationState;
 use crate::app::types::OrderMode;
 use crate::ui::sidebar::{SidebarAction, SidebarTab};
 use winit::event::ElementState;
@@ -408,8 +410,22 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         }
         // Native SidebarUp/Down execute SidebarClass::Scroll 0x6A6A00 on the
         // active strip (up=true/false, tab -1), as the wheel does.
-        HotkeyCommand::SidebarUp => sidebar_scroll_command(state, WheelAction::SidebarUp),
-        HotkeyCommand::SidebarDown => sidebar_scroll_command(state, WheelAction::SidebarDown),
+        HotkeyCommand::SidebarUp => sidebar_scroll_command(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state,
+            &state.persistence,
+            WheelAction::SidebarUp,
+        ),
+        HotkeyCommand::SidebarDown => sidebar_scroll_command(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state,
+            &state.persistence,
+            WheelAction::SidebarDown,
+        ),
         // VERA: Esc leaves the layout edit mode without saving, before it
         // would open the menu.
         HotkeyCommand::Options
@@ -433,7 +449,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         // DeleteCommand731A10: the retained planning node, else the selected beacon.
         HotkeyCommand::Delete => {
             if !crate::app::input::planning_mode::delete_highlighted(&mut state.match_state) {
-                crate::app::input::beacon::delete_selected(state);
+                crate::app::input::beacon::delete_selected(&mut state.match_state);
             }
         }
         HotkeyCommand::ScatterObject => queue_scatter_for_selected(state),
@@ -481,7 +497,12 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
                     &mut state.match_state.match_presentation,
                 )
             {
-                crate::app::input::chrome_input::play_gui_main_button_sound(state);
+                crate::app::input::chrome_input::play_gui_main_button_sound(
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                );
                 crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
             }
         }
@@ -588,17 +609,18 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
 }
 
 /// The Performance Stats boxes follow the panel the keys showed or hid.
-fn follow_performance_stats(state: &mut AppState, shown: bool) {
-    if let Some(dialog) = state.frontend.options_dialog.as_mut() {
+fn follow_performance_stats(
+    frontend: &mut FrontendState,
+    presentation: &mut MatchPresentationState,
+    shown: bool,
+) {
+    if let Some(dialog) = frontend.options_dialog.as_mut() {
         dialog.sync_performance_stats(shown);
     }
-    if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
+    if let Some(page) = presentation.options_page.as_mut() {
         page.dialog.sync_performance_stats(shown);
     }
-    crate::app::App::shell_menu_follow_performance_stats(
-        &mut state.frontend.shell_message_box,
-        shown,
-    );
+    crate::app::App::shell_menu_follow_performance_stats(&mut frontend.shell_message_box, shown);
     log::info!(
         "Performance stats: {}",
         if shown { "shown" } else { "hidden" }
@@ -622,7 +644,11 @@ pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
         }
         HotkeyCommand::PerformanceStats => {
             let shown = state.renderer.performance_overlay.toggle();
-            follow_performance_stats(state, shown);
+            follow_performance_stats(
+                &mut state.frontend,
+                &mut state.match_state.match_presentation,
+                shown,
+            );
         }
         // The rows are the panel's: asking for them while it is hidden
         // shows it.
@@ -630,7 +656,11 @@ pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
             let rows = state.renderer.performance_overlay.toggle_thread_rows();
             if rows && !state.renderer.performance_overlay.is_visible() {
                 state.renderer.performance_overlay.set_visible(true);
-                follow_performance_stats(state, true);
+                follow_performance_stats(
+                    &mut state.frontend,
+                    &mut state.match_state.match_presentation,
+                    true,
+                );
             }
             log::info!("Thread stats: {}", if rows { "shown" } else { "hidden" });
         }
