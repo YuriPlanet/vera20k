@@ -93,8 +93,18 @@ Mặc định, VERA20K dùng luật chơi của bản Yuri's Revenge gốc. Tron
 âm thanh, đồ họa và cách điều khiển hoặc bật các tính năng của VERA. Trò chơi lưu các tùy chọn
 trong `VERA.INI`. Các tùy chọn riêng của VERA nằm trong mục `[VERA]`.
 
+Bạn có thể thêm mod, bản đồ, nhạc của riêng mình và nhiều thứ khác. Chúng được đặt trong thư mục
+VERA20K: thư mục cài đặt trên Windows, `~/Library/Application Support/VERA20k` trên macOS và
+`~/.local/share/VERA20k` trên Linux.
+
+- **Mod:** trong **Options → Mods**, **Add Mod** cài một mod bạn đã tải về, còn **New Mod** bắt đầu một mod của riêng bạn. Mỗi mod có thư mục riêng trong `Mods`.
+- **Bản đồ:** đặt tệp `.map`, `.mpr` hoặc `.yrm` vào `Maps` để chơi trong Skirmish. Bản đồ bạn tải về khi chơi trực tuyến cũng được lưu ở đó.
+- **Nhạc:** đặt tệp WAV hoặc AUD vào `musics` và thêm tệp `music.ini` vào đó với `enable=yes` trong mục `[Music]`. Nhạc của bạn sẽ phát trong trận cùng với nhạc của trò chơi; với `ExclusiveMode=yes`, chỉ nhạc của bạn được phát.
+- **Đồ họa HD:** [gói đồ họa HD](docs/hd-art.md) được cài và chọn giống như một mod. Sau đó bật **HD art** trong **Options**.
+- **Ngôn ngữ:** tệp `vera20k.<language>.ini` thêm một ngôn ngữ hoặc thay đổi chữ trong trò chơi. Xem [hướng dẫn dịch](src/i18n/README.md).
+
 Thiết lập phòng chờ, mod và bản đồ có thể thay đổi luật chơi của từng trận. Mod và bản đồ có thể
-dùng tệp INI để bật các tính năng của [Ares](docs/ares.md) và [Phobos](docs/phobos.md) mà VERA20K
+dùng tệp INI để bật các tính năng của [Ares](docs/ares.md), [Phobos](docs/phobos.md) và [Kratos](docs/kratos.md) mà VERA20K
 hỗ trợ. Mod cũng có thể bật Ares bằng cách kèm theo tệp `ares.mix`. Một số tính năng của Phobos
 vẫn cần phiên bản VERA20K được biên dịch với `--features phobos`.
 

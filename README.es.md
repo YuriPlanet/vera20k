@@ -96,8 +96,18 @@ Por defecto, VERA20K usa las reglas originales de Yuri's Revenge. En **Options**
 el sonido, los gráficos y los controles o activar funciones de VERA. El juego guarda tus preferencias
 en `VERA.INI`, con las opciones propias de VERA en la sección `[VERA]`.
 
+Puedes añadir tus propios mods, mapas, música y más. Van en la carpeta de VERA20K: la carpeta de
+instalación en Windows, `~/Library/Application Support/VERA20k` en macOS y `~/.local/share/VERA20k`
+en Linux.
+
+- **Mods:** en **Options → Mods**, **Add Mod** instala un mod que hayas descargado y **New Mod** empieza uno propio. Cada mod tiene su propia carpeta en `Mods`.
+- **Mapas:** pon archivos `.map`, `.mpr` o `.yrm` en `Maps` para jugarlos en escaramuza. Los mapas que descargues en línea también se guardan allí.
+- **Música:** pon archivos WAV o AUD en `musics` y añade allí un `music.ini` con `enable=yes` en `[Music]`. Tus canciones sonarán en las partidas junto a la música del juego; con `ExclusiveMode=yes` solo suenan las tuyas.
+- **Gráficos HD:** un [paquete de gráficos HD](docs/hd-art.md) se instala y se elige como un mod. Después activa **HD art** en **Options**.
+- **Idiomas:** un archivo `vera20k.<language>.ini` añade un idioma o cambia los textos del juego. Consulta [cómo traducir](src/i18n/README.md).
+
 Los ajustes de la sala, los mods y los mapas pueden cambiar las reglas de una partida. Los mods y
-los mapas pueden activar las funciones compatibles de [Ares](docs/ares.md) y [Phobos](docs/phobos.md)
+los mapas pueden activar las funciones compatibles de [Ares](docs/ares.md), [Phobos](docs/phobos.md) y [Kratos](docs/kratos.md)
 mediante sus archivos INI. Un mod también puede activar Ares si incluye `ares.mix`. Algunas funciones
 de Phobos aún requieren compilar el juego con `--features phobos`.
 
