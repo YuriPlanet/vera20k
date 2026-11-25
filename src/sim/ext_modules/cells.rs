@@ -28,7 +28,7 @@
 
 use vera20k_wasm_ext::{Area, FindPage, Invalid, NAME_OVERLAY, NAME_TECHNO_TYPE, Query, Status};
 
-use super::{Host, Ref, View, cell_ref, decode_ref, techno_type, type_ref};
+use super::{Reader, Ref, View, cell_ref, decode_ref, techno_type, type_ref};
 use crate::map::resolved_terrain::{overlay_reduced_zone_type, zone_class};
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::object_type::ObjectCategory;
@@ -69,7 +69,7 @@ fn passable_speed_type(name: &str) -> Option<SpeedType> {
     })
 }
 
-impl Host<'_, '_> {
+impl Reader<'_> {
     /// A cell's property (appendix 7.6), viewpoint properties for `view`.
     /// A cell outside the map is `NotFound`.
     pub(super) fn cell_property(&self, x: u16, y: u16, name: &str, view: View) -> (i64, Status) {
@@ -279,7 +279,10 @@ impl Host<'_, '_> {
                 let (Ok(rx), Ok(ry)) = (u16::try_from(x), u16::try_from(y)) else {
                     continue;
                 };
-                if terrain.cell(rx, ry).is_none() {
+                // Off the map, or (for a client) a cell it cannot see.
+                if terrain.cell(rx, ry).is_none()
+                    || self.gate.is_some_and(|gate| !gate.lists(cell_ref(rx, ry)))
+                {
                     if !page.skip(key) {
                         break 'rows;
                     }
