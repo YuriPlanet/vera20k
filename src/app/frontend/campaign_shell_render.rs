@@ -134,6 +134,7 @@ fn campaign_labels<'a>(
     process_assets: &'a ProcessAssets,
     layout: &CampaignLayout,
     children: bool,
+    ra2_mode: bool,
 ) -> Vec<PaintLabel<'a>> {
     let Some(campaign) = campaign.as_ref().filter(|_| children) else {
         return Vec::new();
@@ -147,11 +148,7 @@ fn campaign_labels<'a>(
     };
     // game.exe RT_DIALOG 0x94 (0x00BBE210) has no emblem caption statics.
     // gamemd.exe has 0x7A7 and 0x7A8 for the Allied and Soviet captions.
-    let caption_sides: &[CampaignSide] = if crate::util::ra2_launch::enabled() {
-        &[]
-    } else {
-        &CampaignSide::ALL
-    };
+    let caption_sides: &[CampaignSide] = if ra2_mode { &[] } else { &CampaignSide::ALL };
     let captions = caption_sides.iter().map(|side| {
         label(
             side.caption_key(),
@@ -211,6 +208,7 @@ pub(crate) fn render_campaign_page(
         &state.process_assets,
         &layout,
         children,
+        crate::util::ra2_launch::enabled(),
     );
     encode_family_page(state, encoder, destination, frame);
     Ok(true)
@@ -220,35 +218,30 @@ pub(crate) fn render_campaign_page(
 mod tests {
     use super::*;
     use crate::assets::asset_manager::MediaArchiveMode;
-    use crate::util::ra2_launch;
 
     #[test]
     fn campaign_labels_follow_the_launch_mode() {
         let campaign = Some(CampaignShellState::open(1));
         let assets = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
 
-        ra2_launch::set_override(true);
-        let ra2_layout = crate::ui::campaign_shell::compute_layout(800, 600);
-        let ra2_labels = campaign_labels(&campaign, &assets, &ra2_layout, true);
-        ra2_launch::set_override(false);
-        let yr_layout = crate::ui::campaign_shell::compute_layout(800, 600);
-        let yr_labels = campaign_labels(&campaign, &assets, &yr_layout, true);
-        ra2_launch::clear_override();
+        let layout = crate::ui::campaign_shell::compute_layout(800, 600);
+        let ra2_labels = campaign_labels(&campaign, &assets, &layout, true, true);
+        let yr_labels = campaign_labels(&campaign, &assets, &layout, true, false);
 
         assert_eq!(
             ra2_labels
                 .iter()
                 .map(|label| label.rect)
                 .collect::<Vec<_>>(),
-            [ra2_layout.difficulty_label, ra2_layout.difficulty_value]
+            [layout.difficulty_label, layout.difficulty_value]
         );
         assert_eq!(
             yr_labels.iter().map(|label| label.rect).collect::<Vec<_>>(),
             [
-                yr_layout.caption(CampaignSide::Allied),
-                yr_layout.caption(CampaignSide::Soviet),
-                yr_layout.difficulty_label,
-                yr_layout.difficulty_value,
+                layout.caption(CampaignSide::Allied),
+                layout.caption(CampaignSide::Soviet),
+                layout.difficulty_label,
+                layout.difficulty_value,
             ]
         );
     }
