@@ -47,6 +47,7 @@ Thumbs.db
 !/docs/save-compatibility.md
 !/docs/capabilities.md
 !/docs/rfcs/
+!/docs/hd-art.md
 !/docs/wasm.md
 !/docs/aarch64-linux.md
 !/docs/sim-thread.md

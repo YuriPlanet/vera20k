@@ -100,6 +100,7 @@ fn empty_upload(initial: bool) -> ShpAtlasUpload {
         active_anim_frame_counts: HashMap::new(),
         object_shp_frame_counts: HashMap::new(),
         building_type_bounds: HashMap::new(),
+        hd_images: HashSet::new(),
         shp_files: HashMap::new(),
         projectile_files: HashMap::new(),
         new_objects: HashSet::new(),

@@ -208,6 +208,21 @@ impl SidebarFrame {
         }
     }
 
+    /// This frame with its surfaces at a whole number of at least two pixels
+    /// per sidebar pixel: a smaller or a half one doubles, so Normal's 1
+    /// draws at 2 and Large's 1.5 at 3, each shown at half in the frame.
+    /// VERA's HD sidebar takes its pictures at a whole scale of 2 or more
+    /// only (`render::sidebar_smoothing`).
+    pub fn with_whole_draw_scale(self) -> Self {
+        if self.draw_scale >= 2.0 && self.draw_scale.fract() == 0.0 {
+            return self;
+        }
+        Self {
+            draw_scale: (self.draw_scale * 2.0).ceil(),
+            ..self
+        }
+    }
+
     /// The native size, Normal: what captures and native comparisons use.
     pub fn native(frame_width: u32, frame_height: u32) -> Self {
         Self::new(frame_width, frame_height, 100)
@@ -823,6 +838,25 @@ mod tests {
             SidebarFrame::native(1280, 720).layout_size()
         );
         assert_eq!(normal.surface_size(), (168, 720));
+    }
+
+    /// VERA's HD sidebar draws Normal at 2 and Large at 3 and shows them at
+    /// half; whole scales from 2 stay.
+    #[test]
+    fn whole_draw_scale_doubles_a_half_one() {
+        let normal = SidebarFrame::new(1280, 720, 100)
+            .in_window(100, false)
+            .with_whole_draw_scale();
+        assert_eq!((normal.draw_scale(), normal.copy_scale()), (2.0, 0.5));
+        let large = SidebarFrame::new(1280, 720, 150)
+            .in_window(100, true)
+            .with_whole_draw_scale();
+        assert_eq!((large.draw_scale(), large.copy_scale()), (3.0, 0.5));
+        assert_eq!(large.surface_draw_size(), (504, 1440));
+        let xl = SidebarFrame::new(1920, 1080, 200)
+            .in_window(100, true)
+            .with_whole_draw_scale();
+        assert_eq!((xl.draw_scale(), xl.copy_scale()), (2.0, 1.0));
     }
 
     /// A cameo cell the player's columns shrank is drawn into the surface at

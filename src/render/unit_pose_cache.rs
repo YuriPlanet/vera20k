@@ -68,6 +68,10 @@ struct PosePage {
     /// Holds stable raster-style variants for the whole match.
     retained: bool,
     texture: Option<BatchTexture>,
+    /// VERA's HD art page: the images' [`crate::render::vxl_raster::VxlHd`]
+    /// pictures at twice the resolution, 0 where an image has none. Made with
+    /// the first HD picture placed on the page.
+    hd_texture: Option<wgpu::TextureView>,
     /// The images on the page: this frame's, or a retained page's.
     images: Vec<PageImage>,
 }
@@ -76,6 +80,8 @@ struct PageImage {
     corner: [u32; 2],
     size: [u32; 2],
     pixels: PagePixels,
+    /// The CPU image's HD picture, written with it.
+    hd: Option<std::sync::Arc<crate::render::vxl_raster::VxlHd>>,
 }
 
 enum PagePixels {
@@ -546,17 +552,24 @@ impl VxlPoseFrameCache {
                 batch.create_unit_page_texture(device, PAGE_SIZE, PAGE_SIZE)
             });
             for image in &mut page.images {
-                if let PagePixels::Cpu { indices, written } = &mut image.pixels
-                    && !*written
-                {
-                    *written = true;
-                    write_padded(
-                        queue,
-                        texture.view.texture(),
-                        image.corner,
-                        image.size,
-                        indices,
-                    );
+                let fresh = match &mut image.pixels {
+                    PagePixels::Cpu { indices, written } if !*written => {
+                        *written = true;
+                        write_padded(
+                            queue,
+                            texture.view.texture(),
+                            image.corner,
+                            image.size,
+                            indices,
+                        );
+                        true
+                    }
+                    PagePixels::Cpu { .. } => false,
+                    // Drawn afresh this frame, on a frame-local page.
+                    PagePixels::Gpu { .. } => true,
+                };
+                if fresh {
+                    write_hd(device, queue, &mut page.hd_texture, image);
                 }
             }
         }
@@ -588,6 +601,11 @@ impl VxlPoseFrameCache {
 
     pub fn page_texture(&self, page: usize) -> Option<&BatchTexture> {
         self.pages.get(page)?.texture.as_ref()
+    }
+
+    /// VERA's HD art page of `page` ([`PosePage::hd_texture`]).
+    pub(crate) fn hd_page(&self, page: usize) -> Option<&wgpu::TextureView> {
+        self.pages.get(page)?.hd_texture.as_ref()
     }
 
     /// [`Self::encode`] alone in a submission, for a test that reads the
@@ -636,6 +654,7 @@ impl VxlPoseFrameCache {
                 height: PAGE_SIZE,
                 offset_x: 0.,
                 offset_y: 0.,
+                hd: None,
             },
             None,
             false,
@@ -665,9 +684,61 @@ fn write_padded(
     crate::render::atlas_growth::write_texels(queue, texture, [x, y], padded, 1, &texels);
 }
 
+/// VERA's HD art page for `image`: its HD picture, or zeros over its
+/// rectangle where it has none, so an earlier image's picture never shows.
+/// Nothing until a page holds an HD picture.
+fn write_hd(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    hd_texture: &mut Option<wgpu::TextureView>,
+    image: &PageImage,
+) {
+    let [width, height] = image.size;
+    let picture = image
+        .hd
+        .as_ref()
+        .filter(|hd| hd.palette_indices.len() == (4 * width * height) as usize);
+    if picture.is_none() && hd_texture.is_none() {
+        return;
+    }
+    let view = hd_texture.get_or_insert_with(|| {
+        device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("HD art unit pose page"),
+                size: wgpu::Extent3d {
+                    width: PAGE_SIZE * 2,
+                    height: PAGE_SIZE * 2,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::R8Uint,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            })
+            .create_view(&Default::default())
+    });
+    let [x, y] = image.corner.map(|v| v * 2);
+    let padded = [
+        (2 * (width + SPRITE_PADDING)).min(2 * PAGE_SIZE - x),
+        (2 * (height + SPRITE_PADDING)).min(2 * PAGE_SIZE - y),
+    ];
+    let mut texels = vec![0; (padded[0] * padded[1]) as usize];
+    if let Some(hd) = picture {
+        let row_len = 2 * width as usize;
+        for (row, pixels) in hd.palette_indices.chunks_exact(row_len.max(1)).enumerate() {
+            let at = row * padded[0] as usize;
+            texels[at..at + row_len].copy_from_slice(pixels);
+        }
+    }
+    crate::render::atlas_growth::write_texels(queue, view.texture(), [x, y], padded, 1, &texels);
+}
+
 /// Put one voxel image on this frame's pages: for the GPU raster where it
 /// admits the image, else rasterized here. `pose` is a unit pose's key and
-/// tilt.
+/// tilt. While HD poses are on ([`crate::render::vxl_raster::hd_poses`]),
+/// every image is rasterized here, which also makes its HD picture.
 fn place_image(
     pages: &mut Vec<PosePage>,
     gpu: &mut VoxelGpu,
@@ -676,13 +747,15 @@ fn place_image(
     bounds: Option<[i32; 4]>,
     pose: Option<(&UnitSpriteKey, PoseTilt)>,
 ) -> Option<UnitSpriteEntry> {
-    if let Some(admitted) = gpu.admit(&image, vpl) {
+    if !crate::render::vxl_raster::hd_poses()
+        && let Some(admitted) = gpu.admit(&image, vpl)
+    {
         let (size, offset) = image.frame();
         let pixels = PagePixels::Gpu {
             image: admitted,
             pose: pose.map(|(key, tilt)| (key.clone(), tilt)),
         };
-        return place_on(pages, pixels, size, offset, bounds, false);
+        return place_on(pages, pixels, size, offset, bounds, false, None);
     }
     place_sprite(pages, image.render_cpu(vpl)?, bounds, false)
 }
@@ -700,7 +773,15 @@ fn place_sprite(
         indices: sprite.palette_indices,
         written: false,
     };
-    place_on(pages, pixels, size, offset, native_draw_bounds, retained)
+    place_on(
+        pages,
+        pixels,
+        size,
+        offset,
+        native_draw_bounds,
+        retained,
+        sprite.hd,
+    )
 }
 
 /// Put one image on a frame-local or retained page.
@@ -711,6 +792,7 @@ fn place_on(
     [offset_x, offset_y]: [f32; 2],
     native_draw_bounds: Option<[i32; 4]>,
     retained: bool,
+    hd: Option<std::sync::Arc<crate::render::vxl_raster::VxlHd>>,
 ) -> Option<UnitSpriteEntry> {
     if width > PAGE_SIZE || height > PAGE_SIZE {
         return None;
@@ -743,6 +825,7 @@ fn place_on(
         corner: [px, py],
         size: [width, height],
         pixels,
+        hd,
     });
     page.dirty = true;
     Some(UnitSpriteEntry {
@@ -766,6 +849,7 @@ impl PosePage {
             dirty: false,
             retained,
             texture: None,
+            hd_texture: None,
             images: Vec::new(),
         }
     }
@@ -1107,6 +1191,7 @@ mod tests {
             height,
             offset_x: 0.0,
             offset_y: 0.0,
+            hd: None,
         };
         let mut cache = VxlPoseFrameCache::default();
         cache.begin_frame();

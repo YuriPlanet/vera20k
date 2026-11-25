@@ -310,6 +310,11 @@ pub(crate) struct RetailOptionsProfile {
     /// value. `Off` keeps the retail image. Client presentation only: the
     /// final frame pass reads it live, and the simulation never sees it.
     pub(crate) color_vision: crate::ui::main_menu_dialogs::options::ColorVisionMode,
+    /// `[VERA] HdArt=`: HD art (`render::hd_switch`), the HD art over the
+    /// wheel-zoomed world, off by default; the Options list and the HD art key
+    /// (Page Up) set it. Client presentation only: the frame reads it live,
+    /// and the simulation never sees it.
+    pub(crate) hd_art_on: bool,
     /// `[VERA] TranslateChat=` and `TranslateMatches=`: the language other
     /// players' online chat is translated into (off by default) and whether
     /// a match's chat is too (on by default). Only the online lobby's Options
@@ -465,6 +470,7 @@ impl Default for RetailOptionsProfile {
             ares: crate::util::ares_launch::AresSetting::Auto,
             kratos: crate::util::kratos_launch::KratosSetting::Auto,
             color_vision: crate::ui::main_menu_dialogs::options::ColorVisionMode::Off,
+            hd_art_on: false,
             chat_translation: Default::default(),
             language: None,
             skipped_update: String::new(),
@@ -493,7 +499,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 46],
+    pub(crate) vera: [(&'static str, String); 47],
 }
 
 impl RetailOptionsLoad {
@@ -787,6 +793,8 @@ impl RetailOptionsProfile {
                 crate::ui::main_menu_dialogs::options::ColorVisionMode::from_ini_value(
                     vera.read_int("ColorVisionMode", self.color_vision.ini_value()),
                 );
+            // Absent keeps the current value.
+            self.hd_art_on = vera.read_bool("HdArt", self.hd_art_on);
             // `off`, or a tag this build does not offer, is off.
             if let Some(value) = vera.read_name("TranslateChat", 16) {
                 self.chat_translation.language =
@@ -1004,6 +1012,7 @@ impl RetailOptionsProfile {
                     format_bool(self.show_string_keys).to_string(),
                 ),
                 ("ColorVisionMode", self.color_vision.ini_value().to_string()),
+                ("HdArt", format_bool(self.hd_art_on).to_string()),
             ],
         }
     }
@@ -2287,6 +2296,27 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                 "ColorVisionMode={value} survives the profile writer"
             );
         }
+    }
+
+    /// HD art starts off (the original picture) and `HdArt=` survives the
+    /// profile writer.
+    #[test]
+    fn hd_art_reads_and_round_trips() {
+        let startup = RetailStartupOptions::default();
+        assert!(!load_snapshot(&startup, b"").retained_profile.hd_art_on);
+        let input = b"[VERA]\nHdArt=yes\nUnowned=keep\n";
+        let profile = load_snapshot(&startup, input).retained_profile;
+        assert!(profile.hd_art_on);
+        let written = String::from_utf8(profile.transform_settings(input)).unwrap();
+        assert!(written.contains("Unowned=keep"), "{written}");
+        assert!(written.contains("HdArt=yes"), "{written}");
+        assert!(
+            load_snapshot(&startup, written.as_bytes())
+                .retained_profile
+                .hd_art_on
+        );
+        let off = b"[VERA]\nHdArt=no\n";
+        assert!(!load_snapshot(&startup, off).retained_profile.hd_art_on);
     }
 
     /// The three `CustomEndGame*=` switches start off and are independent:
