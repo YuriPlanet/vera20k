@@ -448,7 +448,7 @@ pub struct RandomMapSetupLayout {
 }
 
 impl RandomMapSetupLayout {
-    /// VERA's id for the progress bar, which the template leaves unnamed.
+    /// VERA's layout key for the progress meter at retail control 0x639.
     pub const PROGRESS_BAR: u16 = 0x7452;
 
     /// Control `id`'s rect ([`Self::rects`]).

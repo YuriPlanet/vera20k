@@ -253,13 +253,11 @@ pub(crate) enum FrameArt {
     /// node's rect less `inset` (base pixels, as a `TextInset`), no
     /// caption: the WOL pages' `BS_GROUPBOX` frames.
     ListRings { inset: RectPx },
-    /// The node's rect filled in `fill`, then outlined in `outline`, at
-    /// `depths` (fill, outline): `0x105`'s progress well while a map
-    /// generates.
-    Filled {
-        fill: [f32; 3],
-        outline: [f32; 3],
-        depths: [f32; 2],
+    /// The random map dialog's PROGBAR2 shape at the meter control's origin.
+    RandomMapProgress {
+        shape: SkirmishShellChromeEntry,
+        outline: Option<[f32; 3]>,
+        percent: u8,
     },
     /// VERA's download bar ([`push_progress`]): the node's rect outlined
     /// in `rgb` and filled two pixels in for `done` of `total`, at `depth`.
@@ -1835,13 +1833,27 @@ pub(crate) fn push_frame(
             });
             super::list::paint_list_frame_px(controls, white, window);
         }
-        FrameArt::Filled {
-            fill,
+        FrameArt::RandomMapProgress {
+            shape,
             outline,
-            depths,
+            percent,
         } => {
-            super::chrome::push_solid_rect_px(controls, white, rect, fill, depths[0]);
-            super::chrome::push_rect_outline_px(controls, white, rect, outline, depths[1]);
+            if let Some(white) = white {
+                use crate::app::loading::pump::{LoadingProgressState, push_progress_meter};
+                let mut progress = LoadingProgressState::standard_skirmish();
+                progress.advance_progress(u32::from(percent));
+                let inset = (3.0 * scale.factor()).round();
+                push_progress_meter(
+                    controls,
+                    shape,
+                    white,
+                    &progress,
+                    [rect.x as f32 + inset, rect.y as f32 + inset],
+                    outline,
+                    scale,
+                    [SHELL_DROPDOWN_DEPTH - 0.00014; 2],
+                );
+            }
         }
         FrameArt::Progress {
             rgb,
@@ -2657,6 +2669,44 @@ mod tests {
             .filter_map(|node| gui.id_of(node))
             .collect();
         assert_eq!(ids, [1, 4, 5, 8, 9]);
+    }
+
+    #[test]
+    fn random_map_meter_uncovers_the_shape_between_empty_and_finished() {
+        let shape = entry(100.0, 10.0, 0.25);
+        let render = |percent| {
+            let mut sprites = Vec::new();
+            push_frame(
+                &mut sprites,
+                &mut Vec::new(),
+                &font(),
+                Some(entry(1.0, 1.0, 0.9)),
+                RectPx::new(40, 50, 150, 21),
+                FrameArt::RandomMapProgress {
+                    shape,
+                    outline: None,
+                    percent,
+                },
+                None,
+                TextLook {
+                    align: ShellAlign::NONE,
+                    glyph: 1.0,
+                    rgb: [1.0; 3],
+                },
+                RETAIL_SCALE,
+            );
+            sprites
+        };
+        assert!(render(0).is_empty());
+        let partial = render(60);
+        let full = render(100);
+        assert_eq!(partial.len(), 1);
+        assert_eq!(full.len(), 1);
+        assert_eq!(partial[0].position, [43.0, 53.0]);
+        assert_eq!(partial[0].size, [60.0, 10.0]);
+        assert_eq!(full[0].size, shape.pixel_size);
+        assert!(partial[0].uv_size[0] < full[0].uv_size[0]);
+        assert_eq!(partial[0].uv_origin, shape.uv_origin);
     }
 
     #[test]

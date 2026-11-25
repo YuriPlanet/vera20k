@@ -462,6 +462,15 @@ pub(super) fn random_map_paint(
 ) -> Option<HudPaint> {
     use crate::ui::skirmish_shell::random_map_page;
     use crate::ui::skirmish_shell::{RandomMapSetupControl as C, SetupCombo};
+    // DrawFill (0x00643470) uses the DarkRed scheme for the dialog outline.
+    let progress_outline = {
+        use crate::rules::color_scheme::{hsv_to_rgb, scheme_entry_by_name, scheme_hsv_by_entry};
+        crate::app::state::active_rules(frontend, match_state).and_then(|rules| {
+            let schemes = &rules.color_schemes;
+            let index = scheme_entry_by_name(schemes, "DarkRed")?;
+            Some(hsv_to_rgb(scheme_hsv_by_entry(schemes, index)?).map(|v| f32::from(v) / 255.0))
+        })
+    };
     let modal = frontend
         .skirmish_shell_state
         .random_map_setup_modal
@@ -515,16 +524,23 @@ pub(super) fn random_map_paint(
         }),
         _ => None,
     };
-    // The progress well while a map generates: the panel colour in the
-    // owner-draw dark outline.
     let frame_of = |id: i32| {
-        (id == i32::from(RandomMapSetupLayout::PROGRESS_BAR)).then_some(FrameArt::Filled {
-            fill: super::SHELL_MODAL_PANEL_RGB,
-            outline: super::OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68,
-            depths: [
-                super::SHELL_DROPDOWN_DEPTH - 0.00013,
-                super::SHELL_DROPDOWN_DEPTH - 0.00014,
-            ],
+        if id != i32::from(RandomMapSetupLayout::PROGRESS_BAR) {
+            return None;
+        }
+        let outline = progress_outline;
+        Some(match atlas.random_map_progress {
+            Some(shape) => FrameArt::RandomMapProgress {
+                shape,
+                outline,
+                percent: modal.progress_percent,
+            },
+            None => FrameArt::Progress {
+                rgb: outline.unwrap_or(SHELL_LABEL_TEXT_RGB),
+                done: u64::from(modal.progress_percent),
+                total: 100,
+                depth: super::SHELL_DROPDOWN_DEPTH - 0.00014,
+            },
         })
     };
     let style = GuiStyle {
