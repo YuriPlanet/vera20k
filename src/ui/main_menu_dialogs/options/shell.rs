@@ -275,6 +275,8 @@ pub(crate) const IN_GAME_KEYBOARD_HELP: &str = "STT:IGGameOptButtonKeyboard";
 /// What a greyed control says on the in-game menu: a setting the next game
 /// starts with ([`LauncherTrackbarId::fixed_in_match`]), or Check for Updates.
 const NOT_IN_MATCH_HELP: &str = "VERA:NotInMatchHelp";
+/// The HD art list's help while no HD art pack runs: what it needs.
+const HD_LOOK_NEEDS_PACK_HELP: &str = "VERA:HdLookNeedsPack";
 const SET_WINDOW_SIZE_LABEL: &str = "VERA:SetWindowSize";
 /// The in-game page's first row. 8 DLUs below the main menu's to clear the
 /// frame's top edge at 640x480, and a multiple of 8 so its sliders round to the
@@ -951,6 +953,18 @@ impl OptionsDialogState {
                 |m| m.label(),
                 E::ColorVisionModeSelected,
             ),
+            LauncherComboId::HdLook if !v.hd_look_available => LauncherList::new(
+                super::HdLook::choices_without_pack(),
+                &super::HdLook::Off,
+                |look| look.label(),
+                E::HdLookSelected,
+            ),
+            LauncherComboId::HdLook => LauncherList::new(
+                super::HdLook::choices(),
+                &v.hd_look,
+                |look| look.label(),
+                E::HdLookSelected,
+            ),
             LauncherComboId::Ares => LauncherList::new(
                 super::ares_choices(),
                 &v.ares,
@@ -1021,6 +1035,12 @@ impl OptionsDialogState {
             // A slider greyed for want of sound keeps its own help.
             Control::Setting(Setting::Slider(id)) if self.in_match && id.fixed_in_match() => {
                 return Some(NOT_IN_MATCH_HELP);
+            }
+            // Without an HD art pack the HD art list says what it needs.
+            Control::Setting(Setting::List(LauncherComboId::HdLook))
+                if !self.values.hd_look_available =>
+            {
+                return Some(HD_LOOK_NEEDS_PACK_HELP);
             }
             Control::Setting(setting) => return Some(setting.text().1),
             Control::Button(id) => id,

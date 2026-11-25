@@ -193,7 +193,8 @@ mod native {
     }
 
     fn asset_directory(name: &str) -> bool {
-        ["ini", "resources", "maps", "mixfiles", "taunts"]
+        // `hd_art`: an HD art pack (`render::hd_art`), alone or in a mod.
+        ["ini", "resources", "maps", "mixfiles", "taunts", "hd_art"]
             .iter()
             .any(|asset| asset.eq_ignore_ascii_case(name))
     }

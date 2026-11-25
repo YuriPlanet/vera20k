@@ -160,6 +160,8 @@ impl App {
         state.match_state.match_audio.reset_for_new_match();
         state.match_state.input.zoom_level = 1.0;
         state.match_state.input.zoom_target = 1.0;
+        // The next match starts at HD art's zoom again (`render::hd_switch`).
+        state.renderer.hd_art_zoom_pending = true;
     }
 
     /// Start_Scenario's inputs for the installed campaign mission again
