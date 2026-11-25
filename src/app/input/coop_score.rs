@@ -32,7 +32,11 @@ pub(crate) fn active(frontend: &FrontendState) -> bool {
 /// throughout (BC6 never moves it), the transcript's list follows new
 /// lines, and NewEdit keeps the chat's caret in view.
 fn sync(state: &mut AppState, layout: &CoopScoreLayout) {
-    let view = crate::app::cooperative_round::view(state);
+    let view = crate::app::cooperative_round::view(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    );
     let page = state.frontend.coop_score_page.as_ref();
     let can_continue = page.is_some_and(|page| page.model.can_continue);
     let enabled = [CONTINUE, QUIT].map(|id| (id, enabled_in(view.as_ref(), page, id)));
@@ -147,7 +151,11 @@ pub(crate) fn update_geometry(state: &mut AppState) {
 
 /// Whether control `id` takes input now (`0x0046FB50`, `0x0046DE20`).
 fn enabled(state: &AppState, id: u16) -> bool {
-    let view = crate::app::cooperative_round::view(state);
+    let view = crate::app::cooperative_round::view(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    );
     enabled_in(view.as_ref(), state.frontend.coop_score_page.as_ref(), id)
 }
 
@@ -229,7 +237,12 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     if button != MouseButton::Left || shell_transition::blocks_shell_input(&state.frontend) {
         return;
     }
-    if crate::app::cooperative_round::view(state).is_none()
+    if crate::app::cooperative_round::view(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    )
+    .is_none()
         || state.frontend.coop_score_page.is_none()
     {
         return;

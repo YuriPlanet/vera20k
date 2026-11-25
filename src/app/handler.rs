@@ -1684,7 +1684,10 @@ impl ApplicationHandler for App {
                             }
                         } else if watching
                             && crate::app::match_runtime::watching::key(
-                                state,
+                                &state.platform,
+                                &state.frontend,
+                                &mut state.match_state,
+                                &mut state.audio.sfx_player,
                                 code,
                                 pressed,
                                 event.repeat,

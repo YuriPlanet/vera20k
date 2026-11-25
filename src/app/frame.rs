@@ -459,7 +459,16 @@ impl App {
         if state.match_state.match_diagnostics.is_replay_playback() {
             // Playback never services lobby/relay or routes recorded EXIT and
             // outcomes into live teardown. Keep the final battlefield visible.
-            crate::app::match_runtime::sim_tick::pump_audio_service(state, scenario_now_ms);
+            crate::app::match_runtime::sim_tick::pump_audio_service(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &state.persistence,
+                scenario_now_ms,
+            );
             if in_game && simulation_allowed {
                 main_tick_admitted =
                     sim_tick::advance_in_game_runtime(state, scenario_now_ms, false);
@@ -492,7 +501,16 @@ impl App {
                 &mut state.frontend.shell_controller,
                 &mut state.match_state,
             );
-            crate::app::match_runtime::sim_tick::pump_audio_service(state, scenario_now_ms);
+            crate::app::match_runtime::sim_tick::pump_audio_service(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &state.persistence,
+                scenario_now_ms,
+            );
             let frame_stopped = state.match_state.frame_stopped;
             if crate::app::match_runtime::network_failure::take_acknowledged(
                 &mut state.frontend,
@@ -538,7 +556,16 @@ impl App {
             // The native House wait services Network_ServiceLoop/audio before
             // continuing this same House. Keep that service live while later
             // House callbacks and MainTick's termination router remain held.
-            crate::app::match_runtime::sim_tick::pump_audio_service(state, scenario_now_ms);
+            crate::app::match_runtime::sim_tick::pump_audio_service(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &state.persistence,
+                scenario_now_ms,
+            );
             main_tick_admitted = sim_tick::advance_in_game_runtime(state, scenario_now_ms, false);
             if !Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
                 && !crate::app::match_runtime::network_failure::pending(
@@ -658,7 +685,16 @@ impl App {
                 scenario_now_ms,
             );
         } else {
-            crate::app::match_runtime::sim_tick::pump_audio_service(state, scenario_now_ms);
+            crate::app::match_runtime::sim_tick::pump_audio_service(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &state.persistence,
+                scenario_now_ms,
+            );
         }
         crate::app::radar_movie::service(state, scenario_now_ms);
         crate::app::commander_feedback::service(
@@ -731,7 +767,13 @@ impl App {
             Self::drive_scenario_exit(state, now_ms);
         }
         #[cfg(feature = "telemetry-dashboard")]
-        crate::app::telemetry_capture::publish_if_due(state);
+        crate::app::telemetry_capture::publish_if_due(
+            &state.platform,
+            &state.renderer,
+            &mut state.diag,
+            &state.frontend,
+            &mut state.match_state,
+        );
         RuntimeServiceResult {
             quit_requested: false,
             main_tick_admitted,
@@ -1743,7 +1785,13 @@ impl App {
         );
 
         let entry_sequence_identity = match shell_capture.as_deref_mut() {
-            Some(session) => session.observe_entry_sequence_after_render(state)?,
+            Some(session) => session.observe_entry_sequence_after_render(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.persistence,
+            )?,
             None => None,
         };
         let pending_entry_sequence = if entry_sequence_identity.is_some() {
@@ -2144,7 +2192,13 @@ impl App {
 
         crate::app::loading::pump::after_loading_frame_presented(state)?;
         #[cfg(feature = "telemetry-dashboard")]
-        crate::app::telemetry_capture::publish_if_due(state);
+        crate::app::telemetry_capture::publish_if_due(
+            &state.platform,
+            &state.renderer,
+            &mut state.diag,
+            &state.frontend,
+            &mut state.match_state,
+        );
 
         Ok(FrameRenderOutcome::Presented)
     }

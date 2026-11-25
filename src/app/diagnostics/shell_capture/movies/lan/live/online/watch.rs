@@ -112,7 +112,14 @@ impl LiveRoundFlow {
             }
             Step::Playing => self.play_watched_match(&mut run, state, frame),
             Step::Panning => self.pan_watched_view(&mut run, state, frame),
-            Step::Followed => self.leave_watched_match(&mut run, state, frame),
+            Step::Followed => self.leave_watched_match(
+                &mut run,
+                &state.platform,
+                &state.frontend,
+                &mut state.match_state,
+                &mut state.audio.sfx_player,
+                frame,
+            ),
             Step::Returning => self.watch_returned(&mut run, state, rendered, frame),
         };
         self.watch = Some(run);
@@ -294,7 +301,13 @@ impl LiveRoundFlow {
                 "Tab never came back to {start}: {}",
                 views.join(" -> ")
             );
-            press(state, KeyCode::Tab)?;
+            press(
+                &state.platform,
+                &state.frontend,
+                &mut state.match_state,
+                &mut state.audio.sfx_player,
+                KeyCode::Tab,
+            )?;
             let view = shown_view(&state.match_state.sim_runtime)?;
             ensure!(
                 views.last().unwrap_or(&start) != &view,
@@ -379,11 +392,14 @@ impl LiveRoundFlow {
     fn leave_watched_match(
         &mut self,
         run: &mut WatchRun,
-        state: &mut AppState,
+        platform: &PlatformState,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        sfx_player: &mut Option<SfxPlayer>,
         frame: u32,
     ) -> Result<()> {
-        let native = native_frame(&state.match_state.sim_runtime)?;
-        press(state, KeyCode::Escape)?;
+        let native = native_frame(&match_state.sim_runtime)?;
+        press(platform, frontend, match_state, sfx_player, KeyCode::Escape)?;
         run.exit_route
             .push(json!({"step":"Escape","render_frame":frame,"native_frame":native}));
         self.record(frame, "Escape pressed in the watched match");
@@ -519,14 +535,28 @@ fn begin_pan(state: &mut AppState) -> Result<(f32, f32)> {
 
 /// A press and release through the watcher's key adapter, as the window's
 /// key events reach it in a watched match.
-fn press(state: &mut AppState, code: KeyCode) -> Result<()> {
+fn press(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    sfx_player: &mut Option<SfxPlayer>,
+    code: KeyCode,
+) -> Result<()> {
     ensure!(
-        state.frontend.screen == GameScreen::InGame && watching::active(&state.match_state),
+        frontend.screen == GameScreen::InGame && watching::active(match_state),
         "{code:?} reached no watched match"
     );
     for pressed in [true, false] {
         ensure!(
-            watching::key(state, code, pressed, false),
+            watching::key(
+                platform,
+                frontend,
+                match_state,
+                sfx_player,
+                code,
+                pressed,
+                false
+            ),
             "{code:?} is no watcher's key"
         );
     }

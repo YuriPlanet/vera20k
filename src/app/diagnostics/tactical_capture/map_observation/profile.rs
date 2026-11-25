@@ -2,6 +2,7 @@
 //! gestures and sidebar targets), literal key parsing and profile validation.
 
 use super::*;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -50,20 +51,21 @@ impl MapPresentationProfile {
         Ok(())
     }
 
-    pub(super) fn apply(&self, state: &mut AppState) {
+    pub(super) fn apply(
+        &self,
+        platform: &mut PlatformState,
+        renderer: &mut RendererState,
+        options_profile: &RetailOptionsProfile,
+    ) {
         use crate::ui::main_menu_dialogs::options::{SidebarSize, Zoom};
-        state.platform.capture_presentation = crate::app::state::CapturePresentation {
+        platform.capture_presentation = crate::app::state::CapturePresentation {
             zoom: Zoom::from_ini_value(self.zoom),
             sidebar: SidebarSize::from_ini_value(self.sidebar),
             hd_radar: self.hd_radar,
             smooth_sidebar: self.smooth_sidebar,
             map_picture: false,
         };
-        crate::app::App::sync_zoom_pass(
-            &state.platform,
-            &mut state.renderer,
-            &state.persistence.options_profile,
-        );
+        crate::app::App::sync_zoom_pass(platform, renderer, options_profile);
     }
 }
 

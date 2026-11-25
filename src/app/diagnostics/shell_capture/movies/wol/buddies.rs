@@ -31,7 +31,7 @@ impl WolCapture {
             return Ok(());
         }
         ensure!(page.play_buddy_enabled, "0x114 Play Buddy stayed disabled");
-        welcome_click(state, layout_button(state, PLAY_BUDDY)?);
+        welcome_click(state, layout_button(&state.renderer.gpu, PLAY_BUDDY)?);
         ensure!(
             state.frontend.shell_exit.is_some(),
             "Play Buddy did not tear 0x114 down"

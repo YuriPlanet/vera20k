@@ -355,9 +355,14 @@ impl App {
             MovieReturn::CampaignVictory(victory) => {
                 Self::advance_campaign_victory(state, *victory)
             }
-            MovieReturn::CampaignDefeat(defeat) => {
-                Self::open_campaign_replay_prompt(state, *defeat)
-            }
+            MovieReturn::CampaignDefeat(defeat) => Self::open_campaign_replay_prompt(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+                *defeat,
+            ),
         }
     }
 

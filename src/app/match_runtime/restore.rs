@@ -95,7 +95,11 @@ pub(crate) fn commit_prepared_load(
         // after shell admission, including a successful Load Saved Game.
         // The previous match's Abort may have cleared it at 0x0048CAA1.
         state.match_state.match_presentation.modal_latch = true;
-        crate::app::loading::pump::present_game_mode_blank(state);
+        crate::app::loading::pump::present_game_mode_blank(
+            &state.platform,
+            &state.renderer,
+            &state.match_state,
+        );
     }
 
     // Load_Game 0x0067E4E8 restores GameMode from the save header; VERA's
@@ -162,7 +166,12 @@ pub(crate) fn commit_prepared_load(
         theater_ext,
     };
     crate::app::loading::transitions::install_world_presentation(
-        state,
+        &state.platform,
+        &mut state.renderer,
+        &mut state.frontend,
+        &mut state.match_state,
+        &mut state.process_assets,
+        &state.persistence,
         map,
         committed.presentation,
     );

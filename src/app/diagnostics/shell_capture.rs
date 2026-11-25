@@ -2142,38 +2142,50 @@ impl MainMenuCaptureSnapshot {
         self
     }
 
-    fn from_state(state: &AppState) -> Self {
-        let movie_identity = state.frontend.main_menu_movie_identity;
+    fn from_state(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+    ) -> Self {
+        let movie_identity = frontend.main_menu_movie_identity;
         Self {
-            width: state.renderer.gpu.config.width,
-            height: state.renderer.gpu.config.height,
-            main_menu_screen: state.frontend.screen == GameScreen::MainMenu,
-            shell_failed: state.frontend.main_menu_shell_error.is_some(),
-            single_player_active: state.frontend.shell_route == ShellRoute::SinglePlayer,
-            skirmish_active: state.frontend.shell_route == ShellRoute::Skirmish,
+            width: renderer.gpu.config.width,
+            height: renderer.gpu.config.height,
+            main_menu_screen: frontend.screen == GameScreen::MainMenu,
+            shell_failed: frontend.main_menu_shell_error.is_some(),
+            single_player_active: frontend.shell_route == ShellRoute::SinglePlayer,
+            skirmish_active: frontend.shell_route == ShellRoute::Skirmish,
             // The legacy skirmish-setup flag was write-dead (never set after
             // startup); the capture snapshot keeps the field as literal false.
             legacy_skirmish_setup_active: false,
-            modal_open: state.main_menu_dialog_open(),
-            quit_active: state.frontend.quit_cascade.is_some(),
-            first_paint_slide_active: state.frontend.shell_first_paint_slide.is_some(),
-            active_slide_is_main_menu: state.frontend.shell_slide_active_shell
+            modal_open: frontend.main_menu_dialog_open(),
+            quit_active: frontend.quit_cascade.is_some(),
+            first_paint_slide_active: frontend.shell_first_paint_slide.is_some(),
+            active_slide_is_main_menu: frontend.shell_slide_active_shell
                 == Some(ShellSlideKind::MainMenu),
-            title_terminal_persistent: state.frontend.shell_page_title.is_terminal(),
-            movie_loaded: state.frontend.main_menu_movie.is_some(),
+            title_terminal_persistent: frontend.shell_page_title.is_terminal(),
+            movie_loaded: frontend.main_menu_movie.is_some(),
             movie_owner_is_main_menu: movie_identity
                 .is_some_and(|identity| identity.owner() == Ra2tsDialogOwner::MainMenu0xE2),
             movie_base_is_large: movie_identity
                 .is_some_and(|identity| identity.base() == MainMenuMovieBase::Ra2tsL),
             movie_base_matches_layout: movie_identity.is_some_and(|identity| {
                 identity.base()
-                    == crate::app::frontend::shell_layout::main_menu_layout(&state.renderer.gpu)
+                    == crate::app::frontend::shell_layout::main_menu_layout(&renderer.gpu)
                         .movie_base
             }),
-            chrome_loaded: state.frontend.main_menu_shell_chrome.is_some(),
-            software_cursor_active: state.use_software_cursor(),
-            cursor_x: state.match_state.input.cursor_x,
-            cursor_y: state.match_state.input.cursor_y,
+            chrome_loaded: frontend.main_menu_shell_chrome.is_some(),
+            software_cursor_active: crate::app::state::use_software_cursor(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
+            ),
+            cursor_x: match_state.input.cursor_x,
+            cursor_y: match_state.input.cursor_y,
         }
     }
 }
@@ -2584,9 +2596,21 @@ impl ShellCaptureSession {
             return capture.ready(&state.frontend);
         }
         match &self.skirmish {
-            Some(capture) => capture.ready(state),
+            Some(capture) => capture.ready(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.persistence,
+            ),
             None => {
-                let mut snapshot = MainMenuCaptureSnapshot::from_state(state);
+                let mut snapshot = MainMenuCaptureSnapshot::from_state(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                );
                 let window = (self.request.width, self.request.height);
                 if (snapshot.width, snapshot.height) == window {
                     snapshot = snapshot.scaled_as_reference();
@@ -2686,7 +2710,11 @@ impl ShellCaptureSession {
     /// frame drawn again within the same 30 ms tick is not retained twice.
     pub(crate) fn observe_entry_sequence_after_render(
         &mut self,
-        state: &AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
     ) -> Result<Option<EntrySequenceFrameIdentity>> {
         let Some(sequence) = self.entry_sequence.as_ref() else {
             return Ok(None);
@@ -2704,7 +2732,13 @@ impl ShellCaptureSession {
             self.timeout().as_secs()
         );
 
-        let snapshot = MainMenuCaptureSnapshot::from_state(state);
+        let snapshot = MainMenuCaptureSnapshot::from_state(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+        );
         ensure!(
             snapshot.width == EXPECTED_WIDTH && snapshot.height == EXPECTED_HEIGHT,
             "entry sequence surface changed from 800x600"
@@ -2741,8 +2775,7 @@ impl ShellCaptureSession {
                 && snapshot.software_cursor_active,
             "entry sequence production shell identity is incomplete"
         );
-        let tick = state
-            .frontend
+        let tick = frontend
             .shell_first_paint_slide
             .as_ref()
             .context("entry sequence rendered without its wave")?
@@ -2916,7 +2949,13 @@ impl ShellCaptureSession {
                 surface_format,
                 pixels,
                 self.frames_seen,
-                state,
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &state.audio.sfx_player,
+                &state.persistence,
             )?),
             (None, None, Some(capture), _) => serde_json::to_vec_pretty(&capture.manifest(
                 &self.request,

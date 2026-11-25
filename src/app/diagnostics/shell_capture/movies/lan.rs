@@ -963,7 +963,13 @@ impl LanCapture {
                 state.frontend.shell_slide_active_shell,
                 state.frontend.shell_first_paint_slide.is_some(),
                 state.frontend.shell_page_title.is_terminal(),
-                MainMenuCaptureSnapshot::from_state(state),
+                MainMenuCaptureSnapshot::from_state(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence
+                ),
             );
         }
         ensure!(
@@ -1042,7 +1048,11 @@ impl LanCapture {
             LanPhase::Main
                 if rendered == PresentedShell::MainMenu
                     && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
-                        state,
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence,
                     ))? =>
             {
                 App::leave_shell_dialog(
@@ -2351,7 +2361,11 @@ impl LanCapture {
             LanPhase::MainReturn
                 if rendered == PresentedShell::MainMenu
                     && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
-                        state,
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence,
                     ))? =>
             {
                 ensure!(

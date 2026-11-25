@@ -3619,16 +3619,20 @@ pub(crate) fn present_saved_game_loading(state: &mut AppState) -> anyhow::Result
 /// After the load gamemd switches to the game mode and shows black until
 /// the first game frame (`0x00683E07..0x00683E1C`, again at
 /// `0x0052EAA1..0x0052EAEB`); the tactical install runs under it.
-pub(crate) fn present_game_mode_blank(state: &AppState) {
-    if crate::app::App::online_start_runs_while_hidden(&state.platform, &state.match_state) {
+pub(crate) fn present_game_mode_blank(
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+) {
+    if crate::app::App::online_start_runs_while_hidden(platform, match_state) {
         return;
     }
     if let Err(err) = render::present_blank(
-        &state.renderer.gpu,
-        &state.renderer.shell_surface_presenter,
-        &state.renderer.batch_renderer,
-        &state.renderer.performance_overlay,
-        &state.renderer.bit_font,
+        &renderer.gpu,
+        &renderer.shell_surface_presenter,
+        &renderer.batch_renderer,
+        &renderer.performance_overlay,
+        &renderer.bit_font,
     ) {
         log::warn!("Game-mode blank frame failed: {err:#}");
     }

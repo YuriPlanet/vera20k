@@ -162,7 +162,7 @@ impl WolCapture {
                 self.event(frame, json!({"0x6FF AutoLogin": seen}));
             }
             WolTarget::MyInfoForget => {
-                let rect = layout_button(state, FORGET)?;
+                let rect = layout_button(&state.renderer.gpu, FORGET)?;
                 welcome_click(state, rect);
                 let requests = self.requests(&mut state.frontend.wol, frame)?;
                 let page = my_info_shown(&state.frontend)?;
@@ -187,7 +187,7 @@ impl WolCapture {
                     state.frontend.wol_account.nickname == PEER,
                     "the nickname combo did not set [0xB73E40]"
                 );
-                let rect = layout_button(state, BACK)?;
+                let rect = layout_button(&state.renderer.gpu, BACK)?;
                 welcome_click(state, rect);
                 ensure!(
                     state.frontend.shell_exit.is_some(),

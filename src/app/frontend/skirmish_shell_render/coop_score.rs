@@ -24,7 +24,11 @@ pub(crate) fn render_coop_score(
     if state.frontend.skirmish_shell_chrome.is_none() {
         return Ok(false);
     }
-    let Some(view) = crate::app::cooperative_round::view(state) else {
+    let Some(view) = crate::app::cooperative_round::view(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    ) else {
         return Ok(false);
     };
     crate::app::input::coop_score::update_geometry(state);

@@ -597,7 +597,13 @@ impl LiveRoundFlow {
             RoundPhase::Main
                 if rendered == PresentedShell::MainMenu
                     && steady_main_menu_capture_ready_for(
-                        MainMenuCaptureSnapshot::from_state(state),
+                        MainMenuCaptureSnapshot::from_state(
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.persistence,
+                        ),
                         self.config.as_ref().is_some_and(|config| config.latency),
                     )? =>
             {
@@ -1397,7 +1403,13 @@ impl LiveRoundFlow {
             RoundPhase::MainReturn
                 if rendered == PresentedShell::MainMenu
                     && steady_main_menu_capture_ready_for(
-                        MainMenuCaptureSnapshot::from_state(state),
+                        MainMenuCaptureSnapshot::from_state(
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.persistence,
+                        ),
                         self.config.as_ref().is_some_and(|config| config.latency),
                     )? =>
             {

@@ -25,7 +25,14 @@ impl WolCapture {
             WolPhase::Main
                 if rendered == PresentedShell::MainMenu
                     && steady_main_menu_capture_ready_for(
-                        MainMenuCaptureSnapshot::from_state(state).scaled_as_reference(),
+                        MainMenuCaptureSnapshot::from_state(
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.persistence,
+                        )
+                        .scaled_as_reference(),
                         // The narrow summary capture uses the 640 shell movie.
                         matches!(self.target, WolTarget::ModernLobbySummary { .. }),
                     )? =>
@@ -558,7 +565,14 @@ impl WolCapture {
             WolPhase::MainReturn
                 if rendered == PresentedShell::MainMenu
                     && steady_main_menu_capture_ready(
-                        MainMenuCaptureSnapshot::from_state(state).scaled_as_reference(),
+                        MainMenuCaptureSnapshot::from_state(
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.persistence,
+                        )
+                        .scaled_as_reference(),
                     )? =>
             {
                 ensure!(state.frontend.wol.is_none(), "the WOL visit survived");
@@ -1283,7 +1297,8 @@ impl WolCapture {
                     // Tanya's row names her badge, rank and OS. The players
                     // show in the chat view.
                     show_lobby_chat(state)?;
-                    let row = player_row_rect(state, "Tanya")?;
+                    let row =
+                        player_row_rect(&state.renderer.gpu, state.frontend.wol.as_ref(), "Tanya")?;
                     set_window_pointer_to_rect_center(
                         &state.renderer,
                         &state.frontend.screen,

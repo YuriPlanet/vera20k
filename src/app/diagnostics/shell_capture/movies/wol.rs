@@ -1498,19 +1498,15 @@ fn game_row_click(state: &mut AppState, row: usize) -> Result<()> {
 /// A click on the player list's row of `name`, in the chat view.
 fn player_row_click(state: &mut AppState, name: &str) -> Result<()> {
     show_lobby_chat(state)?;
-    let rect = player_row_rect(state, name)?;
+    let rect = player_row_rect(&state.renderer.gpu, state.frontend.wol.as_ref(), name)?;
     welcome_click(state, rect);
     Ok(())
 }
 
 /// The modern player list's row of `name`.
-fn player_row_rect(state: &AppState, name: &str) -> Result<RectPx> {
-    let layout =
-        crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
-    let lobby = state
-        .frontend
-        .wol
-        .as_ref()
+fn player_row_rect(gpu: &GpuContext, wol: Option<&WolVisit>, name: &str) -> Result<RectPx> {
+    let layout = crate::app::shell_wol::lobby::layout(wol, gpu);
+    let lobby = wol
         .and_then(|visit| visit.lobby())
         .context("the lobby runner")?;
     let row = lobby
@@ -1744,8 +1740,8 @@ fn my_info_shown(frontend: &FrontendState) -> Result<MyInfoShown> {
     })
 }
 
-fn layout_button(state: &AppState, id: u16) -> Result<RectPx> {
-    crate::app::shell_wol::my_info::layout(&state.renderer.gpu)
+fn layout_button(gpu: &GpuContext, id: u16) -> Result<RectPx> {
+    crate::app::shell_wol::my_info::layout(gpu)
         .page
         .button_rect(id)
         .context("0x114 button")

@@ -179,7 +179,13 @@ impl TacticalCaptureSession {
         );
 
         if self.request.map_profile().is_some() {
-            self.prepare_map_observation(state)?;
+            self.prepare_map_observation(
+                &mut state.platform,
+                &mut state.renderer,
+                &mut state.diag,
+                &mut state.match_state,
+                &state.persistence.options_profile,
+            )?;
             let launch = self.request.launch_session();
             if let Some(seed_name) = launch
                 .selected_map_file
