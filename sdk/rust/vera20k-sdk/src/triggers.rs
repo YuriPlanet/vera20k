@@ -165,8 +165,7 @@ impl Event {
     pub const DISTANCE_POLL: i32 = 1029;
     pub const VARIABLE_POLL: i32 = 1030;
 
-    // Decision-only events (appendix 4.5); `Launch` (1035) and
-    // `ProjectileFrame` (1036) are not decided yet.
+    // Decision-only events (appendix 4.5).
     /// Decision-only (appendix 4.5): needs [`Trigger::decide_sync`] and a
     /// type binding. Asked once per frame for each house and bound type.
     pub const PRODUCTION_ALLOWED: i32 = 1031;
@@ -177,45 +176,23 @@ impl Event {
     /// Decision-only (appendix 4.5): needs [`Trigger::decide_sync`] and an
     /// object or type binding. Asked for each command on a bound object.
     pub const COMMAND_ALLOWED: i32 = 1034;
-    /// Decision-only, preview (appendix 4.5): the incoming damage at the
-    /// receiver's entry ([`crate::DamageIncomingDecision`]). The event's
-    /// `id` names the armor for `value2` (-1 the subject's); bit 0 of its
-    /// `value` applies the subject's armor divides first.
-    pub const DAMAGE_INCOMING: i32 = 1039;
-
-    // RFC 0001 0.0.22 (appendix 4.3 and 4.5): unit control points. The
-    // decision-only ones need [`Trigger::decide_sync`] and an object or type
-    // binding.
-    /// Decision-only: veto a shot ([`crate::FireAllowedDecision`]).
-    pub const FIRE_ALLOWED: i32 = 1044;
-    /// Decision-only: retaliate against a hit's source
-    /// ([`crate::RetaliateDecision`]).
-    pub const RETALIATE: i32 = 1045;
-    /// Decision-only: the destination a move takes
-    /// ([`crate::DestinationSetDecision`]).
-    pub const DESTINATION_SET: i32 = 1046;
-    /// Decision-only: veto a crush, on the victim
-    /// ([`crate::CrushAllowedDecision`]).
-    pub const CRUSH_ALLOWED: i32 = 1047;
-    /// Delivered: the current mission changed (`value` the
-    /// [`crate::Mission`]). Not raised by this engine yet: `has_kind` answers
-    /// 0.
-    pub const MISSION_CHANGED: i32 = 1048;
-    /// Decision-only: the cell a miner harvests
-    /// ([`crate::HarvestCellDecision`]).
-    pub const HARVEST_CELL: i32 = 1049;
-    /// Decision-only: veto a deploy ([`crate::DeployAllowedDecision`]).
-    pub const DEPLOY_ALLOWED: i32 = 1050;
-    /// Delivered: deployed or undeployed ([`crate::DeployedEvent`]).
-    pub const DEPLOYED: i32 = 1051;
-    /// Delivered: promoted ([`crate::PromotedEvent`]).
-    pub const PROMOTED: i32 = 1052;
-    /// Delivered: a kill's experience ([`crate::ExperienceGainedEvent`]).
-    pub const EXPERIENCE_GAINED: i32 = 1053;
-    /// Delivered: wholly cloaked ([`crate::CloakEvent`]).
-    pub const CLOAKED: i32 = 1054;
-    /// Delivered: wholly visible again ([`crate::CloakEvent`]).
-    pub const DECLOAKED: i32 = 1055;
+    /// Decision-only (appendix 4.5, preview): needs [`Trigger::decide_sync`]
+    /// and a weapon, warhead or projectile type binding (or the launcher's
+    /// object or type). Asked once per launched bullet: answer with
+    /// [`crate::LaunchDecision::set_path`].
+    pub const LAUNCH: i32 = 1035;
+    /// Decision-only (appendix 4.5, preview): needs [`Trigger::decide_sync`]
+    /// and a projectile type binding. Asked every frame a bound bullet
+    /// moves: answer with [`crate::ProjectileFrameDecision::set_step`].
+    pub const PROJECTILE_FRAME: i32 = 1036;
+    /// Decision-only (appendix 4.5, preview): needs [`Trigger::decide_sync`]
+    /// and an object or type binding. Answer the mission the object idles
+    /// into ([`crate::Mission`], 255 for none).
+    pub const IDLE_MISSION: i32 = 1060;
+    /// Decision-only (appendix 4.5, preview): needs [`Trigger::decide_sync`]
+    /// and an object or type binding. Answer the ore cell a harvester's
+    /// search settles on (a cell reference, 0 for none).
+    pub const HARVEST_CELL: i32 = 1061;
 
     // Module INI (RFC 0001 section 6h).
     /// A module event ([`crate::ini::event`]): the trigger's `id` is the

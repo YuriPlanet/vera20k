@@ -333,20 +333,14 @@ impl Host<'_, '_> {
             vera20k_wasm_ext::decide::EVENT_DEFEAT => TriggerScope::Global,
             vera20k_wasm_ext::decide::EVENT_PRODUCTION_ALLOWED
             | vera20k_wasm_ext::decide::EVENT_PRODUCTION_QUEUED
-            | vera20k_wasm_ext::decide::EVENT_COMMAND_ALLOWED => object,
-            // The unit decisions (`decide`, `control`) bind to the object
-            // or its type.
-            vera20k_wasm_ext::decide::EVENT_DAMAGE_INCOMING
-            | vera20k_wasm_ext::decide::EVENT_FIRE_ALLOWED
-            | vera20k_wasm_ext::decide::EVENT_RETALIATE
-            | vera20k_wasm_ext::decide::EVENT_DESTINATION_SET
-            | vera20k_wasm_ext::decide::EVENT_CRUSH_ALLOWED
-            | vera20k_wasm_ext::decide::EVENT_HARVEST_CELL
-            | vera20k_wasm_ext::decide::EVENT_DEPLOY_ALLOWED => object,
-            EVENT_FIRE => TriggerScope::Object { weapon: true },
-            // Detonated is also reached through the weapon, warhead and
-            // projectile bindings.
-            EVENT_DETONATED => TriggerScope::Object { weapon: true },
+            | vera20k_wasm_ext::decide::EVENT_COMMAND_ALLOWED
+            | vera20k_wasm_ext::decide::EVENT_IDLE_MISSION
+            | vera20k_wasm_ext::decide::EVENT_HARVEST_CELL => object,
+            // `Fire` and `Launch` also bind the weapon, warhead and
+            // projectile type; `ProjectileFrame` binds the projectile type.
+            EVENT_FIRE
+            | vera20k_wasm_ext::decide::EVENT_LAUNCH
+            | vera20k_wasm_ext::decide::EVENT_PROJECTILE_FRAME => TriggerScope::Object { weapon: true },
             EVENT_TAKE_DAMAGE
             | EVENT_ATTACKED_BY
             | EVENT_CRUSHED

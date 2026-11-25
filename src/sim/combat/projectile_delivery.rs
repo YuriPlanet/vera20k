@@ -124,7 +124,7 @@ pub(super) fn classify_projectile_delivery(
     classify_projectile_type(bullet_type(weapon, rules), weapon.speed, rules)
 }
 
-fn classify_projectile_type(
+pub(super) fn classify_projectile_type(
     projectile: &crate::rules::projectile_type::ProjectileType,
     max_speed: i32,
     rules: &RuleSet,
@@ -426,6 +426,11 @@ fn admit_bullet(
     }
     if rules.ares() && techno_fire {
         world.ares_fire_at_firestorm(bullet_id, bullet.origin, bullet.target_position, rules);
+    }
+    // Wasm module `Launch` (RFC 0001 section 9): a flying bullet, once
+    // launched; an `Inviso=` one does not fly.
+    if !delivery.inviso && world.projectiles.get(bullet_id).is_some() {
+        world.module_projectile_launched(rules, bullet_id);
     }
     if delivery.inviso {
         let on_bridge = bullet.target_on_bridge;

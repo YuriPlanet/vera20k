@@ -49,6 +49,9 @@ const TS_WEBS: u32 = 0xF215_BF3A;
 // modifiers, variables and claims, and the trigger runtime the triggers they
 // made. Older worlds ran no module: both convert empty.
 const WASM_MODULES: u32 = 0xE18E_A373;
+// Module projectiles (RFC 0001 appendix 4.5 `Launch`, `ProjectileFrame`):
+// the modules' paths and data words on bullets. Older worlds hold none.
+const MODULE_PROJECTILES: u32 = 0xB976_74C6;
 
 /// The rules digest a converted save carries: the loader takes the rules the
 /// game has instead of proving the digest the old writer computed, whose
@@ -82,7 +85,7 @@ pub fn supports(header: &GameSnapshotHeader) -> bool {
         && previous_layout(header.layout).is_some()
         && header.compatibility().matches_build()
         && SNAPSHOT_ENVELOPE_VERSION == MIGRATION_ENVELOPE_VERSION
-        && snapshot_layout() == WASM_MODULES
+        && snapshot_layout() == MODULE_PROJECTILES
 }
 
 fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
@@ -108,6 +111,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     const STRUGGLE: (&str, &[&str]) = ("InfantrySequenceBank", &["struggle"]);
     const EXT_MODULES: (&str, &[&str]) = ("Simulation", &["ext_modules"]);
     const MODULE_TRIGGERS: (&str, &[&str]) = ("TriggerRuntime", &["module"]);
+    const PROJECTILE_PATHS: (&str, &[&str]) = ("SavedExtModules", &["projectiles"]);
     let absent_fields: &'static [_] = match source {
         V0_3_8_AND_0_3_9 | V0_4_0 => &[
             IMAGE_FLAGS,
@@ -267,6 +271,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             MODULE_TRIGGERS,
         ],
         TS_WEBS => &[EXT_MODULES, MODULE_TRIGGERS],
+        WASM_MODULES => &[PROJECTILE_PATHS],
         _ => return None,
     };
     Some(save_codec::PreviousLayout {
@@ -282,7 +287,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
 /// only its stock Arctic setting and latch. Keep both exactly as saved.
 pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     let target = snapshot_layout();
-    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != WASM_MODULES {
+    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != MODULE_PROJECTILES {
         return Err(MigrationError::UnsupportedTarget(target));
     }
 
@@ -415,7 +420,7 @@ mod tests {
         let error = migrate(&mut bytes).unwrap_err();
         assert_eq!(bytes, original);
         if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
-            || snapshot_layout() != WASM_MODULES
+            || snapshot_layout() != MODULE_PROJECTILES
         {
             assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
             return;

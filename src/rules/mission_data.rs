@@ -106,7 +106,6 @@ pub enum MissionType {
 
 impl MissionType {
     /// The wire mission id (0..=31; `0xFF` for `None`).
-    #[cfg(test)]
     #[inline]
     pub fn id(self) -> u8 {
         self as u8
