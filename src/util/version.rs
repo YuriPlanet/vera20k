@@ -11,6 +11,41 @@ use std::sync::OnceLock;
 
 pub const INTERNAL_VERSION_FALLBACK: &str = "1.001TUC";
 
+/// This build's VERA20k version, which a mod's `mod.ini` and a map's
+/// `[Basic] VeraMinVersion=` compare against.
+pub const GAME_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// `1`, `1.2` or `1.2.3` as three numbers, absent ones 0; anything else,
+/// such as a later scheme this build does not know, is `None`.
+fn version_parts(text: &str) -> Option<[u32; 3]> {
+    let mut parts = [0; 3];
+    let mut given = text.trim().split('.');
+    for part in &mut parts {
+        match given.next() {
+            Some(digits) if digits.len() <= 9 && !digits.is_empty() => {
+                *part = digits
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit())
+                    .then(|| digits.parse().ok())
+                    .flatten()?;
+            }
+            Some(_) => return None,
+            None => break,
+        }
+    }
+    given.next().is_none().then_some(parts)
+}
+
+/// Whether this build, `current`, can play a mod or map that needs `needs`.
+/// A build whose own version does not read as three numbers refuses nothing.
+pub fn version_serves(current: &str, needs: &str) -> bool {
+    match (version_parts(current), version_parts(needs)) {
+        (Some(current), Some(needs)) => current >= needs,
+        (None, _) => true,
+        (Some(_), None) => false,
+    }
+}
+
 const VERSION_TXT_READ_LEN: usize = 16;
 const VERSION_TXT_TERMINATOR_INDEX: usize = VERSION_TXT_READ_LEN - 1;
 

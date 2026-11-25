@@ -94,8 +94,8 @@ fn fire(
     cell: (u16, u16),
 ) -> bool {
     let owner = sim.interner.resolve(owner).to_owned();
-    sim.apply_command_with_overlays(
-        None,
+    (sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         &owner,
         &Command::LaunchSuperWeapon {
             sw_type_id: id,
@@ -105,7 +105,7 @@ fn fire(
         rules,
         None,
         &mut FrameEffects::default(),
-    )
+    )).is_ok()
 }
 
 #[test]

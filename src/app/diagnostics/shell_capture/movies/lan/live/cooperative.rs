@@ -529,7 +529,7 @@ impl CooperativeRun {
 
 /// Clicks one of BC6's buttons through its ordinary mouse input.
 fn press_score_button(state: &mut AppState, control: u16) -> Result<()> {
-    let rect = crate::app::input::coop_score::layout(state)
+    let rect = crate::app::input::coop_score::layout(&state.renderer.gpu)
         .control_rect(control)
         .with_context(|| format!("BC6 control {control:#06x}"))?;
     set_window_pointer_to_rect_center(state, rect);

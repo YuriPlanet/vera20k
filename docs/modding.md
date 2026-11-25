@@ -50,12 +50,14 @@ to 512 and `[AI] AIBaseSpacing` to −16 through 16 cells.
   See [More detail](#more-detail).
 - Large conversions. Selecting their data does not establish support for all their
   extension features.
+- New behaviour in code. A mod or map can carry a [Wasm module](wasm-modules.md), a
+  sandboxed program that changes the game through its own rules. It is a preview.
 
 **You can't:**
 
 - Load DLLs, Syringe or a patched `gamemd.exe`.
-- Add new behaviour with a script or plugin. VERA20k has neither, so that means changing
-  its code.
+- Add new behaviour with a DLL, script or plugin outside the [Wasm modules](wasm-modules.md),
+  which have no files, network or clock.
 - Play without the original game.
 
 ## Where things go
@@ -148,6 +150,7 @@ check a mod's terms before you use it here. VERA20k doesn't support such mods.
 | Only INI files the game doesn't read, such as an AI another author made | Adds them to the map of every Skirmish and online match. See [Add to every map](#add-to-every-map). |
 | `veraui.ini` | Lays out the match screen: which edge the sidebar and the command bar sit on, where the sidebar's parts sit, which it has, and how big it is. See [interface layout](interface-layout.md). |
 | `mod.ini` | Supplies display information, resource filenames and extension requirements. Optional. |
+| An `hd_art` folder | An HD art pack: 2x pictures the game draws instead of the original art when HD art is on. Players need not share it. See [HD art](hd-art.md). |
 | `mod-files.txt` | Lists the mod's files, so players can check their copy. The game writes it for you: see [Check a mod's files](#check-a-mods-files). Optional. |
 
 #### Mods distributed in parts
@@ -505,6 +508,8 @@ don't matter: its matches read the original terrain.
 
 - [INI roots and archive names](ini-roots.md): select your own resource filenames.
 - [Interface layout](interface-layout.md): lay out the match screen with `veraui.ini`.
+- [Wasm modules](wasm-modules.md): build a `rules.wasm`, put it in a mod or a map, and
+  declare its triggers in `rulesmd.ini`.
 - [Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md), [VeraX](verax.md) and
   [Kratos](kratos.md): what each extension covers and how to turn it on or build VERA20k with
   it. The official downloads hold all of Ares, which a game's data turns on, and none of the

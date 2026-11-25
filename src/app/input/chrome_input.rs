@@ -53,8 +53,12 @@ mod command_bar;
 pub(crate) use command_bar::{places as command_bar_places, tooltips as command_bar_tooltips};
 
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::presentation::sidebar_render::current_sidebar_view;
 use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
+use crate::audio::sfx::SfxPlayer;
 use crate::render::retained_hud::PICTURE;
 use crate::ui::sidebar::{self, SidebarAction, SidebarPart, SidebarTab, SidebarView};
 
@@ -433,16 +437,13 @@ struct SwPlaces {
 /// (`ToggleSWButtonClass::Draw` draws nothing and its `Action` ignores
 /// input), and the columns are inert while collapsed.
 #[cfg(feature = "phobos")]
-fn sw_places(state: &AppState) -> SwPlaces {
-    let presentation = &state.match_state.match_presentation;
+fn sw_places(presentation: &MatchPresentationState) -> SwPlaces {
     let sw = &presentation.sw_sidebar;
     if !sw.ui.enabled {
         return SwPlaces::default();
     }
     let expanded = presentation.sidebar_projection.model.sw_sidebar_expanded();
-    let has_toggle =
-        crate::app::presentation::sw_sidebar::toggle_art(&state.match_state.match_presentation)
-            .is_some();
+    let has_toggle = crate::app::presentation::sw_sidebar::toggle_art(presentation).is_some();
     sw_layout_places(&sw.layout, expanded, has_toggle)
 }
 
@@ -467,7 +468,7 @@ fn sw_layout_places(
 }
 
 #[cfg(not(feature = "phobos"))]
-fn sw_places(_: &AppState) -> SwPlaces {
+fn sw_places(_: &MatchPresentationState) -> SwPlaces {
     SwPlaces::default()
 }
 
@@ -510,7 +511,7 @@ fn places(state: &AppState, view: &SidebarView) -> Places {
     // Minimap region rect = the live minimap screen rect; off when the radar
     // is offline or the minimap is absent (the gate `is_cursor_over_minimap`
     // uses, `presentation::sidebar_render`).
-    let minimap = minimap_available(state).then(|| {
+    let minimap = minimap_available(&state.match_state.match_presentation).then(|| {
         rect_px(
             frame,
             crate::app::presentation::sidebar_render::active_minimap_content_screen_rect(state),
@@ -541,9 +542,9 @@ fn places(state: &AppState, view: &SidebarView) -> Places {
     }
 }
 
-fn minimap_available(state: &AppState) -> bool {
-    crate::app::presentation::sidebar_render::minimap_shown(&state.match_state.match_presentation)
-        && state.match_state.match_presentation.minimap.is_some()
+fn minimap_available(presentation: &MatchPresentationState) -> bool {
+    crate::app::presentation::sidebar_render::minimap_shown(presentation)
+        && presentation.minimap.is_some()
 }
 
 /// The timer dock's arrow: the dock keeps its areas in the pixels of the
@@ -588,11 +589,11 @@ fn layout_rects(state: &AppState) -> Vec<Option<Rect>> {
 fn sync_key(state: &AppState) -> SyncKey {
     let presentation = &state.match_state.match_presentation;
     SyncKey {
-        sw: sw_places(state),
+        sw: sw_places(&state.match_state.match_presentation),
         placement_revision: presentation.sidebar_projection.placement_revision(),
         frame: state.sidebar_frame(),
         command_bar_closed: presentation.sidebar_gadget_state.command_bar_closed,
-        minimap: minimap_available(state),
+        minimap: minimap_available(&state.match_state.match_presentation),
         timer: timer_rect(state),
         layout: layout_rects(state),
     }
@@ -966,24 +967,34 @@ fn apply_cameo_hover_tooltip(presentation: &mut MatchPresentationState, before: 
 
 /// [AudioVisual] GUITabSound — played on every consumed tab click, including
 /// a click on the tab that is already active (Sidebar Action `0x006A7A66`).
-fn play_gui_tab_sound(state: &mut AppState) {
+fn play_gui_tab_sound(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
     crate::app::App::play_shell_rules_sound(
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
         |rules| rules.general.gui_tab_sound.as_deref(),
     );
 }
 
 /// [AudioVisual] GUIMainButtonSound — the in-game Repair/Sell toggle click
 /// sound (the same event the main-menu shell buttons play).
-pub(crate) fn play_gui_main_button_sound(state: &mut AppState) {
+pub(crate) fn play_gui_main_button_sound(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
     crate::app::App::play_shell_rules_sound(
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
         |rules| rules.general.gui_main_button_sound.as_deref(),
     );
 }
@@ -1033,7 +1044,12 @@ fn apply_result(state: &mut AppState, id: u16, right: bool) {
         _ if (ID_TAB_BASE..ID_TAB_BASE + 4).contains(&id) => {
             let tab = SidebarTab::all()[(id - ID_TAB_BASE) as usize];
             crate::app::input::dispatch::apply_sidebar_action(state, SidebarAction::SelectTab(tab));
-            play_gui_tab_sound(state);
+            play_gui_tab_sound(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+            );
         }
         ID_DIPLOMACY => {
             crate::app::input::dispatch::apply_sidebar_action(state, SidebarAction::OpenDiplomacy);
@@ -1046,11 +1062,21 @@ fn apply_result(state: &mut AppState, id: u16, right: bool) {
                 state,
                 SidebarAction::ToggleRepairMode,
             );
-            play_gui_main_button_sound(state);
+            play_gui_main_button_sound(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+            );
         }
         ID_SELL => {
             crate::app::input::dispatch::apply_sidebar_action(state, SidebarAction::ToggleSellMode);
-            play_gui_main_button_sound(state);
+            play_gui_main_button_sound(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+            );
         }
         // One page per click (mask 0x55 has no held bits ⇒ no repeat).
         // Sidebar Action 0x006A7780 queues the page on the active strip while
@@ -1109,7 +1135,12 @@ fn apply_sw(state: &mut AppState, node: NodeId, right: bool) -> bool {
     if node == nodes.sw_toggle {
         if !right {
             crate::app::presentation::sw_sidebar::toggle(&mut state.match_state.match_presentation);
-            play_gui_main_button_sound(state);
+            play_gui_main_button_sound(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+            );
         }
         return true;
     }

@@ -1076,8 +1076,8 @@ fn two_ordinary_cleg_moves_publish_class_destinations_before_process() {
         &sim.substrate.entities.get(id).unwrap().position,
     );
     for target_rx in [12, 13] {
-        assert!(sim.apply_command_with_overlays(
-            None,
+        assert!((sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             "Americans",
             &Command::Move {
                 entity_id: id,
@@ -1087,7 +1087,7 @@ fn two_ordinary_cleg_moves_publish_class_destinations_before_process() {
             &rules,
             None,
             &mut crate::sim::world::FrameEffects::default()
-        ));
+        )).is_ok());
         let entity = sim.substrate.entities.get(id).unwrap();
         let runtime = entity
             .locomotor
@@ -1408,8 +1408,8 @@ fn cleg_overlay_cell_requests_match_every_original_command_boundary() {
                     // 718080 below.
                     let (rx, ry) = pair(&boundary["input"]["cell"]);
                     assert!(
-                        sim.apply_command_with_overlays(
-                            None,
+                        (sim.apply_command_with_overlays(
+                            crate::sim::command::CommandSender::Player(None),
                             "Americans",
                             &Command::Move {
                                 entity_id: id,
@@ -1419,7 +1419,7 @@ fn cleg_overlay_cell_requests_match_every_original_command_boundary() {
                             &rules,
                             Some(&registry),
                             &mut crate::sim::world::FrameEffects::default(),
-                        ),
+                        )).is_ok(),
                         "{context}: the Move event runs"
                     );
                 } else {

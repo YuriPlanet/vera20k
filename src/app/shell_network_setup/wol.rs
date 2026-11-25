@@ -817,9 +817,13 @@ pub(crate) fn verify_layout(state: &AppState) -> crate::ui::shell::modal::WolVer
         // Quick Match has no C2/C9 room; its backdrop uses the fitted WOL shell.
         shell_layout::shell_scale_for_screen((width as u32, height as u32))
     } else {
-        crate::app::input::multiplayer_setup::page_layout(state)
-            .page
-            .scale
+        crate::app::input::multiplayer_setup::page_layout(
+            &state.renderer.gpu,
+            &state.frontend,
+            &state.match_state,
+        )
+        .page
+        .scale
     };
     crate::ui::shell::modal::wol_verify_layout(width, height, scale)
 }
@@ -935,9 +939,10 @@ pub(super) fn emote(state: &mut AppState) {
     if state.frontend.multiplayer_setup.is_none() {
         return;
     }
-    let units: Vec<u16> = crate::app::input::multiplayer_setup::chat_text(state)
-        .encode_utf16()
-        .collect();
+    let units: Vec<u16> =
+        crate::app::input::multiplayer_setup::chat_text(&state.frontend, &state.match_state)
+            .encode_utf16()
+            .collect();
     let text = wol_chat::trim_line_end(&units).to_vec();
     let page = super::dialog(&state.frontend, &state.match_state)
         .page()

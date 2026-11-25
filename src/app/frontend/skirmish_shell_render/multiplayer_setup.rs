@@ -44,7 +44,12 @@ pub(crate) fn render_multiplayer_setup(
     };
     crate::app::input::multiplayer_setup::update_geometry(state);
     crate::app::shell_network_setup::verify_sync(state);
-    let layout = crate::app::input::multiplayer_setup::layout_of(state, &view);
+    let layout = crate::app::input::multiplayer_setup::layout_of(
+        &state.renderer.gpu,
+        &state.frontend,
+        &state.match_state,
+        &view,
+    );
     let scale = layout.page.scale;
     let (width, height) = (state.render_width(), state.render_height());
     // The notice on its widgets before it paints.

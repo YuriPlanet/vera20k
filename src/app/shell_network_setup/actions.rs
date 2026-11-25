@@ -151,12 +151,20 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 && let Some(ui) = state.frontend.multiplayer_setup.as_mut()
             {
                 ui.page_rows(&view.pages, forward);
-                crate::app::input::multiplayer_setup::drop_pointer(state, true);
+                crate::app::input::multiplayer_setup::drop_pointer(
+                    &mut state.frontend,
+                    &state.match_state,
+                    true,
+                );
             }
             Ok(())
         }
         SetupAction::GameOptions(open) => {
-            crate::app::input::multiplayer_setup::drop_pointer(state, true);
+            crate::app::input::multiplayer_setup::drop_pointer(
+                &mut state.frontend,
+                &state.match_state,
+                true,
+            );
             if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
                 ui.show_game_options(open);
             }
@@ -167,7 +175,11 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             Ok(())
         }
         SetupAction::MapOffer { download } => {
-            crate::app::input::multiplayer_setup::drop_pointer(state, false);
+            crate::app::input::multiplayer_setup::drop_pointer(
+                &mut state.frontend,
+                &state.match_state,
+                false,
+            );
             let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
                 return;
             };

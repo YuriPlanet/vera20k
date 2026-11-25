@@ -1,14 +1,28 @@
 # Optional NPatch compatibility
 
 NPatch is a long-standing binary patch for Yuri's Revenge that predates the DLL-based Ares and
-Phobos extensions. VERA20K implements the supported behavior in Rust. Enable it explicitly:
+Phobos extensions. VERA20K implements the supported behavior in Rust. NPatch is in every
+build and switches on from a game's data, like Ares: adding its keys to the Rules layers,
+the selected mode or the map is all it takes.
 
-```sh
-cargo run --release --bin vera20k --features npatch
+```ini
+[General]
+VehicleParachute=VEHCHUTE
+DisableParallelAIQueues=no
 ```
 
-The feature compiles to `rules::NPATCH_ENABLED`. A build without it ignores the extension keys
-and keeps stock behavior, like a build without `phobos`.
+`rules::npatch_switch` decides the per-game switch: any key only an NPatch reader found
+(`VehicleParachute`, `DisableParallelAIQueues` or its ext173 name
+`DisableAIParallelProduction`, `EnableAIBuildLimitation`, a TechnoType's `AIBuildLimit=`,
+a BuildingType's `AIPlanningCount=`) turns NPatch on and logs the deciding key. Retail data
+holds none of them, so a retail game plays as gamemd. There is no build feature: a plain
+`cargo run` carries the code, and a mod that ships NPatch keys plays NPatch.
+
+The keys the processing passes read travel with the processed rules
+(`ProcessedRulesLayers::npatch_inputs`), so a save, a replay and every peer decide the same
+answer from the same files. A save written before the switch existed converts with an empty
+read list and keeps NPatch off, as those matches played ([save compatibility](save-compatibility.md)
+lists each layout).
 
 `[General] VehicleParachute=` chooses the canopy for airdropped non-infantry, falling back to
 `Parachute=` when unset. Infantry keeps `Parachute=`. The name uses the retained animation
@@ -33,7 +47,7 @@ NPSE's naval vehicle choice uses the existing mobile-choice owner. House Update 
 land and naval channels in order (`0xC33AB0`), sharing the harvester decision and team
 chooser. Suggest_New_Object reads the producer's channel (`0xC2F130`); exit, abandonment
 and build-limit rejection clear the corresponding choice (`0xC33940`, `0xC33B50`,
-`0xC33570`). These paths require the `npatch` build capability.
+`0xC33570`). These paths run when the game's data turns NPatch on (`rules::npatch_switch`).
 
 The legacy `[General] EnableAIBuildLimitation=yes` switch applies the same comparison to
 `BuildLimit=` (NPExt ext173 reader `0xC2D132`, gate `0xC2CF67`). It defaults to no. This is
@@ -42,7 +56,7 @@ NPSE #359 replaced the global switch with `AIBuildLimit=`. If a VERA ruleset exp
 both, both constraints apply before production starts. Clearing a choice does not skip an
 unsatisfied building-plan node or guarantee the mobile chooser selects an uncapped type.
 
-`[General] DisableParallelAIQueues=` defaults to no and requires `npatch`.
+`[General] DisableParallelAIQueues=` defaults to no; its key turns NPatch on.
 NPatch Extended (ext173) spells the same global switch
 `DisableAIParallelProduction=` ("whether we should prevent AI factories from
 'cloning' units"). ext173's `ReadGeneral` hook reaches the reader at
@@ -91,11 +105,12 @@ source for the `0xC3xxxx` addresses cited above.
 
 ## Cross-extension compatibility
 
-Ares, Phobos and NPatch are orthogonal and mixable. Ares is in every build and a game's data
-switches it on ([Ares](ares.md)); the other two are build features:
+Ares, Phobos and NPatch are orthogonal and mixable. Ares and NPatch are in every build and a
+game's data switches them on ([Ares](ares.md), `rules::npatch_switch`); Phobos is still a build
+feature:
 
 ```sh
-cargo run --release --bin vera20k --features phobos,npatch
+cargo run --release --bin vera20k --features phobos
 ```
 
 Every implemented feature must keep working when Ares plays or the other capabilities are
@@ -108,4 +123,8 @@ one, with the retail substitution kept for builds that lack the capability, is t
 follow.
 
 The build capability is recorded per combination: a save from one combination cannot load in
-another, so a mixed build never reads a save written by a single-extension build.
+another, so a mixed build never reads a save written by a single-extension build. NPatch left
+that matrix when it became a per-game switch: every build carries it, and a game with NPatch
+keys differs from a stock game through its rules digest, not through the build stamp. A save
+written by a build that still had the `npatch` feature names that capability and is refused by
+the current build, which names the mismatch.

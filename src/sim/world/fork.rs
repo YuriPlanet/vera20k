@@ -11,10 +11,12 @@ use super::Simulation;
 
 /// Writes `$ty`'s fork helpers from the list of its fields, in declaration
 /// order. A field in brackets is a struct of fields with helpers of its own;
-/// every other field is a `Forked`. `$prefix` goes before each field's name
+/// a field in braces is not forked (VERA: the Wasm modules, whose live
+/// instances cannot be copied): a fork gets its `fork_empty()`, and the other
+/// helpers leave it alone. Every other field is a `Forked`. `$prefix` goes before each field's name
 /// in [`Simulation::written_fields`].
 macro_rules! fork_helpers {
-    ($ty:ident, $prefix:literal: $($(#[$cfg:meta])* $([$part:ident])? $($field:ident)?,)+) => {
+    ($ty:ident, $prefix:literal: $($(#[$cfg:meta])* $([$part:ident])? $({$own:ident})? $($field:ident)?,)+) => {
         #[cfg_attr(
             not(test),
             expect(dead_code, reason = "the forked object pass is the first caller")
@@ -22,9 +24,10 @@ macro_rules! fork_helpers {
         impl $ty {
             /// Share every field, for a world about to be forked.
             pub(crate) fn share_fields(&mut self) {
-                let $ty { $($(#[$cfg])* $($part)? $($field)?,)+ } = self;
+                let $ty { $($(#[$cfg])* $($part)? $($own)? $($field)?,)+ } = self;
                 $($(#[$cfg])* {
                     $($part.share_fields();)?
+                    $(let _ = $own;)?
                     $($crate::util::forked::Forked::share($field);)?
                 })+
             }
@@ -34,9 +37,10 @@ macro_rules! fork_helpers {
             /// # Panics
             /// When a fork still holds a field.
             pub(crate) fn unshare_fields(&mut self) {
-                let $ty { $($(#[$cfg])* $($part)? $($field)?,)+ } = self;
+                let $ty { $($(#[$cfg])* $($part)? $($own)? $($field)?,)+ } = self;
                 $($(#[$cfg])* {
                     $($part.unshare_fields();)?
+                    $(let _ = $own;)?
                     $($crate::util::forked::Forked::unshare($field);)?
                 })+
             }
@@ -44,18 +48,19 @@ macro_rules! fork_helpers {
             /// A fork: another handle on every shared field, and a full copy
             /// of every other.
             pub(crate) fn fork(&self) -> Self {
-                let $ty { $($(#[$cfg])* $($part)? $($field)?,)+ } = self;
+                let $ty { $($(#[$cfg])* $($part)? $($own)? $($field)?,)+ } = self;
                 $ty {
-                    $($(#[$cfg])* $($part: $part.fork(),)? $($field: $crate::util::forked::Forked::fork($field),)?)+
+                    $($(#[$cfg])* $($part: $part.fork(),)? $($own: $own.fork_empty(),)? $($field: $crate::util::forked::Forked::fork($field),)?)+
                 }
             }
 
             /// Add the names of the written fields to `names`, in
             /// declaration order.
             pub(super) fn push_written_fields(&self, names: &mut Vec<&'static str>) {
-                let $ty { $($(#[$cfg])* $($part)? $($field)?,)+ } = self;
+                let $ty { $($(#[$cfg])* $($part)? $($own)? $($field)?,)+ } = self;
                 $($(#[$cfg])* {
                     $($part.push_written_fields(names);)?
+                    $(let _ = $own;)?
                     $(if $crate::util::forked::Forked::written($field) {
                         names.push(concat!($prefix, stringify!($field)));
                     })?
@@ -64,9 +69,10 @@ macro_rules! fork_helpers {
 
             /// Forget which fields were written.
             pub(crate) fn clear_written_fields(&mut self) {
-                let $ty { $($(#[$cfg])* $($part)? $($field)?,)+ } = self;
+                let $ty { $($(#[$cfg])* $($part)? $($own)? $($field)?,)+ } = self;
                 $($(#[$cfg])* {
                     $($part.clear_written_fields();)?
+                    $(let _ = $own;)?
                     $($crate::util::forked::Forked::clear_written($field);)?
                 })+
             }
@@ -74,9 +80,10 @@ macro_rules! fork_helpers {
             /// Make every written field `base`'s fork again, dropping what
             /// this fork wrote.
             pub(crate) fn restore_written_fields_from(&mut self, base: &Self) {
-                let $ty { $($(#[$cfg])* $($part)? $($field)?,)+ } = self;
+                let $ty { $($(#[$cfg])* $($part)? $($own)? $($field)?,)+ } = self;
                 $($(#[$cfg])* {
                     $($part.restore_written_fields_from(&base.$part);)?
+                    $(let _ = $own;)?
                     $(if $crate::util::forked::Forked::written($field) {
                         $crate::util::forked::Forked::restore_from($field, &base.$field);
                     })?
@@ -215,6 +222,7 @@ fork_helpers! {
     planning,
     replaying_recorded_commands,
     trigger_runtime,
+    {ext_modules},
 }
 
 impl Simulation {

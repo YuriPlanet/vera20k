@@ -2767,23 +2767,25 @@ impl GeneralRules {
             curley_shuffle: general.read_bool("CurleyShuffle", defaults.curley_shuffle),
             // ext173 reads it with the current byte as default into
             // `Rules+0x641` (`0xC2D132..0xC2D151`, `ReadBooleanByte 0x5295F0`).
-            enable_ai_build_limitation: crate::rules::NPATCH_ENABLED
-                && general.read_bool(
+            enable_ai_build_limitation: crate::rules::npatch_switch::npatch_read(|| {
+                general.read_bool(
                     "EnableAIBuildLimitation",
                     defaults.enable_ai_build_limitation,
-                ),
+                )
+            }),
             // NPSE reads it with the current field as default into Rules+0x2D
             // (C30303..C3031A); the constructor's 66569B store leaves 0. NPExt
             // ext173 reads its name of the same global switch into Rules+0x640
             // (reader C2BDDA..C2BDE7, gate C2D482), so an absent or unparsable
             // NPSE value falls through to that name.
-            disable_parallel_ai_queues: crate::rules::NPATCH_ENABLED
-                && general.read_bool(
+            disable_parallel_ai_queues: crate::rules::npatch_switch::npatch_read(|| {
+                general.read_bool(
                     "DisableParallelAIQueues",
                     general
                         .read_bool_value("DisableAIParallelProduction")
                         .unwrap_or(defaults.disable_parallel_ai_queues),
-                ),
+                )
+            }),
             repair_rate_minutes: general.read_double("RepairRate", defaults.repair_rate_minutes),
             // `RulesClass+0x30/+0x34/+0x38/+0x3C`, read by the General reader at
             // `0x0066D530`. ReadInt66E6F3/70D/727/740 retains each current

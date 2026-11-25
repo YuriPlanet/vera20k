@@ -957,6 +957,14 @@ impl DisguiseRuntime {
         modified_damage: i32,
         category: crate::map::entities::EntityCategory,
     ) {
+        self.clear(category);
+        self.block_reacquisition(current_frame, modified_damage.wrapping_shl(1));
+    }
+
+    /// The class ClearDisguise of a disguised object: Unit746720 clears
+    /// identity as well as the raw flag; Infantry5227E5 and the base41C030
+    /// arm drop only the flag. An undisguised object is left as it is.
+    pub(crate) fn clear(&mut self, category: crate::map::entities::EntityCategory) {
         if self.disguised {
             if category == crate::map::entities::EntityCategory::Unit {
                 self.clear_unit();
@@ -964,7 +972,6 @@ impl DisguiseRuntime {
                 self.disguised = false;
             }
         }
-        self.block_reacquisition(current_frame, modified_damage.wrapping_shl(1));
     }
 
     /// Whether the re-disguise block is still running.

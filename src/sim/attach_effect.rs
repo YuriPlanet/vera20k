@@ -789,8 +789,8 @@ fn cpp_i32(value: f64) -> i32 {
 }
 
 /// Phobos `GeneralUtils::SafeMultiply(int, double)`: the product clamped to
-/// the `int` range, then MSVC's cast.
-#[cfg(feature = "phobos")]
+/// the `int` range, then MSVC's cast. The Wasm module range multiplier uses
+/// it in every build.
 fn safe_multiply(value: i32, multiplier: f64) -> i32 {
     let product = f64::from(value) * multiplier;
     if product > f64::from(i32::MAX) {
@@ -856,21 +856,25 @@ pub(crate) fn range_modifier_source<'a>(
 /// floors at zero. The `-512` always-in-range sentinel returns before the
 /// fold, and a type with nothing to add leaves the range untouched.
 /// `entity` is the fold source [`range_modifier_source`] resolved.
+///
+/// Wasm module `WeaponRangeMultiplier` and `WeaponRangeExtra` modifiers on
+/// `entity` (`ext_modules::modifiers`) compose as one more effect for every
+/// weapon: their multiplier after the effects' multipliers, their leptons
+/// beside the summed extra range, then the same floor. Without them, and
+/// in every build, the range reads as before.
 pub(crate) fn range_with_attach_effects(
     entity: &crate::sim::game_entity::GameEntity,
     weapon: &str,
     range: i32,
     rules: &crate::rules::ruleset::RuleSet,
 ) -> i32 {
+    const WEAPON_RANGE_ALWAYS_IN_RANGE_LEPTONS: i32 = -512;
+    if range == WEAPON_RANGE_ALWAYS_IN_RANGE_LEPTONS {
+        return range;
+    }
+    let module = entity.module_range_terms();
     #[cfg(feature = "phobos")]
-    {
-        const WEAPON_RANGE_ALWAYS_IN_RANGE_LEPTONS: i32 = -512;
-        if range == WEAPON_RANGE_ALWAYS_IN_RANGE_LEPTONS {
-            return range;
-        }
-        if !entity.phobos_stat_multipliers().has_range_modifier {
-            return range;
-        }
+    if entity.phobos_stat_multipliers().has_range_modifier {
         let effects = rules.attach_effect_types().types();
         let mut range = range;
         let mut extra_range = 0.0;
@@ -896,13 +900,21 @@ pub(crate) fn range_with_attach_effects(
             range = safe_multiply(range, effect.weapon_range_multiplier.max(0.0));
             extra_range += effect.weapon_range_extra_range;
         }
+        let (range, module_extra) = match module {
+            Some((multiplier, extra)) => (safe_multiply(range, multiplier), extra),
+            None => (range, 0),
+        };
         // `Math::max(range, 0)` (`WeaponType/Body.cpp:467`).
-        range.wrapping_add(cpp_i32(extra_range * 256.0)).max(0)
+        return range
+            .wrapping_add(cpp_i32(extra_range * 256.0))
+            .wrapping_add(module_extra)
+            .max(0);
     }
     #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (entity, weapon, rules);
-        range
+    let _ = (weapon, rules);
+    match module {
+        None => range,
+        Some((multiplier, extra)) => safe_multiply(range, multiplier).wrapping_add(extra).max(0),
     }
 }
 

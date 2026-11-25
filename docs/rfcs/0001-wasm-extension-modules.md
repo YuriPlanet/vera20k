@@ -4,7 +4,7 @@
 
 | | |
 | --- | --- |
-| RFC version | 0.0.20 |
+| RFC version | 0.0.21 |
 | Status | Draft |
 | Created | 2026-11-16 |
 | APIs | `vera:sim@1`, `vera:client@1` (proposed) |
@@ -13,7 +13,7 @@
 
 ## Summary
 
-Mods and maps can ship a simulation module, `rules.wasm`, and a UI module, `ui.wasm`. The engine loads compiled modules in a sandbox. Simulation modules change gameplay through properties, variables, events and actions. Client modules build interfaces with nodes. Official SDKs target TypeScript and Rust. Other languages can target the [module ABI](#5a-languages-and-sdks). The [API appendix](0001-wasm-extension-modules-api.md) specifies function signatures, fixed layouts and numeric IDs.
+Mods and maps can ship a simulation module, `rules.wasm`, and a UI module, `ui.wasm`. The engine loads compiled modules in a sandbox. Simulation modules change gameplay through properties, variables, events and actions. Client modules build interfaces with nodes. Official SDKs target TypeScript and Rust. Other languages can target the [module ABI](#5a-languages-and-sdks). The [API appendix](0001-wasm-extension-modules-api.md) specifies function signatures, fixed layouts and numeric IDs. A module can register its own mechanics as INI names for modders who write no code (section 6h), and can play for a computer house or for the local player (section 6i).
 
 ## Goals
 
@@ -184,7 +184,7 @@ onScenarioStart((): void => {
 | Runs on | Every machine in lockstep | Local machine only |
 | Deterministic | Yes | No |
 | Can change | Gameplay state through its engine owner | UI nodes, camera, cursor, local settings and sound |
-| Affects gameplay through | Actions, property writes, variables, missions for any house's units and orders for computer houses | Standard player orders and messages through the command stream |
+| Affects gameplay through | Actions, property writes, variables, missions for any house's units, orders for computer houses and claiming a computer house's domains (section 6i) | Standard player orders and messages through the command stream, including playing for the local player (section 6i) |
 | Engine side | `sim/` | `ui/`, `render/`, `audio/` |
 
 The existing dependency rule applies. `sim/` never depends on `render/`, `ui/`, `audio/` or `net/`. The loader rejects a simulation module that imports `client_*` functions and a client module that imports simulation functions.
@@ -227,7 +227,7 @@ MapUI=overlay        ; overlay, full or no
 **Conflict rules**
 
 - **Type tag bindings.** Read INI `Vera.Tags` only from the mod's `rulesmd.ini`. Ignore it in maps and warn in the lobby. Maps bind in code with `trigger_bind` (section 7), so they cannot erase mod bindings.
-- **Names.** A module name in a mod's INI or trigger (`Action=Wasm:name` or a decision handler name) resolves to the mod module. A name in a map resolves to the map module. INI may address the other source with `Wasm:mod.name` or `Wasm:map.name`. Action 100036 in map triggers writes `mod.name` or `map.name` (section 6a). Code-created triggers and directly executed `Module` actions can use only their own module's dispatch keys. `lookup(ModuleAction, ...)` accepts no prefix. Variable names (`vera.vars`) also resolve within their source unless explicitly prefixed to reach the other source.
+- **Names.** A module name in a mod's INI or trigger (`Action=Wasm:name` or a decision handler name) resolves to the mod module. A name in a map resolves to the map module. INI may address the other source with `Wasm:mod.name` or `Wasm:map.name`. Action 100036 in map triggers writes `mod.name` or `map.name` (section 6a). Code-created triggers and directly executed `Module` actions can use only their own module's dispatch keys. `lookup(ModuleAction, ...)` accepts no prefix. Variable names (`vera.vars`) also resolve within their source unless explicitly prefixed to reach the other source. Keys, registries and module event names registered with `ini_register` differ: each is unique per kind in the match, mods and maps share one namespace, and no prefix is used (section 6h).
 - **Messages and notifications.** `client_send_message` reaches `on_message` in the simulation module of the same source (mod to mod, map to map). `send_notify` reaches every client module on a target machine as a `Notify` client event carrying the sending module's source (mod or map).
 - **Triggers.** Both sources' triggers fire. The mod module runs first.
 - **Decision events.** The mod produces a result, the map may revise it, and the engine applies the final value. Each handler receives the native value and the preceding result, initially the native value. A later handler may reverse an earlier veto. The decision record has an explicit handled flag. An unhandled request passes the preceding result through unchanged (section 6f).
@@ -246,7 +246,7 @@ At load time, the engine performs these steps in order.
 6. Validate `vera.vars` declarations. Names must be unique within a module, scope and visibility must be table values, and visibility restricted to objects in view applies only to single-object scope. Assign variable IDs in load order (mod, then map), then resolve INI trigger events, filter clauses and atomic actions. Report unresolved names in the lobby.
 7. Check the notification names declared in both simulation modules' `vera.notify` sections for hash collisions (section 10). A collision within a module rejects that module. A collision between mod and map names rejects the map module. Report both names. A name hashing to −1 (`0xFFFFFFFF`) rejects its declaring module. If both sources declare the same name, give them the same ID. The source on the `Notify` client event distinguishes them.
 
-**Initialization.** Run the SDK-generated initialization function once before the first callback. Skip it when loading a save. Initialization may resolve names known up to the current rules layer, probe table entries and log messages. Other calls return `Unsupported`. Initialization, `on_rules` and `on_scenario_start` each receive a one-time budget larger than the frame budget.
+**Initialization.** Run the SDK-generated initialization function once before the first callback. Skip it when loading a save. Initialization may resolve names known up to the current rules layer, probe table entries, log messages and register INI names with `ini_register` (section 6h). Other calls return `Unsupported`. Initialization, `on_rules` and `on_scenario_start` each receive a one-time budget larger than the frame budget.
 
 **Failures**
 
@@ -266,6 +266,8 @@ Clients use the same operation-based meter, which also works on a browser's main
 - Skip its decision-chain link, including the call that failed. Pass the preceding result to the next link, using the native value for the first link.
 - Projectiles on its module-controlled trajectories switch to a straight line toward their targets.
 - Preserve completed effects, including modifiers (which expire normally), variables and properties written, rules, triggers it created (disabled), and work already completed by the failing call.
+- Keep the INI names it registered. INI references to them do not become errors. No module raises its module events any more, though other sources still can (section 6h).
+- Release every house domain it claimed. Native AI resumes from the next frame (section 6i).
 - Keep its memory frozen at the point it stopped, in snapshots and the state hash, so saves and reconnects reproduce it.
 
 **Error model.** Normal gameplay failures return a status and leave the module running.
@@ -403,7 +405,7 @@ The module contract is the Wasm interface of functions and tables in the appendi
 | Actions | `action`, `send_notify`, `order` | [Action kinds](0001-wasm-extension-modules-api.md#5-action-kinds) |
 | UI nodes (client) | `client_node_create`, `client_node_remove`, `client_node_find`, `client_set`, `client_set_bytes` | [Client nodes](0001-wasm-extension-modules-api.md#710-client-nodes) |
 
-The infrastructure functions are `frame`, `random`, `log`, `has_kind`, `lookup` and `name_of`.
+The infrastructure functions are `frame`, `random`, `log`, `has_kind`, `lookup`, `name_of` and `ini_register` (section 6h).
 
 - The functions form a frozen, fixed-size interface. Event kinds, action kinds, properties, name kinds, node kinds and other enumerations are tables. Minor versions may append entries but may never change or delete existing entries. Modules use `has_kind(table, id)` to check availability and fall back on older engines.
 - Every stock or atomic action calls the engine's existing implementation of that operation. Every property write goes through its existing owner.
@@ -465,6 +467,7 @@ Triggers may be created, removed, bound or unbound at any time. The `Enabled` pr
 - Trigger sections accept only the keys in the appendix. An unknown key, a repeated key, both numbered and unnumbered forms of one key, a gap in `Event<n>` or `Action<n>` numbering or an unresolvable name refuses the match, naming section and key. Numbering starts at 1, which an unnumbered key means.
 - A text argument must be last and takes the remainder, which may contain commas but no semicolons.
 - A physical line including its key is at most 511 bytes. An overlong VERA key is an error and is never truncated.
+- `Event=Wasm:name` listens for a registered module event. `Action=Wasm:name(target,text)` is a module action with a target and argument text. The first argument is an `ActionTarget` name (may be empty, default `Subject`). Everything after it up to the last closing parenthesis passes to the module verbatim and may contain commas (section 6h). `Decide=Wasm:name` takes no arguments.
 - Without a module, a mod may declare variables in `[VeraVars]` in `rulesmd.ini`, e.g. `Panicked=Object,Private,0` (scope, visibility, default, as in `vera.vars`). They share a table with the mod module's variables, INI first in file order, then the module. A duplicate name refuses the match. Maps cannot declare variables with this section.
 
 Stock, atomic and AI actions execute when the trigger fires. Module actions queue for delivery. See the [binding example](#binding-a-trigger-to-a-type) and the [event tables](0001-wasm-extension-modules-api.md#4-event-kinds) for fields, binding scope and version tiers. Modules keep historical values in variables or module memory. INI supplies no recorders, operators or expressions for historical values.
@@ -559,7 +562,7 @@ Computer houses keep their AI. The existing concepts cover AI:
 
 In version 1, `on_rules` cannot write the AI document: `rules_set` on those four list sections or the sections they list returns `Refused` instead of having no effect silently. Define AI in `AIMD.INI` or the map. Module writes are left to a later minor version.
 
-All AI operations use the existing AI owner. A module can also command a computer house as a player would with `order` (section 6g). Orders go through the command owner, and the native AI keeps running beside them.
+All AI operations use the existing AI owner. A module can also command a computer house as a player would with `order` (section 6g). Orders go through the command owner. For a house where a module has claimed domains, native AI runs only in the unclaimed domains (section 6i). Without a claim, native AI keeps running as usual.
 
 ### 6e. Variables
 
@@ -622,10 +625,121 @@ An action performs an operation directly. An order asks the house to do what its
 - **Results.** An executed order raises the same events and decisions as the identical player command, including `Commanded`, `CommandAllowed`, `ProductionQueued` and `ProductionCancelled`. `order` executes nothing during the call and raises no events. The module sees the outcome through properties, searches and events in later frames.
 - **Costs and limits.** Charge each call per order and per unit entry. Cap orders and unit entries per module per frame (section 15.4).
 - **Saves, replays and reconnects.** Orders never enter the network command stream. Save and hash orders waiting for the next frame. Replays and reconnecting players resimulate the modules, which issue the same orders again, so replays need not record them.
-- **Native AI.** In version 1 the house's native AI keeps running (section 6d). It may retask the same units or queue other production, and modules cannot take the house over. Modules can narrow it with `AiTriggersActive`, `AutoBaseBuilding` and refusing `ProductionQueued`. Full takeover is a post-freeze candidate (see "Possible future directions").
+- **Native AI.** The house's native AI keeps running in domains no module has claimed (section 6d). It may retask the same units or queue other production. A module claims domains with `ControlDomains`, and native AI yields the corresponding decisions (section 6i). Without a claim, modules can narrow it with `AiTriggersActive`, `AutoBaseBuilding` and refusing `ProductionQueued`.
 - **Disabled module.** Discard its queued orders (section 3).
 
 The SDK builds orders with the builders `Client.order` uses ([appendix section 3](0001-wasm-extension-modules-api.md#3-sdk-mappings)).
+
+### 6h. INI registration
+
+A module can offer its mechanics to modders who write no code: the modder writes only INI, and the module implements the mechanic. In its initialization function the module registers INI names with `ini_register`. The engine records which module owns each name and which handler is responsible, and at scenario start passes the registered names that appear in the final rules to the handlers. The module defines and checks value formats, defaults and ranges. The engine does not parse them and the lobby does not validate them.
+
+```ini
+; INI written by the modder (the mod's rulesmd.ini)
+[HTNK]
+Kratos.Shield=HeavyShield           ; key on a type
+Vera.Tags=ShieldMedicTag
+
+[Kratos.ShieldTypes]                ; registry
+1=HeavyShield
+
+[HeavyShield]                       ; entry section, read by the module with rules_get
+Strength=300
+
+[ShieldMedicTag]
+Trigger=ShieldMedic
+
+[ShieldMedic]
+Event=Wasm:Kratos.ShieldBroken      ; module event
+Action1=Wasm:restoreShield(Subject,50)   ; module action with arguments, name from vera.actions
+```
+
+```rust
+#[vera::init]                       // initialization function: the only place that can register
+fn init() {
+    ini::registry("Kratos.ShieldTypes", ENTRY_KEY);
+    ini::key("Kratos.Shield", IniSection::TechnoType, KEY_KEY);
+    SHIELD_BROKEN.set(ini::event("Kratos.ShieldBroken", EventScope::Object));
+}
+```
+
+**Three kinds of registration**
+
+| Kind (`IniKind`) | INI form | What the engine does |
+| --- | --- | --- |
+| `Key`: key on a type | `name=value` in the section class given at registration (`IniSection`) | At scenario start, deliver one `IniKey` record to the handler for each section with a nonempty value |
+| `Registry`: registry | List section `[name]` whose values are entry section names | At scenario start, deliver one `IniEntry` record to the handler for each entry in the list |
+| `Event`: module event | `Event=Wasm:name` in a trigger section | Assign an event ID. `RaiseEvent` raises it. |
+
+- Only the initialization function can call `ini_register`. A call anywhere else is an invalid argument.
+- Names are 1 to 63 bytes of ASCII letters, digits, `.` and `_`, compared case-insensitively by ASCII rules. Within a kind a name is unique in the match, shared by mod and map: a name already registered (by any source, the caller included) returns `Refused`, as does a name beginning with `Vera.`. Different kinds may share a name. Each module may make at most 4,096 registrations. By convention (not checked by the engine), names begin with the author or package name, e.g. `Kratos.`.
+- Module action names are still declared in `vera.actions` (section 12), not through `ini_register`, and the prefix rules are unchanged (section 2).
+- The engine owns the registry (name, kind, source, dispatch key) and the string table, and saves and hashes them. Loading a save does not run the initialization function and restores registrations from the save.
+
+**Timing.** The initialization function runs at its module's rules layer (section 3), so every name is registered before it is used.
+
+| Order | Step | Registration and use |
+| --- | --- | --- |
+| 1 | `RULESMD.INI`, `LANGRULE.INI`, mode layer | |
+| 2 | Mod module's initialization function | Registers |
+| 3 | Mod module's `on_rules` | May write any key, registered ones included. It should not cache their values, since later layers can still change them. |
+| 4 | Map layer | Map INI may write keys the mod registered |
+| 5 | Map module's initialization function | Registers. A duplicate name gets `Refused`. |
+| 6 | Map module's `on_rules` | As in 3 |
+| 7 | Engine parses INI triggers | `Event=Wasm:name` must be a registered event, as must the event name in `RaiseEvent`. Otherwise the match is refused. |
+| 8 | First module phase, before each module's `on_scenario_start` | Deliver that module's `IniEntry` and `IniKey` records |
+| 9 | `on_scenario_start` and every later frame | Triggers call module actions and `RaiseEvent` raises module events |
+
+**Scenario-start delivery.** Each module first receives all its `IniEntry` records, then all its `IniKey` records, each in registration order. Within one registration, `IniEntry` records follow the entry order in the merged list (a repeated entry name is delivered only the first time), and `IniKey` records follow the section class's ID order. Values come from the merged text after every rules layer has been processed. Delivery uses `on_events`, and the record's `key` is the dispatch key given at registration. It is exempt from the per-frame count limit, never enters the backlog and is charged entirely to the one-time budget of `on_scenario_start`. Exhausting that budget disables the module. A handler that finds an invalid value should stop the module, naming section and key. Loading a save does not deliver again.
+
+**Module events.** `RaiseEvent` (an atomic action) raises a registered event as event kind `ModuleEvent`, with the event ID in `EventDef.id`. For an event registered as an object event, the target must be an existing object, and the event is raised only for objects bound to a matching trigger. A global event needs no binding. `other`, `value`, `value2` and `house` come from the action parameters, with meanings documented by the registering module. Any source can raise any registered event. The raise is a safe point (section 5): stock and atomic actions of listening triggers execute immediately, module actions queue and chains count as usual. Decision handlers cannot execute `RaiseEvent` (open question 20).
+
+**Argument text.** INI `Action=Wasm:name(target,text)` (section 6a), or `ActionDef.target` and `ActionParams.text` of a `Module` action in code, become the record's `target` and `args` when the trigger fires. Argument texts are interned to a string ID, which the module reads with `name_of(String, args)`. The string table only grows and is saved and hashed. Action 100036 in map triggers takes no arguments (open question 19).
+
+**Conditions are not registered.** Filter clauses are evaluated natively by the engine at the event point, without calling the module. The module writes its conclusions to variables, and INI tests them with `Where=Var(...)`.
+
+### 6i. Driving a house
+
+A module can operate a house as a player would: a simulation module takes over a computer house, and a client module plays for the local player. The same decision code can be built as `rules.wasm` or as `ui.wasm`.
+
+| | Simulation module driving a computer house | Client module driving the local player |
+| --- | --- | --- |
+| Runs on | Every machine in lockstep | Local machine only |
+| Order outlet | `order` (section 6g) | `client_send_order` (section 10) |
+| Reads | Full simulation state. `Visible` clauses can limit it to the house's sight. | State the local player can see (section 10) |
+| Events | Triggers (section 6a) | Client event `SimEvent` (section 10) |
+| Native AI | Yields by claimed domain | Not involved |
+| Results | `Commanded`, `OrderRefused` | Same, arriving through `SimEvent` |
+
+**Claims.** The house property `ControlDomains` is a mask with one bit per value of the `Domain` enum, readable and writable only in the simulation.
+
+| Bit | `Domain` | Decisions native AI yields once claimed |
+| --- | --- | --- |
+| 0 | `Production` | Choosing products, build queues, automatic base building (`AutoBaseBuilding`), building placement |
+| 1 | `Forces` | AI triggers, creating teams, team scripts, and attack, defense and rally dispatch of existing forces in the house update |
+| 2 | `Abilities` | Ability missions the house AI gives individual units: deploying and undeploying (other than the MCV), garrisoning and leaving buildings, engineer capture, spy infiltration |
+| 3 | `SuperWeapons` | Choosing and firing superweapons |
+
+- Writes are accepted only for an undefeated house no player controls (the same condition as `order`). For a human house they are `Refused`. A value of 0 leaves stock behavior unchanged (goal 5).
+- Units' own reactions belong to no domain and run as usual: target acquisition, retaliation, the harvest cycle, automatic deployment under the unit's rules and idle behavior. MCV deployment belongs to `Production`.
+- A claim belongs to the module that wrote it. At any time one domain of a house can be claimed by only one module. Another module writing a claimed bit gets `Refused`. When a module is disabled, every bit it claimed is cleared and native AI resumes from the next frame (section 3).
+- Claim state is saved and included in the state hash and the multiplayer sync check.
+
+**Lobby seats.** When a mod writes `Controller=yes` in `[VeraWasm]`, the lobby offers a "mod AI" option for every computer seat. A house given that option starts the scenario with all four `ControlDomains` bits, owned by the mod module, so native AI never runs. Map modules cannot be controllers.
+
+**Budget and memory.** Each house in which a module claims any domain counts as one seat for that module: budget B = `Budget` + seat count × `SeatBudget`, with the seat count computed from the claim state at the start of each frame (section 15.4). There is no per-house export: the module staggers its seats' work itself in `on_frame`. The mod module's memory limit grows with the number of "mod AI" seats in the room (section 15.4) and is allocated accordingly at instantiation. Claiming an ordinary computer house during a match does not change the memory limit.
+
+**Order results.** An executed order raises `Commanded` as usual. An order refused in the execution step raises `OrderRefused`: once for each of its units, or once for a house-level order (production, placement, superweapon, selling walls), with the reason (`RefuseReason`). Orders and results correspond by (unit, command, target). `Order` carries no tag.
+
+**Reads**
+
+- Object viewpoint property `Visible`: the viewpoint house can see the object at this moment, accounting for fog, cloaking and detection, consistent with that player's client. Setting `viewpoint` to the house in `find` and adding the clause `Visible=1` shows the module only the objects that seat should see. The engine does not enforce this. The module decides whether to use only visible information.
+- Object property `Engage` (derived, high cost, `EngageResult`): whether a shooter can strike a candidate object, and if not, why. Set `viewpoint` in `find` to the shooter object (`Query.viewpoint` may be an object reference). It reuses the engine's existing fire permission and damage checks.
+- Production, destination, weapon cooldown, deployment, connected zones and other read properties are in appendix section 7. The engine offers no query for what native AI would choose. For building placement use `find` with a `Placeable=1` clause.
+
+**Client driving the local player.** It uses `client_send_order`: orders are validated like player input, enter the command stream and are recorded by replays. The room switch "Allow automation" sets the global property `AutomationAllowed`. While it is 0, client module orders return `Refused`. Rate limits are in section 15.4. Client modules have no per-frame export: the SDK compares `client_frame()` in the render function and runs decisions only when the simulation frame changes.
+
+**Engine-side micro routines** (kiting, retreat, focus fire, actions `AttachRoutine` and `DetachRoutine`) are left for later. When they are done, they reuse the routines from upstream PR #5049, first converted to simulation state that is saved and hashed.
 
 ### 7. Runtime triggers and tags
 
@@ -745,6 +859,8 @@ See [client nodes](0001-wasm-extension-modules-api.md#710-client-nodes) for INI 
 - `send_notify(to, id, ptr, len)` addresses the client of house `to`'s player. Zero targets every observer client. Each client module there receives a `Notify` event with ID, data and sending module origin. Replay viewers receive the notifications for their chosen player's or observer's perspective. Notification size and per-frame count are bounded (section 15.4). An excess returns `Refused` from `send_notify`.
 - Messages from observer clients are rejected.
 
+**Simulation events.** The client event `SimEvent` forwards some of the player's own simulation events to client modules: `data` and `data_len` in `ClientEventRecord` point to one `EventRecord` in the delivery area (as for `Notify` data). The forwarded kinds are fixed as `Commanded`, `OrderRefused`, `TakeDamage`, `Killed`, `Birth` and `AttackedBy`, with later additions as table entries. Only events whose subject is the player's own object and house events addressed to the player's house are forwarded. `other` is 0 when it is an object the local player cannot currently see. Nothing is delivered while catching up frames.
+
 **Client reads** (`client_get`, `client_get_many`, `client_find`, `client_var_get`) expose only what the local player's UI can show. Notifications carry any other information. The property tables specify access in their client column.
 
 - The player's house and objects (including superweapons) expose entries marked all, own and seen. Properties marked sim and team and modifier objects are simulation-only.
@@ -758,7 +874,7 @@ See [client nodes](0001-wasm-extension-modules-api.md#710-client-nodes) for INI 
 **Communication.** Simulation-to-client delivery is local. Clients read visible state and variables and the simulation sends notifications with `send_notify`. Client-to-simulation traffic uses the command stream exclusively:
 
 - `client_send_message(ptr, len)` inserts a message into the command stream. After the command delay it reaches the same-origin simulation module's `on_message` on the same frame on every machine.
-- `client_send_order(ptr, len)` sends a standard player order.
+- `client_send_order(ptr, len)` sends a standard player order. A client module can use it to play for the local player (section 6i), provided the global property `AutomationAllowed` (room switch "Allow automation") is 1. Otherwise it returns `Refused`. Rate limits are in section 15.4.
 - Both inputs are untrusted. The simulation validates contents. The engine supplies the sender and modules cannot forge it. Size and rate are bounded (section 15.4). Replays record both.
 
 A complete round trip: the player clicks a button, the UI sends a message, the simulation validates it and writes a house variable, and the UI reads the variable to update the button.
@@ -828,6 +944,7 @@ onMessage((sender: House, data: Uint8Array): void => {
 - Released functions, properties and table entries retain their units and meaning. Changes require a new entry or version.
 - `vera.actions`, `vera.notify`, `vera.vars` and `vera.delivery` (delivery area declaration) use [fixed custom section layouts](0001-wasm-extension-modules-api.md#custom-sections) beginning with a format version. Names are UTF-8 restricted to ASCII, with ASCII-only case folding.
 - Module actions and decision handlers use module-chosen 32-bit dispatch keys in trigger definitions. Event records carry the key, and SDK-generated `on_events` and `on_decide` dispatch on it. Handlers need no individual Wasm exports. `vera.actions` maps names to keys. Only handlers referenced from INI or maps need names. Keys are local to the module. Cross-origin names resolve only in INI (section 2).
+- INI registration (section 6h) uses no custom section: the initialization function registers keys, registries and module event names by calling `ini_register`, and development tools read them by running only the initialization function in a sandbox.
 
 ### 13. Tooling
 
@@ -880,7 +997,7 @@ Review each of the following as an implementation acceptance criterion.
 These are proposed defaults, with values in section 15.4, fixed per API major (section 12) once measurements confirm them (open question 7).
 
 - **Per-frame operation budget.** Each module gets one budget per frame regardless of record count. The slowest machine sets lockstep speed, metering slows module code, and browsers use an interpreter. Size the budget for the slowest supported platform: the proposal is about 2 ms of operations there. Defer excess work to the next frame, leaving records queued (section 5). Disable and report a module that cannot keep up within the backlog cap.
-- **Memory limits.** Map modules: 16 MiB. Mod modules: 32 MiB. Not configurable in version 1. The engine allocates this at instantiation (section 3).
+- **Memory limits.** Map modules: 16 MiB. Mod modules: 32 MiB, plus 8 MiB for each "mod AI" seat in the room (section 6i). The engine allocates this at instantiation (section 3).
 - **Raise events by binding scope.** High-frequency events and decidable events scoped to objects or types fire only for corresponding bindings. Global decisions follow the event table (sections 5 and 6a). The cost overlay warns on `bindAllTypes` (section 13).
 - **Charge derived properties.** Charge the owning module for evaluating derived properties such as `NearbyEnemyCount` and `TargetInRange` in a filter (section 6a). The property tables mark costly derived properties.
 
@@ -896,10 +1013,11 @@ These are preview defaults, not frozen values. Values marked "measure" freeze wi
 
 | Item | Value | Basis |
 | --- | --- | --- |
-| Frame budget B | Mod 200,000. Map 100,000 by default, up to 200,000 set by the mod. A configured value below 20,000 refuses the match. | Measure: calibrate host costs first |
+| Frame budget B | Mod 500,000 by default, capped at 500,000. Map 100,000 by default, up to 500,000 set by the mod. Each claimed seat adds `SeatBudget` (500,000 by default, capped at 500,000): B = Budget + seat count × SeatBudget. Any budget configured below 20,000 refuses the match. | Measure: calibrate host costs first. A 1-versus-7 match in the browser build is the worst case (open question 7). |
+| Player-set budget | `[VERA] WasmBudget=` in `VERA.INI` overrides the mod's `Budget=` (with the same cap and floor). Single player uses it directly. Online, the host's value becomes a room setting, compared with the other room settings, and a mismatch prevents the match from starting. | The budget is simulation semantics and must be identical on every machine |
 | Decision budget | B/2 per frame, at most 20,000 per call. `Defeat` separately B/4 per frame. | Measure |
 | One-time budgets | `vera_init`, `on_rules` and `on_scenario_start` 5,000,000 each. At most 16,384 writes per `on_rules` layer. | Measure |
-| Memory | Map 16 MiB, mod 32 MiB | Measure: page digests ≤ 0.5 ms per frame at the limit |
+| Memory | Map 16 MiB, mod 32 MiB, plus 8 MiB per "mod AI" seat | Measure: page digests ≤ 0.5 ms per frame at the limit |
 | Module size (decompressed) | Mod 8 MiB. Map 2 MiB per module. | Map transfer limit is 8 MiB |
 | Load-time shape | 20,000 functions. 1 MiB body. 1,024 locals per function. 256 distinct imports. 1,024 exports. 1,024 mutable globals. 65,536 table entries. 10,000 types. 10,000 of each segment kind. 4,096 entries each in `vera.actions` and `vera.vars`. | Measure worst compile time |
 | Call stack | 512 levels, 16,384 weighted slots | Measure stack high-water marks per platform |
@@ -916,6 +1034,8 @@ These are preview defaults, not frozen values. Values marked "measure" freeze wi
 | Notifications | 256 bytes, 256 per frame | Measure in phase 2 |
 | Messages | 96 bytes. 2 per player per source per frame and 16 in any 15 frames. | Measure in phase 2 |
 | Client | 100,000 operations and 1,024 events per render frame | Measure in phase 2 |
+| Client module orders | 1 per unit per 15 frames. 4 house-level orders per 15 frames. An excess returns `Refused` and does not enter the command stream. | Section 6i |
+| INI registration | 4,096 names per module. Names 1 to 63 bytes. | Section 6h |
 | Result areas | `Fire` 768 bytes, `Launch` 416 bytes, `ProjectileFrame` 56 bytes, others 0 | From appendix layouts |
 | Projectiles | Caps on speed and per-frame displacement | Set with `ProjectileFrame` |
 
@@ -932,7 +1052,7 @@ Planned order after acceptance:
 
 | Phase | Scope |
 | --- | --- |
-| 1 | `rules.wasm`: stock and new events and actions, filters, properties and modifiers, variables, search, AI actions and properties, type tag bindings, object bindings and trigger actions, the first three decidable events and the preview shield events (section 6f), map embedding, `asset` commands, TypeScript and Rust SDKs and templates |
+| 1 | `rules.wasm`: stock and new events and actions, filters, properties and modifiers, variables, search, AI actions and properties, type tag bindings, object bindings and trigger actions, the first three decidable events and the preview shield events (section 6f), INI registration (section 6h), house domain claims, `OrderRefused` and the read properties for driving a house (section 6i), map embedding, `asset` commands, TypeScript and Rust SDKs and templates |
 | 2 | `ui.wasm`: UI tree with INI layout, node kinds and properties, client events, visibility filtering, messages and notifications |
 | 3 | Reimplement a real mission with modules, test with external modders and freeze version 1 |
 | Later | Additional decidable events individually, module trajectories (`Launch`, `ProjectileFrame`), peer calls, player UI modules |
@@ -950,7 +1070,7 @@ Outside version 1. Each item gets a follow-up RFC or a new minor version.
 - Teach AI to use mechanics introduced by mods.
 - Multiple tags on one object.
 - A modifier for seeking targets among allies.
-- House takeover (the first post-freeze candidate): a mod module claims all house-level decisions of a computer house, which stays a computer house. Units keep their own targeting, retaliation and harvesting. The claim is saved and hashed, and native AI resumes when the module stops or releases it. Per-seat controller selection in the lobby is a separate RFC.
+- Engine-side micro routines (`AttachRoutine`, `DetachRoutine`, section 6i).
 - In-match rules changes by type (section 8), module-written AI definitions (section 6d) and multilingual map text.
 - UI-tree data binding (bind a node property to a public variable) and a client hook for rewriting orders.
 - Module trajectories (`Launch`, `ProjectileFrame`), motion actions, peer calls and player-installed UI modules (see planned phases above).
@@ -976,9 +1096,18 @@ Question numbers are unchanged so earlier discussion still resolves. **Decided**
 15. **Map text (decided).** Use CSF in files distributed with the map, one language per map, with no new format (section 10).
 16. **Campaigns (decided).** Each mission starts fresh and only globals in the stock carry-over record persist (section 6e).
 17. **Chain bounds (to measure).** Defer past the limits, count per source, with values in section 15.4. Experiment: measure native stack high-water marks at depth 8 on each platform (Windows debug first), which must be at most half the available stack. 1,024 chained firings must take at most 2 ms and a frame of 5,120 firings at most 15 ms, otherwise lower the limits.
-18. **House control (decided).** Not in version 1. `order` shares the house with native AI (section 6g). Takeover is a post-freeze candidate.
+18. **House control (decided, changed in 0.0.21).** Version 1 claims by domain (section 6i). The 0.0.20 answer "not in version 1" is withdrawn.
+19. **Argument text in map triggers (decided).** In version 1 map action 100036 takes no arguments: FA2's `[Actions]` is comma-separated and cannot hold argument text (section 6h).
+20. **Raising module events in decisions (decided).** Not supported in version 1: decision handlers cannot execute actions. For example, when a shield breaks in a `TakeDamage` decision, the event can be raised only in the next module phase (section 6h).
+21. **Player-set budget (decided).** `[VERA] WasmBudget=` in `VERA.INI`. Online, the host's value becomes a room setting (section 15.4).
+22. **Map default budget (decided).** 100,000, up to 500,000 set by the mod (section 15.4).
+23. **Controller module memory (decided).** 8 MiB more per "mod AI" seat (sections 15.2 and 15.4).
+24. **`SimEvent` kinds (decided).** A fixed set of 6, extended by table entries. Kinds chosen by client modules need a new function and are left for later (section 10).
+25. **`Abilities` domain boundary (decided).** See the table in section 6i: ability missions the house AI gives belong to it, and units' automatic behavior under their own rules belongs to no domain.
 
 ## Revision history
+
+- **0.0.21** (2026-11-24): Modules register INI keys, registries and module events with `ini_register` at initialization, and at scenario start the engine passes the registered names appearing in the rules to their handlers. Added `ModuleEvent`, `RaiseEvent` and module actions with arguments (section 6h). Modules can claim a computer house by domain and client modules can play for the local player. Added `OrderRefused`, `SimEvent` and the read properties for driving a house, reversing 0.0.20's "no house takeover in version 1" (section 6i, open question 18). The mod default budget becomes 500,000, with seat budgets and a player-set budget added. `EventRecord` grows to 120 bytes.
 
 - **0.0.20** (2026-11-23): Stated where gameplay effects are listed that missions (`Mission` writes, `SetMission`) reach any house's units, a player's included; only `order` is limited to computer houses. The text read as if modules could not command a player's units.
 - **0.0.19** (2026-11-23): The first event batch of a frame always starts. `ProductionAllowed` draws from B, so a module that refuses production every frame could otherwise receive no events at all until its backlog stopped it. The worst-frame bound gains one decision call's limit.

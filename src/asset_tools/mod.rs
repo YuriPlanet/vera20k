@@ -40,6 +40,7 @@ pub mod verb_parse_check;
 pub mod verb_render;
 pub mod verb_scan;
 pub mod verb_sound;
+pub mod verb_wasm;
 
 /// Turns an asset or archive name into one output path component: ASCII
 /// letters, digits and `.`, `_`, `-` stay, every other character becomes `_`,

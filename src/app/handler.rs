@@ -1034,7 +1034,14 @@ impl App {
                     // one row. gamemd routes the wheel message straight to
                     // the SidebarUp / SidebarDown commands and has no world
                     // zoom.
-                    dispatch::sidebar_scroll_command(state, action);
+                    dispatch::sidebar_scroll_command(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &mut state.match_state,
+                        &state.persistence,
+                        action,
+                    );
                 }
             }
             _ => {}
@@ -1169,6 +1176,13 @@ impl App {
                     session.fail(format!("{} preparation failed: {err:#}", session.name()));
                     event_loop.exit();
                     return;
+                }
+                // A player's run checks for updates from here, before the
+                // shell's first frame, so the main menu waits for the check
+                // (`updater::launch`); captures and hidden runs never check.
+                #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                if self.shell_capture.is_none() && self.hidden_run.is_none() {
+                    crate::app::updater::launch(&mut state);
                 }
                 // Clip the cursor to the window on first launch (
                 // default). A focus regain re-applies it if the OS dropped it.
@@ -1865,7 +1879,11 @@ impl ApplicationHandler for App {
                         lobby.ui.release_buttons();
                     }
                     if state.frontend.multiplayer_setup.is_some() {
-                        crate::app::input::multiplayer_setup::drop_pointer(state, false);
+                        crate::app::input::multiplayer_setup::drop_pointer(
+                            &mut state.frontend,
+                            &state.match_state,
+                            false,
+                        );
                     }
                     if let Some(dialog) = state.frontend.options_dialog.as_mut() {
                         dialog.shell_cancel_pointer_gesture();

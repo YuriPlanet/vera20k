@@ -379,6 +379,14 @@ impl Simulation {
         unfilled_team_timeout: Option<i32>,
     ) {
         let current_frame = self.session.binary_frame() as i32;
+        // VERA: the teams of a house whose `Forces` a Wasm module claimed
+        // stand as they are until the claim goes (RFC 0001 6i,
+        // `sim::ext_modules::claims`).
+        if let Some(team) = self.team_script_vm.teams.get(&team_id)
+            && self.module_claims(team.owner, vera20k_wasm_ext::DOMAIN_FORCES)
+        {
+            return;
+        }
         let Some(team) = self.team_script_vm.teams.get_mut(&team_id) else {
             return;
         };

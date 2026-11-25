@@ -70,6 +70,11 @@ pub(crate) fn launcher_values_from_profile(
         kratos: profile.kratos,
         graphics_api: profile.graphics_api,
         color_vision: profile.color_vision,
+        // Without an HD art pack the list shows Off whatever was saved.
+        hd_look: crate::ui::main_menu_dialogs::options::HdLook::from_on(
+            profile.hd_art_on && crate::render::hd_art::pack_available(),
+        ),
+        hd_look_available: crate::render::hd_art::pack_available(),
         ..Default::default()
     };
     let mut stored = profile.clone();
@@ -148,6 +153,8 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
         // The final-frame pass reads the profile every frame; no atlas or
         // ramp has to be rebuilt.
         E::ColorVisionModeSelected(mode) => profile.color_vision = mode,
+        // The frame reads the switch every frame.
+        E::HdLookSelected(look) => profile.hd_art_on = look.is_on(),
         // Applied at once, like Full Screen: the window moves to the picked
         // screen (or back to the system's choice) before the page is accepted.
         E::DisplaySelected(display) => {

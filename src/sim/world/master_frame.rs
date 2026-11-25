@@ -347,6 +347,11 @@ impl Simulation {
                 if request.poll_triggers {
                     self.poll_triggers_for_master_frame(rules, overlay_registry, effects);
                 }
+                // The Wasm module phase (RFC 0001 section 5; its place in the
+                // frame is open question 8). Without modules it does nothing.
+                if !self.ext_modules.is_empty() {
+                    self.run_ext_module_phase(rules, overlay_registry, effects);
+                }
             }
             FrameStep::Shroud => {
                 self.tick_shroud_growth(UninitContext::new(rules).with_effects(effects));
@@ -759,6 +764,11 @@ impl Simulation {
                 return Ok(FrameTailResult::Interrupted(reason));
             }
         };
+        // Wasm modules' house orders follow the player commands in the same
+        // step (RFC 0001 section 6g). Without modules this does nothing.
+        if failure.is_none() && pass != Some(NetworkQueuePass::SkipDispatch) {
+            frame.spawned_entities |= self.run_ext_module_orders(rules, effects);
+        }
         frame
             .commands
             .extend(std::mem::take(&mut *self.frame_command_admissions));

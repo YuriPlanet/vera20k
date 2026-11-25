@@ -405,7 +405,7 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     }
     // NPSE ObjectClass::Paradrop C2F939..C2F94D substitutes Rules+400
     // for non-infantry. It needs the same physical bounds as Parachute.
-    if crate::rules::NPATCH_ENABLED
+    if rules.npatch()
         && let Some(name) = rules.general.vehicle_parachute.as_deref()
     {
         insert(name);
@@ -776,16 +776,18 @@ mod tests {
             RuleSet::from_processed_rules(&processed).expect("project the processed rules");
         rules.install_art_data(ArtRegistry::from_ini(&art));
 
-        let capability = crate::rules::NPATCH_ENABLED;
+        assert!(
+            rules.npatch(),
+            "the fixture's VehicleParachute key turns NPatch on"
+        );
         assert_eq!(
             rules.general.vehicle_parachute.as_deref(),
-            capability.then_some("VEHCHUTE"),
-            "only the extension reader publishes the pointer"
+            Some("VEHCHUTE"),
+            "the extension reader publishes the pointer"
         );
         let roots = anim_class_roots(&rules);
-        assert_eq!(
+        assert!(
             roots.iter().any(|root| root == "VEHCHUTE"),
-            capability,
             "the canopy's art root follows the extension pointer"
         );
         rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
@@ -794,13 +796,10 @@ mod tests {
                 .art()
                 .anim_runtime_config("VEHCHUTE")
                 .and_then(|config| config.raw_shp_frame_count),
-            capability.then_some(6),
+            Some(6),
             "the bound canopy carries the SHP's physical frame bounds"
         );
-        assert_eq!(
-            rules.art().scheduler_anim_types().contains("VEHCHUTE"),
-            capability
-        );
+        assert!(rules.art().scheduler_anim_types().contains("VEHCHUTE"));
     }
 
     #[test]

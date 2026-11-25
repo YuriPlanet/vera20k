@@ -21,14 +21,15 @@
 //! lookup of a present key (`IniSection`'s reader path in `ini_parser.rs`)
 //! is noted with who asked: an Ares reader, a Phobos reader the Phobos
 //! switch counts (`phobos_switch`), a Kratos reader the Kratos switch counts
-//! (`kratos_switch`), or a stock reader. The `read_ares_*`
+//! (`kratos_switch`), an NPatch reader the NPatch switch counts
+//! (`npatch_switch`), or a stock reader. The `read_ares_*`
 //! parsers always ask as Ares, and an Ares reader body opens [`ares_reads`]
-//! for the stock readers it calls. A key a stock, Phobos or Kratos reader
-//! also read in the same section does not count, since Ares re-reads stock
-//! keys such as `Prerequisite`, `Armor` or `Verses`, and a key two extensions
-//! read turns neither on. Reads through Ares' parsers that are not Ares keys
-//! open [`not_ares_reads`]: an Ares reader that replaces a stock read or
-//! reads a key retail data already holds, and the Phobos and Kratos readers,
+//! for the stock readers it calls. A key a stock, Phobos, Kratos or NPatch
+//! reader also read in the same section does not count, since Ares re-reads
+//! stock keys such as `Prerequisite`, `Armor` or `Verses`, and a key two
+//! extensions read turns neither on. Reads through Ares' parsers that are not
+//! Ares keys open [`not_ares_reads`]: an Ares reader that replaces a stock read
+//! or reads a key retail data already holds, and the Phobos and Kratos readers,
 //! which parse with Ares' `Valueable<T>` readers, so a Phobos- or
 //! Kratos-only mod keeps Ares off. That
 //! holds in a build with the `phobos` feature: without those readers the
@@ -221,6 +222,23 @@ impl Drop for PhobosReads {
     }
 }
 
+/// Marks the reads made while it lives as an NPatch reader's
+/// (`npatch_switch::npatch_read`).
+#[must_use = "the scope ends when the guard drops"]
+pub(crate) struct NpatchReads(OnThisThread);
+
+/// Open an NPatch reader scope (see [`NpatchReads`]).
+pub(crate) fn npatch_reads() -> NpatchReads {
+    RECORDER.with_borrow_mut(|recorder| recorder.npatch_depth += 1);
+    NpatchReads(PhantomData)
+}
+
+impl Drop for NpatchReads {
+    fn drop(&mut self) {
+        RECORDER.with_borrow_mut(|recorder| recorder.npatch_depth -= 1);
+    }
+}
+
 /// This thread's reading state: the open scopes and the [`record`] run they
 /// note into (see the module notes for why it is per thread).
 #[derive(Default)]
@@ -232,8 +250,10 @@ struct Recorder {
     not_ares_depth: u32,
     /// Open [`kratos_reads`] scopes, which win over `phobos_depth`.
     kratos_depth: u32,
-    /// Open [`phobos_reads`] scopes, which win over `ares_depth`.
+    /// Open [`phobos_reads`] scopes, which win over `npatch_depth`.
     phobos_depth: u32,
+    /// Open [`npatch_reads`] scopes, which win over `ares_depth`.
+    npatch_depth: u32,
     /// The innermost [`record`] run, if one is open on this thread.
     active: Option<KeyReads>,
 }
@@ -254,6 +274,8 @@ pub(crate) fn note_found(section: &str, key: &str) {
             Reader::Kratos
         } else if recorder.phobos_depth > 0 {
             Reader::Phobos
+        } else if recorder.npatch_depth > 0 {
+            Reader::Npatch
         } else if recorder.ares_depth > 0 {
             Reader::Ares
         } else {
@@ -272,6 +294,7 @@ enum Reader {
     Ares,
     Phobos,
     Kratos,
+    Npatch,
 }
 
 /// The present keys one recorded run's readers found, split by who asked.
@@ -280,6 +303,7 @@ pub(crate) struct KeyReads {
     ares: SectionKeys,
     phobos: SectionKeys,
     kratos: SectionKeys,
+    npatch: SectionKeys,
     stock: SectionKeys,
 }
 
@@ -293,6 +317,7 @@ impl KeyReads {
             Reader::Ares => &mut self.ares,
             Reader::Phobos => &mut self.phobos,
             Reader::Kratos => &mut self.kratos,
+            Reader::Npatch => &mut self.npatch,
         };
         let keys = match map.get_mut(section) {
             Some(keys) => keys,
@@ -309,6 +334,7 @@ impl KeyReads {
             (&mut self.ares, later.ares),
             (&mut self.phobos, later.phobos),
             (&mut self.kratos, later.kratos),
+            (&mut self.npatch, later.npatch),
             (&mut self.stock, later.stock),
         ] {
             for (section, keys) in later {
@@ -327,36 +353,51 @@ impl KeyReads {
         })
     }
 
-    /// Whether a stock, Phobos or Kratos reader of these reads saw the key.
+    /// Whether a stock, Phobos, Kratos or NPatch reader of these reads saw the
+    /// key.
     fn read_outside_ares(&self, section: &str, key: &str) -> bool {
         Self::found(&self.stock, section, key)
             || Self::found(&self.phobos, section, key)
             || Self::found(&self.kratos, section, key)
+            || Self::found(&self.npatch, section, key)
     }
 
-    /// The Ares readers' keys that no stock, Phobos or Kratos reader of these
-    /// reads saw.
+    /// The Ares readers' keys that no stock, Phobos, Kratos or NPatch reader of
+    /// these reads saw.
     fn ares_only(&self) -> impl Iterator<Item = (&str, &str)> {
         Self::keys(&self.ares).filter(|(section, key)| !self.read_outside_ares(section, key))
     }
 
-    /// The Phobos readers' keys that no stock, Ares or Kratos reader of these
-    /// reads saw (`phobos_switch`).
+    /// The Phobos readers' keys that no stock, Ares, Kratos or NPatch reader of
+    /// these reads saw (`phobos_switch`).
     pub(super) fn phobos_only(&self) -> impl Iterator<Item = (&str, &str)> {
         Self::keys(&self.phobos).filter(|(section, key)| {
             !Self::found(&self.stock, section, key)
                 && !Self::found(&self.ares, section, key)
                 && !Self::found(&self.kratos, section, key)
+                && !Self::found(&self.npatch, section, key)
         })
     }
 
-    /// The Kratos readers' keys that no stock, Ares or Phobos reader of these
-    /// reads saw (`kratos_switch`).
+    /// The Kratos readers' keys that no stock, Ares, Phobos or NPatch reader of
+    /// these reads saw (`kratos_switch`).
     pub(super) fn kratos_only(&self) -> impl Iterator<Item = (&str, &str)> {
         Self::keys(&self.kratos).filter(|(section, key)| {
             !Self::found(&self.stock, section, key)
                 && !Self::found(&self.ares, section, key)
                 && !Self::found(&self.phobos, section, key)
+                && !Self::found(&self.npatch, section, key)
+        })
+    }
+
+    /// The NPatch readers' keys that no stock, Ares, Phobos or Kratos reader of
+    /// these reads saw (`npatch_switch`).
+    pub(super) fn npatch_only(&self) -> impl Iterator<Item = (&str, &str)> {
+        Self::keys(&self.npatch).filter(|(section, key)| {
+            !Self::found(&self.stock, section, key)
+                && !Self::found(&self.ares, section, key)
+                && !Self::found(&self.phobos, section, key)
+                && !Self::found(&self.kratos, section, key)
         })
     }
 }

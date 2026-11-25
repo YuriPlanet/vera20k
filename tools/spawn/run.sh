@@ -36,6 +36,10 @@
 #   PAGE_PORT=P      browser: the test pages' port (default 8000)
 #   SIM_THREAD=V     browser, --threads package: the pages' simulation worker
 #                    (1, always; default 0), or one value per source: always,0
+#   BROWSERS=S,T     browser: only these sources are pages; the others are
+#                    desktop clients in the same match (a mixed room)
+#   MOD=FOLDER       every player plays this mod folder (copied into each
+#                    player's Mods; pages import it)
 # Scripted actions use the spawn-only VERA20K_SPAWN_LEAVE_AFTER_SECONDS and
 # VERA20K_SPAWN_RESIGN_AFTER_SECONDS switches. Logs land in OUT_DIR.
 set -eu
@@ -51,7 +55,11 @@ kill_target=${KILL:-none}
 bound=${BOUND:-60}
 root=$(cd "$(dirname "$0")/../.." && pwd)
 bin=${VERA20K_BIN:-$(ls -t "$root"/target/owned-worktrees/*/fast/vera20k 2>/dev/null | head -n 1)}
-[ "$mode" = browser ] || [ -x "$bin" ] || { echo "build first: python3 -m tools.cargo_run -- build --profile fast -p vera20k --bin vera20k" >&2; exit 2; }
+browsers=${BROWSERS:-}
+# Whether any desktop client plays: not in an all-browser run.
+desktop=yes
+[ "$mode" = browser ] && [ -z "$browsers" ] && desktop=no
+[ "$desktop" = no ] || [ -x "$bin" ] || { echo "build first: python3 -m tools.cargo_run -- build --profile fast -p vera20k --bin vera20k" >&2; exit 2; }
 pids=""
 cleanup() {
   for pid in $pids; do kill "$pid" 2>/dev/null || true; done
@@ -65,6 +73,7 @@ extra="--players $players"
 [ -n "${STARTS:-}" ] && extra="$extra --starts $STARTS"
 watchers=${WATCHERS:-0}
 [ "$watchers" -gt 0 ] && extra="$extra --watchers $watchers"
+[ -n "${MOD:-}" ] && extra="$extra --mod $MOD"
 
 relay_pid=""
 relay_port=${RELAY_PORT:-5000}
@@ -109,15 +118,25 @@ if [ "$mode" = browser ]; then
   pids="$pids $!"
   until curl -s -o /dev/null "http://127.0.0.1:$gateway_port/"; do sleep 0.2; done
   status=0
-  node "$root/tools/spawn/browser.mjs" --out "$out" --dist "${VERA20K_WASM_DIST:-$root/target/wasm-dist}" \
-    --ra2 "$ra2" --port "$page_port" --leave "$act" --bound "$bound" --timeout "$limit" || status=$?
-  [ -f "$out/results.json" ] && cat "$out/results.json"
-  exit "$status"
+  set -- --out "$out" --dist "${VERA20K_WASM_DIST:-$root/target/wasm-dist}" \
+    --ra2 "$ra2" --port "$page_port" --leave "$act" --bound "$bound" --timeout "$limit"
+  [ -n "${MOD:-}" ] && set -- "$@" --mod "$MOD"
+  if [ -z "$browsers" ]; then
+    node "$root/tools/spawn/browser.mjs" "$@" || status=$?
+    [ -f "$out/results.json" ] && cat "$out/results.json"
+    exit "$status"
+  fi
+  # A mixed room: the pages run beside the desktop clients started below.
+  node "$root/tools/spawn/browser.mjs" "$@" --sources "$browsers" > "$out/browsers.log" 2>&1 &
+  pages=$!
+  pids="$pids $pages"
 fi
 
+is_page() { case ",$browsers," in *",$1,"*) true ;; *) false ;; esac; }
 clients=""
 source=0
 while [ "$source" -lt "$players" ]; do
+  if is_page "$source"; then source=$((source + 1)); continue; fi
   hooks="VERA20K_SPAWN_LEAVE_AFTER_SECONDS=$((act + bound))"
   if [ "$source" = "$resign" ]; then
     hooks="$hooks VERA20K_SPAWN_RESIGN_AFTER_SECONDS=$act"
@@ -181,6 +200,7 @@ fi
 
 source=0
 for pid in $clients; do
+  while is_page "$source"; do source=$((source + 1)); done
   while kill -0 "$pid" 2>/dev/null; do
     [ "$(date +%s)" -lt "$deadline" ] || { echo "timeout after ${limit}s" >&2; exit 1; }
     sleep 1
@@ -190,6 +210,11 @@ for pid in $clients; do
   echo "exit status $status" >> "$out/p$source/stdout.log"
   source=$((source + 1))
 done
+if [ -n "$browsers" ]; then
+  status=0
+  wait "$pages" || status=$?
+  echo "== pages ($browsers): exit status $status"; tail -n 3 "$out/browsers.log"
+fi
 index=0
 for pid in $watcher_clients; do
   while kill -0 "$pid" 2>/dev/null; do
@@ -205,8 +230,10 @@ for pid in $watcher_clients; do
 done
 source=0
 while [ "$source" -lt "$players" ]; do
-  echo "== p$source"; tail -n 1 "$out/p$source/stdout.log"
-  [ -f "$out/p$source/spawn_result.json" ] && cat "$out/p$source/spawn_result.json" && echo
+  if ! is_page "$source"; then
+    echo "== p$source"; tail -n 1 "$out/p$source/stdout.log"
+    [ -f "$out/p$source/spawn_result.json" ] && cat "$out/p$source/spawn_result.json" && echo
+  fi
   source=$((source + 1))
 done
 [ -f "$out/kill.log" ] && cat "$out/kill.log"

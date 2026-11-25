@@ -424,7 +424,9 @@ pub(crate) fn receiver_divisors(
             house_type_armor.to_bits(),
         ),
         unit_armor: target.armor_multiplier(),
-        ae_armor,
+        // Phobos' AttachEffect divisor with the Wasm module modifiers.
+        ae_armor: target
+            .with_module_modifiers(crate::sim::ext_modules::modifiers::Stat::Armor, ae_armor),
         rank_armor,
     }
 }
