@@ -21,6 +21,8 @@ pub(crate) const CHECK: u16 = 0x7E34;
 pub(crate) const NEW: u16 = 0x7E35;
 /// Android: remove the selected mod's folder (the app owns it).
 pub(crate) const DELETE: u16 = 0x7E37;
+/// Android: rename the selected mod's folder.
+pub(crate) const RENAME: u16 = 0x7E39;
 /// Android: add a home-screen shortcut for the selected mod.
 pub(crate) const PIN: u16 = 0x7E38;
 pub(crate) const ADD: u16 = 0x7E36;
@@ -255,8 +257,9 @@ pub(crate) const ACTIONS: &[MenuPageButtonSpec] = &[
     MenuPageButtonSpec::new(NEW, 176, "VERA:ModNew", "VERA:ModNewHelp"),
     MenuPageButtonSpec::new(ADD, 203, "VERA:ModAdd", "VERA:ModAddHelp"),
     MenuPageButtonSpec::new(OPEN_FOLDER, 230, "VERA:ModExport", "VERA:ModExportHelp"),
-    MenuPageButtonSpec::new(DELETE, 257, "VERA:ModDelete", "VERA:ModDeleteHelp"),
-    MenuPageButtonSpec::new(PIN, 284, "VERA:ModPin", "VERA:ModPinHelp"),
+    MenuPageButtonSpec::new(RENAME, 257, "VERA:ModRename", "VERA:ModRenameHelp"),
+    MenuPageButtonSpec::new(DELETE, 284, "VERA:ModDelete", "VERA:ModDeleteHelp"),
+    MenuPageButtonSpec::new(PIN, 311, "VERA:ModPin", "VERA:ModPinHelp"),
 ];
 
 #[cfg(not(target_os = "android"))]

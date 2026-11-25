@@ -118,6 +118,11 @@ fn mod_take_picked() -> Option<String> {
     .filter(|part| !part.is_empty())
 }
 
+/// Mods page: forget `folder`'s home-screen shortcut.
+fn mod_forget(folder: &str) -> bool {
+    activity_flag("forgetModShortcut", Some(folder))
+}
+
 /// Mods page: add a home-screen shortcut for `folder`.
 fn mod_pin(folder: &str) -> bool {
     activity_flag("pinMod", Some(folder))
@@ -457,6 +462,7 @@ fn android_main(app: AndroidApp) {
         export: mod_export,
         import: mod_import,
         pin: mod_pin,
+        forget: mod_forget,
         pick_zip: mod_pick_zip,
         pick_folder: mod_pick_folder,
         take_picked: mod_take_picked,

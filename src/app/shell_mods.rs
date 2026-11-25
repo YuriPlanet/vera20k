@@ -175,6 +175,8 @@ impl App {
             (mods_shell::USE, mods.switch_to(selected).is_some()),
             (mods_shell::CHECK, mods.picked_is_mod(selected)),
             #[cfg(target_os = "android")]
+            (mods_shell::RENAME, Self::picked_folder(state).is_some()),
+            #[cfg(target_os = "android")]
             (mods_shell::DELETE, Self::picked_folder(state).is_some()),
             #[cfg(target_os = "android")]
             (
@@ -219,6 +221,8 @@ impl App {
             Some(mods_shell::NAME_OK) => Self::answer_name_dialog(state, true),
             #[cfg(target_os = "android")]
             Some(mods_shell::NAME_CLOSE) => Self::answer_name_dialog(state, false),
+            #[cfg(target_os = "android")]
+            Some(mods_shell::RENAME) => Self::open_rename_dialog(state),
             #[cfg(target_os = "android")]
             Some(mods_shell::DELETE) => Self::delete_picked_mod(state),
             #[cfg(target_os = "android")]
@@ -280,6 +284,9 @@ impl App {
         let text = match dir.map(|dir| (std::fs::remove_dir_all(&dir), dir)) {
             Some((Ok(()), dir)) => {
                 log::info!("Mods: deleted {}", dir.display());
+                if !crate::util::mod_actions::forget(&folder) {
+                    log::warn!("Mods: no shortcut hook to forget {folder}");
+                }
                 tr_fill("VERA:ModDeleted", &[("mod", &folder)])
             }
             Some((Err(error), dir)) => {
@@ -875,8 +882,13 @@ impl App {
             0.00060,
             scale,
         );
+        let hint = if Self::name_dialog_renames() {
+            crate::i18n::tr("VERA:ModRenameHint")
+        } else {
+            crate::i18n::tr("VERA:ModNewNameHint")
+        };
         text.push(line(
-            &crate::i18n::tr("VERA:ModNewNameHint"),
+            &hint,
             prompt_rect,
             crate::render::shell_paint::SHELL_TEXT_RGB_ENABLED,
             ShellAlign::NONE,
@@ -922,6 +934,28 @@ impl App {
     /// Android: shows New Mod's name dialog over the page.
     #[cfg(target_os = "android")]
     pub(crate) fn open_name_dialog(state: &mut AppState) {
+        name_dialog::MODE.store(1, std::sync::atomic::Ordering::Relaxed);
+        name_dialog::OPEN.store(true, std::sync::atomic::Ordering::Relaxed);
+        state.platform.window.request_redraw();
+    }
+
+    /// Android: whether the dialog renames the picked mod rather than making
+    /// one.
+    #[cfg(target_os = "android")]
+    pub(crate) fn name_dialog_renames() -> bool {
+        name_dialog::MODE.load(std::sync::atomic::Ordering::Relaxed) == 2
+    }
+
+    /// Android: renames the picked mod through the same dialog New Mod uses.
+    #[cfg(target_os = "android")]
+    pub(crate) fn open_rename_dialog(state: &mut AppState) {
+        let Some(folder) = Self::picked_folder(state) else {
+            return;
+        };
+        if let Ok(mut from) = name_dialog::RENAME_FROM.lock() {
+            *from = folder;
+        }
+        name_dialog::MODE.store(2, std::sync::atomic::Ordering::Relaxed);
         name_dialog::OPEN.store(true, std::sync::atomic::Ordering::Relaxed);
         state.platform.window.request_redraw();
     }
@@ -964,11 +998,106 @@ impl App {
         let _ = gui.set(nodes.ok, Prop::Enabled, Value::Bool(open));
         let _ = gui.set(nodes.close, Prop::Enabled, Value::Bool(open));
         if open && !name_dialog::CLEARED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-            let _ = gui.set(nodes.edit, Prop::Text, Value::Text(String::new()));
+            let text = if Self::name_dialog_renames() {
+                name_dialog::RENAME_FROM
+                    .lock()
+                    .map(|from| from.clone())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            let _ = gui.set(nodes.edit, Prop::Text, Value::Text(text));
             let _ = gui.set_focus(Some(nodes.edit));
         }
         if !open {
             name_dialog::CLEARED.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    /// Android: renames the picked mod's folder, keeps its `mod.ini` name in
+    /// step and carries the choice and the launcher shortcut with it.
+    #[cfg(target_os = "android")]
+    pub(crate) fn rename_picked_mod(state: &mut AppState, from: &str, typed: &str) {
+        let Some(config) = state.platform.game_config.as_ref() else {
+            return;
+        };
+        let paths = &config.paths;
+        let mods_dir = paths.mods_dir();
+        let name = crate::app::new_mod::plain_name(typed).trim().to_owned();
+        if name.is_empty() || name == from {
+            return;
+        }
+        let from_dir = mods_dir.join(from);
+        if !from_dir.is_dir() {
+            return;
+        }
+        let taken = crate::util::case_insensitive_path::find(&mods_dir, &name)
+            .is_some_and(|found| found != from_dir);
+        if taken {
+            Self::open_shell_notice(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+                tr("VERA:ModRenameFailed"),
+            );
+            return;
+        }
+        let to = mods_dir.join(&name);
+        if let Err(error) = std::fs::rename(&from_dir, &to) {
+            log::warn!("Mods: could not rename {from} to {name}: {error}");
+            Self::open_shell_notice(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+                tr("VERA:ModRenameFailed"),
+            );
+            return;
+        }
+        Self::set_mod_name(&to, &name);
+        if paths.mod_name() == Some(from) {
+            let _ = state.frontend.mods.keep_choice(paths, Some(&name));
+        }
+        if !crate::util::mod_actions::forget(from) {
+            log::warn!("Mods: no shortcut hook to forget {from}");
+        }
+        log::info!("Mods: renamed {from} to {name}");
+        Self::select_installed_mod(state, &name);
+    }
+
+    /// Android: `mod.ini`'s `Name=` follows a rename: the one it shows, or a
+    /// new one in its `[Mod]` section (the starter file's shape). A commented
+    /// `;Name=` stays a comment; the folder name is used then.
+    #[cfg(target_os = "android")]
+    fn set_mod_name(dir: &std::path::Path, name: &str) {
+        let file = dir.join("mod.ini");
+        let Ok(text) = std::fs::read_to_string(&file) else {
+            return;
+        };
+        let shown = |line: &str| {
+            let line = line.trim_start();
+            !line.starts_with(';') && line.to_ascii_lowercase().starts_with("name=")
+        };
+        if !text.lines().any(shown) {
+            return;
+        }
+        let mut out = String::with_capacity(text.len() + name.len());
+        for line in text.lines() {
+            if shown(line) {
+                out.push_str(&format!("Name={name}\n"));
+            } else {
+                out.push_str(line);
+                out.push('\n');
+            }
+        }
+        if let Err(error) = std::fs::write(&file, out) {
+            log::warn!(
+                "Mods: could not set the name in {}: {error}",
+                file.display()
+            );
         }
     }
 
@@ -988,8 +1117,18 @@ impl App {
                 _ => None,
             })
             .unwrap_or_default();
+        let renames = Self::name_dialog_renames();
+        let from = name_dialog::RENAME_FROM
+            .lock()
+            .map(|from| from.clone())
+            .unwrap_or_default();
+        name_dialog::MODE.store(0, std::sync::atomic::Ordering::Relaxed);
         state.platform.window.request_redraw();
         if !ok {
+            return;
+        }
+        if renames {
+            Self::rename_picked_mod(state, &from, &text);
             return;
         }
         let name = text.trim().to_owned();
@@ -1002,7 +1141,7 @@ impl App {
         Self::make_mod_named(state, &name, true);
     }
 
-    /// Refresh the list and bring a mod we just added into view.    /// Refresh the list and bring a mod we just added into view.    /// Refresh the list and bring a mod we just added into view.
+    /// Refresh the list and bring a mod we just added into view.
     pub(super) fn select_installed_mod(state: &mut AppState, folder: &str) {
         Self::refresh_mods_page(state);
         let selected = state.frontend.mods.page.as_ref().and_then(|rows| {
@@ -1164,11 +1303,15 @@ impl App {
 /// since it opened.
 #[cfg(target_os = "android")]
 mod name_dialog {
-    use std::sync::atomic::AtomicBool;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, AtomicU8};
     use vera20k_gui::{Gui, NodeId};
 
     pub(super) static OPEN: AtomicBool = AtomicBool::new(false);
     pub(super) static CLEARED: AtomicBool = AtomicBool::new(false);
+    /// 0 closed, 1 New Mod, 2 rename.
+    pub(super) static MODE: AtomicU8 = AtomicU8::new(0);
+    pub(super) static RENAME_FROM: Mutex<String> = Mutex::new(String::new());
 
     /// New Mod's dialog widgets under the page's root, once the page built
     /// them. They sit flat in the page's dialog so its painter draws them.

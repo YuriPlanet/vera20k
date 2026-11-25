@@ -20,6 +20,9 @@ pub struct Hooks {
     pub pick_zip: fn() -> bool,
     /// Let the player pick a mod folder in the system file manager.
     pub pick_folder: fn() -> bool,
+    /// Forget a home-screen shortcut for the named folder, when the platform
+    /// can remove one.
+    pub forget: fn(folder: &str) -> bool,
     /// The part the picker copied in, once; the caller takes it.
     pub take_picked: fn() -> Option<String>,
 }
@@ -67,6 +70,11 @@ pub fn take_picked() -> Option<std::path::PathBuf> {
         .get()
         .and_then(|hooks| (hooks.take_picked)())
         .map(std::path::PathBuf::from)
+}
+
+/// Ask the platform to drop `folder`'s shortcut; false when it cannot.
+pub fn forget(folder: &str) -> bool {
+    HOOKS.get().is_some_and(|hooks| (hooks.forget)(folder))
 }
 
 /// Ask the platform to pin `folder`; false when it cannot.

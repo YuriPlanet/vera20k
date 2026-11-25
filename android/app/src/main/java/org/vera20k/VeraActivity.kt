@@ -195,6 +195,26 @@ class VeraActivity : NativeActivity() {
         }
     }
 
+    /**
+     * Drops `folder`'s home-screen shortcut. Pinned shortcuts are the
+     * launcher's, so the app asks for their removal (`removeLongLivedShortcuts`,
+     * API 30) and disables them where the launcher keeps them.
+     */
+    fun forgetModShortcut(folder: String): Boolean {
+        val manager = getSystemService(ShortcutManager::class.java) ?: return false
+        val id = "mod:$folder"
+        return try {
+            if (Build.VERSION.SDK_INT >= 30) {
+                manager.removeLongLivedShortcuts(listOf(id))
+            }
+            manager.disableShortcuts(listOf(id), "mod removed")
+            true
+        } catch (error: Throwable) {
+            android.util.Log.w("Vera20k", "could not forget $folder: $error")
+            false
+        }
+    }
+
     /** Adds a home-screen shortcut that starts this activity on `folder`. */
     fun pinMod(folder: String): Boolean {
         val manager = getSystemService(ShortcutManager::class.java) ?: return false
