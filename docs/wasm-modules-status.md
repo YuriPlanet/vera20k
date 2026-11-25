@@ -579,6 +579,12 @@ mission slots MIS-S3..S6).
 
 ## Residuals
 
+- Untested control points (no reliable retail scene in the headless harness):
+  `Deployed` and `DeployAllowed` on an MCV (the duel scene's MCV does not
+  deploy), `Birth` for a deployed yard, building survivors and vehicle crew
+  (crew type and per-cell survivor rolls are random draws). Their code paths
+  are covered only by the native deploy and survival tests.
+
 - The stopped-module notice is translated (`VERA:ModuleStopped`), but the fault
   reason inside it is English only.
 - Events not raised: stock 0, 24, 31, 33, 51, 53, 54, 59, Ares 87, 88; 4.3
