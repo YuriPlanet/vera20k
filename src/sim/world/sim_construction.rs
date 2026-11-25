@@ -299,11 +299,11 @@ impl Simulation {
             pending_commands: Default::default(),
             local_commands: Default::default(),
             dispatch_reserved_slots: Default::default(),
-            frame_command_admissions: Vec::new(),
-            frame_continuation: None,
-            planning: planning::PlanningState::default(),
-            replaying_recorded_commands: false,
-            trigger_runtime: TriggerRuntime::default(),
+            frame_command_admissions: Forked::new(Vec::new()),
+            frame_continuation: Forked::new(None),
+            planning: Forked::new(planning::PlanningState::default()),
+            replaying_recorded_commands: Forked::new(false),
+            trigger_runtime: Forked::new(TriggerRuntime::default()),
             ext_modules: Default::default(),
         };
         debug_assert_eq!(out.scenario_rng.state(), out.main_rng.state());

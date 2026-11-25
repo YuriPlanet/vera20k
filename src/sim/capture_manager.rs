@@ -956,7 +956,13 @@ impl Simulation {
         // 0x00471DB8: ChangeOwner(controller's house, 1). It refuses only an
         // unchanged house, which CanCapture already excluded.
         self.announce_controlled_building(target_id, controller_owner, rules);
-        self.change_owner_with_rules(target_id, controller_owner, rules, registry, frame_effects);
+        self.change_owner_by_mind_control(
+            target_id,
+            controller_owner,
+            rules,
+            registry,
+            frame_effects,
+        );
         let controller = self.substrate.entities.get_mut(controller_id);
         // A node's victim is a name the pointer-expiry index reads.
         if let Some(manager) = controller.and_then(|controller| {

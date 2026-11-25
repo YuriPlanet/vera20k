@@ -507,7 +507,7 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
     let (wall_owner, _) = gsi_04_07_wall_sell_seed_houses(&mut sim);
     let mut grid = crate::sim::overlay_grid::OverlayGrid::new(3, 3);
     grid.place_owned_wall(0, 2, 2, 0, wall_owner);
-    sim.overlay_grid = Some(grid);
+    *sim.overlay_grid = Some(grid);
     assert!((sim.apply_command_with_overlays(
         crate::sim::command::CommandSender::Player(None),
         "Receiver",

@@ -427,7 +427,7 @@ impl Simulation {
                 if !for_this_client {
                     return Err(CommandRefusal::Other);
                 }
-                if self.replaying_recorded_commands {
+                if *self.replaying_recorded_commands {
                     return Err(CommandRefusal::Other);
                 }
                 self.lifecycle_outputs

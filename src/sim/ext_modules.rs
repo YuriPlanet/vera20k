@@ -525,6 +525,14 @@ impl Clone for ExtModules {
 }
 
 impl ExtModules {
+    /// What a fork of the world holds (`world::fork`): no module. A live
+    /// instance cannot be copied, so a turn on a fork must not call one; the
+    /// forked object pass runs only while no module is loaded.
+    pub(crate) fn fork_empty(&self) -> Self {
+        debug_assert!(self.slots.is_empty(), "a world with Wasm modules was forked");
+        Self::default()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.slots.is_empty()
     }
