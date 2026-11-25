@@ -143,8 +143,13 @@ pub(super) fn follow_selection_writes(
         }
         match rules
             .super_weapon(sim.interner().resolve(*sw_type))
-            .map(|sw| sw.kind)
-        {
+            .map(|sw| {
+                if ares {
+                    sw.kind.ares_handler_kind()
+                } else {
+                    sw.kind
+                }
+            }) {
             Some(
                 SuperWeaponKind::GenericWarhead
                 | SuperWeaponKind::UnitDelivery

@@ -392,7 +392,15 @@ impl RulesPassProcessor {
                     // LoadFromINIFile10033250: the first call runs the Type
                     // handler's Initialize, then LoadFromINI10033370 reads
                     // EVA.Ready/Activated/Detected before the other fields.
-                    let kind = kind.as_deref();
+                    // SW_Protect::HandlesType10074B40 selects the same Initialize
+                    // and LoadFromINI for stock IronCurtain as for Type=Protect.
+                    let kind = kind.as_deref().map(|kind| {
+                        if kind.eq_ignore_ascii_case("IronCurtain") {
+                            "Protect"
+                        } else {
+                            kind
+                        }
+                    });
                     let initialized = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_targeting
                         .read_pass(&raw, kind);
