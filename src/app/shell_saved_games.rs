@@ -174,7 +174,14 @@ impl App {
             return;
         }
         match crate::app::persistence::commands::save_game(
-            state,
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state,
+            &state.persistence,
+            &state.audio,
+            &state.diag,
+            &state.process_assets,
             &description.display_text(),
             path.as_deref(),
         ) {

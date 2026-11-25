@@ -15,7 +15,8 @@ pub(crate) fn render_network_failure(
     let (width, height) = (state.render_width(), state.render_height());
     let (body, button) = labels(&state.match_state.sim_runtime);
     let shell_box = crate::ui::shell::modal::ShellBox::notice(
-        vera_body(state).unwrap_or_else(|| state.csf_label(body.0, body.1)),
+        vera_body(&state.frontend, &state.match_state, &state.process_assets)
+            .unwrap_or_else(|| state.csf_label(body.0, body.1)),
         state.csf_label(button.0, button.1),
     )
     .on_screen();

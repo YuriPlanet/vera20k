@@ -228,7 +228,7 @@ impl App {
         if !std::mem::take(&mut state.match_state.scenario_restart_requested) {
             return;
         }
-        let outcome_ready = Self::local_outcome_exit_ready(state);
+        let outcome_ready = Self::local_outcome_exit_ready(&state.match_state);
         let route = crate::app::match_runtime::scenario_exit::route_scenario_termination(
             crate::app::match_runtime::scenario_exit::TerminationRequests {
                 outcome_ready,
@@ -245,16 +245,13 @@ impl App {
         Self::restart_campaign_scenario(state);
     }
 
-    pub(super) fn local_outcome_exit_ready(state: &AppState) -> bool {
-        let Some(sim) = state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|rt| &rt.simulation)
-        else {
+    pub(super) fn local_outcome_exit_ready(
+        match_state: &crate::app::match_runtime::state::MatchState,
+    ) -> bool {
+        let Some(sim) = match_state.sim_runtime.runtime().map(|rt| &rt.simulation) else {
             return false;
         };
-        crate::app::input::commands::preferred_local_owner(&state.match_state)
+        crate::app::input::commands::preferred_local_owner(match_state)
             .as_deref()
             .and_then(|owner| sim.interner().get(owner))
             .is_some_and(|owner| sim.ready_outcome_for_owner(owner).is_some())
@@ -284,7 +281,7 @@ impl App {
             return;
         }
         state.platform.window_active = active;
-        Self::sync_window_movies(state);
+        Self::sync_window_movies(&state.platform, &mut state.frontend);
         if active {
             state.platform.clear_attention();
         }
@@ -341,24 +338,31 @@ impl App {
     /// Fullscreen Play_Movie (0x00432E40) pauses the Bink handle on deactivation
     /// and resumes it on activation. A hidden shell can get both edges between
     /// draws, so update its video and soundtrack here as well as on creation.
-    fn sync_window_movies(state: &mut AppState) {
-        state.frontend.main_menu_movie_clock.pause();
-        let active = crate::app::frontend::fullscreen_movie::playback_active(&state.platform);
-        if let Some(movie) = state.frontend.fullscreen_movie.as_mut() {
+    fn sync_window_movies(
+        platform: &crate::app::PlatformState,
+        frontend: &mut crate::app::frontend::state::FrontendState,
+    ) {
+        frontend.main_menu_movie_clock.pause();
+        let active = crate::app::frontend::fullscreen_movie::playback_active(platform);
+        if let Some(movie) = frontend.fullscreen_movie.as_mut() {
             movie.set_active(active);
         }
     }
 
     /// Apply one window-visibility edge. Waking on the un-hide edge is what
     /// gets the parked redraw loop turning again.
-    pub(super) fn set_window_hidden(state: &mut AppState, hidden: bool) {
-        if state.platform.window_hidden == hidden {
+    pub(super) fn set_window_hidden(
+        platform: &mut crate::app::PlatformState,
+        frontend: &mut crate::app::frontend::state::FrontendState,
+        hidden: bool,
+    ) {
+        if platform.window_hidden == hidden {
             return;
         }
-        state.platform.window_hidden = hidden;
-        Self::sync_window_movies(state);
+        platform.window_hidden = hidden;
+        Self::sync_window_movies(platform, frontend);
         if !hidden {
-            state.platform.window.request_redraw();
+            platform.window.request_redraw();
         }
     }
 
@@ -593,7 +597,7 @@ impl App {
             ModalOutcome::Enter(next) => Self::enter_in_game_menu_state(state, next),
             ModalOutcome::LeaveMatch { destruct } => {
                 if destruct {
-                    Self::queue_local_destruct(state);
+                    Self::queue_local_destruct(&mut state.match_state);
                 }
                 Self::exit_match_to_shell(state)
             }
@@ -601,7 +605,7 @@ impl App {
                 // 0x0048CAB2: DESTRUCT and the latch clear; no EXIT. The
                 // latch keeps every modal closed until the House is
                 // Defeated, which re-arms it (0x0048C911).
-                Self::queue_local_destruct(state);
+                Self::queue_local_destruct(&mut state.match_state);
                 state.match_state.match_presentation.modal_latch = false;
                 Self::enter_in_game_menu_state(
                     state,
@@ -624,14 +628,13 @@ impl App {
     /// construct `EventClass(PlayerPtr->ArrayIndex, 8)` (`0x0048CA34`,
     /// `0x0048CAB2`) and add it to the ring only while it holds fewer than
     /// 0x80 events; the latch is cleared either way.
-    fn queue_local_destruct(state: &mut AppState) {
-        let Some(owner) = crate::app::input::commands::preferred_local_owner(&state.match_state)
-        else {
+    fn queue_local_destruct(match_state: &mut crate::app::match_runtime::state::MatchState) {
+        let Some(owner) = crate::app::input::commands::preferred_local_owner(match_state) else {
             log::warn!("Abort DESTRUCT has no local command owner");
             return;
         };
         if crate::app::input::commands::try_schedule_command(
-            &mut state.match_state,
+            match_state,
             &owner,
             crate::sim::command::Command::Destruct,
         )
@@ -717,7 +720,7 @@ impl App {
                 .map(|rt| &rt.simulation)
                 .and_then(|sim| sim.interner().get(owner))
         });
-        let local_outcome_exit_ready = Self::local_outcome_exit_ready(state);
+        let local_outcome_exit_ready = Self::local_outcome_exit_ready(&state.match_state);
         // Almost every pass has no EXIT to take. Only one that does takes
         // the world for writing, which waits for a tick on the simulation
         // thread and drops the published frame.
@@ -782,8 +785,14 @@ impl App {
         // audio master, bounds its voice pump to 300 timer buckets, and
         // finally hard-stops audio.
         state.audio.fade_out_theme(wall_ms);
-        let destination = Self::aborted_score_destination(state, elapsed_seconds)
-            .unwrap_or(crate::app::match_runtime::scenario_exit::ScenarioExitDestination::MainMenu);
+        let destination = Self::aborted_score_destination(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.persistence.options_profile,
+            elapsed_seconds,
+        )
+        .unwrap_or(crate::app::match_runtime::scenario_exit::ScenarioExitDestination::MainMenu);
         let showed_score = !matches!(
             &destination,
             crate::app::match_runtime::scenario_exit::ScenarioExitDestination::MainMenu
@@ -819,23 +828,25 @@ impl App {
     /// owns its result dialogs, the second reports through cncnet, the third
     /// has `CooperativeResult`.
     fn aborted_score_destination(
-        state: &mut AppState,
+        frontend: &mut crate::app::frontend::state::FrontendState,
+        match_state: &crate::app::match_runtime::state::MatchState,
+        process_assets: &crate::app::process_assets::ProcessAssets,
+        options_profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
         elapsed_seconds: i32,
     ) -> Option<crate::app::match_runtime::scenario_exit::ScenarioExitDestination> {
-        let eligible = state
-            .match_state
+        let eligible = match_state
             .sim_runtime
             .runtime()
             .is_some_and(|runtime| !runtime.simulation.session().uses_campaign_world())
-            && state.match_state.live_network.is_none()
-            && !crate::app::cooperative_round::applies(&state.match_state)
-            && !state.match_state.map_basic.skip_score.unwrap_or(false);
+            && match_state.live_network.is_none()
+            && !crate::app::cooperative_round::applies(match_state)
+            && !match_state.map_basic.skip_score.unwrap_or(false);
         if !eligible {
             return None;
         }
         // The page numbers itself from this counter, and the natural exit
         // increments before it builds the model.
-        state.frontend.finished_game_count = state.frontend.finished_game_count.saturating_add(1);
+        frontend.finished_game_count = frontend.finished_game_count.saturating_add(1);
         log::info!("Abort Mission: the score page follows ({elapsed_seconds} s played)");
         Some(
             crate::app::match_runtime::scenario_exit::ScenarioExitDestination::Score {
@@ -844,7 +855,10 @@ impl App {
                 ),
                 detail: crate::i18n::tr("VERA:YouLeftTheBattle"),
                 model: crate::app::match_runtime::sim_tick::build_aborted_score_screen_model(
-                    state,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    options_profile,
                     elapsed_seconds,
                 ),
             },

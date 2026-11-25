@@ -135,14 +135,20 @@ pub(crate) struct MapPresentationInputs {
 /// The cameo status strip's labels and Ares hook 6CC2B0's, only when Ares
 /// plays in the game (`RuleSet::ares`): resolved with the incoming world and
 /// after the string table's labels change, instead of with every sidebar draw.
-pub(crate) fn resolve_status_texts(state: &mut AppState) {
-    let ares_status_texts = state.rules().filter(|rules| rules.ares()).map(|rules| {
-        crate::app::presentation::sidebar_build::ares_status_texts(rules, |label| {
-            state.csf_text(label)
-        })
-    });
-    let status_texts = crate::app::presentation::state::StatusTexts::resolve(&state.process_assets);
-    let presentation = &mut state.match_state.match_presentation;
+pub(crate) fn resolve_status_texts(
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+) {
+    let ares_status_texts = crate::app::state::active_rules(frontend, match_state)
+        .filter(|rules| rules.ares())
+        .map(|rules| {
+            crate::app::presentation::sidebar_build::ares_status_texts(rules, |label| {
+                process_assets.csf_text(label)
+            })
+        });
+    let status_texts = crate::app::presentation::state::StatusTexts::resolve(process_assets);
+    let presentation = &mut match_state.match_presentation;
     presentation.ares_status_texts = ares_status_texts;
     presentation.status_texts = status_texts;
 }
@@ -278,7 +284,11 @@ pub(crate) fn install_world_presentation(
             .reset_sw_sidebar();
     }
     state.match_state.match_presentation.outcome_banner_side_art = assets.outcome_banner_side_art;
-    resolve_status_texts(state);
+    resolve_status_texts(
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+    );
     state.match_state.match_presentation.end_game_banner = assets.end_game_banner;
     // `Game_LoadUI_LoadSideData` resolves the dialog background pair once per
     // game load. The shell chrome atlas carries the three side slots, so a
@@ -929,7 +939,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                     .simulation
                     .restore_campaign_carry_over(record, &runtime.resources.rules);
             }
-            let installed = crate::app::lan_service::install_gameplay(state);
+            let installed = crate::app::lan_service::install_gameplay(
+                &state.platform,
+                &mut state.match_state,
+                &mut state.process_assets,
+            );
             if installed.is_ok() {
                 install_watcher(state);
             }

@@ -458,10 +458,18 @@ impl App {
             // ExecuteDoList64CD0C blocks inside ShellMessageBox5D3490. Its
             // message pump still reaches Network_ServiceLoop48D080/audio,
             // while Main_Tick's terminal tests and frame tail wait for Stop.
-            crate::app::match_runtime::network_failure::show(state);
+            crate::app::match_runtime::network_failure::show(
+                &state.platform,
+                &mut state.frontend.shell_controller,
+                &mut state.match_state,
+            );
             crate::app::match_runtime::sim_tick::pump_audio_service(state, scenario_now_ms);
             let frame_stopped = state.match_state.frame_stopped;
-            if crate::app::match_runtime::network_failure::take_acknowledged(state) {
+            if crate::app::match_runtime::network_failure::take_acknowledged(
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+            ) {
                 // A stopped frame has no suspended native frame to finish and
                 // its world must not run again: Stop goes straight to the shell.
                 if !frame_stopped {
@@ -609,7 +617,8 @@ impl App {
         // pumps inside Main_Tick instead, and a parked window not at all;
         // this pass then keeps only the outputs.
         let main_tick_pumps_audio = crate::app::match_runtime::sim_tick::main_tick_owns_audio_pump(
-            state,
+            &state.frontend.screen,
+            &state.match_state,
             simulation_allowed,
         );
         if main_tick_pumps_audio {
@@ -655,7 +664,7 @@ impl App {
                     && !state.focus_freeze_active()
                     && state.match_state.scenario_exit.is_none()
                     && state.match_state.scenario_outcome.is_none()
-                    && !Self::local_outcome_exit_ready(state)))
+                    && !Self::local_outcome_exit_ready(&state.match_state)))
         {
             let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
             // Wait_For_Players runs inside the frame's network service, ahead
@@ -1054,7 +1063,7 @@ impl App {
         if Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
             || (state.frontend.screen == GameScreen::InGame
                 && state.match_state.scenario_exit.is_some()
-                && Self::local_outcome_exit_ready(state)
+                && Self::local_outcome_exit_ready(&state.match_state)
                 && !showing_verdict)
         {
             // House4F860B/4F8732 and outcome exits685670/685DC0 service

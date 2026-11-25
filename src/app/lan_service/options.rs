@@ -147,7 +147,7 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
                     .match_state
                     .session
                     .accept_campaign_room(Some(room), game_speed)?;
-                super::maps::clear_campaign_transfer(state);
+                super::maps::clear_campaign_transfer(&mut state.frontend, &mut state.match_state);
                 campaign_room::report_local_files(state, true)?;
             }
         }
@@ -573,7 +573,9 @@ fn receive_host_options(
         TaggedOptionsBody::Stock { random_map, .. } => {
             super::maps::received_options(state, scope, random_map.clone())?
         }
-        TaggedOptionsBody::Campaign { .. } => super::maps::clear_campaign_transfer(state),
+        TaggedOptionsBody::Campaign { .. } => {
+            super::maps::clear_campaign_transfer(&mut state.frontend, &mut state.match_state)
+        }
     }
     state
         .match_state

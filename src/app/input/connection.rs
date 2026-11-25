@@ -110,7 +110,15 @@ fn pointer(state: &mut AppState, down: Option<bool>) {
                 &mut state.match_state.network_wait,
             ),
             ConnectionButton::Player(row) => {
-                crate::app::match_runtime::network_match::propose_kick(state, row)
+                crate::app::match_runtime::network_match::propose_kick(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &mut state.match_state,
+                    &state.persistence,
+                    &state.process_assets,
+                    row,
+                )
             }
             ConnectionButton::PreviousPage | ConnectionButton::NextPage => {
                 if let Some(page) = state.match_state.network_wait.page_mut()

@@ -219,7 +219,16 @@ pub(crate) fn toggle_debug_pause(frame_pacer: &mut LocalFramePacer, match_state:
 pub(super) fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCode) {
     match code {
         KeyCode::KeyM => {
-            crate::app::persistence::commands::quicksave(state);
+            crate::app::persistence::commands::quicksave(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
+                &state.audio,
+                &state.diag,
+                &state.process_assets,
+            );
         }
         KeyCode::KeyN => {
             crate::app::persistence::commands::quickload(&state.platform, &mut state.persistence);
