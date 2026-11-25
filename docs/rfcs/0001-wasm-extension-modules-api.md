@@ -2,7 +2,7 @@
 
 [简体中文](0001-wasm-extension-modules-api.zh-CN.md)
 
-Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.0.21, revised in the same commit as the main text, which takes precedence. Rules are stated only in the main text. Version 1 contents are in [section 9](#9-version-1-inventory) and the tier columns.
+Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.0.23, revised in the same commit as the main text, which takes precedence. Rules are stated only in the main text. Version 1 contents are in [section 9](#9-version-1-inventory) and the tier columns.
 
 ## Contents
 
@@ -272,7 +272,7 @@ struct Order {            // 24 bytes followed by count unit handles (i64): inpu
 }
 struct ProjectileSpec {   // 48 bytes: variable data for CreateProjectile and one entry in a Fire shot plan
     type: i32,            // 0   Projectile type ID
-    weapon: i32,          // 4   Weapon ID supplying damage and warhead, -1 for none
+    weapon: i32,          // 4   Weapon ID supplying damage and warhead. -1: in a Fire plan the shot's own weapon and payload, in CreateProjectile none
     target: i64,          // 8   Object or cell reference. In a Fire plan, 0 takes this shot's target
                           //     In CreateProjectile, 0 takes the origin object's current Target (Refused if none)
     data: [u8; 16],       // 16  Initial module data (Data0 bytes 0..7, Data1 bytes 8..15), saved and hashed
@@ -283,9 +283,9 @@ struct ProjectileSpec {   // 48 bytes: variable data for CreateProjectile and on
 struct PathSpec {         // 32 bytes followed by point_count points: Launch result area
     kind: i32,            // 0   PathKind (8.3)
     point_count: i32,     // 4   Number of points following
-    speed: i64,           // 8   Fixed-point speed (16 fractional bits) in leptons per frame
-    param: [i64; 2],      // 16  Kind-specific parameters, e.g. spiral radius and period or parabolic apex height
-}                         //     Each point is three i64 values x, y, z in leptons, 24 bytes total
+    speed: i64,           // 8   Speed along the path, fixed point (16 fractional bits), leptons per frame. <= 0 takes the projectile's current speed
+    param: [i64; 2],      // 16  Kind parameters: parabola param[0] apex height, spiral param[0] radius and param[1] frames per turn (> 0)
+}                         //     Each point is three i64 values x, y, z in leptons, 24 bytes total. 1 to 16 points, exactly 1 for parabola and spiral
 struct ProjectileStep {   // 56 bytes: ProjectileFrame result area
     flags: i32,           // 0   Bit 0 detonate, bit 1 set velocity, bit 2 set position, bit 3 set module data
     reserved: i32,        // 4   0
@@ -609,16 +609,16 @@ Available only with `rules.ares_form()`. Otherwise `trigger_create` returns 0 an
 
 Modifier events bind by target. For an object, bind that object. For a house, the event is global and sets `house`.
 
-These events fire at safe points. **Object + weapon** also permits binding to weapon, warhead or projectile types ([RFC 6a](0001-wasm-extension-modules.md#6a-triggers-events-filter-clauses-and-actions)). The tier is for the delivered form. Of the decision forms only `TakeDamage` is `v1`. Those of `Fire`, `FatalDamage` and `TargetChanged` are `later`. 100037 and 100038 are reserved (`OnBehavior`, `OnBehaviorExpire`).
+These events fire at safe points. **Object + weapon** also permits binding to weapon, warhead or projectile types ([RFC 6a](0001-wasm-extension-modules.md#6a-triggers-events-filter-clauses-and-actions)). The tier is for the delivered form. Of the decision forms only `TakeDamage` is `v1`. Those of `Fire` and `FatalDamage` are `preview`, that of `TargetChanged` is `later`. 100037 and 100038 are reserved (`OnBehavior`, `OnBehaviorExpire`).
 
 | # | Event | Fields | When raised | Binding | Decision point → result (— means no decision) | Tier |
 | --- | --- | --- | --- | --- | --- | --- |
 | 100000 | `TakeDamage` | `other` source (may be 0), `value` positive settled damage, after armor multipliers, immunities, falloff, the subject armor's Verses, the cap, the building minimum and Ares culling. Delivered records clamp it to health before the hit, decisions see it unclamped. `id` warhead, `x`, `y`, `z` subject position in leptons | After damage commits | Object | Before damage commits, only when this value is above 0 → final damage before the health clamp (clamped to 0..2^31−1). Zero damage and healing are not asked. | v1 |
 | 100001 | `HitByWarhead` | `id` warhead, `value` final damage, `other` source, `x`, `y`, `z` subject position in leptons | After damage is accepted, excluding immune hits | Object | — | later |
 | 100002 | `AttackedBy` | `other` attacker, `value` weapon slot (−1 for none), `projectile` (may be 0) | On target after firing step | Object | — | v1 |
-| 100003 | `FatalDamage` | `other` attacker (may be 0), `value` damage, `id` warhead, `x`, `y`, `z` subject position in leptons | After lethal damage commits, before death processing, which rechecks | Object | During death processing → death outcome: bits 0–31 death weapon ID plus 1 (0 for none), bit 32 spawn survivors, bit 33 leave wreck | v1 |
+| 100003 | `FatalDamage` | `other` attacker (may be 0), `value` damage, `id` warhead, `x`, `y`, `z` subject position in leptons | After lethal damage commits, before death processing, which rechecks | Object | At the entry of the damage path's death arm, before any of its effects → death plan (bits in the table below). Deaths outside the damage path (crushing, temporal erasure) are not asked | v1 |
 | 100004 | `Killed` | `other` killer (may be 0), `id` lethal warhead (−1 for none), `x`, `y`, `z` death position in leptons | After recording kill | Object | — | v1 |
-| 100005 | `Fire` | `other` target (may be 0), `cell` target cell (always set), `value` weapon slot, `id` weapon, `projectile` (may be 0) | After shot completes | Object + weapon | Before firing → number of entries in shot plan. Result area contains a `ProjectileSpec` array ([RFC 9](0001-wasm-extension-modules.md#9-example-projectile-trajectories)). | v1 |
+| 100005 | `Fire` | `other` target (may be 0), `cell` target cell (always set), `value` weapon slot, `id` weapon, `projectile` (may be 0) | After shot completes | Object + weapon | Before firing, once the launch has a solution and the bullet payload is built → number of entries in the shot plan (0..16). Result area contains a `ProjectileSpec` array; the first link receives the native shot as one entry ([RFC 9](0001-wasm-extension-modules.md#9-example-projectile-trajectories)). | v1 |
 | 100006 | `SpawnFire` | `other` spawned aircraft, `value` weapon slot, `projectile`. Target in `cell` or the spawned aircraft's `Target` property | After spawned aircraft fires | Object | — | later |
 | 100007 | `HitTarget` | `other` target, `value` damage, `id` weapon, `projectile` | On shooter after damage commits | Object + weapon | — | later |
 | 100008 | `TargetChanged` | `other` new target (0 when cleared) | After setting or clearing target | Object | Before setting the target during the object's turn. Parallel speculative targeting raises no event → chosen target reference (0 for none). An unattackable target falls back to the native result. Use `find` for candidates. | later |
@@ -642,6 +642,21 @@ These events fire at safe points. **Object + weapon** also permits binding to we
 | 100040 | `ModuleEvent` | `id` event ID (same as `EventDef.id`), `subject` (0 for a global event), `other`, `value`, `value2`, `house` from the `RaiseEvent` parameters ([RFC 6h](0001-wasm-extension-modules.md#6h-ini-registration)) | When `RaiseEvent` executes | Object when registered as an object event, otherwise global | — | v1 |
 | 100043 | `OrderRefused` | `subject` refused unit (0 for a house-level order), `house` house that issued the order, `value` command (`Command`), `value2` reason (`RefuseReason`), `other` and `cell` the order's target, `id` type for a house-level order (otherwise −1) ([RFC 6i](0001-wasm-extension-modules.md#6i-driving-a-house)) | After an order is refused in the execution step, once per unit, or once for a house-level order | Global | — | v1 |
 
+`FatalDamage`'s death plan (the decision form's result; `native` is the engine's own plan):
+
+| Bits | Meaning | Native value |
+| --- | --- | --- |
+| 0 | Explode: passengers die with the object and the death weapon may fire | `Explodes=`, the veteran ability or a suicide weapon; 0 for a low dropped bomb over water |
+| 1 | Fire the death weapon (needs bit 0) | 1; 0 under Ares `SuppressDeathWeapon` |
+| 2 | Throw debris | 1; 0 for a low dropped bomb over water |
+| 3 | Survivors: a building's survivors appear, a vehicle's passengers escape | 0 when the killing hit ignored defenses |
+| 4 | A vehicle's crew escapes | 0 when the killing hit forbids it |
+| 5 | Unit-lost announcement | 1; 0 under Ares `UnitLost.Suppress` |
+| 8–15 | An infantryman's `InfDeath` (0..255) | The killing warhead's |
+| 32–62 | Death weapon ID plus 1, fired instead of the type's own (at `DeathWeaponDamageModifier`); 0 for the type's own | 0 |
+
+Other bits must be 0. An answer with other bits, a negative answer or an unknown weapon ID keeps the previous link's result. Sinking, crashing, `DeathFrames=`, explosion animations and releasing slaves and mind-controlled units stay with the engine.
+
 ### 4.4 New polling events
 
 All are `v1` with no decision form. See [RFC 6a](0001-wasm-extension-modules.md#6a-triggers-events-filter-clauses-and-actions) for sampling intervals, staggering and trigger edges. By default `op` compares the reading against `EventDef.value`. The record's `value` is the actual reading. House events are global and set `house`. Object events set `subject`.
@@ -664,8 +679,8 @@ Require a trigger with a decision handler. These events have no delivered form.
 | 100032 | `ProductionQueued` | `house`, `id` type, `subject` 0 | When player or AI adds the type to the production queue, excluding continued or forced requeues. On refusal for a computer house the engine makes it choose again | Type | 1 allow, 0 refuse. Refusal leaves the item out of the queue and spends no credits. | v1 |
 | 100033 | `Defeat` | `house` | When the engine's defeat check is about to defeat this house. `EndFor` and stock win/loss actions bypass the check. | Global | 1 defeat, 0 veto this check and ask again at the next check | v1 |
 | 100034 | `CommandAllowed` | `subject`, `value` command (`Command`), `other` target object, `cell` target cell | When simulation executes each player or AI command on a bound object. Cursor previews do not raise it. | Object | 1 allow, 0 refuse | preview |
-| 100035 | `Launch` | `projectile`, `subject` firer, `other` target, `cell` target cell | Once when each projectile of a bound type is fired | Object + weapon | Size of `PathSpec` in bytes (32 + 24 × point count). Result area contains one `PathSpec`. | later |
-| 100036 | `ProjectileFrame` | `projectile`, `value` elapsed flight frames | Each frame as the engine advances projectiles in engine order, after target resolution and the frame fuse, before computing the candidate position, once per bound projectile that moves this frame | Projectile type | Unused. Result area contains one `ProjectileStep`. `handled` of 0 uses native advancement. | later |
+| 100035 | `Launch` | `projectile`, `subject` firer (0 when gone), `other` target object, `cell` cell of the target coordinate | Once for each flying projectile when it is launched, after it enters the game: firing, shot plans, shrapnel, airburst, superweapons and trigger strikes. `Inviso=` projectiles are not asked | Object + weapon | Size of `PathSpec` in bytes (32 + 24 × point count). Result area contains one `PathSpec`. Unhandled, the projectile flies natively | preview |
+| 100036 | `ProjectileFrame` | `subject` and `projectile` the projectile, `value` elapsed flight frames | Each frame as the engine advances projectiles in engine order, after the animation wait, target resolution and the frame fuse, before computing the candidate position, once per bound projectile that moves this frame | Projectile type | Unused. Result area contains one `ProjectileStep`. `handled` of 0 follows the `Launch` path or native advancement | preview |
 | 100039 | `DamageIncoming` | `subject`, `other` source (may be 0), `id` warhead, `value` signed incoming damage, `value2` `previous` put through falloff, the Verses of the armor in the trigger's `EventDef.id` (−1 for the subject's) and the cap, with the sign of `previous`. With bit 0 of `EventDef.value` set, a positive value is first divided by the product of the subject's armor multipliers, truncating toward zero. `x`, `y`, `z` subject position in leptons | Techno receive-damage entry, after infantry prone, the parasite prefix and the engine's own shield, before death prevention, subject armor and the minimum of 1. Not asked for zero incoming damage, ignore-defenses hits, Psychedelic or Temporal warheads, or hits that immunity, Iron Curtain or allegiance would reject. Zero Verses against the subject's armor does not prevent the request. | Object | Incoming damage continuing into the native flow. It must be 0 or have the sign of `previous`, otherwise the previous result stands. Recompute `value2` from each link's own `previous`. A result of 0 suppresses the minimum of 1. | preview |
 
 ### 4.6 Client event kinds
@@ -1162,7 +1177,7 @@ The handle returned by `modify` expires on removal or expiry. All properties are
 
 ### 7.4 Projectiles
 
-All are `later`.
+All are `preview`. A projectile reference is an object handle (kind 0) sharing the creation serial with units; `find` lists no projectiles.
 
 | Property | Value | Access | Client |
 | --- | --- | --- | --- |
