@@ -154,36 +154,39 @@ fn a_kill_raises_experience_gained_on_its_recipient() {
     assert!(value > 0, "the gain {value}");
 }
 
-/// The class setter's store raises `TargetChanged`, `other` the new target;
-/// assigning the same target again raises nothing.
+/// The class setter's store raises `TargetChanged` with the new cell
+/// target (`other` 0, `cell` the cell).
 #[test]
 fn the_target_setter_raises_target_changed() {
-    let Some((mut scene, attacker, target)) = super::tests::gi_duel() else {
-        return;
-    };
-    let clear = |scene: &mut HeadlessScenario, to: Option<TargetKind>| {
+    let Some(scene) = scenario() else { return };
+    let (unit, _) = ground_unit(&scene);
+    let changed = def(0, 2, &[Ev::on(EVENT_TARGET_CHANGED)], &[]);
+    let mut scene = installed(scene, &module(&changed, unit as i64, ""));
+    let entity = scene.sim().entities().get(unit).expect("unit");
+    let cell = (entity.position.rx().saturating_add(1), entity.position.ry());
+    let assign = |scene: &mut HeadlessScenario| {
         let runtime = &mut scene.runtime;
         runtime
             .simulation
             .assign_target_represented(
-                attacker,
-                to,
+                unit,
+                Some(TargetKind::Cell(cell.0, cell.1)),
                 &runtime.resources.rules,
                 &mut FrameEffects::default(),
             )
-            .expect("the attacker takes a target");
+            .expect("the unit takes a target");
     };
-    clear(&mut scene, None);
-    let changed = def(0, 2, &[Ev::on(EVENT_TARGET_CHANGED)], &[]);
-    let mut scene = installed(scene, &module(&changed, attacker as i64, ""));
-    let before = received(&scene);
-    clear(&mut scene, Some(TargetKind::Entity(target)));
-    clear(&mut scene, Some(TargetKind::Entity(target)));
+    assign(&mut scene);
+    // The unit's own AI may change the target again in the frame; the first
+    // record is the setter's.
     scene.tick();
-    assert!(received(&scene) > before);
+    assert!(received(&scene) >= 1);
     let (kind, subject, _, _, _) = first_record(&scene);
-    assert_eq!((kind, subject), (EVENT_TARGET_CHANGED, attacker as i64));
-    assert_eq!(first_other(&scene), target as i64);
+    assert_eq!((kind, subject), (EVENT_TARGET_CHANGED, unit as i64));
+    assert_eq!(first_other(&scene), 0);
+    let m = memory(&scene);
+    let record_cell = i64::from_le_bytes(m[512 + 64..512 + 72].try_into().expect("8 bytes"));
+    assert_eq!(record_cell, super::cell_ref(cell.0, cell.1));
 }
 
 /// An object whose experience reaches elite is promoted at its next AI
