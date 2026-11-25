@@ -18,9 +18,9 @@
 //!   house orders and their results, claims, INI triggers;
 //! - `combat`: the combat decisions (damage, death, fire, projectiles);
 //! - `movement`: production, command, movement, path and unit AI decisions;
-//! - `finale`: once every area is done, the points that pause or end the
-//!   match (`SuspendProduction`, `Defeat`, `EndFor`); the areas' frame work
-//!   stops then.
+//! - `finale`: once every area is done (or at frame 4800), the points that
+//!   pause or end the match (`SuspendProduction`, `Defeat`, `EndFor`); the
+//!   areas' frame work, records and decisions stop then.
 //!
 //! `lib` owns the exports, the dispatch, the marks, the arena and the rules
 //! stage (`on_rules`, marks `rules.*`).
@@ -438,17 +438,23 @@ const AREAS: [&[&str]; 6] = [
 const MISSING_EVERY: i32 = 1500;
 /// Most `BENCH-MISSING` lines a report writes.
 const MISSING_LINES: usize = 24;
+/// The frame (a report frame) the finale begins at even if an area still
+/// misses marks, so the finale is tested on its own: its steps take at most
+/// about 1050 frames (`finale.rs`), which a 6000-frame run leaves room for.
+const FINALE_DEADLINE: i32 = 4800;
 
 /// Every 300 frames until all are in, `BENCH frame <n>: <reached>/<total>`
 /// and every `MISSING_EVERY` frames a line `BENCH-MISSING <mark>` for each
 /// missing one (one pass over the marks: the frame has an operation
 /// budget). Once the match's areas (`basics` to `movement`) have every
-/// mark the finale begins; once every mark is in, the one mark `bench.all`.
+/// mark, or at `FINALE_DEADLINE` (the areas' missing marks listed then),
+/// the finale begins; once every mark is in, the one mark `bench.all`.
 fn report(now: i32) {
     if DONE.load(Relaxed) != 0 {
         return;
     }
-    let list_missing = now % MISSING_EVERY == 0;
+    let deadline = now >= FINALE_DEADLINE && !finale_started();
+    let list_missing = now % MISSING_EVERY == 0 || deadline;
     let mut listed = 0;
     let (mut total, mut reached, mut areas_missing) = (0, 0, 0);
     for (group, marks) in AREAS.iter().enumerate() {
@@ -485,7 +491,7 @@ fn report(now: i32) {
     if reached == total {
         DONE.store(1, Relaxed);
         mark("bench.all");
-    } else if areas_missing == 0 {
+    } else if areas_missing == 0 || deadline {
         finale::begin(now);
     }
 }
@@ -520,7 +526,13 @@ static __VERA_DELIVERY: [u8; 9] = vera20k_sdk::DELIVERY_SECTION;
 pub extern "C" fn on_events(ptr: i32, count: i32) {
     // SAFETY: the engine's own arguments, used only here.
     let records = unsafe { EventRecord::batch(ptr, count) };
+    // Once the finale began the areas hear nothing more: their scene may be
+    // mid-way, and the computer house goes.
+    let finale = finale_started();
     for record in records {
+        if finale && area_of(record.key) != FINALE {
+            continue;
+        }
         match area_of(record.key) {
             BASICS => basics::events(record),
             TRIGGERS => triggers::events(record),
@@ -536,7 +548,12 @@ pub extern "C" fn on_events(ptr: i32, count: i32) {
 pub extern "C" fn on_decide(ptr: i32, count: i32) {
     // SAFETY: the engine's own arguments, used only here.
     let records = unsafe { DecideRecord::batch(ptr, count) };
+    // As in `on_events`; an unanswered decision keeps the engine's result.
+    let finale = finale_started();
     for record in records.iter_mut() {
+        if finale && area_of(record.event.key) != FINALE {
+            continue;
+        }
         match area_of(record.event.key) {
             BASICS => basics::decide(record),
             TRIGGERS => triggers::decide(record),
