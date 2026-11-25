@@ -523,6 +523,8 @@ impl Simulation {
                 self.unit_death_explosion(rules, victim, &mut Vec::new(), registry, effects);
             }
             self.free_all_captures(victim, rules, registry, effects);
+            // Wasm module `Crushed` on the victim, before its kill.
+            self.raise_module_crushed(rules, effects, victim, id);
             // `UnitClass::Crush_Or_Prescatter_Cell @ 0x007416A0`: the
             // victim records its kill by the crusher (vtable `+0xE0`,
             // `0x007418F0`) and is UnInit (vtable `+0xF8`, `0x00741910`),

@@ -3881,7 +3881,7 @@ fn ares_damage_occupants(
     };
     let fatal_rate = f64::from_bits(ext.uc_fatal_rate.bits());
     let multiplier = f64::from_bits(ext.uc_damage_multiplier.bits());
-    let context = crate::sim::world::UninitContext::new(rules).with_effects(run.effects());
+    let mut context = crate::sim::world::UninitContext::new(rules).with_effects(run.effects());
     if fatal_rate > 0.0 && world.scenario_rng.random_double() < fatal_rate {
         if let Some(building) = world.substrate.entities.get_mut(building_id) {
             building
@@ -3902,6 +3902,15 @@ fn ares_damage_occupants(
         }) {
             world.dispatch_unit_lost_events(&[event]);
         }
+        // Wasm module exit events (garrison form) before the UnInit.
+        let inside = world
+            .substrate
+            .entities
+            .get(building_id)
+            .map_or(0, |building| {
+                building.passenger_role().occupants().ids().len() as i32
+            });
+        world.raise_module_garrison_left(rules, context.effects(), building_id, victim, inside);
         crate::sim::passenger::garrison_eject::uninit_garrison_passenger_without_exit(
             world, victim, context,
         );
@@ -4694,6 +4703,11 @@ pub(crate) fn commit_projectile_detonations_inline(
                     &mut world.scenario_rng,
                 );
             }
+        }
+        // Wasm module `Detonated` (RFC 0001 appendix 4.3) once the whole
+        // detonation is done, only for a projectile that was fired.
+        if represented_bullet {
+            world.raise_module_detonated(rules, run.effects(), detonation);
         }
     }
 }

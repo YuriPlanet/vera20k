@@ -3026,6 +3026,9 @@ impl Simulation {
         // 0x00739971..0x007399B2: the building takes the unit's voice handle
         // and latch, so a line the unit is speaking plays on.
         self.move_unit_voice(stable_id, new_sid);
+        // Wasm module `Birth` for the deployed building, the unit as
+        // `other`, while the unit is still there to read.
+        self.raise_module_birth(rules, frame_effects, new_sid, Some(stable_id));
         self.uninit_with_context(
             stable_id,
             super::UninitContext::new(rules).with_effects(frame_effects),
@@ -3295,6 +3298,9 @@ impl Simulation {
         for targeter in targeters {
             let _ = self.assign_target_represented(targeter, target, rules, frame_effects);
         }
+        // Wasm module `Birth` for the undeployed unit, the building as
+        // `other`, while the building is still there to read.
+        self.raise_module_birth(rules, frame_effects, new_sid, Some(sid));
         self.uninit_with_context(
             sid,
             super::UninitContext::new(rules).with_effects(frame_effects),
