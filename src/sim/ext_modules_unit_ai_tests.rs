@@ -370,7 +370,10 @@ fn mission_step_picks_the_target_of_an_attacking_gi() {
         frame(&mut scene, std::mem::take(&mut orders));
         let asked = i32_at(&memory(&scene), 696);
         let gi = scene.sim().entities().get(attacker).expect("GI");
+        // A Guard body before the order may ask too; the order then resets
+        // the target, so only a later Attack body's answer passes here.
         if asked >= 1
+            && gi.mission.current().known() == Some(crate::sim::mission::MissionType::Attack)
             && gi.attack_target.target() == Some(crate::sim::combat::TargetKind::Entity(second))
         {
             picked = true;
@@ -378,13 +381,14 @@ fn mission_step_picks_the_target_of_an_attacking_gi() {
         }
     }
     let memory = memory(&scene);
-    assert!(i32_at(&memory, 696) >= 1, "the Attack body asked");
-    assert_eq!(i32_at(&memory, 516), EVENT_MISSION_STEP);
-    if i32_at(&memory, 696) == 1 {
-        assert_eq!(i64_at(&memory, 584), 1, "Attack");
-        assert_eq!(i64_at(&memory, 704), enemy as i64, "the ordered target");
-    }
     assert!(picked, "the module's pick became the GI's target");
+    assert_eq!(i32_at(&memory, 516), EVENT_MISSION_STEP);
+    assert_eq!(i64_at(&memory, 584), 1, "the Attack body asked last");
+    let native = i64_at(&memory, 704);
+    assert!(
+        native == enemy as i64 || native == second as i64,
+        "the area came holding the body's target, {native}"
+    );
 }
 
 /// A hunting GI takes the module's pick over its own Greatest_Threat scan.
@@ -403,7 +407,12 @@ fn mission_step_picks_the_target_of_a_hunting_gi() {
         frame(&mut scene, Vec::new());
         let asked = i32_at(&memory(&scene), 696);
         let gi = scene.sim().entities().get(attacker).expect("GI");
+        let hunting = matches!(
+            gi.mission.current().known(),
+            Some(crate::sim::mission::MissionType::Hunt | crate::sim::mission::MissionType::Attack)
+        );
         if asked >= 1
+            && hunting
             && gi.attack_target.target() == Some(crate::sim::combat::TargetKind::Entity(second))
         {
             picked = true;

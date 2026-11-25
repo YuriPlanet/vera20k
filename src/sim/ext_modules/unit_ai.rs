@@ -144,7 +144,7 @@ impl Simulation {
             && let Some(requested) = self.module_step_reference(answer.target)
         {
             let requested = requested.map(|at| match at {
-                NavTargetRef::Object { id } => TargetKind::Entity(id),
+                NavTargetRef::Object { id: object } => TargetKind::Entity(object),
                 NavTargetRef::Cell { rx, ry } => TargetKind::Cell(rx, ry),
             });
             let _ = self.assign_target_represented(id, requested, rules, effects);
