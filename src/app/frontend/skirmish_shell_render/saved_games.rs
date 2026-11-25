@@ -21,10 +21,11 @@ use crate::render::shell_text::ShellTextDraw;
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::saved_games::saved_game_layout;
+use crate::ui::sidebar::SidebarTheme;
 use crate::ui::skirmish_shell::saved_seed_browser::{
     ACTION, BACK, BROWSER_DIALOG, CONVERT, LIST, PROMPT, PROMPT_DIALOG, TITLE,
 };
-use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedLayout};
+use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedLayout, SavedSeedMode};
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 /// Each row's description, date and time in the template's columns (the
@@ -134,6 +135,20 @@ pub(crate) fn paint_saved_browser<I>(
     paint
 }
 
+/// game.exe 0x005FF1F5 selects PUDLGBGA or PUDLGBGS from the active
+/// scenario's side flag for the Save and Delete message boxes.
+fn saved_game_prompt_side(
+    ra2: bool,
+    mode: SavedSeedMode,
+    scenario_side: Option<i32>,
+) -> Option<SidebarTheme> {
+    match (ra2, mode, scenario_side) {
+        (true, SavedSeedMode::Save | SavedSeedMode::Delete, Some(0)) => Some(SidebarTheme::Allied),
+        (true, SavedSeedMode::Save | SavedSeedMode::Delete, Some(1)) => Some(SidebarTheme::Soviet),
+        _ => None,
+    }
+}
+
 /// The browser's message box, when one is up: its art after `sprites`, its
 /// texts after `texts`, which give up the box's rect first.
 pub(crate) fn push_saved_browser_box<I>(
@@ -145,13 +160,14 @@ pub(crate) fn push_saved_browser_box<I>(
     atlas: Option<&SkirmishShellChromeAtlas>,
     layout: &SavedSeedLayout,
     browser: &SavedSeedBrowserState<I>,
+    side: Option<SidebarTheme>,
     sprites: &mut Vec<SpriteInstance>,
     texts: &mut Vec<ShellTextDraw>,
 ) {
     let Some(prompt) = browser.prompt.as_ref() else {
         return;
     };
-    let look = BoxLook::prompt(atlas.and_then(|atlas| atlas.mode_two_dialog_background(None)));
+    let look = BoxLook::prompt(atlas.and_then(|atlas| atlas.mode_two_dialog_background(side)));
     let shell_box = prompt.shell_box();
     let parts = skirmish_parts(&shell_box, (layout.screen.w, layout.screen.h));
     let pressed = |id| browser.pressed(id);
@@ -222,6 +238,7 @@ pub(super) fn seed_browser_paint<I>(
             Some(atlas),
             layout,
             browser,
+            None,
             sprites,
             texts,
         )
@@ -324,6 +341,16 @@ pub(crate) fn render_saved_game_shell(
         if let Some(root) = browser.ui.root_in(BROWSER_DIALOG) {
             paint.nodes_in(browser.ui.gui(), root, &[ACTION, CONVERT, BACK], style);
         }
+        let scenario_side = state
+            .match_state
+            .sim_runtime
+            .presentation()
+            .map(|runtime| runtime.simulation.session().scenario_side());
+        let prompt_side = saved_game_prompt_side(
+            crate::util::ra2_launch::enabled(),
+            browser.mode,
+            scenario_side,
+        );
         // The box's clipping excludes all underlying text, the active-game
         // title and column labels included.
         push_saved_browser_box(
@@ -335,10 +362,39 @@ pub(crate) fn render_saved_game_shell(
             state.frontend.skirmish_shell_chrome.as_ref(),
             &layout,
             browser,
+            prompt_side,
             &mut paint.controls,
             &mut paint.texts,
         );
         paint.finish("Active Saved Game Browser")
     };
     render_in_game_shell_frame(state, encoder, destination, frame)
+}
+
+#[cfg(all(test, tests_app_frontend))]
+mod tests {
+    use super::{SavedSeedMode, SidebarTheme, saved_game_prompt_side};
+
+    #[test]
+    fn classic_save_and_delete_prompts_follow_the_active_scenario_side() {
+        for mode in [SavedSeedMode::Save, SavedSeedMode::Delete] {
+            assert_eq!(
+                saved_game_prompt_side(true, mode, Some(0)),
+                Some(SidebarTheme::Allied)
+            );
+            assert_eq!(
+                saved_game_prompt_side(true, mode, Some(1)),
+                Some(SidebarTheme::Soviet)
+            );
+            assert_eq!(saved_game_prompt_side(false, mode, Some(1)), None);
+        }
+        assert_eq!(
+            saved_game_prompt_side(true, SavedSeedMode::Load, Some(1)),
+            None
+        );
+        assert_eq!(
+            saved_game_prompt_side(true, SavedSeedMode::Delete, None),
+            None
+        );
+    }
 }
