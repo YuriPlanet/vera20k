@@ -105,10 +105,7 @@ pub fn combo_items(
                 capacity,
             )
         }
-        SkirmishComboId::Team(_) => team_choices(
-            state.selected_mode_must_ally,
-            skirmish_team_count(state, maps),
-        ),
+        SkirmishComboId::Team(_) => team_items(state, maps),
         SkirmishComboId::TeamMenu => super::team_menus::team_menu_items(state, maps),
         SkirmishComboId::SeatMenu => super::team_menus::seat_menu_items(state, maps),
     }
@@ -199,6 +196,18 @@ pub fn team_choices(must_ally: bool, count: u8) -> Vec<SkirmishComboItem> {
         .chain(0..i32::from(count))
         .map(SkirmishComboItem::Team)
         .collect()
+}
+
+/// Every row's Team combo shows this list, and the page's labels answer for
+/// it: a map past gamemd's eight starts reaches [`SKIRMISH_TEAMS`], so the
+/// labels must name E..O rather than stop at D.
+///
+/// [`SKIRMISH_TEAMS`]: crate::skirmish_launch::SKIRMISH_TEAMS
+pub fn team_items(state: &SkirmishShellState, maps: &[MapMenuEntry]) -> Vec<SkirmishComboItem> {
+    team_choices(
+        state.selected_mode_must_ally,
+        skirmish_team_count(state, maps),
+    )
 }
 
 /// The teams a skirmish Team list offers: gamemd's A to D, and VERA's

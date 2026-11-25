@@ -92,6 +92,45 @@ impl DamageSmoke {
     }
 }
 
+/// Whether the Cyborg spark producer ([`Simulation::update_damage_spark_after_ai`])
+/// admits `entity`, of type `object`, past its first two tests: the type
+/// sparks, and its health ratio is below `[General] ConditionYellow=`. A
+/// steady object's visit asks it too (`world::steady_ai`).
+pub(crate) fn damage_sparks_admit(
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+    rules: &RuleSet,
+) -> bool {
+    // Ares TechnoClass_Update_DamageSparks (Ares.dll 1004B760, hook
+    // 0x6FACD9): the type's `DamageSparks`, else its own flag.
+    let sparks = if rules.ares_form() {
+        object
+            .techno_combat()
+            .damage()
+            .damage_sparks(object.emits_damage_spark())
+    } else {
+        object.emits_damage_spark()
+    };
+    sparks && health_below(entity, object, rules.general.condition_yellow)
+}
+
+/// Whether `entity`'s health ratio is below `threshold` as the spark
+/// producer compares them: an unordered answer counts as below.
+fn health_below(
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+    threshold: f64,
+) -> bool {
+    use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering};
+    matches!(
+        X87::compare(
+            entity.health.ratio(object.strength),
+            X87::load_f64(NativeF64Bits::from_bits(threshold.to_bits()))
+        ),
+        MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
+    )
+}
+
 impl Simulation {
     /// Explicit62E380 birth for AreaDamage's two system producers. The
     /// constructor has no world callbacks; the existing store ownership
@@ -115,38 +154,13 @@ impl Simulation {
     /// ordinary damaged vehicles never enter this producer. Both it and
     /// FireAt use the actual +308 link and the one system constructor.
     pub(crate) fn update_damage_spark_after_ai(&mut self, id: u64, rules: &RuleSet) {
-        use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
-
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        // Ares TechnoClass_Update_DamageSparks (Ares.dll 1004B760, hook
-        // 0x6FACD9): the type's `DamageSparks`, else its own flag.
-        let sparks = if rules.ares_form() {
-            object
-                .techno_combat()
-                .damage()
-                .damage_sparks(object.emits_damage_spark())
-        } else {
-            object.emits_damage_spark()
-        };
-        if !sparks {
-            return;
-        }
-        let ratio = entity.health.ratio(object.strength);
-        let below = |threshold: f64| {
-            matches!(
-                X87::compare(
-                    ratio,
-                    X87::load_f64(NativeF64Bits::from_bits(threshold.to_bits()))
-                ),
-                MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
-            )
-        };
-        if !below(rules.general.condition_yellow)
+        if !damage_sparks_admit(entity, object, rules)
             || Self::damage_particle_owner_height(&self.resolved_terrain, entity) <= -10
             || entity.seldom.spark_particle_system.system().is_some()
         {
@@ -169,7 +183,7 @@ impl Simulation {
         if count == 0 {
             return;
         }
-        let threshold = if below(rules.general.condition_red) {
+        let threshold = if health_below(entity, object, rules.general.condition_red) {
             rules.general.condition_red_spark_threshold
         } else {
             rules.general.condition_yellow_spark_threshold

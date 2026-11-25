@@ -167,15 +167,15 @@ struct Columns {
     /// [`EntityStore::insert`], which copies it). Kept and rebuilt as
     /// `owners` is.
     categories: Vec<EntityCategory>,
-    /// VERA-only: each slot's sleep mark and quiet flag ([`SleepCell`]),
+    /// VERA-only: each slot's sleep mark and turn marks ([`SleepCell`]),
     /// beside the boxed entities so the live object pass passes a sleeping
-    /// object without loading it, and a quiet one's turn skips steps without
-    /// reading their state. Every route to a `&mut GameEntity` settles and
-    /// clears both first ([`EntityStore::wake_slot`]), so a sleeping or quiet
-    /// entity is one nothing has written since its last turn. Kept through
-    /// compaction as `owners` is; a load starts every object awake and not
-    /// quiet. Never saved or hashed: the save form and the state hash read a
-    /// sleeping object as settled.
+    /// object without loading it, and a quiet or steady one's turn skips
+    /// steps without reading their state. Every route to a `&mut GameEntity`
+    /// settles and clears them first ([`EntityStore::wake_slot`]), so a
+    /// sleeping, quiet or steady entity is one nothing has written since its
+    /// last turn. Kept through compaction as `owners` is; a load starts every
+    /// object awake and unmarked. Never saved or hashed: the save form and
+    /// the state hash read a sleeping object as settled.
     sleep: Vec<SleepCell>,
     /// VERA-only: the stored ids of each owner's objects of each category,
     /// ascending ([`EntityStore::owned_ids`]), for walks that want one
@@ -247,10 +247,10 @@ struct SleepCell {
     /// The frame after the last turn that left the object fit to sleep,
     /// while awake; 0 for none ([`EntityStore::fit_to_sleep`]).
     fit_until: u32,
-    /// The object is quiet (`world::quiet_units`): its last turn left every
-    /// state its quiet turn skips off, and nothing has been handed it for
-    /// writing since. Every mutable hand-out clears it, asleep or awake.
-    quiet: bool,
+    /// What the object's last turn left it as ([`QUIET`], [`STEADY`]), with
+    /// nothing handed it for writing since. Every mutable hand-out clears
+    /// them, asleep or awake.
+    marks: u8,
     /// The last pass ([`EntityStore::begin_pass`]) that wrote the slot's
     /// entity or this cell. Not part of the mark: waking keeps it.
     written: u16,
@@ -258,6 +258,14 @@ struct SleepCell {
 
 // The stamp sits in what was padding: a cell stays a quarter of a line.
 const _: () = assert!(std::mem::size_of::<SleepCell>() == 16);
+
+/// A [`SleepCell`] mark: the object is quiet (`world::quiet_units`), its
+/// last turn having left every state its quiet turn skips off.
+const QUIET: u8 = 1;
+/// A [`SleepCell`] mark: the object is steady (`world::steady_ai`), its last
+/// turn having left every step of its AI visit off but its counter, its
+/// timers and its stage clock.
+const STEADY: u8 = 2;
 
 /// What a shared store or a fork reads through.
 #[derive(Debug)]
@@ -575,7 +583,8 @@ impl EntityStore {
     /// has been handed it for writing since (`world::quiet_units`).
     #[inline]
     pub(crate) fn is_quiet(&self, stable_id: u64) -> bool {
-        self.cell(stable_id).is_some_and(|cell| cell.quiet)
+        self.cell(stable_id)
+            .is_some_and(|cell| cell.marks & QUIET != 0)
     }
 
     /// Ask the processor to start loading `stable_id`'s record, if it is
@@ -602,20 +611,35 @@ impl EntityStore {
         if let Some(view) = self.view.as_deref() {
             let slot = self.slot_in(&view.base.slot_of, stable_id)?;
             let focused = stable_id == self.focus.0;
-            let quiet = view.cell(stable_id, focused, slot).quiet;
+            let quiet = view.cell(stable_id, focused, slot).marks & QUIET != 0;
             return Some((view.entity(stable_id, focused, slot)?, quiet));
         }
         let slot = self.slot_in(&self.cols.slot_of, stable_id)? as usize;
         Some((
             self.cols.entities[slot].as_deref()?,
-            self.cols.sleep[slot].quiet,
+            self.cols.sleep[slot].marks & QUIET != 0,
         ))
     }
 
     /// Mark `stable_id` quiet until its next mutable hand-out.
     pub(crate) fn set_quiet(&mut self, stable_id: u64) {
         if let Some(cell) = self.cell_mut(stable_id) {
-            cell.quiet = true;
+            cell.marks |= QUIET;
+        }
+    }
+
+    /// Whether `stable_id` is steady: its last turn left it so, and nothing
+    /// has been handed it for writing since (`world::steady_ai`).
+    #[inline]
+    pub(crate) fn is_steady(&self, stable_id: u64) -> bool {
+        self.cell(stable_id)
+            .is_some_and(|cell| cell.marks & STEADY != 0)
+    }
+
+    /// Mark `stable_id` steady until its next mutable hand-out.
+    pub(crate) fn set_steady(&mut self, stable_id: u64) {
+        if let Some(cell) = self.cell_mut(stable_id) {
+            cell.marks |= STEADY;
         }
     }
 
@@ -658,7 +682,7 @@ impl EntityStore {
         Some(cell)
     }
 
-    /// Clear `slot`'s sleep mark and quiet flag and give its entity the
+    /// Clear `slot`'s sleep mark and turn marks and give its entity the
     /// visits it is owed, before anything writes it; stamp it with the pass.
     #[inline]
     fn wake_slot(&mut self, slot: usize) {
@@ -666,7 +690,7 @@ impl EntityStore {
         let cell = &mut self.cols.sleep[slot];
         cell.written = pass;
         if cell.wake_at == 0 {
-            cell.quiet = false;
+            cell.marks = 0;
             return;
         }
         let owed = cell.owed;
@@ -683,7 +707,7 @@ impl EntityStore {
         }
     }
 
-    /// A new slot's cell: awake, not quiet, written this pass.
+    /// A new slot's cell: awake, unmarked, written this pass.
     fn fresh_cell(&self) -> SleepCell {
         SleepCell {
             written: self.pass,
@@ -2079,8 +2103,8 @@ impl View {
     fn wake(&mut self, id: u64, focused: bool, slot: u32) {
         let cell = self.cell(id, focused, slot);
         if cell.wake_at == 0 {
-            if cell.quiet {
-                self.cell_mut(id, focused, slot).quiet = false;
+            if cell.marks != 0 {
+                self.cell_mut(id, focused, slot).marks = 0;
             }
             return;
         }
@@ -3186,7 +3210,7 @@ mod tests {
                     cell.owed,
                     cell.note.into(),
                     cell.fit_until,
-                    cell.quiet.into(),
+                    cell.marks.into(),
                 ];
                 Some((slot, serde_json::to_string(entity).unwrap(), marks))
             })
@@ -3363,9 +3387,9 @@ mod tests {
     }
 
     /// A fork's hand-out of a sleeping object wakes it and settles the visits
-    /// it is owed in the fork's copy alone, and one of a quiet object clears
-    /// the mark there alone; a reset returns the fork to its base, ready for
-    /// the next turn.
+    /// it is owed in the fork's copy alone, and one of a quiet and steady
+    /// object clears both marks there alone; a reset returns the fork to its
+    /// base, ready for the next turn.
     #[test]
     fn a_fork_wakes_and_settles_in_its_own_copy_until_reset() {
         let mut base = store_of([1, 2]);
@@ -3373,22 +3397,26 @@ mod tests {
         base.owe_visit(1);
         base.owe_visit(1);
         base.set_quiet(2);
+        base.set_steady(2);
         base.share();
         let marks = |store: &EntityStore| {
             (
                 store.sleeps_until(1),
                 store.owed_visits(1),
                 store.get(1).unwrap().mission.ai_counter(),
-                store.is_quiet(2),
+                (store.is_quiet(2), store.is_steady(2)),
             )
         };
         let asleep = marks(&base);
-        assert_eq!((asleep.0, asleep.1, asleep.3), (Some((90, 3)), 2, true));
+        assert_eq!(
+            (asleep.0, asleep.1, asleep.3),
+            (Some((90, 3)), 2, (true, true))
+        );
         let mut fork = base.fork();
         fork.focus(1);
         fork.get_mut(1);
         fork.get_mut(2);
-        assert_eq!(marks(&fork), (None, 0, asleep.2 + 2, false));
+        assert_eq!(marks(&fork), (None, 0, asleep.2 + 2, (false, false)));
         assert_eq!(marks(&base), asleep);
         fork.reset_fork();
         assert_eq!(marks(&fork), asleep);

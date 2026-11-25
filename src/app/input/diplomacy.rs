@@ -255,8 +255,8 @@ pub(crate) fn resolve_rows(
                 insignia,
                 name: sources.ui_name(sim, house, state.country(), &country_name),
                 rgb,
-                // Σ of the two 20-entry per-victim kill tables (+0x53E4,
-                // +0x5438), `%d`.
+                // The Kills total (`0x00658330`), `%d`. VERA counts every
+                // victim House, including those past native's 20-entry tables.
                 kills: Some(state.stats().kills() as i32),
                 // 0x00658330 hides a defeated House's box; nothing re-shows it.
                 allies: allies.filter(|_| !state.is_defeated()),

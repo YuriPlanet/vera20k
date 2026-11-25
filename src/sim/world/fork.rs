@@ -162,6 +162,7 @@ fork_helpers! {
     idle_sleep,
     scan_batch,
     effect_anims,
+    turn_streams,
     zone_grid,
     path_grid,
     structure_navigation_cells,

@@ -262,9 +262,9 @@ pub struct GameEntity {
     #[serde(default)]
     foot_air: foot_air::FootAirState,
     // --- Optional subsystem components ---
-    /// Locomotor state — present on moving types, on every Infantry, and on
-    /// zero-speed Drive/Ship Units and Aircraft whose native class-local
-    /// payload still exists.
+    /// Locomotor state — present on every Foot whose type the rules resolve
+    /// (Infantry, Unit and Aircraft, whatever its `Speed=`), never on a
+    /// Structure.
     pub locomotor: Option<LocomotorState>,
     /// FootClass-style owner navigation destination state.
     ///

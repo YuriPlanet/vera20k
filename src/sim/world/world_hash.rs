@@ -378,6 +378,10 @@ impl Simulation {
         if self.scan_batch.is_some() {
             b"scan-batch-v1".hash(hasher);
         }
+        // Whether turns draw from their own streams (`turn_streams`).
+        if *self.turn_streams {
+            b"turn-streams-v1".hash(hasher);
+        }
 
         self.substrate.fold_raw_cell_occupation(hasher);
         self.substrate.fold_hidden_occupation(hasher);
