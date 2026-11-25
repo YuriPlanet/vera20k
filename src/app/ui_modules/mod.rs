@@ -193,6 +193,9 @@ pub(crate) struct UiModules {
     tree: UiTree,
     /// What the tree's layers draw ([`paint`]).
     huds: paint::ModuleHuds,
+    /// The pictures the tree's nodes name, found as they are named
+    /// ([`paint`]).
+    art: crate::render::sidebar_chrome::NamedPictures,
     local: LocalState,
     /// `client_on_start` given since load or the last catch-up.
     started: bool,
@@ -223,6 +226,7 @@ impl UiModules {
             map_ui,
             tree: UiTree::new(),
             huds: paint::ModuleHuds::default(),
+            art: Default::default(),
             local: LocalState::new(),
             started: false,
             outbox: ClientOutbox::default(),
@@ -714,6 +718,8 @@ pub(crate) fn pointer_button(
     let gui = match_state.match_presentation.dialog_ui.gui_mut();
     let bit = 1 << index;
     if !pressed {
+        // A held button comes up wherever the release is.
+        ui.tree.pointer_up(index);
         let consumed = ui.consumed_buttons & bit != 0;
         ui.consumed_buttons &= !bit;
         return consumed;
