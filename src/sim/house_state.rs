@@ -3208,7 +3208,10 @@ impl MatchStatistics {
     /// seats more Houses than the native table holds, so it credits the
     /// category total directly: within Houses 0..19 this is the same sum, and
     /// every later victim is counted once instead of corrupting a loss count
-    /// or being dropped. Both callers share this mutation.
+    /// or being dropped. Deliberate difference: gamemd on a map with more
+    /// than 20 Houses books a House-20 kill as the killer's UnitsLost, which
+    /// trigger events 15 and 16 read; VERA does not reproduce that write past
+    /// the table. Both callers share this mutation.
     pub(crate) fn record_kill(&mut self, category: crate::map::entities::EntityCategory) {
         let counter = if category == crate::map::entities::EntityCategory::Structure {
             &mut self.buildings_killed

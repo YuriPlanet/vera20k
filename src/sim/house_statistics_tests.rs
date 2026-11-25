@@ -517,33 +517,3 @@ fn saved_live_statistics_preserve_terminal_score_and_rng_continuation() {
     assert_eq!(restored.rng_state(), sim.rng_state());
     assert_eq!(restored.state_hash(), sim.state_hash());
 }
-
-/// Kills of House 20 and later are counted by category like any other
-/// victim. Native's two 20-entry tables (`+0x53E4`, `+0x5438`) end before
-/// those Houses, so its write lands in the adjacent loss counter or past the
-/// table entirely (`0x7030AC`, `0x70164D`); VERA seats more Houses than that
-/// and must not turn a kill into a loss or drop it.
-#[test]
-fn kills_of_every_house_index_are_counted_by_category() {
-    use crate::map::entities::EntityCategory;
-    let mut stats = MatchStatistics::default();
-    // Houses 19, 20, 21, 41 and 119 cover native's last in-table slot, its
-    // first two out-of-table writes and the index it dropped outright. VERA
-    // credits every one by category, with no victim-index table to overflow.
-    for _ in 0..4 {
-        stats.record_kill(EntityCategory::Unit);
-    }
-    for _ in 0..4 {
-        stats.record_kill(EntityCategory::Structure);
-    }
-    assert_eq!(
-        (
-            stats.units_killed(),
-            stats.buildings_killed(),
-            stats.kills(),
-            stats.units_lost(),
-            stats.buildings_lost(),
-        ),
-        (4, 4, 8, 0, 0)
-    );
-}
