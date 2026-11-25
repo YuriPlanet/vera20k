@@ -86,7 +86,7 @@ pub(super) fn decide_fire_plan(
     if !world.trigger_runtime.module_decides(EVENT_FIRE) || shot.weapon.limbo_launch {
         return None;
     }
-    let index = |found: Option<usize>| found.map_or(-1, |index| index as i32);
+    let index = |found: Option<u32>| found.map_or(-1, |index| index as i32);
     let weapon = index(rules.weapon_index(shot.weapon_name));
     let warhead = index(rules.warhead_index(world.interner.resolve(shot.bullet.payload.warhead)));
     let projectile_type = index(

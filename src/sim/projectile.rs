@@ -3739,6 +3739,7 @@ mod tests {
                             .then_some(ProjectileCollisionResponse::TargetZClamp(candidate))
                     },
                     None,
+                    None,
                 )
                 .unwrap();
             assert_eq!(result.detonations.is_empty(), continues);
