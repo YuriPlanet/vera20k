@@ -3,9 +3,18 @@
 //! Marks are named `finale.<point>`; `bench.all` follows the last.
 //!
 //! In order:
-//! 1. `SuspendProduction`: a house order for the computer house on a type
-//!    its factory is building; the factory's `Progress` stands still, then
-//!    `QueueProduction` of the same type resumes it (`Progress` moves on).
+//! 1. `SuspendProduction`: the finale claims the computer house's
+//!    `Production` domain, so its AI starts nothing more and its builds come
+//!    from house orders, as a player's do. A computer house's AI builds in
+//!    its factory buildings' own factories (`BuildingClass::Factory_AI`),
+//!    which SUSPEND, `HouseClass::Suspend_Production`, does not reach: it
+//!    holds the house's factory of the category, the one a player's (or a
+//!    module's) `QueueProduction` fills. So the finale queues a type (a
+//!    conscript, else a Rhino, else a power plant) the AI is not building,
+//!    waits until that build is under way (its `Type` reads it, `Progress`
+//!    between 1 and 90), and orders `SuspendProduction`; `Progress` stands
+//!    still. `QueueProduction` of the same type resumes it (`Progress` moves
+//!    on). The claim goes before the house's objects do.
 //! 2. `Defeat`: every object of the computer house is removed
 //!    (`Find` + `Action::remove`). Its defeat gate then asks; the first
 //!    answer vetoes (`defeat-veto`: the house is still not defeated frames
@@ -20,13 +29,13 @@
 //! (their triggers stay; an unanswered decision keeps the engine's result),
 //! so no area acts on, or misreports, a scene the finale cuts short or a
 //! house that is gone. Each step gives up after its limit with a
-//! `BENCH-FAIL`, so the steps take at most about 1050 frames: pick 300,
-//! two watches of 45, removal 150, defeat 450, then 31.
+//! `BENCH-FAIL`, so the steps take at most about 1050 frames: three
+//! candidates of 90, two watches of 45, removal 150, defeat 450, then 31.
 
 use core::sync::atomic::{AtomicI64, Ordering::Relaxed};
 
 use vera20k_sdk::prelude::*;
-use vera20k_sdk::{NO_HANDLE, get};
+use vera20k_sdk::{NO_HANDLE, get, set};
 
 /// Every mark of the finale.
 pub const MARKS: &[&str] = &[
@@ -53,8 +62,8 @@ const DONE: i64 = 8;
 
 /// Frames production is watched after an order.
 const WATCH: i64 = 45;
-/// Longest wait for something in production, then for the defeat.
-const PICK_LIMIT: i64 = 300;
+/// Frames each candidate type gets to be under way.
+const QUEUE_LIMIT: i64 = 90;
 const REMOVE_LIMIT: i64 = 150;
 const DEFEAT_LIMIT: i64 = 450;
 /// Frames the house must stay undefeated after the veto.
@@ -68,6 +77,17 @@ static AT: AtomicI64 = AtomicI64::new(0);
 static FACTORY: AtomicI64 = AtomicI64::new(0);
 static TYPE: AtomicI64 = AtomicI64::new(0);
 static PROGRESS: AtomicI64 = AtomicI64::new(-1);
+/// The candidate queued now (index into `CANDIDATES`), and whether the
+/// finale set the `Production` claim.
+static CANDIDATE: AtomicI64 = AtomicI64::new(0);
+static CLAIMED: AtomicI64 = AtomicI64::new(0);
+
+/// The `Production` bit of `ControlDomains` (RFC 0001 6i).
+const DOMAIN_PRODUCTION: i64 = 1;
+
+/// The types the finale queues, with their factory (index into
+/// `FACTORIES`): Soviet, which the computer house (Russia) builds.
+const CANDIDATES: [(&str, usize); 3] = [("E2", 0), ("HTNK", 1), ("NAPOWR", 2)];
 /// The frame of the first veto, the gate's asks since, and whether the
 /// next ask is allowed.
 static VETOED_AT: AtomicI64 = AtomicI64::new(0);
@@ -115,13 +135,23 @@ pub fn done() -> bool {
 }
 
 /// Starts the finale on frame `now`: the computer house can pay for what
-/// it builds, and the `Defeat` decision is made before its objects go.
+/// it builds, its `Production` is claimed, and the `Defeat` decision is
+/// made before its objects go.
 pub fn begin(now: i32) {
     if started() {
         return;
     }
     stage(PICK, i64::from(now));
-    let _ = Action::add_money(crate::enemy(), 10_000);
+    let enemy = crate::enemy();
+    let _ = Action::add_money(enemy, 10_000);
+    let domains = get(enemy, Prop::ControlDomains).unwrap_or(0);
+    if domains & DOMAIN_PRODUCTION == 0 {
+        if set(enemy, Prop::ControlDomains, domains | DOMAIN_PRODUCTION).is_ok() {
+            CLAIMED.store(1, Relaxed);
+        } else {
+            crate::bench_fail("finale.suspend", "the Production claim was not taken");
+        }
+    }
     if Trigger::on(Event::DEFEAT).decide_sync(K_DEFEAT).is_err() {
         crate::bench_fail("finale.defeat", "the Defeat trigger could not be made");
     }
@@ -163,31 +193,51 @@ pub fn frame(now: i32) {
     }
 }
 
-/// Every 15 frames: the first factory building something halfway gets
-/// `SuspendProduction` on its type.
+/// Each candidate in turn: queued on the stage's first frame (skipped
+/// while the AI's own factory builds that type, whose readings would be
+/// its), then watched every 3 frames until its build is under way, when
+/// `SuspendProduction` goes out. A candidate not under way after
+/// `QUEUE_LIMIT` frames (refused, say, for a missing factory) gives way to
+/// the next.
 fn pick(now: i64, since: i64) {
-    if since > PICK_LIMIT {
-        crate::bench_fail("finale.suspend", "the computer house built nothing");
+    let index = CANDIDATE.load(Relaxed) as usize;
+    let Some(&(name, factory_index)) = CANDIDATES.get(index) else {
+        crate::bench_fail("finale.suspend", "no candidate type got under way");
         return stage(REMOVE, now);
-    }
-    if since % 15 != 0 {
+    };
+    let next = |now: i64| {
+        CANDIDATE.store(index as i64 + 1, Relaxed);
+        stage(PICK, now);
+    };
+    let Ok(kind) = TypeRef::techno_type(name) else {
+        return next(now);
+    };
+    let (ty, progress, _) = FACTORIES[factory_index];
+    if since == 1 {
+        if read(ty) == kind.0
+            || crate::enemy()
+                .order(&Order::queue_production(kind))
+                .is_err()
+        {
+            return next(now);
+        }
         return;
     }
-    for (index, &(ty, progress, _)) in FACTORIES.iter().enumerate() {
-        let kind = read(ty);
-        if kind == 0 || !(1..=90).contains(&read(progress)) {
-            continue;
-        }
-        let order = Order::new(Command::SuspendProduction, 0, kind, &[]);
-        if crate::enemy().order(&order).is_err() {
-            crate::bench_fail("finale.suspend", "the order was turned down at once");
-            return stage(REMOVE, now);
-        }
-        FACTORY.store(index as i64, Relaxed);
-        TYPE.store(kind, Relaxed);
-        PROGRESS.store(-1, Relaxed);
-        return stage(SUSPENDED, now);
+    if since > QUEUE_LIMIT {
+        return next(now);
     }
+    if since < 4 || since % 3 != 0 || read(ty) != kind.0 || !(1..=90).contains(&read(progress)) {
+        return;
+    }
+    let order = Order::new(Command::SuspendProduction, 0, kind.0, &[]);
+    if crate::enemy().order(&order).is_err() {
+        crate::bench_fail("finale.suspend", "the order was turned down at once");
+        return stage(REMOVE, now);
+    }
+    FACTORY.store(factory_index as i64, Relaxed);
+    TYPE.store(kind.0, Relaxed);
+    PROGRESS.store(-1, Relaxed);
+    stage(SUSPENDED, now);
 }
 
 /// The order ran the frame after it was given: `Progress` is read then,
@@ -238,6 +288,15 @@ fn resumed(now: i64, since: i64) {
 /// Removes the computer house's units and buildings, a page a frame, until
 /// none is left.
 fn remove(now: i64, since: i64) {
+    // The claim goes first: the house is the AI's again until it is gone.
+    if CLAIMED.swap(0, Relaxed) != 0 {
+        let domains = get(crate::enemy(), Prop::ControlDomains).unwrap_or(0);
+        let _ = set(
+            crate::enemy(),
+            Prop::ControlDomains,
+            domains & !DOMAIN_PRODUCTION,
+        );
+    }
     let mut page = [NO_HANDLE; 32];
     // Units and buildings: `remove` takes no projectile.
     let mut find = Find::objects().owned_by(crate::enemy()).where_prop(

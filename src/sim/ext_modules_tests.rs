@@ -373,7 +373,8 @@ const BENCH_MAP: &str = "ControlBench.map";
 /// A Battle on the bench's map against one computer house runs that many
 /// frames. The module must still be running, nothing may be refused and its
 /// log must hold `DEMO-OK bench.all`; otherwise the failure names the marks
-/// of the bench's latest `BENCH-MISSING` lines. Prints the log
+/// of the bench's latest `BENCH-MISSING` lines that no `DEMO-OK` line
+/// reached later. Prints the log
 /// (`--nocapture`).
 #[test]
 fn control_bench_reaches_every_mark() {
@@ -447,8 +448,8 @@ fn control_bench_reaches_every_mark() {
     let refused: Vec<&String> = log.iter().filter(|l| l.contains("refused")).collect();
     assert!(refused.is_empty(), "refused: {refused:?}");
     if !log.iter().any(|l| l == "DEMO-OK bench.all") {
-        // The latest report's list: the lines after the last `BENCH frame`
-        // line that has any.
+        // The latest report's list (the lines after the last `BENCH frame`
+        // line that has any), less the marks that came after it.
         let mut missing: Vec<&str> = Vec::new();
         let mut report_seen = false;
         for line in &log {
@@ -462,6 +463,11 @@ fn control_bench_reaches_every_mark() {
                 missing.push(name);
             }
         }
+        let reached: std::collections::HashSet<&str> = log
+            .iter()
+            .filter_map(|l| l.strip_prefix("DEMO-OK "))
+            .collect();
+        missing.retain(|name| !reached.contains(name));
         let failed: Vec<&String> = log.iter().filter(|l| l.starts_with("BENCH-FAIL")).collect();
         panic!(
             "no `DEMO-OK bench.all` after {frames} frames; missing: {missing:?}; failed: {failed:?}"
