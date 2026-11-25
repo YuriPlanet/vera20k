@@ -4437,6 +4437,7 @@ mod modal_pump_tests {
         sim.present_effect_anims();
         sim.separate_turn_streams(true);
         sim.sleep_idle_objects_in_match();
+        sim.speculate_object_turns(true);
         sim.hash_state_every(std::num::NonZeroU64::MIN);
         let mut diagnostics = MatchDiagnosticsState::default();
         diagnostics.get_or_begin_replay(&scene.runtime).unwrap();

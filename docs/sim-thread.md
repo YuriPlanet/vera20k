@@ -525,10 +525,50 @@ staging is small, since a shard owns its own entities outright. The pass is
 read-coupled rather than write-coupled: those cell writes matter because
 other turns read them.
 
-Status: set aside. The staging fits; splitting the `&mut Simulation` every
-turn takes into per-shard views does not, and no counter prices that work. A
-first step that keeps behavior identical would stage every write and apply it
-in the same stable-id order on one thread, with a per-owner write counter and
-`sim-bench`'s final hash unchanged against `main`; it would show which owners'
-writes really cross objects before any thread runs. Running shards
-concurrently is the step that carries the deviation.
+Shards were set aside: splitting the `&mut Simulation` every turn takes into
+per-shard views does not fit. What runs instead is per-turn speculation
+([`world::speculation`](../src/sim/world/speculation.rs)). Before the walk
+of a pass that begins with at least 4,096 Logic slots
+(`SPECULATE_FROM_SLOTS`; a smaller pass runs as with the switch off, which
+keeps ordinary matches as they were), the turns of units and infantry that
+are moving or have no NavCom, whose
+mission handler is not due and whose passive scan would not run, run side
+by side on the worker pool, each on a private fork of the world as the pass
+found it
+(`world::fork`: every field behind one `Arc` handle, copied on a turn's first
+write; the entity store forks itself and copies only the entities a turn
+writes, and an entity's seldom part only when written). A fork runs a turn
+inside its object's own random stream (`world::turn_streams`), as the walk
+does, from its object woken and marked quiet or steady again from that
+state, so a steady object's visit is counted there as in the walk. A turn
+is kept when it wrote nothing but its own entity and sleep cell, the
+append-only sound, fire and combat-light channels and its own stream's
+draws. The walk is today's: at each slot it applies
+the kept result unless an earlier turn of the pass wrote that object, or runs
+the turn there. The deviation is the one above, bounded: a kept turn reads
+the frame's start, and any turn that writes another owner runs in order as
+before. Work only the world may do (a cell step, a mark query, a cell mark
+lifted or put down, a path search or request, a shot, a removal, a batched
+scan's answer, a team's latch, a pointer expiry, a lent boundary, an anim
+made for a death or taken down) loses the turn on its fork at once, before
+it writes: most of it writes a large field, which a fork would copy whole.
+With the switch off (`Simulation::speculate_object_turns`, sim-bench
+`--serial-turns`) the pass is today's, bit for bit.
+
+Its known cost: the results may not depend on the thread count, so a build
+with few threads runs the same forks. A turn on a fork costs more than in the
+walk: its first write copies the object's record, its reads come cold from
+memory, and a lost or dropped turn runs again at its slot. In the battle a
+pass of 26,200 slots tried 14,000 turns and applied 12,600, and the object
+pass took 16 to 17% longer than with `--serial-turns` with one worker
+(beside which the simulation thread runs forks too), 2.5% less with four
+workers and 9 to 10% less with the whole pool. A build without a pool,
+which runs every fork before the walk on its one thread, takes 51 to 52%
+longer (measured on a build whose every fork ran on one thread). Only a
+pass that begins with 4,096 Logic slots pays any of it. Each of those runs
+started beside its `--serial-turns` twin on a machine busy with other work.
+
+What remains is widening what a kept turn may write. The `object_pass` line
+of sim-bench ranks it: `lost_*` counts the lost turns by the work that lost
+them, and `top_fields` the world fields that most often kept a turn from
+being kept.

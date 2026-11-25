@@ -213,3 +213,19 @@ recorded beside its code as a sim-scale deviation (AGENTS.md) and listed here.
   it (x(n) = x(n-250) xor x(n-147), an R250 table), which every frame ties
   three objects' draws together at fixed distances in the object list, and
   the turns' own streams do not.
+- **Object turns side by side**
+  ([speculation.rs](../src/sim/world/speculation.rs)). In a frame whose
+  object pass begins with at least 4,096 objects in the Logic list
+  (`SPECULATE_FROM_SLOTS`), the turns of units and infantry that are moving
+  or have no destination, and whose mission and target scan are not due that
+  frame, first run side by side, each against the world as the frame found
+  it, and a turn that changed nothing but its own unit is kept for the
+  unit's place in the pass. So a unit may react one frame later to what
+  another did earlier in the same frame. Every other turn, and one whose
+  unit an earlier turn changed, runs in order as before, and a game with
+  fewer objects plays exactly as without it. As the results are the same on
+  every thread count, every build runs those turns on forks, which costs
+  more than running them in order: in the battle the object pass took 16 to
+  17% longer with one worker beside the simulation thread, 2.5% less with
+  four workers and 9 to 10% less with the whole pool, and a build without a
+  pool, which runs all of those turns on its one thread, 51 to 52% longer.

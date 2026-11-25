@@ -113,13 +113,26 @@
 //! every patrolling team scan on the same frame and updates every team every
 //! frame. Each object's turn draws from its own random stream as in a real
 //! match (`sim::world::turn_streams`); `--shared-stream` draws every turn
-//! from the Scenario stream in Logic order, as gamemd does.
-//! The `path_batch` line sums the batch's passes over the
-//! measured frames ([`PathBatchStats`]): registrations waiting and answered,
-//! the ones the cap, a re-path budget or the urgency-2 limit left for a later
-//! pass (`capped` counts the limit's), and the cells the searches expanded,
-//! with the most one pass and one search expanded (`peak_steps`,
-//! `peak_search`) and the code-2 re-paths' share at each urgency.
+//! from the Scenario stream in Logic order, as gamemd does. It also runs the
+//! object turns likely to change nothing but their own object side by side
+//! first (`sim::world::speculation`) in a pass of at least 4,096 Logic
+//! slots, as a match does; `--serial-turns` runs every turn in Logic order,
+//! which gives the hashes of a build without it. The `object_pass` line sums
+//! every pass of the run: passes run on forks and not (`unspeculated`, the
+//! smaller ones among them), slots the walk reached, turns run on forks,
+//! kept and applied or dropped at their slots, the turns not kept by reason
+//! and the fields that most often stopped them, the mean time per pass of
+//! the turns on forks (`speculate_ms`), of the walk after them (`walk_ms`)
+//! and of the whole pass, with the switch on or off (`pass_ms`), the size
+//! of the record a fork copies (`record_bytes`) and how many of its copies
+//! took a new allocation rather than one an earlier pass left
+//! (`new_records`).
+//! The `path_batch` line sums the batch's passes over the measured frames
+//! ([`PathBatchStats`]): registrations waiting and answered, the ones the
+//! cap, a re-path budget or the urgency-2 limit left for a later pass
+//! (`capped` counts the limit's), and the cells the searches expanded, with
+//! the most one pass and one search expanded (`peak_steps`, `peak_search`)
+//! and the code-2 re-paths' share at each urgency.
 //!
 //! `--threads N` gives the worker pool N threads instead of one per CPU
 //! thread; no result depends on it. The `measured` line gives the mean, p50,
@@ -213,6 +226,7 @@ struct Args {
     serial_paths: bool,
     serial_scans: bool,
     shared_stream: bool,
+    serial_turns: bool,
     no_sleep: bool,
     sleep_check: bool,
     frame_profile: bool,
@@ -265,6 +279,7 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
         serial_paths: false,
         serial_scans: false,
         shared_stream: false,
+        serial_turns: false,
         no_sleep: false,
         sleep_check: false,
         frame_profile: false,
@@ -336,6 +351,7 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
             "--client-timing" => args.client_timing = true,
             "--serial-scans" => args.serial_scans = true,
             "--shared-stream" => args.shared_stream = true,
+            "--serial-turns" => args.serial_turns = true,
             "--no-sleep" => args.no_sleep = true,
             "--sleep-check" => args.sleep_check = true,
             "--presentation-frame" => args.presentation_frame = true,
@@ -1092,7 +1108,7 @@ fn main() -> Result<(), String> {
                  [--ticks 300 (match: 1800, skirmish: 9000, battle: 3000)] \
                  [--types E1,E2,MTNK,HTNK] [--order-spread 30] [--return-at T] (march) \
                  [--hash-every N] [--frame-hash-every 15] [--csv <path>] [--serial-paths] [--serial-scans] \
-                 [--shared-stream] [--frame-profile] [--lan] [--watchers N (skirmish)] [--frame-hashes <path>] \
+                 [--shared-stream] [--serial-turns] [--frame-profile] [--lan] [--watchers N (skirmish)] [--frame-hashes <path>] \
                  [--client-timing] [--threads N] [--battle-units 20000 (battle)] \
                  [--state-isolation-report <new.json> --prior-map <map> \
                  --isolation-mode lan|wol --isolation-humans 1|2]"
@@ -1158,6 +1174,10 @@ fn main() -> Result<(), String> {
         .runtime
         .simulation
         .separate_turn_streams(!args.shared_stream);
+    scenario
+        .runtime
+        .simulation
+        .speculate_object_turns(!args.serial_turns);
     scenario
         .runtime
         .simulation
@@ -1293,6 +1313,10 @@ fn main() -> Result<(), String> {
             paths.urgency1_steps,
             paths.peak_pass_ms,
         );
+    }
+    let object_pass = runtime.simulation.object_pass_stats();
+    if object_pass.passes + object_pass.unspeculated + object_pass.serial_passes > 0 {
+        println!("{object_pass}");
     }
     #[cfg(feature = "telemetry")]
     if args.frame_profile {

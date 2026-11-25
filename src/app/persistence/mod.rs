@@ -414,6 +414,10 @@ impl PreparedLoad {
         // A loaded match draws its turns as a new match does
         // (`world::turn_streams`): a save does not carry the switch.
         self.simulation.separate_turn_streams(true);
+        // A loaded match runs its object pass as a new match does
+        // (`world::speculation`). The switch changes results and a save does
+        // not carry it, so the load turns it on as the match's start did.
+        self.simulation.speculate_object_turns(true);
         (
             self.simulation,
             CommittedLoadPresentation {
@@ -1457,6 +1461,36 @@ mod tests {
             Some(saved_owner)
         );
         std::fs::remove_dir_all(directory).expect("remove House load fixture");
+    }
+
+    /// A save carries no speculation switch (`world::speculation`): the
+    /// commit turns it on, so a loaded match runs its object pass as a new
+    /// match does.
+    #[test]
+    fn a_committed_load_runs_its_object_pass_as_a_new_match_does() {
+        let rules = load_fixture_rules();
+        let saved = load_fixture_simulation(true);
+        let prepared = PreparedLoad::prepare_candidate(
+            &snapshot_bytes(&saved, &rules),
+            Some(&saved),
+            Some(LOAD_FIXTURE_MAP_HASH),
+            Some(&rules),
+            Some(&load_fixture_terrain()),
+        )
+        .expect("the fixture save prepares");
+        let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(saved);
+        runtime.resources_mut().rules = rules;
+        let _ = prepared.commit_into(&mut runtime);
+        runtime
+            .advance_frame(
+                &[],
+                1,
+                crate::sim::world::TickLane::Ordinary,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .expect("loaded frame");
+        let stats = runtime.simulation.object_pass_stats();
+        assert_eq!(stats.passes + stats.unspeculated, 1, "{stats}");
     }
 
     #[test]

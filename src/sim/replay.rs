@@ -1480,6 +1480,7 @@ fn prepare_authored_replay_world(sim: &mut Simulation) {
     sim.present_effect_anims();
     sim.separate_turn_streams(true);
     sim.sleep_idle_objects_in_match();
+    sim.speculate_object_turns(true);
 }
 
 impl ReplayRunner {
@@ -1973,6 +1974,7 @@ mod tests {
         sim.batch_target_scans();
         sim.present_effect_anims();
         sim.separate_turn_streams(true);
+        sim.speculate_object_turns(true);
         assert_eq!(
             sim.houses()[&sim.session().current_house().unwrap()].native_scenario_name(),
             Some("ReplayGuest")
