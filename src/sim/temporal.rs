@@ -363,6 +363,7 @@ impl Simulation {
                     Some(bunker) if entity.category() == EntityCategory::Unit => {
                         // vtable +0x3C8 Assign_Target(bunker) on the firer.
                         let requested = Some(crate::sim::combat::TargetKind::Entity(bunker));
+                        let before = self.module_target_before(firer);
                         let stored = crate::sim::mission::concrete_effects::assign_target_stored(
                             &self.substrate.entities,
                             self.terrain_objects.objects(),
@@ -380,6 +381,8 @@ impl Simulation {
                         {
                             self.assign_target_fire_teardown(firer, rules, registry);
                         }
+                        // Wasm module `TargetChanged` (`ext_modules::control`).
+                        self.raise_module_target_changed(rules, effects, firer, before);
                         Some(bunker)
                     }
                     _ => Some(id),

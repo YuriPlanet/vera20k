@@ -2762,6 +2762,16 @@ impl Simulation {
             return true;
         }
 
+        // Wasm module `DeployAllowed` (veto, `ext_modules::control`): a
+        // refusal ends as a blocked deploy does, without its EVA.
+        if !self.module_allows_deploy(rules, stable_id) {
+            if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+                entity.seldom.mcv_deploy_pending.clear();
+            }
+            crate::sim::mcv_deploy::queue_guard(self, stable_id, rules);
+            return false;
+        }
+
         // Native successful deploy transaction:
         // `UnitClass__Deploy @ 0x007393C0`, block `0x00739855..0x00739926`,
         // calls `FUN_00505180 @ 0x00505180` only for a non-controlled
@@ -3026,8 +3036,10 @@ impl Simulation {
         // 0x00739971..0x007399B2: the building takes the unit's voice handle
         // and latch, so a line the unit is speaking plays on.
         self.move_unit_voice(stable_id, new_sid);
-        // Wasm module `Birth` for the deployed building, the unit as
-        // `other`, while the unit is still there to read.
+        // Wasm module `Deployed` on the unit and `Birth` for the deployed
+        // building, the unit as `other`, while the unit is still there to
+        // read.
+        self.raise_module_deployed(rules, frame_effects, stable_id, Some(new_sid), true);
         self.raise_module_birth(rules, frame_effects, new_sid, Some(stable_id));
         self.uninit_with_context(
             stable_id,
@@ -3298,8 +3310,10 @@ impl Simulation {
         for targeter in targeters {
             let _ = self.assign_target_represented(targeter, target, rules, frame_effects);
         }
-        // Wasm module `Birth` for the undeployed unit, the building as
-        // `other`, while the building is still there to read.
+        // Wasm module `Deployed` (value 0) on the building and `Birth` for
+        // the undeployed unit, the building as `other`, while the building
+        // is still there to read.
+        self.raise_module_deployed(rules, frame_effects, sid, Some(new_sid), false);
         self.raise_module_birth(rules, frame_effects, new_sid, Some(sid));
         self.uninit_with_context(
             sid,

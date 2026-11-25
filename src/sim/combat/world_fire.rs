@@ -367,6 +367,23 @@ fn admit_attacker_fire<'r>(
             target_sub_y,
         )
     };
+    // Wasm module `FireAllowed` (veto) on a shot the class would fire: a
+    // refusal answers Rearm, as `DisableWeapons` does (`ext_modules::control`).
+    let code = if code == fire_error::FireError::Ok
+        && !world.module_allows_fire(
+            rules,
+            snap.stable_id,
+            snap.target,
+            weapon_index,
+            selected
+                .as_ref()
+                .and_then(|selected| rules.weapon_index(selected.weapon_id))
+                .map_or(-1, |index| index as i32),
+        ) {
+        fire_error::FireError::Rearm
+    } else {
+        code
+    };
     match snap.category {
         // The table at `0x00737148`.
         EntityCategory::Unit => match code {
@@ -2809,9 +2826,12 @@ fn commit_fire_bookkeeping(
             crate::sim::credit_income::attach_drain_anim(world, drainer_id, rules);
             world.leave_team(drainer_id, true, rules, effects);
         }
+        let before = world.module_target_before(drainer_id);
         if let Some(drainer) = world.substrate.entities.get_mut(drainer_id) {
             represented_assign_target(drainer, None, rules.ares_form());
         }
+        // Wasm module `TargetChanged` (`ext_modules::control`).
+        world.raise_module_target_changed(rules, effects, drainer_id, before);
     }
 }
 

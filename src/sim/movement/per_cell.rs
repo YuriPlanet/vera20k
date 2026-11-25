@@ -496,6 +496,11 @@ impl Simulation {
             ) {
                 continue;
             }
+            // Wasm module `CrushAllowed` (veto): a refused victim stays, as
+            // one `crushes` refuses does (`ext_modules::control`).
+            if !self.module_allows_crush(rules, id, victim) {
+                continue;
+            }
             if ares {
                 self.ares_crush_damage(id, victim, rules, registry, effects);
             }

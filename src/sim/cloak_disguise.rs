@@ -357,6 +357,8 @@ pub struct CloakTickResult {
     /// still-admitted targeters, runs `Detach_All(false)` again, then
     /// re-`Assign_Target`s each saved one.
     pub completed_cloak: bool,
+    /// The state 3 → 0 completion: the object is wholly visible again.
+    pub completed_uncloak: bool,
 }
 
 impl CloakRuntime {
@@ -502,6 +504,7 @@ impl CloakRuntime {
             play_cloak_sound: false,
             began_cloaking: false,
             completed_cloak: false,
+            completed_uncloak: false,
         };
         if self.state == 0 {
             if !facts.state_zero_head_allows || !facts.can_auto_cloak {
@@ -591,6 +594,7 @@ impl CloakRuntime {
                     self.recloak_delay =
                         CdTimer::started(facts.current_frame, facts.cloak_delay_frames);
                     result.transitioned = true;
+                    result.completed_uncloak = true;
                 }
                 1 if facts.can_auto_cloak => {
                     let start =

@@ -380,6 +380,12 @@ fn tick_building_cloak(
     else {
         return;
     };
+    // Wasm module `Cloaked` / `Decloaked` at the fade's edges.
+    match edge {
+        Some(BuildingFadeEdge::Cloaked) => sim.raise_module_cloak_edge(rules, effects, id, true),
+        Some(BuildingFadeEdge::Uncloaked) => sim.raise_module_cloak_edge(rules, effects, id, false),
+        None => {}
+    }
     match edge {
         // 0x00454E7F..0x00454E9E: the system goes through its vt+0x20 with 1.
         Some(BuildingFadeEdge::Cloaked) => {
@@ -995,6 +1001,11 @@ pub(super) fn tick_stock_cloak_producer(
     if result.is_some_and(|result| result.began_cloaking) {
         start_cloaking_detach(sim, id, rules, effects);
     }
+    // Wasm module `Decloaked` once wholly visible again (`Cloaked` follows
+    // the cloak completion's own work below).
+    if result.is_some_and(|result| result.completed_uncloak) {
+        sim.raise_module_cloak_edge(rules, effects, id, false);
+    }
     if result.is_some_and(|result| result.completed_cloak) {
         // The 1 → 2 completion at `0x006FBA98` snapshots the still-admitted
         // targeters (sensed-or-same-owner), runs `Detach_All(false)` again, then
@@ -1041,6 +1052,9 @@ pub(super) fn tick_stock_cloak_producer(
             )
             .unwrap_or_else(|cause| panic!("cloak completion Scatter: {cause}"));
         }
+    }
+    if result.is_some_and(|result| result.completed_cloak) {
+        sim.raise_module_cloak_edge(rules, effects, id, true);
     }
     if let Some(result) = result.filter(|result| result.play_cloak_sound) {
         // CloakingTick's only sounding transitions are StartCloaking(0) from

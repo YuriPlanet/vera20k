@@ -479,6 +479,11 @@ impl Simulation {
             .expect("same pending deployment receiver")
             .mission_leaf
             .take_infantry_pending_deploy();
+        // Wasm module `DeployAllowed` (veto, `ext_modules::control`): a
+        // refused infantryman drops the pending deploy and stays as he is.
+        if !self.module_allows_deploy(rules, id) {
+            return Ok(());
+        }
         self.infantry_do_action(id, 27, false, rules, effects)?;
         Ok(())
     }
@@ -525,6 +530,8 @@ impl Simulation {
         if completed_doing == 27 {
             self.shorten_passive_scan_timer(id);
         }
+        // Wasm module `Deployed` (1 deployed, 0 undeployed).
+        self.raise_module_deployed(rules, effects, id, None, completed_doing == 27);
         Ok(())
     }
 

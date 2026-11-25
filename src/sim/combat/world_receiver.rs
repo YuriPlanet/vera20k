@@ -2059,7 +2059,13 @@ fn commit_entity(
                 death
                     .receiver_stage_trace
                     .push(ReceiverStageTrace::ShouldRetaliate { target_id });
-                combat_targeting::should_retaliate(world, rules, target_id, attacker_id)
+                let native =
+                    combat_targeting::should_retaliate(world, rules, target_id, attacker_id);
+                // Wasm module `Retaliate` (`ext_modules::control`).
+                let warhead = rules
+                    .warhead_index(world.interner.resolve(event.warhead_ref))
+                    .map_or(-1, |index| index as i32);
+                world.module_retaliates(rules, target_id, attacker_id, warhead, native)
             };
             if retaliates && retaliation_reaches(world, rules, target_id, attacker_id) {
                 world.override_mission_on_damage_response(

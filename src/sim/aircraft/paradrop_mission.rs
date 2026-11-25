@@ -139,6 +139,7 @@ pub(super) fn overfly(
 /// Target (vt+0x3C8(NULL)), no destination (vt+0x480(NULL, 1)) and Retreat
 /// queued.
 fn give_up(sim: &mut Simulation, id: u64, rules: &RuleSet, frame_effects: &mut FrameEffects<'_>) {
+    let before = sim.module_target_before(id);
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.mission_leaf.set_aircraft_action_latch(false);
         crate::sim::mission::concrete_effects::represented_assign_target(
@@ -147,6 +148,8 @@ fn give_up(sim: &mut Simulation, id: u64, rules: &RuleSet, frame_effects: &mut F
             rules.ares_form(),
         );
     }
+    // Wasm module `TargetChanged` (`ext_modules::control`).
+    sim.raise_module_target_changed(rules, frame_effects, id, before);
     sim.assign_aircraft_destination(id, None, rules, frame_effects);
     super::queue_mission(&mut sim.substrate, id, MissionType::Retreat);
 }

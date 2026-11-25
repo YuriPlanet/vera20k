@@ -163,10 +163,13 @@ pub(crate) fn scan_for_tiberium(
     let Some(entity) = sim.substrate.entities.get(id) else {
         return Ok(None);
     };
-    if entity.category() == crate::map::entities::EntityCategory::Structure {
-        return techno_scan_for_tiberium(sim, rules, overlay_registry, id, range);
-    }
-    foot_scan_for_tiberium(sim, rules, overlay_registry, id, range)
+    let native = if entity.category() == crate::map::entities::EntityCategory::Structure {
+        techno_scan_for_tiberium(sim, rules, overlay_registry, id, range)?
+    } else {
+        foot_scan_for_tiberium(sim, rules, overlay_registry, id, range)?
+    };
+    // Wasm module `HarvestCell` on the scan's answer (`ext_modules::control`).
+    Ok(sim.module_harvest_cell(rules, id, native))
 }
 
 /// `FootClass::Scan_For_Tiberium @ 0x004DD0A0`: the mover's own cell when
