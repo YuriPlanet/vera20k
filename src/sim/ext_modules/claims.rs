@@ -48,7 +48,11 @@
 //!     `mcv_deploy::finish_initial_attempt`) becomes Guard; and when the
 //!     claim starts, an MCV the house AI already sent to Hunt queues Guard
 //!     (`mcv_deploy::yield_base_hunts`), so Mission_Hunt's deploy arm does
-//!     not deploy it.
+//!     not deploy it;
+//!   - a computer harvester's return from Guard to Harvest (`UnitClass::
+//!     Mission_Guard`'s arm `0x00740880..0x0074092C`,
+//!     `mission_handlers::harvester_guard_override_requeues_harvest`): the
+//!     house's economy.
 //! - `Forces`:
 //!   - the team block of `HouseClass::Update` (`0x004F8A00..0x004F8B08`,
 //!     `ai_team_creation::update_team_creation`): AI trigger evaluation
@@ -60,7 +64,15 @@
 //!   - the strategy tick's `All_To_Hunt @ 0x00501400`
 //!     (`house_strategy::sell_off_and_hunt`, `phobos_last_legs_actions`);
 //!   - the regroup after an MCV deploys (`move_ground_forces_to_base`, the
-//!     hook at `0x739920`, in `world_spawn`'s deploy).
+//!     hook at `0x739920`, in `world_spawn`'s deploy);
+//!   - where the units' missions place them for the house: the computer
+//!     infantry's idle stance pick (`InfantryClass::Enter_Idle_Mode`
+//!     `0x0051CCB9..0x0051CD75`, which then takes the units' own rule),
+//!     a campaign hunter's march on the player (`Mission_Hunt` `0x004D5506`),
+//!     Area Guard's move of a post off an own building (`0x004D6B8D`), the
+//!     computer's repair seek (`UnitClass::AI` `0x0073671F`) and a captured
+//!     unit's fate (`CaptureManagerClass::DecideUnitFate @ 0x004723B0`, whose
+//!     roll is still drawn; the unit keeps its orders as a human's does).
 //! - `Abilities` (the computer-only arms of the unit missions that act for
 //!   the house AI):
 //!   - the AI auto-deploy of `Deployer=` infantry (Infantry Guard
@@ -68,7 +80,10 @@
 //!   - `InfantryClass::Mission_Hunt`'s computer undeploy (`0x0051F5C0..0x0051F609`);
 //!   - the computer capture arm of `Mission_Attack`/`Mission_Hunt`
 //!     (`mission_handlers::computer_capture_building`): engineer capture,
-//!     spy infiltration and garrisoning a building the unit targets.
+//!     spy infiltration and garrisoning a building the unit targets;
+//!   - the computer demolition arm of `Mission_Guard` and `Mission_AreaGuard`
+//!     (`0x004D523A`, `0x004D6DBE`, `mission_handlers::guard_queues_sabotage`):
+//!     a C4 infantryman holding a building target queues Sabotage.
 //! - `SuperWeapons`: `HouseClass::AI_TryFireSW @ 0x005098F0`
 //!   (`superweapon::ai_fire::try_fire`), choosing and firing.
 //!
