@@ -403,13 +403,34 @@ impl Simulation {
         country: crate::rules::ruleset::CountryIdx,
         rules: &RuleSet,
     ) -> Option<InternedId> {
-        self.houses.order().iter().copied().find(|owner| {
+        // VERA-only: a House is of `country` when its Country's name is the
+        // one `RuleSet::country_index` answers `country` for, so the name is
+        // asked of the rules once, not once per House. The index keeps the
+        // first Country of an identity: a later one of the same identity is
+        // no name's answer, and no House's.
+        let identity = rules.country_name(country)?;
+        if rules.country_index(identity) != Some(country) {
+            return None;
+        }
+        let found = self.houses.order().iter().copied().find(|owner| {
             self.houses
                 .get(owner)
                 .and_then(|house| house.country())
-                .and_then(|id| rules.country_index(self.interner.resolve(id)))
-                == Some(country)
-        })
+                .is_some_and(|id| self.interner.resolve(id).eq_ignore_ascii_case(identity))
+        });
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled()
+                || found
+                    == self.houses.order().iter().copied().find(|owner| {
+                        self.houses
+                            .get(owner)
+                            .and_then(|house| house.country())
+                            .and_then(|id| rules.country_index(self.interner.resolve(id)))
+                            == Some(country)
+                    }),
+            "the House of {identity:?} differs from the one its Country index finds"
+        );
+        found
     }
 
     /// Original House510F60 -> Scenario510ED0, otherwise502D30. Only the
