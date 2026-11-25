@@ -80,7 +80,12 @@ pub(in crate::app::shell_wol) fn open_runner(state: &mut AppState, runner: Runne
     }
     super::leaf::free_art(&mut state.frontend.wol_art, crate::ui::wol_login::DIALOG);
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
-    let _ = App::ensure_skirmish_shell_chrome(state);
+    let _ = App::ensure_skirmish_shell_chrome(
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+    );
     show_wait(
         &mut state.frontend,
         &state.process_assets,

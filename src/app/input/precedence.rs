@@ -139,14 +139,14 @@ impl Layers {
             route_page: route_page(state),
             fullscreen_movie: frontend.fullscreen_movie.is_some(),
             credits_roll: frontend.credits_roll.is_some(),
-            launcher_options: App::native_launcher_options_active(state),
+            launcher_options: App::native_launcher_options_active(&state.frontend),
             in_game_menu: state.match_state.match_presentation.in_game_menu,
             in_game_shell: crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(
                 state,
             ),
             coop_score: crate::app::input::coop_score::active(state),
-            campaign_score: App::campaign_score_shell_active(state),
-            score: App::score_shell_active(state),
+            campaign_score: App::campaign_score_shell_active(&state.frontend),
+            score: App::score_shell_active(&state.frontend),
         }
     }
 

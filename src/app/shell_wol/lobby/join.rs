@@ -251,14 +251,18 @@ pub(super) fn enter_game_as_guest(state: &mut AppState) {
         .unwrap_or_default();
     let modern = modern_lobby(state.frontend.wol.as_ref())
         && !quick_match_runner(state.frontend.wol.as_ref());
-    if setup::guest_users_listed(state, &users) {
+    if setup::guest_users_listed(
+        &mut state.frontend.network_setup_protocol,
+        &mut state.match_state.session,
+        &users,
+    ) {
         super::persona::take_side_and_color(
             &mut state.frontend,
             state.platform.game_config.as_ref(),
             &state.process_assets,
             &me,
         );
-        setup::send_first_choices(state);
+        setup::send_first_choices(&mut state.frontend, &state.match_state.session);
         if quick_match_runner(state.frontend.wol.as_ref()) {
             super::quick_match::game_joined(state, true);
         }

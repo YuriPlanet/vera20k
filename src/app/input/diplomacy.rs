@@ -346,7 +346,10 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
     // WOLTaunts; the 250 ms refresh never touches it.
     view.taunts = state.frontend.multiplayer_shell_runtime.taunts_on(mode);
     view.map_name = if mode.execution_topology().is_lockstep() {
-        crate::app::shell_network_setup::map_display_name(state)
+        crate::app::shell_network_setup::map_display_name(
+            &state.frontend.scenario_catalog,
+            &state.match_state.session,
+        )
     } else {
         crate::app::frontend::skirmish_shell_render::skirmish_selected_map_name(&state.frontend)
     }
@@ -442,7 +445,13 @@ fn press_allies_box(state: &mut AppState, view: &DiplomacyView, row: usize) {
 }
 
 fn play_checkbox_sound(state: &mut AppState) {
-    App::play_shell_rules_sound(state, |rules| rules.general.gui_checkbox_sound.as_deref());
+    App::play_shell_rules_sound(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        |rules| rules.general.gui_checkbox_sound.as_deref(),
+    );
 }
 
 /// `Ally 0x00731840`: queue EVENT_ALLY toward `house` for the player's

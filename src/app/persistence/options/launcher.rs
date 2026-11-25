@@ -222,7 +222,12 @@ fn apply_box(state: &mut AppState, id: C, on: bool) {
         // The shell atlas carries the same profile value; it is rebuilt (or
         // built) now, before another shell screen can paint.
         C::YrOriginalStyle => {
-            let _ = App::ensure_skirmish_shell_chrome(state);
+            let _ = App::ensure_skirmish_shell_chrome(
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+            );
         }
         C::MouseWheelZoom if !on => crate::app::input::camera::reset_view_distance(state),
         C::LockCursor => {

@@ -202,12 +202,17 @@ pub(super) fn prepare_watch(
     let names: Vec<_> = started.users.iter().map(|user| user.name.clone()).collect();
     let room = started.options.campaign.clone();
     if let Some(room) = &room {
-        campaign_room::verify_current(state, room)?;
+        campaign_room::verify_current(
+            state.platform.game_config.as_ref(),
+            &state.process_assets,
+            room,
+        )?;
     }
     let options = started.options.into_options(&followed)?;
     let speed = options.launch.options.game_speed;
     crate::app::shell_network_setup::install_watch_setup(
-        state,
+        &mut state.frontend,
+        &mut state.match_state,
         options,
         crate::app::match_runtime::session::NetworkRoom {
             tournament: started.tournament != 0,
@@ -294,7 +299,11 @@ pub(super) fn poll_watch(state: &mut AppState, service: &mut LiveService) -> Res
     let watching = service.watching.as_mut().expect("checked watch");
     let start = watching.start.take().expect("checked start");
     let match_id = watching.match_id.clone();
-    let agreement = crate::app::shell_network_setup::agreement::local(state)?;
+    let agreement = crate::app::shell_network_setup::agreement::local(
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+        &mut state.process_assets,
+    )?;
     ensure!(
         agreement.version == start.version && agreement.rules_digest == start.rules_digest,
         "this game's version or rules differ from the match's"
@@ -488,7 +497,10 @@ pub(crate) fn begin_spawned_match(
         .collect();
     let host_name = users[0].0.clone();
     crate::app::shell_network_setup::install_external_setup(
-        state,
+        state.platform.game_config.as_ref(),
+        &mut state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
         launch,
         crate::app::match_runtime::session::NetworkReturnContext::Wol,
     )?;

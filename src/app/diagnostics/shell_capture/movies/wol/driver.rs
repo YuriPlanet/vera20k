@@ -1893,7 +1893,13 @@ impl WolCapture {
                         })
                         .context("a two-player map")?;
                     crate::app::shell_network_setup::commit_map_selection(
-                        state, mode_id, two, None,
+                        state.platform.game_config.as_ref(),
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        mode_id,
+                        two,
+                        None,
                     )?;
                     for name in ["Boris", "Ivan", "Sofia", "Lena"] {
                         crate::app::shell_wol::service_event(
@@ -2153,7 +2159,9 @@ impl WolCapture {
                 self.buddy_shown(state, frame)?;
             }
             WolPhase::Mismatch => {
-                let Some(verify) = crate::app::shell_network_setup::verify(state) else {
+                let Some(verify) = crate::app::shell_network_setup::verify(
+                    state.frontend.network_setup_protocol.as_ref(),
+                ) else {
                     return Ok(());
                 };
                 let Some(message) = &verify.mismatch else {

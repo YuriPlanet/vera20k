@@ -51,7 +51,12 @@ pub(super) fn apply_response(
             // VERA: the lobby does not say which player differs; this game
             // can say what it changes.
             if let Some(own) = (!retryable)
-                .then(|| crate::app::shell_network_setup::agreement::own_changes_text(state))
+                .then(|| {
+                    crate::app::shell_network_setup::agreement::own_changes_text(
+                        &state.frontend.mods,
+                        &state.process_assets,
+                    )
+                })
                 .flatten()
             {
                 text.push(' ');
@@ -205,7 +210,10 @@ pub(super) fn apply_response(
                 {
                     notice(state, &tr("VERA:WatchingNotTaken"));
                 } else if legacy_refusal
-                    && let Some(key) = crate::app::shell_network_setup::lobby_refused_option(state)
+                    && let Some(key) = crate::app::shell_network_setup::lobby_refused_option(
+                        &mut state.frontend,
+                        &mut state.match_state.session,
+                    )
                 {
                     notice(state, &tr(key));
                 }
@@ -305,8 +313,10 @@ pub(super) fn apply_response(
             }
             "options" if failure == http::CommandFailure::InvalidOptions => {
                 if service.is_room_publication(id)
-                    && let Some(key) =
-                        crate::app::shell_network_setup::lobby_refused_building_queue(state)
+                    && let Some(key) = crate::app::shell_network_setup::lobby_refused_building_queue(
+                        &mut state.frontend.network_setup_protocol,
+                        &mut state.match_state.session,
+                    )
                 {
                     // The newest room rule first: a lobby from before it lists
                     // matches, so the capability check below cannot tell.
@@ -335,7 +345,10 @@ pub(super) fn apply_response(
                     // The lobby refused these settings, usually because the
                     // room has already moved on: the guest's automatic
                     // Accept waits for the next ones.
-                    let _ = crate::app::shell_network_setup::refuse_local_acceptance(state);
+                    let _ = crate::app::shell_network_setup::refuse_local_acceptance(
+                        &mut state.frontend.network_setup_protocol,
+                        &mut state.match_state.session,
+                    );
                 } else if let Some(index) = state
                     .match_state
                     .session

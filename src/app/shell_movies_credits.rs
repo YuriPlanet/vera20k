@@ -12,11 +12,15 @@ use crate::app::frontend::credits_roll::{
     CreditsInput, CreditsReturn, CreditsRoll, CreditsRollSession, CreditsViewport,
 };
 use crate::app::frontend::fullscreen_movie::{FullscreenMovie, MovieReturn, movie_stem};
+use crate::app::frontend::state::FrontendState;
 use crate::app::shell_route::ShellRoute;
 use crate::ui::movies_credits_shell::{
     MOVIE_LIST_DIALOG, MOVIES_CREDITS_PAGE, MoviesCreditsAction, active_movie_entries,
     family_list_node, family_list_selected, retained_movie_row,
 };
+use crate::ui::shell::controller::DialogController;
+use winit::keyboard::ModifiersState;
+use winit::window::Window;
 
 /// The Sneak Peeks movie (`0x0052DE55`).
 const SNEAK_PEEK_MOVIE: &str = "RENEGADE.BIK";
@@ -39,12 +43,12 @@ impl App {
 
     /// `route` shows with `dialog` the shell's sole dialog.
     pub(super) fn show_shell_page(
-        state: &mut AppState,
+        frontend: &mut FrontendState,
         route: ShellRoute,
         dialog: crate::ui::shell::descriptor::DialogResourceId,
     ) {
-        state.frontend.shell_route = route;
-        state.frontend.shell_controller.reset_to(dialog);
+        frontend.shell_route = route;
+        frontend.shell_controller.reset_to(dialog);
     }
 
     /// State 4: create Movies & Credits `0x101`.
@@ -52,7 +56,7 @@ impl App {
         Self::destroy_current_shell_dialog(state);
         state.frontend.movie_list = None;
         let dialog = MOVIES_CREDITS_PAGE.dialog;
-        Self::show_shell_page(state, ShellRoute::MoviesAndCredits, dialog);
+        Self::show_shell_page(&mut state.frontend, ShellRoute::MoviesAndCredits, dialog);
     }
 
     pub(super) fn handle_movies_credits_action(state: &mut AppState, action: MoviesCreditsAction) {
@@ -77,7 +81,11 @@ impl App {
         Self::destroy_current_shell_dialog(state);
         let rows = active_movie_entries(state.persistence.options_profile.movie_progress);
         state.frontend.movie_list = Some(rows);
-        Self::show_shell_page(state, ShellRoute::MovieList, MOVIE_LIST_DIALOG);
+        Self::show_shell_page(
+            &mut state.frontend,
+            ShellRoute::MovieList,
+            MOVIE_LIST_DIALOG,
+        );
         Self::movie_list_sync(state);
     }
 
@@ -111,9 +119,11 @@ impl App {
     /// The movie or Mods list's scrollbar arrow repeat
     /// (`0x0061D215..0x0061D2C8`) while its page shows; returns the next
     /// wake deadline.
-    pub(super) fn poll_family_list(state: &mut AppState) -> Option<Instant> {
-        let window = &state.platform.window;
-        (state.frontend.shell_controller).poll_then(|| window.request_redraw())
+    pub(super) fn poll_family_list(
+        window: &Window,
+        controller: &mut DialogController,
+    ) -> Option<Instant> {
+        (*controller).poll_then(|| window.request_redraw())
     }
 
     /// One pointer message (`down`: `None` moves). A press on a button
@@ -128,7 +138,17 @@ impl App {
         let layout = Self::movie_list_sync(state);
         let rect_of = |id| layout.rect_of(id);
         let nodes = crate::ui::movies_credits_shell::movie_list_nodes;
-        match Self::screen_page_pointer(state, MOVIE_LIST_DIALOG, nodes, rect_of, &[], down) {
+        match Self::screen_page_pointer(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            MOVIE_LIST_DIALOG,
+            nodes,
+            rect_of,
+            &[],
+            down,
+        ) {
             Some(crate::ui::movies_credits_shell::PLAY_MOVIE_CONTROL) => {
                 if family_list_selected(&state.frontend.shell_controller, MOVIE_LIST_DIALOG)
                     .is_some()
@@ -335,16 +355,17 @@ impl App {
     /// Only a bare Escape release (`Keyboard::Get() == 0x081B`) aborts a
     /// movie; every other key and mouse event is consumed and ignored.
     pub(super) fn fullscreen_movie_key(
-        state: &mut AppState,
+        live_modifiers: ModifiersState,
+        fullscreen_movie: &mut Option<FullscreenMovie>,
         code: winit::keyboard::KeyCode,
         pressed: bool,
     ) {
-        let modifiers = state.platform.live_modifiers;
+        let modifiers = live_modifiers;
         let bare = !(modifiers.shift_key() || modifiers.control_key() || modifiers.alt_key());
         if code == winit::keyboard::KeyCode::Escape
             && !pressed
             && bare
-            && let Some(movie) = state.frontend.fullscreen_movie.as_mut()
+            && let Some(movie) = fullscreen_movie.as_mut()
         {
             movie.abort();
         }
@@ -403,8 +424,11 @@ impl App {
     }
 
     /// Queue one keyboard/mouse event for the credits loop.
-    pub(super) fn credits_roll_input(state: &mut AppState, input: CreditsInput) {
-        if let Some(session) = state.frontend.credits_roll.as_mut() {
+    pub(super) fn credits_roll_input(
+        credits_roll: &mut Option<CreditsRollSession>,
+        input: CreditsInput,
+    ) {
+        if let Some(session) = credits_roll.as_mut() {
             session.roll.push_input(input);
         }
     }

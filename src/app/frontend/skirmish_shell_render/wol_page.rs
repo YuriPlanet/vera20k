@@ -196,7 +196,8 @@ pub(crate) fn paint_wol_verify(
         let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
             return paint;
         };
-        let parts = crate::app::shell_network_setup::verify_mismatch_parts(state, message);
+        let parts =
+            crate::app::shell_network_setup::verify_mismatch_parts(&state.renderer.gpu, message);
         let pressed = verify.ok_pressed();
         let look = super::BoxLook::new(atlas.mode_two_dialog_background(side(state)), POPUP_DEPTHS);
         let ok = |id| pressed && id == crate::ui::wol_shell::BOX_OK;

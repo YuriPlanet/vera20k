@@ -438,8 +438,9 @@ impl WolCapture {
         let waiting = csf_name(state, "WOL:MatchWaitingForJoin", PEER);
         self.expect_rows(state, frame, from, &[waiting])?;
         ensure!(
-            crate::app::shell_network_setup::quick_match(state)
-                && state.match_state.session.host()
+            crate::app::shell_network_setup::quick_match(
+                state.frontend.network_setup_protocol.as_ref()
+            ) && state.match_state.session.host()
                 && qm::dialog(state.frontend.wol.as_ref()).is_some()
                 && state.frontend.shell_route != ShellRoute::NetworkSetup,
             "the create did not run the host's nodes headless under 0x117"
@@ -588,7 +589,8 @@ impl WolCapture {
                 pings: pings.to_vec(),
             },
         )?;
-        let names = setup::verify(state).map(|verify| verify.names.clone());
+        let names = setup::verify(state.frontend.network_setup_protocol.as_ref())
+            .map(|verify| verify.names.clone());
         ensure!(
             qm::dialog(state.frontend.wol.as_ref()).is_none()
                 && names.as_deref() == Some(&[NICKNAME.to_owned(), PEER.to_owned()][..]),
@@ -609,7 +611,8 @@ impl WolCapture {
         setup::service_event(state, NetworkSetupEvent::Negotiated { result: 0 })?;
         let requests = self.requests(state, frame)?;
         ensure!(
-            requests.contains(&WolServiceRequest::LeaveChannel) && setup::verify(state).is_none(),
+            requests.contains(&WolServiceRequest::LeaveChannel)
+                && setup::verify(state.frontend.network_setup_protocol.as_ref()).is_none(),
             "the negotiation did not close 0x130 and leave the game channel: {requests:?}"
         );
         MoviesCapture::restore_neutral_pointer(state);
@@ -697,7 +700,9 @@ impl WolCapture {
         self.expect_rows(state, frame, from, &[joined])?;
         ensure!(
             qm::stage(state.frontend.wol.as_ref()) == stage::WAITING
-                && crate::app::shell_network_setup::quick_match(state)
+                && crate::app::shell_network_setup::quick_match(
+                    state.frontend.network_setup_protocol.as_ref()
+                )
                 && !state.match_state.session.host()
                 && qm::dialog(state.frontend.wol.as_ref()).is_some()
                 && state.frontend.shell_route != ShellRoute::NetworkSetup,
@@ -718,8 +723,12 @@ impl WolCapture {
             setup::service_event(state, NetworkSetupEvent::CooperativeCampaign(text.clone()))?;
             self.event(frame, json!({"host C0": text}));
             options.launch.selected_map_file = Some(QC_HOST_MAP.to_owned());
-            options.map_metadata =
-                crate::app::shell_network_setup::local_map_metadata(state, QC_HOST_MAP)?;
+            options.map_metadata = crate::app::shell_network_setup::local_map_metadata(
+                state.platform.game_config.as_ref(),
+                &state.frontend.scenario_catalog,
+                &state.process_assets,
+                QC_HOST_MAP,
+            )?;
         }
         setup::service_event(state, NetworkSetupEvent::HostSetup(options))?;
         let requests = setup_requests(state);

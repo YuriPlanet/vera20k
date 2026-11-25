@@ -426,7 +426,12 @@ impl App {
             // started: the menu's pages draw with it
             // (`native_in_game_shell_active`), so it is back before anything
             // in this frame reads the open state.
-            Self::ensure_skirmish_shell_chrome(state);
+            Self::ensure_skirmish_shell_chrome(
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+            );
         }
         if was_open != will_be_open {
             let locked = crate::app::input::campaign_input::is_locked(state);

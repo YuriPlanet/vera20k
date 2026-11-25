@@ -201,7 +201,7 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
 pub(super) fn in_setup_channel(state: &AppState) -> bool {
     // A visitor's room goes on while the lobby page shows.
     (state.frontend.shell_route == ShellRoute::NetworkSetup
-        || setup::quick_match(state)
+        || setup::quick_match(state.frontend.network_setup_protocol.as_ref())
         || visiting(state.frontend.wol.as_ref()))
         && lobby(state.frontend.wol.as_ref())
             .and_then(|lobby| lobby.current.as_ref())
@@ -569,7 +569,7 @@ pub(in crate::app::shell_wol) fn kicked(
         // made it their channel.
         if user.flags & MEMBER_LOCAL != 0 && visiting(state.frontend.wol.as_ref()) {
             let text = format_csf(
-                &state.csf_text(setup::kicked_key(state)),
+                &state.csf_text(setup::kicked_key(&state.match_state.session)),
                 &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
             );
             visit_settles(state, text);
@@ -581,7 +581,7 @@ pub(in crate::app::shell_wol) fn kicked(
             return;
         }
         if user.flags & MEMBER_LOCAL != 0 {
-            let key = setup::kicked_key(state);
+            let key = setup::kicked_key(&state.match_state.session);
             let text = format_csf(
                 &state.csf_text(key),
                 &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
@@ -736,5 +736,11 @@ pub(in crate::app::shell_wol) fn page_received(
     // 0x7A94ED..0x7A9510: with [0xB77E40] the pager gets the Quick Match
     // away text (API+0xEC).
     super::quick_match::page_reply(state.frontend.wol.as_mut(), &from.name);
-    App::play_shell_rules_sound(state, |rules| rules.general.incoming_message_sound());
+    App::play_shell_rules_sound(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        |rules| rules.general.incoming_message_sound(),
+    );
 }

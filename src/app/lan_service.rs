@@ -1236,7 +1236,11 @@ pub(super) fn verify_setup_agreement(state: &mut AppState) -> anyhow::Result<()>
         .as_ref()
         .and_then(|service| service.setup_agreement.clone())
         .ok_or_else(|| anyhow::anyhow!("LAN host agreement is not admitted"))?;
-    let actual = match super::shell_network_setup::agreement::local(state) {
+    let actual = match super::shell_network_setup::agreement::local(
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+        &mut state.process_assets,
+    ) {
         Ok(actual) => actual,
         Err(error) => {
             reject_setup_compatibility(state, &crate::i18n::tr("VERA:LanRulesUnavailable"));
@@ -1246,7 +1250,10 @@ pub(super) fn verify_setup_agreement(state: &mut AppState) -> anyhow::Result<()>
     if expected != actual {
         // VERA: say what this game changes. The build is the same: the join
         // refuses another, and so does `options::admit_host_room`.
-        let message = super::shell_network_setup::agreement::rules_differ_text(state);
+        let message = super::shell_network_setup::agreement::rules_differ_text(
+            &state.frontend.mods,
+            &state.process_assets,
+        );
         reject_setup_compatibility(state, &message);
         anyhow::bail!("LAN selected-mode agreement mismatch");
     }
@@ -1462,8 +1469,9 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
     }
     advance_go(state, now, service_ok);
     loop {
-        if super::shell_network_setup::lan_go_receive_mode(state)
-            == super::shell_network_setup::LanGoReceiveMode::Defer
+        if super::shell_network_setup::lan_go_receive_mode(
+            state.frontend.network_setup_protocol.as_ref(),
+        ) == super::shell_network_setup::LanGoReceiveMode::Defer
         {
             break;
         }
@@ -1479,7 +1487,9 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
         let Some(incoming) = incoming else {
             break;
         };
-        let mode = super::shell_network_setup::lan_go_receive_mode(state);
+        let mode = super::shell_network_setup::lan_go_receive_mode(
+            state.frontend.network_setup_protocol.as_ref(),
+        );
         // gamemd's host reply wait (0x005DD6F8) also records a 0x10 map-file
         // request. VERA guests transfer the map before GO and reply only 0x13.
         let accepted_kind = mode != super::shell_network_setup::LanGoReceiveMode::RepliesOnly
@@ -1549,8 +1559,9 @@ fn advance_go(state: &mut AppState, now: u32, service_ok: bool) {
         return;
     };
     if !observation.service_ok
-        && super::shell_network_setup::lan_go_receive_mode(state)
-            != super::shell_network_setup::LanGoReceiveMode::Normal
+        && super::shell_network_setup::lan_go_receive_mode(
+            state.frontend.network_setup_protocol.as_ref(),
+        ) != super::shell_network_setup::LanGoReceiveMode::Normal
     {
         // A retired failed send is not proof that its final fragment or GO
         // arrived. Fail through the existing setup owner instead of loading.
@@ -1565,7 +1576,7 @@ fn advance_go(state: &mut AppState, now: u32, service_ok: bool) {
     }
     let response = observation.response_time;
     if !super::shell_network_setup::observe_lan_go_transport(
-        state,
+        &mut state.frontend.network_setup_protocol,
         now,
         queued,
         observation.service_ok,
@@ -1626,7 +1637,7 @@ fn advance_departure(state: &mut AppState, now: u32, service_ok: bool) -> bool {
             );
         }
         DepartureReason::Back => {
-            let dialog = super::shell_network_setup::dialog(state);
+            let dialog = super::shell_network_setup::dialog(&state.frontend, &state.match_state);
             super::App::leave_shell_dialog(
                 state,
                 crate::app::frontend::shell_transition::ShellSlideKind::NetworkSetup(dialog),
@@ -1664,9 +1675,9 @@ pub(crate) fn request_setup_back(state: &mut AppState) -> anyhow::Result<()> {
         .as_ref()
         .is_some_and(|protocol| protocol.editable())
     {
-        super::shell_network_setup::remember_setup(state);
+        super::shell_network_setup::remember_setup(&mut state.frontend, &state.match_state);
     }
-    super::shell_network_setup::lock_lan_departure(state);
+    super::shell_network_setup::lock_lan_departure(&mut state.frontend.network_setup_protocol);
     Ok(())
 }
 
@@ -1877,9 +1888,13 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             &chat,
         ) {
             super::shell_lan::append_chat(state, line);
-            super::App::play_shell_rules_sound(state, |rules| {
-                rules.general.incoming_message_sound()
-            });
+            super::App::play_shell_rules_sound(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                |rules| rules.general.incoming_message_sound(),
+            );
         }
         return Ok(());
     }
@@ -1898,7 +1913,10 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     )),
                     SetupKeepalive::OtherRules(name) => Some(format!(
                         "direct participant {name}: {}",
-                        super::shell_network_setup::agreement::rules_differ_text(state)
+                        super::shell_network_setup::agreement::rules_differ_text(
+                            &state.frontend.mods,
+                            &state.process_assets
+                        )
                     )),
                     SetupKeepalive::Ignored | SetupKeepalive::Renewed => None,
                 };
@@ -2215,7 +2233,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
         LanPayload::JoinConfirmed(fields) => {
             // A VERA room's observer may sit on any row.
             let several_observers = super::shell_network_setup::setup_dialog(
-                state,
+                &state.frontend,
                 false,
                 crate::ui::multiplayer_setup::SetupFlavor::Lan,
             )
@@ -2425,7 +2443,9 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     .as_mut()
                     .ok_or_else(closed_visit)?
                     .begin_kicked_exit(&state.match_state.session, incoming.source, now)?;
-                super::shell_network_setup::lock_lan_departure(state);
+                super::shell_network_setup::lock_lan_departure(
+                    &mut state.frontend.network_setup_protocol,
+                );
             }
         }
         _ => {}

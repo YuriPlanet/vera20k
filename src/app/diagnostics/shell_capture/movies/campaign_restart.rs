@@ -595,8 +595,18 @@ impl RestartCapture {
                     return Ok(()); // Exercise ordinary EOF, not an injected completion.
                 }
             }
-            App::fullscreen_movie_key(state, winit::keyboard::KeyCode::Escape, true);
-            App::fullscreen_movie_key(state, winit::keyboard::KeyCode::Escape, false);
+            App::fullscreen_movie_key(
+                state.platform.live_modifiers,
+                &mut state.frontend.fullscreen_movie,
+                winit::keyboard::KeyCode::Escape,
+                true,
+            );
+            App::fullscreen_movie_key(
+                state.platform.live_modifiers,
+                &mut state.frontend.fullscreen_movie,
+                winit::keyboard::KeyCode::Escape,
+                false,
+            );
             route.push(json!({"frame": frame, "action": "movie Escape release",
                 "movie_frame": displayed_frame}));
             if self.step == Step::AwaitVictoryScore
@@ -752,7 +762,7 @@ impl RestartCapture {
             }
             Step::AwaitVictoryScore => {
                 if rendered == PresentedShell::Score
-                    && App::campaign_score_shell_active(state)
+                    && App::campaign_score_shell_active(&state.frontend)
                     && state
                         .frontend
                         .campaign_score_page

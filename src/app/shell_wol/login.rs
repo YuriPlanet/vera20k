@@ -73,7 +73,12 @@ pub(super) fn open(state: &mut AppState) {
         super::login_info::refresh(&mut state.frontend.login_info);
     }
     super::leaf::open_art(state, DIALOG);
-    let _ = App::ensure_skirmish_shell_chrome(state);
+    let _ = App::ensure_skirmish_shell_chrome(
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+    );
     sync(state);
 }
 

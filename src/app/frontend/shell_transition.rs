@@ -330,7 +330,7 @@ pub(crate) fn advance_shell_exit(state: &mut AppState, now: Instant) -> Option<S
         // The last slide-out frame stays on screen while the voice plays.
         let completed_at = *exit.completed_at.get_or_insert(now);
         if now < completed_at + CAMPAIGN_VOICE_WAIT
-            && crate::app::App::campaign_voice_playing(state)
+            && crate::app::App::campaign_voice_playing(&mut state.audio.sfx_player)
         {
             return None;
         }
@@ -437,7 +437,12 @@ pub(crate) fn drive_shell_entry(state: &mut AppState, now: Instant) -> Option<Sh
                 WaveDirection::SlideIn,
             );
             state.frontend.shell_first_paint_slide = Some(wave);
-            crate::app::App::play_shell_slide_in_sound(state);
+            crate::app::App::play_shell_slide_in_sound(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+            );
         }
     }
     let kind = target?;
@@ -448,7 +453,12 @@ pub(crate) fn drive_shell_entry(state: &mut AppState, now: Instant) -> Option<Sh
     }
     state.frontend.shell_first_paint_slide = None;
     // The slide-in's end cue precedes its SHOW completion (`0x00607F59`).
-    crate::app::App::play_shell_slide_completion_sound(state);
+    crate::app::App::play_shell_slide_completion_sound(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+    );
     show_completion(state, kind, now);
     Some(kind)
 }
@@ -512,7 +522,11 @@ fn show_completion(state: &mut AppState, kind: ShellSlideKind, now: Instant) {
                 page.start_presentation(frames, now);
             }
             if let Some(sound) = sound {
-                crate::app::App::play_campaign_score_anim_sound(state, Some(&sound));
+                crate::app::App::play_campaign_score_anim_sound(
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    Some(&sound),
+                );
             }
             return;
         }
@@ -568,7 +582,9 @@ pub(crate) enum ExternalMenuWait {
 pub(crate) fn external_menu_wait(state: &AppState) -> Option<ExternalMenuWait> {
     let external = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
         && (crate::app::shell_wol::spawned_visit(state.frontend.wol.as_ref())
-            || crate::app::shell_network_setup::external(state));
+            || crate::app::shell_network_setup::external(
+                state.frontend.network_setup_protocol.as_ref(),
+            ));
     external.then(|| {
         if state.frontend.external_progress.match_started.is_none() {
             ExternalMenuWait::Joining
@@ -587,10 +603,10 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     use crate::ui::game_screen::GameScreen;
     // The score dialog runs after the game, before the shell resumes.
     if matches!(state.frontend.screen, GameScreen::MissionResult { .. }) {
-        if crate::app::App::score_shell_active(state) {
+        if crate::app::App::score_shell_active(&state.frontend) {
             return Some(ShellSlideKind::Score);
         }
-        if crate::app::App::campaign_score_shell_active(state) {
+        if crate::app::App::campaign_score_shell_active(&state.frontend) {
             return Some(ShellSlideKind::campaign_score(
                 state
                     .frontend
@@ -630,7 +646,7 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     }
     // Only the native page slides; the assetless fallback does not.
     if state.frontend.options_dialog.is_some() {
-        return crate::app::App::native_launcher_options_active(state)
+        return crate::app::App::native_launcher_options_active(&state.frontend)
             .then_some(ShellSlideKind::Options);
     }
     use crate::app::shell_route::ShellRoute;
@@ -643,9 +659,9 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
         ShellRoute::NetworkSetup if shell.choose_map_modal.is_some() => {
             skirmish_slide_target(shell)?
         }
-        ShellRoute::NetworkSetup => {
-            ShellSlideKind::NetworkSetup(crate::app::shell_network_setup::dialog(state))
-        }
+        ShellRoute::NetworkSetup => ShellSlideKind::NetworkSetup(
+            crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state),
+        ),
         ShellRoute::SinglePlayer => ShellSlideKind::SinglePlayer,
         ShellRoute::MoviesAndCredits => ShellSlideKind::MoviesAndCredits,
         ShellRoute::MovieList => ShellSlideKind::MovieList,

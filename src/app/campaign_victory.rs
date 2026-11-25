@@ -384,7 +384,11 @@ impl App {
                 Self::destroy_current_shell_dialog(state);
                 state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
                 Self::open_shell_message_box(
-                    state,
+                    &state.platform.window,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.persistence.options_profile,
                     shell_box,
                     crate::app::frontend::state::ShellMessageBoxPurpose::CampaignVictory(Box::new(
                         CampaignVictory {

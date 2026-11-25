@@ -1315,7 +1315,9 @@ fn connect_succeeded(state: &mut AppState) {
     }
     // ReadMultiPlayerSettings 0x006980C0.
     if !App::prepare_multiplayer_settings(
-        state,
+        &mut state.frontend,
+        &mut state.match_state,
+        &mut state.process_assets,
         crate::app::match_runtime::session::SessionMode::Wol,
     ) {
         return;

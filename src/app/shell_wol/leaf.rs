@@ -214,7 +214,13 @@ pub(super) fn pointer_quiet(state: &mut AppState, at: Pointer) -> Vec<PageEvent>
             controller.on_pointer_up(x, y);
         }
     }
-    let events = App::shell_page_events(state, false);
+    let events = App::shell_page_events(
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        false,
+    );
     state.platform.window.request_redraw();
     events
 }

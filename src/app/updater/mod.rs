@@ -143,7 +143,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
                     state.frontend.updater.phase = Phase::Offered { package, offer };
                     // The checking box gives way to the offer.
                     if state.frontend.shell_message_box.is_some() {
-                        App::close_shell_message_box_from_controller(state);
+                        App::close_shell_message_box_from_controller(&mut state.frontend);
                     }
                     open_offer(state);
                     return None;
@@ -329,7 +329,11 @@ pub(crate) fn open_check(state: &mut AppState) {
 fn open_checking(state: &mut AppState) {
     let cancel = state.csf_label("TXT_CANCEL", "Cancel");
     App::open_shell_message_box(
-        state,
+        &state.platform.window,
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
         ShellBox::notice(crate::i18n::tr("VERA:UpdateChecking"), cancel),
         ShellMessageBoxPurpose::UpdateCheck,
     );
@@ -395,7 +399,15 @@ pub(crate) fn open_offer(state: &mut AppState) {
     );
     let notes = notes::ReleaseNotes::new(&state.renderer.bit_font, changes);
     App::destroy_current_shell_dialog(state);
-    App::open_shell_message_box(state, shell_box, ShellMessageBoxPurpose::UpdateOffer(notes));
+    App::open_shell_message_box(
+        &state.platform.window,
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+        shell_box,
+        ShellMessageBoxPurpose::UpdateOffer(notes),
+    );
 }
 
 /// The offer's answer: 0 Update (or Download), 2 Skip This Version, 1 (or
@@ -462,7 +474,11 @@ fn download(state: &mut AppState, package: Package, release: Release) {
 fn open_progress(state: &mut AppState, release: &Release, received: u64) {
     let cancel = state.csf_label("TXT_CANCEL", "Cancel");
     App::open_shell_message_box(
-        state,
+        &state.platform.window,
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
         ShellBox::notice(
             progress_text(release.version, received, release.size),
             cancel,
@@ -542,7 +558,14 @@ fn show_failure(state: &mut AppState, version: Version, error: &anyhow::Error) {
 /// An OK box in place of the updater's open one: a failure, or what Check
 /// for Updates found.
 fn show_notice(state: &mut AppState, text: String) {
-    App::open_shell_notice(state, text);
+    App::open_shell_notice(
+        &state.platform.window,
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+        text,
+    );
 }
 
 #[cfg(all(test, tests_app))]

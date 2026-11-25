@@ -34,7 +34,9 @@ pub(crate) fn render_load_saved_game_page(
         state,
         ShellSlideKind::LoadSavedGame,
         false,
-        crate::app::App::load_saved_game_status_key,
+        |state| {
+            crate::app::App::load_saved_game_status_key(state.frontend.load_saved_game.as_ref())
+        },
         layout.page.status_help,
     );
     let leaving = panel.leaving;

@@ -803,7 +803,10 @@ impl LiveRoundFlow {
                                 && session.network_map_status(i) == Some(1)
                         })
                 });
-                let starting = crate::app::shell_network_setup::start_phase(state).in_progress();
+                let starting = crate::app::shell_network_setup::start_phase(
+                    state.frontend.network_setup_protocol.as_ref(),
+                )
+                .in_progress();
                 let start = self.online_config().start;
                 if ready
                     && !starting
@@ -1485,7 +1488,7 @@ pub(super) fn online_setup_settled(state: &AppState, host: bool) -> bool {
     MoviesCapture::slide_settled(
         state,
         ShellSlideKind::NetworkSetup(crate::app::shell_network_setup::setup_dialog(
-            state,
+            &state.frontend,
             host,
             crate::ui::multiplayer_setup::SetupFlavor::Wol,
         )),

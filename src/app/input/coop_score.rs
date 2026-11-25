@@ -207,7 +207,13 @@ fn pointer(state: &mut AppState, layout: &CoopScoreLayout, down: Option<bool>) -
     let (x, y) = state.match_state.input.cursor_px();
     let event = crate::app::input::dialog_page::event_at(x, y, down);
     state.frontend.shell_controller.on_input(event);
-    let events = App::shell_page_events(state, false);
+    let events = App::shell_page_events(
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        false,
+    );
     events.into_iter().rev().find_map(|event| match event {
         PageEvent::Activated(id) => Some(id),
         _ => None,

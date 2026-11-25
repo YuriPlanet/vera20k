@@ -652,7 +652,13 @@ pub(crate) fn mouse(state: &mut AppState, pressed: bool) {
             _ => None,
         });
         if matches!(event, PageEvent::Selected(..)) {
-            App::play_page_cue(state, PageCue::ListClick);
+            App::play_page_cue(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                PageCue::ListClick,
+            );
         }
         apply_received(
             &mut state.frontend,

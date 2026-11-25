@@ -393,7 +393,13 @@ impl MoviesCapture {
             };
             let started = std::time::Instant::now();
             while reading(state) && started.elapsed() < std::time::Duration::from_secs(60) {
-                App::poll_mod_files(state);
+                App::poll_mod_files(
+                    &state.platform.window,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.persistence.options_profile,
+                );
                 std::thread::sleep(std::time::Duration::from_millis(5));
             }
             ensure!(!reading(state), "Check Files did not answer in a minute");
@@ -550,8 +556,18 @@ impl MoviesCapture {
                     state.platform.live_modifiers.is_empty(),
                     "movie skip requires bare Escape"
                 );
-                App::fullscreen_movie_key(state, winit::keyboard::KeyCode::Escape, true);
-                App::fullscreen_movie_key(state, winit::keyboard::KeyCode::Escape, false);
+                App::fullscreen_movie_key(
+                    state.platform.live_modifiers,
+                    &mut state.frontend.fullscreen_movie,
+                    winit::keyboard::KeyCode::Escape,
+                    true,
+                );
+                App::fullscreen_movie_key(
+                    state.platform.live_modifiers,
+                    &mut state.frontend.fullscreen_movie,
+                    winit::keyboard::KeyCode::Escape,
+                    false,
+                );
                 self.route
                     .push(json!({"frame": frame, "action": "movie Escape release",
                     "movie_frame": displayed_frame}));
@@ -2301,7 +2317,9 @@ fn initial_save_receipt(state: &AppState, directory: &Path) -> Result<Value> {
         "automatic save retained already-consumed Options input"
     );
     let browser = App::open_saved_game_rows(
-        state,
+        &state.match_state,
+        &state.process_assets,
+        &state.persistence.repository,
         crate::ui::skirmish_shell::SavedSeedMode::Save,
         8,
         None,

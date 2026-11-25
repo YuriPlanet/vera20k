@@ -646,7 +646,12 @@ impl LanCapture {
                 launch,
                 vacancies,
                 map_metadata: if self.target == LanTarget::CoopGuest {
-                    setup::local_map_metadata(state, COOP_MAP)?
+                    setup::local_map_metadata(
+                        state.platform.game_config.as_ref(),
+                        &state.frontend.scenario_catalog,
+                        &state.process_assets,
+                        COOP_MAP,
+                    )?
                 } else {
                     self.map_metadata()?
                 },
@@ -1434,7 +1439,13 @@ impl LanCapture {
                                 .position(|map| map.player_capacity >= 3)
                                 .context("a map for three players")?;
                             crate::app::shell_network_setup::commit_map_selection(
-                                state, mode_id, index, None,
+                                state.platform.game_config.as_ref(),
+                                &mut state.frontend,
+                                &mut state.match_state,
+                                &state.process_assets,
+                                mode_id,
+                                index,
+                                None,
                             )?;
                             let file = state
                                 .match_state
@@ -3809,7 +3820,7 @@ fn setup_settled(state: &AppState, host: bool) -> bool {
     MoviesCapture::slide_settled(
         state,
         ShellSlideKind::NetworkSetup(crate::app::shell_network_setup::setup_dialog(
-            state,
+            &state.frontend,
             host,
             crate::ui::multiplayer_setup::SetupFlavor::Lan,
         )),

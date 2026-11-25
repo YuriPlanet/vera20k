@@ -6,6 +6,9 @@
 use super::actions::queue;
 use super::chat_notice as message;
 use super::*;
+use crate::app::match_runtime::sim_host::SimHost;
+use crate::audio::sfx::SfxPlayer;
+use crate::render::gpu::GpuContext;
 use crate::skirmish_launch::LaunchTeam;
 use crate::ui::lan_shell::LanChatLine;
 use crate::ui::wol_chat;
@@ -22,14 +25,10 @@ pub(crate) struct WolStartUser {
 /// writer exists (C2 draws nothing, `0x797276` is unreferenced debug code).
 /// That is the seed of the last `Init_Random_Number_System` (`0052FC20`):
 /// the resident match's seed, else the process start seed.
-pub(crate) fn resident_seed(state: &AppState) -> u32 {
-    state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .map_or(state.frontend.startup_rng_seed, |runtime| {
-            runtime.simulation.session().seed() as u32
-        })
+pub(crate) fn resident_seed(startup_rng_seed: u32, sim_runtime: &SimHost) -> u32 {
+    sim_runtime.runtime().map_or(startup_rng_seed, |runtime| {
+        runtime.simulation.session().seed() as u32
+    })
 }
 
 impl App {
@@ -73,7 +72,11 @@ pub(crate) fn unset_choices() -> crate::skirmish_launch::SkirmishLocalSlot {
 /// `[0xA8D610]` (`0x7A7627..0x7A763D`). Without an operator in the list
 /// this returns false and the caller runs the local leave
 /// (`0x7A782A..0x7A788D`); otherwise `0x5E9850` clears the acceptances.
-pub(crate) fn guest_users_listed(state: &mut AppState, users: &[(String, bool)]) -> bool {
+pub(crate) fn guest_users_listed(
+    protocol: &mut Option<NetworkSetupProtocol>,
+    session: &mut MatchSession,
+    users: &[(String, bool)],
+) -> bool {
     for (name, _) in users {
         let human = crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: None,
@@ -81,11 +84,11 @@ pub(crate) fn guest_users_listed(state: &mut AppState, users: &[(String, bool)])
             slot: unset_choices(),
             role: Default::default(),
         };
-        if let Err(error) = state.match_state.session.add_network_participant(human) {
+        if let Err(error) = session.add_network_participant(human) {
             log::warn!("WOL user list: {name} has no node: {error:#}");
             continue;
         }
-        if let Some(protocol) = state.frontend.network_setup_protocol.as_mut()
+        if let Some(protocol) = protocol.as_mut()
             && protocol.wol_host.is_none()
         {
             protocol.wol_host = Some(name.clone());
@@ -94,7 +97,7 @@ pub(crate) fn guest_users_listed(state: &mut AppState, users: &[(String, bool)])
     if !users.iter().any(|(_, operator)| *operator) {
         return false;
     }
-    if let Err(error) = clear_guest_acceptance(state) {
+    if let Err(error) = clear_guest_acceptance(protocol, session) {
         log::warn!("WOL user list: {error:#}");
     }
     true
@@ -104,11 +107,9 @@ pub(crate) fn guest_users_listed(state: &mut AppState, users: &[(String, bool)])
 /// (`0x7A7981..0x7A7AFD`): the MultiPlayer Country and Color the persona
 /// just set, start and team -2; the observer preference sends the
 /// observer's.
-pub(crate) fn send_first_choices(state: &mut AppState) {
-    let local = state.frontend.multiplayer_shell_runtime.local_participant();
-    let Some(row) = state
-        .match_state
-        .session
+pub(crate) fn send_first_choices(frontend: &mut FrontendState, session: &MatchSession) {
+    let local = frontend.multiplayer_shell_runtime.local_participant();
+    let Some(row) = session
         .network_setup()
         .and_then(|launch| launch.local_player().raw_slot_index)
     else {
@@ -119,7 +120,7 @@ pub(crate) fn send_first_choices(state: &mut AppState) {
     slot.start_position = crate::skirmish_launch::LaunchStartPosition::Auto;
     slot.team = crate::skirmish_launch::LaunchTeam::None;
     queue(
-        state,
+        &mut frontend.network_setup_protocol,
         NetworkSetupRequest::PlayerChoices {
             row,
             slot,
@@ -141,7 +142,7 @@ pub(crate) fn send_first_choices(state: &mut AppState) {
 /// RESIDUAL: the host's node takes the mode's default country (mode
 /// vt+0x28) natively; it is unset here.
 pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<()> {
-    let pending = super::start_phase(state).in_progress()
+    let pending = super::start_phase(state.frontend.network_setup_protocol.as_ref()).in_progress()
         || state
             .frontend
             .network_setup_protocol
@@ -166,9 +167,15 @@ pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<
             .map(|row| (Some(row), false))
     };
     let Some((row, observer)) = place.filter(|_| !pending) else {
-        App::play_shell_rules_sound(state, |rules| rules.general.player_joined_sound());
+        App::play_shell_rules_sound(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            |rules| rules.general.player_joined_sound(),
+        );
         queue(
-            state,
+            &mut state.frontend.network_setup_protocol,
             NetworkSetupRequest::Kick {
                 name,
                 keep_out: false,
@@ -203,7 +210,12 @@ pub(crate) fn user_left(state: &mut AppState, name: &str, operator: bool) -> any
 }
 
 fn departed(state: &mut AppState, name: &str, operator: bool, tell: bool) -> anyhow::Result<()> {
-    play_player_left(state);
+    play_player_left(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+    );
     if state
         .frontend
         .network_setup_protocol
@@ -222,9 +234,17 @@ fn departed(state: &mut AppState, name: &str, operator: bool, tell: bool) -> any
     };
     service::service_event(state, service::NetworkSetupEvent::ParticipantLeft { index })?;
     if tell {
-        service::tell_room(state, super::dialog(state), "VERA:PlayerLeftRoom", name);
+        service::tell_room(
+            state,
+            super::dialog(&state.frontend, &state.match_state),
+            "VERA:PlayerLeftRoom",
+            name,
+        );
     }
-    clear_guest_acceptance(state)?;
+    clear_guest_acceptance(
+        &mut state.frontend.network_setup_protocol,
+        &mut state.match_state.session,
+    )?;
     let host = state.match_state.session.host();
     if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
         protocol.record_remote_user_left(host, operator);
@@ -247,13 +267,13 @@ pub(crate) fn player_choices(
     observer: bool,
 ) -> anyhow::Result<()> {
     if crate::app::shell_wol::in_match(state.frontend.wol.as_ref())
-        || super::start_phase(state).submitted()
-        || super::quick_match(state)
+        || super::start_phase(state.frontend.network_setup_protocol.as_ref()).submitted()
+        || super::quick_match(state.frontend.network_setup_protocol.as_ref())
         || !state.match_state.session.host()
     {
         return Ok(());
     }
-    let Some(index) = participant(state, name) else {
+    let Some(index) = participant(&state.match_state.session, name) else {
         return Ok(());
     };
     service::service_event(
@@ -273,8 +293,8 @@ pub(crate) fn player_choices(
 /// room, where the team combos show.
 pub(crate) fn balance_teams(state: &mut AppState, teams: &[(String, u8)]) -> anyhow::Result<()> {
     if crate::app::shell_wol::in_match(state.frontend.wol.as_ref())
-        || super::start_phase(state).in_progress()
-        || super::quick_match(state)
+        || super::start_phase(state.frontend.network_setup_protocol.as_ref()).in_progress()
+        || super::quick_match(state.frontend.network_setup_protocol.as_ref())
         || !state.match_state.session.host()
     {
         return Ok(());
@@ -324,15 +344,18 @@ fn team_moves(
 /// accept icon shows only for 1 (`0x5EA3E0`).
 pub(crate) fn player_ready(state: &mut AppState, name: &str, value: i32) -> anyhow::Result<()> {
     if crate::app::shell_wol::in_match(state.frontend.wol.as_ref())
-        || super::start_phase(state).submitted()
+        || super::start_phase(state.frontend.network_setup_protocol.as_ref()).submitted()
     {
         return Ok(());
     }
     let result = ready_arm(state, name, value);
-    if super::quick_match(state) {
-        quick_match_start(state, name);
+    if super::quick_match(state.frontend.network_setup_protocol.as_ref()) {
+        quick_match_start(&mut state.frontend, &state.match_state.session, name);
     } else {
-        guest_sink_tail(state);
+        guest_sink_tail(
+            &mut state.frontend.network_setup_protocol,
+            &mut state.match_state.session,
+        );
     }
     result
 }
@@ -341,29 +364,27 @@ pub(crate) fn player_ready(state: &mut AppState, name: &str, value: i32) -> anyh
 /// (`n` untested) from the node at index 1 while the channel has exactly
 /// two users, on the host before its StartGame: every channel user, in
 /// reverse channel order, to API+0x48, stage 9 (90 s) and `[0xB77DEC]`.
-fn quick_match_start(state: &mut AppState, name: &str) {
-    let session = &state.match_state.session;
+fn quick_match_start(frontend: &mut FrontendState, session: &MatchSession, name: &str) {
     let second = session
         .network_setup()
         .and_then(|launch| launch.humans.get(1))
         .is_some_and(|human| human.name.eq_ignore_ascii_case(name));
     if !session.host()
         || !second
-        || crate::app::shell_wol::lobby::member_count(state.frontend.wol.as_ref()) != 2
+        || crate::app::shell_wol::lobby::member_count(frontend.wol.as_ref()) != 2
     {
         return;
     }
-    let users = crate::app::shell_wol::lobby::member_names(state.frontend.wol.as_ref())
+    let users = crate::app::shell_wol::lobby::member_names(frontend.wol.as_ref())
         .rev()
         .map(str::to_owned)
         .collect();
-    if state
-        .frontend
+    if frontend
         .network_setup_protocol
         .as_mut()
         .is_some_and(|protocol| protocol.submit_start(users))
     {
-        crate::app::shell_wol::quick_match::start_requested(state.frontend.wol.as_mut());
+        crate::app::shell_wol::quick_match::start_requested(frontend.wol.as_mut());
     }
 }
 
@@ -375,23 +396,22 @@ fn quick_match_start(state: &mut AppState, name: &str) {
 /// online lobby's verified map runs it again (`accept_network_map_source`).
 /// RESIDUAL: the channel-owner gate (`0x007931A0`, the first operator is
 /// not this user) holds for every guest the matchbot names.
-pub(super) fn quick_match_accept(state: &mut AppState) {
-    let assigned = state
-        .match_state
-        .session
-        .network_setup()
-        .is_some_and(|launch| {
-            let slot = &launch.local_player().slot;
-            !slot.country_random && !slot.color_random
-        });
-    if !assigned || crate::app::shell_wol::lobby::member_count(state.frontend.wol.as_ref()) != 2 {
+pub(super) fn quick_match_accept(frontend: &mut FrontendState, session: &MatchSession) {
+    let assigned = session.network_setup().is_some_and(|launch| {
+        let slot = &launch.local_player().slot;
+        !slot.country_random && !slot.color_random
+    });
+    if !assigned || crate::app::shell_wol::lobby::member_count(frontend.wol.as_ref()) != 2 {
         return;
     }
-    queue(state, NetworkSetupRequest::Ready(true));
+    queue(
+        &mut frontend.network_setup_protocol,
+        NetworkSetupRequest::Ready(true),
+    );
 }
 
 fn ready_arm(state: &mut AppState, name: &str, value: i32) -> anyhow::Result<()> {
-    let Some(index) = participant(state, name) else {
+    let Some(index) = participant(&state.match_state.session, name) else {
         return Ok(());
     };
     // RESIDUAL: 0x77E900's own-name A0 re-enables C9 (0x5EDDE0); this
@@ -418,26 +438,29 @@ fn ready_arm(state: &mut AppState, name: &str, value: i32) -> anyhow::Result<()>
 /// requested (`0x005E3E73..0x005E3E90`).
 pub(crate) fn map_status(state: &mut AppState, name: &str, status: u8) -> anyhow::Result<()> {
     if crate::app::shell_wol::in_match(state.frontend.wol.as_ref())
-        || super::start_phase(state).submitted()
+        || super::start_phase(state.frontend.network_setup_protocol.as_ref()).submitted()
     {
         return Ok(());
     }
-    let result = match participant(state, name) {
+    let result = match participant(&state.match_state.session, name) {
         Some(index) => service::service_event(
             state,
             service::NetworkSetupEvent::MapStatus { index, status },
         ),
         None => Ok(()),
     };
-    guest_sink_tail(state);
+    guest_sink_tail(
+        &mut state.frontend.network_setup_protocol,
+        &mut state.match_state.session,
+    );
     result
 }
 
 /// After the arm, a guest's `+0x58` runs its preview tail on every public
 /// text that passed its gates, whoever sent it (`0x007A7F14..0x007A8213`).
-fn guest_sink_tail(state: &mut AppState) {
-    if !state.match_state.session.host() {
-        options_preview(state);
+fn guest_sink_tail(protocol: &mut Option<NetworkSetupProtocol>, session: &mut MatchSession) {
+    if !session.host() {
+        options_preview(protocol, session);
     }
 }
 
@@ -452,46 +475,36 @@ fn guest_sink_tail(state: &mut AppState) {
 /// its 900-bucket repeat (`0x007A802B..0x007A80D7`) are not sent, and the
 /// host's `Z3` and `P` arms are not ported: the online lobby moves previews
 /// as map transfers (docs/lobby-protocol.md).
-pub(super) fn options_preview(state: &mut AppState) {
-    let random = state
-        .match_state
-        .session
+pub(super) fn options_preview(
+    protocol: &mut Option<NetworkSetupProtocol>,
+    session: &mut MatchSession,
+) {
+    let random = session
         .network_setup()
         .and_then(|launch| launch.selected_map_file.as_deref())
         .is_some_and(|file| file.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED));
-    let room = state.match_state.session.network_room();
-    let local = state
-        .match_state
-        .session
+    let room = session.network_room();
+    let local = session
         .network_setup()
         .map(|launch| launch.local_player_index);
     let unaccept = !random
         && room.tournament_or_clan()
-        && local.is_some_and(|index| state.match_state.session.network_player_ready(index));
-    let protocol = state
-        .frontend
-        .network_setup_protocol
-        .as_mut()
-        .expect("setup owns protocol");
+        && local.is_some_and(|index| session.network_player_ready(index));
+    let protocol = protocol.as_mut().expect("setup owns protocol");
     if protocol.received_preview.is_some() || protocol.local_preview() || !unaccept {
         return;
     }
     protocol.accept_eligible = false;
     protocol.requests.push(NetworkSetupRequest::Ready(false));
     if let Some(index) = local
-        && let Err(error) = state
-            .match_state
-            .session
-            .set_network_player_ready(index, false)
+        && let Err(error) = session.set_network_player_ready(index, false)
     {
         log::warn!("WOL room unaccept: {error:#}");
     }
 }
 
-fn participant(state: &AppState, name: &str) -> Option<usize> {
-    state
-        .match_state
-        .session
+fn participant(session: &MatchSession, name: &str) -> Option<usize> {
+    session
         .network_setup()
         .and_then(|launch| participant_in(launch, name))
 }
@@ -524,8 +537,8 @@ pub(crate) fn user_kicked(state: &mut AppState, name: &str, line: String) -> any
 
 /// The kick sink for this user: `TXT_CHANNEL_FULL` when the session is
 /// over-full (`0x5E95E0`), else `TXT_YOURE_KICKED`.
-pub(crate) fn kicked_key(state: &AppState) -> &'static str {
-    if state.match_state.session.network_over_capacity() {
+pub(crate) fn kicked_key(session: &MatchSession) -> &'static str {
+    if session.network_over_capacity() {
         "TXT_CHANNEL_FULL"
     } else {
         "TXT_YOURE_KICKED"
@@ -536,14 +549,19 @@ pub(crate) fn kicked_key(state: &AppState) -> &'static str {
 /// PlayerLeft (`0x785764`), then the dialog closes (`CloseAndPop`) and the
 /// lobby rejoins (`0x788A30`). No box.
 pub(crate) fn local_left(state: &mut AppState) {
-    play_player_left(state);
-    if super::quick_match(state) {
+    play_player_left(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+    );
+    if super::quick_match(state.frontend.network_setup_protocol.as_ref()) {
         // No dialog: the nodes go with the setup; the runner's stage
         // timeout moves on.
         super::abandon_for_wol_runner(state);
         return;
     }
-    let dialog = super::dialog(state);
+    let dialog = super::dialog(&state.frontend, &state.match_state);
     App::leave_shell_dialog(
         state,
         crate::app::frontend::shell_transition::ShellSlideKind::NetworkSetup(dialog),
@@ -552,15 +570,25 @@ pub(crate) fn local_left(state: &mut AppState) {
 }
 
 /// `0x750920(Rules+0x6BC)` while in a channel (`[0xB76B10]` != 0).
-pub(crate) fn play_player_left(state: &mut AppState) {
-    App::play_shell_rules_sound(state, |rules| rules.general.player_left_sound());
+pub(crate) fn play_player_left(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    App::play_shell_rules_sound(frontend, match_state, process_assets, sfx_player, |rules| {
+        rules.general.player_left_sound()
+    });
 }
 
 /// `005E9850`: clear every acceptance but the host's and enable Accept on C9.
-pub(super) fn clear_guest_acceptance(state: &mut AppState) -> anyhow::Result<()> {
-    state.match_state.session.clear_guest_readiness()?;
-    let host = state.match_state.session.host();
-    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut()
+pub(super) fn clear_guest_acceptance(
+    protocol: &mut Option<NetworkSetupProtocol>,
+    session: &mut MatchSession,
+) -> anyhow::Result<()> {
+    session.clear_guest_readiness()?;
+    let host = session.host();
+    if let Some(protocol) = protocol.as_mut()
         && !host
     {
         protocol.accept_eligible = true;
@@ -579,7 +607,7 @@ pub(super) fn game_started(
 ) -> anyhow::Result<()> {
     // 0x7A7B95: once a start has matched ([0xB77E27]), OnGameStart does
     // nothing more.
-    if verify(state).is_some() {
+    if verify(state.frontend.network_setup_protocol.as_ref()).is_some() {
         return Ok(());
     }
     // 0x7A7B82..0x7A7B9E: the page reply window restarts with no time.
@@ -629,7 +657,7 @@ pub(super) fn game_started(
     state.match_state.session.set_wol_start(terms);
     // C2/C9 stay up: Start Game Now (0x794BA0) pushes the verify 0x130
     // over them with the nodes in [0xA8DA78] order (0x794C5B).
-    let names = launch_names(state);
+    let names = launch_names(&state.match_state.session);
     let protocol = state
         .frontend
         .network_setup_protocol
@@ -648,8 +676,8 @@ pub(super) fn game_started(
 /// up.
 /// RESIDUAL: a guest's peers follow the roster order; the native order of
 /// a guest's other nodes is not traced.
-fn launch_names(state: &AppState) -> Vec<String> {
-    let Some(launch) = state.match_state.session.network_setup() else {
+fn launch_names(session: &MatchSession) -> Vec<String> {
+    let Some(launch) = session.network_setup() else {
         return Vec::new();
     };
     let local = launch.local_player_index;
@@ -667,27 +695,27 @@ fn launch_names(state: &AppState) -> Vec<String> {
 }
 
 /// Start Game Now's verify `0x130`, while it is up.
-pub(crate) fn verify(state: &AppState) -> Option<&crate::ui::wol_verify::WolVerifyDialog> {
-    state
-        .frontend
-        .network_setup_protocol
-        .as_ref()?
-        .wol_verify
-        .as_ref()
+pub(crate) fn verify(
+    protocol: Option<&NetworkSetupProtocol>,
+) -> Option<&crate::ui::wol_verify::WolVerifyDialog> {
+    protocol?.wol_verify.as_ref()
 }
 
-fn verify_mut(state: &mut AppState) -> anyhow::Result<&mut crate::ui::wol_verify::WolVerifyDialog> {
-    state
-        .frontend
-        .network_setup_protocol
+fn verify_mut(
+    protocol: &mut Option<NetworkSetupProtocol>,
+) -> anyhow::Result<&mut crate::ui::wol_verify::WolVerifyDialog> {
+    protocol
         .as_mut()
         .and_then(|protocol| protocol.wol_verify.as_mut())
         .ok_or_else(|| anyhow::anyhow!("no connection verify is up"))
 }
 
 /// Node `node`'s box checks (`0x00794809`, `0x00793D20`).
-pub(super) fn verify_connected(state: &mut AppState, node: usize) -> anyhow::Result<()> {
-    verify_mut(state)?.connect(node);
+pub(super) fn verify_connected(
+    protocol: &mut Option<NetworkSetupProtocol>,
+    node: usize,
+) -> anyhow::Result<()> {
+    verify_mut(protocol)?.connect(node);
     Ok(())
 }
 
@@ -698,7 +726,7 @@ pub(super) fn verify_connected(state: &mut AppState, node: usize) -> anyhow::Res
 /// VERA's own room (not the original-style one) stays joined instead, so
 /// its players come back to it after the match.
 pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()> {
-    let verify = verify_mut(state)?;
+    let verify = verify_mut(&mut state.frontend.network_setup_protocol)?;
     anyhow::ensure!(verify.mismatch.is_none(), "the mismatch box is up");
     match result {
         0 => {
@@ -726,8 +754,9 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
                 super::commit_start(state, seed);
                 return Ok(());
             }
-            let quick_match = super::quick_match(state);
-            let back_to_room = super::dialog(state).modern && !quick_match;
+            let quick_match = super::quick_match(state.frontend.network_setup_protocol.as_ref());
+            let back_to_room =
+                super::dialog(&state.frontend, &state.match_state).modern && !quick_match;
             let protocol = state
                 .frontend
                 .network_setup_protocol
@@ -743,7 +772,11 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
                 super::commit_start(state, seed);
                 return Ok(());
             }
-            App::leave_shell_dialog_for_network_start(state, super::dialog(state), seed);
+            App::leave_shell_dialog_for_network_start(
+                state,
+                super::dialog(&state.frontend, &state.match_state),
+                seed,
+            );
         }
         1 => crate::app::shell_wol::start_aborted(state),
         2 => {
@@ -751,7 +784,7 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
                 &state.process_assets,
                 "TXT_SCENARIOS_DO_NOT_MATCH",
             );
-            verify_mut(state)?.mismatch = Some(message);
+            verify_mut(&mut state.frontend.network_setup_protocol)?.mismatch = Some(message);
         }
         other => anyhow::bail!("unknown negotiation result {other}"),
     }
@@ -761,16 +794,15 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
 /// The mismatch box's OK: its modal run (`0x007759E0`) returns and the
 /// abort goes on.
 pub(crate) fn mismatch_ok(state: &mut AppState) {
-    if verify(state).is_some_and(|verify| verify.mismatch.is_some()) {
+    if verify(state.frontend.network_setup_protocol.as_ref())
+        .is_some_and(|verify| verify.mismatch.is_some())
+    {
         crate::app::shell_wol::start_aborted(state);
     }
 }
 
-fn screen(state: &AppState) -> (i32, i32) {
-    (
-        state.renderer.gpu.config.width as i32,
-        state.renderer.gpu.config.height as i32,
-    )
+fn screen(gpu: &GpuContext) -> (i32, i32) {
+    (gpu.config.width as i32, gpu.config.height as i32)
 }
 
 /// `0x130`'s layout on the live screen.
@@ -778,10 +810,10 @@ pub(crate) fn verify_layout(state: &AppState) -> crate::ui::shell::modal::WolVer
     use crate::app::frontend::shell_layout;
     use crate::ui::shell::geom::RETAIL_SCALE;
 
-    let (width, height) = screen(state);
-    let scale = if !setup_dialog(state, false, SetupFlavor::Wol).modern {
+    let (width, height) = screen(&state.renderer.gpu);
+    let scale = if !setup_dialog(&state.frontend, false, SetupFlavor::Wol).modern {
         RETAIL_SCALE
-    } else if super::quick_match(state) {
+    } else if super::quick_match(state.frontend.network_setup_protocol.as_ref()) {
         // Quick Match has no C2/C9 room; its backdrop uses the fitted WOL shell.
         shell_layout::shell_scale_for_screen((width as u32, height as u32))
     } else {
@@ -794,10 +826,10 @@ pub(crate) fn verify_layout(state: &AppState) -> crate::ui::shell::modal::WolVer
 
 /// The 0xD0 mismatch is a separate retail message box; do not resize it here.
 pub(crate) fn verify_mismatch_parts(
-    state: &AppState,
+    gpu: &GpuContext,
     message: &crate::ui::shell::modal::ShellBox,
 ) -> crate::ui::shell::modal::BoxParts {
-    let (width, height) = screen(state);
+    let (width, height) = screen(gpu);
     message.parts(width, height, crate::ui::shell::geom::RETAIL_SCALE)
 }
 
@@ -807,16 +839,23 @@ pub(crate) fn verify_mismatch_parts(
 pub(crate) fn verify_pointer(state: &mut AppState, down: Option<bool>) {
     use crate::ui::shell::page::PageEvent;
     let at = state.match_state.input.cursor_px();
-    let ok = verify(state)
+    let ok = verify(state.frontend.network_setup_protocol.as_ref())
         .and_then(|verify| verify.mismatch.as_ref())
-        .map(|message| verify_mismatch_parts(state, message).button(0))
+        .map(|message| verify_mismatch_parts(&state.renderer.gpu, message).button(0))
         .unwrap_or_default();
     let layout = verify_layout(state);
-    let Ok(verify) = verify_mut(state) else {
+    let Ok(verify) = verify_mut(&mut state.frontend.network_setup_protocol) else {
         return;
     };
     let events = verify.pointer(&layout, ok, at, down);
-    let events = App::play_page_cues(state, events, false);
+    let events = App::play_page_cues(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        events,
+        false,
+    );
     if events.contains(&PageEvent::Activated(crate::ui::wol_shell::BOX_OK)) {
         mismatch_ok(state);
     }
@@ -825,22 +864,22 @@ pub(crate) fn verify_pointer(state: &mut AppState, down: Option<bool>) {
 /// `0x130`'s widgets on its layout before they paint (input syncs them only
 /// on a pointer message).
 pub(crate) fn verify_sync(state: &mut AppState) {
-    let Some(shown) = verify(state) else {
+    let Some(shown) = verify(state.frontend.network_setup_protocol.as_ref()) else {
         return;
     };
     let parts = Some(shown)
         .and_then(|verify| verify.mismatch.as_ref())
-        .map(|message| verify_mismatch_parts(state, message));
+        .map(|message| verify_mismatch_parts(&state.renderer.gpu, message));
     let ok = parts.as_ref().map(|parts| parts.button(0)).unwrap_or_default();
     let layout = verify_layout(state);
-    if let Ok(verify) = verify_mut(state) {
+    if let Ok(verify) = verify_mut(&mut state.frontend.network_setup_protocol) {
         verify.sync_widgets(&layout, ok);
         verify.sync_mismatch(parts.as_ref());
     }
 }
 
-pub(crate) fn verify_poll_scroll(state: &mut AppState) -> Option<Instant> {
-    verify_mut(state).ok()?.poll_scroll().1
+pub(crate) fn verify_poll_scroll(protocol: &mut Option<NetworkSetupProtocol>) -> Option<Instant> {
+    verify_mut(protocol).ok()?.poll_scroll().1
 }
 
 /// C2/C9 0x540 Enter (notify 0x501): commands first, then a plain line.
@@ -851,14 +890,14 @@ pub(super) fn chat(state: &mut AppState, text: Vec<u16>) {
         return;
     }
     let commands = wol_chat::WolChatCommands {
-        page: csf_units(state, "TXT_PAGE_COMMAND"),
-        reply: csf_units(state, "TXT_REPLY_COMMAND"),
-        reply_short: csf_units(state, "TXT_REPLY_COMMAND_SHORT"),
-        online: csf_units(state, "TXT_ONLINE_COMMAND"),
+        page: csf_units(&state.process_assets, "TXT_PAGE_COMMAND"),
+        reply: csf_units(&state.process_assets, "TXT_REPLY_COMMAND"),
+        reply_short: csf_units(&state.process_assets, "TXT_REPLY_COMMAND_SHORT"),
+        online: csf_units(&state.process_assets, "TXT_ONLINE_COMMAND"),
     };
     let last_pager =
         crate::app::shell_wol::last_pager(state.frontend.wol.as_ref()).map(str::to_owned);
-    let nickname = local_nickname(state);
+    let nickname = local_nickname(&state.match_state.session);
     let line = wol_chat::parse(&text, &commands, last_pager.is_some());
     let echo = match &line {
         WolChatLine::Notice(key) => {
@@ -881,7 +920,10 @@ pub(super) fn chat(state: &mut AppState, text: Vec<u16>) {
         }
     };
     crate::app::shell_wol::chat_sent(state.frontend.wol.as_mut(), &line);
-    queue(state, NetworkSetupRequest::WolChat(line));
+    queue(
+        &mut state.frontend.network_setup_protocol,
+        NetworkSetupRequest::WolChat(line),
+    );
     if let Some((text, color)) = echo {
         crate::app::shell_lan::append_room_chat(state, LanChatLine { text, color });
     }
@@ -897,14 +939,16 @@ pub(super) fn emote(state: &mut AppState) {
         .encode_utf16()
         .collect();
     let text = wol_chat::trim_line_end(&units).to_vec();
-    let page = super::dialog(state).page().dialog;
+    let page = super::dialog(&state.frontend, &state.match_state)
+        .page()
+        .dialog;
     let chat = crate::ui::multiplayer_setup::CHAT;
     state.frontend.shell_controller.set_text(page, chat, "");
     if text.is_empty() {
         message(state, "TXT_ENTER_MESSAGE", &[]);
         return;
     }
-    let nickname = local_nickname(state);
+    let nickname = local_nickname(&state.match_state.session);
     crate::app::shell_lan::append_room_chat(
         state,
         LanChatLine {
@@ -912,22 +956,20 @@ pub(super) fn emote(state: &mut AppState) {
             color: wol_chat::EMOTE_COLOR,
         },
     );
-    queue(state, NetworkSetupRequest::WolEmote(text));
+    queue(
+        &mut state.frontend.network_setup_protocol,
+        NetworkSetupRequest::WolEmote(text),
+    );
 }
 
-fn csf_units(state: &AppState, key: &str) -> Vec<u16> {
-    state.csf_label(key, "").encode_utf16().collect()
+fn csf_units(process_assets: &ProcessAssets, key: &str) -> Vec<u16> {
+    process_assets.csf_label(key, "").encode_utf16().collect()
 }
 
 /// `00B73E40` is the login nickname, which the login made the MultiPlayer
 /// handle and therefore the local participant's name.
-fn local_nickname(state: &AppState) -> String {
-    state
-        .match_state
-        .session
-        .local_player_name()
-        .unwrap_or_default()
-        .to_owned()
+fn local_nickname(session: &MatchSession) -> String {
+    session.local_player_name().unwrap_or_default().to_owned()
 }
 
 #[cfg(all(test, tests_app))]

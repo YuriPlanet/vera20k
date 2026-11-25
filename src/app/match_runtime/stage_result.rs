@@ -46,7 +46,7 @@ fn capture(state: &AppState, outcome: HouseOutcomeKind) -> anyhow::Result<Campai
     let room = session
         .campaign_room()
         .context("campaign room disappeared")?;
-    let manifest = campaign_room::load_manifest(state, room)?;
+    let manifest = campaign_room::load_manifest(state.platform.game_config.as_ref(), room)?;
     let sim = &state
         .match_state
         .sim_runtime
@@ -86,7 +86,11 @@ fn present(state: &mut AppState, index: usize) {
         },
     );
     App::open_shell_message_box(
-        state,
+        &state.platform.window,
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
         shell_box,
         ShellMessageBoxPurpose::AuthoredCampaignResult(Some(index)),
     );
@@ -118,7 +122,11 @@ pub(crate) fn answer(state: &mut AppState, index: Option<usize>, response: usize
                 String::new(),
             );
             App::open_shell_message_box(
-                state,
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
                 shell_box,
                 ShellMessageBoxPurpose::AuthoredCampaignResult(None),
             );
@@ -189,14 +197,25 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
         StageProgress::Waiting => {}
     }
     if let Some(plan) = result.plan_to_prepare().cloned() {
-        let result =
-            campaign_room::prepare_stage(state, &plan.stage, plan.carry).and_then(|room| {
-                let start = campaign_room::prepare_current(state, &room)?;
-                state
-                    .match_state
-                    .session
-                    .stage_prepared(room, start, now_ms)
-            });
+        let result = campaign_room::prepare_stage(
+            state.platform.game_config.as_ref(),
+            &state.match_state.session,
+            &state.process_assets,
+            &plan.stage,
+            plan.carry,
+        )
+        .and_then(|room| {
+            let start = campaign_room::prepare_current(
+                state.platform.game_config.as_ref(),
+                &state.match_state.session,
+                &state.process_assets,
+                &room,
+            )?;
+            state
+                .match_state
+                .session
+                .stage_prepared(room, start, now_ms)
+        });
         if let Err(error) = result {
             log::warn!("Cannot admit the next campaign stage: {error:#}");
             abort(state, Some("VERA:CampaignStageUnavailable"));
@@ -255,10 +274,17 @@ fn abort(state: &mut AppState, notice: Option<&str>) {
             Signal::StageAbort,
         );
     }
-    App::close_shell_message_box_from_controller(state);
+    App::close_shell_message_box_from_controller(&mut state.frontend);
     App::return_to_main_menu(state);
     if let Some(notice) = notice {
-        App::open_shell_notice(state, crate::i18n::tr(notice));
+        App::open_shell_notice(
+            &state.platform.window,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+            crate::i18n::tr(notice),
+        );
     }
 }
 
@@ -278,7 +304,7 @@ fn commit(state: &mut AppState, now_ms: u64) {
     }
     match state.match_state.session.commit_campaign_stage(now_ms) {
         Ok(StageHandoff::Lan(startup)) => {
-            App::close_shell_message_box_from_controller(state);
+            App::close_shell_message_box_from_controller(&mut state.frontend);
             App::retire_finished_scenario(state);
             crate::app::loading::pump::begin_loading(
                 state,
@@ -286,7 +312,7 @@ fn commit(state: &mut AppState, now_ms: u64) {
             );
         }
         Ok(StageHandoff::Wol) => {
-            App::close_shell_message_box_from_controller(state);
+            App::close_shell_message_box_from_controller(&mut state.frontend);
             App::retire_finished_scenario(state);
             App::resume_shell_after_match(state);
         }

@@ -1372,7 +1372,7 @@ fn wol_setup_settled(state: &AppState, host: bool) -> bool {
     MoviesCapture::slide_settled(
         state,
         ShellSlideKind::NetworkSetup(crate::app::shell_network_setup::setup_dialog(
-            state,
+            &state.frontend,
             host,
             crate::ui::multiplayer_setup::SetupFlavor::Wol,
         )),
@@ -1634,7 +1634,12 @@ fn unverified_host_options(state: &AppState) -> Result<NetworkSetupEvent> {
         .context("C9 setup")?
         .clone();
     let file = launch.selected_map_file.clone().context("host map")?;
-    let mut map_metadata = crate::app::shell_network_setup::local_map_metadata(state, &file)?;
+    let mut map_metadata = crate::app::shell_network_setup::local_map_metadata(
+        state.platform.game_config.as_ref(),
+        &state.frontend.scenario_catalog,
+        &state.process_assets,
+        &file,
+    )?;
     map_metadata.digest = "another version".into();
     Ok(NetworkSetupEvent::HostSetup(
         crate::app::shell_network_setup::HostOptions {

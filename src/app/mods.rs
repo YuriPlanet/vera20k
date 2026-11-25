@@ -803,7 +803,14 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
         (first, second) => first.or(second),
     };
     if let Some(text) = text {
-        crate::app::App::open_shell_notice(state, text);
+        crate::app::App::open_shell_notice(
+            &state.platform.window,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+            text,
+        );
     }
     None
 }

@@ -739,7 +739,8 @@ impl WolCapture {
         )?;
         // Start Game Now (0x794BA0) keeps C2 up under its verify 0x130.
         let names = |state: &AppState| {
-            setup::verify(state).map(|verify| (verify.names.clone(), verify.checked()))
+            setup::verify(state.frontend.network_setup_protocol.as_ref())
+                .map(|verify| (verify.names.clone(), verify.checked()))
         };
         ensure!(
             setup_requests(state).is_empty()
@@ -792,7 +793,7 @@ impl WolCapture {
         ensure!(
             requests == [NetworkSetupRequest::Leave]
                 && state.frontend.shell_exit.is_some()
-                && setup::verify(state).is_none(),
+                && setup::verify(state.frontend.network_setup_protocol.as_ref()).is_none(),
             "the negotiation did not close 0x130, leave and slide C2 out: {requests:?}"
         );
         MoviesCapture::restore_neutral_pointer(state);

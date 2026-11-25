@@ -3472,7 +3472,14 @@ fn fail_loading_with(
                 .map(crate::i18n::tr)
                 .or_else(|| failed_load_notice(policy, &err))
         {
-            crate::app::App::open_shell_notice(state, text);
+            crate::app::App::open_shell_notice(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+                text,
+            );
         }
     } else if policy == LoadingFailurePolicy::ReportNativeFailure {
         state.frontend.screen = GameScreen::MissionResult {
@@ -3513,7 +3520,12 @@ pub(crate) fn next_native_loading_frame(
 /// The dialog paints no pointer; the window's own stays as the frame owner
 /// last set it, hidden wherever mouse.sha loaded.
 pub(crate) fn present_saved_game_loading(state: &mut AppState) -> anyhow::Result<bool> {
-    if !crate::app::App::ensure_skirmish_shell_chrome(state) {
+    if !crate::app::App::ensure_skirmish_shell_chrome(
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+    ) {
         anyhow::bail!("Saved-game loading dialog has no shell chrome");
     }
     let Some(output) = state

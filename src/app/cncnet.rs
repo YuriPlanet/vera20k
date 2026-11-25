@@ -1030,7 +1030,7 @@ impl App {
             GameScreen::MissionResult { .. } => {
                 if action == SpawnAction::Leave {
                     log::info!("Spawn action: pressing Continue on the score screen");
-                    if Self::score_shell_active(state) {
+                    if Self::score_shell_active(&state.frontend) {
                         Self::leave_shell_dialog(
                             state,
                             crate::app::frontend::shell_transition::ShellSlideKind::Score,

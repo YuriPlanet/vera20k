@@ -1049,7 +1049,9 @@ fn fail_start(state: &mut AppState, text: &str) {
         crate::app::App::fail_external_launch(state, text);
         return;
     }
-    let verifying = crate::app::shell_network_setup::verify(state).is_some();
+    let verifying =
+        crate::app::shell_network_setup::verify(state.frontend.network_setup_protocol.as_ref())
+            .is_some();
     if !verifying && let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
         // A rejected HTTP Start has not handed the setup to the lobby runner.
         // Keep the ordinary host/join screen and release its pending input.

@@ -343,7 +343,13 @@ fn handle_events(state: &mut AppState) {
         let gui = state.frontend.shell_controller.gui();
         match event {
             PageEvent::Cue(cue) => {
-                App::play_page_cue(state, cue);
+                App::play_page_cue(
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    cue,
+                );
                 if matches!(cue, PageCue::ComboOpen | PageCue::ComboClose) {
                     state.frontend.shell_status_line.repaint();
                 }
