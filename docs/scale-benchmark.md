@@ -124,3 +124,17 @@ recorded beside its code as a sim-scale deviation (AGENTS.md) and listed here.
   and 32,768 for the ways through, instead of 65,527 each. In the battle's
   busiest part this halves a frame's search work, and jammed units find
   their way a little later.
+- **Patrol scans spread over their period**
+  ([actions.rs](../src/sim/team_script_vm/actions.rs),
+  `team_action_patrol_waypoint`). A patrolling team's leader looks for a
+  target once every `[AI] PatrolScan=` (14 frames with the retail rules), as
+  in the original, but each team on its own frame of that period, its id
+  modulo the period, where the original has every team look on the same
+  frame. A team so turns on a threat up to 13 frames sooner or later.
+- **Patrol scans answered side by side**
+  ([scan_batch.rs](../src/sim/world/techno_ai/scan_batch.rs)). The scans of
+  the leaders due in a frame are made side by side as the team step begins,
+  against the world as it stood then, and a leader's scan takes its answer
+  while the leader and the answer's target stand as the scan saw them. What
+  an earlier team's update in the same step changes, such as an order to its
+  members, a leader's scan sees a period later.
