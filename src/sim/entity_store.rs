@@ -578,6 +578,25 @@ impl EntityStore {
         self.cell(stable_id).is_some_and(|cell| cell.quiet)
     }
 
+    /// Ask the processor to start loading `stable_id`'s record, if it is
+    /// stored and awake (a sleeper's visit reads its sleep cell alone): for
+    /// the live object pass, a few slots before the object's turn
+    /// (`util::prefetch`). Sim-scale, results unchanged: it reads no entity,
+    /// counts as no lookup and leaves the focus alone.
+    #[inline]
+    pub(crate) fn warm(&self, stable_id: u64) {
+        let cols = self.columns();
+        let Some(&slot) = cols.slot_of.get(&stable_id) else {
+            return;
+        };
+        if cols.sleep[slot as usize].wake_at != 0 {
+            return;
+        }
+        if let Some(entity) = cols.entities[slot as usize].as_deref() {
+            crate::util::prefetch::prefetch(entity);
+        }
+    }
+
     /// `stable_id`'s entity and whether it is quiet, in one lookup.
     pub(crate) fn get_and_quiet(&self, stable_id: u64) -> Option<(&GameEntity, bool)> {
         if let Some(view) = self.view.as_deref() {
@@ -2406,6 +2425,28 @@ mod tests {
         assert!(store.get_mut_if(7, |_| false).is_none());
         assert_eq!(store.hand_outs(), handed_out);
         assert_eq!(store.get(7).unwrap().mission.ai_counter(), 2);
+    }
+
+    /// Warming a record is no lookup, no hand-out and no wake, whether the id
+    /// is stored, asleep or absent, and the focused id stays focused.
+    #[test]
+    fn warming_a_record_reads_and_wakes_nothing() {
+        let mut store = EntityStore::new();
+        for id in [3, 5] {
+            store.insert(GameEntity::test_default(id, "MTNK", "Americans", 5, 5));
+        }
+        store.sleep_until(5, 100, 0);
+        store.focus(3);
+        let (lookups, handed_out) = (store.lookups(), store.hand_outs());
+        for id in [3, 5, 9] {
+            store.warm(id);
+        }
+        assert_eq!(store.lookups(), lookups);
+        assert_eq!(store.hand_outs(), handed_out);
+        assert_eq!(store.sleeps_until(5), Some((100, 0)));
+        let by_index = store.lookups().1;
+        assert!(store.get(3).is_some());
+        assert_eq!(store.lookups().1, by_index, "3 is still the focused id");
     }
 
     /// The entry walk skips removed slots and unkept categories, and only an
