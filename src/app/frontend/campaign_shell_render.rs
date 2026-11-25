@@ -134,6 +134,7 @@ fn campaign_labels<'a>(
     process_assets: &'a ProcessAssets,
     layout: &CampaignLayout,
     children: bool,
+    ra2_mode: bool,
 ) -> Vec<PaintLabel<'a>> {
     let Some(campaign) = campaign.as_ref().filter(|_| children) else {
         return Vec::new();
@@ -145,9 +146,10 @@ fn campaign_labels<'a>(
         rgb: SHELL_TEXT_RGB_ENABLED,
         path_a_reveal: None,
     };
-    // Original RA2 shows a third Boot Camp caption; YR shows only the two
-    // campaign emblems. `active()` returns three under `-ra2`, two otherwise.
-    let captions = CampaignSide::active().iter().map(|side| {
+    // game.exe RT_DIALOG 0x94 (0x00BBE210) has no emblem caption statics.
+    // gamemd.exe has 0x7A7 and 0x7A8 for the Allied and Soviet captions.
+    let caption_sides: &[CampaignSide] = if ra2_mode { &[] } else { &CampaignSide::ALL };
+    let captions = caption_sides.iter().map(|side| {
         label(
             side.caption_key(),
             layout.caption(*side),
@@ -206,7 +208,41 @@ pub(crate) fn render_campaign_page(
         &state.process_assets,
         &layout,
         children,
+        crate::util::ra2_launch::enabled(),
     );
     encode_family_page(state, encoder, destination, frame);
     Ok(true)
+}
+
+#[cfg(all(test, tests_app_frontend))]
+mod tests {
+    use super::*;
+    use crate::assets::asset_manager::MediaArchiveMode;
+
+    #[test]
+    fn campaign_labels_follow_the_launch_mode() {
+        let campaign = Some(CampaignShellState::open(1));
+        let assets = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
+
+        let layout = crate::ui::campaign_shell::compute_layout(800, 600);
+        let ra2_labels = campaign_labels(&campaign, &assets, &layout, true, true);
+        let yr_labels = campaign_labels(&campaign, &assets, &layout, true, false);
+
+        assert_eq!(
+            ra2_labels
+                .iter()
+                .map(|label| label.rect)
+                .collect::<Vec<_>>(),
+            [layout.difficulty_label, layout.difficulty_value]
+        );
+        assert_eq!(
+            yr_labels.iter().map(|label| label.rect).collect::<Vec<_>>(),
+            [
+                layout.caption(CampaignSide::Allied),
+                layout.caption(CampaignSide::Soviet),
+                layout.difficulty_label,
+                layout.difficulty_value,
+            ]
+        );
+    }
 }
