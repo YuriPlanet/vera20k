@@ -251,15 +251,16 @@ impl MapGesture {
 /// Press or release literal modifiers through the shared modifier-key owner,
 /// releasing in reverse order.
 pub(super) fn literal_modifier_edges(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    input: &mut crate::app::input::state::MatchInputState,
     codes: &[winit::keyboard::KeyCode],
     pressed: bool,
 ) {
     let mut edge = |code| {
         crate::app::input::hotkeys::record_modifier_key(
-            &mut state.platform.held_modifier_keys,
-            &mut state.platform.live_modifiers,
-            &mut state.match_state.input.hotkey_modifiers,
+            &mut platform.held_modifier_keys,
+            &mut platform.live_modifiers,
+            &mut input.hotkey_modifiers,
             code,
             pressed,
             false,

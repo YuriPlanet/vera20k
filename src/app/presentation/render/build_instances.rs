@@ -1000,7 +1000,12 @@ fn build_smudge_instances(
 /// Build debug visualization instances (only when toggled on via hotkeys).
 pub(super) fn build_debug_instances(state: &AppState, sw: f32, sh: f32) -> DebugInstances {
     let foot_path = if state.diag.debug_show_foot_path {
-        debug_overlays::build_foot_path_overlay_instances(state, sw, sh)
+        debug_overlays::build_foot_path_overlay_instances(
+            &state.match_state,
+            &state.renderer.bit_font,
+            sw,
+            sh,
+        )
     } else {
         debug_overlays::FootPathInstances {
             stroke: Vec::new(),
@@ -1010,17 +1015,22 @@ pub(super) fn build_debug_instances(state: &AppState, sw: f32, sh: f32) -> Debug
     };
     DebugInstances {
         pathgrid: if state.diag.debug_show_pathgrid {
-            debug_overlays::build_terrain_cost_overlay_instances(state, sw, sh)
+            debug_overlays::build_terrain_cost_overlay_instances(
+                &state.diag,
+                &state.match_state,
+                sw,
+                sh,
+            )
         } else {
             Vec::new()
         },
         cell_grid: if state.diag.debug_show_cell_grid {
-            debug_overlays::build_cell_grid_overlay_instances(state, sw, sh)
+            debug_overlays::build_cell_grid_overlay_instances(&state.match_state, sw, sh)
         } else {
             Vec::new()
         },
         path: if state.diag.debug_show_pathgrid {
-            debug_overlays::build_path_overlay_instances(state, sw, sh)
+            debug_overlays::build_path_overlay_instances(&state.match_state, sw, sh)
         } else {
             Vec::new()
         },
@@ -1028,7 +1038,7 @@ pub(super) fn build_debug_instances(state: &AppState, sw: f32, sh: f32) -> Debug
         foot_nodes: foot_path.nodes,
         foot_text: foot_path.text,
         heightmap: if state.diag.debug_show_heightmap {
-            debug_overlays::build_heightmap_overlay_instances(state, sw, sh)
+            debug_overlays::build_heightmap_overlay_instances(&state.match_state, sw, sh)
         } else {
             Vec::new()
         },

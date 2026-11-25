@@ -958,7 +958,10 @@ impl App {
             .match_diagnostics
             .begin_presentation_observation();
         crate::app::diagnostics::performance_overlay::observe_simulation(
-            state,
+            &state.renderer.performance_overlay,
+            &state.platform,
+            &state.frontend.screen,
+            &state.match_state,
             hidden_run.is_some(),
         );
         let tooltip_ms = crate::app::input::tooltips::update(state);
@@ -1628,7 +1631,13 @@ impl App {
             &mut encoder,
             &output.texture,
             &state.renderer.bit_font,
-            crate::app::diagnostics::performance_overlay::match_panel(state),
+            crate::app::diagnostics::performance_overlay::match_panel(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            ),
         );
         if state.frontend.screen == GameScreen::InGame
             && let Some(offset_px) = runtime_pass.screen_shake_offset
