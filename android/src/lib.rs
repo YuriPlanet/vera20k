@@ -210,28 +210,6 @@ fn ime_set_secret(secret: bool) {
     });
 }
 
-/// The screen's cutout and corner radius at the window's top-left, in screen
-/// pixels (`util::display_insets`).
-fn display_insets() -> vera20k::util::display_insets::Insets {
-    let left = with_activity(|env, activity| {
-        env.call_method(activity, "displayInsetLeft", "()I", &[])
-            .ok()?
-            .i()
-            .ok()
-    })
-    .flatten()
-    .unwrap_or(0);
-    let top = with_activity(|env, activity| {
-        env.call_method(activity, "displayInsetTop", "()I", &[])
-            .ok()?
-            .i()
-            .ok()
-    })
-    .flatten()
-    .unwrap_or(0);
-    vera20k::util::display_insets::Insets { left, top }
-}
-
 /// The activity's folder-picker answer: the chosen tree as a `content://` URI,
 /// or an empty string when the player cancelled.
 #[unsafe(no_mangle)]
