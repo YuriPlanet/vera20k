@@ -37,23 +37,28 @@ RA2_DIR=<原版目录> python3 -m tools.cargo_run -- test --locked -p vera20k-co
 | 区域 | 标记数 | 内容 |
 | --- | --- | --- |
 | `rules`（`lib.rs`） | 4 | 规则阶段：`vera_init` 先于 `on_rules` 运行、`Rules::get` 读原版键（与类型属性一致）、规则阶段的类型名和类型属性、`Rules::set` 改 `YTNK` 的 `Cost`，对局里该类型读到新值 |
-| `basics` | 75 | 宿主调用、各名字种类的 `lookup`/`name_of`、对象/房屋/类型/单元格/全局属性读取、视角读取、`set` 写入（血量、所属、等级、任务、弹药、上线）、全部已接线的修饰器（火力、护甲、速度、射速、射程、暴击、不死、隐形、强制显形、禁用武器、免疫标志、转向速度 ROT）及过期/分组/查询、声明变量、各种 `find`、INI 注册（6h） |
+| `basics` | 86 | 宿主调用、各名字种类的 `lookup`/`name_of`、对象/房屋/类型/单元格/全局属性读取、视角读取、`set` 写入（血量、所属、等级、任务、弹药、上线）、全部已接线的修饰器（火力、护甲、速度、射速、射程、暴击、不死、隐形、强制显形、禁用武器、免疫标志、转向速度 ROT）及过期/分组/查询、声明变量、各种 `find`（含 `Types` 范围）、INI 注册（6h）；第二轮补的属性：类型的 `Name`、`Points`、`Buildable`，全局 `GameMode`，对象的 `Cloaked`、`NearbyEnemyCount`、`TargetInRange`、`CanFireAtTarget`、`DoorOpen`、`Animating` |
 | `triggers` | 99 | 触发器生命周期与各种绑定、投递事件（受伤、击杀、开火、计时、出生、乘客上下、易主、心控、超武、修饰器事件、模块事件）、原版对象/房屋/逻辑/单元格事件、各种轮询、过滤子句、立即动作与连锁、几乎全部原子动作和几个原版动作、房屋命令及 `Commanded`/`OrderRefused`、控制域认领、INI 触发器、队伍类型的 `lookup`/`name_of`、援军（原版动作 7、80）、超时空援军（107）和触发器造出的建筑（125）的 `Birth` |
 | `combat` | 10 | `TakeDamage` 决策与事件、`DamageIncoming`、`FatalDamage`（泰矿残留位）、`Fire` 射击计划、`FireAllowed`、`Retaliate`、`Launch`、`ProjectileFrame`、`CrushAllowed` |
-| `movement` | 13 | `ProductionAllowed`、`ProductionQueued`、`CommandAllowed`、`DestinationSet`、`HarvestCell`、`DeployAllowed`、`IdleMission`、`MissionStep`、`MoveFrame`、`PathFound`、`ApproachPoint`、推动、`SetFacing` |
+| `movement` | 17 | `ProductionAllowed`、`ProductionQueued`、`CommandAllowed`、`DestinationSet`、`HarvestCell`、`DeployAllowed`（攻城直升机）、站立步兵的部署、基地车的部署和展开出的建造厂的 `Birth`、建筑被毁后幸存者的 `Birth`、`IdleMission`、`MissionStep`、`MoveFrame`、`PathFound`、`ApproachPoint`、推动、`SetFacing` |
 | `finale` | 6 | 前面全部到齐后运行，最迟第 4800 帧开始（每步有时限，约 1050 帧内走完）；开始后各区域的逐帧工作、事件和决策都不再执行：认领电脑的 `Production` 控制域（电脑 AI 不再开工，生产走房屋命令），`QueueProduction` 一个电脑没在造的类型，开工后下 `SuspendProduction`（工厂进度停住）再 `QueueProduction` 同类型（进度继续），之后放回认领（电脑 AI 用工厂建筑自己的工厂生产，`SuspendProduction` 只暂停房屋的工厂，所以要先认领）；移除电脑的全部对象，`Defeat` 先否决一次（之后几帧仍未战败）再放行（读到 `IsDefeated`）；`EndFor` 宣布玩家获胜（调用前记标记），之后模块继续运行 30 帧 |
 
 ## 没覆盖的点
 
-- 队伍成员的 `Team` 属性：引擎读得到时记 `triggers.prop-team`，不计入总数。
-- 引擎还没读取的属性（`ControlGroup`、`GameMode`、成员的 `Team`/`Tag`、`Cloaked`、
-  `NearbyEnemyCount` 等）。
+共 222 个标记，约 2900 帧全部到齐。剩下没做的都是有意不做：
+
+- `ControlGroup`：只存在于客户端，放进模拟会导致不同步。
+- 对象的 `Team`/`Tag` 引用：RFC 让它们用共享的创建计数编号，而引擎里队伍有自己的计数、
+  标签是存储下标，真要做得改存档格式。现在答 `Unsupported`；读得到时记
+  `triggers.prop-team`，不计入总数。
+- 伪装成地形的幻影坦克的 `DisguiseType`：没有地形类型的名字种类。
+- 房屋的 `Name`（玩家名不是模拟状态）、写 `DoorOpen`/`Animating`（是客户端显示）。
+- 撤销部署不问 `DeployAllowed`：RFC 4.5 只规定了部署。
 - 暴击与 `Unkillable` 只在 Phobos 构建里生效；非 Phobos 构建里标记确认的是“正确地答
   `Unsupported`”。
+- 载具被毁后乘员的 `Birth`：引擎会发，但基准和引擎测试都还没覆盖（建筑幸存者已覆盖）。
 
-## 基准发现的引擎问题
+## 基准发现并已修好的引擎问题
 
-- 站立的步兵部署（`ToggleInfantryDeploy` → `Mission_Unload`，`src/sim/deploy.rs`
-  `infantry_mission_unload`）不问 `DeployAllowed`，电脑 AI 的自动部署
-  （`techno_ai/mission_handlers.rs`）也不问；只有行进中步兵的待定部署、简单部署者和 MCV 会问。
-  所以基准用攻城直升机测部署。
+- 站立的步兵部署（`Mission_Unload`）、电脑 AI 的自动部署和接近目标时的部署都不问
+  `DeployAllowed`；现在所有步兵部署都走同一个入口 `infantry_request_deploy`。
