@@ -44,7 +44,7 @@ fn alternate_base_center_roundtrips_with_primary_center_and_hash() {
     house.set_alternate_base_center_for_test((93, 106));
     house.set_base_plan_center_for_test((19, 21));
     sim.houses.register(house);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
 
     let bytes = GameSnapshot::save(&sim, 0, 0, "alternate-base-center", 0);
@@ -68,7 +68,7 @@ fn naval_build_const_order_and_membership_roundtrip_with_hash() {
     let type_ref = sim.interner.intern("GACNST");
     let house = crate::sim::house_state::HouseState::new(owner, 0, Some(country), false, 0, 10);
     sim.houses.register(house);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let entity = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
         9,
         4,
@@ -208,7 +208,7 @@ fn gsi_04_05_base_plan_and_building_facts_roundtrip_current_snapshot() {
         .type_facts
         .set_base_plan_has_undeploy_target_for_test(true);
     sim.substrate.entities.insert(entity);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
 
     let bytes = GameSnapshot::save(&sim, 0, 0, "base-plan", 0);
@@ -347,7 +347,7 @@ fn gsi_04_05_house_and_techno_base_defense_state_roundtrip_with_hash() {
         &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(sim.team_script_vm.team_for_member(1).is_none());
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
 
     let bytes = GameSnapshot::save(&sim, 0, 0, "gsi_04_05_strategy", 0);
@@ -468,7 +468,7 @@ fn wave_active_inactive_dummy_links_roundtrip_with_identical_hash() {
     use crate::util::native_x87::NativeF64Bits;
 
     let mut sim = Simulation::new();
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let owner = sim.interner.intern("Americans");
     let type_ref = sim.interner.intern("DLPH");
     let mut owner_ids = Vec::new();
@@ -618,7 +618,7 @@ fn gsi_01_04_pending_exit_command_roundtrips_without_terminal_edge() {
         hash_without_pending_input,
         "pending EXIT follows the existing external-command hash convention"
     );
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
 
     let bytes = GameSnapshot::save(&sim, 1, 2, "abort.map", 0);
@@ -756,7 +756,7 @@ fn gsi_01_04_mid_savour_snapshot_preserves_remaining_frames_without_replaying_ev
     });
     // Full snapshot load resets Scenario RNG to Seed0; compare hashes on
     // that canonical post-load cursor.
-    original.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *original.scenario_rng = crate::sim::rng::SimRng::new(0);
     let saved_hash = original.state_hash();
     let bytes = GameSnapshot::save(&original, 11, 22, "", 33);
     let mut restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
@@ -873,7 +873,7 @@ fn gsi_04_20_mid_fade_lighting_roundtrip_preserves_hash_and_next_rung() {
 
     // Native in-scenario load restarts Scenario RNG from Seed0; isolate
     // lighting persistence on that same post-load cursor.
-    original.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *original.scenario_rng = crate::sim::rng::SimRng::new(0);
     let saved_hash = original.state_hash();
     let bytes = GameSnapshot::save(&original, 11, 22, "", 33);
     let mut restored = GameSnapshot::load(&bytes)
@@ -905,7 +905,7 @@ fn house_harvester_no_ore_latch_roundtrips_at_v132() {
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, true, 5_000, 10);
     house.set_harvester_no_ore_for_test(true);
     sim.houses.register(house);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
 
     let bytes = GameSnapshot::save(&sim, 0, 0, "house_no_ore_latch", 0);
@@ -931,7 +931,7 @@ fn house_eva_advice_state_roundtrips_at_v133() {
     house.set_eva_funds_timer_for_test(crate::sim::timer::CdTimer::started(1_234, 2_880));
     house.set_eva_low_power_guard_for_test(true);
     sim.houses.register(house);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
 
     let bytes = GameSnapshot::save(&sim, 0, 0, "house_eva_advice", 0);
@@ -972,7 +972,7 @@ fn gsi_04_18_spy_sat_latch_and_erased_map_knowledge_roundtrip_at_v65() {
     assert!(!sim.fog.is_cell_revealed(owner, 6, 6));
     // Native in-scenario load restarts Scenario RNG from Seed0; isolate
     // SpySat/map-knowledge persistence on that same post-load cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
 
     let bytes = GameSnapshot::save(&sim, 0, 0, "gsi_04_18_shroud", 0);
@@ -1000,7 +1000,7 @@ fn house_difficulty_round_trips_through_snapshot() {
     sim.houses.register(house);
     // Native in-scenario load restarts Scenario RNG from Seed0; isolate
     // house-difficulty persistence on that same post-load cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
 
     let bytes = GameSnapshot::save(&sim, 0, 0, "test_map", 0);

@@ -716,6 +716,13 @@ def _run(root: Path, args: list[str], label: str | None, timeout: float, policy,
                         destination = staging / str(i) / path.name
                         destination.parent.mkdir()
                         shutil.copy2(path, destination)
+                        # Preserved games/tools can outlive their source checkout.
+                        terrain = root / 'Terrain'
+                        if terrain.is_dir():
+                            loose = destination.parent / terrain.name
+                            loose.mkdir()
+                            for name in ('vera_ice.mix', 'vera_ice_tiles.ini'):
+                                shutil.copyfile(terrain / name, loose / name)
                         records.append({'source': str(path), 'file': destination.relative_to(staging).as_posix(),
                                         'sha256': hashlib.sha256(destination.read_bytes()).hexdigest()})
                     manifest = {'schema': 1, 'checkout': str(root), 'source': before,

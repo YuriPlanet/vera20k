@@ -56,8 +56,25 @@ fn snapshot_layout() -> u32 {
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     {
         static LAYOUT: OnceLock<u32> = OnceLock::new();
-        *LAYOUT.get_or_init(traced_snapshot_layout)
+        *LAYOUT.get_or_init(traced_on_a_game_stack)
     }
+}
+
+/// [`traced_snapshot_layout`] on a thread of its own with the 8 MiB stack of
+/// the game's own threads. The trace runs under whichever caller first saves
+/// or loads, and it decodes a made-up snapshot through every saved type:
+/// unoptimized, its frames hold about 1.9 MiB of whole snapshots and worlds,
+/// more than a 2 MiB thread has left. A caller whose thread did not start or
+/// did not finish traces itself.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+fn traced_on_a_game_stack() -> u32 {
+    std::thread::Builder::new()
+        .name("snapshot layout".into())
+        .stack_size(8 << 20)
+        .spawn(traced_snapshot_layout)
+        .ok()
+        .and_then(|trace| trace.join().ok())
+        .unwrap_or_else(traced_snapshot_layout)
 }
 
 /// [`snapshot_layout`], traced from the saved types.
@@ -334,8 +351,8 @@ where
         // gamemd reads the saved ScenarioClass Random at +0x218, then
         // immediately reseeds it. MapGen starts at Seed(0) until the live
         // process cursor, if present, is bound during player-load admission.
-        simulation.scenario_rng = crate::sim::rng::SimRng::new(0);
-        simulation.mapgen_rng = crate::sim::rng::SimRng::new(0);
+        *simulation.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *simulation.mapgen_rng = crate::sim::rng::SimRng::new(0);
     }
     Ok(simulation)
 }

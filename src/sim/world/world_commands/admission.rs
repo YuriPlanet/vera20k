@@ -8,7 +8,7 @@ use crate::sim::command::{
     MegaMissionTarget, SpecialPlaceRecord,
 };
 use crate::sim::control_authority::{CommandCapability, ControlScope};
-use crate::sim::intern::InternedId;
+use crate::sim::intern::{InternKey, InternedId};
 use crate::sim::world::Simulation;
 
 impl Simulation {
@@ -16,7 +16,7 @@ impl Simulation {
     #[cfg(test)]
     pub(crate) fn entity_owned_by_id(&self, command_owner: &str, stable_id: u64) -> bool {
         self.command_entity_allowed(
-            command_owner,
+            command_owner.into(),
             None,
             stable_id,
             CommandCapability::PrimaryHouse,
@@ -27,11 +27,12 @@ impl Simulation {
     /// envelopes and local-view identity cannot select a grant row.
     pub(in crate::sim::world) fn resolve_command_grant_source(
         &self,
-        command_owner: &str,
+        command_owner: InternKey<'_>,
         source: i8,
     ) -> Option<(i8, InternedId)> {
         let primary = self.admitted_grant_source_owner(source)?;
-        command_owner
+        self.interner
+            .key_name(command_owner)
             .eq_ignore_ascii_case(self.interner.resolve(primary))
             .then_some((source, primary))
     }
@@ -66,7 +67,7 @@ impl Simulation {
         actor: u64,
     ) -> bool {
         self.command_entity_allowed(
-            self.interner.resolve(source.1),
+            source.1.into(),
             Some(source),
             actor,
             CommandCapability::Tactical,
@@ -74,14 +75,18 @@ impl Simulation {
     }
     pub(super) fn command_house_allowed(
         &self,
-        command_owner: &str,
+        command_owner: InternKey<'_>,
         granted_source: Option<(i8, InternedId)>,
         subject_house: InternedId,
         capability: CommandCapability,
     ) -> bool {
         let scope = match granted_source {
             Some((source, _)) => self.control_scope_for_source(source, subject_house),
-            None if command_owner.eq_ignore_ascii_case(self.interner.resolve(subject_house)) => {
+            None if self
+                .interner
+                .key_name(command_owner)
+                .eq_ignore_ascii_case(self.interner.resolve(subject_house)) =>
+            {
                 ControlScope::OwnFull
             }
             None => ControlScope::None,
@@ -91,7 +96,7 @@ impl Simulation {
 
     pub(super) fn command_entity_allowed(
         &self,
-        command_owner: &str,
+        command_owner: InternKey<'_>,
         granted_source: Option<(i8, InternedId)>,
         stable_id: u64,
         capability: CommandCapability,
@@ -155,7 +160,7 @@ impl Simulation {
             command
         };
         !self.network_command_actor_foreign(
-            self.interner.resolve(primary),
+            primary.into(),
             Some((source, primary)),
             command,
             rules,
@@ -255,7 +260,7 @@ impl Simulation {
     ///
     pub(super) fn network_command_actor_foreign(
         &self,
-        command_owner: &str,
+        command_owner: InternKey<'_>,
         granted_source: Option<(i8, InternedId)>,
         cmd: &Command,
         rules: &RuleSet,
@@ -452,7 +457,7 @@ impl Simulation {
     /// receiver checks handle missing actors and their existing side effects.
     pub(in crate::sim::world) fn command_actor_outside_scope(
         &self,
-        command_owner: &str,
+        command_owner: InternKey<'_>,
         granted_source: Option<(i8, InternedId)>,
         id: u64,
         capability: CommandCapability,

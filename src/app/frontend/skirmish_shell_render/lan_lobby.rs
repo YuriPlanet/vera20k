@@ -1,21 +1,24 @@
 //! BB LAN lobby composition: native5DDBD0 with ordinary shell60CF00,
 //! NewEdit614B30, list619230 and scrollbar61C690. Discovery rows are UI views.
 
+use super::SHELL_CONTROL_DEPTH;
 use super::chrome::*;
 use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
-use super::SHELL_CONTROL_DEPTH;
 use crate::app::AppState;
-use crate::render::hud_paint::Material;
 use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::shell_lan::LanShellRuntime;
+use crate::render::hud_paint::Material;
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::lan_shell::{CHAT_LOG, GAMES, JOIN, PAGE, PLAYERS, STATUS, TITLE};
+use crate::ui::shell::controller::DialogController;
 use crate::util::time::Instant;
 
 /// Whether box button `id` shows pushed (612B70).
-fn box_pressed(state: &AppState, id: i32) -> bool {
-    let gui = state.frontend.shell_controller.gui();
+fn box_pressed(shell_controller: &DialogController, id: i32) -> bool {
+    let gui = shell_controller.gui();
     gui.dialogs()
         .last()
         .and_then(|d| gui.find_id(gui.dialog_root(d)?, id))
@@ -50,19 +53,34 @@ fn paint_create_box(
         ROOM_SPECTATORS,
     ];
     let style = super::gui_paint::GuiStyle::popup();
-    let widgets =
-        super::gui_paint::paint_gui_ids(state, controller.gui(), root, ids, layout.scale, style);
-    overlay.controls.extend(widgets.lane(Material::Controls).copied());
+    let widgets = super::gui_paint::paint_gui_ids(
+        &state.platform.ime,
+        &state.renderer.bit_font,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        controller.gui(),
+        root,
+        ids,
+        layout.scale,
+        style,
+    );
+    overlay
+        .controls
+        .extend(widgets.lane(Material::Controls).copied());
     overlay.texts.extend(widgets.texts);
 }
 
 /// BB's message box as it shows, when one is up.
-fn lan_notice(state: &AppState) -> Option<crate::ui::shell::modal::ShellBox> {
+fn lan_notice(
+    lan: &Option<LanShellRuntime>,
+    process_assets: &ProcessAssets,
+) -> Option<crate::ui::shell::modal::ShellBox> {
     use crate::app::shell_lan::{MODAL, OK};
-    let runtime = state.frontend.lan.as_ref()?;
+    let runtime = lan.as_ref()?;
     let key = runtime.modal?;
-    let body = (runtime.modal_body.clone()).unwrap_or_else(|| state.csf_label(key, key));
-    let ok = state.csf_label("TXT_OK", "OK");
+    let body = (runtime.modal_body.clone()).unwrap_or_else(|| process_assets.csf_label(key, key));
+    let ok = process_assets.csf_label("TXT_OK", "OK");
     Some(crate::ui::shell::modal::ShellBox::new(MODAL, body).button(OK, ok))
 }
 
@@ -73,9 +91,11 @@ pub(crate) fn render_lan_lobby(
 ) -> anyhow::Result<()> {
     crate::app::shell_lan::sync_gui(state);
     // The message box on its widgets (built as it opened) before it paints.
-    let notice = lan_notice(state);
+    let notice = lan_notice(&state.frontend.lan, &state.process_assets);
     let size = (state.render_width() as i32, state.render_height() as i32);
-    let notice_parts = notice.as_ref().map(|notice| super::shell_box::skirmish_parts(notice, size));
+    let notice_parts = notice
+        .as_ref()
+        .map(|notice| super::shell_box::skirmish_parts(notice, size));
     if let (Some(notice), Some(parts)) = (notice.as_ref(), notice_parts.as_ref()) {
         let controller = &mut state.frontend.shell_controller;
         if let Some(root) = controller.root_in(notice.dialog) {
@@ -87,9 +107,11 @@ pub(crate) fn render_lan_lobby(
     let scale = layout.page.scale;
     let width = state.render_width();
     let height = state.render_height();
-    let exit =
-        crate::app::frontend::shell_transition::shell_exit_wave(state, ShellSlideKind::LanLobby)
-            .cloned();
+    let exit = crate::app::frontend::shell_transition::shell_exit_wave(
+        &state.frontend.shell_exit,
+        ShellSlideKind::LanLobby,
+    )
+    .cloned();
     let leaving = exit.is_some();
     let wave = exit.or_else(|| state.frontend.shell_first_paint_slide.clone());
     let sliding = wave.is_some();
@@ -114,7 +136,7 @@ pub(crate) fn render_lan_lobby(
             .map(|key| state.csf_label(key, ""))
             .unwrap_or_default();
         crate::app::frontend::menu_page_render::paint_shell_status_line(
-            state,
+            &mut state.frontend.shell_status_line,
             help,
             layout.page.status_help,
         )
@@ -235,19 +257,34 @@ pub(crate) fn render_lan_lobby(
             ..Default::default()
         };
         if let Some(root) = root {
-            let paint = super::gui_paint::paint_gui_styled(state, gui, root, scale, &[], style);
+            let paint = super::gui_paint::paint_gui_styled(
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                gui,
+                root,
+                scale,
+                &[],
+                style,
+            );
             controls.extend(paint.lane(Material::Controls).copied());
             texts.extend(paint.texts);
         }
         if let (Some(notice), Some(parts)) = (notice.as_ref(), notice_parts.as_ref()) {
             use crate::app::shell_lan::OK;
-            let pressed = box_pressed(state, OK.into());
+            let pressed = box_pressed(&state.frontend.shell_controller, OK.into());
             let look = super::BoxLook::skirmish(atlas.mode_two_dialog_background(None));
             let (sprites, texts) = (&mut overlay.controls, (&mut overlay.texts, false));
             let pressed = |id| pressed && id == OK;
             let tree = super::controller_tree(&state.frontend.shell_controller, notice.dialog);
             super::shell_box::push_skirmish_box(
-                state,
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
                 Some(atlas),
                 tree,
                 notice,

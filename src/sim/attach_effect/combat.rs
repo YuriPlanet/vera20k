@@ -512,7 +512,7 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
-        if damage <= 0 || self.reflected_warhead == Some(warhead_ref) {
+        if damage <= 0 || *self.reflected_warhead == Some(warhead_ref) {
             return;
         }
         let Some(warhead) = self.interner.warhead_type(warhead_ref, rules) else {
@@ -721,7 +721,7 @@ impl Simulation {
             {
                 instance.reflect_damage_timer.start(frame, delay);
             }
-            self.reflected_warhead = previous;
+            *self.reflected_warhead = previous;
         }
     }
 

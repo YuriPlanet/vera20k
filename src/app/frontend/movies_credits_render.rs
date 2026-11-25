@@ -4,6 +4,8 @@
 use anyhow::Result;
 
 use crate::app::AppState;
+use crate::app::frontend::credits_roll::CreditsRollSession;
+use crate::app::frontend::fullscreen_movie::FullscreenMovie;
 use crate::app::frontend::menu_page_render::{
     FamilyFrame, encode_family_page, family_art_ready, page_panel_state, page_tree,
 };
@@ -12,12 +14,14 @@ use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::frontend::skirmish_shell_render::gui_paint::{
     GuiStyle, paint_gui_ids_into, paint_gui_styled_into,
 };
+use crate::app::renderer_state::RendererState;
 use crate::render::shell_surface_present::SurfaceEffects;
 use crate::render::shell_text::ShellTextDraw;
 use crate::ui::movies_credits_shell::{
     FAMILY_LIST_ID, MOVIE_LIST_DIALOG, MOVIE_LIST_PAGE, MOVIE_LIST_PROMPT, MOVIE_LIST_TOOLTIP_KEY,
     find_family_list, movie_list_nodes,
 };
+use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::menu_page;
 use vera20k_gui::ListView;
 use vera20k_gui::shell::list::ShellListGeometry;
@@ -25,33 +29,33 @@ use vera20k_gui::shell::list::ShellListGeometry;
 /// The family page `dialog`'s list as its `List` node shows it, with its
 /// geometry on the node's window.
 pub(crate) fn family_list_view(
-    state: &AppState,
+    shell_controller: &DialogController,
     dialog: crate::ui::shell::descriptor::DialogResourceId,
 ) -> Option<(ShellListGeometry, ListView)> {
-    let gui = state.frontend.shell_controller.gui();
-    let node = find_family_list(&state.frontend.shell_controller, dialog)?;
+    let gui = shell_controller.gui();
+    let node = find_family_list(shell_controller, dialog)?;
     Some((gui.list_geometry(node)?, gui.list_view(node)?))
 }
 
 /// Whether the pointer is over the family page `dialog`'s list, its status
 /// help's hover target. The page is the top dialog.
 pub(crate) fn family_list_hovered(
-    state: &AppState,
+    shell_controller: &DialogController,
     dialog: crate::ui::shell::descriptor::DialogResourceId,
 ) -> bool {
-    let controller = &state.frontend.shell_controller;
+    let controller = shell_controller;
     controller.top_id() == Some(dialog)
         && find_family_list(controller, dialog)
             .is_some_and(|node| controller.gui().hovered() == Some(node))
 }
 
 /// Hover help of dialog `0x129` for its status line `0x695`.
-fn movie_list_status_key(state: &AppState) -> Option<&'static str> {
-    let controller = &state.frontend.shell_controller;
+fn movie_list_status_key(shell_controller: &DialogController) -> Option<&'static str> {
+    let controller = shell_controller;
     if controller.top_id() != Some(MOVIE_LIST_PAGE.dialog) {
         return None;
     }
-    if family_list_hovered(state, MOVIE_LIST_DIALOG) {
+    if family_list_hovered(shell_controller, MOVIE_LIST_DIALOG) {
         return Some(MOVIE_LIST_TOOLTIP_KEY);
     }
     MOVIE_LIST_PAGE
@@ -68,11 +72,19 @@ pub(crate) fn render_movie_list(
     if !family_art_ready(state) {
         return Ok(false);
     }
-    let layout = crate::app::frontend::shell_layout::movie_list_layout(state);
+    let layout = crate::app::frontend::shell_layout::movie_list_layout(&state.renderer.gpu);
     let (page, dialog) = (&layout.page, MOVIE_LIST_DIALOG);
     let rect_of = |id| layout.rect_of(id);
-    let tree = page_tree(state, dialog, movie_list_nodes, rect_of, &[]);
-    let status = |state: &AppState| movie_list_status_key(state).map(str::to_owned);
+    let tree = page_tree(
+        &mut state.frontend.shell_controller,
+        dialog,
+        movie_list_nodes,
+        rect_of,
+        &[],
+    );
+    let status = |state: &AppState| {
+        movie_list_status_key(&state.frontend.shell_controller).map(str::to_owned)
+    };
     let kind = ShellSlideKind::MovieList;
     let panel = page_panel_state(state, kind, true, status, page.status_help);
     // The teardown slide covers every child with the dialog's own repaint
@@ -80,8 +92,11 @@ pub(crate) fn render_movie_list(
     // the list box and the prompt stay blank.
     let leaving = panel.leaving;
     let title = MOVIE_LIST_PAGE.title_key;
-    let mut frame =
-        FamilyFrame::new("Movie List Shell", page, panel, title).on(state, dialog, &tree);
+    let mut frame = FamilyFrame::new("Movie List Shell", page, panel, title).on(
+        &state.frontend.shell_controller,
+        dialog,
+        &tree,
+    );
     frame.backdrop = true;
     if !leaving {
         // The list over its widget, its rows the movies' captions: only the
@@ -111,14 +126,38 @@ pub(crate) fn render_movie_list(
                 ..Default::default()
             };
             let over = &mut frame.over;
-            paint_gui_styled_into(over, state, gui, node, page.scale, &[], style);
+            paint_gui_styled_into(
+                over,
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                gui,
+                node,
+                page.scale,
+                &[],
+                style,
+            );
         }
         frame.list_boxes.push((layout.list, bar));
         if let Some((gui, root)) = frame.buttons {
             let prompt = [MOVIE_LIST_PROMPT];
             let style = GuiStyle::default();
             let over = &mut frame.over;
-            paint_gui_ids_into(over, state, gui, root, prompt, page.scale, style);
+            paint_gui_ids_into(
+                over,
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                gui,
+                root,
+                prompt,
+                page.scale,
+                style,
+            );
         }
     }
     encode_family_page(state, encoder, destination, frame);
@@ -128,12 +167,12 @@ pub(crate) fn render_movie_list(
 /// A cleared black frame: Play_Movie's closing clear (`arg1 == 1`) and the
 /// end of Show_Credits, shown for the frame on which the presentation ends.
 pub(crate) fn render_fullscreen_black(
-    state: &mut AppState,
+    renderer: &RendererState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) {
     encode_shell_pass(
-        state,
+        renderer,
         encoder,
         destination,
         "Shell black",
@@ -143,16 +182,17 @@ pub(crate) fn render_fullscreen_black(
 
 /// Paint the active full-screen movie on black, without a cursor.
 pub(crate) fn render_fullscreen_movie(
-    state: &mut AppState,
+    renderer: &RendererState,
+    fullscreen_movie: &Option<FullscreenMovie>,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<()> {
-    let Some(movie) = state.frontend.fullscreen_movie.as_ref() else {
+    let Some(movie) = fullscreen_movie.as_ref() else {
         return Ok(());
     };
     let instance = movie.instance(
-        state.renderer.gpu.config.width as i32,
-        state.renderer.gpu.config.height as i32,
+        renderer.gpu.config.width as i32,
+        renderer.gpu.config.height as i32,
     );
     let draws = [TexturedDraw {
         texture: movie.surface().batch_texture(),
@@ -160,14 +200,14 @@ pub(crate) fn render_fullscreen_movie(
     }];
     let subtitle: Vec<_> = movie
         .subtitle_text(
-            &state.renderer.bit_font,
-            state.renderer.gpu.config.width as i32,
-            state.renderer.gpu.config.height as i32,
+            &renderer.bit_font,
+            renderer.gpu.config.width as i32,
+            renderer.gpu.config.height as i32,
         )
         .into_iter()
         .collect();
     encode_shell_pass(
-        state,
+        renderer,
         encoder,
         destination,
         "Play_Movie",
@@ -182,19 +222,21 @@ pub(crate) fn render_fullscreen_movie(
 
 /// Paint the credits roll on black with the 16-bit band fade, no cursor.
 pub(crate) fn render_credits_roll(
-    state: &mut AppState,
+    window_active: bool,
+    renderer: &RendererState,
+    credits_roll: &mut Option<CreditsRollSession>,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<()> {
-    let screen_w = state.renderer.gpu.config.width;
-    let screen_h = state.renderer.gpu.config.height;
+    let screen_w = renderer.gpu.config.width;
+    let screen_h = renderer.gpu.config.height;
     let viewport = super::credits_roll::CreditsViewport::new(screen_w, screen_h);
-    let active = state.platform.window_active;
-    let Some(session) = state.frontend.credits_roll.as_mut() else {
+    let active = window_active;
+    let Some(session) = credits_roll.as_mut() else {
         return Ok(());
     };
     if active || session.last_drawn.is_empty() {
-        session.last_drawn = session.roll.instances(&state.renderer.bit_font, viewport);
+        session.last_drawn = session.roll.instances(&renderer.bit_font, viewport);
     }
     // Glyphs are clipped to the 520 px box (0x006211D0 sets the clip rect).
     let text = [ShellTextDraw {
@@ -202,7 +244,7 @@ pub(crate) fn render_credits_roll(
         scissor: viewport.scissor,
     }];
     encode_shell_pass(
-        state,
+        renderer,
         encoder,
         destination,
         "Show_Credits",

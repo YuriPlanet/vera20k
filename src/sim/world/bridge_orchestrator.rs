@@ -1110,7 +1110,7 @@ mod tests {
     #[test]
     fn drop_in_keeps_a_falling_objects_z_and_it_falls_to_the_ground() {
         let mut sim = Simulation::new();
-        sim.resolved_terrain = Some(water_below_bridge_terrain(3));
+        *sim.resolved_terrain = Some(water_below_bridge_terrain(3));
         let id = spawn_deck_unit(&mut sim);
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         entity.position.set_exact_z_leptons_for_test(Some(1000));
@@ -1244,9 +1244,9 @@ mod tests {
         let mut sim = Simulation::new();
         let seed = 0x48A7_51DE_u64;
         sim.initialize_random_number_system(seed as u32);
-        sim.resolved_terrain = Some(water_below_bridge_terrain(3));
+        *sim.resolved_terrain = Some(water_below_bridge_terrain(3));
         seed_bridge_overlay(&mut sim, &[(4, 3), (4, 4)], 0xE0);
-        sim.bridge_state = Some(crate::sim::bridge_state::BridgeRuntimeState::default());
+        *sim.bridge_state = Some(crate::sim::bridge_state::BridgeRuntimeState::default());
         let bridge_explosion = sim.interner.intern("BRIDGEEXP1");
         sim.bridge_explosions.push(bridge_explosion);
 
@@ -1340,9 +1340,9 @@ mod tests {
                 b"[General]\nBridgeMiddle1=20\nBridgeMiddle2=40\n",
             ),
         );
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         seed_bridge_overlay(&mut sim, &[(5, 5)], 0xCD);
-        sim.bridge_state = Some(BridgeRuntimeState::default());
+        *sim.bridge_state = Some(BridgeRuntimeState::default());
 
         let bridge_strength = 1500i32;
         // Predict exactly two BridgeStrength gate draws (block A + block D).
@@ -1399,7 +1399,7 @@ mod tests {
         };
         let hut_fallback_anchor = |terrain: ResolvedTerrainGrid, hut| {
             let mut sim = Simulation::new();
-            sim.resolved_terrain = Some(terrain);
+            *sim.resolved_terrain = Some(terrain);
             ramp_repair::hut_anchor(&mut LiveCells::new(&sim), hut)
                 .expect("stamped structural starters carry +0x2C")
         };
@@ -1578,7 +1578,7 @@ mod tests {
         let mut sim = Simulation::new();
         sim.initialize_random_number_system(7);
         let baseline_state = sim.scenario_rng.state();
-        sim.resolved_terrain = Some(water_below_bridge_terrain(3));
+        *sim.resolved_terrain = Some(water_below_bridge_terrain(3));
         let metallic_debris = sim.interner.intern("METALDEB1");
         sim.metallic_debris.push(metallic_debris);
         let rules = bridge_explosion_rules();

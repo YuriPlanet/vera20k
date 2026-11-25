@@ -6,6 +6,7 @@
 //! ([`Command::SetBuildingOnLine`]).
 
 use crate::app::AppState;
+use crate::app::match_runtime::state::MatchState;
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::Command;
@@ -42,10 +43,9 @@ pub(crate) fn execute_command(state: &mut AppState) {
 /// `SetTogglePowerMode(0)`, which Cancel (`0x004AADDE`), the team keys
 /// (`0x007311D3`, `0x007313AC`, `0x007314CB`) and Next/Previous Object
 /// (`0x00536617`, `0x00536A87`) call before their other mode clears.
-pub(crate) fn disable(state: &mut AppState) {
-    let placement_armed = state.armed_building_type().is_some();
-    state
-        .match_state
+pub(crate) fn disable(match_state: &mut MatchState) {
+    let placement_armed = match_state.input.armed_building_type().is_some();
+    match_state
         .match_presentation
         .sidebar_gadget_state
         .set_power_mode(false, placement_armed, 0);
@@ -82,7 +82,7 @@ pub(crate) fn admits(sim: &Simulation, rules: &RuleSet, stable_id: u64) -> bool 
 /// The building under the cursor that [`admits`] power mode's switch.
 pub(crate) fn building_under_cursor(state: &AppState) -> Option<u64> {
     let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        state,
+        &state.match_state.input,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
@@ -109,7 +109,8 @@ pub(crate) fn click(state: &mut AppState) {
     else {
         return;
     };
-    let Some(owner) = super::commands::preferred_command_owner(state) else {
+    let Some(owner) = super::commands::preferred_command_owner(&state.match_state.sim_runtime)
+    else {
         return;
     };
     super::commands::schedule_command(

@@ -54,6 +54,7 @@
 use crate::sim::intern::InternedId;
 use crate::sim::projectile::launch::{AircraftBulletCourse, aircraft_bullet_velocity};
 use crate::sim::projectile::{ProjectileCoord, ProjectileVelocity};
+use crate::sim::world::HumanPlayerClients;
 
 #[cfg(all(test, tests_sim_a_b))]
 #[path = "fire_at_tests.rs"]
@@ -106,7 +107,7 @@ pub(crate) trait FireAtHost {
     fn set_velocity(&mut self, velocity: ProjectileVelocity);
     /// The clients on which `0x0050B6F0` admits the owner (`+0x21C`), each
     /// asking with its own PlayerPtr.
-    fn player_clients(&mut self) -> Vec<InternedId>;
+    fn player_clients(&mut self) -> HumanPlayerClients;
     /// The Location (`+0x9C`).
     fn location(&mut self) -> ProjectileCoord;
     /// `MapClass::IsShrouded @ 0x00586360` on `client`'s map.
@@ -142,7 +143,7 @@ pub(crate) fn fire_at(host: &mut impl FireAtHost) {
         if let Some(course) = course {
             host.set_velocity(aircraft_bullet_velocity(shot.velocity, course));
         }
-        for client in host.player_clients() {
+        for &client in host.player_clients().iter() {
             let location = host.location();
             let shrouded = SHROUD_PROBES.iter().any(|&(dx, dy)| {
                 host.is_shrouded(

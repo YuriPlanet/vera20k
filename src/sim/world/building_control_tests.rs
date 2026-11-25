@@ -169,14 +169,14 @@ fn native_player_identity_is_independent_of_the_discovery_policy() {
         .with_counts_player_control_as_human(false);
     sim.install_session_admission(Campaign, None, campaign);
     assert!(sim.house_is_human_player(scripted));
-    assert_eq!(sim.human_player_clients(scripted), [player]);
+    assert_eq!(*sim.human_player_client_set(scripted), [player]);
 
     let skirmish = Skirmish
         .stock_rule_policy(None)
         .with_uses_campaign_discovery(true);
     sim.install_session_admission(Skirmish, None, skirmish);
     assert!(!sim.house_is_human_player(scripted));
-    assert!(sim.human_player_clients(scripted).is_empty());
+    assert!(sim.human_player_client_set(scripted).is_empty());
 }
 
 #[test]

@@ -535,6 +535,7 @@ fn load_with_assets(
     let team_ai_registry =
         crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, rule_policy)?;
     let theater = theater::load_scenario_theater(assets, &map.header.theater, &map.ini, false)
+        .map_err(|error| format!("{error:#}"))?
         .ok_or_else(|| format!("load theater {}", map.header.theater))?;
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
     let house_roster = crate::map::houses::parse_house_roster(
@@ -895,7 +896,7 @@ mod retail_construction_tests {
         };
         let mut sim = ScenarioBootstrapRng::new(descriptor.seed).into_simulation(&descriptor);
         // This synthetic fixture omits the production native Rules prefix.
-        sim.native_unique_ids =
+        *sim.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
         let resolved = {
             let (mut scenario_fill_rng, variant_main_rng) = sim.terrain_load_draws();

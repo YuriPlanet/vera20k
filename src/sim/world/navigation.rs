@@ -16,6 +16,7 @@ use crate::sim::intern::StringInterner;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::zone_map::ZoneGrid;
+use crate::util::forked::Forked;
 
 /// The cells one marked structure blocks for movement: its base foundation
 /// with the bib edge relaxed. Every structure-presence reader uses this rule.
@@ -96,9 +97,12 @@ pub(super) fn structure_blocked_among(
     blocked
 }
 
+/// The world's zone and path caches are its fields as they are
+/// (`util::forked`), so a publication that finds a cell current only reads
+/// them.
 pub(super) struct NavigationCaches<'a> {
-    pub(super) zones: &'a mut Option<ZoneGrid>,
-    pub(super) path: &'a mut Option<Arc<PathGrid>>,
+    pub(super) zones: &'a mut Forked<Option<ZoneGrid>>,
+    pub(super) path: &'a mut Forked<Option<Arc<PathGrid>>>,
     /// The live overlay surface the path projection reads for bridge sprites.
     pub(super) overlays: Option<&'a OverlayGrid>,
     /// Current operation's world bounds; this borrowed view is never retained.
@@ -117,22 +121,25 @@ impl NavigationCaches<'_> {
         let cell = terrain
             .cell(coord.0, coord.1)
             .ok_or("Recalc cell is outside terrain")?;
-        // Only a changed cell rewrites the grid.
-        if let Some(zones) = self.zones.as_mut()
-            && !zones.base_cell_attributes_current(terrain, coord.0, coord.1)
+        // Only a changed cell rewrites the grid, and only it takes the grid
+        // for writing.
+        if self
+            .zones
+            .as_ref()
+            .is_some_and(|zones| !zones.base_cell_attributes_current(terrain, coord.0, coord.1))
+            && let Some(zones) = self.zones.as_mut()
         {
             zones.refresh_base_cell_attributes_at(terrain, coord.0, coord.1);
         }
-        if let Some(path) = self.path.as_mut() {
+        if let Some(path) = self.path.as_ref() {
             if path.width() != terrain.width() || path.height() != terrain.height() {
                 return Err("path dimensions differ from terrain".into());
             }
-            if !path.resolved_cell_is_current(cell, self.overlays, structure_blocked)
-                && !Arc::make_mut(path).refresh_resolved_cell(
-                    cell,
-                    self.overlays,
-                    structure_blocked,
-                )
+            let overlays = self.overlays;
+            if !path.resolved_cell_is_current(cell, overlays, structure_blocked)
+                && !self.path.as_mut().is_some_and(|path| {
+                    Arc::make_mut(path).refresh_resolved_cell(cell, overlays, structure_blocked)
+                })
             {
                 return Err("current path cell could not be published".into());
             }
@@ -167,7 +174,7 @@ impl NavigationCaches<'_> {
                     .unwrap_or(&[]),
                 self.playfield_bounds,
             )?;
-            *self.path = Some(Arc::new(grid));
+            **self.path = Some(Arc::new(grid));
         } else {
             self.rebuild_zones(Arc::new(grid), terrain, bridges);
         }
@@ -267,7 +274,7 @@ impl NavigationCaches<'_> {
         {
             // PathGrid does not carry CellClass reduced zone type.
             // Both path state and retained base classes must match.
-            *self.path = Some(path_grid);
+            **self.path = Some(path_grid);
             return;
         }
         self.rebuild_zones_full(path_grid, terrain, bridges);
@@ -281,7 +288,7 @@ impl NavigationCaches<'_> {
         terrain: &ResolvedTerrainGrid,
         bridges: Option<&BridgeRuntimeState>,
     ) {
-        *self.zones = Some(
+        **self.zones = Some(
             ZoneGrid::build_with_native_map_context(
                 &path_grid,
                 terrain,
@@ -293,6 +300,6 @@ impl NavigationCaches<'_> {
             )
             .into(),
         );
-        *self.path = Some(path_grid);
+        **self.path = Some(path_grid);
     }
 }

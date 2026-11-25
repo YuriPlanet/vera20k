@@ -47,8 +47,7 @@ fn has_stealth_ability(
         entity.category(),
         object,
         ares,
-    ))
-        || entity.phobos_cloakable()
+    )) || entity.phobos_cloakable()
 }
 
 /// `FootClass::IsCloakable @ 0x004DBDA0` (vtable +0x288) while Ares plays:
@@ -131,7 +130,10 @@ fn stock_cloak_tick_facts(
     // Original active-YR producer reachability remains unproven: the
     // dormant TS EMPulse body alone does not establish an original scenario
     // caller. Ares's Bullet hook is a separate, established producer.
-    let emp_active = entity.is_under_emp();
+    // Firestorm 2.0 `Cloaking_AI` 0x0062EFA0 (`0x0062EFC7`) and vt+0x240
+    // `0x0062F4A0` (`0x0062F523`) ask Is_Immobilized here, which also holds
+    // a webbed infantryman (`0x004D5B10`).
+    let emp_active = entity.is_immobilized(sim.session.binary_frame() as i32);
     let paralyzed = entity.parasite.is_paralyzed(sim.session.binary_frame());
     // Ares ShouldNotCloak10043A40 applies the same blockers to rank cloak
     // and raw ability, and rejects parachutes and deactivated self-cloakers.
@@ -149,7 +151,8 @@ fn stock_cloak_tick_facts(
     let sonar_active = rules.ares()
         && entity.seldom.ares.sonar_timer.start_frame() != -1
         && entity
-            .seldom.ares
+            .seldom
+            .ares
             .sonar_timer
             .remaining(sim.session.binary_frame() as i32)
             > 0;
@@ -170,7 +173,8 @@ fn stock_cloak_tick_facts(
     // resolving to a WeaponsFactory building (naval-yard repair contact), not
     // an arbitrary movement destination.
     let destination_is_weapons_factory = entity
-        .seldom.radio_contacts
+        .seldom
+        .radio_contacts
         .slot(0)
         .is_some_and(|contact| sim.is_weapons_factory(contact, rules));
     let current_frame = sim.session.binary_frame() as i32;
@@ -758,7 +762,7 @@ pub(crate) fn uncloak_on_sensor_neighbour_after_cell_entry(
         // seam.
         if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             (i32::from(nx), i32::from(ny)),
-            sim.playfield_bounds,
+            *sim.playfield_bounds,
             sim.resolved_terrain.as_ref(),
         ) {
             continue;
@@ -927,16 +931,14 @@ pub(crate) fn cloak_producer_ticks(
         entity.category(),
         object,
         ares,
-    ))
-        || has_weapon_ability(
-            rank_from_u16(entity.veterancy.rank()),
-            object,
-            Ability::Cloak,
-        )
-        || entity
-            .cloak
-            .as_ref()
-            .is_some_and(|cloak| cloak.state() != 0)
+    )) || has_weapon_ability(
+        rank_from_u16(entity.veterancy.rank()),
+        object,
+        Ability::Cloak,
+    ) || entity
+        .cloak
+        .as_ref()
+        .is_some_and(|cloak| cloak.state() != 0)
         || entity.phobos_cloakable()
 }
 

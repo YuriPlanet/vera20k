@@ -7,10 +7,16 @@
 
 use crate::app::AppState;
 use crate::app::input::dialog_page::InGameDialog;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::presentation::state::MatchPresentationState;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::render::batch::SpriteInstance;
 use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::scaled_copy::ScaledSurface;
 use crate::render::sidebar_chrome::{SidebarChromeAtlas, SidebarChromeEntry};
+use crate::ui::game_screen::GameScreen;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::in_game_shell::{InGameShellLayout, InGameShellSizes};
@@ -57,18 +63,42 @@ pub(super) fn shell_layout(
 /// The pixels every active-game shell lays out, paints and hit-tests in: the
 /// match frame in sidebar pixels (`SidebarFrame::layout_size`), the frame
 /// itself at Normal.
-pub(crate) fn in_game_shell_size(state: &AppState) -> (i32, i32) {
-    let (width, height) = state.sidebar_frame().layout_size();
+pub(crate) fn in_game_shell_size(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    presentation: &MatchPresentationState,
+    persistence: &PersistenceState,
+) -> (i32, i32) {
+    let (width, height) = crate::app::state::sidebar_frame(
+        platform,
+        persistence,
+        renderer,
+        screen,
+        &presentation.sidebar_layout_spec,
+    )
+    .layout_size();
     (width as i32, height as i32)
 }
 
 /// The pointer in [`in_game_shell_size`]'s pixels: the shell pixel shown at
 /// the frame pixel under it.
-pub(crate) fn in_game_shell_cursor(state: &AppState) -> (i32, i32) {
-    let (x, y) = state.cursor_position();
-    state
-        .sidebar_frame()
-        .pixel_to_layout(x.round() as i32, y.round() as i32)
+pub(crate) fn in_game_shell_cursor(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> (i32, i32) {
+    let (x, y) = match_state.input.cursor_position();
+    crate::app::state::sidebar_frame(
+        platform,
+        persistence,
+        renderer,
+        screen,
+        &match_state.match_presentation.sidebar_layout_spec,
+    )
+    .pixel_to_layout(x.round() as i32, y.round() as i32)
 }
 
 /// An active-game shell's pixel space and its native layout there.
@@ -117,7 +147,13 @@ pub(crate) fn native_in_game_shell_active(state: &AppState) -> bool {
 
 pub(crate) fn current_in_game_shell_layout(state: &AppState) -> Option<InGameShellGeometry> {
     let atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)?;
-    let (width, height) = in_game_shell_size(state);
+    let (width, height) = in_game_shell_size(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     // The Phobos switch is absent from builds without the capability, so those
     // keep the native top-left placement.
     #[cfg(feature = "phobos")]
@@ -229,7 +265,10 @@ impl<'a> InGamePaint<'a> {
         let state = self.state;
         let atlas = state.frontend.skirmish_shell_chrome.as_ref();
         // The controls and texts move in and back out: no new buffers.
-        let (controls, texts) = (std::mem::take(&mut self.controls), std::mem::take(&mut self.texts));
+        let (controls, texts) = (
+            std::mem::take(&mut self.controls),
+            std::mem::take(&mut self.texts),
+        );
         let mut paint = HudPaint::from_lane(Material::Controls, controls, texts);
         let scale = crate::ui::shell::geom::RETAIL_SCALE;
         for node in ids
@@ -238,7 +277,11 @@ impl<'a> InGamePaint<'a> {
         {
             super::gui_paint::paint_gui_into(
                 &mut paint,
-                state,
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
                 atlas,
                 gui,
                 node,
@@ -271,13 +314,24 @@ pub(super) fn paint_dialog(
     use crate::ui::shell::in_game_shell::{FOOTER, TITLE};
     let frame = {
         let state: &AppState = state;
-        let ui = (dialog.ui)(state).expect("the open dialog's controls");
+        let ui =
+            (dialog.ui)(&state.match_state.match_presentation).expect("the open dialog's controls");
         let mut paint = InGamePaint::new(state);
         let (lower, (key, fallback)) = dialog.lower;
-        let under = dialog.help_under_held.then(|| in_game_shell_cursor(state));
+        let under = dialog.help_under_held.then(|| {
+            in_game_shell_cursor(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            )
+        });
         let text_of = |id: i32| -> Option<String> {
             match u16::try_from(id).ok()? {
-                TITLE => dialog.title.map(|(key, fallback)| state.csf_label(key, fallback)),
+                TITLE => dialog
+                    .title
+                    .map(|(key, fallback)| state.csf_label(key, fallback)),
                 FOOTER => crate::app::input::dialog_page::help(ui, under)
                     .map(|key| state.csf_label(key, (dialog.help_fallback)(key))),
                 _ => Some(state.csf_label(key, fallback)),
@@ -578,10 +632,17 @@ pub(super) fn render_shell_frame(
         .iter()
         .map(|d| batch.create_instance_buffer(gpu, &d.instances))
         .collect();
-    let zoom_buffers = overlay.zoom.as_ref().map(|zoom| zoom.buffers(state));
+    let zoom_buffers = overlay
+        .zoom
+        .as_ref()
+        .map(|zoom| zoom.buffers(&state.renderer));
     let cursor_raster = window_raster.map(|_| {
-        crate::app::presentation::window_ui::dialog_raster(state)
-            .unwrap_or(crate::render::bit_font::TextRaster::NATIVE)
+        crate::app::presentation::window_ui::dialog_raster(
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.input,
+        )
+        .unwrap_or(crate::render::bit_font::TextRaster::NATIVE)
     });
     let cursor: Vec<_> = match cursor_policy {
         ShellFrameCursor::Visible => {
@@ -696,7 +757,13 @@ pub(super) fn render_shell_frame(
     }
     if let (Some(buffers), Some(atlas)) = (&zoom_buffers, control_atlas) {
         pass.set_scissor_rect(0, 0, shell_width, shell_height);
-        super::preview::draw_zoom(&mut pass, state, atlas, buffers);
+        super::preview::draw_zoom(
+            &mut pass,
+            &state.renderer,
+            &state.frontend.skirmish_preview_texture,
+            atlas,
+            buffers,
+        );
     }
     drop(pass);
     if let Some(surface) = shell_surface {
@@ -743,7 +810,10 @@ pub(super) fn render_shell_frame(
     }
     if let Some(raster) = window_raster {
         let view = destination.create_view(&Default::default());
-        let mut pass = state.renderer.window_ui.begin_pass(state, encoder, &view);
+        let mut pass = state
+            .renderer
+            .window_ui
+            .begin_pass(&state.renderer, encoder, &view);
         let atlas = state.renderer.bit_font.atlas();
         for (draw, buffer) in texts.iter().zip(&text_buffers) {
             if let Some((buffer, count)) = buffer {
@@ -768,7 +838,11 @@ pub(super) fn render_shell_frame(
             }
         }
         if let (Some((buffer, count)), Some(texture)) = (&cursor_buffer, cursor_texture) {
-            let frame = crate::app::presentation::window_ui::frame_rect(state);
+            let frame = crate::app::presentation::window_ui::frame_rect(
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state.input,
+            );
             pass.draw_cursor(texture, buffer, *count, frame);
         }
     }

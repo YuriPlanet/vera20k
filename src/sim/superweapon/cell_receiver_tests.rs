@@ -75,7 +75,7 @@ fn fixture_with_art(extra: &str, art: Option<&IniFile>) -> (Simulation, RuleSet)
     sim.houses
         .register(HouseState::new(owner, 0, None, true, 50_000, 10));
     sim.session.game_options_mut_for_test().super_weapons = true;
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(16, 16, |x, y| {
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(16, 16, |x, y| {
         test_terrain_cell(x, y)
     }));
     sim.set_playfield_bounds_for_test(Some(test_playfield_bounds()));
@@ -896,7 +896,7 @@ fn command_uses_packed_aliases_and_stamps_missing_cells(name: &str, object_type:
         .test_set_native_allocated_cells(&allocated);
     for mapless in [false, true] {
         if mapless {
-            sim.resolved_terrain = None;
+            *sim.resolved_terrain = None;
         }
         launch_command(&mut sim, &rules, name, 5, 5);
         let object = sim.substrate.entities.get(victim).unwrap();
@@ -966,7 +966,7 @@ fn iron_curtain_command_observes_native_deck_order_after_nested_bridge_drop_in()
     anchor.overlay_data = 6;
     let state =
         BridgeRuntimeState::from_resolved_terrain(sim.resolved_terrain.as_ref().unwrap(), true, 1);
-    sim.bridge_state = Some(state);
+    *sim.bridge_state = Some(state);
     // Older deck recipient is visited only after the newer Infantry's callback.
     let tank = sim
         .construct_object_limbo_at_height(

@@ -1,11 +1,14 @@
 //! Shared A3 lifecycle/input. Original5FBEF0/5FB320 and command assignment5FBB38.
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::hotkeys::{self, BindingAssignmentError, catalog::registered_commands};
+use crate::app::input::state::MatchInputState;
 #[cfg(any(
     all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
     target_os = "android"
 ))]
 use crate::app::keyboard_shim::KeyEventExtModifierSupplement;
-use crate::app::{App, AppState};
+use crate::app::process_assets::ProcessAssets;
+use crate::app::{App, AppState, PlatformState};
 use crate::ui::shell::keyboard::*;
 use crate::ui::shell::page::PageEvent;
 use crate::util::time::Instant;
@@ -17,6 +20,7 @@ use winit::keyboard::{Key, KeyCode, KeyLocation, NamedKey};
     target_os = "android"
 )))]
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+use winit::window::Window;
 
 /// A keyboard edge after the front-end/dialog admission gates. Both a window
 /// event and a literal-key production capture enter this same binding owner.
@@ -49,7 +53,12 @@ pub(crate) fn in_game_key_edge(
     // The Formation Line key comes up whoever owns the edge, as above; so
     // does the ferry's waypoint key.
     if !edge.state.is_pressed() {
-        crate::app::input::ferry::via_key_edge(state, edge.physical, false);
+        crate::app::input::ferry::via_key_edge(
+            &state.frontend,
+            &mut state.match_state,
+            edge.physical,
+            false,
+        );
         state
             .match_state
             .input
@@ -72,7 +81,7 @@ pub(crate) fn in_game_key_edge(
         return;
     }
     let is_escape = matches!(edge.logical, Key::Named(NamedKey::Escape));
-    let locked = crate::app::input::campaign_input::is_locked(state);
+    let locked = crate::app::input::campaign_input::is_locked(&state.match_state);
     let binding_key = hotkeys::binding_logical_key(edge.logical, edge.unmodified, edge.location);
     let mut resolution = state.match_state.input.hotkey_bindings.resolve_event(
         binding_key,
@@ -93,7 +102,12 @@ pub(crate) fn in_game_key_edge(
         && resolution == hotkeys::HotkeyResolution::Command(hotkeys::HotkeyCommand::PlanningMode)
     {
         if edge.state.is_pressed() {
-            crate::app::input::ferry::via_key_edge(state, edge.physical, true);
+            crate::app::input::ferry::via_key_edge(
+                &state.frontend,
+                &mut state.match_state,
+                edge.physical,
+                true,
+            );
         }
         return;
     }
@@ -180,7 +194,13 @@ fn layout_and_pointer(state: &AppState) -> Option<(KeyboardLayout, (i32, i32))> 
             shell.width,
             shell.height,
             Some((shell.layout, shell.button_size)),
-            crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state),
+            crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            ),
         )
     } else {
         let (x, y) = state.cursor_position();
@@ -192,7 +212,12 @@ fn layout_and_pointer(state: &AppState) -> Option<(KeyboardLayout, (i32, i32))> 
         )
     };
     Some((
-        crate::app::frontend::shell_layout::keyboard_layout(state, width, height, shell),
+        crate::app::frontend::shell_layout::keyboard_layout(
+            &state.renderer.gpu,
+            width,
+            height,
+            shell,
+        ),
         pointer,
     ))
 }
@@ -275,9 +300,9 @@ pub(crate) fn sync(state: &mut AppState) -> Option<KeyboardLayout> {
     Some(layout)
 }
 
-/// A command's name, category or description ([`AppState::csf_label`]).
-fn localized(state: &AppState, key: &str, parameter: Option<u8>) -> String {
-    let text = state.csf_label(key, key);
+/// A command's name, category or description ([`ProcessAssets::csf_label`]).
+fn localized(process_assets: &ProcessAssets, key: &str, parameter: Option<u8>) -> String {
+    let text = process_assets.csf_label(key, key);
     match parameter {
         Some(value) => text
             .replace("%2d", &format!("{value:2}"))
@@ -322,36 +347,48 @@ pub(crate) fn open(state: &mut AppState, parent: KeyboardParent) {
         })
         .map(|(index, metadata)| KeyboardCommandRow {
             command_index: index,
-            name: localized(state, metadata.name_key, metadata.parameter),
-            category: localized(state, metadata.category_key, None),
-            description: localized(state, metadata.description_key, metadata.parameter),
+            name: localized(&state.process_assets, metadata.name_key, metadata.parameter),
+            category: localized(&state.process_assets, metadata.category_key, None),
+            description: localized(
+                &state.process_assets,
+                metadata.description_key,
+                metadata.parameter,
+            ),
         })
         .collect();
     state.frontend.keyboard_dialog = Some(KeyboardState::new(
         parent,
         commands,
-        vec![localized(state, hotkeys::catalog::VERA_CATEGORY_KEY, None)],
+        vec![localized(
+            &state.process_assets,
+            hotkeys::catalog::VERA_CATEGORY_KEY,
+            None,
+        )],
     ));
-    refresh_title(state);
+    refresh_title(&mut state.frontend, &state.process_assets);
     state.platform.window.request_redraw();
 }
 /// Resolve the open page's heading into its static, as it opens and after
 /// the string table's labels change; the page paints it from there.
-pub(crate) fn refresh_title(state: &mut AppState) {
-    let text = state.csf_label(KEYBOARD_PAGE.title_key, "Keyboard Options");
-    if let Some(dialog) = state.frontend.keyboard_dialog.as_mut() {
+pub(crate) fn refresh_title(frontend: &mut FrontendState, process_assets: &ProcessAssets) {
+    let text = process_assets.csf_label(KEYBOARD_PAGE.title_key, "Keyboard Options");
+    if let Some(dialog) = frontend.keyboard_dialog.as_mut() {
         dialog.title.set_text(&text, Instant::now());
     }
 }
-fn reload(state: &mut AppState, reset: bool) {
-    let Some(config) = state.platform.game_config.as_ref() else {
+fn reload(
+    platform: &PlatformState,
+    input: &mut MatchInputState,
+    process_assets: &ProcessAssets,
+    reset: bool,
+) {
+    let Some(config) = platform.game_config.as_ref() else {
         return;
     };
-    let archive = state
-        .process_assets
+    let archive = process_assets
         .manager()
         .and_then(|a| a.get_archive_ref("KEYBOARDMD.INI"));
-    state.match_state.input.hotkey_bindings = if reset {
+    input.hotkey_bindings = if reset {
         crate::app::persistence::keyboard::reset(config.paths.settings_dir(), archive)
     } else {
         crate::app::persistence::keyboard::reload(config.paths.settings_dir(), archive)
@@ -423,7 +460,12 @@ pub(crate) fn commit_close(state: &mut AppState, exit: KeyboardExit) {
         }
     } else if exit.binding_action() == BindingExit::Reload {
         // IDCANCEL5FB6D4 reloads CURRENT disk, including a preceding Reset All.
-        reload(state, false);
+        reload(
+            &state.platform,
+            &mut state.match_state.input,
+            &state.process_assets,
+            false,
+        );
     }
     if !exit.recreate_parent(dialog.parent) {
         return;
@@ -443,7 +485,12 @@ fn activate(state: &mut AppState, id: KeyboardButton) {
     match id {
         KeyboardButton::Back => close(state, KeyboardExit::Back),
         KeyboardButton::ResetAll => {
-            reload(state, true);
+            reload(
+                &state.platform,
+                &mut state.match_state.input,
+                &state.process_assets,
+                true,
+            );
             if let Some(dialog) = state.frontend.keyboard_dialog.as_mut() {
                 dialog.reset_categories();
             }
@@ -500,9 +547,8 @@ fn apply(state: &mut AppState, events: Vec<PageEvent>) {
 }
 
 /// Poll the captured list gesture and return its next event-loop wake deadline.
-pub(crate) fn poll_scroll_repeat(state: &mut AppState) -> Option<Instant> {
-    let dialog = state.frontend.keyboard_dialog.as_mut()?;
-    let window = &state.platform.window;
+pub(crate) fn poll_scroll_repeat(window: &Window, frontend: &mut FrontendState) -> Option<Instant> {
+    let dialog = frontend.keyboard_dialog.as_mut()?;
     dialog.ui.poll_then(|| window.request_redraw())
 }
 
@@ -562,7 +608,9 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) {
         false => (lines * 3.0) as i32,
     };
     dialog.ui.set_scale(layout.scale);
-    dialog.ui.on_input(vera20k_gui::InputEvent::Wheel { lines, x, y });
+    dialog
+        .ui
+        .on_input(vera20k_gui::InputEvent::Wheel { lines, x, y });
     let events = dialog.ui.drain_events();
     let events = crate::ui::shell::page::page_events(dialog.ui.gui(), events);
     apply(state, events);

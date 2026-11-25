@@ -20,7 +20,7 @@ fn gsi_04_12_raw_occupation_snapshot_roundtrip_preserves_both_planes() {
     sim.substrate.raw_cell_occupation.mark_ground(2, 31, 0x02);
     // Native in-scenario load restarts Scenario RNG from Seed0; isolate
     // occupation-plane persistence on that same post-load cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
 
     let bytes = GameSnapshot::save(&sim, 0, 0, "gsi_04_12_raw_occupation", 0);
@@ -343,7 +343,7 @@ fn cell_fog_sensor_and_cloak_state_roundtrips_with_hash() {
     sim.substrate.entities.insert(entity);
     // Native in-scenario load restarts Scenario RNG from Seed0; isolate
     // fog/sensor/cloak persistence on that same post-load cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
 
     let bytes = GameSnapshot::save(&sim, 0, 0, "cell_fog_sensor_cloak", 0);
@@ -408,7 +408,7 @@ fn lifecycle_authority_pending_boundary_roundtrips_queue_and_state() {
     }
     // Native in-scenario load restarts Scenario RNG from Seed0; isolate
     // lifecycle-boundary persistence on that same post-load cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let hash_before = sim.state_hash();
 
     let bytes = GameSnapshot::save(&sim, 0, 0, "test_map", 0);
@@ -477,7 +477,7 @@ fn lifecycle_authority_bookkeeping_facts_roundtrip_and_change_state_hash() {
         .insert(GameEntity::test_default(1, "MTNK", "Americans", 5, 5));
     // Native in-scenario load restarts Scenario RNG from Seed0; isolate
     // lifecycle bookkeeping persistence on that same post-load cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let default_hash = sim.state_hash();
 
     let entity = sim.substrate.entities.get_mut(1).expect("fixture entity");
@@ -508,7 +508,7 @@ fn techno_playfield_membership_roundtrips_and_changes_state_hash_v87() {
     sim.substrate
         .entities
         .insert(GameEntity::test_default(1, "MTNK", "Americans", 5, 5));
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let default_hash = sim.state_hash();
     sim.substrate
         .entities
@@ -540,7 +540,7 @@ fn unlimbo_ge_places_into_logic_and_occupancy_atomically() {
     let ge = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
     // `place_spawned` resolves the owner and Unlimbo the type against
     // `sim.interner`; test_default interns both in the test interner.
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     let (id, outcome) = sim.unlimbo(ge);
     assert!(matches!(outcome, RevealOutcome::Revealed { .. }));
 
@@ -630,7 +630,7 @@ fn saveload_occupancy_list_order_survives_reentry() {
         sim.substrate.entities.insert(entity);
         sim.add_entity_occupancy(id);
     }
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     sim.remove_entity_occupancy(1);
     sim.add_entity_occupancy(1);
     let list = |sim: &Simulation| -> Vec<u64> {
@@ -645,7 +645,7 @@ fn saveload_occupancy_list_order_survives_reentry() {
     assert_eq!(list(&sim), vec![1, 3, 2]);
     // Snapshot deserialization intentionally executes native Scenario Seed0.
     // Compare this state-only roundtrip on that same admitted RNG cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let hash = sim.state_hash();
     let saved = GameSnapshot::save(&sim, 0, 0, "re-entry list", 0);
     let mut restored = GameSnapshot::load(&saved).unwrap().sim;

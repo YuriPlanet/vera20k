@@ -1,6 +1,7 @@
 //! The LAN lobby's join flow: chat packets, discovered-game projection, lobby
 //! requests, and the host/guest join offer, confirm, denial and cancel exchange.
 
+use crate::app::match_runtime::session::MatchSession;
 use crate::net::global::GlobalDestination;
 use crate::net::lan_messages::LanJoinRequest;
 use crate::net::lan_messages::LanMessage;
@@ -110,7 +111,7 @@ fn lobby_request(
     request: super::shell_lan::LanServiceRequest,
 ) -> anyhow::Result<()> {
     use super::shell_lan::LanServiceRequest;
-    let name = local_name(state);
+    let name = local_name(&state.frontend, &state.match_state.session);
     match request {
         LanServiceRequest::Refresh => {
             state
@@ -142,7 +143,7 @@ fn lobby_request(
                 country: local.slot.country_shell_value(observe),
                 color: local.slot.color_shell_value(),
                 version: crate::net::lan_messages::LanVersionInterval::RETAIL,
-                compatibility: compatibility(state)
+                compatibility: compatibility(&state.process_assets)
                     .ok_or_else(|| anyhow::anyhow!("retail compatibility inputs unavailable"))?,
                 observer_request: u32::from(observe),
             };
@@ -197,10 +198,10 @@ fn lobby_request(
             }
         }
         LanServiceRequest::Chat { text } => {
-            let game = active_game_name(state).unwrap_or_default();
+            let game = active_game_name(&state.match_state).unwrap_or_default();
             let message = chat_packet(&name, &game, &text)?;
             send(
-                state,
+                &mut state.match_state,
                 &message,
                 GlobalDestination::Broadcast { port_override: 0 },
                 false,
@@ -210,11 +211,12 @@ fn lobby_request(
     Ok(())
 }
 
-pub(super) fn active_game_name(state: &AppState) -> Option<String> {
-    if state.match_state.session.host() {
+pub(super) fn active_game_name(
+    match_state: &crate::app::match_runtime::state::MatchState,
+) -> Option<String> {
+    if match_state.session.host() {
         Some(
-            state
-                .match_state
+            match_state
                 .session
                 .network_setup()?
                 .local_player()
@@ -222,8 +224,7 @@ pub(super) fn active_game_name(state: &AppState) -> Option<String> {
                 .clone(),
         )
     } else {
-        state
-            .match_state
+        match_state
             .lan_service
             .as_ref()?
             .admitted_host
@@ -232,29 +233,16 @@ pub(super) fn active_game_name(state: &AppState) -> Option<String> {
     }
 }
 
-pub(super) fn received_choices(
-    country: i32,
-    color: i32,
-    initial: &crate::skirmish_launch::SkirmishLocalSlot,
-) -> anyhow::Result<crate::skirmish_launch::SkirmishLocalSlot> {
-    let mut slot = initial.clone();
-    // Type3 initializes start/team to Random. Subsequent authoritative host
-    // options own their selected values (696FF0/697020 at5E060D..5E061A).
-    slot.start_position = crate::skirmish_launch::LaunchStartPosition::Auto;
-    slot.team = crate::skirmish_launch::LaunchTeam::None;
-    slot.country_random = country < 0;
-    if country >= 0 {
-        anyhow::ensure!(
-            country <= i32::from(u16::MAX),
-            "country outside registry domain"
-        );
-        slot.country = crate::skirmish_launch::LaunchCountry::from_country_index(country as u32);
-    }
-    slot.color_random = color < 0;
-    if color >= 0 {
-        slot.color_index = u8::try_from(color)?;
-    }
-    Ok(slot)
+/// The room admits a participant whose name no seated player already
+/// carries: a name that differs only in case names the same player, as
+/// the guest's admission projection compares it.
+pub(super) fn admits_participant(session: &MatchSession, name: &str) -> bool {
+    !session.network_setup().is_some_and(|launch| {
+        launch
+            .humans
+            .iter()
+            .any(|human| human.name.eq_ignore_ascii_case(name))
+    })
 }
 
 pub(super) fn accept_participant(
@@ -277,7 +265,7 @@ pub(super) fn accept_participant(
         "participant is outside the host's confirmed LAN admission"
     );
     anyhow::ensure!(
-        !name.eq_ignore_ascii_case(&local_name(state)),
+        !name.eq_ignore_ascii_case(&local_name(&state.frontend, &state.match_state.session)),
         "local participant reflection"
     );
     //5E050A rejects an existing endpoint before allocating/appending a node.
@@ -289,15 +277,13 @@ pub(super) fn accept_participant(
     {
         return Ok(());
     }
-    if let Some(game) = active_game_name(state) {
+    if let Some(game) = active_game_name(&state.match_state) {
         anyhow::ensure!(
             fields.game_name_hash == crate::net::lan_messages::game_name_hash(&game),
             "different LAN game"
         );
     }
-    if let Some(launch) = state.match_state.session.network_setup()
-        && launch.humans.iter().any(|human| human.name == name)
-    {
+    if !admits_participant(&state.match_state.session, &name) {
         return Ok(());
     }
     let initial = state
@@ -307,7 +293,7 @@ pub(super) fn accept_participant(
         .slot;
     let human = crate::skirmish_launch::SkirmishHumanSlot {
         name: name.clone(),
-        slot: received_choices(fields.country, fields.color, &initial)?,
+        slot: super::picks::decoded_participant(fields.country, fields.color, &initial)?,
         //5E0685 passes this slot to5E8D90 after appending the node.
         raw_slot_index: Some(
             u8::try_from(fields.field_0x53)
@@ -338,58 +324,49 @@ pub(super) fn accept_participant(
 }
 
 fn join_denial(
-    state: &AppState,
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
     endpoint: SocketAddrV4,
     name: &str,
     request: &LanJoinRequest,
     proof: &LanSessionProof,
     now: u32,
 ) -> Option<u32> {
-    let same_peer = state
-        .match_state
-        .session
-        .network_setup()
-        .is_some_and(|launch| {
-            launch.humans.iter().enumerate().any(|(index, human)| {
-                index != launch.local_player_index
-                    && human.name.eq_ignore_ascii_case(name)
-                    && state.match_state.session.network_endpoint(index) == Some(endpoint)
-            })
-        });
+    let same_peer = match_state.session.network_setup().is_some_and(|launch| {
+        launch.humans.iter().enumerate().any(|(index, human)| {
+            index != launch.local_player_index
+                && human.name.eq_ignore_ascii_case(name)
+                && match_state.session.network_endpoint(index) == Some(endpoint)
+        })
+    });
     if proof.version != super::shell_network_setup::agreement::version() {
         Some(8)
-    } else if !state.match_state.session.host()
-        || state
-            .frontend
+    } else if !match_state.session.host()
+        || frontend
             .network_setup_protocol
             .as_ref()
             .is_none_or(|protocol| !protocol.editable())
     {
         Some(5)
     } else if !same_peer
-        && state
-            .match_state
+        && match_state
             .session
             .network_endpoint_source(endpoint)
             .is_some()
     {
         Some(0)
     } else if !same_peer
-        && state
-            .match_state
-            .session
-            .network_setup()
-            .is_some_and(|launch| {
-                launch
-                    .humans
-                    .iter()
-                    .any(|human| human.name.eq_ignore_ascii_case(name))
-            })
+        && match_state.session.network_setup().is_some_and(|launch| {
+            launch
+                .humans
+                .iter()
+                .any(|human| human.name.eq_ignore_ascii_case(name))
+        })
     {
         Some(0)
     } else if !same_peer
-        && state
-            .match_state
+        && match_state
             .lan_service
             .as_ref()
             .is_some_and(|service| service.keeps_out(endpoint, name, now))
@@ -397,16 +374,15 @@ fn join_denial(
         // VERA-only: the host kicked this player within five minutes.
         Some(9)
     } else if !same_peer
-        && state
-            .match_state
+        && match_state
             .session
             .network_join_row(request.observer_request == 1)
             .is_none()
         // VERA's room gives a newcomer the last AI's seat.
-        && state.match_state.session.network_newcomer_ai_seat().is_none()
+        && match_state.session.network_newcomer_ai_seat().is_none()
     {
         Some(1)
-    } else if Some(request.compatibility) != compatibility(state) {
+    } else if Some(request.compatibility) != compatibility(process_assets) {
         Some(6)
     } else if request.version.maximum < crate::net::lan_messages::LanVersionInterval::RETAIL.minimum
     {
@@ -420,13 +396,12 @@ fn join_denial(
 }
 
 fn send_join_denial(
-    state: &mut AppState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
     endpoint: SocketAddrV4,
     reason: u32,
     proof: &LanSessionProof,
 ) -> anyhow::Result<()> {
-    let service = state
-        .match_state
+    let service = match_state
         .lan_service
         .as_mut()
         .ok_or_else(super::closed_visit)?;
@@ -456,7 +431,9 @@ fn send_join_denial(
 /// existing ParticipantJoined owner. Delayed old requests can only create
 /// bounded proposals; no replay history or second roster is retained.
 pub(super) fn offer_join(
-    state: &mut AppState,
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
     endpoint: SocketAddrV4,
     message: &LanMessage,
     request: LanJoinRequest,
@@ -466,11 +443,19 @@ pub(super) fn offer_join(
         .session_proof()?
         .ok_or_else(|| anyhow::anyhow!("LAN join has no VERA build identity"))?;
     anyhow::ensure!(proof.join_nonce != [0; 16], "LAN join has no request nonce");
-    if let Some(reason) = join_denial(state, endpoint, &message.name(), &request, &proof, now) {
-        return send_join_denial(state, endpoint, reason, &proof);
+    if let Some(reason) = join_denial(
+        frontend,
+        match_state,
+        process_assets,
+        endpoint,
+        &message.name(),
+        &request,
+        &proof,
+        now,
+    ) {
+        return send_join_denial(match_state, endpoint, reason, &proof);
     }
-    let current = state
-        .match_state
+    let current = match_state
         .lan_service
         .as_ref()
         .ok_or_else(super::closed_visit)?
@@ -479,10 +464,9 @@ pub(super) fn offer_join(
         .map(|record| record.identity)
         .filter(|identity| identity.join_nonce == proof.join_nonce);
     if let Some(identity) = current {
-        let confirmed = confirmed_join_message(state, endpoint, identity)?;
+        let confirmed = confirmed_join_message(match_state, endpoint, identity)?;
         anyhow::ensure!(
-            state
-                .match_state
+            match_state
                 .lan_service
                 .as_mut()
                 .ok_or_else(super::closed_visit)?
@@ -495,26 +479,24 @@ pub(super) fn offer_join(
         return Ok(());
     }
     let identity = {
-        let service = state
-            .match_state
+        let service = match_state
             .lan_service
             .as_mut()
             .ok_or_else(super::closed_visit)?;
         service.ensure_host_scope()?;
         match service.join_offer(endpoint, message, now) {
             Ok(identity) => identity,
-            Err(_) => return send_join_denial(state, endpoint, 5, &proof),
+            Err(_) => return send_join_denial(match_state, endpoint, 5, &proof),
         }
     };
-    let host_name = local_name(state);
+    let host_name = local_name(frontend, &match_state.session);
     let acceptance = crate::net::lan_messages::LanAcceptance {
         country: request.country,
         color: request.color,
         assigned_row: 0,
         observer_row: -1,
     };
-    let mut offer_proof = state
-        .match_state
+    let mut offer_proof = match_state
         .lan_service
         .as_ref()
         .ok_or_else(super::closed_visit)?
@@ -524,8 +506,7 @@ pub(super) fn offer_join(
     let offer =
         LanMessage::join_accepted(&host_name, acceptance)?.with_session_proof(&offer_proof)?;
     anyhow::ensure!(
-        state
-            .match_state
+        match_state
             .lan_service
             .as_mut()
             .ok_or_else(super::closed_visit)?
@@ -539,20 +520,15 @@ pub(super) fn offer_join(
 }
 
 fn confirmed_join_message(
-    state: &AppState,
+    match_state: &crate::app::match_runtime::state::MatchState,
     endpoint: SocketAddrV4,
     identity: PeerAdmission,
 ) -> anyhow::Result<LanMessage> {
-    let source = state
-        .match_state
+    let source = match_state
         .session
         .network_endpoint_source(endpoint)
         .ok_or_else(|| anyhow::anyhow!("confirmed admission has no Session source"))?;
-    let launch = state
-        .match_state
-        .session
-        .network_setup()
-        .expect("admitted setup");
+    let launch = match_state.session.network_setup().expect("admitted setup");
     let human = &launch.humans[source];
     let acceptance = crate::net::lan_messages::LanAcceptance {
         country: human.slot.country_shell_value(human.is_observer()),
@@ -562,14 +538,12 @@ fn confirmed_join_message(
                 .raw_slot_index
                 .ok_or_else(|| anyhow::anyhow!("confirmed source has no row"))?,
         ),
-        observer_row: state
-            .match_state
+        observer_row: match_state
             .session
             .network_observer_row()
             .map_or(-1, i32::from),
     };
-    let mut proof = state
-        .match_state
+    let mut proof = match_state
         .lan_service
         .as_ref()
         .ok_or_else(super::closed_visit)?
@@ -612,8 +586,17 @@ pub(super) fn confirm_join(
         .ok_or_else(super::closed_visit)?
         .confirmed_request(endpoint, &proof, now);
     if let Some((name, request)) = request {
-        if let Some(reason) = join_denial(state, endpoint, &name, &request, &proof, now) {
-            return send_join_denial(state, endpoint, reason, &proof);
+        if let Some(reason) = join_denial(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            endpoint,
+            &name,
+            &request,
+            &proof,
+            now,
+        ) {
+            return send_join_denial(&mut state.match_state, endpoint, reason, &proof);
         }
         // Reserve the final reply before changing Session membership. UI-side
         // join effects append semantic requests, not transport packets.
@@ -639,7 +622,7 @@ pub(super) fn confirm_join(
                 .multiplayer_shell_runtime
                 .local_participant()
                 .slot;
-            let slot = received_choices(request.country, request.color, &initial)?;
+            let slot = super::picks::decoded_participant(request.country, request.color, &initial)?;
             // With every seat taken, VERA's room seats the newcomer on the
             // last AI's, which it frees.
             let freed = state.match_state.session.free_network_seat_for_newcomer()?;
@@ -699,7 +682,7 @@ pub(super) fn confirm_join(
         join_nonce: proof.join_nonce,
         admission_nonce: proof.admission_nonce,
     };
-    let confirmed = confirmed_join_message(state, endpoint, identity)?;
+    let confirmed = confirmed_join_message(&state.match_state, endpoint, identity)?;
     anyhow::ensure!(
         state
             .match_state

@@ -202,6 +202,32 @@ impl MatchState {
             .and_then(|runtime| scenario_local_owner(&runtime.simulation))
     }
 
+    /// Immutable view of the running simulation (F10): the read boundary
+    /// presentation cones consume. `None` outside a match. Sites that also
+    /// hold `&mut` match parts keep the `sim_runtime` field chain and call
+    /// `rt.view()` directly for split borrows.
+    pub(crate) fn sim_view(&self) -> Option<crate::sim::runtime::SimView<'_>> {
+        self.sim_runtime.runtime().map(|rt| rt.view())
+    }
+
+    /// Current terrain authority, replaced together with the running world on
+    /// map load and restore. No presentation height projection is retained.
+    pub(crate) fn resolved_terrain(
+        &self,
+    ) -> Option<&crate::map::resolved_terrain::ResolvedTerrainGrid> {
+        self.sim_runtime.runtime()?.simulation.resolved_terrain()
+    }
+
+    /// The immutable base resolved-terrain template for the active match
+    /// (static rendering + restore); never the live sim grid.
+    pub(crate) fn terrain_template(
+        &self,
+    ) -> Option<&crate::map::resolved_terrain::ResolvedTerrainGrid> {
+        self.sim_runtime
+            .runtime()
+            .and_then(|rt| rt.resources.terrain_template.as_ref())
+    }
+
     /// Bring VERA's relation colours up to date with the world, as the local
     /// house sees it.
     pub(crate) fn refresh_relation_colors(&mut self) {

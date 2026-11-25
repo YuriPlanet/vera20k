@@ -759,7 +759,7 @@ fn naval_factory_spawn_uses_water_exit_and_defers_unload_only_without_contacts()
         let terrain = water_terrain_with_yard_exit(32, 32);
         let grid = PathGrid::from_resolved_terrain(&terrain);
         sim.install_fixture_path_grid(Some(&grid));
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 32,
             off_fc: -100,
@@ -890,7 +890,7 @@ fn mixed_land_and_naval_factories_bind_independent_vehicle_and_ship_slots() {
     land_exit.land_type = crate::rules::terrain_rules::LandType::Clear.as_index();
     let grid = PathGrid::test_all_passable(40, 40);
     sim.install_fixture_path_grid(Some(&grid));
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 40,
         off_fc: -100,
@@ -1064,7 +1064,7 @@ fn naval_delivery_nonzero_canenter_refunds_without_trying_second_producer() {
     }
     let grid = PathGrid::from_resolved_terrain(&terrain);
     sim.install_fixture_path_grid(Some(&grid));
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 40,
         off_fc: -100,
@@ -1208,7 +1208,7 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
 
     let grid = PathGrid::from_resolved_terrain(&terrain);
     sim.install_fixture_path_grid(Some(&grid));
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 40,
         off_fc: -100,
@@ -1314,7 +1314,7 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
         cell.base_speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::ONE);
     }
     let grid = PathGrid::from_resolved_terrain(sim.resolved_terrain.as_ref().unwrap());
-    sim.path_grid = Some(std::sync::Arc::new(grid));
+    *sim.path_grid = Some(std::sync::Arc::new(grid));
     assert!(
         sim.production
             .factories_mut()
@@ -1347,7 +1347,7 @@ fn naval_yard_with_rally(rules: &RuleSet) -> Simulation {
     let terrain = water_terrain(40, 40);
     let grid = PathGrid::from_resolved_terrain(&terrain);
     sim.install_fixture_path_grid(Some(&grid));
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 40,
         off_fc: -100,
@@ -1566,7 +1566,7 @@ fn naval_rally_destination_and_move_survive_beyond_the_path_grid() {
     // Ship setter publishes it without a search.
     let grid = PathGrid::test_all_passable(15, 15);
     sim.install_fixture_path_grid(Some(&grid));
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 40,
         off_fc: -100,

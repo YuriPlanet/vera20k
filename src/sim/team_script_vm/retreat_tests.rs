@@ -91,10 +91,10 @@ fn retail_guard_retreat(ramp: bool) {
     }
     // Exercise the production restore seam on its documented seed-zero
     // Scenario cursor and freshly published map hierarchy (native load rebuilds it).
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     sim.restore_map_authority_after_snapshot_load(&rules, &overlays, None)
         .unwrap();
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     // Player load discards active planning (ClearScene6370B0 / TechnoLoad70BF79).
     sim.reset_planning_after_player_load();
     let before_rng = rng(&sim);
@@ -145,9 +145,8 @@ fn retail_guard_retreat(ramp: bool) {
     let mut restored = snapshot_copy(&sim, &rules, &overlays);
     assert_same_hash(&sim, &restored);
     for world in [&mut sim, &mut restored] {
-        world
-            .session
-            .set_binary_frame_for_test(world.session.binary_frame() + 1);
+        let session = &mut *world.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         world.run_team_ai_pass(&rules, None, &mut FrameEffects::default());
     }
     assert_same_hash(&sim, &restored);

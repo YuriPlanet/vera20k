@@ -557,7 +557,7 @@ fn eject_head_passenger(
             // `0x0073DC0C..0x0073DC19`: a transport in a team takes the
             // passenger into it (`Add_Member(passenger, 0)`); boarding's
             // Conceal had removed it from its own.
-            if let Some((team, _)) = sim.team_script_vm.team_for_member(transport_id) {
+            if let Some(team) = sim.team_script_vm.team_of(transport_id) {
                 sim.team_add_member(team, pax_id, false, rules, effects);
             }
 
@@ -1289,8 +1289,8 @@ pub(crate) fn mission_unload(
                         .entities
                         .get(pax_id)
                         .is_some_and(|pax| !pax.is_on_carryall())
-                    && sim.team_script_vm.team_for_member(pax_id).is_some()
-                    && let Some((team, _)) = sim.team_script_vm.team_for_member(id)
+                    && sim.team_script_vm.team_of(pax_id).is_some()
+                    && let Some(team) = sim.team_script_vm.team_of(id)
                 {
                     sim.team_add_member(team, pax_id, false, rules, effects);
                 }

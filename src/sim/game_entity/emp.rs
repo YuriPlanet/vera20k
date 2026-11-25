@@ -37,6 +37,14 @@ impl GameEntity {
                 .then_some(self.unit_death_counter.get()),
         )
     }
+    /// Firestorm 2.0 `Is_Immobilized` (vt+0x2A4), the ancestor of vt+0x37C:
+    /// the Infantry override `0x004D5B10` answers yes while the web timer
+    /// (`+0x370`) runs, else the Techno body `0x006321A0` (EMP). Only the
+    /// Firestorm consumers read it: Can_Fire, Can_Player_Move/Fire, the
+    /// deploy admissions, Walk's step, recloaking and the lead-object ranker.
+    pub fn is_immobilized(&self, frame: i32) -> bool {
+        self.is_under_emp() || self.is_webbed(frame)
+    }
     /// [`Self::is_under_emp`] from the raw counters: `+0x504` and, for a
     /// Unit, `+0x6D8`.
     pub(crate) fn under_emp(emp_remaining: i32, unit_death_counter: Option<i32>) -> bool {

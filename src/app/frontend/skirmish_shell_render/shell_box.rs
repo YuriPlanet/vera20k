@@ -16,11 +16,20 @@ use super::{
     SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH, SHELL_MODAL_PANEL_RGB,
 };
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::ime::ImeState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::render::batch::SpriteInstance;
+use crate::render::bit_font::BitFont;
 use crate::render::hud_paint::{HudPaint, Material};
-use crate::render::shell_paint::{ModalDepths, ModalDraw, SHELL_TEXT_RGB_ENABLED, paint_modal_sprites};
+use crate::render::shell_paint::{
+    ModalDepths, ModalDraw, SHELL_TEXT_RGB_ENABLED, paint_modal_sprites,
+};
 use crate::render::shell_text::ShellTextDraw;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
+use crate::ui::game_screen::GameScreen;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
@@ -94,7 +103,11 @@ pub(crate) fn controller_tree(ui: &DialogController, dialog: DialogResourceId) -
 #[allow(clippy::too_many_arguments)]
 fn paint_box_into(
     paint: &mut HudPaint,
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     atlas: Option<&SkirmishShellChromeAtlas>,
     tree: BoxTree<'_>,
     shell_box: &ShellBox,
@@ -131,7 +144,20 @@ fn paint_box_into(
     };
     let (scale, covered) = (parts.scale, look.covered);
     if let Some(body) = body_node(gui, root) {
-        paint_gui_into(paint, state, atlas, gui, body, scale, covered, style);
+        paint_gui_into(
+            paint,
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            atlas,
+            gui,
+            body,
+            scale,
+            covered,
+            style,
+        );
     }
     // Only the box's own buttons, each once: a host's dialog may hold more
     // (a list, the verify's boxes), and the hidden IDOK may share an id.
@@ -144,7 +170,20 @@ fn paint_box_into(
         };
         if painted & bit == 0 {
             painted |= bit;
-            paint_gui_into(paint, state, atlas, gui, node, scale, covered, style);
+            paint_gui_into(
+                paint,
+                ime,
+                bit_font,
+                frontend,
+                match_state,
+                process_assets,
+                atlas,
+                gui,
+                node,
+                scale,
+                covered,
+                style,
+            );
         }
     }
 }
@@ -152,7 +191,11 @@ fn paint_box_into(
 /// `shell_box` on `parts` from its widgets in `tree`, `pressed` telling
 /// which buttons show pushed. Without `atlas` only its texts paint.
 pub(crate) fn paint_shell_box(
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     atlas: Option<&SkirmishShellChromeAtlas>,
     tree: BoxTree<'_>,
     shell_box: &ShellBox,
@@ -161,7 +204,20 @@ pub(crate) fn paint_shell_box(
     look: BoxLook<'_>,
 ) -> ModalDraw {
     let mut paint = HudPaint::default();
-    paint_box_into(&mut paint, state, atlas, tree, shell_box, parts, &pressed, look);
+    paint_box_into(
+        &mut paint,
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
+        atlas,
+        tree,
+        shell_box,
+        parts,
+        &pressed,
+        look,
+    );
     ModalDraw {
         sprites: paint.take_lane(Material::Controls),
         text: paint.texts,
@@ -203,7 +259,11 @@ pub(crate) fn skirmish_parts(shell_box: &ShellBox, (w, h): (i32, i32)) -> BoxPar
 #[allow(clippy::too_many_arguments)]
 fn skirmish_box_into(
     mut paint: HudPaint,
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     atlas: Option<&SkirmishShellChromeAtlas>,
     tree: BoxTree<'_>,
     shell_box: &ShellBox,
@@ -214,11 +274,30 @@ fn skirmish_box_into(
     if let (Some(atlas), None) = (atlas, look.background) {
         let (at, edge) = (parts.dialog, OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68);
         paint.draw(Material::Controls, |out, _| {
-            push_solid_rect(out, atlas, at, SHELL_MODAL_PANEL_RGB, look.depths.background);
+            push_solid_rect(
+                out,
+                atlas,
+                at,
+                SHELL_MODAL_PANEL_RGB,
+                look.depths.background,
+            );
             push_rect_outline(out, atlas, at, edge, SHELL_DROPDOWN_DEPTH - 0.00015);
         });
     }
-    paint_box_into(&mut paint, state, atlas, tree, shell_box, parts, pressed, look);
+    paint_box_into(
+        &mut paint,
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
+        atlas,
+        tree,
+        shell_box,
+        parts,
+        pressed,
+        look,
+    );
     SkirmishBoxDraw {
         paint,
         dialog: parts.dialog,
@@ -229,7 +308,11 @@ fn skirmish_box_into(
 /// ([`SkirmishBoxDraw`]).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn skirmish_box(
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     atlas: Option<&SkirmishShellChromeAtlas>,
     tree: BoxTree<'_>,
     shell_box: &ShellBox,
@@ -238,14 +321,31 @@ pub(crate) fn skirmish_box(
     look: BoxLook<'_>,
 ) -> SkirmishBoxDraw {
     let paint = HudPaint::default();
-    skirmish_box_into(paint, state, atlas, tree, shell_box, parts, &pressed, look)
+    skirmish_box_into(
+        paint,
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
+        atlas,
+        tree,
+        shell_box,
+        parts,
+        &pressed,
+        look,
+    )
 }
 
 /// [`skirmish_box`]'s sprites into `sprites` and its texts into `texts`,
 /// which give up the box's rect first when `exclude_under`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn push_skirmish_box(
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     atlas: Option<&SkirmishShellChromeAtlas>,
     tree: BoxTree<'_>,
     shell_box: &ShellBox,
@@ -255,14 +355,29 @@ pub(crate) fn push_skirmish_box(
     sprites: &mut Vec<SpriteInstance>,
     (texts, exclude_under): (&mut Vec<ShellTextDraw>, bool),
 ) {
-    let mut draw = skirmish_box(state, atlas, tree, shell_box, parts, pressed, look);
+    let mut draw = skirmish_box(
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
+        atlas,
+        tree,
+        shell_box,
+        parts,
+        pressed,
+        look,
+    );
     draw.push_sprites(sprites);
     draw.push_texts(texts, exclude_under);
 }
 
 /// The window a Skirmish-family box centres in: the render size.
-pub(crate) fn render_size(state: &AppState) -> (i32, i32) {
-    (state.render_width() as i32, state.render_height() as i32)
+pub(crate) fn render_size(renderer: &RendererState, screen: &GameScreen) -> (i32, i32) {
+    (
+        renderer.render_width(screen) as i32,
+        renderer.render_height(screen) as i32,
+    )
 }
 
 /// Use Map's two-button box over the chooser as it shows: its body and
@@ -298,7 +413,7 @@ pub(crate) fn choose_map_prompt_box(
     });
     let mut paint = HudPaint::default();
     if let (Some(atlas), Kind::Downloading) = (atlas, prompt.kind)
-        && let Some(progress) = crate::app::map_library::download_progress(state)
+        && let Some(progress) = crate::app::map_library::download_progress(&state.frontend)
     {
         let track = parts.progress_track();
         let depth = BoxLook::skirmish(None).depths.button;
@@ -313,5 +428,18 @@ pub(crate) fn choose_map_prompt_box(
     let pressed = |id| held == Some(id);
     let look = BoxLook::prompt(background);
     let tree = controller_tree(controller, shell_box.dialog);
-    skirmish_box_into(paint, state, atlas, tree, shell_box, parts, &pressed, look)
+    skirmish_box_into(
+        paint,
+        &state.platform.ime,
+        &state.renderer.bit_font,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        atlas,
+        tree,
+        shell_box,
+        parts,
+        &pressed,
+        look,
+    )
 }

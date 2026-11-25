@@ -17,6 +17,7 @@
 use anyhow::Result;
 
 use crate::app::movie_subtitles::{BAND_HEIGHT, BAND_WIDTH, SubtitleTrack, text_origin};
+use crate::app::state::PlatformState;
 use crate::render::batch::SpriteInstance;
 use crate::render::bink_movie::BinkMovieSurface;
 use crate::render::bit_font::BitFont;
@@ -103,8 +104,8 @@ pub(crate) fn movie_rect(screen_w: i32, screen_h: i32, movie_w: i32, movie_h: i3
 }
 
 /// Hidden windows park the fullscreen renderer even if the platform still reports focus.
-pub(crate) fn playback_active(state: &crate::app::AppState) -> bool {
-    state.platform.window_active && !state.platform.window_hidden
+pub(crate) fn playback_active(platform: &PlatformState) -> bool {
+    platform.window_active && !platform.window_hidden
 }
 
 pub(crate) struct FullscreenMovie {

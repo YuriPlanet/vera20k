@@ -344,10 +344,12 @@ pub(crate) fn calculate_threat_score(
     coefficients: ThreatCoefficients,
     reference: ThreatReference,
     scorer_enemy_house: Option<InternedId>,
+    frame: i32,
 ) -> Option<MaskedX87Value> {
     let scorer = entities.get(scorer_id)?;
     let candidate = entities.get(candidate_id)?;
     let pair = ThreatPair {
+        frame,
         scorer,
         scorer_type: interner.object_type(scorer.type_ref(), rules)?,
         candidate,
@@ -365,6 +367,7 @@ pub(crate) fn calculate_threat_score(
         pair.candidate_type,
         terrain,
         is_ally_by_object(alliances, interner, scorer.owner(), candidate.owner()),
+        frame,
         rules,
         interner,
     );
@@ -393,6 +396,8 @@ pub(crate) fn calculate_threat_score(
 /// The two objects [`threat_score`] weighs, their types, and whether the
 /// candidate's house counts the scorer's as an ally (the B term's question).
 struct ThreatPair<'e, 'r> {
+    /// The game frame the web timers are read at.
+    frame: i32,
     scorer: &'e GameEntity,
     scorer_type: &'r ObjectType,
     candidate: &'e GameEntity,
@@ -415,6 +420,7 @@ fn threat_score(
     scorer_enemy_house: Option<InternedId>,
 ) -> Option<MaskedX87Value> {
     let &ThreatPair {
+        frame,
         scorer,
         scorer_type,
         candidate,
@@ -439,6 +445,7 @@ fn threat_score(
         scorer_type,
         terrain,
         candidate_allies_scorer,
+        frame,
         rules,
         interner,
     );
@@ -747,6 +754,11 @@ struct ScanContext<'a> {
     /// Truce session bit (`0x00687C16..0x00687C29`). World-less fixtures
     /// (walk and score unit tests) leave it off.
     harvester_immune: bool,
+    /// The game frame the web timers are read at; 0 in world-less fixtures.
+    frame: i32,
+    /// `WebDuration=` of the scanner's webbing warhead, the secondary's
+    /// first ([`scanner_web_duration`]); `None` without one.
+    scanner_web_duration: Option<i32>,
     /// VERA-only: [`crate::sim::scenario_session::ScenarioSession::truce_harvester_types`]
     /// resolved once per scan, so the HarvesterImmune gate
     /// (`0x006F8009..0x006F8047`) compares ids instead of re-uppercasing each
@@ -793,7 +805,7 @@ impl ScanContext<'_> {
         disguise_detection_roll(
             state
                 .scenario_rng
-                .get_or_insert_with(|| world.scenario_rng.clone()),
+                .get_or_insert_with(|| (*world.scenario_rng).clone()),
             self.standing.house,
             self.rules,
         )
@@ -1489,6 +1501,14 @@ pub(crate) fn greatest_threat(
         harvester_unit_ids: fire_world.map_or_else(Vec::new, |world| {
             world.session.truce_harvester_types(rules, interner)
         }),
+        frame: fire_world.map_or(0, |world| world.session.binary_frame() as i32),
+        scanner_web_duration: scanner_web_duration(
+            scanner,
+            attacker_obj,
+            entities,
+            rules,
+            interner,
+        ),
     };
     let mut state = ScanState::default();
 
@@ -2386,6 +2406,24 @@ fn reaches_from_nearby_cell(
     distance_squared <= range * range
 }
 
+/// `WebDuration=` of the scanner's webbing warhead: Firestorm 2.0
+/// `Evaluate_Object` (`0x0062D516..0x0062D55A`) takes it from GetWeapon(1),
+/// else GetWeapon(0), the first whose warhead webs.
+fn scanner_web_duration(
+    scanner: &GameEntity,
+    scanner_type: &ObjectType,
+    entities: &EntityStore,
+    rules: &RuleSet,
+    interner: &StringInterner,
+) -> Option<i32> {
+    [1, 0]
+        .into_iter()
+        .filter_map(|index| get_weapon(scanner, scanner_type, index, entities, rules, interner))
+        .filter_map(|weapon| rules.weapon_warhead(weapon))
+        .find_map(|warhead| warhead.webby())
+        .map(|web| web.duration)
+}
+
 /// `TechnoClass::Evaluate_Candidate @ 0x006F7CA0` — the gate ladder, in native
 /// order, followed by the score.
 ///
@@ -2411,6 +2449,7 @@ fn evaluate_candidate(
         candidate_obj,
         ctx.terrain,
         ctx.is_ally(state, candidate),
+        ctx.frame,
         ctx.rules,
         ctx.interner,
     );
@@ -2978,12 +3017,23 @@ fn evaluate_candidate(
         return None;
     }
 
+    // Firestorm 2.0 `TechnoClass::Evaluate_Object` 0x0062CF40
+    // (`0x0062D516..0x0062D5B6`): a scanner with a webbing weapon passes over
+    // an infantryman still freshly webbed. gamemd has no such gate; it sits
+    // here, before the score, in VERA's port of the scan.
+    if let Some(duration) = ctx.scanner_web_duration
+        && candidate.web_outlasts_quarter(ctx.frame, duration)
+    {
+        return None;
+    }
+
     // G28/P9 — truncate first, then Normal VHPScan, then the house and
     // quarry terms, then final acceptance. The score's A term is G1's
     // selection: the same scanner, candidate and ally answer; with no
     // weapon selected (`None`) the score skips the term and falls back to
     // `GuardRange=` for term E (`0x0070CF81`).
     let pair = ThreatPair {
+        frame: ctx.frame,
         scorer: ctx.scanner,
         scorer_type: ctx.attacker_obj,
         candidate,
@@ -3015,6 +3065,7 @@ fn evaluate_candidate(
                     ctx.coefficients,
                     walk.reference,
                     ctx.standing.enemy(),
+                    ctx.frame,
                 ),
         "candidate {}: the scan's threat score diverged from a fresh one",
         candidate.stable_id()

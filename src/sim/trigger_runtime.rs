@@ -391,6 +391,10 @@ pub struct TriggerRuntime {
     map_cursor: i32,
     definitions_prepared: bool,
     classified: bool,
+    /// The empty stand-in of a presentation copy of the world
+    /// ([`Self::detached`]). Debug builds refuse reads of it.
+    #[serde(skip)]
+    detached: bool,
     /// Scratch for one synchronous Spring call tree. Empty between dispatches;
     /// save/restore and checksums keep only the authoritative trigger state.
     #[serde(skip)]
@@ -452,6 +456,26 @@ impl PartialEq for TriggerRuntime {
 impl Eq for TriggerRuntime {}
 
 impl TriggerRuntime {
+    /// The empty runtime a presentation copy of the world holds in place of
+    /// the triggers (`Simulation::presentation_copy`): only gameplay reads
+    /// them. Debug builds panic on a read of it, so a reader of the copy
+    /// shows up instead of finding no trigger.
+    pub(crate) fn detached() -> Self {
+        Self {
+            detached: true,
+            ..Self::default()
+        }
+    }
+
+    /// Debug builds: refuse a read of a [`Self::detached`] runtime.
+    #[inline]
+    pub(crate) fn check_attached(&self) {
+        debug_assert!(
+            !self.detached,
+            "read of the triggers of a presentation copy of the world: only the live world holds them"
+        );
+    }
+
     /// `TeamTypeClass::Array[index]` (`0x00A8ECA4`) by ID, in constructor
     /// order. None past its end, where native reads out of bounds.
     pub(crate) fn team_type_at(&self, index: usize) -> Option<&str> {
@@ -1046,6 +1070,7 @@ impl TriggerRuntime {
     /// Every registered live trigger instance, in registry order, read at
     /// `current_frame`.
     pub fn armed_trigger_views(&self, current_frame: i32) -> Vec<ArmedTriggerView> {
+        self.check_attached();
         self.trigger_order
             .iter()
             .filter_map(|&index| {
@@ -1072,6 +1097,7 @@ impl TriggerRuntime {
     /// live instance ever exists for it, while an enable-trigger hop (the
     /// defense persona's protected-target walk) still reads its outcome.
     pub fn trigger_definition_view(&self, trigger_id: &str) -> Option<TriggerDefinitionView> {
+        self.check_attached();
         let index = self
             .definitions
             .trigger_types
@@ -1084,6 +1110,7 @@ impl TriggerRuntime {
     /// attachment funnel's registrations), each walked through its linked
     /// triggers. An object with no attached Tag yields an empty vec.
     pub fn object_tag_definition_views(&self, object: u64) -> Vec<TriggerDefinitionView> {
+        self.check_attached();
         match self.attachments.get(&TagAttachment::Object(object)) {
             Some(&tag) => self
                 .tag(tag)
@@ -1098,12 +1125,14 @@ impl TriggerRuntime {
     /// A global trigger variable's current value. Out-of-range indices read
     /// clear, never panic.
     pub fn global_variable_is_set(&self, index: u32) -> bool {
+        self.check_attached();
         self.globals_set.contains(&index)
     }
 
     /// A local trigger variable's current value. Out-of-range indices read
     /// clear, never panic.
     pub fn local_variable_is_set(&self, index: u32) -> bool {
+        self.check_attached();
         self.locals_set.contains(&index)
     }
 }

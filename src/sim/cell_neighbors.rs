@@ -264,7 +264,7 @@ mod tests {
 
     fn fixture(width: u16, seed: u8) -> Simulation {
         let mut sim = Simulation::with_seed(31);
-        sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
+        *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
             width,
             width,
             (0..width)
@@ -273,7 +273,7 @@ mod tests {
         ));
         let mut grid = OverlayGrid::new(width, width);
         grid.seed_neighbor_counts_for_tests(seed);
-        sim.overlay_grid = Some(grid);
+        *sim.overlay_grid = Some(grid);
         for _ in 0..seed {
             sim.resolved_terrain
                 .as_ref()
@@ -503,7 +503,7 @@ mod tests {
             .navigation
             .neighbor_state_mut()
             .cell = (3, 3);
-        restored.resolved_terrain = sim.resolved_terrain.clone();
+        *restored.resolved_terrain = (*sim.resolved_terrain).clone();
         restored.techno_limbo(1);
         assert!(
             restored

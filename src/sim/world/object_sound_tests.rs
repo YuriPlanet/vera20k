@@ -36,7 +36,7 @@ fn sim_with_actions(count: usize, action: &str) -> (Simulation, crate::map::map_
     );
     let map = crate::map::map_file::MapFile::from_bytes(text.as_bytes()).unwrap();
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
         32,
         32,
         crate::map::resolved_terrain::test_clear_cell,
@@ -364,9 +364,9 @@ fn retail_terrain_ambient_reaches_logic_saved_load_and_lethal_cleanup() {
         .into_parts()
         .0;
     let mut sim = Simulation::new();
-    sim.playfield_bounds =
+    *sim.playfield_bounds =
         Some(crate::map::playfield::PlayfieldBounds::from_normalized_local_size(8, 0, 0, 8, 8));
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
         32,
         32,
         crate::map::resolved_terrain::test_clear_cell,
@@ -416,7 +416,7 @@ fn retail_terrain_ambient_reaches_logic_saved_load_and_lethal_cleanup() {
     let processed = crate::util::save_codec::deserialize(&saved).unwrap();
     let loaded_rules = owner.project_saved_scenario_rules(&processed).unwrap();
     // The app restores the resolved map separately from retained save state.
-    restored.resolved_terrain = sim.resolved_terrain.clone();
+    *restored.resolved_terrain = (*sim.resolved_terrain).clone();
     assert!(restored.rebuild_dynamic_navigation(&loaded_rules));
     let zone_slots = |world: &Simulation| {
         let graph = world
@@ -883,7 +883,7 @@ fn network_named_audio_keeps_equal_worlds_with_missing_local_catalog_entries() {
     let restored = crate::sim::snapshot::GameSnapshot::load(&saved)
         .unwrap()
         .sim;
-    assert_eq!(restored.object_custom_sounds, right.object_custom_sounds);
+    assert_eq!(*restored.object_custom_sounds, *right.object_custom_sounds);
 
     // The same catalog operand is gameplay state when SetTimer consumes it.
     let (_, timer_map) = sim_with_trigger("27,7,CowAmbient,0,0,0,0,A");

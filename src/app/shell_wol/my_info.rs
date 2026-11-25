@@ -9,11 +9,15 @@ use super::WolPage;
 use super::leaf::{self, Pointer};
 use super::service::{self, WolServiceRequest};
 use crate::app::frontend::shell_layout;
+use crate::app::frontend::state::FrontendState;
 use crate::app::persistence::wol_profile::WolPersona;
+use crate::app::shell_wol::WolVisit;
 use crate::app::{App, AppState};
+use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::page::PageEvent;
 use crate::ui::skirmish_shell::{SkirmishComboItem, SkirmishCountryChoice};
 use crate::ui::wol_my_info::*;
+use crate::util::config::GameConfig;
 
 fn view(persona: &WolPersona) -> MyInfoPersona {
     MyInfoPersona {
@@ -27,11 +31,11 @@ fn view(persona: &WolPersona) -> MyInfoPersona {
 
 /// `0x799080`'s AutoLogin check against the current `[0xB73E40]`
 /// (`0x00799AF3`, `0x00799279`).
-fn auto_login_names(state: &AppState) -> bool {
-    let auto_login = super::persona::info_file(state)
+fn auto_login_names(frontend: &FrontendState, game_config: Option<&GameConfig>) -> bool {
+    let auto_login = super::persona::info_file(frontend.wol.as_ref(), game_config)
         .map(|file| file.auto_login())
         .unwrap_or_default();
-    state.frontend.wol_account.auto_login_names(&auto_login)
+    frontend.wol_account.auto_login_names(&auto_login)
 }
 
 /// `0x4E3A00`'s rows: `GUI:RandomEx` (-2), then the multiplayer countries
@@ -45,7 +49,12 @@ fn country_rows(state: &AppState) -> Vec<MyInfoRow> {
         .into_iter()
         .map(|item| match item {
             SkirmishComboItem::Country(SkirmishCountryChoice::Country(country)) => MyInfoRow::text(
-                crate::app::frontend::skirmish_shell_render::combo_item_label(state, item),
+                crate::app::frontend::skirmish_shell_render::combo_item_label(
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    item,
+                ),
                 crate::app::frontend::skirmish_shell_render::side_item_data_for_country(country),
             ),
             _ => MyInfoRow::text(state.csf_text("GUI:RandomEx"), -2),
@@ -66,7 +75,12 @@ fn color_rows(state: &AppState) -> Vec<MyInfoRow> {
                 swatch: Some(index),
             },
             _ => MyInfoRow::text(
-                crate::app::frontend::skirmish_shell_render::combo_item_label(state, item),
+                crate::app::frontend::skirmish_shell_render::combo_item_label(
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    item,
+                ),
                 -2,
             ),
         })
@@ -79,9 +93,14 @@ fn color_rows(state: &AppState) -> Vec<MyInfoRow> {
 /// `[0xAC1170]`; none is modelled, so none is sent.
 pub(super) fn open(state: &mut AppState) {
     let nickname = state.frontend.wol_account.nickname.clone();
-    let persona = super::persona::load(state, &nickname);
-    let texts = super::persona::profile_texts(state, &nickname, &persona);
-    let auto_login = auto_login_names(state);
+    let persona = super::persona::load(
+        state.frontend.wol.as_ref(),
+        state.platform.game_config.as_ref(),
+        &state.process_assets,
+        &nickname,
+    );
+    let texts = super::persona::profile_texts(&state.process_assets, &nickname, &persona);
+    let auto_login = auto_login_names(&state.frontend, state.platform.game_config.as_ref());
     let default_text = state.csf_text(DEFAULT_KEY);
     let unknown = state.csf_text(UNKNOWN_STATS_KEY);
     let countries = country_rows(state);
@@ -114,7 +133,12 @@ pub(super) fn open(state: &mut AppState) {
         colors,
     };
     super::leaf::open_art(state, DIALOG);
-    let _ = App::ensure_skirmish_shell_chrome(state);
+    let _ = App::ensure_skirmish_shell_chrome(
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+    );
     state.frontend.shell_controller.reset_to(DIALOG);
     let Some(root) = sync(state) else {
         return;
@@ -135,7 +159,12 @@ pub(super) fn open(state: &mut AppState) {
 /// locale.
 pub(super) fn locale_count(state: &mut AppState, count: i32) {
     let nickname = state.frontend.wol_account.nickname.clone();
-    let persona = super::persona::load(state, &nickname);
+    let persona = super::persona::load(
+        state.frontend.wol.as_ref(),
+        state.platform.game_config.as_ref(),
+        &state.process_assets,
+        &nickname,
+    );
     let rows = crate::ui::wol_persona::locale_rows(
         (0..count.max(0)).map(|locale| (locale, state.csf_text(&format!("WOL:Locale{locale:02}")))),
     );
@@ -147,8 +176,8 @@ pub(super) fn locale_count(state: &mut AppState, count: i32) {
     });
 }
 
-pub(crate) fn page(state: &AppState) -> Option<&WolMyInfoPage> {
-    match &state.frontend.wol.as_ref()?.page {
+pub(crate) fn page(wol: Option<&WolVisit>) -> Option<&WolMyInfoPage> {
+    match &wol?.page {
         WolPage::MyInformation(page) => Some(page),
         _ => None,
     }
@@ -168,30 +197,38 @@ fn with_page<R>(
 }
 
 /// The page's widgets, for a reader of their state.
-pub(crate) fn root(state: &AppState) -> Option<NodeId> {
-    leaf::root(state, DIALOG)
+pub(crate) fn root(controller: &DialogController) -> Option<NodeId> {
+    leaf::root(controller, DIALOG)
 }
 
-pub(super) fn page_open(state: &AppState) -> bool {
-    page(state).is_some()
+pub(super) fn page_open(wol: Option<&WolVisit>) -> bool {
+    page(wol).is_some()
 }
 
 pub(crate) fn layout(state: &AppState) -> WolMyInfoLayout {
-    shell_layout::on(state, WolMyInfoLayout::new)
+    shell_layout::on(&state.renderer.gpu, WolMyInfoLayout::new)
 }
 
 /// Builds and places `0x114`'s widgets; the root.
 pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
     let layout = layout(state);
-    leaf::sync(state, DIALOG, layout.page.scale, spec, |id| {
-        layout.rect_of(id)
-    })
+    leaf::sync(
+        &mut state.frontend.shell_controller,
+        &state.renderer.bit_font,
+        DIALOG,
+        layout.page.scale,
+        spec,
+        |id| layout.rect_of(id),
+    )
 }
 
 /// Combo `control`'s open drop list.
-pub(crate) fn drop_down(state: &AppState, control: u16) -> Option<vera20k_gui::ComboDropDown> {
-    let gui = state.frontend.shell_controller.gui();
-    gui.combo_drop_down(gui.find_id(leaf::root(state, DIALOG)?, control.into())?)
+pub(crate) fn drop_down(
+    controller: &DialogController,
+    control: u16,
+) -> Option<vera20k_gui::ComboDropDown> {
+    let gui = controller.gui();
+    gui.combo_drop_down(gui.find_id(leaf::root(controller, DIALOG)?, control.into())?)
 }
 
 /// Run one control's persona write or account change at once.
@@ -199,9 +236,20 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
     let nickname = state.frontend.wol_account.nickname.clone();
     // LoadRecord, the setter, then SaveProfileToINI (dirty only).
     let write = |state: &mut AppState, set: &dyn Fn(&mut WolPersona)| {
-        let mut record = super::persona::load(state, &nickname);
+        let mut record = super::persona::load(
+            state.frontend.wol.as_ref(),
+            state.platform.game_config.as_ref(),
+            &state.process_assets,
+            &nickname,
+        );
         set(&mut record);
-        super::persona::save(state, &mut record, &nickname);
+        super::persona::save(
+            state.frontend.wol.as_ref(),
+            state.platform.game_config.as_ref(),
+            &state.process_assets,
+            &mut record,
+            &nickname,
+        );
     };
     match action {
         MyInfoAction::Nickname { slot } => {
@@ -224,9 +272,14 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
             let account = &mut state.frontend.wol_account;
             account.nickname = name.clone();
             account.nickname_allocated = slot != -1 && !name.is_empty();
-            let persona = super::persona::load(state, &name);
-            let texts = super::persona::profile_texts(state, &name, &persona);
-            let auto_login = auto_login_names(state);
+            let persona = super::persona::load(
+                state.frontend.wol.as_ref(),
+                state.platform.game_config.as_ref(),
+                &state.process_assets,
+                &name,
+            );
+            let texts = super::persona::profile_texts(&state.process_assets, &name, &persona);
+            let auto_login = auto_login_names(&state.frontend, state.platform.game_config.as_ref());
             let persona = view(&persona);
             with_page(state, |page, gui, root| {
                 page.nickname_changed(gui, root, &persona, texts, !name.is_empty(), auto_login)
@@ -248,7 +301,10 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
             write(state, &|record| record.set_match_by_res(value));
         }
         MyInfoAction::AutoLogin(checked) => {
-            if let Some(file) = super::persona::info_file(state) {
+            if let Some(file) = super::persona::info_file(
+                state.frontend.wol.as_ref(),
+                state.platform.game_config.as_ref(),
+            ) {
                 if checked {
                     file.set_auto_login(&nickname);
                 } else if file.auto_login().to_ascii_lowercase() == nickname.to_ascii_lowercase() {
@@ -259,7 +315,10 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
         MyInfoAction::Forget { name, slot } => {
             // 0x007996A5..0x0079978E: a lowered match clears AutoLogin, then
             // LastValid; a stored slot is cleared (API+0x94).
-            if let Some(file) = super::persona::info_file(state) {
+            if let Some(file) = super::persona::info_file(
+                state.frontend.wol.as_ref(),
+                state.platform.game_config.as_ref(),
+            ) {
                 let name = name.to_ascii_lowercase();
                 if file.auto_login().to_ascii_lowercase() == name {
                     file.set_auto_login("");
@@ -275,14 +334,19 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
                         .retain(|stored| stored.slot as i32 != slot);
                 }
                 service::request(
-                    state,
+                    state.frontend.wol.as_mut(),
                     WolServiceRequest::ForgetCredential { slot: slot as u32 },
                 );
             }
             // 0x77A8D0's clear is repainted at once by the default record
             // (0x00778710) through 0x77A9F0 with no name.
-            let default = super::persona::load(state, "");
-            let texts = super::persona::profile_texts(state, "", &default);
+            let default = super::persona::load(
+                state.frontend.wol.as_ref(),
+                state.platform.game_config.as_ref(),
+                &state.process_assets,
+                "",
+            );
+            let texts = super::persona::profile_texts(&state.process_assets, "", &default);
             let default = view(&default);
             with_page(state, |page, gui, root| {
                 page.refresh(gui, root, &default, texts)
@@ -304,7 +368,7 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
 /// with return mode 6: mode 5's login category is 1, so `WOL_Main` runs the
 /// login flow first (`0x0077B3AA`), then the Buddy List runner.
 pub(crate) fn commit_close(state: &mut AppState, control: u16) {
-    super::leaf::free_art(state, DIALOG);
+    super::leaf::free_art(&mut state.frontend.wol_art, DIALOG);
     if control != PLAY_BUDDY {
         App::reopen_wol_welcome(state);
         return;
@@ -315,7 +379,7 @@ pub(crate) fn commit_close(state: &mut AppState, control: u16) {
     visit.mode = Some(crate::ui::wol_shell::WolMode::PlayBuddy);
     visit.return_mode = Some(crate::ui::wol_shell::WolMode::MyInformation);
     visit.page = WolPage::Backdrop { wait: None };
-    super::apply_wol_preferences(state);
+    super::apply_wol_preferences(&mut state.frontend, &mut state.audio);
     service::begin_flow(state);
 }
 

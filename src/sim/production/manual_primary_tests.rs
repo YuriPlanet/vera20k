@@ -82,7 +82,7 @@ fn stale_primary_events_preserve_then_toggle_each_limbo_peer_flag() {
     assert!(sim.production.is_primary_factory(first));
     assert!(sim.production.is_primary_factory(second));
     // Full snapshot load reseeds the unsaved Scenario stream to zero.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     // Compare this owner across full graph registration. Derived navigation
     // and the process RNG streams have their own native load policies.
     let primary_hash = |sim: &Simulation| {
@@ -495,9 +495,9 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
         }
         sim.sound_events.clear_for_test();
         let seed = corpus["seed"].as_u64().unwrap();
-        sim.main_rng = SimRng::new(seed);
-        sim.scenario_rng = SimRng::new(seed);
-        sim.mapgen_rng = SimRng::new(seed);
+        *sim.main_rng = SimRng::new(seed);
+        *sim.scenario_rng = SimRng::new(seed);
+        *sim.mapgen_rng = SimRng::new(seed);
         let assert_rng = |sim: &Simulation, expected: &serde_json::Value| {
             assert_eq!(
                 sim.main_rng.native_state_hex(),

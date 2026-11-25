@@ -76,8 +76,8 @@ fn world(rules: &RuleSet, input: &Value) -> Simulation {
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.bridge_state = Some(bridges);
-    sim.overlay_grid = Some(overlays);
+    *sim.bridge_state = Some(bridges);
+    *sim.overlay_grid = Some(overlays);
     sim.session
         .set_no_damage_for_test(input["no_damage"].as_bool().unwrap());
     sim
@@ -222,7 +222,7 @@ fn nested_death_bridge_continuation_finishes_before_parent_area_returns() {
             );
             units.push(id);
         }
-        sim.scenario_rng = SimRng::new(native["seed"].as_u64().unwrap());
+        *sim.scenario_rng = SimRng::new(native["seed"].as_u64().unwrap());
         sim.dirty_cells.clear_tactical_for_test();
         let warhead = sim.interner.intern("WH");
         let hit = EntityDamageEvent::area(units[0], 100, 0, RAD_NO_ATTACKER, None, warhead);

@@ -402,9 +402,11 @@ parts leave those files out. On LAN the refusal keeps the native text without th
 list. Nothing new is exchanged and the identity stays 32 bytes.
 
 A snow map with `[Map] VeraIce=yes` uses the original Yuri's Revenge snow
-terrain and the VERA ice tiles embedded in the game. The map agreement covers
-the switch, the painted cells and the map's weights. The build agreement
-covers the bundled tiles. Ice Lake uses the same map identity and transfer
+terrain and VERA's installed ice pack. The map agreement covers the switch, the
+painted cells and the map's weights. Both loose `Terrain` files enter the
+multiplayer build identity. Each game checks their lengths and SHA-256 against
+that build before using them. An incomplete or changed pack stops the ice map
+from loading and tells the player to restore the installed files. Ice Lake uses the same map identity and transfer
 as any authored map. A mixed-build room follows the existing build check.
 A game from before this is another build, which the build check refuses first; a
 rollback starts such games together again.
@@ -508,16 +510,22 @@ Native lockstep instead slows every match to its slowest player (ProcessNetwork
 
 A lobby that turns on continuous pacing (certificate flags bit 2, below) lets the
 relay seal at any whole rate instead of Game Speed rows, as lockstep LAN play
-follows its slowest player: a slow player slows the match to its holdable rate,
-nine tenths of what it ran while behind, at least one frame and at most a
-quarter slower at a time, never below 10 frames a second. A player whose frames
-keep waiting for ten seconds though it runs as many as the relay seals slows it
-a twentieth, so that backlog drains. After a third of the raise wait the match
-speeds up half the way to the slowest player's ceiling, at least one frame and
-at most a tenth of its rate at a time, up to its own speed. The ceiling is the
-player's tick cost and nineteen twentieths of what it ran in a ten-second
-backlog or when it fell behind a second time within five minutes, so a hitch of a
-few seconds holds nothing back. Messages, replays and saves are as above.
+follows its slowest player. The relay estimates what each player can run: what
+its tick cost holds and, while frames wait on it, nine tenths of what it ran. It
+holds the low point of that estimate and, after a wait, tries more: a twentieth
+more every five seconds, or nine tenths of the most the player has run since. A
+try the player cannot hold doubles the wait, from 15 seconds up to two minutes;
+one that held a minute starts it over. The clock aims at the smallest estimate
+less that player's backlog over ten seconds (at most four tenths of the
+estimate), so a backlog always drains. The backlog comes from the sampled
+checksums the games already send: the newest frame when a checksum arrives,
+less the checksum's frame, less the least such gap while the player kept up.
+Every two seconds the clock moves towards that aim: down by at most half, up
+half the way and at most a quarter, and only when that is three percent or
+more; never below 10 frames a second or above the match's own speed. Messages,
+replays and saves are as above. These rules live in the relay alone: games of
+any version play under a relay with either set, and rolling the relay back
+brings back the earlier rules for matches it starts.
 
 The lobby enables continuous pacing only after every participating relay and
 every admitted game build support bit 2. An older game rejects the grant with
@@ -718,7 +726,18 @@ again without it. A lobby that lists matches to watch already supports Teams, th
 and the room rules. A refusal from it leaves the settings in place. The host checks the
 map has enough starts for the playing teams, people and AI before publishing, so they
 can change the map or the seats while keeping their room settings. A room has 2 to 15
-teams, named A to O.
+teams, named A to O. A count outside that range, from a room or a peer, leaves Teams
+Off.
+
+A room's list and its seats come from one number: the rows that admit players. That
+is the map's capacity, and the host's observer row adds one more row when the room
+has one: a WOL room holds the six rows of the original service (`0x005E6440`), or two
+in a tournament room, and the host's observer row adds a row only when the capacity
+is under that limit (`0x005EC4A3..0x005EC4EF`). The list shows exactly those rows, so
+a newcomer takes a row the list shows and the room refuses the next one, instead of
+seating a player in a row nobody sees. Nothing new travels: a player's row travels
+as before, and a room of mixed versions seats as many players as the host's rows
+allow. An older host keeps its own rows, and a rollback does again.
 
 In a VERA room whose mode has teams and Teams set, people play only on a team. A newcomer
 comes in watching while a spectator seat is open and takes a seat with a team header's
@@ -872,6 +891,15 @@ doesn't offer it. A guest's own pick sent at the same moment carries its whole r
 wins on the host. Online, a game sends its room commands to the lobby one at a time; a
 newer options, map-status or ready command replaces an older one of the same kind that
 is still waiting, and goes out after whatever was queued before it.
+A guest's own pick travels as the `R` words the shell wrote, and the host reads them
+with the same owner the room's publication uses (`app::lan_service::picks`): a side
+(-3 while the seat watches, -2 for Random, else the country index up to 65535), a
+colour (-2 for Random, else the index up to 255), a start (-2 or -1 for Auto, else a
+waypoint below the shell's own 120 rows) and a team (-2 or -1 for no team, else the
+team index up to 255). A value outside its domain is refused rather than trimmed, so
+the row the host stores is the row the room re-applies. A guest of another build never
+reaches this path: it is refused at the build check. Online, a pick travels as the
+lobby's typed room data, not as these words, so the online wire is unchanged.
 
 ### Build check
 

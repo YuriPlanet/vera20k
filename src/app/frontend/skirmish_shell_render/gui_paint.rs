@@ -39,7 +39,10 @@ use super::{
     SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB, SHELL_MODAL_PANEL_RGB,
     SHELL_SWATCH_DEPTH,
 };
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::ime::ImeState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::render::hud_paint::{HudPaint, Material, rgba_tint};
@@ -339,15 +342,9 @@ pub(crate) enum Picture {
 /// button's painted rect and hit target are still the original cell.
 fn right_panel_caption_rect(rect: RectPx, pressed: bool, scale: ShellScale) -> RectPx {
     scale.derive_rect(rect, |rect| {
-        let label =
-            crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed);
+        let label = crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed);
         let width = label.w.min(FAMILY_CAPTION_W);
-        RectPx::new(
-            label.x + (label.w - width) / 2,
-            label.y,
-            width,
-            label.h,
-        )
+        RectPx::new(label.x + (label.w - width) / 2, label.y, width, label.h)
     })
 }
 
@@ -539,9 +536,13 @@ impl GuiStyle<'_> {
 
 /// A node's caption: `Label` is a string key (shown as the key when
 /// missing), `Text` a literal (borrowed, not copied).
-fn label_of<'g>(state: &AppState, gui: &'g Gui, node: NodeId) -> Option<Cow<'g, str>> {
+fn label_of<'g>(
+    process_assets: &ProcessAssets,
+    gui: &'g Gui,
+    node: NodeId,
+) -> Option<Cow<'g, str>> {
     match gui.get(node, Prop::Label).ok().flatten() {
-        Some(Value::Text(key)) => Some(Cow::Owned(state.csf_label(key, key))),
+        Some(Value::Text(key)) => Some(Cow::Owned(process_assets.csf_label(key, key))),
         _ => match gui.get(node, Prop::Text).ok().flatten() {
             Some(Value::Text(text)) => Some(Cow::Borrowed(text.as_str())),
             _ => None,
@@ -597,7 +598,7 @@ fn inset(gui: &Gui, node: NodeId, rect: RectPx, scale: ShellScale) -> Option<Rec
 }
 
 fn text(
-    state: &AppState,
+    bit_font: &BitFont,
     value: &str,
     rect: RectPx,
     align: ShellAlign,
@@ -606,7 +607,7 @@ fn text(
     depth: f32,
 ) -> ShellTextDraw {
     shell_text::draw_in_rect_scaled(
-        &state.renderer.bit_font,
+        bit_font,
         value,
         rect_to_text_rect(rect),
         rgb,
@@ -626,12 +627,27 @@ fn items(gui: &Gui, node: NodeId, prop: Prop) -> &[String] {
 
 /// The widgets under `root`, in paint order. Invisible subtrees are skipped.
 pub(crate) fn paint_gui_children(
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     gui: &Gui,
     root: NodeId,
     scale: ShellScale,
 ) -> HudPaint {
-    paint_gui_styled(state, gui, root, scale, &[], GuiStyle::default())
+    paint_gui_styled(
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
+        gui,
+        root,
+        scale,
+        &[],
+        GuiStyle::default(),
+    )
 }
 
 /// [`paint_gui_children`] in the host's `style`, under `overlays` that
@@ -639,7 +655,11 @@ pub(crate) fn paint_gui_children(
 /// a box): the captions of the nodes an overlay meets are left out, so they
 /// don't show through it.
 pub(crate) fn paint_gui_styled(
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     gui: &Gui,
     root: NodeId,
     scale: ShellScale,
@@ -647,7 +667,19 @@ pub(crate) fn paint_gui_styled(
     style: GuiStyle<'_>,
 ) -> HudPaint {
     let mut paint = HudPaint::default();
-    paint_gui_styled_into(&mut paint, state, gui, root, scale, overlays, style);
+    paint_gui_styled_into(
+        &mut paint,
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
+        gui,
+        root,
+        scale,
+        overlays,
+        style,
+    );
     paint
 }
 
@@ -655,15 +687,32 @@ pub(crate) fn paint_gui_styled(
 /// shell control art.
 pub(crate) fn paint_gui_styled_into(
     paint: &mut HudPaint,
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     gui: &Gui,
     root: NodeId,
     scale: ShellScale,
     overlays: &[RectPx],
     style: GuiStyle<'_>,
 ) {
-    if let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() {
-        paint_gui_into(paint, state, Some(atlas), gui, root, scale, overlays, style);
+    if let Some(atlas) = frontend.skirmish_shell_chrome.as_ref() {
+        paint_gui_into(
+            paint,
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            Some(atlas),
+            gui,
+            root,
+            scale,
+            overlays,
+            style,
+        );
     }
 }
 
@@ -671,7 +720,11 @@ pub(crate) fn paint_gui_styled_into(
 /// (a screen whose paint order is not its hit order), each with its own
 /// subtree.
 pub(crate) fn paint_gui_ids(
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     gui: &Gui,
     root: NodeId,
     ids: impl IntoIterator<Item = u16>,
@@ -679,14 +732,30 @@ pub(crate) fn paint_gui_ids(
     style: GuiStyle<'_>,
 ) -> HudPaint {
     let mut paint = HudPaint::default();
-    paint_gui_ids_into(&mut paint, state, gui, root, ids, scale, style);
+    paint_gui_ids_into(
+        &mut paint,
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
+        gui,
+        root,
+        ids,
+        scale,
+        style,
+    );
     paint
 }
 
 /// [`paint_gui_ids`] appended to `paint`'s lanes.
 pub(crate) fn paint_gui_ids_into(
     paint: &mut HudPaint,
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     gui: &Gui,
     root: NodeId,
     ids: impl IntoIterator<Item = u16>,
@@ -697,14 +766,30 @@ pub(crate) fn paint_gui_ids_into(
         .into_iter()
         .filter_map(|id| gui.find_id(root, id.into()))
     {
-        paint_gui_styled_into(paint, state, gui, node, scale, &[], style);
+        paint_gui_styled_into(
+            paint,
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            gui,
+            node,
+            scale,
+            &[],
+            style,
+        );
     }
 }
 
 /// [`paint_gui_styled`] on `atlas`, for a renderer that holds the shell
 /// chrome while it paints (the Skirmish family's).
 pub(crate) fn paint_gui_with(
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     atlas: &SkirmishShellChromeAtlas,
     gui: &Gui,
     root: NodeId,
@@ -715,7 +800,11 @@ pub(crate) fn paint_gui_with(
     let mut paint = HudPaint::default();
     paint_gui_into(
         &mut paint,
-        state,
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
         Some(atlas),
         gui,
         root,
@@ -735,7 +824,11 @@ pub(crate) fn paint_gui_with(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn paint_gui_into(
     paint: &mut HudPaint,
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     atlas: Option<&SkirmishShellChromeAtlas>,
     gui: &Gui,
     root: NodeId,
@@ -747,7 +840,7 @@ pub(crate) fn paint_gui_into(
         .map(SkirmishShellChromeAtlas::control_chrome)
         .unwrap_or_default();
     let white = atlas.and_then(|atlas| atlas.white_pixel);
-    let font = &state.renderer.bit_font;
+    let font = bit_font;
     // Shell passes draw in queue order (no depth test).
     let depth = SHELL_CONTROL_TEXT_DEPTH;
     let glyph = style.text_factor.unwrap_or(scale.factor());
@@ -765,7 +858,7 @@ pub(crate) fn paint_gui_into(
         .and_then(|(text_of, id)| text_of(id))
     {
         Some(text) => Some(Cow::Owned(text)),
-        None => label_of(state, gui, node),
+        None => label_of(process_assets, gui, node),
     };
     // Each visible node in paint order, its sprites before its text.
     gui.tree().walk_visible(root, |node| {
@@ -837,7 +930,16 @@ pub(crate) fn paint_gui_into(
                     };
                     let label = caption(node).filter(|_| !covered);
                     paint.draw(Material::Side, |art, texts| {
-                        push_side_button(art, texts, font, side, rect, label.as_deref(), look, glyph)
+                        push_side_button(
+                            art,
+                            texts,
+                            font,
+                            side,
+                            rect,
+                            label.as_deref(),
+                            look,
+                            glyph,
+                        )
                     });
                     return;
                 }
@@ -853,7 +955,7 @@ pub(crate) fn paint_gui_into(
                         let frame = super::chrome::right_panel_button_sdbtnanm_frame_index(
                             visual, !enabled,
                         );
-                        let chrome = state.frontend.main_menu_shell_chrome.as_ref();
+                        let chrome = frontend.main_menu_shell_chrome.as_ref();
                         paint.draw(Material::Column, |out, _| {
                             out.extend(chrome.and_then(|chrome| {
                                 shell_paint::column_button(chrome, rect, frame, SHELL_CONTROL_DEPTH)
@@ -900,15 +1002,18 @@ pub(crate) fn paint_gui_into(
                             Ok(Some(Value::Text(own))) => Some(Cow::Borrowed(own.as_str())),
                             _ => caption(node),
                         };
-                        let shown =
-                            own.filter(|_| !super::text_covered_by_overlay(at, overlays));
+                        let shown = own.filter(|_| !super::text_covered_by_overlay(at, overlays));
                         if let Some(label) = shown {
-                            let rgb = if enabled { style.rgb } else { look.disabled_rgb };
+                            let rgb = if enabled {
+                                style.rgb
+                            } else {
+                                look.disabled_rgb
+                            };
                             let centred = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
                             let depth = look.depths.text;
                             paint
                                 .texts
-                                .push(text(state, &label, at, centred, glyph, rgb, depth));
+                                .push(text(bit_font, &label, at, centred, glyph, rgb, depth));
                         }
                         return;
                     }
@@ -920,7 +1025,13 @@ pub(crate) fn paint_gui_into(
                             .zip(id(node))
                             .and_then(|(picture_of, id)| picture_of(id));
                         match (picture, style.art) {
-                            (Some(Picture::Icon { released, pressed: down }), Some(art)) => {
+                            (
+                                Some(Picture::Icon {
+                                    released,
+                                    pressed: down,
+                                }),
+                                Some(art),
+                            ) => {
                                 let face = if pressed { down } else { released };
                                 paint.draw(Material::Icons, |out, _| {
                                     push_page_icon(out, art, face, rect, false, scale)
@@ -961,18 +1072,20 @@ pub(crate) fn paint_gui_into(
                         let face_width = (scale.base_rect(at).w - 12).max(1) as u32;
                         let rgb = text_rgb(gui, node, true, style.rgb, None);
                         let centred = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
-                        paint.texts.push(font.fitted(font.fit_line(&label, face_width), |font| {
-                            shell_text::draw_in_rect_scaled(
-                                font,
-                                &label,
-                                rect_to_text_rect(at),
-                                rgb,
-                                centred,
-                                [0.0; 2],
-                                depth,
-                                scale.factor(),
-                            )
-                        }));
+                        paint
+                            .texts
+                            .push(font.fitted(font.fit_line(&label, face_width), |font| {
+                                shell_text::draw_in_rect_scaled(
+                                    font,
+                                    &label,
+                                    rect_to_text_rect(at),
+                                    rgb,
+                                    centred,
+                                    [0.0; 2],
+                                    depth,
+                                    scale.factor(),
+                                )
+                            }));
                         return;
                     }
                     (ButtonArt::CheckboxFace, Some(_)) => {
@@ -1062,11 +1175,16 @@ pub(crate) fn paint_gui_into(
                     art.caption_rect(rect, pressed, own_align, scale, standard_panel_art);
                 paint
                     .texts
-                    .push(text(state, &label, at, align, glyph, rgb, depth));
+                    .push(text(bit_font, &label, at, align, glyph, rgb, depth));
             }
             // A checkbox that shows as the host's picture (the observer
             // image): no face or caption.
-            NodeKind::Checkbox if style.picture_of.zip(id(node)).is_some_and(|(f, id)| f(id).is_some()) => {
+            NodeKind::Checkbox
+                if style
+                    .picture_of
+                    .zip(id(node))
+                    .is_some_and(|(f, id)| f(id).is_some()) =>
+            {
                 let picture = style.picture_of.zip(id(node)).and_then(|(f, id)| f(id));
                 if let (Some(picture), Some(atlas)) = (picture, atlas) {
                     paint.draw(Material::Controls, |out, _| {
@@ -1089,7 +1207,7 @@ pub(crate) fn paint_gui_into(
                     let rgb = text_rgb(gui, node, enabled, style.rgb, None);
                     paint
                         .texts
-                        .push(text(state, &label, at, align, glyph, rgb, depth));
+                        .push(text(bit_font, &label, at, align, glyph, rgb, depth));
                 }
             }
             NodeKind::Trackbar => {
@@ -1133,7 +1251,7 @@ pub(crate) fn paint_gui_into(
                     };
                     let at = value_text_rect(rect, scale);
                     paint.texts.push(text(
-                        state,
+                        bit_font,
                         &shown,
                         at,
                         ShellAlign::H_CENTER | ShellAlign::V_CENTER,
@@ -1164,7 +1282,18 @@ pub(crate) fn paint_gui_into(
                 }
                 let face = (rect, !covered);
                 paint_combo(
-                    paint, state, atlas, gui, node, face, enabled, scale, style, host_rows,
+                    paint,
+                    bit_font,
+                    frontend,
+                    match_state,
+                    atlas,
+                    gui,
+                    node,
+                    face,
+                    enabled,
+                    scale,
+                    style,
+                    host_rows,
                 );
             }
             NodeKind::List => {
@@ -1226,15 +1355,21 @@ pub(crate) fn paint_gui_into(
                     let h = content.y + content.h - row.y;
                     let at = RectPx::new(row.x + left, row.y, row.w - left, h);
                     let rgb = style.rgb;
-                    paint
-                        .texts
-                        .push(text(state, &empty, at, ShellAlign::NONE, glyph, rgb, depth));
+                    paint.texts.push(text(
+                        bit_font,
+                        &empty,
+                        at,
+                        ShellAlign::NONE,
+                        glyph,
+                        rgb,
+                        depth,
+                    ));
                 }
                 if let Some(cells) = cells {
                     let rows = cells.into_iter().skip(view.top).take(geometry.visible_rows);
                     for (visible, row) in rows.enumerate() {
                         let r = geometry.row(visible);
-                        paint_cells(paint, state, atlas, style, row, r, scale, covered);
+                        paint_cells(paint, bit_font, atlas, style, row, r, scale, covered);
                     }
                     return;
                 }
@@ -1274,7 +1409,7 @@ pub(crate) fn paint_gui_into(
                     };
                     paint
                         .texts
-                        .push(text(state, row, at, align, glyph, rgb, depth));
+                        .push(text(bit_font, row, at, align, glyph, rgb, depth));
                 }
             }
             // NewEdit `0x00614B30` as `push_new_edit` paints it, or framed in
@@ -1289,14 +1424,13 @@ pub(crate) fn paint_gui_into(
                 if let Some(focus_of) = style.focus_of {
                     edit.focused = focus_of(node);
                 }
-                let ime = &state.platform.ime;
                 let composition = match style.ime_target {
                     Some(target) => ime.composition(target),
                     None => ime.open_composition().filter(|_| style.ime && edit.focused),
                 };
                 let caret = match style.caret_of {
                     Some(caret_of) => caret_of(node),
-                    None => state.frontend.shell_controller.caret_visible(node),
+                    None => frontend.shell_controller.caret_visible(node),
                 };
                 edit.focused |= style.caret_of.is_some() && caret;
                 let rgb = text_rgb(gui, node, true, style.rgb, None);
@@ -1306,7 +1440,7 @@ pub(crate) fn paint_gui_into(
                     .and_then(|(hint_of, id)| hint_of(id));
                 let hint = hint.filter(|_| !covered).map(|(hint, x)| {
                     let at = scale.derive_rect(rect, |r| RectPx::new(r.x + x, r.y, r.w - x, r.h));
-                    text(state, &hint, at, ShellAlign::V_CENTER, glyph, rgb, depth)
+                    text(bit_font, &hint, at, ShellAlign::V_CENTER, glyph, rgb, depth)
                 });
                 let face = style
                     .edit_face_of
@@ -1331,7 +1465,7 @@ pub(crate) fn paint_gui_into(
                         let align = ShellAlign::V_CENTER;
                         paint
                             .texts
-                            .push(text(state, &shown, rect, align, glyph, rgb, depth));
+                            .push(text(bit_font, &shown, rect, align, glyph, rgb, depth));
                     }
                     paint.texts.extend(hint);
                     return;
@@ -1393,8 +1527,8 @@ pub(crate) fn paint_gui_into(
                     }
                     if selected {
                         let width = font.text_width(&edit.painted_text()) as i32;
-                        let at = scale
-                            .derive_rect(field, |f| RectPx::new(f.x, f.y + 2, width, f.h - 4));
+                        let at =
+                            scale.derive_rect(field, |f| RectPx::new(f.x, f.y + 2, width, f.h - 4));
                         super::chrome::push_solid_rect(
                             out,
                             atlas,
@@ -1419,7 +1553,12 @@ pub(crate) fn paint_gui_into(
             }
             // A text the host sizes: squeezed to its rect's width at that
             // size, over its shadow when the style shadows them.
-            NodeKind::Text if style.glyph_of.zip(id(node)).is_some_and(|(f, id)| f(id).is_some()) => {
+            NodeKind::Text
+                if style
+                    .glyph_of
+                    .zip(id(node))
+                    .is_some_and(|(f, id)| f(id).is_some()) =>
+            {
                 let size = style.glyph_of.zip(id(node)).and_then(|(f, id)| f(id));
                 let Some(label) = caption(node).filter(|t| !covered && !t.is_empty()) else {
                     return;
@@ -1471,7 +1610,7 @@ pub(crate) fn paint_gui_into(
                                 .zip(id(node))
                                 .and_then(|(rgb_of, id)| rgb_of(id))
                                 .unwrap_or_else(|| text_rgb(gui, node, enabled, style.rgb, None));
-                            text(state, &label, at, align, glyph, rgb, depth)
+                            text(bit_font, &label, at, align, glyph, rgb, depth)
                         }
                     });
                 }
@@ -1484,7 +1623,9 @@ pub(crate) fn paint_gui_into(
                     .zip(id(node))
                     .and_then(|(page_art_of, id)| page_art_of(id))
                 {
-                    paint.draw(Material::PageArt, |out, _| push_page_art(out, art, rect, scale));
+                    paint.draw(Material::PageArt, |out, _| {
+                        push_page_art(out, art, rect, scale)
+                    });
                     return;
                 }
                 let Some(atlas) = atlas else { return };
@@ -1546,7 +1687,9 @@ pub(crate) fn paint_gui_into(
                     }),
                     fill: color(gui, node, Prop::Color).unwrap_or(style.rgb),
                 };
-                paint.draw(Material::Controls, |out, _| push_bar(out, white, rect, look));
+                paint.draw(Material::Controls, |out, _| {
+                    push_bar(out, white, rect, look)
+                });
             }
             _ => {}
         }
@@ -1720,9 +1863,12 @@ pub(crate) fn push_frame(
                 );
             }
         }
-        FrameArt::Progress { rgb, done, total, depth } => {
-            push_progress(controls, white, rect, rgb, (done, total), depth)
-        }
+        FrameArt::Progress {
+            rgb,
+            done,
+            total,
+            depth,
+        } => push_progress(controls, white, rect, rgb, (done, total), depth),
     }
 }
 
@@ -1948,7 +2094,12 @@ fn push_search_line(
     shown: Option<&str>,
     scale: ShellScale,
 ) {
-    let SearchLine { rect, inset, fill, look } = line;
+    let SearchLine {
+        rect,
+        inset,
+        fill,
+        look,
+    } = line;
     let depth = SHELL_CONTROL_DEPTH;
     if let Some(fill) = fill {
         super::chrome::push_solid_rect(out, atlas, rect, fill, depth);
@@ -1960,7 +2111,12 @@ fn push_search_line(
     let (tail, caret) = search_line_tail(font, shown, rect, inset, scale);
     super::chrome::push_solid_rect(out, atlas, caret, look.rgb, depth);
     let field = scale.derive_rect(rect, |r| {
-        RectPx::new(r.x + inset.x, r.y + inset.y, r.w - inset.x, r.h - inset.y - inset.h)
+        RectPx::new(
+            r.x + inset.x,
+            r.y + inset.y,
+            r.w - inset.x,
+            r.h - inset.y - inset.h,
+        )
     });
     texts.push(shell_text::draw_in_rect_scaled(
         font,
@@ -1977,7 +2133,7 @@ fn push_search_line(
 /// A multi-cell row on `row`: its fill, then its cells' texts and pictures.
 fn paint_cells(
     paint: &mut HudPaint,
-    state: &AppState,
+    bit_font: &BitFont,
     atlas: &SkirmishShellChromeAtlas,
     style: GuiStyle<'_>,
     cells: CellRow,
@@ -2010,7 +2166,7 @@ fn paint_cells(
         let depth = SHELL_CONTROL_TEXT_DEPTH;
         paint
             .texts
-            .push(text(state, &value, at, align, glyph, rgb, depth));
+            .push(text(bit_font, &value, at, align, glyph, rgb, depth));
     }
     if let Some(art) = style.art {
         paint.draw(Material::Icons, |out, _| {
@@ -2026,7 +2182,7 @@ fn paint_cells(
 #[allow(clippy::too_many_arguments)]
 fn push_cell(
     paint: &mut HudPaint,
-    state: &AppState,
+    bit_font: &BitFont,
     atlas: &SkirmishShellChromeAtlas,
     gui: &Gui,
     node: NodeId,
@@ -2063,7 +2219,7 @@ fn push_cell(
     let depth = SHELL_CONTROL_TEXT_DEPTH;
     paint
         .texts
-        .push(text(state, item, rect, align, glyph, rgb, depth));
+        .push(text(bit_font, item, rect, align, glyph, rgb, depth));
 }
 
 /// An owner-draw combo's face, its caption unless an overlay covers it, and
@@ -2072,7 +2228,9 @@ fn push_cell(
 #[allow(clippy::too_many_arguments)]
 fn paint_combo(
     paint: &mut HudPaint,
-    state: &AppState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
     atlas: &SkirmishShellChromeAtlas,
     gui: &Gui,
     node: NodeId,
@@ -2088,7 +2246,10 @@ fn paint_combo(
     let swatches = items(gui, node, Prop::Swatches);
     let swatch = |row: usize| {
         let index = swatches.get(row)?.parse().ok()?;
-        Some(super::controls::house_color_tint(state.rules(), index))
+        Some(super::controls::house_color_tint(
+            crate::app::state::active_rules(frontend, match_state),
+            index,
+        ))
     };
     let face_swatch = selected.and_then(swatch);
     let open = drop_down.is_some();
@@ -2099,13 +2260,15 @@ fn paint_combo(
         Some(rows) => rows.iter().map(|(row, rgb)| (row.as_str(), *rgb)).collect(),
         None => items.iter().map(|row| (row.as_str(), u32::MAX)).collect(),
     };
-    let font = &state.renderer.bit_font;
+    let font = bit_font;
     if style.combos == ComboArt::Cell {
         let lit = (style.rgb_of.zip(gui.id_of(node))).and_then(|(rgb_of, id)| rgb_of(id));
         if let Some((row, (item, _))) = selected.and_then(|row| Some((row, *rows.get(row)?))) {
             let look = (lit, style.text_factor.unwrap_or(scale.factor()));
             let face = (rect, caption, swatch(row), item);
-            push_cell(paint, state, atlas, gui, node, face, look, style.rgb, scale);
+            push_cell(
+                paint, bit_font, atlas, gui, node, face, look, style.rgb, scale,
+            );
         }
     } else if style.combos != ComboArt::Host {
         let control = ControlPaint::Combo {
@@ -2138,7 +2301,7 @@ fn paint_combo(
             let align = ShellAlign::V_CENTER;
             paint
                 .texts
-                .push(text(state, face, at, align, glyph, rgb, depth));
+                .push(text(bit_font, face, at, align, glyph, rgb, depth));
         } else if let Some(face) = face.filter(|_| caption) {
             // Cut to gamemd's arrow reserve (`0x00617250`), squeezed first;
             // drawn in the face less its `TextInset` when it has one.
@@ -2146,7 +2309,7 @@ fn paint_combo(
                 .unwrap_or_else(|| combo_face_text_draw_rect(rect, scale));
             fit_owner_draw_label(font, face, combo_face_text_fit_width(rect, scale), |face| {
                 paint.texts.push(text(
-                    state,
+                    bit_font,
                     face,
                     at,
                     ShellAlign::V_CENTER,
@@ -2197,7 +2360,7 @@ fn paint_combo(
                 });
             }
             paint.popup_texts.push(text(
-                state,
+                bit_font,
                 item,
                 RectPx::new(row.x + 3, row.y, row.w - 6, row.h),
                 ShellAlign::V_CENTER,
@@ -2256,7 +2419,7 @@ fn paint_combo(
                 continue;
             };
             paint.popup_texts.push(text(
-                state,
+                bit_font,
                 item,
                 RectPx::new(row.x + left, row.y, row.w - left, row.h),
                 ShellAlign::V_CENTER,
@@ -2305,7 +2468,7 @@ fn paint_combo(
         let at = scale.derive_rect(at, |r| RectPx::new(r.x + inset, r.y, r.w - 2 * inset, r.h));
         let mut draw = |item: &str| {
             paint.popup_texts.push(text(
-                state,
+                bit_font,
                 item,
                 at,
                 ShellAlign::V_CENTER,
@@ -2383,10 +2546,7 @@ mod tests {
         if let Some(entry) = buttons[super::button_frame(look)].or(buttons[0]) {
             super::super::in_game_shell::push_art(&mut art, entry, rect, side.clip);
         }
-        let rgb = super::button_text_rgb(
-            side.theme,
-            look.enabled && !look.highlighted,
-        );
+        let rgb = super::button_text_rgb(side.theme, look.enabled && !look.highlighted);
         let at = super::button_text_rect(rect, look.pressed);
         texts.push(shell_text::draw_in_rect_scaled(
             font,
@@ -2457,7 +2617,8 @@ mod tests {
         let mut gui = Gui::new(32);
         let root = gui.create(NodeKind::Dialog, None).unwrap();
         let node = |gui: &mut Gui, kind, id, parent| {
-            gui.create_tree(&NodeSpec::new(kind).id(id), Some(parent)).unwrap()
+            gui.create_tree(&NodeSpec::new(kind).id(id), Some(parent))
+                .unwrap()
         };
         node(&mut gui, NodeKind::Button, 1, root);
         let hidden = node(&mut gui, NodeKind::Panel, 2, root);
@@ -2555,7 +2716,10 @@ mod tests {
             pressed: true,
             ..up
         };
-        let (first, second) = (RectPx::new(653, 227, 125, 25), RectPx::new(653, 262, 125, 25));
+        let (first, second) = (
+            RectPx::new(653, 227, 125, 25),
+            RectPx::new(653, 262, 125, 25),
+        );
         let group = RectPx::new(100, 300, 400, 120);
         let checkbox = || ControlPaint::Checkbox {
             checked: true,
@@ -2571,22 +2735,72 @@ mod tests {
         let s = RETAIL_SCALE;
 
         let mut old = OldLanes::default();
-        push_side_button(&mut old.side, &mut old.texts, &font, side, first, Some("AAA"), up, 1.0);
+        push_side_button(
+            &mut old.side,
+            &mut old.texts,
+            &font,
+            side,
+            first,
+            Some("AAA"),
+            up,
+            1.0,
+        );
         let caption = Some(("AAA", true));
-        push_frame(&mut old.controls, &mut old.texts, &font, white, group, FrameArt::Group, caption, look, s);
+        push_frame(
+            &mut old.controls,
+            &mut old.texts,
+            &font,
+            white,
+            group,
+            FrameArt::Group,
+            caption,
+            look,
+            s,
+        );
         paint_control(&mut old.controls, &chrome, checkbox(), s);
-        push_side_button(&mut old.side, &mut old.texts, &font, side, second, Some("A"), down, 1.0);
+        push_side_button(
+            &mut old.side,
+            &mut old.texts,
+            &font,
+            side,
+            second,
+            Some("A"),
+            down,
+            1.0,
+        );
         push_bar(&mut old.controls, white, RectPx::new(500, 120, 96, 14), bar);
-        push_frame(&mut old.controls, &mut old.texts, &font, white, field, plain, None, look, s);
+        push_frame(
+            &mut old.controls,
+            &mut old.texts,
+            &font,
+            white,
+            field,
+            plain,
+            None,
+            look,
+            s,
+        );
 
         let mut paint = HudPaint::default();
         paint.draw(Material::Side, |art, texts| {
             push_side_button(art, texts, &font, side, first, Some("AAA"), up, 1.0)
         });
         paint.draw(Material::Controls, |out, texts| {
-            push_frame(out, texts, &font, white, group, FrameArt::Group, caption, look, s)
+            push_frame(
+                out,
+                texts,
+                &font,
+                white,
+                group,
+                FrameArt::Group,
+                caption,
+                look,
+                s,
+            )
         });
-        paint.draw(Material::Controls, |out, _| paint_control(out, &chrome, checkbox(), s));
+        paint.draw(Material::Controls, |out, _| {
+            paint_control(out, &chrome, checkbox(), s)
+        });
         paint.draw(Material::Side, |art, texts| {
             push_side_button(art, texts, &font, side, second, Some("A"), down, 1.0)
         });
@@ -2669,11 +2883,15 @@ mod tests {
         old.popup_texts.push(row_text(second));
 
         let mut paint = HudPaint::default();
-        paint.draw(Material::Controls, |out, _| paint_control(out, &chrome, combo(), s));
+        paint.draw(Material::Controls, |out, _| {
+            paint_control(out, &chrome, combo(), s)
+        });
         paint.texts.push(row_text(face));
         paint.draw(Material::Popup, |out, _| open(out, list));
         paint.popup_texts.push(row_text(row));
-        paint.draw(Material::Controls, |out, _| paint_control(out, &chrome, bar(), s));
+        paint.draw(Material::Controls, |out, _| {
+            paint_control(out, &chrome, bar(), s)
+        });
         paint.draw(Material::Popup, |out, _| open(out, second));
         paint.popup_texts.push(row_text(second));
 
@@ -2763,14 +2981,17 @@ mod tests {
         let rect = RectPx::new(100, 200, 108, 23);
         for pressed in [false, true] {
             let centred = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
-            let hand = (
-                super::button_text_rect(rect, pressed),
-                centred,
-            );
+            let hand = (super::button_text_rect(rect, pressed), centred);
             for art in [ButtonArt::ModalType2, ButtonArt::Side] {
-                assert_eq!(art.caption_rect(rect, pressed, None, RETAIL_SCALE, false), hand);
+                assert_eq!(
+                    art.caption_rect(rect, pressed, None, RETAIL_SCALE, false),
+                    hand
+                );
                 let aligned = Some(ShellAlign::NONE);
-                assert_eq!(art.caption_rect(rect, pressed, aligned, RETAIL_SCALE, false), hand);
+                assert_eq!(
+                    art.caption_rect(rect, pressed, aligned, RETAIL_SCALE, false),
+                    hand
+                );
             }
         }
         let (pressed_at, _) =
@@ -3057,7 +3278,11 @@ mod tests {
             (false, RectPx::new(664, 200, 114, 41)),
             (true, RectPx::new(665, 204, 114, 37)),
         ] {
-            for scale in [RETAIL_SCALE, shell_scale(1024, 768), shell_scale(1600, 1200)] {
+            for scale in [
+                RETAIL_SCALE,
+                shell_scale(1024, 768),
+                shell_scale(1600, 1200),
+            ] {
                 for (art, standard) in [(ButtonArt::Column, false), (ButtonArt::Panel, true)] {
                     assert_eq!(
                         art.caption_rect(scale.scale_rect(button), pressed, None, scale, standard),

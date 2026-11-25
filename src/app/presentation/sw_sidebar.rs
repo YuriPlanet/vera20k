@@ -6,6 +6,7 @@
 //! state is refreshed from the live `SuperWeaponView` every frame.
 
 use crate::app::AppState;
+use crate::app::presentation::state::MatchPresentationState;
 use crate::rules::phobos_sw_sidebar::SuperWeaponSidebarUi;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
@@ -160,7 +161,7 @@ pub(crate) fn plan(
     use crate::app::presentation::field_parts;
     use crate::ui::field_layout::FieldPart;
     // A layout that leaves the column out has no buttons to place.
-    if !field_parts::shows(state, FieldPart::Powers) {
+    if !field_parts::shows(&state.match_state.match_presentation, FieldPart::Powers) {
         return (SwSidebarLayout::default(), Vec::new());
     }
     // Phobos lays the left sidebar out on `DSurface::ViewBounds`, so it stays
@@ -218,7 +219,9 @@ pub(crate) fn refresh_draw_state(state: &mut AppState) {
     let Some(runtime) = state.match_state.sim_runtime.presentation() else {
         return;
     };
-    let Some(owner_name) = crate::app::input::commands::preferred_local_owner_name(state) else {
+    let Some(owner_name) =
+        crate::app::input::commands::preferred_local_owner_name(&state.match_state)
+    else {
         return;
     };
     let sim = &runtime.simulation;
@@ -238,19 +241,13 @@ pub(crate) fn refresh_draw_state(state: &mut AppState) {
 }
 
 /// Whether the column is expanded (`ScenarioExt::SWSidebar_Enable`).
-pub(crate) fn expanded(state: &AppState) -> bool {
-    state
-        .match_state
-        .match_presentation
-        .sidebar_projection
-        .model
-        .sw_sidebar_expanded()
+pub(crate) fn expanded(presentation: &MatchPresentationState) -> bool {
+    presentation.sidebar_projection.model.sw_sidebar_expanded()
 }
 
 /// `ToggleSWButtonClass::SwitchSidebar`: flips the expanded state when the
 /// sidebar is configured. Returns whether anything changed.
-pub(crate) fn toggle(state: &mut AppState) -> bool {
-    let presentation = &mut state.match_state.match_presentation;
+pub(crate) fn toggle(presentation: &mut MatchPresentationState) -> bool {
     if !presentation.sw_sidebar.ui.enabled {
         return false;
     }
@@ -261,25 +258,25 @@ pub(crate) fn toggle(state: &mut AppState) -> bool {
 /// The On or Off PCX for the current state. Without it
 /// `ToggleSWButtonClass::Draw` draws nothing and its `Action` ignores input.
 pub(crate) fn toggle_art(
-    state: &AppState,
+    presentation: &MatchPresentationState,
 ) -> Option<&crate::render::sw_sidebar_art::SwSidebarArtEntry> {
-    let presentation = &state.match_state.match_presentation;
-    presentation
-        .sw_sidebar_art
-        .as_ref()?
-        .entry(if presentation.sidebar_projection.model.sw_sidebar_expanded() {
+    presentation.sw_sidebar_art.as_ref()?.entry(
+        if presentation.sidebar_projection.model.sw_sidebar_expanded() {
             crate::render::sw_sidebar_art::SwSidebarArtKind::On
         } else {
             crate::render::sw_sidebar_art::SwSidebarArtKind::Off
-        })
+        },
+    )
 }
-
 
 /// Entry used by a positional hotkey (`FireTacticalSW1..10`): only the first
 /// column, positions 0..9.
-pub(crate) fn positional_entry(state: &AppState, index: usize) -> Option<&SwSidebarRuntimeEntry> {
-    let sw = &state.match_state.match_presentation.sw_sidebar;
-    if !sw.ui.enabled || !expanded(state) {
+pub(crate) fn positional_entry(
+    presentation: &MatchPresentationState,
+    index: usize,
+) -> Option<&SwSidebarRuntimeEntry> {
+    let sw = &presentation.sw_sidebar;
+    if !sw.ui.enabled || !expanded(presentation) {
         return None;
     }
     sw.entries
@@ -291,11 +288,12 @@ pub(crate) fn positional_entry(state: &AppState, index: usize) -> Option<&SwSide
 /// darkens/outlines on the gadget's hover state, not after the tooltip delay.
 pub(crate) fn hovered_entry_rect(state: &AppState) -> Option<Rect> {
     let sw = &state.match_state.match_presentation.sw_sidebar;
-    if !sw.ui.enabled || !expanded(state) {
+    if !sw.ui.enabled || !expanded(&state.match_state.match_presentation) {
         return None;
     }
     // The chrome's hover (`SWButtonClass::OnMouseEnter`).
-    let index = crate::app::input::chrome_input::hovered_sw_button(state)?;
+    let index =
+        crate::app::input::chrome_input::hovered_sw_button(&state.match_state.match_presentation)?;
     sw.entries.get(index).map(|entry| entry.rect)
 }
 
@@ -436,5 +434,4 @@ mod tests {
             ["Beta", "Alpha", "Delta"]
         );
     }
-
 }

@@ -98,7 +98,7 @@ impl Encounter {
         {
             let (rx, ry, facing) = if let Some(initial) = native {
                 let prior = &initial["actor_admissions"][index];
-                sim.native_unique_ids = Some(
+                *sim.native_unique_ids = Some(
                     crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(
                         (prior["native_id"].as_i64().unwrap() as u32).wrapping_sub(1),
                     ),
@@ -878,15 +878,15 @@ fn stock_squid_internal_snapshot_preserves_live_roll_progress_and_reference() {
         crate::sim::rng::SimRng::new(0).logical_state()
     );
     // Explicit Rust continuation cursor, not native/app SaveGame semantics.
-    loaded.scenario_rng = scene.sim.scenario_rng.clone();
-    let main = scene.sim.main_rng.clone();
-    loaded.main_rng = main.clone();
-    scene.sim.main_rng = main;
-    loaded.mapgen_rng = scene.sim.mapgen_rng.clone();
+    *loaded.scenario_rng = (*scene.sim.scenario_rng).clone();
+    let main = (*scene.sim.main_rng).clone();
+    *loaded.main_rng = main.clone();
+    *scene.sim.main_rng = main;
+    *loaded.mapgen_rng = (*scene.sim.mapgen_rng).clone();
     loaded.restore_after_snapshot_load().unwrap();
     loaded.rebuild_caches_after_load(
-        scene.sim.resolved_terrain.clone().unwrap(),
-        scene.sim.terrain_speed_config.clone(),
+        (*scene.sim.resolved_terrain).clone().unwrap(),
+        (*scene.sim.terrain_speed_config).clone(),
         &scene.rules,
     );
     loaded.resolve_type_handles(&scene.rules);
@@ -1349,14 +1349,14 @@ fn stock_squid_grapple_monotonic_visits_match_native_rng_state_and_anim_construc
     );
 
     let rows = corpus["rows"].as_array().unwrap();
-    scene.sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+    *scene.sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
         initial["native_cursor"].as_u64().unwrap() as u32,
     ));
-    scene.sim.scenario_rng =
+    *scene.sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["scenario"].as_str().unwrap());
-    scene.sim.main_rng =
+    *scene.sim.main_rng =
         SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["main"].as_str().unwrap());
-    scene.sim.mapgen_rng =
+    *scene.sim.mapgen_rng =
         SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["mapgen"].as_str().unwrap());
     let mut compared = 0;
     for frame in 0..=corpus["visits_end"].as_u64().unwrap() as u32 {

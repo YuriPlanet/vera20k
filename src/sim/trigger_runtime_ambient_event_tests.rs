@@ -52,7 +52,7 @@ fn fixture(threshold: i32, target_action: bool) -> Simulation {
     sim.session.publish_started();
     sim.session.set_map_width_for_test(32);
     sim.session.set_map_height_for_test(32);
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
         32,
         32,
         crate::map::resolved_terrain::test_flat_cell,
@@ -140,7 +140,7 @@ fn saved_pending_ambient_event_fires_after_the_production_frame_fade() {
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
     assert_eq!(restored.state_hash(), saved_hash);
-    restored.resolved_terrain = original.resolved_terrain.clone();
+    *restored.resolved_terrain = (*original.resolved_terrain).clone();
     // A8ED5C is process admission state, not saved. The committed app load
     // republishes it before resuming frames (app/persistence/mod.rs).
     restored.session.publish_started();

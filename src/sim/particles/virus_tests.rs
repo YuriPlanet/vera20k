@@ -22,7 +22,7 @@ fn check_fatal_virus_shot(
 ) -> Option<(RuleSet, Simulation)> {
     let rules = retail_rules()?;
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1000));
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1000));
     sim.construct_post_load_particle_system_id(&rules);
     let victim = sim
         .spawn_object(victim_type, "Americans", 12, 12, 64, &rules)
@@ -90,8 +90,8 @@ fn retail_gas_harms_both_houses_but_respects_virus_poison_immunity() {
         // Advance only production particle dispatch: the bystander remains
         // in the cloud and cannot acquire damage from ordinary combat AI.
         for _ in 0..30 {
-            sim.session
-                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+            let session = &mut *sim.session;
+            session.set_binary_frame_for_test(session.binary_frame() + 1);
             super::system_ai::tick_particle_systems(&mut sim, &rules);
         }
         let after = sim.entities().get(bystander).unwrap().health.current();
@@ -107,7 +107,7 @@ fn retail_gas_harms_both_houses_but_respects_virus_poison_immunity() {
 fn gas_damage_can_append_animal_death_particle_to_the_ticking_system() {
     let Some(rules) = retail_rules() else { return };
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1000));
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1000));
     sim.construct_post_load_particle_system_id(&rules);
     let victim = sim
         .spawn_object("ADOG", "Americans", 12, 12, 64, &rules)
@@ -158,7 +158,7 @@ fn retail_gas_snapshot_retains_global_owner_motion_and_child_cleanup() {
     use crate::sim::snapshot::GameSnapshot;
     let Some(rules) = retail_rules() else { return };
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1000));
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1000));
     sim.construct_post_load_particle_system_id(&rules);
     let kind = rules.p_type_id_by_name("VirusCloud1").unwrap();
     sim.spawn_gas_particle(kind, glam::IVec3::new(3200, 3200, 0), &rules)
@@ -192,7 +192,7 @@ fn retail_gas_snapshot_retains_global_owner_motion_and_child_cleanup() {
     // Resolved terrain is an asset-derived cache, reinstalled by the normal
     // app loader after snapshot restoration. Supply the same flat arena here.
     restored.rebuild_caches_after_load(
-        sim.resolved_terrain.clone().unwrap(),
+        (*sim.resolved_terrain).clone().unwrap(),
         Default::default(),
         &rules,
     );
@@ -200,7 +200,7 @@ fn retail_gas_snapshot_retains_global_owner_motion_and_child_cleanup() {
     assert!(!restored.construct_post_load_particle_system_id(&rules));
     // The existing native-style load restarts Scenario RNG; align this test's
     // continuation cursor so only the new saved particle state is compared.
-    restored.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+    *restored.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
         &sim.scenario_rng.native_state_hex(),
     );
     assert_eq!(

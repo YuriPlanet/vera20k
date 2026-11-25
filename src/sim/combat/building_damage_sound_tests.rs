@@ -228,11 +228,11 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
         .unwrap();
     assert_eq!(weapon.warhead.as_deref(), Some("AP"));
     let warhead = world.interner.intern(weapon.warhead.as_deref().unwrap());
-    world.main_rng =
+    *world.main_rng =
         SimRng::from_native_state_hex_for_test(rng_boundary(history, &first["before"], "main"));
-    world.scenario_rng =
+    *world.scenario_rng =
         SimRng::from_native_state_hex_for_test(rng_boundary(history, &first["before"], "scenario"));
-    world.mapgen_rng =
+    *world.mapgen_rng =
         SimRng::from_native_state_hex_for_test(rng_boundary(history, &first["before"], "mapgen"));
 
     for row in steps {
@@ -297,8 +297,8 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
         // Snapshot the existing health owner only to observe its return value.
         // The actual world transaction below owns the live entity and effects.
         let mut local_world = Simulation::new();
-        local_world.substrate.entities = world.substrate.entities.clone();
-        local_world.interner = world.interner.clone();
+        *local_world.substrate.entities = (*world.substrate.entities).clone();
+        *local_world.interner = (*world.interner).clone();
         *local_world.house_alliances_mut_for_test() = world.house_alliances.as_map().clone();
         local_world
             .session

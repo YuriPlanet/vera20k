@@ -400,7 +400,7 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
     }
 
     install_rectangular_test_map(&mut sim, 16, 16);
-    sim.resolved_terrain = Some(gsi_04_10_clear_terrain(16, 16));
+    *sim.resolved_terrain = Some(gsi_04_10_clear_terrain(16, 16));
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let grid = (*sim.path_grid_snapshot().unwrap()).clone();
     assert!(sim.set_unit_destination(
@@ -580,7 +580,7 @@ fn gsi_13_06_stop_preserves_committed_ship_segment_and_speed_state() {
     }
 
     install_rectangular_test_map(&mut sim, 16, 16);
-    sim.resolved_terrain = Some(water_terrain(16, 16));
+    *sim.resolved_terrain = Some(water_terrain(16, 16));
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let grid = (*sim.path_grid_snapshot().unwrap()).clone();
     assert!(sim.set_unit_destination(

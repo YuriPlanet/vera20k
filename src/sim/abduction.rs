@@ -84,7 +84,7 @@ impl Simulation {
             entity.gattling.set_stage(0);
         }
         // TeamClass::LiberateMember (0x006EA870).
-        if let Some((team, _)) = self.team_script_vm.team_for_member(target) {
+        if let Some(team) = self.team_script_vm.team_of(target) {
             self.team_remove_member(team, target, false, rules, context.effects());
         }
         if let Some(controller) = self

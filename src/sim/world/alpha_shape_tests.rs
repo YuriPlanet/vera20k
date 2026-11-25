@@ -30,7 +30,7 @@ fn a_loaded_alpha_image_glows_from_unlimbo_until_the_purge_after_expiry() {
     let mut sim = Simulation::with_seed(5);
     sim.session.set_map_width_for_test(10);
     sim.session.set_map_height_for_test(10);
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
         base: 10,
         off_fc: 0,
         off_100: 0,
@@ -89,7 +89,7 @@ fn ares_moves_a_glow_with_its_object() {
     let mut sim = Simulation::with_seed(5);
     sim.session.set_map_width_for_test(10);
     sim.session.set_map_height_for_test(10);
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
         base: 10,
         off_fc: 0,
         off_100: 0,

@@ -23,7 +23,7 @@ fn retail_blocking_wall_restores_the_move_in_the_detonation_frame() {
     sim.set_input_delay_ticks(0);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let wall = registry.id_for_name("GAWALL").unwrap();
     assert!(!registry.flags(wall).unwrap().crushable);
     // A complete enemy wall line makes shooting the wall the admitted route;
@@ -119,7 +119,7 @@ fn ore_removal_runs_the_outer_sweep_but_an_empty_cell_does_not() {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 43);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let ore = registry.id_for_name("TIB01").unwrap();
     let flags = registry.flags(ore).unwrap();
     assert!(flags.tiberium && flags.chain_reaction && !flags.wall);

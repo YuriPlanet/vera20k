@@ -128,7 +128,7 @@ fn fixture(radar: bool) -> (Simulation, RuleSet, InternedId) {
     // The reused native fixture supplies an unseeded zero Main buffer and
     // seeds Scenario31 through the original seeder. Adopt the Main prior
     // through the existing serialized RNG owner, without a new RNG codec.
-    sim.main_rng = serde_json::from_value(json!({
+    *sim.main_rng = serde_json::from_value(json!({
         "disabled": 0, "index_a": 0, "index_b": 0, "state": vec![0u32; 250],
     }))
     .unwrap();

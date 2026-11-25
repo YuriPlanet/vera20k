@@ -308,7 +308,7 @@ impl CooperativeRun {
                 }
             }
             CoopPhase::AwaitResult => {
-                if !crate::app::input::coop_score::active(state) {
+                if !crate::app::input::coop_score::active(&state.frontend) {
                     return Ok(());
                 }
                 let opened = *self.result_frame.get_or_insert(frame);
@@ -452,8 +452,9 @@ impl CooperativeRun {
                 }
                 let page_layout = {
                     let (width, height) =
-                        crate::app::frontend::shell_layout::shell_screen_size(state);
-                    let fills = crate::app::frontend::shell_layout::fills_window(state);
+                        crate::app::frontend::shell_layout::shell_screen_size(&state.renderer.gpu);
+                    let fills =
+                        crate::app::frontend::shell_layout::fills_window(&state.renderer.gpu);
                     page.layout(width, height, fills)
                 };
                 let continue_button = page_layout.control_rect(page.dialog.continue_button());
@@ -464,7 +465,7 @@ impl CooperativeRun {
                 MoviesCapture::restore_neutral_pointer(state);
                 ensure!(
                     crate::app::frontend::shell_transition::shell_exit_wave(
-                        state,
+                        &state.frontend.shell_exit,
                         ShellSlideKind::CampaignEnd,
                     )
                     .is_some(),

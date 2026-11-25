@@ -646,7 +646,12 @@ impl LanCapture {
                 launch,
                 vacancies,
                 map_metadata: if self.target == LanTarget::CoopGuest {
-                    setup::local_map_metadata(state, COOP_MAP)?
+                    setup::local_map_metadata(
+                        state.platform.game_config.as_ref(),
+                        &state.frontend.scenario_catalog,
+                        &state.process_assets,
+                        COOP_MAP,
+                    )?
                 } else {
                     self.map_metadata()?
                 },
@@ -992,7 +997,10 @@ impl LanCapture {
                 for index in &peers {
                     ensure!(
                         crate::app::loading::pump::accept_network_loading_progress(
-                            state, *index, terminal,
+                            &mut state.frontend,
+                            &state.match_state.session,
+                            *index,
+                            terminal,
                         ),
                         "controlled peer completion was refused"
                     );
@@ -1431,7 +1439,13 @@ impl LanCapture {
                                 .position(|map| map.player_capacity >= 3)
                                 .context("a map for three players")?;
                             crate::app::shell_network_setup::commit_map_selection(
-                                state, mode_id, index, None,
+                                state.platform.game_config.as_ref(),
+                                &mut state.frontend,
+                                &mut state.match_state,
+                                &state.process_assets,
+                                mode_id,
+                                index,
+                                None,
                             )?;
                             let file = state
                                 .match_state
@@ -1818,7 +1832,7 @@ impl LanCapture {
                         "trackbar did not change canonical options"
                     );
                     ensure!(
-                        !setup_input::slider_held(state),
+                        !setup_input::slider_held(&state.frontend.shell_controller),
                         "trackbar capture survived mouse release"
                     );
                     ensure!(
@@ -2308,17 +2322,27 @@ impl LanCapture {
             LanPhase::Loading
                 if state.frontend.screen == GameScreen::Loading
                     && self.target == LanTarget::RemoteLoadingProgress
-                    && crate::app::loading::pump::next_native_loading_frame(state)
+                    && crate::app::loading::pump::next_native_loading_frame(&state.frontend)
                         == Some(crate::app::loading::pump::NextLoadingFrame::First) =>
             {
                 // The original renderer has now created its immutable source
                 // rows. Supply only the remote service milestone, never local progress.
                 ensure!(
-                    crate::app::loading::pump::accept_network_loading_progress(state, 1, 50),
+                    crate::app::loading::pump::accept_network_loading_progress(
+                        &mut state.frontend,
+                        &state.match_state.session,
+                        1,
+                        50
+                    ),
                     "remote loading service input refused"
                 );
                 ensure!(
-                    !crate::app::loading::pump::accept_network_loading_progress(state, 0, 50),
+                    !crate::app::loading::pump::accept_network_loading_progress(
+                        &mut state.frontend,
+                        &state.match_state.session,
+                        0,
+                        50
+                    ),
                     "local loading progress accepted remote input"
                 );
                 self.event(
@@ -2722,7 +2746,7 @@ impl LanCapture {
                 self.phase = LanPhase::Settle(2);
             }
             LanPhase::CoopOutcome => {
-                if !crate::app::input::coop_score::active(state) {
+                if !crate::app::input::coop_score::active(&state.frontend) {
                     return Ok(());
                 }
                 ensure!(
@@ -3084,8 +3108,13 @@ impl LanCapture {
                     .simulation;
                 let order = sim.houses().order().to_vec();
                 let name = |index: usize| {
-                    crate::app::presentation::house_ui::house_ui_name(state, order[index])
-                        .unwrap_or_default()
+                    crate::app::presentation::house_ui::house_ui_name(
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        order[index],
+                    )
+                    .unwrap_or_default()
                 };
                 let template = state.csf_label("TXT_HAS_ALLIED", "TXT_HAS_ALLIED");
                 let line = |a: usize, b: usize| {
@@ -3348,7 +3377,13 @@ impl LanCapture {
                 self.phase = LanPhase::Taunt(1);
             }
             1 => {
-                crate::app::input::taunt::receive(state, 0x82);
+                crate::app::input::taunt::receive(
+                    &state.frontend.multiplayer_shell_runtime,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    0x82,
+                );
                 let received = playing(state);
                 ensure!(received != Some(false), "the received taunt is not playing");
                 super::super::skirmish::press_diplomacy_tab(state)?;
@@ -3384,7 +3419,13 @@ impl LanCapture {
                 if let Some(sfx) = state.audio.sfx_player.as_mut() {
                     sfx.stop_all();
                 }
-                crate::app::input::taunt::receive(state, 0x83);
+                crate::app::input::taunt::receive(
+                    &state.frontend.multiplayer_shell_runtime,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    0x83,
+                );
                 ensure!(
                     playing(state) != Some(true),
                     "a taunt played with TauntsOn cleared"
@@ -3392,7 +3433,10 @@ impl LanCapture {
                 // A send past the 5 s clock is refused by the player's own
                 // TauntsOn.
                 crate::app::input::taunt::execute(
-                    state,
+                    &mut state.frontend.multiplayer_shell_runtime,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
                     2,
                     crate::app::match_runtime::frame_pacer::wall_clock_ms() + 60_000,
                 );
@@ -3455,7 +3499,7 @@ impl LanCapture {
         }
         if self.phase == LanPhase::CoopNextLoading {
             return Ok(state.frontend.screen == GameScreen::Loading
-                && crate::app::loading::pump::next_native_loading_frame(state)
+                && crate::app::loading::pump::next_native_loading_frame(&state.frontend)
                     == Some(crate::app::loading::pump::NextLoadingFrame::First));
         }
         if self.phase == LanPhase::RemoteProgress {
@@ -3475,7 +3519,7 @@ impl LanCapture {
                 "network handoff became offline"
             );
             return Ok(state.frontend.screen == GameScreen::Loading
-                && crate::app::loading::pump::next_native_loading_frame(state)
+                && crate::app::loading::pump::next_native_loading_frame(&state.frontend)
                     == Some(crate::app::loading::pump::NextLoadingFrame::First));
         }
         Ok(self.phase == LanPhase::Settle(0)
@@ -3490,7 +3534,7 @@ impl LanCapture {
         if let Some(live) = &self.live {
             return live.receipt(state);
         }
-        let presentation = crate::app::loading::pump::network_loading_presentation(state);
+        let presentation = crate::app::loading::pump::network_loading_presentation(&state.frontend);
         if self.target == LanTarget::HostObserverGo {
             use crate::render::loading_screen_chrome::LoadingArtVariant;
             let loading = presentation
@@ -3539,7 +3583,10 @@ fn cooperative_mode(state: &AppState) -> Result<&crate::skirmish_modes::Skirmish
 /// Click Cooperative in the open chooser's game types; `+0x4C` lists the
 /// campaigns, whose labels this returns.
 fn click_cooperative_mode(state: &mut AppState) -> Result<Vec<String>> {
-    let layout = crate::app::frontend::shell_layout::choose_map_layout(state);
+    let layout = crate::app::frontend::shell_layout::choose_map_layout(
+        &state.renderer,
+        &state.frontend.screen,
+    );
     let mode_id = cooperative_mode(state)?.id;
     let modal = state
         .frontend
@@ -3583,7 +3630,10 @@ fn use_soviet_campaign_row(state: &mut AppState, labels: &[String]) -> Result<()
 
 /// Selects a Cooperative chooser row and presses Use Map.
 fn use_chooser_row(state: &mut AppState, row: usize) -> Result<()> {
-    let layout = crate::app::frontend::shell_layout::choose_map_layout(state);
+    let layout = crate::app::frontend::shell_layout::choose_map_layout(
+        &state.renderer,
+        &state.frontend.screen,
+    );
     let modal = state
         .frontend
         .skirmish_shell_state
@@ -3684,8 +3734,10 @@ impl RandomMapInput {
                             (2..=crate::map::rmg::MAX_PLAYERS as usize).contains(&players),
                             "random maps support two to thirty starts"
                         );
-                        let layout =
-                            crate::app::frontend::shell_layout::random_map_setup_layout(state);
+                        let layout = crate::app::frontend::shell_layout::random_map_setup_layout(
+                            &state.renderer,
+                            &state.frontend.screen,
+                        );
                         let slider = layout.control_rects[5];
                         let x = (slider.x..slider.x + slider.w)
                             .find(|&x| {
@@ -3783,7 +3835,7 @@ fn setup_settled(state: &AppState, host: bool) -> bool {
     MoviesCapture::slide_settled(
         state,
         ShellSlideKind::NetworkSetup(crate::app::shell_network_setup::setup_dialog(
-            state,
+            &state.frontend,
             host,
             crate::ui::multiplayer_setup::SetupFlavor::Lan,
         )),

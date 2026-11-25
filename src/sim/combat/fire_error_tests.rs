@@ -243,6 +243,7 @@ fn facts(input: &Value, ares: bool) -> FireFacts {
             transporter_cloaked: false,
             emp_remaining: int(&f["emp_remaining"]),
             death_frame_counter: int(&f["death_frame_counter"]),
+            webbed: false,
             fire_particles_live: flag(&f["fire_particles_live"]),
             spark_particles_live: flag(&f["spark_particles_live"]),
             railgun_particles_live: flag(&f["railgun_particles_live"]),

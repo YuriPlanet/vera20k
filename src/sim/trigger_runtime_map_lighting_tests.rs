@@ -53,7 +53,7 @@ fn ambient_action_matches_native_controller_writes_without_resetting_timer_or_ti
         let storm = input["storm"].as_bool().unwrap();
         if storm {
             let owner = sim.interner.intern("LightingControlOwner");
-            sim.lightning_storm = LightningStorm::raging_for_test(owner, (0, 0));
+            *sim.lightning_storm = LightningStorm::raging_for_test(owner, (0, 0));
         }
         let light = sim.session.lighting_mut();
         light.normal_mut_for_test().ambient_percent = 87;

@@ -142,7 +142,7 @@ fn fixture(row: &Value, corpus: &Value) -> (Simulation, RuleSet) {
         actor.slave_manager = Some(Box::new(manager));
     }
     sim.substrate.entities.insert(actor);
-    sim.scenario_rng = SimRng::from_native_state_hex_for_test(row["rng_before"].as_str().unwrap());
+    *sim.scenario_rng = SimRng::from_native_state_hex_for_test(row["rng_before"].as_str().unwrap());
     (sim, rules)
 }
 

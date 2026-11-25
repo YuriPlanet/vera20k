@@ -762,7 +762,7 @@ impl Simulation {
             }
         }
         self.publish_recalculated_cells(rules, &run.recalced);
-        self.ice_zones_stale |= run.zones;
+        *self.ice_zones_stale |= run.zones;
         for &cell in &run.changed {
             self.dirty_cells.mark_radar([cell]);
             self.dirty_cells.mark_tactical_once(cell);

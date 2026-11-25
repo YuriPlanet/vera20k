@@ -87,7 +87,7 @@ fn debris_pieces_construct_between_picks_as_the_original() {
         let at = |i: usize| coord[i].as_i64().unwrap() as i32;
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");
-        sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
+        *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
         assert_eq!(
             sim.scenario_rng.native_state_hex(),
             row["rng_before"].as_str().unwrap()

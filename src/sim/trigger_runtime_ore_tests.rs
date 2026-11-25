@@ -61,9 +61,9 @@ fn scene(rules: &RuleSet) -> Simulation {
     sim.session.set_tiberium_grows_flag_for_test(true);
     sim.session.set_tiberium_spreads_flag_for_test(false);
     sim.install_resolved_terrain_for_new_map(test_grid(16, 16, test_flat_cell));
-    sim.overlay_grid = Some(OverlayGrid::new(16, 16));
-    sim.ore_growth_config = OreGrowthConfig::for_test(true, false, true);
-    sim.ore_growth_state = OreGrowthState::new(16, 16);
+    *sim.overlay_grid = Some(OverlayGrid::new(16, 16));
+    *sim.ore_growth_config = OreGrowthConfig::for_test(true, false, true);
+    *sim.ore_growth_state = OreGrowthState::new(16, 16);
     sim.ore_growth_state.reset_native_tiberium_classes_for_rect(
         (8, 8),
         rules.tiberium_types.len(),

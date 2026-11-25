@@ -284,8 +284,8 @@ def install(work: Path, release: Path, program: Path, game_folder: Path, quarant
     shutil.copy(program, package / "vera20k")
     for name in ("README.txt", "LICENSE-GPL", "THIRD_PARTY_LICENSES.html"):
         shutil.copyfile(extracted / "squashfs-root/usr/share/doc/vera20k" / name, package / name)
-    # Older releases can have their languages or maps embedded in the program.
-    for name in ("languages", "Maps"):
+    # Older releases can have these resources embedded in the program.
+    for name in ("languages", "Maps", "Terrain"):
         folder = extracted / "squashfs-root/usr/share/vera20k" / name
         if folder.is_dir():
             shutil.copytree(folder, package / name)
