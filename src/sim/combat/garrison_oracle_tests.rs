@@ -74,9 +74,9 @@ fn a_shot_before_an_unarmed_occupant_rearms_without_an_rng_draw() {
         }
         assert_eq!(building.passenger_role().occupants().ids(), [2, 3]);
         world.substrate.entities.insert(building);
-        world.interner = test_interner();
+        *world.interner = test_interner();
         crate::sim::arena_fixture::flat_arena(&mut world, &rules);
-        world.scenario_rng = crate::sim::rng::SimRng::new(31);
+        *world.scenario_rng = crate::sim::rng::SimRng::new(31);
         assert_eq!(world.scenario_rng.native_state_hex(), golden["rng_before"]);
 
         let building = world.substrate.entities.get(1).unwrap();

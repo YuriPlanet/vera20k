@@ -257,8 +257,8 @@ mod tests {
             for line in house_lines(sim) {
                 lines.push((frame, line));
             }
-            sim.session
-                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+            let session = &mut *sim.session;
+            session.set_binary_frame_for_test(session.binary_frame() + 1);
         }
         lines
     }

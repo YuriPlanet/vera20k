@@ -31,7 +31,7 @@ fn spawned_sub() -> (Simulation, RuleSet, u64) {
     let mut sim = Simulation::with_seed(0xC10A_C001);
     sim.fog.set_width_for_test(64);
     sim.fog.set_height_for_test(64);
-    sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
+    *sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
         64, 2, 2, 56, 52,
     ));
     let bounds = sim.playfield_bounds.unwrap();
@@ -458,14 +458,8 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
     // Arm even the dormant cloak-field bit, to prove the refusal comes from
     // CanAutoCloak and not from the outer CloakedByHouses gate.
     arm_cloak_field_for(&mut sim, cloaker_owner, cell);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
-    let mission_before = sim
-        .substrate
-        .entities
-        .get(targeter)
-        .unwrap()
-        .mission
-        .clone();
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    let mission_before = sim.substrate.entities.get(targeter).unwrap().mission.clone();
     let hash_before = sim.state_hash();
 
     let outcome = sensor_reevaluate_stock_cloak(&mut sim, cloaker, &rules, None);
@@ -1190,7 +1184,7 @@ fn attach_effect_cloakable_and_force_decloak_move_the_gates() {
     let mut sim = Simulation::with_seed(0xC10A_C0DE);
     sim.fog.set_width_for_test(64);
     sim.fog.set_height_for_test(64);
-    sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
+    *sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
         64, 2, 2, 56, 52,
     ));
     let bounds = sim.playfield_bounds.unwrap();
@@ -1327,7 +1321,7 @@ fn a_natural_particle_system_goes_with_the_cloak_and_comes_back_with_it() {
     let mut sim = Simulation::with_seed(0xC10A_C001);
     sim.fog.set_width_for_test(64);
     sim.fog.set_height_for_test(64);
-    sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
+    *sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
         64, 2, 2, 56, 52,
     ));
     sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_retail_clear_grid(

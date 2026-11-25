@@ -1737,7 +1737,7 @@ fn imageless_retail_animation_reaches_existing_gas_particle_owner() {
         .p_type_id_by_name(config.spawns_particle.as_deref().unwrap())
         .unwrap();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(1000));
     sim.construct_post_load_particle_system_id(&rules);
     let count = |sim: &crate::sim::world::Simulation| {

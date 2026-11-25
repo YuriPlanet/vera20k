@@ -843,8 +843,8 @@ impl Simulation {
             UninitContext::new(rules).with_effects(effects),
         );
         self.substrate.entities.change_owner(stable_id, new_owner);
-            self.phobos_attach_effects_on_owner_change(stable_id, old_owner, new_owner, rules);
-        self.ownership_changed_since_output = true;
+        self.phobos_attach_effects_on_owner_change(stable_id, old_owner, new_owner, rules);
+        *self.ownership_changed_since_output = true;
         self.spatial_threat_after_owner_change(stable_id, spatial_threat_cell, rules);
         if category == EntityCategory::Structure {
             self.houses

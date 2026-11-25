@@ -150,10 +150,10 @@ fn retail_concrete_hut_damage_matches_native_both_huts_and_three_states() {
         let expected = &case["result"];
         // Import the original streams at the declared immediate caller
         // boundary. This does not claim native whole-Scenario startup parity.
-        sim.main_rng = serde_json::from_value(expected["rng_before"]["main"].clone()).unwrap();
-        sim.scenario_rng =
+        *sim.main_rng = serde_json::from_value(expected["rng_before"]["main"].clone()).unwrap();
+        *sim.scenario_rng =
             serde_json::from_value(expected["rng_before"]["scenario"].clone()).unwrap();
-        sim.mapgen_rng = serde_json::from_value(expected["rng_before"]["mapgen"].clone()).unwrap();
+        *sim.mapgen_rng = serde_json::from_value(expected["rng_before"]["mapgen"].clone()).unwrap();
         sim.session.set_binary_frame_for_test(1000);
         let before_anims: std::collections::BTreeSet<_> =
             sim.substrate.anims.iter().map(|(id, _)| *id).collect();

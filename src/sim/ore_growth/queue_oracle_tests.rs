@@ -517,21 +517,21 @@ fn compare_case(row: &Value) {
     } = supplied_fixture(row);
     let types = &rules.tiberium_types;
     let mut constructors = Simulation::with_seed(0);
-    constructors.native_unique_ids = Some(
+    *constructors.native_unique_ids = Some(
         crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(
             input["scenario_serial"].as_u64().unwrap_or(0) as u32,
         ),
     );
-    constructors.overlay_grid = Some(grid);
-    constructors.resolved_terrain = Some(terrain);
-    constructors.ore_growth_state = state;
-    constructors.scenario_rng = rng;
-    constructors.substrate.entities = entities;
-    constructors.substrate.occupancy = occupancy;
-    constructors.interner = interner;
+    *constructors.overlay_grid = Some(grid);
+    *constructors.resolved_terrain = Some(terrain);
+    *constructors.ore_growth_state = state;
+    *constructors.scenario_rng = rng;
+    *constructors.substrate.entities = entities;
+    *constructors.substrate.occupancy = occupancy;
+    *constructors.interner = interner;
     *constructors.terrain_objects.cell_index_mut_for_test() = trees;
     *constructors.terrain_objects.spawning_cells_mut_for_test() = sources;
-    constructors.ore_growth_config = OreGrowthConfig::for_test(
+    *constructors.ore_growth_config = OreGrowthConfig::for_test(
         input["grows"] == true,
         input["spreads"] == true,
         input["fast_growth"] == true,
@@ -961,23 +961,23 @@ fn compare_authored_natural_phases(
     let rules = &scene.runtime.resources.rules;
     let registry = scene.runtime.resources.rules.overlay_registry();
     let mut actual = Simulation::with_seed(0);
-    actual.ore_growth_state = sim.ore_growth_state.clone();
-    actual.overlay_grid = sim.overlay_grid.clone();
+    *actual.ore_growth_state = (*sim.ore_growth_state).clone();
+    *actual.overlay_grid = (*sim.overlay_grid).clone();
     let mut terrain = sim.resolved_terrain.as_ref().unwrap().clone();
     terrain.bind_shared_cell_dummy(terrain.shared_cell_dummy().fork_query_identity());
-    actual.resolved_terrain = Some(terrain);
-    actual.substrate.entities = sim.substrate.entities.clone();
-    actual.substrate.occupancy = sim.substrate.occupancy.clone();
-    actual.substrate.raw_cell_occupation = sim.substrate.raw_cell_occupation.clone();
-    actual.interner = sim.interner.clone();
+    *actual.resolved_terrain = Some(terrain);
+    *actual.substrate.entities = (*sim.substrate.entities).clone();
+    *actual.substrate.occupancy = (*sim.substrate.occupancy).clone();
+    *actual.substrate.raw_cell_occupation = (*sim.substrate.raw_cell_occupation).clone();
+    *actual.interner = (*sim.interner).clone();
     *actual.terrain_objects.cell_index_mut_for_test() = sim.terrain_objects.cell_index().clone();
     *actual.terrain_objects.spawning_cells_mut_for_test() =
         sim.terrain_objects.spawning_cells().clone();
     let seed = native["inputs"]["seed"].as_u64().unwrap();
-    actual.scenario_rng = SimRng::new(seed);
+    *actual.scenario_rng = SimRng::new(seed);
     let main = MainRng::new(seed);
     let mapgen = SimRng::new(seed);
-    actual.ore_growth_config = sim.ore_growth_config.clone();
+    *actual.ore_growth_config = (*sim.ore_growth_config).clone();
     let config = &sim.ore_growth_config;
     assert_eq!(
         config.grows,
@@ -1007,7 +1007,7 @@ fn compare_authored_natural_phases(
     let mut previous_cells = actual.overlay_grid.as_ref().unwrap().cells().to_vec();
     let mut construction_count = 0;
     let mut native_cursor = native["initial"]["runtime_id_cursor"].as_u64().unwrap();
-    actual.native_unique_ids = Some(
+    *actual.native_unique_ids = Some(
         crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(
             native_cursor as u32,
         ),

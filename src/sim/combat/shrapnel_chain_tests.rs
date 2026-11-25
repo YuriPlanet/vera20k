@@ -315,10 +315,8 @@ fn retail_comet_terrain_child_keeps_construction_height_through_first_logic() {
         ),
         Some(tree_coord)
     );
-    scene
-        .world
-        .session
-        .set_binary_frame_for_test(scene.world.session.binary_frame() + 1);
+    let session = &mut *scene.world.session;
+    session.set_binary_frame_for_test(session.binary_frame() + 1);
     scene
         .world
         .visit_combat_tail(child.0, &scene.rules, None, &mut FrameEffects::default());
@@ -374,10 +372,8 @@ fn retail_elite_comet_terrain_child_recurses_from_its_tree_on_first_logic() {
         })
         .unwrap();
     scene.world.lifecycle_outputs.clear_for_test();
-    scene
-        .world
-        .session
-        .set_binary_frame_for_test(scene.world.session.binary_frame() + 1);
+    let session = &mut *scene.world.session;
+    session.set_binary_frame_for_test(session.binary_frame() + 1);
     scene
         .world
         .visit_combat_tail(child, &scene.rules, None, &mut FrameEffects::default());
@@ -490,10 +486,8 @@ fn stock_shock_repairs_the_live_prism_terrain_child_before_limbo() {
     };
     assert!(position(parent) < position(spacer) && position(spacer) < position(shock));
     scene.world.clear_lifecycle_test_events_for_test();
-    scene
-        .world
-        .session
-        .set_binary_frame_for_test(scene.world.session.binary_frame() + 1);
+    let session = &mut *scene.world.session;
+    session.set_binary_frame_for_test(session.binary_frame() + 1);
     scene
         .world
         .visit_combat_tail(parent, &scene.rules, None, &mut FrameEffects::default());
@@ -599,7 +593,7 @@ fn terrain_bullet_expiry_matches_original_live_observer() {
         };
         let expected = &row["observer"];
         scene.world.session.set_binary_frame_for_test(1000);
-        scene.world.scenario_rng = crate::sim::rng::SimRng::new(1);
+        *scene.world.scenario_rng = crate::sim::rng::SimRng::new(1);
         scene
             .world
             .resolved_terrain
@@ -1009,7 +1003,7 @@ fn spawn_shrapnel_matches_the_original(ares_way: bool) {
                 }
             }
         }
-        world.substrate.occupancy = OccupancyGrid::new();
+        *world.substrate.occupancy = OccupancyGrid::new();
         // The native fixture supplies explicit head->next lists. Feed that
         // list through the existing prepend owner, without relying on IDs.
         for actor in row["actors"].as_array().unwrap().iter().rev() {
@@ -1029,12 +1023,12 @@ fn spawn_shrapnel_matches_the_original(ares_way: bool) {
                 CellListInsertion::PrependNonBuilding,
             );
         }
-        world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+        *world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             row["native_id_before"].as_u64().unwrap() as u32,
         ));
-        world.main_rng = SimRng::new(seed);
-        world.scenario_rng = SimRng::new(seed + 1);
-        world.mapgen_rng = SimRng::new(seed + 2);
+        *world.main_rng = SimRng::new(seed);
+        *world.scenario_rng = SimRng::new(seed + 1);
+        *world.mapgen_rng = SimRng::new(seed + 2);
         assert_eq!(
             world.scenario_rng.native_state_hex(),
             row["rng_before"]["scenario"],
@@ -1312,7 +1306,7 @@ fn building_bounce_places_child_at_get_coords_and_beam_at_target_offset() {
         .world
         .spawn_object("GAYARD", "Russians", 18, 15, 0, &scene.rules)
         .unwrap();
-    scene.world.resolved_terrain = terrain;
+    *scene.world.resolved_terrain = terrain;
     let target = scene.world.substrate.entities.get(yard).unwrap();
     let center = crate::sim::movement::ground_pose::object_get_coords(
         target,
@@ -1389,10 +1383,8 @@ fn elite_bounces_recurse_only_when_children_get_their_logic_visits() {
         5
     );
     for _ in 0..20 {
-        scene
-            .world
-            .session
-            .set_binary_frame_for_test(scene.world.session.binary_frame() + 1);
+        let session = &mut *scene.world.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         scene.world.visit_combat_tail(
             first_child,
             &scene.rules,

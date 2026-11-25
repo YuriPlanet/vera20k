@@ -307,7 +307,7 @@ impl Simulation {
             PackUpFrame::Waiting => false,
         };
         if spawned {
-            self.mission_spawned_entities = true;
+            *self.mission_spawned_entities = true;
         }
     }
 
@@ -408,7 +408,7 @@ impl Simulation {
         if self.path_grid.is_none()
             && let Some(grid) = path_grid
         {
-            self.path_grid = Some(Arc::new(grid.clone()));
+            *self.path_grid = Some(Arc::new(grid.clone()));
         }
     }
 
@@ -418,7 +418,7 @@ impl Simulation {
     /// win or loss, a lost connection), whose `frame_committed` is false. A
     /// fixed frame count, so the same commands always hash the same frames.
     pub fn hash_state_every(&mut self, frames: std::num::NonZeroU64) {
-        self.state_hash_interval = Some(frames);
+        *self.state_hash_interval = Some(frames);
     }
 
     /// Whether the next frame's tick falls on the interval
@@ -438,9 +438,9 @@ impl Simulation {
     /// New and deserialized simulations start disabled with an empty profile.
     /// The telemetry build and the in-game performance panel turn it on.
     pub fn set_frame_profiling(&mut self, enabled: bool) {
-        if self.frame_profiling != enabled {
+        if *self.frame_profiling != enabled {
             self.frame_profile.reset();
-            self.frame_profiling = enabled;
+            *self.frame_profiling = enabled;
         }
     }
 
@@ -459,7 +459,7 @@ impl Simulation {
     /// Install the sole audio owner's read-only pending-interest projection
     /// immediately before an admitted frame. No voice names/state live here.
     pub fn prepare_unit_voice_visits(&mut self, owners: std::collections::BTreeSet<u64>) {
-        self.unit_voice_visit_interest = owners;
+        *self.unit_voice_visit_interest = owners;
     }
 
     /// Emit only interested reached heads, in the existing ordered channel.

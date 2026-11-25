@@ -109,7 +109,7 @@ fn retail_deso_attack_emits_a_copied_straight_radiation_beam() {
     assert_eq!(rules.radiation.color, (0, 255, 0));
 
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0xC29D_E500);
-    sim.fog = FogState::new(32, 32);
+    *sim.fog = FogState::new(32, 32);
     let owner = sim.interner.intern("Americans");
     sim.session.set_current_house_for_test(Some(owner));
     sim.intern_rule_type_ids(rules);
@@ -189,7 +189,7 @@ fn retail_cleg_first_attack_emits_a_copied_chrono_beam() {
     );
 
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0xC30C_1E60);
-    sim.fog = FogState::new(32, 32);
+    *sim.fog = FogState::new(32, 32);
     let owner = sim.interner.intern("Americans");
     sim.session.set_current_house_for_test(Some(owner));
     sim.intern_rule_type_ids(rules);
@@ -459,10 +459,11 @@ fn assert_native_births(
         assert_eq!(source_entity.veterancy.rank(), 0, "{name} rookie input");
         let facing_before = source_entity.body_facing;
         let rng_before = &native["birth_rng_before"];
-        sim.main_rng = SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap());
-        sim.scenario_rng =
+        *sim.main_rng =
+            SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap());
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(rng_before["scenario"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(rng_before["mapgen"].as_str().unwrap());
         let id_before = sim.native_unique_ids.as_ref().unwrap().current_raw();
         let stable_before = sim.next_stable_object_id();
@@ -581,7 +582,7 @@ fn an_eruption_shot_creates_eight_kind2_beams_around_the_firer() {
     assert_eq!(warhead.cell_spread_f64, 10.0);
 
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0xC29D_E500);
-    sim.fog = FogState::new(32, 32);
+    *sim.fog = FogState::new(32, 32);
     let owner = sim.interner.intern("Americans");
     sim.session.set_current_house_for_test(Some(owner));
     sim.intern_rule_type_ids(rules);
@@ -666,7 +667,7 @@ fn native_eruption_births_and_main_draws_match_the_original() {
             cell_mut.slope_type = cell["slope"].as_u64().unwrap() as u8;
         }
         let source = place_native_actor(&mut sim, rules, "DESO", "Americans", &input["source"]);
-        sim.main_rng =
+        *sim.main_rng =
             SimRng::from_native_state_hex_for_test(row["main_rng_before"].as_str().unwrap());
         sim.lifecycle_outputs.clear_for_test();
         super::radiation_beam::erupted(&mut sim, rules, source, weapon);

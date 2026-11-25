@@ -256,7 +256,7 @@ fn seed_scenario(sim: &mut Simulation, rules: &RuleSet, overlays: &OverlayTypeRe
     // placing objects: Unlimbo's Unit `Can_Enter_Cell` reads both, and the
     // harvester's ore scan (`FootClass::Is_Cell_Harvestable @ 0x004DCE80`)
     // admits only playfield cells of LandType 5.
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_flat_ground_grid(
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_flat_ground_grid(
         HARNESS_CELL_SIDE,
     ));
     sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
@@ -270,7 +270,7 @@ fn seed_scenario(sim: &mut Simulation, rules: &RuleSet, overlays: &OverlayTypeRe
         local_width: 60,
         local_height: 56,
     });
-    sim.bridge_state = Some(
+    *sim.bridge_state = Some(
         crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain_with_map_size(
             sim.resolved_terrain.as_ref().unwrap(),
             true,
@@ -327,19 +327,19 @@ fn seed_scenario(sim: &mut Simulation, rules: &RuleSet, overlays: &OverlayTypeRe
         overlay_grid.recalculate_runtime_cell(terrain, overlays, (rx, ry));
     }
     overlay_grid.take_dirty_cells();
-    sim.overlay_grid = Some(overlay_grid);
+    *sim.overlay_grid = Some(overlay_grid);
     // Live Foot reachability consumes the same map authorities as a map load.
     // The old ore-query copy silently skipped zones in this direct-spawn scene.
     // This harness passes its PathGrid into each frame; retain that owner
     // rather than installing a second grid while completing the zone fixture.
     let path = PathGrid::new(HARNESS_CELL_SIDE, HARNESS_CELL_SIDE);
-    sim.zone_grid = Some(
+    *sim.zone_grid = Some(
         crate::sim::pathfinding::zone_map::ZoneGrid::build_with_native_map_context(
             &path,
             sim.resolved_terrain.as_ref().unwrap(),
             &[],
             sim.map_size_diamond(),
-            sim.playfield_bounds,
+            *sim.playfield_bounds,
         )
         .into(),
     );
@@ -525,7 +525,7 @@ fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {
         // (ClearScene6370B0, TechnoLoad70BF79), retaining process streams.
         // Equalize those load effects before comparing the movement state
         // and its continued full-world hashes.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         sim.reset_planning_after_player_load();
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 1, 0, "Fresh turn", 0);
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -544,7 +544,7 @@ fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {
         // publication. A decoded saved base is not an active hierarchy.
         restored.rebuild_caches_after_load(
             sim.resolved_terrain.as_ref().unwrap().clone(),
-            sim.terrain_speed_config.clone(),
+            (*sim.terrain_speed_config).clone(),
             &rules,
         );
         assert!(restored.rebuild_dynamic_navigation(&rules));

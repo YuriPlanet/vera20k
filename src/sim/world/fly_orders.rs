@@ -392,7 +392,7 @@ impl Simulation {
         edge: super::edge_cell::Edge,
     ) -> Option<(u16, u16)> {
         super::edge_cell::find_paradrop_edge_cell(
-            self.playfield_bounds,
+            *self.playfield_bounds,
             self.resolved_terrain.as_ref(),
             edge,
             &mut self.scenario_rng,
@@ -757,7 +757,7 @@ impl Simulation {
         }
         let location = ground_pose::position_world_coord(&entity.position);
         let mut cell = ((location.x / 256) as i16, (location.y / 256) as i16);
-        if let Some(bounds) = self.playfield_bounds
+        if let Some(bounds) = *self.playfield_bounds
             && !entity.is_mission_only()
             && !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                 (i32::from(cell.0), i32::from(cell.1)),

@@ -455,7 +455,9 @@ pub(crate) fn append_chat(state: &mut AppState, line: LanChatLine) {
 pub(crate) fn append_chat_sent_at(state: &mut AppState, line: LanChatLine, sent_at: Option<u64>) {
     let route = state.frontend.shell_route;
     // WOL Quick Match's 0x117 is the top dialog with a 0x53F.
-    if route == ShellRoute::Wol && crate::app::shell_wol::quick_match::page_open(state) {
+    if route == ShellRoute::Wol
+        && crate::app::shell_wol::quick_match::page_open(state.frontend.wol.as_ref())
+    {
         crate::app::shell_wol::quick_match::append_line(state, line);
         return;
     }
@@ -482,7 +484,7 @@ pub(crate) fn append_room_chat_sent_at(
     line: LanChatLine,
     sent_at: Option<u64>,
 ) {
-    if crate::app::shell_wol::lobby::visiting(state) {
+    if crate::app::shell_wol::lobby::visiting(state.frontend.wol.as_ref()) {
         append_chat_to(state, true, false, line, sent_at);
     } else {
         append_chat_sent_at(state, line, sent_at);

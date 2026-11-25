@@ -542,7 +542,7 @@ impl Simulation {
     /// @ 0x00636120` on each token, frees it and zeroes AC4B84.
     /// This is a player-load boundary, separate from internal serialization.
     pub(crate) fn reset_planning_after_player_load(&mut self) {
-        self.planning = PlanningState::default();
+        *self.planning = PlanningState::default();
     }
 
     /// Normalize the unsaved planner in cross-crate state-only load fixtures,
@@ -2183,9 +2183,13 @@ impl Simulation {
         if !enabled {
             return;
         }
+        // One borrow of the store for the path read beside the node writes.
+        let planning = &mut *self.planning;
+        let Some(path) = planning.paths.get(&actor) else {
+            return;
+        };
         for id in &path.nodes[start..] {
-            let node = self
-                .planning
+            let node = planning
                 .nodes
                 .get_mut(id)
                 .expect("every node on a path exists (restore_index)");

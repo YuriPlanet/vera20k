@@ -4209,8 +4209,8 @@ mod tests {
         sim.admit_projectile(stable_id, spawn(ProjectileTarget::Cell { rx: 1, ry: 0 }));
         // Native in-scenario load restarts Scenario RNG from Seed0. Normalize
         // both controls so this fixture isolates projectile persistence/hash.
-        empty.scenario_rng = crate::sim::rng::SimRng::new(0);
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *empty.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let expected_hash = sim.state_hash();
 
         assert_ne!(empty.state_hash(), expected_hash);

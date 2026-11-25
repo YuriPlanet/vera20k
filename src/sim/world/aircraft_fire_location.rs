@@ -210,7 +210,7 @@ impl Simulation {
                 let cell = ((xy[0] / 256) as i16, (xy[1] / 256) as i16);
                 if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                     (i32::from(cell.0), i32::from(cell.1)),
-                    self.playfield_bounds,
+                    *self.playfield_bounds,
                     self.resolved_terrain.as_ref(),
                 ) {
                     continue;
@@ -274,7 +274,7 @@ impl Simulation {
     ) -> bool {
         if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             (i32::from(cell.0), i32::from(cell.1)),
-            self.playfield_bounds,
+            *self.playfield_bounds,
             self.resolved_terrain.as_ref(),
         ) {
             return true;

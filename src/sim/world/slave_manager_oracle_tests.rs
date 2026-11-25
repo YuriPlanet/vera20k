@@ -309,7 +309,7 @@ pub(super) fn row_scene_edited(
             nodes,
             CdTimer::started(frame as i32, 10),
         );
-    sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
+    *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
     SlaveScene {
         scene,
         master,
@@ -745,7 +745,7 @@ fn manager_machine_matches_the_original_owner_states_and_relocation() {
             // map it needs and FindDeployCell answers the same (0,0) (read at
             // 0x006B00F0).
             if group == "relocation" && row["input"]["passable"] == serde_json::json!([null]) {
-                s.scene.sim.zone_grid = None;
+                *s.scene.sim.zone_grid = None;
             }
             s.scene
                 .sim

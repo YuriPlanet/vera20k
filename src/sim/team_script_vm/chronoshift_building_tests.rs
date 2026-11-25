@@ -299,7 +299,7 @@ fn action56_a_waiting_script_roundtrips_without_extra_action_state() {
         restored.team(scene.team),
         scene.sim.team_script_vm.team(scene.team)
     );
-    scene.sim.team_script_vm = restored;
+    *scene.sim.team_script_vm = restored;
     source(&mut scene).set_is_ready_for_test(true);
     assert_eq!(step(&mut scene).len(), 2);
     assert!(scene.sim.team_script_vm.teams[&scene.team].advance_pending);
@@ -312,7 +312,7 @@ fn action56_does_not_require_a_weapon_or_revealed_target() {
         true,
         json!([{"live": true, "joined": true, "aircraft": false, "rating": 0, "unarmed": true}]),
     );
-    scene.sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *scene.sim.fog = crate::sim::vision::FogState::new(32, 32);
     assert_eq!(step(&mut scene).last(), Some(&("SW4".into(), (20, 21))));
     assert_eq!(
         scene.sim.team_script_vm.teams[&scene.team].mission_target,

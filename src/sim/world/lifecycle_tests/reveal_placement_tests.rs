@@ -34,7 +34,7 @@ fn native_trigger_reveal_cell_put_discovers_unshrouded_campaign_resident() {
             24,
             crate::map::resolved_terrain::test_clear_cell,
         ));
-        sim.fog = FogState::new(24, 24);
+        *sim.fog = FogState::new(24, 24);
         let mut plane = OwnerVisibility::new(24, 24);
         if revealed {
             plane.mark_visible(10, 10);
@@ -307,7 +307,7 @@ fn grounded_ramp_position_survives_snapshot_and_idle_continuation() {
     ));
     // Native snapshot load resets this stream. Canonicalize the original too
     // so whole-world comparison measures continuation, not that load policy.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let bytes = GameSnapshot::save(&sim, 0, 0, "ramp-height", 0);
     let mut restored = GameSnapshot::load(&bytes).expect("ramp snapshot").sim;
     restored
@@ -358,7 +358,7 @@ fn drive_ship_slope_production_spawn_unlimbo_snaps_without_manual_rocking_state(
     ] {
         let mut sim = Simulation::with_seed(0x510fe);
         sim.session.set_binary_frame_for_test(37);
-        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        *sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 0,
             off_fc: -100,
             off_100: -100,
@@ -418,7 +418,7 @@ fn zero_speed_foot_drive_ship_payloads_survive_all_world_spawn_paths() {
     let rules = zero_speed_drive_ship_slope_rules();
     let mut sim = Simulation::with_seed(0x510fe);
     sim.session.set_binary_frame_for_test(71);
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 0,
         off_fc: -100,
         off_100: -100,
@@ -574,7 +574,7 @@ fn techno_playfield_ctor_unlimbo_and_movement_hysteresis() {
     let mut sim = Simulation::new();
     install_common_raw_terrain(&mut sim, 32, 32, 0, None);
     let bounds = PlayfieldBounds::from_normalized_local_size(32, 2, 2, 24, 20);
-    sim.playfield_bounds = Some(bounds);
+    *sim.playfield_bounds = Some(bounds);
     let inside = (0u16..32)
         .flat_map(|ry| (0u16..32).map(move |rx| (rx, ry)))
         .find(|&(rx, ry)| bounds.contains_height_aware_packed(rx.into(), ry.into(), 0, 0))

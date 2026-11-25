@@ -97,9 +97,10 @@ fn facing_fields(facing: FacingClass) -> Value {
 }
 
 fn import_rng(sim: &mut Simulation, native: &Value) {
-    sim.main_rng = SimRng::from_native_state_hex_for_test(native["main"].as_str().unwrap());
-    sim.scenario_rng = SimRng::from_native_state_hex_for_test(native["scenario"].as_str().unwrap());
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(native["mapgen"].as_str().unwrap());
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(native["main"].as_str().unwrap());
+    *sim.scenario_rng =
+        SimRng::from_native_state_hex_for_test(native["scenario"].as_str().unwrap());
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(native["mapgen"].as_str().unwrap());
 }
 
 fn assert_rng(sim: &Simulation, native: &Value, label: &str) {
@@ -180,7 +181,7 @@ fn supplied_world(
         sim.resolved_terrain.as_mut().unwrap(),
         terrain_rules,
     );
-    sim.overlay_grid = Some(OverlayGrid::new(allocation.0, allocation.1));
+    *sim.overlay_grid = Some(OverlayGrid::new(allocation.0, allocation.1));
     let land = signed(&world["default_land_type"]) as u8;
     let semantics = terrain_rules
         .semantics_for_land_type(land)
@@ -219,14 +220,14 @@ fn supplied_world(
         // Water TMP or a base-terrain mutation.
     }
     let map = &world["map_f4"];
-    sim.playfield_bounds = Some(PlayfieldBounds {
+    *sim.playfield_bounds = Some(PlayfieldBounds {
         base: signed(&map[0]),
         off_fc: signed(&map[2]),
         off_100: signed(&map[3]),
         off_104: signed(&map[4]),
         off_108: signed(&map[5]),
     });
-    sim.playfield_size_height = Some(signed(&map[1]));
+    *sim.playfield_size_height = Some(signed(&map[1]));
     // The oracle's tracker allocation is an independent supplied extent;
     // Map+F4/+F8 above remains the In_Bounds authority.
     let tracker_extent = cell(&world["tracker_extent"]);
@@ -754,7 +755,7 @@ fn execute_step(
             // Scenario Load689470 -> PostRead683560 reseeds Scenario+218.
             // The composed native control invokes original Seed65C6D0(0)
             // at that declared handoff; it does not load the whole game.
-            sim.scenario_rng = SimRng::new(0);
+            *sim.scenario_rng = SimRng::new(0);
         }
         "retained_request_move_to" => {
             let args = &step["args"];
@@ -1072,7 +1073,7 @@ fn native_scatter_result_survives_snapshot_and_continues_through_touchdown() {
     restored.restore_after_snapshot_load().unwrap();
     restored.rebuild_caches_after_load(
         sim.resolved_terrain.as_ref().unwrap().clone(),
-        sim.terrain_speed_config.clone(),
+        (*sim.terrain_speed_config).clone(),
         &retail.rules,
     );
     assert_eq!(

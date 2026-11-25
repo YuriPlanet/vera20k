@@ -56,8 +56,8 @@ mod voice_feedback_tests;
 /// ascending fixture ID order. Acquisition no longer synthesizes these lists.
 fn mark_fixture_entities(store: &mut EntityStore) -> OccupancyGrid {
     let mut sim = crate::sim::world::Simulation::new();
-    sim.interner = test_interner();
-    sim.substrate.entities = std::mem::take(store);
+    *sim.interner = test_interner();
+    *sim.substrate.entities = std::mem::take(store);
     let ids: Vec<_> = sim
         .substrate
         .entities
@@ -67,8 +67,8 @@ fn mark_fixture_entities(store: &mut EntityStore) -> OccupancyGrid {
     for id in ids {
         sim.add_entity_occupancy(id);
     }
-    *store = sim.substrate.entities;
-    sim.substrate.occupancy
+    *store = sim.substrate.entities.into_inner();
+    sim.substrate.occupancy.into_inner()
 }
 
 /// Build a minimal RuleSet for combat testing.

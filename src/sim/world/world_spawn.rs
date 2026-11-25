@@ -2010,7 +2010,7 @@ impl Simulation {
             || self
                 .resolved_terrain
                 .as_ref()
-                .zip(self.playfield_bounds)
+                .zip(*self.playfield_bounds)
                 .is_some_and(|(terrain, bounds)| {
                     !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                         (i32::from(packed_cell.0), i32::from(packed_cell.1)),
@@ -3050,7 +3050,7 @@ impl Simulation {
             new_sid,
             rules,
         );
-        self.mission_spawned_entities = true;
+        *self.mission_spawned_entities = true;
         // `!AISetBaseCenter && NumConYards > 1` skips the whole
         // `0x00739889..0x0073992B` block, including the gather call at
         // `0x00739926`; key on (constructed default) always runs it.

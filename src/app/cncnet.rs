@@ -81,6 +81,9 @@ pub(crate) struct ExternalLaunchProgress {
     pub(crate) match_last: Option<Instant>,
     /// The last observed simulation frame (`binary_frame`).
     pub(crate) frames: u32,
+    /// The spawn test switch `VERA20K_SPAWN_FRAME_COST`'s record
+    /// (`spawn_frame_cost`), kept from the match's first frame on screen.
+    pub(crate) frame_cost: Option<crate::app::spawn_frame_cost::FrameCost>,
     /// Every opposing playing participant had left or disconnected while
     /// the local player was still in the match (see [`opponents_left`]).
     pub(crate) opponents_left: bool,
@@ -111,6 +114,37 @@ pub(crate) enum SpawnAction {
 pub(crate) struct SpawnActionsFired {
     leave: bool,
     resign: bool,
+    /// `VERA20K_SPAWN_LEAVE_AT_FRAME`'s Leave in the match, and its Continue
+    /// on the score page after it.
+    leave_at_frame: bool,
+    leave_score: bool,
+}
+
+/// The desktop test switch `VERA20K_SPAWN_LEAVE_AT_FRAME=<frame>`
+/// (tools/spawn/README.md): press Leave once the match has reached that
+/// simulation frame and Continue on the score page that follows, so a
+/// launch of any kind, one human against computers too, ends by itself after
+/// a set stretch of the match. `frames` is the launch's last observed
+/// simulation frame; `on_score` whether the score page is up.
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    expect(dead_code, reason = "the browser build runs no test switch")
+)]
+fn leave_at_frame_due(
+    leave_at: u32,
+    frames: u32,
+    on_score: bool,
+    fired: &mut SpawnActionsFired,
+) -> Option<SpawnAction> {
+    if !fired.leave_at_frame {
+        fired.leave_at_frame = frames >= leave_at;
+        return fired.leave_at_frame.then_some(SpawnAction::Leave);
+    }
+    if on_score && !fired.leave_score {
+        fired.leave_score = true;
+        return Some(SpawnAction::Leave);
+    }
+    None
 }
 
 /// The desktop test switches `VERA20K_SPAWN_LEAVE_AFTER_SECONDS` and
@@ -182,6 +216,10 @@ pub(crate) struct ExternalLaunchReport {
     /// Relay matches only: the match's network quality record.
     pub(crate) network_quality:
         Option<crate::app::match_runtime::network_quality::NetworkQualityReport>,
+    /// With the spawn test switch `VERA20K_SPAWN_FRAME_COST`: what the match
+    /// cost the main thread (tools/spawn/README.md); absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) frame_cost: Option<crate::app::spawn_frame_cost::FrameCostReport>,
     /// `rules_mismatch` when spawn.ini's `ExpectedRulesDigest` refused the
     /// launch; absent otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -225,6 +263,7 @@ impl ExternalLaunchReport {
             opponents_left: progress.opponents_left,
             reason: failure.map(str::to_owned),
             network_quality: None,
+            frame_cost: progress.frame_cost.as_ref().and_then(|cost| cost.report()),
             failure: None,
             rules_parts: None,
         }
@@ -747,6 +786,7 @@ impl App {
         if progress.match_started.is_none() {
             log::info!("External launch: match on screen at frame {frame}");
             progress.match_started = Some(now);
+            progress.frame_cost = crate::app::spawn_frame_cost::FrameCost::requested();
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             crate::web::status("spawn:match_started");
         }
@@ -757,6 +797,9 @@ impl App {
             log::info!("External launch: frame {frame}");
         }
         progress.frames = progress.frames.max(frame);
+        if let Some(cost) = &mut progress.frame_cost {
+            cost.observe_frame(frame);
+        }
         if left && !progress.opponents_left {
             log::info!("External launch: every opposing participant has left the match");
             progress.opponents_left = true;
@@ -821,7 +864,7 @@ impl App {
         }
         Self::browser_match_ended(state, ExternalMatchResult::Quit);
         crate::web::request_exit(state.frontend.external_launch_error.as_deref());
-        crate::app::shell_wol::discard_spawned_visit(state);
+        crate::app::shell_wol::discard_spawned_visit(&mut state.frontend);
         if state.match_state.lan_service.is_some() {
             crate::app::lan_service::close(state);
         }
@@ -839,15 +882,48 @@ impl App {
     /// `VERA20K_SPAWN_LEAVE_AFTER_SECONDS` / `VERA20K_SPAWN_RESIGN_AFTER_SECONDS`
     /// (read only here, i.e. only by `-SPAWN` multiplayer launches) or the
     /// browser exports `spawn_leave()` / `spawn_resign()`. Ordinary play,
-    /// single-player spawns and the built-in lobbies never reach this.
+    /// single-player spawns and the built-in lobbies never reach this. The
+    /// desktop test switch `VERA20K_SPAWN_LEAVE_AT_FRAME` is read here too,
+    /// by every `-SPAWN` launch ([`leave_at_frame_due`]).
     pub(super) fn poll_spawn_actions(state: &mut AppState) {
-        if !state.frontend.external_launch
-            || state.frontend.external_progress.mode == ExternalLaunchMode::Single
+        if !state.frontend.external_launch {
+            return;
+        }
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
+            use std::sync::OnceLock;
+            static LEAVE_AT_FRAME: OnceLock<Option<u32>> = OnceLock::new();
+            let leave_at = *LEAVE_AT_FRAME.get_or_init(|| {
+                std::env::var("VERA20K_SPAWN_LEAVE_AT_FRAME")
+                    .ok()
+                    .and_then(|value| value.trim().parse().ok())
+            });
+            let on_score = matches!(
+                state.frontend.screen,
+                crate::ui::game_screen::GameScreen::MissionResult { .. }
+            );
+            let progress = &mut state.frontend.external_progress;
+            if let Some(action) = leave_at.and_then(|leave_at| {
+                leave_at_frame_due(
+                    leave_at,
+                    progress.frames,
+                    on_score,
+                    &mut progress.actions_fired,
+                )
+            }) {
+                log::info!(
+                    "Spawn test switch: requesting {action:?} at frame {}",
+                    progress.frames
+                );
+                progress.pending_actions.push(action);
+            }
+        }
+        if state.frontend.external_progress.mode == ExternalLaunchMode::Single {
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-            if state.frontend.external_launch && crate::web::take_spawn_action().is_some() {
+            if crate::web::take_spawn_action().is_some() {
                 log::warn!("Spawn action ignored: not a multiplayer launch");
             }
+            Self::apply_pending_spawn_action(state);
             return;
         }
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -884,6 +960,11 @@ impl App {
                 .pending_actions
                 .push(action);
         }
+        Self::apply_pending_spawn_action(state);
+    }
+
+    /// Run the first waiting scripted action, if it can run now.
+    fn apply_pending_spawn_action(state: &mut AppState) {
         let Some(&action) = state.frontend.external_progress.pending_actions.first() else {
             return;
         };
@@ -1086,6 +1167,26 @@ mod tests {
             timers.due(Duration::from_secs(100), &mut fresh),
             [SpawnAction::Resign, SpawnAction::Leave]
         );
+    }
+
+    #[test]
+    fn leave_at_frame_leaves_the_match_once_then_the_score_page_once() {
+        let mut fired = SpawnActionsFired::default();
+        assert_eq!(leave_at_frame_due(900, 899, false, &mut fired), None);
+        assert_eq!(
+            leave_at_frame_due(900, 900, false, &mut fired),
+            Some(SpawnAction::Leave)
+        );
+        // The match is still up while the Leave runs: nothing more to press.
+        assert_eq!(leave_at_frame_due(900, 905, false, &mut fired), None);
+        assert_eq!(
+            leave_at_frame_due(900, 905, true, &mut fired),
+            Some(SpawnAction::Leave)
+        );
+        assert_eq!(leave_at_frame_due(900, 905, true, &mut fired), None);
+        // A score page before the frame is another match's: it stays.
+        let mut early = SpawnActionsFired::default();
+        assert_eq!(leave_at_frame_due(900, 10, true, &mut early), None);
     }
 
     #[test]

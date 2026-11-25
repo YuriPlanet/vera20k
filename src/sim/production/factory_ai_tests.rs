@@ -147,7 +147,7 @@ fn ai_wall_consumption_keeps_its_accounting_and_one_creation_cue() {
     assert!(wall.wall);
     assert_eq!(wall.to_overlay.as_deref(), Some("PLAIN"));
     let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
-    f.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *f.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let mut held = None;
     for _ in 0..3_000 {
         f.sim

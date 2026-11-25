@@ -156,7 +156,7 @@ fn fixture(rules: &RuleSet, input: &Value) -> (Simulation, u64, Option<u64>) {
             .map_mut_for_test()
             .insert(owner, power_state);
     }
-    sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
+    *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
     let entity = sim.substrate.entities.get_mut(building).unwrap();
     // The original block fixture supplies this retained +53C prior.
     entity.initialize_building_loss_index(0x7777);
@@ -360,7 +360,7 @@ fn production_fixture(
         .spawn_object("GUN", "Russians", cell.0, cell.1, 0, rules)
         .unwrap();
     sim.session.set_binary_frame_for_test(FRAME);
-    sim.scenario_rng = SimRng::new(1);
+    *sim.scenario_rng = SimRng::new(1);
     (sim, building, source)
 }
 

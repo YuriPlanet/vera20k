@@ -56,7 +56,7 @@ fn arena_from(text: &str) -> Arena {
     let registry = OverlayTypeRegistry::from_ini(&ini, None);
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
     Arena {
         sim,
         rules,

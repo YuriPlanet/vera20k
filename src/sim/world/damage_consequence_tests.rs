@@ -41,7 +41,7 @@ fn consequence_rules() -> RuleSet {
 
 fn consequence_world() -> (Simulation, u64, u64) {
     let mut sim = Simulation::with_seed(17);
-    sim.input_delay_ticks = 0;
+    *sim.input_delay_ticks = 0;
     let attacker = sim.substrate.allocate_stable_id();
     let victim = sim.substrate.allocate_stable_id();
     for (id, kind, owner, rx, hp) in [
@@ -52,7 +52,7 @@ fn consequence_world() -> (Simulation, u64, u64) {
         entity.health.set_for_test(hp);
         sim.substrate.entities.insert(entity);
     }
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     for id in [attacker, victim] {
         assert!(matches!(sim.reveal(id), RevealOutcome::Revealed { .. }));
     }

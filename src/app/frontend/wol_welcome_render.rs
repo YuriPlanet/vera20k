@@ -65,12 +65,12 @@ pub(crate) fn page_dialogs_paint(state: &AppState) -> Option<(RectPx, WolLobbyPa
         paint_wol_page_dialog, paint_wol_page_received,
     };
     use crate::app::shell_wol::page;
-    if let Some(dialog) = page::page_dialog(state) {
-        let layout = page::page_layout(state);
+    if let Some(dialog) = page::page_dialog(state.frontend.wol.as_ref()) {
+        let layout = page::page_layout(&state.renderer, &state.frontend.screen);
         return Some((layout.dialog, paint_wol_page_dialog(state, dialog, &layout)));
     }
-    let received = page::page_received(state)?;
-    let layout = page::received_layout(state);
+    let received = page::page_received(state.frontend.wol.as_ref())?;
+    let layout = page::received_layout(&state.renderer, &state.frontend.screen);
     Some((
         layout.dialog,
         paint_wol_page_received(state, received, &layout),
@@ -147,7 +147,7 @@ fn painted(state: &mut AppState) -> Option<Painted> {
     use crate::ui::{wol_buddy, wol_lobby, wol_login, wol_my_info, wol_options, wol_quick_match};
     // 0x11E opens over the empty backdrop (0x0052FEC0), except from 0x116's
     // Page, which runs it over the Buddy List.
-    let received = crate::app::shell_wol::page::page_received(state);
+    let received = crate::app::shell_wol::page::page_received(state.frontend.wol.as_ref());
     if received.is_some_and(|received| !received.modal) {
         return None;
     }
@@ -158,7 +158,7 @@ fn painted(state: &mut AppState) -> Option<Painted> {
         WolPage::Options(page) if page.sound.is_some() => SOUND_DIALOG,
         WolPage::Options(_) => wol_options::DIALOG,
         WolPage::AutoLoginQuery | WolPage::Locale(_) | WolPage::AddBuddyQuery(_) => {
-            persona::dialog(state)?
+            persona::dialog(state.frontend.wol.as_ref())?
         }
         WolPage::MyInformation(_) => wol_my_info::DIALOG,
         WolPage::Buddy(_) => wol_buddy::DIALOG,
@@ -213,7 +213,7 @@ fn painted(state: &mut AppState) -> Option<Painted> {
             )
         }
         wol_options::DIALOG => {
-            let spec = options::menu_spec(state);
+            let spec = options::menu_spec(state.frontend.wol.as_ref());
             let layout = options::layout(state);
             options::sync_gui(state);
             painted(
@@ -349,17 +349,26 @@ pub(crate) fn render_wol_page(
         let status_key = match painted.as_ref().map(|painted| painted.dialog) {
             // The lobby writes its own line.
             _ if matches!(body, Some(Body::Lobby(_))) => None,
-            Some(crate::ui::wol_login::DIALOG) => crate::app::shell_wol::login_status_key(state),
-            Some(crate::ui::wol_options::DIALOG) => options::status_key(state),
-            Some(crate::ui::wol_quick_match::DIALOG) => quick_match::status_key(state),
+            Some(crate::ui::wol_login::DIALOG) => crate::app::shell_wol::login_status_key(
+                &state.frontend.shell_controller,
+                &state.match_state.input,
+            ),
+            Some(crate::ui::wol_options::DIALOG) => options::status_key(&state.frontend),
+            Some(crate::ui::wol_quick_match::DIALOG) => {
+                quick_match::status_key(state.frontend.wol.as_ref())
+            }
             Some(SOUND_DIALOG) => None,
             // The control the last move hovered (none arrives while a button
             // holds the mouse).
-            Some(dialog) => leaf::status_key(state, dialog),
+            Some(dialog) => leaf::status_key(&state.frontend.shell_controller, dialog),
             None => None,
         };
         let status_text = match body {
-            Some(Body::Lobby(_)) => crate::app::shell_wol::lobby::status_help(state),
+            Some(Body::Lobby(_)) => crate::app::shell_wol::lobby::status_help(
+                &state.frontend,
+                &state.match_state.input,
+                &state.process_assets,
+            ),
             _ => status_key
                 .map(|key| state.csf_text(key))
                 .unwrap_or_default(),
@@ -380,9 +389,9 @@ pub(crate) fn render_wol_page(
         .as_ref()
         .expect("checked before render");
     // 0xFE and 0x122 load no art of their own.
-    let art = painted
-        .as_ref()
-        .and_then(|painted| crate::app::shell_wol::leaf::art(state, painted.dialog));
+    let art = painted.as_ref().and_then(|painted| {
+        crate::app::shell_wol::leaf::art(&state.frontend.wol_art, painted.dialog)
+    });
     let mut sprites = Vec::new();
     // The dialog's own background exists only at 800 wide; elsewhere, and
     // behind the boxes, the empty shell backdrop shows (`0x0052FEC0`).
@@ -477,7 +486,7 @@ pub(crate) fn render_wol_page(
         welcome_texts = Some(welcome.texts);
     }
     let shown = body.filter(|_| children);
-    let buddy_page = crate::app::shell_wol::buddy::page(state);
+    let buddy_page = crate::app::shell_wol::buddy::page(state.frontend.wol.as_ref());
     let buddy_children = match (shown, buddy_page) {
         (Some(Body::Buddy(layout)), Some(dialog)) => Some(
             crate::app::frontend::skirmish_shell_render::paint_wol_buddy_children(
@@ -537,7 +546,10 @@ pub(crate) fn render_wol_page(
     let lobby = state.frontend.wol.as_ref().and_then(|visit| visit.lobby());
     let lobby_children = match (shown, lobby) {
         (Some(Body::Lobby(layout)), Some(lobby)) => {
-            let base_names = crate::app::shell_wol::lobby::base_names(state);
+            let base_names = crate::app::shell_wol::lobby::base_names(
+                state.frontend.wol.as_ref(),
+                &state.process_assets,
+            );
             Some(
                 crate::app::frontend::skirmish_shell_render::paint_wol_lobby_children(
                     state,
@@ -574,7 +586,11 @@ pub(crate) fn render_wol_page(
     let lobby_popup = lobby.and_then(|lobby| {
         lobby.ui.popup.as_ref()?;
         let status = if page_statics || painted.is_none() {
-            crate::app::shell_wol::lobby::status_help(state)
+            crate::app::shell_wol::lobby::status_help(
+                &state.frontend,
+                &state.match_state.input,
+                &state.process_assets,
+            )
         } else {
             String::new()
         };
@@ -590,7 +606,7 @@ pub(crate) fn render_wol_page(
         )
     });
 
-    let quick_match_page = crate::app::shell_wol::quick_match::dialog(state);
+    let quick_match_page = crate::app::shell_wol::quick_match::dialog(state.frontend.wol.as_ref());
     let quick_match_children = match (shown, quick_match_page) {
         (Some(Body::QuickMatch(layout)), Some(dialog)) => Some(
             crate::app::frontend::skirmish_shell_render::paint_wol_quick_match_children(
@@ -634,7 +650,9 @@ pub(crate) fn render_wol_page(
             let ids: Vec<u16> = match &painted.body {
                 Body::Welcome(layout) => {
                     let active = controller.top_id() == Some(painted.dialog);
-                    let pressed = active.then(|| crate::app::App::wol_held(state)).flatten();
+                    let pressed = active
+                        .then(|| crate::app::App::wol_held(&state.frontend.shell_controller))
+                        .flatten();
                     let shown = layout.painted_buttons(pressed);
                     shown.iter().map(|button| button.id).collect()
                 }
@@ -692,7 +710,7 @@ pub(crate) fn render_wol_page(
         state.frontend.skirmish_shell_chrome.as_ref(),
     ) {
         box_dialog = Some(parts.dialog);
-        let held = crate::app::App::wol_held(state);
+        let held = crate::app::App::wol_held(&state.frontend.shell_controller);
         let look = BoxLook::new(atlas.mode_two_dialog_background(None), BOX_DEPTHS);
         let tree = controller_tree(&state.frontend.shell_controller, shell_box.dialog);
         let draw = paint_shell_box(
@@ -754,7 +772,7 @@ pub(crate) fn render_wol_page(
             texts,
         }
     };
-    let translate = crate::app::shell_wol::options::translate_popup(state).filter(|_| {
+    let translate = crate::app::shell_wol::options::translate_popup(&state.frontend).filter(|_| {
         painted.as_ref().map(|painted| painted.dialog) == Some(crate::ui::wol_options::DIALOG)
     });
     let widget_children = widget_children.map(|mut widgets| {

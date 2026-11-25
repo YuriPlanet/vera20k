@@ -68,7 +68,7 @@ fn stock_sniper_damage_retaliation_uses_wall_context_before_sight_fallback() {
         if blocked {
             overlays.place_overlay(13, 12, wall, 0);
         }
-        sim.overlay_grid = Some(overlays);
+        *sim.overlay_grid = Some(overlays);
         assert!(
             combat_targeting::should_retaliate(&sim, rules, victim, source, None),
             "the non-range refusal gates must admit this source"

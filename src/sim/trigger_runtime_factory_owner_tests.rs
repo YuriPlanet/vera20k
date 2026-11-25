@@ -137,7 +137,7 @@ fn stock_world(with_plant: bool) -> Option<(Simulation, RuleSet, InternedId, Int
         sim.houses.register(state);
     }
     sim.session.set_current_house_for_test(Some(owner));
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     sim.fog.ensure_viewer(owner);
     sim.fog.ensure_viewer(target);
     // Completed map-scene priors all precede the ordered production interval.

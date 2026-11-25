@@ -42,7 +42,7 @@ fn arena_from(rules: &str) -> (Simulation, RuleSet, OverlayTypeRegistry) {
     rules.install_art_data(ArtRegistry::from_ini(&art));
     let registry = OverlayTypeRegistry::from_ini(&ini, None);
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
-    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
     (sim, rules, registry)
 }
 

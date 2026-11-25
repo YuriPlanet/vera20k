@@ -2841,7 +2841,7 @@ mod guard_rearm_tests {
                     .collect(),
             );
             sim.substrate.entities.insert(entity);
-            sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+            *sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
                 row["rng_before_hex"].as_str().unwrap(),
             );
             let main = sim.main_rng.state();

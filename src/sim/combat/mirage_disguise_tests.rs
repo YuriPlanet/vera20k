@@ -221,7 +221,7 @@ fn damage_receiver_matches_original_packet_result_and_disguise_consequence() {
                 arg6: row["args"][5] != 0,
             },
         );
-        world.interner = interner.clone();
+        *world.interner = interner.clone();
         let resolved = resolve_receive_damage(
             &event,
             &world.substrate.entities,

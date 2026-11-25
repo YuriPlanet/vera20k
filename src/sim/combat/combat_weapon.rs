@@ -2915,7 +2915,7 @@ mod tests {
                 5,
                 EntityCategory::Infantry,
             ));
-        world.interner = crate::sim::intern::test_interner();
+        *world.interner = crate::sim::intern::test_interner();
         let obj = rules.object("HOUSE").unwrap();
         let read = |world: &Simulation| {
             get_weapon_record(
@@ -3406,9 +3406,13 @@ mod tests {
                 EntityCategory::Infantry,
             ));
         // The fixture entities' names were interned by `test_default`.
-        sim.interner = crate::sim::intern::test_interner();
-        sim.substrate.entities.get_mut(1).unwrap().seldom.mind_control =
-            MindControlLink::controlled_by_for_test(3);
+        *sim.interner = crate::sim::intern::test_interner();
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .seldom
+            .mind_control = MindControlLink::controlled_by_for_test(3);
         sim.substrate
             .entities
             .get_mut(2)

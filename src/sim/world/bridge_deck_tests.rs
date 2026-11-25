@@ -30,8 +30,8 @@ fn structural_fallout_retires_effect_only_ground_victim() {
     let clear = terrain.cell_mut_for_test(4, 4).unwrap();
     clear.speed_costs.foot = Some(crate::util::native_x87::NativeF32Bits::ONE);
     clear.base_speed_costs.foot = Some(crate::util::native_x87::NativeF32Bits::ONE);
-    sim.resolved_terrain = Some(terrain);
-    sim.bridge_state = Some(BridgeRuntimeState::default());
+    *sim.resolved_terrain = Some(terrain);
+    *sim.bridge_state = Some(BridgeRuntimeState::default());
     let owner = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(owner, 0, None, true, 1000, 10));
@@ -98,7 +98,7 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
     let mut sim = Simulation::with_seed(31);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.resolved_terrain = Some(water_below_bridge_terrain(4));
+    *sim.resolved_terrain = Some(water_below_bridge_terrain(4));
     for (x, y) in [(4, 3), (4, 4), (4, 5), (3, 4)] {
         let cell = sim
             .resolved_terrain
@@ -113,7 +113,7 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
         cell.bridge_deck_level = 4;
     }
     seed_bridge_overlay(&mut sim, &[(4, 3), (4, 4), (4, 5)], 0xD4);
-    sim.bridge_state = Some(BridgeRuntimeState::default());
+    *sim.bridge_state = Some(BridgeRuntimeState::default());
     let mut construct = |name: &str, x: u16, marked: bool| {
         let id = sim
             .construct_object_limbo_at_height(
@@ -189,14 +189,14 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
         .unwrap()
         .set_foot_occupation_enabled(false);
     let next_order = sim.substrate.next_air_tracker_order.current();
-    let raw_before = sim.substrate.raw_cell_occupation.clone();
+    let raw_before = (*sim.substrate.raw_cell_occupation).clone();
     let mut smudge = crate::sim::smudge_grid::SmudgeGrid::new(10, 10);
     let decal = crate::sim::smudge_grid::SmudgeCell {
         type_id: Some(1),
         frame_offset: 0,
     };
     smudge.test_force_set(3, 4, decal);
-    sim.smudge_grid = Some(smudge);
+    *sim.smudge_grid = Some(smudge);
 
     // Supplied structural47DD70 callback. Concrete ground overlays205..232
     // do not call this owner; the former hut fixture invented that dependency.
@@ -233,10 +233,10 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
     assert!(twin.on_bridge() && twin.lifecycle.in_limbo() && !twin.lifecycle.cell_marked());
     assert_eq!(twin.position.z(), 4);
     assert_ne!(
-        sim.substrate.raw_cell_occupation, raw_before,
+        *sim.substrate.raw_cell_occupation, raw_before,
         "the stationary Unit's raw receiver clears its old deck occupation"
     );
-    let raw_after = sim.substrate.raw_cell_occupation.clone();
+    let raw_after = (*sim.substrate.raw_cell_occupation).clone();
     assert_eq!(
         save_codec::serialize(
             sim.substrate
@@ -296,7 +296,7 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
             .unwrap()
             .foot_occupation_enabled()
     );
-    assert_eq!(restored.substrate.raw_cell_occupation, raw_after);
+    assert_eq!(*restored.substrate.raw_cell_occupation, raw_after);
     assert_eq!(
         restored.substrate.next_air_tracker_order.current(),
         next_order,
@@ -327,7 +327,7 @@ fn a_bombed_bridge_hut_drops_its_bridge() {
                 .unwrap()
                 .place_overlay(17, y, 0xD4, 0);
         }
-        sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
+        *sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
             sim.resolved_terrain.as_ref().unwrap(),
             true,
             300,

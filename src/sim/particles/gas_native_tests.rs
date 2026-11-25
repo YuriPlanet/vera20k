@@ -29,7 +29,7 @@ fn bits(value: &Value) -> NativeF32Bits {
 }
 fn setup(rules: &RuleSet, input: &Value, location: IVec3) -> (Simulation, u64) {
     let mut sim = Simulation::with_seed(1);
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1000));
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1000));
     let cells = (0..64)
         .flat_map(|y| {
             (0..64).map(move |x| {
@@ -44,8 +44,8 @@ fn setup(rules: &RuleSet, input: &Value, location: IVec3) -> (Simulation, u64) {
             })
         })
         .collect();
-    sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(64, 64, cells));
-    sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+    *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(64, 64, cells));
+    *sim.overlay_grid = Some(OverlayGrid::new(64, 64));
     let system = sim
         .spawn_particle_system(
             rules.ps_type_id_by_name("GasCloudSys").unwrap(),
@@ -193,7 +193,7 @@ fn gas_system_motion_lifetime_replacement_and_rng_match_original_histories() {
         }
         // The original case supplies RNG AFTER construction and explicit
         // prior EC/DC/drift writes. Only subsequent original AI is compared.
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(case["scenario_before"].as_str().unwrap());
         let other_rng = (sim.main_rng.logical_state(), sim.mapgen_rng.logical_state());
         for visit in case["visits"].as_array().unwrap() {
@@ -225,7 +225,7 @@ fn one_and_three_explicit_gas_births_match_original_constructors_and_rng() {
     let rules = rules(&Value::Null);
     for case in corpus()["constructors"].as_array().unwrap() {
         let (mut sim, system) = setup(&rules, &Value::Null, coords(&case["state"]["coords"]));
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(case["scenario_before"].as_str().unwrap());
         let kind = rules.p_type_id_by_name("VirusCloud1").unwrap();
         for _ in 0..case["count"].as_u64().unwrap() {

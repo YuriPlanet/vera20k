@@ -144,7 +144,7 @@ fn fixture_with_art(input: &Value, art: &IniFile) -> (Simulation, RuleSet) {
         .as_array()
         .cloned()
         .unwrap_or_else(|| vec![json!(0), json!(0), json!(64), json!(64)]);
-    sim.playfield_bounds = Some(
+    *sim.playfield_bounds = Some(
         crate::map::playfield::PlayfieldBounds::from_normalized_local_size(
             64,
             local[0].as_i64().unwrap() as i32,
@@ -465,7 +465,7 @@ fn aircraft_reengagement_matches_original_through_production_dispatch() {
         restored.restore_after_snapshot_load().unwrap();
         // The snapshot envelope's seed-reset policy is independent of the
         // persisted mission/navigation inputs compared in this fixture.
-        restored.scenario_rng = sim.scenario_rng.clone();
+        *restored.scenario_rng = (*sim.scenario_rng).clone();
         assert_eq!(sim.state_hash(), restored.state_hash());
         for world in [&mut sim, &mut restored] {
             crate::sim::aircraft::tick_aircraft_missions(world, &rules);
@@ -600,7 +600,7 @@ fn fire_location_reads_restored_reservations_cargo_and_current_house() {
         restored.restore_after_snapshot_load().unwrap();
         // Save loading intentionally reinitializes Scenario RNG. Supply the
         // same continuation stream to isolate persistence of search inputs.
-        restored.scenario_rng = sim.scenario_rng.clone();
+        *restored.scenario_rng = (*sim.scenario_rng).clone();
         for world in [&mut sim, &mut restored] {
             assert_eq!(
                 selected(world.aircraft_find_fire_location(

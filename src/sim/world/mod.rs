@@ -11,6 +11,7 @@
 //! - `world_spawn.rs` — entity spawning from map data and production
 //! - `world_orders.rs` — click-order helpers, building entries and pending building detonation
 //! - `lifecycle.rs` / `substrate.rs` — object transitions, stores and registration order
+//! - `fork.rs` — every field shared, forked and restored (`util::forked`)
 //! - `object_turn.rs` — complete live-object turn and pass outcomes
 //! - `techno_ai.rs` — per-object AI dispatch within each turn
 //! - `sim_events.rs` — sound, EVA and fire events a frame emits for the app
@@ -45,6 +46,7 @@ pub use disk_laser::DiskLaserObservation;
 mod disk_laser_tests;
 #[cfg(test)] // shared by test groups
 pub(crate) mod entry_test_fixture;
+mod fork;
 mod frame_channel;
 pub(crate) mod frame_effects;
 mod ice;
@@ -340,6 +342,7 @@ use crate::sim::vision;
 use crate::sim::vision::FogState;
 #[cfg(test)]
 use crate::util::fixed_math::SimFixed;
+use crate::util::forked::Forked;
 
 /// Test fixtures' seed. Real launches negotiate a per-match seed through
 /// `ScenarioDescriptor`, and only test builds can construct with this value.
@@ -584,15 +587,18 @@ pub struct SimulationRngState {
     pub mapgen: SimRngLogicalState,
 }
 
-fn deserialized_main_rng_placeholder() -> SimRng {
-    SimRng::new(0)
+fn deserialized_main_rng_placeholder() -> Forked<SimRng> {
+    Forked::new(SimRng::new(0))
 }
 
-fn every_frame() -> Option<std::num::NonZeroU64> {
-    Some(std::num::NonZeroU64::MIN)
+fn every_frame() -> Forked<Option<std::num::NonZeroU64>> {
+    Forked::new(Some(std::num::NonZeroU64::MIN))
 }
 
 /// The game simulation - owns all authoritative game state.
+/// Every field is a [`Forked`] value, and so is every field of `substrate`:
+/// a world forks field by field, and a fork tells which fields it wrote
+/// (`fork.rs`).
 /// `Clone` serves exactly one copy, through [`Simulation::presentation_copy`]:
 /// the world without its objects that drawing reads beside the presentation
 /// frame's records while a tick runs on the simulation thread
@@ -601,61 +607,61 @@ fn every_frame() -> Option<std::num::NonZeroU64> {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Simulation {
     /// String interner for owner/type_ref — zero-cost ID clones instead of heap Strings.
-    pub(crate) interner: crate::sim::intern::StringInterner,
+    pub(crate) interner: Forked<crate::sim::intern::StringInterner>,
     /// Runtime TechnoType+634 writes; RuleSet remains the frozen read projection.
     #[serde(default)]
-    type_tech_levels: TypeTechLevels,
+    type_tech_levels: Forked<TypeTechLevels>,
     /// Runtime BuildingType normal PowerUp animation names (44099B..4409C4).
     /// Shared by all instances of the type; the upgrade/art owner mutates it.
     #[serde(default)]
-    building_upgrade_art_names: crate::sim::building_upgrades::BuildingUpgradeArtNames,
+    building_upgrade_art_names: Forked<crate::sim::building_upgrades::BuildingUpgradeArtNames>,
     /// VoxelAnimAI74A8F8 supplies the live Type Damage field to receivers.
     #[serde(default)]
-    voxel_type_damage: crate::sim::voxel_anim::VoxelTypeDamage,
+    voxel_type_damage: Forked<crate::sim::voxel_anim::VoxelTypeDamage>,
     /// Pre-resolved `[CombatDamage]` warhead handles (F04). Built by
     /// `resolve_type_handles` beside the type table; rebuilt from rules on
     /// load. NOT serialized, NOT hashed. `None` until resolved.
     #[serde(skip)]
-    rule_handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
+    rule_handles: Forked<Option<crate::sim::type_handle_table::ResolvedRuleHandles>>,
     /// Factories, the enqueue stamp and the primary-factory flags.
-    pub(crate) production: ProductionState,
+    pub(crate) production: Forked<ProductionState>,
     /// Live terrain objects and their cell, animation and spawner indexes.
-    pub(crate) terrain_objects: crate::sim::terrain_object::TerrainObjectStore,
+    pub(crate) terrain_objects: Forked<crate::sim::terrain_object::TerrainObjectStore>,
     /// Ore growth/spread configuration resolved from merged INI sources.
-    pub(crate) ore_growth_config: crate::sim::ore_growth::OreGrowthConfig,
+    pub(crate) ore_growth_config: Forked<crate::sim::ore_growth::OreGrowthConfig>,
     /// Per-TiberiumClass growth and spread queues, bitmaps and timers.
-    pub(crate) ore_growth_state: crate::sim::ore_growth::OreGrowthState,
+    pub(crate) ore_growth_state: Forked<crate::sim::ore_growth::OreGrowthState>,
     /// Session aggregate — scenario identity, seed, authoritative map
     /// bounds, MP start table, per-match options, and the frame clocks
     /// (`tick` plus the wrapping `binary_frame`, committed late at the end of
     /// `advance_tick`). `total_sim_ms` is diagnostic only. Constructed once
     /// from the app-layer descriptor; serialized + hashed except for that
     /// diagnostic accumulator. See `sim::scenario_session`.
-    pub(crate) session: ScenarioSession,
+    pub(crate) session: Forked<ScenarioSession>,
     /// Opt-in trainer state. No save, checksum, or normal-build representation.
     #[cfg(feature = "debug-tools")]
     #[serde(skip)]
-    pub(crate) debug_tools: crate::sim::cheats::DebugToolsState,
+    pub(crate) debug_tools: Forked<crate::sim::cheats::DebugToolsState>,
     /// Opt-in wall-clock observations. Never part of saves, hashes, or gameplay.
     #[serde(skip)]
-    frame_profiling: bool,
+    frame_profiling: Forked<bool>,
     #[serde(skip)]
-    frame_profile: crate::sim::frame_profile::FrameProfile,
+    frame_profile: Forked<crate::sim::frame_profile::FrameProfile>,
     /// Native A8E7AC is a synchronous, wrapping placement/destruction scope,
     /// independent of GameMode. Balanced at frame boundaries; not saved/hash
     /// state. Only lifecycle's nested scope API mutates it.
     #[serde(skip, default)]
-    object_placement_scope_depth: u32,
+    object_placement_scope_depth: Forked<u32>,
     /// VERA's analog of native `0xA8ED6B`, which sends an initial building
     /// Unlimbo to Enter_Idle_Mode's Idle arm. Raised only by lifecycle's
     /// bypass API; balanced at frame boundaries; not saved/hash state.
     #[serde(skip, default)]
-    buildup_bypass: bool,
+    buildup_bypass: Forked<bool>,
     /// Phobos `WarheadTypeExt::Reflected`: the warhead whose own damage is
     /// being reflected right now, so a reflected hit never reflects again.
     /// Synchronous, never saved or hashed.
     #[serde(skip, default)]
-    pub(crate) reflected_warhead: Option<crate::sim::intern::InternedId>,
+    pub(crate) reflected_warhead: Forked<Option<crate::sim::intern::InternedId>>,
     /// Phobos `ScenarioExt::Global()->FallingDownTracker`
     /// (`Ext/Techno/Hooks.cpp:1654-1702`, hooks `0x5F4160`, `0x5F5965`,
     /// `0x5F3F86`): Technos that started a bomb fall or a paradrop, in
@@ -677,21 +683,21 @@ pub struct Simulation {
     /// drawn once at scenario start; saved and hashed. See
     /// `sim::ares_make_stuff_up`.
     #[serde(default)]
-    pub(crate) ares_made_up_rules: Option<crate::sim::ares_make_stuff_up::AresMadeUpRules>,
+    pub(crate) ares_made_up_rules: Forked<Option<crate::sim::ares_make_stuff_up::AresMadeUpRules>>,
     /// Scenario RNG — gamemd `Scenario->Random` (Scen+0x218). Drives in-object-tick
     /// sim draws: scatter, sub-cell placement, smudge/destruction, particles,
     /// wall/overlay damage, bridge collapse/destruction presentation, ore growth/spread, TIBTRE,
     /// anim scorch/50-50, miner-dock jitter, and the terminal score projection.
     /// The snapshot load policy decides whether to resume this cursor or apply
     /// the native player-load reset. It is always hashed while live.
-    pub(crate) scenario_rng: SimRng,
+    pub(crate) scenario_rng: Forked<SimRng>,
     /// Main/global RNG — gamemd `g_MainRng` (0x00886B88). This is a
     /// process-global cursor: it is neither part of ScenarioClass saves nor
     /// multiplayer checksums, and the live cursor continues across a load.
     /// The simulation owns this copy alone and draws it through `&mut`; the
     /// app keeps the process cell ([`MainRng`], `install_fresh_process_main`).
     #[serde(skip, default = "deserialized_main_rng_placeholder")]
-    pub(crate) main_rng: SimRng,
+    pub(crate) main_rng: Forked<SimRng>,
     /// Map-generator RNG — gamemd `g_MapGenRng` (0x00ABE890). VERA's fresh
     /// fixed-map construction uses `Random__Seed(0)`, matching the verified
     /// native fresh-process state; launch `.SED` generation installs its exact
@@ -702,38 +708,39 @@ pub struct Simulation {
     /// bridge repair writes its chosen variant into authoritative overlays.
     /// Original Init_Random_Number_System52FC20 leaves this entire object
     /// unchanged; only random-map generation reseeds it at598996.
-    pub(crate) mapgen_rng: SimRng,
+    pub(crate) mapgen_rng: Forked<SimRng>,
     /// Independent wrapping `AbstractClass+0x10` identity cursor, Scenario+214.
     /// Native numeric IDs may duplicate and are neither stable handles nor RNG.
     /// Original689310/689470 preserve the cursor across save/load, including
     ///683560's post-read Scenario reinitialization. See native_id_snapshot.
     /// Runtime constructors consume this continuation before class admission.
-    pub(crate) native_unique_ids: Option<crate::sim::native_identity::NativeUniqueIdCursor>,
+    pub(crate) native_unique_ids: Forked<Option<crate::sim::native_identity::NativeUniqueIdCursor>>,
     /// `MapClass+0x134` (`0x0087F91C`) analogue: the wrapping signed total that
     /// authored `ScenarioClass::Full_Init @ 0x00686B20` stores from
     /// `InitCellAttributes(0)`'s value-only `Get_Tiberium_Value` pass. No active
     /// reader is proved; cell-array teardown (a new Simulation) resets it and
     /// generated loads leave it `None`.
     #[serde(skip, default)]
-    authored_tiberium_value_total: Option<i32>,
+    authored_tiberium_value_total: Forked<Option<i32>>,
     #[serde(skip, default)]
-    pub(crate) post_load_particle_system_constructed: crate::sim::ore_twinkle::PostLoadGasCloud,
+    pub(crate) post_load_particle_system_constructed:
+        Forked<crate::sim::ore_twinkle::PostLoadGasCloud>,
     /// Successful raw `[Tubes]` constructor bindings from this fresh map read.
     /// Kept separate from resolved topology so its later owning transaction
     /// can consume the already-assigned IDs without recounting filtered facts.
     #[serde(skip, default)]
-    pub(crate) native_map_tubes: crate::map::tubes::NativeMapTubes,
+    pub(crate) native_map_tubes: Forked<crate::map::tubes::NativeMapTubes>,
     /// Shared authored/runtime OverlayClass registry/deferred-delete owner. These
     /// records survive saves so global deferred tickets keep their registry
     /// identities. Their queue order is hashed by the shared deletion owner.
-    pub(crate) load_objects: LoadObjectLifecycle,
+    pub(crate) load_objects: Forked<LoadObjectLifecycle>,
     /// Deterministic fog/shroud visibility state.
-    pub(crate) fog: FogState,
+    pub(crate) fog: Forked<FogState>,
     /// Each house's ally mask (`HouseClass+0x5788`) as a directed graph,
     /// written by `sim::house_diplomacy`: the scenario's install, then
     /// MakeAlly and MakeEnemy. A write during the object or fog pass must
     /// also forget [`Self::reveal_viewers`], as those writers do.
-    pub(crate) house_alliances: crate::sim::house_diplomacy::HouseAlliances,
+    pub(crate) house_alliances: Forked<crate::sim::house_diplomacy::HouseAlliances>,
     /// Object substrate — the active-object order plus the monotonic id and
     /// enter-order counters. The single owner the lifecycle contract
     /// (reveal/conceal/unlimbo/uninit) mutates; entity storage and the
@@ -742,7 +749,7 @@ pub struct Simulation {
     /// Ordered release-visible handoffs produced by lifecycle transactions.
     /// The app drains these without feeding them back into simulation.
     #[serde(skip)]
-    pub(crate) lifecycle_outputs: FrameChannel<LifecycleOutput>,
+    pub(crate) lifecycle_outputs: Forked<FrameChannel<LifecycleOutput>>,
     /// Derived presentation interest for the next admitted frame. The app
     /// copies only pending voice owners; this is never a second voice latch.
     /// A deploy conversion renames its old object's entry to the new one
@@ -750,82 +757,83 @@ pub struct Simulation {
     /// `advance_app_frame` clears it on success and error, and restore starts
     /// empty. Neither snapshots nor world hashes include this transient set.
     #[serde(skip)]
-    unit_voice_visit_interest: std::collections::BTreeSet<u64>,
+    unit_voice_visit_interest: Forked<std::collections::BTreeSet<u64>>,
     /// A mission or production step placed objects this frame; the frame tail
     /// folds it into the tick's `spawned_entities`. Derived frame output, not
     /// gameplay state; saves occur at frame boundaries.
     #[serde(skip)]
-    mission_spawned_entities: bool,
+    mission_spawned_entities: Forked<bool>,
     /// An ice run's Recalc_Ice changed land this frame; the frame tail
     /// rebuilds the zones once (`ice`, docs/ts-ice.md). Derived frame
     /// output, like `mission_spawned_entities`.
     #[serde(skip)]
-    ice_zones_stale: bool,
+    ice_zones_stale: Forked<bool>,
     /// The shared ownership chokepoint's report, drained into the tick's
     /// `ownership_changed`, including changes outside the live object pass.
     /// Not saved or hashed.
     #[serde(skip)]
-    ownership_changed_since_output: bool,
+    ownership_changed_since_output: Forked<bool>,
     /// Ordered occupied-cell identities finalized at the authoritative frame
     /// boundary. The app drains these into its render-only overlay list.
     #[serde(skip)]
-    frame_overlay_updates: Vec<OverlayEntry>,
+    frame_overlay_updates: Forked<Vec<OverlayEntry>>,
     /// Ordered coordinates whose overlay identity was erased at the
     /// authoritative frame boundary. Drained into `SimFrameOutput` beside the
     /// occupied upserts.
     #[serde(skip)]
-    frame_overlay_removals: Vec<(u16, u16)>,
+    frame_overlay_removals: Forked<Vec<(u16, u16)>>,
     /// One-shot raw post-match score result.
-    pub(super) terminal_score_snapshot: crate::sim::score::TerminalScore,
+    pub(super) terminal_score_snapshot: Forked<crate::sim::score::TerminalScore>,
     /// Internal order proof; release builds carry no ledger or recording branch.
     #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
-    lifecycle_test_events: Vec<LifecycleTestEvent>,
+    lifecycle_test_events: Forked<Vec<LifecycleTestEvent>>,
     #[cfg(test)]
     #[serde(skip)]
-    pub(crate) receiver_fixture: Option<crate::sim::combat::receiver_fixture::FixturePolicy>,
+    pub(crate) receiver_fixture:
+        Forked<Option<crate::sim::combat::receiver_fixture::FixturePolicy>>,
     /// App-visible outcomes produced by the authoritative trigger rung.
     /// Trigger actions mutate `trigger_runtime` during the frame; only their
     /// presentation outcomes are moved into `SimFrameOutput` after the tick.
     #[serde(skip)]
-    trigger_effects: Vec<TriggerEffect>,
+    trigger_effects: Forked<Vec<TriggerEffect>>,
     /// [`Self::revision`]'s count. Never hashed or saved: a loaded world
     /// starts again from zero under its own rules serial.
     #[serde(skip)]
-    revision: u64,
+    revision: Forked<u64>,
     #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
-    frame_step_trace: Vec<FrameStep>,
+    frame_step_trace: Forked<Vec<FrameStep>>,
     /// Focused ordering observer for the bounded House-update activation seam.
     #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
-    house_ai_activation_order_test_trace: Vec<HouseAiActivationOrderTestEvent>,
+    house_ai_activation_order_test_trace: Forked<Vec<HouseAiActivationOrderTestEvent>>,
     /// Sound events produced during the current tick and moved into the owned
     /// app-frame output batch.
     #[serde(skip)]
-    pub(crate) sound_events: FrameChannel<SimSoundEvent>,
+    pub(crate) sound_events: Forked<FrameChannel<SimSoundEvent>>,
     #[serde(skip)]
-    pub(crate) lighting_sources: crate::sim::light_sources::LightingSources,
+    pub(crate) lighting_sources: Forked<crate::sim::light_sources::LightingSources>,
     /// Fire events produced during combat and moved into the app-frame output
     /// for muzzle flash rendering and future projectile origin computation.
     #[serde(skip)]
-    pub(crate) fire_events: FrameChannel<SimFireEvent>,
+    pub(crate) fire_events: Forked<FrameChannel<SimFireEvent>>,
     /// Native IC/ForceShield impact combat-light requests emitted in receiver
     /// order during the current master frame. The native object has no owner
     /// and is distinct from AnimClass/ParticleSystemClass, so this remains a
     /// dedicated presentation handoff rather than fabricated world state.
     #[serde(skip)]
-    pub(crate) combat_light_requests: FrameChannel<crate::sim::combat::CombatLightRequest>,
+    pub(crate) combat_light_requests: Forked<FrameChannel<crate::sim::combat::CombatLightRequest>>,
     /// Ordered Bullet DetonateAtCoord screen-shake writes for this frame.
     #[serde(skip)]
-    pub(crate) screen_shake_updates: FrameChannel<crate::sim::combat::ScreenShakeUpdate>,
+    pub(crate) screen_shake_updates: Forked<FrameChannel<crate::sim::combat::ScreenShakeUpdate>>,
     /// Persistent ordinary shots. This is authoritative save/hash state, not
     /// the render-side fire-event approximation.
     #[serde(default)]
-    pub(crate) projectiles: crate::sim::projectile::ProjectileStore,
+    pub(crate) projectiles: Forked<crate::sim::projectile::ProjectileStore>,
     /// Phobos per-warhead-type animation creation counters.
     #[serde(default)]
-    pub(crate) warhead_anim_runtime: crate::sim::warhead_anim::WarheadAnimRuntime,
+    pub(crate) warhead_anim_runtime: Forked<crate::sim::warhead_anim::WarheadAnimRuntime>,
     /// Phobos `WarheadTypeExt::WasDetonatedOnAllMapObjects`: the reentrancy
     /// guard for the `0x4690C1` whole-map pass, held per warhead type. Set and
     /// cleared inside one synchronous detonation; never set between frames.
@@ -833,73 +841,73 @@ pub struct Simulation {
     pub(crate) phobos_all_map_detonation_active: Option<InternedId>,
     /// Persistent WaveClass registrations. They have their own logic lifetime;
     /// this is not a one-frame weapon-fire presentation list.
-    pub(crate) waves: crate::sim::wave::WaveStore,
+    pub(crate) waves: Forked<crate::sim::wave::WaveStore>,
     /// Stable form of TechnoClass +0x324: owner stable id -> exact Wave stable
     /// id. The native link is installed even for a constructor-short Wave and
     /// is cleared only by exact pointer-expiry cleanup.
     #[serde(default)]
-    active_wave_links: BTreeMap<u64, u64>,
+    active_wave_links: Forked<BTreeMap<u64, u64>>,
     /// `ObjectClass+0x64`: the custom sound trigger action 99 gave an object
     /// (a Building or Terrain), keyed by stable id. Absent is the
     /// constructor's -1. Only `object_sound` writes it; the object's
     /// destruction removes it. A network trigger retains the authored
     /// name/slot so local playback availability cannot change idle admission.
     #[serde(default)]
-    object_custom_sounds: BTreeMap<u64, crate::rules::sound_ini::SoundReference>,
+    object_custom_sounds: Forked<BTreeMap<u64, crate::rules::sound_ini::SoundReference>>,
     /// Test observation of each refinery unload gate. The dock commits the
     /// gate's smoke and SpecialAnim itself; the frame tail drops these.
     #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
-    pub(crate) bale_events: Vec<crate::sim::components::BaleDepositEvent>,
+    pub(crate) bale_events: Forked<Vec<crate::sim::components::BaleDepositEvent>>,
     /// Test observation of each tank-bunker wall rise or fall. The bunker link
     /// sets the wall anim slots itself; the frame tail drops these.
     #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
-    pub(crate) bunker_wall_events: Vec<crate::sim::components::BunkerWallAnimEvent>,
+    pub(crate) bunker_wall_events: Forked<Vec<crate::sim::components::BunkerWallAnimEvent>>,
     /// Resolved TeamClass/ScriptType runtime; scenario INI parsing remains a
     /// separate refused boundary until its record grammar is evidenced.
-    pub(crate) team_script_vm: TeamScriptVm,
+    pub(crate) team_script_vm: Forked<TeamScriptVm>,
     /// The HouseClass array: each House's state and registration order.
-    pub(crate) houses: crate::sim::houses::Houses,
+    pub(crate) houses: Forked<crate::sim::houses::Houses>,
     /// Derived movement inputs reused across object turns (blocker plane).
     /// Rebuilt from state on demand; never serialized or hashed.
     #[serde(skip)]
-    pub(crate) movement_pass_cache: crate::sim::movement::movement_tick::MovementPassCache,
+    pub(crate) movement_pass_cache: Forked<crate::sim::movement::movement_tick::MovementPassCache>,
     /// Each owner's reveal viewers, remembered through the object and fog
     /// passes (`vision::RevealViewers`); never serialized or hashed.
     #[serde(skip)]
-    pub(crate) reveal_viewers: crate::sim::vision::RevealViewers,
+    pub(crate) reveal_viewers: Forked<crate::sim::vision::RevealViewers>,
     /// The Civilian-side House, remembered through the object pass
     /// (`house_defeat::CivilianSideHouse`); never serialized or hashed.
     #[serde(skip)]
-    civilian_house_memo: house_defeat::CivilianSideHouse,
+    civilian_house_memo: Forked<house_defeat::CivilianSideHouse>,
     /// Which listeners each pointer expiry reaches (`expiry_listeners`).
     /// Derived from the listener stores; never serialized or hashed.
     #[serde(skip)]
-    expiry_listeners: expiry_listeners::ExpiryListeners,
+    expiry_listeners: Forked<expiry_listeners::ExpiryListeners>,
     /// Batched path searches (`movement::path_batch`); `None`
     /// searches in native order. Its registrations wait across a save.
-    pub(crate) path_batch: Option<crate::sim::movement::path_batch::PathBatch>,
+    pub(crate) path_batch: Forked<Option<crate::sim::movement::path_batch::PathBatch>>,
     /// Idle objects sleep (`idle_sleep`). A runtime setting: never saved or
     /// hashed, and no result depends on it.
     #[serde(skip)]
-    idle_sleep: idle_sleep::IdleSleep,
+    idle_sleep: Forked<idle_sleep::IdleSleep>,
     /// Batched target scans (`techno_ai::scan_batch`); `None` scans in
     /// native order. A save carries only the setting.
-    pub(crate) scan_batch: Option<techno_ai::ScanBatch>,
+    pub(crate) scan_batch: Forked<Option<techno_ai::ScanBatch>>,
     /// Whether an effect anim that changes nothing but its picture runs as a
     /// presentation anim (`anim_class::EffectAnims`); a new world makes every
     /// anim in native order. A save carries the setting.
-    pub(crate) effect_anims: crate::sim::anim_class::EffectAnims,
+    pub(crate) effect_anims: Forked<crate::sim::anim_class::EffectAnims>,
     /// Retained native navigation base plane/raw movement rows plus the live
     /// derived hierarchy. ZoneGrid saves only its own retained base state;
     /// LoadContent67E8CD rebuilds hierarchy after bound Cell/object restoration.
-    pub(crate) zone_grid: Option<ZoneGrid>,
+    pub(crate) zone_grid: Forked<Option<ZoneGrid>>,
     /// Canonical dynamic navigation projection. Every reader reads it at its
     /// point of use; a republish replaces the `Arc` without mutating readers'
     /// shared copies.
     #[serde(skip)]
-    pub(crate) path_grid: Option<Arc<PathGrid>>,
+    pub(crate) path_grid: Forked<Option<Arc<PathGrid>>>,
     /// Derived cache: the marked-structure movement cells last published into
     /// `path_grid`. Source of truth is the marked structures themselves
     /// (`navigation::structure_movement_cells`). A full navigation rebuild
@@ -907,7 +915,7 @@ pub struct Simulation {
     /// Frame-end structure publication reconciles the union of this set and
     /// the current one, skipping cells already current.
     #[serde(skip)]
-    structure_navigation_cells: BTreeSet<(u16, u16)>,
+    structure_navigation_cells: Forked<BTreeSet<(u16, u16)>>,
     /// Derived cache: the base foundation cells of marked Phobos
     /// `IsDestroyableObstacle` buildings, whose cell class is Destroyable.
     /// Source of truth is the marked structures; a full navigation rebuild
@@ -915,125 +923,127 @@ pub struct Simulation {
     #[serde(skip)]
     destroyable_obstacle_cells: BTreeSet<(u16, u16)>,
     #[serde(skip)]
-    pub(crate) resolved_terrain: Option<ResolvedTerrainGrid>,
+    pub(crate) resolved_terrain: Forked<Option<ResolvedTerrainGrid>>,
     /// Process-global MapClass fallback CellClass identity. Native owns this at
     /// `0x00ABDC50`, outside Scenario serialization; live in-scenario loads
     /// retain the current handle and rebuilt terrain is rebound to it.
     #[serde(skip, default)]
-    pub(crate) shared_cell_dummy: SharedCellDummy,
+    pub(crate) shared_cell_dummy: Forked<SharedCellDummy>,
     /// Shared Map+11C/+120 traversal for synchronous RevealZone578850/578710.
     /// Nested discovery actions overwrite this same cursor; never restore an
     /// outer cursor. Every exposed traversal resets before consuming it, and
     /// no action stack survives a save, so this private scratch is not saved
     /// or hashed. Terrain/query/input clones do not share its mutable state.
     #[serde(skip)]
-    native_local_cell_cursor: Option<crate::map::resolved_terrain::NativeLocalCellCursor>,
+    native_local_cell_cursor: Forked<Option<crate::map::resolved_terrain::NativeLocalCellCursor>>,
     #[serde(skip)]
-    native_allocated_cell_cursor: Option<crate::map::resolved_terrain::NativeAllocatedCellCursor>,
+    native_allocated_cell_cursor:
+        Forked<Option<crate::map::resolved_terrain::NativeAllocatedCellCursor>>,
     /// Serialized value authority for allocated real CellClass bridge bits.
     /// The derived terrain grid is skipped; load installs its pristine map
     /// template and then writes these saved values directly back onto real
     /// cells. This is value state, never a setter/replay log.
     #[serde(default)]
-    pub(crate) real_cell_bridge_flags_0x1180: RealCellBridgeFlags0x1180,
+    pub(crate) real_cell_bridge_flags_0x1180: Forked<RealCellBridgeFlags0x1180>,
     /// Exact value projection of runtime isometric-tile replacement. The
     /// parsed terrain grid is derived/skipped and receives these values before
     /// overlay/bridge/navigation reconstruction on restore.
     #[serde(default)]
-    pub(crate) dynamic_terrain_cells: crate::map::resolved_terrain::DynamicTerrainCells,
+    pub(crate) dynamic_terrain_cells: Forked<crate::map::resolved_terrain::DynamicTerrainCells>,
     /// Firestorm 2.0 MapClass+0x14C, the cracked ice waiting to freeze over
     /// (`ice`, docs/ts-ice.md). Empty unless the map runs ice.
     #[serde(default)]
-    ice_cracks: Vec<ice::CrackedIce>,
+    ice_cracks: Forked<Vec<ice::CrackedIce>>,
     /// The second step of the last terrain dent, Firestorm's one pending
     /// slot (`terrain_deformation`). Only terrain deformation fills it.
-    terrain_dent: Option<terrain_deformation::PendingTerrainDent>,
-    pub(crate) bridge_state: Option<BridgeRuntimeState>,
+    terrain_dent: Forked<Option<terrain_deformation::PendingTerrainDent>>,
+    pub(crate) bridge_state: Forked<Option<BridgeRuntimeState>>,
     /// Resident Map+D4 ordered collapse coordinates. Independent of optional
     /// geometry so even standalone fallout/save retains its native publication.
     /// The bridge damage controller owns its mutations and synchronous drain.
-    pending_bridge_collapses: bridge_orchestrator::PendingBridgeCells,
+    pending_bridge_collapses: Forked<bridge_orchestrator::PendingBridgeCells>,
     /// Per-cell mutable overlay state (ore density, wall damage, bridge frames).
     /// Seeded from map [OverlayPack] at init, mutated during gameplay.
-    pub(crate) overlay_grid: Option<crate::sim::overlay_grid::OverlayGrid>,
+    pub(crate) overlay_grid: Forked<Option<crate::sim::overlay_grid::OverlayGrid>>,
     /// Persistent MapClass scenario-crate slots, including accepted ghosts and
     /// their native timer words. This is authoritative save/hash state.
-    crate_authority: crate::sim::crates::CrateAuthority,
+    crate_authority: Forked<crate::sim::crates::CrateAuthority>,
     /// Per-cell smudge state (craters, scorches). Seeded from map [Smudge]
     /// entries at init, mutated by combat death-handling at runtime.
-    pub(crate) smudge_grid: Option<crate::sim::smudge_grid::SmudgeGrid>,
+    pub(crate) smudge_grid: Forked<Option<crate::sim::smudge_grid::SmudgeGrid>>,
     /// Per-cell radiation field + site registry. Detonations of RadLevel>0
     /// weapons feed it as their damage commits; sites decay before the object
     /// pass (`RadiationState::tick_decay`); foot units take periodic damage
     /// from their cell.
     #[serde(default)]
-    pub(crate) radiation: crate::sim::radiation::RadiationState,
+    pub(crate) radiation: Forked<crate::sim::radiation::RadiationState>,
     /// `BombListClass`: the carriers of live Crazy Ivan bombs (each record
     /// sits on its carrier) and the BombVisible countdown, owned by `bomb`.
     /// Not saved: a load clears it and rebuilds the carriers.
     #[serde(skip)]
-    pub(crate) bombs: crate::sim::bomb::BombList,
+    pub(crate) bombs: Forked<crate::sim::bomb::BombList>,
     /// The kamikaze tracker (`0x00ABC5F8`): missiles out of their launcher's
     /// control and the cells they fly at, owned by `kamikaze`. Its timer is
     /// not saved; a load restarts it.
-    pub(crate) kamikaze: crate::sim::kamikaze::KamikazeTracker,
+    pub(crate) kamikaze: Forked<crate::sim::kamikaze::KamikazeTracker>,
     /// DiskLaser Save4A7C10 retains delayed shots; emitted LaserDraws remain
     /// copied presentation facts. This owner has no Logic/Display membership.
-    disk_lasers: disk_laser::DiskLasers,
+    disk_lasers: Forked<disk_laser::DiskLasers>,
     /// The map's isometric playfield diamond ([Map] Size width + the raw
     /// LocalSize rect), set at map init. Threaded into the cell-rect occupancy
     /// validator's final playfield-corner test (the engine diamond, not a
     /// rectangle). `None` only in headless tests with no map loaded.
     #[serde(default)]
-    playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
+    playfield_bounds: Forked<Option<crate::sim::cell_rect::PlayfieldBounds>>,
     /// Immutable signed `[Map] Size=` height retained for later LocalSize
     /// normalization. The live predicate needs only Size width, but action 40
     /// can rewrite the four LocalSize dwords repeatedly during a scenario.
     #[serde(default)]
-    playfield_size_height: Option<i32>,
+    playfield_size_height: Forked<Option<i32>>,
     /// Monotonic visible-area writer generation. Every successful trigger
     /// action 0x28 advances it, even when two writers normalize to the same
     /// bounds. Presentation consumes this as the global radar/scroll rebuild
     /// edge; cell-local bridge dirtiness is deliberately a separate channel.
     #[serde(default)]
-    playfield_revision: u64,
+    playfield_revision: Forked<u64>,
     /// Interned projection of RuleSet's ordered BridgeExplosions references.
     /// Rebuilt at map binding and snapshot restoration; not serialized authority.
     #[serde(skip)]
-    bridge_explosions: Vec<InternedId>,
+    bridge_explosions: Forked<Vec<InternedId>>,
     /// Interned projection of RuleSet's ordered MetallicDebris references,
     /// including unread types without an SHP. Rebuilt at map binding and
     /// snapshot restoration so per-cell selection needs no string interning.
     #[serde(skip)]
-    metallic_debris: Vec<InternedId>,
+    metallic_debris: Forked<Vec<InternedId>>,
     /// Radar and tactical redraw marks for runtime cell changes.
     #[serde(skip)]
-    pub(crate) dirty_cells: crate::sim::dirty_cells::DirtyCells,
+    pub(crate) dirty_cells: Forked<crate::sim::dirty_cells::DirtyCells>,
     /// Per-player power state (output, drain, low-power flag, spy blackout timer),
     /// assessed by each House's own update.
-    pub(crate) power_states: crate::sim::power_system::PowerStates,
+    pub(crate) power_states: Forked<crate::sim::power_system::PowerStates>,
     /// Per-owner superweapon instances. Outer key = owner, inner key = SW type ID.
     /// Deterministic iteration via nested BTreeMap.
-    pub(crate) super_weapons: crate::sim::superweapon::SuperWeapons,
+    pub(crate) super_weapons: Forked<crate::sim::superweapon::SuperWeapons>,
     /// The Lightning Storm's globals (one at a time).
-    pub(crate) lightning_storm: crate::sim::superweapon::lightning_storm::LightningStorm,
+    pub(crate) lightning_storm: Forked<crate::sim::superweapon::lightning_storm::LightningStorm>,
     /// The Psychic Dominator's globals (one at a time).
-    pub(crate) psychic_dominator: crate::sim::superweapon::psychic_dominator::PsychicDominatorState,
+    pub(crate) psychic_dominator:
+        Forked<crate::sim::superweapon::psychic_dominator::PsychicDominatorState>,
     /// Pending UnitDelivery effects; simulation-owned, saved and hashed.
     #[serde(default)]
-    pub(crate) unit_deliveries: crate::sim::superweapon::unit_delivery::UnitDeliveryState,
+    pub(crate) unit_deliveries: Forked<crate::sim::superweapon::unit_delivery::UnitDeliveryState>,
     /// Ares ChronoWarpStateMachines moving chronoshifted buildings; owned by
     /// `superweapon::chronosphere`, saved and hashed.
     #[serde(default)]
-    pub(crate) ares_chrono_warps: crate::sim::superweapon::AresChronoWarps,
+    pub(crate) ares_chrono_warps: Forked<crate::sim::superweapon::AresChronoWarps>,
     /// The Houses whose Ares firestorm is up (HouseClass+0x1FA); owned by
     /// `sim::ares_firestorm`, saved and hashed.
     #[serde(default)]
-    pub(crate) ares_firestorm: crate::sim::ares_firestorm::FirestormHouses,
+    pub(crate) ares_firestorm: Forked<crate::sim::ares_firestorm::FirestormHouses>,
     /// Every House's Ares tunnel networks (HouseExt+0x64); owned by
     /// `sim::ares_tunnel`, saved and hashed.
     #[serde(default)]
-    pub(crate) ares_tunnels: crate::sim::ares_tunnel::AresTunnels,
+    pub(crate) ares_tunnels: Forked<crate::sim::ares_tunnel::AresTunnels>,
     /// IonBlastClass's vector (`0x00AA0118`), owned by `ion_blast`. Native
     /// saves no blast; Rust retains pending damaging effects for match restore.
     #[serde(
@@ -1041,16 +1051,11 @@ pub struct Simulation {
         serialize_with = "ion_blast::save",
         deserialize_with = "ion_blast::load"
     )]
-    ion_blasts: Vec<ion_blast::IonBlast>,
+    ion_blasts: Forked<Vec<ion_blast::IonBlast>>,
     /// AlphaShapeClass's vector (`0x0088A0F0`), owned by `alpha_shape`.
     /// Saved, never hashed.
     #[serde(default)]
-    alpha_shapes: alpha_shape::AlphaShapes,
-    /// `0x48A444` sets and `0x48A47E` clears the light-flash mark a
-    /// `WH.Particle` system spawns its AlphaImage under. It is a transient
-    /// register, not saved state, and it is only read while a particle
-    /// reveal is inside that window.
-    particle_light_flash: bool,
+    alpha_shapes: Forked<alpha_shape::AlphaShapes>,
     /// `ScenarioExt::Global()->FiringAnimUpdateCount`
     /// (`Ext/Anim/Body.cpp:25`, `Hooks.cpp:731`): how many anims still owe a
     /// per-frame `UpdateAsFiringAnim`. Saved with the scenario
@@ -1060,30 +1065,30 @@ pub struct Simulation {
     /// Per-cell terrain speed modifier config (slope climb/descend).
     /// Built from [General] rules at map load.
     #[serde(skip)]
-    terrain_speed_config: terrain_speed::TerrainSpeedConfig,
+    terrain_speed_config: Forked<terrain_speed::TerrainSpeedConfig>,
     /// Negotiated lockstep ahead window. Offline producers stamp the current
     /// raw issue ordinal; a network transfer owner overwrites that stamp with
     /// `send_current + MaxAhead` before synchronized dispatch.
-    input_delay_ticks: u64,
+    input_delay_ticks: Forked<u64>,
     /// Native Main_Tick termination gates outside House state. These are
     /// front-end connection/session facts, so they are transient and un-hashed.
     #[serde(skip)]
-    quit_requested: bool,
+    quit_requested: Forked<bool>,
     /// One-shot owner-tagged edge raised only when a due native EXIT command
     /// executes at the EventClass tail. App teardown consumes and clears it.
     #[serde(skip)]
-    executed_exit_owner: Option<InternedId>,
+    executed_exit_owner: Forked<Option<InternedId>>,
     /// Remote senders of executed EXIT events this frame, in execution
     /// order: the app runs DestroyConnection(house, 0) for each
     /// (`0x0064C9B1`) and drains them. A sender is the record's header byte.
     #[serde(skip)]
-    departed_senders: Vec<i8>,
+    departed_senders: Forked<Vec<i8>>,
     #[serde(skip)]
-    connection_lost: bool,
+    connection_lost: Forked<bool>,
     /// Checksum computed by this frame's multiplayer tail, handed to the
     /// frame output. Transient per frame.
     #[serde(skip)]
-    frame_sync_checksum: Option<FrameSyncChecksum>,
+    frame_sync_checksum: Forked<Option<FrameSyncChecksum>>,
     /// VERA-only: which frames hash their state for the TickResult, by tick
     /// number; `None` for none. A launch or a loaded save hashes every frame
     /// unless the caller asks for fewer; normal play's frame loop asks for
@@ -1091,39 +1096,43 @@ pub struct Simulation {
     /// ([`Simulation::with_seed`]) hash only when asked. A frame that ends the
     /// match hashes regardless. Never saved or hashed.
     #[serde(skip, default = "every_frame")]
-    state_hash_interval: Option<std::num::NonZeroU64>,
+    state_hash_interval: Forked<Option<std::num::NonZeroU64>>,
     /// One admitted command FIFO. Native frame/flags remain in the record;
     /// remaining semantic commands retain their monotonic scheduler.
-    pending_commands: crate::sim::command_queue::DoList<
-        queued_command::QueuedCommand,
-        { crate::sim::command_queue::NETWORK_COMMAND_CAPACITY },
+    pending_commands: Forked<
+        crate::sim::command_queue::DoList<
+            queued_command::QueuedCommand,
+            { crate::sim::command_queue::NETWORK_COMMAND_CAPACITY },
+        >,
     >,
     /// Locally issued events retain their shared OutList occupancy until
     /// the post-Logic transfer. Already-admitted/deferred work stays above.
-    local_commands: crate::sim::command_queue::LocalCommandStage<
-        queued_command::QueuedCommand,
-        { crate::sim::command_queue::NETWORK_SOURCE_COMMAND_CAPACITY },
+    local_commands: Forked<
+        crate::sim::command_queue::LocalCommandStage<
+            queued_command::QueuedCommand,
+            { crate::sim::command_queue::NETWORK_SOURCE_COMMAND_CAPACITY },
+        >,
     >,
     /// While the dispatcher temporarily owns the FIFO, this derived count
     /// reserves its occupied native slots for callbacks that admit new work.
     /// Balanced at the dispatch boundary, never saved or hashed.
     #[serde(skip)]
-    dispatch_reserved_slots: crate::sim::command_queue::NativeCommandOccupancy,
+    dispatch_reserved_slots: Forked<crate::sim::command_queue::NativeCommandOccupancy>,
     /// Non-authoritative copies for this frame's replay output. Admissions
     /// append once; collection drains them. Saved queue entries remain the
     /// only gameplay authority and a restored snapshot starts a new receipt.
     #[serde(skip)]
-    frame_command_admissions: Vec<CommandEnvelope>,
+    frame_command_admissions: Forked<Vec<CommandEnvelope>>,
     /// The one suspended frame cursor: a House Vox wait or post-Logic
     /// network service. Restore and resume its suffix without replaying work.
     #[serde(default)]
-    frame_continuation: Option<FrameContinuation>,
+    frame_continuation: Forked<Option<FrameContinuation>>,
     /// PlanMgr is the sole owner of shared nodes and per-actor plan tokens.
-    planning: planning::PlanningState,
+    planning: Forked<planning::PlanningState>,
     /// Diagnostic playback supplies a batch already containing generated
     /// events. Transient admission context, not gameplay or saved state.
     #[serde(skip)]
-    replaying_recorded_commands: bool,
+    replaying_recorded_commands: Forked<bool>,
     /// Phobos `SW.Next`/`SW.Link` tail recursion depth. Transient: it only
     /// stops a cyclic chain (native would recurse to stack exhaustion) and is
     /// zero outside a launch. Not saved or hashed.
@@ -1131,7 +1140,7 @@ pub struct Simulation {
     pub(crate) super_weapon_chain_depth: crate::sim::superweapon::ChainDepth,
     /// Serialized map trigger state, initialized and mutated by trigger_runtime.
     /// Remains installed while actions call other Simulation mechanisms.
-    pub(crate) trigger_runtime: TriggerRuntime,
+    pub(crate) trigger_runtime: Forked<TriggerRuntime>,
     /// Phobos `ScenarioExt::TransportReloaders` (`Ext/Scenario/Body.h:34`):
     /// passengers reloaded by the pre-Logic pass while inside a transport, in
     /// boarding order. Saved (`Ext/Scenario/Body.cpp:182`) and hashed.
@@ -1951,25 +1960,25 @@ impl SyncedWorld {
             terrain: sim.resolved_terrain.take(),
             overlays: sim.overlay_grid.take(),
             smudges: sim.smudge_grid.take(),
-            terrain_objects: std::mem::take(&mut sim.terrain_objects),
-            interner: std::mem::take(&mut sim.interner),
-            occupancy: std::mem::take(&mut sim.substrate.occupancy),
-            raw_cell_occupation: std::mem::take(&mut sim.substrate.raw_cell_occupation),
-            hidden_occupation: std::mem::take(&mut sim.substrate.hidden_occupation),
-            air_slots: std::mem::take(&mut sim.substrate.air_slots),
+            terrain_objects: std::mem::take(&mut *sim.terrain_objects),
+            interner: std::mem::take(&mut *sim.interner),
+            occupancy: std::mem::take(&mut *sim.substrate.occupancy),
+            raw_cell_occupation: std::mem::take(&mut *sim.substrate.raw_cell_occupation),
+            hidden_occupation: std::mem::take(&mut *sim.substrate.hidden_occupation),
+            air_slots: std::mem::take(&mut *sim.substrate.air_slots),
         }
     }
 
     fn put(self, sim: &mut Simulation) {
-        sim.resolved_terrain = self.terrain;
-        sim.overlay_grid = self.overlays;
-        sim.smudge_grid = self.smudges;
-        sim.terrain_objects = self.terrain_objects;
-        sim.interner = self.interner;
-        sim.substrate.occupancy = self.occupancy;
-        sim.substrate.raw_cell_occupation = self.raw_cell_occupation;
-        sim.substrate.hidden_occupation = self.hidden_occupation;
-        sim.substrate.air_slots = self.air_slots;
+        *sim.resolved_terrain = self.terrain;
+        *sim.overlay_grid = self.overlays;
+        *sim.smudge_grid = self.smudges;
+        *sim.terrain_objects = self.terrain_objects;
+        *sim.interner = self.interner;
+        *sim.substrate.occupancy = self.occupancy;
+        *sim.substrate.raw_cell_occupation = self.raw_cell_occupation;
+        *sim.substrate.hidden_occupation = self.hidden_occupation;
+        *sim.substrate.air_slots = self.air_slots;
     }
 
     /// Bring `mirror` up to these parts; an absent part leaves none.

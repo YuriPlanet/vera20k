@@ -385,7 +385,7 @@ impl Simulation {
                 if !for_this_client {
                     return false;
                 }
-                if self.replaying_recorded_commands {
+                if *self.replaying_recorded_commands {
                     return false;
                 }
                 self.lifecycle_outputs
@@ -1129,10 +1129,10 @@ impl Simulation {
                     // The local sender's EventClass__Execute (0x004C7903)
                     // writes the termination byte at 0x004C7917. The app
                     // consumes the owner-tagged edge after this tail.
-                    if !self.quit_requested {
-                        self.executed_exit_owner = Some(owner);
+                    if !*self.quit_requested {
+                        *self.executed_exit_owner = Some(owner);
                     }
-                    self.quit_requested = true;
+                    *self.quit_requested = true;
                 } else {
                     // A remote sender never reaches Execute (0x0064C91B):
                     // DestroyConnection(house, 0) runs for it (0x0064C9B1).

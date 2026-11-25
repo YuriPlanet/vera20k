@@ -64,7 +64,7 @@ fn bridge_row_terrain() -> crate::map::resolved_terrain::ResolvedTerrainGrid {
 
 fn bridge_scene(firer: &str) -> crate::sim::world::Simulation {
     let mut sim = crate::sim::world::Simulation::new();
-    sim.resolved_terrain = Some(bridge_row_terrain());
+    *sim.resolved_terrain = Some(bridge_row_terrain());
     spawn(
         &mut sim.substrate.entities,
         1,
@@ -82,7 +82,7 @@ fn bridge_scene(firer: &str) -> crate::sim::world::Simulation {
         (12, 10),
     );
     // After the spawns: `test_default` interns their names.
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     sim
 }
 
@@ -124,7 +124,7 @@ fn a_mapless_fire_gate_takes_the_shared_range_answer() {
         );
     }
     // After the spawns: `test_default` interns their names.
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     assert!(sim.resolved_terrain.is_none());
     let error = |firer: u64, kind: &str, target: u64| {
         crate::sim::combat::fire_error_world::FireSubject {
@@ -176,7 +176,7 @@ fn a_tethered_low_balloon_is_illegal_to_fire_at() {
         "Soviet",
         (7, 5),
     );
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     let error = |sim: &crate::sim::world::Simulation| {
         crate::sim::combat::fire_error_world::FireSubject {
             world: sim,
@@ -237,7 +237,7 @@ fn a_cargo_rider_is_not_bound_to_its_carrier_as_transporter() {
     rider.health.set_for_test(100);
     rider.lifecycle.set_in_limbo_for_test(false);
     sim.substrate.entities.insert(rider);
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     let error = |sim: &crate::sim::world::Simulation| {
         crate::sim::combat::fire_error_world::FireSubject {
             world: sim,

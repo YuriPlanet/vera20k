@@ -84,11 +84,11 @@ fn f64_hex(value: f64) -> String {
 /// Import the receipt through the RNG owner's complete native-state seam;
 /// no Rust seed/search supplies a replacement Random2 decision.
 fn import_rng(sim: &mut Simulation, native: &Value) {
-    sim.main_rng =
+    *sim.main_rng =
         SimRng::from_native_state_hex_for_test(native["main"]["before_hex"].as_str().unwrap());
-    sim.scenario_rng =
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(native["scenario"]["before_hex"].as_str().unwrap());
-    sim.mapgen_rng =
+    *sim.mapgen_rng =
         SimRng::from_native_state_hex_for_test(native["mapgen"]["before_hex"].as_str().unwrap());
 }
 
@@ -340,7 +340,7 @@ fn fixture(rules: &RuleSet, ini: &IniFile) -> Fixture {
         })
         .collect();
     sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(128, 128, cells));
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
         base: 0,
         off_fc: -128,
         off_100: -128,
@@ -483,7 +483,7 @@ fn fixture_input(fixture: &mut Fixture, rules: &RuleSet, native: &Value) {
         .set_speed_fraction_native_bits(bits(&drive["applied_fraction_bits"]));
     unit.navigation.set_nav_com_for_test(native_nav(native));
     assert_eq!(native["producer_archive"], "0x0");
-    sim.substrate.occupancy =
+    *sim.substrate.occupancy =
         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
 
     let linked = native["radio_pair"]["unit"]["contacts"][0] != "0x0";
@@ -1008,7 +1008,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
                 entity.advance_door(now);
             }
         }
-        sim.substrate.occupancy =
+        *sim.substrate.occupancy =
             crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
         for slot in before["slots"].as_array().unwrap() {
             let Some(name) = slot["type"].as_str() else {
@@ -1041,11 +1041,11 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
             anim.runtime_mut_for_test().paused = runtime["paused"] == 1;
         }
         sim.session.set_binary_frame_for_test(now);
-        sim.main_rng =
+        *sim.main_rng =
             SimRng::from_native_state_hex_for_test(before["rng"]["main"].as_str().unwrap());
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(before["rng"]["scenario"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(before["rng"]["mapgen"].as_str().unwrap());
         assert_boundary(&sim, yard, before);
         let slots_before = *sim
@@ -1711,7 +1711,7 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
         .register(HouseState::new(rival, 1, Some(rival), false, 0, 10));
     sim.session.set_current_house_for_test(Some(owner));
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     for (kind, x, y) in [
         ("GACNST", 10, 14),
         ("GAPOWR", 16, 12),

@@ -2037,7 +2037,7 @@ impl ApplicationHandler for App {
             // box tells them of a mod, and they never check for an update.
             let live_polls: &[Poll] = &[
                 crate::app::map_library::poll,
-                crate::app::shell_wol::login_info::poll,
+                |state| crate::app::shell_wol::login_info::poll(&mut state.frontend),
                 crate::app::map_picture::poll,
                 crate::app::mods::poll,
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]

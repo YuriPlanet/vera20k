@@ -46,7 +46,7 @@ fn rules() -> RuleSet {
 /// The flat arena with an overlay grid, which the batch needs.
 fn arena(rules: &RuleSet) -> (Simulation, PathGrid) {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x4D3920);
-    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
     let grid = sim
         .path_grid_snapshot()
         .map(|grid| (*grid).clone())
@@ -1065,7 +1065,14 @@ fn a_left_out_recursion_stays_one() {
     let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .expect("the save loads")
         .sim;
-    assert_eq!(restored.path_batch.unwrap().left_out_recursions, left_out);
+    assert_eq!(
+        restored
+            .path_batch
+            .into_inner()
+            .unwrap()
+            .left_out_recursions,
+        left_out
+    );
     let hash = sim.state_hash();
     let batch = sim.path_batch.as_mut().unwrap();
     batch.left_out_recursions.clear();
@@ -1515,7 +1522,7 @@ fn a_repath_past_the_budget_stops_or_does_not_start() {
                 (0..SIZE).filter(move |&x| x != gap).map(move |x| (x, y))
             });
             crate::sim::arena_fixture::flood(&mut sim, &rules, SIZE, water);
-            sim.overlay_grid = Some(OverlayGrid::new(SIZE, SIZE));
+            *sim.overlay_grid = Some(OverlayGrid::new(SIZE, SIZE));
             let foots: Vec<u64> = (0..3)
                 .map(|_| {
                     let id = spawn(&mut sim, &rules, "E1", (0, 0));
@@ -1906,7 +1913,7 @@ fn a_mover_allowed_to_leave_the_map_searches_across_zones() {
             .expect("arena cell")
             .zone_type = zone_class::IMPASSABLE;
     }
-    sim.zone_grid = None;
+    *sim.zone_grid = None;
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     let tank = spawn(&mut sim, &rules, "TANK", (1, 4));
     let goal = DriveCoord::cell(7, 4, 0);

@@ -764,7 +764,7 @@ fn network_vision_perspective(
     sim.session.install_network_timing(10);
     initialize_skirmish_launch_houses(&mut sim, &HouseRoster::default(), &rules, &launch);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     let actors = [
         sim.spawn_object("MTNK", "Host", 8, 8, 0, &rules).unwrap(),
         sim.spawn_object("MTNK", "Guest", 24, 24, 0, &rules)
@@ -3316,7 +3316,7 @@ fn staged_simulation_owns_fill_and_generated_replay_without_reconstruction() {
     let owner = ScenarioBootstrapRng::new(seed);
     let mut sim = owner.into_simulation(&descriptor(seed));
     // This isolated RNG fixture omits the full native Rules prefix.
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
     sim.session.set_binary_frame_for_test(77);
     let retained_handle = sim.substrate.allocate_stable_id();
@@ -3378,7 +3378,7 @@ fn gsi_04_12_prefix_fill_and_generated_trace_share_one_scenario_owner() {
     // The match load stages the Simulation here, before Fill.
     let mut sim = owner.into_simulation(&descriptor(seed));
     // This isolated RNG fixture omits the full native Rules prefix.
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
     {
         let (mut scenario_fill, _main) = sim.terrain_load_draws();
@@ -3517,7 +3517,7 @@ fn gsi_04_12_generated_trace_continues_into_starting_techno_and_post_map_crate()
     scenario.mp_start_waypoints.insert(0, (start.rx, start.ry));
     let mut sim = owner.into_simulation(&scenario);
     // This isolated RNG fixture omits the full native Rules prefix.
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
     {
         let (mut scenario_fill, _main) = sim.terrain_load_draws();
@@ -3563,7 +3563,7 @@ fn gsi_04_12_generated_trace_continues_into_starting_techno_and_post_map_crate()
 
     let terrain = techno_constructor_flat_start_terrain(SIZE);
     sim.install_resolved_terrain_for_new_map(terrain.clone());
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(SIZE, SIZE));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(SIZE, SIZE));
     sim.install_playfield_from_map_header(&map.header);
     let house_roster = HouseRoster::default();
     initialize_skirmish_launch_houses(&mut sim, &house_roster, &rules, &launch);

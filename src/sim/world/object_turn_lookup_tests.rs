@@ -142,7 +142,7 @@ fn a_buildings_turn_keeps_its_deliveries_and_takes_no_foot_tail() {
         let (mut sim, rules, _, plant) = scene();
         let mut smudges = crate::sim::smudge_grid::SmudgeGrid::new(32, 32);
         smudges.test_force_set(3, 4, Default::default());
-        sim.smudge_grid = Some(smudges);
+        *sim.smudge_grid = Some(smudges);
         sim.dirty_cells.clear_tactical_for_test();
         (sim, rules, plant)
     };
@@ -213,7 +213,7 @@ fn a_fire_visit_without_a_target_keeps_its_deliveries() {
     ] {
         let mut smudges = crate::sim::smudge_grid::SmudgeGrid::new(32, 32);
         smudges.test_force_set(cell.0, cell.1, Default::default());
-        sim.smudge_grid = Some(smudges);
+        *sim.smudge_grid = Some(smudges);
         sim.dirty_cells.clear_tactical_for_test();
         let receipt = sim.commit_fire_visit(
             visit,

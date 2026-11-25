@@ -284,7 +284,7 @@ fn flat_sim() -> Simulation {
         off_104: 80,
         off_108: 41,
     }));
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
         WIDTH,
         HEIGHT,
         flat_terrain_cell,
@@ -874,8 +874,8 @@ fn a_missile_that_lost_its_target_retreats_for_good() {
     );
     assert_eq!(entity.mission.dispatch_timer().delay(), 1);
 
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+    let session = &mut *sim.session;
+    session.set_binary_frame_for_test(session.binary_frame() + 1);
     crate::sim::aircraft::dispatch_mission(&mut sim, missile, &rules, &mut Default::default());
     let entity = sim.substrate.entities.get(missile).unwrap();
     assert_eq!(
@@ -1572,8 +1572,8 @@ fn missile_flight_speed_uses_the_ra2_conversion() {
     };
     let mut fastest: f64 = 0.0;
     for _ in 0..240 {
-        sim.session
-            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+        let session = &mut *sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         sim.process_rocket(
             child_id,
             &rules,

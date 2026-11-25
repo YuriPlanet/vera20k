@@ -477,7 +477,7 @@ impl Simulation {
             .map_or(requested, |t| t.native_cell_coord(identity.unwrap()));
         if !cell_is_in_playfield_height_aware(
             (i32::from(cell.0), i32::from(cell.1)),
-            self.playfield_bounds,
+            *self.playfield_bounds,
             self.resolved_terrain.as_ref(),
         ) {
             return false;
@@ -723,10 +723,10 @@ mod tests {
         let mut sim = Simulation::with_seed(31);
         sim.session.set_map_width_for_test(128);
         sim.session.set_map_height_for_test(128);
-        sim.playfield_bounds = Some(
+        *sim.playfield_bounds = Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(64, 0, 0, 64, 64),
         );
-        sim.playfield_size_height = Some(64);
+        *sim.playfield_size_height = Some(64);
         install_common_raw_terrain(
             &mut sim,
             128,
@@ -745,7 +745,7 @@ mod tests {
             .unwrap();
         cell.level = input["level"].as_u64().unwrap_or(0) as u8;
         cell.slope_type = input["slope"].as_u64().unwrap_or(0) as u8;
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
         sim.overlay_grid
             .as_mut()
             .unwrap()
@@ -1500,11 +1500,11 @@ mod tests {
         );
         // Native Scenario Load deliberately reseeds its RNG to0. Normalize
         // both branches at this checkpoint so unrelated load policy is equal.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = GameSnapshot::save(&sim, 0, 0, "Fly landing continuation", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
         restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
-        restored.resolved_terrain = sim.resolved_terrain.clone();
+        *restored.resolved_terrain = (*sim.resolved_terrain).clone();
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(sim.state_hash(), restored.state_hash());
         for frame in 101..126 {

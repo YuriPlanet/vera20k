@@ -602,7 +602,7 @@ impl App {
         if state.frontend.external_launch {
             // A relay launch first reports its result to the match service;
             // its live service starts the same quit once that settles.
-            if !crate::app::shell_wol::end_spawned_match(state) {
+            if !crate::app::shell_wol::end_spawned_match(state.frontend.wol.as_mut()) {
                 Self::start_quit_cascade(state);
             }
             return;

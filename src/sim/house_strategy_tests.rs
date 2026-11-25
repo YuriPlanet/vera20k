@@ -214,7 +214,7 @@ fn post_map_ai_hate_delays_defer_enemy_selection_across_save_load() {
 
     // Native scenario restore reseeds this stream; keep the hash comparison
     // focused on retained state rather than that independent load effect.
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "hate-delay", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .unwrap()
@@ -280,7 +280,7 @@ fn the_strategy_timer_and_its_gates_match_native() {
         spawn_building(&mut sim, owner, "FACTORY", 1000, false);
         sim.session
             .set_binary_frame_for_test(int(&row["frame"]) as u32);
-        sim.scenario_rng = SimRng::answering(1, 7, int(&row["answer"]) - 105);
+        *sim.scenario_rng = SimRng::answering(1, 7, int(&row["answer"]) - 105);
         let mut expected = sim.scenario_rng.clone();
         if flag(&row["called"]) {
             expected.next_range_i32_inclusive(1, 7);
@@ -405,7 +405,7 @@ fn the_strategy_matches_native() {
             [0x218, 1, 7],
             "{label}"
         );
-        sim.scenario_rng = SimRng::answering(1, 7, int(&draws[0][4]));
+        *sim.scenario_rng = SimRng::answering(1, 7, int(&draws[0][4]));
         let mut expected = sim.scenario_rng.clone();
         expected.next_range_i32_inclusive(1, 7);
 

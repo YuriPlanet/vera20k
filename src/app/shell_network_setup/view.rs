@@ -79,7 +79,12 @@ pub(crate) fn player_help(state: &AppState, view: &SetupView, control: u16) -> O
         .humans
         .iter()
         .find(|human| human.raw_slot_index == Some(row))?;
-    crate::app::shell_wol::lobby::badge_help(state, &human.name, badge)
+    crate::app::shell_wol::lobby::badge_help(
+        &state.frontend.wol_lobby_globals,
+        &state.process_assets,
+        &human.name,
+        badge,
+    )
 }
 
 /// Whether the local player could press Accept (`SetupView::accept_enabled`).
@@ -93,7 +98,10 @@ pub(super) fn accept_enabled(state: &AppState) -> bool {
         && session
             .network_setup()
             .is_some_and(|launch| !session.network_player_ready(launch.local_player_index))
-        && crate::app::shell_wol::local_choices_agreed(state)
+        && crate::app::shell_wol::local_choices_agreed(
+            state.frontend.wol.as_ref(),
+            &state.match_state.session,
+        )
 }
 
 /// The room's map in the scenario catalog, when this player shows its own
@@ -815,24 +823,25 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             // reads the same table, and the host's ping timer 0x14AF8 that
             // fills it are not ported: the lobby carries no per-user latency
             // to the room.
-            row_icons[visible_row] = Some(SetupRowIcon {
-                country: flag,
-                // 0x5EA3E0: wolhost.pcx on the human row named [0xA8D610];
-                // a WOL guest learns it from the user list, otherwise the
-                // host is row 0.
-                host: human.is_some_and(|(_, human)| match host_name {
-                    Some(host) => human.name == host,
-                    None => row == 0,
-                }),
-                accepted: ai.is_some()
-                    || human.is_some_and(|(index, _)| session.network_player_ready(index)),
-                // VERA's online room shows each player's badge, as the
-                // lobby's player list does.
-                badge: human
-                    .filter(|_| dialog.modern && dialog.wol())
-                    .and_then(|(_, human)| player_badge(state, &human.name)),
-                local: is_local,
-            });
+            row_icons[visible_row] =
+                Some(SetupRowIcon {
+                    country: flag,
+                    // 0x5EA3E0: wolhost.pcx on the human row named [0xA8D610];
+                    // a WOL guest learns it from the user list, otherwise the
+                    // host is row 0.
+                    host: human.is_some_and(|(_, human)| match host_name {
+                        Some(host) => human.name == host,
+                        None => row == 0,
+                    }),
+                    accepted: ai.is_some()
+                        || human.is_some_and(|(index, _)| session.network_player_ready(index)),
+                    // VERA's online room shows each player's badge, as the
+                    // lobby's player list does.
+                    badge: human.filter(|_| dialog.modern && dialog.wol()).and_then(
+                        |(_, human)| player_badge(&state.frontend.wol_lobby_globals, &human.name),
+                    ),
+                    local: is_local,
+                });
         }
     }
     let bounds = state.frontend.skirmish_shell_state.trackbar_bounds;
@@ -994,7 +1003,8 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         ],
         row_icons,
         headers,
-        lobby_enabled: dialog.wol() && crate::app::shell_wol::lobby_visits(state),
+        lobby_enabled: dialog.wol()
+            && crate::app::shell_wol::lobby_visits(state.frontend.wol.as_ref()),
         drag_rows,
         mode_label: if launch.selected_map_file.is_none() {
             label(state, "GUI:None")

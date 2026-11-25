@@ -154,7 +154,7 @@ fn retail_harrier_move_preserves_native_acceleration_across_save() {
             let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
             loaded
                 .retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
-            loaded.resolved_terrain = sim.resolved_terrain.clone();
+            *loaded.resolved_terrain = (*sim.resolved_terrain).clone();
             loaded.restore_after_snapshot_load().unwrap();
             let loaded_plane = loaded.entities().get(plane.stable_id()).unwrap();
             assert_eq!(
@@ -277,17 +277,17 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
     sim.session.set_map_width_for_test(128);
     sim.session.set_map_height_for_test(128);
     let [left, top, local_width, local_height] = ints(&input["local"], [0, 0, 64, 64]);
-    sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
+    *sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
         64,
         left,
         top,
         local_width,
         local_height,
     ));
-    sim.playfield_size_height = Some(64);
+    *sim.playfield_size_height = Some(64);
     install_common_raw_terrain(&mut sim, 128, 128, 0, None);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
-    sim.scenario_rng = SimRng::new(31);
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
+    *sim.scenario_rng = SimRng::new(31);
     sim.session.set_binary_frame_for_test(frame);
     let [x, y] = ints(&input["cell"], [60, 64]);
     assert_eq!(sim.substrate.allocate_stable_id(), AIRCRAFT);

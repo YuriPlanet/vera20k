@@ -1872,7 +1872,7 @@ mod tests {
                 goal_cell,
                 MovementLayer::Ground,
             ));
-            sim.zone_grid = Some(zones.into());
+            *sim.zone_grid = Some(zones.into());
             let goal = DriveCoord::cell(goal_cell.0, goal_cell.1, 0);
             let request = FootPathRequest::track(
                 &sim.substrate.entities,

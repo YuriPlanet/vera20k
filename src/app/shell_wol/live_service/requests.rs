@@ -7,8 +7,11 @@ use super::{
     match_report, notice, service_event, settings_dir, sign_in_credential, wire,
 };
 use crate::app::AppState;
+use crate::app::frontend::skirmish_session::MultiplayerShellRuntime;
+use crate::app::match_runtime::session::MatchSession;
 use crate::app::shell_network_setup::NetworkSetupRequest;
 use crate::app::shell_network_setup::campaign_room;
+use crate::app::shell_wol::WolVisit;
 use crate::i18n::tr;
 use crate::ui::wol_chat::WolChatLine;
 use crate::util::time::{Duration, Instant};
@@ -37,7 +40,13 @@ pub(super) fn request_service(
             let credential = if generated_guest {
                 Some(http::Credential::GeneratedGuest)
             } else {
-                sign_in_credential(settings_dir(state), service, &nickname, password, remember)
+                sign_in_credential(
+                    settings_dir(state.platform.game_config.as_ref()),
+                    service,
+                    &nickname,
+                    password,
+                    remember,
+                )
             };
             let Some(credential) = credential else {
                 super::apply_response(
@@ -66,7 +75,9 @@ pub(super) fn request_service(
                 .requests
                 .send(http::Request::Account { attempt, request });
         }
-        WolServiceRequest::ForgetSignIn => forget_sign_in(settings_dir(state), service),
+        WolServiceRequest::ForgetSignIn => {
+            forget_sign_in(settings_dir(state.platform.game_config.as_ref()), service)
+        }
         WolServiceRequest::ListChannels { kind, .. } => {
             let _ = service.requests.send(http::Request::Channels(kind));
         }
@@ -76,14 +87,16 @@ pub(super) fn request_service(
             });
         }
         WolServiceRequest::Watch { match_id } => {
-            if super::lobby::bind_online_request(state, service.next_request) {
+            if super::lobby::bind_online_request(state.frontend.wol.as_mut(), service.next_request)
+            {
                 service.command("watch", json!({"match_id":match_id}));
             }
         }
         WolServiceRequest::JoinChannel { channel, key } => {
-            if super::lobby::bind_online_request(state, service.next_request) {
+            if super::lobby::bind_online_request(state.frontend.wol.as_mut(), service.next_request)
+            {
                 let payload = json!({"channel":channel.name,"key":key});
-                if super::lobby::switching_room(state) {
+                if super::lobby::switching_room(state.frontend.wol.as_ref()) {
                     service.switching_room =
                         Some(service.retrying_command("join", payload, Instant::now()));
                 } else {
@@ -92,7 +105,8 @@ pub(super) fn request_service(
             }
         }
         WolServiceRequest::VisitLobby => {
-            if super::lobby::bind_online_request(state, service.next_request) {
+            if super::lobby::bind_online_request(state.frontend.wol.as_mut(), service.next_request)
+            {
                 service.command("visit_lobby", json!({}));
             }
         }
@@ -107,7 +121,8 @@ pub(super) fn request_service(
             key,
             ranked,
         } => {
-            if super::lobby::bind_online_request(state, service.next_request) {
+            if super::lobby::bind_online_request(state.frontend.wol.as_mut(), service.next_request)
+            {
                 service.command("create", create_payload(channel, key, ranked));
             }
         }
@@ -309,38 +324,32 @@ pub(super) fn local_agreement(state: &mut AppState, revision: u64) -> Result<Val
     )
 }
 
-pub(super) fn local_map_status(state: &AppState, service: &LiveService) -> u8 {
-    if let Some(verified) = campaign_room::local_map_verified(&state.match_state.session) {
+pub(super) fn local_map_status(
+    session: &MatchSession,
+    wol: Option<&WolVisit>,
+    service: &LiveService,
+) -> u8 {
+    if let Some(verified) = campaign_room::local_map_verified(session) {
         return u8::from(verified);
     }
-    if !service.maps.current_verified(state) {
+    if !service.maps.current_verified(session, wol) {
         return 0;
     }
-    let Some(expected) = state.match_state.session.network_map_metadata() else {
+    let Some(expected) = session.network_map_metadata() else {
         return 0;
     };
-    let Some(file) = state
-        .match_state
-        .session
+    let Some(file) = session
         .network_setup()
         .and_then(|launch| launch.selected_map_file.as_deref())
     else {
         return 0;
     };
-    if crate::map::rmg::is_seed_selection(file)
-        && state
-            .match_state
-            .session
-            .network_random_map_preview()
-            .is_none()
-    {
+    if crate::map::rmg::is_seed_selection(file) && session.network_random_map_preview().is_none() {
         return 0;
     }
     u8::from(
         crate::map::source::valid_source_sha256(&expected.source_sha256)
-            && state
-                .match_state
-                .session
+            && session
                 .network_local_map_source()
                 .and_then(|source| source.physical_identity())
                 == Some((
@@ -420,7 +429,12 @@ pub(super) fn options(state: &AppState) -> Result<wire::Options> {
             .cooperative_difficulty(),
         cooperative_campaign: campaign
             .is_none()
-            .then(|| cooperative_campaign(state))
+            .then(|| {
+                cooperative_campaign(
+                    &state.frontend.multiplayer_shell_runtime,
+                    &state.match_state.session,
+                )
+            })
             .flatten(),
         seed: Some(crate::app::shell_network_setup::resident_seed(state)),
         // Only a host's VERA room has one; a guest publishes no options.
@@ -428,7 +442,9 @@ pub(super) fn options(state: &AppState) -> Result<wire::Options> {
             .frontend
             .network_setup_protocol
             .as_ref()
-            .and_then(|protocol| protocol.published_watching(super::lobby_watches(state)))
+            .and_then(|protocol| {
+                protocol.published_watching(super::lobby_watches(state.frontend.wol.as_ref()))
+            })
             .map(str::to_owned),
     };
     check_map_capacity(&options)?;
@@ -437,19 +453,15 @@ pub(super) fn options(state: &AppState) -> Result<wire::Options> {
 
 /// The host's current `C0` text for its options, only in Cooperative: the
 /// record `+0x60` would send each guest at that moment.
-pub(super) fn cooperative_campaign(state: &AppState) -> Option<String> {
-    let cooperative = state
-        .match_state
-        .session
+pub(super) fn cooperative_campaign(
+    runtime: &MultiplayerShellRuntime,
+    session: &MatchSession,
+) -> Option<String> {
+    let cooperative = session
         .network_setup()
         .is_some_and(|launch| launch.mode.class == crate::skirmish_modes::MpModeClass::Cooperative);
     cooperative
-        .then(|| {
-            state
-                .frontend
-                .multiplayer_shell_runtime
-                .cooperative_campaign_text()
-        })
+        .then(|| runtime.cooperative_campaign_text())
         .flatten()
 }
 
@@ -525,13 +537,8 @@ pub(super) fn restore_accepted_options(state: &mut AppState, service: &LiveServi
 /// Optimistic country/color controls cannot accept until the host's complete
 /// server options echo the same local row. Controlled/native providers keep
 /// their existing admission behavior.
-pub(crate) fn local_choices_agreed(state: &AppState) -> bool {
-    let Some(visit) = state
-        .frontend
-        .wol
-        .as_ref()
-        .filter(|visit| visit.provider == WolProvider::Online)
-    else {
+pub(crate) fn local_choices_agreed(wol: Option<&WolVisit>, session: &MatchSession) -> bool {
+    let Some(visit) = wol.filter(|visit| visit.provider == WolProvider::Online) else {
         return true;
     };
     visit.live_service.as_ref().is_some_and(|service| {
@@ -540,7 +547,7 @@ pub(crate) fn local_choices_agreed(state: &AppState) -> bool {
                 .room
                 .accepted_options
                 .as_ref()
-                .is_some_and(|accepted| local_choices_match(&state.match_state.session, accepted))
+                .is_some_and(|accepted| local_choices_match(session, accepted))
     })
 }
 
@@ -557,7 +564,11 @@ pub(super) fn poll_start_preparation(
     }
     if start.submitted_request.is_some()
         || !start.ready(&state.match_state.session, service.revision)
-        || local_map_status(state, service) != 1
+        || local_map_status(
+            &state.match_state.session,
+            state.frontend.wol.as_ref(),
+            service,
+        ) != 1
     {
         service.start_preparation = Some(start);
         return Ok(());
@@ -633,7 +644,12 @@ pub(super) fn request_setup(
             });
         }
         NetworkSetupRequest::Ready(requested) => {
-            let ready = requested && local_map_status(state, service) == 1;
+            let ready = requested
+                && local_map_status(
+                    &state.match_state.session,
+                    state.frontend.wol.as_ref(),
+                    service,
+                ) == 1;
             let index = state
                 .match_state
                 .session
@@ -667,7 +683,11 @@ pub(super) fn request_setup(
             let mut payload = local_agreement(state, service.revision)?;
             // Native RandMap admission assumes the pending seed/image
             // receive. Online status1 requires both verified resources.
-            payload["status"] = json!(status.min(local_map_status(state, service)));
+            payload["status"] = json!(status.min(local_map_status(
+                &state.match_state.session,
+                state.frontend.wol.as_ref(),
+                service
+            )));
             service.command("map_status", payload);
         }
         NetworkSetupRequest::StartGame { users } => {
@@ -709,7 +729,11 @@ pub(super) fn request_setup(
         }
         NetworkSetupRequest::Kick { name, .. } => service.command("kick", json!({"name":name})),
         NetworkSetupRequest::Advertise => {
-            if let Some(channel) = super::lobby::republish_channel(state) {
+            if let Some(channel) = super::lobby::republish_channel(
+                &mut state.frontend,
+                &state.match_state.session,
+                &state.process_assets,
+            ) {
                 service.command("advertise", json!({"channel":wire::Channel::from(channel)}));
             }
         }

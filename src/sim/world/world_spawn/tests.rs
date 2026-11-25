@@ -37,7 +37,7 @@ fn infantry_unlimbo_placement_matches_original_coordinate_and_rng_controls() {
     .unwrap();
     for row in corpus["rows"].as_array().unwrap() {
         let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture();
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_class_before"].as_str().unwrap());
         let input = &row["input"];
         let raw_z = input["raw_z"].as_i64().unwrap() as i32;
@@ -148,7 +148,7 @@ fn infantry_unlimbo_matches_native_gate_incoming_membership_and_signed_xy() {
         selected_cell.slope_type = cell["level_slope"][1].as_u64().unwrap() as u8;
         sim.install_resolved_terrain_for_new_map(terrain);
         let fields = row["map_fields"].as_array().unwrap();
-        sim.playfield_bounds = Some(
+        *sim.playfield_bounds = Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(
                 fields[0].as_i64().unwrap() as i32,
                 fields[1].as_i64().unwrap() as i32,
@@ -211,11 +211,11 @@ fn infantry_unlimbo_matches_native_gate_incoming_membership_and_signed_xy() {
                 CellListInsertion::AppendBuilding,
             );
         }
-        sim.main_rng =
+        *sim.main_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let xyz = &row["requested_xyz"];
         let mut requested = RevealPosition::new(
@@ -768,7 +768,7 @@ fn signed_rot_reaches_spawn_combat_turn_and_snapshot_restore() {
         );
         // Match native load-time resets of Scenario RNG and the unsaved
         // active planner before comparing whole state and continuing both.
-        sim.scenario_rng = SimRng::new(0);
+        *sim.scenario_rng = SimRng::new(0);
         sim.reset_planning_after_player_load();
         let hash = sim.state_hash();
         let saved = GameSnapshot::save(&sim, 0, 0, "signed facing ROT", 0);
@@ -890,7 +890,7 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
         assert_eq!(bytes(transferred), [0, 1, 0]);
         // Match the admitted Scenario Seed0 and lost active-planner state
         // before comparing this discovery-state roundtrip's whole hash.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         sim.reset_planning_after_player_load();
         let hash = sim.state_hash();
         let saved = GameSnapshot::save(&sim, 0, 0, "discovery", 0);
@@ -1417,7 +1417,7 @@ fn campaign_unlimbo_discovers_a_building_on_open_ground_instead_of_lighting_it()
     install_american_house(&mut sim);
     let player = sim.interner.get("Americans").unwrap();
     sim.session.set_current_house_for_test(Some(player));
-    sim.fog = crate::sim::vision::FogState::new(10, 10);
+    *sim.fog = crate::sim::vision::FogState::new(10, 10);
     sim.fog.set_ground_bits_for_test(player, 6, 5, 0x10);
     assert_eq!(
         sim.spawn_from_map(
@@ -1440,7 +1440,7 @@ fn campaign_unlimbo_discovers_a_building_on_open_ground_instead_of_lighting_it()
 fn install_constructor_test_playfield(sim: &mut Simulation) {
     sim.session.set_map_width_for_test(10);
     sim.session.set_map_height_for_test(10);
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
         base: 10,
         off_fc: 0,
         off_100: 0,
@@ -1538,7 +1538,7 @@ fn an_admitted_aircraft_takes_no_playfield_gate() {
         .find(|&(rx, ry)| {
             !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                 (i32::from(rx), i32::from(ry)),
-                sim.playfield_bounds,
+                *sim.playfield_bounds,
                 sim.resolved_terrain.as_ref(),
             )
         })
@@ -1696,7 +1696,7 @@ fn techno_constructor_live_overlay_context_admits_ore_and_structural_bridge() {
     let registry = rules.overlay_registry();
     let mut sim = Simulation::with_seed(seed);
     install_constructor_test_playfield(&mut sim);
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
         base: 0,
         off_fc: -100,
         off_100: -100,
@@ -1721,7 +1721,7 @@ fn techno_constructor_live_overlay_context_admits_ore_and_structural_bridge() {
         bridge.bridge_walkable = true;
         bridge.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
     }
-    sim.bridge_state = Some(
+    *sim.bridge_state = Some(
         crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain(
             sim.resolved_terrain.as_ref().unwrap(),
             true,
@@ -1732,7 +1732,7 @@ fn techno_constructor_live_overlay_context_admits_ore_and_structural_bridge() {
     for cell in [ore_authored, ore_runtime, bridge_cell] {
         overlays.place_overlay(cell.0, cell.1, 0, 0);
     }
-    sim.overlay_grid = Some(overlays);
+    *sim.overlay_grid = Some(overlays);
 
     assert_eq!(
         sim.spawn_from_map_with_resolved_and_overlay_registry(
@@ -1806,7 +1806,7 @@ fn techno_constructor_wall_rejection_precedes_mutation_and_keeps_graph_draws_spe
     overlays.place_overlay(wall_cell.0, wall_cell.1, 1, 0);
     // Unit73F0A0 reads the Cell's live overlay identity, which OverlayGrid
     // owns.
-    sim.overlay_grid = Some(overlays);
+    *sim.overlay_grid = Some(overlays);
 
     let parent_id = sim
         .construct_object_limbo_at_height(
@@ -2970,7 +2970,7 @@ fn techno_constructor_authored_upgrades_consume_temporaries_with_native_ids() {
     ))
     .unwrap();
     let mut sim = Simulation::with_seed(seed);
-    sim.native_unique_ids = Some(
+    *sim.native_unique_ids = Some(
         crate::sim::native_identity::build_noncampaign_fresh_id_prefix(0, 0, 0, 0, 0, 0, 1, 1)
             .into_cursor(),
     );
@@ -3028,7 +3028,7 @@ fn techno_constructor_failed_reveal_keeps_one_draw_and_reuses_identity() {
     let seed = 0xC701_0006;
     let rules = constructor_rules();
     let mut sim = Simulation::with_seed(seed);
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(1000));
     let mut expected = SimRng::new(seed);
     let word = (expected.next_u32() & 0xFFFF) as u16;

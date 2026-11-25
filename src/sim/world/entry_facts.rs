@@ -329,7 +329,7 @@ impl CellFacts {
             deck: raw.occupant_at(key, MovementLayer::Bridge),
             in_playfield: crate::sim::cell_rect::retained_cell_is_in_playfield(
                 cell,
-                sim.playfield_bounds,
+                *sim.playfield_bounds,
                 &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
             ),
             overlay: sim.cell_overlay(cell),

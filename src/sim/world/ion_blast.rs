@@ -33,6 +33,7 @@ use crate::sim::ion_blast_ripple::{RippleFrames, spiral_point};
 use crate::sim::movement::{ground_pose, locomotor::MovementLayer};
 use crate::sim::projectile::ProjectileCoord;
 use crate::sim::rocking::ion_blast;
+use crate::util::forked::Forked;
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 
@@ -75,8 +76,8 @@ pub(super) fn save<S: serde::Serializer>(
 }
 pub(super) fn load<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> Result<Vec<IonBlast>, D::Error> {
-    Vec::deserialize(deserializer)
+) -> Result<Forked<Vec<IonBlast>>, D::Error> {
+    Vec::deserialize(deserializer).map(Forked::new)
 }
 
 impl Simulation {

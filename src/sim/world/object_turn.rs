@@ -742,7 +742,7 @@ impl Simulation {
             sim.path_grid.as_deref(),
             sim.session.binary_frame(),
             sim.resolved_terrain.as_ref(),
-            sim.playfield_bounds,
+            *sim.playfield_bounds,
             &mut sim.interner,
             rules,
             &sim.houses,

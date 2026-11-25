@@ -819,7 +819,7 @@ fn a_teleport_warp_drops_the_drone_onto_ore() {
     let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
     arena.infect(&rules, drone, tank);
     // The overlay grid matches the arena's 32x32 map.
-    arena.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *arena.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     for y in 9..=11 {
         for x in 10..=12 {
             place_tiberium_on_map(

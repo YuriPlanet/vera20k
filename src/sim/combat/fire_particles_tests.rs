@@ -26,7 +26,7 @@ fn flame_rules() -> Option<RetailBattleRules> {
 /// a target that neither moves nor shoots back.
 fn flame_attack(rules: &RuleSet) -> (Simulation, u64, u64) {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0xF1A3_E000);
-    sim.fog = FogState::new(32, 32);
+    *sim.fog = FogState::new(32, 32);
     let owner = sim.interner.intern("Americans");
     sim.session.set_current_house_for_test(Some(owner));
     sim.intern_rule_type_ids(rules);

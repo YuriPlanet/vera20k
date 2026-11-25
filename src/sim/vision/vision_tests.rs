@@ -69,12 +69,12 @@ fn fixture_frame_with_sight(
         height_grid.is_none(),
         "fixture heights belong in its PathGrid"
     );
-    world.fog = std::mem::take(fog);
-    world.substrate.entities = entities.clone();
-    world.interner = interner.clone();
+    *world.fog = std::mem::take(fog);
+    *world.substrate.entities = entities.clone();
+    *world.interner = interner.clone();
     *world.house_alliances_mut_for_test() = alliances.clone();
-    world.resolved_terrain = terrain.cloned();
-    world.path_grid = path_grid.cloned().map(std::sync::Arc::new);
+    *world.resolved_terrain = terrain.cloned();
+    *world.path_grid = path_grid.cloned().map(std::sync::Arc::new);
     seat_fixture_clients(world, alliances, &[]);
     let mut context = crate::sim::world::UninitContext::new(
         rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
@@ -101,7 +101,7 @@ fn fixture_frame_with_sight(
         config,
         rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
     );
-    *fog = std::mem::take(&mut world.fog);
+    *fog = std::mem::take(&mut *world.fog);
 }
 
 /// Seat every house the fixture names, by its objects or its alliances, as a
@@ -170,16 +170,16 @@ fn fixture_source_event(
     interner: &intern::StringInterner,
     refresh: bool,
 ) {
-    world.fog = std::mem::take(fog);
-    world.substrate.entities = entities.clone();
-    world.interner = interner.clone();
+    *world.fog = std::mem::take(fog);
+    *world.substrate.entities = entities.clone();
+    *world.interner = interner.clone();
     seat_fixture_clients(world, &HouseAllianceMap::new(), &[]);
     let mut context = crate::sim::world::UninitContext::default();
     if refresh {
         world.release_object_sight_with_context(1, context.reborrow());
     }
     world.update_object_sight_in_view(1, 0, None, config, None, context);
-    *fog = std::mem::take(&mut world.fog);
+    *fog = std::mem::take(&mut *world.fog);
 }
 
 fn spawn_with_vision(store: &mut EntityStore, id: u64, owner: &str, rx: u16, ry: u16, range: u16) {
@@ -772,7 +772,7 @@ fn a_tracked_pass_after_a_sweep_marks_the_swept_cells_a_footprint_covers() {
     };
     let mut fog = FogState::default();
     pass(&mut sight_world, &mut fog);
-    sight_world.fog = std::mem::take(&mut fog);
+    *sight_world.fog = std::mem::take(&mut fog);
     let alternate = SightAdmission {
         latched: true,
         owner: intern::test_intern("Soviet"),
@@ -795,7 +795,7 @@ fn a_tracked_pass_after_a_sweep_marks_the_swept_cells_a_footprint_covers() {
         crate::sim::vision::MapRevealProjection::Transient,
         sight_world.session.current_house(),
     );
-    fog = std::mem::take(&mut sight_world.fog);
+    fog = std::mem::take(&mut *sight_world.fog);
     let (covered, alternate) = ((9, 8), (18, 18));
     for (x, y) in [covered, alternate] {
         let vis = fog.by_owner.get_mut(&americans).unwrap();
@@ -1504,7 +1504,7 @@ fn shroud_current_sight_matches_original_native_sequences() {
     for case in corpus["cases"].as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
         let mut sight_world = crate::sim::world::Simulation::default();
-        sight_world.interner = interner.clone();
+        *sight_world.interner = interner.clone();
         let mut fog = FogState {
             width: 32,
             height: 32,
@@ -1527,8 +1527,8 @@ fn shroud_current_sight_matches_original_native_sequences() {
                         count += 1;
                         spawn_with_vision(&mut store, count, "Americans", 10, 10, 2);
                     }
-                    sight_world.fog = std::mem::take(&mut fog);
-                    sight_world.substrate.entities = store.clone();
+                    *sight_world.fog = std::mem::take(&mut fog);
+                    *sight_world.substrate.entities = store.clone();
                     seat_fixture_clients(&mut sight_world, &HouseAllianceMap::new(), &[]);
                     let context = crate::sim::world::UninitContext::default();
                     if op == "reveal" {
@@ -1545,7 +1545,7 @@ fn shroud_current_sight_matches_original_native_sequences() {
                         store.remove(count);
                         count -= 1;
                     }
-                    fog = std::mem::take(&mut sight_world.fog);
+                    fog = std::mem::take(&mut *sight_world.fog);
                     apply_gap_generators(&mut fog, &HouseAlliances::default(), &gaps, &interner);
                 }
                 "unshroud" => reveal_radius(&mut fog, owner, 10, 10, 2),
@@ -1702,8 +1702,8 @@ fn shroud_current_sight_provenance_changes_future_conceal_and_hash() {
     let mut store = EntityStore::new();
     spawn_with_vision(&mut store, 1, "Americans", 10, 10, 3);
     let mut sim = crate::sim::world::Simulation::with_seed(142);
-    sim.interner = ti();
-    sim.fog = fixture_visibility(
+    *sim.interner = ti();
+    *sim.fog = fixture_visibility(
         &store,
         Some(&PathGrid::new(32, 32)),
         &Default::default(),
@@ -1711,7 +1711,7 @@ fn shroud_current_sight_provenance_changes_future_conceal_and_hash() {
         &sim.interner,
     );
     let sight_hash = sim.state_hash();
-    let mut mapped = sim.fog.clone();
+    let mut mapped = (*sim.fog).clone();
     // Keep the public observation identical, but replace the source's selected
     // state with a past mapping receipt.
     mapped.sight_admissions.clear();
@@ -1722,7 +1722,7 @@ fn shroud_current_sight_provenance_changes_future_conceal_and_hash() {
             state.set_transient_visible_for_test(true);
         }
     }
-    let sight = std::mem::replace(&mut sim.fog, mapped);
+    let sight = std::mem::replace(&mut *sim.fog, mapped);
     assert_ne!(sim.state_hash(), sight_hash);
     apply_gap_generators(
         &mut sim.fog,
@@ -1731,7 +1731,7 @@ fn shroud_current_sight_provenance_changes_future_conceal_and_hash() {
         &sim.interner,
     );
     assert!(!sim.fog.is_cell_revealed(owner, 10, 10));
-    sim.fog = sight;
+    *sim.fog = sight;
     apply_gap_generators(
         &mut sim.fog,
         &sim.house_alliances,
@@ -1926,7 +1926,7 @@ fn shroud_current_sight_first_fire_and_psychic_have_distinct_pending_history() {
     let psychic = fire.clone();
     reveal_radius(&mut fire, owner, 10, 10, 2);
     let mut sim = crate::sim::world::Simulation::default();
-    sim.fog = psychic;
+    *sim.fog = psychic;
     let config = default_config();
     for final_pass in [false, true] {
         let _ = sim.reveal_area(
@@ -2031,8 +2031,8 @@ fn source_release_and_zero_sight_gate_preserve_original_cached_metadata() {
         z: input[2].as_i64().unwrap() as i32,
     };
     let mut world = crate::sim::world::Simulation::default();
-    world.interner = ti();
-    world.fog = FogState::new(128, 128);
+    *world.interner = ti();
+    *world.fog = FogState::new(128, 128);
     let owner = world.interner.intern("Americans");
     let amcv = rules.object("AMCV").unwrap();
     let mut entity = GameEntity::new_at_frame_zero_for_test(
@@ -2173,9 +2173,9 @@ fn a_release_clears_a_retained_map_that_is_no_client() {
     let americans = intern::test_intern("Americans");
     let soviet = intern::test_intern("Soviet");
     let mut world = crate::sim::world::Simulation::default();
-    world.fog = FogState::new(32, 32);
-    world.substrate.entities = store;
-    world.interner = ti();
+    *world.fog = FogState::new(32, 32);
+    *world.substrate.entities = store;
+    *world.interner = ti();
     seat_fixture_clients(&mut world, &HouseAllianceMap::new(), &[soviet]);
     assert_eq!(*world.fog_viewers(), [americans]);
     let config = default_config();
@@ -2200,9 +2200,9 @@ fn a_computer_houses_sight_opens_no_map_of_its_own() {
     let americans = intern::test_intern("Americans");
     let soviet = intern::test_intern("Soviet");
     let mut world = crate::sim::world::Simulation::default();
-    world.fog = FogState::new(32, 32);
-    world.substrate.entities = store;
-    world.interner = ti();
+    *world.fog = FogState::new(32, 32);
+    *world.substrate.entities = store;
+    *world.interner = ti();
     seat_fixture_clients(&mut world, &HouseAllianceMap::new(), &[soviet]);
     let config = default_config();
     let mut context = crate::sim::world::UninitContext::default();

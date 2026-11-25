@@ -406,14 +406,14 @@ pub(super) fn world_with(
     let mut sim = Simulation::with_seed(31);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.playfield_bounds = Some(bounds);
-    sim.playfield_size_height = Some(32);
+    *sim.playfield_bounds = Some(bounds);
+    *sim.playfield_size_height = Some(32);
     sim.session.set_map_width_for_test(33);
     sim.session.set_map_height_for_test(33);
-    sim.overlay_grid = Some(OverlayGrid::new(33, 33));
-    sim.bridge_state = Some(bridges);
-    sim.zone_grid = Some(zones.into());
-    sim.path_grid = Some(Arc::new(path));
+    *sim.overlay_grid = Some(OverlayGrid::new(33, 33));
+    *sim.bridge_state = Some(bridges);
+    *sim.zone_grid = Some(zones.into());
+    *sim.path_grid = Some(Arc::new(path));
     sim.install_resolved_terrain_for_new_map(terrain);
     sim
 }

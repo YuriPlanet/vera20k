@@ -933,12 +933,12 @@ SpawnSparkPercentage=1
 
         let rules = spark_rules(0);
         let mut sim = Simulation::with_seed(789);
-        sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
+        *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
             1,
             1,
             vec![super::super::spark_world::tests::terrain_cell(0, 0)],
         ));
-        sim.overlay_grid = None;
+        *sim.overlay_grid = None;
         sim.resolved_terrain
             .as_ref()
             .unwrap()
@@ -999,12 +999,12 @@ SpawnSparkPercentage=1
         );
 
         let mut collision_sim = Simulation::with_seed(790);
-        collision_sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
+        *collision_sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
             1,
             1,
             vec![super::super::spark_world::tests::terrain_cell(0, 0)],
         ));
-        collision_sim.overlay_grid = None;
+        *collision_sim.overlay_grid = None;
         let mut collision_particle = spark_particle(256, 2);
         collision_particle.coords.z = -1;
         let motion = begin_particle_tick(

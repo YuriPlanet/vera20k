@@ -58,10 +58,10 @@ fn install_destination_cells(sim: &mut Simulation, rules: &RuleSet) {
             })
             .collect(),
     ));
-    sim.playfield_bounds = Some(
+    *sim.playfield_bounds = Some(
         crate::map::playfield::PlayfieldBounds::from_normalized_local_size(32, -32, -32, 64, 64),
     );
-    sim.playfield_size_height = Some(32);
+    *sim.playfield_size_height = Some(32);
     // Reveal preceded map installation in relocating_owner. Finish the same
     // Techno threat/Foot neighbor producers as the existing object-turn fixture.
     sim.spatial_threat_after_unlimbo(1, rules, None);
@@ -378,11 +378,11 @@ fn retail_cmin_teleport_preserves_departure_cell_through_guidance_and_snapshot()
 
     // Native load resets the Scenario stream; keep that independent policy
     // equal while checking the repaired target and its next flight step.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let saved = GameSnapshot::save(&sim, 0, 0, "teleport-target", 0);
     let mut restored = GameSnapshot::load(&saved).unwrap().sim;
     restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
-    restored.resolved_terrain = sim.resolved_terrain.clone();
+    *restored.resolved_terrain = (*sim.resolved_terrain).clone();
     restored.restore_after_snapshot_load().unwrap();
     // Bullet Load46AE9C..46AEB0 deliberately restarts the arm timer at zero.
     // Canonicalize that existing load policy before comparing continuation.
@@ -428,14 +428,14 @@ fn teleport_object_turn_moves_retained_foot_neighbor_counts() {
     use crate::sim::overlay_grid::OverlayGrid;
     let rules = rules(false);
     let mut sim = relocating_legionnaire((8, 9));
-    sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
+    *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
         32,
         32,
         (0..32)
             .flat_map(|y| (0..32).map(move |x| test_flat_cell(x, y)))
             .collect(),
     ));
-    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
     // This component fixture's Reveal preceded map installation. Complete its
     // admitted Unlimbo's map-dependent producers in native order before the
     // object turn: Techno6F6EDE threat, then Foot4D72xx neighbor counters.
@@ -683,7 +683,7 @@ fn restoration_callbacks_forward_overlay_inputs_before_any_destination_write() {
     // In OverlayGrid, which owns a real cell's overlay.
     let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(32, 32);
     overlays.place_overlay(12, 7, overlay, 0);
-    sim.overlay_grid = Some(overlays);
+    *sim.overlay_grid = Some(overlays);
     let before = (
         save_codec::serialize(sim.substrate.entities.get(1).unwrap()).unwrap(),
         save_codec::serialize(&sim.substrate.raw_cell_occupation).unwrap(),

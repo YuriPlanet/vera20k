@@ -580,10 +580,11 @@ impl Simulation {
         // The sidebar part is the app's: PlayerPtr's beacons, command bar and
         // chat mask (0x004FC1BD..0x004FC23E, an observer's too), and the bar's
         // reopening by any defeat that ends the match (0x004FC591..0x004FC59F).
+        let match_decided = self.multiplayer_decision().is_some();
         self.lifecycle_outputs
             .emit(super::LifecycleOutput::MultiplayerHouseDefeated {
                 owner,
-                match_decided: self.multiplayer_decision().is_some(),
+                match_decided,
             });
         let planning_commit = if self.session.current_house() == Some(owner) {
             // Original gamemd:4FC1EE ->637A10, before Session+300/reveal

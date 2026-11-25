@@ -241,7 +241,7 @@ pub(super) fn row_scene_with(input: &Value, edit: impl FnOnce(&mut String, &mut 
         grid.recalculate_runtime_cell(s.sim.resolved_terrain.as_mut().unwrap(), registry, at);
     }
     let frame = s.sim.session.binary_frame();
-    s.sim.ore_growth_state = OreGrowthState::new(33, 33);
+    *s.sim.ore_growth_state = OreGrowthState::new(33, 33);
     s.sim
         .ore_growth_state
         .reset_native_tiberium_classes_for_rect((16, 16), 4, frame);
@@ -263,7 +263,7 @@ pub(super) fn row_scene_with(input: &Value, edit: impl FnOnce(&mut String, &mut 
             miner.set_harvesting_for_test(input["harvesting"] == true);
         }
     }
-    s.sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
+    *s.sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
     if let Some(owned) = input["owned_by_current_house"].as_bool() {
         s.sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
@@ -280,7 +280,7 @@ pub(super) fn row_scene_with(input: &Value, edit: impl FnOnce(&mut String, &mut 
             .seldom
             .discovery
             .set_owned_by_current_house_for_test(owned);
-        s.sim.fog = crate::sim::vision::FogState::new(33, 33);
+        *s.sim.fog = crate::sim::vision::FogState::new(33, 33);
         s.sim.fog.reveal_cells_for_owner(
             current,
             input["mapped"].as_array().into_iter().flatten().map(cell),
@@ -633,7 +633,7 @@ fn campaign_player_scan_rejects_unexplored_ore() {
         .seldom
         .discovery
         .set_owned_by_current_house_for_test(true);
-    scene.sim.fog = crate::sim::vision::FogState::new(33, 33);
+    *scene.sim.fog = crate::sim::vision::FogState::new(33, 33);
     assert!(crate::sim::vision::cell_is_shrouded(
         &scene.sim.fog,
         &crate::map::resolved_terrain::NativeCellQuery::canonical(

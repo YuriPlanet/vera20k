@@ -388,7 +388,7 @@ fn refused_miner_order_leaves_teleport_payload_untouched() {
         let mut grid = PathGrid::test_all_blocked(16, 16);
         grid.set_blocked(8, 8, false);
         grid.set_blocked(12, 8, false);
-        sim.path_grid = Some(std::sync::Arc::new(grid));
+        *sim.path_grid = Some(std::sync::Arc::new(grid));
 
         crate::sim::miner::miner_system::assign_miner_cell_destination(
             &mut sim,
@@ -437,7 +437,7 @@ fn foot_speed_without_class_payload_roundtrips_and_hashes_each_field() {
     let (mut sim, _) = fixture();
     // Scenario RNG is deliberately reset by the production deserializer.
     // Normalize this fixture to that load state before comparing whole hashes.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let mut expected = crate::sim::components::FootSpeedState::default();
     expected.set_speed_fraction(SimFixed::lit("0.625"));
     assert!(
@@ -748,7 +748,7 @@ fn drive_end_denial_flags_survive_save_and_block_generic_restore() {
         let (mut sim, _) = fixture();
         // Production load resets Scenario RNG; normalize the fixture before
         // comparing whole hashes, as in the Foot speed roundtrip above.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         activate_drive(entity);
         entity
