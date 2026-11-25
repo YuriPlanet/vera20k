@@ -225,7 +225,9 @@ recorded beside its code as a sim-scale deviation (AGENTS.md) and listed here.
   unit an earlier turn changed, runs in order as before, and a game with
   fewer objects plays exactly as without it. As the results are the same on
   every thread count, every build runs those turns on forks, which costs
-  more than running them in order: in the battle the object pass took 16 to
-  17% longer with one worker beside the simulation thread, 2.5% less with
-  four workers and 9 to 10% less with the whole pool, and a build without a
-  pool, which runs all of those turns on its one thread, 51 to 52% longer.
+  more than running them in order: in the battle the object pass took 13 to
+  14% longer with one worker beside the simulation thread, 3 to 5% less with
+  four workers and 9% less with the whole pool, and a build without a pool,
+  which runs all of those turns on its one thread, 51 to 52% longer when
+  last measured. With four or all workers the game's footprint peaked 0.4
+  to 0.5 GB higher, free room the allocator keeps (cause not yet found).

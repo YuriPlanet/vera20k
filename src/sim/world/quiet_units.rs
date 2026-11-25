@@ -21,8 +21,9 @@
 //! Only Units are marked, and only where no extension's unsorted per-visit
 //! steps can run ([`Simulation::extension_steps_unsorted`]). Idle sleeping's
 //! switch turns it on and off
-//! ([`Simulation::sleep_idle_objects`]). A debug build checks [`rests`] at the
-//! start of every quiet turn.
+//! ([`Simulation::sleep_idle_objects`]), but for a turn on a fork, which
+//! must run the same code in every process (`world::speculation`). A debug
+//! build checks [`rests`] at the start of every quiet turn.
 
 use super::Simulation;
 use crate::map::entities::EntityCategory;
@@ -41,10 +42,11 @@ impl Simulation {
 
     /// `id`'s turn is over, or its turn on a fork of the world begins from
     /// the state the last left (`world::speculation`): mark it quiet if
-    /// [`rests`] holds.
+    /// [`rests`] holds. A fork marks it whatever this process's switch,
+    /// which the pass's commit then follows.
     pub(super) fn quiet_after_turn(&mut self, id: u64, rules: &RuleSet) {
         if self.extension_steps_unsorted(rules)
-            || !self.idle_sleep.is_on()
+            || !(self.idle_sleep.is_on() || self.substrate.entities.is_fork())
             || self.substrate.entities.category_of(id) != Some(EntityCategory::Unit)
             || self.quiet(id)
         {

@@ -9,6 +9,8 @@
 //! moving or standing, finds every step off but
 //! - the `+0xC4` counter (`0x006FA646`), which every visit steps;
 //! - the common stage clock (Techno6FABC4), on the frames it advances;
+//! - the flash countdown (Techno6FAC31), while it counts: the current
+//!   player's orders start it, so peers hold different values;
 //! - `MissionClass::AI @ 0x005B3060`'s handler, when its dispatch timer runs
 //!   out;
 //! - the passive block (`0x006FA65A`), when its targeting timer runs out and
@@ -28,12 +30,16 @@
 //! departure changes, and those wake every object. The next turn's head
 //! ([`Simulation::steady_ai_visit`]) asks the last four, which read timers,
 //! the frame and the client's voice set; when none acts, it steps the
-//! counter and the stage clock in place of the visit. The rest of the turn
-//! (the locomotor, the fire visit) runs as before.
+//! counter, the stage clock and the flash countdown in place of the visit.
+//! The rest of the turn (the locomotor, the fire visit) runs as before. A
+//! turn on a fork of the world (`world::speculation`) leaves the voice set
+//! out of the question and records the voice probe's visit itself, so the
+//! code it runs does not depend on this player's audio.
 //!
-//! Only Units and Infantry are marked, under idle sleeping's switch and
-//! gates: no extension's unsorted per-visit steps, no campaign (its shroud
-//! prelude), a rule policy that allows sleeping.
+//! Only Units and Infantry are marked, under idle sleeping's switch (but for
+//! a turn on a fork, which marks whatever the switch) and gates: no
+//! extension's unsorted per-visit steps, no campaign (its shroud prelude), a
+//! rule policy that allows sleeping.
 //! [`Simulation::check_idle_sleep`] runs every visit a steady object would
 //! count and panics if it changed anything else: the object, the Scenario or
 //! Main stream or the object lists, and once a frame the state hash.
@@ -66,8 +72,14 @@ impl Simulation {
             return self.object_ai_visit_one_with_effects(id, rules, ctx);
         }
         // A turn on a fork notes it instead: the pass counts it where the
-        // turn's result applies (`world::speculation`).
-        if !super::speculation::note_steady_visit() {
+        // turn's result applies (`world::speculation`). The fork counts the
+        // visit whether or not the client waits on the object's voice, and
+        // records the voice probe's visit (Techno6F9EBB) itself, which the
+        // full visit would make: what a fork runs must not depend on this
+        // player's audio.
+        if super::speculation::note_steady_visit() {
+            self.record_unit_voice_visit(id);
+        } else {
             self.idle_sleep.steady += 1;
         }
         if self.idle_sleep.check {
@@ -76,16 +88,18 @@ impl Simulation {
             self.finish_sleep_check(id, check);
             return outcome;
         }
-        // The `+0xC4` step (`0x006FA646`) and the stage clock, the visit's
-        // two writes (`world::techno_ai::common_body`).
+        // The `+0xC4` step (`0x006FA646`), the stage clock and the flash
+        // countdown, the visit's writes (`world::techno_ai::common_body`).
         self.substrate.entities.count_mission_ai_visit(id);
         super::techno_ai::stage_step(self, id);
+        super::techno_ai::flash_step(&mut self.substrate, id, self.session.binary_frame());
         ObjectAiOutcome::visited()
     }
 
-    /// Whether steady `id`'s visit acts on more than its counter and stage
-    /// clock this frame: its mission handler or passive block is due, its
-    /// estimated health moves, or the client waits on its voice.
+    /// Whether steady `id`'s visit acts on more than its counter, stage
+    /// clock and flash countdown this frame: its mission handler or passive
+    /// block is due, its estimated health moves, or, outside a fork, the
+    /// client waits on its voice.
     fn steady_visit_acts(&self, id: u64, rules: &RuleSet) -> bool {
         let frame = self.session.binary_frame();
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -97,7 +111,7 @@ impl Simulation {
                 .recovers(entity.health.current(), frame)
             || (entity.passive_scan.timer().due(frame)
                 && super::techno_ai::passive_block_acts(self, id, rules))
-            || self.unit_voice_visit_interest.contains(&id)
+            || (!self.substrate.entities.is_fork() && self.unit_voice_visit_interest.contains(&id))
     }
 
     /// Check mode: what steady `id`'s visit must leave. Once a frame, on a
@@ -117,6 +131,8 @@ impl Simulation {
         if stage {
             expected.tick_native_stage(now);
         }
+        // The flash countdown is never hashed (`world_hash`).
+        expected.flashing.tick();
         let hash = !stage && self.idle_sleep.steady_hashed != frame.wrapping_add(1);
         if hash {
             self.idle_sleep.steady_hashed = frame.wrapping_add(1);
@@ -126,9 +142,11 @@ impl Simulation {
 
     /// `id`'s turn is over, or its turn on a fork of the world begins from
     /// the state the last left (`world::speculation`): mark it steady if
-    /// [`ai_rests`] holds and no trigger has given it a sound.
+    /// [`ai_rests`] holds and no trigger has given it a sound. A fork marks
+    /// it whatever this process's switch, which the pass's commit then
+    /// follows.
     pub(super) fn steady_after_turn(&mut self, id: u64, rules: &RuleSet) {
-        if !self.idle_sleep.is_on()
+        if !(self.idle_sleep.is_on() || self.substrate.entities.is_fork())
             || !matches!(
                 self.substrate.entities.category_of(id),
                 Some(EntityCategory::Unit | EntityCategory::Infantry)
@@ -171,12 +189,7 @@ impl Simulation {
 /// What a fighting, hurt or busy object fails comes first, so most answer
 /// after a few reads (every term only reads, so the order changes no
 /// answer).
-fn ai_rests(
-    entity: &GameEntity,
-    object: &ObjectType,
-    frame: u32,
-    rules: &RuleSet,
-) -> bool {
+fn ai_rests(entity: &GameEntity, object: &ObjectType, frame: u32, rules: &RuleSet) -> bool {
     let health = entity.health.current();
     // The target drops (`0x006FA30C`, `0x006FA472`, `0x006FA9D8`), the
     // off-mission clear (`0x006FA5E8`) and the reach block (`0x006FAB48`).
@@ -232,7 +245,7 @@ fn ai_rests(
         && entity.spawn_manager.is_none()
         && entity.cloak.is_none()
         && !super::techno_ai_cloak::cloak_producer_ticks(entity, object, rules.ares())
-        // The flash countdown (Techno6FAC31) and the damage sparks.
-        && !entity.flashing.counting()
+        // The damage sparks. The flash countdown (Techno6FAC31), which the
+        // current player's orders start (`flashing`), a counted visit steps.
         && !crate::sim::particles::spawn::damage_sparks_admit(entity, object, rules)
 }

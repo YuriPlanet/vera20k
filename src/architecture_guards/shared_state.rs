@@ -154,10 +154,11 @@ const POOL_ENTRY_PINS: &[(&str, usize, &str)] = &[
     (
         "sim/world/speculation.rs",
         2,
-        "speculative: each object turn on a fork of the world runs inside \
-         `SharedCellDummy::speculative`, whose stamps go to a private copy and which \
-         refuses writes of the other words; a turn that stamped or was refused is \
-         dropped and runs on the world. The other entry frees results on the pool",
+        "speculative: each task's choice whether to try its object's turn, and the \
+         turn on a fork of the world, run inside `SharedCellDummy::speculative`, \
+         whose stamps go to a private copy and which refuses writes of the other \
+         words; a turn that stamped or was refused is dropped and runs on the world. \
+         The other entry frees results on the pool",
     ),
     (
         "sim/world/techno_ai/scan_batch.rs",

@@ -104,7 +104,9 @@
 //! steady objects' AI visits are counted (`sim::world::steady_ai`):
 //! `--no-sleep` runs every turn and visit, which must give the same hashes,
 //! and `--sleep-check` runs every turn and visit either would skip and stops
-//! if one changed anything. The summary prints how many were counted.
+//! if one changed anything; it also runs every object pass's turns in Logic
+//! order (`sim::world::speculation`), as `--serial-turns` does. The summary
+//! prints how many were counted.
 //!
 //! The simulation batches its path searches and target scans as a real
 //! match does, and with the scans spreads the patrol scans over their period

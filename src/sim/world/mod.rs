@@ -61,8 +61,8 @@ mod quiet_units;
 mod quiet_units_tests;
 mod sinking;
 mod speculation;
-pub(crate) use speculation::Lost;
 pub use speculation::ObjectPassStats;
+pub(crate) use speculation::{Lost, note_local_read};
 #[cfg(all(test, tests_sim_world_p_s))]
 mod speculation_tests;
 mod steady_ai;

@@ -472,20 +472,67 @@ impl Simulation {
     /// stay awake. The note is unused: what it reads outside itself is
     /// checked at each visit ([`Self::infantry_disturbed`]).
     fn infantry_sleep(&self, id: u64, rules: &RuleSet) -> Option<(u32, u8)> {
+        // The flash countdown, which the current player's orders start
+        // (`flashing`), and the timers come after the rest.
+        if !self.infantry_at_rest(id, rules) {
+            return None;
+        }
+        let entity = self.substrate.entities.get(id)?;
+        if entity.flashing.frames() != 0 {
+            return None;
+        }
+        let now = self.session.binary_frame();
+        // `MissionClass::AI @ 0x005B3060`'s dispatch timer: the Guard and
+        // Area Guard handlers run when it is out, the idle fidget
+        // (`InfantryClass::UpdateIdleAction @ 0x0051CDB0`) inside them.
+        let mut frames =
+            u32::try_from(entity.mission.dispatch_timer().remaining_if_pending(now)?).ok()?;
+        // The passive block of `TechnoClass::AI_Update` (`0x006FA65A`) scans
+        // when its targeting timer runs out, if it would act at all.
+        if super::techno_ai::passive_block_acts(self, id, rules) {
+            let timer = entity.passive_scan.timer();
+            if timer.due(now) {
+                return None;
+            }
+            frames = frames.min(timer.remaining(now));
+        }
+        // FootClass::AI's idle Scatter (`0x004DADF5`) on frames with the low
+        // six bits set, and radiation on its application frames, read the
+        // terrain and the cell: the first runs, the second is read at each
+        // visit ([`Self::infantry_disturbed`]).
+        let scatter = (now | 0x3F).wrapping_add(if now & 0x3F == 0x3F { 64 } else { 0 });
+        let wake_at = now.checked_add(frames.min(SLEEP_CAP_FRAMES))?.min(scatter);
+        // The turn at `now` has run; sleeping starts with the next frame.
+        (wake_at > now.saturating_add(1)).then_some((wake_at, 0))
+    }
+
+    /// Whether infantryman `id` stands at rest in a game where idle objects
+    /// may sleep, whether or not this process lets them: every test of
+    /// [`Self::infantry_sleep`] but the flash countdown and the timers. It
+    /// reads shared saved state alone, so the live object pass may leave
+    /// such an infantryman's turn to its walk alike in every process and in
+    /// a loaded game (`world::speculation`).
+    pub(super) fn infantry_at_rest(&self, id: u64, rules: &RuleSet) -> bool {
         use crate::sim::movement::infantry_action::{DO_GUARD, DO_READY};
         if self.extension_steps_unsorted(rules)
             || self.session.uses_local_player_shroud()
             || !self.session.rule_policy().allows_idle_object_sleep()
         {
-            return None;
+            return false;
         }
-        let entity = self.substrate.entities.get(id)?;
-        let object = self.interner.object_type(entity.type_ref(), rules)?;
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        let (Some(object), Some(infantry), Some(leaf)) = (
+            self.interner.object_type(entity.type_ref(), rules),
+            entity.infantry.as_ref(),
+            entity.mission_leaf.as_infantry(),
+        ) else {
+            return false;
+        };
         let now = self.session.binary_frame();
-        let infantry = entity.infantry.as_ref()?;
-        let leaf = entity.mission_leaf.as_infantry()?;
         let health = entity.health.current();
-        let idle = infantry_rests(entity, object)
+        infantry_rests(entity, object)
             && matches!(
                 entity.mission.current().known(),
                 Some(MissionType::Guard | MissionType::AreaGuard)
@@ -509,7 +556,6 @@ impl Simulation {
                 now,
             )
             && entity.ion_blast_lift_pixels() == 0
-            && entity.flashing.frames() == 0
             && entity.emp_remaining() == 0
             && !entity.ai_frozen()
             && !entity.temporal.is_warping_someone()
@@ -518,32 +564,7 @@ impl Simulation {
             && entity.airstrike_link().is_none()
             && entity.invulnerability.is_none()
             && !self.object_custom_sounds.contains_key(&id)
-            && self.ground_building_in_cell(entity).is_none();
-        if !idle {
-            return None;
-        }
-        // `MissionClass::AI @ 0x005B3060`'s dispatch timer: the Guard and
-        // Area Guard handlers run when it is out, the idle fidget
-        // (`InfantryClass::UpdateIdleAction @ 0x0051CDB0`) inside them.
-        let mut frames =
-            u32::try_from(entity.mission.dispatch_timer().remaining_if_pending(now)?).ok()?;
-        // The passive block of `TechnoClass::AI_Update` (`0x006FA65A`) scans
-        // when its targeting timer runs out, if it would act at all.
-        if super::techno_ai::passive_block_acts(self, id, rules) {
-            let timer = entity.passive_scan.timer();
-            if timer.due(now) {
-                return None;
-            }
-            frames = frames.min(timer.remaining(now));
-        }
-        // FootClass::AI's idle Scatter (`0x004DADF5`) on frames with the low
-        // six bits set, and radiation on its application frames, read the
-        // terrain and the cell: the first runs, the second is read at each
-        // visit ([`Self::infantry_disturbed`]).
-        let scatter = (now | 0x3F).wrapping_add(if now & 0x3F == 0x3F { 64 } else { 0 });
-        let wake_at = now.checked_add(frames.min(SLEEP_CAP_FRAMES))?.min(scatter);
-        // The turn at `now` has run; sleeping starts with the next frame.
-        (wake_at > now.saturating_add(1)).then_some((wake_at, 0))
+            && self.ground_building_in_cell(entity).is_none()
     }
 }
 

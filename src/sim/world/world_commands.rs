@@ -151,8 +151,10 @@ pub struct Selection {
 }
 
 impl Selection {
-    /// The object is selected.
-    pub const fn is_selected(self) -> bool {
+    /// The object is selected: this player's selection, so a turn on a fork
+    /// that asks is lost (`world::speculation`).
+    pub fn is_selected(self) -> bool {
+        super::note_local_read();
         self.selected
     }
 

@@ -157,22 +157,6 @@ pub trait FrameClient {
     fn production_request_cleared(&mut self, _type_id: crate::sim::intern::InternedId) {}
 }
 
-/// What a frame lends (VERA-only, sim-scale), for an object turn run on a
-/// fork of the world (`world::speculation`) to tell whether a boundary it
-/// asks would have served it: such a turn is lost, and the pass runs it
-/// again on the world. Callbacks count as lent with a client, whose methods
-/// may take them.
-#[derive(Debug, Clone, Copy, Default)]
-pub(super) struct Lends {
-    sound: bool,
-    tactical_radar: bool,
-    outcome_wait: bool,
-    local_planning: bool,
-    network: bool,
-    callbacks: bool,
-    production: bool,
-}
-
 /// One sound delivery a turn on a fork reached: the frame's sound events
 /// so far ([`FrameEffects::flush_sound`]), or those and a looping sound's
 /// update ([`FrameEffects::update_looping_sound`]). The pass makes it on the
@@ -186,19 +170,19 @@ pub(super) struct SoundStep {
 
 /// The effects of an object turn run on a fork of the world
 /// (`world::speculation`): nothing is lent, sound deliveries are noted for
-/// the commit, and a boundary the frame lends loses the turn.
+/// the commit, and asking any other boundary or callback loses the turn,
+/// whatever the frame lends: a client lends more than a headless frame, and
+/// the turn's verdict must not depend on which.
 #[derive(Debug, Default)]
 pub(super) struct ForkEffects {
-    lends: Lends,
     selection_voice_suppressed: bool,
     pub(super) sound_steps: Vec<SoundStep>,
 }
 
 impl ForkEffects {
-    /// A fork's effects for a pass whose frame lends `lends`.
-    pub(super) fn new(lends: Lends, selection_voice_suppressed: bool) -> Self {
+    /// A fork's effects, with the selection voice as the frame has it.
+    pub(super) fn new(selection_voice_suppressed: bool) -> Self {
         Self {
-            lends,
             selection_voice_suppressed,
             sound_steps: Vec::new(),
         }
@@ -275,29 +259,10 @@ impl<'a> FrameEffects<'a> {
         }
     }
 
-    /// What this frame lends ([`Lends`]).
-    pub(super) fn lends(&mut self) -> Lends {
-        Lends {
-            sound: self.sound().is_some(),
-            tactical_radar: self.tactical_radar().is_some(),
-            outcome_wait: self.outcome_wait().is_some(),
-            local_planning: self.local_planning().is_some(),
-            network: self.network().is_some(),
-            callbacks: self.before_logic.is_some()
-                || self.command_applied.is_some()
-                || self.bounty_text.is_some()
-                || self.production_request_cleared.is_some()
-                || self.client.is_some(),
-            production: !self.production_factories.is_empty(),
-        }
-    }
-
-    /// A turn on a fork asked a role or callback: it is lost if the frame
-    /// lends that one.
-    fn asked(&self, lent: impl FnOnce(Lends) -> bool) {
-        if let Some(fork) = self.fork.as_deref()
-            && lent(fork.lends)
-        {
+    /// A turn on a fork asked a role or callback: it is lost
+    /// ([`ForkEffects`]).
+    fn asked(&self) {
+        if self.fork.is_some() {
             super::speculation::mark_lost(super::speculation::Lost::Boundary);
         }
     }
@@ -341,7 +306,7 @@ impl<'a> FrameEffects<'a> {
     }
 
     fn sound(&mut self) -> Option<&mut dyn SoundBoundary> {
-        self.asked(|lends| lends.sound);
+        self.asked();
         match self.sound.as_deref_mut() {
             Some(sound) => Some(sound),
             None => self.client.as_deref_mut().and_then(FrameClient::sound),
@@ -349,7 +314,7 @@ impl<'a> FrameEffects<'a> {
     }
 
     fn tactical_radar(&mut self) -> Option<&mut dyn TacticalRadarBoundary> {
-        self.asked(|lends| lends.tactical_radar);
+        self.asked();
         match self.tactical_radar.as_deref_mut() {
             Some(radar) => Some(radar),
             None => self
@@ -360,7 +325,7 @@ impl<'a> FrameEffects<'a> {
     }
 
     fn outcome_wait(&mut self) -> Option<&mut dyn OutcomeWaitBoundary> {
-        self.asked(|lends| lends.outcome_wait);
+        self.asked();
         match self.outcome_wait.as_deref_mut() {
             Some(wait) => Some(wait),
             None => self
@@ -371,7 +336,7 @@ impl<'a> FrameEffects<'a> {
     }
 
     fn local_planning(&mut self) -> Option<&mut dyn LocalPlanningBoundary> {
-        self.asked(|lends| lends.local_planning);
+        self.asked();
         match self.local_planning.as_deref_mut() {
             Some(planning) => Some(planning),
             None => self
@@ -382,7 +347,7 @@ impl<'a> FrameEffects<'a> {
     }
 
     fn network(&mut self) -> Option<&mut dyn NetworkCommandBoundary> {
-        self.asked(|lends| lends.network);
+        self.asked();
         match self.network_commands.as_deref_mut() {
             Some(network) => Some(network),
             None => self
@@ -417,7 +382,7 @@ impl<'a> FrameEffects<'a> {
         rules: &RuleSet,
         text: crate::sim::bounty::BountyText,
     ) {
-        self.asked(|lends| lends.callbacks);
+        self.asked();
         if let Some(boundary) = self.bounty_text.as_deref_mut() {
             boundary(sim, rules, text);
         } else if let Some(client) = self.client.as_deref_mut() {
@@ -503,7 +468,7 @@ impl<'a> FrameEffects<'a> {
         command: &CommandRecord,
         applied: bool,
     ) {
-        self.asked(|lends| lends.callbacks);
+        self.asked();
         if let Some(observer) = self.command_applied.as_deref_mut() {
             observer(sim, command, applied);
         } else if let Some(client) = self.client.as_deref_mut() {
@@ -542,12 +507,12 @@ impl<'a> FrameEffects<'a> {
     pub(crate) fn production_factories(
         &self,
     ) -> &'a [crate::sim::production::ProductionFactoryVisit] {
-        self.asked(|lends| lends.production);
+        self.asked();
         self.production_factories
     }
 
     pub(crate) fn clear_production_request(&mut self, type_id: crate::sim::intern::InternedId) {
-        self.asked(|lends| lends.callbacks);
+        self.asked();
         if let Some(clear) = self.production_request_cleared.as_deref_mut() {
             clear(type_id);
         } else if let Some(client) = self.client.as_deref_mut() {
@@ -576,7 +541,7 @@ impl<'a> FrameEffects<'a> {
     }
 
     pub(crate) fn before_logic(&mut self, sim: &Simulation) {
-        self.asked(|lends| lends.callbacks);
+        self.asked();
         if let Some(boundary) = self.before_logic.as_deref_mut() {
             boundary(sim);
         } else if let Some(client) = self.client.as_deref_mut() {

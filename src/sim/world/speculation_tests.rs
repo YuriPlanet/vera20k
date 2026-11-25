@@ -2,17 +2,21 @@
 //! world as the turns run at their slots would, a result whose object an
 //! earlier turn of the pass wrote is dropped, a fork counts a steady visit
 //! as the walk does, forks copy records into the allocations earlier passes
-//! left, one worker makes the world the whole pool does, and a pass begun
-//! under the size threshold runs as with the switch off.
+//! left, one worker makes the world the whole pool does, a pass begun under
+//! the size threshold runs as with the switch off, a game loaded mid-way
+//! runs its passes as the game it was saved from, the client's voice set
+//! chooses no code a fork runs, and a tank firing at a visible enemy loses
+//! the turns that fire, none to a per-player read.
 
 use super::speculation::Lost;
-use super::{FrameEffects, LifecycleTestEvent, Simulation};
+use super::{FrameEffects, LifecycleTestEvent, SimSoundEvent, Simulation};
 use crate::map::entities::{EntityCategory, MapEntity};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::scenario_session::ScenarioGameMode;
+use crate::sim::snapshot::GameSnapshot;
 
 fn rules() -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(
@@ -44,10 +48,23 @@ fn armed_rules() -> RuleSet {
 /// sleeping and each turn drawing from its own stream as in a match, and
 /// speculation on or off, from passes of any size.
 fn tanks(rules: &RuleSet, cells: &[(u16, u16)], speculate: bool) -> (Simulation, PathGrid) {
+    let (mut sim, grid) = tanks_in(rules, cells, speculate, 32);
+    sim.speculate_from_slots_for_test(0);
+    (sim, grid)
+}
+
+/// [`tanks`] on an arena `size` cells wide, from passes of the size a match
+/// speculates.
+fn tanks_in(
+    rules: &RuleSet,
+    cells: &[(u16, u16)],
+    speculate: bool,
+    size: u16,
+) -> (Simulation, PathGrid) {
     let mut sim = Simulation::with_seed(0x51EE_9000_0003);
     sim.session_mut_for_test()
         .set_game_mode(ScenarioGameMode::Skirmish);
-    let grid = crate::sim::arena_fixture::flat_arena(&mut sim, rules);
+    let grid = crate::sim::arena_fixture::flat_arena_with_size(&mut sim, rules, size);
     let tanks: Vec<MapEntity> = cells
         .iter()
         .map(|&(cell_x, cell_y)| MapEntity {
@@ -77,7 +94,6 @@ fn tanks(rules: &RuleSet, cells: &[(u16, u16)], speculate: bool) -> (Simulation,
     sim.sleep_idle_objects(true);
     sim.separate_turn_streams(true);
     sim.speculate_object_turns(speculate);
-    sim.speculate_from_slots_for_test(0);
     (sim, grid)
 }
 
@@ -358,4 +374,152 @@ fn a_pass_begun_under_the_threshold_runs_as_with_the_switch_off() {
         }
     }
     panic!("no shot put a shell into Logic");
+}
+
+/// A game loaded mid-way, its passes of a match's size (4,096 tanks), runs
+/// them as the game it was saved from: both run and keep the same turns on
+/// forks and reach the same hash, frame by frame. The game that goes on
+/// holds smudge dirt no save keeps, as a smudge write after its frame's
+/// flush leaves it; its pass publishes the dirt before deciding whether to
+/// run turns on forks, as the loaded game's finds none.
+#[test]
+fn a_game_loaded_mid_way_runs_its_passes_as_the_game_it_was_saved_from() {
+    let rules = rules();
+    let size = 72;
+    let cells: Vec<(u16, u16)> = (4..68).flat_map(|x| (4..68).map(move |y| (x, y))).collect();
+    let (mut sim, grid) = tanks_in(&rules, &cells, true, size);
+    assert!(sim.substrate.logic.len() >= 4096);
+    *sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(size, size));
+    for _ in 0..3 {
+        tick(&mut sim, &rules, &grid);
+    }
+    assert!(
+        sim.object_pass_stats().kept > 0,
+        "{}",
+        sim.object_pass_stats()
+    );
+    let bytes = GameSnapshot::save_validated(&sim, 1, 2, "speculation", 0);
+    let mut loaded = GameSnapshot::load(&bytes).expect("the save loads").sim;
+    loaded
+        .restore_after_snapshot_load()
+        .expect("the save restores");
+    let loaded_grid = crate::sim::arena_fixture::flat_ground_with_size(&mut loaded, &rules, size);
+    // A match's switches, which no save carries (`app::persistence`).
+    loaded.sleep_idle_objects(true);
+    loaded.separate_turn_streams(true);
+    loaded.speculate_object_turns(true);
+    // Native load reseeds the Scenario stream and clears each Foot's move
+    // sound (FootClass::Load 0x4DB60D..0x4DB624).
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    for id in sim.substrate.logic.as_slice().to_vec() {
+        sim.substrate.restore_move_sound_state_after_load(id);
+    }
+    assert_eq!(sim.state_hash(), loaded.state_hash(), "the loaded game");
+    sim.smudge_grid
+        .as_mut()
+        .expect("the smudge grid")
+        .test_force_set(30, 30, Default::default());
+    let before = sim.object_pass_stats().clone();
+    for frame in 0..6 {
+        tick(&mut sim, &rules, &grid);
+        tick(&mut loaded, &rules, &loaded_grid);
+        assert_eq!(
+            sim.state_hash(),
+            loaded.state_hash(),
+            "the games differ after frame {frame}"
+        );
+    }
+    let (went_on, loaded) = (sim.object_pass_stats(), loaded.object_pass_stats());
+    assert_eq!(
+        [
+            went_on.passes - before.passes,
+            went_on.unspeculated - before.unspeculated,
+            went_on.speculated - before.speculated,
+            went_on.kept - before.kept,
+            went_on.committed - before.committed,
+        ],
+        [
+            loaded.passes,
+            loaded.unspeculated,
+            loaded.speculated,
+            loaded.kept,
+            loaded.committed,
+        ],
+        "\n{went_on}\n{loaded}"
+    );
+    assert_eq!(loaded.passes, 6, "{loaded}");
+}
+
+/// The client's voice set chooses no code a turn on a fork runs: of twins
+/// whose steady tanks' turns are kept, the one waiting on a tank's voice
+/// keeps, applies and counts as steady what the other does, and its frames
+/// still record the tank's voice visit (Techno6F9EBB).
+#[test]
+fn a_voice_wait_on_one_twin_keeps_the_turns_of_the_other() {
+    let rules = rules();
+    let cells = [(4, 4), (26, 26)];
+    let (mut waiting, grid) = tanks(&rules, &cells, true);
+    let (mut other, other_grid) = tanks(&rules, &cells, true);
+    // The tanks settle and go steady.
+    for _ in 0..60 {
+        tick(&mut waiting, &rules, &grid);
+        tick(&mut other, &rules, &other_grid);
+    }
+    let tank = waiting.substrate.logic.as_slice()[0];
+    let counts = |sim: &Simulation| {
+        let stats = sim.object_pass_stats();
+        [
+            stats.speculated,
+            stats.kept,
+            stats.committed,
+            sim.steady_ai_visits(),
+        ]
+    };
+    let before = (counts(&waiting), counts(&other));
+    for frame in 0..30 {
+        waiting.sound_events.clear_for_test();
+        waiting.prepare_unit_voice_visits([tank].into());
+        tick(&mut waiting, &rules, &grid);
+        tick(&mut other, &rules, &other_grid);
+        assert!(
+            waiting.sound_events.as_slice().iter().any(
+                |event| matches!(event, SimSoundEvent::UnitVoiceVisit { owner } if *owner == tank)
+            ),
+            "frame {frame} recorded the tank's voice visit"
+        );
+        assert_eq!(
+            waiting.state_hash(),
+            other.state_hash(),
+            "the twins differ after frame {frame}"
+        );
+    }
+    let delta =
+        |now: [u64; 4], then: [u64; 4]| std::array::from_fn::<u64, 4, _>(|at| now[at] - then[at]);
+    let (waited, went) = (
+        delta(counts(&waiting), before.0),
+        delta(counts(&other), before.1),
+    );
+    assert!(
+        went[2] > 0 && went[3] > 0,
+        "turns were kept and counted steady"
+    );
+    assert_eq!(waited, went, "speculated, kept, applied, steady");
+}
+
+/// A tank firing at a visible enemy asks GetFireError every turn, whose
+/// visual state (T17) reads the target's owner byte, a per-player value,
+/// only of an `Invisible=` target: its turns on forks are lost to its shots
+/// (`Lost::Fire`), none to a per-player read (`Lost::Local`).
+#[test]
+fn a_tank_firing_at_a_visible_enemy_loses_the_turns_that_fire() {
+    let rules = armed_rules();
+    let (mut sim, grid, [shooter, target]) = duel(&rules, true);
+    sim.speculate_from_slots_for_test(0);
+    order_attack(&mut sim, shooter, target);
+    for _ in 0..120 {
+        tick(&mut sim, &rules, &grid);
+    }
+    let stats = sim.object_pass_stats();
+    assert!(stats.lost(Lost::Fire) > 0 && stats.committed > 0, "{stats}");
+    assert_eq!(stats.lost(Lost::Local), 0, "{stats}");
 }

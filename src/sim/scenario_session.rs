@@ -1780,11 +1780,13 @@ impl ScenarioSession {
 
     /// This process's sender while players share Houses.
     pub(crate) fn local_shared_house_source(&self) -> Option<i8> {
+        crate::sim::world::note_local_read();
         self.view.shared_house_source
     }
 
     /// VERA watching: this process watches the match and sends nothing.
     pub fn watcher(&self) -> bool {
+        crate::sim::world::note_local_read();
         self.view.watching
     }
 
@@ -1794,6 +1796,7 @@ impl ScenarioSession {
 
     /// VERA watching: the watcher shows the observer's sidebar.
     pub fn watcher_observes(&self) -> bool {
+        crate::sim::world::note_local_read();
         self.view.observer_sidebar
     }
 
@@ -2117,6 +2120,7 @@ impl ScenarioSession {
     }
 
     pub fn current_house(&self) -> Option<InternedId> {
+        crate::sim::world::note_local_read();
         self.view.current_house
     }
 

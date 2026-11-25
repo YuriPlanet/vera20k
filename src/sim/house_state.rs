@@ -1582,7 +1582,10 @@ impl HouseState {
         self.is_human
     }
 
-    pub const fn player_control(&self) -> bool {
+    /// `+0x1ED`: set on this process's house alone, so a turn on a fork
+    /// that asks is lost (`world::speculation`).
+    pub fn player_control(&self) -> bool {
+        crate::sim::world::note_local_read();
         self.player_control
     }
 

@@ -1437,8 +1437,9 @@ pub(in crate::sim::world) fn stage_step(sim: &mut Simulation, id: u64) {
 /// The countdown owns no RNG or CdTimer. Native redraw virtual+124 is a
 /// presentation dependency; the existing +F0 supplies its phase bits.
 /// A building whose countdown ran and flipped its flash phase relights its
-/// slot anims (`0x006FAC62..0x006FACC8`).
-fn flash_step(substrate: &mut ObjectSubstrate, id: u64, frame: u32) {
+/// slot anims (`0x006FAC62..0x006FACC8`). A steady object's counted visit
+/// runs this step too (`world::steady_ai`).
+pub(in crate::sim::world) fn flash_step(substrate: &mut ObjectSubstrate, id: u64, frame: u32) {
     if !ai_alive(substrate, id) {
         return;
     }

@@ -1,5 +1,6 @@
 //! Idle sleep changes no result: a sleeping building and an awake twin stay
-//! in the same state, hash by hash.
+//! in the same state, hash by hash. A standing GI sleeps as much with object
+//! turns speculated (`world::speculation`) as without.
 
 use super::Simulation;
 use crate::map::entities::{EntityCategory, MapEntity};
@@ -388,4 +389,40 @@ fn radiation_in_a_sleeping_gis_cell_wakes_it() {
             &mut sim.lighting_sources,
         );
     });
+}
+
+/// An infantryman at rest is left to the walk, where it sleeps: with the
+/// switch on, a standing GI's visits are counted as its twin's with the
+/// switch off are, not its turn run whole on a fork every frame and its
+/// sleep undone.
+#[test]
+fn a_standing_gi_sleeps_as_with_the_switch_off() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &fixture.rules;
+    let gi = |speculate: bool| {
+        let (mut sim, _) = standing_gi(rules, true);
+        sim.separate_turn_streams(true);
+        sim.speculate_object_turns(speculate);
+        sim.speculate_from_slots_for_test(0);
+        sim
+    };
+    let (mut on, mut off) = (gi(true), gi(false));
+    for n in 0..300 {
+        frame(&mut on, rules);
+        frame(&mut off, rules);
+        assert_eq!(
+            on.state_hash(),
+            off.state_hash(),
+            "the twins differ after frame {n}"
+        );
+        assert_eq!(
+            on.idle_sleep_counts(),
+            off.idle_sleep_counts(),
+            "asleep and counted visits after frame {n}"
+        );
+    }
+    assert!(off.idle_sleep_counts().1 > 150, "the GI slept");
+    assert_eq!(on.object_pass_stats().passes, 300);
 }

@@ -833,10 +833,13 @@ impl FireQuery for WorldQuery<'_, '_> {
                 target.position.ry(),
             )
         });
+        // A sensor query asks `+0x41A` only of an `Invisible=` object
+        // (`cloak_disguise::visual_character`), so only then is it read: a
+        // turn on a fork that reads it is lost (`world::speculation`).
         i32::from(target.visual_character(
             obj.cloaking_stages(subject.rules.general.cloaking_stages),
             invisible,
-            subject.world.shared_owned_by_current_house(target),
+            invisible && subject.world.shared_owned_by_current_house(target),
             crate::sim::cloak_disguise::VisualCharacterQuery::sensor(true, sensed, false),
         ))
     }

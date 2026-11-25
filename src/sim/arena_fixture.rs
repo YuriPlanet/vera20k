@@ -139,8 +139,14 @@ pub fn flood(
 /// Install the arena on `sim`, with commands executing on the next tick, and
 /// return its path grid.
 pub fn flat_arena(sim: &mut Simulation, rules: &RuleSet) -> PathGrid {
+    flat_arena_with_size(sim, rules, 32)
+}
+
+/// The same arena `size` cells wide, for a fixture with more objects than
+/// the 32-cell arena holds.
+pub fn flat_arena_with_size(sim: &mut Simulation, rules: &RuleSet, size: u16) -> PathGrid {
     sim.set_input_delay_ticks(0);
-    flat_ground(sim, rules)
+    flat_ground_with_size(sim, rules, size)
 }
 
 /// Install the arena's ground, playfield and navigation on `sim` and return
@@ -149,7 +155,8 @@ pub fn flat_ground(sim: &mut Simulation, rules: &RuleSet) -> PathGrid {
     flat_ground_with_size(sim, rules, 32)
 }
 
-fn flat_ground_with_size(sim: &mut Simulation, rules: &RuleSet, size: u16) -> PathGrid {
+/// [`flat_ground`] `size` cells wide.
+pub fn flat_ground_with_size(sim: &mut Simulation, rules: &RuleSet, size: u16) -> PathGrid {
     sim.session.set_map_width_for_test(size);
     sim.session.set_map_height_for_test(size);
     sim.install_resolved_terrain_for_new_map(clear_ground(size));

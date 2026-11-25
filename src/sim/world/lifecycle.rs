@@ -147,13 +147,17 @@ pub struct TechnoDiscoveryHistory {
 }
 
 impl TechnoDiscoveryHistory {
-    /// `+0x41A`.
-    pub const fn owned_by_current_house(self) -> bool {
+    /// `+0x41A`: this process's byte, so a turn on a fork that asks is lost
+    /// (`world::speculation`).
+    pub fn owned_by_current_house(self) -> bool {
+        super::note_local_read();
         self.owned_by_current_house
     }
 
-    /// `+0x41B`.
-    pub const fn discovered_by_current_house(self) -> bool {
+    /// `+0x41B`: this process's byte, so a turn on a fork that asks is lost
+    /// (`world::speculation`).
+    pub fn discovered_by_current_house(self) -> bool {
+        super::note_local_read();
         self.discovered_by_current_house
     }
 

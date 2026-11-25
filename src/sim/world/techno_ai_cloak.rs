@@ -273,6 +273,10 @@ fn stock_cloak_tick_facts(
     // `ShouldNotBeCloaked_Wrapper`: a passing object still reports
     // should-uncloak while an active effect forces the decloak.
     let should_uncloak = should_uncloak || entity.phobos_force_decloak();
+    // The tick asks only sensor queries, which ask `+0x41A` only of an
+    // `Invisible=` object (`cloak_disguise::visual_character`), so only then
+    // is it read: a turn on a fork that reads it is lost (`world::speculation`).
+    let invisible = object.invisible || (is_building && object.invisible_in_game);
     Some(crate::sim::cloak_disguise::CloakTickFacts::new(
         current_frame,
         // CloakingTick6FB7FD..6FB823 applies this contact exclusion before
@@ -288,8 +292,8 @@ fn stock_cloak_tick_facts(
         object.cloaking_speed,
         rules.general.cloak_delay_frames,
         object.cloaking_stages(rules.general.cloaking_stages),
-        object.invisible || (is_building && object.invisible_in_game),
-        sim.shared_owned_by_current_house(entity),
+        invisible,
+        invisible && sim.shared_owned_by_current_house(entity),
         is_building,
     ))
 }

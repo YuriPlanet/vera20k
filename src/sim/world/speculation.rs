@@ -10,6 +10,18 @@
 //! object's slot it applies that object's kept result, or runs the turn
 //! there as it always has. A smaller pass runs every turn in the walk.
 //!
+//! **Which passes.** Besides the smaller ones, the walk runs every turn of a
+//! pass in a campaign (each turn reads the local player's shroud,
+//! `TechnoClass` vt+0x4A0's prelude), with the idle-sleep check on
+//! (sim-bench's `--sleep-check`, which runs each counted visit whole), with
+//! overlay receipts pending from the frame's steps before the pass (every
+//! turn's commit would publish them), or with a grid whose cell Dummy is not
+//! the world's (some tests; every match binds them together). Each reads
+//! what a loaded game reads alike: the slot count, the session, receipts the
+//! frame's own earlier steps made (its tail takes them all). Smudge dirt,
+//! which no save keeps and which may stay from an earlier frame, is
+//! published first.
+//!
 //! **The one deviation.** A kept turn read the world as the pass found it,
 //! not as the turns before it in the same pass left it: an object may react
 //! one frame later to what another did earlier in the same frame. It applies
@@ -38,22 +50,51 @@
 //!
 //! **Which turns are tried.** Units and infantry not dying that have no
 //! NavCom or are moving now, whose mission handler is not due and whose
-//! passive block does not act: saved state alone, so a loaded game tries the
-//! same ones. A due handler may name a target, which a kept result could not
-//! check against the objects turns before it in the pass removed, and an
-//! acting passive block takes a batched scan's answer; a unit standing with
-//! a NavCom mostly asks for a path, and the other objects mostly write the
-//! world. They run in the walk.
+//! passive block does not act, but for infantry at rest
+//! ([`Simulation::infantry_at_rest`]): shared saved state alone, so every
+//! process and a loaded game try the same ones. The selection runs inside
+//! the shared cell Dummy's private copy, as a turn does: the passive block's
+//! gate may look up a cell the map lacks, which stamps the Dummy. A due
+//! handler may name a target, which a kept result could not check against
+//! the objects turns before it in the pass removed, and an acting passive
+//! block takes a batched scan's answer; a unit standing with a NavCom mostly
+//! asks for a path, an infantryman at rest may sleep, which the walk counts
+//! for almost nothing and a fork would not, and the other objects mostly
+//! write the world. They run in the walk.
 //!
 //! **Lost turns.** A turn on a fork that reaches work only the world itself
 //! may do ([`Lost`]: a step into another cell, a cell mark query, lifting or
 //! putting down a cell mark, a path search or request, a shot, a removal, a
-//! batched scan's answer, a team's latch, a pointer expiry's broadcast, a
-//! boundary the frame lends, an anim made for a death or taken down) marks
-//! itself lost, skips that work and stops at its next checkpoint
+//! batched scan's answer, a team's latch, a pointer expiry's broadcast, any
+//! boundary or callback of the frame, an anim made for a death or taken
+//! down, a read of what only this player's game holds) marks itself lost,
+//! skips that work and stops at its next checkpoint
 //! ([`Simulation::stop_lost_turn`], after the AI visit and after the
 //! locomotor's Process). Such work is costly on a fork, which would copy
 //! whole the fields it writes, and its result would be dropped anyway.
+//!
+//! **Per-player inputs.** Peers in a match, and a game loaded from a save,
+//! must try and keep the same turns, so no verdict may depend on what only
+//! one process holds. What a fork may still read of it, and why its verdict
+//! cannot follow:
+//! - the frame's boundaries and callbacks (a client lends more than a
+//!   headless frame): asking any loses the turn, lent or not
+//!   ([`ForkEffects`]); a sound delivery is noted, not asked;
+//! - the local house, the selection, the local discovery bytes and a house's
+//!   control by this process ([`note_local_read`]): reading any loses the
+//!   turn, whatever its value;
+//! - the client's voice set: a steady object's counted visit leaves it out
+//!   of the question and records the voice probe's visit itself
+//!   (`world::steady_ai`), so it only adds a sound to the result;
+//! - the flash countdown, which the current player's orders start: a counted
+//!   visit steps it, so steadiness does not ask it, and only the sleep cell a
+//!   turn leaves follows it;
+//! - idle sleeping's switch (`VERA20K_IDLE_SLEEP=0`): a fork marks quiet and
+//!   steady whatever the switch (see **Sleep**), which then decides only the
+//!   sleep cell a turn leaves, read by no verdict.
+//!
+//! The results' sounds and sleep cells may differ between peers, as the
+//! walk's do; neither is hashed or decides a verdict.
 //!
 //! **Cost.** A turn on a fork costs more than the same turn in the walk: its
 //! first write copies its object's main record (the seldom part stays shared
@@ -62,12 +103,13 @@
 //! thread count, so every build pays this and only threads hide it. In
 //! sim-bench's battle (30 houses, about 23,000 objects, 1,200 frames, an
 //! Apple M4 busy with other work, each run started beside one with
-//! `--serial-turns`) a pass of 26,200 slots tried 14,000 turns and applied
-//! 12,600 of them. The object pass took 16 to 17% longer with one worker
-//! (`--threads 1`, beside which the simulation thread runs forks too), 2.5%
-//! less with four and 9 to 10% less with the whole pool. A build without a
+//! `--serial-turns`) a pass of 26,200 slots tried 13,800 turns and applied
+//! 12,400 of them. The object pass took 13 to 14% longer with one worker
+//! (`--threads 1`, beside which the simulation thread runs forks too), 3 to
+//! 5% less with four and 9% less with the whole pool. A build without a
 //! pool runs every tried turn on its one thread before the walk: 51 to 52%
-//! longer, measured on a build whose every fork ran on one thread.
+//! longer when last measured, on a build whose every fork ran on one thread
+//! and which still tried infantry at rest.
 //! [`SPECULATE_FROM_SLOTS`] bounds that cost: a game whose passes begin with
 //! fewer Logic slots pays none of it.
 //!
@@ -78,19 +120,23 @@
 //! allocator's free room spread over every thread's share of it: with the
 //! whole pool a run peaked 0.7 to 2.1 GB above its `--serial-turns` twin
 //! with the same live bytes (macOS's allocator held 3.0 GB for 435 MB of
-//! allocations, against 0.79 GB for 428 MB). With the spares its footprint
-//! peaks 40 to 110 MB above it with one, four or all workers: the spares
-//! (about 31 MB in the battle), and the allocator's room for what a copy
-//! still allocates on a worker (its lists, a seldom part it writes).
+//! allocations, against 0.79 GB for 428 MB). With the spares the live bytes
+//! are the twin's (460 MB in the battle), but the footprint is not: with
+//! four or all workers it rises to about 1.0 GB and falls back, and peaks
+//! 0.4 to 0.5 GB above the twin's 0.51 to 0.57 GB (70 to 90 MB with one
+//! worker). The extra is free room the allocator keeps in its small
+//! regions (44% of them, against 20%); its cause is not yet found.
 //!
 //! **Sleep.** A fork first wakes its own object, settling the visits it is
 //! owed, then marks it quiet and steady again from that state alone
-//! ([`Simulation::quiet_after_turn`], [`Simulation::steady_after_turn`]) and
-//! runs its turn, which skips and counts what the walk's would: a steady
-//! object's AI visit is counted on the fork, which notes it for the pass to
-//! count where the result applies. No turn reads the marks the world holds
-//! for its object, which no save keeps, so a loaded game keeps the same
-//! turns. The kept result leaves the state hash a counted visit would.
+//! ([`Simulation::quiet_after_turn`], [`Simulation::steady_after_turn`]),
+//! whatever this process's sleep switch, and runs its turn, which skips and
+//! counts what the walk's would: a steady object's AI visit is counted on
+//! the fork, which notes it for the pass to count where the result applies.
+//! No turn reads the marks the world holds for its object, which no save
+//! keeps, so a loaded game keeps the same turns. The kept result leaves the
+//! state hash a counted visit would; with the switch off, its commit clears
+//! the marks the fork left. The infantry that may sleep are not tried.
 //!
 //! **A fork stays its base.** After every turn each written field takes its
 //! base's handle again ([`Simulation::restore_written_fields_from`]), the
@@ -111,7 +157,7 @@ use std::time::Duration;
 
 use super::fork::SimulationField;
 use super::frame_channel::FrameChannel;
-use super::frame_effects::{ForkEffects, Lends, SoundStep};
+use super::frame_effects::{ForkEffects, SoundStep};
 use super::object_turn::ObjectTurnOutcome;
 use super::substrate::{ObjectSubstrate, SubstrateField};
 use super::{FrameAdvanceError, FrameEffects, SimFireEvent, SimSoundEvent, Simulation};
@@ -180,14 +226,17 @@ pub(crate) enum Lost {
     Team,
     /// A pointer expiry's broadcast to its listeners.
     Expiry,
-    /// A boundary or callback the frame lends ([`FrameEffects::lends`]).
+    /// A boundary or callback of the frame asked, whether or not the frame
+    /// lends it.
     Boundary,
     /// An Anim made for a death or taken down (`AnimClass` ctor, `UnInit`).
     Anim,
+    /// A read of what only this player's game holds ([`note_local_read`]).
+    Local,
 }
 
 impl Lost {
-    const ALL: [Lost; 11] = [
+    const ALL: [Lost; 12] = [
         Lost::CellStep,
         Lost::MarkQuery,
         Lost::Marks,
@@ -199,6 +248,7 @@ impl Lost {
         Lost::Expiry,
         Lost::Boundary,
         Lost::Anim,
+        Lost::Local,
     ];
 
     fn name(self) -> &'static str {
@@ -214,6 +264,7 @@ impl Lost {
             Lost::Expiry => "expiry",
             Lost::Boundary => "boundary",
             Lost::Anim => "anim",
+            Lost::Local => "local",
         }
     }
 }
@@ -273,6 +324,15 @@ pub(super) fn mark_lost(at: Lost) {
             ..notes
         }));
     }
+}
+
+/// A read of what only this player's game holds: the local house, the
+/// selection, the local discovery bytes, a house's control by this process
+/// (see the module's **Per-player inputs**). A turn on a fork that makes one
+/// is lost, so its verdict cannot depend on the value read; outside such a
+/// turn, nothing.
+pub(crate) fn note_local_read() {
+    mark_lost(Lost::Local);
 }
 
 /// Note that the turn this thread runs on a fork made the end-of-turn commit,
@@ -360,9 +420,9 @@ pub struct ObjectPassStats {
     /// Passes that ran turns on forks.
     pub passes: u64,
     /// Passes with the switch on that ran every turn in the walk: the pass
-    /// began with fewer Logic slots than [`SPECULATE_FROM_SLOTS`], the
-    /// idle-sleep check was on, a commit was pending, or the grid had a
-    /// Dummy of its own.
+    /// began with fewer Logic slots than [`SPECULATE_FROM_SLOTS`], the game
+    /// is a campaign, the idle-sleep check was on, a commit was pending, or
+    /// the grid had a Dummy of its own.
     pub unspeculated: u64,
     /// Logic slots the walks of those passes reached.
     pub walked: u64,
@@ -578,7 +638,6 @@ struct TurnInputs<'a> {
     rules: &'a RuleSet,
     overlay_registry: Option<&'a OverlayTypeRegistry>,
     dummy: SharedCellDummy,
-    lends: Lends,
     selection_voice_suppressed: bool,
 }
 
@@ -710,7 +769,9 @@ impl SpeculatedPass {
 
 /// Whether `id`'s turn is worth trying on a fork: a unit's or infantryman's,
 /// not dying, that has no NavCom or is moving now, whose mission handler is
-/// not due and whose passive block does not act. Saved state alone.
+/// not due and whose passive block does not act, and not an infantryman at
+/// rest. Shared saved state alone: run inside the shared cell Dummy's
+/// private copy, as the passive block's gate may look a missing cell up.
 fn likely_kept(
     world: &Simulation,
     id: u64,
@@ -719,10 +780,9 @@ fn likely_kept(
     frame: u32,
 ) -> bool {
     world.substrate.entities.get(id).is_some_and(|entity| {
-        matches!(
-            entity.category(),
-            EntityCategory::Unit | EntityCategory::Infantry
-        ) && !entity.death.is_dying()
+        let category = entity.category();
+        matches!(category, EntityCategory::Unit | EntityCategory::Infantry)
+            && !entity.death.is_dying()
             && (entity.navigation.nav_com().is_none()
                 || crate::sim::movement::motion_query::is_moving_now(entity, speed, frame))
             // A due handler mostly draws the Scenario stream for its next
@@ -733,6 +793,10 @@ fn likely_kept(
             && !entity.mission_handler_due(frame)
             && !(entity.passive_scan.timer().due(frame)
                 && super::techno_ai::passive_block_acts(world, id, rules))
+            // An infantryman at rest may sleep, and the walk then counts its
+            // visit for almost nothing; a fork would wake it and run its
+            // turn whole, every frame (`world::idle_sleep`).
+            && !(category == EntityCategory::Infantry && world.infantry_at_rest(id, rules))
     })
 }
 
@@ -818,11 +882,20 @@ impl Simulation {
             self.speculation.stats.unspeculated += 1;
             return None;
         }
-        // A turn's fork must reach the Dummy its run detaches, and a commit
-        // pending from before the pass would make every turn's commit write
-        // the world.
+        // The smudge grid's dirt waits for the next commit, the walk's first
+        // turn's, and may stay from an earlier frame; no save keeps it, so
+        // publish it now (the radar's redraw marks) and let the gate read
+        // what a loaded game reads too.
+        Self::flush_smudge_dirty(&mut self.smudge_grid, &mut self.dirty_cells);
+        // The check runs every counted visit, and a campaign's turns read the
+        // local player's shroud (`TechnoClass` vt+0x4A0's prelude). A turn's
+        // fork must reach the Dummy its run detaches: in every match the
+        // grid's is the world's (`bind_shared_cell_dummy`). Overlay receipts
+        // pending from this frame's steps before the pass (the frame's tail
+        // takes them all) would make every turn's commit write the world.
         let dummy = self.effective_shared_cell_dummy();
         if self.idle_sleep.check
+            || self.session.uses_local_player_shroud()
             || self.commit_work_pending()
             || !dummy.same_identity(&self.shared_cell_dummy)
         {
@@ -834,7 +907,6 @@ impl Simulation {
             rules,
             overlay_registry,
             dummy,
-            lends: effects.lends(),
             selection_voice_suppressed: !effects.selection_voice_enabled(),
         };
         // Each slot takes a spare record for its turn's copy, while they last.
@@ -862,7 +934,10 @@ impl Simulation {
                 &mut slots,
                 Worker::default(),
                 |worker, slot| {
-                    if likely_kept(world, slot.id, inputs.rules, speed, frame) {
+                    let (tried, _) = inputs
+                        .dummy
+                        .speculative(|| likely_kept(world, slot.id, inputs.rules, speed, frame));
+                    if tried {
                         worker.turn(world, slot, &inputs);
                     }
                 },
@@ -922,6 +997,11 @@ impl Simulation {
         self.substrate
             .entities
             .commit_writes(writes, &mut pass.spares);
+        // A fork marks its object quiet and steady whatever this process's
+        // sleep switch; with the switch off the world holds no marks.
+        if !self.idle_sleep.is_on() {
+            self.substrate.entities.wake(id);
+        }
         self.idle_sleep.steady += u64::from(steady_visit);
         // Each sound delivery the turn made, after the sounds it had
         // emitted by then.
@@ -999,7 +1079,7 @@ impl Simulation {
         inputs: &TurnInputs<'_>,
     ) -> (Verdict, Option<Kept>) {
         let notes = TurnNotes::begin();
-        let mut effects = ForkEffects::new(inputs.lends, inputs.selection_voice_suppressed);
+        let mut effects = ForkEffects::new(inputs.selection_voice_suppressed);
         let (ran, dummy_written) = inputs.dummy.speculative(|| {
             // The slot draws from its object's own stream, as it does in the
             // walk (`world::turn_streams`).
