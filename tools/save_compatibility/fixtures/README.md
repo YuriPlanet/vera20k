@@ -27,6 +27,7 @@ and executes the saved command before it accepts the fixture.
 | `main-8852f7a76.sav` | `8852f7a76` (pre-release) | `skirmish` |
 | `main-bc55c35e7.sav` | `bc55c35e7` (pre-release) | `skirmish` |
 | `main-30e9a0f38.sav` | `30e9a0f38` (pre-release) | `skirmish` |
+| `main-f845dd0f7.sav` | `f845dd0f7` (Wasm extension modules) | `skirmish` |
 
 The Kratos writer revision is in PR #5080. In a fresh clone, fetch it with
 `git fetch origin pull/5080/head` before checking out `bc55c35e7`.
