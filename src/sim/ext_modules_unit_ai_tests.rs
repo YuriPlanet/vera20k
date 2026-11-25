@@ -80,22 +80,32 @@ fn advance(scene: &mut HeadlessScenario, orders: Vec<crate::sim::command::Comman
     }
 }
 
-/// A stopped GI idles into Sleep (mission 0) when the module answers so.
+/// A GI that arrives from a move idles into Sleep (mission 0) when the
+/// module answers so, where it would queue Guard or Area Guard.
 #[test]
-fn idle_mission_replaces_what_a_stopped_unit_queues() {
+fn idle_mission_replaces_what_an_arriving_unit_queues() {
     use crate::sim::command::{Command, CommandEnvelope};
     let Some((mut scene, attacker, _)) = super::tests::gi_duel() else {
         return;
     };
     install(&mut scene, EVENT_IDLE_MISSION, attacker as i64, 0);
-    let stop = CommandEnvelope::new(
+    let (x, y) = {
+        let at = &scene.sim().entities().get(attacker).expect("GI").position;
+        (at.rx(), at.ry())
+    };
+    let walk = CommandEnvelope::new(
         scene.sim().interner.get("Americans").expect("Americans house"),
         scene.sim().session.tick() + 1,
-        Command::Stop {
+        Command::Move {
             entity_id: attacker,
+            target_rx: x,
+            target_ry: y.saturating_sub(2),
         },
     );
-    advance(&mut scene, vec![stop]);
+    advance(&mut scene, vec![walk]);
+    for _ in 0..12 {
+        advance(&mut scene, Vec::new());
+    }
     let memory = memory(&scene);
     let count = i32::from_le_bytes(memory[696..700].try_into().unwrap());
     assert!(count >= 1, "the GI idled and asked");
