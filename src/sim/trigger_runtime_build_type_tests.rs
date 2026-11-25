@@ -409,7 +409,7 @@ fn build_type_retail_all07_placement_reaches_house_poll_and_eva_once() {
             &rules,
             "Americans",
             ProductionPlacement::Building {
-                type_id: "GAWEAP",
+                type_id: "GAWEAP".into(),
                 cell: (18, 18)
             },
             None,
@@ -428,7 +428,7 @@ fn build_type_retail_all07_placement_reaches_house_poll_and_eva_once() {
             &rules,
             "Americans",
             ProductionPlacement::Building {
-                type_id: "GAWEAP",
+                type_id: "GAWEAP".into(),
                 cell: (23, 19)
             },
             None,

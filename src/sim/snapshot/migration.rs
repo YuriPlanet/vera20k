@@ -39,10 +39,16 @@ const TS_LIMPETS: u32 = 0xF612_7DC1;
 const TS_ANIM_SOUNDS: u32 = 0x9441_E8D8;
 // Older writers stored neither Kratos inputs nor its infantry firing offsets.
 const KRATOS_FLH: u32 = 0x9F1B_D701;
+// Tiberian Sun webs (docs/ts-webs.md) store the frame an infantryman's web
+// runs out with a byte saying he was webbed, a warhead's web keys and an
+// infantry type's Struggle record. Older worlds hold none: no man was
+// webbed, end frame 0 has passed, no warhead webs and no type has Struggle
+// frames.
+const TS_WEBS: u32 = 0xF215_BF3A;
 // The Wasm extension modules (RFC 0001): the world stores its modules, their
 // modifiers, variables and claims, and the trigger runtime the triggers they
 // made. Older worlds ran no module: both convert empty.
-const WASM_MODULES: u32 = 0x880E_972F;
+const WASM_MODULES: u32 = 0xE18E_A373;
 
 /// The rules digest a converted save carries: the loader takes the rules the
 /// game has instead of proving the digest the old writer computed, whose
@@ -96,6 +102,10 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     const ANIM_SOUNDS: (&str, &[&str]) = ("AnimTypeReferences", &["bounce_sound", "expire_sound"]);
     const KRATOS_INPUTS: (&str, &[&str]) = ("ProcessedRulesLayers", &["kratos_inputs"]);
     const KRATOS_OFFSETS: (&str, &[&str]) = ("WeaponOffsets", &["crawling", "elite_crawling"]);
+    const WEB: (&str, &[&str]) = ("InfantryRuntime", &["webbed"]);
+    const WEB_TIMER: (&str, &[&str]) = ("Seldom", &["web"]);
+    const WARHEAD_WEB: (&str, &[&str]) = ("WarheadAnimReadState", &["web"]);
+    const STRUGGLE: (&str, &[&str]) = ("InfantrySequenceBank", &["struggle"]);
     const EXT_MODULES: (&str, &[&str]) = ("Simulation", &["ext_modules"]);
     const MODULE_TRIGGERS: (&str, &[&str]) = ("TriggerRuntime", &["module"]);
     let absent_fields: &'static [_] = match source {
@@ -115,6 +125,10 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
             EXT_MODULES,
             MODULE_TRIGGERS,
         ],
@@ -133,6 +147,10 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
             EXT_MODULES,
             MODULE_TRIGGERS,
         ],
@@ -150,6 +168,10 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
             EXT_MODULES,
             MODULE_TRIGGERS,
         ],
@@ -164,6 +186,10 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
             EXT_MODULES,
             MODULE_TRIGGERS,
         ],
@@ -177,6 +203,10 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
             EXT_MODULES,
             MODULE_TRIGGERS,
         ],
@@ -187,6 +217,10 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
             EXT_MODULES,
             MODULE_TRIGGERS,
         ],
@@ -196,6 +230,10 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
             EXT_MODULES,
             MODULE_TRIGGERS,
         ],
@@ -203,11 +241,32 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
             EXT_MODULES,
             MODULE_TRIGGERS,
         ],
-        TS_ANIM_SOUNDS => &[KRATOS_INPUTS, KRATOS_OFFSETS, EXT_MODULES, MODULE_TRIGGERS],
-        KRATOS_FLH => &[EXT_MODULES, MODULE_TRIGGERS],
+        TS_ANIM_SOUNDS => &[
+            KRATOS_INPUTS,
+            KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+            EXT_MODULES,
+            MODULE_TRIGGERS,
+        ],
+        KRATOS_FLH => &[
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+            EXT_MODULES,
+            MODULE_TRIGGERS,
+        ],
+        TS_WEBS => &[EXT_MODULES, MODULE_TRIGGERS],
         _ => return None,
     };
     Some(save_codec::PreviousLayout {

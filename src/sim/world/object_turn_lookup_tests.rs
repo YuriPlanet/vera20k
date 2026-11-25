@@ -85,6 +85,7 @@ fn a_tanks_turn_and_a_load_store_no_building_state() {
 /// would read them each step, so a byte in the main part's padding
 /// (`FootSpeedState::limpeted`) says when to. Tiberian Sun's web timer sits
 /// there too, and a byte in `InfantryRuntime`'s padding says when to read it.
+/// The Wasm module modifier cache is another 8 in the seldom part.
 #[cfg(all(
     target_pointer_width = "64",
     not(any(feature = "phobos", feature = "debug-tools"))
@@ -97,7 +98,7 @@ fn the_object_record_stays_under_its_ceiling() {
         std::mem::size_of::<Seldom>(),
     );
     assert!(
-        main <= 1208 && seldom <= 832,
+        main <= 1208 && seldom <= 840,
         "GameEntity is {main} bytes and Seldom {seldom}"
     );
 }

@@ -140,7 +140,7 @@ impl HouseFactoryAbandonment {
 /// receiver refuses silently): no factory is `Prerequisite`, the busy
 /// building factory and a refused append `QueueFull`, a module's
 /// `ProductionQueued` refusal `Vetoed`.
-pub fn enqueue_by_type(
+pub fn enqueue_by_type<'k>(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: impl Into<InternKey<'k>>,
@@ -148,7 +148,7 @@ pub fn enqueue_by_type(
     effects: &mut FrameEffects<'_>,
     force: bool,
 ) -> Result<(), CommandRefusal> {
-    let Some(obj) = rules.object(type_id) else {
+    let Some(obj) = sim.interner.key_object_type(type_id.into(), rules) else {
         return Err(CommandRefusal::Other);
     };
     let Some(selection) = super::ProductionSelection::for_type(rules, obj) else {

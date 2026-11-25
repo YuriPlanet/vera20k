@@ -153,7 +153,14 @@ fn lockstep_subject_gate_refuses_an_unrecognized_native_opcode() {
     let command = Command::SynchronizedRecord {
         record: CommandRecord::encode(0xff, 0, 0, &[]).unwrap(),
     };
-    assert!(sim.network_command_actor_foreign("Americans", None, &command, rules, None, false));
+    assert!(sim.network_command_actor_foreign(
+        "Americans".into(),
+        None,
+        &command,
+        rules,
+        None,
+        false
+    ));
 }
 
 /// Event IDLE admits its actor on `+0x90` and `+0x81` alone

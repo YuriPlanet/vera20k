@@ -187,9 +187,16 @@ struct Slot {
     disabled: Option<String>,
     /// Operations used by the latest `on_frame`.
     last_frame_ops: u64,
-    /// Operations per frame: [`FRAME_BUDGET`], or the mod's
-    /// `[VeraWasm]` budget for this source.
+    /// Operations per frame this frame: `base_budget` plus `seat_budget`
+    /// for each house this module claims (RFC 15.4, 6i), set at the start
+    /// of each module phase.
     frame_budget: u64,
+    /// [`FRAME_BUDGET`], or the `[VeraWasm]` budget for this source.
+    base_budget: u64,
+    /// `[VeraWasm] SeatBudget=`.
+    seat_budget: u64,
+    /// The "mod AI" seats its memory limit counts.
+    memory_seats: usize,
     /// The frame the three counts below belong to. Saves resume at frame
     /// boundaries, so they carry only the configured budget.
     budget_frame: u32,
@@ -272,8 +279,13 @@ struct SavedSlot {
     started: bool,
     disabled: Option<String>,
     last_frame_ops: u64,
+    /// The base budget (`Slot::base_budget`).
     #[serde(default = "default_frame_budget")]
     frame_budget: u64,
+    #[serde(default = "default_seat_budget")]
+    seat_budget: u64,
+    #[serde(default)]
+    memory_seats: usize,
     #[serde(default)]
     orders: Vec<orders::PendingOrder>,
     /// Saved so a loaded game hashes what the running one does. Without
@@ -284,6 +296,10 @@ struct SavedSlot {
 
 const fn default_frame_budget() -> u64 {
     FRAME_BUDGET
+}
+
+const fn default_seat_budget() -> u64 {
+    SEAT_BUDGET
 }
 
 /// Frames for the digest rotation to visit every page (RFC 15.1, item 7).
@@ -423,6 +439,12 @@ pub struct ExtModules {
     decide: decide::DecideState,
     /// Registered INI names and the string table ([`ini_names`]).
     ini: ini_names::IniNames,
+    /// House domain claims (RFC 6i, [`claims`]).
+    claims: claims::DomainClaims,
+    /// The mod's `[VeraWasm] Controller=`, for "mod AI" seats
+    /// ([`Simulation::seat_mod_ai_houses`]). Not saved: seats are given
+    /// when the match starts, and a save carries the claims.
+    controller: bool,
     /// The `Commanded` serials of the current frame ([`orders`]); not
     /// saved, as a save resumes at a frame boundary.
     command_serial: orders::CommandSerial,
@@ -458,7 +480,9 @@ impl serde::Serialize for ExtModules {
                 started: slot.started,
                 disabled: slot.disabled.clone(),
                 last_frame_ops: slot.last_frame_ops,
-                frame_budget: slot.frame_budget,
+                frame_budget: slot.base_budget,
+                seat_budget: slot.seat_budget,
+                memory_seats: slot.memory_seats,
                 orders: slot.orders.clone(),
                 digests: slot.digests.clone(),
             })
@@ -993,6 +1017,11 @@ impl SimHost for Host<'_, '_> {
             return Ok(status);
         }
         let name = property_name(prop).unwrap_or_default();
+        if name == "ControlDomains"
+            && let Some(Ref::House(index)) = decode_ref(reference)?
+        {
+            return self.write_control_domains(index, value);
+        }
         if let Some(Ref::SuperWeapon { house, index }) = decode_ref(reference)? {
             return self.write_super_weapon(house, index, name, value);
         }
@@ -1253,6 +1282,7 @@ const READABLE: &[&str] = &[
     // Houses.
     "TechLevel",
     "Country",
+    "ControlDomains",
     "Factory.Building.Type",
     "Factory.Building.Progress",
     "Factory.Building.Ready",
@@ -1858,7 +1888,7 @@ impl Simulation {
         bytes: &[u8],
     ) -> Result<(), String> {
         let module = SimModule::load(bytes, source.limits()).map_err(|e| e.to_string())?;
-        let position = self.insert_ext_slot(source, module, FRAME_BUDGET);
+        let position = self.insert_ext_slot(source, module, FRAME_BUDGET, SEAT_BUDGET, 0);
         self.init_ext_slot(rules, position)
     }
 
@@ -1869,6 +1899,8 @@ impl Simulation {
         source: ModuleSource,
         module: SimModule,
         frame_budget: u64,
+        seat_budget: u64,
+        memory_seats: usize,
     ) -> usize {
         // The module's own stream (RFC section 4): from the scenario seed and
         // the slot, so module draws never move a native stream.
@@ -1887,6 +1919,9 @@ impl Simulation {
                 disabled: None,
                 last_frame_ops: 0,
                 frame_budget,
+                base_budget: frame_budget,
+                seat_budget,
+                memory_seats,
                 budget_frame: 0,
                 frame_ops_used: 0,
                 decide_ops_used: 0,
@@ -1966,7 +2001,13 @@ impl Simulation {
         let mut uninitialized = Vec::new();
         for prepared in modules {
             let source = prepared.source;
-            self.insert_ext_slot(source, prepared.module, policy.budget_of(source));
+            self.insert_ext_slot(
+                source,
+                prepared.module,
+                policy.budget_of(source),
+                policy.seat_budget,
+                prepared.memory_seats,
+            );
             if !prepared.initialized {
                 uninitialized.push(source);
             }
@@ -1990,7 +2031,8 @@ impl Simulation {
     /// An error means this game cannot continue the save.
     pub(crate) fn restore_ext_modules(&mut self) -> Result<(), String> {
         for saved in std::mem::take(&mut self.ext_modules.pending) {
-            let module = SimModule::restore(&saved.bytes, saved.source.limits(), &saved.state)
+            let limits = saved.source.limits().with_seats(saved.memory_seats);
+            let module = SimModule::restore(&saved.bytes, limits, &saved.state)
                 .map_err(|e| format!("{:?} module: {e}", saved.source))?;
             self.ext_modules.slots.push(Slot {
                 source: saved.source,
@@ -2000,6 +2042,9 @@ impl Simulation {
                 disabled: saved.disabled,
                 last_frame_ops: saved.last_frame_ops,
                 frame_budget: saved.frame_budget.clamp(1, FRAME_BUDGET),
+                base_budget: saved.frame_budget.clamp(1, FRAME_BUDGET),
+                seat_budget: saved.seat_budget.min(SEAT_BUDGET),
+                memory_seats: saved.memory_seats,
                 budget_frame: 0,
                 frame_ops_used: 0,
                 decide_ops_used: 0,
@@ -2047,6 +2092,13 @@ impl Simulation {
         frame_effects: &mut FrameEffects<'_>,
     ) {
         let frame = self.session.binary_frame();
+        // Each claimed seat adds its budget for this frame (RFC 15.4, 6i).
+        for index in 0..self.ext_modules.slots.len() {
+            let source = self.ext_modules.slots[index].source;
+            let seats = self.ext_modules.claimed_seats(source) as u64;
+            let slot = &mut self.ext_modules.slots[index];
+            slot.frame_budget = slot.base_budget + seats * slot.seat_budget;
+        }
         if !self.ext_modules.modifiers.is_empty() {
             let expired = self
                 .ext_modules
@@ -2242,6 +2294,14 @@ mod event_tests;
 #[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_ini_register_tests.rs"]
 mod ini_register_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_claim_tests.rs"]
+mod claim_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_drive_tests.rs"]
+mod drive_tests;
 
 #[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_order_tests.rs"]

@@ -57,9 +57,9 @@ The `8d55b4a73` writer's layout `0xF6127DC1` predates Tiberian Sun's
 BounceSound and ExpireSound; its animation types convert with neither sound.
 The `8852f7a76` writer's layout `0x9441E8D8` predates the Kratos infantry firing
 offsets. Its saves convert with Kratos off, as those matches played. The
-`bc55c35e7` writer's layout `0x9F1BD701` predates the Wasm extension modules;
-its worlds convert with no module and no module trigger. The `72f13f841`
-writer covers direct loading of layout `0x880E972F`.
+`bc55c35e7` writer's layout `0x9F1BD701` predates Tiberian Sun webs; its
+infantry convert with no web. The `30e9a0f38` writer covers direct loading of
+layout `0xF215BF3A`.
 
 Run the menu and compatibility tests with this command.
 
