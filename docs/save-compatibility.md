@@ -63,7 +63,8 @@ predates the Wasm extension modules and Phobos ArtImageSwap; its saves convert
 with no module and no swapped image. The `a33fcac81` writer's layout
 `0xE18EA373` predates ArtImageSwap, and main's writer from #5205, layout
 `0x8C73B1B3`, predates the modules; each converts with the other's part empty.
-No frozen save holds `0x8C73B1B3` or the current layout `0xB65C0664`.
+No frozen save holds `0x8C73B1B3`. The `2e39b88dd` writer covers direct
+loading of the current layout `0xB65C0664`.
 
 Run the menu and compatibility tests with this command.
 
