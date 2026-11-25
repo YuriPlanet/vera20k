@@ -55,7 +55,7 @@ content as work lands; do not append a diary.
 | Map embedding (`[VeraWasm]`, `[VeraWasmRulesPack]`) | `src/map/ext_module_pack.rs` |
 | Loading | `headless_scenario.rs`, `app/loading/init.rs`: `PreparedExtModules::load` (mod folder `rules.wasm`, then map) before the rules load, `install_scenario_ext_modules` after the simulation exists |
 | `asset wasm-check / wasm-embed / wasm-extract` | `src/asset_tools/verb_wasm.rs` |
-| Rust SDK | `sdk/rust/vera20k-sdk` (no_std; `props.rs`, `vars.rs`, `triggers.rs`); examples `sdk/examples/minimal-rules`, `modifier-vars`, `panic-triggers`, `actions-demo`, `orders-rules`, `decide-damage`; the tutorial's `tutorial-bounty`; playtest mods `playtest`, `veteran-fury`, `siege-doctrine`, `meteor-storm`, `trigger-lab` (these four split the API by area without overlap, see `docs/wasm-modules.md`); the small game `muster-field` |
+| Rust SDK | `sdk/rust/vera20k-sdk` (no_std; `props.rs`, `vars.rs`, `triggers.rs`); examples `sdk/examples/minimal-rules`, `modifier-vars`, `panic-triggers`, `actions-demo`, `orders-rules`, `decide-damage`; the tutorial's `tutorial-bounty`; playtest mods `playtest`, `veteran-fury`, `siege-doctrine`, `meteor-storm`, `trigger-lab` (these four split the API by area without overlap, see `docs/wasm-modules.md`); the small game `muster-field`; the benchmark `control-bench` |
 
 Build an example: `cd sdk/examples/<name> && cargo build --release` (its
 `.cargo/config.toml` targets wasm32 with the allowlisted features). The engine tests
@@ -69,7 +69,11 @@ Build an example: `cd sdk/examples/<name> && cargo build --release` (its
 house with each module that `VERA20K_TEST_PLAYTEST_WASM` lists (`:`-separated) and
 checks it keeps running with no trigger refused; `--nocapture` prints the module logs.
 These tests need `RA2_DIR` (the retail install) or they return early and pass
-without running. The examples' `.cargo/config.toml` is ignored by the root
+without running.
+The benchmark mod `sdk/examples/control-bench` reaches nearly every phase-1 control
+point in one module (192 marks in four areas, all by frame 4500 of a Battle on
+XMP03T4 against one computer house) and runs through `ini_demo_mods_reach_their_marks`
+with the mark `bench.all`; its `README.zh-CN.md` lists what it leaves out and why. The examples' `.cargo/config.toml` is ignored by the root
 `.gitignore`; add a new one with `git add -f`.
 
 Writing modules: `core::fmt` (`write!`, `format_args!`, `{:?}`) in a `no_std` module
