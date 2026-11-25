@@ -252,8 +252,8 @@ impl Fixture {
                 sim.engineer_building_action(id, building, &rules),
                 Some(EngineerBuildingAction::Repair(true))
             );
-            assert!(sim.apply_command_with_overlays(
-                None,
+            assert!((sim.apply_command_with_overlays(
+                crate::sim::command::CommandSender::Player(None),
                 "Americans",
                 &Command::CaptureBuilding {
                     engineer_id: id,
@@ -262,7 +262,7 @@ impl Fixture {
                 &rules,
                 Some(&registry),
                 &mut crate::sim::world::FrameEffects::default()
-            ));
+            )).is_ok());
             // The native command witness follows Event4C6CB0 with the
             // ordinary Mission5B3570 Commence receiver before its snapshot.
             sim.substrate.mission_commence_exact(id, 0).unwrap();

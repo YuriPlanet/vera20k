@@ -100,6 +100,17 @@ pub fn depart_cargo_head(
         open_topped: prior.is_some_and(|link| link.open_topped),
     };
     let result = attempt(sim, passenger_id, effects);
+    // Wasm module `TransportExited` and `PassengerRemoved` (RFC 0001
+    // appendix 4.3), once the route placed the passenger.
+    if result.is_ok() {
+        sim.raise_module_passenger_removed(
+            rules,
+            effects,
+            transport_id,
+            passenger_id,
+            passenger_size,
+        );
+    }
     if let Err(failure) = result.as_ref()
         && route != DepartureRoute::Hospital
     {

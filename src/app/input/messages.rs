@@ -15,6 +15,7 @@ use crate::app::presentation::state::MatchPresentationState;
 use crate::app::presentation::text_hud::{self, TextHud};
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::render::batch::SpriteInstance;
 use crate::ui::game_screen::GameScreen;
 
@@ -1156,6 +1157,17 @@ pub(crate) fn post_primary_rotation(state: &mut AppState, factories: usize) {
     post_grey_row(state, &text, false, true);
 }
 
+/// VERA's HD art key (`render::hd_switch`): say that HD art is now on or off, or,
+/// for None, that it needs an HD art pack mod. gamemd has no such line.
+pub(crate) fn post_hd_art(state: &mut AppState, on: Option<bool>) {
+    let text = crate::i18n::tr(match on {
+        Some(true) => "VERA:HdArtOnLine",
+        Some(false) => "VERA:HdArtOffLine",
+        None => "VERA:HdLookNeedsPack",
+    });
+    post_grey_row(state, &text, false, true);
+}
+
 pub(super) fn post_command_backpressure(state: &mut AppState) {
     post_grey_row(
         state,
@@ -1337,7 +1349,7 @@ fn sync_view(state: &mut AppState) {
 /// Android: the one-shot "touch here to chat" line, five seconds into the first
 /// network match a profile plays (`persistence::chat_hint`).
 #[cfg(target_os = "android")]
-fn maybe_post_chat_hint(state: &mut AppState) {
+pub(crate) fn maybe_post_chat_hint(state: &mut AppState) {
     use crate::util::time::Duration;
     if !state.match_state.session_mode().is_network() {
         return;
@@ -1394,25 +1406,28 @@ fn post_chat_hint(state: &mut AppState) {
 /// nonsilent TextLabel72A4A0 advances its raw-wall reveal and requests the
 /// typing sound once per successful paint. It steps whether or not a layout
 /// shows the messages.
-pub(crate) fn advance_messages(state: &mut AppState) {
-    if state.frontend.screen != GameScreen::InGame {
+pub(crate) fn advance_messages(
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    if frontend.screen != GameScreen::InGame {
         return;
     }
-    #[cfg(target_os = "android")]
-    maybe_post_chat_hint(state);
-    let wall_ms = crate::app::input::tooltips::now_ms(&state.diag, &state.match_state) as u32;
-    let requests = state
-        .match_state
+    let wall_ms = crate::app::input::tooltips::now_ms(diag, match_state) as u32;
+    let requests = match_state
         .match_presentation
         .message_list
         .advance_reveal(wall_ms);
     if requests > 0 {
         for _ in 0..requests {
             crate::app::App::play_shell_rules_sound(
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
                 |rules| rules.general.message_char_typed_sound(),
             );
         }
@@ -1422,36 +1437,32 @@ pub(crate) fn advance_messages(state: &mut AppState) {
 /// The message lines as they stand after this frame's
 /// [`advance_messages`], drawn through `hud`.
 pub(crate) fn build_message_instances(
-    state: &AppState,
+    ime: &crate::app::input::ime::ImeState,
+    bit_font: &crate::render::bit_font::BitFont,
+    screen: &GameScreen,
+    match_state: &MatchState,
     hud: &mut TextHud,
 ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
-    if state.frontend.screen != GameScreen::InGame {
+    if *screen != GameScreen::InGame {
         return (Vec::new(), Vec::new());
     }
     // A layout that leaves the messages out only takes them off the screen.
     if !crate::app::presentation::field_parts::shows(
-        &state.match_state.match_presentation,
+        &match_state.match_presentation,
         crate::ui::field_layout::FieldPart::Messages,
     ) {
         return (Vec::new(), Vec::new());
     }
-    let font = &state.renderer.bit_font;
     let rows = message_rows(
-        font,
-        &state.match_state.match_presentation.message_list,
-        state
-            .platform
-            .ime
-            .composition(crate::app::input::ime::ImeTarget::InGameChat)
+        bit_font,
+        &match_state.match_presentation.message_list,
+        ime.composition(crate::app::input::ime::ImeTarget::InGameChat)
             .map(|(units, _)| units),
     );
     draw_message_rows(
-        font,
+        bit_font,
         &rows,
-        [
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-        ],
+        [match_state.input.camera_x, match_state.input.camera_y],
         hud,
     )
 }

@@ -160,6 +160,8 @@ impl App {
         state.match_state.match_audio.reset_for_new_match();
         state.match_state.input.zoom_level = 1.0;
         state.match_state.input.zoom_target = 1.0;
+        // The next match starts at HD art's zoom again (`render::hd_switch`).
+        state.renderer.hd_art_zoom_pending = true;
     }
 
     /// Start_Scenario's inputs for the installed campaign mission again
@@ -499,7 +501,15 @@ impl App {
         if next == InGameMenuState::Menu {
             state.match_state.match_presentation.pause_menu_has_saves =
                 state.persistence.repository.has_browser_entry();
-            crate::app::input::pause_menu::on_open(state);
+            crate::app::input::pause_menu::on_open(
+                &state.platform,
+                &state.renderer.performance_overlay,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                state.audio.launcher_audio_available,
+                &state.persistence.options_profile,
+            );
         }
         if next == InGameMenuState::AbortConfirm {
             crate::app::input::abort::on_open(&mut state.match_state);

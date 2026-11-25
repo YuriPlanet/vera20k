@@ -30,6 +30,7 @@ impl Simulation {
     pub(crate) fn validate_restored_trigger_runtime(&self, ares: bool) -> Result<(), String> {
         let runtime = &self.trigger_runtime;
         let definitions = &runtime.definitions;
+        runtime.module.validate()?;
         if definitions.team_tags.len() != definitions.team_types.len()
             || definitions
                 .team_tags
@@ -333,7 +334,7 @@ impl Simulation {
         };
     }
 
-    pub(super) fn trigger_difficulty(&self) -> i32 {
+    pub(crate) fn trigger_difficulty(&self) -> i32 {
         #[cfg(any(test, feature = "test-support"))]
         if let Some(difficulty) = self.trigger_runtime.fixture_difficulty {
             return difficulty;

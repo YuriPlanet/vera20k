@@ -382,14 +382,14 @@ impl Replay {
                     },
                 };
                 assert!(
-                    s.sim.apply_command_with_overlays(
-                        None,
+                    (s.sim.apply_command_with_overlays(
+                        crate::sim::command::CommandSender::Player(None),
                         "Americans",
                         &command,
                         &s.rules,
                         Some(registry()),
                         &mut crate::sim::world::FrameEffects::default()
-                    ),
+                    )).is_ok(),
                     "{context}: command admission"
                 );
             }

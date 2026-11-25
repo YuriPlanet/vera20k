@@ -818,7 +818,7 @@ fn send_chat(state: &mut AppState, text: Vec<u16>) {
 /// `0x005E2700` with a `COLORREF` (-1 the list's default) into BC6's list
 /// `0x53F`.
 fn append_line(state: &mut AppState, text: String, color: u32) {
-    let layout = crate::app::input::coop_score::layout(state);
+    let layout = crate::app::input::coop_score::layout(&state.renderer.gpu);
     let rect = layout
         .control_rect(crate::ui::coop_score_shell::CHAT_LOG)
         .expect("BC6 lays out its chat list");

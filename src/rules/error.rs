@@ -29,6 +29,11 @@ pub enum RulesError {
     #[error("LANGRULE.INI failed its Digest check")]
     LangRuleDigestRejected,
 
+    /// A Wasm extension module's `on_rules` failed (RFC 0001 section 3): the
+    /// scenario does not start.
+    #[error("{0}")]
+    ExtModule(String),
+
     /// The INI data is not valid UTF-8.
     #[error("INI data is not valid UTF-8: {0}")]
     InvalidUtf8(#[from] std::str::Utf8Error),

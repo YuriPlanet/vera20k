@@ -3,9 +3,7 @@
 //! parsing; app initialization only constructs entries.
 
 use crate::map::preview::{PreviewSection, PreviewSourceBounds, PreviewStartPoint};
-use crate::map::waypoints::{
-    Waypoint, multiplayer_start_waypoints_for_capacity, parse_waypoints, skirmish_player_capacity,
-};
+use crate::map::waypoints::{Waypoint, read_multiplayer_start_waypoints, skirmish_player_capacity};
 use crate::rules::ini_parser::IniFile;
 
 /// Lightweight metadata used by the main-menu map selector.
@@ -19,7 +17,7 @@ pub struct MapMenuEntry {
     pub author: Option<String>,
     /// Lightweight preview metadata from `[Preview]` / `[PreviewPack]`.
     pub preview: PreviewSection,
-    /// Multiplayer start waypoints 0..=7, sorted by waypoint index.
+    /// Admitted multiplayer start waypoints, sorted by waypoint index.
     pub multiplayer_start_waypoints: Vec<Waypoint>,
     /// Setup-shell player capacity from native waypoint counting, including
     /// the `[RandomMap] NumPlayers` / eight-player fallback path.
@@ -41,10 +39,7 @@ pub(crate) fn read_map_menu_entry_from_ini(ini: &IniFile, file_name: &str) -> Ma
         display_name,
         author: basic.author,
         preview: crate::map::preview::parse_preview_section(ini),
-        multiplayer_start_waypoints: multiplayer_start_waypoints_for_capacity(
-            &parse_waypoints(ini),
-            player_capacity,
-        ),
+        multiplayer_start_waypoints: read_multiplayer_start_waypoints(ini, player_capacity),
         player_capacity,
         preview_source_bounds: preview_source_bounds_from_verified_source(ini),
     }

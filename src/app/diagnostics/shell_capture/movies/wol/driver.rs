@@ -1749,7 +1749,11 @@ impl WolCapture {
                     ensure!(
                         !moved.is_observer()
                             && moved.slot.team == crate::skirmish_launch::LaunchTeam::Team(0)
-                            && crate::app::input::multiplayer_setup::open_list(state).is_none()
+                            && crate::app::input::multiplayer_setup::open_list(
+                                &state.frontend,
+                                &state.match_state
+                            )
+                            .is_none()
                             && state.frontend.multiplayer_setup.is_some()
                             && state.frontend.shell_controller.gui().drag().is_none(),
                         "dragging Natasha onto Team A gave {:?}",
@@ -1800,7 +1804,7 @@ impl WolCapture {
                         row_combo(&wide, SetupColumn::Color, 0).context("host colour")?;
                     let face = layout.control_rect(color.id).context("colour cell")?;
                     setup_click(state, face);
-                    let popup = room_input::open_list(state)
+                    let popup = room_input::open_list(&state.frontend, &state.match_state)
                         .context("open colour list after releasing the roster thumb")?
                         .1
                         .popup;
@@ -1812,7 +1816,7 @@ impl WolCapture {
                     room_input::cursor_moved(state);
                     room_input::mouse(state, winit::event::MouseButton::Left, false);
                     ensure!(
-                        room_input::open_list(state)
+                        room_input::open_list(&state.frontend, &state.match_state)
                             .is_some_and(|(id, list)| id == color.id && list.popup.first > 0)
                             && setup_view(state)?.first_row == wide.first_row,
                         "the colour thumb drag failed to scroll just the list"
@@ -1823,9 +1827,12 @@ impl WolCapture {
                         "the colour list did not take the wheel at its limit"
                     );
                     ensure!(
-                        room_input::open_list(state).is_some_and(|(id, list)| {
-                            id == color.id && list.popup.first == popup.total - popup.visible_rows
-                        }) && setup_view(state)?.first_row == wide.first_row,
+                        room_input::open_list(&state.frontend, &state.match_state).is_some_and(
+                            |(id, list)| {
+                                id == color.id
+                                    && list.popup.first == popup.total - popup.visible_rows
+                            }
+                        ) && setup_view(state)?.first_row == wide.first_row,
                         "wheeling to the end of the colour list moved the roster or closed the list"
                     );
                     setup_click(state, face);

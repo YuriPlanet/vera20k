@@ -367,7 +367,9 @@ another thread, so two things differ:
   work would wait for in vain. Until the worker runs, frames tick inline.
   It is experimental and off unless the page turns it on:
   `set_simulation_thread` takes `1` to turn it on, `always` to lend every
-  frame it can take, or `0`. Lending then follows desktop's rules.
+  frame it can take, or `0`. Lending then follows desktop's rules, except
+  that a match with Wasm extension modules never lends: each module is a
+  JavaScript `WebAssembly.Instance` of the main thread (wasm-ext `browser.rs`).
 - **Nothing wakes the loop.** The next animation frame asks whether the
   tick has ended. Every window event waits while a tick is out, pointer
   motion too, and a write no route covers (a debug tool, a teardown) spins

@@ -351,6 +351,36 @@ pub(crate) fn render_game(
     // around the view (ALL06, SOV03) or jump the camera in the same trigger
     // (SOV01 SP3.6, action 112); only SOV01's SP4.5b and base-gained shrinks
     // can leave the view outside, until the player scrolls. VERA moves it at once.
+    // VERA's HD art (`render::hd_switch`): pictures the unit atlas rasterizes from
+    // here on (this frame's first draws included) also make their HD picture,
+    // and keep doing so once HD art has been on in this run, so turning it off
+    // and on again (Page Up) shows them at once.
+    let hd_art_on = state.hd_art_on().0;
+    state.renderer.hd_art_seen |= hd_art_on;
+    crate::render::vxl_raster::set_hd_voxels(state.renderer.hd_art_seen);
+    crate::render::hd_art::set_active(hd_art_on);
+    if let Some(zoom) = crate::render::hd_switch::capture_zoom() {
+        state.match_state.input.zoom_level = zoom;
+        state.match_state.input.zoom_target = zoom;
+    } else if std::mem::take(&mut state.renderer.hd_art_zoom_pending)
+        && hd_art_on
+        && state.persistence.options_profile.mouse_wheel_zoom
+        && state.match_state.input.zoom_target < crate::render::hd_switch::EASE_BELOW
+    {
+        // A match's first frame with HD art on starts zoomed in, so the HD
+        // art shows; the wheel zooms out as ever.
+        crate::app::input::camera::ease_zoom_to_centre(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state,
+            &state.persistence,
+            crate::render::hd_switch::DEFAULT_ZOOM,
+        );
+    }
+    // Posed voxels are drawn afresh each frame: make their HD picture only
+    // while HD art is on.
+    crate::render::vxl_raster::set_hd_poses(hd_art_on);
     crate::app::input::camera::clamp_camera_to_playable_area(
         &state.platform,
         &state.renderer,
@@ -383,7 +413,9 @@ pub(crate) fn render_game(
     // Wheel zoom is a presentation copy of the fully resolved world. Keep all
     // native source/depth/packed operations on the same one-texel lattice;
     // filtering each sprite (or its palette indices) loses edges and details.
-    if z == 1.0 {
+    // HD art (`render::hd_switch`) draws its art on the zoom's copy, so it keeps
+    // one at 100% too.
+    if z == 1.0 && !hd_art_on {
         state.renderer.world_zoom_pass = None;
     } else {
         // When the Options zoom scales the frame, the world also goes
@@ -1128,10 +1160,26 @@ fn upload_to_gpu(
     // tooltip (O10). Prepare once: nonsilent TextLabel72A4A0 advances its
     // raw-wall reveal and requests typing audio once per successful paint.
     // Keep the row's existing opaque black background behind its glyphs.
-    crate::app::input::messages::advance_messages(state);
+    // Android posts its one-shot touch-to-chat line first.
+    #[cfg(target_os = "android")]
+    if state.frontend.screen == crate::ui::game_screen::GameScreen::InGame {
+        crate::app::input::messages::maybe_post_chat_hint(state);
+    }
+    crate::app::input::messages::advance_messages(
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+    );
     let mut message_hud = std::mem::take(&mut state.match_state.match_presentation.message_hud);
-    let (message_fill, message_text) =
-        crate::app::input::messages::build_message_instances(state, &mut message_hud);
+    let (message_fill, message_text) = crate::app::input::messages::build_message_instances(
+        &state.platform.ime,
+        &state.renderer.bit_font,
+        &state.frontend.screen,
+        &state.match_state,
+        &mut message_hud,
+    );
     state.match_state.match_presentation.message_hud = message_hud;
     let verdict = crate::app::presentation::outcome_banner::visible_verdict(&state.match_state);
     let mut banner_huds =

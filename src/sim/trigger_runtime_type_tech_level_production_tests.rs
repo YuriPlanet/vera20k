@@ -320,14 +320,17 @@ fn retail_all05_type_tech_level_recheck_cancels_paid_harrier_and_unlocks_black_e
         history["initial_state"]["rng"],
         "complete native Random2 objects are the declared production prior"
     );
-    assert!(production::enqueue_by_type(
-        &mut runtime.simulation,
-        &runtime.resources.rules,
-        input["house"].as_str().unwrap(),
-        "ORCA",
-        &mut FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        production::enqueue_by_type(
+            &mut runtime.simulation,
+            &runtime.resources.rules,
+            input["house"].as_str().unwrap(),
+            "ORCA",
+            &mut FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let held = runtime
         .simulation
         .production

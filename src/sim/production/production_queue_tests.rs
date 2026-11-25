@@ -943,22 +943,28 @@ fn human_mobile_completion_retains_identity_until_next_frame_place() {
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAPILE", 14, 14);
     let owner = sim.interner.get("Americans").unwrap();
     sim.session.set_current_house_for_test(Some(owner));
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E2",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E2",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let held = sim
         .production
         .factories()
@@ -1020,22 +1026,28 @@ fn ready_infantry_prefix_world(
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAPILE", 14, 14);
     let owner = sim.interner.get("Americans").unwrap();
     sim.session.set_current_house_for_test(Some(owner));
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     assert!(
         sim.production
             .factories_mut()
@@ -1314,14 +1326,17 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
 
     let mut expected = SimRng::new(seed);
     let mtnk_word = (expected.next_u32() & 0xFFFF) as u16;
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "MTNK",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "MTNK",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let vehicle = sim
         .production
         .factories()
@@ -1337,14 +1352,17 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
     assert_eq!(vehicle_entity.techno_ctor_random_word(), mtnk_word);
 
     let e1_word = (expected.next_u32() & 0xFFFF) as u16;
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let infantry = sim
         .production
         .factories()
@@ -1359,14 +1377,17 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
     assert!(!e1_entity.in_playfield());
     assert_eq!(e1_entity.techno_ctor_random_word(), e1_word);
 
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E2",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E2",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     assert_eq!(
         sim.scenario_rng.logical_state(),
         expected.logical_state(),
@@ -2432,14 +2453,17 @@ fn only_a_busy_airfield_refuses_its_type() {
     assert_eq!(factory(&sim, "MTNK", false), Some(1));
     assert_eq!(factory(&sim, "ORCA", false), None);
     assert_eq!(factory(&sim, "ORCA", true), Some(2));
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "MTNK",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "MTNK",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
 }
 
 /// Original HouseBegin4FA5A8..4FA6AF admits/relinks a suspended same-type
@@ -2449,14 +2473,17 @@ fn only_a_busy_airfield_refuses_its_type() {
 #[test]
 fn completed_same_type_produce_preserves_the_factory_at_build_limit() {
     let (mut sim, rules, owner) = hold_world();
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "AMCV",
-        &mut Default::default(),
-        false
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "AMCV",
+            &mut Default::default(),
+            false
+        )
+        .is_ok()
+    );
     assert!(
         sim.production
             .factories_mut()
@@ -2472,14 +2499,17 @@ fn completed_same_type_produce_preserves_the_factory_at_build_limit() {
     let wallet = sim.houses[&owner].economy().clone();
     let rng = sim.rng_state();
     sim.session.set_binary_frame_for_test(300);
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "AMCV",
-        &mut Default::default(),
-        false
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "AMCV",
+            &mut Default::default(),
+            false
+        )
+        .is_ok()
+    );
     assert_eq!(
         *sim.production
             .factories_mut()
@@ -2503,14 +2533,17 @@ fn completed_same_type_produce_preserves_the_factory_at_build_limit() {
 #[test]
 fn a_held_build_at_its_build_limit_resumes_on_produce() {
     let (mut sim, rules, owner) = hold_world();
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "AMCV",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "AMCV",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     assert!(suspend_production(
         &sim.interner,
         &mut sim.production,
@@ -2543,14 +2576,17 @@ fn a_held_build_at_its_build_limit_resumes_on_produce() {
     );
 
     sim.session.set_binary_frame_for_test(300);
-    assert!(enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "AMCV",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "AMCV",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let factory = sim
         .production
         .factories_mut()
@@ -2569,14 +2605,17 @@ fn a_held_build_at_its_build_limit_resumes_on_produce() {
     );
     // Running, the build no longer passes the limit: StartProduction refuses
     // the append (CheckBuildLimit, 0x004C9CEA) and scolds the house's player.
-    assert!(!enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "AMCV",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        !enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "AMCV",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     assert!(sim.sound_events.iter().any(|event| {
         matches!(event, SimSoundEvent::ProductionRefused { owner: refused } if *refused == owner)
     }));
@@ -2598,24 +2637,30 @@ fn a_produce_past_the_queue_cap_is_refused_with_a_scold() {
             .count()
     };
     for _ in 0..3 {
-        assert!(enqueue_by_type(
+        assert!(
+            enqueue_by_type(
+                &mut sim,
+                &rules,
+                "Americans",
+                "MTNK",
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
+    }
+    assert_eq!(refusals(&sim), 0);
+    assert!(
+        !enqueue_by_type(
             &mut sim,
             &rules,
             "Americans",
             "MTNK",
             &mut crate::sim::world::FrameEffects::default(),
             false,
-        ));
-    }
-    assert_eq!(refusals(&sim), 0);
-    assert!(!enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "MTNK",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+        )
+        .is_ok()
+    );
     assert_eq!(refusals(&sim), 1);
     let factory = sim
         .production

@@ -1,9 +1,13 @@
 //! B8 orchestration and physical input. Original6B6300 owns control projection;
 //! Options/Theme retain values and playback, including while simulation is paused.
 use super::dialog_page::InGameDialog;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::options::audio::{AudioVolume, apply_volume};
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
 use crate::app::{App, AppState};
 use crate::audio::theme::ThemeRuntime;
 use crate::ui::pause_menu::InGameMenuState;
@@ -83,21 +87,28 @@ pub(crate) fn open(state: &mut AppState) {
 /// Back `0x686` in `0x6B6300`, shared by B8 and the shell's `0xD6`:
 /// re-apply the three volumes; a zero score volume queues the current song
 /// and stops it. No RA2MD write.
-pub(crate) fn apply_back_volumes(state: &mut AppState, positions: [u8; 3]) {
+pub(crate) fn apply_back_volumes(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    options_profile: &mut RetailOptionsProfile,
+    positions: [u8; 3],
+) {
     for id in SoundSlider::ALL {
         apply_volume(
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence.options_profile,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            options_profile,
             channel(id),
             (f64::from(positions[id as usize]) * 0.1) as f32,
             false,
         );
         if id == SoundSlider::Music && positions[0] == 0 {
             let now = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-            state.audio.queue_then_stop_score_zero(now);
+            audio.queue_then_stop_score_zero(now);
         }
     }
 }
@@ -110,13 +121,21 @@ pub(crate) fn volume_positions(options_profile: &RetailOptionsProfile) -> [u8; 3
 }
 
 /// A changed slider applies live (`WM_HSCROLL`).
-pub(crate) fn apply_slider_volume(state: &mut AppState, id: SoundSlider, volume: f32) {
+pub(crate) fn apply_slider_volume(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    options_profile: &mut RetailOptionsProfile,
+    id: SoundSlider,
+    volume: f32,
+) {
     apply_volume(
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &mut state.audio,
-        &mut state.persistence.options_profile,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        options_profile,
         channel(id),
         volume,
         true,
@@ -127,7 +146,14 @@ fn back(state: &mut AppState) {
     let Some(dialog) = state.match_state.match_presentation.sound_dialog.take() else {
         return;
     };
-    apply_back_volumes(state, dialog.positions());
+    apply_back_volumes(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &mut state.persistence.options_profile,
+        dialog.positions(),
+    );
     // State_Machine 0x0048C9F4 writes state 5 after B8 returns, where gamemd
     // recreates BBB. VERA's Game Controls is the in-game menu's page, so the
     // menu is what comes back.
@@ -239,7 +265,19 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
     };
     let boxes = score_boxes(&state.persistence.options_profile);
     let sync = move |gui: &mut vera20k_gui::Gui, root| put_boxes(gui, root, boxes);
-    let events = DIALOG.route(state, down, nodes, |id| layout.rect(id), sync);
+    let events = DIALOG.route(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        &state.persistence,
+        down,
+        nodes,
+        |id| layout.rect(id),
+        sync,
+    );
     state.platform.window.request_redraw();
     for event in events {
         if let Some((id, volume)) = sound::shell_sound_volume(&event) {

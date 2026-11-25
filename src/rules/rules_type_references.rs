@@ -77,7 +77,7 @@ impl RulesTypeReferences {
             .iter()
             .chain(&DEFAULT_PARTICLE_SYSTEMS)
             .chain(ares_pointers())
-            .chain(npatch_pointers())
+            .chain(NPATCH_POINTERS)
         {
             publish(rules, self.pointers.get(key).map_or("", String::as_str));
         }
@@ -106,23 +106,13 @@ fn ares_pointers() -> &'static [(&'static str, PublishPointer)] {
     }
 }
 
-/// The extension pointers this build's rules processor keeps: none without
-/// the capability, which never reads their keys.
-fn npatch_pointers() -> &'static [(&'static str, PublishPointer)] {
-    if crate::rules::NPATCH_ENABLED {
-        NPATCH_POINTERS
-    } else {
-        &[]
-    }
-}
-
 /// Whether the processor keeps `key` as a pointer.
 fn kept_pointer(key: &str) -> bool {
     POINTERS
         .iter()
         .chain(&DEFAULT_PARTICLE_SYSTEMS)
         .chain(ares_pointers())
-        .chain(npatch_pointers())
+        .chain(NPATCH_POINTERS)
         .any(|&(kept, _)| kept == key)
 }
 
@@ -320,11 +310,9 @@ const ARES_POINTERS: &[(&str, PublishPointer)] = &[
 ];
 
 /// The pointers an installed extension keeps, by reader. They are part of the
-/// same retained set as [`POINTERS`] when the capability is compiled in: the
-/// extension's reader runs inside the rules load, so its FindOrAllocate
-/// identity must survive later passes exactly like a vanilla pointer's.
-/// Without the capability nothing reads the key, the type is never allocated,
-/// and the name is not admitted here.
+/// same retained set as [`POINTERS`]: the extension's reader runs in every
+/// build inside the rules load, so its FindOrAllocate identity must survive
+/// later passes exactly like a vanilla pointer's.
 const NPATCH_POINTERS: &[(&str, PublishPointer)] = &[
     // NPSE's `[General] VehicleParachute=`: the canopy an airdropped
     // non-infantry object takes instead of `Parachute=` (`0xC30FF8..0xC3101F`

@@ -157,14 +157,14 @@ fn gsi_04_07_wall_sell_raw_signed_linear_coordinates_use_canonical_cell() {
             .decode_native_command_record(&record, sim.session.tick())
             .expect("registered receiver decodes");
         let receiver = sim.interner.resolve(envelope.owner).to_string();
-        sim.apply_command_with_overlays(
-            None,
+        (sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             &receiver,
             &envelope.payload,
             rules,
             Some(overlays),
             &mut crate::sim::world::FrameEffects::default(),
-        )
+        )).is_ok()
     }
 
     let (rules, overlays) = gsi_04_07_wall_sell_rules(false, false);

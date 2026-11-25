@@ -94,8 +94,8 @@ fn charge(sim: &mut Simulation, rules: &RuleSet, owner: &str) -> (InternedId, In
 
 fn fire(sim: &mut Simulation, rules: &RuleSet, owner: &str, cell: (u16, u16)) {
     let (_, sw) = charge(sim, rules, owner);
-    sim.apply_command_with_overlays(
-        None,
+    let _ = sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         owner,
         &Command::LaunchSuperWeapon {
             sw_type_id: sw,

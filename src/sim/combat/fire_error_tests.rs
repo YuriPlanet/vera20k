@@ -239,6 +239,7 @@ fn facts(input: &Value, ares: bool) -> FireFacts {
             z: int(&f["z"]),
             // The native rows run without Ares: no DisableWeaponTimer.
             weapons_disabled: false,
+            module_weapons_disabled: false,
             transporter_gunner_open_topped: false,
             transporter_cloaked: false,
             emp_remaining: int(&f["emp_remaining"]),

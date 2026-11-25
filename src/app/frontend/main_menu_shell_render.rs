@@ -189,7 +189,8 @@ impl MainMenuCover {
                 .shell_message_box
                 .as_ref()
                 .is_some_and(|message_box| !message_box.keeps_page())
-                || state.frontend.quit_cascade.is_some(),
+                || state.frontend.quit_cascade.is_some()
+                || crate::app::frontend::shell_transition::update_check_holds_main_menu(state),
             external_menu_wait(state),
         )
     }

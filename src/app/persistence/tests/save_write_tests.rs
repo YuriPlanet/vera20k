@@ -62,12 +62,7 @@ fn migration_backs_up_original_before_decoding_the_old_world() {
 }
 
 #[test]
-#[cfg(not(any(
-    feature = "phobos",
-    feature = "npatch",
-    feature = "verax",
-    feature = "npbug"
-)))]
+#[cfg(not(any(feature = "phobos", feature = "verax", feature = "npbug")))]
 fn conversion_overwrites_only_the_selected_slot_and_keeps_its_path() {
     use super::save_migration::SaveMigrationError;
 
@@ -138,12 +133,7 @@ fn conversion_overwrites_only_the_selected_slot_and_keeps_its_path() {
 }
 
 #[test]
-#[cfg(not(any(
-    feature = "phobos",
-    feature = "npatch",
-    feature = "verax",
-    feature = "npbug"
-)))]
+#[cfg(not(any(feature = "phobos", feature = "verax", feature = "npbug")))]
 fn conversion_preserves_the_replaced_slot_and_takes_the_current_rules() {
     use super::save_migration::SaveMigrationError;
     use crate::sim::snapshot::migration;

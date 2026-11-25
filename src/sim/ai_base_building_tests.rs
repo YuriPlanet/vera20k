@@ -803,16 +803,22 @@ fn a_human_yard_places_nothing() {
 
 /// NPSE gives a naval producer its own vehicle choice: `0x4FBDAF -> 0xC2F130`
 /// reads `House+0x16130` while the producing building is `Naval=`, and
-/// `House+0x5650` otherwise. An ordinary build has no naval slot and keeps
-/// reading the war factory's pick.
+/// `House+0x5650` otherwise. A stock game has no naval slot and keeps reading
+/// the war factory's pick. `DisableParallelAIQueues=no` is the NPatch key that
+/// turns the `npatch_switch` on for this fixture.
 #[test]
 fn a_naval_producer_reads_its_own_vehicle_choice() {
     // `FactoryType::for_production_rtti`: 1 and 40 are the unit factory RTTIs.
     let unit_type_rtti = 40;
     let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[BuildingTypes]\n0=B\n[VehicleTypes]\n0=U\n1=SHIP\n[U]\n[SHIP]\nNaval=yes\n",
+        "[BuildingTypes]\n0=B\n[VehicleTypes]\n0=U\n1=SHIP\n[General]\n\
+         DisableParallelAIQueues=no\n[U]\n[SHIP]\nNaval=yes\n",
     ))
     .unwrap();
+    assert!(
+        rules.npatch(),
+        "the fixture's NPatch key turns the switch on"
+    );
     let mut sim = Simulation::with_seed(37);
     let owner = sim.interner.intern("AI");
     let mut house = HouseState::new(owner, 0, None, false, 1000, 10);
@@ -832,12 +838,8 @@ fn a_naval_producer_reads_its_own_vehicle_choice() {
         .map(|object| object.id.as_str());
     assert_eq!(
         naval,
-        Some(if crate::rules::NPATCH_ENABLED {
-            "SHIP"
-        } else {
-            "U"
-        }),
-        "only the NPatch build has a naval channel"
+        Some("SHIP"),
+        "the NPatch game's naval producer reads its own channel"
     );
 }
 

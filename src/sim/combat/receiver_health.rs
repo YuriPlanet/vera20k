@@ -44,6 +44,30 @@ struct ReceiverHealthHost<'world, 'input, 'effects> {
     reached_exact_zero: bool,
 }
 
+impl ReceiverHealthHost<'_, '_, '_> {
+    /// A module `TakeDamage` occurrence of `damage` on this receiver: the
+    /// source, the warhead and the subject's position.
+    fn take_damage_event(&self, damage: i32) -> crate::sim::ext_modules::ModuleEvent {
+        use vera20k_wasm_ext::triggers::EVENT_TAKE_DAMAGE;
+        let event = self.event;
+        let warhead = self
+            .rules
+            .warhead_index(self.world.interner.resolve(event.warhead_ref))
+            .map_or(-1, |index| index as i32);
+        crate::sim::ext_modules::ModuleEvent {
+            other: if event.attacker_id == RAD_NO_ATTACKER {
+                0
+            } else {
+                event.attacker_id
+            },
+            value: i64::from(damage),
+            id: warhead,
+            at_subject: true,
+            ..crate::sim::ext_modules::ModuleEvent::new(EVENT_TAKE_DAMAGE, event.target_id)
+        }
+    }
+}
+
 impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
     fn object(&self) -> Option<&GameEntity> {
         self.world.substrate.entities.get(self.event.target_id)
@@ -103,6 +127,63 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
             rules.general.condition_yellow,
             &mut self.world.scenario_rng,
         )
+    }
+
+    /// Wasm module `TakeDamage` decision (RFC 0001 6f): the final damage
+    /// before Strength is written; see `sim::ext_modules::decide`.
+    fn decide_damage(&mut self, damage: i32) -> i32 {
+        use vera20k_wasm_ext::triggers::EVENT_TAKE_DAMAGE;
+        if !self.execute_world_callbacks
+            || !self.world.trigger_runtime.module_decides(EVENT_TAKE_DAMAGE)
+        {
+            return damage;
+        }
+        let event = self.take_damage_event(damage);
+        let decided = self.world.decide_module_event(
+            self.rules,
+            &event,
+            None,
+            None,
+            i64::from(damage),
+            |answer| Some(answer.clamp(0, i64::from(i32::MAX))),
+        );
+        decided
+            .and_then(|answer| i32::try_from(answer).ok())
+            .unwrap_or(damage)
+    }
+
+    /// Wasm module `TakeDamage` (RFC 0001 appendix 4.3): after the Strength
+    /// write, with the source, the warhead and the damage written; then
+    /// `FatalDamage` when the write left 0, before Kill and Destroy (which
+    /// read the live Strength again, 5F5752..579A).
+    fn committed(&mut self, damage: i32) {
+        use vera20k_wasm_ext::triggers::{EVENT_FATAL_DAMAGE, EVENT_TAKE_DAMAGE};
+        if !self.execute_world_callbacks {
+            return;
+        }
+        if self.world.trigger_runtime.module_listens(EVENT_TAKE_DAMAGE) {
+            let event = self.take_damage_event(damage);
+            self.world
+                .raise_module_event(self.rules, &mut self.effects, event);
+        }
+        if self
+            .world
+            .trigger_runtime
+            .module_listens(EVENT_FATAL_DAMAGE)
+            && self
+                .world
+                .substrate
+                .entities
+                .get(self.event.target_id)
+                .is_some_and(|target| target.health.current() == 0)
+        {
+            let event = crate::sim::ext_modules::ModuleEvent {
+                kind: EVENT_FATAL_DAMAGE,
+                ..self.take_damage_event(damage)
+            };
+            self.world
+                .raise_module_event(self.rules, &mut self.effects, event);
+        }
     }
 
     fn invoke(&mut self, callback: super::object_health::HealthCallback) {
@@ -165,8 +246,18 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
                 } else {
                     super::KillSource::Techno((attacker != RAD_NO_ATTACKER).then_some(attacker))
                 };
-                self.world
-                    .record_the_kill(id, source, super::KillCallback::Terminal, context);
+                // The lethal warhead for a Wasm module `Killed` record.
+                let warhead = self
+                    .rules
+                    .warhead_index(self.world.interner.resolve(self.event.warhead_ref))
+                    .map_or(-1, |index| index as i32);
+                self.world.record_the_kill_by_warhead(
+                    id,
+                    source,
+                    super::KillCallback::Terminal,
+                    warhead,
+                    context,
+                );
             }
             HealthCallback::Destroy => {
                 if self.execute_world_callbacks {

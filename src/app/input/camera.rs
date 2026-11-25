@@ -143,6 +143,8 @@ pub(crate) fn restore_tactical_view(
     let Some(saved) = saved else {
         return;
     };
+    // A loaded game keeps its saved zoom, HD art or not.
+    renderer.hd_art_zoom_pending = false;
     let viewport = tactical_centring_size(
         platform,
         renderer,
@@ -1873,9 +1875,13 @@ pub(crate) fn apply_zoom(input: &mut MatchInputState, delta_lines: f32) {
 /// resolution at a 1280x800 reference frame while the frame stays the window's.
 ///
 /// Wheel up selects the next smaller view distance (zoom in); wheel down
-/// selects the next larger one. Cycling clamps at both ends.
+/// selects the next larger one. Cycling clamps at both ends. VERA's HD art
+/// (`render::hd_switch`) adds Close (150%) and Closest (200%), where its art has
+/// the pixels to show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum ViewDistanceTier {
+    Closest,
+    Close,
     Small,
     #[default]
     Default,
@@ -1884,11 +1890,20 @@ pub(crate) enum ViewDistanceTier {
 }
 
 impl ViewDistanceTier {
-    pub(crate) const ALL: [Self; 4] = [Self::Small, Self::Default, Self::Large, Self::Huge];
+    pub(crate) const ALL: [Self; 6] = [
+        Self::Closest,
+        Self::Close,
+        Self::Small,
+        Self::Default,
+        Self::Large,
+        Self::Huge,
+    ];
 
     /// Multiplier of the 1280x800 reference viewport.
     pub(crate) const fn scale(self) -> f32 {
         match self {
+            Self::Closest => 0.5,
+            Self::Close => 2.0 / 3.0,
             Self::Small => 0.8,
             Self::Default => 1.0,
             Self::Large => 1.25,
@@ -1913,6 +1928,8 @@ impl ViewDistanceTier {
     /// One step toward a larger view distance, clamped at `Huge`.
     fn larger(self) -> Self {
         match self {
+            Self::Closest => Self::Close,
+            Self::Close => Self::Small,
             Self::Small => Self::Default,
             Self::Default => Self::Large,
             Self::Large => Self::Huge,
@@ -1920,10 +1937,12 @@ impl ViewDistanceTier {
         }
     }
 
-    /// One step toward a smaller view distance, clamped at `Small`.
+    /// One step toward a smaller view distance, clamped at `Closest`.
     fn smaller(self) -> Self {
         match self {
-            Self::Small => Self::Small,
+            Self::Closest => Self::Closest,
+            Self::Close => Self::Closest,
+            Self::Small => Self::Close,
             Self::Default => Self::Small,
             Self::Large => Self::Default,
             Self::Huge => Self::Large,
@@ -2060,6 +2079,35 @@ fn set_view_distance_in(
     input.zoom_target = tier.zoom();
 }
 
+/// Ease the wheel zoom to `zoom` around the battlefield's centre
+/// (`animate_zoom` keeps it in place): HD art's zoomed view
+/// (`render::hd_switch::DEFAULT_ZOOM`).
+pub(crate) fn ease_zoom_to_centre(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+    zoom: f32,
+) {
+    let viewport = tactical_centring_size(
+        platform,
+        renderer,
+        screen,
+        &match_state.match_presentation,
+        persistence,
+    );
+    let input = &mut match_state.input;
+    let anchor = [viewport.0 as f32 / 2.0, viewport.1 as f32 / 2.0];
+    let current = input.zoom_level;
+    input.zoom_anchor_world = [
+        anchor[0] / current + input.camera_x,
+        anchor[1] / current + input.camera_y,
+    ];
+    input.zoom_anchor_screen = anchor;
+    input.zoom_target = zoom.clamp(MIN_ZOOM, MAX_ZOOM);
+}
+
 /// Whether the cursor is over the battlefield rather than the sidebar column
 /// or the bottom command strip, in the frame pixels the cursor uses.
 pub(crate) fn cursor_over_battlefield(
@@ -2082,40 +2130,50 @@ pub(crate) fn cursor_over_battlefield(
 }
 
 /// The battlefield point the player is pointing at now, in world pixels.
-pub(crate) fn spawn_pointer_world_point(state: &AppState) -> Option<(f32, f32)> {
-    let pointer = state.match_state.input.pointer_in_window()?;
+pub(crate) fn spawn_pointer_world_point(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<(f32, f32)> {
+    let pointer = match_state.input.pointer_in_window()?;
     // A tap supplies window coordinates even when the hardware mouse is outside.
-    if !(state.platform.pointer_in_client || touch_owns_pointer(&state.match_state.input))
-        || !cursor_over_battlefield(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &state.match_state,
-            &state.persistence,
-        )
+    if !(platform.pointer_in_client || touch_owns_pointer(&match_state.input))
+        || !cursor_over_battlefield(platform, renderer, screen, match_state, persistence)
     {
         return None;
     }
-    if let Some(zoom) = state.tactical_zoom() {
+    if let Some(zoom) = renderer.tactical_zoom(screen) {
         let (width, height) = zoom.frame_size();
-        if !state.platform.pointer_held
+        if !platform.pointer_held
             && !viewport_contains((zoom.origin.0, zoom.origin.1, width, height), pointer)
         {
             return None;
         }
     }
-    let (x, y) = state.cursor_position();
+    let (x, y) = match_state.input.cursor_position();
     // A floating sidebar (including its radar) can cover the tactical rectangle.
-    if viewport_contains(state.sidebar_frame().column(), (x, y)) {
+    if viewport_contains(
+        crate::app::state::sidebar_frame(
+            platform,
+            persistence,
+            renderer,
+            screen,
+            &match_state.match_presentation.sidebar_layout_spec,
+        )
+        .column(),
+        (x, y),
+    ) {
         return None;
     }
     // A live control there, Phobos' superweapon column included.
-    let (px, py) = state.match_state.input.cursor_px();
-    if crate::app::input::chrome_input::control_at(&state.match_state.match_presentation, px, py) {
+    let (px, py) = match_state.input.cursor_px();
+    if crate::app::input::chrome_input::control_at(&match_state.match_presentation, px, py) {
         return None;
     }
     Some(crate::app::match_runtime::sim_tick::screen_point_to_world(
-        &state.match_state.input,
+        &match_state.input,
         x,
         y,
     ))
@@ -3813,6 +3871,8 @@ mod camera_bounds_tests;
 #[test]
 fn view_distance_tiers_match_the_1280_reference_and_clamp_at_the_ends() {
     let expected = [
+        (0.5, 640, 400),
+        (2.0 / 3.0, 853, 533),
         (0.8, 1024, 640),
         (1.0, 1280, 800),
         (1.25, 1600, 1000),
@@ -3827,7 +3887,13 @@ fn view_distance_tiers_match_the_1280_reference_and_clamp_at_the_ends() {
             "{tier:?}"
         );
     }
-    assert_eq!(ViewDistanceTier::Small.smaller(), ViewDistanceTier::Small);
+    assert_eq!(
+        ViewDistanceTier::Closest.smaller(),
+        ViewDistanceTier::Closest
+    );
+    assert_eq!(ViewDistanceTier::Close.smaller(), ViewDistanceTier::Closest);
+    assert_eq!(ViewDistanceTier::Close.larger(), ViewDistanceTier::Small);
+    assert_eq!(ViewDistanceTier::Small.smaller(), ViewDistanceTier::Close);
     assert_eq!(ViewDistanceTier::Small.larger(), ViewDistanceTier::Default);
     assert_eq!(ViewDistanceTier::Default.larger(), ViewDistanceTier::Large);
     assert_eq!(ViewDistanceTier::Default.smaller(), ViewDistanceTier::Small);
@@ -3839,6 +3905,8 @@ fn view_distance_tiers_match_the_1280_reference_and_clamp_at_the_ends() {
     assert_eq!(ViewDistanceTier::nearest(0.79), ViewDistanceTier::Large);
     assert_eq!(ViewDistanceTier::nearest(1.0), ViewDistanceTier::Default);
     assert_eq!(ViewDistanceTier::nearest(1.2), ViewDistanceTier::Small);
+    assert_eq!(ViewDistanceTier::nearest(2.0), ViewDistanceTier::Closest);
+    assert_eq!(ViewDistanceTier::Closest.zoom(), 2.0);
 }
 
 /// Half a tile on **both** axes from the tile corner — the Y half is the one

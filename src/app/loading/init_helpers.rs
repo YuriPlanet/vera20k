@@ -274,6 +274,16 @@ pub(crate) fn build_tile_atlas(
 
     let images: HashMap<TileKey, TileImage> =
         theater::load_tile_images(asset_manager, lookup, palette, &needed);
+    // VERA's HD art terrain collection: every tile of the theater, not only
+    // the map's, for the offline upscaler (`render::hd_terrain`).
+    if std::env::var_os("VERA20K_HD_DUMP_TERRAIN").is_some() {
+        let mut all: HashSet<TileKey> = HashSet::new();
+        for tile_id in 0..lookup.len().min(usize::from(u16::MAX)) {
+            let _ = theater::inject_template_tiles(&mut all, tile_id as u16, lookup, asset_manager);
+        }
+        let every = theater::load_tile_images(asset_manager, lookup, palette, &all);
+        crate::render::hd_terrain::dump_tiles(every.values());
+    }
     if images.is_empty() {
         log::warn!("No tile images loaded — falling back to single tile");
         return None;

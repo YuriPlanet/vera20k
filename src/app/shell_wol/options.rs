@@ -356,7 +356,14 @@ fn handle_events(state: &mut AppState) {
             }
             PageEvent::Activated(id) if on_sound && id == SHELL_SOUND_PAGE.back.id => {
                 let positions = sound::shell_sound_positions(gui, root);
-                crate::app::input::sound::apply_back_volumes(state, positions);
+                crate::app::input::sound::apply_back_volumes(
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence.options_profile,
+                    positions,
+                );
                 App::leave_shell_dialog(
                     state,
                     crate::app::frontend::shell_transition::ShellSlideKind::WolSoundOptions,
@@ -365,7 +372,15 @@ fn handle_events(state: &mut AppState) {
             }
             _ if on_sound => {
                 if let Some((id, volume)) = sound::shell_sound_volume(&event) {
-                    crate::app::input::sound::apply_slider_volume(state, id, volume);
+                    crate::app::input::sound::apply_slider_volume(
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence.options_profile,
+                        id,
+                        volume,
+                    );
                 }
             }
             _ => {
@@ -380,7 +395,15 @@ fn handle_events(state: &mut AppState) {
                 {
                     dispatch(state, action);
                 } else if modern && let Some((id, volume)) = sound::shell_sound_volume(&event) {
-                    crate::app::input::sound::apply_slider_volume(state, id, volume);
+                    crate::app::input::sound::apply_slider_volume(
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence.options_profile,
+                        id,
+                        volume,
+                    );
                     if let Some(config) = state.platform.game_config.as_ref()
                         && let Err(error) =
                             profile_file::update(config.paths.settings_dir(), |input| {

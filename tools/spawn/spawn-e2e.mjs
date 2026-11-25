@@ -17,6 +17,8 @@
 // --ips gives each source's address in the other files (default 127.0.0.1).
 // --cors ORIGIN answers the browser's CORS preflight for that page origin.
 // --gateway ORIGIN names the WebSocket gateway browser players reach the relay by.
+// --mod FOLDER copies that mod folder into every player's Mods and plays it
+// (config.toml `[paths] mod`; browser players import it, browser.mjs).
 //
 // Both write one directory per player (DIR/p0, DIR/p1, ...) holding spawn.ini,
 // the map as spawnmap.ini and a config.toml pointing at RETAIL with settings
@@ -24,9 +26,9 @@
 // spawned client uses, signing relay grants in the lobby's format
 // (relay_grant.mjs); it is a test mock, never a deployment.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { base64url, relayGrant, watchGrant } from './relay_grant.mjs';
 
@@ -103,8 +105,15 @@ function playerDirectory(opts, source, ini, prefix = 'p') {
   writeFileSync(join(directory, 'spawn.ini'), ini);
   copyFileSync(opts.map, join(directory, 'spawnmap.ini'));
   // Machine-specific paths stay in this scratch directory, never the repo.
+  let mod = '';
+  if (opts.mod) {
+    const name = basename(resolve(opts.mod));
+    rmSync(join(directory, 'Mods', name), { recursive: true, force: true });
+    cpSync(resolve(opts.mod), join(directory, 'Mods', name), { recursive: true });
+    mod = `mod = ${JSON.stringify(name)}\n`;
+  }
   writeFileSync(join(directory, 'config.toml'),
-    `[paths]\nra2_dir = ${JSON.stringify(resolve(opts.ra2))}\nsettings_dir = "."\n`);
+    `[paths]\nra2_dir = ${JSON.stringify(resolve(opts.ra2))}\nsettings_dir = "."\n${mod}`);
   // A small frontend surface; run.sh keeps the window invisible.
   writeFileSync(join(directory, 'VERA.INI'), '[Video]\nScreenWidth=640\nScreenHeight=480\n');
   return directory;

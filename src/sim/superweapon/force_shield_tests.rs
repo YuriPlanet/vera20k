@@ -479,8 +479,8 @@ mod sound_reference_history {
                 .any(|view| view.type_id == type_id && view.can_fire)
         );
         sim.sound_events.clear_for_test();
-        assert!(sim.apply_command_with_overlays(
-            None,
+        assert!((sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             OWNER,
             &Command::LaunchSuperWeapon {
                 sw_type_id: type_id,
@@ -490,7 +490,7 @@ mod sound_reference_history {
             rules,
             None,
             &mut FrameEffects::default(),
-        ));
+        )).is_ok());
         // StartSound is expanded by the app from this actual Launch fact and
         // the bound type. Its cue consumer is tested in sound_dispatch; core
         // owns the real delayed SpecialSound producer6CBCA8..6CBCCF below.

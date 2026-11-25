@@ -94,9 +94,20 @@ VERA20K uses the original Yuri's Revenge rules by default. In **Options**, you c
 sound, graphics and controls or turn on VERA features. The game saves your preferences in
 `VERA.INI`, with VERA-specific options under `[VERA]`.
 
+You can add your own mods, maps, music and more. They go in the VERA20K folder: the install
+folder on Windows, `~/Library/Application Support/VERA20k` on macOS and `~/.local/share/VERA20k`
+on Linux.
+
+- **Mods:** in **Options → Mods**, **Add Mod** installs a mod you downloaded and **New Mod** starts your own. Each mod gets its own folder in `Mods`.
+- **Maps:** put `.map`, `.mpr` or `.yrm` files in `Maps` to play them in Skirmish. Maps you download online are saved there too.
+- **Music:** put WAV or AUD files in `musics` and add a `music.ini` there with `enable=yes` under `[Music]`. Your songs then play in matches alongside the game's music; `ExclusiveMode=yes` plays only yours.
+- **HD art:** an [HD art pack](docs/hd-art.md) is installed and picked like a mod. Then turn on **HD art** in **Options**.
+- **Languages:** a `vera20k.<language>.ini` file adds a language or changes the game's text. See [translating](src/i18n/README.md).
+
 Lobby settings, mods and maps can change the rules for a match. Mods and maps can enable supported
-[Ares](docs/ares.md) and [Phobos](docs/phobos.md) features through their INI files. A mod can also
-enable Ares by including `ares.mix`. Some Phobos features still require a build with `--features phobos`.
+[Ares](docs/ares.md), [Phobos](docs/phobos.md) and [Kratos](docs/kratos.md) features through their
+INI files. A mod can also enable Ares by including `ares.mix`. Some Phobos features still require a
+build with `--features phobos`.
 
 To create a mod, start with the [modding guide](docs/modding.md).
 
@@ -129,7 +140,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
-This product includes software developed by the [Kratos PP author](docs/kratos.md#original-project-and-authors).
+This product includes software developed by the [Kratos Authors](docs/kratos.md#original-project-and-authors).
 
 **Read the [legal notice](LEGAL.md) before you share, sell or fork VERA20K.**
 

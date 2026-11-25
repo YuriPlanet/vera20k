@@ -156,7 +156,8 @@ mod map_wall_owner_candidate_tests {
             EntityCategory::Structure,
         );
         entity
-            .seldom.type_facts
+            .seldom
+            .type_facts
             .set_foundation_for_test(foundation.to_string().into());
         entity.lifecycle.set_object_alive_for_test(true);
         entity.lifecycle.set_cell_marked_for_test(true);
@@ -1562,27 +1563,55 @@ struct PreparedScenarioRules {
     native: crate::rules::process_owner::NativeScenarioRulesLoad,
     team_ai_registry: crate::rules::team_ai_ini::TeamAiIniRegistry,
     rules_at_ai_read: Option<RuleSet>,
+    /// The Wasm extension modules that ran `on_rules` in this load.
+    ext_modules: crate::sim::ext_modules::PreparedExtModules,
 }
 
+/// The rules, AI registry, AI-read rules, fixed Art, receipt, Wasm modules
+/// and merged rules text of one scenario rules load.
+type ScenarioRulesParts = (
+    RuleSet,
+    crate::rules::team_ai_ini::TeamAiIniRegistry,
+    Option<RuleSet>,
+    crate::rules::ini_parser::IniFile,
+    crate::rules::process_owner::NativeScenarioRulesReceipt,
+    crate::sim::ext_modules::PreparedExtModules,
+    crate::rules::ini_parser::IniFile,
+);
+
 impl PreparedScenarioRules {
-    fn into_parts(
-        self,
-    ) -> (
-        RuleSet,
-        crate::rules::team_ai_ini::TeamAiIniRegistry,
-        Option<RuleSet>,
-        crate::rules::ini_parser::IniFile,
-        crate::rules::process_owner::NativeScenarioRulesReceipt,
-    ) {
-        let (rules, _, art, receipt) = self.native.into_parts();
+    fn into_parts(self) -> ScenarioRulesParts {
+        let (rules, processed_ini, art, receipt) = self.native.into_parts();
         (
             rules,
             self.team_ai_registry,
             self.rules_at_ai_read,
             art,
             receipt,
+            self.ext_modules,
+            processed_ini,
         )
     }
+}
+
+/// The scenario's Wasm extension modules (RFC 0001): the selected mod's
+/// `rules.wasm`, then the map's, under the mod's `[VeraWasm]` policy.
+fn load_scenario_ext_modules(
+    owner: &crate::rules::process_owner::NativeRulesProcessOwner,
+    assets: &AssetManager,
+    map_ini: &crate::rules::ini_parser::IniFile,
+    mod_ai_seats: usize,
+) -> Result<crate::sim::ext_modules::PreparedExtModules> {
+    let mod_module = crate::sim::ext_modules::PreparedExtModules::read_mod_file(assets)
+        .map_err(anyhow::Error::msg)?;
+    crate::sim::ext_modules::PreparedExtModules::load(
+        owner.selected_rules_root(),
+        mod_module.as_deref(),
+        map_ini,
+        owner.personal_rules().wasm_budget(),
+        mod_ai_seats,
+    )
+    .map_err(|e| anyhow::anyhow!("Wasm extension module: {e}"))
 }
 
 /// The shared Rules/AI ordering for ordinary Full_Init and its early .SED arm.
@@ -1597,28 +1626,43 @@ fn prepare_scenario_rules(
     tmcj4f: Option<&crate::rules::ini_parser::IniFile>,
     rule_policy: RulePolicy,
     ai_file: crate::rules::retail_sources::AiFile,
+    mod_ai_seats: usize,
 ) -> Result<PreparedScenarioRules> {
     if ai_file == crate::rules::retail_sources::AiFile::Original {
         log::info!("Network match AI file: the original game's; it seats no computer");
     }
+    let mut ext_modules = load_scenario_ext_modules(owner, assets, map_ini, mod_ai_seats)?;
     let (native, team_ai_registry, rules_at_ai_read) = if let Some(tmcj4f) = tmcj4f {
-        let (loaded, (ai, rules_at_read)) = owner
-            .load_scenario_with_post_map(prefix, map_ini, tmcj4f, |rules_at_read| {
-                (
-                    crate::rules::team_ai_ini::TeamAiIniRegistry::load_for_match(
-                        assets,
-                        map_ini,
-                        rule_policy,
-                        ai_file,
-                    ),
-                    rules_at_read,
-                )
-            })
+        let after_map = |rules_at_read| {
+            (
+                crate::rules::team_ai_ini::TeamAiIniRegistry::load_for_match(
+                    assets,
+                    map_ini,
+                    rule_policy,
+                    ai_file,
+                ),
+                rules_at_read,
+            )
+        };
+        let (loaded, after_map_result) = owner
+            .load_scenario_with_ext_rules(
+                prefix,
+                map_ini,
+                Some((tmcj4f, after_map)),
+                &mut ext_modules,
+            )
             .map_err(|error| anyhow::anyhow!("failed native scenario rules rebuild: {error}"))?;
+        let (ai, rules_at_read) =
+            after_map_result.expect("TMCJ4F Rules stack includes the map boundary");
         (loaded, ai.map_err(anyhow::Error::msg)?, Some(rules_at_read))
     } else {
-        let loaded = owner
-            .load_scenario(prefix, map_ini)
+        let (loaded, _) = owner
+            .load_scenario_with_ext_rules(
+                prefix,
+                map_ini,
+                None::<(&crate::rules::ini_parser::IniFile, fn(RuleSet))>,
+                &mut ext_modules,
+            )
             .map_err(|error| anyhow::anyhow!("failed native scenario rules rebuild: {error}"))?;
         let ai = crate::rules::team_ai_ini::TeamAiIniRegistry::load_for_match(
             assets,
@@ -1633,6 +1677,7 @@ fn prepare_scenario_rules(
         native,
         team_ai_registry,
         rules_at_ai_read,
+        ext_modules,
     })
 }
 
@@ -1706,76 +1751,6 @@ impl MapLoadInitial {
         }
         log::info!("The mod adds to the map: {}", additions.names().join(", "));
         self.map_data = self.map_data.with_additions(additions.files())?;
-        Ok(self)
-    }
-
-    /// `-ra2` translation of the retail Allied mission ALL02S ("Hail to the
-    /// Chief"): its Chapel trigger uses an RA2 event kind whose stock YR
-    /// descendant the engine evaluates differently.
-    ///
-    /// `Chapel Destroyed` uses event 57, "the trigger's House owns no
-    /// BuildingTypes[186]". An engineer capture moves the only Chapel out of
-    /// NeutralA's registration and zeroes that House-scoped count, which the
-    /// trigger cannot distinguish from the Chapel being destroyed. The YR
-    /// campaign master rewrites that trigger to event 61, "no TechnoType
-    /// named CACOLO01 exists anywhere" — still true when the Chapel is
-    /// destroyed, false while the captured building lives on.
-    ///
-    /// Tanya's `1,11,0,3` is deliberately left alone: event 11 is "the
-    /// trigger's House is destroyed", and Germans owns only TANY on this
-    /// map, so the stock event is already correct. Limboed passengers keep
-    /// their tracking count, so entering a transport does not fake her death.
-    ///
-    /// This is map data, applied after every other map source has been merged
-    /// and before anything reads the map's rules or triggers. It never runs in
-    /// YR mode, on another map, or on a network map.
-    pub(crate) fn with_ra2_campaign_fixups(mut self, map_file: &str) -> Result<Self> {
-        use crate::rules::ini_parser::{IniFile, IniSection};
-
-        if !crate::util::ra2_launch::enabled() {
-            return Ok(self);
-        }
-        let base_name = map_file.rsplit(['/', '\\']).next().unwrap_or(map_file);
-        if !base_name.eq_ignore_ascii_case("ALL02S.MAP") {
-            return Ok(self);
-        }
-        // Each entry as `map::events::parse_events` reads it, through the
-        // 512-byte buffer of TriggerType Read7274A6.
-        let edits: Vec<String> = self
-            .map_data
-            .ini
-            .section("Events")
-            .into_iter()
-            .flat_map(|section| {
-                section
-                    .keys()
-                    .map(move |key| (key, section.read_string(key, "", 512)))
-            })
-            .filter_map(|(key, value)| {
-                let translated = if value.eq_ignore_ascii_case("1,57,0,186") {
-                    Some("1,61,2,0,CACOLO01")
-                } else {
-                    None
-                };
-                translated.map(|value| format!("{key}={value}"))
-            })
-            .collect();
-        if edits.is_empty() {
-            return Ok(self);
-        }
-        let mut patch_events = IniSection::new("Events".to_owned());
-        for edit in &edits {
-            let (key, value) = edit.split_once('=').expect("built as key=value");
-            patch_events.set(key, value);
-        }
-        let patch = IniFile::from_sections([patch_events]);
-        let mut ini = std::mem::replace(&mut self.map_data.ini, IniFile::empty());
-        ini.merge(&patch);
-        self.map_data = crate::map::map_file::MapFile::from_ini(ini)?;
-        log::info!(
-            "-ra2 ALL02S campaign translation applied: {}",
-            edits.join(", ")
-        );
         Ok(self)
     }
 
@@ -2814,6 +2789,9 @@ pub(crate) fn load_map_initial_with_assets(
             tmcj4f.as_ref(),
             full_init_entry_mode.stock_rule_policy(None),
             ai_file,
+            // RESIDUAL: a random map's load has no launch session here, so
+            // its "mod AI" seats get no extra module memory.
+            0,
         )?;
         let terrain_rules = &generated_rules.native.rules().terrain_rules;
         let resolved = crate::map::rmg::build::ResolvedTheaterInputs::from_theater(
@@ -3414,6 +3392,7 @@ fn load_map_first_step(
                     tmcj4f_ini.as_ref(),
                     rule_policy,
                     ai_file,
+                    skirmish_launch_session.map_or(0, |launch| launch.mod_ai_slots.len()),
                 )?
             };
             let (
@@ -3422,6 +3401,8 @@ fn load_map_first_step(
                 team_ai_rules_at_read,
                 fixed_art_ini,
                 native_rules_receipt,
+                ext_modules,
+                processed_rules_ini,
             ) = prepared_rules.into_parts();
             Ok(FreshMapLoadStep::Continue(FreshMapLoadContinuation::new(
                 "art-metadata",
@@ -3490,14 +3471,17 @@ fn load_map_first_step(
                                 bootstrap_rng.install_process_mapgen_continuation(continuation);
                             }
                             let authored_campaign = startup.authored_campaign();
-                            let campaign_game_options = if let Some(game_speed) = startup.authored_campaign_speed() {
-                                Some(crate::sim::game_options::GameOptions {
-                                    game_speed,
-                                    ..Default::default()
-                                })
-                            } else {
-                                campaign.as_ref().and_then(|campaign| campaign.game_options())
-                            };
+                            let campaign_game_options =
+                                if let Some(game_speed) = startup.authored_campaign_speed() {
+                                    Some(crate::sim::game_options::GameOptions {
+                                        game_speed,
+                                        ..Default::default()
+                                    })
+                                } else {
+                                    campaign
+                                        .as_ref()
+                                        .and_then(|campaign| campaign.game_options())
+                                };
                             let fresh_prefix = if let Some(plan) = scenario_prefix_plan {
                                 FreshScenarioPrefix::StockOffline(
                                     plan.bind_native_rules_receipt(
@@ -3519,7 +3503,8 @@ fn load_map_first_step(
                                     house_roster: &house_roster,
                                     game_options: campaign_game_options.as_ref(),
                                     campaign_index: 0,
-                                    restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                                    restart_carry_over:
+                                        crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
                                 }
                             } else {
                                 let campaign = campaign
@@ -3616,6 +3601,16 @@ fn load_map_first_step(
                                     .map(crate::app::process_assets::ProcessAudioCatalog::sounds),
                                 services.themes,
                             );
+                            // Wasm extension modules (RFC 0001), which ran
+                            // `on_rules` with the rules. One that cannot
+                            // start stops the match before it starts.
+                            staged_simulation
+                                .install_scenario_ext_modules(
+                                    &rules,
+                                    ext_modules,
+                                    processed_rules_ini,
+                                )
+                                .map_err(|e| anyhow::anyhow!("Wasm extension module: {e}"))?;
                             let (mut scenario_fill_rng, variant_main_rng) =
                                 staged_simulation.terrain_load_draws();
                             let mut scenario_fill_ranged =

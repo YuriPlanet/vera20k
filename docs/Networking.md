@@ -709,6 +709,12 @@ A successful join moves them once. A lost reply retries the same command ID.
 Earlier clients leave first; a lobby without visits never offers this switch.
 The game, lobby and relay exchange the same messages.
 
+Simulation WASM modules run locally on every peer. The existing mod-file
+digest covers a selected mod's loose rules module, and an embedded module
+travels with the agreed map. Module state participates in the match checksum.
+The source-derived build identity refuses a mixed room before simulation.
+Peers on the same earlier build use its earlier behavior after a rollback.
+
 In VERA Online game rooms, the lobby sends rank badges as part of the join. The
 newcomer sees the room's badges, and everyone already there sees the newcomer's badge
 as their name appears. Released clients use the same ladder messages. After a lobby

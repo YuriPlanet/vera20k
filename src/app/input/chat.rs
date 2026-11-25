@@ -31,11 +31,13 @@
 //! - Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::keyboard::InGameKeyEdge;
 use crate::app::match_runtime::beacons::{self, BeaconTarget};
 use crate::app::match_runtime::session::SessionMode;
 use crate::app::match_runtime::sim_host::SimHost;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
 use crate::sim::intern::InternedId;
 use crate::sim::skirmish_cheats::SkirmishCheat;
 use crate::ui::messages::{EditInput, EditKey};
@@ -201,18 +203,20 @@ pub(crate) fn key_edge(state: &mut AppState, edge: &InGameKeyEdge<'_>) -> bool {
         let modifiers = state.match_state.input.hotkey_modifiers;
         if !state.match_state.session_mode().is_network() {
             if edge.logical == &Key::Named(NamedKey::Escape)
-                && skirmish_input_available(state)
+                && skirmish_input_available(&state.match_state)
                 && cancel_skirmish_spawn(state)
             {
                 return true;
             }
-            if opens_skirmish_chat(edge.logical, modifiers) && skirmish_input_available(state) {
+            if opens_skirmish_chat(edge.logical, modifiers)
+                && skirmish_input_available(&state.match_state)
+            {
                 return open_edit(state, ChatTarget::Skirmish);
             }
             if edge.text == Some("/")
                 && !modifiers.super_key()
                 && state.persistence.options_profile.skirmish_cheats
-                && skirmish_input_available(state)
+                && skirmish_input_available(&state.match_state)
             {
                 let presentation = &mut state.match_state.match_presentation;
                 if presentation.message_list.add_edit("", [1.0; 3], true) {
@@ -231,7 +235,11 @@ pub(crate) fn key_edge(state: &mut AppState, edge: &InGameKeyEdge<'_>) -> bool {
         };
         // 0x0055E4E2: PlayerPtr's selected beacon picks the branch.
         if beacons::own_selected(&state.match_state) {
-            return open_beacon_edit(state);
+            return open_beacon_edit(
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+            );
         }
         return open_edit(state, target);
     }
@@ -257,19 +265,22 @@ pub(crate) fn commit_text(state: &mut AppState, text: &str) {
     if state.match_state.match_presentation.chat.target != ChatTarget::Skirmish
         && beacons::own_selected(&state.match_state)
     {
-        follow_label(state, None);
+        follow_label(&state.platform.ime, &mut state.match_state, None);
     }
 }
 
 /// The pre-hook's composition test `[0x00B7356C]` (`0x0055E671`): while an
 /// input-method composition is open, the selected beacon's label follows
 /// the line and the composition.
-pub(crate) fn composition_changed(state: &mut AppState) {
-    if state.match_state.match_presentation.chat.target != ChatTarget::Skirmish
-        && state.match_state.match_presentation.message_list.editing()
-        && composition(&state.platform.ime).is_some()
+pub(crate) fn composition_changed(
+    ime: &crate::app::input::ime::ImeState,
+    match_state: &mut MatchState,
+) {
+    if match_state.match_presentation.chat.target != ChatTarget::Skirmish
+        && match_state.match_presentation.message_list.editing()
+        && composition(ime).is_some()
     {
-        follow_label(state, None);
+        follow_label(ime, match_state, None);
     }
 }
 
@@ -282,21 +293,20 @@ fn composition(ime: &crate::app::input::ime::ImeState) -> Option<Vec<u16>> {
 /// `0x0055E6B3..0x0055E734`: GetEditBuffer, then the composition and `_`,
 /// written into the first selected beacon without sending it. `typed`
 /// stands in for the list's buffer once Input has ended the edit.
-fn follow_label(state: &mut AppState, typed: Option<Vec<u16>>) {
+fn follow_label(
+    ime: &crate::app::input::ime::ImeState,
+    match_state: &mut MatchState,
+    typed: Option<Vec<u16>>,
+) {
     let mut text = typed
         .or_else(|| {
-            let list = &state.match_state.match_presentation.message_list;
+            let list = &match_state.match_presentation.message_list;
             list.edit_typed().map(<[u16]>::to_vec)
         })
         .unwrap_or_default();
-    text.extend(composition(&state.platform.ime).unwrap_or_default());
+    text.extend(composition(ime).unwrap_or_default());
     text.push(u16::from(b'_'));
-    beacons::edit_beacon_message(
-        &mut state.match_state,
-        Some(&text),
-        BeaconTarget::Selected,
-        false,
-    );
+    beacons::edit_beacon_message(match_state, Some(&text), BeaconTarget::Selected, false);
 }
 
 /// A right press or release (key 2 or `0x802`) ends an open edit; the game
@@ -415,24 +425,22 @@ fn open_edit(state: &mut AppState, target: ChatTarget) -> bool {
 /// in the player's colour, hidden (`0x0055E5C1`), without overflow
 /// (`0x0055E5CA`) and with the chat target untouched; the selected beacon's
 /// label becomes the bare cursor.
-fn open_beacon_edit(state: &mut AppState) -> bool {
-    let Some(local) = local_house(&state.match_state.sim_runtime) else {
+fn open_beacon_edit(
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+) -> bool {
+    let Some(local) = local_house(&match_state.sim_runtime) else {
         return false;
     };
-    let prefix = state.csf_text("TXT_BEACON_MESSAGE");
-    let rgb =
-        crate::app::input::messages::player_line_rgb(&state.frontend, &state.match_state, local);
-    let list = &mut state.match_state.match_presentation.message_list;
+    let prefix = process_assets.csf_text("TXT_BEACON_MESSAGE");
+    let rgb = crate::app::input::messages::player_line_rgb(frontend, match_state, local);
+    let list = &mut match_state.match_presentation.message_list;
     if list.add_edit(&prefix, rgb, false) {
         list.hide_edit();
     }
     let cursor = [u16::from(b'_')];
-    beacons::edit_beacon_message(
-        &mut state.match_state,
-        Some(&cursor),
-        BeaconTarget::Selected,
-        false,
-    );
+    beacons::edit_beacon_message(match_state, Some(&cursor), BeaconTarget::Selected, false);
     true
 }
 
@@ -510,7 +518,11 @@ fn apply_input(state: &mut AppState, key: EditKey) {
                 true,
             );
         } else {
-            follow_label(state, Some(typed.clone()));
+            follow_label(
+                &state.platform.ime,
+                &mut state.match_state,
+                Some(typed.clone()),
+            );
         }
     }
     // 0x0055E77B..0x0055E7AE: results 3 and 4 with an own beacon selected
@@ -552,13 +564,13 @@ fn apply_input(state: &mut AppState, key: EditKey) {
 }
 
 /// Skirmish chat follows the active local match, including its ordinary input locks.
-fn skirmish_input_available(state: &AppState) -> bool {
-    state.match_state.session_mode() == SessionMode::Skirmish
-        && !state.match_state.match_diagnostics.is_replay_playback()
-        && !state.match_state.frame_stopped
-        && !state.match_state.paused()
-        && !crate::app::input::campaign_input::is_locked(&state.match_state)
-        && !crate::app::App::house_outcome_wait_pending(&state.match_state.sim_runtime)
+fn skirmish_input_available(match_state: &MatchState) -> bool {
+    match_state.session_mode() == SessionMode::Skirmish
+        && !match_state.match_diagnostics.is_replay_playback()
+        && !match_state.frame_stopped
+        && !match_state.paused()
+        && !crate::app::input::campaign_input::is_locked(match_state)
+        && !crate::app::App::house_outcome_wait_pending(&match_state.sim_runtime)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -610,14 +622,14 @@ fn parse_skirmish_command(line: &str) -> Result<SkirmishCommand, &'static str> {
 }
 
 fn ready_skirmish_cheats(state: &mut AppState) -> Result<(), &'static str> {
-    if !skirmish_input_available(state) {
+    if !skirmish_input_available(&state.match_state) {
         return Err("VERA:CheatUnavailable");
     }
     if !state.persistence.options_profile.skirmish_cheats {
         return Err("VERA:CheatDisabled");
     }
     crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
-    skirmish_input_available(state)
+    skirmish_input_available(&state.match_state)
         .then_some(())
         .ok_or("VERA:CheatUnavailable")
 }
@@ -626,7 +638,9 @@ fn skirmish_command(state: &mut AppState, line: &str) -> Result<String, &'static
     ready_skirmish_cheats(state)?;
     match parse_skirmish_command(line)? {
         SkirmishCommand::Help => Ok(crate::i18n::tr("VERA:CheatHelp")),
-        SkirmishCommand::Apply(command) => apply_skirmish_cheat(state, command),
+        SkirmishCommand::Apply(command) => {
+            apply_skirmish_cheat(&mut state.match_state, &state.process_assets, command)
+        }
         SkirmishCommand::Place(order) => {
             let rt = state
                 .match_state
@@ -677,7 +691,15 @@ pub(crate) fn skirmish_spawn_mouse(
     match (button, pressed) {
         (MouseButton::Left, _) if mouse.right_held() => {}
         (MouseButton::Left, true) => {
-            if super::camera::spawn_pointer_world_point(state).is_some() {
+            if super::camera::spawn_pointer_world_point(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            )
+            .is_some()
+            {
                 state.match_state.input.tactical_mouse.begin_left_press();
             } else {
                 super::messages::post_selection_navigation_text(
@@ -716,7 +738,14 @@ pub(crate) fn skirmish_spawn_mouse(
 fn place_skirmish_spawn(state: &mut AppState) -> Result<String, &'static str> {
     use crate::app::match_runtime::sim_tick;
     // Preserve the point in the displayed camera before joining an outstanding tick.
-    let (x, y) = super::camera::spawn_pointer_world_point(state).ok_or("VERA:CheatPointAtMap")?;
+    let (x, y) = super::camera::spawn_pointer_world_point(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    )
+    .ok_or("VERA:CheatPointAtMap")?;
     ready_skirmish_cheats(state)?;
     let sim = &state
         .match_state
@@ -739,21 +768,22 @@ fn place_skirmish_spawn(state: &mut AppState) -> Result<String, &'static str> {
         count: order.count,
         cell,
     };
-    apply_skirmish_cheat(state, command)
+    apply_skirmish_cheat(&mut state.match_state, &state.process_assets, command)
 }
 
 fn apply_skirmish_cheat(
-    state: &mut AppState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
     command: SkirmishCheat,
 ) -> Result<String, &'static str> {
     use crate::app::match_runtime::{sim_host::SimWrite, sim_tick};
     use crate::i18n::{tr, tr_fill};
     use crate::sim::skirmish_cheats::CheatEffect;
-    sim_tick::prepare_replay_recording(&mut state.match_state, &state.process_assets);
-    let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
+    sim_tick::prepare_replay_recording(match_state, process_assets);
+    let Some(rt) = match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return Err("VERA:CheatUnavailable");
     };
-    let result = match state.match_state.match_diagnostics.replay_log.as_mut() {
+    let result = match match_state.match_diagnostics.replay_log.as_mut() {
         Some(log) => log.apply_skirmish_cheat(&mut rt.simulation, &rt.resources.rules, command),
         None => rt
             .simulation

@@ -4,6 +4,7 @@
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::{App, AppState};
+use crate::render::gpu::GpuContext;
 use crate::ui::coop_score_shell::*;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::page::PageEvent;
@@ -12,13 +13,9 @@ use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
 
-pub(crate) fn layout(state: &AppState) -> CoopScoreLayout {
-    let (w, h) = shell_layout::shell_screen_size(&state.renderer.gpu);
-    CoopScoreLayout::new(
-        w as i32,
-        h as i32,
-        shell_layout::fills_window(&state.renderer.gpu),
-    )
+pub(crate) fn layout(gpu: &GpuContext) -> CoopScoreLayout {
+    let (w, h) = shell_layout::shell_screen_size(gpu);
+    CoopScoreLayout::new(w as i32, h as i32, shell_layout::fills_window(gpu))
 }
 
 /// BC6 owns the result screen while its page is open.
@@ -143,7 +140,7 @@ fn sync_values(
 
 pub(crate) fn update_geometry(state: &mut AppState) {
     if active(&state.frontend) {
-        let layout = layout(state);
+        let layout = layout(&state.renderer.gpu);
         sync(state, &layout);
     }
 }
@@ -190,7 +187,7 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     if state.frontend.coop_score_page.is_none() {
         return;
     }
-    let layout = layout(state);
+    let layout = layout(&state.renderer.gpu);
     sync(state, &layout);
     // The chat edit has the focus and takes every key; Enter submits.
     let controller = &mut state.frontend.shell_controller;
@@ -224,7 +221,7 @@ fn pointer(state: &mut AppState, layout: &CoopScoreLayout, down: Option<bool>) -
 }
 
 pub(crate) fn cursor_moved(state: &mut AppState) {
-    let layout = layout(state);
+    let layout = layout(&state.renderer.gpu);
     pointer(state, &layout, None);
 }
 
@@ -237,7 +234,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     {
         return;
     }
-    let layout = layout(state);
+    let layout = layout(&state.renderer.gpu);
     let controller = &state.frontend.shell_controller;
     let over = crate::ui::shell::menu_page::hovered_id(controller, COOP_SCORE_DIALOG)
         .filter(|id| enabled(state, *id));

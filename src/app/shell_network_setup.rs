@@ -1207,7 +1207,7 @@ pub(crate) fn return_after_match(state: &mut AppState) {
 /// lobby (docs/lobby-protocol.md "Visiting the lobby"); [`show_room`] shows
 /// it again and [`abandon_for_wol_runner`] ends it.
 pub(crate) fn hide_room(state: &mut AppState) {
-    crate::app::input::multiplayer_setup::park_chat(state);
+    crate::app::input::multiplayer_setup::park_chat(&mut state.frontend, &state.match_state);
     state.frontend.skirmish_shell_state.choose_map_modal = None;
     if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
         ui.show_game_options(None);
@@ -1287,7 +1287,11 @@ pub(crate) fn offer_missing_map(
     button_key: &'static str,
 ) {
     // The offer takes the pointer from a row's open list too.
-    crate::app::input::multiplayer_setup::drop_pointer(state, true);
+    crate::app::input::multiplayer_setup::drop_pointer(
+        &mut state.frontend,
+        &state.match_state,
+        true,
+    );
     if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
         ui.map_offer = Some(crate::ui::multiplayer_setup::MapOffer {
             name,
