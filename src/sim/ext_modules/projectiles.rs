@@ -648,3 +648,74 @@ impl Host<'_, '_> {
         Status::Ok
     }
 }
+
+/// Path arithmetic the flight tests (`ext_modules_flight_tests`) check.
+#[cfg(test)]
+pub(crate) mod tests_support {
+    use super::*;
+
+    /// The first point of a one-point `Waypoints` path from `start` to
+    /// `end` at `speed` leptons a frame.
+    pub(crate) fn waypoint_step(start: [i32; 3], end: [i32; 3], speed: i64) -> [i32; 3] {
+        let spec = PathSpec {
+            kind: i32::from(PATH_WAYPOINTS),
+            speed: speed << 16,
+            param: [0, 0],
+            points: vec![end.map(i64::from)],
+        };
+        let start = ProjectileCoord::new(start[0], start[1], start[2]);
+        Path::new(&spec, start, 0).expect("a path").advance().0
+    }
+
+    pub(crate) fn check_arithmetic() {
+        assert_eq!(isqrt(0), 0);
+        assert_eq!(isqrt(15), 3);
+        assert_eq!(isqrt(16), 4);
+        assert_eq!(isqrt(u128::from(u64::MAX) * u128::from(u64::MAX)), u64::MAX);
+        assert_eq!(sin_q16(0), 0);
+        assert_eq!(sin_q16(ONE / 4), ONE);
+        assert_eq!(sin_q16(ONE / 2), 0);
+        assert_eq!(sin_q16(3 * ONE / 4), -ONE);
+        assert_eq!(cos_q16(0), ONE);
+        let origin = ProjectileCoord::new(0, 0, 0);
+        // A Bezier ends on its last control point.
+        let bezier = PathSpec {
+            kind: i32::from(PATH_BEZIER),
+            speed: 16 << 16,
+            param: [0, 0],
+            points: vec![[512, 512, 0], [1024, 0, 0]],
+        };
+        let mut path = Path::new(&bezier, origin, 0).expect("a Bezier");
+        let mut last = ([0; 3], false);
+        for _ in 0..1000 {
+            last = path.advance();
+            if last.1 {
+                break;
+            }
+        }
+        assert_eq!(last, ([1024, 0, 0], true));
+        // A parabola peaks midway, at its height.
+        let parabola = PathSpec {
+            kind: i32::from(PATH_PARABOLA),
+            speed: 512 << 16,
+            param: [300, 0],
+            points: vec![[1024, 0, 0]],
+        };
+        let mut path = Path::new(&parabola, origin, 0).expect("a parabola");
+        assert_eq!(path.advance(), ([512, 0, 300], false));
+        assert_eq!(path.advance(), ([1024, 0, 0], true));
+        // A spiral needs a period; a parabola exactly one point.
+        let spiral = PathSpec {
+            kind: i32::from(PATH_SPIRAL),
+            speed: 0,
+            param: [64, 0],
+            points: vec![[1, 0, 0]],
+        };
+        assert!(Path::new(&spiral, origin, 0).is_none());
+        let two = PathSpec {
+            points: vec![[1, 0, 0], [2, 0, 0]],
+            ..parabola
+        };
+        assert!(Path::new(&two, origin, 0).is_none());
+    }
+}

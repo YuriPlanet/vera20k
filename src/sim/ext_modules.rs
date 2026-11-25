@@ -2326,6 +2326,10 @@ mod ini_trigger_tests;
 mod decide_tests;
 
 #[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_flight_tests.rs"]
+mod flight_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_event_tests.rs"]
 mod event_tests;
 
