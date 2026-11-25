@@ -226,6 +226,9 @@ fn emit(
     // registration. A preceding Inviso Bullet can remove itself
     // and compact this entry behind the advancing cursor, deferring its AI
     // to the next pass (electric_bolt.json's live scheduling controls).
+    // Init discards the handle, so in a match a picture-only system is a
+    // presentation one, run after the Logic pass instead
+    // (`spawn_effect_particle_system`).
     let default_system = || rules.combat_damage.default_spark_system.as_deref();
     // Ares EBolt_Fire_Particles (Ares.dll 100562C0, hook 0x4C2AFF): a bolt
     // with WeaponTypeExt spawns Bolt.ParticleSystem instead, with the same
@@ -235,7 +238,7 @@ fn emit(
         None => default_system(),
     };
     if let Some(system_type) = system.and_then(|name| rules.ps_type_id_by_name(name)) {
-        world.spawn_particle_system(
+        world.spawn_effect_particle_system(
             system_type,
             glam::IVec3::new(to.x, to.y, to.z),
             None,

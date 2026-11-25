@@ -45,7 +45,7 @@ fn restore_validates_references_then_rebuilds_logic_particles_and_cells() {
         .unwrap()
         .seldom
         .spark_particle_system
-        .bind(Some(particle_id));
+        .set_for_test(Some(particle_id));
     sim.set_logic_order_for_test(vec![particle_id, entity_id]);
 
     let bytes = GameSnapshot::save_validated(&sim, 7, 8, "Restore fixture", 9);
@@ -264,7 +264,7 @@ fn terrain_target_snapshot_fixture() -> (Simulation, crate::rules::ruleset::Rule
     sim.terrain_objects
         .objects_mut_for_test()
         .insert(tree_id, tree);
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     assert!(sim.register_terrain_object(tree_id, &rules));
 
     let projectile_id = sim.substrate.allocate_stable_id();
@@ -915,7 +915,7 @@ fn gsi_04_01_successful_load_restores_real_flags_and_zeroes_only_dummy() {
             .expect("fixture uses a native-supported CellClass slope")
     };
     live.install_resolved_terrain_for_new_map(map_load_terrain);
-    live.overlay_grid = Some(OverlayGrid::new(4, 3));
+    *live.overlay_grid = Some(OverlayGrid::new(4, 3));
     assert_ne!(
         live.resolved_terrain
             .as_ref()
@@ -949,7 +949,7 @@ fn gsi_04_01_successful_load_restores_real_flags_and_zeroes_only_dummy() {
         "the live runtime setter clears the allocated CellClass before save"
     );
     assert_eq!(
-        live.real_cell_bridge_flags_0x1180,
+        *live.real_cell_bridge_flags_0x1180,
         live.resolved_terrain
             .as_ref()
             .unwrap()
@@ -971,7 +971,7 @@ fn gsi_04_01_successful_load_restores_real_flags_and_zeroes_only_dummy() {
 
     // In-scenario process state retains the shared Dummy, while native
     // Scenario deserialization independently resets its RNG to Seed(0).
-    live.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *live.scenario_rng = crate::sim::rng::SimRng::new(0);
     let bytes = GameSnapshot::save(&live, 0, 0, "bridge-dummy.map", 0);
     let mut restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
     restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&live));
@@ -996,16 +996,16 @@ fn gsi_04_01_successful_load_restores_real_flags_and_zeroes_only_dummy() {
         "before direct value restore the pristine raw 0x100 selects the +416 target surface"
     );
     let pristine_candidate_authority = rebuilt_terrain.capture_real_cell_bridge_flags_0x1180();
-    let serialized_cleared_authority = restored.real_cell_bridge_flags_0x1180.clone();
+    let serialized_cleared_authority = (*restored.real_cell_bridge_flags_0x1180).clone();
     assert_ne!(serialized_cleared_authority, pristine_candidate_authority);
     let hash_with_serialized_clear = restored.state_hash();
-    restored.real_cell_bridge_flags_0x1180 = pristine_candidate_authority.clone();
+    *restored.real_cell_bridge_flags_0x1180 = pristine_candidate_authority.clone();
     let hash_if_pristine_template_were_authority = restored.state_hash();
     assert_ne!(
         hash_with_serialized_clear, hash_if_pristine_template_were_authority,
         "the canonical hash distinguishes the saved clear from the pristine nonzero template"
     );
-    restored.real_cell_bridge_flags_0x1180 = serialized_cleared_authority.clone();
+    *restored.real_cell_bridge_flags_0x1180 = serialized_cleared_authority.clone();
     assert_eq!(restored.state_hash(), hash_with_serialized_clear);
     let candidate_dummy_before_authority_restore =
         restored.effective_shared_cell_dummy().snapshot();
@@ -1064,7 +1064,7 @@ fn gsi_04_01_successful_load_restores_real_flags_and_zeroes_only_dummy() {
         "completed native hierarchy rebuild matches the published saved-clear world"
     );
     assert_eq!(
-        restored.real_cell_bridge_flags_0x1180,
+        *restored.real_cell_bridge_flags_0x1180,
         serialized_cleared_authority
     );
     assert_eq!(
@@ -1114,7 +1114,7 @@ fn gsi_04_01_successful_load_restores_real_flags_and_zeroes_only_dummy() {
         "accepted Resize keeps the restored real CellClass on the 104-lepton ground surface"
     );
     assert_eq!(
-        restored.real_cell_bridge_flags_0x1180, serialized_cleared_authority,
+        *restored.real_cell_bridge_flags_0x1180, serialized_cleared_authority,
         "accepted Resize clears only the dummy and retains saved real-cell hash authority"
     );
 }
@@ -1240,7 +1240,7 @@ fn object_type_id_past_the_saved_interner_refuses_the_load() {
     let entity = crate::sim::game_entity::GameEntity::test_default(1, "MTNK", "AMERICANS", 5, 6);
     let type_id = entity.type_ref().index();
     sim.substrate.entities.insert(entity);
-    sim.interner = crate::sim::intern::StringInterner::new();
+    *sim.interner = crate::sim::intern::StringInterner::new();
     let bytes = GameSnapshot::save(&sim, 0, 0, "unknown-type", 0);
     let Err(error) = GameSnapshot::load(&bytes).unwrap().restore_player_world(
         crate::sim::world::SnapshotProcessState::Live(&Simulation::new()),

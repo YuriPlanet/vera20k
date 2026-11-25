@@ -483,10 +483,11 @@ fn record_last_built_matches_native_class_slots_score_gate_and_rng() {
                 built_total(&row["before"])
             );
             let before = &row["observation"]["rng_before"];
-            sim.scenario_rng =
+            *sim.scenario_rng =
                 SimRng::from_native_state_hex_for_test(before["scenario"].as_str().unwrap());
-            sim.main_rng = SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap());
-            sim.mapgen_rng =
+            *sim.main_rng =
+                SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap());
+            *sim.mapgen_rng =
                 SimRng::from_native_state_hex_for_test(before["mapgen"].as_str().unwrap());
 
             super::factory_lifecycle::record_last_built(
@@ -934,7 +935,7 @@ fn offline_backup_recovery_distinguishes_saved_system_and_user_holds() {
 
         // Match Scenario load's native reseed while retaining process RNG and
         // exercising the production save/restore owner, not raw native SAV.
-        sim.scenario_rng = SimRng::new(0);
+        *sim.scenario_rng = SimRng::new(0);
         hold_hashes.push(sim.state_hash());
         let bytes = GameSnapshot::save(sim, 0, rules.simulation_config_hash(), "offline-backup", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
@@ -1118,7 +1119,7 @@ fn selling_last_retail_barracks_keeps_paid_head_before_map_exit() {
         // Native Scenario load deliberately reseeds this stream to zero. Give
         // both branches the same explicit pre-save state, then exercise the live
         // process retention/restore seam used by the app, not native SAV parsing.
-        runtime.simulation.scenario_rng = SimRng::new(0);
+        *runtime.simulation.scenario_rng = SimRng::new(0);
         let rules = &runtime.resources.rules;
         let bytes = crate::sim::snapshot::GameSnapshot::save(
             &runtime.simulation,
@@ -1282,7 +1283,7 @@ fn restore_accepts_a_queued_tail_left_by_a_refused_start_next() {
         rules,
         "Russians",
         super::ProductionCancellation::Type {
-            type_id: "E2",
+            type_id: "E2".into(),
             naval: false
         },
         false,
@@ -1946,7 +1947,7 @@ fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay_b
     // Full native Scenario load reseeds its saved stream to zero. Isolate the
     // recheck roundtrip from that intentional transition, and retain the live
     // process cursors through the same in-scenario load seam as the app.
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     let bytes = GameSnapshot::save(&sim, 0, rules.simulation_config_hash(), "factory-loss", 0);
     let mut restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
     restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
@@ -2303,7 +2304,7 @@ fn limited_heads_survive_revalidation_without_bypassing_limits_or_cleanup() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: name,
+                type_id: name.into(),
                 naval: false
             },
             false,
@@ -2440,7 +2441,7 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: parent_type,
+                type_id: parent_type.into(),
                 naval: false
             },
             false,
@@ -2456,7 +2457,7 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: parent_type,
+                type_id: parent_type.into(),
                 naval: false
             },
             false,
@@ -2515,7 +2516,7 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: parent_type,
+                type_id: parent_type.into(),
                 naval: false
             },
             false,
@@ -2944,7 +2945,7 @@ fn cancel_one_queued_structure_keeps_the_building_under_construction() {
         &rules,
         "Americans",
         ProductionCancellation::Type {
-            type_id: "GAPOWR",
+            type_id: "GAPOWR".into(),
             naval: false,
         },
         false,
@@ -3389,7 +3390,7 @@ fn active_cancel_without_house_does_not_create_refund_account() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: "SMIN",
+                type_id: "SMIN".into(),
                 naval: false,
             },
             all,
@@ -3615,7 +3616,7 @@ fn a_cancel_refunds_the_cost_of_at_cancel_time() {
         &rules,
         "Russians",
         crate::sim::production::ProductionCancellation::Type {
-            type_id: "HTNK",
+            type_id: "HTNK".into(),
             naval: false
         },
         false,

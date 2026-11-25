@@ -48,13 +48,19 @@ pub(crate) fn blocks_main_tick(mode: super::session::SessionMode, paused: bool) 
         )
 }
 
-pub(crate) fn enter(state: &mut AppState, duration: i32, outermost: bool, wall_ms: u64) {
-    let mode = state.match_state.session_mode();
+pub(crate) fn enter(
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    audio: &mut crate::app::audio_runtime::AppAudioRuntime,
+    duration: i32,
+    outermost: bool,
+    wall_ms: u64,
+) {
+    let mode = match_state.session_mode();
     enter_with_owners(
-        &mut state.match_state.match_presentation.scenario_pause,
-        &mut state.match_state.scenario_elapsed_clock,
+        &mut match_state.match_presentation.scenario_pause,
+        &mut match_state.scenario_elapsed_clock,
         mode,
-        state.audio.sfx_player.as_mut(),
+        audio.sfx_player.as_mut(),
         duration,
         outermost,
         wall_ms,
@@ -88,16 +94,17 @@ pub(crate) fn enter_with_owners(
     }
 }
 
-pub(crate) fn resume(state: &mut AppState, wall_ms: u64) {
-    let elapsed_paused = state
-        .match_state
-        .elapsed_clock_paused(&state.frontend.screen);
-    let audio_paused = state
-        .match_state
-        .presentation_paused(&state.frontend.screen);
+pub(crate) fn resume(
+    screen: &crate::ui::game_screen::GameScreen,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    audio: &mut crate::app::audio_runtime::AppAudioRuntime,
+    wall_ms: u64,
+) {
+    let elapsed_paused = match_state.elapsed_clock_paused(screen);
+    let audio_paused = match_state.presentation_paused(screen);
     resume_with_owners(
-        &mut state.match_state.scenario_elapsed_clock,
-        state.audio.sfx_player.as_mut(),
+        &mut match_state.scenario_elapsed_clock,
+        audio.sfx_player.as_mut(),
         elapsed_paused,
         audio_paused,
         wall_ms,
@@ -172,13 +179,18 @@ fn apply_live_service(
 
 /// Retire only this world's physical clock. Saved62C/630 remain simulation
 /// state; a failed load cannot release the outgoing world's authoritative hold.
-pub(crate) fn load_clock(state: &mut AppState, wall_ms: u64) {
-    state.match_state.match_presentation.scenario_pause = ScenarioPauseClock::after_load(wall_ms);
+pub(crate) fn load_clock(
+    presentation: &mut crate::app::presentation::state::MatchPresentationState,
+    wall_ms: u64,
+) {
+    presentation.scenario_pause = ScenarioPauseClock::after_load(wall_ms);
 }
 
-pub(crate) fn reset_clock(state: &mut AppState) {
-    state.match_state.match_presentation.scenario_pause = ScenarioPauseClock::default();
-    state.match_state.match_presentation.narrative_sync = Default::default();
+pub(crate) fn reset_clock(
+    presentation: &mut crate::app::presentation::state::MatchPresentationState,
+) {
+    presentation.scenario_pause = ScenarioPauseClock::default();
+    presentation.narrative_sync = Default::default();
 }
 
 #[cfg(all(test, tests_app_match))]

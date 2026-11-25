@@ -69,7 +69,7 @@ impl Simulation {
             check("object", object_id, "type", entity.type_ref())?;
             check("object", object_id, "owner", entity.owner())?;
         }
-        for (&key, house) in &self.houses {
+        for (&key, house) in &*self.houses {
             let object_id = u64::from(key.index());
             check("House", object_id, "key", key)?;
             check("House", object_id, "type", house.house_type_id())?;
@@ -190,7 +190,7 @@ impl Simulation {
                 return Err(SnapshotRestoreError::InvalidInfantryDyingMark { object_id });
             }
         }
-        for (&owner, house) in &self.houses {
+        for (&owner, house) in &*self.houses {
             house.validate_scenario_name().map_err(|reason| {
                 SnapshotRestoreError::InvalidHouseScenarioName { owner, reason }
             })?;
@@ -272,7 +272,7 @@ impl Simulation {
                 });
             }
         }
-        if let Some(grid) = &self.smudge_grid {
+        if let Some(grid) = &*self.smudge_grid {
             for (object_id, object) in grid.objects() {
                 if object.object_alive() || !object.in_limbo() {
                     return Err(SnapshotRestoreError::InvalidSmudgeLifetime { object_id });

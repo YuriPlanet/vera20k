@@ -247,7 +247,9 @@ pub struct GeneralRules {
     /// ReadAI672AE0). Constructor666E09/666E1A stores the literal double
     /// 0.016; each reached AI pass retains its prior value as the default.
     /// Team Script16 uses the signed global frame modulo ftol(value*900),
-    /// without a clamp or a per-team timer. Source: Steam gamemd,
+    /// without a clamp or a per-team timer; with batched target scans each
+    /// team scans at its own phase of that period, a sim-scale deviation
+    /// (`team_action_patrol_waypoint`). Source: Steam gamemd,
     /// tools/team_recruit_oracle.py --patrol.
     pub patrol_scan_minutes: NativeF64Bits,
     /// `[General] AITriggerSuccessWeightDelta=` (`Rules+0xC0`, ReadDouble at
@@ -857,6 +859,10 @@ pub struct GeneralRules {
     /// the AnimType lookup at `0x0066A587..0x0066A5B1` over the constructor's
     /// null (`0x00665A10`). Retail leaves it unset.
     pub dig_anim: Option<String>,
+    /// Tiberian Sun Firestorm's `[AudioVisual] WebbedInfantry=` (Rules
+    /// `+0xF68`), the AnimType whose shapes a webbed infantryman's Struggle
+    /// frames come from (`docs/ts-webs.md`). gamemd has no such key.
+    pub webbed_infantry: Option<String>,
     /// `[General] NukeTakeOff=` (stock `NUKETO`), the AnimType at `Rules+0x98`
     /// (ReadString then the AnimType lookup, `0x0066D829..0x0066D850`;
     /// constructor null at `0x00665735`). `BuildingClass::Mission_Missile`
@@ -2070,6 +2076,7 @@ impl Default for GeneralRules {
             lightning_print_text: true,
             dig_sound: None,
             dig_anim: None,
+            webbed_infantry: None,
             nuke_take_off: String::new(),
             ai_super_defense_probability: Vec::new(),
             ai_super_defense_distance: 10,
@@ -3011,6 +3018,7 @@ impl GeneralRules {
             // Published by the Rules processor's `Dig` pointer
             // (`rules_type_references`).
             dig_anim: None,
+            webbed_infantry: None,
             nuke_take_off: defaults.nuke_take_off.clone(),
             ai_super_defense_probability: general
                 .read_int_list("AISuperDefenseProbability")

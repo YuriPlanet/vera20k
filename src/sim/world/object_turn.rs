@@ -733,8 +733,8 @@ impl Simulation {
             sim.path_grid.as_deref(),
             sim.session.binary_frame(),
             sim.resolved_terrain.as_ref(),
-            sim.playfield_bounds,
-            &mut sim.interner,
+            *sim.playfield_bounds,
+            &sim.interner,
             rules,
             &sim.houses,
         );
@@ -962,14 +962,50 @@ impl Simulation {
         sim.parasite_ai_for_victim(stable_id, rules, overlay_registry, effects);
     }
 
+    /// The start of the live object pass: answer its batched path searches
+    /// (`movement::path_batch`) and target scans (`techno_ai::scan_batch`) as
+    /// one body of work. Both read only the world as the pass finds it, and
+    /// each answer depends on that world alone, so answering them side by
+    /// side changes none. Every thread starts on the searches, the costliest
+    /// first, and goes on to the scans, so the scans do not wait for the
+    /// slowest search.
+    pub(crate) fn answer_batched_work(
+        &mut self,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    ) {
+        let scans = self.batched_scans(rules, overlay_registry);
+        let objects = if scans.is_some() {
+            self.batched_scan_objects()
+        } else {
+            0
+        };
+        let answer = |world: &Simulation, index: usize| scans.as_ref()?.answer(world, index);
+        let scanned = match self.answer_batched_path_searches(rules, (objects, &answer)) {
+            Some(scanned) => scanned,
+            // A pass with no search to run answers its scans by themselves.
+            None => {
+                let _area =
+                    crate::sim::frame_profile::area(crate::sim::frame_profile::phase::TARGETING);
+                let world = &*self;
+                crate::sim::parallel::filter_map_indices(objects, |index| answer(world, index))
+            }
+        };
+        if scans.is_some() {
+            self.install_scan_answers(scanned);
+        }
+    }
+
     pub(super) fn advance_live_object_pass(
         &mut self,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: &mut super::FrameEffects<'_>,
     ) -> Result<LiveObjectPassOutcome, super::FrameAdvanceError> {
-        self.answer_batched_path_searches(rules);
-        self.answer_batched_scans(rules, overlay_registry);
+        // The pass's key for its turns' own streams, drawn on every frame
+        // alike (`world::turn_streams`, sim-scale).
+        self.begin_turn_streams();
+        self.answer_batched_work(rules, overlay_registry);
         let mut object_ctx = techno_ai::ObjectAiCtx {
             effects: effects.reborrow(),
             overlay_registry,
@@ -1003,7 +1039,7 @@ impl Simulation {
         // visits find their types through handles (VERA-only, answers
         // unchanged).
         self.interner.cover_types(rules);
-        let walked = self.try_for_each_live_object::<super::FrameAdvanceError>(|sim, stable_id| {
+        let mut visit = |sim: &mut Self, stable_id: u64| -> Result<(), super::FrameAdvanceError> {
             #[cfg(feature = "debug-tools")]
             let debug_before = sim
                 .substrate
@@ -1022,6 +1058,7 @@ impl Simulation {
             }
             sim.sleep_after_turn(stable_id, rules);
             sim.quiet_after_turn(stable_id, rules);
+            sim.steady_after_turn(stable_id, rules);
             #[cfg(feature = "debug-tools")]
             if let Some(before) = debug_before
                 && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
@@ -1035,12 +1072,21 @@ impl Simulation {
             outcome.bridge_state_changed |= turn.bridge_state_changed;
             outcome.ownership_changed |= turn.ownership_changed;
             Ok(())
+        };
+        let walked = self.try_for_each_live_object::<super::FrameAdvanceError>(|sim, stable_id| {
+            // The slot's visit, and everything it calls, draws from its
+            // object's own stream (`world::turn_streams`).
+            sim.enter_turn_stream(stable_id);
+            let visited = visit(sim, stable_id);
+            sim.leave_turn_stream(stable_id);
+            visited
         });
         self.fog.settle_plane_writes();
         self.reveal_viewers.end();
         self.civilian_house_memo.end();
         self.finish_batched_path_searches();
         self.finish_batched_scans();
+        self.end_turn_streams();
         walked?;
         Ok(outcome)
     }
@@ -1083,7 +1129,8 @@ impl Simulation {
         }
         let _building_area = was_structure
             .then(|| crate::sim::frame_profile::area(crate::sim::frame_profile::phase::BUILDINGS));
-        let mut ai = sim.object_ai_visit_one_with_effects(stable_id, rules, object_ctx);
+        // A steady object's visit may be counted (`world::steady_ai`).
+        let mut ai = sim.steady_ai_visit(stable_id, rules, object_ctx);
         if let Some(error) = ai.frame_error.take() {
             return Err(error);
         }

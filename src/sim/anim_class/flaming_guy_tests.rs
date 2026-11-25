@@ -143,7 +143,7 @@ fn scene(rules: &RuleSet, input: &Value) -> (Simulation, AnimId) {
     let ty = sim.interner.intern("FLAMEGUY");
     let (rx, ry, sx, sy, z) = coord.to_cell_sub_z();
     if let Some(hex) = input["scenario_before_constructor"].as_str() {
-        sim.scenario_rng = SimRng::from_native_state_hex_for_test(hex);
+        *sim.scenario_rng = SimRng::from_native_state_hex_for_test(hex);
     }
     let id = sim
         .spawn_anim_at_world(
@@ -217,7 +217,7 @@ fn physical_flaming_guy_methods_and_full_ai_histories_match_original() {
         );
         // The constructor was checked independently above. Import the full
         // measured continuation cursor rather than infer its draw count.
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
         match input["kind"].as_str().unwrap() {
             "enter" => {
@@ -330,15 +330,15 @@ fn admission_reads_wall_flag_and_raw_plane_without_reserving_a_cell() {
         None,
     );
     let wall = overlays.id_for_name("FENCE").unwrap();
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
     sim.overlay_grid
         .as_mut()
         .unwrap()
         .place_overlay(33, 32, wall, 0);
     let coord = sim.anim(id).unwrap().world_coord;
-    let raw = sim.substrate.raw_cell_occupation.clone();
+    let raw = (*sim.substrate.raw_cell_occupation).clone();
     assert!(!sim.flaming_guy_can_enter(coord, (33, 32), Some(&overlays)));
-    assert_eq!(sim.substrate.raw_cell_occupation, raw);
+    assert_eq!(*sim.substrate.raw_cell_occupation, raw);
     // The bridge branch precedes the wall/ground branch and uses alternate
     // occupation; a ground wall must not deny an otherwise clear high deck.
     sim.resolved_terrain
@@ -406,7 +406,7 @@ fn runner_destination_progress_and_fall_survive_serde_and_affect_world_hash() {
     let (mut continued, continued_id) = scene(&rules, &json!({"z": 500}));
     assert_eq!(continued_id, id);
     *continued.substrate.anims.get_mut(id).unwrap() = restored;
-    continued.scenario_rng = sim.scenario_rng.clone();
+    *continued.scenario_rng = (*sim.scenario_rng).clone();
     // Continue the serialized object through production AI on the same flat
     // input scene. This is Rust serde continuation, not native SaveGame parity.
     for frame in 5..300 {
@@ -476,7 +476,7 @@ fn stock_oil_derrick_death_weapon_produces_a_running_flameguy_in_master_frames()
         .get_mut(&opponent)
         .unwrap()
         .set_player_control_for_test(true);
-    sim.fog = crate::sim::vision::FogState::new(64, 64);
+    *sim.fog = crate::sim::vision::FogState::new(64, 64);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.resolve_rule_animation_lists(&rules);

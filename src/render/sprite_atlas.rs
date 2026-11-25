@@ -2676,6 +2676,53 @@ pub(crate) fn prepare_sprite_atlas(
         }
     }
 
+    // Step 1c'': Firestorm's `[AudioVisual] WebbedInfantry=` image, every
+    // frame, for each infantry type with a `Struggle=` record: Firestorm 2.0
+    // `InfantryClass::Get_Image_Data` 0x004D9030 draws a struggling man from
+    // it (docs/ts-webs.md). Absent without webs.
+    if let Some(webbed) = rules.and_then(|rules| rules.general.webbed_infantry.as_deref()) {
+        let upper = webbed.to_ascii_uppercase();
+        for (type_id, color) in &new_objects {
+            let struggles = rules
+                .and_then(|rules| {
+                    rules.animation_sequence_in_category(
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        type_id,
+                    )
+                })
+                .and_then(|set| set.infantry_action(crate::rules::infantry_sequence::DO_STRUGGLE))
+                .is_some();
+            if !struggles {
+                continue;
+            }
+            let count = match object_shp_frame_counts.get(&upper) {
+                Some(&count) => count,
+                None => {
+                    let candidates =
+                        effect_anim_shp_candidates(webbed, art, theater_ext, theater_name);
+                    let Some((file, data)) = find_shp(asset_manager, &candidates) else {
+                        break;
+                    };
+                    let Ok(count) = ShpFile::frame_count_from_bytes(&data) else {
+                        break;
+                    };
+                    object_shp_frame_counts.insert(upper.clone(), count);
+                    shp_files.insert((ShpImageKind::Object, upper.clone()), file.to_string());
+                    count
+                }
+            };
+            for frame in 0..count {
+                needed.insert(ShpSpriteKey {
+                    palette_context: ShpPaletteContext::Legacy,
+                    type_id: upper.as_str().into(),
+                    facing: 0,
+                    frame,
+                    house_color: *color,
+                });
+            }
+        }
+    }
+
     // Step 1d: Pre-load world effect SHPs (warp animations, explosions, etc.)
     // once, at map load. Names come from rules.ini [General]
     // WarpIn=/WarpOut=/WarpAway= — NOT hardcoded. These use anim.pal (effect

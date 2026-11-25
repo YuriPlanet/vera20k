@@ -713,7 +713,7 @@ fn spawner_cell_spread(
 }
 
 fn adjacent_cells_in_range(range: i32) -> Vec<(i16, i16)> {
-    crate::sim::cell_rect::cell_spread_offsets(range as u32 as usize)
+    crate::sim::cell_rect::cell_spread_offsets(range as u32 as usize).collect()
 }
 
 /// Result of one `Reduce_Tiberium` call.
@@ -1035,11 +1035,11 @@ mod tests {
         let registry = rules.overlay_registry().clone();
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
         sim.install_resolved_terrain_for_new_map(test_support::flat_terrain(32, 32));
-        sim.overlay_grid = Some(OverlayGrid::new(32, 32));
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(4000));
-        sim.ore_growth_config =
+        *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(4000));
+        *sim.ore_growth_config =
             crate::sim::ore_growth::OreGrowthConfig::for_test(true, true, false);
-        sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(32, 32);
+        *sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(32, 32);
         sim.ore_growth_state
             .reset_native_tiberium_classes(rules.tiberium_types.len(), 0);
         super::place_tiberium(
@@ -1132,14 +1132,14 @@ mod tests {
             0
         );
         let mut blocked = Simulation::new();
-        blocked.overlay_grid = Some(OverlayGrid::new(32, 32));
+        *blocked.overlay_grid = Some(OverlayGrid::new(32, 32));
         blocked
             .overlay_grid
             .as_mut()
             .unwrap()
             .place_overlay(10, 10, 0, 0);
-        blocked.resolved_terrain = Some(test_support::flat_terrain(32, 32));
-        blocked.ore_growth_config =
+        *blocked.resolved_terrain = Some(test_support::flat_terrain(32, 32));
+        *blocked.ore_growth_config =
             crate::sim::ore_growth::OreGrowthConfig::for_test(false, true, false);
         let rng = blocked.scenario_rng.clone();
         assert!(
@@ -1159,7 +1159,7 @@ mod tests {
             blocked.scenario_rng.native_state_hex(),
             rng.native_state_hex()
         );
-        blocked.ore_growth_config =
+        *blocked.ore_growth_config =
             crate::sim::ore_growth::OreGrowthConfig::for_test(true, true, false);
         assert!(
             super::place_tiberium(
@@ -1180,7 +1180,7 @@ mod tests {
         // BEFORE GetTiberiumType5FD1BB; the inert entry does not stop Mark.
         // ReadINI5FE8C9..5FE8E7 coerces Tiberium + Land=Clear to Tiberium
         // land. Road avoids that independent, earlier germination lookup.
-        blocked.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(5000));
+        *blocked.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(5000));
         assert!(
             crate::sim::crates::construct_runtime_overlay(
                 &mut blocked,
@@ -1234,8 +1234,8 @@ mod tests {
         ));
         let rules = RuleSet::from_ini(&ini).unwrap();
         let mut sim = Simulation::new();
-        sim.overlay_grid = Some(OverlayGrid::new(8, 8));
-        sim.resolved_terrain = Some(test_support::flat_terrain(8, 8));
+        *sim.overlay_grid = Some(OverlayGrid::new(8, 8));
+        *sim.resolved_terrain = Some(test_support::flat_terrain(8, 8));
         let spawner = SpawnerSpread {
             tiberium_type: 1,
             range: 1,
@@ -1808,10 +1808,10 @@ SpreadPercentage=.06
         );
 
         let mut sim = Simulation::new();
-        sim.overlay_grid = Some(grid);
+        *sim.overlay_grid = Some(grid);
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // packed-overlay persistence on that same post-load cursor.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let expected_hash = sim.state_hash();
         let bytes = GameSnapshot::save(&sim, 0, 0, "gsi_04_09_packed.map", 0);
         let restored = GameSnapshot::load(&bytes)
@@ -1830,7 +1830,7 @@ SpreadPercentage=.06
         }
 
         let mut raw_changed = restored;
-        raw_changed.overlay_grid = Some(build_grid(0xA6));
+        *raw_changed.overlay_grid = Some(build_grid(0xA6));
         assert_ne!(
             raw_changed.state_hash(),
             expected_hash,
@@ -1976,7 +1976,7 @@ SpreadPercentage=.06
         sim.hash_state_every(std::num::NonZeroU64::MIN);
         sim.ore_growth_config.set_grows_for_test(false);
         sim.ore_growth_config.set_spreads_for_test(false);
-        sim.ore_growth_state = OreGrowthState::new(1, 1);
+        *sim.ore_growth_state = OreGrowthState::new(1, 1);
         sim.ore_growth_state
             .reset_native_tiberium_classes(rules.tiberium_types.len(), 0);
         let mut terrain = flat_clear_terrain();
@@ -1993,8 +1993,8 @@ SpreadPercentage=.06
             0,
         ));
         overlay.take_dirty_cells();
-        sim.overlay_grid = Some(overlay);
-        sim.resolved_terrain = Some(terrain);
+        *sim.overlay_grid = Some(overlay);
+        *sim.resolved_terrain = Some(terrain);
         assert!(sim.rebuild_dynamic_navigation(&rules));
         let before = sim.path_grid_snapshot().unwrap();
 

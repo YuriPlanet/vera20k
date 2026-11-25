@@ -49,7 +49,7 @@ impl Scene {
         let options = sim.session.game_options_mut_for_test();
         options.multi_engineer = false;
         options.short_game = false;
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        *sim.fog = crate::sim::vision::FogState::new(32, 32);
         for name in ["Americans", "Russians"] {
             sim.fog
                 .reveal_all_for_owner(sim.interner.get(name).unwrap());
@@ -192,7 +192,7 @@ impl Scene {
         loaded.restore_after_snapshot_load().unwrap();
         loaded.rebuild_caches_after_load(
             resources.terrain_template.clone().unwrap(),
-            live.terrain_speed_config.clone(),
+            (*live.terrain_speed_config).clone(),
             &resources.rules,
         );
         loaded

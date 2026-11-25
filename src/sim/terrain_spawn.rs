@@ -724,11 +724,11 @@ mod tests {
             let rules = RuleSet::from_ini(&ini).expect("spawn world rules");
             let registry = OverlayTypeRegistry::from_ini(&ini, None);
             let mut sim = crate::sim::world::Simulation::new();
-            sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+            *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
             sim.install_resolved_terrain_for_new_map(resolved_grid(32, 32));
-            sim.ore_growth_config =
+            *sim.ore_growth_config =
                 crate::sim::ore_growth::OreGrowthConfig::for_test(true, true, false);
-            sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(32, 32);
+            *sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(32, 32);
             sim.ore_growth_state
                 .reset_native_tiberium_classes(rules.tiberium_types.len(), 0);
             Self {
@@ -761,7 +761,7 @@ mod tests {
             self.sim
                 .session
                 .set_binary_frame_for_test(self.binary_frame);
-            std::mem::swap(&mut self.sim.scenario_rng, rng);
+            std::mem::swap(&mut *self.sim.scenario_rng, rng);
             for (&cell, state) in spawners {
                 let id = self
                     .sim
@@ -779,7 +779,7 @@ mod tests {
                 .unwrap();
                 *state = self.sim.terrain_objects.animations()[&id].clone();
             }
-            std::mem::swap(&mut self.sim.scenario_rng, rng);
+            std::mem::swap(&mut *self.sim.scenario_rng, rng);
             self.binary_frame += 1;
         }
 
@@ -887,7 +887,7 @@ mod tests {
         sim.resolve_type_handles(&rules);
         let template = resolved_grid(8, 8);
         sim.install_resolved_terrain_for_new_map(template.clone());
-        sim.overlay_grid = Some(OverlayGrid::new(8, 8));
+        *sim.overlay_grid = Some(OverlayGrid::new(8, 8));
         let objects: Vec<_> = names
             .iter()
             .map(|name| TerrainObject {
@@ -959,7 +959,7 @@ mod tests {
             stages(&sim),
             [("TIBTRE01".into(), 2), ("TIBTRE02".into(), 1)]
         );
-        sim.scenario_rng = SimRng::new(0);
+        *sim.scenario_rng = SimRng::new(0);
         let bytes = GameSnapshot::save_validated(
             &sim,
             1,
@@ -1123,7 +1123,7 @@ mod tests {
         sim.resolve_type_handles(&rules);
         let template = resolved_grid(8, 8);
         sim.install_resolved_terrain_for_new_map(template.clone());
-        sim.overlay_grid = Some(OverlayGrid::new(8, 8));
+        *sim.overlay_grid = Some(OverlayGrid::new(8, 8));
         let objects = [
             TerrainObject {
                 rx: 2,
@@ -1188,7 +1188,7 @@ mod tests {
                 if *id == anim_id && sound_id.name_in(&rules) == "EXPLOSION12"
         )));
         assert!(!sim.terrain_objects.get(doomed).unwrap().is_live());
-        sim.scenario_rng = SimRng::new(0); // Native load resets this stream.
+        *sim.scenario_rng = SimRng::new(0); // Native load resets this stream.
         let saved = GameSnapshot::save_validated(
             &sim,
             1,
@@ -1312,11 +1312,11 @@ mod tests {
             .set_map_height_for_test(template.height());
         // This fixture starts at the real Terrain constructor phase; the
         // normal app launch captures exercise the complete Scenario prefix.
-        sim.native_unique_ids =
+        *sim.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
-        sim.overlay_grid = Some(OverlayGrid::new(template.width(), template.height()));
+        *sim.overlay_grid = Some(OverlayGrid::new(template.width(), template.height()));
         sim.install_resolved_terrain_for_new_map(template.clone());
         Some((sim, rules, registry, template))
     }
@@ -1334,7 +1334,7 @@ mod tests {
             return;
         };
         let ore = registry.id_for_name("TIB01").unwrap();
-        sim.overlay_grid = Some(OverlayGrid::from_overlay_entries(
+        *sim.overlay_grid = Some(OverlayGrid::from_overlay_entries(
             &[
                 OverlayEntry {
                     rx: 2,
@@ -1708,10 +1708,10 @@ mod tests {
         // `test_default` interns both owner and type through the shared test
         // interner. Snapshot it only after constructing the entity so those
         // handles resolve through the Simulation that will execute the order.
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
 
         sim.set_input_delay_ticks(0);
-        sim.resolved_terrain = Some(resolved_grid(64, 64));
+        *sim.resolved_terrain = Some(resolved_grid(64, 64));
         sim.substrate.entities.insert(attacker);
         assert!(matches!(
             sim.reveal(attacker_id),
@@ -1944,8 +1944,8 @@ mod tests {
             sim.intern_rule_type_ids(&rules);
             sim.resolve_type_handles(&rules);
             sim.install_resolved_terrain_for_new_map(template.clone());
-            sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
-            sim.native_unique_ids = Some(
+            *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
+            *sim.native_unique_ids = Some(
                 crate::sim::native_identity::build_noncampaign_fresh_id_prefix(
                     0, 0, 0, 0, 0, 0, 1, 1,
                 )
@@ -2070,7 +2070,7 @@ mod tests {
         // Resize565C10 never allocates cell0 in a legal authored map.
         grid.test_set_native_allocated_cells(&[(2, 2)]);
         sim.install_resolved_terrain_for_new_map(grid.clone());
-        sim.overlay_grid = Some(OverlayGrid::from_overlay_entries(
+        *sim.overlay_grid = Some(OverlayGrid::from_overlay_entries(
             &[OverlayEntry {
                 rx: 0,
                 ry: 0,
@@ -2081,7 +2081,7 @@ mod tests {
             4,
         ));
         sim.substrate.raw_cell_occupation.mark_ground(0, 0, 0xE0);
-        sim.native_unique_ids = Some(
+        *sim.native_unique_ids = Some(
             crate::sim::native_identity::build_noncampaign_fresh_id_prefix(0, 0, 0, 0, 0, 0, 1, 1)
                 .into_cursor(),
         );
@@ -2248,10 +2248,10 @@ mod tests {
         sim.session_mut_for_test().set_map_height_for_test(4);
         // This phase fixture deliberately omits the full Scenario prefix;
         // the headless regression exercises it through actual retail loading.
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::for_synthetic_simulation());
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::for_synthetic_simulation());
         let grid = resolved_grid(4, 4);
         sim.install_resolved_terrain_for_new_map(grid.clone());
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
         let americans = sim.interner.intern("Americans");
         sim.houses
             .register(crate::sim::house_state::HouseState::new(
@@ -2405,8 +2405,8 @@ mod tests {
         let rules = RuleSet::from_ini(&ini).expect("authored Terrain rules");
         let overlays = OverlayTypeRegistry::from_ini(&ini, None);
         let mut sim = Simulation::new();
-        sim.resolved_terrain = Some(resolved_grid(4, 4));
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::from_overlay_entries(
+        *sim.resolved_terrain = Some(resolved_grid(4, 4));
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::from_overlay_entries(
             &[OverlayEntry {
                 rx: 2,
                 ry: 2,
@@ -2416,7 +2416,7 @@ mod tests {
             4,
             4,
         ));
-        sim.native_unique_ids = Some(
+        *sim.native_unique_ids = Some(
             crate::sim::native_identity::build_noncampaign_fresh_id_prefix(0, 0, 0, 0, 0, 0, 1, 1)
                 .into_cursor(),
         );

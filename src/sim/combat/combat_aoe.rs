@@ -298,17 +298,20 @@ impl From<&str> for AoEDamageOrigin {
 
 /// Apply_area_damage's entry (`0x004892BE`): an inert scenario or a zero
 /// damage returns at once. Ares DamageArea_NullDamage (10053940) lets a
-/// warhead with `AllowZeroDamage=yes` take a zero damage through the area.
+/// warhead with `AllowZeroDamage=yes` take a zero damage through the area,
+/// and Firestorm 2.0 `Explosion_Damage` lets a `Webby=` warhead's
+/// (`0x0045EE75..0x0045EE81`), so it still webs.
 pub(crate) fn area_damage_enters(
     damage: i32,
     warhead: &WarheadType,
     scenario_no_damage: bool,
     ares: bool,
 ) -> bool {
-    let zero_admitted = ares
-        && warhead
-            .ares_combat()
-            .is_some_and(|combat| combat.allow_zero_damage());
+    let zero_admitted = warhead.webby().is_some()
+        || ares
+            && warhead
+                .ares_combat()
+                .is_some_and(|combat| combat.allow_zero_damage());
     !scenario_no_damage && (damage != 0 || zero_admitted)
 }
 
@@ -1014,7 +1017,7 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
     ) else {
         return AoEDamageResult::default();
     };
-    for &(dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64, rules.ares()).iter() {
+    for (dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64, rules.ares()) {
         let cell = collector.prepare_cell(dx, dy, warhead, &mut layer_context, &mut cell_prelude);
         collector.capture_cell(&cell, entities, &layer_context, terrain_objects);
     }

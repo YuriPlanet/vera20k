@@ -331,9 +331,9 @@ fn turret_upgrade_selling_matches_original_refund_constructor_and_rng_visits() {
         let next_id = sim.next_stable_object_id();
         let native_id = sim.native_identity_cursor().unwrap();
         let initial = &row["rng_before"];
-        sim.scenario_rng = SimRng::from_native_state_hex_for_test(name(&initial["scenario"]));
-        sim.main_rng = SimRng::from_native_state_hex_for_test(name(&initial["main"]));
-        sim.mapgen_rng = SimRng::from_native_state_hex_for_test(name(&initial["mapgen"]));
+        *sim.scenario_rng = SimRng::from_native_state_hex_for_test(name(&initial["scenario"]));
+        *sim.main_rng = SimRng::from_native_state_hex_for_test(name(&initial["main"]));
+        *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(name(&initial["mapgen"]));
         let mut constructors = 0;
         for phase in row["phases"].as_array().unwrap() {
             let draws = phase["draws"].as_array().unwrap();

@@ -68,7 +68,7 @@ fn stock_sniper_damage_retaliation_uses_wall_context_before_sight_fallback() {
         if blocked {
             overlays.place_overlay(13, 12, wall, 0);
         }
-        sim.overlay_grid = Some(overlays);
+        *sim.overlay_grid = Some(overlays);
         assert!(
             combat_targeting::should_retaliate(&sim, rules, victim, source),
             "the non-range refusal gates must admit this source"
@@ -1200,6 +1200,173 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
     assert!(sim.particle_systems().get(system_id).is_none());
 }
 
+/// In a match (`Simulation::present_effect_anims`), a tank at 180 of 300
+/// whose `DamageParticleSystems=` smoke's particle has `particle_keys`, and an
+/// unarmed source: the rules, the world, the source and the tank. `HOTMTNK`
+/// is that tank with a smoke whose particle damages.
+fn smoke_receiver(particle_keys: &str) -> (RuleSet, crate::sim::world::Simulation, u64, u64) {
+    let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[InfantryTypes]\n[VehicleTypes]\n0=SOURCE\n1=MTNK\n2=HOTMTNK\n[AircraftTypes]\n\
+         [BuildingTypes]\n[Warheads]\n0=HitWH\n[Particles]\n0=GreySmoke\n1=HotSmoke\n\
+         [ParticleSystems]\n0=SmallGreySSys\n1=HotSys\n\
+         [SOURCE]\nStrength=200\nArmor=heavy\n\
+         [MTNK]\nStrength=300\nArmor=heavy\nDamageParticleSystems=SmallGreySSys\n\
+         [HOTMTNK]\nStrength=300\nArmor=heavy\nDamageParticleSystems=HotSys\n\
+         [HitWH]\nCellSpread=0\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [SmallGreySSys]\nBehavesLike=Smoke\nHoldsWhat=GreySmoke\n\
+         [GreySmoke]\nBehavesLike=Smoke\n{particle_keys}\
+         [HotSys]\nBehavesLike=Smoke\nHoldsWhat=HotSmoke\n\
+         [HotSmoke]\nBehavesLike=Smoke\nDamage=5\n\
+         [AudioVisual]\nConditionYellow=50%\nConditionRed=25%\n",
+    )))
+    .expect("damage-Smoke receiver fixture");
+    let mut sim = crate::sim::world::Simulation::new();
+    sim.present_effect_anims();
+    let source = sim
+        .spawn_object("SOURCE", "SourceHouse", 6, 5, 0, &rules)
+        .unwrap();
+    let victim = sim
+        .spawn_object("MTNK", "VictimHouse", 8, 5, 0, &rules)
+        .unwrap();
+    let owners = [source, victim].map(|id| sim.substrate.entities.get(id).unwrap().owner());
+    register_computer_houses(&mut sim.houses, &owners);
+    sim.substrate.entities.get_mut(victim).unwrap().health = Health::new(180);
+    (rules, sim, source, victim)
+}
+
+/// One `damage` hit from `source` on `victim` through the production receiver.
+fn smoke_hit(
+    rules: &RuleSet,
+    sim: &mut crate::sim::world::Simulation,
+    source: u64,
+    victim: u64,
+    damage: i32,
+) {
+    let owner = sim.substrate.entities.get(source).unwrap().owner();
+    let warhead = sim.interner.intern("HitWH");
+    sim.commit_noncombat_aoe_hits(
+        rules,
+        None,
+        &[EntityDamageEvent::area(
+            victim,
+            damage,
+            0,
+            source,
+            Some(owner),
+            warhead,
+        )],
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+}
+
+/// In a match (`Simulation::present_effect_anims`) a damage smoke whose type
+/// changes nothing but its picture is a presentation system: `+0x310` stays
+/// empty and nothing joins Logic or takes a unique id or Scenario draw. The
+/// presentation's link to the owner stands in for the slot: a second hit
+/// makes no second smoke, also after a change to a type whose smoke is
+/// shared, a heal ends its emission and the smoke's own end clears the link.
+/// A smoke whose particle has `Damage=` stays the shared one in `+0x310`.
+#[test]
+fn a_match_presents_picture_only_damage_smoke_linked_to_its_owner() {
+    let slot = |sim: &crate::sim::world::Simulation, victim| {
+        let victim = sim.substrate.entities.get(victim).unwrap();
+        victim.seldom.damage_smoke_system_id.system()
+    };
+
+    let (rules, mut sim, source, victim) = smoke_receiver("");
+    let order = sim.live_object_order_snapshot();
+    let unique = sim.next_native_runtime_id();
+    let scenario = sim.scenario_rng.logical_state();
+    smoke_hit(&rules, &mut sim, source, victim, 60);
+    assert_eq!(slot(&sim, victim), None, "+0x310 stays empty");
+    let smokes: Vec<_> = sim
+        .particle_systems()
+        .presented_systems()
+        .map(|(id, _)| id)
+        .collect();
+    let [smoke] = smokes[..] else {
+        panic!("one presentation smoke: {smokes:?}");
+    };
+    let systems = sim.particle_systems();
+    assert_eq!(systems.get(smoke).unwrap().owner_entity(), Some(victim));
+    assert_eq!(systems.presented_damage_smoke(victim), Some(smoke));
+    assert!(systems.is_empty(), "no shared system");
+    assert_eq!(sim.live_object_order_snapshot(), order);
+    assert_eq!(sim.next_native_runtime_id(), unique + 1);
+    assert_eq!(sim.scenario_rng.logical_state(), scenario);
+
+    // 120 to 70 of 300, under ConditionRed's 75: a hit that would smoke.
+    smoke_hit(&rules, &mut sim, source, victim, 50);
+    assert_eq!(
+        sim.particle_systems().presented_systems().count(),
+        1,
+        "the link suppresses a second smoke"
+    );
+    smoke_hit(&rules, &mut sim, source, victim, -90);
+    let systems = sim.particle_systems();
+    assert!(systems.get(smoke).unwrap().done_spawning(), "the heal");
+    assert_eq!(systems.presented_damage_smoke(victim), Some(smoke));
+    sim.retire_particle_system(smoke, crate::sim::world::UninitContext::new(&rules));
+    assert!(
+        sim.particle_systems().get(smoke).is_none(),
+        "it leaves at once"
+    );
+    assert_eq!(sim.particle_systems().presented_damage_smoke(victim), None);
+
+    // As `+0x310` does when the object's type changes to one whose smoke is
+    // shared.
+    let (rules, mut sim, source, victim) = smoke_receiver("");
+    smoke_hit(&rules, &mut sim, source, victim, 60);
+    let shared_smoke_type = sim.interner.intern("HOTMTNK");
+    let tank = sim.substrate.entities.get_mut(victim).unwrap();
+    tank.set_type_ref_for_test(shared_smoke_type);
+    smoke_hit(&rules, &mut sim, source, victim, 50);
+    assert_eq!(slot(&sim, victim), None, "nor a shared one");
+    assert_eq!(sim.particle_systems().presented_systems().count(), 1);
+
+    let (rules, mut sim, source, victim) = smoke_receiver("Damage=5\n");
+    smoke_hit(&rules, &mut sim, source, victim, 60);
+    assert!(
+        slot(&sim, victim).is_some(),
+        "a damaging particle keeps it shared"
+    );
+    assert_eq!(sim.particle_systems().presented_systems().count(), 0);
+}
+
+/// A save keeps no presentation smoke (docs/scale-benchmark.md): the loaded
+/// world has neither the smoke nor its link. A hit makes a smoke only when it
+/// takes the object into yellow or red (the result of
+/// `ObjectClass::ReceiveDamage @ 0x005F5390`), so the yellow tank smokes again
+/// from the hit that makes it red, not from one that keeps it yellow.
+#[test]
+fn a_load_drops_a_presentation_smoke_until_a_hit_makes_it_red() {
+    use crate::sim::snapshot::GameSnapshot;
+    let (rules, mut sim, source, victim) = smoke_receiver("");
+    smoke_hit(&rules, &mut sim, source, victim, 60);
+    assert!(
+        sim.particle_systems()
+            .presented_damage_smoke(victim)
+            .is_some()
+    );
+
+    let bytes = GameSnapshot::save(&sim, 0, 0, "test_map", 0);
+    let mut sim = GameSnapshot::load(&bytes).expect("load").sim;
+    let systems = sim.particle_systems();
+    assert_eq!(systems.presented_systems().count(), 0, "a save keeps none");
+    assert_eq!(systems.presented_damage_smoke(victim), None);
+    assert!(systems.is_empty());
+
+    smoke_hit(&rules, &mut sim, source, victim, 1);
+    assert_eq!(sim.particle_systems().presented_systems().count(), 0);
+    // 119 to 69 of 300, under ConditionRed's 75.
+    smoke_hit(&rules, &mut sim, source, victim, 50);
+    let systems = sim.particle_systems();
+    let smoke = systems
+        .presented_damage_smoke(victim)
+        .expect("the hit that makes it red smokes");
+    assert_eq!(systems.get(smoke).unwrap().owner_entity(), Some(victim));
+}
+
 #[test]
 fn gsi_04_07_damage_ai_retaliation_keeps_higher_scored_current_target() {
     #[derive(Debug)]
@@ -1262,7 +1429,7 @@ fn gsi_04_07_damage_ai_retaliation_keeps_higher_scored_current_target() {
         entities.insert(gi);
 
         let current_score = crate::sim::combat::combat_targeting::calculate_ai_threat_score(
-            &entities, 10, current_id, &rules, &interner, None, None, None,
+            &entities, 10, current_id, &rules, &interner, None, None, None, 0,
         )
         .map(|score| {
             i64::from(crate::util::native_x87::MaskedX87Chop53::ftol_i32_low_masked(score))
@@ -1277,6 +1444,7 @@ fn gsi_04_07_damage_ai_retaliation_keeps_higher_scored_current_target() {
             None,
             None,
             None,
+            0,
         )
         .map(|score| {
             i64::from(crate::util::native_x87::MaskedX87Chop53::ftol_i32_low_masked(score))

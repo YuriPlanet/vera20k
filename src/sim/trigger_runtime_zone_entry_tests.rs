@@ -348,7 +348,7 @@ fn last_reference_line_tag_preserves_the_arrival_cells_independent_tag() {
         &mut terrain,
         (1..height).flat_map(|y| (1..width).map(move |x| (i32::from(x), i32::from(y)))),
     );
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     let arrival_cell = Simulation::trigger_cell_identity(&sim.resolved_terrain, (17, 15));
     let line_cell = Simulation::trigger_cell_identity(&sim.resolved_terrain, (19, 15));
     let other_tag = sim.trigger_runtime.cell_tags[&arrival_cell];

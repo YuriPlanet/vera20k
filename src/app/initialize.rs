@@ -391,6 +391,13 @@ impl App {
                     maps_dir.display()
                 );
             }
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            if crate::app::app_bundle::package_path().is_some()
+                && let Err(error) =
+                    crate::assets::ice_pack::install_editor_files(config.paths.settings_dir())
+            {
+                log::warn!("Could not copy the installed terrain files for the map editor: {error}");
+            }
             crate::map::source::set_downloaded_maps_dir(maps_dir);
             crate::render::locomotor_visual::set_high_terrain_building_lift(
                 config.graphics.high_terrain_building_lift,
@@ -1510,7 +1517,7 @@ impl App {
                 Self::sync_zoom_pass(&mut state);
                 Self::sync_present_mode(&mut state);
                 #[cfg(feature = "telemetry-dashboard")]
-                attach_dashboard(&mut state);
+                attach_dashboard(&mut state.diag);
 
                 // The developer shortcut carries an authored-map sandbox through
                 // the unverified legacy Battle loader. It has no artificial AI
@@ -1533,7 +1540,11 @@ impl App {
                     crate::app::loading::pump::begin_loading(&mut state, request);
                 }
 
-                crate::app::mods::finish_start(&mut state, external_launch);
+                crate::app::mods::finish_start(
+                    &mut state.frontend,
+                    &state.process_assets,
+                    external_launch,
+                );
                 Ok(InitializationStep::Ready(Box::new(state), Vec::new()))
             })
         })
@@ -1981,8 +1992,8 @@ mod tests {
 
 /// The credential is printed only to the local terminal, outside captured logs.
 #[cfg(feature = "telemetry-dashboard")]
-fn attach_dashboard(state: &mut crate::app::AppState) {
-    state.diag.telemetry_server = match crate::app::telemetry_server::start_from_env() {
+fn attach_dashboard(diag: &mut crate::app::diagnostics::state::DiagnosticsState) {
+    diag.telemetry_server = match crate::app::telemetry_server::start_from_env() {
         Some(Ok(server)) => {
             crate::util::logging::enable_telemetry_capture();
             #[cfg(feature = "debug-tools")]

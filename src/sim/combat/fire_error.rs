@@ -282,6 +282,9 @@ pub(crate) struct FirerFacts {
     /// `+0x504` and, for a Unit, `+0x6D8` DeathFrameCounter (vt+0x37C).
     pub emp_remaining: i32,
     pub death_frame_counter: i32,
+    /// Firestorm 2.0 Infantry `+0x370`: the web timer runs
+    /// ([`GameEntity::is_webbed`](crate::sim::game_entity::GameEntity::is_webbed)).
+    pub webbed: bool,
     /// Live continuous effects: `+0x304` fire, `+0x308` spark and `+0x314`
     /// railgun particle systems, `+0x324` the Wave.
     pub fire_particles_live: bool,
@@ -367,6 +370,7 @@ impl Default for FirerFacts {
             weapons_disabled: false,
             emp_remaining: 0,
             death_frame_counter: -1,
+            webbed: false,
             fire_particles_live: false,
             spark_particles_live: false,
             railgun_particles_live: false,
@@ -1001,11 +1005,13 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
         return Illegal;
     }
     // T20 `0x006FC2E0`: EMP (vt+0x37C; a Unit also while its death frames
-    // run), except a visceroid.
+    // run), except a visceroid. Firestorm 2.0's `TechnoClass::Can_Fire`
+    // asks Is_Immobilized there (`0x0062F88B`), whose Infantry override
+    // (`0x004D5B10`) adds the web.
     let emp = crate::sim::game_entity::GameEntity::under_emp(
         firer.emp_remaining,
         (class == FirerClass::Unit).then_some(firer.death_frame_counter),
-    );
+    ) || firer.webbed;
     if emp
         && (class != FirerClass::Unit
             || !(firer_type.large_visceroid || firer_type.small_visceroid))

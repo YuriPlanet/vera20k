@@ -141,7 +141,7 @@ fn a_recruiting_team_survives_save_load() {
     crate::sim::arena_fixture::flat_ground(&mut restored, &rules);
     // Retail load reinitializes Scenario RNG and discards active planning
     // (ClearScene6370B0 / TechnoLoad70BF79); align the control before comparing.
-    original.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *original.scenario_rng = crate::sim::rng::SimRng::new(0);
     original.reset_planning_after_player_load();
     assert_eq!(original.state_hash(), restored.state_hash());
 

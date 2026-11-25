@@ -111,11 +111,11 @@ fn constructor_complete_foot_destructors_match_native_team_gate_and_rng() {
         // entry, not an invented dead/queue-ready object. This comparison
         // starts its RNG there; the action7 test separately covers constructor
         // draws and native identities. No process-Started inference is made.
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        sim.main_rng =
+        *sim.main_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         sim.finalize_and_remove_common(
             member,
@@ -277,7 +277,7 @@ fn receiver_garrison_survivor_keeps_height_aware_playfield_membership() {
     let mut sim = Simulation::new();
     sim.session.set_map_width_for_test(16);
     sim.session.set_map_height_for_test(16);
-    sim.playfield_bounds =
+    *sim.playfield_bounds =
         Some(crate::sim::cell_rect::PlayfieldBounds::from_normalized_local_size(16, 2, 2, 12, 3));
     install_common_raw_terrain(&mut sim, 16, 16, 4, None);
     // SellBuilding's exit probe is the occupant's own Can_Enter_Cell, which
@@ -450,7 +450,7 @@ fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
         },
     );
     let _ = grid.drain_dirty();
-    sim.smudge_grid = Some(grid);
+    *sim.smudge_grid = Some(grid);
 
     assert!(matches!(
         sim.try_reveal_entity_with_context(
@@ -533,8 +533,8 @@ fn wrapped_smudge_data_survives_load_and_controls_building_clear() {
     let _ = grid.drain_dirty();
     let mut live = Simulation::with_seed(17);
     live.install_resolved_terrain_for_new_map(terrain.clone());
-    live.overlay_grid = Some(overlay);
-    live.smudge_grid = Some(grid);
+    *live.overlay_grid = Some(overlay);
+    *live.smudge_grid = Some(grid);
     let bytes = GameSnapshot::save(&live, 0, rules.simulation_config_hash(), "wide-smudge", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     let saved_rules: ProcessedRulesLayers = save_codec::deserialize(&saved_rules).unwrap();

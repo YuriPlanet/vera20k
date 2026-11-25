@@ -30,6 +30,7 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::timer::MissionTimer;
 use crate::sim::world::FrameEffects;
 use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+use crate::util::forked::Forked;
 
 /// An infantryman's fear, stance, idle timer and failed-path answer.
 /// - Fear: this module's fear receiver raises and decays it.
@@ -62,6 +63,70 @@ pub struct InfantryRuntime {
     /// Infantry Mission_Move restart `0x00520FF1` and save/load `0x00521D0F`.
     #[serde(default)]
     cell_entry_blocked: bool,
+    /// Whether a web has held this man. The web timer itself is a
+    /// [`WebTimer`] in the object's seldom part; this byte, in the record's
+    /// padding, spares every man never webbed that read. Only
+    /// [`GameEntity::renew_web`] sets it, with the timer.
+    #[serde(default)]
+    webbed: bool,
+}
+
+/// The Tiberian Sun web timer, Firestorm 2.0 InfantryClass `+0x370` (ctor
+/// `0x004D1F50`: Delay 0, expired), kept as the frame it runs out: a web
+/// never pauses, so its start plus its delay is all its readers need. It
+/// sits in the object's seldom part (`Seldom::web`); only a `Webby=` warhead
+/// sets it ([`GameEntity::renew_web`]), and its remainder holds the man
+/// ([`GameEntity::is_immobilized`]). Zero, which a save written without it
+/// decodes to, has run out.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct WebTimer(i32);
+
+impl GameEntity {
+    /// The web timer's remainder at `frame`, the value Firestorm 2.0 inlines
+    /// at every reader of InfantryClass `+0x370`; 0 for a man never webbed
+    /// and for every other object.
+    pub fn web_remaining(&self, frame: i32) -> i32 {
+        if !self
+            .infantry
+            .as_ref()
+            .is_some_and(|infantry| infantry.webbed)
+        {
+            return 0;
+        }
+        self.seldom.web.0.wrapping_sub(frame).max(0)
+    }
+
+    /// Whether an infantryman's web timer still runs at `frame`.
+    pub fn is_webbed(&self, frame: i32) -> bool {
+        self.web_remaining(frame) > 0
+    }
+
+    /// Firestorm 2.0's fresh-web test, inlined in `Evaluate_Object`
+    /// (`0x0062D583..0x0062D5B6`) and `UnitClass::Firing_AI`
+    /// (`0x0064E81D..0x0064E851`): more is left of the web than a quarter of
+    /// the attacker's warhead `WebDuration=` (signed, toward zero).
+    pub(crate) fn web_outlasts_quarter(&self, frame: i32, web_duration: i32) -> bool {
+        self.web_remaining(frame) > web_duration / 4
+    }
+
+    /// The frame the web runs out (0 before any web), for the world hash.
+    pub(crate) fn web_end(&self) -> i32 {
+        self.seldom.web.0
+    }
+
+    /// Firestorm 2.0 `InfantryClass::Take_Damage` `0x004D2420..0x004D2476`:
+    /// a new web of `duration` frames restarts an infantryman's timer only
+    /// when the current remainder is not longer (`rem <= new`); otherwise
+    /// the old one is kept.
+    pub(crate) fn renew_web(&mut self, frame: i32, duration: i32) {
+        if self.infantry.is_none() || self.web_remaining(frame) > duration {
+            return;
+        }
+        self.seldom.web = WebTimer(frame.wrapping_add(duration));
+        if let Some(infantry) = self.infantry.as_mut() {
+            infantry.webbed = true;
+        }
+    }
 }
 
 impl Default for InfantryRuntime {
@@ -147,6 +212,7 @@ impl InfantryRuntime {
             is_prone: false,
             idle_action_timer: MissionTimer::default(),
             cell_entry_blocked: false,
+            webbed: false,
         }
     }
 }
@@ -286,6 +352,60 @@ fn repeated_fear_add(
 }
 
 impl crate::sim::world::Simulation {
+    /// Firestorm 2.0 `InfantryClass::Take_Damage` 0x004D2380, its web arm
+    /// (`0x004D23D1..0x004D24A0`), after the prone head: a `Webby=` warhead
+    /// webs an infantryman whose type is not `IsWebImmune=`. In order:
+    /// - one Scenario call for `-WebDurationVariation..=WebDurationVariation`
+    ///   (`0x004D2410`, Scenario `+0x218`), made even when the web is not
+    ///   renewed;
+    /// - the web timer restarts at `WebDuration` plus that, unclamped, unless
+    ///   more is left ([`GameEntity::renew_web`]);
+    /// - a forced Struggle that starts at a random stage (`0x004D2493`,
+    ///   vt+0x3C0); its answer is ignored.
+    ///
+    /// Answers whether it webbed him, which makes the hit's damage 0, so the
+    /// rest of the receiver does nothing (`0x004D24D4`). Not ported: the tag's
+    /// TEvent 53 (Paralyzed, `0x0061E6D0`), whose number is another event in
+    /// gamemd.
+    pub(crate) fn infantry_take_web(
+        &mut self,
+        id: u64,
+        web: &crate::rules::warhead_type::WarheadWeb,
+        rules: &crate::rules::ruleset::RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> bool {
+        let Some(target) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        // VERA's receivers can find a man killed earlier in the same batch;
+        // Firestorm's callers reach only one above zero strength
+        // (`0x004467D6`), and a forced Struggle must not replace his death.
+        if target.infantry.is_none()
+            || target.health.current() <= 0
+            || self
+                .interner
+                .object_type(target.type_ref(), rules)
+                .is_none_or(|object| object.is_web_immune)
+        {
+            return false;
+        }
+        let variation = web.duration_variation;
+        let extra = self
+            .scenario_rng
+            .next_range_i32_inclusive(variation.wrapping_neg(), variation);
+        let duration = web.duration.wrapping_add(extra);
+        let frame = self.session.binary_frame() as i32;
+        if let Some(target) = self.substrate.entities.get_mut(id) {
+            target.renew_web(frame, duration);
+        }
+        let struggle = crate::sim::movement::infantry_action::DO_STRUGGLE;
+        if let Err(cause) = self.infantry_do_action_random_start(id, struggle, true, rules, effects)
+        {
+            log::debug!("infantry {id} Struggle: {cause}");
+        }
+        true
+    }
+
     /// gamemd.exe `InfantryClass__Fear_Decay_Handler @ 0x005200B0`, called by InfantryAI at
     /// 51BF0B after Foot Process and before FireAtTarget5206B0/sequencer520AE0.
     /// Caller owns survival/warped admission. Returns the existing NULL Scatter
@@ -568,13 +688,14 @@ enum IdleTurn {
 
 /// Single Infantry51CDB0 decision body. The world receiver applies its class
 /// action immediately, before a mission caller can spend its cadence draw.
-/// `ares` is the game's `RuleSet::ares_form`.
+/// `ares` is the game's `RuleSet::ares_form`. A refused turn draws nothing
+/// and leaves the stream unwritten.
 fn select_idle_action(
     entity: &mut GameEntity,
     object: &ObjectType,
     controlled_by_human: bool,
     frequency: f64,
-    rng: &mut crate::sim::rng::SimRng,
+    rng: &mut Forked<crate::sim::rng::SimRng>,
     frame: u32,
     ares: bool,
 ) -> Result<IdleTurn, String> {
@@ -741,7 +862,7 @@ pub(crate) fn tick_idle_actions(
     houses: &crate::sim::houses::Houses,
     rules: &crate::rules::ruleset::RuleSet,
     interner: &crate::sim::intern::StringInterner,
-    rng: &mut crate::sim::rng::SimRng,
+    rng: &mut Forked<crate::sim::rng::SimRng>,
     frame: u32,
 ) -> Vec<(u64, i32)> {
     let mut fidgets = Vec::new();
@@ -993,9 +1114,9 @@ mod tests {
                 input["game_mode_nonzero"].as_bool().unwrap_or(true),
             ),
         );
-        sim.scenario_rng = SimRng::new(31);
-        sim.main_rng = SimRng::new(31);
-        sim.mapgen_rng = SimRng::new(31);
+        *sim.scenario_rng = SimRng::new(31);
+        *sim.main_rng = SimRng::new(31);
+        *sim.mapgen_rng = SimRng::new(31);
         let owner = sim.interner.intern("FearOwner");
         let mut house = HouseState::new(
             owner,
@@ -1482,7 +1603,7 @@ mod tests {
                 .unwrap();
             actor.infantry.as_mut().unwrap().idle_action_timer =
                 crate::sim::mission::MissionTimer::armed(frame, 0);
-            sim.scenario_rng = SimRng::new(scenario_seed);
+            *sim.scenario_rng = SimRng::new(scenario_seed);
             sim.sound_events.clear_for_test();
             let before = sim.main_rng.clone();
             assert!(
@@ -1552,7 +1673,7 @@ mod tests {
             // an Options constructor/settings load is outside this receipt.
             // Reproduction: foot_missions.md's idle Options input proof.
             sim.session.game_options_mut_for_test().game_speed = 0;
-            sim.scenario_rng = SimRng::new(input["scenario_seed"].as_u64().unwrap());
+            *sim.scenario_rng = SimRng::new(input["scenario_seed"].as_u64().unwrap());
             assert_eq!(
                 native_rng_state(&sim.scenario_rng),
                 row["rng_before"]["scenario"],

@@ -111,10 +111,10 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
     }
     // Adopt the oracle's declared boundary after source setup, not a claim
     // that the fixture's synthetic world constructed the native full prefix.
-    world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+    *world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
         rows[0]["launch"]["scenario_id_before"].as_u64().unwrap() as u32,
     ));
-    world.scenario_rng = SimRng::new(31);
+    *world.scenario_rng = SimRng::new(31);
     let main_before = world.main_rng.logical_state();
     let anim_count = world.substrate.anims.len();
     let mut previous_projectiles = std::collections::BTreeSet::new();
@@ -152,6 +152,7 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
                 target_cell[0].as_u64().unwrap() as u16,
                 target_cell[1].as_u64().unwrap() as u16,
                 world.resolved_terrain.as_ref(),
+                None,
             )),
             &world.substrate.entities,
             &world.interner,

@@ -216,13 +216,10 @@ impl NativeRadarSurfaceGeometry {
         let raw_y = world_y_leptons
             .wrapping_sub(self.raw_offset_y.wrapping_mul(256))
             .wrapping_add(world_x_leptons);
-        let project = |raw| {
-            native_ftol(X87Chop53::mul(
-                X87Chop53::mul(X87Chop53::load_i32(raw), load_f32(self.zoom)),
-                load_constant(ONE_OVER_CELL_BITS),
-            ))
-        };
-        let mut pixel = (project(raw_x), project(raw_y));
+        let mut pixel = (
+            surface_pixel(raw_x, self.zoom),
+            surface_pixel(raw_y, self.zoom),
+        );
         if clamp {
             // `0x006557F0` raises to 0, then lowers to the image's last pixel:
             // an empty image gives -1 (`i32::clamp` would panic on it).
@@ -320,6 +317,46 @@ fn native_aspect_fit(raw_width: i32, raw_height: i32) -> (f32, i32, i32) {
         ));
         (height_zoom, generated_width, MAX_RADAR_HEIGHT)
     }
+}
+
+/// `0x006557F0`'s pixel for one raw coordinate: `ftol(raw * zoom * 2^-8)`
+/// on the x87, at 53-bit precision with truncation toward zero. Below 2^61
+/// the product's truncation to 53 bits drops only bits under 2^8, which the
+/// division by 256 and `ftol` drop anyway, so the pixel is the exact
+/// product's truncation, taken here in integers. Debug builds check it
+/// against the x87 model ([`x87_surface_pixel`]).
+fn surface_pixel(raw: i32, zoom: f32) -> i32 {
+    let bits = zoom.to_bits();
+    let exponent = ((bits >> 23) & 0xff) as i32;
+    // A normal zoom is its 24-bit significand times 2^(exponent - 150), so
+    // the pixel is raw times the significand over 2^(158 - exponent). From
+    // 2 up the product, below 2^31 * 2^(exponent - 126), stays below 2^61.
+    let shift = 158 - exponent;
+    if exponent == 0 || exponent == 0xff || !(2..63).contains(&shift) {
+        return x87_surface_pixel(raw, zoom);
+    }
+    let significand = i64::from((bits & 0x7f_ffff) | 0x80_0000);
+    let signed = if bits >> 31 == 0 {
+        significand
+    } else {
+        -significand
+    };
+    // Below 2^55 in magnitude; `/` truncates toward zero as `ftol` does.
+    let pixel = (i64::from(raw) * signed / (1_i64 << shift)) as i32;
+    debug_assert_eq!(
+        pixel,
+        x87_surface_pixel(raw, zoom),
+        "raw {raw}, zoom {zoom}"
+    );
+    pixel
+}
+
+/// [`surface_pixel`] in the x87 model, operation by operation.
+fn x87_surface_pixel(raw: i32, zoom: f32) -> i32 {
+    native_ftol(X87Chop53::mul(
+        X87Chop53::mul(X87Chop53::load_i32(raw), load_f32(zoom)),
+        load_constant(ONE_OVER_CELL_BITS),
+    ))
 }
 
 fn load_constant(bits: u32) -> X87Value {

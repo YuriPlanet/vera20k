@@ -10,16 +10,18 @@
 //! - Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
+use crate::app::presentation::state::MatchPresentationState;
+use crate::app::state::PlatformState;
 use crate::rules::ini_parser::IniFile;
 use crate::ui::match_layout::{FILE_NAME, MatchLayoutFile};
 
 /// The player's file in the VERA20k folder, whatever capitals its name has;
 /// `None` in a capture run or without a settings folder.
-fn path(state: &AppState) -> Option<std::path::PathBuf> {
-    if state.platform.capture_client_size.is_some() {
+fn path(platform: &PlatformState) -> Option<std::path::PathBuf> {
+    if platform.capture_client_size.is_some() {
         return None;
     }
-    let dir = state.platform.game_config.as_ref()?.paths.settings_dir();
+    let dir = platform.game_config.as_ref()?.paths.settings_dir();
     Some(
         crate::util::case_insensitive_path::find(dir, FILE_NAME)
             .unwrap_or_else(|| dir.join(FILE_NAME.to_ascii_lowercase())),
@@ -27,19 +29,19 @@ fn path(state: &AppState) -> Option<std::path::PathBuf> {
 }
 
 /// The player's file as it is on disk; empty when there is none.
-fn read(state: &AppState) -> Vec<u8> {
-    path(state)
+fn read(platform: &PlatformState) -> Vec<u8> {
+    path(platform)
         .and_then(|path| crate::util::file_system::read(path).ok())
         .unwrap_or_default()
 }
 
 /// Write the player's file as the match holds it; with nothing left in it,
 /// as after a Reset, remove the file. A capture run writes none.
-pub(crate) fn write(state: &AppState) {
-    let Some(path) = path(state) else {
+pub(crate) fn write(platform: &PlatformState, presentation: &MatchPresentationState) {
+    let Some(path) = path(platform) else {
         return;
     };
-    let text = &state.match_state.match_presentation.player_layout_text;
+    let text = &presentation.player_layout_text;
     if text.iter().all(u8::is_ascii_whitespace) {
         match crate::util::file_system::remove_file(&path) {
             Ok(()) => log::info!("Interface layout reset: removed {}", path.display()),
@@ -67,7 +69,7 @@ pub(crate) fn write(state: &AppState) {
 /// A new match's layouts: the mod's file as the loader parsed it, and the
 /// player's own from the VERA20k folder.
 pub(crate) fn install(state: &mut AppState, mod_file: Option<IniFile>) {
-    let player = read(state);
+    let player = read(&state.platform);
     let presentation = &mut state.match_state.match_presentation;
     presentation.mod_layout_ini = mod_file;
     presentation.player_layout_text = player;

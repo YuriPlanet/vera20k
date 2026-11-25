@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def regenerate(entry) -> bytes:
     """Run the entry's recorded regeneration command in-process."""
     command = list(entry.regenerate)
-    size, starts = 250, None
+    size, starts, battle = 250, None, None
     index = 0
     while index < len(command):
         if command[index] == "--size":
@@ -28,9 +28,12 @@ def regenerate(entry) -> bytes:
         elif command[index] == "--starts":
             starts = int(command[index + 1])
             index += 2
+        elif command[index] == "--battle":
+            battle = int(command[index + 1])
+            index += 2
         else:
             index += 1
-    return build_map(size, starts).encode("ascii")
+    return build_map(size, starts, battle=battle).encode("ascii")
 
 
 class TestMapRegistryTests(unittest.TestCase):

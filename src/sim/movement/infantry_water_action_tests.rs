@@ -231,10 +231,11 @@ fn fixture(row: &Value, rules: &RuleSet, type_name: &str) -> (Simulation, u64) {
     ));
     sim.sound_events.clear_for_test();
     if row["rng_before"].is_object() {
-        sim.main_rng = serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone()).unwrap();
-        sim.scenario_rng =
+        *sim.main_rng =
+            serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone()).unwrap();
+        *sim.scenario_rng =
             serde_json::from_value::<SimRng>(row["rng_before"]["scenario"].clone()).unwrap();
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             serde_json::from_value::<SimRng>(row["rng_before"]["mapgen"].clone()).unwrap();
     }
     (sim, id)

@@ -412,7 +412,7 @@ pub(crate) fn infantry_destination_coordinate(
     entities: &crate::sim::entity_store::EntityStore,
     rules: &crate::rules::ruleset::RuleSet,
     interner: &crate::sim::intern::StringInterner,
-    rng: &mut crate::sim::rng::SimRng,
+    rng: &mut crate::util::forked::Forked<crate::sim::rng::SimRng>,
 ) -> Option<DriveCoord> {
     let (slot, bridge) = super::bump_crush::pick_infantry_sublocation(
         Some(terrain),
@@ -575,15 +575,14 @@ impl JumpjetOrderHost for WorldOrderHost<'_> {
         let (x, y) = self
             .terrain()
             .native_cell_coord(self.cell_identity([destination.x, destination.y]));
-        self.sim
-            .substrate
-            .entities
-            .get_mut(self.id)
-            .unwrap()
-            .navigation
-            .store_nav_com(Some(crate::sim::components::NavTargetRef::cell(
+        let entity = self.sim.substrate.entities.get_mut(self.id).unwrap();
+        let note = entity.note_names();
+        entity.navigation.store_nav_com(
+            Some(crate::sim::components::NavTargetRef::cell(
                 x as u16, y as u16,
-            )));
+            )),
+            note,
+        );
     }
 }
 
@@ -835,6 +834,7 @@ mod tests {
         occupancy::{OccupancyGrid, RawCellOccupationGrid},
         rng::SimRng,
     };
+    use crate::util::forked::Forked;
 
     /// `0x0054D930` on REMOVE: a grounded owner's receiver runs; an airborne
     /// one's runs only for an admitted landing, whose byte clears either way.
@@ -874,7 +874,7 @@ mod tests {
         occupancy: &'a OccupancyGrid,
         entities: &'a EntityStore,
         interner: &'a StringInterner,
-        rng: &'a mut SimRng,
+        rng: &'a mut Forked<SimRng>,
         fail: bool,
     }
 
@@ -980,7 +980,7 @@ mod tests {
             let occupancy = OccupancyGrid::new();
             let entities = EntityStore::new();
             let interner = StringInterner::new();
-            let mut rng = SimRng::new(31);
+            let mut rng = Forked::new(SimRng::new(31));
             let current = DriveCoord {
                 x: 2496,
                 y: 2624,

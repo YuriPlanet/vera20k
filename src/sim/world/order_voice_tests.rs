@@ -292,11 +292,11 @@ fn assert_move_voice_request(corpus: &serde_json::Value, row: &serde_json::Value
     );
     // A declared native action boundary, before event encoding/audio. These
     // complete states are installed once, never reseeded between draws.
-    sim.main_rng =
+    *sim.main_rng =
         SimRng::from_native_state_hex_for_test(output["main_before_hex"].as_str().unwrap());
-    sim.scenario_rng =
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(output["scenario_before_hex"].as_str().unwrap());
-    sim.mapgen_rng =
+    *sim.mapgen_rng =
         SimRng::from_native_state_hex_for_test(output["mapgen_before_hex"].as_str().unwrap());
     let enabled = input["voices_enabled"].as_bool().unwrap();
     let entry = input["caller_entry"].as_str().unwrap();

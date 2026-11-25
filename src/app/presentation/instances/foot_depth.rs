@@ -2,7 +2,7 @@
 //! Native identities and pure arithmetic live in render::foot_depth. All unit
 //! pieces consume one result; camera visibility never mutates the sim's dummy.
 
-use crate::app::AppState;
+use crate::app::match_runtime::sim_host::SimHost;
 use crate::app::presentation::frame::{ObjectRecord, PresentationFrame};
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -114,10 +114,10 @@ pub(crate) struct DepthWorld<'a> {
 }
 
 impl<'a> DepthWorld<'a> {
-    pub(crate) fn of(state: &'a AppState) -> Self {
+    pub(crate) fn of(sim_runtime: &'a SimHost) -> Self {
         Self {
-            runtime: state.match_state.sim_runtime.presentation(),
-            frame: state.match_state.sim_runtime.frame(),
+            runtime: sim_runtime.presentation(),
+            frame: sim_runtime.frame(),
         }
     }
 }
@@ -125,11 +125,11 @@ impl<'a> DepthWorld<'a> {
 /// Raw Unit composite predicate (0x73B1A8..0x73B207), not a draw-layer route.
 /// SHP infantry and aircraft never pass through this Unit vtable slot +0x55C.
 pub(crate) fn unit_bridge_split(
-    state: &AppState,
+    sim_runtime: &SimHost,
     entity: &ObjectRecord,
     unloading_body: bool,
 ) -> bool {
-    unit_bridge_split_in(DepthWorld::of(state), entity, unloading_body)
+    unit_bridge_split_in(DepthWorld::of(sim_runtime), entity, unloading_body)
 }
 
 /// [`unit_bridge_split`] in a given world.
@@ -284,13 +284,13 @@ pub(super) fn shp_z_adjust(world: DepthWorld<'_>, entity: &ObjectRecord) -> f32 
 /// SetHeights the object; its read-only adapter supplies that world Z here
 /// instead of changing the simulation.
 pub(crate) fn unit_z_adjust(
-    state: &AppState,
+    sim_runtime: &SimHost,
     entity: &ObjectRecord,
     unloading_body: bool,
     world_z_override: Option<i32>,
 ) -> i32 {
     unit_z_adjust_in(
-        DepthWorld::of(state),
+        DepthWorld::of(sim_runtime),
         entity,
         unloading_body,
         world_z_override,

@@ -61,9 +61,9 @@ fn seed_native(sim: &mut Simulation, state: &Value) {
             SimRng::from_native_state_hex_for_test(record)
         }
     };
-    sim.scenario_rng = restore("scenario");
-    sim.main_rng = restore("main");
-    sim.mapgen_rng = restore("mapgen");
+    *sim.scenario_rng = restore("scenario");
+    *sim.main_rng = restore("main");
+    *sim.mapgen_rng = restore("mapgen");
     assert_rng_state(sim, state);
 }
 

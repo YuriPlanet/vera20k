@@ -130,7 +130,7 @@ fn replay_reapplies_header_seed() {
     fn sim_with_unit(desc: &ScenarioDescriptor, rules: &RuleSet) -> (Simulation, PathGrid) {
         let mut sim = Simulation::from_descriptor(desc);
         // This synthetic fixture omits the production native Rules prefix.
-        sim.native_unique_ids =
+        *sim.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
         let grid = crate::sim::arena_fixture::flat_ground(&mut sim, rules);
         let entity = MapEntity {

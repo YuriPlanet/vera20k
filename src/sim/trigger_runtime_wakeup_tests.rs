@@ -427,12 +427,12 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
     // Use the existing native in-scenario load seed0 boundary. This checkpoint
     // deliberately retains pending source Tag/Trigger finalization and all7
     // shared prisoner references, before the enabled elapsed0 poll.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let bytes = GameSnapshot::save(&sim, 0, 0, "ALL02UMD.MAP", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
     crate::sim::arena_fixture::flat_ground(&mut restored, &rules);
-    assert_eq!(sim.trigger_runtime, restored.trigger_runtime);
+    assert_eq!(*sim.trigger_runtime, *restored.trigger_runtime);
     for candidate in [&mut sim, &mut restored] {
         let before: Vec<_> = prisoners
             .iter()
@@ -500,7 +500,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
             1
         );
     }
-    assert_eq!(sim.trigger_runtime, restored.trigger_runtime);
+    assert_eq!(*sim.trigger_runtime, *restored.trigger_runtime);
     for &id in &prisoners {
         assert_eq!(
             sim.substrate.entities.get(id).unwrap().mission,

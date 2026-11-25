@@ -6,28 +6,33 @@
 //! and roster drags do.
 
 use super::*;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::{NetworkRowKind, PeerChoicesChange};
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
 use crate::skirmish_launch::{LaunchTeam, ROOM_TEAMS};
 use crate::ui::multiplayer_setup::{SEAT_MENU, SetupChoice, SetupCombo, TEAM_MENU};
 use crate::ui::team_tools::{
     self, PRESETS, SEAT_MENU_KEY, Seat, SeatAction, SeatCounts, TEAM_MENU_KEY, TeamPreset,
     TeamTool, ToolRefusal,
 };
+use crate::util::config::GameConfig;
 use anyhow::Context;
 
 /// The host's lists in VERA's room: Quick Team Setup in a room with teams
 /// (`grouped`), Bulk Seat Actions wherever the team bar shows.
 pub(super) fn combos(
-    state: &AppState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
     grouped: bool,
     ai_allowed: bool,
     starting: bool,
 ) -> Vec<SetupCombo> {
-    let session = &state.match_state.session;
+    let session = &match_state.session;
     let Some(launch) = session.network_setup() else {
         return Vec::new();
     };
-    if !super::dialog(state).modern || !session.host() {
+    if !super::dialog(frontend, match_state).modern || !session.host() {
         return Vec::new();
     }
     let menu = |id, key, items: Vec<SetupChoice>| SetupCombo {
@@ -44,9 +49,18 @@ pub(super) fn combos(
     };
     let mut combos = Vec::new();
     if grouped {
-        combos.push(menu(TEAM_MENU, TEAM_MENU_KEY, team_items(state, launch)));
+        combos.push(menu(
+            TEAM_MENU,
+            TEAM_MENU_KEY,
+            team_items(frontend, match_state, launch),
+        ));
     }
-    if grouped || super::view::room_size_shown(state) {
+    if grouped
+        || super::view::room_size_shown(
+            frontend.network_setup_protocol.as_ref(),
+            &match_state.session,
+        )
+    {
         let items = team_tools::seat_actions(seat_counts(session, ai_allowed))
             .into_iter()
             .map(|(action, offered)| {
@@ -74,19 +88,23 @@ fn choice(value: i32, text: String, greyed: bool) -> SetupChoice {
 /// Quick Team Setup's items: Team Starts and Team Colors while Teams is
 /// set (Team Starts on a map the host has), online Balance Teams, then the
 /// quick teams under their heading.
-fn team_items(state: &AppState, launch: &SkirmishLaunchSession) -> Vec<SetupChoice> {
+fn team_items(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    launch: &SkirmishLaunchSession,
+) -> Vec<SetupChoice> {
     let set = launch
         .options
         .teams
         .is_none()
         .then_some(ToolRefusal::TwoTeamsNeeded);
     let starts = set.or_else(|| {
-        view::local_map_index(state)
+        view::local_map_index(frontend, &match_state.session)
             .is_none()
             .then_some(ToolRefusal::Unavailable)
     });
     let mut tools = vec![(TeamTool::Starts, starts), (TeamTool::Colors, set)];
-    if super::dialog(state).wol() {
+    if super::dialog(frontend, match_state).wol() {
         tools.push((TeamTool::Balance, None));
     }
     let item = |(tool, refusal): (TeamTool, Option<ToolRefusal>)| {
@@ -222,71 +240,89 @@ fn plan_preset(
 }
 
 /// The host's pick from one of the lists, an item [`combos`] offered.
-pub(super) fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> {
+pub(super) fn select(
+    game_config: Option<&GameConfig>,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+    control: u16,
+    value: i32,
+) -> anyhow::Result<()> {
     match control {
         TEAM_MENU => match TeamTool::from_code(value).context("unknown Quick Team Setup item")? {
             TeamTool::Starts => {
-                if super::teams::team_starts(state, false)? {
-                    options_edited(state)?;
+                if super::teams::team_starts(
+                    game_config,
+                    frontend,
+                    &mut match_state.session,
+                    process_assets,
+                    false,
+                )? {
+                    options_edited(frontend, match_state)?;
                 }
                 Ok(())
             }
             TeamTool::Colors => {
-                if super::teams::team_colors(state)? {
-                    options_edited(state)?;
+                if super::teams::team_colors(frontend, match_state)? {
+                    options_edited(frontend, match_state)?;
                 }
                 Ok(())
             }
             TeamTool::Balance => {
-                super::teams::balance(state);
+                super::teams::balance(&mut frontend.network_setup_protocol);
                 Ok(())
             }
-            TeamTool::Preset(preset) => apply_preset(state, preset),
+            TeamTool::Preset(preset) => apply_preset(frontend, match_state, preset),
         },
         SEAT_MENU => apply_seat_action(
-            state,
+            frontend,
+            match_state,
             SeatAction::from_code(value).context("unknown Bulk Seat Actions item")?,
         ),
         _ => anyhow::bail!("not a team bar list"),
     }
 }
 
-fn options_edited(state: &mut AppState) -> anyhow::Result<()> {
-    actions::host_option_edited(state)?;
-    actions::queue(state, NetworkSetupRequest::PublishOptions);
+fn options_edited(
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+) -> anyhow::Result<()> {
+    actions::host_option_edited(frontend, match_state)?;
+    actions::queue(
+        &mut frontend.network_setup_protocol,
+        NetworkSetupRequest::PublishOptions,
+    );
     Ok(())
 }
 
 /// A quick team: the Teams count it needs, then each seated row moved to
 /// its team as the host's roster drag would move it.
-fn apply_preset(state: &mut AppState, preset: TeamPreset) -> anyhow::Result<()> {
-    let launch = state
-        .match_state
-        .session
-        .network_setup()
-        .context("no setup")?;
+fn apply_preset(
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    preset: TeamPreset,
+) -> anyhow::Result<()> {
+    let launch = match_state.session.network_setup().context("no setup")?;
     let (count, moves) = plan_preset(launch, preset)
         .map_err(|why| anyhow::anyhow!("quick team refused: {why:?}"))?;
-    if state.match_state.session.network_teams() != count {
-        super::teams::set_teams(state, count)?;
+    if match_state.session.network_teams() != count {
+        super::teams::set_teams(
+            &mut frontend.network_setup_protocol,
+            &mut match_state.session,
+            count,
+        )?;
     }
     let mut change = PeerChoicesChange::default();
     let mut refused = Ok(());
     for (row, team) in moves {
-        let on = super::teams::seats(
-            state
-                .match_state
-                .session
-                .network_setup()
-                .context("no setup")?,
-        )
-        .into_iter()
-        .find(|&(seat, ..)| seat == row)
-        .map(|(_, on, _)| on);
+        let on = super::teams::seats(match_state.session.network_setup().context("no setup")?)
+            .into_iter()
+            .find(|&(seat, ..)| seat == row)
+            .map(|(_, on, _)| on);
         if on.is_none_or(|on| on == team) {
             continue;
         }
-        match actions::put_on_team(state, row, team, false) {
+        match actions::put_on_team(frontend, match_state, row, team, false) {
             Ok(moved) => {
                 change.roster |= moved.roster;
                 change.options |= moved.options;
@@ -298,16 +334,20 @@ fn apply_preset(state: &mut AppState, preset: TeamPreset) -> anyhow::Result<()> 
         }
     }
     // Rows moved before a refused one are published too.
-    actions::host_option_edited(state)?;
-    super::service::publish_choices(state, change);
+    actions::host_option_edited(frontend, match_state)?;
+    super::service::publish_choices(frontend, match_state, change);
     refused
 }
 
 /// A Bulk Seat Actions item on the map's seats, each row changed as the
 /// host's Player list would change it; Fill with AI's random difficulty is
 /// drawn for each seat. Close all keeps two seats.
-fn apply_seat_action(state: &mut AppState, action: SeatAction) -> anyhow::Result<()> {
-    let session = &state.match_state.session;
+fn apply_seat_action(
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    action: SeatAction,
+) -> anyhow::Result<()> {
+    let session = &match_state.session;
     let rows = seat_rows(session);
     let mut kept = usize::from(session.network_player_row_limit()) - rows.closed.len();
     let changes: Vec<(u8, NetworkRowKind)> = match action {
@@ -343,16 +383,22 @@ fn apply_seat_action(state: &mut AppState, action: SeatAction) -> anyhow::Result
     };
     for (row, kind) in changes {
         // Open seats, closed seats and AI rows hold no guest to kick.
-        state
-            .match_state
-            .session
-            .choose_network_row_kind(row, kind)?;
+        match_state.session.choose_network_row_kind(row, kind)?;
     }
-    if super::dialog(state).wol() {
-        actions::queue(state, NetworkSetupRequest::Advertise);
+    if super::dialog(frontend, match_state).wol() {
+        actions::queue(
+            &mut frontend.network_setup_protocol,
+            NetworkSetupRequest::Advertise,
+        );
     }
-    actions::queue(state, NetworkSetupRequest::PublishOptions);
-    actions::queue(state, NetworkSetupRequest::PublishRoster);
+    actions::queue(
+        &mut frontend.network_setup_protocol,
+        NetworkSetupRequest::PublishOptions,
+    );
+    actions::queue(
+        &mut frontend.network_setup_protocol,
+        NetworkSetupRequest::PublishRoster,
+    );
     Ok(())
 }
 

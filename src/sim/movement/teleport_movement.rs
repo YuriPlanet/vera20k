@@ -235,7 +235,7 @@ impl ChronoWarpDelay {
 /// write. Native keeps the bytes on the Techno; only the Teleport's states
 /// write them, and End_Piggyback waits until all are clear
 /// (`0x00719F30`), so they live and die with this Teleport.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ChronoWarp {
     /// Teleport `+0x38`.
     state: u8,
@@ -612,12 +612,9 @@ impl crate::sim::world::Simulation {
             || actor.is_warping_in()
         {
             // The refusal's NavCom store (`0x00718213`).
-            self.substrate
-                .entities
-                .get_mut(id)
-                .unwrap()
-                .navigation
-                .store_nav_com(None);
+            let entity = self.substrate.entities.get_mut(id).unwrap();
+            let note = entity.note_names();
+            entity.navigation.store_nav_com(None, note);
             return Ok(false);
         }
         let infantry = actor.category() == EntityCategory::Infantry;

@@ -2,23 +2,20 @@
 //! gameplay lock owner; this leaf coordinates existing input/display owners.
 
 use crate::app::AppState;
+use crate::app::match_runtime::state::MatchState;
 
 /// Native mirror A8ED9C is copied from Scenario+35A2. App consumers read the
 /// session owner directly, including before its presentation effect drains.
-pub(crate) fn is_locked(state: &AppState) -> bool {
-    state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .is_some_and(|runtime| {
-            runtime.simulation.session().input_locked()
-                || (runtime.simulation.session().scenario_paused()
-                    && matches!(
-                        state.match_state.session_mode(),
-                        crate::app::match_runtime::session::SessionMode::Campaign
-                            | crate::app::match_runtime::session::SessionMode::Skirmish
-                    ))
-        })
+pub(crate) fn is_locked(match_state: &MatchState) -> bool {
+    match_state.sim_runtime.runtime().is_some_and(|runtime| {
+        runtime.simulation.session().input_locked()
+            || (runtime.simulation.session().scenario_paused()
+                && matches!(
+                    match_state.session_mode(),
+                    crate::app::match_runtime::session::SessionMode::Campaign
+                        | crate::app::match_runtime::session::SessionMode::Skirmish
+                ))
+    })
 }
 
 /// TActionClass::Execute 0x006DD8B0, case 46 (`0x006DED8B..0x006DEDD7`;
@@ -41,7 +38,7 @@ pub(crate) fn cancel_placement_modes(
 /// only for prior byte1, including after repeated locks.
 pub(crate) fn apply_lock_effect(state: &mut AppState, locked: bool, was_locked: bool) {
     if locked {
-        crate::app::input::chrome_input::cancel(state);
+        crate::app::input::chrome_input::cancel(&mut state.match_state.match_presentation);
         state.match_state.input.reset_cursor_shape();
     }
     lock_input(&mut state.match_state.input, locked, was_locked);

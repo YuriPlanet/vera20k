@@ -84,6 +84,7 @@ impl GameEntity {
         &mut self,
         candidates: Vec<DistributedFireCandidate>,
     ) {
+        let _ = self.note_names();
         self.seldom.distributed_fire.candidates = candidates;
     }
 
@@ -93,6 +94,7 @@ impl GameEntity {
 
     /// FireAt6FF872..6FF8EB appends its argument before the class null setter.
     pub(crate) fn remember_distributed_fire_target(&mut self, target: TargetKind) {
+        let _ = self.note_names();
         self.seldom.distributed_fire.history.push(Some(target));
     }
 

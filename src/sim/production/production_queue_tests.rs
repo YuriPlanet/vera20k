@@ -788,9 +788,9 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
         }
         // Native before is post-constructor. Import that declared boundary;
         // this compares ExitObject, not Factory construction/charge or release.
-        sim.main_rng = serde_json::from_value(row["rng_before"]["main"].clone()).unwrap();
-        sim.scenario_rng = serde_json::from_value(row["rng_before"]["scenario"].clone()).unwrap();
-        sim.mapgen_rng = serde_json::from_value(row["rng_before"]["mapgen"].clone()).unwrap();
+        *sim.main_rng = serde_json::from_value(row["rng_before"]["main"].clone()).unwrap();
+        *sim.scenario_rng = serde_json::from_value(row["rng_before"]["scenario"].clone()).unwrap();
+        *sim.mapgen_rng = serde_json::from_value(row["rng_before"]["mapgen"].clone()).unwrap();
         let registry = sim.production.factories().clone();
         let credits = sim.houses[&owner].economy().credits();
         let next_id = sim.next_stable_object_id();
@@ -983,9 +983,9 @@ fn human_mobile_completion_retains_identity_until_next_frame_place() {
         })
         .expect("the paid native step ladder completes");
     assert!(sim.pending_command_snapshot().is_empty());
-    sim.session.set_tick_for_test(sim.session.tick() + 1);
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let session = &mut *sim.session;
+    session.set_tick_for_test(session.tick() + 1);
+    session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
     super::publish_production_changes_for_tests(&mut sim, &rules, owner);
     let entity = sim.substrate.entities.get(held).unwrap();
     assert!(
@@ -1379,7 +1379,7 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
         &rules,
         "Americans",
         crate::sim::production::ProductionCancellation::Type {
-            type_id: "E1",
+            type_id: "E1".into(),
             naval: false
         },
         false,
@@ -1546,11 +1546,11 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
         // The native reader fixture also has an admitted plant and MTNK. Adopt
         // its declared pre-cancel full cursors; their construction is outside
         // this selected-field cancellation comparison.
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(before["rng"]["scenario"].as_str().unwrap());
-        sim.main_rng =
+        *sim.main_rng =
             SimRng::from_native_state_hex_for_test(before["rng"]["main"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(before["rng"]["mapgen"].as_str().unwrap());
         sim.session
             .set_binary_frame_for_test(before["frame"].as_u64().unwrap() as u32);
@@ -1560,7 +1560,7 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: "GAPOWR",
+                type_id: "GAPOWR".into(),
                 naval: false
             },
             false,
@@ -2042,7 +2042,7 @@ fn blocked_vehicle_delivery_refunds_disposes_and_promotes_next_item() {
     let grid = PathGrid::from_resolved_terrain(&terrain);
     sim.install_fixture_path_grid(Some(&grid));
     install_exit_map_size(&mut sim);
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
 
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAWEAP", 10, 10);
     super::house_for_test(&mut sim, "Americans")
@@ -2132,7 +2132,7 @@ fn failed_vehicle_exit_promotes_a_fresh_identity_that_can_deliver_after_cells_cl
     let blocked_grid = PathGrid::from_resolved_terrain(&terrain);
     sim.install_fixture_path_grid(Some(&blocked_grid));
     install_exit_map_size(&mut sim);
-    sim.resolved_terrain = Some(terrain.clone());
+    *sim.resolved_terrain = Some(terrain.clone());
 
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAWEAP", 10, 10);
 
@@ -2193,8 +2193,8 @@ fn failed_vehicle_exit_promotes_a_fresh_identity_that_can_deliver_after_cells_cl
         cell.zone_type = crate::map::resolved_terrain::zone_class::GROUND;
     }
     let clear_grid = PathGrid::from_resolved_terrain(&terrain);
-    sim.resolved_terrain = Some(terrain);
-    sim.path_grid = Some(std::sync::Arc::new(clear_grid));
+    *sim.resolved_terrain = Some(terrain);
+    *sim.path_grid = Some(std::sync::Arc::new(clear_grid));
     // The failed identity cannot retry. Supply completion of its newly started
     // successor and exercise that object's own next-frame PLACE edge.
     assert!(
@@ -2332,7 +2332,7 @@ fn cancel_by_type_removes_ready_building_and_refunds() {
         &rules,
         "Americans",
         crate::sim::production::ProductionCancellation::Type {
-            type_id: "GAREFN",
+            type_id: "GAREFN".into(),
             naval: false,
         },
         false,

@@ -1,16 +1,19 @@
 //! Single-threaded wasm execution of the existing independent work items.
-pub(crate) fn map<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) -> Vec<R> {
+pub fn map<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) -> Vec<R> {
     items.iter().map(work).collect()
 }
-pub(crate) fn map_in_order<T: Sync, R: Send>(
+pub(crate) fn map_in_order_then_filter_map_indices<T: Sync, A: Send, B: Send>(
     items: &[T],
-    work: impl Fn(usize, &T) -> R + Sync,
-) -> Vec<R> {
-    items
+    work: impl Fn(usize, &T) -> A + Sync,
+    len: usize,
+    pick: impl Fn(usize) -> Option<B> + Sync,
+) -> (Vec<A>, Vec<B>) {
+    let of_items = items
         .iter()
         .enumerate()
         .map(|(index, item)| work(index, item))
-        .collect()
+        .collect();
+    (of_items, filter_map_indices(len, pick))
 }
 pub(crate) fn map_with<T: Sync, S: Clone + Send, R: Send>(
     items: &[T],
@@ -52,9 +55,12 @@ mod tests {
         // Independent work must agree regardless of scheduling or worker count.
         let input = [7, 1, 9, 0, 4];
         assert_eq!(map(&input, |x| x * x), native::map(&input, |x| x * x));
+        let joined = |index: usize, x: &i32| x * 10 + index as i32;
         assert_eq!(
-            map_in_order(&input, |index, x| x * 10 + index as i32),
-            native::map_in_order(&input, |index, x| x * 10 + index as i32)
+            map_in_order_then_filter_map_indices(&input, joined, 17, |x| (x % 3 == 0)
+                .then_some(x * 2)),
+            native::map_in_order_then_filter_map_indices(&input, joined, 17, |x| (x % 3 == 0)
+                .then_some(x * 2))
         );
         let work = |scratch: &mut Vec<i32>, x: &i32| {
             scratch.clear();

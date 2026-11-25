@@ -19,7 +19,10 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use crate::app::AppState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::frontend::skirmish_session::MultiplayerShellRuntime;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
 
 /// The rate limit `[0x00825C88]`: a taunt is sent at most once per 5000 ms
 /// of `timeGetTime`.
@@ -60,12 +63,19 @@ fn taunt_byte(country: u16, number: u8) -> u8 {
 /// plays locally before any send (`0x00536438`), and the packet goes to
 /// every Multiplay House whose chat-mask byte is set
 /// (`0x0053645A..0x0053652B`); alliance does not matter.
-pub(crate) fn execute(state: &mut AppState, number: u8, now_ms: u64) {
-    let mode = state.match_state.session_mode();
+pub(crate) fn execute(
+    shell_runtime: &mut MultiplayerShellRuntime,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    number: u8,
+    now_ms: u64,
+) {
+    let mode = match_state.session_mode();
     if !mode.is_network() {
         return;
     }
-    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+    let Some(runtime) = match_state.sim_runtime.runtime() else {
         return;
     };
     let sim = &runtime.simulation;
@@ -85,11 +95,7 @@ pub(crate) fn execute(state: &mut AppState, number: u8, now_ms: u64) {
                 .rules
                 .country_index(sim.interner().resolve(country))
         });
-    if !state
-        .frontend
-        .multiplayer_shell_runtime
-        .admit_taunt(mode, now_ms)
-    {
+    if !shell_runtime.admit_taunt(mode, now_ms) {
         return;
     }
     // RESIDUAL: a House with no resolved country stands as 0; the local
@@ -100,21 +106,26 @@ pub(crate) fn execute(state: &mut AppState, number: u8, now_ms: u64) {
         .rules
         .country_taunt_pattern_by_index(u16::from(byte >> 4))
         .map(str::to_owned);
-    play(state, byte, pattern.as_deref());
-    let recipients = crate::app::input::chat::listener_peers(state, local);
+    play(process_assets, audio, byte, pattern.as_deref());
+    let recipients = crate::app::input::chat::listener_peers(match_state, local);
     if !recipients.is_empty() {
-        state.match_state.session.request_taunt(recipients, byte);
+        match_state.session.request_taunt(recipients, byte);
     }
 }
 
 /// Receive `0x0048D9BD..0x0048DA35`: the receiver's own TauntsOn is the only
 /// gate; it plays the sender's country voice from the byte, whoever sent it
 /// and whatever the receiver's chat mask, alliances or defeat.
-pub(crate) fn receive(state: &mut AppState, byte: u8) {
-    let mode = state.match_state.session_mode();
-    if state.frontend.multiplayer_shell_runtime.taunts_on(mode) == Some(true) {
-        let pattern = state
-            .match_state
+pub(crate) fn receive(
+    shell_runtime: &MultiplayerShellRuntime,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    byte: u8,
+) {
+    let mode = match_state.session_mode();
+    if shell_runtime.taunts_on(mode) == Some(true) {
+        let pattern = match_state
             .sim_runtime
             .runtime()
             .and_then(|runtime| {
@@ -124,15 +135,17 @@ pub(crate) fn receive(state: &mut AppState, byte: u8) {
                     .country_taunt_pattern_by_index(u16::from(byte >> 4))
             })
             .map(str::to_owned);
-        play(state, byte, pattern.as_deref());
+        play(process_assets, audio, byte, pattern.as_deref());
     }
 }
 
-fn play(state: &mut AppState, byte: u8, pattern: Option<&str>) {
-    if let (Some(sfx), Some(assets)) = (
-        state.audio.sfx_player.as_mut(),
-        state.process_assets.manager(),
-    ) {
+fn play(
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    byte: u8,
+    pattern: Option<&str>,
+) {
+    if let (Some(sfx), Some(assets)) = (audio.sfx_player.as_mut(), process_assets.manager()) {
         sfx.play_taunt(byte, assets, pattern);
     }
 }

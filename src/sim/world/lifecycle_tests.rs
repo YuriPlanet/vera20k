@@ -242,11 +242,11 @@ pub(super) fn install_common_raw_terrain(
         .collect();
     let mut terrain = ResolvedTerrainGrid::from_cells(width, height, cells);
     terrain.set_land_speed_rules_for_test(&crate::map::resolved_terrain::test_retail_clear_rules());
-    terrain.bind_shared_cell_dummy(sim.shared_cell_dummy.clone());
-    sim.bridge_state = Some(
+    terrain.bind_shared_cell_dummy((*sim.shared_cell_dummy).clone());
+    *sim.bridge_state = Some(
         crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain(&terrain, true, 1500),
     );
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
 }
 
 /// A Fly aircraft in limbo holding `target_height`. A Reveal without rules

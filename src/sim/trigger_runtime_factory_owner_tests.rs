@@ -137,7 +137,7 @@ fn stock_world(with_plant: bool) -> Option<(Simulation, RuleSet, InternedId, Int
         sim.houses.register(state);
     }
     sim.session.set_current_house_for_test(Some(owner));
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     sim.fog.ensure_viewer(owner);
     sim.fog.ensure_viewer(target);
     // Completed map-scene priors all precede the ordered production interval.
@@ -407,7 +407,7 @@ fn transferred_held_tank_refund_values_its_owner_but_credits_factory_house() {
         &rules,
         "Americans",
         crate::sim::production::ProductionCancellation::Type {
-            type_id: "MTNK",
+            type_id: "MTNK".into(),
             naval: false
         },
         true,
@@ -421,4 +421,55 @@ fn transferred_held_tank_refund_values_its_owner_but_credits_factory_house() {
         t_cost.wrapping_sub(balance),
         "native4CA02E values held-owner CostOf but4CA040 credits Factory owner"
     );
+}
+
+/// The interner's ids are saved and hashed, so a command or anim spawn that
+/// takes the id it holds must add the names the name-taking path added, at the
+/// same moments: queueing, placing and cancelling production, then a known and
+/// an unknown named anim.
+#[test]
+fn production_commands_and_named_anims_keep_the_interned_names_in_order() {
+    let Some((mut sim, rules, owner, _)) = stock_world(false) else {
+        return;
+    };
+    let names = |sim: &Simulation| {
+        (0..sim.interner.len() as u32)
+            .map(|index| {
+                sim.interner
+                    .resolve(InternedId::from_index(index))
+                    .to_owned()
+            })
+            .collect::<Vec<_>>()
+    };
+    let before = names(&sim);
+    paid_place(&mut sim, &rules, owner, "GAPILE", 18, 18);
+    let infantry = queue_hold(&mut sim, &rules, owner, "E1", ProductionCategory::Infantry);
+    let type_id = sim.interner.get("E1").unwrap();
+    frame(
+        &mut sim,
+        &rules,
+        owner,
+        Some(Command::CancelProductionByType {
+            type_id,
+            all: false,
+        }),
+    );
+    assert!(sim.substrate.entities.get(infantry).is_none());
+    let coord = crate::sim::anim_class::AnimWorldCoord {
+        x: 20 * 256,
+        y: 20 * 256,
+        z: 0,
+    };
+    let _ = sim.spawn_named_anim(&rules, "TWLT070", coord, 0, 0x600, 0);
+    assert!(!sim.spawn_named_anim(&rules, "NotAnAnimType", coord, 0, 0x600, 0));
+    let after = names(&sim);
+    assert_eq!(after[..before.len()], before[..]);
+    assert_eq!(
+        after[before.len()..],
+        ["GACNST_B", "Dummy", "GAPILE_A", "TWLT070", "NotAnAnimType"]
+    );
+    // A caller that holds the id interns nothing more.
+    let held = sim.interner.get("TWLT070").unwrap();
+    let _ = sim.spawn_named_anim(&rules, held, coord, 0, 0x600, 0);
+    assert_eq!(names(&sim), after);
 }

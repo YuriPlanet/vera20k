@@ -54,6 +54,7 @@ use common_body::techno_after_acquisition;
 use common_body::techno_common_post;
 use common_body::techno_common_steps;
 use common_body::unit_techno_bracket;
+pub(super) use common_body::{behind_indicator_cell, behind_indicator_coord, stage_step};
 pub(crate) use foot_patrol::PatrolPost;
 mod mission_handlers;
 mod scan_batch;
@@ -594,6 +595,7 @@ impl Simulation {
                 &request,
                 &mut ctx.effects,
             );
+            self.waves.return_damage_cells(request);
         }
         let context =
             self.wave_update_context(self.waves.get(id).expect("represented Wave"), rules);
@@ -614,6 +616,7 @@ impl Simulation {
                 &request,
                 &mut ctx.effects,
             );
+            self.waves.return_damage_cells(request);
         }
         if !result.alive {
             let retired = self.retire_non_entity_object(

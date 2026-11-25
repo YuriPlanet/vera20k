@@ -5,15 +5,22 @@
 
 use crate::util::time::Instant;
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::preferred_local_owner_name;
 use crate::app::input::entity_pick::HoverObject;
+use crate::app::input::state::MatchInputState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::presentation::instances::CellVisibilityState;
+use crate::app::renderer_state::RendererState;
 use crate::app::types::{
     CursorFeedbackKind, CursorId, HoverTargetKind, ScrollDir, SoftwareCursorSequence,
 };
+use crate::app::{AppState, PlatformState};
 use crate::render::cursor_atlas::CURSOR_TIMER_UNIT_MS;
 use crate::sim::combat;
+use crate::ui::game_screen::GameScreen;
 
 /// WWMouse's display depth, separate from Scenario's authoritative input
 /// lock. Lock684240 hides only at depth0; Unlock684290 unwinds negative
@@ -98,7 +105,10 @@ impl CursorTargets {
             &state.match_state.sim_runtime,
             &state.match_state.input.cursor_targets_seen,
             || Self {
-                selected: crate::app::input::dispatch::selected_in_order(state),
+                selected: crate::app::input::dispatch::selected_in_order(
+                    &state.frontend,
+                    &state.match_state,
+                ),
                 hover: crate::app::input::entity_pick::cursor_hover_object(state),
             },
         )
@@ -128,7 +138,13 @@ pub(crate) fn answer_kept_questions(state: &AppState) {
     let targets = CursorTargets::read(state);
     current_cursor_feedback_kind(state, &targets);
     crate::app::input::ferry::armed_click_accepted(state);
-    crate::app::input::planning_mode::hover_node(state);
+    crate::app::input::planning_mode::hover_node(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    );
     crate::app::input::tooltips::answer_kept_tactical_tip(state);
 }
 
@@ -148,9 +164,21 @@ fn find_cursor_feedback_kind(
     );
     if let Some(kind) = scroll_or_arrow_cursor(
         over_radar_top_button(state) || command_bar_arrow_hit(state.sidebar_frame(), x, y),
-        crate::app::input::camera::right_drag_pan_cursor_state(state),
+        crate::app::input::camera::right_drag_pan_cursor_state(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence,
+        ),
         state.match_state.input.captured_cursor(),
-        crate::app::input::camera::edge_scroll_cursor_state(state),
+        crate::app::input::camera::edge_scroll_cursor_state(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence,
+        ),
     ) {
         return kind;
     }
@@ -162,7 +190,13 @@ fn find_cursor_feedback_kind(
             RadarCursor::Mini(id) => Some(CursorFeedbackKind::Minimap(id)),
         };
     }
-    if current_sidebar_view_hit(state) {
+    if current_sidebar_view_hit(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    ) {
         return state.match_state.input.sidebar_cursor();
     }
     let (x, y) = crate::app::presentation::super_timers::cursor_in_view(state);
@@ -206,12 +240,12 @@ fn find_cursor_feedback_kind(
     );
     if let super::state::TacticalPointerMode::SuperWeapon(section) = pointer_mode {
         if let Some(runtime) = state.match_state.sim_runtime.runtime()
-            && let Some(owner) = preferred_local_owner_name(state)
+            && let Some(owner) = preferred_local_owner_name(&state.match_state)
                 .and_then(|name| runtime.simulation.interner().get(&name))
             && let Some(sw_type) = runtime.simulation.interner().get(section)
         {
             let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-                state,
+                &state.match_state,
                 state.match_state.input.cursor_x,
                 state.match_state.input.cursor_y,
             );
@@ -268,7 +302,7 @@ fn find_cursor_feedback_kind(
             .sidebar_gadget_state
             .repair_mode_on;
         let (wx, wy) = crate::app::match_runtime::sim_tick::screen_point_to_world(
-            state,
+            &state.match_state.input,
             state.match_state.input.cursor_x,
             state.match_state.input.cursor_y,
         );
@@ -328,7 +362,15 @@ fn find_cursor_feedback_kind(
         });
     }
     // PlanMgr63AC41 selects native action0 over a planning node.
-    if crate::app::input::planning_mode::node_at_cursor(state).is_some() {
+    if crate::app::input::planning_mode::node_at_cursor(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    )
+    .is_some()
+    {
         return Some(CursorFeedbackKind::Default);
     }
     // DetermineAction's no-selection arm, reached once the node hover
@@ -338,26 +380,26 @@ fn find_cursor_feedback_kind(
     // (0x006928A9) would replace 0x3D is never set in YR: its only write of
     // 1, SetWaypointMode 0x004AC7A7, is only ever called with 0.
     if selected.is_empty() {
-        if crate::app::input::beacon::mode_active(state) {
+        if crate::app::input::beacon::mode_active(&state.match_state.match_presentation) {
             return Some(CursorFeedbackKind::PlaceBeacon);
         }
         let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-            state,
+            &state.match_state,
             state.match_state.input.cursor_x,
             state.match_state.input.cursor_y,
         );
-        if crate::app::input::beacon::beacon_at_cell(state, cell) {
+        if crate::app::input::beacon::beacon_at_cell(&state.match_state, cell) {
             return Some(CursorFeedbackKind::Select);
         }
     }
     let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-        state,
+        &state.match_state,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
     // The cursor update asks the Cell's What_Action with mouse-over set
     // (`0x0069300B`).
-    let query = ActionQuery::new(state, sim, selected, true);
+    let query = ActionQuery::new(&state.frontend, &state.match_state, sim, selected, true);
     // Ares DisplayClass_SetAction_CustomCursor 10057F10 (hook 0x4AB35A)
     // draws the What_Action answer with the cursor its hooks chose.
     let ares = |kind: CursorFeedbackKind, overrides: &super::ares_cursor::CursorOverrides| {
@@ -377,7 +419,7 @@ fn find_cursor_feedback_kind(
             ares(kind, &overrides)
         });
     }
-    let owner = preferred_local_owner_name(state)?;
+    let owner = preferred_local_owner_name(&state.match_state)?;
     let hover_object = targets.hover;
     if selected.is_empty() {
         let fog = (!state.match_state.sandbox_full_visibility).then(|| sim.fog());
@@ -422,19 +464,24 @@ pub(crate) struct ActionQuery<'a> {
 
 impl<'a> ActionQuery<'a> {
     pub(crate) fn new(
-        state: &'a AppState,
+        frontend: &'a FrontendState,
+        match_state: &'a MatchState,
         sim: &'a crate::sim::world::Simulation,
         selected: &'a [u64],
         mouse_over: bool,
     ) -> Self {
         let mut modifier = crate::app::input::context_order::resolve_order_modifiers(
-            crate::app::input::dispatch::is_ctrl_held(state),
-            crate::app::input::dispatch::is_shift_held(state),
-            crate::app::input::dispatch::is_alt_held(state),
+            crate::app::input::dispatch::is_ctrl_held(&match_state.input),
+            crate::app::input::dispatch::is_shift_held(&match_state.input),
+            crate::app::input::dispatch::is_alt_held(&match_state.input),
         );
-        let force_move_key = crate::app::input::dispatch::is_alt_held(state);
+        let force_move_key = crate::app::input::dispatch::is_alt_held(&match_state.input);
         if modifier == super::context_order::OrderModifier::AttackMove
-            && !super::context_order::selection_can_attack_move(sim, state.rules(), selected)
+            && !super::context_order::selection_can_attack_move(
+                sim,
+                crate::app::state::active_rules(frontend, match_state),
+                selected,
+            )
         {
             modifier = if force_move_key {
                 super::context_order::OrderModifier::ForceMove
@@ -444,17 +491,18 @@ impl<'a> ActionQuery<'a> {
         }
         Self {
             sim,
-            rules: state.rules(),
-            overlays: state.overlay_registry(),
-            viewer: preferred_local_owner_name(state).and_then(|owner| sim.interner().get(&owner)),
+            rules: crate::app::state::active_rules(frontend, match_state),
+            overlays: crate::app::state::active_overlay_registry(frontend, match_state),
+            viewer: preferred_local_owner_name(match_state)
+                .and_then(|owner| sim.interner().get(&owner)),
             selected,
             modifier,
             force_move_key,
-            force_fire_key: crate::app::input::dispatch::is_ctrl_held(state),
-            order_mode: state.match_state.input.queued_order_mode,
-            planning: state.match_state.input.planning.active(),
+            force_fire_key: crate::app::input::dispatch::is_ctrl_held(&match_state.input),
+            order_mode: match_state.input.queued_order_mode,
+            planning: match_state.input.planning.active(),
             mouse_over,
-            full_visibility: state.match_state.sandbox_full_visibility,
+            full_visibility: match_state.sandbox_full_visibility,
         }
     }
 
@@ -1857,7 +1905,9 @@ pub(crate) fn select_best_for_action(
         let obj = rules.and_then(|r| sim.interner().object_type(entity.type_ref(), r));
         let priority = if entity.berserk.is_active() {
             0
-        } else if entity.is_under_emp() {
+        } else if entity.is_immobilized(sim.session().binary_frame() as i32) {
+            // Firestorm 2.0's ranker `0x004E86F0` asks Is_Immobilized, which
+            // also ranks a webbed infantryman 1 (`0x004D5B10`).
             1
         } else if !obj.zip(rules).is_some_and(|(obj, rules)| {
             is_armed(entity, obj, sim.entities(), rules, sim.interner())
@@ -2210,7 +2260,10 @@ fn command_bar_arrow_hit(frame: crate::ui::sidebar::SidebarFrame, x: f32, y: f32
 /// the radar's own press drew its row: a radar press dragged onto them shows
 /// the arrow too.
 fn over_radar_top_button(state: &AppState) -> bool {
-    crate::app::presentation::sidebar_render::current_sidebar_view(state).is_some_and(|view| {
+    crate::app::presentation::sidebar_render::current_sidebar_view(
+        &state.match_state.match_presentation,
+    )
+    .is_some_and(|view| {
         top_button_hit(
             state.sidebar_frame(),
             view.top_buttons.iter().map(|button| button.rect),
@@ -2233,11 +2286,23 @@ fn top_button_hit(
         .any(|rect| frame.rect_to_frame(rect).contains(x, y))
 }
 
-pub(crate) fn current_sidebar_view_hit(state: &AppState) -> bool {
+pub(crate) fn current_sidebar_view_hit(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> bool {
     sidebar_view_hit(
-        state.sidebar_frame(),
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
+        crate::app::state::sidebar_frame(
+            platform,
+            persistence,
+            renderer,
+            screen,
+            &match_state.match_presentation.sidebar_layout_spec,
+        ),
+        match_state.input.cursor_x,
+        match_state.input.cursor_y,
     )
 }
 
@@ -2306,8 +2371,8 @@ pub(crate) fn super_weapon_cursor_id(action: &str) -> Option<CursorId> {
 /// The OS drops the clip on focus loss (alt-tab), so callers re-apply this on
 /// every focus regain. A platform that cannot confine (some Wayland setups)
 /// logs and leaves the cursor free rather than failing the frame.
-pub(crate) fn apply_cursor_confinement(state: &mut AppState) {
-    apply_cursor_confinement_impl(state, true);
+pub(crate) fn apply_cursor_confinement(platform: &mut PlatformState) {
+    apply_cursor_confinement_impl(platform, true);
 }
 
 /// Keep the player's cursor-lock choice alive every frame clips
@@ -2318,12 +2383,12 @@ pub(crate) fn apply_cursor_confinement(state: &mut AppState) {
 /// we never trap it inside another application. A cleared lock always releases.
 /// Silent (no per-frame log spam), and a no-op once the OS clip already matches
 /// what the player chose, so re-asserting per frame issues no `ClipCursor` call.
-pub(crate) fn reassert_cursor_confinement(state: &mut AppState) {
-    if !state.platform.window_active && state.platform.cursor_confined {
+pub(crate) fn reassert_cursor_confinement(platform: &mut PlatformState) {
+    if !platform.window_active && platform.cursor_confined {
         // Backgrounded: don't fight other apps; Focused(false) already released.
         return;
     }
-    apply_cursor_confinement_impl(state, false);
+    apply_cursor_confinement_impl(platform, false);
 }
 
 /// The OS pointer clip this thread currently holds, as `(left, top, right,
@@ -2369,7 +2434,7 @@ fn cursor_clip_wanted(cursor_confined: bool, window_foreground: bool) -> bool {
     cursor_confined && window_foreground
 }
 
-fn apply_cursor_confinement_impl(state: &mut AppState, verbose: bool) {
+fn apply_cursor_confinement_impl(platform: &mut PlatformState, verbose: bool) {
     // Windows: clip to the client rectangle with the Win32 ClipCursor API.
     // winit's own grab path is deliberately not used here: `refresh_os_cursor`
     // clips a hidden cursor to a one-pixel box at the client centre
@@ -2386,18 +2451,18 @@ fn apply_cursor_confinement_impl(state: &mut AppState, verbose: bool) {
         use windows_sys::Win32::UI::WindowsAndMessaging::{
             ClipCursor, GetClientRect, GetForegroundWindow,
         };
-        let handle = match state.platform.window.window_handle() {
+        let handle = match platform.window.window_handle() {
             Ok(h) => h,
             Err(err) => {
                 if verbose {
                     log::warn!("cursor confinement: no window handle ({err})");
                 }
-                state.platform.pointer_held = false;
+                platform.pointer_held = false;
                 return;
             }
         };
         let RawWindowHandle::Win32(w) = handle.as_raw() else {
-            state.platform.pointer_held = false;
+            platform.pointer_held = false;
             return;
         };
         let hwnd = w.hwnd.get() as *mut c_void;
@@ -2466,7 +2531,7 @@ fn apply_cursor_confinement_impl(state: &mut AppState, verbose: bool) {
                         clip.bottom
                     );
                 }
-                state.platform.pointer_held = false;
+                platform.pointer_held = false;
                 return;
             }
             // Only issue a call when the clip actually changes. Re-issuing
@@ -2474,13 +2539,13 @@ fn apply_cursor_confinement_impl(state: &mut AppState, verbose: bool) {
             // `WM_MOUSEMOVE` (winit guards the same way in `refresh_os_cursor`),
             // and each spurious move re-runs the enter/leave bookkeeping that
             // decides who owns the pointer image.
-            let wanted = if cursor_clip_wanted(state.platform.cursor_confined, window_foreground) {
+            let wanted = if cursor_clip_wanted(platform.cursor_confined, window_foreground) {
                 Some((clip.left, clip.top, clip.right, clip.bottom))
             } else {
                 None
             };
             if current_cursor_clip() == wanted {
-                state.platform.pointer_held = wanted.is_some();
+                platform.pointer_held = wanted.is_some();
                 return;
             }
             if verbose {
@@ -2490,7 +2555,7 @@ fn apply_cursor_confinement_impl(state: &mut AppState, verbose: bool) {
                     clip.top,
                     clip.right,
                     clip.bottom,
-                    state.platform.cursor_confined,
+                    platform.cursor_confined,
                     window_foreground
                 );
             }
@@ -2502,7 +2567,7 @@ fn apply_cursor_confinement_impl(state: &mut AppState, verbose: bool) {
             if ok == 0 && verbose {
                 log::warn!("cursor confinement: ClipCursor failed");
             }
-            state.platform.pointer_held = wanted.is_some() && ok != 0;
+            platform.pointer_held = wanted.is_some() && ok != 0;
         }
     }
     // macOS: winit 0.30 refuses a Confined grab there, so the lock is VERA's
@@ -2511,8 +2576,8 @@ fn apply_cursor_confinement_impl(state: &mut AppState, verbose: bool) {
     #[cfg(target_os = "macos")]
     {
         let _ = verbose;
-        state.platform.pointer_held =
-            cursor_clip_wanted(state.platform.cursor_confined, state.platform.window_active);
+        platform.pointer_held =
+            cursor_clip_wanted(platform.cursor_confined, platform.window_active);
     }
     // Other platforms: use winit's Confined grab. On X11 this confines the
     // pointer to the window; on pure Wayland cursor confinement is unsupported
@@ -2523,20 +2588,19 @@ fn apply_cursor_confinement_impl(state: &mut AppState, verbose: bool) {
         use winit::window::CursorGrabMode;
         // Other backends expose focus through winit's activation edges; a
         // backgrounded window must leave the pointer free for other apps.
-        let wanted =
-            cursor_clip_wanted(state.platform.cursor_confined, state.platform.window_active);
+        let wanted = cursor_clip_wanted(platform.cursor_confined, platform.window_active);
         let mode = if wanted {
             CursorGrabMode::Confined
         } else {
             CursorGrabMode::None
         };
-        let grabbed = state.platform.window.set_cursor_grab(mode);
+        let grabbed = platform.window.set_cursor_grab(mode);
         if let Err(err) = &grabbed {
             if verbose {
                 log::warn!("cursor confinement unavailable on this platform: {err:#}");
             }
         }
-        state.platform.pointer_held = wanted && grabbed.is_ok();
+        platform.pointer_held = wanted && grabbed.is_ok();
     }
 }
 
@@ -2546,9 +2610,9 @@ fn apply_cursor_confinement_impl(state: &mut AppState, verbose: bool) {
 /// full-screen switch or a visit to the title bar the arrow can stand next to
 /// mouse.shp; the app-wide `NSCursor` hide holds it hidden regardless.
 /// Presentation-only.
-pub(crate) fn set_os_cursor_visible(state: &mut AppState, visible: bool) {
-    state.platform.os_cursor_visible = Some(visible);
-    state.platform.window.set_cursor_visible(visible);
+pub(crate) fn set_os_cursor_visible(platform: &mut PlatformState, visible: bool) {
+    platform.os_cursor_visible = Some(visible);
+    platform.window.set_cursor_visible(visible);
     #[cfg(target_os = "macos")]
     super::mac_pointer::set_arrow_hidden(!visible);
 }
@@ -2562,31 +2626,40 @@ pub(crate) fn set_os_cursor_visible(state: &mut AppState, visible: bool) {
 /// did; false when nothing holds the pointer (the lock is off and it left
 /// another way, the window is not active, or the platform clips the pointer
 /// itself). Presentation-only.
-pub(crate) fn hold_pointer_in_window(state: &mut AppState) -> bool {
+pub(crate) fn hold_pointer_in_window(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    input: &mut MatchInputState,
+) -> bool {
     #[cfg(target_os = "macos")]
     {
-        let Some(pointer) = super::mac_pointer::pointer_in_view(&state.platform.window) else {
+        let Some(pointer) = super::mac_pointer::pointer_in_view(&platform.window) else {
             return false;
         };
-        let beside_housing = state.platform.window_active
+        let beside_housing = platform.window_active
             && pointer.in_strip_above(super::mac_pointer::strip_above_full_screen(
-                &state.platform.window,
+                &platform.window,
             ));
-        if !state.platform.pointer_held && !beside_housing {
+        if !platform.pointer_held && !beside_housing {
             return false;
         }
         let (x, y) = pointer.nearest_inside();
         let position = winit::dpi::LogicalPosition::new(x, y);
-        if state.platform.window.set_cursor_position(position).is_err() {
+        if platform.window.set_cursor_position(position).is_err() {
             return false;
         }
-        let physical = position.to_physical::<f64>(state.platform.window.scale_factor());
-        state.set_cursor_from_window(physical.x as f32, physical.y as f32);
+        let physical = position.to_physical::<f64>(platform.window.scale_factor());
+        input.set_cursor_from_window(
+            (physical.x as f32, physical.y as f32),
+            renderer.tactical_zoom(screen),
+            platform.confines_pointer(),
+        );
         true
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = state;
+        let _ = (platform, renderer, screen, input);
         false
     }
 }
@@ -2595,20 +2668,20 @@ pub(crate) fn hold_pointer_in_window(state: &mut AppState) -> bool {
 /// becomes active. macOS reports leaving and entering only on movement, so a
 /// window activated with the pointer elsewhere (a Dock click, Cmd-Tab) would
 /// otherwise keep the last answer and hide the arrow away from the game.
-pub(crate) fn refresh_pointer_in_client(state: &mut AppState) {
+pub(crate) fn refresh_pointer_in_client(platform: &mut PlatformState) {
     #[cfg(target_os = "macos")]
-    if let Some(pointer) = super::mac_pointer::pointer_in_view(&state.platform.window) {
-        state.platform.pointer_in_client = pointer.inside();
+    if let Some(pointer) = super::mac_pointer::pointer_in_view(&platform.window) {
+        platform.pointer_in_client = pointer.inside();
     }
     #[cfg(not(target_os = "macos"))]
-    let _ = state;
+    let _ = platform;
 }
 
 /// Drop the OS cursor clip entirely. Called on focus loss so alt-tab releases
 /// the pointer instead of leaving it trapped over the game window (
 /// behaviour). Presentation-only.
-pub(crate) fn release_cursor_confinement(state: &mut AppState) {
-    state.platform.pointer_held = false;
+pub(crate) fn release_cursor_confinement(platform: &mut PlatformState) {
+    platform.pointer_held = false;
     #[cfg(target_os = "windows")]
     {
         use windows_sys::Win32::UI::WindowsAndMessaging::ClipCursor;
@@ -2622,8 +2695,7 @@ pub(crate) fn release_cursor_confinement(state: &mut AppState) {
         // Best-effort: releasing an already-free grab can error on some
         // compositors (pure Wayland), which we tolerate so the per-frame
         // re-assert path never spams the log.
-        let _ = state
-            .platform
+        let _ = platform
             .window
             .set_cursor_grab(winit::window::CursorGrabMode::None);
     }
@@ -2632,24 +2704,24 @@ pub(crate) fn release_cursor_confinement(state: &mut AppState) {
 /// Lock the cursor again on a click over the active window's client area,
 /// when the player's Lock Cursor choice is on but the lock key freed it.
 /// Presentation-only.
-pub(crate) fn relock_cursor_on_click(state: &mut AppState) {
-    if state.persistence.options_profile.lock_cursor
-        && !state.platform.cursor_confined
-        && state.platform.owns_pointer()
-    {
-        state.platform.cursor_confined = true;
-        apply_cursor_confinement(state);
+pub(crate) fn relock_cursor_on_click(
+    platform: &mut PlatformState,
+    options_profile: &RetailOptionsProfile,
+) {
+    if options_profile.lock_cursor && !platform.cursor_confined && platform.owns_pointer() {
+        platform.cursor_confined = true;
+        apply_cursor_confinement(platform);
     }
 }
 
 /// Flip the window cursor lock  and re-apply it immediately.
 /// Bound to the runtime cursor-lock hotkey; never part of the sim or replay.
-pub(crate) fn toggle_cursor_confinement(state: &mut AppState) {
-    state.platform.cursor_confined = !state.platform.cursor_confined;
-    apply_cursor_confinement(state);
+pub(crate) fn toggle_cursor_confinement(platform: &mut PlatformState) {
+    platform.cursor_confined = !platform.cursor_confined;
+    apply_cursor_confinement(platform);
     log::info!(
         "cursor confinement {}",
-        if state.platform.cursor_confined {
+        if platform.cursor_confined {
             "enabled"
         } else {
             "disabled"

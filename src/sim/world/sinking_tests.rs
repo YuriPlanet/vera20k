@@ -70,9 +70,9 @@ fn native_sink_suffix_preserves_cadence_coordinates_and_complete_rng_states() {
         sim.session
             .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
         let seed = input["seed"].as_u64().unwrap_or(1);
-        sim.main_rng = SimRng::new(seed);
-        sim.scenario_rng = SimRng::new(seed);
-        sim.mapgen_rng = SimRng::new(seed);
+        *sim.main_rng = SimRng::new(seed);
+        *sim.scenario_rng = SimRng::new(seed);
+        *sim.mapgen_rng = SimRng::new(seed);
         sim.substrate.entities.get_mut(id).unwrap().sinking.active =
             input["sinking"].as_u64().unwrap_or(1) != 0;
         let terminal = sim.tick_ship_sinking(
@@ -152,7 +152,7 @@ fn sinking_state_is_hashed_and_survives_snapshot() {
     sim.resolve_type_handles(&rules);
     // Native load restarts Scenario from Seed0. Begin both compared futures
     // at that same cursor; this test does not assert saved Scenario retention.
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     let active_hash = sim.state_hash();
     Simulation::sinking_edge_sounds(
         &sim.interner,
@@ -174,7 +174,7 @@ fn sinking_state_is_hashed_and_survives_snapshot() {
     // Production keeps Main/MapGen as process state, outside serialized sim.
     loaded.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
     // Map-derived floor data is supplied by the ordinary map reload.
-    loaded.resolved_terrain = sim.resolved_terrain.clone();
+    *loaded.resolved_terrain = (*sim.resolved_terrain).clone();
     loaded.restore_after_snapshot_load().unwrap();
     loaded.resolve_type_handles(&rules);
     assert_eq!(loaded.state_hash(), expected_hash);
@@ -313,9 +313,9 @@ fn native_sinking_sound_readers_and_reachable_edges_match() {
             input["move_sound"].as_u64().unwrap_or(0) != 0,
             0,
         );
-        sim.main_rng = SimRng::new(1);
-        sim.scenario_rng = SimRng::new(1);
-        sim.mapgen_rng = SimRng::new(1);
+        *sim.main_rng = SimRng::new(1);
+        *sim.scenario_rng = SimRng::new(1);
+        *sim.mapgen_rng = SimRng::new(1);
         sim.sound_events.clear_for_test();
         Simulation::sinking_edge_sounds(
             &sim.interner,

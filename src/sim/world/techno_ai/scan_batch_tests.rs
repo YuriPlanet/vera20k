@@ -75,7 +75,7 @@ fn a_tank_whose_scan_cannot_be_due_is_looked_up_once() {
         .arm(100, 30);
     sim.batch_target_scans();
     let before = sim.substrate.entities.lookups().0;
-    sim.answer_batched_scans(rules, None);
+    sim.answer_batched_work(rules, None);
     assert_eq!(sim.substrate.entities.lookups().0 - before, 1);
 }
 
@@ -93,7 +93,7 @@ fn a_hunter_sees_a_hostile_admitted_during_the_pass_at_its_next_run() {
     let (mut serial, hunter) = hunting_tank_scene(rules);
     let (mut batched, _) = hunting_tank_scene(rules);
     batched.batch_target_scans();
-    batched.answer_batched_scans(rules, None);
+    batched.answer_batched_work(rules, None);
     // The hostile sleeps, so only the hunter's scan targets it.
     let admit = |sim: &mut Simulation| {
         let id = sim
@@ -180,7 +180,7 @@ fn a_hunter_whose_house_changes_enemy_during_the_pass_scans_live() {
     let (mut batched, ..) = scene();
     set_enemy(&mut batched, "Russians");
     batched.batch_target_scans();
-    batched.answer_batched_scans(rules, None);
+    batched.answer_batched_work(rules, None);
     let batch = batched.scan_batch.as_ref().unwrap();
     let answered = batch.answers.iter().find(|(id, _)| *id == hunter);
     assert_eq!(
@@ -202,6 +202,60 @@ fn a_hunter_whose_house_changes_enemy_during_the_pass_scans_live() {
     assert_eq!(batched.batched_scans_used(), 0, "the answer is not taken");
 }
 
+/// A deployed GI (`DeployFire=yes`) on Guard whose handler and targeting
+/// timer fall due together: the pass answers the targeting slot's scan, and
+/// the deploy shim's in-place rescan before it (`0x00521320` ->
+/// `0x0051F330`, mask 1 around its own coordinate) asks the same mask and
+/// coordinate. The batch makes no answer for the shim's call, so it scans
+/// live and finds a hostile admitted after the pass began.
+#[test]
+fn a_deployed_gi_rescans_live_beside_its_slots_answer() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &fixture.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 626);
+    sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+    sim.session.game_options_mut_for_test().short_game = false;
+    let gi = sim
+        .spawn_object("E1", "Americans", 12, 12, 0, rules)
+        .unwrap();
+    on_mission(&mut sim, gi, MissionType::Guard);
+    sim.session.set_binary_frame_for_test(100);
+    let actor = sim.substrate.entities.get_mut(gi).unwrap();
+    actor.mission_leaf = crate::sim::mission::leaf::MissionLeafState::infantry_raw_for_test(0, 28);
+    actor.passive_scan.timer_mut_for_test().arm(100, 0);
+    sim.refresh_object_sight(gi, rules, 0, &mut FrameEffects::default());
+    sim.batch_target_scans();
+    sim.answer_batched_work(rules, None);
+    let slot_answer = |sim: &Simulation| {
+        let batch = sim.scan_batch.as_ref().unwrap();
+        let (_, answer) = batch.answers.iter().find(|(id, _)| *id == gi)?;
+        answer
+            .as_ref()
+            .map(|answer| (answer.call, answer.mask, answer.scan_coord))
+    };
+    let waiting = Some((ScanCall::Turn, ScanMission::Guard, None));
+    assert_eq!(slot_answer(&sim), waiting, "the slot's answer");
+    let hostile = sim
+        .spawn_object("E2", "Russians", 14, 12, 0, rules)
+        .unwrap();
+    on_mission(&mut sim, hostile, MissionType::Sleep);
+    super::super::mission_handlers::dispatch_foot_mission(
+        &mut sim,
+        gi,
+        rules,
+        &mut ObjectAiCtx::default(),
+    )
+    .unwrap();
+    let actor = sim.substrate.entities.get(gi).unwrap();
+    assert_eq!(
+        actor.attack_target.target(),
+        Some(TargetKind::Entity(hostile))
+    );
+    assert_eq!(slot_answer(&sim), waiting, "the answer waits for the slot");
+}
+
 /// A save keeps the setting, in the bytes the retired empty struct wrote, but
 /// not a pass's answers; a game saved without batching resumes without it.
 #[test]
@@ -212,7 +266,7 @@ fn a_save_keeps_the_setting_and_drops_the_answers() {
     let rules = &fixture.rules;
     let (mut sim, _) = hunting_tank_scene(rules);
     sim.batch_target_scans();
-    sim.answer_batched_scans(rules, None);
+    sim.answer_batched_work(rules, None);
     assert!(!sim.scan_batch.as_ref().unwrap().answers.is_empty());
     assert_eq!(
         crate::util::save_codec::serialize(&sim.scan_batch).unwrap(),

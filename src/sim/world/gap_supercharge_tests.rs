@@ -26,7 +26,7 @@ fn arena(rules: &RuleSet) -> (Simulation, PathGrid, InternedId) {
     let owner = sim.interner.get("Americans").unwrap();
     // Bind the actual human viewer and map before Unlimbo.
     sim.session.set_current_house_for_test(Some(owner));
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     (sim, grid, owner)
 }
 

@@ -75,10 +75,10 @@ fn joined_fixture(rules: &RuleSet, row: &Value) -> (Simulation, u64) {
     // The original corpus supplies these already admitted actors, then starts
     // its Scenario ID cursor and streams before the entry under comparison.
     // Constructor/Unlimbo draws and full map admission are outside this join.
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(0));
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(0));
     let seed = input["seed"].as_u64().unwrap();
-    sim.main_rng = SimRng::new(seed);
-    sim.scenario_rng = SimRng::new(seed);
+    *sim.main_rng = SimRng::new(seed);
+    *sim.scenario_rng = SimRng::new(seed);
     sim.set_logic_order_for_test(vec![id]);
     assert_eq!(sim.main_rng.native_state_hex(), row["rng_before"]["main"]);
     assert_eq!(

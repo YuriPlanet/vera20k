@@ -34,9 +34,9 @@ fn world(terrain: ResolvedTerrainGrid) -> Simulation {
     let path = PathGrid::from_resolved_terrain(&terrain);
     let zones = ZoneGrid::build_with_native_map_context(&path, &terrain, &[], None, Some(bounds()));
     let mut sim = Simulation::new();
-    sim.playfield_bounds = Some(bounds());
+    *sim.playfield_bounds = Some(bounds());
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.zone_grid = Some(zones.into());
+    *sim.zone_grid = Some(zones.into());
     sim
 }
 
@@ -73,7 +73,7 @@ fn identical_source_and_houses_with_different_retained_threat_seed_hash_differen
     );
     // Removing just this owner proves every other retained source/House field
     // in the world hash stayed identical; no second authority was introduced.
-    a.zone_grid = None;
-    b.zone_grid = None;
+    *a.zone_grid = None;
+    *b.zone_grid = None;
     assert_eq!(a.state_hash(), b.state_hash());
 }

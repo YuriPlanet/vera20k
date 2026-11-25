@@ -446,7 +446,7 @@ impl Simulation {
     /// `superweapon::genetic_converter_tests`.
     fn infantry_mutation_admits(
         interner: &StringInterner,
-        scenario_rng: &mut SimRng,
+        scenario_rng: &mut crate::util::forked::Forked<SimRng>,
         substrate: &mut ObjectSubstrate,
         path_grid: &Option<Arc<PathGrid>>,
         resolved_terrain: &Option<ResolvedTerrainGrid>,

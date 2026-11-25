@@ -9,21 +9,29 @@
 use crate::util::time::Instant;
 
 use super::{App, AppState};
+use crate::app::PlatformState;
 use crate::app::frontend::shell_layout::mods_layout;
 use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::state::{ModFilesBox, ShellMessageBoxPurpose};
 use crate::app::mod_files::{Against, Checked, PageCheck, Step};
+use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_route::ShellRoute;
 use crate::i18n::{tr, tr_fill};
 use crate::ui::mods_shell::{self, ModsLayout};
 use crate::ui::movies_credits_shell::{
     family_list_node, family_list_selected, find_family_list, set_family_list,
 };
+use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::modal::ShellBox;
+use crate::util::config::GameConfig;
+use winit::window::Window;
 
 impl App {
-    fn installed_mods(state: &AppState) -> Vec<crate::app::mods::Listed> {
-        let config = state.platform.game_config.as_ref();
+    fn installed_mods(game_config: Option<&GameConfig>) -> Vec<crate::app::mods::Listed> {
+        let config = game_config;
         config
             .map(|config| crate::app::mods::installed(&config.paths))
             .unwrap_or_default()
@@ -33,27 +41,27 @@ impl App {
     /// holds now, with what this run uses selected and in view.
     pub(super) fn open_mods_page(state: &mut AppState) {
         Self::destroy_current_shell_dialog(state);
-        state.frontend.mods.page = Some(Self::installed_mods(state));
-        Self::show_shell_page(state, ShellRoute::Mods, mods_shell::DIALOG);
+        state.frontend.mods.page = Some(Self::installed_mods(state.platform.game_config.as_ref()));
+        Self::show_shell_page(&mut state.frontend, ShellRoute::Mods, mods_shell::DIALOG);
         Self::mods_sync(state);
     }
 
     /// The row the page's list has selected.
-    pub(super) fn mods_selected(state: &AppState) -> Option<usize> {
-        family_list_selected(&state.frontend.shell_controller, mods_shell::DIALOG)
+    pub(super) fn mods_selected(controller: &DialogController) -> Option<usize> {
+        family_list_selected(controller, mods_shell::DIALOG)
     }
 
     /// The window is in front again, perhaps from the folder that Open Mods
     /// Folder showed: list what `Mods` holds now. The picked row stays
     /// picked while its folder is there.
     pub(super) fn refresh_mods_page(state: &mut AppState) {
-        if crate::app::input::precedence::route_page(state)
+        if crate::app::input::precedence::route_page(&state.frontend)
             != crate::app::input::precedence::ScreenPage::Mods
         {
             return;
         }
-        let rows = Self::installed_mods(state);
-        let selected = Self::mods_selected(state);
+        let rows = Self::installed_mods(state.platform.game_config.as_ref());
+        let selected = Self::mods_selected(&state.frontend.shell_controller);
         let Some(page) = state.frontend.mods.page.as_mut() else {
             return;
         };
@@ -66,18 +74,18 @@ impl App {
         let selected = picked.and_then(|folder| rows.iter().position(|row| row.folder == folder));
         *page = rows;
         // The top stays where it was, within the new range.
-        Self::update_mods_list(state, selected, false);
+        Self::update_mods_list(&mut state.frontend, selected, false);
     }
 
     /// The page's rows and `selected` into its `List` node. With `reveal`
     /// the list shows the selected row as a new list does (from the first
     /// row, scrolled into view); otherwise its top stays where it was,
     /// within the new range.
-    fn update_mods_list(state: &mut AppState, selected: Option<usize>, reveal: bool) {
-        let Some(rows) = state.frontend.mods.page.as_ref().map(Vec::len) else {
+    fn update_mods_list(frontend: &mut FrontendState, selected: Option<usize>, reveal: bool) {
+        let Some(rows) = frontend.mods.page.as_ref().map(Vec::len) else {
             return;
         };
-        let controller = &mut state.frontend.shell_controller;
+        let controller = &mut frontend.shell_controller;
         let Some(node) = find_family_list(controller, mods_shell::DIALOG) else {
             return;
         };
@@ -106,7 +114,7 @@ impl App {
     /// new instance builds with the row in use selected and in view (a hover
     /// target for status help, never a button press); the layout.
     fn mods_sync(state: &mut AppState) -> ModsLayout {
-        let layout = mods_layout(state);
+        let layout = mods_layout(&state.renderer.gpu);
         let mods = &state.frontend.mods;
         let in_use = mods.page.as_ref().map(|rows| {
             let selected = rows.iter().position(|row| mods.in_use(row));
@@ -161,7 +169,7 @@ impl App {
     /// is no mod. Every hover message repaints the status line (0x00615EF7).
     pub(super) fn handle_mods_mouse(state: &mut AppState, down: Option<bool>) {
         let layout = Self::mods_sync(state);
-        let selected = Self::mods_selected(state);
+        let selected = Self::mods_selected(&state.frontend.shell_controller);
         let mods = &state.frontend.mods;
         let enabled = [
             (mods_shell::USE, mods.switch_to(selected).is_some()),
@@ -169,12 +177,40 @@ impl App {
         ];
         let rect_of = |id| layout.rect_of(id);
         let nodes = mods_shell::nodes;
-        match Self::screen_page_pointer(state, mods_shell::DIALOG, nodes, rect_of, &enabled, down) {
-            Some(mods_shell::USE) => Self::use_picked_mod(state),
+        match Self::screen_page_pointer(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            mods_shell::DIALOG,
+            nodes,
+            rect_of,
+            &enabled,
+            down,
+        ) {
+            Some(mods_shell::USE) => Self::use_picked_mod(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+            ),
             #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
             Some(mods_shell::ADD) => Self::open_add_mod(state),
-            Some(mods_shell::OPEN_FOLDER) => Self::open_mods_folder(state),
-            Some(mods_shell::CHECK) => Self::check_picked_mod(state),
+            Some(mods_shell::OPEN_FOLDER) => Self::open_mods_folder(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+            ),
+            Some(mods_shell::CHECK) => Self::check_picked_mod(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+            ),
             Some(mods_shell::NEW) => Self::make_new_mod(state),
             Some(mods_shell::BACK) => {
                 Self::leave_shell_dialog(state, ShellSlideKind::Mods, |state| {
@@ -188,55 +224,115 @@ impl App {
 
     /// Open Mods Folder. Where no file manager starts, say where the folder
     /// is.
-    pub(super) fn open_mods_folder(state: &mut AppState) {
-        let opened = state
-            .platform
+    pub(super) fn open_mods_folder(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+    ) {
+        let opened = platform
             .game_config
             .as_ref()
             .map(|config| crate::app::mods::open_folder(&config.paths));
         if let Some(Err(folder)) = opened {
-            Self::show_folder_is_here(state, &folder);
+            Self::show_folder_is_here(
+                &platform.window,
+                renderer,
+                frontend,
+                process_assets,
+                options_profile,
+                &folder,
+            );
         }
     }
 
     /// One of the page's boxes, in place of the one before it.
     fn open_mods_box(
-        state: &mut AppState,
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
         text: String,
         confirm: String,
         cancel: String,
         purpose: ShellMessageBoxPurpose,
     ) {
-        if state.frontend.shell_message_box.is_some() {
-            Self::close_shell_message_box_from_controller(state);
+        if frontend.shell_message_box.is_some() {
+            Self::close_shell_message_box_from_controller(frontend);
         }
         let shell_box = ShellBox::message(text, confirm, cancel, String::new());
-        Self::open_shell_message_box(state, shell_box, purpose);
+        Self::open_shell_message_box(
+            window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            shell_box,
+            purpose,
+        );
     }
 
     /// What Check Files found, or what came of writing the list, with OK.
-    fn open_mod_files_found(state: &mut AppState, text: String) {
-        let ok = state.csf_label("TXT_OK", "OK");
+    fn open_mod_files_found(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+        text: String,
+    ) {
+        let ok = process_assets.csf_label("TXT_OK", "OK");
         let purpose = ShellMessageBoxPurpose::ModFiles(ModFilesBox::Found);
-        Self::open_mods_box(state, text, ok, String::new(), purpose);
+        Self::open_mods_box(
+            window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            text,
+            ok,
+            String::new(),
+            purpose,
+        );
     }
 
     /// Says where `folder` is, where no file manager starts.
-    fn show_folder_is_here(state: &mut AppState, folder: &std::path::Path) {
+    fn show_folder_is_here(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+        folder: &std::path::Path,
+    ) {
         let text = tr_fill("VERA:ModsFolderIsHere", &[("folder", &folder.display())]);
-        Self::open_shell_notice(state, text);
+        Self::open_shell_notice(
+            window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            text,
+        );
     }
 
     /// Check Files: read the picked mod's files on a thread of their own, and
     /// wait under a box whose button stops the wait ([`Self::poll_mod_files`]
     /// shows the answer).
-    fn check_picked_mod(state: &mut AppState) {
-        let selected = Self::mods_selected(state);
-        let picked = state
-            .platform
+    fn check_picked_mod(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+    ) {
+        let selected = Self::mods_selected(&frontend.shell_controller);
+        let picked = platform
             .game_config
             .as_ref()
-            .and_then(|config| state.frontend.mods.picked_mod(&config.paths, selected));
+            .and_then(|config| frontend.mods.picked_mod(&config.paths, selected));
         let Some((title, dir)) = picked else {
             return;
         };
@@ -246,15 +342,29 @@ impl App {
             .and_then(|dir| crate::app::mod_files::start(title.clone(), dir));
         match started {
             Ok(check) => {
-                state.frontend.mods.files_check = Some(check);
+                frontend.mods.files_check = Some(check);
                 let text = tr_fill("VERA:ModChecking", &[("mod", &title)]);
                 let purpose = ShellMessageBoxPurpose::ModFiles(ModFilesBox::Reading);
-                Self::open_mods_box(state, text, tr("VERA:Cancel"), String::new(), purpose);
+                Self::open_mods_box(
+                    &platform.window,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    options_profile,
+                    text,
+                    tr("VERA:Cancel"),
+                    String::new(),
+                    purpose,
+                );
             }
             Err(error) => {
                 log::warn!("Mods: {title}'s files cannot be read: {error}");
                 Self::open_mod_files_found(
-                    state,
+                    &platform.window,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    options_profile,
                     tr_fill("VERA:ModFilesNotRead", &[("mod", &title)]),
                 );
             }
@@ -265,19 +375,25 @@ impl App {
     /// box's place: every file as listed, or what differs with the offer to
     /// write the folder's files as the mod's list. Returns when to look
     /// again.
-    pub(super) fn poll_mod_files(state: &mut AppState) -> Option<Instant> {
+    pub(super) fn poll_mod_files(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+    ) -> Option<Instant> {
         use std::sync::mpsc::TryRecvError;
         /// How often the reading thread's answer is looked for.
         const LOOK_AGAIN: crate::util::time::Duration =
             crate::util::time::Duration::from_millis(100);
-        let check = state.frontend.mods.files_check.take()?;
+        let check = frontend.mods.files_check.take()?;
         let Step::Reading { result, .. } = &check.step else {
-            state.frontend.mods.files_check = Some(check);
+            frontend.mods.files_check = Some(check);
             return None;
         };
         let checked = match result.try_recv() {
             Err(TryRecvError::Empty) => {
-                state.frontend.mods.files_check = Some(check);
+                frontend.mods.files_check = Some(check);
                 return Some(Instant::now() + LOOK_AGAIN);
             }
             Ok(Ok(checked)) => Some(checked),
@@ -289,7 +405,14 @@ impl App {
         };
         let PageCheck { title, dir, .. } = check;
         let Some(Checked { found, against }) = checked else {
-            Self::open_mod_files_found(state, tr_fill("VERA:ModFilesNotRead", &[("mod", &title)]));
+            Self::open_mod_files_found(
+                window,
+                renderer,
+                frontend,
+                process_assets,
+                options_profile,
+                tr_fill("VERA:ModFilesNotRead", &[("mod", &title)]),
+            );
             return None;
         };
         let (count, code) = (found.len(), found.code());
@@ -316,15 +439,32 @@ impl App {
             ),
         };
         match offer {
-            None => Self::open_mod_files_found(state, text),
+            None => Self::open_mod_files_found(
+                window,
+                renderer,
+                frontend,
+                process_assets,
+                options_profile,
+                text,
+            ),
             Some(write_key) => {
-                state.frontend.mods.files_check = Some(PageCheck {
+                frontend.mods.files_check = Some(PageCheck {
                     title,
                     dir,
                     step: Step::Offered(found),
                 });
                 let purpose = ShellMessageBoxPurpose::ModFiles(ModFilesBox::Offer);
-                Self::open_mods_box(state, text, tr(write_key), tr("VERA:Close"), purpose);
+                Self::open_mods_box(
+                    window,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    options_profile,
+                    text,
+                    tr(write_key),
+                    tr("VERA:Close"),
+                    purpose,
+                );
             }
         }
         None
@@ -333,8 +473,16 @@ impl App {
     /// The answer to one of Check Files' boxes. The waiting box's button
     /// stops the reading; the offer's first button writes the folder's files
     /// as the mod's list, and says what came of it.
-    pub(super) fn answer_mod_files(state: &mut AppState, which: ModFilesBox, confirmed: bool) {
-        let Some(check) = state.frontend.mods.files_check.take() else {
+    pub(super) fn answer_mod_files(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+        which: ModFilesBox,
+        confirmed: bool,
+    ) {
+        let Some(check) = frontend.mods.files_check.take() else {
             return;
         };
         match (which, check.step) {
@@ -360,7 +508,14 @@ impl App {
                         tr_fill("VERA:ModFilesNotMade", &[("file", &list.display())])
                     }
                 };
-                Self::open_mod_files_found(state, text);
+                Self::open_mod_files_found(
+                    window,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    options_profile,
+                    text,
+                );
             }
             _ => {}
         }
@@ -393,7 +548,11 @@ impl App {
             Err(error) => {
                 log::warn!("Mods: no new mod made in {}: {error}", mods_dir.display());
                 Self::open_shell_notice(
-                    state,
+                    &state.platform.window,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.persistence.options_profile,
                     tr_fill("VERA:ModNotMade", &[("folder", &mods_dir.display())]),
                 );
                 return;
@@ -409,7 +568,11 @@ impl App {
         let text = tr_fill("VERA:ModMade", &[("mod", &made.folder), ("files", &files)]);
         let (open, close) = (tr("VERA:ModOpenItsFolder"), tr("VERA:Close"));
         Self::open_mods_box(
-            state,
+            &state.platform.window,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
             text,
             open,
             close,
@@ -424,14 +587,29 @@ impl App {
             rows.iter()
                 .position(|row| row.folder.as_deref() == Some(folder))
         });
-        Self::update_mods_list(state, selected, true);
+        Self::update_mods_list(&mut state.frontend, selected, true);
     }
 
     /// New Mod's box: Open Folder shows the new mod's folder, or says where it
     /// is when no file manager starts.
-    pub(super) fn answer_mod_made(state: &mut AppState, dir: &std::path::Path, open: bool) {
+    pub(super) fn answer_mod_made(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+        dir: &std::path::Path,
+        open: bool,
+    ) {
         if open && !crate::app::web_link::open_folder(dir) {
-            Self::show_folder_is_here(state, dir);
+            Self::show_folder_is_here(
+                window,
+                renderer,
+                frontend,
+                process_assets,
+                options_profile,
+                dir,
+            );
         }
     }
 
@@ -447,15 +625,28 @@ impl App {
     /// row needs a restart: ask first. The row this run plays already (after
     /// a `--mod` switch, or when the kept choice could not be loaded) needs
     /// none: it only becomes the choice for the next start.
-    fn use_picked_mod(state: &mut AppState) {
-        let selected = Self::mods_selected(state);
-        let mods = &state.frontend.mods;
+    fn use_picked_mod(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+    ) {
+        let selected = Self::mods_selected(&frontend.shell_controller);
+        let mods = &frontend.mods;
         let Some(row) = mods.switch_to(selected) else {
             return;
         };
         let folder = row.folder.clone();
         if mods.in_use(row) {
-            Self::keep_mod_choice(state, folder.as_deref());
+            Self::keep_mod_choice(
+                platform,
+                renderer,
+                frontend,
+                process_assets,
+                options_profile,
+                folder.as_deref(),
+            );
             return;
         }
         let title = match &row.folder {
@@ -464,15 +655,32 @@ impl App {
         };
         let (restart, cancel) = (tr("VERA:ModRestart"), tr("VERA:Cancel"));
         let purpose = ShellMessageBoxPurpose::ModRestart(folder);
-        Self::open_mods_box(state, title, restart, cancel, purpose);
+        Self::open_mods_box(
+            &platform.window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            title,
+            restart,
+            cancel,
+            purpose,
+        );
     }
 
     /// Keep `folder`, or the original game, as the choice for the next start.
     /// False when config.toml could not be written: nothing changes, and a
     /// notice names the file.
-    fn keep_mod_choice(state: &mut AppState, folder: Option<&str>) -> bool {
-        let kept = match state.platform.game_config.as_ref() {
-            Some(config) => state.frontend.mods.keep_choice(&config.paths, folder),
+    fn keep_mod_choice(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+        folder: Option<&str>,
+    ) -> bool {
+        let kept = match platform.game_config.as_ref() {
+            Some(config) => frontend.mods.keep_choice(&config.paths, folder),
             None => Err(std::io::Error::other("no config was read")),
         };
         let Err(error) = kept else {
@@ -482,7 +690,14 @@ impl App {
         let file = crate::util::config::GameConfig::path()
             .map(|path| path.display().to_string())
             .unwrap_or_default();
-        Self::open_shell_notice(state, tr_fill("VERA:ModChoiceNotSaved", &[("file", &file)]));
+        Self::open_shell_notice(
+            &platform.window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            tr_fill("VERA:ModChoiceNotSaved", &[("file", &file)]),
+        );
         false
     }
 
@@ -493,7 +708,14 @@ impl App {
         if !restart {
             return;
         }
-        if Self::keep_mod_choice(state, folder.as_deref()) {
+        if Self::keep_mod_choice(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+            folder.as_deref(),
+        ) {
             log::info!("Mods: restarting to use {folder:?}");
             crate::app::restart::ask();
             // As Exit Game leaves: from the empty backdrop, the page gone.

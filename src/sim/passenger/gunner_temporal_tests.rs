@@ -23,7 +23,7 @@ fn retail_unload_and_snapshot_resume_preserve_the_gunners_rearm() {
     // The existing native load owner consumes the saved Scenario bytes, then
     // seeds zero. Compare continuations with that same RNG input; the gunner's
     // retained burst, timer and link must survive independently of this reset.
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     assert_eq!(restored.rng_state(), sim.rng_state());
     restored.restore_after_snapshot_load().unwrap();
     restored.resolve_type_handles(rules);

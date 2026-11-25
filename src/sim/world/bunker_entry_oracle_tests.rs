@@ -393,13 +393,13 @@ impl NativeScene {
             int(&local[2]),
             int(&local[3]),
         );
-        sim.playfield_bounds = Some(bounds);
-        sim.playfield_size_height = Some(width);
+        *sim.playfield_bounds = Some(bounds);
+        *sim.playfield_size_height = Some(width);
         sim.session.set_map_width_for_test(width as u16);
         sim.session.set_map_height_for_test(width as u16);
         let terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
         let path = crate::sim::pathfinding::PathGrid::from_resolved_terrain(&terrain);
-        sim.zone_grid = Some(
+        *sim.zone_grid = Some(
             crate::sim::pathfinding::zone_map::ZoneGrid::build_with_native_map_context(
                 &path,
                 &terrain,
@@ -409,8 +409,8 @@ impl NativeScene {
             )
             .into(),
         );
-        sim.path_grid = Some(std::sync::Arc::new(path));
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        *sim.path_grid = Some(std::sync::Arc::new(path));
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
         sim.install_resolved_terrain_for_new_map(terrain);
         let owner = sim.interner.intern("Americans");
         sim.houses
@@ -499,7 +499,7 @@ impl NativeScene {
                     .ensure_installed_track_state()
             );
         }
-        sim.scenario_rng =
+        *sim.scenario_rng =
             crate::sim::rng::SimRng::new(inputs["scenario"]["seed"].as_u64().unwrap());
         Self {
             sim,

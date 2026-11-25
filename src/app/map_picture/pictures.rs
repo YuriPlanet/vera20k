@@ -10,7 +10,6 @@ use std::time::SystemTime;
 use anyhow::{Context, Result};
 
 use super::MapPictureRequest;
-use crate::app::AppState;
 use crate::map::preview::DecodedPreview;
 use crate::map::skirmish_scenarios::SkirmishScenarioSource;
 use crate::ui::game_screen::GameScreen;
@@ -58,12 +57,17 @@ struct Running {
 /// The kept picture of the catalog's map `map_index`, or None while it has
 /// none. A local map without one gets a run that draws it; a library map
 /// without a file shows a picture only when one is kept.
-pub(crate) fn picture_for_map(state: &mut AppState, map_index: usize) -> Option<DecodedPreview> {
-    let folder = match &state.frontend.map_pictures.folder {
+pub(crate) fn picture_for_map(
+    platform: &crate::app::PlatformState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    map_index: usize,
+) -> Option<DecodedPreview> {
+    let folder = match &frontend.map_pictures.folder {
         Some(folder) => folder.clone(),
         None => {
-            let paths = &state.platform.game_config.as_ref()?.paths;
-            let mods = &state.frontend.mods;
+            let paths = &platform.game_config.as_ref()?.paths;
+            let mods = &frontend.mods;
             let mod_folder = mods
                 .active
                 .as_ref()
@@ -73,19 +77,22 @@ pub(crate) fn picture_for_map(state: &mut AppState, map_index: usize) -> Option<
                 &paths.ra2_dir,
                 mod_folder.as_deref(),
             );
-            state.frontend.map_pictures.mod_args = mods.child_args();
-            state.frontend.map_pictures.folder = Some(folder.clone());
+            frontend.map_pictures.mod_args = mods.child_args();
+            frontend.map_pictures.folder = Some(folder.clone());
             folder
         }
     };
-    let record = state.frontend.scenario_catalog.records().get(map_index)?;
+    let record = frontend.scenario_catalog.records().get(map_index)?;
     let (sha256, map) = match &record.source {
         SkirmishScenarioSource::Online(sha256) => (sha256.clone(), None),
         // A seed draws a new map each time; it has no fixed picture.
         _ if crate::map::rmg::is_seed_selection(&record.file_name) => return None,
         _ => {
             let map = record.file_name.clone();
-            (map_sha256(state, &map)?, Some(map))
+            (
+                map_sha256(platform, frontend, process_assets, &map)?,
+                Some(map),
+            )
         }
     };
     let output = super::picture_path(&folder, &sha256);
@@ -94,21 +101,26 @@ pub(crate) fn picture_for_map(state: &mut AppState, map_index: usize) -> Option<
     }
     if let Some(map) = map {
         let mut request = MapPictureRequest::for_menus(map, sha256, output);
-        request.prepared_mod = state.frontend.mods.active.as_ref().and_then(|active| {
+        request.prepared_mod = frontend.mods.active.as_ref().and_then(|active| {
             active
                 .dir
                 .is_prepared()
                 .then(|| active.dir.path().to_path_buf())
         });
-        want(&mut state.frontend.map_pictures, request);
+        want(&mut frontend.map_pictures, request);
     }
     None
 }
 
 /// The SHA-256 of the file a game of `map` would load, read once per file.
-fn map_sha256(state: &mut AppState, map: &str) -> Option<String> {
+fn map_sha256(
+    platform: &crate::app::PlatformState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    map: &str,
+) -> Option<String> {
     let key = map.to_ascii_lowercase();
-    if let Some(identity) = state.frontend.map_pictures.identities.get(&key)
+    if let Some(identity) = frontend.map_pictures.identities.get(&key)
         && identity
             .file
             .as_ref()
@@ -118,11 +130,10 @@ fn map_sha256(state: &mut AppState, map: &str) -> Option<String> {
     {
         return Some(identity.sha256.clone());
     }
-    let ra2_dir = &state.platform.game_config.as_ref()?.paths.ra2_dir;
-    let source =
-        crate::map::source::map_source_identity(ra2_dir, map, state.process_assets.manager()?)
-            .inspect_err(|error| log::debug!("No map file for {map}'s picture: {error:#}"))
-            .ok()?;
+    let ra2_dir = &platform.game_config.as_ref()?.paths.ra2_dir;
+    let source = crate::map::source::map_source_identity(ra2_dir, map, process_assets.manager()?)
+        .inspect_err(|error| log::debug!("No map file for {map}'s picture: {error:#}"))
+        .ok()?;
     let (_, sha256) = source.physical_identity()?;
     let identity = Identity {
         file: match &source {
@@ -135,7 +146,7 @@ fn map_sha256(state: &mut AppState, map: &str) -> Option<String> {
         sha256: sha256.to_owned(),
     };
     let sha256 = identity.sha256.clone();
-    state.frontend.map_pictures.identities.insert(key, identity);
+    frontend.map_pictures.identities.insert(key, identity);
     Some(sha256)
 }
 
@@ -212,19 +223,25 @@ fn start(
 
 /// Take a finished run and start the next. A new picture replaces the map's
 /// own preview on the screen showing it.
-pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
+pub(crate) fn poll(
+    platform: &crate::app::PlatformState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    persistence: &crate::app::persistence::PersistenceState,
+) -> Option<Instant> {
     // A match and its loading get the machine to themselves, and unticking
     // HD Map Previews stops the drawing; a map stopped is drawn when next
     // shown.
-    if !state.hd_map_previews() || state.frontend.screen != GameScreen::MainMenu {
-        let pictures = &mut state.frontend.map_pictures;
+    if !persistence.hd_map_previews(platform.capture_choices())
+        || frontend.screen != GameScreen::MainMenu
+    {
+        let pictures = &mut frontend.map_pictures;
         pictures.wanted = None;
         if let Some(running) = pictures.running.take() {
             end(running.child);
         }
         return None;
     }
-    let pictures = &mut state.frontend.map_pictures;
+    let pictures = &mut frontend.map_pictures;
     let running = pictures.running.as_mut()?;
     let (drawn, overdue) = match running.child.try_wait() {
         Ok(Some(status)) => (status.success(), false),
@@ -254,13 +271,12 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
         .is_some()
         .then(|| Instant::now() + POLL_INTERVAL);
     if drawn
-        && state
-            .frontend
+        && frontend
             .skirmish_preview_texture
             .as_ref()
             .is_some_and(|texture| texture.hd_setting && texture.hd_picture.is_none())
     {
-        state.frontend.skirmish_preview_texture = None;
+        frontend.skirmish_preview_texture = None;
     }
     next
 }

@@ -231,12 +231,22 @@ impl RuleSet {
         rules.combat_damage.tiberium_explosion_damage = processed.tiberium_explosion_damage();
         rules.combat_damage.death_weapon =
             processed.combat_damage_death_weapon().map(str::to_owned);
-        for (name, conventional, em_effect, sparky, anim_list, debris_types, verses, ares_verses) in
-            processed.warhead_read_states()
+        for (
+            name,
+            conventional,
+            em_effect,
+            sparky,
+            anim_list,
+            debris_types,
+            verses,
+            ares_verses,
+            web,
+        ) in processed.warhead_read_states()
         {
             if let Some(warhead) = rules.warhead_mut(name) {
                 warhead.conventional = conventional;
                 warhead.em_effect = em_effect;
+                warhead.web = web;
                 warhead.sparky = sparky;
                 warhead.anim_list = anim_list.to_vec();
                 warhead.debris_types = debris_types.to_vec();

@@ -37,15 +37,26 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
     {
         return Ok(false);
     }
-    let campaign = campaign_room::publication(state)?;
+    let campaign = campaign_room::publication(
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+    )?;
     if let Some(room) = &campaign {
-        campaign_room::verify_current(state, room)?;
+        campaign_room::verify_current(
+            state.platform.game_config.as_ref(),
+            &state.process_assets,
+            room,
+        )?;
     }
-    let agreement = crate::app::shell_network_setup::agreement::local(state)?;
+    let agreement = crate::app::shell_network_setup::agreement::local(
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+        &mut state.process_assets,
+    )?;
     // The room carries the applied speed, the world's while one is installed:
     // another player's speed event in the last match changed only the world.
     // Build_Options_String reads that global, [0xA8EB60], at 0x005DBC68.
-    crate::app::loading::transitions::sync_in_game_options_speed_from_sim(state);
+    crate::app::loading::transitions::sync_in_game_options_speed_from_sim(&mut state.match_state);
     let session = &state.match_state.session;
     ensure!(session.host(), "only the host publishes full LAN options");
     let current_speed = state
@@ -66,7 +77,11 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
                 .ok_or_else(|| anyhow!("host seed is not initialized"))?,
         },
         None => TaggedOptionsBody::Stock {
-            random_map: crate::app::shell_network_setup::maps::host_generated_manifest(state)?,
+            random_map: crate::app::shell_network_setup::maps::host_generated_manifest(
+                state.platform.game_config.as_ref(),
+                &state.frontend.multiplayer_shell_runtime,
+                &state.match_state.session,
+            )?,
             room: projected_room(
                 session,
                 state
@@ -100,12 +115,15 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
         body: body.clone(),
     })?;
     let admitted = queue_payload(
-        state,
+        &mut state.match_state,
         crate::net::lan_messages::extended_setup::SetupKind::Options,
         payload,
     )?;
     if admitted {
-        crate::app::shell_network_setup::invalidate_network_agreement(state)?;
+        crate::app::shell_network_setup::invalidate_network_agreement(
+            &mut state.frontend.network_setup_protocol,
+            &mut state.match_state.session,
+        )?;
         let service = state
             .match_state
             .lan_service
@@ -317,19 +335,18 @@ pub(super) fn reapply_received_options(state: &mut AppState) -> Result<()> {
 }
 
 fn queue_payload(
-    state: &mut AppState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
     kind: crate::net::lan_messages::extended_setup::SetupKind,
     payload: Vec<u8>,
 ) -> Result<bool> {
-    let endpoints = super::remote_sources(state)
+    let endpoints = super::remote_sources(&match_state.session)
         .into_iter()
-        .filter_map(|source| state.match_state.session.network_endpoint(source))
+        .filter_map(|source| match_state.session.network_endpoint(source))
         .collect::<Vec<_>>();
-    let game = super::active_game_name(state).ok_or_else(|| anyhow!("no active LAN game"))?;
+    let game = super::active_game_name(match_state).ok_or_else(|| anyhow!("no active LAN game"))?;
     let mut scoped = game_name_hash(&game).to_le_bytes().to_vec();
     scoped.extend_from_slice(&payload);
-    let service = state
-        .match_state
+    let service = match_state
         .lan_service
         .as_mut()
         .ok_or_else(|| anyhow!("no LAN service"))?;
@@ -392,7 +409,11 @@ fn apply_host_room(
                 .session
                 .accept_campaign_room(Some(room.clone()), envelope.game_speed)?;
             state.match_state.session.set_network_start_seed(*seed)?;
-            let verified = campaign_room::verify_current(state, room);
+            let verified = campaign_room::verify_current(
+                state.platform.game_config.as_ref(),
+                &state.process_assets,
+                room,
+            );
             if let Err(error) = &verified {
                 log::info!("Campaign room files refused: {error:#}");
             }
@@ -404,8 +425,10 @@ fn apply_host_room(
     Ok(())
 }
 
-pub(super) fn publish_roster(state: &mut AppState) -> Result<bool> {
-    let session = &state.match_state.session;
+pub(super) fn publish_roster(
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) -> Result<bool> {
+    let session = &match_state.session;
     ensure!(session.host(), "only the host publishes a LAN roster");
     // A VERA room's spectator rows may lie past the native eight.
     let rows = if session.network_several_observers()
@@ -420,7 +443,7 @@ pub(super) fn publish_roster(state: &mut AppState) -> Result<bool> {
     let names = projected_roster(session)?;
     let names = &names[..rows];
     queue_payload(
-        state,
+        match_state,
         crate::net::lan_messages::extended_setup::SetupKind::Roster,
         serde_json::to_vec(names)?,
     )
@@ -467,7 +490,8 @@ pub(super) fn receive_extended(
     let Some((kind, bytes)) = complete else {
         return Ok(());
     };
-    let game = super::active_game_name(state).ok_or_else(|| anyhow!("no active LAN game"))?;
+    let game =
+        super::active_game_name(&state.match_state).ok_or_else(|| anyhow!("no active LAN game"))?;
     ensure!(
         bytes.len() >= 4 && bytes[..4] == game_name_hash(&game).to_le_bytes(),
         "different LAN game"
@@ -540,7 +564,10 @@ fn receive_host_options(
             )?;
         }
     }
-    crate::app::shell_network_setup::invalidate_network_agreement(state)?;
+    crate::app::shell_network_setup::invalidate_network_agreement(
+        &mut state.frontend.network_setup_protocol,
+        &mut state.match_state.session,
+    )?;
     apply_host_room(state, &options, host_setup)?;
     match &options.body {
         TaggedOptionsBody::Stock { random_map, .. } => {

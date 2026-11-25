@@ -262,7 +262,7 @@ fn keep_alive_limbo_capture_reload_and_destruction_use_the_tracking_owner() {
         );
     }
 
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let before = sim.state_hash();
     let saved = GameSnapshot::save(&sim, 0, 0, "keep-alive", 0);
     let mut restored = GameSnapshot::load(&saved).unwrap().sim;

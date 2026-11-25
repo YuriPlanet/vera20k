@@ -41,7 +41,7 @@ fn scene_from(
     )))
     .unwrap();
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(flat_terrain(16, 16));
+    *sim.resolved_terrain = Some(flat_terrain(16, 16));
     place_tiberium_on_map(&mut sim, (5, 5), ResourceType::Ore, 6);
     let ids = objects
         .iter()
@@ -266,7 +266,7 @@ fn visceroid_scene() -> (Simulation, RuleSet, u64) {
     )))
     .unwrap();
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(flat_terrain(TEST_GRID_SIZE, TEST_GRID_SIZE));
+    *sim.resolved_terrain = Some(flat_terrain(TEST_GRID_SIZE, TEST_GRID_SIZE));
     place_tiberium_on_map(&mut sim, (5, 5), ResourceType::Ore, 6);
     for (house, country) in [("A", "Americans"), ("Neutral", "Neutral")] {
         let name = sim.interner.intern(house);
@@ -398,7 +398,7 @@ fn chain_reacting_ore_halves_and_blasts_power_times_the_loss() {
         )))
         .unwrap();
         let mut sim = Simulation::new();
-        sim.resolved_terrain = Some(flat_terrain(TEST_GRID_SIZE, TEST_GRID_SIZE));
+        *sim.resolved_terrain = Some(flat_terrain(TEST_GRID_SIZE, TEST_GRID_SIZE));
         place_tiberium_on_map(&mut sim, (5, 5), ResourceType::Ore, 6);
         sim.overlay_grid
             .as_mut()

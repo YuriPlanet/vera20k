@@ -41,7 +41,7 @@ fn fixture() -> (Simulation, RuleSet) {
     );
     // The accepted head (10,9) was the route's last cell, so Foot+5E0 holds
     // no word beyond it: the committed head alone models the route.
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     // Drive ProcessMovement4B3673..368D stores the frame anchor and
     // duration. Active TrackProcess4B0F20 does not mutate that timer.
     entity
@@ -49,7 +49,7 @@ fn fixture() -> (Simulation, RuleSet) {
         .path_runtime_mut()
         .set_blocked_timer_for_test(crate::sim::timer::CdTimer::started(10, 9));
     sim.substrate.entities.insert(entity);
-    sim.substrate.occupancy =
+    *sim.substrate.occupancy =
         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     sim.spatial_threat_after_unlimbo(1, &rules, None);
@@ -192,10 +192,10 @@ fn accepted_chain_runs_sensor_callback_and_consumes_more_paid_points_in_same_obj
             })
             .collect(),
     );
-    sim.path_grid = Some(std::sync::Arc::new(
+    *sim.path_grid = Some(std::sync::Arc::new(
         crate::sim::pathfinding::PathGrid::from_resolved_terrain(&terrain),
     ));
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     // The fixture inserts its unit already placed, so no Unlimbo stamped it.
     sim.add_unit_sensors_at_current(1, &rules, None);
     let selection = drive_track::select_drive_track(32, 64, false).unwrap();

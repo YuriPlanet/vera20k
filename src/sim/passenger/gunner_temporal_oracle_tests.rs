@@ -406,7 +406,7 @@ fn prepare_case(rules: &RuleSet, row: &Value) -> (Simulation, Actors) {
         );
     install_temporal_boundary(&mut sim, &actors, &row["initial"]);
     sim.session.set_binary_frame_for_test(frame as u32);
-    sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
+    *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
     assert_eq!(
         sim.scenario_rng.native_state_hex(),
         row["rng_initial"]["scenario"],
@@ -475,7 +475,7 @@ fn native_temporal_gunner_callbacks_match_retained_histories() {
                             &operation["after"][role],
                         );
                     }
-                    sim.scenario_rng = SimRng::from_native_state_hex_for_test(
+                    *sim.scenario_rng = SimRng::from_native_state_hex_for_test(
                         operation["rng_after"]["scenario"].as_str().unwrap(),
                     );
                     imported_fire_boundaries += 1;

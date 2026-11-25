@@ -728,17 +728,21 @@ fn on_leaving(error_card: bool) -> Verdict {
 /// Loading is over ([`after_loading`]); `external_launch` is `-SPAWN` or a
 /// replay. A mod that did not load stays on record, and the player is told
 /// what to do.
-pub(crate) fn finish_start(state: &mut AppState, external_launch: bool) {
-    let mods = &state.frontend.mods;
+pub(crate) fn finish_start(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    external_launch: bool,
+) {
+    let mods = &frontend.mods;
     let Some(active) = mods.active.as_ref().filter(|_| mods.record.is_some()) else {
         return;
     };
-    let error_card = state.frontend.main_menu_shell_error.is_some();
+    let error_card = frontend.main_menu_shell_error.is_some();
     let straight_to_match =
-        external_launch || state.frontend.screen != crate::ui::game_screen::GameScreen::MainMenu;
-    let rules_loaded = state.process_assets.has_native_rules();
+        external_launch || frontend.screen != crate::ui::game_screen::GameScreen::MainMenu;
+    let rules_loaded = process_assets.has_native_rules();
     match after_loading(error_card, rules_loaded, straight_to_match) {
-        Verdict::Passed => started(state),
+        Verdict::Passed => started(frontend),
         Verdict::Open => {}
         Verdict::Failed => {
             log::warn!(
@@ -747,25 +751,25 @@ pub(crate) fn finish_start(state: &mut AppState, external_launch: bool) {
             );
             // The error card says it for itself (`App::render_shell_error`).
             if !error_card {
-                state.frontend.mods.notice = Some(start_failed_text(&active.title));
+                frontend.mods.notice = Some(start_failed_text(&active.title));
             }
             // Let go of the file and leave its name in it.
-            state.frontend.mods.record = None;
+            frontend.mods.record = None;
         }
     }
 }
 
 /// The start with a mod has passed: its record goes.
-fn started(state: &mut AppState) {
-    if let Some(record) = state.frontend.mods.record.take() {
+fn started(frontend: &mut crate::app::frontend::state::FrontendState) {
+    if let Some(record) = frontend.mods.record.take() {
         record.clear();
     }
 }
 
 /// The game is left in the ordinary way ([`on_leaving`]).
-pub(crate) fn left(state: &mut AppState) {
-    if on_leaving(state.frontend.main_menu_shell_error.is_some()) == Verdict::Passed {
-        started(state);
+pub(crate) fn left(frontend: &mut crate::app::frontend::state::FrontendState) {
+    if on_leaving(frontend.main_menu_shell_error.is_some()) == Verdict::Passed {
+        started(frontend);
     }
 }
 
@@ -792,14 +796,21 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     if now < due {
         return Some(due);
     }
-    started(state);
+    started(&mut state.frontend);
     let mods = &mut state.frontend.mods;
     let text = match (mods.notice.take(), mods.rules_file_notice.take()) {
         (Some(first), Some(second)) => Some(format!("{first}\n\n{second}")),
         (first, second) => first.or(second),
     };
     if let Some(text) = text {
-        crate::app::App::open_shell_notice(state, text);
+        crate::app::App::open_shell_notice(
+            &state.platform.window,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+            text,
+        );
     }
     None
 }

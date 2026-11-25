@@ -59,15 +59,22 @@ to 2 and 4 and gives `MTNK`, `HTNK` and `APOC` weights 2, 4 and 5.
 
 ### Paint the tiles in an editor
 
+The installer ships `vera_ice.mix` and `vera_ice_tiles.ini` together. On Windows,
+open the `Terrain` folder beside `vera20k.exe`. On macOS and Linux, start the game
+once, then open `Terrain` beside `VERA.INI` in your VERA20k settings folder.
+The defaults are `~/Library/Application Support/VERA20k/Terrain` on macOS and
+`~/.local/share/VERA20k/Terrain` on Linux. VERA maintains these release files.
+Make any edits in your own editor or mod folder.
+
 In World-Altering Editor with a Yuri's Revenge profile:
 
 1. Use a separate editor data directory with access to your YR files. Copy
-   [vera_ice.mix](../src/assets/bundled/vera_ice.mix) into a search directory
+   [vera_ice.mix](../Terrain/vera_ice.mix) into a search directory
    from the profile's `FileManagerConfig.ini`. Under `[MIXFiles]`, add
    `N=vera_ice.mix`, replacing `N` with the next unused number.
 2. Start with an editor-only copy of stock `SNOWMD.INI`. Replace the four ice
    entries in its existing `[General]` section with the values in
-   [vera_ice_tiles.ini](../src/assets/bundled/vera_ice_tiles.ini). Append the five
+   [vera_ice_tiles.ini](../Terrain/vera_ice_tiles.ini). Append the five
    `[TileSet0083]` through `[TileSet0087]` sections from the same file. Stock
    snow uses tiles 0–963. The first added section reserves the gap to 4096.
 3. Reopen the editor and load a snow map. Select **VERA Ice 1**, **VERA Ice 2**,

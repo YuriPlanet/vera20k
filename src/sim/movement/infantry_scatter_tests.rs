@@ -32,7 +32,7 @@ fn set_mission(entity: &mut GameEntity, mission: MissionType) {
 fn sim_with(entity: GameEntity) -> Simulation {
     let mut sim = Simulation::new();
     sim.substrate.entities.insert(entity);
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     sim
 }
 
@@ -96,7 +96,7 @@ fn player_scatter_event_gates_and_rng_prefix_match_native_gi() {
             let owner = sim.interner.intern("Allies");
             sim.houses
                 .register(HouseState::new(owner, 0, None, true, 0, 10));
-            sim.scenario_rng = SimRng::from_native_state_hex_for_test(native_rng(before));
+            *sim.scenario_rng = SimRng::from_native_state_hex_for_test(native_rng(before));
             let initial_rng = sim.scenario_rng.native_state_hex();
             let reached = sim.apply_command(
                 "DifferentIssuer",
@@ -240,7 +240,7 @@ fn forced_gates_and_draw_match_original_hut_caller() {
         loco.set_walk_destination(flag("moving").then(|| DriveCoord::cell(6, 5, 0)));
         man.locomotor = Some(loco);
         let mut sim = sim_with(man);
-        sim.scenario_rng = crate::sim::rng::SimRng::new(31);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(31);
         assert!(
             !sim.infantry_scatter_null(
                 1,

@@ -10,10 +10,10 @@
 #[cfg(test)]
 use super::controls::{frame_segments, group_box_geometry, push_group_or_plain_frame};
 use super::gui_paint::{ButtonArt, ComboArt, FrameArt, GuiStyle, HostRows, SideButtons};
-use crate::render::hud_paint::{HudPaint, Material};
 use super::in_game_shell::{self, InGameShellFrame, ShellFrameArt, ShellFrameOverlay};
 use crate::app::AppState;
 use crate::app::frontend::menu_page_render::{PanelStatic, paint_panel_statics};
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::shell::geom::{RETAIL_SCALE, RectPx, ShellScale};
 use crate::ui::shell::in_game_shell::{FOOTER, TITLE};
@@ -71,7 +71,11 @@ pub(crate) fn render_keyboard_shell(
             .and_then(|dialog| crate::app::input::dialog_page::help(&dialog.ui, None))
             .map(|key| state.csf_label(key, ""))
             .unwrap_or_default();
-        crate::app::frontend::menu_page_render::paint_shell_status_line(state, help, layout.footer)
+        crate::app::frontend::menu_page_render::paint_shell_status_line(
+            &mut state.frontend.shell_status_line,
+            help,
+            layout.footer,
+        )
     };
     let dialog = state
         .frontend
@@ -121,9 +125,7 @@ pub(crate) fn render_keyboard_shell(
             _ => match KeyboardControl::from_id(id)? {
                 KeyboardControl::Button(KeyboardButton::Back) => ("GUI:Back", "Back"),
                 KeyboardControl::Button(KeyboardButton::Assign) => ("GUI:Assign", "Assign"),
-                KeyboardControl::Button(KeyboardButton::ResetAll) => {
-                    ("GUI:ResetAll", "Reset All")
-                }
+                KeyboardControl::Button(KeyboardButton::ResetAll) => ("GUI:ResetAll", "Reset All"),
                 KeyboardControl::Description => ("GUI:Description", "Description"),
                 _ => return None,
             },
@@ -183,7 +185,11 @@ pub(crate) fn render_keyboard_shell(
         for node in nodes {
             super::gui_paint::paint_gui_into(
                 &mut paint,
-                shared,
+                &shared.platform.ime,
+                &shared.renderer.bit_font,
+                &shared.frontend,
+                &shared.match_state,
+                &shared.process_assets,
                 Some(atlas),
                 gui,
                 node,
@@ -238,7 +244,15 @@ pub(crate) fn render_keyboard_shell(
     // The status line is a family static like the heading: it scales with the
     // page, as on every other family page.
     let status = status_label.map(PanelStatic::status);
-    texts.extend(paint_panel_statics(shared, [None, status], layout.scale));
+    texts.extend(paint_panel_statics(
+        &shared.platform.ime,
+        &shared.renderer.bit_font,
+        &shared.frontend,
+        &shared.match_state,
+        &shared.process_assets,
+        [None, status],
+        layout.scale,
+    ));
     let overlay = ShellFrameOverlay {
         controls: popup,
         texts: popup_texts,

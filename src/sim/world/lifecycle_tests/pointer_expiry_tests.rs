@@ -529,7 +529,7 @@ fn detach_sensor_guard_applies_to_techno_but_not_constructed_terrain() {
     .unwrap();
     for terrain_expires in [true, false] {
         let mut sim = Simulation::with_seed(0x1234);
-        sim.fog = FogState::new(32, 32);
+        *sim.fog = FogState::new(32, 32);
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         assert_eq!(
             crate::sim::terrain_spawn::construct_terrain_objects(
@@ -814,14 +814,14 @@ fn particle_system_retirement_clears_only_the_indexed_techno_spark_link() {
         .unwrap()
         .seldom
         .spark_particle_system
-        .bind(Some(1));
+        .set_for_test(Some(1));
     sim.substrate
         .entities
         .get_mut(4)
         .unwrap()
         .seldom
         .spark_particle_system
-        .bind(Some(2));
+        .set_for_test(Some(2));
     sim.substrate
         .particle_systems
         .get_mut(1)
@@ -892,7 +892,7 @@ fn techno_spark_pointer_expiry_is_exact_and_independent_of_control() {
             .unwrap()
             .seldom
             .spark_particle_system
-            .bind(Some(1));
+            .set_for_test(Some(1));
         let before = [
             sim.main_rng.native_state_hex(),
             sim.scenario_rng.native_state_hex(),
@@ -1393,7 +1393,7 @@ fn gsi_05_03_duplicate_uninit_repeats_direct_expiry_and_queue_but_finalizes_once
     assert!(!sim.substrate.entities.contains(1));
     assert!(sim.substrate.pending_delete.is_empty());
     assert_eq!(
-        sim.lifecycle_test_events,
+        *sim.lifecycle_test_events,
         vec![
             LifecycleTestEvent::PendingDeleteDrainStarted,
             LifecycleTestEvent::DeferredDeleteSelected {

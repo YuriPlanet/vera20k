@@ -24,6 +24,9 @@
 
 use crate::app::AppState;
 use crate::app::match_runtime::beacons::{self, BeaconTarget};
+use crate::app::match_runtime::sim_host::SimHost;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::presentation::state::MatchPresentationState;
 
 /// SetPlaceBeaconMode's argument.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,13 +82,14 @@ pub(crate) fn set_place_beacon_mode(state: &mut AppState, request: BeaconModeReq
         sell: gadgets.sell_mode_on,
         beacon: gadgets.place_beacon_mode_on,
     };
-    let can_place = beacons::local_house_index(state).is_some_and(|house| {
-        state
-            .match_state
-            .match_presentation
-            .beacons
-            .can_place(house)
-    });
+    let can_place =
+        beacons::local_house_index(&state.match_state.sim_runtime).is_some_and(|house| {
+            state
+                .match_state
+                .match_presentation
+                .beacons
+                .can_place(house)
+        });
     let Some(next) = place_beacon_mode_transition(
         request,
         modes,
@@ -126,20 +130,14 @@ pub(crate) fn enter_placement_mode(state: &mut AppState) {
 }
 
 /// Whether DetermineAction's no-selection arm answers a beacon action.
-pub(crate) fn mode_active(state: &AppState) -> bool {
-    state
-        .match_state
-        .match_presentation
-        .sidebar_gadget_state
-        .place_beacon_mode_on
+pub(crate) fn mode_active(presentation: &MatchPresentationState) -> bool {
+    presentation.sidebar_gadget_state.place_beacon_mode_on
 }
 
 /// The coordinate both clicks and DetermineAction build from the Cell: its
 /// centre and level (`Level * 104`, `0x004AC05A..0x004AC09A`).
-fn cell_coord(state: &AppState, cell: (u16, u16)) -> [i32; 3] {
-    let level = state
-        .match_state
-        .sim_runtime
+fn cell_coord(sim_runtime: &SimHost, cell: (u16, u16)) -> [i32; 3] {
+    let level = sim_runtime
         .runtime()
         .and_then(|runtime| runtime.simulation.resolved_terrain())
         .and_then(|terrain| terrain.cell(cell.0, cell.1))
@@ -152,12 +150,11 @@ fn cell_coord(state: &AppState, cell: (u16, u16)) -> [i32; 3] {
 }
 
 /// DetermineAction's 0x3D test (`0x00431090` at `0x006927BC`).
-pub(crate) fn beacon_at_cell(state: &AppState, cell: (u16, u16)) -> bool {
-    state
-        .match_state
+pub(crate) fn beacon_at_cell(match_state: &MatchState, cell: (u16, u16)) -> bool {
+    match_state
         .match_presentation
         .beacons
-        .find_at(cell_coord(state, cell))
+        .find_at(cell_coord(&match_state.sim_runtime, cell))
         .is_some()
 }
 
@@ -169,8 +166,8 @@ pub(crate) fn place_at_cell(state: &mut AppState, cell: (u16, u16)) {
         .sim_runtime
         .runtime()
         .is_none_or(|runtime| runtime.simulation.local_player_defeated());
-    if !defeated && let Some(house) = beacons::local_house_index(state) {
-        let coord = cell_coord(state, cell);
+    if !defeated && let Some(house) = beacons::local_house_index(&state.match_state.sim_runtime) {
+        let coord = cell_coord(&state.match_state.sim_runtime, cell);
         beacons::place_beacon(state, house, coord, None);
     }
     set_place_beacon_mode(state, BeaconModeRequest::Off);
@@ -178,7 +175,7 @@ pub(crate) fn place_at_cell(state: &mut AppState, cell: (u16, u16)) {
 
 /// BandBox_LeftUp's action 0x3D: `SelectBeacon 0x00430F70` at the Cell.
 pub(crate) fn select_at_cell(state: &mut AppState, cell: (u16, u16)) {
-    let coord = cell_coord(state, cell);
+    let coord = cell_coord(&state.match_state.sim_runtime, cell);
     if let Some((house, slot)) = state.match_state.match_presentation.beacons.find_at(coord) {
         crate::app::input::dispatch::unselect_all(state);
         state
@@ -192,7 +189,7 @@ pub(crate) fn select_at_cell(state: &mut AppState, cell: (u16, u16)) {
 /// `DeleteCommand 0x00731A10`'s beacon arm: with no planning node to delete,
 /// `DeleteBeacon(-1, -1)` (`0x00731A24`).
 pub(crate) fn delete_selected(state: &mut AppState) {
-    beacons::delete_beacon(state, BeaconTarget::Selected);
+    beacons::delete_beacon(&mut state.match_state, BeaconTarget::Selected);
 }
 
 #[cfg(all(test, tests_app_input_a_c))]
