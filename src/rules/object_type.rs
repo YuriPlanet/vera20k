@@ -553,6 +553,10 @@ pub struct ObjectType {
     /// `Soylent=` (TechnoType `+0x614`): when nonzero, the refund
     /// `TechnoTypeClass::GetRefund @ 0x00711F60` returns instead of the cost.
     pub soylent: i32,
+    /// `Points=` (TechnoType), the type's score value. Read only for Wasm
+    /// modules' TechnoType `Points` (RFC 0001 appendix 7.7); no simulation
+    /// rule uses it.
+    pub points: i32,
     /// `FactoryPlant=` (BuildingType `+0x16CD`): Unlimbo and ChangeOwner add
     /// the building to its House's FactoryPlant list (House `+0x140`).
     pub factory_plant: bool,

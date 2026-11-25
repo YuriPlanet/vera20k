@@ -3142,6 +3142,15 @@ impl GameEntity {
             .is_some_and(|body| body.state() == 0)
     }
 
+    /// Native Building+534 is Active (2), Begin_Mode's working body mode
+    /// (`building_construction::BuildingBodyMode::Active`).
+    pub fn in_active_bstate(&self) -> bool {
+        self.building
+            .building_body
+            .as_ref()
+            .is_some_and(|body| body.state() == 2)
+    }
+
     /// Whether [`Self::sample_building_health_for_power`] changes the sample.
     pub(crate) fn building_health_sample_changes(&self) -> bool {
         self.category == EntityCategory::Structure

@@ -1116,7 +1116,7 @@ AI 文档的读写层次见 [RFC 6d](0001-wasm-extension-modules.zh-CN.md#6d-ai)
 | `Team` | ref（小队） | R | sim | later | 加入和离开用小队动作 |
 | `Tag` | ref（标签） | W | sim | later | 写入已有标签，替换原标签（[RFC 7](0001-wasm-extension-modules.zh-CN.md#7-运行时的触发器和标签)） |
 | `DisguiseType`、`DisguiseOwner` | ref | R | own | v1 | 模拟读真实状态；无伪装为 0 |
-| `Cloaked` | bool | R | own | later |  |
+| `Cloaked` | bool | R | own | v1 | 完全隐形（隐形中、显形中读 0） |
 | `Moving` | bool | R | own | v1 |  |
 | `Facing` | int 0..255 | R | own | v1 | 车体朝向，刻度同地图单位的朝向和脚本动作 `ForceFacing` |
 | `TurretFacing` | int 0..255 | R | own | v1 | 炮塔朝向，刻度同 `Facing`；没有炮塔为 `Unsupported` |
@@ -1132,11 +1132,11 @@ AI 文档的读写层次见 [RFC 6d](0001-wasm-extension-modules.zh-CN.md#6d-ai)
 | `Engage` | enum `EngageResult` | R（视点为对象，派生·高） | own | v1 | 视点对象作为射手能否打击它；视点须是对象，否则为 `Unsupported`；复用引擎的开火许可和伤害判定 |
 | `Selected` | bool | R | 客户端专用 | v1（阶段 2） | 本地选择；模拟中为 `Unsupported` |
 | `Relation` | enum `Relation` | R（视点） | own | v1 | 与视点所属方的关系 |
-| `NearbyEnemyCount` | int | R（派生，高） | own | later | 视野（`Sight`）内的敌方对象数 |
-| `TargetInRange` | bool | R（派生，高） | own | later | 当前目标在主武器射程内 |
-| `CanFireAtTarget` | bool | R（派生，高） | own | later | 现在能向当前目标开火 |
-| `DoorOpen` | bool | W | seen | later | 建筑：工厂出口的门开着；没有出口门的建筑和其他对象为 `Unsupported`；写入只改引擎绘制的显示状态，不开始生产或出厂 |
-| `Animating` | bool | W | seen | later | 建筑：工作动画开着；其他对象为 `Unsupported`；写入只改引擎绘制的显示状态，不开始生产或出厂 |
+| `NearbyEnemyCount` | int | R（派生，高） | own | v1 | 视野（`Sight`）内的敌方对象数 |
+| `TargetInRange` | bool | R（派生，高） | own | v1 | 当前目标在对象对它选用的武器射程内（一般为主武器，目标需要时为副武器） |
+| `CanFireAtTarget` | bool | R（派生，高） | own | v1 | 现在能向当前目标开火 |
+| `DoorOpen` | bool | W | seen | v1（写入为 later） | 建筑：工厂出口的门开着；没有出口门的建筑和其他对象为 `Unsupported`；写入只改引擎绘制的显示状态，不开始生产或出厂 |
+| `Animating` | bool | W | seen | v1（写入为 later） | 建筑：工作动画开着；其他对象为 `Unsupported`；写入只改引擎绘制的显示状态，不开始生产或出厂 |
 | 可修饰属性 | 见 7.2 | | | | 可修饰 |
 
 ### 7.2 可修饰属性
@@ -1335,7 +1335,7 @@ Ares 和 Phobos 的键尚未分类。
 | --- | --- | --- | --- | --- |
 | `Frame` | int | R | all | v1 |
 | `Difficulty` | enum `Difficulty` | R | all | v1 |
-| `GameMode` | string | R | all | later |
+| `GameMode` | string | R | all | v1 |
 | `PlayerCount` | int | R | all | v1 |
 | `MissionTimer` | frames | R | all | v1（修改用原版动作 23 至 27） |
 | `MissionTimerRunning` | bool | R | all | v1 |
@@ -1562,10 +1562,10 @@ Ares 和 Phobos 的键尚未分类。
 | 模拟导入 | 除 `send_notify` 外的全部 23 个 | `send_notify` 随阶段 2 |
 | 模拟导出 | 除 `on_message` 外的全部 | `on_message` 随阶段 2 |
 | 原版和 Ares 动作 | 1、2、4、5、7、8、10..12、14、16..18、20..35、41..48、51、53..73、76..80、82..90、92..97、100..110、112、114..118、125、127..129、131..145、148、149 | 其余 |
-| TechnoType 属性 | `Category`、`Strength`、`Cost`、`Soylent`、`Speed`、`ROT`、`Crushable`、`Selfhealing`、`Explodes`、`Power`、`Sight`、`Ammo`、`InitialAmmo`、`Storage`、`Passengers`、`SizeLimit`、`TechLevel` | 其余 |
-| Weapon 属性 | `Damage`、`ROF`、`Burst`、`MinimumRange`、`Range` | 其余 |
-| Warhead 属性 | `CellSpread`、`PercentAtMax`、`Wall`、`Wood`、`Sparky`、`Fire`、`Conventional`、`Rocker`、`InfDeath` | 其余 |
+| TechnoType 属性 | `Name`、`Category`、`Buildable`、`Strength`、`Cost`、`Points`、`Soylent`、`Speed`、`ROT`、`Crushable`、`Selfhealing`、`Explodes`、`Power`、`Sight`、`Ammo`、`InitialAmmo`、`Storage`、`Passengers`、`SizeLimit`、`TechLevel` | 其余 |
+| Weapon 属性 | `Name`、`Damage`、`ROF`、`Burst`、`MinimumRange`、`Range` | 其余 |
+| Warhead 属性 | `Name`、`CellSpread`、`PercentAtMax`、`Wall`、`Wood`、`Sparky`、`Fire`、`Conventional`、`Rocker`、`InfDeath` | 其余 |
 | 名字种类 | `TechnoType`、`Weapon`、`Warhead`、`Projectile`、`Anim`、`VoxelAnim`、`ParticleSystem`、`SuperWeapon`、`Country`、`TeamType`、`Variable`、`ModuleAction`、`Property`、`ActionKind`、`String`、`ModuleEvent`；阶段 2：`Notify`、`Hotkey` | 其余；`Armor` 随 `TargetArmor` 预览 |
-| 搜索范围 | `Objects`（不含抛射体）、`Houses`（不按区域、类型、所属方筛选）、`Cells`、`Modifiers`、`SuperWeapons` | 其余 |
+| 搜索范围 | `Objects`（不含抛射体）、`Houses`（不按区域、类型、所属方筛选）、`Cells`、`Types`（TechnoType、Weapon 和 Warhead，不按区域、所属方筛选）、`Modifiers`、`SuperWeapons` | 其余 |
 | 指令 | 8.3 中除右列外的全部 | `EjectBunker` |
 | 客户端节点属性 | 7.10 中除右列外的全部 | 只属于 `Decoration` 的属性、`ItemProgress`、写 `CameoGrid` 的 `Items` |
