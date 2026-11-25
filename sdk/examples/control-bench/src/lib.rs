@@ -5,9 +5,11 @@
 //! itself, so a Battle against one computer house with nobody at the controls
 //! is enough.
 //!
-//! The engine test `ini_demo_mods_reach_their_marks` runs it
-//! (`VERA20K_TEST_INI_DEMOS`, see `README.zh-CN.md` for the mark list); a
-//! missing mark names the control point that stopped working.
+//! The engine test `control_bench_reaches_every_mark` loads it the way a
+//! mod loads (`VERA20K_TEST_CONTROL_BENCH`, see `README.zh-CN.md`): its
+//! `rules.wasm` and `rulesmd.ini` in a mod's folder, with the bench's map.
+//! A missing mark names the control point that stopped working; the
+//! `BENCH-MISSING` lines list them.
 //!
 //! The work is split by area, one file each, so the marks stay independent:
 //! - `basics`: host calls, properties, writes, variables, searches,
@@ -15,13 +17,18 @@
 //! - `triggers`: trigger events and polls, atomic and stock actions, chains,
 //!   house orders and their results, claims, INI triggers;
 //! - `combat`: the combat decisions (damage, death, fire, projectiles);
-//! - `movement`: production, command, movement, path and unit AI decisions.
+//! - `movement`: production, command, movement, path and unit AI decisions;
+//! - `finale`: once every area is done, the points that pause or end the
+//!   match (`SuspendProduction`, `Defeat`, `EndFor`); the areas' frame work
+//!   stops then.
 //!
-//! `lib` owns the exports, the dispatch, the marks and the arena.
+//! `lib` owns the exports, the dispatch, the marks, the arena and the rules
+//! stage (`on_rules`, marks `rules.*`).
 #![no_std]
 
 mod basics;
 mod combat;
+mod finale;
 mod movement;
 mod triggers;
 
@@ -34,12 +41,13 @@ use vera20k_sdk::{NO_HANDLE, get};
 
 /// Each area owns a range of trigger keys (`Trigger::enqueue`,
 /// `decide_sync`, INI registrations): `basics` 100..199, `triggers`
-/// 200..299, `combat` 300..399, `movement` 400..499. `on_events` and
-/// `on_decide` route a record by its key's hundred.
+/// 200..299, `combat` 300..399, `movement` 400..499, `finale` 500..599.
+/// `on_events` and `on_decide` route a record by its key's hundred.
 pub const BASICS: i32 = 1;
 pub const TRIGGERS: i32 = 2;
 pub const COMBAT: i32 = 3;
 pub const MOVEMENT: i32 = 4;
+pub const FINALE: i32 = 5;
 
 fn area_of(key: i32) -> i32 {
     key / 100
@@ -62,7 +70,7 @@ fn hash(name: &str) -> i64 {
 
 /// Logs `DEMO-OK <name>` the first time `name` is marked. Marks are short
 /// ASCII names, unique across the areas (each area prefixes its own:
-/// `basics.`, `triggers.`, `combat.`, `movement.`).
+/// `rules.`, `basics.`, `triggers.`, `combat.`, `movement.`, `finale.`).
 pub fn mark(name: &str) {
     let h = hash(name);
     for slot in &MARKED {
@@ -260,6 +268,83 @@ fn find_sides() -> bool {
     true
 }
 
+// ------------------------------------------------------------ Rules stage
+
+/// The rules stage's marks: `vera_init` ran before `on_rules` (both run
+/// while the rules are processed), `Rules::get` reads a retail key,
+/// TechnoType names and their properties answer there, and a
+/// `Rules::set` of a type's `Cost` is what the match's type reads.
+const RULES_MARKS: &[&str] = &["rules.init", "rules.get", "rules.type-lookup", "rules.set"];
+
+/// The type and the cost `on_rules` gives it. No one builds the Yuri
+/// Gattling tank in the bench's match.
+const SET_TYPE: &str = "YTNK";
+const SET_COST: i64 = 1234;
+const SET_COST_TEXT: &str = "1234";
+
+/// `vera_init` ran; `on_rules` wrote the cost.
+static INIT_RAN: AtomicI64 = AtomicI64::new(0);
+static COST_SET: AtomicI64 = AtomicI64::new(0);
+
+/// A decimal number, `None` for other text.
+fn parse(text: &str) -> Option<i64> {
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    let mut value: i64 = 0;
+    for b in text.bytes() {
+        if !b.is_ascii_digit() {
+            return None;
+        }
+        value = value.checked_mul(10)?.checked_add(i64::from(b - b'0'))?;
+    }
+    Some(value)
+}
+
+fn rules_stage() {
+    if INIT_RAN.load(Relaxed) != 0 && frame() == 0 {
+        mark("rules.init");
+    }
+    let mut buf = [0u8; 32];
+    // The GI's Strength, as text and as the type's property.
+    let gi = TypeRef::techno_type("E1");
+    let text = Rules::get("E1", "Strength", &mut buf).ok().and_then(parse);
+    match (gi, text) {
+        (Ok(gi), Some(text)) if get(gi, Prop::Strength) == Ok(text) && text > 0 => {
+            mark("rules.get");
+        }
+        _ => bench_fail("rules.get", "[E1] Strength did not read as the type's"),
+    }
+    let Ok(kind) = TypeRef::techno_type(SET_TYPE) else {
+        return bench_fail("rules.type-lookup", "YTNK is not a TechnoType here");
+    };
+    match get(kind, Prop::Cost) {
+        Ok(cost) if cost > 0 && cost != SET_COST => mark("rules.type-lookup"),
+        _ => return bench_fail("rules.type-lookup", "YTNK's Cost did not read"),
+    }
+    let written = Rules::set(SET_TYPE, "Cost", SET_COST_TEXT).is_ok()
+        && Rules::get(SET_TYPE, "Cost", &mut buf).ok().and_then(parse) == Some(SET_COST);
+    if written {
+        COST_SET.store(1, Relaxed);
+    } else {
+        bench_fail("rules.set", "the written Cost did not read back");
+    }
+}
+
+/// On the arena's frame: the match's type has the cost `on_rules` wrote.
+fn rules_check() {
+    if COST_SET.load(Relaxed) == 0 {
+        return;
+    }
+    let cost = TypeRef::techno_type(SET_TYPE).and_then(|kind| get(kind, Prop::Cost));
+    if cost == Ok(SET_COST) {
+        mark("rules.set");
+    } else {
+        bench_fail("rules.set", "the match's YTNK has another Cost");
+    }
+}
+
 // --------------------------------------------------------------- Exports
 
 /// The frame the arena opens on: the starting units are on the map by the
@@ -268,6 +353,7 @@ const OPEN_FRAME: i32 = 2;
 static OPEN: AtomicI64 = AtomicI64::new(0);
 
 fn init() {
+    INIT_RAN.store(1, Relaxed);
     basics::init();
     triggers::init();
     combat::init();
@@ -292,6 +378,7 @@ fn tick() {
             return log("BENCH-FAIL arena: needs one human house and a computer opponent");
         }
         OPEN.store(i64::from(now), Relaxed);
+        rules_check();
         basics::open();
         triggers::open();
         combat::open();
@@ -301,35 +388,79 @@ fn tick() {
     if OPEN.load(Relaxed) < 0 {
         return;
     }
-    basics::frame(now);
-    triggers::frame(now);
-    combat::frame(now);
-    movement::frame(now);
+    if finale_started() {
+        finale::frame(now);
+        if finale::done() {
+            report(now);
+        }
+    } else {
+        basics::frame(now);
+        triggers::frame(now);
+        combat::frame(now);
+        movement::frame(now);
+    }
     if now % 300 == 0 {
         report(now);
     }
 }
 
+/// Whether the finale began: the areas' frame work stops then.
+pub fn finale_started() -> bool {
+    finale::started()
+}
+
 static DONE: AtomicI64 = AtomicI64::new(0);
 
-/// Every 300 frames until all are in: `BENCH <reached>/<total>` and, once
-/// every area's `MARKS` is reached, the one mark `bench.all`.
+/// The areas' marks; the finale's come last.
+const AREAS: [&[&str]; 6] = [
+    RULES_MARKS,
+    basics::MARKS,
+    triggers::MARKS,
+    combat::MARKS,
+    movement::MARKS,
+    finale::MARKS,
+];
+
+/// Every `MISSING_EVERY` frames until all are in, each missing mark.
+const MISSING_EVERY: i32 = 1500;
+/// Most `BENCH-MISSING` lines a report writes.
+const MISSING_LINES: usize = 24;
+
+/// Every 300 frames until all are in, `BENCH frame <n>: <reached>/<total>`
+/// and every `MISSING_EVERY` frames a line `BENCH-MISSING <mark>` for each
+/// missing one (one pass over the marks: the frame has an operation
+/// budget). Once the match's areas (`basics` to `movement`) have every
+/// mark the finale begins; once every mark is in, the one mark `bench.all`.
 fn report(now: i32) {
     if DONE.load(Relaxed) != 0 {
         return;
     }
-    let areas = [
-        basics::MARKS,
-        triggers::MARKS,
-        combat::MARKS,
-        movement::MARKS,
-    ];
-    let total: usize = areas.iter().map(|marks| marks.len()).sum();
-    let reached = areas
-        .iter()
-        .flat_map(|marks| marks.iter())
-        .filter(|name| marked(name))
-        .count();
+    let list_missing = now % MISSING_EVERY == 0;
+    let mut listed = 0;
+    let (mut total, mut reached, mut areas_missing) = (0, 0, 0);
+    for (group, marks) in AREAS.iter().enumerate() {
+        for name in marks.iter() {
+            total += 1;
+            if marked(name) {
+                reached += 1;
+                continue;
+            }
+            if (1..AREAS.len() - 1).contains(&group) {
+                areas_missing += 1;
+            }
+            if list_missing && listed <= MISSING_LINES {
+                let mut line = Line::new();
+                line.text("BENCH-MISSING ")
+                    .text(if listed == MISSING_LINES {
+                        "..."
+                    } else {
+                        *name
+                    });
+                line.log();
+                listed += 1;
+            }
+        }
+    }
     let mut line = Line::new();
     line.text("BENCH frame ")
         .num(i64::from(now))
@@ -341,12 +472,21 @@ fn report(now: i32) {
     if reached == total {
         DONE.store(1, Relaxed);
         mark("bench.all");
+    } else if areas_missing == 0 {
+        finale::begin(now);
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn vera_init() {
     init();
+}
+
+/// The rules stage (RFC 0001 section 8): runs after `vera_init`, while the
+/// rules are processed, when the module is the selected mod's.
+#[unsafe(no_mangle)]
+pub extern "C" fn on_rules() {
+    rules_stage();
 }
 
 #[unsafe(no_mangle)]
@@ -373,6 +513,7 @@ pub extern "C" fn on_events(ptr: i32, count: i32) {
             TRIGGERS => triggers::events(record),
             COMBAT => combat::events(record),
             MOVEMENT => movement::events(record),
+            FINALE => finale::events(record),
             _ => {}
         }
     }
@@ -388,6 +529,7 @@ pub extern "C" fn on_decide(ptr: i32, count: i32) {
             TRIGGERS => triggers::decide(record),
             COMBAT => combat::decide(record),
             MOVEMENT => movement::decide(record),
+            FINALE => finale::decide(record),
             _ => {}
         }
     }

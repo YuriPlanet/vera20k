@@ -14,18 +14,18 @@
 //! opens (`setup` for the units and triggers, `steps` for the actions);
 //! `records` reads the delivered records.
 //!
+//! TeamTypes (`teams`): the bench's map adds two (`map.ini`); their names
+//! round-trip through `lookup`/`name_of`, and stock 7, 80 and 107 bring
+//! their members, stock 125 a building, each marked by its `Birth`.
+//!
 //! Not marked (left out of `MARKS`):
-//! - `EndFor`: it makes a house win or lose, which ends or decides the
-//!   bench's match for every area.
+//! - `EndFor` and the `SuspendProduction` order: the finale (`finale.rs`)
+//!   runs them once every area is done, since they end the match or pause
+//!   the enemy's production the `movement` area relies on.
 //! - `Push` and `SetFacing`: the `movement` area marks them with the
 //!   position and facing they lead to.
-//! - `Birth` of reinforcements and trigger-made buildings (stock 7, 80,
-//!   107, 125): XMP03T4 has no TeamTypes and the bench owns no waypoint
-//!   away from the start positions, so only `CreateObject`'s `Birth` is
-//!   marked.
-//! - The `SuspendProduction` order: it pauses the enemy's production of a
-//!   whole category, which the `movement` area relies on; `QueueProduction`
-//!   is marked.
+//! - `Team` of a reinforcement's member: marked `triggers.prop-team` when
+//!   the engine reads it, which this list does not count on.
 //! - Stock cell events need a bound cell's row or column crossed by a foot;
 //!   they are marked (any unit on those lines raises them), the others the
 //!   engine does not take (24, 31, 33, 51, 53, 54, 59) are not tried.
@@ -43,6 +43,7 @@ use vera20k_sdk::{NO_HANDLE, get, set};
 mod records;
 mod setup;
 mod steps;
+mod teams;
 
 // The crate's one `vera.actions` section: the names INI `Wasm:` actions
 // address. Only `triggers` declares names.
@@ -157,6 +158,12 @@ pub const MARKS: &[&str] = &[
     "triggers.claim-human",
     // INI triggers.
     "triggers.ini-trigger",
+    // TeamTypes and the objects stock actions make (`teams`).
+    "triggers.team-lookup",
+    "triggers.ev-birth-reinforce",
+    "triggers.ev-birth-reinforce-at",
+    "triggers.ev-birth-chrono",
+    "triggers.ev-birth-building",
 ];
 
 // ------------------------------------------------------------------ Keys
@@ -204,6 +211,9 @@ const K_FIRE_WARHEAD_TYPE: i32 = 238;
 const K_FIRE_PROJECTILE_TYPE: i32 = 239;
 const K_COMMANDED: i32 = 240;
 const K_ORDER_REFUSED: i32 = 241;
+const K_BIRTH_TEAM: i32 = 242;
+const K_BIRTH_CHRONO: i32 = 243;
+const K_BIRTH_BUILDING: i32 = 244;
 
 // ----------------------------------------------------------------- State
 
@@ -270,7 +280,15 @@ const UNBIND_YES: usize = 51;
 const UNBIND_NO: usize = 52;
 /// The unit `Remove` took, checked on a later frame.
 const REMOVED: usize = 53;
-const SLOTS: usize = 54;
+// TeamTypes (type references) and the types their `Birth` is bound to.
+const TEAM: usize = 54;
+const CHRONO_TEAM: usize = 55;
+const TYPE_TNKD: usize = 56;
+const TYPE_SNIPE: usize = 57;
+const TYPE_GAP: usize = 58;
+/// Which reinforcement the next Tank Destroyer's `Birth` belongs to.
+const TEAM_PHASE: usize = 59;
+const SLOTS: usize = 60;
 
 static STATE: [AtomicI64; SLOTS] = [const { AtomicI64::new(0) }; SLOTS];
 
@@ -368,6 +386,7 @@ pub fn frame(now: i32) {
     let t = i64::from(now) - ld(OPENED);
     setup::step(t);
     steps::step(t);
+    teams::step(t);
 }
 
 /// Records whose key is in this area's range.

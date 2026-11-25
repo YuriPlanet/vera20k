@@ -201,6 +201,7 @@ pub(super) fn dispatch(r: &EventRecord) {
             }
         }
         INI_DOG => ini_dog(r),
+        K_BIRTH_TEAM | K_BIRTH_CHRONO | K_BIRTH_BUILDING => super::teams::record(r),
         _ => {}
     }
 }
