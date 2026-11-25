@@ -248,6 +248,10 @@ static TR_BIRTH_YARD: V = V::new(0);
 static MC: V = V::new(0);
 static MC_AT: V = V::new(0);
 static MC_AFTER: V = V::new(0);
+static MC_BUILDING: V = V::new(0);
+static MC_PLACEABLE: V = V::new(0);
+static MC_MISPLACED: V = V::new(0);
+static MC_RUNS: V = V::new(0);
 static MC_TRIES: V = V::new(0);
 static MC_ASKED: V = V::new(0);
 static MC_ALLOW: V = V::new(0);
@@ -1386,53 +1390,92 @@ fn gi_deployed(record: &EventRecord) {
 
 /// The frame after the arena opened when the MCV scene starts even with
 /// `HarvestCell` still pending (the scene takes at most ~1000 frames).
-const MCV_LATEST: i64 = 4500;
+const MCV_LATEST: i64 = 2500;
 
 /// The MCVs tried, with the yard each deploys into.
 const MCVS: [(&str, &str); 2] = [("AMCV", "GACNST"), ("SMCV", "NACNST")];
 
-/// One page of `Placeable` cells for `yard` around the computer's first
-/// building, from `MC_AFTER` on; the first whose 5x5 block from it is level
-/// and passable takes `mcv` on its yard's deploy cell (one cell in from the
-/// corner, `deploy_origin_from_unit_cell`). The MCV, or none.
+/// One page of `Placeable` cells for `yard` in the 15x15 block around
+/// the computer's building number `MC_BUILDING` (creation order), from
+/// `MC_AFTER` on; the first whose 4x4 foundation is level takes `mcv` on
+/// its yard's deploy cell (one cell in from the corner,
+/// `deploy_origin_from_unit_cell`). A building whose block is scanned moves
+/// the search to the next one; after the last, a round ends (`MC_TRIES`).
+/// The MCV, or none.
 fn place_mcv(mcv: TypeRef, yard: TypeRef) -> Option<Techno> {
-    let first = Find::objects()
+    let mut buildings = [NO_HANDLE; 48];
+    let count = Find::objects()
         .owned_by(enemy())
         .where_prop(Prop::Category, Op::Eq, Category::Building as i64)
-        .first();
-    let base = Cell(get(Techno(first), Prop::Cell).ok()?);
+        .page(&mut buildings, 0)
+        .map_or(0, |(count, _)| count);
+    let index = MC_BUILDING.get() as usize;
+    if index >= count {
+        MC_BUILDING.set(0);
+        MC_AFTER.set(0);
+        MC_TRIES.add(1);
+        return None;
+    }
+    let Ok(base) = get(Techno(buildings[index]), Prop::Cell) else {
+        MC_BUILDING.add(1);
+        return None;
+    };
     let mut out = [NO_HANDLE; 16];
-    let (count, next) = Find::cells()
-        .within(offset(base, -8, -8), 17, 17)
+    let found = Find::cells()
+        .within(offset(Cell(base), -7, -7), 15, 15)
         .of_type(yard)
         .seen_by(enemy())
         .where_prop(Prop::Placeable, Op::Eq, 1)
-        .page(&mut out, MC_AFTER.get())
-        .ok()?;
+        .page(&mut out, MC_AFTER.get());
+    let (found, next) = found.unwrap_or((0, 0));
+    MC_PLACEABLE.add(found as i64);
     MC_AFTER.set(next);
-    for &corner in &out[..count] {
+    if next == 0 {
+        MC_BUILDING.add(1);
+    }
+    for &corner in &out[..found] {
         let corner = Cell(corner);
         let Ok(level) = corner.height() else {
             continue;
         };
-        let clear = (0..5).all(|y| {
-            (0..5).all(|x| {
-                let cell = offset(corner, x, y);
-                cell.height().is_ok_and(|h| h == level) && passable(cell)
-            })
-        });
-        if !clear {
+        let level_ground =
+            (0..4).all(|y| (0..4).all(|x| offset(corner, x, y).height().is_ok_and(|h| h == level)));
+        if !level_ground {
             continue;
         }
         let at = offset(corner, 1, 1);
-        if let Ok(unit) = Action::create_object(at, mcv, enemy()) {
-            if cell_of(unit) == at {
-                return Some(unit);
+        match Action::create_object(at, mcv, enemy()) {
+            Ok(unit) if cell_of(unit) == at => return Some(unit),
+            Ok(unit) => {
+                let _ = Action::remove(unit);
+                MC_MISPLACED.add(1);
             }
-            let _ = Action::remove(unit);
+            Err(_) => MC_MISPLACED.add(1),
         }
     }
     None
+}
+
+/// `BENCH-DIAG` for the MCV scene: why it stopped short.
+fn mcv_diag(why: &str) {
+    let mut line = crate::Line::new();
+    line.text("BENCH-DIAG movement.DeployMcv ")
+        .text(why)
+        .text(": rounds ")
+        .num(MC_TRIES.get())
+        .text(" placeable ")
+        .num(MC_PLACEABLE.get())
+        .text(" misplaced ")
+        .num(MC_MISPLACED.get())
+        .text(" asked ")
+        .num(MC_ASKED.get())
+        .text(" allow ")
+        .num(MC_ALLOW.get())
+        .text(" yard ")
+        .num(i64::from(MC_YARD.get() != 0))
+        .text(" born ")
+        .num(i64::from(MC_BORN.get() != 0));
+    line.log();
 }
 
 /// Spawns the first known MCV of `MCVS` on a placeable spot and binds its
@@ -1491,23 +1534,24 @@ fn deploy_mcv(now: i64, since: i64) {
         // the computer's base and Paranoid, which may change where its
         // harvesters go next.
         0 if since >= 40 && now >= MC_AT.get() && (HC.get() == DONE || since >= MCV_LATEST) => {
+            let rounds = MC_TRIES.get();
             if next_mcv() {
                 MC_AT.set(now);
                 MC.set(1);
-            } else if MC_AFTER.get() == 0 {
-                // A whole scan without a spot: again later, three times.
-                MC_TRIES.add(1);
-                MC_AT.set(now + 300);
-                if MC_TRIES.get() >= 3 {
-                    MC.set(DONE);
-                }
+            } else if MC_TRIES.get() >= 3 {
+                mcv_diag("no spot");
+                MC.set(DONE);
+            } else if MC_TRIES.get() > rounds {
+                // Every building's block scanned without a spot: again a
+                // little later (the base and its units change).
+                MC_AT.set(now + 60);
             }
         }
         1 if now >= MC_AT.get() + 15 => {
             MC_AT.set(now);
             MC.set(2);
             if !order_deploy(mcv) {
-                mcv_finish();
+                mcv_retry(now, "deploy order");
             }
         }
         2 if now >= MC_AT.get() + 90 => {
@@ -1516,10 +1560,10 @@ fn deploy_mcv(now: i64, since: i64) {
                 MC_AT.set(now);
                 MC.set(3);
                 if !order_deploy(mcv) {
-                    mcv_finish();
+                    mcv_retry(now, "allowed order");
                 }
             } else if now > MC_AT.get() + 300 || !alive(mcv) {
-                mcv_finish();
+                mcv_retry(now, "veto never asked");
             }
         }
         3 => {
@@ -1536,14 +1580,36 @@ fn deploy_mcv(now: i64, since: i64) {
                 }
                 mcv_finish();
             } else if now > MC_AT.get() + 300 {
-                mcv_finish();
+                mcv_retry(now, "no deploy after the allow");
             }
         }
         _ => {}
     }
 }
 
+/// A scene that stopped short: logs why and starts again on a new spot,
+/// three runs at most.
+fn mcv_retry(now: i64, why: &str) {
+    mcv_diag(why);
+    mcv_cleanup();
+    MC_RUNS.add(1);
+    if MC_RUNS.get() >= 3 {
+        MC.set(DONE);
+        return;
+    }
+    for slot in [&MC_ASKED, &MC_ALLOW, &MC_YARD, &MC_BORN, &MC_TRIES] {
+        slot.set(0);
+    }
+    MC_AT.set(now + 30);
+    MC.set(0);
+}
+
 fn mcv_finish() {
+    mcv_cleanup();
+    MC.set(DONE);
+}
+
+fn mcv_cleanup() {
     if MC_CLAIM.get() == 1 {
         claim_forces(false);
     }
@@ -1555,7 +1621,6 @@ fn mcv_finish() {
     disable(&TR_MCV_DA);
     disable(&TR_MCV_DEPLOYED);
     disable(&TR_BIRTH_YARD);
-    MC.set(DONE);
 }
 
 fn decide_mcv_deploy(mut d: DeployAllowedDecision) {
