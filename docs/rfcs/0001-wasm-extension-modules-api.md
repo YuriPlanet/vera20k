@@ -1116,7 +1116,7 @@ Properties of a `Techno`. Only the final row supports modifiers.
 | `Team` | ref (team) | R | sim | later | Join and leave with team actions |
 | `Tag` | ref (tag) | W | sim | later | Writing an existing tag replaces the old tag ([RFC 7](0001-wasm-extension-modules.md#7-runtime-triggers-and-tags)) |
 | `DisguiseType`, `DisguiseOwner` | ref | R | own | v1 | Simulation reads the actual state. 0 if undisguised |
-| `Cloaked` | bool | R | own | later |  |
+| `Cloaked` | bool | R | own | v1 | Fully cloaked (cloaking and uncloaking read 0) |
 | `Moving` | bool | R | own | v1 |  |
 | `Facing` | int 0..255 | R | own | v1 | Body facing, in the same units as map unit facing and the `ForceFacing` script action |
 | `TurretFacing` | int 0..255 | R | own | v1 | Turret facing in `Facing` units. `Unsupported` without a turret |
@@ -1132,11 +1132,11 @@ Properties of a `Techno`. Only the final row supports modifiers.
 | `Engage` | enum `EngageResult` | R (viewpoint object, derived, high) | own | v1 | Whether the viewpoint object as shooter can strike it. The viewpoint must be an object, otherwise `Unsupported`. Reuses the engine's fire permission and damage checks |
 | `Selected` | bool | R | Client only | v1 (phase 2) | Local selection. `Unsupported` in the simulation |
 | `Relation` | enum `Relation` | R (viewpoint) | own | v1 | Relationship to the viewpoint house |
-| `NearbyEnemyCount` | int | R (derived, high) | own | later | Number of enemy objects within sight (`Sight`) |
-| `TargetInRange` | bool | R (derived, high) | own | later | Current target is within primary weapon range |
-| `CanFireAtTarget` | bool | R (derived, high) | own | later | Can fire at the current target now |
-| `DoorOpen` | bool | W | seen | later | Whether the factory exit door is open. `Unsupported` for buildings without an exit door and for other objects. Writing changes the displayed state without starting production or dispatching a unit |
-| `Animating` | bool | W | seen | later | Whether the building's working animation is active. `Unsupported` for other objects. Writing changes the displayed state without starting production or dispatching a unit |
+| `NearbyEnemyCount` | int | R (derived, high) | own | v1 | Number of enemy objects within sight (`Sight`) |
+| `TargetInRange` | bool | R (derived, high) | own | v1 | Current target is within range of the weapon the object selects against it (the primary unless the target calls for the secondary) |
+| `CanFireAtTarget` | bool | R (derived, high) | own | v1 | Can fire at the current target now |
+| `DoorOpen` | bool | W | seen | v1 (writing later) | Whether the factory exit door is open. `Unsupported` for buildings without an exit door and for other objects. Writing changes the displayed state without starting production or dispatching a unit |
+| `Animating` | bool | W | seen | v1 (writing later) | Whether the building's working animation is active. `Unsupported` for other objects. Writing changes the displayed state without starting production or dispatching a unit |
 | Modifiable properties | See 7.2 | | | | Modifiable |
 
 ### 7.2 Modifiable properties
@@ -1335,7 +1335,7 @@ Global rules reference (kind 4) for scenario and global state.
 | --- | --- | --- | --- | --- |
 | `Frame` | int | R | all | v1 |
 | `Difficulty` | enum `Difficulty` | R | all | v1 |
-| `GameMode` | string | R | all | later |
+| `GameMode` | string | R | all | v1 |
 | `PlayerCount` | int | R | all | v1 |
 | `MissionTimer` | frames | R | all | v1 (change with stock actions 23 through 27) |
 | `MissionTimerRunning` | bool | R | all | v1 |
@@ -1562,10 +1562,10 @@ Tables with a tier column follow that column. This section covers the rest. Each
 | Simulation imports | All 23 other than `send_notify` | `send_notify` with phase 2 |
 | Simulation exports | All other than `on_message` | `on_message` with phase 2 |
 | Stock and Ares actions | 1, 2, 4, 5, 7, 8, 10..12, 14, 16..18, 20..35, 41..48, 51, 53..73, 76..80, 82..90, 92..97, 100..110, 112, 114..118, 125, 127..129, 131..145, 148, 149 | The rest |
-| TechnoType properties | `Category`, `Strength`, `Cost`, `Soylent`, `Speed`, `ROT`, `Crushable`, `Selfhealing`, `Explodes`, `Power`, `Sight`, `Ammo`, `InitialAmmo`, `Storage`, `Passengers`, `SizeLimit`, `TechLevel` | The rest |
-| Weapon properties | `Damage`, `ROF`, `Burst`, `MinimumRange`, `Range` | The rest |
-| Warhead properties | `CellSpread`, `PercentAtMax`, `Wall`, `Wood`, `Sparky`, `Fire`, `Conventional`, `Rocker`, `InfDeath` | The rest |
+| TechnoType properties | `Name`, `Category`, `Buildable`, `Strength`, `Cost`, `Points`, `Soylent`, `Speed`, `ROT`, `Crushable`, `Selfhealing`, `Explodes`, `Power`, `Sight`, `Ammo`, `InitialAmmo`, `Storage`, `Passengers`, `SizeLimit`, `TechLevel` | The rest |
+| Weapon properties | `Name`, `Damage`, `ROF`, `Burst`, `MinimumRange`, `Range` | The rest |
+| Warhead properties | `Name`, `CellSpread`, `PercentAtMax`, `Wall`, `Wood`, `Sparky`, `Fire`, `Conventional`, `Rocker`, `InfDeath` | The rest |
 | Name kinds | `TechnoType`, `Weapon`, `Warhead`, `Projectile`, `Anim`, `VoxelAnim`, `ParticleSystem`, `SuperWeapon`, `Country`, `TeamType`, `Variable`, `ModuleAction`, `Property`, `ActionKind`, `String`, `ModuleEvent`. Phase 2: `Notify`, `Hotkey` | The rest. `Armor` previews with `TargetArmor` |
-| Search scopes | `Objects` (no projectiles), `Houses` (no area, type or owner filter), `Cells`, `Modifiers`, `SuperWeapons` | The rest |
+| Search scopes | `Objects` (no projectiles), `Houses` (no area, type or owner filter), `Cells`, `Types` (TechnoType, Weapon and Warhead, no area or owner filter), `Modifiers`, `SuperWeapons` | The rest |
 | Commands | All in 8.3 except the right column | `EjectBunker` |
 | Client node properties | All in 7.10 except the right column | Properties only of `Decoration`, `ItemProgress`, writing `Items` of a `CameoGrid` |

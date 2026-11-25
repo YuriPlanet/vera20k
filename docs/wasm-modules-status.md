@@ -434,8 +434,9 @@ separate work):
   without range, the selected Warhead's Verses against the target's armor, InRange).
   `Query.viewpoint` may be an object: `Engage` reads for it, house viewpoint
   properties for its owner; filter clauses keep the trigger house. A clause on a
-  "derived, high" property (`HIGH_COST_PROPERTIES`, now `Engage`) costs
-  `HIGH_CLAUSE_COST` (60) more per candidate.
+  "derived, high" property (`HIGH_COST_PROPERTIES`: `Engage`, `NearbyEnemyCount`,
+  `TargetInRange`, `CanFireAtTarget`) costs `HIGH_CLAUSE_COST` (60) more per
+  candidate.
 - Houses: `Factory.<Kind>.Type/Progress/Ready/Queued` for the six kinds, from the
   House slot factory or, for a computer house, the first building-held one.
 - Cells: `Zone.<MovementZone>` (MapClass::GetZoneID `0x0056D230`), `Obstructed`
@@ -621,6 +622,29 @@ modules, external modders, freeze), and the later items (peer calls,
   field `native_rots`) and restored exactly. Test in
   `ext_modules_movement_tests.rs`.
 
+## Done (properties past the first set)
+
+`src/sim/ext_modules/props.rs` (its module doc has the owner of each):
+
+- Objects: `Cloaked` (CloakState 2), `NearbyEnemyCount` (enemies of the owner
+  within `Sight=`), `TargetInRange` and `CanFireAtTarget` against TarCom
+  (`Simulation::target_check`: InRange and GetFireError with range of the slot
+  SelectWeapon picks), `DoorOpen` (DoorClass not closed; war factories, gates,
+  vehicles with `Passengers=`), `Animating` (BState Active). The three searches
+  are "derived, high" (`HIGH_COST_PROPERTIES`).
+- Types: TechnoType `Points` (`Points=`, parsed into `ObjectType::points`), any
+  rules type's `Name` and the global `GameMode` (the session's multiplayer mode
+  class, its `mpmodes` section) as string IDs; `get` adds the text to the string
+  table (saved and hashed), a filter clause only finds a held one. `Name` reads
+  in `on_rules` too.
+- TechnoType `Buildable` (viewpoint: `production::buildable_by_player`) and
+  `find` scope 3 `Types` (TechnoTypes, Weapons, Warheads; wildcard or one type;
+  no area or owner). SDK `Find::types`, `TypeRef::any`.
+- Tests: `ext_modules_drive_tests.rs` (the GI duel's reads, a war factory's door,
+  names, points, `GameMode`, `Types` with `Buildable`),
+  `ext_modules_control_tests.rs` (`Cloaked` under the cloak modifiers). Control
+  Bench marks `basics.type-name` .. `basics.door-open`.
+
 ## Residuals
 
 - Untested control points (no reliable retail scene in the headless harness):
@@ -670,10 +694,15 @@ modules, external modders, freeze), and the later items (peer calls,
   `ROFMultiplier.ApplyOnCurrentTimer` is not applied; `Cloakable` Override 0 does
   not remove a type's own `Cloakable=`. Timed conversions are in the state hash, not
   the MP checksum.
-- Properties not read: `Team`/`Tag` values (no references), `GameMode`, `Name`,
-  `Buildable`, `Points`, the house's `IsCivilian` (answers `Unsupported`, so a clause
-  on it matches nothing; found by `sdk/examples/veteran-fury`), the `v1?` object
-  properties; `lookup(Armor)`,
+- Properties not read: `Team`/`Tag` values (teams and tags have no kind 0
+  handles: teams number from their own counter, tags are tag-storage indices,
+  and a handle would change the save layout), a house's `Name` (player names are
+  not simulation state), `ControlGroup` (client only: the local player's groups
+  would desync the simulation), `DisguiseType` of a Mirage disguised as terrain
+  (no name kind for terrain types), the house's `IsCivilian` (answers `Unsupported`,
+  so a clause on it matches nothing; found by `sdk/examples/veteran-fury`);
+  `DoorOpen` and `Animating` are not writable, and `Animating` reads 1 only for the
+  missile silo's launch (art `AnimActive=` is not bound); `lookup(Armor)`,
   `lookup(Sound)`; `Passable` ignores objects and overlays; `PropertyPoll` reads
   without a viewpoint.
 - `Health` writes of 0 or less answer `Refused`; an `Ammo` write restarts a running

@@ -151,10 +151,11 @@ pub const ENTRY_COST: u64 = 10;
 pub const SCAN_COST: u64 = 2;
 pub const CLAUSE_COST: u64 = 6;
 /// What a clause on a "derived, high" property (appendix 7: a fire or range
-/// check per candidate) adds to [`CLAUSE_COST`].
+/// check or a nearby search per candidate) adds to [`CLAUSE_COST`].
 pub const HIGH_CLAUSE_COST: u64 = 60;
 /// The "derived, high" properties a host evaluates.
-pub const HIGH_COST_PROPERTIES: &[&str] = &["Engage"];
+pub const HIGH_COST_PROPERTIES: &[&str] =
+    &["Engage", "NearbyEnemyCount", "TargetInRange", "CanFireAtTarget"];
 /// Candidates one `find` examines at most (RFC 15.4); fewer where they
 /// would cost more than half the call's budget.
 pub const MAX_SCAN: u64 = 16_384;
@@ -195,6 +196,7 @@ pub const TABLE_SCOPE: i32 = 4;
 pub const SCOPE_OBJECTS: i32 = 0;
 pub const SCOPE_HOUSES: i32 = 1;
 pub const SCOPE_CELLS: i32 = 2;
+pub const SCOPE_TYPES: i32 = 3;
 pub const SCOPE_MODIFIERS: i32 = 7;
 pub const SCOPE_SUPER_WEAPONS: i32 = 8;
 pub const SCOPES: i32 = 9;

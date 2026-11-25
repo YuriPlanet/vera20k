@@ -763,6 +763,46 @@ fn cloakable_and_force_decloak_raise_the_cloak_edges() {
     }
 }
 
+/// `Cloaked` reads CloakState 2: 0 at first, 1 once a `Cloakable`
+/// override has cloaked the unit, 0 again after a `ForceDecloak` override.
+#[test]
+fn cloaked_reads_the_cloak_state() {
+    use super::modifiers::{ModifierOp, Stat};
+    let Some(scene) = scenario() else { return };
+    let (unit, _) = ground_unit(&scene);
+    let edge = def(0, 2, &[Ev::on(EVENT_CLOAKED)], &[]);
+    let mut scene = installed(scene, &module(&edge, unit as i64, ""));
+    let cloaked = |scene: &mut HeadlessScenario| {
+        let runtime = &mut scene.runtime;
+        runtime
+            .simulation
+            .with_module_host(&runtime.resources.rules, super::ModuleSource::Map, |host| {
+                host.read(unit as i64, super::tests::prop("Cloaked"))
+            })
+            .expect("a valid read")
+    };
+    let ok = |value| (value, vera20k_wasm_ext::Status::Ok);
+    assert_eq!(cloaked(&mut scene), ok(0));
+    put_modifier(&mut scene, unit, Stat::Cloakable, ModifierOp::Override, 1);
+    let on = (0..300).any(|_| {
+        scene.tick();
+        cloaked(&mut scene) == ok(1)
+    });
+    assert!(on, "the unit cloaks");
+    put_modifier(
+        &mut scene,
+        unit,
+        Stat::ForceDecloak,
+        ModifierOp::Override,
+        1,
+    );
+    let off = (0..300).any(|_| {
+        scene.tick();
+        cloaked(&mut scene) == ok(0)
+    });
+    assert!(off, "the unit uncloaks");
+}
+
 /// Fly's paid speed and Rocket's type speed scale by the module
 /// `SpeedMultiplier` alone, truncated toward zero; without one they stay.
 #[test]

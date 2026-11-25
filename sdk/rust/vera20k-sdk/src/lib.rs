@@ -230,6 +230,12 @@ impl TypeRef {
     pub const fn id(self) -> i32 {
         self.0 as i32
     }
+
+    /// The wildcard of name kind `kind` (ID `0xFFFFFFFF`), for
+    /// [`Find::types`] only.
+    pub const fn any(kind: NameKind) -> Self {
+        Self::new(kind, -1)
+    }
 }
 
 // ------------------------------------------------------------------- Enums
@@ -1523,6 +1529,13 @@ impl Find {
     /// [`Find::within`].
     pub fn cells() -> Self {
         Self::scope(2)
+    }
+
+    /// Types, by type ID: [`TypeRef::any`] lists every type of its name
+    /// kind, a specific type only itself (TechnoTypes, Weapons, Warheads).
+    /// A `Buildable` clause reads for [`Find::seen_by`]'s house.
+    pub fn types(ty: TypeRef) -> Self {
+        Self::scope(3).of_type(ty)
     }
 }
 

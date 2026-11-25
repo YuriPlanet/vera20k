@@ -13,15 +13,24 @@
 //! runs per frame over the first ~45 frames after the arena opens; the
 //! enemy's factories and its build area are polled later.
 //!
+//! From the 47th frame the properties past the first set: an enemy HTNK
+//! made and removed beside A within one frame (`NearbyEnemyCount`), a
+//! player MTNK that cloaks under a `Cloakable` modifier and uncloaks under
+//! `ForceDecloak` (`Cloaked`), and a player MTNK ordered to attack a far
+//! enemy HTNK, then a near one (`TargetInRange`, `CanFireAtTarget`); the
+//! enemy's war factory door is polled once it stands (`DoorOpen`).
+//!
 //! Not marked (left out of `MARKS`):
 //! - `lookup`/`name_of(TeamType)`: TeamType IDs are the map's own team
 //!   definitions and XMP03T4 has none to look up; `name_of` with an ID that
 //!   names nothing stops the module, so there is nothing safe to try.
 //! - `lookup`/`name_of(ModuleAction)`: the crate's `named_actions!` is
 //!   `triggers`'s, whose names this area does not know.
-//! - `ControlGroup` (client only), `GameMode`, `Team`/`Tag` on a member,
-//!   `Cloaked`, `NearbyEnemyCount` and the other properties the engine does
-//!   not read yet (`src/sim/ext_modules/props.rs` residuals).
+//! - `ControlGroup` (client only: the local player's groups), `Team`/`Tag`
+//!   on a member and a house's `Name` (no references or text the engine
+//!   reads, `src/sim/ext_modules/props.rs` residuals).
+//! - `Animating` reading 1: only a missile silo's launch begins the working
+//!   body mode; the mark checks 0 on a building and `Unsupported` on a tank.
 //! - `CritMultiplier`, `CritExtraChance` and `Unkillable` work only in a
 //!   Phobos build. Their marks pass either way: in a Phobos build when the
 //!   modifier reads back, otherwise when `has_kind` says 0 and `modify`
@@ -116,6 +125,17 @@ pub const MARKS: &[&str] = &[
     "basics.ini-entry",
     "basics.ini-key",
     "basics.module-event",
+    "basics.type-name",
+    "basics.points",
+    "basics.game-mode",
+    "basics.buildable",
+    "basics.find-types",
+    "basics.animating",
+    "basics.nearby-enemies",
+    "basics.cloaked",
+    "basics.target-in-range",
+    "basics.can-fire",
+    "basics.door-open",
 ];
 
 // ------------------------------------------------------------------ Keys
@@ -160,6 +180,17 @@ static SUPER: AtomicI64 = AtomicI64::new(NO_HANDLE);
 static EXPIRING: AtomicI64 = AtomicI64::new(NO_HANDLE);
 /// `IniEntry` records seen right: bit 0 the first entry, bit 1 the second.
 static ENTRIES: AtomicI64 = AtomicI64::new(0);
+/// Player MTNK that cloaks and uncloaks.
+static CLOAKER: AtomicI64 = AtomicI64::new(NO_HANDLE);
+/// 1 once `CLOAKER` read cloaked and `ForceDecloak` was added.
+static CLOAK_SEEN: AtomicI64 = AtomicI64::new(0);
+/// Player MTNK for the target reads, its far and its near enemy.
+static SHOOTER: AtomicI64 = AtomicI64::new(NO_HANDLE);
+static FAR_FOE: AtomicI64 = AtomicI64::new(NO_HANDLE);
+static NEAR_FOE: AtomicI64 = AtomicI64::new(NO_HANDLE);
+/// The enemy's war factory, and 1 once its door read shut.
+static WAR_FACTORY: AtomicI64 = AtomicI64::new(NO_HANDLE);
+static DOOR_SHUT: AtomicI64 = AtomicI64::new(0);
 
 fn unit(slot: &AtomicI64) -> Techno {
     Techno(slot.load(Relaxed))
@@ -331,12 +362,14 @@ pub fn frame(now: i32) {
         13 => write_owner_away(),
         14 => write_owner_back(),
         15 => write_mission(),
+        16 => type_name_and_points(),
         17 => write_ammo(),
         18 => spawn_building(),
         19 => write_online(),
         20 => modifier_compose(),
         21 => modifier_group(),
         22 => modifier_props(),
+        23 => game_mode(),
         24 => stat(Prop::ArmorMultiplier, "basics.mod-armor"),
         25 => stat(Prop::SpeedMultiplier, "basics.mod-speed"),
         26 => stat(Prop::ROFMultiplier, "basics.mod-rof"),
@@ -348,6 +381,7 @@ pub fn frame(now: i32) {
         32 => immunity(),
         33 => stat(Prop::ROTMultiplier, "basics.mod-rot"),
         34 => modifier_expire_start(),
+        35 => find_types(),
         40 => raise_event(),
         42 => modifier_expire_check(),
         45 => {
@@ -356,7 +390,22 @@ pub fn frame(now: i32) {
                 let _ = Action::remove(e);
             }
         }
+        47 => nearby_enemies(),
+        50 => cloak_start(),
+        60 => target_start(),
         _ => {}
+    }
+    if (51..=900).contains(&step) && !marked("basics.cloaked") {
+        cloak_poll(step == 900);
+    }
+    if (61..=600).contains(&step) && !marked("basics.can-fire") {
+        target_poll(step == 600);
+    }
+    if step >= 35 && step % 100 == 35 && !marked("basics.buildable") {
+        buildable_poll();
+    }
+    if step >= 100 && !marked("basics.door-open") {
+        door_poll(step);
     }
     if (15..=60).contains(&step) && !marked("basics.set-mission") {
         mission_poll();
@@ -406,9 +455,10 @@ fn host_calls(now: i32) {
         && has_kind(2, Prop::Health.0)
         && has_kind(2, Prop::FirepowerMultiplier.0)
         && has_kind(3, NameKind::TechnoType as i32)
+        && has_kind(4, 3)
         && has_kind(4, 7)
         && has_kind(4, 8);
-    let no = !has_kind(4, 3) && !has_kind(3, 22) && !has_kind(1, 1999);
+    let no = !has_kind(4, 4) && !has_kind(3, 22) && !has_kind(1, 1999);
     check(
         "basics.has-kind",
         yes && no,
@@ -1164,6 +1214,15 @@ fn write_online() {
     let on = building.set_online(true).is_ok() && get(building, Prop::Online) == Ok(1);
     // A tank has no Online.
     let tank = get(unit(&UNIT_A), Prop::Online) == Err(Status::Unsupported);
+    // Not in the working body mode, not a factory; a tank has neither.
+    let a = unit(&UNIT_A);
+    check(
+        "basics.animating",
+        get(building, Prop::Animating) == Ok(0)
+            && get(building, Prop::DoorOpen) == Err(Status::Unsupported)
+            && get(a, Prop::Animating) == Err(Status::Unsupported),
+        "Animating reads wrong",
+    );
     let _ = Action::remove(building);
     check(
         "basics.set-online",
@@ -1488,4 +1547,320 @@ fn module_event(record: ModuleEventRecord) {
             && record.value2() == 88,
         "the module event's record reads wrong",
     );
+}
+
+// ---------------------------------------------- Properties past the first set
+
+/// A type's `Name` round trip (string ID, `name_of`, `lookup(String)`), and
+/// TechnoType `Points`: the rules' `Points=` where the merged text holds it,
+/// and a `Types` query on the value finds the type.
+fn type_name_and_points() {
+    let Some(mtnk) = tank_type() else {
+        return bench_fail("basics.type-name", "MTNK does not resolve");
+    };
+    let mut buf = [0u8; 32];
+    let id = get(mtnk, Prop::Name).unwrap_or(0);
+    let named = id > 0 && name_of(NameKind::String, id as i32, &mut buf).is_ok_and(|n| n == "MTNK");
+    check(
+        "basics.type-name",
+        named
+            && lookup(NameKind::String, "MTNK") == Ok(id as i32)
+            && get(mtnk, Prop::Name) == Ok(id),
+        "a type's Name does not round-trip",
+    );
+    let Ok(points) = get(mtnk, Prop::Points) else {
+        return bench_fail("basics.points", "Points does not read");
+    };
+    let mut text = [0u8; 16];
+    let rules = Rules::get("MTNK", "Points", &mut text)
+        .ok()
+        .and_then(ini::int);
+    let mut out = [NO_HANDLE; 1];
+    let found = Find::types(mtnk)
+        .where_prop(Prop::Points, Op::Eq, points)
+        .page(&mut out, 0)
+        .is_ok_and(|(n, _)| n == 1 && out[0] == mtnk.0);
+    check(
+        "basics.points",
+        points >= 0 && found && rules.is_none_or(|value| value == points),
+        "Points differs from the rules",
+    );
+}
+
+/// The global `GameMode`: 0 without a multiplayer mode, else a string the
+/// engine holds (`lookup(String)` finds it again).
+fn game_mode() {
+    let Ok(id) = get(Global, Prop::GameMode) else {
+        return bench_fail("basics.game-mode", "GameMode does not read");
+    };
+    let mut buf = [0u8; 32];
+    let ok = id == 0
+        || name_of(NameKind::String, id as i32, &mut buf)
+            .is_ok_and(|mode| !mode.is_empty() && lookup(NameKind::String, mode) == Ok(id as i32));
+    check("basics.game-mode", ok, "GameMode is not a held string");
+}
+
+/// `find` scope 3: every TechnoType for the wildcard, page by page, and a
+/// `Category` clause that keeps MTNK among the vehicles.
+fn find_types() {
+    let Some(mtnk) = tank_type() else {
+        return;
+    };
+    let mut out = [NO_HANDLE; 64];
+    let (mut total, mut vehicles, mut after) = (0usize, 0usize, 0i64);
+    let mut has_tank = false;
+    let mut query = Find::types(TypeRef::any(NameKind::TechnoType));
+    loop {
+        let Ok((n, next)) = query.page(&mut out, after) else {
+            return bench_fail("basics.find-types", "a Types page failed");
+        };
+        total += n;
+        if next == 0 {
+            break;
+        }
+        after = next;
+    }
+    let mut query = Find::types(TypeRef::any(NameKind::TechnoType)).where_prop(
+        Prop::Category,
+        Op::Eq,
+        Category::Vehicle as i64,
+    );
+    after = 0;
+    loop {
+        let Ok((n, next)) = query.page(&mut out, after) else {
+            return bench_fail("basics.find-types", "a Types page failed");
+        };
+        vehicles += n;
+        has_tank |= out[..n].contains(&mtnk.0);
+        if next == 0 {
+            break;
+        }
+        after = next;
+    }
+    check(
+        "basics.find-types",
+        has_tank && vehicles > 0 && vehicles < total,
+        "the Types search is wrong",
+    );
+}
+
+/// `Buildable` for the enemy (a computer house: CanBuild passes, the
+/// requirements and prerequisites decide): some type it can build, and the
+/// other sides' battle labs, which it cannot.
+fn buildable_poll() {
+    let mut out = [NO_HANDLE; 8];
+    let some = Find::types(TypeRef::any(NameKind::TechnoType))
+        .seen_by(enemy())
+        .where_prop(Prop::Buildable, Op::Eq, 1)
+        .page(&mut out, 0)
+        .is_ok_and(|(n, _)| n > 0);
+    if !some {
+        return;
+    }
+    let mut labs = 0;
+    let mut refused = 0;
+    for name in ["GATECH", "NATECH", "YATECH"] {
+        let Ok(lab) = TypeRef::techno_type(name) else {
+            continue;
+        };
+        labs += 1;
+        let no = Find::types(lab)
+            .seen_by(enemy())
+            .where_prop(Prop::Buildable, Op::Eq, 0)
+            .first();
+        if no == lab.0 {
+            refused += 1;
+        }
+    }
+    let plain = get(unit(&UNIT_A), Prop::Buildable) == Err(Status::Unsupported);
+    // At least two of the three labs belong to another side.
+    check(
+        "basics.buildable",
+        labs == 3 && refused >= 2 && plain,
+        "Buildable read wrong",
+    );
+}
+
+/// `NearbyEnemyCount` of A rises by one for an enemy made beside it and
+/// falls back once that one is removed, all within this frame.
+fn nearby_enemies() {
+    let a = unit(&UNIT_A);
+    let Ok(cell) = get(a, Prop::Cell) else {
+        return bench_fail("basics.nearby-enemies", "unit A is missing");
+    };
+    let Ok(before) = get(a, Prop::NearbyEnemyCount) else {
+        return bench_fail("basics.nearby-enemies", "NearbyEnemyCount does not read");
+    };
+    let Some(foe) = spawn(offset(Cell(cell), 1, 1), "HTNK", enemy()) else {
+        return bench_fail("basics.nearby-enemies", "no enemy could be made beside A");
+    };
+    let with = get(a, Prop::NearbyEnemyCount);
+    let _ = Action::remove(foe);
+    let after = get(a, Prop::NearbyEnemyCount);
+    check(
+        "basics.nearby-enemies",
+        with == Ok(before + 1) && after == Ok(before),
+        "NearbyEnemyCount does not follow the enemy",
+    );
+}
+
+/// A player MTNK with a `Cloakable` modifier, apart from the others.
+fn cloak_start() {
+    let Some(c) = spawn(offset(arena(BASICS), -3, 3), "MTNK", player()) else {
+        return bench_fail("basics.cloaked", "no cloaker could be made");
+    };
+    CLOAKER.store(c.0, Relaxed);
+    if get(c, Prop::Cloaked) != Ok(0)
+        || Modifier::new(c, Prop::Cloakable, ModifierOp::Override, 1, -1, 0, 97).is_err()
+    {
+        bench_fail("basics.cloaked", "the cloaker starts wrong");
+    }
+}
+
+/// Until the cloaker reads cloaked, then `ForceDecloak` until it reads 0
+/// again; removed when done or at the `last` poll.
+fn cloak_poll(last: bool) {
+    let c = unit(&CLOAKER);
+    if !alive(c) {
+        return;
+    }
+    let cloaked = get(c, Prop::Cloaked);
+    if CLOAK_SEEN.load(Relaxed) == 0 {
+        if cloaked == Ok(1) {
+            CLOAK_SEEN.store(1, Relaxed);
+            if Modifier::new(c, Prop::ForceDecloak, ModifierOp::Override, 1, -1, 0, 96).is_err() {
+                bench_fail("basics.cloaked", "ForceDecloak could not be added");
+            }
+        }
+    } else if cloaked == Ok(0) {
+        mark("basics.cloaked");
+        let _ = Action::remove(c);
+        return;
+    }
+    if last {
+        let _ = Action::remove(c);
+    }
+}
+
+/// A player MTNK ordered at an enemy HTNK far off (weapons off, so
+/// neither fights back).
+fn target_start() {
+    let spot = offset(arena(BASICS), 3, 6);
+    let (Some(shooter), Some(far)) = (
+        spawn(spot, "MTNK", player()),
+        spawn(offset(spot, -16, 0), "HTNK", enemy()),
+    ) else {
+        return bench_fail(
+            "basics.target-in-range",
+            "the shooter or its target is missing",
+        );
+    };
+    SHOOTER.store(shooter.0, Relaxed);
+    FAR_FOE.store(far.0, Relaxed);
+    let _ = Modifier::new(
+        far,
+        Prop::DisableWeapons,
+        ModifierOp::Override,
+        1,
+        -1,
+        0,
+        99,
+    );
+    let idle =
+        get(shooter, Prop::TargetInRange) == Ok(0) && get(shooter, Prop::CanFireAtTarget) == Ok(0);
+    if !idle || Action::set_mission_on(shooter, Mission::Attack, far).is_err() {
+        bench_fail("basics.target-in-range", "the shooter starts wrong");
+    }
+}
+
+/// Once the far enemy is the target both read 0, and a near enemy is made
+/// and ordered; once that one is the target it is in range, and the shooter
+/// can fire on it at some poll. Everything is removed when done or at the
+/// `last` poll.
+fn target_poll(last: bool) {
+    let (shooter, far, near) = (unit(&SHOOTER), unit(&FAR_FOE), unit(&NEAR_FOE));
+    if !alive(shooter) {
+        return;
+    }
+    let target = get(shooter, Prop::Target).unwrap_or(NO_HANDLE);
+    if near.is_none() && target == far.0 && target != NO_HANDLE {
+        let far_reads = get(shooter, Prop::TargetInRange) == Ok(0)
+            && get(shooter, Prop::CanFireAtTarget) == Ok(0);
+        if !far_reads {
+            bench_fail("basics.target-in-range", "the far target reads in range");
+        }
+        let Ok(cell) = get(shooter, Prop::Cell) else {
+            return;
+        };
+        let Some(close) = spawn(offset(Cell(cell), 2, 0), "HTNK", enemy()) else {
+            return bench_fail("basics.target-in-range", "no near target could be made");
+        };
+        NEAR_FOE.store(close.0, Relaxed);
+        let _ = Modifier::new(
+            close,
+            Prop::DisableWeapons,
+            ModifierOp::Override,
+            1,
+            -1,
+            0,
+            99,
+        );
+        if far_reads {
+            let _ = Action::set_mission_on(shooter, Mission::Attack, close);
+        }
+        return;
+    }
+    if !near.is_none() && target == near.0 {
+        if get(shooter, Prop::TargetInRange) == Ok(1) {
+            mark("basics.target-in-range");
+        }
+        if marked("basics.target-in-range") && get(shooter, Prop::CanFireAtTarget) == Ok(1) {
+            mark("basics.can-fire");
+        }
+    }
+    if last || marked("basics.can-fire") {
+        for foe in [shooter, far, near] {
+            if alive(foe) {
+                let _ = Action::remove(foe);
+            }
+        }
+    }
+}
+
+/// The enemy's war factory (looked up every 100 frames until it stands):
+/// its door read shut, then open while a vehicle leaves. A tank has no
+/// door.
+fn door_poll(step: i64) {
+    let mut factory = unit(&WAR_FACTORY);
+    if !alive(factory) {
+        if step % 100 != 0 {
+            return;
+        }
+        factory = Techno(NO_HANDLE);
+        for name in ["GAWEAP", "NAWEAP", "YAWEAP"] {
+            let Ok(kind) = TypeRef::techno_type(name) else {
+                continue;
+            };
+            let found = Find::objects().owned_by(enemy()).of_type(kind).first();
+            if found != NO_HANDLE {
+                factory = Techno(found);
+                break;
+            }
+        }
+        WAR_FACTORY.store(factory.0, Relaxed);
+        DOOR_SHUT.store(0, Relaxed);
+        if factory.is_none() {
+            return;
+        }
+    }
+    match get(factory, Prop::DoorOpen) {
+        Ok(0) => DOOR_SHUT.store(1, Relaxed),
+        Ok(1) if DOOR_SHUT.load(Relaxed) == 1 => check(
+            "basics.door-open",
+            get(unit(&UNIT_A), Prop::DoorOpen) == Err(Status::Unsupported),
+            "a tank reads a door",
+        ),
+        Ok(_) => {}
+        Err(_) => bench_fail("basics.door-open", "the war factory has no door"),
+    }
 }
