@@ -19,7 +19,17 @@
 //!   Phobos it divides incoming damage; the warhead filters stay with Phobos'
 //!   own effect types.
 //! - `SpeedMultiplier`: the Phobos `FootClass_GetMovementSpeed_SpeedMultiplier`
-//!   stage (`0x4DB218`) every mover's GetCurrentSpeed applies.
+//!   stage (`0x4DB218`) every mover's GetCurrentSpeed applies. Fly, Jumpjet
+//!   and Rocket read their type speed instead (Fly `0x004CFE20`,
+//!   `JumpjetSpeed=` linked at `0x0054AD30`, Rocket's type `Speed=`), where
+//!   neither GetCurrentSpeed nor Phobos' stage reaches; VERA scales that
+//!   type speed by the module modifiers alone ([`GameEntity::module_speed_factor`],
+//!   base 1.0, truncated toward zero): Fly's paid speed each frame
+//!   (`fly_process`), Jumpjet's speed cap and target speeds (`JumpjetSpeed=`,
+//!   `jumpjet_flight`), Rocket's type speed. As on the ground the factor is
+//!   the movement speed; Phobos' own speed effects keep not reaching them.
+//!   Lead and range estimates that read Fly's speed (FireAt's lead, Hunter
+//!   Seeker, aircraft release) keep the type speed.
 //! - `ROFMultiplier`: the Phobos `TechnoClass_RearmDelay_ROF` factor
 //!   (`0x006FD0B5`) GetROF multiplies `ROF=` by (`rof::RofQuery::ae_rof`).
 //!   Phobos' `ROFMultiplier.ApplyOnCurrentTimer` is not applied: a modifier
@@ -389,6 +399,13 @@ impl GameEntity {
     /// the module modifiers.
     pub(crate) fn effect_speed_multiplier(&self) -> f64 {
         self.with_module_modifiers(Stat::Speed, self.phobos_speed_multiplier())
+    }
+
+    /// The module `SpeedMultiplier` alone, 1.0 without one: the factor Fly,
+    /// Jumpjet and Rocket movement apply to their type speed, which no
+    /// Phobos stage reaches (see the module documentation).
+    pub(crate) fn module_speed_factor(&self) -> f64 {
+        self.with_module_modifiers(Stat::Speed, 1.0)
     }
 
     /// GetROF's `ROF=` factor (`0x006FD0B5`): Phobos' AttachEffect product

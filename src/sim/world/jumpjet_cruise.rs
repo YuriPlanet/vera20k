@@ -97,6 +97,9 @@ impl CruiseHost<'_> {
 }
 
 impl JumpjetFlightHost for CruiseHost<'_> {
+    fn speed_factor(&self) -> f64 {
+        self.owner().module_speed_factor()
+    }
     fn binary_frame(&self) -> u32 {
         self.frame
     }
