@@ -127,7 +127,6 @@ cargo run --release --bin vera20k
 
 حقوق النشر © 2026 Halvor Nikolai Rusten والمساهمون في VERA20K.
 المشروع مرخّص بموجب [GPLv3](LICENSE-GPL) مع [شروط إضافية](LEGAL.md#additional-terms).
-أُدرجت بلاطات الثلج والجليد من Tiberian Sun: Firestorm في VERA20K بإذن، وتظل ملكًا لشركة Electronic Arts.
 على اللاعبين توفير ملفات اللعبة من نسختهم الخاصة من Red Alert 2: Yuri's Revenge. تُعد
 Command & Conquer وRed Alert علامتين تجاريتين لشركة Electronic Arts Inc.، وتعرض لقطات الشاشة
 وأيقونة التطبيق، أي النجمة الحمراء من Red Alert 2، رسومات من اللعبة تملكها Electronic Arts.

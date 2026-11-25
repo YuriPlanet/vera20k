@@ -131,8 +131,7 @@ Final Alert, YRpp, Ares, Phobos und viele andere.
 
 Copyright © 2026 Halvor Nikolai Rusten und die Mitwirkenden an VERA20K.
 Lizenziert unter der [GPLv3](LICENSE-GPL) mit [zusätzlichen Bedingungen](LEGAL.md#additional-terms).
-VERA20K enthält mit Genehmigung Schnee- und Eiskacheln aus Tiberian Sun: Firestorm.
-Sie bleiben Eigentum von Electronic Arts. Die Spieldateien für Red Alert 2: Yuri's Revenge
+Die Spieldateien für Red Alert 2: Yuri's Revenge
 stammen aus deiner eigenen Installation.
 Command & Conquer und Red Alert sind Marken von Electronic Arts Inc. Die Screenshots und das
 App-Symbol, der rote Stern aus Red Alert 2, zeigen Spielgrafiken, die Electronic Arts gehören.

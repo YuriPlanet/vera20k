@@ -106,7 +106,7 @@ VERA20K は標準で Yuri's Revenge オリジナル版のルールを使いま�
 OpenRA、XCC Mixer、ModEnc wiki、Project Perfect Mod、EA が GPL で公開した Command & Conquer と Red Alert のソースコード、World-Altering Editor、Final Alert、YRpp、Ares、Phobos、そのほか多くの皆さんに感謝します。
 
 本プロジェクトは[追加条項](LEGAL.md#additional-terms)付きの [GPLv3](LICENSE-GPL) でライセンスされています。
-VERA20K は許可を得て Tiberian Sun: Firestorm の雪と氷の地形タイルを同梱しています。これらのタイルは引き続き Electronic Arts の所有物です。Red Alert 2: Yuri's Revenge のゲームファイルはご自身でご用意ください。
+Red Alert 2: Yuri's Revenge のゲームファイルはご自身でご用意ください。
 Command & Conquer および Red Alert は Electronic Arts Inc. の商標です。スクリーンショットとアプリアイコン（Red Alert 2 の赤い星）には、Electronic Arts が所有するゲームアートが含まれています。VERA20K は Electronic Arts と提携関係になく、同社の承認を受けたものでもありません。
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).

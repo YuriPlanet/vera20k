@@ -130,8 +130,7 @@ many others.
 
 Copyright © 2026 Halvor Nikolai Rusten and VERA20K contributors.
 Licensed under the [GPLv3](LICENSE-GPL) with [additional terms](LEGAL.md#additional-terms).
-VERA20K includes the snow ice and shoreline artwork from Tiberian Sun: Firestorm with permission.
-Electronic Arts owns that artwork. Players supply their own Yuri's Revenge game files. Command &
+Players supply their own Yuri's Revenge game files. Command &
 Conquer and Red Alert are trademarks of Electronic Arts Inc., and the screenshots and the app
 icon, Red Alert 2's red star, show game art owned by Electronic Arts. VERA20K is not affiliated
 with or endorsed by Electronic Arts.

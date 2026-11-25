@@ -128,8 +128,7 @@ Phobos и многим другим.
 
 © 2026 Halvor Nikolai Rusten и участники проекта VERA20K.
 Проект распространяется под лицензией [GPLv3](LICENSE-GPL) с [дополнительными условиями](LEGAL.md#additional-terms).
-Тайлы снега и льда из Tiberian Sun: Firestorm включены в VERA20K с разрешения.
-Права на них остаются у Electronic Arts. Для игры нужны файлы из собственной копии
+Для игры нужны файлы из собственной копии
 Red Alert 2: Yuri's Revenge.
 Command & Conquer и Red Alert — товарные знаки Electronic Arts Inc., а на скриншотах и значке
 приложения (красной звезде из Red Alert 2) показана игровая графика, принадлежащая Electronic Arts.
