@@ -6,39 +6,39 @@
 //! a delivered `Commanded`, `Deployed` or `OrderRefused`), on objects this
 //! area creates in its arena:
 //! - player tanks (`MTNK`): `MoveFrame` then `Push` then `SetFacing` on one,
-//!   `PathFound`, `IdleMission`, `MissionStep` and `ApproachPoint` on one
-//!   each, driven with `Action::set_mission`. Their decisions come in the
-//!   units' own turns, outside this module's call (a decision raised inside
-//!   the module's own call, such as the receiver of a `SetMission` write,
-//!   skips the module's links), so the module's write is only the order;
+//!   `PathFound`, `IdleMission` and `MissionStep` on one each, driven with
+//!   `Action::set_mission`. Their decisions come in the units' own turns,
+//!   outside this module's call (a decision raised inside the module's own
+//!   call, such as the receiver of a `SetMission` write, skips the module's
+//!   links), so the module's write is only the order;
 //! - computer-house objects, ordered through `House::order` (queued, run in
 //!   the next frame's command step, so `CommandAllowed` and `DestinationSet`
 //!   reach this module): a Chrono Miner for `CommandAllowed` and
-//!   `DestinationSet`, another one on the nearest ore field for
-//!   `HarvestCell`, a Siege Chopper (weapons off; an MCV if it is never
-//!   asked) on level ground for `DeployAllowed`, removed once done, and a
-//!   sleeping GI target for `ApproachPoint` if the cell attack never asks.
-//!   A GI's deploy command is not used: `Mission_Unload` deploys a standing
-//!   infantryman without asking `DeployAllowed` (`src/sim/deploy.rs`
-//!   `infantry_mission_unload`), only the walking one's pending deploy asks;
-//! - the computer house's own production: `ProductionAllowed` and
-//!   `ProductionQueued` are bound to its basic infantry types (`E1`, `E2`)
-//!   and wait until its native answer says it can build one (a barracks);
-//!   the module then queues that type itself and reads the `OrderRefused`
-//!   reasons; `ProductionQueued`'s refusal shows as the type asked again
-//!   (or its own order `Vetoed`), its allow as one more of the type built.
+//!   `DestinationSet`, a tank (weapons off) attacking a player tank for
+//!   `ApproachPoint`, a Siege Chopper (an MCV if it is never asked) on level
+//!   ground for `DeployAllowed`; each removed once done. A GI's deploy
+//!   command is not used: `Mission_Unload` deploys a standing infantryman
+//!   without asking `DeployAllowed` (`src/sim/deploy.rs`
+//!   `infantry_mission_unload`); only the walking one's pending deploy asks;
+//! - the computer house's own harvesters (`HarvestCell`) and production
+//!   (`ProductionQueued`, then `ProductionAllowed`, on the first type its
+//!   factories start). The module's own `QueueProduction` is not used: a
+//!   module order checks the player's prerequisites.
+//!
+//! A `MoveFrame` decider that never answers (the observer) reads the NavCom
+//! a `DestinationSet`, `ApproachPoint` or `HarvestCell` answer set.
 //!
 //! Lines `movement diag ...` are temporary diagnostics for the points that
-//! did not come in the first central run.
+//! did not come in the first central runs.
 //!
 //! Not in `MARKS`:
 //! - `ROTMultiplier` (the ROT modifier): `basics` covers it.
 //!
-//! Most likely to miss in the scene: `ProductionAllowed` and
-//! `ProductionQueued` need the Easy computer house to own a barracks within
-//! the frames played (it gets 5000 credits once it can build); the deploy
-//! needs the chopper's (or the MCV's) deploy to be asked at all; `HarvestCell`
-//! needs an ore field within 40 cells of the player's start.
+//! Most likely to miss in the scene: the production pair needs the Easy
+//! computer house's factories to start a bound type and start it again;
+//! `HarvestCell` needs a computer harvester scanning on an ore field of at
+//! least two cells' spread; the deploy needs the chopper's (or the MCV's)
+//! deploy to be asked at all.
 
 use core::sync::atomic::{AtomicI64, Ordering::Relaxed};
 
@@ -81,6 +81,7 @@ const KEY_MS: i32 = 407;
 const KEY_MF: i32 = 408;
 const KEY_PF: i32 = 409;
 const KEY_AP: i32 = 410;
+const KEY_OBS: i32 = 411;
 const KEY_ORDER_RESULT: i32 = 420;
 const KEY_COMMANDED: i32 = 421;
 const KEY_DEPLOYED: i32 = 422;
@@ -167,14 +168,16 @@ static MS: V = V::new(0);
 static MS_AT: V = V::new(0);
 static MS_DEST: V = V::new(0);
 
-// ApproachPoint.
+// ApproachPoint: the player's tank is the target, a computer tank attacks.
 static T_AP: V = V::new(0);
+static AP_ATTACKER: V = V::new(0);
 static AP: V = V::new(0);
 static AP_AT: V = V::new(0);
-static AP_TARGET: V = V::new(0);
 static AP_CELL: V = V::new(0);
-static AP_MODE: V = V::new(0);
-static AP_DUMMY: V = V::new(0);
+static AP_SEEN: V = V::new(0);
+
+// The MoveFrame observer (never answers).
+static TR_OBS: V = V::new(0);
 
 // CommandAllowed, then DestinationSet, on one computer-house miner.
 static U_CMD: V = V::new(0);
@@ -186,17 +189,20 @@ static CA_TRIES: V = V::new(0);
 static DS: V = V::new(0);
 static DS_AT: V = V::new(0);
 static DS_ASKS: V = V::new(0);
+static DS_SEEN: V = V::new(0);
+static DS_NATIVE: V = V::new(0);
 static CMD_NATIVE: V = V::new(0);
 static CMD_MODULE: V = V::new(0);
 
-// HarvestCell.
-static U_HARV: V = V::new(0);
+// HarvestCell, on the computer house's own harvesters.
 static HC: V = V::new(0);
 static HC_AT: V = V::new(0);
-static HC_ORE: V = V::new(0);
+static HC_UNIT: V = V::new(0);
 static HC_CELL: V = V::new(0);
-static HC_ASKED: V = V::new(0);
-static HC_DIFF: V = V::new(0);
+static HC_SEEN: V = V::new(0);
+static HC_OTHER: V = V::new(0);
+static HC_BOUND: V = V::new(0);
+static HC_TRIES: V = V::new(0);
 
 // DeployAllowed: a GI, else an MCV.
 static U_DEPLOY: V = V::new(0);
@@ -208,22 +214,26 @@ static DA_KIND: V = V::new(0);
 static DA_ALLOW: V = V::new(0);
 static DA_BECAME: V = V::new(0);
 
-// ProductionAllowed, then ProductionQueued, on the computer house.
+// ProductionQueued, then ProductionAllowed, on the computer house's own
+// production.
 static TR_PA: V = V::new(0);
+static TR_PA2: V = V::new(0);
 static TR_PQ: V = V::new(0);
+static TR_PQ2: V = V::new(0);
 static PROD_TYPE: V = V::new(-1);
+static PQ: V = V::new(0);
+static PQ_AT: V = V::new(0);
+static PQ_NO: V = V::new(0);
+static PQ_YES: V = V::new(0);
+static PQ_COUNT: V = V::new(0);
 static PA: V = V::new(0);
 static PA_AT: V = V::new(0);
 static PA_NO: V = V::new(0);
+static PA_NATIVE: V = V::new(0);
 static PA_YES: V = V::new(0);
-static PA_ORDERED: V = V::new(0);
-static PA_TRIES: V = V::new(0);
-static PQ: V = V::new(0);
-static PQ_AT: V = V::new(0);
-static PQ_YES: V = V::new(0);
-static PQ_ORDERED: V = V::new(0);
-static PQ_NO: V = V::new(0);
-static PQ_COUNT: V = V::new(0);
+static PA_DURING: V = V::new(0);
+static PA_AFTER: V = V::new(0);
+static PA_COUNT: V = V::new(0);
 
 // --------------------------------------------------------------- Helpers
 
@@ -346,11 +356,16 @@ pub fn open() {
         decider(Event::MISSION_STEP, tank, KEY_MS);
     }
     if let Some(tank) = put(&T_AP, offset(a, -2, 8), "MTNK", me) {
-        let at = cell_of(tank);
-        // Out of its range to the south; the module heads it north.
-        AP_TARGET.set(offset(at, 0, 10).0);
-        AP_CELL.set(pick(at, &[(-2, -2), (2, -2), (-2, 0), (2, 0)]).0);
-        decider(Event::APPROACH_POINT, tank, KEY_AP);
+        let _ = Modifier::override_(tank, Prop::DisableWeapons, 1, -1);
+        // A computer tank ten cells south attacks it; the module heads that
+        // tank further south instead.
+        if let Some(attacker) = put(&AP_ATTACKER, offset(cell_of(tank), 0, 10), "MTNK", them) {
+            let _ = Modifier::override_(attacker, Prop::DisableWeapons, 1, -1);
+            let from = cell_of(attacker);
+            AP_CELL.set(pick(from, &[(0, 2), (2, 2), (-2, 2), (2, 0), (-2, 0)]).0);
+            decider(Event::APPROACH_POINT, attacker, KEY_AP);
+            observe(attacker);
+        }
     }
 
     // The computer house's objects, east half (unarmed or weapons off).
@@ -360,6 +375,7 @@ pub fn open() {
         CMD_MODULE.set(pick(at, &[(0, 4), (0, -4)]).0);
         decider(Event::COMMAND_ALLOWED, miner, KEY_CA);
         decider(Event::DESTINATION_SET, miner, KEY_DS);
+        observe(miner);
         let _ = Trigger::on(Event::COMMANDED)
             .bind(miner)
             .enqueue(KEY_COMMANDED)
@@ -369,23 +385,28 @@ pub fn open() {
         .enqueue(KEY_ORDER_RESULT)
         .done();
 
-    // The computer house's basic infantry.
-    if let (Ok(e1), Ok(e2)) = (TypeRef::techno_type("E1"), TypeRef::techno_type("E2")) {
-        TR_PA.set(
-            Trigger::on(Event::PRODUCTION_ALLOWED)
-                .bind(e1)
-                .bind(e2)
-                .decide_sync(KEY_PA)
-                .map_or(0, |trigger| trigger.0),
-        );
-        TR_PQ.set(
-            Trigger::on(Event::PRODUCTION_QUEUED)
-                .bind(e1)
-                .bind(e2)
-                .decide_sync(KEY_PQ)
-                .map_or(0, |trigger| trigger.0),
-        );
-    }
+    // The computer house's own production and harvesters.
+    TR_PA.set(type_decider(
+        Event::PRODUCTION_ALLOWED,
+        &PROD_TYPES[0],
+        KEY_PA,
+    ));
+    TR_PA2.set(type_decider(
+        Event::PRODUCTION_ALLOWED,
+        &PROD_TYPES[1],
+        KEY_PA,
+    ));
+    TR_PQ.set(type_decider(
+        Event::PRODUCTION_QUEUED,
+        &PROD_TYPES[0],
+        KEY_PQ,
+    ));
+    TR_PQ2.set(type_decider(
+        Event::PRODUCTION_QUEUED,
+        &PROD_TYPES[1],
+        KEY_PQ,
+    ));
+    type_decider(Event::HARVEST_CELL, &["HARV", "CMIN", "SMIN"], KEY_HC);
 }
 
 /// Every later frame.
@@ -461,6 +482,7 @@ pub fn decide(record: &mut DecideRecord) {
         KEY_MF => decide_move_frame(MoveFrameDecision::from(record)),
         KEY_PF => decide_path(PathFoundDecision::from(record)),
         KEY_AP => decide_approach(ApproachPointDecision::from(record)),
+        KEY_OBS => decide_observe(MoveFrameDecision::from(record)),
         _ => {}
     }
 }
@@ -833,97 +855,112 @@ fn decide_step(mut d: MissionStepDecision) {
 
 // -------------------------------------------------------- ApproachPoint
 
-/// An attack out of range (mode 0 a cell, mode 1 a sleeping computer GI
-/// with weapons off, if the cell attack never asks): every approach answers
-/// the module's cell on the other side, where the tank must arrive; then it
-/// guards and the GI goes.
+/// A computer tank (weapons off) ten cells south of the player's tank is
+/// ordered to attack it (`House::order` Attack, the player command the
+/// engine test drives); every approach answers a cell further south, which
+/// must become its destination (seen by the `MoveFrame` observer) or where
+/// it must arrive. The tank goes afterwards.
 fn approach_point(now: i64, since: i64) {
-    let tank = T_AP.unit();
+    let attacker = AP_ATTACKER.unit();
     match AP.get() {
-        0 if since >= 15 && alive(tank) => {
-            if Action::set_mission(tank, Mission::Attack, AP_TARGET.cell()).is_ok() {
+        0 if since >= 15 => {
+            if !alive(attacker) || !alive(T_AP.unit()) {
+                diag_unit("ApproachPoint units missing", attacker, AP_CELL.cell());
+                ap_finish();
+                return;
+            }
+            let units = [attacker];
+            if enemy().order(&Order::attack(&units, T_AP.unit())).is_ok() {
                 AP_AT.set(now);
                 AP.set(1);
             } else {
                 diag_unit(
-                    "ApproachPoint cell attack not taken",
-                    tank,
-                    AP_TARGET.cell(),
+                    "ApproachPoint attack order failed",
+                    attacker,
+                    AP_CELL.cell(),
                 );
-                AP_AT.set(now - 150);
-                AP.set(1);
+                ap_finish();
             }
         }
-        1 if now > AP_AT.get() + 150 => {
-            diag_unit("ApproachPoint not asked, mode", tank, AP_TARGET.cell());
-            if AP_MODE.get() == 1 || !alive(tank) {
-                ap_finish(tank);
-                return;
-            }
-            AP_MODE.set(1);
-            AP_AT.set(now);
-            let spot = offset(cell_of(tank), 0, 9);
-            let Some(dummy) = put(&AP_DUMMY, spot, "E1", enemy()) else {
-                ap_finish(tank);
-                return;
-            };
-            let _ = Modifier::override_(dummy, Prop::DisableWeapons, 1, -1);
-            let _ = Action::set_mission(dummy, Mission::Sleep, no_cell());
-            AP_TARGET.set(cell_of(dummy).0);
-            if Action::set_mission_on(tank, Mission::Attack, dummy).is_err() {
-                diag_unit(
-                    "ApproachPoint object attack not taken",
-                    tank,
-                    AP_TARGET.cell(),
-                );
-                ap_finish(tank);
-            }
+        1 if now > AP_AT.get() + 300 => {
+            diag_unit(
+                "ApproachPoint not asked, attacker",
+                attacker,
+                cell_of(T_AP.unit()),
+            );
+            ap_finish();
         }
         2 => {
-            if dist(cell_of(tank), AP_CELL.cell()) <= 1 {
+            if AP_SEEN.get() == 1 || dist(cell_of(attacker), AP_CELL.cell()) <= 1 {
                 mark("movement.ApproachPoint");
-            } else if now > AP_AT.get() + 400 {
-                diag_unit("ApproachPoint answered, tank", tank, AP_CELL.cell());
+                ap_finish();
+            } else if now > AP_AT.get() + 300 || !alive(attacker) {
+                diag_unit("ApproachPoint answered, attacker", attacker, AP_CELL.cell());
                 bench_fail(
                     "movement.ApproachPoint",
                     "the tank did not head for the module cell",
                 );
-            } else {
-                return;
+                ap_finish();
             }
-            ap_finish(tank);
         }
         _ => {}
     }
 }
 
-fn ap_finish(tank: Techno) {
-    if alive(tank) {
-        let _ = Action::set_mission(tank, Mission::Guard, no_cell());
-    }
-    let dummy = AP_DUMMY.unit();
-    if !dummy.is_none() && alive(dummy) {
-        let _ = Action::remove(dummy);
+fn ap_finish() {
+    let attacker = AP_ATTACKER.unit();
+    if alive(attacker) {
+        let _ = Action::remove(attacker);
     }
     AP.set(DONE);
 }
 
 fn decide_approach(mut d: ApproachPointDecision) {
-    if d.unit().0 != T_AP.get() || !matches!(AP.get(), 1 | 2) {
+    if d.unit().0 != AP_ATTACKER.get() || !matches!(AP.get(), 1 | 2) {
         return;
     }
-    let named = if AP_MODE.get() == 1 {
-        d.target().0 == AP_DUMMY.get()
-    } else {
-        d.target_cell() == AP_TARGET.cell()
-    };
-    if !named || d.chosen().is_none() {
+    if d.target().0 != T_AP.get() || d.chosen().is_none() {
         bench_fail("movement.ApproachPoint", "the request named another target");
     }
     d.set_cell(AP_CELL.cell());
     if AP.get() == 1 {
         AP_AT.set(tick());
         AP.set(2);
+    }
+}
+
+// ------------------------------------------------- the MoveFrame observer
+
+/// Binds the observer (a `MoveFrame` decider that never answers) to
+/// `unit`: its requests carry the unit's NavCom, the effect of a
+/// `DestinationSet`, `ApproachPoint` or `HarvestCell` answer.
+fn observe(unit: Techno) {
+    if TR_OBS.get() == 0 {
+        TR_OBS.set(decider(Event::MOVE_FRAME, unit, KEY_OBS));
+    } else {
+        let _ = TriggerRef(TR_OBS.get()).bind(unit);
+    }
+}
+
+fn decide_observe(d: MoveFrameDecision) {
+    let unit = d.unit().0;
+    let navcom = d.destination_cell();
+    if unit == U_CMD.get() && DS.get() == 2 {
+        if navcom == CMD_MODULE.cell() {
+            DS_SEEN.set(1);
+        } else if navcom == CMD_NATIVE.cell() {
+            DS_NATIVE.set(1);
+        }
+    }
+    if unit == AP_ATTACKER.get() && AP.get() == 2 && navcom == AP_CELL.cell() {
+        AP_SEEN.set(1);
+    }
+    if unit == HC_UNIT.get() && HC.get() == 2 {
+        if navcom == HC_CELL.cell() {
+            HC_SEEN.set(1);
+        } else if !navcom.is_none() {
+            HC_OTHER.set(1);
+        }
     }
 }
 
@@ -992,7 +1029,7 @@ fn decide_command(mut d: CommandAllowedDecision) {
 }
 /// After the commands: a Move order to one cell (three cells from where
 /// the miner now stands) whose destination the module replaces with
-/// another, where the miner must arrive.
+/// another; the observer must see that cell as its NavCom (or it arrives).
 fn destination_set(now: i64) {
     let miner = U_CMD.unit();
     match DS.get() {
@@ -1021,30 +1058,20 @@ fn destination_set(now: i64) {
             DS.set(DONE);
         }
         2 => {
-            let at = cell_of(miner);
-            if dist(at, CMD_MODULE.cell()) <= 1 {
+            if DS_SEEN.get() == 1 || dist(cell_of(miner), CMD_MODULE.cell()) <= 1 {
                 mark("movement.DestinationSet");
                 DS.set(DONE);
-            } else if at == CMD_NATIVE.cell() {
-                bench_fail(
-                    "movement.DestinationSet",
-                    "the miner went to the native cell",
-                );
-                DS.set(DONE);
-            } else if now > DS_AT.get() + 600 || !alive(miner) {
+            } else if now > DS_AT.get() + 150 || !alive(miner) {
                 diag_unit("DestinationSet answered, miner", miner, CMD_MODULE.cell());
                 let mut line = Line::new();
                 line.text("movement diag DestinationSet asks ")
                     .num(DS_ASKS.get())
-                    .text(" native cell ")
-                    .num(i64::from(CMD_NATIVE.cell().x()))
-                    .text(",")
-                    .num(i64::from(CMD_NATIVE.cell().y()));
+                    .text(" native NavCom seen ")
+                    .num(DS_NATIVE.get());
                 line.log();
-                bench_fail(
-                    "movement.DestinationSet",
-                    "the miner did not reach the module cell",
-                );
+                if DS_NATIVE.get() == 1 {
+                    bench_fail("movement.DestinationSet", "the native destination stayed");
+                }
                 DS.set(DONE);
             }
         }
@@ -1068,92 +1095,44 @@ fn decide_destination(mut d: DestinationSetDecision) {
 
 // ----------------------------------------------------------- HarvestCell
 
-/// A computer-house miner on the ore field nearest the arena: every scan
-/// answers the field's farthest cell, where the miner must arrive. A miner
-/// that never scans is sent to harvest (SetMission, then a Harvest order).
+/// The computer house's own harvesters (a miner made by `create_object`
+/// never scanned in the first runs): one scan is answered with another ore
+/// cell of the field, which the observer must see as the harvester's
+/// NavCom (or it arrives). Up to three tries.
 fn harvest_cell(now: i64, since: i64) {
     match HC.get() {
         0 if since >= 3 => {
-            HC.set(DONE);
-            let ore = |center: Cell, cells: i32| {
-                Find::cells()
-                    .near(center, cells * 256)
-                    .where_prop(Prop::Ore, Op::Gt, 0)
-                    .first()
-            };
-            let mut found = ore(arena(crate::MOVEMENT), 16);
-            if found == NO_HANDLE {
-                found = ore(crate::base(), 40);
-            }
-            if found == NO_HANDLE {
-                log("movement diag HarvestCell: no ore within 40 cells of the start");
-                return;
-            }
-            let Some(miner) = put(&U_HARV, Cell(found), "CMIN", enemy()) else {
-                log("movement diag HarvestCell: no miner spawned");
-                return;
-            };
-            let home = cell_of(miner);
-            let mut cells = [NO_HANDLE; 48];
-            let count = Find::cells()
-                .near(Cell(found), 6 * 256)
-                .where_prop(Prop::Ore, Op::Gt, 0)
-                .page(&mut cells, 0)
-                .map_or(0, |(count, _)| count);
-            let far = cells[..count]
-                .iter()
-                .copied()
-                .max_by_key(|&c| dist(Cell(c), home))
-                .unwrap_or(found);
-            HC_ORE.set(found);
-            HC_CELL.set(far);
-            decider(Event::HARVEST_CELL, miner, KEY_HC);
-            let mut line = Line::new();
-            line.text("movement diag HarvestCell ore cells ")
-                .num(count as i64)
-                .text(", module cell ")
-                .num(i64::from(dist(Cell(far), home)))
-                .text(" cells from the miner");
-            line.log();
-            HC_AT.set(now);
             HC.set(1);
+            HC_AT.set(now);
         }
-        1 => {
-            let miner = U_HARV.unit();
-            let waited = now - HC_AT.get();
-            if HC_DIFF.get() == 1 && dist(cell_of(miner), HC_CELL.cell()) <= 1 {
+        1 if now > HC_AT.get() + 4000 => {
+            log("movement diag HarvestCell: no computer harvester scan answered");
+            HC.set(DONE);
+        }
+        2 => {
+            let harvester = HC_UNIT.unit();
+            if HC_BOUND.get() != harvester.0 {
+                observe(harvester);
+                HC_BOUND.set(harvester.0);
+            }
+            if HC_SEEN.get() == 1 || dist(cell_of(harvester), HC_CELL.cell()) <= 1 {
                 mark("movement.HarvestCell");
                 HC.set(DONE);
-            } else if waited == 30 && HC_ASKED.get() == 0 {
-                if Action::set_mission(miner, Mission::Harvest, no_cell()).is_err() {
-                    diag_unit(
-                        "HarvestCell SetMission Harvest failed",
-                        miner,
-                        HC_CELL.cell(),
-                    );
+            } else if now > HC_AT.get() + 300 || !alive(harvester) {
+                diag_unit("HarvestCell answered, harvester", harvester, HC_CELL.cell());
+                HC_TRIES.add(1);
+                if HC_TRIES.get() < 3 {
+                    HC_AT.set(now);
+                    HC.set(1);
+                } else {
+                    if HC_OTHER.get() == 1 {
+                        bench_fail(
+                            "movement.HarvestCell",
+                            "the harvester headed for another cell",
+                        );
+                    }
+                    HC.set(DONE);
                 }
-            } else if waited == 150 && HC_ASKED.get() == 0 {
-                diag_unit("HarvestCell no scan yet, ordering", miner, HC_CELL.cell());
-                let units = [miner];
-                let order = Order::new(Command::Harvest, HC_ORE.get(), 0, &units);
-                if enemy().order(&order).is_err() {
-                    log("movement diag HarvestCell: the Harvest order failed");
-                }
-            } else if waited > 900 || !alive(miner) {
-                diag_unit("HarvestCell end, miner", miner, HC_CELL.cell());
-                let mut line = Line::new();
-                line.text("movement diag HarvestCell asks ")
-                    .num(HC_ASKED.get())
-                    .text(" differed ")
-                    .num(HC_DIFF.get());
-                line.log();
-                if HC_DIFF.get() == 1 {
-                    bench_fail(
-                        "movement.HarvestCell",
-                        "the miner did not reach the module cell",
-                    );
-                }
-                HC.set(DONE);
             }
         }
         _ => {}
@@ -1161,14 +1140,38 @@ fn harvest_cell(now: i64, since: i64) {
 }
 
 fn decide_harvest(mut d: HarvestCellDecision) {
-    if d.harvester().0 != U_HARV.get() || HC.get() != 1 {
+    if HC.get() != 1 {
         return;
     }
-    HC_ASKED.add(1);
-    if d.scanned() != HC_CELL.cell() {
-        HC_DIFF.set(1);
+    let harvester = d.harvester();
+    if get(harvester, Prop::Owner).ok() != Some(enemy().0) {
+        return;
     }
-    d.set_result(HC_CELL.get());
+    let scanned = d.scanned();
+    if scanned.is_none() {
+        return;
+    }
+    let mut cells = [NO_HANDLE; 32];
+    let count = Find::cells()
+        .near(scanned, 5 * 256)
+        .where_prop(Prop::Ore, Op::Gt, 0)
+        .page(&mut cells, 0)
+        .map_or(0, |(count, _)| count);
+    let Some(far) = cells[..count]
+        .iter()
+        .copied()
+        .filter(|&c| dist(Cell(c), scanned) >= 2)
+        .max_by_key(|&c| dist(Cell(c), scanned))
+    else {
+        return;
+    };
+    d.set_result(far);
+    HC_UNIT.set(harvester.0);
+    HC_CELL.set(far);
+    HC_SEEN.set(0);
+    HC_OTHER.set(0);
+    HC_AT.set(tick());
+    HC.set(2);
 }
 
 // --------------------------------------------------------- DeployAllowed
@@ -1333,6 +1336,31 @@ fn decide_deploy(mut d: DeployAllowedDecision) {
 
 // ------------------------------------- ProductionAllowed, ProductionQueued
 
+/// The types the computer house builds early (Soviet, and Allied in case):
+/// buildings and units its factories start themselves. The module's own
+/// `QueueProduction` is not used: a module order checks the player's
+/// prerequisites and came back `Prerequisite` for a type the house could
+/// build.
+const PROD_TYPES: [[&str; 8]; 2] = [
+    [
+        "NAPOWR", "NAREFN", "NAHAND", "NAWEAP", "NARADR", "NALASR", "HTNK", "HARV",
+    ],
+    [
+        "GAPOWR", "GAREFN", "GAPILE", "GAWEAP", "GAPILL", "HTK", "E2", "E1",
+    ],
+];
+
+/// A decision trigger on `kind` bound to `ids`' types; its handle or 0.
+fn type_decider(kind: i32, ids: &[&str], key: i32) -> i64 {
+    let mut trigger = Trigger::on(kind);
+    for id in ids {
+        if let Ok(ty) = TypeRef::techno_type(id) {
+            trigger = trigger.bind(ty);
+        }
+    }
+    trigger.decide_sync(key).map_or(0, |trigger| trigger.0)
+}
+
 /// The computer house's objects of type `ty` (at most 64 counted).
 fn count_of(ty: TypeRef) -> i64 {
     let mut out = [NO_HANDLE; 64];
@@ -1343,153 +1371,165 @@ fn count_of(ty: TypeRef) -> i64 {
         .map_or(0, |(count, _)| count as i64)
 }
 
-/// Once the computer house can build its basic infantry: forbid it and
-/// queue it (the order must be refused, not for a veto), allow it back.
-/// Then `ProductionQueued` refuses that type (its own order must come back
-/// `Vetoed`, or the AI's factory must ask again: nothing started) and
-/// allows it (one must be built).
+fn prod_diag(what: &str, a: i64, b: i64) {
+    let mut line = Line::new();
+    line.text("movement diag ")
+        .text(what)
+        .text(" type ")
+        .num(PROD_TYPE.get())
+        .text(": ")
+        .num(a)
+        .text(", ")
+        .num(b);
+    line.log();
+}
+
+/// `ProductionQueued` first: the first type the computer's factory starts
+/// is refused until it asks again (nothing started), then allowed (one more
+/// must be built). Then `ProductionAllowed` on that type: forbidden for 300
+/// frames its factory must not try to start it (no `ProductionQueued`
+/// request) while the native answer says it could; allowed back, it must
+/// start one again (a request, or one more built).
 fn production(now: i64) {
-    if PROD_TYPE.get() < 0 {
-        return;
-    }
     let ty = TypeRef::new(NameKind::TechnoType, PROD_TYPE.get() as i32);
-    let queue = || enemy().order(&Order::queue_production(ty)).is_ok();
-    match PA.get() {
-        1 => {
-            let _ = Action::add_money(enemy(), 5000);
-            PA_AT.set(now);
-            PA.set(2);
-        }
-        2 => {
-            if PA_ORDERED.get() == 0 && PA_NO.get() >= 1 && now >= PA_AT.get() + 2 {
-                let _ = queue();
-                PA_ORDERED.set(now);
-            } else if PA_ORDERED.get() > 0 && now > PA_ORDERED.get() + 60 {
-                PA_TRIES.add(1);
-                PA_ORDERED.set(0);
-                if PA_TRIES.get() >= 3 {
-                    bench_fail("movement.ProductionAllowed", "a forbidden type was queued");
-                    PA.set(DONE);
-                }
-            }
-        }
-        3 if PA_YES.get() >= 1 => {
-            mark("movement.ProductionAllowed");
-            PA.set(DONE);
-        }
-        3 if now > PA_AT.get() + 300 => PA.set(DONE),
-        _ => {}
-    }
-    if PA.get() != DONE {
-        return;
-    }
     match PQ.get() {
-        0 => {
-            PQ.set(1);
-            PQ_NO.set(0);
-            PQ_ORDERED.set(0);
+        0 if PQ_NO.get() >= 1 && PQ_AT.get() == 0 => {
+            let _ = Action::add_money(enemy(), 5000);
             PQ_AT.set(now);
+        }
+        0 if PQ_NO.get() >= 2 => {
+            PQ_COUNT.set(count_of(ty));
+            PQ_AT.set(now);
+            PQ.set(1);
+        }
+        0 if PQ_AT.get() > 0 && now > PQ_AT.get() + 1500 => {
+            prod_diag("ProductionQueued asked once in 1500 frames", PQ_NO.get(), 0);
+            PQ.set(DONE);
         }
         1 => {
-            if PQ_ORDERED.get() == 0 {
-                let _ = Action::add_money(enemy(), 5000);
-                if !queue() {
-                    log("movement diag ProductionQueued: the queue order failed");
-                }
-                PQ_ORDERED.set(now);
-            }
-            // Asked again after a refusal: the refused start did not happen.
-            if PQ_NO.get() >= 2 {
-                PQ.set(2);
-            } else if now > PQ_AT.get() + 1500 {
-                let mut line = Line::new();
-                line.text("movement diag ProductionQueued: refusals ")
-                    .num(PQ_NO.get())
-                    .text(" in 1500 frames");
-                line.log();
-                PQ.set(DONE);
-            }
-        }
-        2 => {
-            PQ_COUNT.set(count_of(ty));
-            PQ.set(3);
-            PQ_AT.set(now);
-            let _ = queue();
-        }
-        3 => {
-            let built = count_of(ty) > PQ_COUNT.get();
-            if PQ_YES.get() >= 1 && built {
+            let count = count_of(ty);
+            if PQ_YES.get() >= 1 && count > PQ_COUNT.get() {
                 mark("movement.ProductionQueued");
                 PQ.set(DONE);
-            } else if now > PQ_AT.get() + 1200 {
-                let mut line = Line::new();
-                line.text("movement diag ProductionQueued: allowed ")
-                    .num(PQ_YES.get())
-                    .text(" times, count then ")
-                    .num(PQ_COUNT.get())
-                    .text(" now ")
-                    .num(count_of(ty));
-                line.log();
+            } else if now > PQ_AT.get() + 2000 {
+                prod_diag(
+                    "ProductionQueued allowed, count then/now",
+                    PQ_COUNT.get(),
+                    count,
+                );
                 PQ.set(DONE);
+            }
+        }
+        _ => {}
+    }
+    if PQ.get() != DONE || PROD_TYPE.get() < 0 {
+        return;
+    }
+    match PA.get() {
+        0 => {
+            PA.set(1);
+            PA_AT.set(now);
+        }
+        1 if now >= PA_AT.get() + 300 => {
+            if PA_DURING.get() > 0 {
+                prod_diag(
+                    "ProductionAllowed forbidden, asks",
+                    PA_NO.get(),
+                    PA_DURING.get(),
+                );
+                bench_fail(
+                    "movement.ProductionAllowed",
+                    "the factory started a forbidden type",
+                );
+                PA.set(DONE);
+            } else if PA_NO.get() >= 1 && PA_NATIVE.get() >= 1 {
+                PA_COUNT.set(count_of(ty));
+                PA_AT.set(now);
+                PA.set(2);
+            } else {
+                prod_diag(
+                    "ProductionAllowed forbid asks, native yes",
+                    PA_NO.get(),
+                    PA_NATIVE.get(),
+                );
+                PA.set(DONE);
+            }
+        }
+        2 => {
+            let count = count_of(ty);
+            if PA_YES.get() >= 1 && (PA_AFTER.get() >= 1 || count > PA_COUNT.get()) {
+                mark("movement.ProductionAllowed");
+                PA.set(DONE);
+            } else if now > PA_AT.get() + 2500 {
+                prod_diag(
+                    "ProductionAllowed allowed, starts",
+                    PA_YES.get(),
+                    PA_AFTER.get(),
+                );
+                PA.set(DONE);
             }
         }
         DONE => {
             disable(&TR_PA);
+            disable(&TR_PA2);
             disable(&TR_PQ);
+            disable(&TR_PQ2);
         }
         _ => {}
     }
 }
 
 fn decide_production_allowed(mut d: ProductionAllowedDecision) {
-    if d.house() != enemy() {
-        return;
-    }
-    let ty = i64::from(d.techno_type().id());
-    if PROD_TYPE.get() < 0 {
-        if PA.get() == 0 && d.native() == 1 {
-            PROD_TYPE.set(ty);
-            PA.set(1);
-        }
-        return;
-    }
-    if ty != PROD_TYPE.get() {
+    if d.house() != enemy() || i64::from(d.techno_type().id()) != PROD_TYPE.get() {
         return;
     }
     match PA.get() {
-        2 => {
+        1 => {
             d.set_result(0);
             PA_NO.add(1);
-        }
-        3 => {
-            d.set_result(1);
             if d.native() == 1 {
-                PA_YES.add(1);
+                PA_NATIVE.add(1);
             }
+        }
+        2 => {
+            d.set_result(1);
+            PA_YES.add(1);
         }
         _ => {}
     }
 }
 
 fn decide_production_queued(mut d: ProductionQueuedDecision) {
-    if d.house() != enemy() || i64::from(d.techno_type().id()) != PROD_TYPE.get() {
+    if d.house() != enemy() {
         return;
     }
-    match PQ.get() {
-        1 => {
+    let ty = i64::from(d.techno_type().id());
+    if PQ.get() == 0 {
+        if PROD_TYPE.get() < 0 {
+            PROD_TYPE.set(ty);
+        }
+        if ty == PROD_TYPE.get() {
             d.set_result(0);
             PQ_NO.add(1);
         }
-        3 => {
-            d.set_result(1);
-            PQ_YES.add(1);
+        return;
+    }
+    if ty != PROD_TYPE.get() {
+        return;
+    }
+    if PQ.get() == 1 {
+        d.set_result(1);
+        PQ_YES.add(1);
+    } else {
+        match PA.get() {
+            1 => PA_DURING.add(1),
+            2 => PA_AFTER.add(1),
+            _ => {}
         }
-        _ => {}
     }
 }
 
-/// `OrderRefused` (global): the command, deploy and production checks
-/// above.
+/// `OrderRefused` (global): the command and deploy checks above.
 fn order_refused(record: &EventRecord) {
     if record.subject == U_CMD.get()
         && record.subject != NO_HANDLE
@@ -1508,29 +1548,5 @@ fn order_refused(record: &EventRecord) {
             .text(", deployer ")
             .text(deployer_name());
         line.log();
-        return;
-    }
-    if record.subject != NO_HANDLE
-        || record.house != enemy().0
-        || record.value != Command::QueueProduction as i64
-        || i64::from(record.id) != PROD_TYPE.get()
-    {
-        return;
-    }
-    let mut line = Line::new();
-    line.text("movement diag production order not carried out, reason ")
-        .num(record.value2)
-        .text(", PA ")
-        .num(PA.get())
-        .text(", PQ ")
-        .num(PQ.get());
-    line.log();
-    if PA.get() == 2 && PA_ORDERED.get() > 0 && record.value2 != VETOED {
-        PA_AT.set(tick());
-        PA.set(3);
-    } else if PQ.get() == 1 && PQ_ORDERED.get() > 0 && record.value2 == VETOED {
-        PQ.set(2);
-    } else if PQ.get() == 3 && record.value2 == VETOED {
-        bench_fail("movement.ProductionQueued", "vetoed after the allow");
     }
 }
