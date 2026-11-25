@@ -82,7 +82,8 @@ impl Selection {
             listed: None,
             selected: None,
             top: 0,
-            can_browse: mod_import_picker::available() || crate::util::mod_actions::picker_available(),
+            can_browse: mod_import_picker::available()
+                || crate::util::mod_actions::picker_available(),
             choosing_kind: false,
             error: None,
         }
@@ -539,27 +540,28 @@ impl App {
     }
 
     /// Android: a ZIP or folder the system file manager copied in joins the
-/// selection, and its box is rebuilt with the preview's buttons.
-#[cfg(target_os = "android")]
-fn drain_picked_part(state: &mut AppState) {
-    let Some(path) = crate::util::mod_actions::take_picked() else {
-        return;
-    };
-    let Some(shell) = state.frontend.shell_message_box.take() else {
-        return;
-    };
-    let crate::app::frontend::state::ShellMessageBoxPurpose::ModImport(dialog) = shell.purpose else {
-        state.frontend.shell_message_box = Some(shell);
-        return;
-    };
-    let Dialog::Select(mut selection) = *dialog else {
-        return;
-    };
-    selection.add(vec![path]);
-    Self::show_import_selection(state, selection);
-}
+    /// selection, and its box is rebuilt with the preview's buttons.
+    #[cfg(target_os = "android")]
+    fn drain_picked_part(state: &mut AppState) {
+        let Some(path) = crate::util::mod_actions::take_picked() else {
+            return;
+        };
+        let Some(shell) = state.frontend.shell_message_box.take() else {
+            return;
+        };
+        let crate::app::frontend::state::ShellMessageBoxPurpose::ModImport(dialog) = shell.purpose
+        else {
+            state.frontend.shell_message_box = Some(shell);
+            return;
+        };
+        let Dialog::Select(mut selection) = *dialog else {
+            return;
+        };
+        selection.add(vec![path]);
+        Self::show_import_selection(state, selection);
+    }
 
-fn show_import_selection(state: &mut AppState, selection: Selection) {
+    fn show_import_selection(state: &mut AppState, selection: Selection) {
         let shell_box = selection.shell_box();
         Self::show_import_box(
             &state.platform.window,

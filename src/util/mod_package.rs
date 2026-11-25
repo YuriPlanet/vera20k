@@ -19,7 +19,12 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-#[cfg(any(windows, target_os = "linux", target_os = "macos", target_os = "android"))]
+#[cfg(any(
+    windows,
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "android"
+))]
 pub use native::import::{ModImport, PreparedModImport};
 
 #[derive(Debug, Clone)]
@@ -365,6 +370,14 @@ mod native {
                 )));
             }
             for entry in fs::read_dir(source)? {
+                {
+                    use std::sync::atomic::{AtomicU64, Ordering};
+                    static SEEN: AtomicU64 = AtomicU64::new(0);
+                    let seen = SEEN.fetch_add(1, Ordering::Relaxed) + 1;
+                    if seen % 2048 == 0 {
+                        log::info!("mod import: {seen} folder entries written");
+                    }
+                }
                 self.entry()?;
                 let entry = entry?;
                 let name = entry
@@ -410,7 +423,15 @@ mod native {
                 )));
             }
             let entries = zip.files()?;
+            let mut seen = 0u64;
             while let Some(entry) = entries.next() {
+                seen += 1;
+                if seen % 2048 == 0 {
+                    log::info!(
+                        "mod import: {seen} zip entries written, {} MiB left of budget",
+                        self.bytes_left >> 20
+                    );
+                }
                 self.entry()?;
                 let entry = entry?;
                 let mut name = entry.name()?;
@@ -620,7 +641,12 @@ mod native {
         Ok(())
     }
 
-    #[cfg(any(windows, target_os = "linux", target_os = "macos", target_os = "android"))]
+    #[cfg(any(
+        windows,
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "android"
+    ))]
     pub(super) mod import {
         use super::*;
 
@@ -878,6 +904,7 @@ mod native {
     not(all(target_arch = "wasm32", target_os = "unknown"))
 ))]
 mod tests {
+
     use super::*;
     use std::fs::{self, File};
     use std::io::Write;

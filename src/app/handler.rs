@@ -2143,7 +2143,12 @@ impl ApplicationHandler for App {
                         &state.persistence.options_profile,
                     )
                 },
-                #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                #[cfg(any(
+                    windows,
+                    target_os = "macos",
+                    target_os = "linux",
+                    target_os = "android"
+                ))]
                 Self::poll_mod_import,
                 Self::poll_choose_map_scroll,
                 Self::poll_skirmish_opponent_scroll,
