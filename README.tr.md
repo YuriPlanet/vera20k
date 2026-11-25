@@ -15,7 +15,8 @@
 
 VERA20K, Red Alert 2: Yuri's Revenge için yeni bir oyun motorudur. Orijinali gibi oynanır;
 birimler, haritalar ve görünüm aynıdır. Windows, macOS ve Linux'ta çalışır. Daha büyük savaşlar
-için yapılmıştır: bir haritada 30 oyuncuya ve 20.000 birime kadar.
+için yapılmıştır ve tek bir haritada 20.000 birime ulaşan savaşları destekler. Çevrimdışı çatışmalarda en fazla 120,
+yerel ağda veya internet üzerinden oynanan maçlarda ise en fazla 30 oyuncu yuvası bulunur.
 
 VERA20K oyuncular tarafından, oyuncular için yapılıyor ve projenin nereye gideceğine son sözü
 oyuncular söylüyor.
@@ -33,7 +34,7 @@ Takıldınız mı? [Yardım sayfasına](https://vera20k.org/tr/help) göz atın.
 ## Projenin hedefleri
 
 1. Orijinal Red Alert 2: Yuri's Revenge'in oynanışını, görsellerini ve atmosferini korumak.
-2. 500×500 haritalarda **30 oyuncuya** ve **20.000 birime** kadar daha büyük savaşları desteklemek.
+2. 500×500 haritalarda **20.000 birime** kadar çıkan büyük savaşları desteklemek. Çevrimdışı çatışmalarda en fazla **120 oyuncu yuvası**, yerel ağda veya internet üzerinden oynanan maçlarda ise en fazla **30** yuva sunmak.
 3. Bilinen RTS özelliklerini ve daha önce hiç görülmemiş bazı özellikleri eklemek.
 4. Entegre çok oyunculu istemci
 
@@ -118,7 +119,9 @@ Ares, Phobos ve daha nicelerine teşekkürler.
 
 Telif hakkı © 2026 Halvor Nikolai Rusten ve VERA20K'ya katkıda bulunanlar.
 [Ek koşullarla](LEGAL.md#additional-terms) birlikte [GPLv3](LICENSE-GPL) ile lisanslanmıştır.
-Bu depo hiçbir oyun dosyası içermez.
+Tiberian Sun: Firestorm'daki kar ve buz karoları pakete izinle dahil edilmiştir.
+Bu karoların mülkiyeti Electronic Arts'a aittir. Oyuncular Red Alert 2: Yuri's Revenge
+dosyalarını kendi oyun kopyalarından sağlar.
 Command & Conquer ve Red Alert, Electronic Arts Inc. şirketinin ticari markalarıdır.
 Ekran görüntülerindeki ve uygulama simgesindeki (Red Alert 2'nin kırmızı yıldızı) oyun grafikleri
 Electronic Arts'a aittir. VERA20K, Electronic Arts ile bağlantılı değildir ve Electronic Arts

@@ -41,6 +41,26 @@ fn with_activity<R>(f: impl FnOnce(&mut jni::JNIEnv, &JObject) -> R) -> Option<R
     Some(f(&mut env, &activity))
 }
 
+/// Display-inset hook for `vera20k::util::display_insets`.
+///
+/// The activity measures the cutout and the top-left rounded corner from the
+/// window insets; the engine moves the message lane and the performance panel in
+/// by them.
+fn display_insets() -> vera20k::util::display_insets::Insets {
+    with_activity(|env, activity| {
+        let inset = |env: &mut jni::JNIEnv, name: &str| -> i32 {
+            env.call_method(activity, name, "()I", &[])
+                .and_then(|value| value.i())
+                .unwrap_or(0)
+        };
+        vera20k::util::display_insets::Insets {
+            left: inset(env, "displayInsetLeft"),
+            top: inset(env, "displayInsetTop"),
+        }
+    })
+    .unwrap_or_default()
+}
+
 /// Folder-picker hook for `vera20k::util::folder_picker`.
 ///
 /// The picker is the one thing the NDK cannot do itself: a Storage Access
@@ -319,6 +339,26 @@ fn keep_screen_on(app: &AndroidApp) {
     );
 }
 
+/// Read one entry from the APK's assets through Android's AssetManager.
+fn packaged_bytes(app: &AndroidApp, file: &str) -> std::io::Result<Vec<u8>> {
+    let name = std::ffi::CString::new(file)?;
+    let mut asset = app
+        .asset_manager()
+        .open(&name)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, file.to_owned()))?;
+    Ok(asset.buffer()?.to_vec())
+}
+
+fn install_packaged_map(app: &AndroidApp) -> anyhow::Result<()> {
+    use vera20k::map::installed::{ARCTIC_MAP, install_arctic_map};
+
+    let maps = vera20k::util::config::GameConfig::load()?
+        .paths
+        .downloaded_maps_dir();
+    install_arctic_map(&maps, || packaged_bytes(app, ARCTIC_MAP))?;
+    Ok(())
+}
+
 /// Resolved by `android-activity`'s loader trampoline; the name is the ABI.
 ///
 /// Android calls the symbol with the activity's handle, which
@@ -327,6 +367,11 @@ fn keep_screen_on(app: &AndroidApp) {
 fn android_main(app: AndroidApp) {
     keep_screen_on(&app);
     vera20k::util::folder_picker::install(request_folder_picker, cancel_import);
+    // The screen's rounded corner and cutout hide the top-left of what the game
+    // draws there; the activity measures them and the engine moves in by them.
+    vera20k::util::display_insets::install(vera20k::util::display_insets::Hooks {
+        insets: display_insets,
+    });
     // The launcher icon is a compiled resource, so the VERA Icon box's choice
     // reaches the two activity aliases only through PackageManager.
     vera20k::util::app_icon::install(apply_app_icon);
@@ -357,6 +402,17 @@ fn android_main(app: AndroidApp) {
 
     let log_path = vera20k::entry::init_logging();
     vera20k::entry::log_banner(log_path.as_deref());
+    if let Err(error) = install_packaged_map(&app) {
+        log::warn!("Could not install the packaged skirmish map: {error:#}");
+    }
+    if let Some(root) = vera20k::util::platform_dir::get() {
+        use vera20k::assets::ice_pack;
+        if let Err(error) = ice_pack::install(&root.join(ice_pack::DIRECTORY), |name, _| {
+            packaged_bytes(&app, name)
+        }) {
+            log::warn!("Could not install the packaged ice terrain: {error}");
+        }
+    }
     // Bind the picker's callback before the player can reach the button, and say
     // whether it took: a silent failure here is what turned a missing folder
     // picker into an `UnsatisfiedLinkError` at the worst moment.

@@ -889,9 +889,10 @@ impl ReplayStartup {
         anyhow::ensure!(
             sim.path_batch_stats().is_some()
                 && sim.target_scans_batched()
-                && sim.effect_anims_presented(),
-            "standalone replay requires the normal App's batched paths, target scans and \
-             presentation effect anims"
+                && sim.effect_anims_presented()
+                && sim.turn_streams_separate(),
+            "standalone replay requires the normal App's batched paths, target scans, \
+             presentation effect anims and turn streams"
         );
         let map_name = match launch {
             ReplayLaunchInput::Slots(session) => crate::map::source::portable_map_name(
@@ -908,11 +909,7 @@ impl ReplayStartup {
             "replay launch map differs from its world"
         );
         anyhow::ensure!(
-            matches!(
-                source,
-                crate::map::source::LoadedMapSource::Loose { .. }
-                    | crate::map::source::LoadedMapSource::Mix { .. }
-            ),
+            source.is_authored(),
             "generated/legacy maps lack authored replay startup"
         );
         let (map_payload_len, map_sha256) = source
@@ -1481,6 +1478,7 @@ fn prepare_authored_replay_world(sim: &mut Simulation) {
     sim.batch_path_searches();
     sim.batch_target_scans();
     sim.present_effect_anims();
+    sim.separate_turn_streams(true);
     sim.sleep_idle_objects_in_match();
 }
 
@@ -1974,6 +1972,7 @@ mod tests {
         sim.batch_path_searches();
         sim.batch_target_scans();
         sim.present_effect_anims();
+        sim.separate_turn_streams(true);
         assert_eq!(
             sim.houses()[&sim.session().current_house().unwrap()].native_scenario_name(),
             Some("ReplayGuest")

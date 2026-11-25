@@ -137,7 +137,7 @@ fn walk_destination_search_observes_route_opened_before_process() {
     }
     // The order reads the canonical grid, so publish the closed one for the
     // command and restore the open one for the object turn.
-    sim.path_grid = Some(std::sync::Arc::new(closed_grid));
+    *sim.path_grid = Some(std::sync::Arc::new(closed_grid));
     assert!(sim.apply_command_with_overlays(
         None,
         "Local",
@@ -150,7 +150,7 @@ fn walk_destination_search_observes_route_opened_before_process() {
         None,
         &mut crate::sim::world::FrameEffects::default(),
     ));
-    sim.path_grid = Some(open_grid.clone());
+    *sim.path_grid = Some(open_grid.clone());
     let e = sim.substrate.entities.get(actor).unwrap();
     assert!(e.navigation.path_replay().remaining_directions().is_empty());
     assert_eq!(

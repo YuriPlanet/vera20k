@@ -290,6 +290,16 @@ pub(crate) struct FrontendState {
     pub(crate) updater: crate::app::updater::Updater,
 }
 
+impl FrontendState {
+    /// Whether any main-menu modal dialog (exit confirm, options, keyboard)
+    /// is currently open.
+    pub(crate) fn main_menu_dialog_open(&self) -> bool {
+        self.shell_message_box.is_some()
+            || self.options_dialog.is_some()
+            || self.keyboard_dialog.is_some()
+    }
+}
+
 /// One open shell message box `0x120` and the caller its result returns to.
 #[derive(Debug)]
 pub(crate) struct ShellMessageBox {

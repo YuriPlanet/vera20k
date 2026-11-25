@@ -26,48 +26,52 @@ const MAX_DETAIL_BYTES: usize = 256;
 const PUBLISH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// World replacement starts a new observation window without touching the world.
-pub(crate) fn reset_observation(state: &mut AppState) {
+pub(crate) fn reset_observation(
+    diag: &mut crate::app::diagnostics::state::DiagnosticsState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) {
     #[cfg(feature = "debug-tools")]
-    crate::app::debug_tools::reset_session(state);
-    reset_live_window(state);
-    state.match_state.telemetry_history.clear();
-    state.match_state.report_history.clear();
-    state.diag.render_report_cache = None;
-    state.diag.telemetry_history_generation = 0;
+    crate::app::debug_tools::reset_session(diag, &mut match_state.sim_runtime);
+    reset_live_window(diag, match_state);
+    match_state.telemetry_history.clear();
+    match_state.report_history.clear();
+    diag.render_report_cache = None;
+    diag.telemetry_history_generation = 0;
     // A replaced world has a new elevation grid: drop the cache and force the
     // next publish to resend it, even if the same client stays attached.
-    state.diag.telemetry_terrain = None;
-    state.diag.telemetry_terrain_dirty = true;
+    diag.telemetry_terrain = None;
+    diag.telemetry_terrain_dirty = true;
 }
 
 /// The attach/detach boundary: the live window restarts, but the whole-match
 /// history must survive it — that is exactly the time a late client needs.
-fn reset_live_window(state: &mut AppState) {
-    state.match_state.telemetry_timing.clear();
-    state.match_state.telemetry_tick_rate.clear();
-    state.diag.render_timing = Default::default();
-    state.diag.telemetry_last_publish = None;
+fn reset_live_window(
+    diag: &mut crate::app::diagnostics::state::DiagnosticsState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) {
+    match_state.telemetry_timing.clear();
+    match_state.telemetry_tick_rate.clear();
+    diag.render_timing = Default::default();
+    diag.telemetry_last_publish = None;
 }
 
-pub(crate) fn synchronize_observer(state: &mut AppState) {
+pub(crate) fn synchronize_observer(
+    diag: &mut crate::app::diagnostics::state::DiagnosticsState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) {
     // The observer writes the live world. A tick still on the simulation
     // thread leaves it to the pass that finds the tick back, so the draw
     // never waits for it (docs/sim-thread.md).
-    if state.match_state.sim_runtime.is_lent() {
+    if match_state.sim_runtime.is_lent() {
         return;
     }
-    let active = state.diag.telemetry_active();
-    let simulation = state
-        .match_state
+    let active = diag.telemetry_active();
+    let simulation = match_state
         .sim_runtime
         .write_sim(SimWrite::Debug)
         .map(|rt| &mut rt.simulation);
-    if state
-        .diag
-        .telemetry_observer
-        .synchronize(simulation, active)
-    {
-        reset_live_window(state);
+    if diag.telemetry_observer.synchronize(simulation, active) {
+        reset_live_window(diag, match_state);
     }
 }
 
@@ -80,7 +84,7 @@ fn bounded_text(value: &str, maximum: usize) -> String {
 }
 
 /// Capture one full dashboard snapshot, or `None` when no match is running.
-pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
+pub fn capture_snapshot(state: &mut AppState) -> Option<TelemetrySnapshot> {
     let runtime = state.match_state.sim_runtime.runtime()?;
     let mut snapshot = runtime.simulation.telemetry_snapshot();
     #[cfg(feature = "debug-tools")]
@@ -112,7 +116,10 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
             .map(|name| bounded_text(name, TELEMETRY_MAX_NAME_BYTES));
     }
     let mut timing = state.match_state.telemetry_timing.summarize(
-        crate::app::match_runtime::network_match::game_frame_ms(state),
+        crate::app::match_runtime::network_match::game_frame_ms(
+            &state.platform,
+            &state.match_state,
+        ),
     );
     // Each rate keeps its own owner: FPS is the render loop's, tick_hz is the
     // committed-tick meter's.
@@ -153,7 +160,11 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
         build_stamp: BUILD_STAMP.to_owned(),
     });
     snapshot.debug = Some(capture_debug(state, &runtime.simulation));
-    snapshot.process = Some(capture_process(state));
+    snapshot.process = Some(capture_process(
+        &state.renderer,
+        &mut state.diag.process_stats,
+        &state.match_state.match_presentation,
+    ));
     // Mean per observed frame, accumulated only while a client is watching.
     // A report point closes the window, so the brief span between that reset
     // and the next frame has nothing to report; fall back to the window the
@@ -209,13 +220,17 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
 /// Process-level resources for the dashboard: the OS counters, plus the
 /// adapter identity and the palette-index texture pages this process keeps
 /// resident. Pure observation — nothing here touches simulation state.
-fn capture_process(state: &AppState) -> ProcessStats {
-    let mut stats = state.diag.process_stats.sample();
+fn capture_process(
+    renderer: &crate::app::renderer_state::RendererState,
+    process_stats: &mut crate::app::process_stats::ProcessStatsSampler,
+    presentation: &crate::app::presentation::state::MatchPresentationState,
+) -> ProcessStats {
+    let mut stats = process_stats.sample();
     stats.gpu_adapter = Some(bounded_text(
-        &state.renderer.gpu.capture_adapter_observation().name,
+        &renderer.gpu.capture_adapter_observation().name,
         MAX_DETAIL_BYTES,
     ));
-    stats.gpu_texture_mb = resident_texture_mib(state);
+    stats.gpu_texture_mb = resident_texture_mib(presentation);
     stats
 }
 
@@ -225,16 +240,18 @@ fn capture_process(state: &AppState) -> ProcessStats {
 /// a page's footprint is exactly its pixel count. This is deliberately the
 /// renderer's own accounting and not a driver query: it is exact for what we
 /// allocate and needs no vendor API.
-fn resident_texture_mib(state: &AppState) -> f64 {
+fn resident_texture_mib(
+    presentation: &crate::app::presentation::state::MatchPresentationState,
+) -> f64 {
     const BYTES_PER_PIXEL: f64 = 1.0;
-    let pixels = (sprite_atlas_bytes(state) + unit_atlas_bytes(state)) as f64;
+    let pixels = (sprite_atlas_bytes(presentation) + unit_atlas_bytes(presentation)) as f64;
     pixels * BYTES_PER_PIXEL / (1024.0 * 1024.0)
 }
 
-fn sprite_atlas_bytes(state: &AppState) -> u64 {
-    state
-        .match_state
-        .match_presentation
+fn sprite_atlas_bytes(
+    presentation: &crate::app::presentation::state::MatchPresentationState,
+) -> u64 {
+    presentation
         .sprite_atlas
         .as_ref()
         .map(|atlas| {
@@ -247,10 +264,8 @@ fn sprite_atlas_bytes(state: &AppState) -> u64 {
         .unwrap_or(0)
 }
 
-fn unit_atlas_bytes(state: &AppState) -> u64 {
-    state
-        .match_state
-        .match_presentation
+fn unit_atlas_bytes(presentation: &crate::app::presentation::state::MatchPresentationState) -> u64 {
+    presentation
         .unit_atlas
         .as_ref()
         .map(|atlas| {
@@ -266,7 +281,7 @@ fn unit_atlas_bytes(state: &AppState) -> u64 {
 /// Render-loop cadence also publishes paused worlds. No snapshot work or
 /// process queries occur without an authenticated subscriber.
 pub fn publish_if_due(state: &mut AppState) {
-    synchronize_observer(state);
+    synchronize_observer(&mut state.diag, &mut state.match_state);
     if !state.diag.telemetry_observer.active() {
         return;
     }
@@ -385,7 +400,7 @@ fn encode_terrain_grid(
 /// The egui Terrain Debug panel's data, read from live cursor and selection.
 fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
     let (cursor_rx, cursor_ry) = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-        state,
+        &state.match_state,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
@@ -439,7 +454,7 @@ fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
                 TELEMETRY_MAX_NAME_BYTES,
             ),
             hp: entity.health.current(),
-            max_hp: entity_max_hp(state, sim, entity),
+            max_hp: entity_max_hp(&state.frontend, &state.match_state, sim, entity),
         });
     }
     if let Some(rules) = state.rules() {
@@ -606,12 +621,12 @@ mod tests {
 
 /// Strength from the entity's object type, or 0 when the rules are not bound.
 fn entity_max_hp(
-    state: &AppState,
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
     sim: &Simulation,
     entity: &crate::sim::game_entity::GameEntity,
 ) -> i32 {
-    state
-        .rules()
+    crate::app::state::active_rules(frontend, match_state)
         .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
         .map_or(0, |obj| obj.strength)
 }

@@ -38,7 +38,7 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::cell_rect::{CellRef, get_cellclass_fallback, get_cellclass_fallback_leptons};
-use crate::sim::intern::InternedId;
+use crate::sim::intern::{InternKey, InternedId};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::projectile::ProjectileCoord;
 use crate::sim::radar::{RadarEventRequest, RadarEventType};
@@ -688,8 +688,7 @@ pub(super) fn ground_strike(
             if let Some(anim) = crate::sim::combat::detonation_anim::select(
                 sim, rules, warhead, damage, land, coordinate, false,
             ) {
-                let name = sim.interner.resolve(anim).to_string();
-                let _ = crate::sim::superweapon::spawn_super_anim(sim, rules, &name, strike);
+                let _ = crate::sim::superweapon::spawn_super_anim(sim, rules, anim, strike);
             }
         } else {
             log::warn!("Ares Lightning Storm warhead {warhead_name:?} not found in rules");
@@ -700,15 +699,13 @@ pub(super) fn ground_strike(
         StrikeCell::read(sim, &StormCell::of(&cell), coordinate)
     };
     debris |= after.nearest != before.nearest;
-    let pieces: Vec<String> = match &lightning.debris {
-        Some(debris) => debris.clone(),
-        None => sim
-            .metallic_debris()
-            .iter()
-            .map(|&id| sim.interner.resolve(id).to_string())
-            .collect(),
-    };
-    if pieces.is_empty() || before.nearest_is_infantry || !debris {
+    // The storm's own debris names, else [General] MetallicDebris as the
+    // world interned it.
+    let pieces = lightning
+        .debris
+        .as_ref()
+        .map_or(sim.metallic_debris().len(), Vec::len);
+    if pieces == 0 || before.nearest_is_infantry || !debris {
         return bridge_changed;
     }
     let count = sim
@@ -717,9 +714,18 @@ pub(super) fn ground_strike(
     for _ in 0..count.max(0) {
         let pick = sim
             .superweapon_rng()
-            .next_range_i32_inclusive(0, pieces.len() as i32 - 1);
-        let _ =
-            crate::sim::superweapon::spawn_super_anim(sim, rules, &pieces[pick as usize], strike);
+            .next_range_i32_inclusive(0, pieces as i32 - 1) as usize;
+        let piece = match &lightning.debris {
+            Some(names) => names.get(pick).map(InternKey::from),
+            None => sim
+                .metallic_debris()
+                .get(pick)
+                .copied()
+                .map(InternKey::from),
+        };
+        if let Some(piece) = piece {
+            let _ = crate::sim::superweapon::spawn_super_anim(sim, rules, piece, strike);
+        }
     }
     bridge_changed
 }

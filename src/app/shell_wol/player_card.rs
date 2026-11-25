@@ -10,6 +10,11 @@ use winit::keyboard::KeyCode;
 
 use super::service::WolServiceRequest;
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::shell_wol::WolVisit;
+use crate::app::shell_wol::buddies::WolBuddies;
 use crate::app::web_link;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::{WolPlayerCardLayout, wol_player_card_layout_on};
@@ -18,7 +23,10 @@ use crate::ui::wol_lobby::{
     CARD_STATUS, PLAYER_BADGE_X, PLAYER_NAME_X, WolCardAction, WolLobbyState, WolPlayerCard,
     badge_name_key,
 };
+use crate::ui::wol_login::WolAccountGlobals;
 use crate::ui::wol_persona::{LOCALE_COUNT, locale_rows};
+use crate::util::config::GameConfig;
+use winit::window::Window;
 
 /// What the card shows, for the painter.
 pub(crate) struct PlayerCardView {
@@ -36,33 +44,28 @@ pub(crate) struct PlayerCardView {
 
 /// The lobby's widgets while its card is open; a lobby popup over it takes
 /// the input first.
-fn card_ui(state: &AppState) -> Option<&WolLobbyState> {
-    let ui = &state.frontend.wol.as_ref()?.lobby()?.ui;
+fn card_ui(wol: Option<&WolVisit>) -> Option<&WolLobbyState> {
+    let ui = &wol?.lobby()?.ui;
     ui.card.as_ref().filter(|_| ui.popup.is_none())?;
     Some(ui)
 }
 
-fn card(state: &AppState) -> Option<&WolPlayerCard> {
-    card_ui(state)?.card.as_ref()
+fn card(wol: Option<&WolVisit>) -> Option<&WolPlayerCard> {
+    card_ui(wol)?.card.as_ref()
 }
 
-fn card_ui_mut(state: &mut AppState) -> Option<&mut WolLobbyState> {
-    let ui = &mut state.frontend.wol.as_mut()?.lobby_mut()?.ui;
+fn card_ui_mut(wol: Option<&mut WolVisit>) -> Option<&mut WolLobbyState> {
+    let ui = &mut wol?.lobby_mut()?.ui;
     ui.card.as_ref().filter(|_| ui.popup.is_none())?;
     Some(ui)
 }
 
-fn close(state: &mut AppState) {
-    if let Some(lobby) = state
-        .frontend
-        .wol
-        .as_mut()
-        .and_then(|visit| visit.lobby_mut())
-    {
+fn close(frontend: &mut FrontendState, window: &Window) {
+    if let Some(lobby) = frontend.wol.as_mut().and_then(|visit| visit.lobby_mut()) {
         lobby.ui.close_card();
     }
-    state.frontend.shell_status_line.repaint();
-    state.platform.window.request_redraw();
+    frontend.shell_status_line.repaint();
+    window.request_redraw();
 }
 
 pub(crate) fn layout(state: &AppState) -> WolPlayerCardLayout {
@@ -73,8 +76,8 @@ pub(crate) fn layout(state: &AppState) -> WolPlayerCardLayout {
     )
 }
 
-fn own(state: &AppState, name: &str) -> bool {
-    name.eq_ignore_ascii_case(&state.frontend.wol_account.nickname)
+fn own(account: &WolAccountGlobals, name: &str) -> bool {
+    name.eq_ignore_ascii_case(&account.nickname)
 }
 
 /// Message, or Change Country on your own card, and Add or Remove Buddy,
@@ -94,16 +97,16 @@ fn buttons(layout: &WolPlayerCardLayout, own: bool) -> [(u16, RectPx); 4] {
 /// Puts the open card's buttons on its box, the first one by whose card it
 /// is, each taking a press while it can act.
 pub(super) fn sync(state: &mut AppState) {
-    let Some(name) = card(state).map(|card| card.name.clone()) else {
+    let Some(name) = card(state.frontend.wol.as_ref()).map(|card| card.name.clone()) else {
         return;
     };
-    let placed: Vec<_> = buttons(&layout(state), own(state, &name))
+    let placed: Vec<_> = buttons(&layout(state), own(&state.frontend.wol_account, &name))
         .into_iter()
-        .map(|(id, rect)| (id, rect, enabled(state, &name, id)))
+        .map(|(id, rect)| (id, rect, enabled(&state.frontend, &name, id)))
         .collect();
     let value = country_value(state);
     let layout = layout(state);
-    let shown = rows(state, &name);
+    let shown = rows(&state.frontend, &state.process_assets, &name);
     // Each shown row hovers from its caption to its value's end.
     let rows: Vec<RectPx> = (layout.rows.iter().take(shown.len()))
         .map(|(caption, value)| {
@@ -112,12 +115,12 @@ pub(super) fn sync(state: &mut AppState) {
         .collect();
     // The name sits after its badge as in the modern player list, where the
     // lobby's art shows the badge.
-    let badged = super::lobby::player_badge(state, &name).is_some()
-        && super::leaf::art(state, crate::ui::wol_lobby::DIALOG).is_some();
+    let badged = super::lobby::player_badge(&state.frontend.wol_lobby_globals, &name).is_some()
+        && super::leaf::art(&state.frontend.wol_art, crate::ui::wol_lobby::DIALOG).is_some();
     let scale = super::lobby::popup_scale(state);
     // The badge at its own size, 2 pixels into the name's value and centred
     // on it, as the player list draws it.
-    let badge = super::lobby::player_badge(state, &name)
+    let badge = super::lobby::player_badge(&state.frontend.wol_lobby_globals, &name)
         .filter(|_| badged)
         .and_then(|file| state.frontend.skirmish_shell_chrome.as_ref()?.wol_badge(file))
         .zip(layout.rows.first())
@@ -128,7 +131,7 @@ pub(super) fn sync(state: &mut AppState) {
             let [w, h] = scale.art_size(entry.pixel_size[0], entry.pixel_size[1]);
             RectPx::new(x, y, w.round() as i32, h.round() as i32)
         });
-    let status = status_help(state).unwrap_or_default();
+    let status = status_help(&state.frontend, &state.process_assets).unwrap_or_default();
     // Each row's caption and value, then the status line.
     let statics = |id: u16| {
         if id == CARD_STATUS {
@@ -149,7 +152,7 @@ pub(super) fn sync(state: &mut AppState) {
             _ => (row.value.as_str(), value),
         })
     };
-    if let Some(ui) = card_ui_mut(state) {
+    if let Some(ui) = card_ui_mut(state.frontend.wol.as_mut()) {
         ui.sync_card(layout.dialog, &rows, badge, statics, |id| {
             placed
                 .iter()
@@ -163,22 +166,21 @@ pub(super) fn sync(state: &mut AppState) {
 }
 
 /// The buddy mirror's spelling of the player, when they are a buddy.
-fn buddy(state: &AppState, name: &str) -> Option<String> {
-    state
-        .frontend
-        .wol_buddies
+fn buddy(buddies: &WolBuddies, name: &str) -> Option<String> {
+    buddies
         .names()
         .iter()
         .find(|known| known.eq_ignore_ascii_case(name))
         .cloned()
 }
 
-fn enabled(state: &AppState, name: &str, control: u16) -> bool {
-    let local = &state.frontend.wol_account.nickname;
+fn enabled(frontend: &FrontendState, name: &str, control: u16) -> bool {
+    let local = &frontend.wol_account.nickname;
     match control {
-        CARD_COUNTRY => state.frontend.wol.as_ref().is_some_and(|visit| visit.api),
+        CARD_COUNTRY => frontend.wol.as_ref().is_some_and(|visit| visit.api),
         CARD_BUDDY => {
-            buddy(state, name).is_some() || state.frontend.wol_buddies.valid_new(name, local)
+            buddy(&frontend.wol_buddies, name).is_some()
+                || frontend.wol_buddies.valid_new(name, local)
         }
         CARD_PROFILE => web_link::profile_url(name).is_some(),
         _ => true,
@@ -186,8 +188,8 @@ fn enabled(state: &AppState, name: &str, control: u16) -> bool {
 }
 
 /// The player's clan, as the card's Clan row shows it.
-fn clan(state: &AppState, name: &str) -> Option<String> {
-    let member = super::lobby::members(state)
+fn clan(wol: Option<&WolVisit>, name: &str) -> Option<String> {
+    let member = super::lobby::members(wol)
         .iter()
         .find(|member| member.name == name)?;
     match (member.clan_name.is_empty(), member.clan_tag.is_empty()) {
@@ -200,17 +202,16 @@ fn clan(state: &AppState, name: &str) -> Option<String> {
 
 /// Your Country row's value, which the country list hangs below.
 fn country_value(state: &AppState) -> Option<RectPx> {
-    let card = card(state)?;
-    let row = 1 + usize::from(clan(state, &card.name).is_some());
+    let card = card(state.frontend.wol.as_ref())?;
+    let row = 1 + usize::from(clan(state.frontend.wol.as_ref(), &card.name).is_some());
     let (_, value) = layout(state).rows.get(row).copied()?;
     Some(value)
 }
 
 /// The country the lobby holds for you, 0 when it has none.
-fn own_locale(state: &AppState) -> i32 {
-    let nickname = state.frontend.wol_account.nickname.to_ascii_lowercase();
-    state
-        .frontend
+fn own_locale(frontend: &FrontendState) -> i32 {
+    let nickname = frontend.wol_account.nickname.to_ascii_lowercase();
+    frontend
         .wol
         .as_ref()
         .and_then(|visit| visit.locales.get(&nickname))
@@ -223,9 +224,9 @@ fn open_countries(state: &mut AppState) {
     let rows = locale_rows(
         (0..LOCALE_COUNT).map(|locale| (locale, state.csf_text(&format!("WOL:Locale{locale:02}")))),
     );
-    let locale = own_locale(state);
+    let locale = own_locale(&state.frontend);
     if let Some(value) = country_value(state)
-        && let Some(ui) = card_ui_mut(state)
+        && let Some(ui) = card_ui_mut(state.frontend.wol.as_mut())
     {
         ui.open_countries(rows, locale, value);
     }
@@ -234,54 +235,62 @@ fn open_countries(state: &mut AppState) {
 
 /// Your pick: VERA.INI keeps it for later sign-ins, and the lobby has it at
 /// once.
-fn choose_country(state: &mut AppState, locale: i32) {
-    let profile = &mut state.persistence.options_profile;
-    if profile.online_locale != locale {
-        profile.online_locale = locale;
-        if let Some(config) = state.platform.game_config.as_ref()
-            && let Err(error) = profile.commit_online_locale(config.paths.settings_dir())
+fn choose_country(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    options_profile: &mut RetailOptionsProfile,
+    locale: i32,
+) {
+    if options_profile.online_locale != locale {
+        options_profile.online_locale = locale;
+        if let Some(config) = game_config
+            && let Err(error) = options_profile.commit_online_locale(config.paths.settings_dir())
         {
             log::warn!("Could not save the online country: {error}");
         }
     }
-    super::service::send_locale(state, locale);
+    super::service::send_locale(frontend, locale);
 }
 
 /// Row `row` of your country list picked.
-pub(super) fn country_picked(state: &mut AppState, row: usize) {
-    if let Some(locale) = card_ui(state).and_then(|ui| ui.country_locale(row)) {
-        choose_country(state, locale);
+pub(super) fn country_picked(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    options_profile: &mut RetailOptionsProfile,
+    row: usize,
+) {
+    if let Some(locale) = card_ui(frontend.wol.as_ref()).and_then(|ui| ui.country_locale(row)) {
+        choose_country(frontend, game_config, options_profile, locale);
     }
 }
 
 /// A press on a modern player row opened `name`'s card. The lobby asks for
 /// a locale it has not heard; gamemd's locale queue `0xB765F8` is not ported.
-pub(super) fn opened(state: &mut AppState, name: &str) {
-    let unheard =
-        state.frontend.wol.as_ref().is_some_and(|visit| {
-            visit.api && !visit.locales.contains_key(&name.to_ascii_lowercase())
-        });
+pub(super) fn opened(mut wol: Option<&mut WolVisit>, window: &Window, name: &str) {
+    let unheard = wol
+        .as_deref()
+        .is_some_and(|visit| visit.api && !visit.locales.contains_key(&name.to_ascii_lowercase()));
     if unheard {
         super::service::request(
-            state,
+            wol.as_deref_mut(),
             WolServiceRequest::RequestLocales {
                 names: vec![name.to_owned()],
             },
         );
     }
-    state.platform.window.request_redraw();
+    window.request_redraw();
 }
 
 /// A press outside the box closes the card (the card's widgets report it;
 /// the open country list takes every press first, ComboDropWin's capture).
-pub(super) fn dismissed(state: &mut AppState) {
-    close(state);
+pub(super) fn dismissed(frontend: &mut FrontendState, window: &Window) {
+    close(frontend, window);
 }
 
 /// Card button `id` released.
 pub(super) fn button(state: &mut AppState, id: u16) {
     if let (Some(name), Some(action)) = (
-        card(state).map(|card| card.name.clone()),
+        card(state.frontend.wol.as_ref()).map(|card| card.name.clone()),
         WolCardAction::of(id),
     ) {
         act(state, name, action);
@@ -291,39 +300,44 @@ pub(super) fn button(state: &mut AppState, id: u16) {
 fn act(state: &mut AppState, name: String, action: WolCardAction) {
     match action {
         WolCardAction::Message => {
-            close(state);
+            close(&mut state.frontend, &state.platform.window);
             super::page::open_page_dialog_to(state, &name);
         }
         WolCardAction::Country => open_countries(state),
-        WolCardAction::Buddy => match buddy(state, &name) {
-            Some(known) => super::buddies::remove(state, &known),
-            None => super::buddies::add(state, name),
+        WolCardAction::Buddy => match buddy(&state.frontend.wol_buddies, &name) {
+            Some(known) => super::buddies::remove(&mut state.frontend, &known),
+            None => super::buddies::add(&mut state.frontend, name),
         },
         WolCardAction::Profile => {
             if let Some(url) = web_link::profile_url(&name) {
                 web_link::open_in_browser(&url);
             }
         }
-        WolCardAction::Close => close(state),
+        WolCardAction::Close => close(&mut state.frontend, &state.platform.window),
     }
 }
 
 /// The card keeps every key from the chat edit but Escape, which its
 /// widgets take: it closes the open country list, else Close (its Cancel).
-pub(super) fn key_press(state: &AppState, code: Option<KeyCode>) -> bool {
-    card_ui(state).is_some() && code != Some(KeyCode::Escape)
+pub(super) fn key_press(wol: Option<&WolVisit>, code: Option<KeyCode>) -> bool {
+    card_ui(wol).is_some() && code != Some(KeyCode::Escape)
 }
 
 /// The hovered button's help while the card is open, else the help of the
 /// row under the pointer.
-pub(super) fn status_help(state: &AppState) -> Option<String> {
-    let ui = card_ui(state)?;
+pub(super) fn status_help(
+    frontend: &FrontendState,
+    process_assets: &ProcessAssets,
+) -> Option<String> {
+    let ui = card_ui(frontend.wol.as_ref())?;
     let card = ui.card.as_ref()?;
     let open = ui.countries_open();
     let key = match ui.hovered().filter(|_| !open) {
         Some(CARD_MESSAGE) => "VERA:MessageHelp",
         Some(CARD_COUNTRY) => "VERA:ChangeCountryHelp",
-        Some(CARD_BUDDY) if buddy(state, &card.name).is_some() => "VERA:RemoveBuddyHelp",
+        Some(CARD_BUDDY) if buddy(&frontend.wol_buddies, &card.name).is_some() => {
+            "VERA:RemoveBuddyHelp"
+        }
         Some(CARD_BUDDY) => "VERA:AddBuddyHelp",
         Some(CARD_PROFILE) => "VERA:FullProfileHelp",
         _ if open => return Some(String::new()),
@@ -331,13 +345,17 @@ pub(super) fn status_help(state: &AppState) -> Option<String> {
         hovered => {
             let row = hovered.and_then(|id| id.checked_sub(CARD_ROWS));
             let help = row
-                .and_then(|row| rows(state, &card.name).into_iter().nth(usize::from(row)))
+                .and_then(|row| {
+                    rows(frontend, process_assets, &card.name)
+                        .into_iter()
+                        .nth(usize::from(row))
+                })
                 .and_then(|row| row.help);
             return Some(help.unwrap_or_default());
         }
     };
     Some(crate::i18n::fill(
-        &state.csf_text(key),
+        &process_assets.csf_text(key),
         &[("name", &card.name)],
     ))
 }
@@ -354,26 +372,25 @@ struct CardRow {
 /// own card always, Unknown without one), the season's rank and OS or
 /// Unranked, and the season's wins and losses. The badge and the season
 /// explain themselves under the pointer.
-fn rows(state: &AppState, name: &str) -> Vec<CardRow> {
-    let label = |key: &str| state.csf_text(key);
+fn rows(frontend: &FrontendState, process_assets: &ProcessAssets, name: &str) -> Vec<CardRow> {
+    let label = |key: &str| process_assets.csf_text(key);
     let row = |caption: &str, value: String| CardRow {
         caption: label(caption),
         value,
         help: None,
     };
-    let badge_help = super::lobby::player_badge(state, name)
+    let badge_help = super::lobby::player_badge(&frontend.wol_lobby_globals, name)
         .and_then(badge_name_key)
         .map(|key| crate::i18n::fill(&label("VERA:BadgeHelp"), &[("badge", &label(key))]));
     let mut rows = vec![CardRow {
         help: badge_help,
         ..row("VERA:Username", name.to_owned())
     }];
-    rows.extend(clan(state, name).map(|clan| row("GUI:Clan", clan)));
-    let country = super::lobby::locale_name(state, name)
-        .or_else(|| own(state, name).then(|| label("WOL:Locale00")));
+    rows.extend(clan(frontend.wol.as_ref(), name).map(|clan| row("GUI:Clan", clan)));
+    let country = super::lobby::locale_name(frontend.wol.as_ref(), process_assets, name)
+        .or_else(|| own(&frontend.wol_account, name).then(|| label("WOL:Locale00")));
     rows.extend(country.map(|country| row("VERA:Country", country)));
-    let ladder = state
-        .frontend
+    let ladder = frontend
         .wol_lobby_globals
         .ladder
         .get(&name.to_ascii_lowercase());
@@ -402,17 +419,17 @@ fn rows(state: &AppState, name: &str) -> Vec<CardRow> {
 
 /// The open card's rows and buttons.
 pub(crate) fn view(state: &AppState) -> Option<PlayerCardView> {
-    let card = card(state)?;
+    let card = card(state.frontend.wol.as_ref())?;
     let name = card.name.as_str();
-    let own = own(state, name);
+    let own = own(&state.frontend.wol_account, name);
     let label = |key: &str| state.csf_text(key);
-    let badge = super::lobby::player_badge(state, name);
-    let rows = rows(state, name)
+    let badge = super::lobby::player_badge(&state.frontend.wol_lobby_globals, name);
+    let rows = rows(&state.frontend, &state.process_assets, name)
         .into_iter()
         .map(|row| (row.caption, row.value))
         .collect();
     let layout = layout(state);
-    let buddy = buddy(state, name).is_some();
+    let buddy = buddy(&state.frontend.wol_buddies, name).is_some();
     let buttons = buttons(&layout, own)
         .into_iter()
         .map(|(id, _)| {
@@ -427,7 +444,7 @@ pub(crate) fn view(state: &AppState) -> Option<PlayerCardView> {
             (id, label(key))
         })
         .collect();
-    let countries = card_ui(state)?.countries_drop_down();
+    let countries = card_ui(state.frontend.wol.as_ref())?.countries_drop_down();
     Some(PlayerCardView {
         layout,
         badge,

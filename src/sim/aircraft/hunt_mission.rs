@@ -122,7 +122,7 @@ impl Simulation {
         debug_assert_eq!(entity.category(), EntityCategory::Aircraft);
         let facts = HuntFacts {
             ammo: entity.ammo().map_or(-1, |ammo| ammo.current()),
-            team: self.team_script_vm.team_for_member(id).is_some(),
+            team: self.team_script_vm.team_of(id).is_some(),
             game_mode: self.session.game_mode_nonzero(),
         };
         hunt_visit(

@@ -266,7 +266,7 @@ impl Simulation {
         if let Some(definitions) = staged {
             self.trigger_runtime.definitions = definitions;
         }
-        self.team_script_vm = vm;
+        *self.team_script_vm = vm;
         for diagnostic in &diagnostics {
             log::warn!("Team AI install diagnostic: {diagnostic:?}");
         }
@@ -280,6 +280,7 @@ impl Simulation {
     /// Snapshot the values that SetDefaults683610 and ClearScene6851F0 leave
     /// intact. Names come from the incoming map; no live Tag state transfers.
     pub fn retain_local_variables_for_fresh_load(&self) -> RetainedLocalVariables {
+        self.trigger_runtime.check_attached();
         RetainedLocalVariables {
             set: self.trigger_runtime.locals_set.clone(),
         }
@@ -324,7 +325,7 @@ impl Simulation {
                 }
             }
         }
-        self.trigger_runtime = TriggerRuntime {
+        *self.trigger_runtime = TriggerRuntime {
             definitions,
             definitions_prepared: true,
             locals_set,

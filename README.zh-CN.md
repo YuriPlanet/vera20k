@@ -13,7 +13,7 @@
 
 # VERA20K
 
-VERA20K 是《红色警戒2：尤里的复仇》的全新引擎。玩起来和原版一样，单位、地图和画面都相同，可在 Windows、macOS 和 Linux 上运行。它支持更大规模的战斗：一张地图最多 30 名玩家、20,000 个单位。
+VERA20K 是《红色警戒2：尤里的复仇》的全新引擎。玩起来和原版一样，单位、地图和画面都相同，可在 Windows、macOS 和 Linux 上运行。它支持更大规模的战斗，一张地图最多可容纳 20,000 个单位。离线遭遇战最多有 120 个玩家席位，局域网和在线对战最多有 30 个。
 
 VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 
@@ -30,7 +30,7 @@ VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 ## 项目目标
 
 1. 保留原版《红色警戒2：尤里的复仇》的玩法、画面和氛围。
-2. 支持更大规模的战斗：在 500×500 的地图上，容纳最多 **30 名玩家**和 **20,000 个单位**。
+2. 支持在 500×500 的地图上进行更大规模的战斗，最多容纳 **20,000 个单位**。离线遭遇战最多有 **120 个玩家席位**，局域网和在线对战最多有 **30 个**。
 3. 加入 RTS 游戏中已有的功能，以及一些前所未见的功能。
 4. 内置多人游戏客户端
 
@@ -112,13 +112,16 @@ VERA20K 默认使用《尤里的复仇》原版规则。你可以在 **Options**
 《命令与征服》和《红色警戒》源码、World-Altering Editor、Final Alert、YRpp、Ares、Phobos，
 以及其他为此做出贡献的项目和社区。
 
-版权所有 © 2026 Halvor Nikolai Rusten 及 VERA20K 贡献者。本项目采用 [GPLv3](LICENSE-GPL) 许可证，并附有[附加条款](LEGAL.md#additional-terms)。本仓库不包含游戏文件。
+版权所有 © 2026 Halvor Nikolai Rusten 及 VERA20K 贡献者。本项目采用 [GPLv3](LICENSE-GPL) 许可证，并附有[附加条款](LEGAL.md#additional-terms)。
+VERA20K 经许可随附《Tiberian Sun: Firestorm》的雪地和冰面地块，这些地块仍归 Electronic Arts 所有。玩家需自行提供《红色警戒2：尤里的复仇》的游戏文件。
 Command & Conquer 和 Red Alert 是 Electronic Arts Inc. 的商标，截图和应用图标（《红色警戒2》的红星）中的游戏美术资源归 Electronic Arts 所有。
 VERA20K 与 Electronic Arts 无隶属关系，也未获其认可。
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
 
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
+
+This product includes software developed by the [Kratos PP author](docs/zh-CN/kratos.md).
 
 **在分享、出售或复刻（fork）VERA20K 之前，请先阅读[法律声明](LEGAL.md)。**
 
@@ -127,7 +130,7 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 - [WebAssembly 预览版](docs/wasm.zh-CN.md)：在浏览器中运行的可选单人版本。
 - [模组制作指南](docs/modding.md)：模组能做什么、不能做什么，以及 VERA20K 与原版游戏的区别。
 - [INI 配置方案](docs/ini-roots.md)：选择规则、美术和 AI 文件。
-- [Ares](docs/ares.md)、[Phobos](docs/phobos.md) 和 [NPatch](docs/npatch.md)：扩展的支持情况与限制。
+- [Ares](docs/ares.md)、[Phobos](docs/phobos.md)、[Kratos](docs/zh-CN/kratos.md) 和 [NPatch](docs/npatch.md)：扩展的支持情况与限制。
 - [引擎概览](docs/index.md)：代码结构以及引擎各部分如何协同工作。
 - [开发者工具](tools/README.md)：构建、测试和资源检查。
 - [地图测试](tools/map_observation.md)：脚本化场景、截图和对局观察。

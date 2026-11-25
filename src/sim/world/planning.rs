@@ -542,7 +542,7 @@ impl Simulation {
     /// @ 0x00636120` on each token, frees it and zeroes AC4B84.
     /// This is a player-load boundary, separate from internal serialization.
     pub(crate) fn reset_planning_after_player_load(&mut self) {
-        self.planning = PlanningState::default();
+        *self.planning = PlanningState::default();
     }
 
     /// Normalize the unsaved planner in cross-crate state-only load fixtures,
@@ -1667,11 +1667,11 @@ impl Simulation {
     pub(super) fn apply_planning_record(
         &mut self,
         sender: Option<i8>,
-        owner_name: &str,
+        owner_name: crate::sim::intern::InternKey<'_>,
         record: &CommandRecord,
         rules: &crate::rules::ruleset::RuleSet,
     ) -> bool {
-        let Some(owner) = self.interner.get(owner_name) else {
+        let Some(owner) = self.interner.key_id(owner_name) else {
             return false;
         };
         let authority = if self.session.has_custom_control_grants() {
@@ -2170,9 +2170,13 @@ impl Simulation {
         if !enabled {
             return;
         }
+        // One borrow of the store for the path read beside the node writes.
+        let planning = &mut *self.planning;
+        let Some(path) = planning.paths.get(&actor) else {
+            return;
+        };
         for id in &path.nodes[start..] {
-            let node = self
-                .planning
+            let node = planning
                 .nodes
                 .get_mut(id)
                 .expect("every node on a path exists (restore_index)");
@@ -2261,9 +2265,7 @@ impl Simulation {
                 break (node_id, record.clone());
             }
             let permitted = owner
-                .and_then(|owner| {
-                    self.resolve_command_grant_source(self.interner.resolve(owner), sender)
-                })
+                .and_then(|owner| self.resolve_command_grant_source(owner.into(), sender))
                 .is_some_and(|source| self.planning_command_actor_allowed(source, actor));
             if permitted {
                 break (node_id, record.clone());

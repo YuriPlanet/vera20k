@@ -10,6 +10,7 @@
 use crate::util::time::Instant;
 use std::collections::{BTreeMap, HashMap};
 
+use crate::app::process_assets::ProcessAssets;
 use crate::map::houses::{HouseColorMap, HouseRoster};
 use crate::map::overlay::TerrainObject;
 use crate::map::terrain::TerrainGrid;
@@ -481,12 +482,12 @@ pub(crate) struct StatusTexts {
 }
 
 impl StatusTexts {
-    pub(crate) fn resolve(state: &crate::app::AppState) -> Self {
+    pub(crate) fn resolve(process_assets: &ProcessAssets) -> Self {
         Self {
-            ready: state.csf_label("TXT_READY", "Ready"),
-            hold: state.csf_label("TXT_HOLD", "On Hold"),
-            charging: state.csf_label("TXT_CHARGING", "Charging"),
-            active: state.csf_label("TXT_FIRESTORM_ON", "Firestorm On"),
+            ready: process_assets.csf_label("TXT_READY", "Ready"),
+            hold: process_assets.csf_label("TXT_HOLD", "On Hold"),
+            charging: process_assets.csf_label("TXT_CHARGING", "Charging"),
+            active: process_assets.csf_label("TXT_FIRESTORM_ON", "Firestorm On"),
         }
     }
 }

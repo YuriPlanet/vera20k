@@ -2,7 +2,10 @@
 //! (`0x005C98FE`) and the Diplomacy rows (`0x00658330`): both read the same
 //! House UI name `+0x1602A` and colour it through the House's colour scheme.
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::assets::csf_file::CsfFile;
 use crate::map::houses::HouseColorMap;
 use crate::rules::color_scheme::ColorSchemeEntry;
 use crate::sim::intern::InternedId;
@@ -21,14 +24,18 @@ pub(crate) struct HouseUiSources<'a> {
 impl<'a> HouseUiSources<'a> {
     /// The running match's sources. `computer` is the caller's resolved
     /// `TXT_COMPUTER`.
-    pub(crate) fn from_state(state: &'a AppState, computer: &'a str) -> Self {
+    pub(crate) fn from_state(
+        frontend: &'a FrontendState,
+        match_state: &'a MatchState,
+        csf: &'a Option<CsfFile>,
+        computer: &'a str,
+    ) -> Self {
         Self {
-            csf: state.process_assets.csf.as_ref(),
+            csf: csf.as_ref(),
             computer,
-            schemes: state
-                .rules()
+            schemes: crate::app::state::active_rules(frontend, match_state)
                 .map_or(&[][..], |rules| rules.color_schemes.as_slice()),
-            colors: &state.match_state.match_presentation.house_color_map,
+            colors: &match_state.match_presentation.house_color_map,
         }
     }
 
@@ -83,31 +90,42 @@ impl<'a> HouseUiSources<'a> {
 
 /// The running match's UI name for `owner` (House+0x1602A), as every
 /// House-named message reads it.
-pub(crate) fn house_ui_name(state: &AppState, owner: InternedId) -> Option<String> {
-    let sim = &state.match_state.sim_runtime.presentation()?.simulation;
+pub(crate) fn house_ui_name(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    owner: InternedId,
+) -> Option<String> {
+    let sim = &match_state.sim_runtime.presentation()?.simulation;
     let country = sim.houses().get(&owner)?.country();
-    let computer = state.csf_text("TXT_COMPUTER");
+    let computer = process_assets.csf_text("TXT_COMPUTER");
     Some(
-        HouseUiSources::from_state(state, &computer).ui_name(sim, owner, country, |country| {
-            country_display_name(state, sim, country)
-        }),
+        HouseUiSources::from_state(frontend, match_state, &process_assets.csf, &computer).ui_name(
+            sim,
+            owner,
+            country,
+            |country| {
+                country_display_name(frontend, match_state, &process_assets.csf, sim, country)
+            },
+        ),
     )
 }
 
 /// A country's display name: its `UIName=` through the string table, else
 /// its plain `Name=`.
 pub(crate) fn country_display_name(
-    state: &AppState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    csf: &Option<CsfFile>,
     sim: &Simulation,
     country: InternedId,
 ) -> Option<String> {
     let country = sim.interner().resolve(country);
-    let (ui_key, plain) = state
-        .rules()
+    let (ui_key, plain) = crate::app::state::active_rules(frontend, match_state)
         .map(|rules| rules.country_display_name_sources(country))
         .unwrap_or((None, None));
     let localized = ui_key
-        .zip(state.process_assets.csf.as_ref())
+        .zip(csf.as_ref())
         .map(|(key, csf)| csf.text(key).into_owned())
         .filter(|text| Some(text.as_str()) != ui_key);
     localized.or_else(|| plain.map(str::to_string))

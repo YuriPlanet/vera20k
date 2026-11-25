@@ -35,7 +35,7 @@ fn world_with_cliff() -> Simulation {
     terrain.test_install_destroyable_cliff_catalog(100);
     assert!(terrain.is_destroyable_cliff(1, 1));
     let mut sim = Simulation::with_seed(0x70CA);
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     sim
 }
 

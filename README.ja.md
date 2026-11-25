@@ -13,7 +13,7 @@
 
 # VERA20K
 
-VERA20K は Red Alert 2: Yuri's Revenge の新しいエンジンです。ユニット、マップ、見た目はそのままで、オリジナルと同じように遊べ、Windows、macOS、Linux で動作します。より大きな戦いに向けて作られており、1 つのマップで最大 30 人のプレイヤーと 20,000 ユニットに対応します。
+VERA20K は Red Alert 2: Yuri's Revenge の新しいエンジンです。ユニット、マップ、見た目はそのままで、オリジナルと同じように遊べ、Windows、macOS、Linux で動作します。より大きな戦いに向けて作られており、1 つのマップで最大 20,000 ユニットに対応します。プレイヤー枠はオフラインのスカーミッシュで最大 120、LAN 対戦とオンライン対戦で最大 30 です。
 
 VERA20K はゲーマーによる、ゲーマーのためのプロジェクトです。その方向性を最終的に決めるのもゲーマーです。
 
@@ -30,7 +30,7 @@ VERA20K はゲーマーによる、ゲーマーのためのプロジェクトで
 ## プロジェクトの目標
 
 1. オリジナルの Red Alert 2: Yuri's Revenge のゲームプレイ、ビジュアル、雰囲気を守る。
-2. より大規模な戦闘に対応する：500×500 のマップで最大 **30 人のプレイヤー**と **20,000 ユニット**。
+2. 500×500 のマップで最大 **20,000 ユニット**が参加する大規模な戦闘に対応する。プレイヤー枠はオフラインのスカーミッシュで最大 **120**、LAN 対戦とオンライン対戦で最大 **30**。
 3. RTS でおなじみの機能に加え、これまでにない機能も取り入れる。
 4. マルチプレイクライアントの内蔵
 
@@ -97,7 +97,9 @@ VERA20K は標準で Yuri's Revenge オリジナル版のルールを使いま�
 
 OpenRA、XCC Mixer、ModEnc wiki、Project Perfect Mod、EA が GPL で公開した Command & Conquer と Red Alert のソースコード、World-Altering Editor、Final Alert、YRpp、Ares、Phobos、そのほか多くの皆さんに感謝します。
 
-本プロジェクトは[追加条項](LEGAL.md#additional-terms)付きの [GPLv3](LICENSE-GPL) でライセンスされています。このリポジトリにゲームファイルは含まれていません。Command & Conquer および Red Alert は Electronic Arts Inc. の商標です。スクリーンショットとアプリアイコン（Red Alert 2 の赤い星）には、Electronic Arts が所有するゲームアートが含まれています。VERA20K は Electronic Arts と提携関係になく、同社の承認を受けたものでもありません。
+本プロジェクトは[追加条項](LEGAL.md#additional-terms)付きの [GPLv3](LICENSE-GPL) でライセンスされています。
+VERA20K は許可を得て Tiberian Sun: Firestorm の雪と氷の地形タイルを同梱しています。これらのタイルは引き続き Electronic Arts の所有物です。Red Alert 2: Yuri's Revenge のゲームファイルはご自身でご用意ください。
+Command & Conquer および Red Alert は Electronic Arts Inc. の商標です。スクリーンショットとアプリアイコン（Red Alert 2 の赤い星）には、Electronic Arts が所有するゲームアートが含まれています。VERA20K は Electronic Arts と提携関係になく、同社の承認を受けたものでもありません。
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
 

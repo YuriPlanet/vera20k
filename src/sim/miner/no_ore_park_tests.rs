@@ -19,7 +19,7 @@ fn a_computer_miner_that_finds_no_ore_parks_on_guard() {
         return;
     };
     let russians = sim.interner.get("Russians").unwrap();
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(40, 40));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(40, 40));
     // The human house keeps a building, so the match does not end.
     spawn(&mut sim, &rules, "GAPOWR", "Americans", 30, 30);
     spawn(&mut sim, &rules, "GAREFN", "Russians", 10, 10);
@@ -130,7 +130,7 @@ fn blocked_pad() -> Option<(
             .native_fixed_cell_index(0, 0)
             .is_none()
     );
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(40, 40));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(40, 40));
     spawn(&mut sim, &rules, "GAPOWR", "Americans", 22, 22);
     let refinery = spawn(&mut sim, &rules, "GAREFN", "Russians", 12, 13);
     let miner = spawn(&mut sim, &rules, "HARV", "Russians", 15, 14);

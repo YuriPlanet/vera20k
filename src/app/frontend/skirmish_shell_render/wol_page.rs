@@ -4,9 +4,11 @@
 //! an owner-draw list, their looks read from the dialogs' widgets.
 
 use super::gui_paint::{ButtonArt, GuiStyle, HostRows, paint_gui_styled};
-use crate::render::hud_paint::{HudPaint, Material};
 use super::wol_lobby::{POPUP_DEPTHS, WolLobbyPaint};
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::renderer_state::RendererState;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::shell_paint;
 use crate::ui::lan_shell::LanChatLine;
 use crate::ui::shell::descriptor::DialogResourceId;
@@ -48,7 +50,9 @@ fn paint_box_on(state: &AppState, dialog: RectPx, scale: ShellScale) -> WolLobby
 
 /// Appends a widget paint's sprites and texts to the box's.
 fn extend(paint: &mut WolLobbyPaint, widgets: HudPaint) {
-    paint.controls.extend(widgets.lane(Material::Controls).copied());
+    paint
+        .controls
+        .extend(widgets.lane(Material::Controls).copied());
     paint.texts.extend(widgets.texts);
 }
 
@@ -73,7 +77,18 @@ fn paint_widget_box(
     };
     extend(
         &mut paint,
-        paint_gui_styled(state, c.gui(), root, SCALE, &[], style),
+        paint_gui_styled(
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            c.gui(),
+            root,
+            SCALE,
+            &[],
+            style,
+        ),
     );
     paint
 }
@@ -89,9 +104,9 @@ fn rows(lines: &[LanChatLine]) -> HostRows {
 /// nodes ([`crate::app::input::surrender::sync`]).
 fn paint_surrender_box(state: &AppState) -> WolLobbyPaint {
     use crate::app::input::surrender::{self, BODY, SurrenderButton};
-    let layout = surrender::layout(state);
+    let layout = surrender::layout(&state.renderer, &state.frontend.screen);
     let mut paint = paint_box(state, layout.dialog);
-    let Some(root) = surrender::root(state) else {
+    let Some(root) = surrender::root(&state.match_state.match_presentation) else {
         return paint;
     };
     let text_of = |id: i32| -> Option<String> {
@@ -104,8 +119,14 @@ fn paint_surrender_box(state: &AppState) -> WolLobbyPaint {
         Some(state.csf_text(key))
     };
     let pressed_of = |id: i32| match id {
-        0x5AE => Some(surrender::pressed(state, SurrenderButton::Ok)),
-        2 => Some(surrender::pressed(state, SurrenderButton::Cancel)),
+        0x5AE => Some(surrender::pressed(
+            &state.match_state.match_presentation,
+            SurrenderButton::Ok,
+        )),
+        2 => Some(surrender::pressed(
+            &state.match_state.match_presentation,
+            SurrenderButton::Cancel,
+        )),
         _ => None,
     };
     let style = GuiStyle {
@@ -117,7 +138,18 @@ fn paint_surrender_box(state: &AppState) -> WolLobbyPaint {
     let gui = state.match_state.match_presentation.dialog_ui.gui();
     extend(
         &mut paint,
-        paint_gui_styled(state, gui, root, SCALE, &[], style),
+        paint_gui_styled(
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            gui,
+            root,
+            SCALE,
+            &[],
+            style,
+        ),
     );
     paint
 }
@@ -170,14 +202,27 @@ pub(crate) fn paint_wol_verify(
         let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
             return paint;
         };
-        let parts = crate::app::shell_network_setup::verify_mismatch_parts(state, message);
+        let parts =
+            crate::app::shell_network_setup::verify_mismatch_parts(&state.renderer.gpu, message);
         let pressed = verify.ok_pressed();
         let look = super::BoxLook::new(atlas.mode_two_dialog_background(side(state)), POPUP_DEPTHS);
         let ok = |id| pressed && id == crate::ui::wol_shell::BOX_OK;
         // The box's widgets in the verify's own tree
         // ([`crate::ui::wol_verify::WolVerifyDialog::sync_mismatch`]).
         let tree = verify.widgets();
-        let draw = super::paint_shell_box(state, Some(atlas), tree, message, &parts, ok, look);
+        let draw = super::paint_shell_box(
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            Some(atlas),
+            tree,
+            message,
+            &parts,
+            ok,
+            look,
+        );
         paint.controls = draw.sprites;
         paint.texts.extend(draw.text);
         return paint;
@@ -220,7 +265,18 @@ pub(crate) fn paint_wol_verify(
             if painted {
                 extend(
                     &mut paint,
-                    paint_gui_styled(state, gui, node, scale, &[], style),
+                    paint_gui_styled(
+                        &state.platform.ime,
+                        &state.renderer.bit_font,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        gui,
+                        node,
+                        scale,
+                        &[],
+                        style,
+                    ),
                 );
             }
         }
@@ -246,18 +302,25 @@ pub(crate) struct InMatchPageDraw {
 pub(crate) fn in_match_page_draw(state: &AppState) -> Option<InMatchPageDraw> {
     let window_ui = &state.renderer.window_ui;
     window_ui.set_page_texts(Vec::new());
-    let raster = crate::app::presentation::window_ui::dialog_raster(state);
+    let raster = crate::app::presentation::window_ui::dialog_raster(
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.input,
+    );
     let frame_raster = state
         .renderer
         .bit_font
         .set_raster(raster.unwrap_or(crate::render::bit_font::TextRaster::NATIVE));
     let paint = match state.match_state.match_presentation.in_game_menu {
         crate::ui::pause_menu::InGameMenuState::Page => {
-            crate::app::shell_wol::page::page_dialog(state).map(|page| {
+            crate::app::shell_wol::page::page_dialog(state.frontend.wol.as_ref()).map(|page| {
                 paint_wol_page_dialog(
                     state,
                     page,
-                    &crate::app::shell_wol::page::page_layout(state),
+                    &crate::app::shell_wol::page::page_layout(
+                        &state.renderer,
+                        &state.frontend.screen,
+                    ),
                 )
             })
         }
@@ -310,13 +373,20 @@ pub(crate) fn in_match_page_draw(state: &AppState) -> Option<InMatchPageDraw> {
 }
 
 impl InMatchPageDraw {
-    pub(crate) fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, state: &'a AppState) {
-        let batch = &state.renderer.batch_renderer;
-        let (width, height) = (state.render_width(), state.render_height());
-        if let (Some((buffer, count)), Some(atlas)) = (
-            &self.controls,
-            state.frontend.skirmish_shell_chrome.as_ref(),
-        ) {
+    pub(crate) fn draw<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        renderer: &'a RendererState,
+        frontend: &'a FrontendState,
+    ) {
+        let batch = &renderer.batch_renderer;
+        let (width, height) = (
+            renderer.render_width(&frontend.screen),
+            renderer.render_height(&frontend.screen),
+        );
+        if let (Some((buffer, count)), Some(atlas)) =
+            (&self.controls, frontend.skirmish_shell_chrome.as_ref())
+        {
             batch.draw_with_buffer_ui_passthrough(pass, &atlas.texture, buffer, *count);
         }
         for (scissor, buffer) in &self.texts {
@@ -331,12 +401,7 @@ impl InMatchPageDraw {
                 continue;
             }
             pass.set_scissor_rect(x, y, w, h);
-            batch.draw_with_buffer_ui_passthrough(
-                pass,
-                state.renderer.bit_font.atlas(),
-                buffer,
-                *count,
-            );
+            batch.draw_with_buffer_ui_passthrough(pass, renderer.bit_font.atlas(), buffer, *count);
         }
         pass.set_scissor_rect(0, 0, width, height);
     }

@@ -2551,7 +2551,7 @@ fn line_arrival_rereads_later_cell_attachments_after_real_tag_cleanup() {
         &mut terrain,
         (1..5).flat_map(|y| (1..5).map(move |x| (x, y))),
     );
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     let first = Simulation::trigger_cell_identity(&sim.resolved_terrain, (3, 2));
     let tag = sim.trigger_runtime.cell_tags[&first];
     sim.per_cell_process(
@@ -2614,7 +2614,7 @@ fn advance_trigger_frame(
     {
         // Supply native Cell storage for camera actions. Unset valid waypoints
         // retain the original(0,0) cell; no diagnostic waypoint shadow is used.
-        sim.resolved_terrain = Some(flat_trigger_playfield_terrain(32, 32));
+        *sim.resolved_terrain = Some(flat_trigger_playfield_terrain(32, 32));
     }
     sim.advance_triggers(
         rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
@@ -2914,7 +2914,7 @@ fn damage_at_waypoint_reaches_the_shared_building_receiver() {
     let mut sim = Simulation::with_seed(31);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.resolved_terrain = Some(flat_trigger_playfield_terrain(32, 32));
+    *sim.resolved_terrain = Some(flat_trigger_playfield_terrain(32, 32));
     let owner = sim.interner.intern("Neutral");
     sim.houses
         .register(HouseState::new(owner, 0, None, false, 0, 10));
@@ -3011,7 +3011,7 @@ fn parsed_event_records_match_native_list_and_production_predicates() {
             sim.session.set_binary_frame_for_test(*frame);
             install_map_triggers(&mut sim, &map);
             sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
-            sim.resolved_terrain = Some(flat_trigger_playfield_terrain(32, 32));
+            *sim.resolved_terrain = Some(flat_trigger_playfield_terrain(32, 32));
             sim.trigger_runtime.globals_set.insert(7);
             sim.trigger_runtime.locals_set.insert(9);
             let result = sim
@@ -3096,7 +3096,7 @@ fn parsed_variable_actions_match_native_reader_dispatch_and_restore() {
             );
         }
         assert_eq!(
-            original.trigger_runtime, restored.trigger_runtime,
+            *original.trigger_runtime, *restored.trigger_runtime,
             "{}",
             row.raw
         );
@@ -3130,7 +3130,7 @@ fn parsed_map_trigger_flags_gate_production_frames_and_survive_restore() {
     );
     let mut original = Simulation::new();
     install_map_triggers(&mut original, &map);
-    original.resolved_terrain = Some(flat_trigger_playfield_terrain(32, 32));
+    *original.resolved_terrain = Some(flat_trigger_playfield_terrain(32, 32));
     // Classify before saving.
     original.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
     // TriggerTypes are allocated in [Triggers] key order.
@@ -3150,7 +3150,7 @@ fn parsed_map_trigger_flags_gate_production_frames_and_survive_restore() {
     for sim in [&mut original, &mut restored] {
         // Terrain is a resource-derived authority restored separately from
         // GameSnapshot. Supply the same canonical fixture to both candidates.
-        sim.resolved_terrain = Some(flat_trigger_playfield_terrain(32, 32));
+        *sim.resolved_terrain = Some(flat_trigger_playfield_terrain(32, 32));
         let frame = sim
             .advance_app_frame(
                 &[],
@@ -3175,7 +3175,7 @@ fn parsed_map_trigger_flags_gate_production_frames_and_survive_restore() {
             ]
         );
     }
-    assert_eq!(original.trigger_runtime, restored.trigger_runtime);
+    assert_eq!(*original.trigger_runtime, *restored.trigger_runtime);
 }
 
 #[test]
@@ -3229,7 +3229,7 @@ fn trigger_action_40_normalizes_and_refreshes_authority_same_frame() {
     let mut terrain = flat_trigger_playfield_terrain(100, 100);
     terrain.recalc_playfield_attributes(initial_bounds);
     let path_grid = PathGrid::from_resolved_terrain(&terrain);
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     sim.rebuild_zone_grid(&path_grid);
     install_map_triggers(&mut sim, &map);
     sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
@@ -3333,7 +3333,7 @@ fn action40_growth_fixture() -> (Simulation, Vec<(u16, u16)>) {
         .collect();
     sim.fog.set_width_for_test(100);
     sim.fog.set_height_for_test(100);
-    sim.resolved_terrain = Some(flat_trigger_playfield_terrain(100, 100));
+    *sim.resolved_terrain = Some(flat_trigger_playfield_terrain(100, 100));
     (sim, added)
 }
 
@@ -3595,7 +3595,7 @@ fn master_frame_polls_triggers_before_logic_houses_commit_and_delete() {
          [Tags]\nTRIG_A_TAG=0,Frame Zero,TRIG_A\n",
     );
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(flat_trigger_playfield_terrain(32, 32));
+    *sim.resolved_terrain = Some(flat_trigger_playfield_terrain(32, 32));
     install_map_triggers(&mut sim, &map);
     sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
 
@@ -3684,7 +3684,7 @@ fn master_frame_save_load_continues_trigger_projectile_and_delete_state() {
 
     // Native in-scenario load restarts Scenario RNG from Seed0. Continue both
     // branches from that cursor while testing unrelated trigger/lifecycle state.
-    original.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *original.scenario_rng = crate::sim::rng::SimRng::new(0);
     let hash_before_save = original.state_hash();
     let bytes = GameSnapshot::save(&original, 0, 0, "test_map", 0);
     let mut restored = GameSnapshot::load(&bytes).expect("snapshot loads").sim;
@@ -4665,7 +4665,7 @@ fn cell_tags_split_by_ini_format_and_keep_the_first_tag_per_cell() {
         )
         .unwrap();
         let mut sim = Simulation::new();
-        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+        *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
             16,
             16,
             crate::map::resolved_terrain::test_clear_cell,

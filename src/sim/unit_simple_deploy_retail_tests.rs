@@ -123,8 +123,8 @@ fn scene(extra_clear: bool) -> Option<(Simulation, RuleSet, u64)> {
     }
     sim.session
         .set_current_house_for_test(sim.interner.get("Russians"));
-    sim.fog = crate::sim::vision::FogState::new(96, 96);
-    sim.overlay_grid = Some(OverlayGrid::new(96, 96));
+    *sim.fog = crate::sim::vision::FogState::new(96, 96);
+    *sim.overlay_grid = Some(OverlayGrid::new(96, 96));
     let clear_cells = [START, (84, 84), (86, 86), (88, 84)];
     sim.install_resolved_terrain_for_new_map(test_grid(96, 96, |x, y| {
         let is_clear = clear_cells.contains(&(x, y)) || (extra_clear && (x, y) == (49, 56));

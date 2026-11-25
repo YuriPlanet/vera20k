@@ -1017,7 +1017,10 @@ impl LiveLanCapture {
                     // selection handler, which emits the real query packet.
                     let layout = lobby::layout(state);
                     let lobby_state = &state.frontend.lan.as_ref().context("BB")?.lobby;
-                    let top = lobby::list_top(state, crate::ui::lan_shell::GAMES);
+                    let top = lobby::list_top(
+                        &state.frontend.shell_controller,
+                        crate::ui::lan_shell::GAMES,
+                    );
                     let geometry = vera20k_gui::shell::list::ShellListGeometry::new(
                         layout.rect(crate::ui::lan_shell::GAMES).unwrap_or_default(),
                         lobby_state.game_count(),
@@ -1176,7 +1179,7 @@ impl LiveLanCapture {
                 metadata.player_capacity,
             )?;
             Some(
-                json!({"text":text,"digest":crate::app::shell_network_setup::maps::staging_digest(state),
+                json!({"text":text,"digest":crate::app::shell_network_setup::maps::staging_digest(&state.frontend.multiplayer_shell_runtime, &state.match_state.session),
                 "count":checked.count,"width":checked.width,"height":checked.height}),
             )
         } else {
@@ -1233,7 +1236,15 @@ impl LiveLanCapture {
                     && crate::map::skirmish_scenarios::is_valid_map(map, mode, false)
             })
             .context("retail network map with enough starts")?;
-        setup::commit_map_selection(state, mode_id, map_index, None)?;
+        setup::commit_map_selection(
+            state.platform.game_config.as_ref(),
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            mode_id,
+            map_index,
+            None,
+        )?;
         self.select_country(state)?;
         self.open_human_rows(state, ai)
     }
@@ -1817,7 +1828,7 @@ fn click_main_menu(
     state: &mut AppState,
     control: crate::ui::main_menu_shell::MainMenuControlId,
 ) -> Result<()> {
-    let layout = crate::app::frontend::shell_layout::main_menu_layout(state);
+    let layout = crate::app::frontend::shell_layout::main_menu_layout(&state.renderer.gpu);
     let rect = layout
         .buttons
         .iter()
@@ -1903,7 +1914,7 @@ fn startup_receipt(state: &AppState) -> Result<Value> {
         .context("simulation")?
         .simulation;
     Ok(json!({
-        "match_id":crate::app::shell_wol::online_match_id(state),
+        "match_id":crate::app::shell_wol::online_match_id(state.frontend.wol.as_ref()),
         "seed":session.network_start_seed(),
         "map":launch.selected_map_file,
         "max_ahead":session.network_max_ahead_frames(),

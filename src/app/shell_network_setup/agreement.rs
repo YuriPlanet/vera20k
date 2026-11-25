@@ -1,7 +1,11 @@
 //! One build/features and resolved selected-mode rules agreement for both
 //! multiplayer adapters. ProcessAssets retains the actual source/digest owner.
 
-use crate::app::AppState;
+use crate::app::match_runtime::session::MatchSession;
+use crate::app::match_runtime::sim_host::SimHost;
+use crate::app::mods::Mods;
+use crate::app::process_assets::ProcessAssets;
+use crate::util::config::GameConfig;
 use anyhow::{Result, anyhow};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -22,19 +26,21 @@ pub(crate) fn version() -> String {
     .to_owned()
 }
 
-pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
-    let session = &state.match_state.session;
+pub(crate) fn local(
+    game_config: Option<&GameConfig>,
+    session: &MatchSession,
+    process_assets: &mut ProcessAssets,
+) -> Result<MultiplayerAgreement> {
     let rules = session
         .network_personal_rules()
         .ok_or_else(|| anyhow!("no setup"))?
         .map_err(|error| anyhow!("the host's rules do not read: {error}"))?;
-    state.process_assets.use_personal_rules(rules);
+    process_assets.use_personal_rules(rules);
     // VERA: a match that seats no computer reads the original AI INI, as its
     // load does (`LoadingStartup::ai_file`).
     let seats_computers = session.network_seats_computers();
     if session.campaign_room().is_some() {
-        let rules_digest = state
-            .process_assets
+        let rules_digest = process_assets
             .multiplayer_match_rules_digest("", seats_computers)
             .map_err(anyhow::Error::msg)?;
         return Ok(MultiplayerAgreement {
@@ -49,27 +55,21 @@ pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
         .ok_or_else(|| anyhow!("no selected map"))?;
     let mode = setup.mode.override_file.clone();
     let seed_options = if crate::map::rmg::is_seed_selection(file) {
-        let root = &state
-            .platform
-            .game_config
-            .as_ref()
+        let root = &game_config
             .ok_or_else(|| anyhow!("no asset directory"))?
             .paths
             .ra2_dir;
-        let source_file = state
-            .match_state
-            .session
+        let source_file = session
             .network_local_map_source()
             .and_then(|source| match source {
                 crate::map::source::LoadedMapSource::Loose { path, .. } => path.to_str(),
                 _ => None,
             })
             .unwrap_or(file);
-        let assets = state
-            .process_assets
+        let assets = process_assets
             .manager()
             .ok_or_else(|| anyhow!("assets missing"))?;
-        let ares = state.process_assets.reads_ares_way();
+        let ares = process_assets.reads_ares_way();
         crate::map::source::load_network_map_ini(root, source_file, assets)
             .ok()
             .map(|loaded| {
@@ -82,13 +82,9 @@ pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
         None
     };
     let digest = if let Some(options) = seed_options.as_ref() {
-        state
-            .process_assets
-            .multiplayer_generated_rules_digest(&mode, options, seats_computers)
+        process_assets.multiplayer_generated_rules_digest(&mode, options, seats_computers)
     } else {
-        state
-            .process_assets
-            .multiplayer_match_rules_digest(&mode, seats_computers)
+        process_assets.multiplayer_match_rules_digest(&mode, seats_computers)
     }
     .map_err(anyhow::Error::msg)?;
     Ok(MultiplayerAgreement {
@@ -99,16 +95,14 @@ pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
 
 /// VERA: log the match's rules in parts (`app::rules_parts`), so a refused
 /// start can be read against another player's log.
-pub(crate) fn log_rules_parts(state: &AppState) {
-    let Some(mode) = state
-        .match_state
-        .session
+pub(crate) fn log_rules_parts(session: &MatchSession, process_assets: &ProcessAssets) {
+    let Some(mode) = session
         .network_setup()
         .map(|setup| setup.mode.override_file.as_str())
     else {
         return;
     };
-    match state.process_assets.multiplayer_rules_parts(&[mode]) {
+    match process_assets.multiplayer_rules_parts(&[mode]) {
         Ok(parts) => {
             for parts in parts {
                 log::info!("Rules parts: {}", parts.json());
@@ -134,9 +128,9 @@ pub(crate) fn changed_files_text(files: &[String]) -> String {
 /// Each game knows only its own files, so it names what it changes from the
 /// original game ([`own_changes_text`]), or says it plays the original, so
 /// the change is in another player's.
-pub(crate) fn rules_differ_text(state: &AppState) -> String {
-    let own =
-        own_changes_text(state).unwrap_or_else(|| crate::i18n::tr("VERA:RulesDifferOriginal"));
+pub(crate) fn rules_differ_text(mods: &Mods, process_assets: &ProcessAssets) -> String {
+    let own = own_changes_text(mods, process_assets)
+        .unwrap_or_else(|| crate::i18n::tr("VERA:RulesDifferOriginal"));
     format!("{} {own}", crate::i18n::tr("VERA:RulesDiffer"))
 }
 
@@ -154,6 +148,8 @@ pub(crate) enum OriginalGameChange<'a> {
     /// The Ares setting where it decides which game this is
     /// (`ProcessAssets::agreed_ares_setting`), never Auto.
     Ares(crate::util::ares_launch::AresSetting),
+    /// The rules enable Kratos (forced or detected from ART).
+    Kratos,
     /// The game-folder files that change the original game.
     ChangedFiles(&'a [String]),
 }
@@ -182,6 +178,9 @@ pub(crate) fn original_game_changes<'a>(
         (!ra2 && !assets.stock_ini_roots()).then_some(OriginalGameChange::IniRoots),
         (ares != crate::util::ares_launch::AresSetting::Auto)
             .then_some(OriginalGameChange::Ares(ares)),
+        assets
+            .startup_kratos()
+            .then_some(OriginalGameChange::Kratos),
         (!files.is_empty()).then_some(OriginalGameChange::ChangedFiles(files)),
     ]
     .into_iter()
@@ -228,6 +227,9 @@ pub(crate) fn changes_header(changes: &[OriginalGameChange]) -> String {
                 header.insert("ares".into(), "off".into());
             }
             OriginalGameChange::Ares(AresSetting::Auto) => {}
+            OriginalGameChange::Kratos => {
+                header.insert("kratos".into(), true.into());
+            }
             OriginalGameChange::ChangedFiles(files) => {
                 let named: Vec<Value> = files
                     .iter()
@@ -253,11 +255,8 @@ pub(crate) fn changes_header(changes: &[OriginalGameChange]) -> String {
 
 /// The text naming each of this game's [`original_game_changes`]; `None`
 /// when it plays the original.
-pub(crate) fn own_changes_text(state: &AppState) -> Option<String> {
-    changes_text(original_game_changes(
-        state.frontend.mods.title(),
-        &state.process_assets,
-    ))
+pub(crate) fn own_changes_text(mods: &Mods, process_assets: &ProcessAssets) -> Option<String> {
+    changes_text(original_game_changes(mods.title(), process_assets))
 }
 
 /// VERA: the rules a match's start certifies (`StartupAgreement::new`): the
@@ -281,6 +280,11 @@ pub(crate) fn start_rules(
     if rules.ares() {
         rules_digest.push_str(" ares");
     }
+    // Kratos' switch follows the same data and the player's setting, so two
+    // peers whose games differ by it must not start together.
+    if rules.kratos() {
+        rules_digest.push_str(" kratos");
+    }
     rules_digest
 }
 
@@ -288,10 +292,8 @@ pub(crate) fn start_rules(
 /// loaded match (`RuleSet::ares_kept_off`): its rules or map hold an Ares key.
 /// No room compares that and the rules parts leave it out; the match's start
 /// does ([`start_rules`]).
-pub(crate) fn match_keeps_ares_off(state: &AppState) -> bool {
-    state
-        .match_state
-        .sim_runtime
+pub(crate) fn match_keeps_ares_off(sim_runtime: &SimHost) -> bool {
+    sim_runtime
         .runtime()
         .is_some_and(|runtime| runtime.resources.rules.ares_kept_off())
 }
@@ -301,12 +303,15 @@ pub(crate) fn match_keeps_ares_off(state: &AppState) -> bool {
 /// (`RuleSet::file_input_folder_files`), which its start certifies and no
 /// room compares. A selected mod's own files are left out: the rules digest
 /// compares them with the mod.
-pub(crate) fn match_picture_files(state: &AppState) -> Vec<String> {
-    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+pub(crate) fn match_picture_files(
+    sim_runtime: &SimHost,
+    process_assets: &ProcessAssets,
+) -> Vec<String> {
+    let Some(runtime) = sim_runtime.runtime() else {
         return Vec::new();
     };
     let mut files = runtime.resources.rules.file_input_folder_files();
-    if let Some(assets) = state.process_assets.manager() {
+    if let Some(assets) = process_assets.manager() {
         files.retain(|file| !assets.from_mod_folder(file));
     }
     files
@@ -342,10 +347,14 @@ fn start_files(changed: &[String], read: impl IntoIterator<Item = String>) -> Op
 /// before the changed files. And where the Ares setting Off is what keeps
 /// Ares from playing in the match (`RuleSet::ares_kept_off`), which no room
 /// compares either, it is named as the setting.
-pub(crate) fn start_changes_text(state: &AppState) -> Option<String> {
-    let assets = &state.process_assets;
-    let mut changes = original_game_changes(state.frontend.mods.title(), assets);
-    if match_keeps_ares_off(state)
+pub(crate) fn start_changes_text(
+    mods: &Mods,
+    sim_runtime: &SimHost,
+    process_assets: &ProcessAssets,
+) -> Option<String> {
+    let assets = process_assets;
+    let mut changes = original_game_changes(mods.title(), assets);
+    if match_keeps_ares_off(sim_runtime)
         && !changes
             .iter()
             .any(|change| matches!(change, OriginalGameChange::Ares(_)))
@@ -359,11 +368,18 @@ pub(crate) fn start_changes_text(state: &AppState) -> Option<String> {
             OriginalGameChange::Ares(crate::util::ares_launch::AresSetting::Off),
         );
     }
+    if !assets.startup_kratos()
+        && sim_runtime
+            .runtime()
+            .is_some_and(|runtime| runtime.resources.rules.kratos())
+    {
+        changes.push(OriginalGameChange::Kratos);
+    }
     let read = assets
         .match_terrain_files()
         .iter()
         .cloned()
-        .chain(match_picture_files(state));
+        .chain(match_picture_files(sim_runtime, process_assets));
     let files = start_files(assets.changed_game_files(), read);
     if let Some(files) = &files {
         changes.retain(|change| !matches!(change, OriginalGameChange::ChangedFiles(_)));
@@ -387,6 +403,7 @@ fn changes_text(changes: Vec<OriginalGameChange<'_>>) -> Option<String> {
                     &crate::ui::main_menu_dialogs::options::ares_label(setting),
                 )],
             ),
+            OriginalGameChange::Kratos => tr("VERA:RulesChangeKratos"),
             OriginalGameChange::ChangedFiles(files) => changed_files_text(files),
         })
         .collect();

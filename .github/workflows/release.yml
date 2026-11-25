@@ -48,10 +48,9 @@ name: Release
 # third-party notices (THIRD_PARTY_LICENSES.html) and a README.txt made from
 # .github/release/README.txt.in; the Windows one also config.toml.example. Each
 # also holds every language but English, and the fonts behind them
-# (.github/release/languages.sh). They
-# never hold game files (README.md, README.txt.in). Their one piece of game art
-# is the app icon, Red Alert 2's red star from retail game.exe
-# (.github/release/icon.png).
+# (.github/release/languages.sh). The installer README credits the app icon
+# (.github/release/icon.png) and the bundled terrain artwork. Players supply
+# their Yuri's Revenge installation.
 on:
   workflow_dispatch:
     inputs:
@@ -264,11 +263,21 @@ jobs:
           # a downloaded installer traceable to its commit. A release drops both
           # (the promote job).
           name="vera20k-${VERSION}-${{ matrix.target }}-${STAMP}-${SHA7}"
-          mkdir -p "dist/$name"
+          mkdir -p "dist/$name/Maps" "dist/$name/Terrain"
           echo "name=$name" >> "$GITHUB_OUTPUT"
           # The files the platform's installer takes from this folder.
           cp "target/shipping/${{ matrix.program }}" config.toml.example LICENSE-GPL \
             dist/THIRD_PARTY_LICENSES.html "dist/$name/"
+          cp maps/Arctic_Circle_16_Ice_Passages.map "dist/$name/Maps/"
+          cp Terrain/vera_ice.mix Terrain/vera_ice_tiles.ini "dist/$name/Terrain/"
+          python - "dist/$name/${{ matrix.program }}" <<'PYTHON'
+          from pathlib import Path
+          import sys
+          program = Path(sys.argv[1]).read_bytes()
+          for name in ('vera_ice.mix', 'vera_ice_tiles.ini'):
+              if (Path('Terrain') / name).read_bytes() in program:
+                  sys.exit(f'{name} is still embedded in the game executable')
+          PYTHON
           bash .github/release/languages.sh "dist/$name"
           # Windows also gets Microsoft's DirectX Shader Compiler beside the game.
           if [ "$RUNNER_OS" = Windows ]; then
@@ -414,6 +423,19 @@ jobs:
                          'languages\NotoSansThai-VF.ttf') {
             if (-not (Test-Path (Join-Path $app $f))) { throw "setup did not install $f" }
           }
+          foreach ($file in 'vera_ice.mix', 'vera_ice_tiles.ini') {
+            $path = "Terrain\$file"
+            if ((Get-FileHash (Join-Path $app $path)).Hash -ne (Get-FileHash $path).Hash) {
+              throw "setup did not install the release's $path"
+            }
+          }
+          $mapFile = 'Arctic_Circle_16_Ice_Passages.map'
+          $map = Join-Path $app "Maps\$mapFile"
+          $receipt = Join-Path $app 'Maps\.Arctic_Circle_16_Ice_Passages.installed'
+          if (-not (Test-Path $receipt -PathType Leaf)) { throw 'setup did not record the installed map' }
+          if ((Get-FileHash $map).Hash -ne (Get-FileHash "maps\$mapFile").Hash) {
+            throw 'setup did not install the release skirmish map'
+          }
           $config = Read-Config
           if (-not $config.Contains((Ra2Dir $first))) { throw "config.toml lacks $(Ra2Dir $first)" }
           if ($config -notmatch '(?m)^settings_dir = "\."\r?$') { throw 'config.toml lacks settings_dir = "."' }
@@ -434,9 +456,16 @@ jobs:
             "`n[profile]`nname = `"$commander`"`n", [Text.UTF8Encoding]::new($false))
           $droppedLanguage = Join-Path $app 'languages\vera20k.xx.ini'
           Set-Content $droppedLanguage 'A language a newer release no longer has.'
+          $tileIni = Join-Path $app 'Terrain\vera_ice_tiles.ini'
+          Set-Content $tileIni 'A terrain definition from an earlier release.'
+          Set-Content $map 'player edits'
           $second = New-Game $yuri
           $code = Install $second
           if ($code -ne 0) { Get-Content $log; throw "upgrade failed with exit code $code" }
+          if ((Get-Content $map) -ne 'player edits') { throw 'upgrade overwrote an edited map' }
+          if ((Get-FileHash $tileIni).Hash -ne (Get-FileHash 'Terrain\vera_ice_tiles.ini').Hash) {
+            throw 'upgrade left the previous terrain definition in place'
+          }
           if (Test-Path $droppedLanguage) { throw 'upgrade kept a language the release dropped' }
           $config = Read-Config
           if (-not $config.Contains((Ra2Dir $second))) { throw "upgrade did not write $(Ra2Dir $second)" }
@@ -459,7 +488,9 @@ jobs:
           }
           if (Test-Path (Join-Path $app 'unins000.exe')) { throw 'uninstall did not finish' }
           if (Test-Path (Join-Path $app 'vera20k.exe')) { throw 'uninstall left vera20k.exe behind' }
+          if ((Get-Content $map) -ne 'player edits') { throw 'uninstall removed an edited map' }
           if (Test-Path (Join-Path $app 'languages')) { throw 'uninstall left the languages behind' }
+          if (Test-Path (Join-Path $app 'Terrain')) { throw 'uninstall left the release terrain behind' }
           if (-not (Test-Path (Join-Path $app 'config.toml'))) { throw 'uninstall removed config.toml' }
 
           # With nothing from before, setup finds the game: in a Steam library
@@ -501,11 +532,13 @@ jobs:
           # even while another detected installation passes validation.
           if ((Install $steamGame) -eq 0) { throw 'setup ignored the invalid explicit /GAMEDIR' }
           Assert-Found $eaGame
+          Remove-Item $map
           # A damaged previous choice must not hide another valid install.
           Copy-Item '.github\release\windows\test-game\cameomd.mix' $steamGame
           Remove-Item (Join-Path $eaGame 'ra2.mix')
           $code = Install ''
           if ($code -ne 0) { Get-Content $log; throw "setup failed to recommend Steam: exit code $code" }
+          if (Test-Path $map) { throw 'upgrade restored a map the player deleted' }
           Assert-Found $steamGame
           Copy-Item '.github\release\windows\test-game\ra2.mix' $eaGame
           # Without the game there, setup recommends the EA app's folder.
@@ -553,6 +586,11 @@ jobs:
           # The window's arrow and layout (dmg_settings.py).
           test -f "$mount/.background.tiff"
           test -f "$mount/.DS_Store"
+          map=Arctic_Circle_16_Ice_Passages.map
+          cmp "maps/$map" "$app/Contents/Resources/Maps/$map"
+          for file in vera_ice.mix vera_ice_tiles.ini; do
+            cmp "Terrain/$file" "$app/Contents/Resources/Terrain/$file"
+          done
           test -f "$app/Contents/Resources/README.txt"
           test -f "$app/Contents/Resources/VERA20K.icns"
           test -f "$app/Contents/Resources/zh-Hans.lproj/InfoPlist.strings"
@@ -601,6 +639,11 @@ jobs:
           root="$work/squashfs-root"
           test "$(readlink "$root/AppRun")" = usr/bin/vera20k
           cmp "$root/usr/bin/vera20k" "dist/$NAME/vera20k"
+          map=Arctic_Circle_16_Ice_Passages.map
+          cmp "maps/$map" "$root/usr/share/vera20k/Maps/$map"
+          for file in vera_ice.mix vera_ice_tiles.ini; do
+            cmp "Terrain/$file" "$root/usr/share/vera20k/Terrain/$file"
+          done
           test -f "$root/usr/share/doc/vera20k/README.txt"
           test -f "$root/vera20k.png"
           test -f "$root/.DirIcon"

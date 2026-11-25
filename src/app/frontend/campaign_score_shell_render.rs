@@ -20,10 +20,8 @@ use crate::app::frontend::menu_page_render::{
 };
 use crate::app::frontend::score_shell_render::static_reveal;
 use crate::app::frontend::shell_pass::TexturedDraw;
+use crate::app::frontend::skirmish_shell_render::gui_paint::{GuiStyle, PageArt, paint_gui_into};
 use crate::render::hud_paint::{HudPaint, Material};
-use crate::app::frontend::skirmish_shell_render::gui_paint::{
-    GuiStyle, PageArt, paint_gui_into,
-};
 use crate::render::shell_paint::{
     self, DIALOG_BACKGROUND_DEPTH, PARENT_BACKGROUND_DEPTH, SHELL_TEXT_RGB_ENABLED,
 };
@@ -44,8 +42,9 @@ pub(crate) fn render_campaign_score_page(
         return Ok(false);
     }
 
-    let (width, height) = crate::app::frontend::shell_layout::shell_screen_size(state);
-    let fills_window = crate::app::frontend::shell_layout::fills_window(state);
+    let (width, height) =
+        crate::app::frontend::shell_layout::shell_screen_size(&state.renderer.gpu);
+    let fills_window = crate::app::frontend::shell_layout::fills_window(&state.renderer.gpu);
     let now = Instant::now();
     // `0x006071E0` owns both slides; `SetSlideChildSuppressProc` hides the
     // dialog's statics (including the SCRA kind-4 static) until SHOW completes,
@@ -57,7 +56,7 @@ pub(crate) fn render_campaign_score_page(
         .expect("checked before render")
         .dialog;
     let exit_wave = crate::app::frontend::shell_transition::shell_exit_wave(
-        state,
+        &state.frontend.shell_exit,
         crate::app::frontend::shell_transition::ShellSlideKind::campaign_score(dialog),
     )
     .cloned();
@@ -102,10 +101,16 @@ pub(crate) fn render_campaign_score_page(
         (page.layout(width, height, fills_window), frame)
     };
     let rect_of = |id| layout.control_rect(id);
-    let mut tree = page_tree(state, dialog.id(), || dialog.nodes(), rect_of, &[]);
+    let mut tree = page_tree(
+        &mut state.frontend.shell_controller,
+        dialog.id(),
+        || dialog.nodes(),
+        rect_of,
+        &[],
+    );
     // `0xBC7`'s monitor `0x71C` runs the shared kind-4 timer.
     let monitor_frame = (children && dialog == CampaignScoreDialog::CampaignEnd)
-        .then(|| crate::app::frontend::menu_page_render::paint_shell_monitor(state))
+        .then(|| crate::app::frontend::menu_page_render::paint_shell_monitor(&mut state.frontend))
         .flatten();
     let controller = &state.frontend.shell_controller;
     let active = controller.top_id() == Some(dialog.id());
@@ -184,7 +189,20 @@ pub(crate) fn render_campaign_score_page(
     let mut paint = HudPaint::default();
     if let Some((gui, root)) = nodes {
         let scale = layout.page.scale;
-        paint_gui_into(&mut paint, state, None, gui, root, scale, &[], style);
+        paint_gui_into(
+            &mut paint,
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            None,
+            gui,
+            root,
+            scale,
+            &[],
+            style,
+        );
     }
     let emblem = paint.take_lane(Material::PageArt);
 
@@ -201,7 +219,7 @@ pub(crate) fn render_campaign_score_page(
     };
     let title = dialog.page().title_key;
     let mut frame = FamilyFrame::new("Campaign Score Shell", &layout.page, panel, title).on(
-        state,
+        &state.frontend.shell_controller,
         dialog.id(),
         &tree,
     );

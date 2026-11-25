@@ -140,7 +140,7 @@ pub(crate) fn still_frame(
     let still = !capture
         && modal.is_none()
         && state.frontend.screen == GameScreen::InGame
-        && !network_picture_moves(state, simulation, clock)
+        && !network_picture_moves(&state.match_state, simulation, clock)
         && !state.match_state.match_diagnostics.is_replay_playback()
         && !state
             .match_state
@@ -150,7 +150,7 @@ pub(crate) fn still_frame(
         && state.frontend.quit_cascade.is_none()
         && state.match_state.scenario_exit.is_none()
         && state.match_state.scenario_outcome.is_none()
-        && !crate::app::App::house_outcome_wait_pending(state)
+        && !crate::app::App::house_outcome_wait_pending(&state.match_state.sim_runtime)
         && !input.tactical_mouse.left_held()
         && !input.tactical_mouse.right_held()
         && !simulation.is_some_and(|sim| {
@@ -187,12 +187,12 @@ pub(crate) fn still_frame(
         ScreenPage::Battlefield => {
             let detail = presentation.detail.borrow();
             let moving = state.match_state.paused()
-                || !crate::app::input::camera::zoom_settled(state)
+                || !crate::app::input::camera::zoom_settled(&state.match_state.input)
                 || presentation
                     .radar_anim
                     .as_ref()
                     .is_some_and(|radar| radar.housing_moving())
-                || crate::app::radar_movie::has_pending(state)
+                || crate::app::radar_movie::has_pending(&state.match_state.match_presentation)
                 || presentation.chrono_screen.active()
                 || presentation.power_bar_anim.in_motion()
                 || presentation.message_list.revealing()
@@ -256,7 +256,7 @@ pub(crate) fn draw_limits(state: &AppState, status_step: bool) -> DrawLimits {
         page,
         status_step,
         state.platform.hardware_cursor.on_cursor_plane(),
-        super::network_match::game_frame_ms(state),
+        super::network_match::game_frame_ms(&state.platform, &state.match_state),
         picture_interval,
     )
 }
@@ -323,18 +323,14 @@ fn is_menu(page: ScreenPage) -> bool {
 /// A network match's picture moves without a new frame while its last
 /// composite would move again or the recovery line shows.
 fn network_picture_moves(
-    state: &AppState,
+    match_state: &crate::app::match_runtime::state::MatchState,
     simulation: Option<&crate::sim::world::Simulation>,
     clock: PictureClock,
 ) -> bool {
-    let Some(live) = state.match_state.live_network.as_ref() else {
+    let Some(live) = match_state.live_network.as_ref() else {
         return false;
     };
-    state
-        .match_state
-        .match_presentation
-        .tactical_composite
-        .animated()
+    match_state.match_presentation.tactical_composite.animated()
         || simulation.is_some_and(|sim| {
             live.recovery_status(clock.wall_ms as u32, sim.session().binary_frame())
                 .is_some()

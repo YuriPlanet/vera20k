@@ -79,7 +79,7 @@ fn scene(recruitable: bool, tagged: bool) -> Option<Scene> {
     let overlays = OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
     let mut sim =
         super::refinery_dock_oracle_tests::world_with(&rules, &retail.processed_rules, |_| {});
-    sim.fog = FogState::new(33, 33);
+    *sim.fog = FogState::new(33, 33);
     sim.session.set_game_mode(ScenarioGameMode::Skirmish);
     sim.session.game_options_mut_for_test().short_game = false;
     sim.session.publish_started();

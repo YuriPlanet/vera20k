@@ -65,7 +65,11 @@ impl SuspendedTarget {
     }
 
     /// Override_Mission's archive of the live TarCom.
-    pub(crate) fn archive(&mut self, target: Option<crate::sim::combat::TargetKind>) {
+    pub(crate) fn archive(
+        &mut self,
+        target: Option<crate::sim::combat::TargetKind>,
+        _: crate::sim::game_entity::NameNote,
+    ) {
         self.target = target;
     }
 
@@ -77,7 +81,7 @@ impl SuspendedTarget {
     /// Install a fixture's archived target.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_for_test(&mut self, target: Option<crate::sim::combat::TargetKind>) {
-        self.target = target;
+        self.archive(target, crate::sim::game_entity::NameNote::fixture());
     }
 }
 
@@ -805,7 +809,8 @@ impl Simulation {
                 entity.navigation.suspend_nav_com();
             }
             let target = entity.attack_target.target();
-            entity.seldom.suspended_attack_target.archive(target);
+            let note = entity.note_names();
+            entity.seldom.suspended_attack_target.archive(target, note);
             verb::override_base(&mut entity.mission, packet.mission);
         }
         effects.apply_target(self, &prepared, packet.combat_target);
@@ -1428,7 +1433,7 @@ mod tests {
                     ));
                 sim.session
                     .set_binary_frame_for_test(row["input"]["frame"].as_u64().unwrap() as u32);
-                sim.scenario_rng = SimRng::new(row["input"]["seed"].as_u64().unwrap());
+                *sim.scenario_rng = SimRng::new(row["input"]["seed"].as_u64().unwrap());
                 assert_eq!(sim.scenario_rng.native_state_hex(), row["rng_before"]);
 
                 let ran = if damage_response {

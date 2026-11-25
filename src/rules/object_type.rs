@@ -2245,6 +2245,8 @@ pub struct ObjectType {
     /// Retained WeaponStruct and transport-port coordinates, projected from
     /// the ordered type reader rather than reconstructed from the final Image.
     weapon_offsets: crate::rules::weapon_offsets::WeaponOffsets,
+    /// Kratos' frozen status inputs (`kratos_freeze`): `Wreck` today.
+    kratos_freeze: crate::rules::kratos_freeze::FreezeRules,
 
     /// `WeaponCount=` (`TechnoTypeClass+0x80C`, ReadINI `0x00712873`). Bounds
     /// the `Weapon%d`/`EliteWeapon%d` loop; slots at or past it keep their
@@ -2657,6 +2659,12 @@ pub struct ObjectType {
     /// default at `0x005243B8`). No stock INI authors it. See
     /// [`ObjectType::emits_damage_spark`] for the spark flag it feeds.
     pub cyborg: bool,
+    /// Tiberian Sun Firestorm's InfantryType `IsWebImmune=` (`+0x4B7`, read
+    /// with the current value as default by `InfantryTypeClass::Read_INI`
+    /// `0x004DA8E0` at `0x004DAB40`; constructor false, `0x004DA229`): a web
+    /// leaves this infantryman alone (`docs/ts-webs.md`). gamemd has no
+    /// such key.
+    pub is_web_immune: bool,
     /// TechnoType `+0xC8F`, projected from the Rules passes: see
     /// [`ObjectType::emits_damage_spark`].
     pub damage_sparks: bool,

@@ -66,7 +66,7 @@ fn stock_long_move(rules: &RuleSet, type_id: &str, batched: bool) {
     let context = format!("{type_id}, batched={batched}");
     let mut sim = crate::sim::arena_fixture::rival_arena_with_size(rules, 0x4D3E82, 64);
     sim.set_input_delay_ticks(0);
-    sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+    *sim.overlay_grid = Some(OverlayGrid::new(64, 64));
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     if batched {

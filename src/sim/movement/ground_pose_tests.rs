@@ -244,8 +244,8 @@ fn walk_rules() -> RuleSet {
 fn walk_tick(sim: &mut Simulation, terrain: &ResolvedTerrainGrid, grid: &PathGrid, frame: u32) {
     let rules = walk_rules();
     let (width, height) = (terrain.width(), terrain.height());
-    sim.resolved_terrain = Some(terrain.clone());
-    sim.zone_grid = Some(
+    *sim.resolved_terrain = Some(terrain.clone());
+    *sim.zone_grid = Some(
         crate::sim::pathfinding::zone_map::ZoneGrid::build_with_native_bridge_geometry(
             grid,
             terrain,
@@ -275,7 +275,7 @@ fn tick_with_rules(
     frame: u32,
     rules: Option<&RuleSet>,
 ) {
-    sim.resolved_terrain = Some(terrain.clone());
+    *sim.resolved_terrain = Some(terrain.clone());
     sim.install_fixture_path_grid(Some(grid));
     sim.session.set_tick_for_test(u64::from(frame));
     sim.session.set_binary_frame_for_test(frame);
@@ -515,14 +515,14 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
 
         // Native load resets Scenario RNG. Keep the original at that same
         // canonical point, while retaining the independent process streams.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = GameSnapshot::save(&sim, 0, 0, "moving-ramp-residual", 0);
         let mut restored = GameSnapshot::load(&bytes)
             .expect("moving ramp snapshot")
             .sim;
         // The original and restored controls run as independent test processes.
-        restored.main_rng = sim.main_rng.clone();
-        restored.mapgen_rng = sim.mapgen_rng.clone();
+        *restored.main_rng = (*sim.main_rng).clone();
+        *restored.mapgen_rng = (*sim.mapgen_rng).clone();
         restored
             .restore_after_snapshot_load()
             .expect("moving ramp identities and occupation");
@@ -543,8 +543,7 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
                 .count_on_layer(3, 2, MovementLayer::Bridge),
             1
         );
-        let restored_terrain = restored
-            .resolved_terrain
+        let restored_terrain = (*restored.resolved_terrain)
             .clone()
             .expect("restored terrain cache");
 
@@ -961,7 +960,7 @@ fn forced_track_terminal_samples_full_head_xy_before_relink() {
     let mut sim = Simulation::new();
     let entity = mover(&mut sim, LocomotorKind::Drive);
     insert(&mut sim, entity);
-    sim.resolved_terrain = Some(terrain.clone());
+    *sim.resolved_terrain = Some(terrain.clone());
     assert!(sim.force_track(
         1,
         0x47,
@@ -975,7 +974,7 @@ fn forced_track_terminal_samples_full_head_xy_before_relink() {
         &mut crate::sim::world::FrameEffects::default(),
     ));
     if sim.path_grid.is_none() {
-        sim.path_grid = Some(std::sync::Arc::new(grid.clone()));
+        *sim.path_grid = Some(std::sync::Arc::new(grid.clone()));
     }
     for frame in 0..64 {
         sim.session.set_binary_frame_for_test(frame);
@@ -1284,7 +1283,7 @@ fn a_building_on_a_ramp_is_targeted_at_its_floor() {
         "[BuildingTypes]\n0=TEST\n[TEST]\nFoundation=1x1\n",
     ))
     .unwrap();
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     let mut building = GameEntity::test_default_of_category(
         1,
         "TEST",
@@ -1329,7 +1328,7 @@ fn a_building_on_a_ramp_is_targeted_at_its_floor() {
 /// Two Drive units marked into cell (4, 4), 1 before 2, so 2 heads the list.
 fn two_marked_units() -> Simulation {
     let mut sim = Simulation::new();
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     for id in [1, 2] {
         let mut entity = GameEntity::test_default(id, "ACTOR", "Americans", 4, 4);
         entity.lifecycle.set_in_limbo_for_test(false);

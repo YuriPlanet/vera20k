@@ -5,7 +5,7 @@
 //! `zh-CN` or `pt-BR`. VERA ships the files beside this module (build.rs lists
 //! them, so shipping a language is adding its file). They are compiled in,
 //! except in the installers' builds: those compile in only English, and each
-//! installer puts the rest in a folder of its own ([`packaged_language_dir`]),
+//! installer puts the rest in a folder of its own ([`installed_language_dir`]),
 //! so a language can be removed after the build by deleting its files. A file
 //! of that name in the settings folder adds a language, or replaces a shipped
 //! one while it is being written. `vera20k --check-language <file>` lists what
@@ -515,22 +515,10 @@ fn languages(settings_dir: Option<&Path>) -> Vec<Arc<Language>> {
 
 /// The folder of languages and fonts an installer put with the running game.
 pub(crate) fn installed_language_dir() -> Option<PathBuf> {
-    packaged_language_dir(std::env::current_exe().ok()?.parent()?)
-}
-
-/// Where each installer puts the languages that are not compiled in, from the
-/// folder holding the game's program: beside it on Windows, in the app bundle's
-/// Resources on macOS, in the AppImage's `usr/share/vera20k` on Linux. The
-/// last two are sealed, so there a language is removed before packaging.
-fn packaged_language_dir(program_dir: &Path) -> Option<PathBuf> {
-    [
+    crate::util::platform_dir::packaged_resource_dir(
+        std::env::current_exe().ok()?.parent()?,
         "languages",
-        "../Resources/languages",
-        "../share/vera20k/languages",
-    ]
-    .into_iter()
-    .map(|place| program_dir.join(place))
-    .find(|dir| dir.is_dir())
+    )
 }
 
 /// [`languages`], from `installed_dir` and `settings_dir`. A file in a later
@@ -1542,13 +1530,18 @@ mod tests {
                 "VERA20K.app/Contents/Resources/languages",
             ),
             ("AppDir/usr/bin", "AppDir/usr/share/vera20k/languages"),
+            ("Launcher/usr/bin", "Launcher/usr/lib/VERA20K/languages"),
         ] {
             let program = root.join(program);
             let folder = root.join(folder);
             std::fs::create_dir_all(&program).unwrap();
-            assert_eq!(packaged_language_dir(&program), None);
+            assert_eq!(
+                crate::util::platform_dir::packaged_resource_dir(&program, "languages"),
+                None
+            );
             std::fs::create_dir_all(&folder).unwrap();
-            let found = packaged_language_dir(&program).expect("the folder");
+            let found = crate::util::platform_dir::packaged_resource_dir(&program, "languages")
+                .expect("the folder");
             assert_eq!(
                 found.canonicalize().unwrap(),
                 folder.canonicalize().unwrap()

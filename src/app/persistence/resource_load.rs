@@ -139,7 +139,14 @@ impl PreparedSavedGame {
             ));
         }
         let theater_name = snapshot.session().theater().to_owned();
-        let theater = theater::load_theater(assets, &theater_name).ok_or_else(|| {
+        let theater = theater::load_theater_with_bundled_ice(
+            assets,
+            &theater_name,
+            saved.map().uses_bundled_ice(),
+            false,
+        )
+        .map_err(|error| PreparedLoadError::Resources(format!("{error:#}")))?
+        .ok_or_else(|| {
             PreparedLoadError::Resources(format!("cannot load theater {theater_name}"))
         })?;
         let mut rules = view

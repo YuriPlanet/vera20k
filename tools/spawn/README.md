@@ -15,10 +15,20 @@ directories (docs/spawn.md). Nothing here is used by ordinary play.
   Grants and ordering certificates are signed by `relay_grant.mjs` in the
   lobby's format (docs/lobby-protocol.md): `VO1C`, or `VO2C` with
   `--pacing on|off|continuous` (`run.sh`: `PACING=on|off|continuous`). Results go to `OUT/results.json`.
-* `SLOW=K` makes source K a slow PC: the spawn-only switches
+* `SLOW=K` makes source K a slow PC. The spawn-only switches
   `VERA20K_SPAWN_SLOW_DRAW_MS` and `VERA20K_SPAWN_SLOW_TICK_MS` (`run.sh`:
   `SLOW_DRAW_MS`, `SLOW_TICK_MS`) add that many milliseconds to each drawn
-  picture and to each simulation tick, the tick's inside its reported cost.
+  picture and to each simulation tick throughout, the tick's inside its
+  reported cost. The switch `VERA20K_SPAWN_SLOW_PLAN` (`run.sh`:
+  `SLOW_PLAN`), which may be set as well (tick delays add up), is
+  `second:draw_ms:tick_ms[:unreported_ms]` points, comma separated, from the
+  match's start; that many milliseconds go on each frame pass (drawn or not,
+  so hidden windows pay it too) and each simulation tick (inside its
+  reported cost), and the optional last on each tick outside that cost (a
+  PC whose ticks look quick but run slowly, as 1e9fac21's did), linear
+  between points and held after the last. `0:0:20` is a PC whose
+  simulation is slow throughout; `0:0:0,300:0:3:12` one that slows as the
+  match grows. Catching up runs the same ticks, so it slows too.
   `SPEED=0` plays at 60 frames a second. Each client's `External launch result`
   line carries its `network_quality` (catch-up seconds, largest backlog,
   slowdowns).
@@ -62,6 +72,27 @@ activation policy (no Dock icon or menu bar). Never run these clients without
 it on a shared screen. `python3 -I tools/spawn/winwatch.py SECONDS`, run
 beside `run.sh`, samples the CoreGraphics on-screen window list for the client
 PIDs and prints any visible window.
+
+Two more test hooks time a match instead of testing its network, and are read
+by every `-SPAWN` launch, one human against computer houses included
+(`python -m tools.scale_bench client` uses both,
+[the scale benchmark](../../docs/scale-benchmark.md)):
+
+* `VERA20K_SPAWN_LEAVE_AT_FRAME=N` presses Leave once the match has reached
+  simulation frame N, then Continue on the score page, so the game ends by
+  itself after a set stretch of the match.
+* `VERA20K_SPAWN_FRAME_COST=N` counts, from simulation frame N on, what the
+  match costs the game's main thread, in that thread's own CPU time, so a wait
+  for the display or for a tick on the simulation thread costs nothing.
+  `spawn_result.json` then carries `frame_cost`: `draw_ms` (the mean drawn
+  picture, with `draw_p50_ms` and `draw_p99_ms`), `service_ms` (the match
+  service of one simulation frame: the finished tick's tail and the frame and
+  world copy the next tick leaves for drawing, without any tick it ran
+  itself), `frame_ms` (their sum: one picture of one simulation frame),
+  `tick_ms` and `tick_p99_ms` (a simulation frame's own wall time, on
+  whichever thread ran it), the counts `pictures`, `ticks` and `lent_ticks`
+  (ticks run on the simulation thread), and the frames it spans
+  (`first_frame`, `last_frame`).
 
 The test hook `VERA20K_SPAWN_LEAVE_AFTER_SECONDS=N` presses the abort box's
 Leave N seconds after the match appears. It is read only by external

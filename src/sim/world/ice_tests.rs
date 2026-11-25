@@ -98,7 +98,7 @@ fn heavy_units_crack_then_break_the_ice_and_what_stood_there_sinks() {
     arrive(&mut sim, &rules, 1);
     assert!(TILES.is_cracked(tile(&sim, (5, 5)).0));
     assert_eq!(
-        sim.ice_cracks,
+        *sim.ice_cracks,
         [CrackedIce {
             cell: (5, 5),
             frame: 510
@@ -198,4 +198,70 @@ fn growth_refreezes_ice_water_each_time_its_timer_runs_out() {
     sim.session.set_binary_frame_for_test(910);
     sim.tick_ice_growth(&rules, None);
     assert!(TILES.is_crackable(tile(&sim, (5, 5)).0));
+}
+
+#[test]
+fn ice_lake_grizzly_cracks_the_crossing_and_rhino_sinks() {
+    use crate::headless_scenario::{battle_session, load_session};
+    use crate::sim::command::Command;
+    use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+    let Some((root, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let map = "vera-ice-lake.map";
+    let launch = battle_session(map, &[(LaunchCountry::Russia, AiDifficulty::Easy)]);
+    let mut scene = load_session(&root, map, 17, launch).expect("ordinary bundled skirmish");
+    let player = scene.sim().session.current_house().unwrap();
+    let owner = scene.sim().resolve(player).to_owned();
+    let mut drive = |kind, from: (u16, u16), to: (u16, u16)| {
+        let runtime = &mut scene.runtime;
+        let id = runtime
+            .simulation
+            .spawn_object(
+                kind,
+                owner.as_str(),
+                from.0,
+                from.1,
+                0,
+                &runtime.resources.rules,
+            )
+            .unwrap();
+        assert!(runtime.apply_command_for_test(
+            &owner,
+            &Command::Move {
+                entity_id: id,
+                target_rx: to.0,
+                target_ry: to.1,
+            }
+        ));
+        id
+    };
+
+    // Start on opposite dry banks so one tank's damage cannot affect the other.
+    let crossing = (56, 72);
+    let grizzly = drive("MTNK", (55, 72), crossing);
+    let rhino = drive("HTNK", (74, 53), (63, 63));
+    for _ in 0..180 {
+        scene.tick();
+        if !scene.sim().ice_cracks.is_empty()
+            && scene
+                .sim()
+                .entities()
+                .get(rhino)
+                .is_some_and(|unit| unit.sinking.is_ice())
+        {
+            break;
+        }
+    }
+
+    let sim = scene.sim();
+    assert!(sim.ice_tiles().unwrap().is_cracked(tile(sim, crossing).0));
+    assert!(!sim.entities().get(grizzly).unwrap().sinking.is_active());
+    let rhino = sim.entities().get(rhino).expect("Rhino entering the water");
+    assert!(rhino.sinking.is_ice());
+    assert_eq!(
+        tile(sim, (rhino.position.rx(), rhino.position.ry())).1,
+        LandType::Water.as_index()
+    );
 }

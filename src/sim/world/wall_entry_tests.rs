@@ -1025,9 +1025,9 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
             assert_cell(sim, expected, &neighbor_domain);
         }
         let seed = case["input"]["seed"].as_u64().unwrap();
-        sim.scenario_rng = SimRng::new(seed);
-        sim.main_rng = SimRng::new(seed);
-        sim.mapgen_rng = SimRng::new(seed);
+        *sim.scenario_rng = SimRng::new(seed);
+        *sim.main_rng = SimRng::new(seed);
+        *sim.mapgen_rng = SimRng::new(seed);
         assert_eq!(rng(sim), case["initial"]["rng"]);
         if case.get("construction").is_none() {
             sim.dirty_cells.take_radar();

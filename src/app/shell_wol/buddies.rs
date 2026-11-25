@@ -18,6 +18,7 @@ use std::collections::{HashMap, VecDeque};
 
 use super::service::{self, WolLadderRecord, WolServiceRequest};
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::ui::wol_lobby::{GAME_CHANNEL, WolChannel};
 
 /// The statuses the find sink stores (`0xB76990`); 6 has no writer.
@@ -183,29 +184,24 @@ pub(crate) fn valid_new_buddy(names: &[String], name: &str, local: &str) -> bool
         && !names.iter().any(|known| known.eq_ignore_ascii_case(name))
 }
 
-fn mirror(state: &mut AppState) -> &mut WolBuddies {
-    &mut state.frontend.wol_buddies
-}
-
 /// The pending-locate kick: API+0x60 for the next queued name.
-fn kick_locate(state: &mut AppState) {
-    let modern_ui = state
-        .frontend
-        .wol
-        .as_ref()
-        .is_none_or(|visit| visit.modern_ui());
-    if let Some(name) = mirror(state).next_locate(Instant::now(), modern_ui) {
-        service::request(state, WolServiceRequest::Locate(name));
+fn kick_locate(frontend: &mut FrontendState) {
+    let modern_ui = frontend.wol.as_ref().is_none_or(|visit| visit.modern_ui());
+    if let Some(name) = frontend.wol_buddies.next_locate(Instant::now(), modern_ui) {
+        service::request(frontend.wol.as_mut(), WolServiceRequest::Locate(name));
     }
 }
 
 /// `0x0079D110`: up to ten names of the ladder queue to the ladder API,
 /// as ladder and high-score requests.
-pub(super) fn request_ladder(state: &mut AppState) {
-    let names = mirror(state).ladder_batch();
+pub(super) fn request_ladder(frontend: &mut FrontendState) {
+    let names = frontend.wol_buddies.ladder_batch();
     if !names.is_empty() {
-        service::request(state, WolServiceRequest::LadderRecords(names.clone()));
-        service::request(state, WolServiceRequest::HighScores(names));
+        service::request(
+            frontend.wol.as_mut(),
+            WolServiceRequest::LadderRecords(names.clone()),
+        );
+        service::request(frontend.wol.as_mut(), WolServiceRequest::HighScores(names));
     }
 }
 
@@ -213,65 +209,72 @@ pub(super) fn request_ladder(state: &mut AppState) {
 /// (`0x00787BC8..`): the mirror cleared, API+0xDC, then outside Quick
 /// Match the status refresh `0x0079CE70`, then the ladder queue from the
 /// (empty) buddies (`0x0079D2F0`).
-pub(super) fn restart(state: &mut AppState) {
-    mirror(state).clear();
-    service::request(state, WolServiceRequest::ListBuddies);
-    if !super::quick_match::mode_active(state) {
-        refresh(state);
+pub(super) fn restart(frontend: &mut FrontendState) {
+    frontend.wol_buddies.clear();
+    service::request(frontend.wol.as_mut(), WolServiceRequest::ListBuddies);
+    if !super::quick_match::mode_active(frontend.wol.as_ref()) {
+        refresh(frontend);
     }
-    let buddies = mirror(state);
+    let buddies = &mut frontend.wol_buddies;
     buddies.ladder_queue = buddies.names.iter().cloned().collect();
-    request_ladder(state);
+    request_ladder(frontend);
 }
 
 /// `0x0079CE70` (and Refresh `0x704`, the timer body without its 30 s
 /// test): the game list with autoping (`0x0077EF90(0x29, 1)`), the locate
 /// queue rebuilt from the buddies and one locate started.
-pub(super) fn refresh(state: &mut AppState) {
-    let buddies = mirror(state);
+pub(super) fn refresh(frontend: &mut FrontendState) {
+    let buddies = &mut frontend.wol_buddies;
     buddies.games_at = Some(Instant::now());
     buddies.queue = buddies.names.iter().cloned().collect();
     service::request(
-        state,
+        frontend.wol.as_mut(),
         WolServiceRequest::ListChannels {
             kind: GAME_CHANNEL,
             flags: 1,
         },
     );
-    kick_locate(state);
+    kick_locate(frontend);
 }
 
 /// `0x116`'s `WM_TIMER` 0 (every 1000 ms): the refresh once more than 30 s
 /// passed since the last one.
-pub(super) fn timer(state: &mut AppState, now: Instant) {
-    let due = mirror(state)
+pub(super) fn timer(frontend: &mut FrontendState, now: Instant) {
+    let due = frontend
+        .wol_buddies
         .games_at
         .is_none_or(|at| now.saturating_duration_since(at) > GAMES_REFRESH);
     if due {
-        refresh(state);
+        refresh(frontend);
     }
 }
 
 /// `0x0079DFE0`'s Add after API+0xE0: a name the sink has not already added
 /// joins the mirror, a locate starts and the ladder is asked.
-pub(super) fn add(state: &mut AppState, name: String) {
-    service::request(state, WolServiceRequest::AddBuddy(name.clone()));
-    let buddies = mirror(state);
+pub(super) fn add(frontend: &mut FrontendState, name: String) {
+    service::request(
+        frontend.wol.as_mut(),
+        WolServiceRequest::AddBuddy(name.clone()),
+    );
+    let buddies = &mut frontend.wol_buddies;
     if !buddies
         .names
         .iter()
         .any(|known| known.eq_ignore_ascii_case(&name))
     {
         buddies.append(name);
-        kick_locate(state);
+        kick_locate(frontend);
     }
-    request_ladder(state);
+    request_ladder(frontend);
 }
 
 /// `0x0079CBA0`, then API+0xE4.
-pub(super) fn remove(state: &mut AppState, name: &str) {
-    mirror(state).remove(name);
-    service::request(state, WolServiceRequest::RemoveBuddy(name.to_owned()));
+pub(super) fn remove(frontend: &mut FrontendState, name: &str) {
+    frontend.wol_buddies.remove(name);
+    service::request(
+        frontend.wol.as_mut(),
+        WolServiceRequest::RemoveBuddy(name.to_owned()),
+    );
 }
 
 /// The buddy-list sink `0x007AC220`: each valid user joins the mirror and
@@ -283,12 +286,12 @@ pub(super) fn buddy_list_received(state: &mut AppState, result: Result<Vec<Strin
     };
     let local = state.frontend.wol_account.nickname.clone();
     for user in users {
-        if mirror(state).valid_new(&user, &local) {
-            mirror(state).append(user);
-            kick_locate(state);
+        if state.frontend.wol_buddies.valid_new(&user, &local) {
+            state.frontend.wol_buddies.append(user);
+            kick_locate(&mut state.frontend);
         }
     }
-    request_ladder(state);
+    request_ladder(&mut state.frontend);
     super::buddy::buddies_changed(state, true);
 }
 
@@ -296,13 +299,13 @@ pub(super) fn buddy_list_received(state: &mut AppState, result: Result<Vec<Strin
 /// buddy's status, an open `0x116` rebuilds its rows, and the next queued
 /// name is located at once. False when no buddy locate is pending.
 pub(super) fn located(state: &mut AppState, result: &Result<WolChannel, u32>) -> bool {
-    let Some((name, _)) = mirror(state).locating.take() else {
+    let Some((name, _)) = state.frontend.wol_buddies.locating.take() else {
         return false;
     };
-    let games = super::lobby::games(state).to_vec();
-    mirror(state).located(name, result, &games);
+    let games = super::lobby::games(state.frontend.wol.as_ref()).to_vec();
+    state.frontend.wol_buddies.located(name, result, &games);
     super::buddy::buddies_changed(state, false);
-    kick_locate(state);
+    kick_locate(&mut state.frontend);
     true
 }
 
@@ -343,10 +346,10 @@ pub(super) fn ladder_received(state: &mut AppState, records: Vec<WolLadderRecord
             .wol_lobby_globals
             .ladder
             .insert(name.to_ascii_lowercase(), record);
-        super::lobby::rank_changed(state, &name);
+        super::lobby::rank_changed(&mut state.frontend, &name);
     }
-    super::lobby::refill_players(state);
-    request_ladder(state);
+    super::lobby::refill_players(&mut state.frontend);
+    request_ladder(&mut state.frontend);
     super::buddy::stats_changed(state);
 }
 

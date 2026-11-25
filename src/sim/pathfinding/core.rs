@@ -25,7 +25,7 @@ use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::util::direction::DIRECTION_DELTAS;
 use crate::util::native_x87::{
-    NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering, chop_sum_f32, sqrt_approx_f32,
+    NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering, chop_sum_f32, sqrt_approx_square_bits,
 };
 use std::cell::{Cell, RefCell};
 
@@ -820,7 +820,8 @@ pub trait SearchFootEntry {
     /// expansions with the expansions this cell search has made. `false`
     /// stops it with [`PathSearchFailure::Stopped`], which no retry
     /// follows. Going on changes nothing. The path batch stops a code-2
-    /// re-path whose answer its turn's budget cuts whatever the search finds.
+    /// re-path whose answer its turn's budget cuts whatever the search finds,
+    /// and an urgency-2 one at its limit.
     fn keeps_searching(&self, _expanded: u32) -> bool {
         true
     }
@@ -2153,12 +2154,17 @@ struct AStarNode {
 /// trades optimality for shorter expansion, and the resulting path geometry
 /// is part of the engine's character. The table root never exceeds the exact
 /// one.
+///
+/// The square is an integer, and `Sqrt_Approx`'s binary32 store truncates to
+/// 24 significant bits while the mantissa table reads only the top 14 of
+/// them, so the root comes out of the integer alone:
+/// [`sqrt_approx_square_bits`](crate::util::native_x87::sqrt_approx_square_bits)
+/// skips the x87 load and store the helper used to pay for every node.
 fn heuristic(cell: (u16, u16), goal: (u16, u16)) -> f32 {
     let dx = i32::from(cell.0 as i16) - i32::from(goal.0 as i16);
     let dy = i32::from(cell.1 as i16) - i32::from(goal.1 as i16);
     let squares = dy.wrapping_mul(dy).wrapping_add(dx.wrapping_mul(dx));
-    let root = sqrt_approx_f32(X87Chop53::load_i32(squares)).expect("an integer root is finite");
-    f32::from_bits(root.bits())
+    f32::from_bits(sqrt_approx_square_bits(squares))
 }
 
 fn apply_search_marker_cost(

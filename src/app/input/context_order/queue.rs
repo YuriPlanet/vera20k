@@ -260,14 +260,22 @@ fn queue_context_order(
     }
     let (target_rx, target_ry) = match target {
         ContextOrderTarget::ScreenPoint(x, y) => {
-            crate::app::match_runtime::sim_tick::screen_point_to_world_cell(state, x, y)
+            crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
+                &state.match_state,
+                x,
+                y,
+            )
         }
         ContextOrderTarget::Radar(target) => target.cell,
     };
     let world_point = match target {
-        ContextOrderTarget::ScreenPoint(x, y) => Some(
-            crate::app::match_runtime::sim_tick::screen_point_to_world(state, x, y),
-        ),
+        ContextOrderTarget::ScreenPoint(x, y) => {
+            Some(crate::app::match_runtime::sim_tick::screen_point_to_world(
+                &state.match_state.input,
+                x,
+                y,
+            ))
+        }
         ContextOrderTarget::Radar(_) => None,
     };
     // Retail modifier map: Ctrl = force fire, Alt = force move,
@@ -275,18 +283,18 @@ fn queue_context_order(
     // Cell's What_Action answer Move — see `OrderModifier` for the full
     // derivation.
     let mut modifier = resolve_order_modifiers(
-        is_ctrl_held(state),
-        is_shift_held(state),
-        is_alt_held(state),
+        is_ctrl_held(&state.match_state.input),
+        is_shift_held(&state.match_state.input),
+        is_alt_held(&state.match_state.input),
     );
     // The object receiver 4D74E0 reads the force-move key itself
     // (`0x004D79EC..0x004D7A14`), whatever chord it is part of.
-    let force_move_key = is_alt_held(state);
+    let force_move_key = is_alt_held(&state.match_state.input);
     // Ares' Ivan rung reads the force-fire key the same way
     // ([`super::ares_ivan_grinds`]).
-    let force_fire_key = is_ctrl_held(state);
+    let force_fire_key = is_ctrl_held(&state.match_state.input);
     let order_mode = state.match_state.input.queued_order_mode;
-    let Some(owner) = preferred_local_owner(state) else {
+    let Some(owner) = preferred_local_owner(&state.match_state) else {
         return false;
     };
     let owner_id: InternedId = state

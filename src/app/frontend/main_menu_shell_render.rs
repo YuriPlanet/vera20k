@@ -14,11 +14,19 @@ use crate::app::frontend::shell_pass::TexturedDraw;
 use crate::app::frontend::shell_transition::{
     ColumnDraw, ExternalMenuWait, ShellFrameWave, external_menu_wait,
 };
+use crate::app::frontend::state::FrontendState;
+use crate::app::frontend::state::ShellMessageBox;
+use crate::app::mods::Mods;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::app::{AppState, BUILD_STAMP};
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::bink_file::BinkHeader;
 use crate::render::batch::SpriteInstance;
 use crate::render::bink_movie::BinkMovieSurface;
+use crate::render::gpu::GpuContext;
 use crate::render::main_menu_shell_chrome::MainMenuShellChromeAtlas;
 use crate::render::shell_paint::{
     self, CURSOR_DEPTH, MOVIE_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED,
@@ -120,10 +128,10 @@ impl MenuMovieClock {
 ///
 /// This models destruction of the owning dialog's child static `0x71A`. The
 /// next movie-bearing dialog reconstructs its own session lazily on first paint.
-pub(crate) fn clear_ra2ts_movie_session(state: &mut AppState) {
-    state.frontend.main_menu_movie = None;
-    state.frontend.main_menu_movie_identity = None;
-    state.frontend.main_menu_movie_clock.pause();
+pub(crate) fn clear_ra2ts_movie_session(frontend: &mut FrontendState) {
+    frontend.main_menu_movie = None;
+    frontend.main_menu_movie_identity = None;
+    frontend.main_menu_movie_clock.pause();
 }
 
 /// The slide a painted `0xE2` frame belongs to.
@@ -146,8 +154,8 @@ impl MainMenuSlide {
     }
 }
 
-pub(crate) fn main_menu_title_text(state: &AppState) -> std::borrow::Cow<'_, str> {
-    state.csf_text(MAIN_MENU_PAGE.title_key).into()
+pub(crate) fn main_menu_title_text(process_assets: &ProcessAssets) -> std::borrow::Cow<'_, str> {
+    process_assets.csf_text(MAIN_MENU_PAGE.title_key).into()
 }
 
 /// What 0xE2 shows in place of its live controls.
@@ -204,7 +212,7 @@ pub(crate) fn shell_reveal_path_a(window: Kind1RevealWindow) -> PathAReveal {
 /// and updates compare, on the status line's baseline rather than gamemd's
 /// version-line top, so the two bottom texts line up. The teardown slide
 /// leaves it blank.
-fn version_labels(state: &AppState, layout: &MainMenuShellLayout) -> Vec<PaintLabel<'static>> {
+fn version_labels(mods: &Mods, layout: &MainMenuShellLayout) -> Vec<PaintLabel<'static>> {
     let version_rect = RectPx {
         y: layout.tooltip_line.y,
         ..layout.version_line
@@ -218,7 +226,7 @@ fn version_labels(state: &AppState, layout: &MainMenuShellLayout) -> Vec<PaintLa
     }];
     // VERA: the mod in use (`app::mods`), on the same line, between the
     // status help and the right panel. Retail 640x480 has no room there.
-    if let Some(active) = state.frontend.mods.active.as_ref() {
+    if let Some(active) = mods.active.as_ref() {
         // As far from the panel as the status help is from the strip's left.
         let gap = layout.tooltip_line.x - layout.lower_strip.x;
         let left = layout.tooltip_line.x + layout.tooltip_line.w;
@@ -317,8 +325,11 @@ pub(crate) fn push_family_list_backing(
 }
 
 /// The RA2TS movie filling `rect`, once its session is loaded.
-pub(crate) fn movie_draw(state: &AppState, rect: RectPx) -> Option<TexturedDraw<'_>> {
-    let movie = state.frontend.main_menu_movie.as_ref()?;
+pub(crate) fn movie_draw(
+    main_menu_movie: &Option<BinkMovieSurface>,
+    rect: RectPx,
+) -> Option<TexturedDraw<'_>> {
+    let movie = main_menu_movie.as_ref()?;
     Some(TexturedDraw {
         texture: movie.batch_texture(),
         instances: vec![SpriteInstance {
@@ -335,40 +346,42 @@ pub(crate) fn movie_draw(state: &AppState, rect: RectPx) -> Option<TexturedDraw<
 }
 
 pub(crate) fn ensure_movie_for_current_layout(
-    state: &mut AppState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    options_profile: &RetailOptionsProfile,
     requested_owner: Ra2tsDialogOwner,
 ) -> Result<()> {
-    let layout = shell_layout::main_menu_layout(state);
-    let yr_original_style = state.persistence.options_profile.plays_yr_original_style();
+    let layout = shell_layout::main_menu_layout(&renderer.gpu);
+    let yr_original_style = options_profile.plays_yr_original_style();
     let requested_identity =
         Ra2tsMovieSessionIdentity::new(requested_owner, layout.movie_base, yr_original_style);
     if ra2ts_movie_session_is_reusable(
-        state.frontend.main_menu_movie.is_some(),
-        state.frontend.main_menu_movie_identity,
+        frontend.main_menu_movie.is_some(),
+        frontend.main_menu_movie_identity,
         requested_identity,
     ) {
         return Ok(());
     }
-    clear_ra2ts_movie_session(state);
+    clear_ra2ts_movie_session(frontend);
 
-    let Some(assets) = state.process_assets.manager() else {
-        state
-            .frontend
+    let Some(assets) = process_assets.manager() else {
+        frontend
             .main_menu_shell_error
             .get_or_insert_with(|| crate::i18n::tr("VERA:GameArchivesUnavailable"));
         return Ok(());
     };
     let load_movie = |bytes: &[u8], source: &str| {
         BinkMovieSurface::from_bytes(
-            &state.renderer.gpu,
-            &state.renderer.batch_renderer,
+            &renderer.gpu,
+            &renderer.batch_renderer,
             Arc::<[u8]>::from(bytes),
             source.to_string(),
             true,
             wgpu::FilterMode::Nearest,
         )
     };
-    let max_dimension = state.renderer.gpu.device.limits().max_texture_dimension_2d;
+    let max_dimension = renderer.gpu.device.limits().max_texture_dimension_2d;
     let mod_movie = mod_menu_movie_candidates(assets, layout.movie_base, max_dimension).find_map(
         |(asset_name, bytes, source)| match load_movie(bytes, source) {
             Ok(movie) => Some((asset_name, movie)),
@@ -384,7 +397,7 @@ pub(crate) fn ensure_movie_for_current_layout(
         let asset_name = layout.movie_base.asset_name();
         let Some((bytes, source)) = menu_movie_bytes(assets, asset_name, yr_original_style) else {
             log::warn!("Missing main-menu movie asset {asset_name}");
-            state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
+            frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
                 "VERA:MenuMovieMissing",
                 &[("movie", &asset_name)],
             ));
@@ -394,7 +407,7 @@ pub(crate) fn ensure_movie_for_current_layout(
             Ok(movie) => (asset_name, movie),
             Err(err) => {
                 log::warn!("Failed to load main-menu movie {asset_name} from {source}: {err:#}");
-                state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
+                frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
                     "VERA:MenuMovieUnreadable",
                     &[
                         ("movie", &asset_name),
@@ -410,8 +423,8 @@ pub(crate) fn ensure_movie_for_current_layout(
         "Loaded {asset_name} for main menu from {}",
         movie.source_archive()
     );
-    state.frontend.main_menu_movie = Some(movie);
-    state.frontend.main_menu_movie_identity = Some(requested_identity);
+    frontend.main_menu_movie = Some(movie);
+    frontend.main_menu_movie_identity = Some(requested_identity);
     Ok(())
 }
 
@@ -442,13 +455,17 @@ fn mod_menu_movie_candidates(
 }
 
 /// Step the shared menu loop once for this paint.
-pub(super) fn step_ra2ts_movie(state: &mut AppState, shown: bool) -> bool {
-    let playing = shown && state.platform.window_active && !state.platform.window_hidden;
-    let elapsed = state
-        .frontend
+pub(super) fn step_ra2ts_movie(
+    platform: &PlatformState,
+    gpu: &GpuContext,
+    frontend: &mut FrontendState,
+    shown: bool,
+) -> bool {
+    let playing = shown && platform.window_active && !platform.window_hidden;
+    let elapsed = frontend
         .main_menu_movie_clock
         .elapsed(Instant::now(), playing);
-    let Some(movie) = state.frontend.main_menu_movie.as_mut() else {
+    let Some(movie) = frontend.main_menu_movie.as_mut() else {
         return true;
     };
     let Some(elapsed) = elapsed else {
@@ -456,9 +473,9 @@ pub(super) fn step_ra2ts_movie(state: &mut AppState, shown: bool) -> bool {
         movie.resume_clock();
         return true;
     };
-    if let Err(err) = movie.step(&state.renderer.gpu, elapsed.as_secs_f64()) {
+    if let Err(err) = movie.step(gpu, elapsed.as_secs_f64()) {
         log::warn!("Failed to step RA2TS menu movie: {err:#}");
-        state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
+        frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
             "VERA:MenuMovieFailed",
             &[("error", &format!("{err:#}"))],
         ));
@@ -502,7 +519,7 @@ pub(crate) fn render_main_menu_shell(
     destination: &wgpu::Texture,
 ) -> Result<MainMenuShellRenderResult> {
     let slide = match crate::app::frontend::shell_transition::shell_exit_wave(
-        state,
+        &state.frontend.shell_exit,
         crate::app::frontend::shell_transition::ShellSlideKind::MainMenu,
     ) {
         Some(wave) => MainMenuSlide::Exit(wave.clone()),
@@ -541,11 +558,17 @@ fn render_main_menu(
     // (`0x0052FEC0`). Retail leaves the destroyed box's last image on screen
     // through the quit fade (nothing repaints after OK); here the backdrop
     // shows alone (evidence note residual).
-    sync_shell_menu_settings(state);
+    sync_shell_menu_settings(&state.renderer, &mut state.frontend.shell_message_box);
     let cover = MainMenuCover::of(state);
     let backdrop = cover != MainMenuCover::Live;
     if !backdrop {
-        ensure_movie_for_current_layout(state, Ra2tsDialogOwner::MainMenu0xE2)?;
+        ensure_movie_for_current_layout(
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+            Ra2tsDialogOwner::MainMenu0xE2,
+        )?;
     }
     if state.frontend.main_menu_shell_error.is_some()
         || !super::menu_page_render::family_art_ready(state)
@@ -563,11 +586,16 @@ fn render_main_menu(
     let sliding = !matches!(slide, MainMenuSlide::Steady);
     let leaving = matches!(slide, MainMenuSlide::Exit(_));
     let movie_shown = !sliding && !backdrop;
-    if !step_ra2ts_movie(state, movie_shown) {
+    if !step_ra2ts_movie(
+        &state.platform,
+        &state.renderer.gpu,
+        &mut state.frontend,
+        movie_shown,
+    ) {
         return Ok(false);
     }
 
-    let layout = shell_layout::main_menu_layout(state);
+    let layout = shell_layout::main_menu_layout(&state.renderer.gpu);
     let page = layout.page();
     // The teardown slide starts with a full dialog repaint (`0x00622C4F`)
     // that covers the children, and the engine pumps no messages until it
@@ -576,17 +604,21 @@ fn render_main_menu(
     let monitor = if backdrop || leaving {
         None
     } else {
-        paint_shell_monitor(state)
+        paint_shell_monitor(&mut state.frontend)
     };
     let status = if leaving || cover == MainMenuCover::Backdrop {
         None
     } else {
         let key = match cover {
             MainMenuCover::Joining => Some("GUI:ConnectingToPlayers".to_owned()),
-            _ => FamilyPage::MainMenu.status_key(state),
+            _ => FamilyPage::MainMenu.status_key(&state.frontend.shell_controller),
         };
-        let text = help_text(state, key.as_deref());
-        paint_shell_status_line(state, text, page.status_help)
+        let text = help_text(&state.process_assets, key.as_deref());
+        paint_shell_status_line(
+            &mut state.frontend.shell_status_line,
+            text,
+            page.status_help,
+        )
     };
     let panel = PanelState {
         leaving,
@@ -601,21 +633,21 @@ fn render_main_menu(
         title: title_window.filter(|_| !backdrop),
         status,
     };
-    let tree = FamilyPage::MainMenu.tree(state);
+    let tree = FamilyPage::MainMenu.tree(&state.renderer.gpu, &mut state.frontend);
     // An open box paints over the page next, with the cursor above it.
     let boxed = state.frontend.shell_message_box.is_some();
     let title = MAIN_MENU_PAGE.title_key;
     let mut frame = FamilyFrame::new("Main Menu Shell", &page, panel, title).on(
-        state,
+        &state.frontend.shell_controller,
         MAIN_MENU_PAGE.dialog,
         &tree,
     );
     frame.backdrop = true;
     frame
         .under
-        .extend(movie_draw(state, page.movie).filter(|_| movie_shown));
+        .extend(movie_draw(&state.frontend.main_menu_movie, page.movie).filter(|_| movie_shown));
     if !backdrop && !leaving {
-        frame.labels = version_labels(state, &layout);
+        frame.labels = version_labels(&state.frontend.mods, &layout);
     }
     frame.cursor = !boxed;
     encode_family_page(state, encoder, destination, frame);
@@ -642,8 +674,8 @@ pub(crate) fn render_shell_message_box_over_page(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) {
-    sync_shell_menu_settings(state);
-    let parts = sync_shell_message_box(state);
+    sync_shell_menu_settings(&state.renderer, &mut state.frontend.shell_message_box);
+    let parts = sync_shell_message_box(&state.renderer.gpu, &mut state.frontend);
     // The box's lists keep their widgets on the box as it lays out now.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     let _ = crate::app::updater::notes::sync(state);
@@ -661,7 +693,7 @@ pub(crate) fn render_shell_message_box_over_page(
         instances: overlay.sprites,
     }];
     crate::app::frontend::shell_pass::encode_shell_pass_over_page(
-        state,
+        &state.renderer,
         encoder,
         destination,
         "Shell message box over page",
@@ -684,10 +716,12 @@ pub(crate) fn render_shell_message_box_over_page(
 /// The box's own widgets on the shell controller follow it and its layout
 /// before they paint ([`crate::ui::shell::modal::ShellBox::sync`]).
 /// Its rects; none while no box is open.
-fn sync_shell_message_box(state: &mut AppState) -> Option<crate::ui::shell::modal::BoxParts> {
-    let message_box = state.frontend.shell_message_box.as_ref()?;
-    let parts = shell_layout::shell_box_parts(state, &message_box.shell_box);
-    let frontend = &mut state.frontend;
+fn sync_shell_message_box(
+    gpu: &GpuContext,
+    frontend: &mut FrontendState,
+) -> Option<crate::ui::shell::modal::BoxParts> {
+    let message_box = frontend.shell_message_box.as_ref()?;
+    let parts = shell_layout::shell_box_parts(gpu, &message_box.shell_box);
     if let Some(message_box) = frontend.shell_message_box.as_ref() {
         let controller = &mut frontend.shell_controller;
         crate::ui::shell::menu_page::sync_box(controller, &message_box.shell_box, &parts);
@@ -697,10 +731,11 @@ fn sync_shell_message_box(state: &mut AppState) -> Option<crate::ui::shell::moda
 
 /// The Esc menu's settings tree follows its layout and values before it
 /// paints.
-fn sync_shell_menu_settings(state: &mut AppState) {
-    if state
-        .frontend
-        .shell_message_box
+fn sync_shell_menu_settings(
+    renderer: &RendererState,
+    shell_message_box: &mut Option<ShellMessageBox>,
+) {
+    if shell_message_box
         .as_ref()
         .and_then(crate::app::frontend::state::ShellMessageBox::menu_settings)
         .is_none()
@@ -708,12 +743,10 @@ fn sync_shell_menu_settings(state: &mut AppState) {
         return;
     }
     let controls = shell_layout::shell_menu_settings_layout(
-        shell_layout::shell_screen_size(state),
-        &state.renderer.bit_font,
+        shell_layout::shell_screen_size(&renderer.gpu),
+        &renderer.bit_font,
     );
-    if let Some(settings) = state
-        .frontend
-        .shell_message_box
+    if let Some(settings) = shell_message_box
         .as_mut()
         .and_then(crate::app::frontend::state::ShellMessageBox::menu_settings_mut)
     {
@@ -770,7 +803,7 @@ fn build_shell_message_box_overlay(
         .and_then(|top| crate::ui::shell::menu_page::pressed_id(controller, top));
     let menu = message_box.menu_settings().map(|settings| {
         let controls = shell_layout::shell_menu_settings_layout(
-            shell_layout::shell_screen_size(state),
+            shell_layout::shell_screen_size(&state.renderer.gpu),
             &state.renderer.bit_font,
         );
         (settings, controls)
@@ -796,12 +829,14 @@ fn build_shell_message_box_overlay(
         },
         ..base_look
     };
-    let tree = crate::app::frontend::skirmish_shell_render::controller_tree(
-        controller,
-        shell_box.dialog,
-    );
+    let tree =
+        crate::app::frontend::skirmish_shell_render::controller_tree(controller, shell_box.dialog);
     let mut draw = crate::app::frontend::skirmish_shell_render::paint_shell_box(
-        state,
+        &state.platform.ime,
+        &state.renderer.bit_font,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
         Some(atlas),
         tree,
         shell_box,
@@ -830,7 +865,18 @@ fn build_shell_message_box_overlay(
             solid_lists: true,
             ..Default::default()
         };
-        paint_gui_styled(state, gui, node, parts.scale, &[], style)
+        paint_gui_styled(
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            gui,
+            node,
+            parts.scale,
+            &[],
+            style,
+        )
     });
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     let notes = notes.map(|mut notes| {
@@ -840,7 +886,14 @@ fn build_shell_message_box_overlay(
     });
     if let Some((settings, controls)) = menu {
         crate::app::frontend::skirmish_shell_render::paint_options_settings(
-            &mut draw, state, &controls, settings,
+            &mut draw,
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &controls,
+            settings,
         );
     }
     // Add Mod's parts, each row's text inset 4 pixels from both ends and cut
@@ -853,7 +906,18 @@ fn build_shell_message_box_overlay(
             solid_lists: true,
             ..Default::default()
         };
-        paint_gui_styled(state, gui, node, parts.scale, &[], style)
+        paint_gui_styled(
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            gui,
+            node,
+            parts.scale,
+            &[],
+            style,
+        )
     });
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
     let import_parts = import_parts.map(|mut import_parts| {

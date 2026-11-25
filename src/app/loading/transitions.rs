@@ -28,16 +28,11 @@ const CLEAR_COLOR: wgpu::Color = wgpu::Color {
 /// replaces the app's live match (fresh-map handoff and in-scenario load),
 /// after a local change, and before BBB's init or the LAN host's options read
 /// it, since another player's speed event changes only the world.
-pub(crate) fn sync_in_game_options_speed_from_sim(state: &mut AppState) {
-    let world = state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .map(|rt| &rt.simulation);
-    mirror_world_speed(
-        &mut state.match_state.match_presentation.in_game_options,
-        world,
-    );
+pub(crate) fn sync_in_game_options_speed_from_sim(
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) {
+    let world = match_state.sim_runtime.runtime().map(|rt| &rt.simulation);
+    mirror_world_speed(&mut match_state.match_presentation.in_game_options, world);
 }
 
 /// [`sync_in_game_options_speed_from_sim`] on `options`: `world`'s speed after
@@ -146,7 +141,7 @@ pub(crate) fn resolve_status_texts(state: &mut AppState) {
             state.csf_text(label)
         })
     });
-    let status_texts = crate::app::presentation::state::StatusTexts::resolve(state);
+    let status_texts = crate::app::presentation::state::StatusTexts::resolve(&state.process_assets);
     let presentation = &mut state.match_state.match_presentation;
     presentation.ares_status_texts = ares_status_texts;
     presentation.status_texts = status_texts;
@@ -230,7 +225,7 @@ pub(crate) fn install_world_presentation(
         .match_presentation
         .super_timer_dock
         .reset();
-    sync_in_game_options_speed_from_sim(state);
+    sync_in_game_options_speed_from_sim(&mut state.match_state);
 
     state.match_state.match_presentation.tile_atlas = assets.tile_atlas;
     state.match_state.match_presentation.building_zshape = assets.building_zshape;
@@ -377,7 +372,7 @@ pub(crate) fn install_world_presentation(
     // Current MapClass authority, including restored/triggered LocalSize,
     // reaches camera and minimap before either route positions its view.
     let (playfield_bounds, playfield_revision) =
-        crate::app::input::camera::playfield_presentation_authority(state);
+        crate::app::input::camera::playfield_presentation_authority(&state.match_state.sim_runtime);
     let minimap = state
         .match_state
         .match_presentation
@@ -593,7 +588,11 @@ pub(crate) fn finish_fresh_scenario_read(state: &mut AppState, mut result: init:
         if let Some(manager) = result.asset_manager.take() {
             state.process_assets.return_from_loading(manager);
         }
-        crate::app::loading::pump::clear_loading_state(state);
+        crate::app::loading::pump::clear_loading_state(
+            &mut state.renderer,
+            &mut state.frontend,
+            &mut state.process_assets,
+        );
         crate::app::App::start_fullscreen_movie(
             state,
             &movie,
@@ -608,10 +607,17 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // Retiring Radar may record a service input after the outgoing frame.
     // Publish that frame before the retire/reset sequence.
     crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
-    crate::app::match_runtime::scenario_pause::reset_clock(state);
+    crate::app::match_runtime::scenario_pause::reset_clock(
+        &mut state.match_state.match_presentation,
+    );
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
-    crate::app::chrono_screen::retire(state, wall_ms);
+    crate::app::chrono_screen::retire(
+        &state.frontend.screen,
+        &mut state.match_state,
+        &mut state.audio,
+        wall_ms,
+    );
     crate::app::input::dispatch::selection_navigation::reset_for_world_replacement(
         &mut state.match_state.input,
     );
@@ -627,8 +633,12 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // A loaded world is not timed until the launch handoff reaches InGame.
     state.match_state.scenario_elapsed_clock.reset();
     #[cfg(feature = "telemetry-dashboard")]
-    crate::app::telemetry_capture::reset_observation(state);
-    crate::app::loading::pump::clear_loading_state(state);
+    crate::app::telemetry_capture::reset_observation(&mut state.diag, &mut state.match_state);
+    crate::app::loading::pump::clear_loading_state(
+        &mut state.renderer,
+        &mut state.frontend,
+        &mut state.process_assets,
+    );
 
     // Close the outgoing diagnostic timeline before replacing its runtime.
     crate::app::match_runtime::sim_tick::close_replay_segment_for_new_timeline(state);
@@ -671,6 +681,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             simulation.batch_path_searches();
             simulation.batch_target_scans();
             simulation.present_effect_anims();
+            simulation.separate_turn_streams(true);
             simulation.sleep_idle_objects_in_match();
             crate::sim::runtime::SimRuntime {
                 simulation,
@@ -687,7 +698,10 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             .session
             .hand_mode_to_world(runtime.simulation.session().game_mode());
     }
-    crate::app::audio_runtime::bind_match_eva_context(state);
+    crate::app::audio_runtime::bind_match_eva_context(
+        &state.match_state.sim_runtime,
+        &mut state.audio,
+    );
     // Only an actually-carried lease returns. A fallback result must not wipe
     // the process-sticky manager already restored by its failure path.
     if let Some(manager) = result.asset_manager {
@@ -749,13 +763,15 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         .match_state
         .match_presentation
         .sidebar_projection
-        .model.reset_cameo_seed();
+        .model
+        .reset_cameo_seed();
     let owner = state.match_state.local_player_owner().map(str::to_owned);
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .model.start_scenario_credits_counter(owner.as_deref());
+        .model
+        .start_scenario_credits_counter(owner.as_deref());
     if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
         runtime
             .simulation
@@ -765,9 +781,20 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // Map load hands over a world anchor point; the transition applies the
     // active tactical rectangle and live zoom.
     let (tactical_x, tactical_y, tactical_width, tactical_height) =
-        crate::app::input::camera::tactical_viewport_px(state);
-    let (centring_width, centring_height) =
-        crate::app::input::camera::tactical_centring_size(state);
+        crate::app::input::camera::tactical_viewport_px(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+        );
+    let (centring_width, centring_height) = crate::app::input::camera::tactical_centring_size(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let (camera_x, camera_y) = crate::app::input::camera::tactical_camera_top_left(
         (
             result.scenario.camera_anchor_x,
@@ -777,7 +804,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         centring_height as f32,
         state.match_state.input.zoom_level,
     );
-    crate::app::input::camera::reset_camera_for_new_scenario(state);
+    crate::app::input::camera::reset_camera_for_new_scenario(&mut state.match_state.input);
     state.match_state.input.cursor_visibility.reset();
     crate::app::input::camera::set_camera_position(
         &mut state.match_state.input,
@@ -786,14 +813,18 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // gamemd's scenario reader fills all four camera bookmarks with the opening
     // view cell, so F1 before any Ctrl+F1 is a valid "go home".
     crate::app::input::camera::seed_view_bookmarks_from_opening_view(
-        state,
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state,
+        &state.persistence,
         result.scenario.opening_view_cell,
     );
     state.match_state.input.reset_targeting_for_new_world();
     state.match_state.match_presentation.active_sidebar_tab = SidebarTab::default_active_tab();
     // The match's chrome: the sidebar's and the command bar's nodes, which
     // take their clicks and draw them, until the match ends.
-    crate::app::input::chrome_input::build_for_match(state);
+    crate::app::input::chrome_input::build_for_match(&mut state.match_state.match_presentation);
     // Read_Scenario's Init (`0x00684AC9`). Start_Scenario then changes video
     // mode when the game size differs from the shell's (`0x00683DB8..0x00683DF3`):
     // Change_Video_Mode's Set_View_Dimensions (`0x005610EC`) Inits the empty
@@ -837,7 +868,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // once the fade lands. Theme AI borrows the installed process Main cursor;
     // `Is_Allowed`'s `Side=` gate compares the local player's side.
     let music_now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-    crate::app::audio_runtime::bind_match_theme_context(state);
+    crate::app::audio_runtime::bind_match_theme_context(
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+    );
     if let Some(assets) = state.process_assets.manager() {
         state.audio.request_scenario_theme(
             state.match_state.map_basic.theme.as_deref(),
@@ -920,7 +955,10 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                 Ok(effects) => initial_replay_effects = effects,
                 Err(error) => {
                     log::error!("Replay startup failed: {error:#}");
-                    let message = if matches!(startup, crate::app::match_bootstrap::LoadingStartup::AuthoredCampaignReplay { .. }) {
+                    let message = if matches!(
+                        startup,
+                        crate::app::match_bootstrap::LoadingStartup::AuthoredCampaignReplay { .. }
+                    ) {
                         crate::i18n::tr("VERA:CampaignReplayUnavailable")
                     } else {
                         format!("Replay startup failed: {error:#}")
@@ -995,7 +1033,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
 /// only because a world needs a current House: it starts on the observer's
 /// sidebar (`watching::begin_on_observers_view`).
 fn install_watcher(state: &mut AppState) {
-    if !crate::app::match_runtime::watching::active(state) {
+    if !crate::app::match_runtime::watching::active(&state.match_state) {
         return;
     }
     if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {

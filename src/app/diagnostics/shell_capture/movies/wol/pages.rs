@@ -76,7 +76,8 @@ impl WolCapture {
                     bail!("0xFE is not open");
                 };
                 let (geometry, _) =
-                    crate::app::shell_wol::persona::list_view(state).context("0xFE list")?;
+                    crate::app::shell_wol::persona::list_view(&state.frontend.shell_controller)
+                        .context("0xFE list")?;
                 let locale = page.rows.get(2).context("0xFE rows")?.locale;
                 welcome_click(state, geometry.row(2));
                 welcome_click(state, layout.page.button_rect(ACCEPT).context("0xFE OK")?);
@@ -144,13 +145,14 @@ impl WolCapture {
             },
             false,
         );
-        let opened = page::page_dialog(state).is_some()
+        let opened = page::page_dialog(state.frontend.wol.as_ref()).is_some()
             && crate::app::shell_wol::leaf::text(
-                state,
+                &state.frontend.shell_controller,
                 crate::ui::wol_page::PAGE_DIALOG,
                 crate::ui::wol_page::NAME,
             ) == "Tanya"
-            && crate::app::shell_wol::leaf::focused(state) == Some(crate::ui::wol_page::TEXT);
+            && crate::app::shell_wol::leaf::focused(&state.frontend.shell_controller)
+                == Some(crate::ui::wol_page::TEXT);
         ensure!(
             state.match_state.match_presentation.in_game_menu == InGameMenuState::Page && opened,
             "PageUser did not open 0xCF with the pager prefilled"
@@ -194,7 +196,7 @@ impl WolCapture {
     fn ingame_page_answers(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         use crate::app::shell_wol::page;
         use crate::ui::pause_menu::InGameMenuState;
-        let texts: Vec<String> = page::page_dialog(state)
+        let texts: Vec<String> = page::page_dialog(state.frontend.wol.as_ref())
             .context("the in-match 0xCF closed")?
             .lines
             .iter()
@@ -224,7 +226,7 @@ impl WolCapture {
         );
         self.event(frame, json!({"in-match 0xCF lines": texts, "rows": rows}));
         if self.target == WolTarget::IngamePageCancel {
-            let cancel = page::page_layout(state)
+            let cancel = page::page_layout(&state.renderer, &state.frontend.screen)
                 .rect_of(crate::ui::shell::modal::control::CANCEL)
                 .unwrap_or_default();
             state.match_state.input.cursor_x = (cancel.x + cancel.w / 2) as f32;
@@ -241,7 +243,7 @@ impl WolCapture {
             }
             ensure!(
                 state.match_state.match_presentation.in_game_menu == InGameMenuState::Closed
-                    && page::page_dialog(state).is_none(),
+                    && page::page_dialog(state.frontend.wol.as_ref()).is_none(),
                 "Cancel did not end state 7"
             );
             self.event(frame, "Cancel ended state 7");
@@ -257,9 +259,12 @@ impl WolCapture {
         setup: bool,
     ) -> Result<()> {
         use crate::app::shell_wol::page;
-        ensure!(page::page_dialog(state).is_some(), "Page did not open 0xCF");
+        ensure!(
+            page::page_dialog(state.frontend.wol.as_ref()).is_some(),
+            "Page did not open 0xCF"
+        );
         self.event(frame, "0xCF opened");
-        let layout = page::page_layout(state);
+        let layout = page::page_layout(&state.renderer, &state.frontend.screen);
         let click = |state: &mut AppState, rect: RectPx| {
             if setup {
                 setup_click(state, rect);
@@ -290,7 +295,7 @@ impl WolCapture {
                 key(state, None, Some(text));
                 ensure!(
                     crate::app::shell_wol::leaf::enabled(
-                        state,
+                        &state.frontend.shell_controller,
                         crate::ui::wol_page::PAGE_DIALOG,
                         crate::ui::wol_page::SEND
                     ),
@@ -310,7 +315,8 @@ impl WolCapture {
 
     /// The test service has answered `0xCF`'s locate and page.
     pub(super) fn page_answers(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let Some(page) = crate::app::shell_wol::page::page_dialog(state) else {
+        let Some(page) = crate::app::shell_wol::page::page_dialog(state.frontend.wol.as_ref())
+        else {
             bail!("0xCF closed");
         };
         let texts: Vec<String> = page
@@ -468,7 +474,11 @@ impl WolCapture {
                 "the pointer missed the game row at {x}"
             );
         }
-        let help = crate::app::shell_wol::lobby::status_help(state);
+        let help = crate::app::shell_wol::lobby::status_help(
+            &state.frontend,
+            &state.match_state.input,
+            &state.process_assets,
+        );
         let (size, seats, limit, capacity_key) = if watch {
             (2, 1, 8, "VERA:LobbyWatchCapacity")
         } else {
@@ -514,7 +524,12 @@ impl WolCapture {
             return Ok(());
         }
         ensure!(
-            crate::app::loading::pump::accept_network_loading_progress(state, 1, 100),
+            crate::app::loading::pump::accept_network_loading_progress(
+                &mut state.frontend,
+                &state.match_state.session,
+                1,
+                100
+            ),
             "controlled guest completion was refused"
         );
         self.route.push(json!({"frame": frame,

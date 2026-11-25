@@ -30,15 +30,15 @@ fn stacking_world(size: u16) -> Option<(Simulation, RuleSet, PathGrid)> {
 /// to keep the fixtures focused on movement admission.
 fn stacking_navigation_world(rules: RuleSet, size: u16) -> (Simulation, RuleSet, PathGrid) {
     let mut sim = Simulation::new();
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
         base: i32::from(size),
         off_fc: -256,
         off_100: -256,
         off_104: 512,
         off_108: 512,
     });
-    sim.playfield_size_height = Some(i32::from(size));
-    sim.resolved_terrain = Some(gsi_04_10_clear_terrain(size, size));
+    *sim.playfield_size_height = Some(i32::from(size));
+    *sim.resolved_terrain = Some(gsi_04_10_clear_terrain(size, size));
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let grid = PathGrid::clone(&sim.path_grid_snapshot().expect("navigation built"));
     (sim, rules, grid)
@@ -1922,7 +1922,7 @@ fn a_group_spread_keeps_aircraft_out_of_shrouded_cells() {
                 .set_owned_by_current_house_for_test(true);
         }
         let owner = sim.interner.intern("Americans");
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        *sim.fog = crate::sim::vision::FogState::new(32, 32);
         if revealed {
             crate::sim::vision::reveal_radius(&mut sim.fog, owner, 20, 20, 8);
             assert!(sim.fog.is_ground_unshrouded(owner, 19, 20));

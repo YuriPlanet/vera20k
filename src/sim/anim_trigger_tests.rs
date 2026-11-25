@@ -384,7 +384,7 @@ fn a_network_drop_zone_flare_reveals_for_every_human_whoever_is_local() {
     let flare = |local: &str| {
         let mut sim = Simulation::with_seed(31);
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        *sim.fog = crate::sim::vision::FogState::new(32, 32);
         for name in ["Russians", "Americans"] {
             let id = sim.interner.intern(name);
             sim.houses

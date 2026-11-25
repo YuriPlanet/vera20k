@@ -135,7 +135,7 @@ impl Fixture {
         // the Map Size.
         sim.set_playfield_size_height_for_test(Some(i32::from(MAP)));
         let terrain = sim.resolved_terrain.as_ref().expect("fixture terrain");
-        sim.zone_grid = Some(
+        *sim.zone_grid = Some(
             crate::sim::pathfinding::zone_map::ZoneGrid::build_with_terrain(
                 &grid,
                 terrain,
@@ -1102,7 +1102,7 @@ fn retail_hover_transport_fallback_assignment_survives_save_and_continues() {
             .sim;
         restored
             .retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&fx.sim));
-        restored.resolved_terrain = fx.sim.resolved_terrain.clone();
+        *restored.resolved_terrain = (*fx.sim.resolved_terrain).clone();
         restored.restore_after_snapshot_load().unwrap();
         restored.rebuild_caches_after_load(
             fx.sim.resolved_terrain.as_ref().unwrap().clone(),
@@ -1119,7 +1119,7 @@ fn retail_hover_transport_fallback_assignment_survives_save_and_continues() {
                 .effective_shared_cell_dummy()
                 .same_identity(&control_dummy)
         );
-        fx.sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *fx.sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         // Player load clears planning tokens (6370B0 / 70BF79).
         fx.sim.reset_planning_after_player_load();
         for id in fx.sim.substrate.entities.keys_sorted() {
@@ -1243,9 +1243,8 @@ fn nighthawk_unloads_only_when_landed() {
             &fx.rules,
             &mut Default::default(),
         );
-        fx.sim
-            .session
-            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
+        let session = &mut *fx.sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
     }
     assert_eq!(fx.cargo_ids(shad).len(), 2, "airborne: nothing leaves");
 
@@ -1272,9 +1271,8 @@ fn nighthawk_unloads_only_when_landed() {
             &fx.rules,
             &mut Default::default(),
         );
-        fx.sim
-            .session
-            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
+        let session = &mut *fx.sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
     }
     assert_eq!(fx.cargo_ids(shad).len(), 2, "pitched: nothing leaves");
 
@@ -1287,9 +1285,8 @@ fn nighthawk_unloads_only_when_landed() {
                 &fx.rules,
                 &mut Default::default(),
             );
-            fx.sim
-                .session
-                .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
+            let session = &mut *fx.sim.session;
+            session.set_binary_frame_for_test(session.binary_frame() + 1);
         }
     };
     dispatch(&mut fx, 80);
@@ -1908,9 +1905,8 @@ fn descending_nighthawk_draws_no_scenario_rng_until_it_ejects() {
     // First dispatch: state 0 → 2 with exactly one epilogue draw.
     let before = fx.sim.scenario_rng.state();
     crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, &mut Default::default());
-    fx.sim
-        .session
-        .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
+    let session = &mut *fx.sim.session;
+    session.set_binary_frame_for_test(session.binary_frame() + 1);
     assert_eq!(handler_state(&fx, shad), super::AIR_STATE_WAIT_STOP);
     assert_ne!(
         fx.sim.scenario_rng.state(),
@@ -1931,9 +1927,8 @@ fn descending_nighthawk_draws_no_scenario_rng_until_it_ejects() {
             &fx.rules,
             &mut Default::default(),
         );
-        fx.sim
-            .session
-            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
+        let session = &mut *fx.sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         if fx.sim.scenario_rng.state() != before {
             airborne_draws += 1;
         }
@@ -2132,9 +2127,8 @@ fn landed_aircraft_transport_unload_asks_the_locomotor() {
             &fx.rules,
             &mut Default::default(),
         );
-        fx.sim
-            .session
-            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
+        let session = &mut *fx.sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         assert_eq!(handler_state(&fx, shad), super::AIR_STATE_WAIT_STOP);
         set_altitude(&mut fx, shad, 0);
         setup(fx.sim.substrate.entities.get_mut(shad).expect("aircraft"));
@@ -2146,9 +2140,8 @@ fn landed_aircraft_transport_unload_asks_the_locomotor() {
                 &fx.rules,
                 &mut Default::default(),
             );
-            fx.sim
-                .session
-                .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
+            let session = &mut *fx.sim.session;
+            session.set_binary_frame_for_test(session.binary_frame() + 1);
             if handler_state(&fx, shad) != super::AIR_STATE_WAIT_STOP {
                 break;
             }
@@ -2213,9 +2206,8 @@ fn nighthawk_failed_ejection_keeps_cargo_and_leaves_for_guard() {
     // Advance to the state-3 dispatch: the ejection is refused, and the idle
     // mode's tail queues Guard and commences it when ready (`0x00417B44`).
     for _ in 0..20 {
-        fx.sim
-            .session
-            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
+        let session = &mut *fx.sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         crate::sim::aircraft::dispatch_mission(
             &mut fx.sim,
             shad,
@@ -2245,9 +2237,8 @@ fn nighthawk_failed_ejection_keeps_cargo_and_leaves_for_guard() {
     // The handler stays silent.
     let before = fx.sim.scenario_rng.state();
     for _ in 0..60 {
-        fx.sim
-            .session
-            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
+        let session = &mut *fx.sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         crate::sim::aircraft::dispatch_mission(
             &mut fx.sim,
             shad,
@@ -2298,9 +2289,8 @@ fn nighthawk_passenger_is_refused_by_an_enemy_in_the_aircraft_cell() {
     assert!(fx.apply(Command::UnloadPassengers { transport_id: shad }));
 
     for _ in 0..40 {
-        fx.sim
-            .session
-            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
+        let session = &mut *fx.sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         crate::sim::aircraft::dispatch_mission(
             &mut fx.sim,
             shad,
@@ -2483,7 +2473,7 @@ fn turning_unload_uses_the_turret_latch_and_native_cadence() {
                 .is_rotating(101),
             hull_turning
         );
-        fx.sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+        *fx.sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
             row["rng_before"].as_str().unwrap(),
         );
         let delay = super::unit_mission_unload(
@@ -2531,7 +2521,7 @@ fn retail_bfrt_ejects_while_turning_and_resumes_after_save() {
     let mut fx = Fixture::new(|_, _| false);
     fx.rules = retail.rules;
     fx.sim.session.set_binary_frame_for_test(100);
-    fx.sim.scenario_rng = crate::sim::rng::SimRng::new(1);
+    *fx.sim.scenario_rng = crate::sim::rng::SimRng::new(1);
     let carrier = fx.spawn("BFRT", 20, 20, 0);
     let passengers = fx.board(carrier, 5);
     assert!(
@@ -2570,7 +2560,7 @@ fn retail_bfrt_ejects_while_turning_and_resumes_after_save() {
         .unwrap()
         .sim;
     restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&fx.sim));
-    restored.resolved_terrain = fx.sim.resolved_terrain.clone();
+    *restored.resolved_terrain = (*fx.sim.resolved_terrain).clone();
     restored.restore_after_snapshot_load().unwrap();
     restored.rebuild_caches_after_load(
         fx.sim.resolved_terrain.as_ref().unwrap().clone(),
@@ -2581,7 +2571,7 @@ fn retail_bfrt_ejects_while_turning_and_resumes_after_save() {
     // Native ScenarioLoad resets the Scenario RNG to Seed(0), and player load
     // clears planning tokens (6370B0 / 70BF79). Apply that same load prior to
     // the uninterrupted control before comparing futures.
-    fx.sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *fx.sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     fx.sim.reset_planning_after_player_load();
     // Foot Load also clears the move-sound countdown, including idle Feet.
     for id in fx.sim.substrate.entities.keys_sorted() {

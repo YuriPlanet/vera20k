@@ -251,10 +251,7 @@ fn virtual_purifiers_use_admitted_rules_and_the_raw_human_byte() {
         let mut house = HouseState::new(owner, 0, None, human, 0, 10);
         house.set_player_control_for_test(true);
         sim.houses.register(house);
-        assert_eq!(
-            effective_purifier_count(&sim, &rules, "Americans"),
-            expected
-        );
+        assert_eq!(effective_purifier_count(&sim, &rules, owner), expected);
     }
 }
 
@@ -279,7 +276,7 @@ fn virtual_purifier_wrap_and_saved_payment_use_native_inputs() {
         crate::sim::miner::miner_system::effective_purifier_count(
             &scene.sim,
             &scene.rules,
-            "Americans"
+            scene.sim.interner.get("Americans").unwrap()
         ),
         i32::MIN
     );
@@ -404,14 +401,14 @@ pub(super) fn world_with(
     let mut sim = Simulation::with_seed(31);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.playfield_bounds = Some(bounds);
-    sim.playfield_size_height = Some(32);
+    *sim.playfield_bounds = Some(bounds);
+    *sim.playfield_size_height = Some(32);
     sim.session.set_map_width_for_test(33);
     sim.session.set_map_height_for_test(33);
-    sim.overlay_grid = Some(OverlayGrid::new(33, 33));
-    sim.bridge_state = Some(bridges);
-    sim.zone_grid = Some(zones.into());
-    sim.path_grid = Some(Arc::new(path));
+    *sim.overlay_grid = Some(OverlayGrid::new(33, 33));
+    *sim.bridge_state = Some(bridges);
+    *sim.zone_grid = Some(zones.into());
+    *sim.path_grid = Some(Arc::new(path));
     sim.install_resolved_terrain_for_new_map(terrain);
     sim
 }

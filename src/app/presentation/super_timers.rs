@@ -12,8 +12,8 @@
 use std::collections::HashMap;
 
 use crate::app::AppState;
-use crate::app::presentation::text_hud::{self, TextHud};
 use crate::app::presentation::super_timer_groups::{TeamKey, TeamSuperRow, grouped_super_rows};
+use crate::app::presentation::text_hud::{self, TextHud};
 use crate::assets::csf_file::type_ui_name;
 use crate::map::houses::is_allied_with;
 use crate::render::batch::SpriteInstance;
@@ -425,7 +425,11 @@ pub(crate) fn update_super_timers(state: &mut AppState) {
         .super_timer_frame
         .texts
         .clear();
-    state.match_state.match_presentation.super_timer_frame.toggle = None;
+    state
+        .match_state
+        .match_presentation
+        .super_timer_frame
+        .toggle = None;
     state
         .match_state
         .match_presentation
@@ -438,7 +442,8 @@ pub(crate) fn update_super_timers(state: &mut AppState) {
     use crate::app::presentation::field_parts;
     use crate::ui::field_layout::FieldPart;
     // A layout that leaves the timers out draws none and keeps no hit area.
-    if state.frontend.screen != GameScreen::InGame || !field_parts::shows(state, FieldPart::Timers)
+    if state.frontend.screen != GameScreen::InGame
+        || !field_parts::shows(&state.match_state.match_presentation, FieldPart::Timers)
     {
         return;
     }
@@ -627,7 +632,7 @@ pub(crate) fn update_super_timers(state: &mut AppState) {
         })
         .collect();
     let blink_rgb = blink_rgb(rules);
-    let now_ms = crate::app::input::tooltips::now_ms(state);
+    let now_ms = crate::app::input::tooltips::now_ms(&state.diag, &state.match_state);
     // The dock stacks up from the bottom right of its box, the battlefield
     // in the original interface, and works in the box's own pixels.
     let [_, _, view_w, view_h] = field_parts::rect(state, FieldPart::Timers);
@@ -768,7 +773,10 @@ fn draw_timer_frame(
         }
     }
     hud.finish(font);
-    (hud.boxes().copied().collect(), hud.glyphs().copied().collect())
+    (
+        hud.boxes().copied().collect(),
+        hud.glyphs().copied().collect(),
+    )
 }
 
 /// Whether a 0 s Super line's blink flips on the next timer draw
@@ -778,7 +786,9 @@ pub(crate) fn blink_due(state: &AppState) -> bool {
         .match_state
         .match_presentation
         .super_timer_next_flip_ms
-        .is_some_and(|next| crate::app::input::tooltips::now_ms(state) >= next)
+        .is_some_and(|next| {
+            crate::app::input::tooltips::now_ms(&state.diag, &state.match_state) >= next
+        })
 }
 
 #[cfg(all(test, tests_app_presentation))]

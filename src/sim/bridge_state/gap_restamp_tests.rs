@@ -112,8 +112,8 @@ fn gap_flags_snapshot_hash_and_later_setter_preserve_value_authority() {
     let mut sim = Simulation::new();
     let mut bridge_state = super::BridgeRuntimeState::from_resolved_terrain(&terrain, true, 100);
     bridge_state.test_set_endpoint_records(records.clone());
-    sim.bridge_state = Some(bridge_state);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(12, 12));
+    *sim.bridge_state = Some(bridge_state);
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(12, 12));
     sim.install_resolved_terrain_for_new_map(terrain);
     let before = sim.state_hash();
     let updates = &mut sim.real_cell_bridge_flags_0x1180;
@@ -221,7 +221,7 @@ fn gap_flags_snapshot_hash_and_later_setter_preserve_value_authority() {
         0
     );
     assert_eq!(
-        restored.real_cell_bridge_flags_0x1180,
+        *restored.real_cell_bridge_flags_0x1180,
         restored
             .resolved_terrain
             .as_ref()

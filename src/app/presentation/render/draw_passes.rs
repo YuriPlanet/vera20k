@@ -12,11 +12,14 @@ use crate::app::presentation::sidebar_render::{begin_main_load_pass, begin_main_
 use crate::app::presentation::sidebar_surface::{
     SIDEBAR_STREAMS, SidebarPart, SidebarPicture, SidebarRedraw, TEXT_LAYERS, VIEWPORT_OUTLINE,
 };
+use crate::app::presentation::state::MatchPresentationState;
 use crate::app::presentation::ui_overlays::software_cursor_texture;
+use crate::app::renderer_state::RendererState;
 use crate::render::batch::{BatchRenderer, BatchTexture, InstanceBufferPool, SpriteInstance};
 use crate::render::bridge_atlas::BridgeAtlas;
 use crate::render::overlay_atlas::OverlayAtlas;
 use crate::render::tactical_draw_plan::RenderZPolicy;
+use crate::ui::game_screen::GameScreen;
 
 use super::merge_passes;
 use super::terrain_picture::{
@@ -90,10 +93,20 @@ fn draw_sidebar_surface(
     encoder: &mut wgpu::CommandEncoder,
     data: &DrawPassData<'_>,
 ) {
-    encode_radar_pictures(state, encoder);
+    encode_radar_pictures(
+        &state.renderer,
+        &mut state.match_state.match_presentation,
+        encoder,
+    );
     // The column's text draws here only where its pixels are the window's.
     let text_in_surface = matches!(
-        crate::app::presentation::sidebar_surface::column_text(state),
+        crate::app::presentation::sidebar_surface::column_text(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence
+        ),
         crate::app::presentation::sidebar_surface::ColumnText::Surface(_)
     );
     let side_index = crate::app::presentation::sidebar_render::current_sidebar_side(state);
@@ -330,9 +343,11 @@ fn draw_sidebar_surface(
 /// (`RadarClass::Update @ 0x00656EC0`), then the housing's paints
 /// (`RadarClass::Draw @ 0x00653100`), whose retained online draw samples it.
 /// Every frame encodes them, sidebar drawn or not, so neither waits a frame.
-fn encode_radar_pictures(state: &mut AppState, encoder: &mut wgpu::CommandEncoder) {
-    let renderer = &state.renderer;
-    let presentation = &mut state.match_state.match_presentation;
+fn encode_radar_pictures(
+    renderer: &RendererState,
+    presentation: &mut MatchPresentationState,
+    encoder: &mut wgpu::CommandEncoder,
+) {
     if let Some(minimap) = presentation.minimap.as_mut() {
         minimap.encode_composition(&renderer.gpu.device, encoder);
     }
@@ -382,7 +397,11 @@ pub(super) fn dispatch_draw_passes(
     // screen-fixed block copies it in.
     draw_sidebar_surface(state, encoder, data);
     // The Surrender box paints from its nodes, kept on its layout.
-    crate::app::input::surrender::sync(state);
+    crate::app::input::surrender::sync(
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state.match_presentation,
+    );
     let pool: &InstanceBufferPool = &state.renderer.instance_pool;
     let pose_cache = state.renderer.vxl_pose_frame_cache.borrow();
     let world_depth = state
@@ -402,7 +421,13 @@ pub(super) fn dispatch_draw_passes(
     // Keep the native surface boundary independent of chrome coverage. The
     // ordinary sidebar now uses the resolved stock side archive, real source
     // canvas heights, and one pixel per source pixel in every theme.
-    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(state);
+    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let [tac_x, tac_y, tac_w, tac_h] = state
         .renderer
         .world_zoom_pass
@@ -1162,7 +1187,13 @@ pub(super) fn dispatch_draw_passes(
     // Resolve wheel zoom once, after every world/depth/destination operation.
     // Timers, sidebar, messages and cursor then draw in frame pixels.
     drop(pass);
-    let (tac_x, tac_y, tac_w, tac_h) = crate::app::input::camera::tactical_viewport_px(state);
+    let (tac_x, tac_y, tac_w, tac_h) = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let view = if let Some(zoom) = state.renderer.world_zoom_pass.as_ref() {
         composite_world_with_drag_rect(
             &state.renderer.gpu.device,
@@ -1240,7 +1271,12 @@ pub(super) fn dispatch_draw_passes(
     // A zoomed match draws the battlefield's screen-fixed text, with its
     // boxes, at the window's pixels after the zoom (`window_ui`); their
     // layers are left out of the frame.
-    let text_in_frame = crate::app::presentation::window_ui::battlefield_raster(state).is_none();
+    let text_in_frame = crate::app::presentation::window_ui::battlefield_raster(
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+    )
+    .is_none();
     // --- Step 10.6: timer lines ---
     // TacticalClass::Draw's Scenario, Super and blackout timers
     // (`0x006D4941..0x006D4B25`) follow the sparkles: black boxes, then text,
@@ -1278,7 +1314,11 @@ pub(super) fn dispatch_draw_passes(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
-        crate::app::presentation::outcome_banner::texture(state),
+        crate::app::presentation::outcome_banner::texture(
+            &state.renderer.outcome_banner_art,
+            &state.match_state,
+            &state.persistence.options_profile,
+        ),
         "outcome_shape",
     );
     if text_in_frame {
@@ -1336,7 +1376,13 @@ pub(super) fn dispatch_draw_passes(
     // The column's text, where its copy would resample it, over the copy
     // within the column (`sidebar_surface::column_text`).
     if let crate::app::presentation::sidebar_surface::ColumnText::Frame(_) =
-        crate::app::presentation::sidebar_surface::column_text(state)
+        crate::app::presentation::sidebar_surface::column_text(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence,
+        )
     {
         let (x, y, width, height) = state.sidebar_frame().column();
         pass.set_scissor_rect(x, y, width, height);
@@ -1442,7 +1488,7 @@ pub(super) fn dispatch_draw_passes(
     }
     // State 7's 0xCF window over the live battlefield (0x0077D840).
     if let Some(page) = page_draw.as_ref() {
-        page.draw(&mut pass, state);
+        page.draw(&mut pass, &state.renderer, &state.frontend);
     }
 
     // --- Step 10.7: build description ---
@@ -1496,25 +1542,31 @@ pub(super) fn dispatch_draw_passes(
 
 /// An unzoomed match's software cursor, over the window's copy of the frame.
 pub(crate) fn draw_software_cursor(
-    state: &AppState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    presentation: &MatchPresentationState,
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
     cursor: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
 ) {
-    let Some(texture) = cursor.and_then(|draw| software_cursor_texture(state, draw)) else {
+    let Some(texture) = cursor.and_then(|draw| software_cursor_texture(presentation, draw)) else {
         return;
     };
-    let frame_depth = state
-        .renderer
+    let frame_depth = renderer
         .world_zoom_pass
         .as_ref()
-        .map_or(&state.renderer.depth_view, |zoom| zoom.frame_depth_view());
+        .map_or(&renderer.depth_view, |zoom| zoom.frame_depth_view());
     let mut pass = begin_main_load_pass(encoder, view, frame_depth);
-    pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
+    pass.set_scissor_rect(
+        0,
+        0,
+        renderer.render_width(screen),
+        renderer.render_height(screen),
+    );
     draw_pooled_ui(
         &mut pass,
-        &state.renderer.batch_renderer,
-        &state.renderer.instance_pool,
+        &renderer.batch_renderer,
+        &renderer.instance_pool,
         Some(texture),
         "software_cursor",
     );
@@ -1684,7 +1736,13 @@ pub(crate) fn draw_world_window_copy(
         view,
         state.renderer.combat_light_renderer.composition_texture(),
         zoom,
-        crate::app::input::camera::tactical_viewport_px(state),
+        crate::app::input::camera::tactical_viewport_px(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+        ),
     );
 }
 

@@ -284,7 +284,13 @@ fn construct_spark_particle(
         rules,
         particle_type_id,
         system_coords,
-        |sim, x, y| Ok(super::spark_world::constructor_ground_height(sim, x, y)?),
+        |sim, x, y| {
+            Ok(super::spark_world::constructor_ground_height(
+                sim.resolved_terrain.as_ref(),
+                x,
+                y,
+            )?)
+        },
     )
 }
 
@@ -687,7 +693,7 @@ mod tests {
     fn an_int_min_burst_draw_keeps_its_sign() {
         let rules = spark_rules(1, 6, "1");
         let mut sim = Simulation::with_seed(1);
-        sim.scenario_rng = SimRng::with_next_draws_for_test(&[0x8000_0000]);
+        *sim.scenario_rng = SimRng::with_next_draws_for_test(&[0x8000_0000]);
         let mut sys = spark_system(1);
 
         spark_spawn_pass(&mut sys, &mut sim, &rules).expect("spark spawn");

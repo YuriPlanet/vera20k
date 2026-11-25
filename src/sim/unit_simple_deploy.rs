@@ -137,7 +137,7 @@ impl Simulation {
             return Ok(());
         }
         let deploy_to_land = object.deploy_to_land;
-        let configured_anim = object.deploying_anim.clone();
+        let configured_anim = object.deploying_anim.as_deref();
         let object_has_deploying_anim = configured_anim.is_some();
         let active = if deploying {
             leaf.deploy_begin_active()
@@ -211,7 +211,7 @@ impl Simulation {
                 let anim_id = if let Some(anim_id) = retained {
                     anim_id
                 } else {
-                    self.start_unit_deploy_anim(id, &name, !deploying, rules)?
+                    self.start_unit_deploy_anim(id, name, !deploying, rules)?
                 };
                 let anim = self
                     .anim(anim_id)

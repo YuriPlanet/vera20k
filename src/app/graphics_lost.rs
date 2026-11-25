@@ -66,7 +66,7 @@ fn save_match(state: &mut AppState) -> Option<String> {
     if state.match_state.scenario_outcome.is_some() || state.match_state.scenario_exit.is_some() {
         return None;
     }
-    let description = App::current_save_description(state);
+    let description = App::current_save_description(&state.match_state, &state.process_assets);
     match crate::app::persistence::commands::save_game(state, &description, None) {
         Ok(path) => {
             log::info!("Saved the match to {}", path.display());

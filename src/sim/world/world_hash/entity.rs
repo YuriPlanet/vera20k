@@ -848,6 +848,14 @@ pub(super) fn hash_entity_owed(
         if infantry.cell_entry_blocked() {
             0x36DC_u32.hash(hasher);
         }
+        // Firestorm 2.0 Infantry+0x370, the web timer's end frame: tagged
+        // once a Webby warhead has set it, so streams without webs stay
+        // unchanged.
+        let web_end = entity.web_end();
+        if web_end != 0 {
+            0x5745_4253_u32.hash(hasher);
+            web_end.hash(hasher);
+        }
     } else {
         0u8.hash(hasher);
     }

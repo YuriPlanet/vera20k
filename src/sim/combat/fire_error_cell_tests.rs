@@ -121,7 +121,7 @@ fn original_object_cell_queries_keep_physical_aliases_and_dummy_fields() {
         }
         let rules = rules();
         let mut sim = bridge_scene("TANK");
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         for id in [1, 2] {
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             entity.position.set_rx_for_test((x.max(0) / 256) as u16);
@@ -295,7 +295,7 @@ fn original_cell_center_query_reads_the_retained_receiver_coordinate() {
         cells[20 * 32 + 10].level = 6;
         let mut terrain = ResolvedTerrainGrid::from_cells(32, 32, cells);
         terrain.test_set_native_allocated_cells(&[(10, 20)]);
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         let terrain = sim.resolved_terrain.as_ref().unwrap();
         let dummy = terrain.shared_cell_dummy();
         dummy.stamp_coord(111, -222);

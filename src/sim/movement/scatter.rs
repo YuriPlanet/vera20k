@@ -309,11 +309,9 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(false);
         };
-        // RESIDUAL: VERA builds no locomotor for a zero-`Speed=` Unit or
-        // Aircraft whose locomotor is neither Drive nor Ship
-        // (`should_construct_locomotor`); native always has one, whose answers
-        // would decide the gates and the Scatter body. No retail Foot type is
-        // built that way. Such a Foot never takes this Scatter.
+        // A Foot whose type the rules do not resolve owns no locomotor;
+        // native always has one, whose answers would decide the gates and the
+        // Scatter body. Such a Foot never takes this Scatter.
         if entity.locomotor.is_none() {
             return Ok(false);
         }

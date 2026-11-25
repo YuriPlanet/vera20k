@@ -12,12 +12,14 @@ use crate::app::frontend::menu_page_render::{
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_pass::TexturedDraw;
 use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::process_assets::ProcessAssets;
 use crate::render::batch::SpriteInstance;
 use crate::render::main_menu_shell_chrome::CampaignShellArt;
 use crate::render::shell_paint::{
     PARENT_BACKGROUND_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED, STATIC_IMAGE_DEPTH,
     push_entry_crop_scaled, push_entry_scaled,
 };
+use crate::ui::campaign_shell::CampaignShellState;
 use crate::ui::campaign_shell::{CAMPAIGN_PAGE, CampaignLayout, CampaignSide, DIFFICULTY_MAX};
 use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::geom::{RectPx, centred_in_window};
@@ -25,8 +27,8 @@ use vera20k_gui::shell::trackbar::TrackbarRange;
 
 /// Frame counts of the emblems (Allied / Soviet / Boot Camp). Boot Camp is
 /// empty under YR, which has only two emblems.
-pub(crate) fn emblem_frame_counts(state: &AppState) -> [usize; 3] {
-    state.frontend.campaign_art.as_ref().map_or([0, 0, 0], |art| {
+pub(crate) fn emblem_frame_counts(campaign_art: &Option<CampaignShellArt>) -> [usize; 3] {
+    campaign_art.as_ref().map_or([0, 0, 0], |art| {
         [art.allied.len(), art.soviet.len(), art.bootcamp.len()]
     })
 }
@@ -76,7 +78,7 @@ fn push_slider(
 
 /// The dialog's own paint and the children it shows.
 fn campaign_sprites(
-    state: &AppState,
+    campaign: &Option<CampaignShellState>,
     art: &CampaignShellArt,
     layout: &CampaignLayout,
     children: bool,
@@ -101,7 +103,7 @@ fn campaign_sprites(
             PARENT_BACKGROUND_DEPTH,
         );
     }
-    let Some(campaign) = state.frontend.campaign.as_ref().filter(|_| children) else {
+    let Some(campaign) = campaign.as_ref().filter(|_| children) else {
         return out;
     };
     push_slider(
@@ -128,23 +130,26 @@ fn campaign_sprites(
 }
 
 fn campaign_labels<'a>(
-    state: &'a AppState,
+    campaign: &'a Option<CampaignShellState>,
+    process_assets: &'a ProcessAssets,
     layout: &CampaignLayout,
     children: bool,
+    ra2_mode: bool,
 ) -> Vec<PaintLabel<'a>> {
-    let Some(campaign) = state.frontend.campaign.as_ref().filter(|_| children) else {
+    let Some(campaign) = campaign.as_ref().filter(|_| children) else {
         return Vec::new();
     };
     let label = |key, rect, align| PaintLabel {
-        text: state.csf_text(key).into(),
+        text: process_assets.csf_text(key).into(),
         rect,
         align,
         rgb: SHELL_TEXT_RGB_ENABLED,
         path_a_reveal: None,
     };
-    // Original RA2 shows a third Boot Camp caption; YR shows only the two
-    // campaign emblems. `active()` returns three under `-ra2`, two otherwise.
-    let captions = CampaignSide::active().iter().map(|side| {
+    // game.exe RT_DIALOG 0x94 (0x00BBE210) has no emblem caption statics.
+    // gamemd.exe has 0x7A7 and 0x7A8 for the Allied and Soviet captions.
+    let caption_sides: &[CampaignSide] = if ra2_mode { &[] } else { &CampaignSide::ALL };
+    let captions = caption_sides.iter().map(|side| {
         label(
             side.caption_key(),
             layout.caption(*side),
@@ -171,14 +176,14 @@ pub(crate) fn render_campaign_page(
     if !family_art_ready(state) || !crate::app::App::ensure_campaign_art(state) {
         return Ok(false);
     }
-    let layout = shell_layout::campaign_layout(state);
+    let layout = shell_layout::campaign_layout(&state.renderer.gpu);
     let page = FamilyPage::Campaign;
-    let tree = page.tree(state);
+    let tree = page.tree(&state.renderer.gpu, &mut state.frontend);
     let panel = page_panel_state(
         state,
         ShellSlideKind::Campaign,
         true,
-        |state| page.status_key(state),
+        |state| page.status_key(&state.frontend.shell_controller),
         layout.page.status_help,
     );
     // The teardown slide's repaint leaves every child blank.
@@ -190,15 +195,54 @@ pub(crate) fn render_campaign_page(
         .expect("ensured before render");
     let title = CAMPAIGN_PAGE.title_key;
     let mut frame = FamilyFrame::new("Campaign Shell", &layout.page, panel, title).on(
-        state,
+        &state.frontend.shell_controller,
         page.dialog(),
         &tree,
     );
     frame.under.push(TexturedDraw {
         texture: &art.texture,
-        instances: campaign_sprites(state, art, &layout, children),
+        instances: campaign_sprites(&state.frontend.campaign, art, &layout, children),
     });
-    frame.labels = campaign_labels(state, &layout, children);
+    frame.labels = campaign_labels(
+        &state.frontend.campaign,
+        &state.process_assets,
+        &layout,
+        children,
+        crate::util::ra2_launch::enabled(),
+    );
     encode_family_page(state, encoder, destination, frame);
     Ok(true)
+}
+
+#[cfg(all(test, tests_app_frontend))]
+mod tests {
+    use super::*;
+    use crate::assets::asset_manager::MediaArchiveMode;
+
+    #[test]
+    fn campaign_labels_follow_the_launch_mode() {
+        let campaign = Some(CampaignShellState::open(1));
+        let assets = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
+
+        let layout = crate::ui::campaign_shell::compute_layout(800, 600);
+        let ra2_labels = campaign_labels(&campaign, &assets, &layout, true, true);
+        let yr_labels = campaign_labels(&campaign, &assets, &layout, true, false);
+
+        assert_eq!(
+            ra2_labels
+                .iter()
+                .map(|label| label.rect)
+                .collect::<Vec<_>>(),
+            [layout.difficulty_label, layout.difficulty_value]
+        );
+        assert_eq!(
+            yr_labels.iter().map(|label| label.rect).collect::<Vec<_>>(),
+            [
+                layout.caption(CampaignSide::Allied),
+                layout.caption(CampaignSide::Soviet),
+                layout.difficulty_label,
+                layout.difficulty_value,
+            ]
+        );
+    }
 }

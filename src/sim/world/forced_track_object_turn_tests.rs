@@ -12,8 +12,12 @@ use crate::sim::snapshot::GameSnapshot;
 use crate::util::fixed_math::{SIM_ONE, SimFixed};
 
 fn rules(speed: u32) -> RuleSet {
+    rules_with_cadence(speed, 1, 0)
+}
+
+fn rules_with_cadence(speed: u32, walk_rate: u32, idle_rate: u32) -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(&format!(
-        "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=100\nSpeed={speed}\nAccelerates=no\nSensorsSight=1\nWalkRate=1\nIdleRate=0\n"
+        "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=100\nSpeed={speed}\nAccelerates=no\nSensorsSight=1\nWalkRate={walk_rate}\nIdleRate={idle_rate}\n"
     ))).unwrap()
 }
 
@@ -148,7 +152,7 @@ fn every_bunker_selector_restores_before_first_point_midcurve_and_paid_sentinel(
                 // probes at each new save boundary. Their track, occupation,
                 // mission and facing state stay live.
                 sim.substrate.restore_move_sound_state_after_load(1);
-                sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+                *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
                 for (_, probe) in &mut restored_probes {
                     assert!(
                         !probe
@@ -160,11 +164,11 @@ fn every_bunker_selector_restores_before_first_point_midcurve_and_paid_sentinel(
                             .is_active()
                     );
                     probe.substrate.restore_move_sound_state_after_load(1);
-                    probe.scenario_rng = crate::sim::rng::SimRng::new(0);
+                    *probe.scenario_rng = crate::sim::rng::SimRng::new(0);
                 }
                 restored.rebuild_caches_after_load(
                     sim.resolved_terrain.as_ref().unwrap().clone(),
-                    sim.terrain_speed_config.clone(),
+                    (*sim.terrain_speed_config).clone(),
                     &rules,
                 );
                 assert!(restored.rebuild_dynamic_navigation(&rules));
@@ -260,4 +264,50 @@ fn forced_object_turn_queries_live_speed_and_advances_shp_once() {
     );
     assert!(outcome.moved_steps > 1);
     assert_eq!(entity.body_frame_counter.get(), before_body + 1);
+}
+
+/// The Foot body counter advances once per due frame. `0x004DA81A` asks
+/// the same predicate for the admission and for the counter it admits, so
+/// a walking foot whose WalkRate divides the frame advances the counter
+/// exactly once, and a frame the rate does not divide advances it not at
+/// all.
+#[test]
+fn foot_body_counter_advances_once_per_due_frame() {
+    let rules = rules_with_cadence(6, 4, 0);
+    let mut sim = fixture(0x43);
+    let mut before = sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .body_frame_counter
+        .get();
+    let mut due_frames = 0;
+    for frame in 0..12 {
+        let walking = {
+            let entity = sim.substrate.entities.get(1).unwrap();
+            crate::sim::movement::motion_query::is_moving_now(
+                entity,
+                crate::sim::movement::SpeedRules::new(&rules, &sim.interner, &sim.houses),
+                frame,
+            )
+        };
+        tick(&mut sim, &rules, frame);
+        let after = sim
+            .substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .body_frame_counter
+            .get();
+        let due = walking && frame % 4 == 0;
+        assert_eq!(
+            after,
+            before + u32::from(due),
+            "frame {frame}: the counter advances once on a due frame"
+        );
+        due_frames += u32::from(due);
+        before = after;
+    }
+    assert!(due_frames > 0, "the foot walked on a due frame");
 }

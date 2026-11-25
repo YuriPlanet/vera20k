@@ -46,9 +46,9 @@ fn assert_rng(sim: &Simulation, expected: &Value, context: &str) {
 fn scene(input: &Value, before: &Value, rules: &RuleSet) -> (Simulation, u64) {
     let seed = input["seed"].as_u64().unwrap_or(31);
     let mut sim = Simulation::with_seed(seed);
-    sim.main_rng = SimRng::new(seed);
-    sim.scenario_rng = SimRng::new(seed);
-    sim.mapgen_rng = SimRng::new(seed);
+    *sim.main_rng = SimRng::new(seed);
+    *sim.scenario_rng = SimRng::new(seed);
+    *sim.mapgen_rng = SimRng::new(seed);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     let owner = sim.interner.intern("Americans");
@@ -176,8 +176,8 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
         .get();
     let object = rules.object("SQD").unwrap();
     let (_, draws) = crate::sim::rng::trace_draws(|| {
-        crate::sim::animation::tick_foot_body_frame_counter(
-            sim.substrate.entities.get_mut(id).unwrap(),
+        let due = crate::sim::animation::foot_body_frame_due(
+            sim.substrate.entities.get(id).unwrap(),
             crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
             crate::sim::animation::FootBodyCadence {
                 walk_rate: object.walk_rate,
@@ -188,6 +188,10 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
             0,
             None,
             sim.session.binary_frame(),
+        );
+        crate::sim::animation::tick_foot_body_frame_counter(
+            sim.substrate.entities.get_mut(id).unwrap(),
+            due,
         );
         Simulation::tick_move_sound_after_process(
             &sim.interner,
@@ -349,7 +353,7 @@ fn native_foot_load_reset_runs_through_snapshot_restore_then_the_next_visit() {
         // Native Scenario reload reseeds separately. This bounded raw-object
         // load fixture does not execute that operation; restore the explicitly
         // supplied Scenario boundary before comparing its next Foot visit.
-        loaded.scenario_rng = SimRng::from_native_state_hex_for_test(
+        *loaded.scenario_rng = SimRng::from_native_state_hex_for_test(
             row["next_visit"]["before"]["rng"]["scenario"]
                 .as_str()
                 .unwrap(),
@@ -585,7 +589,7 @@ fn assert_retail_idle_timeline(retail_dir: &std::path::Path, row: &Value) {
     // dispatch intact. This is not a whole-map startup RNG comparison.
     sim.session
         .set_binary_frame_for_test(steps[0]["frame"].as_u64().unwrap() as u32);
-    sim.main_rng =
+    *sim.main_rng =
         SimRng::from_native_state_hex_for_test(steps[0]["before"]["rng"]["main"].as_str().unwrap());
     for step in steps {
         let native_frame = step["frame"].as_u64().unwrap() as u32;

@@ -98,7 +98,7 @@ fn retail_world(rules: &RuleSet, terrain_rules: &TerrainRules) -> Simulation {
     let terrain = ResolvedTerrainGrid::from_cells(128, 128, cells);
     let path = PathGrid::from_resolved_terrain(&terrain);
     sim.install_fixture_path_grid(Some(&path));
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
         base: 0,
         off_fc: -128,
         off_100: -128,
@@ -966,10 +966,11 @@ fn retail_reused_unit_unlimbo_matches_original_stage_and_rng_tail() {
             ));
         sim.session
             .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
-        sim.main_rng = serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone()).unwrap();
-        sim.scenario_rng =
+        *sim.main_rng =
+            serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone()).unwrap();
+        *sim.scenario_rng =
             serde_json::from_value::<SimRng>(row["rng_before"]["scenario"].clone()).unwrap();
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             serde_json::from_value::<SimRng>(row["rng_before"]["mapgen"].clone()).unwrap();
         apply_cell_inputs(&mut sim, cell, input);
         assert_stage(&sim, id, &row["stage_before"], name);
@@ -1514,7 +1515,7 @@ fn unit_entry_scope_and_actual_game_mode_match_independent_original_controls() {
         let (mut sim, rules, _registry) = entry_test_fixture::fixture_with_rules(
             "[VehicleTypes]\n0=MOVER\n[MOVER]\nSpeedType=Track\n[O0]\nCrate=yes\n",
         );
-        sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
+        *sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
         let owner = sim.interner.intern("Americans");
         sim.houses
             .register(HouseState::new(owner, 0, None, false, 0, 10));
@@ -1529,7 +1530,7 @@ fn unit_entry_scope_and_actual_game_mode_match_independent_original_controls() {
             .mission_assign_exact(90, MissionId::from_known(MissionType::Guard), 100)
             .unwrap();
         let bounds = &input["fixture"]["bounds"];
-        sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+        *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
             base: int(&bounds[0]),
             off_fc: int(&bounds[1]),
             off_100: int(&bounds[2]),

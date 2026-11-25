@@ -1,0 +1,57 @@
+{
+  "schema_version": "vera20k.map-observation-expectations.v1",
+  "assertions": [
+    {
+      "name": "yard exists before the save",
+      "subject": {
+        "actor": {
+          "owner": "VERA-OBSERVER",
+          "type_id": "GACNST",
+          "bind_step": 120
+        }
+      },
+      "at_step": 120,
+      "field": "present",
+      "op": "eq",
+      "value": true
+    },
+    {
+      "name": "payment started after the save",
+      "subject": {"house": "VERA-OBSERVER"},
+      "at_step": 300,
+      "field": "economy.credits",
+      "op": "lt",
+      "value": 10000
+    },
+    {
+      "name": "restore rewinds the economy",
+      "subject": {"house": "VERA-OBSERVER"},
+      "at_step": 360,
+      "field": "economy.spent_credits",
+      "op": "eq",
+      "value": 0
+    },
+    {
+      "name": "restore refunds the payment",
+      "subject": {"house": "VERA-OBSERVER"},
+      "at_step": 360,
+      "field": "economy.credits",
+      "op": "eq",
+      "value": 10000
+    },
+    {
+      "name": "restored observer still owns its yard",
+      "subject": {
+        "actor": {
+          "owner": "VERA-OBSERVER",
+          "type_id": "GACNST",
+          "bind_step": 360
+        }
+      },
+      "at_step": 360,
+      "field": "present",
+      "op": "eq",
+      "value": true
+    }
+  ]
+}

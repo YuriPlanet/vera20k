@@ -163,7 +163,7 @@ pub(crate) fn voxel_anim_visitor<'a>(
     let view = DebrisView {
         terrain,
         admission: TacticalAdmission::of_state(state),
-        axis: super::helpers::depth_axis(state),
+        axis: super::helpers::depth_axis(&state.match_state.match_presentation),
     };
     let presentation = &state.match_state.match_presentation;
     Some(move |objects: &mut PlannedObjects, id: u64| {

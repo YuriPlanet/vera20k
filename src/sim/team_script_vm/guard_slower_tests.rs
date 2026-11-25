@@ -189,8 +189,8 @@ impl Fixture {
                 &mut FrameEffects::default(),
             );
         }
-        sim.session
-            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+        let session = &mut *sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         sim.run_team_ai_pass(&rules, Some(&overlays), &mut FrameEffects::default());
         // Calc_Center6EAEE0 uses Foot4DBFD0's converted native speed, then asks
         // the actual closest member's CanEnter before retaining the mean cell.
