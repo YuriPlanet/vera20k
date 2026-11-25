@@ -208,6 +208,12 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
     if crate::app::input::campaign_input::is_locked(state) {
         return;
     }
+    // Client module nodes lie over the match: a press on a clickable one, a
+    // press that dismisses one, or a map click a module captures never
+    // reaches the chrome or the battlefield (RFC 0001 section 10).
+    if crate::app::ui_modules::pointer_button(state, button, pressed) {
+        return;
+    }
     // The stock tactical handler has no middle-button case. VERA's optional
     // wheel zoom takes a press over the battlefield as its reset.
     if button == MouseButton::Middle {
@@ -1137,6 +1143,8 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
         }
         return;
     }
+    // Client module nodes follow the pointer (`Hover`) before the game does.
+    crate::app::ui_modules::pointer_moved(state);
     // Minimap: gamemd re-centers only on press edges and ignores held motion
     // (decompile 0x006539D0: `param_1 & 0x22` early-out). While a minimap press
     // is held we do NOT follow the cursor — but still swallow the move so it

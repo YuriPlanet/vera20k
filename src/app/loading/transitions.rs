@@ -81,6 +81,7 @@ pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {
             opening_view_cell: None,
             camera_anchor_x: 0.0,
             camera_anchor_y: 0.0,
+            ui_modules: Default::default(),
         },
         presentation: init::PresentationLoadAssets {
             tile_atlas: None,
@@ -829,6 +830,10 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     state.match_state.input.queued_order_mode = render::OrderMode::Move;
     state.match_state.match_audio.reset_for_new_match();
     state.match_state.sandbox_full_visibility = result.scenario.sandbox_full_visibility;
+    // The match's client modules, now that the world, its rules modules and
+    // its chrome exist: loaded and `client_init` run here, `client_on_start`
+    // with the first frame the match draws (`ui_modules::render_frame`).
+    crate::app::ui_modules::install(state, result.scenario.ui_modules);
 
     // `Start_Scenario @ 0x00683AB0` after `Read_Scenario`: `[Basic] Theme`
     // resolves through `From_Name` (`0x004758F0`); -1 -> `Stop(fade=1)` of the

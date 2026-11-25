@@ -1526,6 +1526,11 @@ fn advance_in_game_runtime_mode(
 
 /// The client work that follows one frame's result, committed or not.
 fn after_frame(state: &mut AppState, frame_committed: bool) {
+    // What the frame sent client modules waits for the next render frame
+    // (`ui_modules`); taken first, before a draw captures the frame again.
+    if frame_committed {
+        crate::app::ui_modules::collect_sim_outbox(state);
+    }
     #[cfg(feature = "telemetry-dashboard")]
     if frame_committed && state.diag.telemetry_active() {
         state.match_state.telemetry_tick_rate.record(Instant::now());
