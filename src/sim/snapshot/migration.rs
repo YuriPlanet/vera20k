@@ -548,6 +548,11 @@ mod tests {
         let after_image = 8 + image.image().len();
         assert_eq!(&bytes[after_image..after_image + 3], &[1, 0, 1]);
         bytes.remove(after_image + 1);
+        // That writer also predates the optional Phobos image name, which
+        // now sits immediately before its retained model slots.
+        let slots_size = save_codec::serialize(&image.model_slots).unwrap().len();
+        let image_swap = bytes.len() - slots_size - 1;
+        assert_eq!(bytes.remove(image_swap), 0); // None
         let mut offsets = Vec::new();
         let (restored, rest) = save_codec::deserialize_previous::<ObjectImageState>(
             &bytes,
@@ -557,7 +562,7 @@ mod tests {
         .unwrap();
         assert_eq!(restored, image);
         assert!(rest.is_empty());
-        assert_eq!(offsets, [(after_image + 1, 1)]);
+        assert_eq!(offsets, [(after_image + 1, 1), (image_swap, 1)]);
     }
 
     #[test]

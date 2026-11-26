@@ -66,7 +66,7 @@ use std::collections::BTreeMap;
 use vera20k_wasm_ext::decide::{EVENT_LAUNCH, EVENT_PROJECTILE_FRAME, PathSpec, ProjectileStep};
 use vera20k_wasm_ext::{NAME_PROJECTILE, Status};
 
-use super::{Host, ModuleEvent, Reader, Ref, cell_ref, decode_ref, type_ref};
+use super::{ExtModules, Host, ModuleEvent, Reader, Ref, cell_ref, decode_ref, type_ref};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::projectile::{
     ModuleMotion, Projectile, ProjectileCoord, ProjectileTarget, ProjectileVelocity,
@@ -119,13 +119,10 @@ struct Path {
     frames: u32,
 }
 
-impl ModuleProjectiles {
-    pub(crate) fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    pub(super) fn valid_saved_paths(&self) -> bool {
-        self.entries
+impl ExtModules {
+    pub(in crate::sim) fn valid_saved_projectile_paths(&self) -> bool {
+        self.projectiles
+            .entries
             .values()
             .filter_map(|entry| entry.path.as_ref())
             .all(|path| {
@@ -134,6 +131,12 @@ impl ModuleProjectiles {
                     && (1..=i64::from(MAX_STEP) * ONE).contains(&path.speed)
                     && path.progress >= 0
             })
+    }
+}
+
+impl ModuleProjectiles {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 
     pub(crate) fn forget(&mut self, id: u64) {
@@ -752,5 +755,36 @@ pub(crate) mod tests_support {
             ..parabola
         };
         assert!(Path::new(&two, origin, 0).is_none());
+    }
+}
+
+#[cfg(all(test, tests_sim_c_g))]
+mod tests {
+    use super::*;
+    use crate::sim::snapshot::{GameSnapshot, SnapshotError};
+
+    #[test]
+    fn a_save_with_a_zero_length_module_path_is_refused_on_load() {
+        crate::test_fixture::on_game_stack(|| {
+            let mut sim = Simulation::new();
+            let mut path = Path::new(
+                &PathSpec {
+                    kind: i32::from(PATH_WAYPOINTS),
+                    speed: ONE,
+                    param: [0; 2],
+                    points: vec![[256, 0, 0]],
+                },
+                ProjectileCoord::new(0, 0, 0),
+                0,
+            )
+            .unwrap();
+            path.length = 0;
+            sim.ext_modules.projectiles.entry(1, 0).path = Some(path);
+            let bytes = GameSnapshot::save_validated(&sim, 0, 0, "damaged path", 0);
+            assert!(matches!(
+                GameSnapshot::load_with_resources(&bytes),
+                Err(SnapshotError::InvalidModuleProjectilePath)
+            ));
+        });
     }
 }
