@@ -410,6 +410,27 @@ impl Simulation {
         self.queued_commands().collect()
     }
 
+    /// Whether queued input may change this house's active production.
+    pub(crate) fn has_pending_production_commands(&self, owner: InternedId) -> bool {
+        use crate::sim::command::{PlaceRecord, ProductionRecord, TargetHouseRecord};
+        self.queued_command_entries().any(|entry| {
+            if let Some(record) = entry.record() {
+                if let Some(targeted) = TargetHouseRecord::decode(record) {
+                    return self.houses.order().get(usize::from(targeted.target_house)) == Some(&owner)
+                        && (ProductionRecord::decode(&targeted.command).is_some()
+                            || PlaceRecord::decode(&targeted.command).is_some());
+                }
+                return self.command_sender_owner(record.house_id()) == Some(owner)
+                    && (ProductionRecord::decode(record).is_some() || PlaceRecord::decode(record).is_some());
+            }
+            entry.semantic().is_some_and(|command| {
+                command.owner == owner && matches!(command.payload,
+                    Command::QueueProduction { .. } | Command::SuspendProduction { .. }
+                    | Command::CancelProductionByType { .. } | Command::PlaceReadyBuilding { .. })
+            })
+        })
+    }
+
     /// Whether provisional local selection still has authoritative queued
     /// work. Derive this from the existing queue; selected-bit equality cannot
     /// distinguish an unconsumed snapshot from later lifecycle deselection.

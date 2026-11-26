@@ -57,6 +57,33 @@ pub fn rival_arena_with_size(rules: &RuleSet, seed: u64, size: u16) -> Simulatio
     sim
 }
 
+/// [`rival_arena`] with the whole map already in sight for both houses.
+///
+/// The steps that pick a target read the sight plane, not only the explored
+/// one: an engineer may only be sent at a building it can see, and a garrison
+/// only at a building whose guards are known. A fixture that starts under full
+/// shroud therefore makes every one of them refuse, which reads as a broken
+/// step rather than as a fixture that never looked. Use this constructor when
+/// the test is about *which* target is chosen; keep [`rival_arena`] when the
+/// test is about what happens under fog.
+pub fn rival_arena_known(rules: &RuleSet, seed: u64) -> Simulation {
+    rival_arena_known_with_size(rules, seed, 32)
+}
+
+/// [`rival_arena_known`] with a caller-chosen size.
+pub fn rival_arena_known_with_size(rules: &RuleSet, seed: u64, size: u16) -> Simulation {
+    let mut sim = rival_arena_with_size(rules, seed, size);
+    for name in ["Russians", "Americans"] {
+        let owner = sim.interner.intern(name);
+        for y in 0..size {
+            for x in 0..size {
+                sim.fog.mark_visible_for_owner(owner, x, y);
+            }
+        }
+    }
+    sim
+}
+
 /// The player has discovered `id` (Techno `+0x41B`), as a campaign object in
 /// explored ground is from its first AI tick (`update_techno_discovery_from_shroud`).
 /// The arena runs the campaign without a current player, so nothing is

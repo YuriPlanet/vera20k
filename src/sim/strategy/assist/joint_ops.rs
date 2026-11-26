@@ -129,8 +129,7 @@ impl Director {
     ) -> bool {
         members.contains(&unit.entity_id)
             && matches!(unit.slot, Slot::Infantry | Slot::Vehicle)
-            && unit.controllable() && !unit.in_service()
-            && unit.traits.combat && unit.traits.armed
+            && brain.census.available(unit) && unit.traits.armed
             && !unit.traits.aircraft && !unit.traits.suicide
             && !unit.traits.irreplaceable && !unit.traits.yard_maker
             && !unit.traits.harvester && !unit.traits.carries
@@ -149,17 +148,18 @@ impl Director {
     fn create(brain: &AssistBrain, rules: &RuleSet,
         obs: &Observation<'_>, retry: &BTreeMap<u64,u64>,
     ) -> Option<Operation> {
-        if brain.director.under_attack_now() || brain.siege_charge.is_some()
+        if brain.director.under_attack_now() || brain.director.rebuilding_force()
+            || brain.mobilization.active() || brain.campaign.economy_resting()
+            || brain.siege_charge.is_some()
             || brain.blackout.is_some()
         { return None; }
         let attack = brain.squads.squad(Role::Attack)?;
         // Never impair the committed main fist. A wealthy house with a large
         // stockpile may run a limited side operation; a small house may not.
-        if attack.members.len() < MAIN_FIST_RESERVE + MIN_FRONT {
-            return None;
-        }
+        let main_available = super::readiness::attack_members(brain);
+        if main_available < MAIN_FIST_RESERVE + MIN_FRONT { return None; }
         let home = brain.census.base_cell?;
-        let (prize, cell) = brain.asset_ops.coalition_target(obs, home, retry)?;
+        let (prize, cell) = brain.asset_ops.coalition_target(rules,obs,home,retry)?;
         let mut eligible: Vec<Unit> = brain.census.units.iter().copied()
             .filter(|unit| Self::candidate(brain, obs, unit, &attack.members))
             .collect();
@@ -186,7 +186,7 @@ impl Director {
             .map(|unit| unit.entity_id).collect();
         let assigned_rear: BTreeSet<_> = guns.iter().take(MAX_REAR)
             .map(|unit| unit.entity_id).collect();
-        if !reserve_permits(attack.members.len(), assigned_front.len() + assigned_rear.len()) {
+        if !reserve_permits(main_available, assigned_front.len() + assigned_rear.len()) {
             return None;
         }
         log::info!("auto play: joint operation assembles prize={} cell={:?} rally={:?} front={} guns={}",
@@ -214,7 +214,8 @@ impl Director {
         };
         // An operation is one bounded strategic task, not a per-frame enemy
         // scanner. An actual home raid must still preempt it immediately.
-        if now % 15 != 0 && !brain.director.under_attack_now() {
+        if now % 15 != 0 && !brain.director.under_attack_now() && !brain.director.rebuilding_force()
+            && !brain.mobilization.active() && !brain.campaign.economy_resting() {
             director.active = Some(op);
             brain.joint_ops = director;
             return;
@@ -241,12 +242,14 @@ impl Director {
         // Neither new fog information nor a unit death is inferred here.
         // Our own roster and an actually owned building are lawful inputs.
         let roster: Vec<Unit> = brain.census.units.iter().copied()
-            .filter(|unit| op.contains(unit.entity_id) && unit.controllable()
-                && !unit.in_service() && unit.health_permille >= 350)
+            .filter(|unit| op.contains(unit.entity_id) && brain.census.available(unit)
+                && unit.health_permille >= 350)
             .collect();
         let remaining_front = roster.iter().filter(|unit|
             op.front.contains(&unit.entity_id)).count();
         let revoked = brain.director.under_attack_now()
+            || brain.director.rebuilding_force()
+            || brain.mobilization.active() || brain.campaign.economy_resting()
             || !obs.forces_enabled()
             || now.saturating_sub(op.started) > OPERATION_LIMIT
             || remaining_front < MIN_FRONT
@@ -285,7 +288,7 @@ impl Director {
         let threats: Vec<EnemyEntity> = obs.visible_enemy_entities()
             .filter(|enemy| advance::cell_distance(enemy.cell, op.cell) <= 16)
             .filter(|enemy| obs.object_type(rules, enemy.type_id).is_some_and(|ty|
-                ty.category != ObjectCategory::Building
+                super::convergence::mobile_threat(rules,obs,enemy)
                     || super::siege_counter::dangerous_battery(rules, ty)
                         && obs.visible_enemy_building_operational(
                         rules, enemy.entity_id)))

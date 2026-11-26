@@ -236,6 +236,13 @@ pub(super) fn captures(
     // engineer approach. A *defenceless* captured construction yard, factory
     // or tech lab must not count as a gun and forever exclude itself or the
     // abandoned factory standing behind it from all engineer missions.
+    let site_threats: Vec<_> = obs.visible_enemy_entities().collect();
+    // Destination survivability is independent of the claimant. Evaluate it
+    // once per candidate instead of repeating the building/weapon scan for
+    // every engineer. The final arbiter still checks the live assignment.
+    let eligible_engineer_targets: Vec<_> = engineer_targets.iter().copied()
+        .filter(|target| super::asset_ops::capture_opportunity(brain,rules,obs,target,&site_threats))
+        .collect();
     let structures: Vec<(u16, u16)> = obs.visible_enemy_entities()
         .filter(|entity| obs.object_type(rules, entity.type_id).is_some_and(|ty| {
             ty.category == ObjectCategory::Building && ty.is_base_defense
@@ -466,7 +473,8 @@ pub(super) fn captures(
             // One building takes one engineer. Without this both were sent at
             // the same derrick, the first took it, and the second arrived at a
             // building that was already ours and stood there.
-            let free: Vec<EnemyEntity> = engineer_targets
+            let approach = super::safety::envelopes(rules,obs,unit.entity_id,&site_threats,true);
+            let free: Vec<EnemyEntity> = eligible_engineer_targets
                 .iter()
                 .copied()
                 // Only the buildings this engineer's click takes: an ally's
@@ -478,6 +486,7 @@ pub(super) fn captures(
                 // Only the original claimant may continue an active capture.
                 .filter(|target| brain.asset_ops.permits_capture(
                     unit.entity_id, target.entity_id))
+                .filter(|target| super::safety::safe_leg(&approach,unit.cell,target.cell,false))
                 // A visible neutral factory across an impassable cliff is not
                 // an engineer mission. Evaluate the building entrance, not
                 // its blocked footprint cell.
@@ -554,14 +563,16 @@ pub(super) fn captures(
         // The aim is not 'ignore towers' but 'ignore towers that truly regard
         // this spy as friendly'. A native disguise rejected by the observer
         // makes all regular weapons dangerous along the route.
-        let guns_unsafe = (!ty.agent || !wearing_enemy_uniform)
-            && spy_gun_crossfire(rules, obs, unit.entity_id, unit.cell, target.cell);
+        let guns_unsafe = if ty.engineer {
+            !super::safety::specialist_approach_safe(rules,obs,unit.entity_id,target.entity_id)
+        } else { (!ty.agent || !wearing_enemy_uniform)
+            && spy_gun_crossfire(rules, obs, unit.entity_id, unit.cell, target.cell) };
         let close = route_threats.iter().any(|cell| {
             squared_distance(*cell, unit.cell) <= CAPTURE_CLEAR_CELLS * CAPTURE_CLEAR_CELLS
         });
         let crossed = tick % CAPTURE_RECHECK_FRAMES == 0
             && path_crosses(route_threats, unit.cell, target.cell, PATH_CLEAR_CELLS);
-        if close || crossed || guns_unsafe {
+        if (!ty.engineer && (close || crossed)) || guns_unsafe {
             brain.tracked.tasks.release(unit.entity_id);
             brain.specialist_risk_after.insert((unit.entity_id, target.entity_id),
                 tick.saturating_add(240));
@@ -1119,7 +1130,10 @@ pub(super) fn bridges(
         {
             continue;
         }
-        let Some(target) = nearest_site(&huts, unit.cell) else {
+        let Some(target) = huts.iter().filter(|(target,_)|
+            super::safety::specialist_approach_safe(rules,obs,unit.entity_id,*target))
+            .min_by_key(|(target,cell)| (squared_distance(unit.cell,*cell),*target))
+            .map(|(target,_)| *target) else {
             continue;
         };
         if issue_tracked(
@@ -1940,15 +1954,6 @@ fn built_capture_value(rules: &RuleSet, ty: &ObjectType) -> u8 {
     } else {
         0
     }
-}
-
-/// The nearest of `(id, cell)` sites, ties broken by id so the answer does not
-/// depend on the order the entity store happens to yield.
-fn nearest_site(sites: &[(u64, (u16, u16))], from: (u16, u16)) -> Option<u64> {
-    sites
-        .iter()
-        .min_by_key(|(id, cell)| (squared_distance(from, *cell), *id))
-        .map(|(id, _)| *id)
 }
 
 /// Put every idle combat unit no team has taken on area guard where it stands.
@@ -3224,11 +3229,13 @@ pub(super) fn repairs(
     brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
+    budget: &super::plan::Budget,
     out: &mut Outbox,
 ) {
+    let mut budget = *budget;
     let mut issued = 0;
     let mut whole: Vec<u64> = Vec::new();
-    let mut hurt: Vec<u64> = Vec::new();
+    let mut hurt: Vec<(bool,i32,u64,i32)> = Vec::new();
     for entity in obs.own_entities() {
         let Some(ty) = obs.object_type(rules, entity.type_id) else {
             continue;
@@ -3249,7 +3256,12 @@ pub(super) fn repairs(
         if permille >= 1_000 {
             whole.push(entity.entity_id);
         } else if permille < REPAIR_HEALTH_PERMILLE && brain.repaired.contains(&entity.entity_id) {
-            hurt.push(entity.entity_id);
+            // Repair actual infrastructure before incidental towers. Never
+            // start a repair on an already active native toggle.
+            if let Some((false,cost)) = obs.own_repair_quote(rules,entity.entity_id) {
+                let core = ty.resource_destination || ty.factory_type().is_some() || ty.power > 0;
+                hurt.push((!core,permille,entity.entity_id,cost));
+            }
         }
     }
     // A building is worth the wrench once it has stood whole: a structure still
@@ -3259,7 +3271,8 @@ pub(super) fn repairs(
         brain.repaired.insert(*entity_id);
         brain.repairing.remove(entity_id);
     }
-    for entity_id in hurt {
+    hurt.sort_unstable();
+    for (optional,_,entity_id,cost) in hurt {
         if issued >= FORCE_ORDERS_PER_FRAME {
             break;
         }
@@ -3279,6 +3292,8 @@ pub(super) fn repairs(
         {
             continue;
         }
+        if optional && brain.campaign.economy_resting() { continue; }
+        if !budget.try_commit(cost) { continue; }
         brain
             .repairing
             .insert(entity_id, obs.tick().saturating_add(REPAIR_REARM_FRAMES));
@@ -3421,6 +3436,9 @@ pub(super) fn managed(
     out: &mut Outbox,
 ) {
 
+    // Ground casualties now keep actor-scoped recovery ownership; the legacy
+    // managed routine remains for other movement classes.
+    super::safety::recover(brain, rules, obs, tick, out);
     // Collected before anything is written: the routine takes the unit, and
     // the ledger is borrowed while it is read.
     let retreating: Vec<(u64, (u16, u16), MissionId, super::census::Slot)> = brain
@@ -3435,6 +3453,7 @@ pub(super) fn managed(
                     && obs.has_parasite(unit.entity_id)
                     && !brain.census.repair_sites.is_empty())
         })
+        .filter(|unit| !super::safety::ground_recovery_unit(rules,obs,unit))
         // A hurt unit in a fight the house is winning stays in it. The
         // comparison is the push's own, with a stricter margin: the push may
         // wait for a better moment, this unit cannot, and a third of the

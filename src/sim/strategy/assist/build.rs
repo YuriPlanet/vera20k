@@ -82,6 +82,65 @@ const SITE_CLEAR_RANK: u8 = 5;
 /// Re-probe an impossible site after ten seconds, or sooner when normal
 /// placement candidates are available again during a ready-product retry.
 const SITE_PREFLIGHT_RETRY_FRAMES: u64 = 150;
+const WALL_SITE_TIMEOUT_FRAMES: u64 = 450;
+const WALL_REORDER_COOLDOWN: u64 = 900;
+
+/// Tracks the native product of a wall requested on an idle Defense strip.
+/// Manually queued walls and replacement products have no cancellation lease.
+#[derive(Debug)]
+pub(super) struct WallBuild {
+    pub(super) type_id: InternedId,
+    entity_id: Option<u64>,
+    ready_since: Option<u64>,
+    // Diagnostic only; the original cancellation/lease policy is unchanged.
+    release_requested_at: Option<u64>,
+}
+
+fn observe_wall_build(brain: &mut AssistBrain, obs: &Observation<'_>) {
+    let Some(wall) = brain.wall_build.as_mut() else { return; };
+    let line = obs.factory_line(ProductionCategory::Defense);
+    let product = line.and_then(|line| {
+        (line.product == Some(wall.type_id) && line.queued == 0)
+            .then_some(line.product_entity).flatten()
+    });
+    match product {
+        Some(id) if wall.entity_id.is_none_or(|held| held == id) => wall.entity_id = Some(id),
+        _ => {
+            if let Some(requested_at) = wall.release_requested_at {
+                // Lease loss is not necessarily cancellation: a player can
+                // queue another item, or the factory can be destroyed. Log the
+                // actual held product and line, not an inferred refund.
+                let product_departed = wall.entity_id != line.and_then(|line| line.product_entity);
+                log::info!("auto play: site_release_observed tick={} requested_at={requested_at} entity={:?} product_departed={product_departed} line={line:?} credits={}",
+                    obs.tick(), wall.entity_id, obs.credits());
+            }
+            brain.wall_build = None;
+        }
+    }
+}
+
+fn release_stalled_wall(
+    brain: &mut AssistBrain, obs: &Observation<'_>, type_id: InternedId, out: &mut Outbox,
+) -> bool {
+    let Some(wall) = brain.wall_build.as_mut().filter(|wall| {
+        wall.type_id == type_id && wall.entity_id.is_some()
+    }) else { return false; };
+    let now = obs.tick();
+    let Some(since) = wall.ready_since else { return false; };
+    if now.saturating_sub(since) < WALL_SITE_TIMEOUT_FRAMES
+        || obs.has_pending_production_commands()
+    {
+        return false;
+    }
+    // ABANDON uses the native lifecycle for refunds and releases the strip
+    // only when the held object actually goes away (0x004FAA10/0x004C9FF0).
+    out.intent(Intent::CancelProduction { type_id, all: false });
+    wall.release_requested_at.get_or_insert(now);
+    brain.wall_order_after = now.saturating_add(WALL_REORDER_COOLDOWN);
+    log::info!("auto play: site_release tick={now} type={type_id} entity={:?} ready_frames={} reason=wall-site-timeout",
+        wall.entity_id, now.saturating_sub(since));
+    true
+}
 
 /// The lifecycle of a *paid-for*, ready building. Waiting, clearing and
 /// command delivery are different facts: the world does not move because the
@@ -163,12 +222,14 @@ pub(super) fn spend(
     budget: &Budget,
     out: &mut Outbox,
 ) {
+    observe_wall_build(brain, obs);
     // A player who disabled Production did not authorize the building planner
     // to borrow Forces and Scatter the player's tanks while the yard is off.
     if !obs.production_enabled() {
         return;
     }
     place_finished(brain, rules, obs, out);
+    if obs.has_pending_production_commands() { return; }
     build_next(brain, rules, obs, budget, out);
     // Native Building and Defense factories are independent. The main build
     // choice must not make the second strip look busy (or vice versa).
@@ -179,7 +240,7 @@ pub(super) fn spend(
     queue_defense_in_parallel(brain, rules, obs, budget, out);
     // After the structure decision, because `build_next` is the owner that
     // clears the hold; a reserve set before it would be zeroed by it.
-    hold_for_a_second_base(brain, rules, obs, budget);
+    hold_for_a_second_base(brain, rules, obs, &budget.after_commitment(plan::proposed_cost(rules,obs,out)));
 }
 
 /// Send a building-clear request through the same ranked order arbiter as the
@@ -226,6 +287,9 @@ fn place_finished(
             continue;
         }
         let is_wall = obs.object_type(rules, type_id).is_some_and(|ty| ty.wall);
+        if is_wall && let Some(wall) = brain.wall_build.as_mut().filter(|wall| wall.type_id == type_id) {
+            wall.ready_since.get_or_insert(now);
+        }
         let space = (!is_wall).then(|| super::terrain::Space::read(
             obs, rules, &brain.census.home_cells, brain.census.base_cell,
         ));
@@ -258,6 +322,11 @@ fn place_finished(
                 // Still in the ready list after the settle window means the
                 // last click did not place it; the next distinct site may.
                 log::debug!("auto play: ready {} still waiting after placement at {cell:?}", type_id);
+                if is_wall && release_stalled_wall(brain, obs, type_id, out) {
+                    job.no_space(now);
+                    brain.site_jobs.insert(type_id, job);
+                    continue;
+                }
                 job.advance(now);
             }
             SitePhase::Clearing { cell, since } => {
@@ -294,12 +363,11 @@ fn place_finished(
         }
         job.phase = SitePhase::Search;
         let attempt = job.attempt;
-        // Walls follow the ring plan only on the first attempt: a failed
-        // special site must not shadow every subsequent generic alternative.
         let planned = obs
             .object_type(rules, type_id)
             .filter(|ty| ty.wall)
             .and_then(|_| super::walls::next_segment(brain, rules, obs))
+            .filter(|segment| segment.type_id == type_id)
             .map(|segment| {
                 log::info!(
                     "auto play: wall segment at {:?}, {} standing, closes {} cells",
@@ -313,7 +381,12 @@ fn place_finished(
             placement.cell_for_where(type_id, attempt, &allowed)
         };
         let Some(cell) = cell else {
-            if obs.forces_enabled()
+            if is_wall && release_stalled_wall(brain, obs, type_id, out) {
+                job.no_space(now);
+                brain.site_jobs.insert(type_id, job);
+                continue;
+            }
+            if !is_wall && obs.forces_enabled()
                 && let Some((blocked, units)) = placement.site_blocked_by_own_units(type_id, &allowed)
             {
                 log::info!(
@@ -334,7 +407,7 @@ fn place_finished(
         };
         let blockers = own_units_on_foundation(obs, rules, type_id, cell);
         if !blockers.is_empty() {
-            if blockers.iter().all(|&unit| !obs.owned_by_hand(unit)) && obs.forces_enabled() {
+            if !is_wall && blockers.iter().all(|&unit| !obs.owned_by_hand(unit)) && obs.forces_enabled() {
                 scatter_blockers(obs, out, &blockers);
                 job.clear(cell, now);
             } else {
@@ -490,14 +563,17 @@ fn build_next(
         return;
     }
     let tick = obs.tick();
+    let power_short = plan::power_short(rules, obs, &brain.census);
+    let emergency = brain.director.emergency_spending(obs);
     let held = brain.plan_hold.filter(|(_, until)| tick < *until);
     // An MCV that already unfolded by a known ore seam is not yet an
     // operational mining base. A second local unloading bay and a guard
     // factory outrank optional luxuries at the original yard.
-    let frontier = super::frontier::needed(
+    let frontier = (!power_short && !emergency && !brain.campaign.economy_resting() && !obs.power_blackout_active()).then(|| super::frontier::needed(
         rules, obs, &brain.census, &brain.ore_known, budget.free,
-    ).and_then(|(item, anchor)| {
-        if !brain.director.permits_build(item) { return None; }
+    )).flatten().and_then(|(item, anchor)| {
+        if !brain.director.permits_build(item)
+            || !brain.mobilization.admits(item, rules, obs, &brain.census, budget.free) { return None; }
         let chosen = match item {
             Item::Refinery => first_buildable(rules, obs, &rules.build_refinery_types),
             Item::Power => first_buildable(rules, obs, &rules.build_power_types),
@@ -517,7 +593,19 @@ fn build_next(
         held.map(|(step, _)| step),
         // The Defense factory is planned separately in the same frame.
         // A busy Defense strip must never hide a ready main construction strip.
-        |item| item != Item::Defense && brain.director.permits_build(item),
+        |item| item != Item::Defense && brain.director.permits_build(item)
+            && (emergency || brain.mobilization.admits(item, rules, obs, &brain.census, budget.free))
+            && (!brain.campaign.economy_resting() || matches!(item, Item::Power)
+                || (item == Item::Refinery && brain.census.refineries == 0)
+                || (item == Item::Weapons && count_in(obs,rules,&brain.census,&rules.build_weapons_types)==0)
+                || (item == Item::Barracks && count_in(obs,rules,&brain.census,&rules.build_barracks_types)==0))
+            && (!emergency || match item {
+                Item::Refinery => brain.census.refineries == 0,
+                Item::Weapons => count_in(obs, rules, &brain.census, &rules.build_weapons_types) == 0,
+                Item::Barracks => count_in(obs, rules, &brain.census, &rules.build_barracks_types) == 0,
+                Item::Power | Item::Support | Item::Repair => true,
+                _ => false,
+            }),
         brain.asset_ops.technology_window(tick),
         );
         // Power and income recovery always outrank research. Otherwise a
@@ -525,13 +613,24 @@ fn build_next(
         // radar/laboratory prerequisite instead of buying another line tank.
         let urgent = regular.as_ref().is_some_and(|plan|
             matches!(plan.item, Item::Power | Item::Refinery | Item::Weapons)
-            && (plan::power_short(rules,obs,&brain.census)
+            && (power_short
                 || brain.census.refineries == 0
                 || brain.census.harvesters == 0));
-        if urgent || plan::needs_power_reserve(rules,obs,&brain.census,budget.free) {
+        if urgent || emergency || brain.campaign.economy_resting() || obs.power_blackout_active() || brain.mobilization.active()
+            || plan::needs_power_reserve(rules,obs,&brain.census,budget.free)
+        {
             regular
         } else {
-            super::siege_counter::technology_step(brain,rules,obs).or(regular)
+            let viable = |plan: &plan::Chosen<'_>| {
+                let price = obs.cost_of(rules,plan.ty);
+                optional_tech_admissible(budget,price,
+                    obs.can_build(rules,plan.ty,true)==CanBuild::Yes && obs.has_producer(rules,plan.ty),
+                    brain.site_preflight_after.get(&plan.type_id).copied(),tick)
+            };
+            super::siege_counter::technology_step(brain,rules,obs)
+                .filter(&viable)
+                .or_else(|| scarce_tech_step(brain,rules,obs,budget).filter(&viable))
+                .or(regular)
         }
     }) else {
         return;
@@ -542,7 +641,7 @@ fn build_next(
     if chosen.item == Item::Defense
         && plan::consumer_breaks_reserve(rules, obs, &brain.census, chosen.ty.power)
     {
-        let Some((ty, type_id)) = first_buildable(rules, obs, &rules.build_power_types)
+        let Some((ty, type_id)) = emergency_generator(rules, obs)
         else { return; };
         chosen = plan::Chosen { step: None, item: Item::Power, ty, type_id };
     }
@@ -574,6 +673,10 @@ fn build_next(
     }
     let ty = chosen.ty;
     let type_id = chosen.type_id;
+    if obs.can_build(rules,ty,true) != CanBuild::Yes || !obs.has_producer(rules,ty)
+        || (ty.power < 0 && obs.power_blackout_active()) {
+        return;
+    }
     // Whichever strip owns the answer has to be the free one. The gate above
     // only says the two are not *both* working; this says this one is not.
     // Without it a Defense answer would be queued into a Defense line that is
@@ -624,6 +727,8 @@ fn build_next(
     // 8613 for the seed that won at tick 32491), because every credit the
     // factories did not commit went into one more soldier. A second bay is not
     // more army, it is the income the rest of the list is paced by.
+    if !ty.wall && brain.site_preflight_after.get(&type_id)
+        .is_some_and(|&at| obs.tick() < at) { return; }
     brain.yard_reserve = match chosen.item {
         // An emergency is not financed from "whatever credits the factories
         // leave over". The *whole available wallet* is committed until the
@@ -631,15 +736,16 @@ fn build_next(
         // Holding only (price - free) let cheap units repeatedly reset the
         // saving, so a stranded house never reached its missing prerequisite.
         Item::Refinery if brain.census.refineries == 0 => budget.free.max(0),
-        Item::Refinery if focused.is_some() => price.saturating_sub(budget.free).max(0),
+        Item::Refinery if focused.is_some() && super::economy::can_save_for(budget.free,price,budget.income) => super::economy::investment_hold(budget.free,price),
+        Item::Power if power_short => budget.free.max(0),
+        Item::Weapons if brain.mobilization.active()
+            && count_in(obs,rules,&brain.census,&rules.build_weapons_types) == 0 => budget.free.max(0),
         Item::Power | Item::Weapons if brain.director.recovering_income() => {
             budget.free.max(0)
         }
-        Item::Radar | Item::Tech if super::siege_counter::technology_step(brain,rules,obs)
-            .is_some_and(|want| want.type_id == type_id) => budget.free.max(0),
         Item::Aircraft | Item::Radar | Item::Tech | Item::Superweapon
-        | Item::SupportSuperweapon => {
-            price.saturating_sub(budget.free).max(0)
+        | Item::SupportSuperweapon if optional_tech_admissible(budget,price,true,None,obs.tick()) => {
+            super::economy::investment_hold(budget.free,price)
         }
         _ => 0,
     };
@@ -782,6 +888,8 @@ fn queue_defense_in_parallel(
     let urgent_ground = psychic_near && !has_ground;
     if brain.census.line(ProductionCategory::Defense).busy()
         || brain.census.refineries == 0 || brain.census.harvesters == 0
+        || obs.power_blackout_active()
+        || (brain.director.emergency_spending(obs) && !urgent_air && !urgent_ground)
         || (!urgent_air && !urgent_ground && !baseline_air && !baseline_ground
             && !brain.director.permits_build(Item::Defense))
         || plan::power_short(rules, obs, &brain.census)
@@ -829,15 +937,23 @@ fn queue_defense_in_parallel(
     if plan::consumer_breaks_reserve(rules, obs, &brain.census, chosen.ty.power)
         || obs.in_production(rules, chosen.type_id)
     { return; }
-    let committed = out.intents.iter().filter_map(|intent| {
-        if let Intent::QueueProduction { type_id } = intent {
-            return obs.object_type(rules, *type_id)
-                .map(|ty| obs.cost_of(rules, ty).max(0));
-        }
-        None
-    }).fold(0i32, |sum, price| sum.saturating_add(price));
+    let committed = plan::proposed_cost(rules,obs,out);
     let price = obs.cost_of(rules, chosen.ty).max(0);
-    if !two_strip_budget_admits(budget.free, committed, price) { return; }
+    // A speculative tower must not consume the first vehicle budget.
+    // Actual attacks on the base and urgently required AA remain exempt.
+    let opening_reserve = if brain.mobilization.active() && !urgent_air && !urgent_ground
+        && !brain.director.under_attack_now() {
+        let Some(floor) = brain.mobilization.floor() else { return; };
+        floor
+    } else { 0 };
+    let bank = if urgent_air || urgent_ground || brain.director.under_attack_now() { 0 }
+        else { brain.yard_reserve };
+    if !urgent_air && !urgent_ground && !brain.director.under_attack_now()
+        && brain.campaign.economy_resting() { return; }
+    if !two_strip_budget_admits(budget.free.saturating_sub(bank)
+        .saturating_sub(opening_reserve), committed, price) {
+        return;
+    }
     // A second queue can only help if its finished building also has a site.
     // Never buy an endless backlog of towers without land for them.
     if Placement::new(obs, rules).cell_for(chosen.type_id, 0).is_none() {
@@ -886,6 +1002,10 @@ fn queue_safe_walls(
     budget: &Budget, out: &mut Outbox,
 ) {
     if brain.census.refineries < 1 || brain.census.harvesters < 1
+        || brain.mobilization.active() || brain.campaign.economy_resting()
+        || obs.tick() < brain.wall_order_after
+        || brain.director.emergency_spending(obs)
+        || obs.power_blackout_active() || plan::power_short(rules, obs, &brain.census)
         || budget.free < 3_500 || budget.income.is_some_and(|income| income <= 0)
         || brain.director.under_attack_now()
         || brain.census.line(ProductionCategory::Defense).busy()
@@ -902,15 +1022,17 @@ fn queue_safe_walls(
     { return; }
     let price = obs.object_type(rules, segment.type_id)
         .map_or(i32::MAX, |ty| obs.cost_of(rules, ty).max(0));
-    let committed = out.intents.iter().filter_map(|intent| match intent {
-        Intent::QueueProduction { type_id } => obs.object_type(rules, *type_id)
-            .map(|ty| obs.cost_of(rules, ty).max(0)),
-        _ => None,
-    }).fold(0i32, |sum, price| sum.saturating_add(price));
-    if !two_strip_budget_admits(budget.free.saturating_sub(2_500), committed, price) {
+    let committed = plan::proposed_cost(rules,obs,out);
+    if !two_strip_budget_admits(budget.free.saturating_sub(2_500).saturating_sub(brain.yard_reserve), committed, price) {
+        return;
+    }
+    if obs.has_pending_production_commands() {
         return;
     }
     out.intent(Intent::QueueProduction { type_id: segment.type_id });
+    brain.wall_build = Some(WallBuild {
+        type_id: segment.type_id, entity_id: None, ready_since: None, release_requested_at: None,
+    });
     log::info!("auto play: protective wall at {:?}, existing={} native_fill={}",
         segment.cell, segment.standing, segment.fill);
 }
@@ -944,6 +1066,12 @@ fn hold_for_a_second_base(
     obs: &Observation<'_>,
     budget: &Budget,
 ) {
+    if brain.director.emergency_spending(obs) || obs.power_blackout_active()
+        || brain.mobilization.active() || brain.campaign.economy_resting()
+        || brain.yard_reserve > 0 || brain.census.line(ProductionCategory::Vehicle).busy()
+        || budget.income.is_none_or(|rate| rate < 900) {
+        return;
+    }
     let worth = super::expand::expansion_is_worth_saving_for(brain, rules, obs);
     let needed = super::expand::expansion_price(rules, obs);
     // One line every forty seconds while the house is *not* saving, because
@@ -965,7 +1093,57 @@ fn hold_for_a_second_base(
     if !worth {
         return;
     }
-    brain.yard_reserve = needed.saturating_sub(budget.free).max(0);
+    // Optional expansion must not consume a weak economy's entire bank.
+    // Only save once the actual purchase is legal and already half funded.
+    if budget.free >= needed / 2 && super::economy::can_save_for(budget.free,needed,budget.income)
+        && super::expand::yard_maker(rules,obs)
+        .is_some_and(|(ty,_)| obs.can_build(rules,ty,true)==CanBuild::Yes && obs.has_producer(rules,ty))
+        && super::expand::wants_a_maker(brain,rules,obs,&Budget {free:needed,..*budget}) {
+        brain.yard_reserve = super::economy::investment_hold(budget.free,needed);
+    }
+}
+
+/// An optional research request may supersede the regular build list only
+/// while it is native-legal, outside site backoff and actually fundable.
+fn optional_tech_admissible(budget:&Budget,price:i32,legal:bool,site_retry:Option<u64>,now:u64)->bool {
+    legal && site_retry.is_none_or(|at|now>=at)
+        && (budget.free>=price || budget.income.is_some_and(|rate|rate>0
+            && i64::from(price)-i64::from(budget.free)<=i64::from(rate)))
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v52_integration_tests {
+    use super::*;
+    #[test]
+    fn unavailable_optional_tech_must_yield_to_regular_plan() {
+        let budget=Budget {committed:0,free:500,income:Some(100)};
+        assert!(!optional_tech_admissible(&budget,2000,true,None,0));
+        // Optional research must be fundable in one minute, not three.
+        assert!(!optional_tech_admissible(&Budget {income:Some(500),..budget},2000,true,None,0));
+        let viable=Budget {income:Some(1500),..budget};
+        assert!(optional_tech_admissible(&viable,2000,true,None,0));
+        assert!(!optional_tech_admissible(&viable,2000,false,None,0));
+        assert!(!optional_tech_admissible(&viable,2000,true,Some(100),99));
+        assert!(optional_tech_admissible(&viable,2000,true,Some(100),100));
+    }
+}
+
+/// A weak but functioning economy may save for a genuine tech step when a
+/// useful field army already exists. The yard, not the infantry line, owns
+/// this request and its placement/affordability checks.
+fn scarce_tech_step<'r>(brain: &AssistBrain,rules: &'r RuleSet,
+    obs: &Observation<'_>,budget: &Budget) -> Option<plan::Chosen<'r>> {
+    if brain.mobilization.active() || obs.tick()<3000 || brain.director.under_attack_now()
+        || brain.census.available_fighters()<12 || brain.census.refineries==0
+        || brain.census.harvesters==0 || brain.ore_known.len()>=18
+        || !budget.income.is_some_and(|income| income>0 && income<=700)
+        || count_in(obs,rules,&brain.census,&rules.build_tech_types)>0 { return None; }
+    let (item,(ty,type_id)) = if let Some(lab)=tech_building(rules,obs) { (Item::Tech,lab) }
+        else if count_in(obs,rules,&brain.census,&rules.build_radar_types)==0 {
+            (Item::Radar,first_buildable(rules,obs,&rules.build_radar_types)?)
+        } else { return None; };
+    if obs.can_build(rules,ty,true)!=CanBuild::Yes { return None; }
+    Some(plan::Chosen {step:None,item,ty,type_id})
 }
 
 /// The structure to start now.
@@ -1063,7 +1241,7 @@ fn next_building_for<'r>(
             // Do not bypass this guard just because the normal build plan has
             // not yet been consulted this frame.
             if plan::consumer_breaks_reserve(rules, obs, census, ty.power) {
-                if let Some((plant, plant_id)) = first_buildable(rules, obs, &rules.build_power_types) {
+                if let Some((plant, plant_id)) = emergency_generator(rules, obs) {
                     return Some(plan::Chosen {
                         step: None, item: Item::Power, ty: plant, type_id: plant_id,
                     });
@@ -1095,6 +1273,9 @@ fn next_building_for<'r>(
         }
         None => return None,
     };
+    if obs.power_blackout_active() && chosen.ty.power < 0 {
+        return None;
+    }
     // What the base decided on, once every forty seconds while
     // `AUTOPLAY_TRACE_BUILD` is set: "the house builds nothing" has to name the
     // step that is holding the list before it can be fixed, and reading the
@@ -1118,7 +1299,7 @@ fn next_building_for<'r>(
     if chosen.item == Item::Defense
         && plan::consumer_breaks_reserve(rules, obs, census, chosen.ty.power)
     {
-        return first_buildable(rules, obs, &rules.build_power_types).map(|(ty,type_id)|
+        return emergency_generator(rules, obs).map(|(ty,type_id)|
             plan::Chosen { step: None, item: Item::Power, ty, type_id });
     }
     // `Power=` is the type's net contribution: negative is what it draws, and
@@ -1135,6 +1316,16 @@ fn next_building_for<'r>(
         }
     }
     Some(chosen)
+}
+
+/// The meter is zero during a timed outage. Defer reserve-driven purchases
+/// until native generation is measurable again. The first plant still comes
+/// from the ordinary build plan when the base has no working grid at all.
+fn emergency_generator<'r>(
+    rules: &'r RuleSet, obs: &Observation<'_>,
+) -> Option<(&'r ObjectType, InternedId)> {
+    if obs.power_blackout_active() { return None; }
+    first_buildable(rules, obs, &rules.build_power_types)
 }
 
 /// Whether the house's own country owns `ty`: `Owner=` is the rules' list of
@@ -2015,7 +2206,7 @@ mod tests {
     /// regression tested wherever the sources are checked out.
     fn arena(seed: u64) -> Option<(Simulation, RuleSet)> {
         let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()?;
-        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, seed);
+        let mut sim = crate::sim::arena_fixture::rival_arena_known(&rules, seed);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         Some((sim, rules))
@@ -2138,6 +2329,71 @@ mod tests {
         assert!(brain.site_jobs.get(&plant).is_some_and(|job| job.retry_at > obs.tick()),
             "the completed plant is retained for a scheduled retry");
         assert_eq!(brain.census.ready, vec![plant]);
+    }
+
+    #[test]
+    fn a_stalled_autoplay_wall_releases_its_native_strip_after_the_site_timeout() {
+        use crate::sim::command::{Command, CommandEnvelope};
+        use crate::sim::world::{FrameEffects, TickLane};
+
+        let rules = crate::rules::retail_ini_fixture::retail_rulesmd_rules().expect("retail rules");
+        let mut sim = crate::sim::arena_fixture::rival_arena_known(&rules, 0xA17);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let owner = sim.interner.intern("Americans");
+        sim.session_mut_for_test().set_current_house_for_test(Some(owner));
+        let type_id = sim.interner.get("GAWALL").expect("retail wall");
+        for (name, x) in [("GACNST", 8), ("GAPILE", 16)] {
+            sim.spawn_object(name, "Americans", x, 8, 255, &rules)
+                .expect("production prerequisite");
+        }
+        sim.houses.get_mut(&owner).unwrap().economy_mut().set_credits_for_test(1_000);
+        let frame = |sim: &mut Simulation, commands: &[CommandEnvelope]| {
+            let visits = sim.production().factories().strip_visits_for_test(owner);
+            sim.advance_app_frame(commands, &rules, 67, TickLane::Ordinary,
+                &mut FrameEffects::default().with_production_strip(&visits)).expect("native frame");
+        };
+        let queue = CommandEnvelope::new(owner, 1, Command::QueueProduction { type_id });
+        frame(&mut sim, &[queue]);
+
+        let mut brain = AssistBrain::new(0xA17);
+        brain.wall_build = Some(WallBuild { type_id, entity_id: None, ready_since: None, release_requested_at: None });
+        observe_wall_build(&mut brain, &Observation::new(&sim, owner));
+        assert!(brain.wall_build.as_ref().and_then(|wall| wall.entity_id).is_some());
+        for _ in 0..1_200 {
+            if Observation::new(&sim, owner).finished_product(ProductionCategory::Defense)
+                == Some(type_id)
+            {
+                break;
+            }
+            frame(&mut sim, &[]);
+        }
+        let obs = Observation::new(&sim, owner);
+        assert_eq!(obs.finished_product(ProductionCategory::Defense), Some(type_id));
+        let paid = obs.credits();
+        let ready_at = obs.tick();
+        brain.census.ready.push(type_id);
+        let mut out = Outbox::default();
+        place_finished(&mut brain, &rules, &obs, &mut out);
+        assert!(out.intents.is_empty());
+
+        sim.session_mut_for_test().set_tick_for_test(ready_at + WALL_SITE_TIMEOUT_FRAMES);
+        let obs = Observation::new(&sim, owner);
+        let mut manual = AssistBrain::new(0xA17);
+        manual.census.ready.push(type_id);
+        place_finished(&mut manual, &rules, &obs, &mut out);
+        assert!(out.intents.is_empty(), "a manually queued wall stays in the strip");
+        place_finished(&mut brain, &rules, &obs, &mut out);
+        assert_eq!(out.intents, vec![Intent::CancelProduction { type_id, all: false }]);
+        assert!(brain.wall_order_after > obs.tick());
+
+        let cancel = CommandEnvelope::new(owner, obs.tick() + 1, out.intents[0].clone().command());
+        frame(&mut sim, &[cancel]);
+        let obs = Observation::new(&sim, owner);
+        assert_eq!(obs.finished_product(ProductionCategory::Defense), None);
+        assert_eq!(obs.credits() - paid, obs.cost_of(&rules, rules.object("GAWALL").unwrap()));
+        observe_wall_build(&mut brain, &obs);
+        assert!(brain.wall_build.is_none(), "the observed native product left the leased strip");
     }
 
     /// The opening is the plant, then the barracks, then the income, then the

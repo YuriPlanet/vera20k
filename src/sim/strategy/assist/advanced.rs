@@ -112,12 +112,17 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
         if !unit.traits.yard_maker || !unit.controllable() { return None; }
         let ty = obs.object_type(rules,unit.type_id)?;
         let yard = rules.object(ty.deploys_into.as_deref()?)?;
-        super::build::foreign_yard(rules,obs,yard).then_some(unit.cell)
+        (brain.census.yards == 0 || super::build::foreign_yard(rules,obs,yard)).then_some(unit.cell)
     }));
-    if sites.is_empty() { return; }
+    let miners: Vec<_> = brain.census.units.iter().filter(|u| u.traits.harvester).map(|u| u.cell).collect();
+    if sites.is_empty() && miners.is_empty() { return; }
+    let visible_buildings: std::collections::BTreeSet<_> = obs.visible_enemy_entities()
+        .filter(|e| obs.object_type(rules,e.type_id).is_some_and(|ty| ty.category == ObjectCategory::Building))
+        .map(|e| e.entity_id).collect();
     let threats: Vec<_> = obs.visible_enemy_entities()
         .filter(|enemy| obs.entity_type(rules, enemy.entity_id)
-            .is_some_and(|ty| ty.category != ObjectCategory::Building
+            .is_some_and(|ty| (ty.category != ObjectCategory::Building
+                && super::convergence::mobile_threat(rules,obs,enemy))
                 || ((0..8).any(|slot| ty.weapon_at(slot).is_some())
                     && obs.attack_target(enemy.entity_id).is_some())))
         .filter(|enemy| sites.iter().any(|site| {
@@ -148,7 +153,8 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
         // to the attacking fist. This is especially important against air:
         // the Defense role may contain only anti-ground units.
         let local = sites.iter().any(|site|
-            squared_distance(*site, defender.cell) <= 17 * 17);
+            squared_distance(*site, defender.cell) <= 17 * 17)
+            || miners.iter().any(|site| squared_distance(*site,defender.cell) <= 12*12);
         let local_reserve = !attackers.contains(&defender.entity_id)
             && local && obs.attack_target(defender.entity_id).is_none();
         // A soldier assigned to Attack but still standing *inside* the base
@@ -157,7 +163,8 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
         // attacking fist or overwrite an ongoing firefight.
         let emergency_loan = attackers.contains(&defender.entity_id)
             && local && obs.attack_target(defender.entity_id).is_none()
-            && threats.iter().any(|enemy| sites.iter().any(|site| {
+            && threats.iter().any(|enemy| miners.iter().any(|site| squared_distance(*site,enemy.cell) <= 10*10)
+                || sites.iter().any(|site| {
                 let air = obs.entity_type(rules, enemy.entity_id).is_some_and(|ty|
                     airborne(ty,obs.is_deployed(enemy.entity_id)));
                 squared_distance(*site, enemy.cell) <= alarm_radius(air).pow(2)
@@ -177,18 +184,26 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
                 && obs.can_engage(rules, defender.entity_id, enemy.entity_id)
                 && obs.can_hurt(rules, defender.entity_id, enemy.entity_id)
         });
+        let local_contact = local && brain.census.main_available(defender) && obs.attack_target(defender.entity_id).is_some_and(|id|
+            visible_buildings.contains(&id))
+            && threats.iter().any(|e| super::convergence::mobile_threat(rules,obs,e)
+                && obs.engage(rules,defender.entity_id,e.entity_id) == crate::sim::control::observation::Engage::Ready
+                && obs.can_hurt(rules,defender.entity_id,e.entity_id));
         if !(defenders.contains(&defender.entity_id) || local_reserve
-            || emergency_loan || air_emergency || critical_emergency)
+            || emergency_loan || air_emergency || critical_emergency || local_contact)
             || !defender.controllable()
             || defender.in_service() || !defender.traits.combat
+            || brain.safety.reserved(rules,obs,defender)
             || ordered_this_frame(out, defender.entity_id)
             || (brain.tracked.held(obs.tick(), defender.entity_id)
-                && !emergency_loan && !air_emergency && !critical_emergency
+                && !emergency_loan && !air_emergency && !critical_emergency && !local_contact
                 && !(local && obs.attack_target(defender.entity_id).is_none()))
         { continue; }
         let target = threats.iter()
             .filter(|enemy| squared_distance(defender.cell, enemy.cell)
                 <= DEFENDER_REACH * DEFENDER_REACH)
+            .filter(|enemy| !local_contact || (super::convergence::mobile_threat(rules,obs,enemy)
+                && obs.engage(rules,defender.entity_id,enemy.entity_id) == crate::sim::control::observation::Engage::Ready))
             .filter(|enemy| !obs.visible_enemy_invulnerable(enemy.entity_id)
                 && obs.can_engage(rules, defender.entity_id, enemy.entity_id)
                 && obs.can_hurt(rules, defender.entity_id, enemy.entity_id))
@@ -211,8 +226,8 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
                         super::tactics::mind_control_reach(rules, ty).is_some(),
                         super::tactics::emergency_threat_score(rules,ty)))
                     .unwrap_or((false, false, 0));
-                (-urgency, !airborne, !controller, !parasite_weapon, !attacks_asset,
-                    sites.iter().map(|site| squared_distance(*site,enemy.cell))
+                (-urgency, !attacks_asset, !airborne, !controller, !parasite_weapon,
+                    sites.iter().chain(miners.iter()).map(|site| squared_distance(*site,enemy.cell))
                         .min().unwrap_or(i32::MAX),enemy.entity_id)
             });
         let Some(target) = target else { continue; };
@@ -239,8 +254,7 @@ pub(super) fn station_home_reserve(
     let mut issued = 0usize;
     for unit in &brain.census.units {
         if issued >= 4 { break; }
-        if !defenders.contains(&unit.entity_id) || !unit.controllable()
-            || !unit.traits.combat || unit.in_service()
+        if !defenders.contains(&unit.entity_id) || !brain.census.available(unit)
             || brain.outpost_guards.contains_key(&unit.entity_id)
             || brain.asset_guards.contains_key(&unit.entity_id)
             || squared_distance(home, unit.cell) <= 12 * 12
@@ -372,8 +386,7 @@ pub(super) fn secure_captured_assets(
             || reserves.len().saturating_sub(brain.asset_guards.len()
                 + brain.outpost_guards.len()) <= 4 { continue; }
         let candidate = live.iter()
-            .filter(|u| reserves.contains(&u.entity_id) && u.controllable()
-                && u.traits.combat && !u.in_service()
+            .filter(|u| reserves.contains(&u.entity_id) && brain.census.available(u)
                 && !brain.outpost_guards.contains_key(&u.entity_id)
                 && !brain.asset_guards.contains_key(&u.entity_id)
                 && !ordered_this_frame(out, u.entity_id)

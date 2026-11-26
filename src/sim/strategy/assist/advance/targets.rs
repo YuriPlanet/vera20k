@@ -49,6 +49,7 @@ pub(super) struct Chosen {
     /// is no longer a base. A clean-up army is allowed to lose to a garrison it
     /// cannot out-shoot, so `super::advance` reads this before it weighs a fight.
     pub(super) mopping_up: bool,
+    pub(super) local_contact: bool,
 }
 
 /// What the push should aim at, or why it aims at nothing.
@@ -77,7 +78,7 @@ pub(super) fn choose(
     obs: &Observation<'_>,
 ) -> (Answer, (u64, usize)) {
     choose_focused(census, tracked, tick, progress, anchor, fighters,
-        rules, obs, None, None)
+        rules, obs, None, None, None)
 }
 
 /// In multi-house games, concentrate on a single opponent's known buildings,
@@ -95,11 +96,10 @@ pub(super) fn choose_focused(
     obs: &Observation<'_>,
     preferred: Option<InternedId>,
     remembered_search: Option<(u16,u16)>,
+    deferred: Option<(u64,(u16,u16))>,
 ) -> (Answer, (u64, usize)) {
-    // Structures, not units: a base is what a house loses with, and a
-    // defending unit walks into the push on its own. Refineries first — a
-    // house that loses its unloading bays loses the war it is paying for,
-    // and the opponent's wallet is the one number that decides the late game.
+    // Clear urgent local contact before selecting strategic buildings.
+    // The resource chain is a priority both to protect and to pressure.
     //
     // A building an engineer or a spy is already walking into is left out: it
     // is being taken whole, and shooting it destroys the prize the walk was
@@ -145,18 +145,11 @@ pub(super) fn choose_focused(
     // Clean-up targets whatever is left. A house down to a handful of objects
     // is not a base: the army that only ever aims at structures stands in
     // front of the last two units until the match times out — measured, a
-    // timeout at 36000 with two enemies alive. Units join the list only here,
-    // so an ordinary push still aims at what a base is.
-    // A push that has not taken an enemy **structure** for a minute is not
-    // waiting for a better moment: the comparison holding it home can be held
-    // forever by a base the army is strong enough to trade into. Past the
-    // stall the army goes, the way a player stops waiting for the perfect
-    // engagement. This is a group-level reading on purpose — it is the army's
-    // progress, not any one unit's orders, and no per-unit pass can see it.
-    //
-    // The count is structures, not objects: a field trade that never reaches
-    // the base keeps the object count falling and would reset this forever,
-    // which is the stalemate it is meant to catch.
+    // timeout at 36000 with two enemies alive. Outside local contact,
+    // a normal push still aims at strategic buildings.
+    // A long spell without a structure falling widens target selection to
+    // enemy field units. It does not establish a favourable battle: the
+    // committed force must still pass the attack and support checks.
     let standing = structures.len();
     if progress.1 == usize::MAX {
         progress = (tick, standing);
@@ -165,26 +158,33 @@ pub(super) fn choose_focused(
         progress = (tick, standing);
     }
     let stalled = push_stalled(progress, tick, standing);
-    // A field with no structure standing is a field army, whatever its size:
-    // the army's job there is to shoot what it can see, not to walk to the
-    // middle of the map and wait. The count and the stall are the other two
-    // ways this opens -- a handful left, or a minute without a kill -- and this
-    // is the one that was missing: measured on Death.mmx seed 10, the enemy
-    // ended with ten objects and no building, and the fist marched to the map
-    // centre for the rest of the match because ten is above MOP_UP_OBJECTS.
-    let mopping_up =
-        structures.is_empty() || census.enemies.len() <= MOP_UP_OBJECTS || stalled;
-    if mopping_up {
+    // Local mobile threats must not be rewritten into a tower on their way
+    // to the miner. Leave the tactical range/force/safety gates intact.
+    let mut contact: Vec<_> = census.enemies.iter().filter(|e|
+        visible_ids.contains(&e.entity_id) && !obs.visible_enemy_invulnerable(e.entity_id)
+            && super::super::convergence::mobile_threat(rules,obs,e))
+        .filter_map(|e| super::super::convergence::local_rank(census,anchor,e)
+            .map(|rank| (rank,*e))).collect();
+    contact.sort_by_key(|(rank,_)| *rank);
+    if let Some((_,enemy)) = contact.into_iter().take(REACHABLE_CANDIDATES)
+        .find(|(_,e)| target_reachable(e,fighters,rules,obs)) {
+        return (Answer::Chosen(Chosen {entity_id:enemy.entity_id,cell:enemy.cell,
+            nearest:(enemy.entity_id,enemy.cell),mopping_up:false,local_contact:true}),progress);
+    }
+    // Keep genuine cleanup/search behaviour when the visible structures
+    // are gone or only a handful of known objects remain. A stall alone
+    // must not turn a defended base into a cleanup target.
+    let mopping_up = census.enemies.len() <= MOP_UP_OBJECTS;
+    // A stall broadens the candidate list, but is not evidence that the
+    // enemy is weak enough to bypass force and formation checks.
+    if structures.is_empty() || mopping_up || stalled {
         targets.extend(
             census
                 .enemies
                 .iter()
                 .filter(|enemy| visible_ids.contains(&enemy.entity_id))
-                .filter(|enemy| {
-                    !structures
-                        .iter()
-                        .any(|(_, structure)| structure.entity_id == enemy.entity_id)
-                })
+                .filter(|enemy| obs.object_type(rules,enemy.type_id).is_some_and(|ty|
+                    ty.category != ObjectCategory::Building))
                 .copied(),
         );
     }
@@ -219,7 +219,13 @@ pub(super) fn choose_focused(
     // the fist to one structure for a term was measured on the pinned 1v1 and
     // turned its win into a timeout — a structure the army cannot reach held
     // it for the whole term while the nearest one moved with the army.
-    let Some(nearest) = reachable_target(&targets, anchor, fighters, rules, obs) else {
+    let alternative = if deferred.is_some() {
+        let alternatives: Vec<_> = targets.iter().copied().filter(|e|
+            super::super::convergence::outside_deferred(e,deferred)).collect();
+        reachable_target(&alternatives,anchor,fighters,rules,obs)
+    } else { None };
+    let rotated = alternative.is_some();
+    let Some(nearest) = alternative.or_else(|| reachable_target(&targets, anchor, fighters, rules, obs)) else {
         return (Answer::NoTarget, progress);
     };
     // A hostile forward base within reach of our ore chain is a defence
@@ -228,6 +234,7 @@ pub(super) fn choose_focused(
     // miners outranks a distant base. Use only currently visible positions,
     // and only targets our fighters can actually reach.
     let local_raider = structures.iter()
+        .filter(|(_,enemy)| !rotated || super::super::convergence::outside_deferred(enemy,deferred))
         .filter(|(ty, enemy)| {
             obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
                 && (ty.resource_destination || ty.weapons_factory
@@ -239,14 +246,13 @@ pub(super) fn choose_focused(
                 .chain(census.units.iter().filter(|unit| unit.traits.harvester)
                     .map(|unit| cell_distance(unit.cell, enemy.cell)))
                 .min()?;
-            (distance <= 22 && fighters.iter().any(|unit|
-                super::super::orders::reachable(rules, obs, unit.entity_id, enemy.cell)))
+            (distance <= 22 && target_reachable(enemy,fighters,rules,obs))
                 .then_some((distance, *enemy))
         })
         .min_by_key(|(distance, enemy)| (*distance,
             cell_distance(anchor, enemy.cell), enemy.entity_id))
         .map(|(_, enemy)| enemy);
-    let focused = if local_raider.is_none() && !mopping_up {
+    let focused = if local_raider.is_none() && !mopping_up && !rotated {
         let home = census.base_cell.unwrap_or(anchor);
         let mut owners: BTreeMap<InternedId, i32> = BTreeMap::new();
         for (_, enemy) in &structures {
@@ -293,7 +299,9 @@ pub(super) fn choose_focused(
     // the reachable generator instead. A spy blackout or low-power condition
     // is an observation of this specific tower, never a read of hidden enemy
     // economy. Restrict this to the *same* nearby assault lane.
-    let dark_tower = structures.iter().filter(|(ty, enemy)| {
+    let dark_tower = structures.iter()
+        .filter(|(_,enemy)| !rotated || super::super::convergence::outside_deferred(enemy,deferred))
+        .filter(|(ty, enemy)| {
         powered_defense_dark(ty, obs.visible_enemy_building_operational(rules, enemy.entity_id))
             && obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
             && cell_distance(enemy.cell, nearest.cell) <= 12
@@ -315,6 +323,7 @@ pub(super) fn choose_focused(
         }).map(|(_, power)| *power)
     });
     let campaign_target = power_pressure.unwrap_or_else(|| structures.iter()
+        .filter(|(_,enemy)| !rotated || super::super::convergence::outside_deferred(enemy,deferred))
         .filter(|(ty, enemy)| super::super::build::grants_a_strike(rules, ty)
             && obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
             && strike_on_approach(anchor, nearest.cell, enemy.cell))
@@ -346,6 +355,7 @@ pub(super) fn choose_focused(
             cell,
             nearest: (nearest.entity_id, nearest.cell),
             mopping_up,
+            local_contact:false,
         }),
         progress,
     )
@@ -599,8 +609,8 @@ pub(super) fn pick_reachable(
 /// every one of them the same `AttackMove`, and the army idle at the bell.
 /// Nearest first, then the next, and the first candidate anybody can reach wins.
 ///
-/// When nobody can reach anything the nearest is returned unchanged: that is
-/// the state this cannot fix, and the caller still has to hold the army.
+/// If nobody can harm and reach a candidate, review the remaining bounded
+/// rotating window rather than repeatedly selecting an impossible target.
 fn reachable_target(
     targets: &[EnemyEntity],
     from: (u16, u16),
@@ -614,17 +624,37 @@ fn reachable_target(
             .is_some_and(|ty| ty.resource_destination);
         (local_objective_rank(cell_distance(target.cell, from), income), target.entity_id)
     });
-    let candidates: Vec<EnemyEntity> = nearest_first
-        .iter()
-        .take(REACHABLE_CANDIDATES)
-        .copied()
-        .collect();
-    pick_reachable(&candidates, |cell| {
-        fighters
-            .iter()
-            .any(|unit| super::super::orders::reachable(rules, obs, unit.entity_id, cell))
+    let head = nearest_first.len().min(REACHABLE_CANDIDATES);
+    let tail = &nearest_first[head..];
+    nearest_first[..head].iter().chain(tail.iter().cycle()
+        .skip((obs.tick()/120) as usize % tail.len().max(1))
+        .take(tail.len().min(REACHABLE_CANDIDATES)))
+        .find(|target| target_reachable(target,fighters,rules,obs)).copied()
+}
+
+/// Native damage admission plus reachable approach. The cell of a building
+/// can itself be occupied; a ready gun or nearby reachable perimeter is a
+/// legitimate attack opportunity even when the occupied centre is blocked.
+fn target_reachable(target: &EnemyEntity, fighters: &[&Unit], rules: &RuleSet,
+    obs: &Observation<'_>) -> bool {
+    use crate::sim::control::observation::Engage;
+    fighters.iter().any(|unit| {
+        let id = unit.entity_id;
+        let reachable = |cell| super::super::orders::reachable(rules,obs,id,cell);
+        if target.entity_id == 0 { return reachable(target.cell); }
+        if !obs.can_hurt(rules,id,target.entity_id) { return false; }
+        match obs.engage(rules,id,target.entity_id) {
+            Engage::Cannot => false,
+            Engage::Ready => true,
+            Engage::OutOfRange => reachable(target.cell) ||
+                (obs.object_type(rules,target.type_id).is_some_and(|ty| ty.category==ObjectCategory::Building)
+                    && [(-2i32,0),(2,0),(0,-2),(0,2)].iter().any(|(dx,dy)| {
+                        let (Ok(x),Ok(y)) = (u16::try_from(i32::from(target.cell.0)+dx),
+                            u16::try_from(i32::from(target.cell.1)+dy)) else { return false; };
+                        obs.is_cell_in_playfield(x,y) && reachable((x,y))
+                    })),
+        }
     })
-    .or_else(|| nearest_first.into_iter().next())
 }
 
 /// The enemy structure nearest `from`, ties going to the earlier one in

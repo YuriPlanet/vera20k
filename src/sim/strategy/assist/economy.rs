@@ -73,10 +73,18 @@ pub(super) const SURPLUS_INCOME_PER_MINUTE: i32 = 2_400;
 /// whose line tank is dearer than another's answers with its own price this
 /// way.
 pub(super) fn line_vehicle_floor(rules: &RuleSet, obs: &Observation<'_>) -> Option<i32> {
-    class_types(rules, obs, ObjectCategory::Vehicle)
-        .filter(|(ty, _)| super::orders::is_combat_unit(rules, ty))
-        .map(|(ty, _)| obs.cost_of(rules, ty))
-        .min()
+    let mut core = None;
+    let mut fallback = None;
+    for (ty,_) in class_types(rules,obs,ObjectCategory::Vehicle) {
+        if ty.naval || !super::orders::is_combat_unit(rules,ty) { continue; }
+        let price = obs.cost_of(rules,ty);
+        if price <= 0 { continue; }
+        fallback = Some(fallback.map_or(price, |v:i32| v.min(price)));
+        if super::mobilization::line_quality(rules,ty) > 0 {
+            core = Some(core.map_or(price, |v:i32| v.min(price)));
+        }
+    }
+    core.or(fallback)
 }
 
 /// How much of the wallet the house refuses to spend: one minute of its own
@@ -113,10 +121,15 @@ pub(super) const MIN_RESERVE_CREDITS: i32 = 700;
 /// measured is not held to a reserve it cannot size; twelve seconds in, the
 /// meter has one and the floor applies.
 pub(super) fn reserve(rules: &RuleSet, obs: &Observation<'_>, income: Option<i32>) -> i32 {
-    let Some(rate) = income else {
-        return 0;
-    };
+    if !income.is_some_and(|rate|rate>0) {return 0;}
     let floor = line_vehicle_floor(rules, obs).unwrap_or(MIN_RESERVE_CREDITS);
+    cash_reserve(floor,income)
+}
+
+fn cash_reserve(floor:i32,income:Option<i32>)->i32 {
+    // A measured zero is not merely an unknown opening income. Do not
+    // permanently immobilise a finite wallet in a stranded economy.
+    let Some(rate)=income.filter(|rate|*rate>0) else {return 0;};
     rate.saturating_mul(RESERVE_SECONDS)
         .saturating_div(60)
         .max(floor)
@@ -131,3 +144,64 @@ pub(super) fn reserve(rules: &RuleSet, obs: &Observation<'_>, income: Option<i32
 /// enough that a base which really has changed its mind (the defense it wanted
 /// now stands) is not held to a plan for a minute.
 pub(super) const BUILD_HOLD_FRAMES: u64 = 600;
+
+/// Hold the entire price of a selected, not-yet-funded investment. A deficit
+/// is NOT a reserve: with 1900/2000 saved, holding just 100 spends the 1900.
+pub(super) fn investment_hold(free: i32, price: i32) -> i32 {
+    if free < price { price.max(0) } else { 0 }
+}
+
+/// Is a non-emergency bank plausibly fundable in the next three minutes?
+/// Future income is a scheduling hint, NEVER treated as spendable credits.
+/// Unknown income permits normal opening/essential recovery but not optional
+/// indefinite saving. A funded purchase needs no forecast.
+pub(super) fn can_save_for(free: i32, price: i32, income: Option<i32>) -> bool {
+    free >= price || income.is_some_and(|rate| rate > 0 &&
+        i64::from(price).saturating_sub(i64::from(free)) <= i64::from(rate)*3)
+}
+
+/// Discretionary purchases must leave the next useful line vehicle funded
+/// on a functioning but thin economy. Urgent recovery/defence is handled by
+/// its own earlier admission. Rich economies can spend their true surplus.
+pub(super) fn discretionary_floor(free: i32, income: Option<i32>, line: i32) -> i32 {
+    // An impossible second bank must not freeze affordable infantry/utility
+    // production after the primary reserve has already been deducted.
+    if free<line && income.is_some()
+        && !can_save_for(free,line,income) {return 0;}
+    if free >= line.saturating_mul(6) && income.is_some_and(|v| v >= 1200) { 0 }
+    else { line.max(0) }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v50_tests {
+    use super::*;
+    #[test]
+    fn an_investment_protects_saved_cash_not_only_its_deficit() {
+        assert_eq!(investment_hold(1900,2000),2000);
+        assert_eq!(investment_hold(0,2000),2000);
+        assert_eq!(investment_hold(2000,2000),0);
+    }
+    #[test]
+    fn an_impossible_bank_does_not_freeze_a_stranded_house() {
+        assert!(!can_save_for(500,2000,Some(0)));
+        assert!(!can_save_for(500,2000,Some(100)));
+        assert!(can_save_for(500,2000,Some(500)));
+        assert!(can_save_for(2000,2000,None));
+    }
+    #[test]
+    fn discretionary_spending_preserves_a_core_cycle_until_prosperous() {
+        assert_eq!(discretionary_floor(1900,Some(300),900),900);
+        assert_eq!(discretionary_floor(5400,Some(1200),900),0);
+        assert_eq!(discretionary_floor(400,Some(0),900),0);
+        assert_eq!(discretionary_floor(400,Some(100),900),0);
+        assert_eq!(discretionary_floor(400,Some(300),900),900);
+        assert_eq!(discretionary_floor(400,None,900),900);
+    }
+    #[test]
+    fn a_confirmed_stranded_wallet_is_not_frozen_by_a_permanent_cash_reserve() {
+        assert_eq!(cash_reserve(700,Some(0)),0);
+        assert_eq!(cash_reserve(700,None),0);
+        assert_eq!(cash_reserve(700,Some(300)),700);
+        assert_eq!(cash_reserve(700,Some(1800)),1800);
+    }
+}

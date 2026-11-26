@@ -26,7 +26,7 @@ use crate::sim::control::brain::Outbox;
 use crate::sim::control::intent::Intent;
 use crate::sim::control::observation::Observation;
 use crate::sim::intern::InternedId;
-use crate::sim::production::ProductionCategory;
+use crate::sim::production::{CanBuild, ProductionCategory};
 
 use super::AssistBrain;
 use super::build;
@@ -102,9 +102,11 @@ pub(super) fn fill_lines(
     // What the yard is saving for is not the lines' money: it decided on a
     // structure, and paying for it is what "decided" means. Taken here, once,
     // so no line below can spend it.
-    let mut budget = budget.reserving(brain.yard_reserve);
+    if obs.has_pending_production_commands() { return; }
+    let mut budget = budget.reserving(if brain.director.under_attack_now() {0} else {brain.yard_reserve});
     brain.engineers.observe_outcomes(obs.tick(), brain.census.units.iter()
         .filter(|unit| unit.traits.engineer).count());
+    let emergency = brain.director.emergency_spending(obs);
     // A house with a standing yard but no unloading bay must save its wallet
     // for the first refinery. The barracks' cheap infantry purchases could
     // otherwise keep its credits below the refinery's price indefinitely.
@@ -121,14 +123,42 @@ pub(super) fn fill_lines(
     // for its *actual rules price* and give the vehicle line first refusal;
     // otherwise an infantry-short opening can buy one cheap soldier every
     // frame and never accumulate the miner's price.
-    let last_miner_needed = brain.director.recovering_income()
+    let last_miner_needed = brain.director.initialized()
         && brain.census.refineries > 0
         && brain.census.harvesters == 0;
-    if last_miner_needed
-        && let Some((ty, _)) = build::harvester(rules, obs)
-        && budget.free < obs.cost_of(rules, ty)
-    {
-        return;
+    let active_vehicle = brain.census.line(ProductionCategory::Vehicle).product;
+    let maker_needed = !super::expand::yard_stands(&brain.census)
+        && !super::expand::owns_yard_maker(&brain.census)
+        && !active_vehicle.and_then(|id| obs.object_type(rules, id))
+            .is_some_and(|ty| super::expand::makes_a_yard(rules, ty));
+    let replacement = maker_needed.then(|| super::expand::yard_maker(rules, obs)).flatten()
+        .filter(|(ty, _)| obs.can_build(rules, ty, true) == CanBuild::Yes && obs.has_producer(rules, ty));
+    let miner = last_miner_needed.then(|| build::harvester(rules, obs)).flatten()
+        .filter(|(ty, _)| obs.can_build(rules, ty, true) == CanBuild::Yes && obs.has_producer(rules, ty));
+    // If both are legal, restore a last miner first when the wallet cannot
+    // fund both. A yard without any income may be the last purchase it can
+    // afford. When both are funded the yard still takes priority.
+    let critical = match (replacement, miner) {
+        (Some(yard), Some(truck)) if prefer_last_miner(budget.free,
+            obs.cost_of(rules, yard.0), obs.cost_of(rules, truck.0)) => Some(truck),
+        (yard, truck) => yard.or(truck),
+    };
+    let mut vehicle_claimed = false;
+    if let Some((ty, id)) = critical {
+        let cost = obs.cost_of(rules, ty);
+        if !obs.in_production(rules, id) {
+            let busy = brain.census.line(ProductionCategory::Vehicle).busy();
+            vehicle_claimed = true;
+            if busy || !queue_unit(rules, obs, &mut budget, out, Some((ty, id))) {
+                if obs.tick() % 600 == 0 {
+                    log::info!("auto play: recovery_purchase tick={} type={} cost={} free={} reason={}",
+                        obs.tick(), ty.id, cost, budget.free, if busy { "line-busy" } else { "credits" });
+                }
+                budget = budget.reserving(cost);
+            }
+        }
+    } else if maker_needed && emergency && obs.tick() % 600 == 0 {
+        log::info!("auto play: recovery_purchase tick={} type=mcv reason=no-legal-producer-or-prerequisites", obs.tick());
     }
     // The infantry floor decides who gets the wallet first when it is thin: a
     // house below its share of infantry spends on the barracks before it
@@ -155,11 +185,42 @@ pub(super) fn fill_lines(
     // play test reports as "only infantry and dogs, no tank all match".
     let vehicle_floor =
         super::economy::line_vehicle_floor(rules, obs).unwrap_or(COMBAT_MIN_CREDITS);
-    // A legal anti-battery unit may cost more than the current wallet.
-    // Treat it as a real procurement commitment, not a soft recommendation:
-    // otherwise cheaper infantry or line tanks continually consume its bank.
-    let siege_bank = super::siege_counter::saving_for_counter(
-        brain, rules, obs, budget.free);
+    let ground_line_available = has_ground_line(rules,obs);
+    // A concrete neutral-asset opportunity gets its exact engineer before
+    // ordinary composition or a speculative counter. The budget has already
+    // protected essential building/last-miner commitments.
+    let capture_purchase = if !emergency && !vehicle_claimed
+        && !brain.census.line(ProductionCategory::Infantry).busy()
+        && !brain.director.under_attack_now() && !brain.director.recovering_income()
+    {
+        neutral_asset_engineer(brain,rules,obs,budget.free)
+            .or_else(|| early_oil_engineer(brain,rules,obs,budget.free))
+    } else { None };
+    let capture_claimed = queue_unit(rules,obs,&mut budget,out,capture_purchase);
+    if capture_claimed {
+        brain.engineers.note_bought(obs.tick());
+        log::info!("auto play: neutral_asset_purchase tick={} free={}",obs.tick(),budget.free);
+    }
+    let miner_due = !brain.census.line(ProductionCategory::Vehicle).busy()
+        && !brain.census.harvesters_served()
+        && build::harvester(rules,obs).is_some_and(|(ty,_)|
+            obs.can_build(rules,ty,true)==CanBuild::Yes && obs.has_producer(rules,ty)
+            && budget.free>=obs.cost_of(rules,ty).saturating_add(vehicle_floor));
+    let mut counter_line = None;
+    if !emergency && !vehicle_claimed && brain.yard_reserve==0 && !miner_due
+        && let Some((category,ty,id)) = super::siege_counter::procurement(
+            brain,rules,obs,budget.free,budget.income)
+    {
+        // V53 recovery: never freeze every production line for a speculative
+        // expensive counter. Buy it when affordable from the shared ledger.
+        let price=obs.cost_of(rules,ty);
+        if price<=budget.free && queue_unit(rules,obs,&mut budget,out,Some((ty,id))) {
+            counter_line=Some(category);
+            vehicle_claimed |= category==ProductionCategory::Vehicle;
+            log::info!("auto play: counter_committed tick={} type={} price={}",
+                obs.tick(),ty.id,price);
+        }
+    }
     // Whether the barracks stops this frame.
     //
     // Two failure modes meet here, and the arm has to avoid both:
@@ -220,9 +281,9 @@ pub(super) fn fill_lines(
     let fragile_opening = brain.census.refineries <= 1
         && infantry >= 5 && budget.free < vehicle_floor.saturating_mul(3)
         && !brain.director.under_attack_now();
-    let barracks_holds = fragile_opening || rich_needs_armour
+    let barracks_holds=ground_line_available && (fragile_opening || rich_needs_armour
         || (infantry_full && !rich
-            && (budget.free >= vehicle_floor || a_soldier_would_reset_the_saving));
+            && (budget.free>=vehicle_floor || a_soldier_would_reset_the_saving)));
     // Why the infantry line kept running: the ceiling is only as good as the
     // three numbers it reads. Traced like the build list's own line, so a
     // roster that is four fifths infantry can be attributed instead of guessed.
@@ -252,15 +313,16 @@ pub(super) fn fill_lines(
         && !brain.director.recovering_income()
         && brain.census.refineries > 0
         && brain.census.harvesters > 0;
-    let order = if last_miner_needed {
+    let order = if last_miner_needed || brain.mobilization.floor().is_some()
+        || (brain.director.initialized() && !brain.director.under_attack_now()
+            && budget.free < vehicle_floor.saturating_mul(3)) {
         [
             ProductionCategory::Vehicle,
             ProductionCategory::Infantry,
             ProductionCategory::Aircraft,
             ProductionCategory::Ship,
         ]
-    } else if super::siege_counter::prefers_air_line(brain,rules,obs)
-        || establish_air_cover && budget.free >= COMBAT_MIN_CREDITS {
+    } else if establish_air_cover && budget.free >= COMBAT_MIN_CREDITS {
         // Fill at most two aircraft per airfield before resuming the usual
         // tank-first spending. This is a one-time investment in air coverage,
         // not a permanent rule that starves the ground army.
@@ -285,12 +347,64 @@ pub(super) fn fill_lines(
             ProductionCategory::Ship,
         ]
     };
+    let mut wave_funded = vehicle_claimed || brain.census.line(ProductionCategory::Vehicle).busy();
     for category in order {
-        if siege_bank && !brain.director.under_attack_now() {
-            // Economically functional bases retain the money to buy the
-            // requested counter when its native price is reached. Emergency
-            // home defence and restoration of the last miner run above this.
+        if counter_line==Some(category) || (category == ProductionCategory::Vehicle && vehicle_claimed)
+            || (category == ProductionCategory::Infantry && capture_claimed) {
             continue;
+        }
+        if brain.census.line(category).busy() {
+            continue;
+        }
+        if emergency {
+            let (class, naval) = match category {
+                ProductionCategory::Infantry => (ObjectCategory::Infantry, None),
+                ProductionCategory::Vehicle => (ObjectCategory::Vehicle, Some(false)),
+                ProductionCategory::Aircraft => (ObjectCategory::Aircraft, None),
+                ProductionCategory::Ship => (ObjectCategory::Vehicle, Some(true)),
+                _ => continue,
+            };
+            if !brain.director.under_attack_now() && brain.director.initialized()
+                && (matches!(category, ProductionCategory::Aircraft | ProductionCategory::Ship)
+                    || (category == ProductionCategory::Infantry && (infantry >= 5 ||
+                        (ground_line_available && budget.free < vehicle_floor.saturating_add(INFANTRY_MIN_CREDITS))))) { continue; }
+            let product = fighter(brain, rules, obs, &budget, class, naval, infantry_short);
+            queue_unit(rules, obs, &mut budget, out, product);
+            continue;
+        }
+        // Opening first-wave procurement bypasses optional technology banks,
+        // native team suggestions and speculative specialists. It still
+        // protects the income chain and can answer an actual home raid.
+        if let Some(floor) = brain.mobilization.floor() {
+            if category == ProductionCategory::Vehicle {
+                let second_miner = brain.census.harvesters == 1
+                    && !brain.census.harvesters_served()
+                    && !brain.director.under_attack_now();
+                let additional_miner = if second_miner {
+                    build::harvester(rules, obs).filter(|(ty, _)|
+                        obs.can_build(rules, ty, true) == CanBuild::Yes
+                        && obs.has_producer(rules, ty)
+                        && budget.free >= obs.cost_of(rules, ty).saturating_add(floor))
+                } else { None };
+                let wanted = if additional_miner.is_some() { additional_miner }
+                    else if brain.director.under_attack_now() || budget.free >= floor {
+                        fighter(brain, rules, obs, &budget, ObjectCategory::Vehicle, Some(false), infantry_short)
+                    } else { None };
+                wave_funded = queue_unit(rules, obs, &mut budget, out, wanted);
+                if wave_funded && let Some((ty, _)) = wanted {
+                    log::info!("auto play: mobilization_purchase tick={} type={} free={} floor={}",
+                        obs.tick(), ty.id, budget.free, floor);
+                }
+                continue;
+            }
+            if !brain.director.under_attack_now() {
+                if matches!(category, ProductionCategory::Aircraft | ProductionCategory::Ship) { continue; }
+                // A small screen and confirmed income/capture specialists are
+                // useful; mass infantry must not repeatedly reset tank savings.
+                if category == ProductionCategory::Infantry && !wave_funded
+                    && infantry >= 3 && budget.free < floor.saturating_add(INFANTRY_MIN_CREDITS)
+                { continue; }
+            }
         }
         // An army that already holds its share of infantry stops buying it,
         // so the wallet can reach a vehicle — unless the wallet is so far under
@@ -300,49 +414,66 @@ pub(super) fn fill_lines(
         // against an actually observed infiltration opportunity. Otherwise
         // the opening's five-infantry cap silently blocks every spy when a
         // one-refinery house most needs enemy cash.
-        let urgent_infiltration = category == ProductionCategory::Infantry
-            && !brain.director.under_attack_now()
-            && !brain.director.recovering_income()
-            && early_spy_infiltration(brain, rules, obs, budget.free).is_some();
-        let urgent_capture = category == ProductionCategory::Infantry
-            && (neutral_asset_engineer(brain, rules, obs, budget.free).is_some()
-                || urgent_engineer(brain, rules, obs, budget.free).is_some()
-                || maintenance_engineer(brain, rules, obs, budget.free).is_some());
-        // A useful empty IFV or open-top fortress has a genuine capability
-        // gap when no existing spare soldier can fill its fire port. Permit
-        // *one* rules-derived passenger purchase even if generic infantry
-        // share has reached its ceiling, but not over the strategic lab bank.
+        // Select the actual specialist once. A boolean exception must not
+        // bypass the bank and then fall through into an unrelated rifleman.
+        let capture = if category == ProductionCategory::Infantry {
+            neutral_asset_engineer(brain,rules,obs,budget.free)
+                .or_else(|| early_oil_engineer(brain,rules,obs,budget.free))
+                .or_else(|| urgent_engineer(brain,rules,obs,budget.free))
+                .or_else(|| maintenance_engineer(brain,rules,obs,budget.free))
+        } else { None };
+        let infiltration = if category==ProductionCategory::Infantry
+            && !brain.director.under_attack_now() && !brain.director.recovering_income()
+        { early_spy_infiltration(brain,rules,obs,budget.free) } else { None };
+        if let Some((ty,id))=capture.or(infiltration) {
+            if queue_unit(rules,obs,&mut budget,out,Some((ty,id))) {
+                let traits=census::Traits::of(rules,ty);
+                if traits.engineer { brain.engineers.note_bought(obs.tick()); }
+                else if traits.spy {
+                    brain.next_spy_purchase=obs.tick().saturating_add(
+                        if obs.credits()>=5_000 {450} else {900});
+                }
+                continue;
+            }
+        }
+        // The construction reserve was deducted at function entry. Do not
+        // suppress affordable purchases from the remaining cash a second time.
+        // Expensive optional vehicles are still ranked by product_for when
+        // affordable, but no longer monopolize all idle lines while saving.
         let combo_due = category == ProductionCategory::Infantry
             && combo_passenger_purchase(brain, rules, obs, budget.free).is_some();
-        // The wallet saved for a scarce-map lab should not be silently spent
-        // by ordinary unit ranking, but an engineer or spy with a real mission
-        // may still use its own specialist priority.
-        let bank_for_tech = save_for_tech(brain, rules, obs, &budget);
-        // A *visible, active* heavy battery is an urgent production objective.
-        // The old saving gates skipped the vehicle and air lines completely
-        // and then purchased more cheap infantry while the army died at the
-        // tower. Let a native-buildable counter compete with ordinary saving;
-        // the yard's actual queued/committed money was already reserved above.
-        let siege_due = matches!(category,
-            ProductionCategory::Vehicle | ProductionCategory::Aircraft)
-            && super::siege_counter::purchase(
-                brain, rules, obs, category, budget.free).is_some();
-        let heavy_cost = scarce_advanced_vehicle(brain,rules,obs,budget.income)
-            .map(|(ty,_)|obs.cost_of(rules,ty));
-        let bank_for_heavy = heavy_cost.is_some_and(|cost| budget.free < cost);
-        if (bank_for_tech || bank_for_heavy)
-            && !urgent_infiltration && !urgent_capture && !siege_due { continue; }
         if barracks_holds && category == ProductionCategory::Infantry
-            && !urgent_infiltration && !urgent_capture && !combo_due
+            && !combo_due
         { continue; }
+        // V49 stopgap: discretionary local counters cannot bypass savings,
+        // barracks caps, opening/recovery ownership or a real specialist job.
+        let optional_hold = if brain.director.initialized() && !brain.director.under_attack_now()
+            && category != ProductionCategory::Vehicle && ground_line_available
+            && !brain.census.line(ProductionCategory::Vehicle).busy() && !wave_funded {
+            super::economy::discretionary_floor(budget.free,budget.income,vehicle_floor)
+        } else { 0 };
+        let line_budget = budget.reserving(optional_hold);
+        if line_budget.free <= 0 { continue; }
+        if category == ProductionCategory::Infantry && brain.director.initialized()
+            && !brain.director.under_attack_now() && ground_line_available
+            && infantry >= 5 && infantry_full && !combo_due { continue; }
+        if !combo_due && !brain.mobilization.active()
+            && !brain.campaign.economy_resting()
+            && !(barracks_holds && category == ProductionCategory::Infantry)
+            && let Some(counter) = local_counter_purchase(brain,rules,obs,category,line_budget.free)
+        {
+            if obs.cost_of(rules,counter.0) <= line_budget.free
+                && queue_unit(rules,obs,&mut budget,out,Some(counter)) {
+                if category == ProductionCategory::Vehicle { wave_funded = true; }
+                log::info!("auto play: local_counter_purchase tick={} type={}", obs.tick(),counter.0.id);
+                continue;
+            }
+        }
         // A line holding a product, a queue or a finished object is working and
         // is not given another request; a line with nothing in it — including
         // one the house has not used yet — can be started. Whether the house
         // can make any type of this category at all is `CanBuild`'s answer, and
         // the candidate list below is already filtered by it.
-        if brain.census.line(category).busy() {
-            continue;
-        }
         // A line the house does not own is not idle, it is absent: an aircraft
         // type the prerequisites allow but no airfield can make answers `Yes`
         // to `CanBuild` and is refused at the queue, every frame, for as long
@@ -358,15 +489,16 @@ pub(super) fn fill_lines(
             brain,
             rules,
             obs,
-            &budget,
+            &line_budget,
             category,
             infantry_short,
             vehicle_floor,
-        );
+        ).filter(|(ty,_)| obs.cost_of(rules,ty) <= line_budget.free);
         // Only a request the shared ledger accepted counts as purchased.
         // The local budget is mutable: each category sees the credits already
         // promised to every earlier category *and* to the yard this frame.
         let queued = queue_unit(rules, obs, &mut budget, out, wanted);
+        if queued && category == ProductionCategory::Vehicle { wave_funded = true; }
         if queued && let Some((ty, _)) = wanted {
             let traits = census::Traits::of(rules, ty);
             if traits.engineer {
@@ -382,11 +514,12 @@ pub(super) fn fill_lines(
     }
 }
 
+/// Restart income when it is the affordable dependency of a future MCV.
+fn prefer_last_miner(free: i32, yard: i32, miner: i32) -> bool {
+    free < yard.saturating_add(miner) && (miner <= free || yard > free)
+}
+
 /// Whether the army is short of its infantry share.
-///
-/// A house with no army at all is short of it: `fighters.max(1)` makes the
-/// first soldier the floor's, rather than leaving an empty army's share at
-/// zero and letting the war factory decide what the opening is made of.
 fn infantry_below_floor(census: &Census) -> bool {
     infantry_below_share(census, INFANTRY_SHARE_PERCENT)
 }
@@ -640,35 +773,27 @@ fn tool<'r>(
 fn neutral_asset_engineer<'r>(
     brain: &AssistBrain, rules: &'r RuleSet, obs: &Observation<'_>, free: i32,
 ) -> Option<(&'r ObjectType, InternedId)> {
-    // A large starting wallet or captured oil field can fund engineers
-    // before a conventional refinery exists; do not require harvesters when
-    // the purpose is unlocking an abandoned technology tree.
-    if free < 1_500 || (brain.census.refineries == 0 && free < 10_000)
-        || brain.director.under_attack_now() || brain.director.recovering_income()
-        || !brain.engineers.may_buy(obs.tick())
-    { return None; }
-    let objectives = obs.neutral_structures()
-        .filter(|site| obs.is_cell_visible(site.cell.0, site.cell.1))
-        .filter(|site| obs.object_type(rules, site.type_id).is_some_and(|ty|
-            ty.capturable && (ty.build_const_eligible()
-                || ty.factory_type().is_some()
-                || rules.build_tech_types.iter().any(|name| *name == ty.id)
+    if brain.director.under_attack_now() || brain.director.recovering_income()
+        || !brain.engineers.may_buy(obs.tick()) { return None; }
+    let engineer = build::class_types(rules,obs,ObjectCategory::Infantry)
+        .filter(|(ty,_)| census::Traits::of(rules,ty).engineer)
+        .filter(|(ty,_)| obs.can_build(rules,ty,true)==CanBuild::Yes && obs.has_producer(rules,ty)
+            && obs.cost_of(rules,ty)<=free)
+        .min_by_key(|(ty,id)|(obs.cost_of(rules,ty),*id))?;
+    let cap = if free>=obs.cost_of(rules,engineer.0).saturating_mul(4) {2} else {1};
+    let live=brain.census.units.iter().filter(|u|u.traits.engineer && !u.in_service()).count();
+    if live>=cap { return None; }
+    let visible:Vec<_>=obs.visible_enemy_entities().collect();
+    let objectives=obs.neutral_structures()
+        .filter(|site|obs.is_cell_visible(site.cell.0,site.cell.1))
+        .filter(|site|obs.object_type(rules,site.type_id).is_some_and(|ty|
+            ty.capturable && (ty.build_const_eligible() || ty.factory_type().is_some()
+                || rules.build_tech_types.iter().any(|name|*name==ty.id)
                 || super::orders::strategic_public_asset(ty))))
-        .filter(|site| !obs.visible_enemy_entities().any(|enemy|
-            super::squared_distance(enemy.cell, site.cell) <= 8 * 8))
-        .take(12).count();
-    // V37 keeps a short, visible-object mission queue across production
-    // frames. A tech prize must not lose its engineer slot simply because
-    // ordinary production ran one frame before `orders::captures`.
-    let operations = brain.asset_ops.visible_opportunities(obs);
-    let objectives = objectives.max(operations);
-    if objectives == 0 { return None; }
-    let engineers = brain.census.units.iter().filter(|unit| unit.traits.engineer).count();
-    if engineers >= objectives.saturating_add(1).clamp(2, 4) { return None; }
-    build::class_types(rules, obs, ObjectCategory::Infantry)
-        .filter(|(ty, _)| census::Traits::of(rules, ty).engineer)
-        .filter(|(ty, _)| obs.cost_of(rules, ty) <= free)
-        .min_by_key(|(ty, id)| (obs.cost_of(rules, ty), *id))
+        .filter(|site|brain.asset_ops.purchase_ready(site.entity_id))
+        .filter(|site|super::asset_ops::capture_opportunity(brain,rules,obs,site,&visible))
+        .take(cap).count();
+    (live<objectives).then_some(engineer)
 }
 
 /// A siege without any engineer can surround a capturable yard for minutes
@@ -755,25 +880,6 @@ fn maintenance_engineer<'r>(
         .min_by_key(|(ty,id)| (obs.cost_of(rules,ty), *id))
 }
 
-/// Small ore fields cannot replace endless low-tier casualties. Once a
-/// defensible army and a working miner exist, protect the next genuine lab
-/// or radar purchase rather than buying one cheap infantry every tick.
-fn save_for_tech(
-    brain: &AssistBrain, rules: &RuleSet,
-    obs: &Observation<'_>, budget: &Budget,
-) -> bool {
-    if obs.tick() < 3_000 || brain.director.under_attack_now()
-        || brain.director.recovering_income() || brain.census.fighters < 12
-        || brain.census.refineries == 0 || brain.census.harvesters == 0
-        || build::count_in(obs, rules, &brain.census, &rules.build_tech_types) > 0
-        || !budget.income.is_some_and(|income| income > 0 && income <= 700)
-        || brain.ore_known.len() >= 18
-    { return false; }
-    let next = build::tech_building(rules, obs).or_else(||
-        build::first_buildable(rules, obs, &rules.build_radar_types));
-    next.is_some_and(|(ty,_)| budget.free < obs.cost_of(rules,ty))
-}
-
 /// The high-tech combat unit the already-built laboratory has made
 /// *actually* legal. On a thin ore field an endless cheap infantry queue is a
 /// debt against one genuine heavy tank. Choose from the native buildable
@@ -782,7 +888,7 @@ fn scarce_advanced_vehicle<'r>(
     brain: &AssistBrain, rules: &'r RuleSet,
     obs: &Observation<'_>, income: Option<i32>,
 ) -> Option<(&'r ObjectType, InternedId)> {
-    if obs.tick() < 3_000 || brain.director.under_attack_now()
+    if brain.mobilization.active() || obs.tick() < 3_000 || brain.director.under_attack_now()
         || brain.director.recovering_income() || brain.census.fighters < 12
         || brain.census.refineries == 0 || brain.census.harvesters == 0
         || build::count_in(obs,rules,&brain.census,&rules.build_tech_types) == 0
@@ -792,6 +898,7 @@ fn scarce_advanced_vehicle<'r>(
     build::class_types(rules,obs,ObjectCategory::Vehicle)
         .filter(|(ty,_)| !ty.naval && !ty.resource_gatherer
             && census::Traits::of(rules,ty).combat
+            && obs.can_build(rules,ty,true)==CanBuild::Yes && obs.has_producer(rules,ty)
             && super::doctrine::may_produce(brain,rules,obs,ty))
         .filter(|(ty,_)| (1_500..=3_400).contains(&obs.cost_of(rules,ty)))
         .min_by_key(|(ty,id)| (
@@ -918,27 +1025,15 @@ fn product_for<'r>(
     // that asks for an engineer or a spy is answered here — no ranking over
     // combat weights can ask for those at all. It is unchecked (§ the reader),
     // so the wallet is this caller's guard.
-    // Recover the construction yard before any native product preference:
-    // without a yard the economy cannot replace buildings at all. A lost
-    // yard is a different job from buying an optional second MCV and must
-    // never be blocked by the strategic expansion gate.
-    if category == ProductionCategory::Vehicle
-        && !super::expand::yard_stands(&brain.census)
-        && !super::expand::owns_yard_maker(&brain.census)
-        && let Some(maker) = super::expand::yard_maker(rules, obs)
-    {
-        return Some(maker);
-    }
-    // Restore the *last* harvester before satisfying native team wishes.
-    // A chosen combat vehicle can be cheaper and would otherwise keep the
-    // wallet below the price of the sole miner that restores future income.
-    if category == ProductionCategory::Vehicle
-        && brain.director.recovering_income()
-        && brain.census.refineries > 0
-        && brain.census.harvesters == 0
-        && let Some(found) = build::harvester(rules, obs)
-    {
-        return Some(found);
+    if category == ProductionCategory::Vehicle && !brain.census.harvesters_served()
+        && let Some(found) = build::harvester(rules,obs).filter(|(ty,_)|
+            obs.can_build(rules,ty,true)==CanBuild::Yes && obs.has_producer(rules,ty)) {
+        // An affordable next miner is a better investment than a speculative
+        // extra tank. On a working chain retain the price of a core vehicle.
+        let price = obs.cost_of(rules,found.0);
+        if brain.census.harvesters == 0 || budget.free >= price.saturating_add(vehicle_floor) {
+            return Some(found);
+        }
     }
     // A damaged tank force needs an actual repair IFV chassis, not just an
     // engineer that would board one if it happened to exist. Limit this to
@@ -971,13 +1066,6 @@ fn product_for<'r>(
             .min_by_key(|(ty,_)| (obs.cost_of(rules, ty), ty.id.clone()))
     {
         return Some(found);
-    }
-    if matches!(category, ProductionCategory::Vehicle | ProductionCategory::Aircraft)
-        && let Some(decision) = super::siege_counter::purchase(brain,rules,obs,category,budget.free)
-    {
-        // `None` intentionally holds the line for an unlocked counter it
-        // cannot yet pay for; infantry/repair spending retain their own gates.
-        return decision;
     }
     if category == ProductionCategory::Vehicle
         && let Some((ty,id)) = scarce_advanced_vehicle(brain,rules,obs,budget.income)
@@ -1072,6 +1160,12 @@ fn product_for<'r>(
     {
         return Some(specialist);
     }
+    if category == ProductionCategory::Vehicle && budget.income.is_some_and(|rate| rate >= 900)
+        && super::expand::wants_a_maker(brain,rules,obs,budget)
+        && let Some(maker) = super::expand::yard_maker(rules,obs)
+        && obs.can_build(rules,maker.0,true)==CanBuild::Yes && obs.has_producer(rules,maker.0) {
+        return Some(maker);
+    }
     if let Some(found) = chosen_product(brain, rules, obs, category, budget.free)
         && (category != ProductionCategory::Aircraft
             || airship_due(brain, rules, obs, found.0))
@@ -1085,24 +1179,6 @@ fn product_for<'r>(
     }
 
     if category == ProductionCategory::Vehicle {
-        // A maker bought while the yard stands is for a second base, not for the
-        // one that stands. The war factory spends one cycle on it, and it walks
-        // out and deploys where the house has ground of its own
-        // (`super::expand`).
-        if super::expand::wants_a_maker(brain, rules, obs, budget)
-            && let Some(maker) = super::expand::yard_maker(rules, obs)
-        {
-            return Some(maker);
-        }
-        // A harvester first while the bays are short of them, but only one the
-        // house can actually buy: a harvester that needs a bay the house has
-        // not built (retail's `[CMIN] Prerequisite=GAWEAP,PROC`) must not hold
-        // the line idle while the army waits for a tank.
-        if !brain.census.harvesters_served()
-            && let Some(found) = build::harvester(rules, obs)
-        {
-            return Some(found);
-        }
         // The war factory waits for the price of one line vehicle, not a heavy
         // one: below it there is nothing it could start, and above it the
         // barracks has stopped spending the wallet it is waiting for
@@ -1196,45 +1272,25 @@ fn product_for<'r>(
 /// Acquiring the unit is not an order to capture: `orders::captures` still
 /// checks the entire approach and escort safety before risking its life.
 fn early_oil_engineer<'r>(
-    brain: &AssistBrain,
-    rules: &'r RuleSet,
-    obs: &Observation<'_>,
-    credits: i32,
+    brain: &AssistBrain, rules: &'r RuleSet, obs: &Observation<'_>, credits: i32,
 ) -> Option<(&'r ObjectType, InternedId)> {
-    if credits < 1_000 || brain.census.refineries == 0
+    if brain.director.under_attack_now() || brain.director.recovering_income()
         || !brain.engineers.may_buy(obs.tick())
-        || brain.census.units.iter().any(|unit| unit.traits.engineer)
-        || !brain.census.units.iter().any(|unit| unit.traits.scout) {
+        || brain.census.units.iter().any(|u|u.traits.engineer && !u.in_service()) {
         return None;
     }
-    let safe_oil = obs.capturable_buildings(rules).any(|target| {
-        // An enemy engineer taking the derrick does not erase its income or
-        // our right to take it back. Require live sight of an enemy-held one;
-        // a neutral derrick only needs to be explored previously.
-        (!obs.is_hostile(target.entity_id)
-            || obs.is_cell_visible(target.cell.0, target.cell.1))
-            && obs.is_cell_revealed(target.cell.0, target.cell.1)
-            && obs.object_type(rules, target.type_id)
-                .is_some_and(|ty| ty.produce_cash_amount > 0)
-            && !obs.visible_enemy_entities().any(|enemy| {
-                enemy.entity_id != target.entity_id
-                    && super::squared_distance(enemy.cell, target.cell) <= 12 * 12
-            })
-            && !brain.census.enemies.iter().any(|enemy| {
-                // The prize itself is an enemy-owned building now, not the
-                // enemy's main base guarding it; do not block recapture just
-                // because the income building has changed hands.
-                enemy.entity_id != target.entity_id
-                    && obs.object_type(rules, enemy.type_id)
-                        .is_some_and(|ty| ty.category == ObjectCategory::Building)
-                    && super::squared_distance(enemy.cell, target.cell) <= 12 * 12
-            })
-    });
-    if !safe_oil { return None; }
-    build::class_types(rules, obs, ObjectCategory::Infantry)
-        .filter(|(ty, _)| census::Traits::of(rules, ty).engineer)
-        .filter(|(ty, _)| obs.cost_of(rules, ty) <= credits)
-        .min_by_key(|(ty, id)| (obs.cost_of(rules, ty), *id))
+    let engineer=build::class_types(rules,obs,ObjectCategory::Infantry)
+        .filter(|(ty,_)|census::Traits::of(rules,ty).engineer)
+        .filter(|(ty,_)|obs.can_build(rules,ty,true)==CanBuild::Yes && obs.has_producer(rules,ty)
+            && obs.cost_of(rules,ty)<=credits)
+        .min_by_key(|(ty,id)|(obs.cost_of(rules,ty),*id))?;
+    let visible:Vec<_>=obs.visible_enemy_entities().collect();
+    let safe_oil=obs.capturable_buildings(rules).any(|target|
+        obs.is_cell_visible(target.cell.0,target.cell.1)
+        && obs.object_type(rules,target.type_id).is_some_and(|ty|ty.produce_cash_amount>0)
+        && brain.asset_ops.purchase_ready(target.entity_id)
+        && super::asset_ops::capture_opportunity(brain,rules,obs,&target,&visible));
+    safe_oil.then_some(engineer)
 }
 
 /// Buy one spy when scouting has found a *currently visible* infiltratable
@@ -1366,9 +1422,11 @@ fn chosen_product<'r>(
         ProductionCategory::Building | ProductionCategory::Defense => return None,
     };
     let (ty, type_id) = obs.chosen_product(rules, object_category)?;
-    if ty.resource_gatherer
+    if crate::sim::production::category_for_object(ty) != category
+        || ty.resource_gatherer || !air_stock_allows(rules,obs,ty)
         || !super::doctrine::may_produce(brain,rules,obs,ty)
-        || obs.can_build(rules, ty, true) == crate::sim::production::CanBuild::No
+        || obs.can_build(rules, ty, true) != CanBuild::Yes
+        || !obs.has_producer(rules, ty)
         || credits < obs.cost_of(rules, ty)
     {
         return None;
@@ -1410,7 +1468,7 @@ fn airship_due(
 /// needs positive verses against its armour. A Kirov, Prism or Apocalypse in
 /// a mod with a new name retains its tactical properties.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ThreatClass { Airborne, Saboteur, Explosive, Standoff, HeavyArmour }
+enum ThreatClass { Airborne, Saboteur, Explosive, MindControl, Standoff, HeavyArmour }
 
 fn threat_class(rules: &RuleSet, ty: &ObjectType) -> Option<ThreatClass> {
     // Most retail bombers including the Kirov are VehicleTypes, not
@@ -1426,6 +1484,9 @@ fn threat_class(rules: &RuleSet, ty: &ObjectType) -> Option<ThreatClass> {
         || (ty.explodes && ty.death_weapon.is_some()) {
         return Some(ThreatClass::Explosive);
     }
+    if ty.category != ObjectCategory::Building && super::tactics::mind_control_reach(rules, ty).is_some() {
+        return Some(ThreatClass::MindControl);
+    }
     if ty.category != ObjectCategory::Vehicle { return None; }
     let reach = (0..ty.weapon_record_count()).filter_map(|slot| {
         let weapon = ty.weapon_at(slot).and_then(|name| rules.weapon(name))?;
@@ -1436,81 +1497,146 @@ fn threat_class(rules: &RuleSet, ty: &ObjectType) -> Option<ThreatClass> {
     else { None }
 }
 
-fn counter_quality(
-    rules: &RuleSet, candidate: &ObjectType,
-    enemy: &ObjectType, kind: ThreatClass,
+fn counter_weapon_quality(
+    rules: &RuleSet, candidate: &ObjectType, enemy: &ObjectType,
+    kind: ThreatClass, weapon: &crate::rules::weapon_type::WeaponType,
 ) -> i32 {
+    if weapon.never_use || weapon.damage <= 0 || weapon.suicide || weapon.spawner
+        || weapon.area_fire { return 0; }
+    let Some(projectile) = rules.weapon_projectile(weapon) else { return 0; };
+    let air = enemy.category == ObjectCategory::Aircraft || enemy.balloon_hover || enemy.jumpjet;
+    if !(if air { projectile.aa } else { projectile.ag }) { return 0; }
+    let Some(head) = weapon.warhead.as_deref().and_then(|name| rules.warhead(name))
+        else { return 0; };
+    if head.mind_control || head.parasite || head.ivan_bomb || head.is_locomotor { return 0; }
+    let interaction = head.interaction(enemy.armor_id());
+    let mult = f64::from_bits(interaction.multiplier().bits());
+    if !interaction.can_fire() || !mult.is_finite() || mult <= 0.0 { return 0; }
+    let reach = super::siege_counter::max_range_cells(weapon);
     let hostile_reach = super::advance::weapon_range_cells(rules, enemy, false);
-    (0..candidate.weapon_record_count()).filter_map(|slot| {
-        let weapon = candidate.weapon_at(slot).and_then(|name| rules.weapon(name))?;
-        if weapon.never_use || weapon.damage <= 0 { return None; }
-        let projectile = rules.weapon_projectile(weapon)?;
-        let valid = match kind {
-            ThreatClass::Airborne => projectile.aa,
-            ThreatClass::Saboteur | ThreatClass::Explosive
-                | ThreatClass::Standoff | ThreatClass::HeavyArmour => projectile.ag,
-        };
-        if !valid { return None; }
-        let head = weapon.warhead.as_deref().and_then(|name| rules.warhead(name))?;
-        let mult = f64::from_bits(head.interaction(enemy.armor_id()).multiplier().bits());
-        if mult <= 0.0 { return None; }
-        let reach = super::advance::weapon_reach_cells(weapon);
-        if kind == ThreatClass::Standoff && reach + 2 < hostile_reach { return None; }
-        // An explosive truck must be intercepted *before* its detonation
-        // radius. A point-blank gun is not an economic counter even when its
-        // theoretical DPS is high.
-        if kind == ThreatClass::Explosive && reach < 5 { return None; }
-        let damage = (f64::from(weapon.damage) * mult).clamp(0.0, 8_000.0) as i32;
-        let output = damage.saturating_mul(90) / weapon.rof.max(15);
-        Some(output.saturating_add(reach.saturating_mul(4)))
-    }).max().unwrap_or(0)
+    if kind == ThreatClass::Standoff && reach + 2 < hostile_reach { return 0; }
+    if kind == ThreatClass::Explosive && reach < 5 { return 0; }
+    if kind == ThreatClass::MindControl && !candidate.immune_to_psionics
+        && reach <= super::tactics::mind_control_reach(rules, enemy).unwrap_or(0) + 1
+    { return 0; }
+    let damage = (f64::from(weapon.damage) * mult).clamp(0.0, 8_000.0) as i32;
+    let output = damage.saturating_mul(weapon.burst.max(1)).saturating_mul(90) / weapon.rof.max(15);
+    // A token positive Verses is not a useful counter.
+    if output < 8 { return 0; }
+    output.saturating_add(reach.saturating_mul(4))
+}
+
+fn counter_quality(rules: &RuleSet, candidate: &ObjectType,
+    enemy: &ObjectType, kind: ThreatClass) -> i32 {
+    // A newly bought Gunner is empty: alternate passenger modes are not
+    // simultaneously available. Owned gunners use their actual active weapon.
+    let count = if candidate.gunner { 1 } else { candidate.weapon_record_count() };
+    (0..count).filter_map(|slot| candidate.weapon_at(slot).and_then(|name| rules.weapon(name)))
+        .map(|weapon| counter_weapon_quality(rules, candidate, enemy, kind, weapon))
+        .max().unwrap_or(0)
+}
+
+fn local_threats<'r>(brain: &AssistBrain, rules: &'r RuleSet, obs: &Observation<'_>)
+    -> Vec<(crate::sim::control::observation::EnemyEntity, &'r ObjectType, ThreatClass)>
+{
+    // Current visibility, not the coordinates of a stale census sighting.
+    obs.visible_enemy_entities().filter(|enemy| {
+        brain.census.base_cell.is_some_and(|base|
+            super::advance::cell_distance(enemy.cell,base) <= 44)
+        || brain.push_target.is_some_and(|(_,_,front)|
+            super::advance::cell_distance(enemy.cell,front) <= 20)
+    }).filter_map(|enemy| {
+        let ty = obs.entity_type(rules, enemy.entity_id)?;
+        let kind = threat_class(rules, ty)?;
+        Some((enemy,ty,kind))
+    }).collect()
 }
 
 fn emergency_counter<'r>(
-    brain: &AssistBrain,
-    rules: &'r RuleSet,
-    obs: &Observation<'_>,
+    brain: &AssistBrain, rules: &'r RuleSet, obs: &Observation<'_>,
     candidates: &[(&'r ObjectType, InternedId, i32)],
 ) -> Option<(&'r ObjectType, InternedId)> {
-    let threat = brain.census.enemies.iter()
-        .filter(|enemy| obs.is_cell_visible(enemy.cell.0, enemy.cell.1))
-        .filter(|enemy| {
-            brain.census.base_cell.is_some_and(|base| {
-                super::advance::cell_distance(enemy.cell,base) <= 44
-            }) || brain.push_target.is_some_and(|(_,_,front)| {
-                super::advance::cell_distance(enemy.cell, front) <= 20
-            })
-        })
-        .filter_map(|enemy| {
-            let ty = obs.object_type(rules, enemy.type_id)?;
-            let kind = threat_class(rules,ty)?;
-            Some((ty, kind))
-        })
-        .max_by_key(|(ty,kind)| (
-            match kind {
-                ThreatClass::Explosive => 5, ThreatClass::Saboteur => 4,
-                ThreatClass::Airborne => 3, ThreatClass::Standoff => 2,
-                ThreatClass::HeavyArmour => 1,
-            },ty.strength))?;
-    let (enemy, kind) = threat;
-    // If the house already fields two real counters per visible dangerous
-    // target, do not build nothing but anti-air trucks all match.
-    let protected = brain.census.units.iter()
-        .filter(|unit| unit.controllable() && unit.traits.combat)
-        .filter(|unit| obs.object_type(rules, unit.type_id)
-            .is_some_and(|ty| counter_quality(rules,ty,enemy,kind)>0))
-        .count();
-    let attackers = brain.census.enemies.iter()
-        .filter(|unit| obs.is_cell_visible(unit.cell.0,unit.cell.1))
-        .filter(|unit| obs.object_type(rules,unit.type_id)
-            .is_some_and(|ty| threat_class(rules,ty)==Some(kind)))
-        .count();
-    if protected >= attackers.saturating_mul(2).max(2) { return None; }
-    candidates.iter().copied().filter_map(|(ty,id,_)| {
-        let score = counter_quality(rules,ty,enemy,kind);
-        (score>0).then_some((score, ty, id))
-    }).max_by_key(|(score,ty,id)| (*score, ty.strength, std::cmp::Reverse(*id)))
-        .map(|(_,ty,id)| (ty,id))
+    if candidates.is_empty() { return None; }
+    let threats = local_threats(brain,rules,obs);
+    counter_for_threats(brain,rules,obs,candidates,&threats)
+}
+
+fn counter_for_threats<'r>(
+    brain: &AssistBrain, rules: &'r RuleSet, obs: &Observation<'_>,
+    candidates: &[(&'r ObjectType, InternedId, i32)],
+    threats: &[(crate::sim::control::observation::EnemyEntity, &'r ObjectType, ThreatClass)],
+) -> Option<(&'r ObjectType, InternedId)> {
+    if candidates.is_empty() || threats.is_empty() { return None; }
+    // Cover the most urgent unsatisfied class, not the most urgent object
+    // forever. A covered demolition truck must not hide an uncovered Kirov.
+    let priority = |kind: ThreatClass| match kind {
+        ThreatClass::Explosive => 6, ThreatClass::Saboteur => 5,
+        ThreatClass::MindControl => 4, ThreatClass::Airborne => 3,
+        ThreatClass::Standoff => 2, ThreatClass::HeavyArmour => 1,
+    };
+    let mut ranked = threats.iter().collect::<Vec<_>>();
+    ranked.sort_by_key(|(target, ty, kind)| (
+        std::cmp::Reverse(priority(*kind)),
+        brain.census.base_cell.map_or(i32::MAX, |home|
+            super::advance::cell_distance(target.cell, home)),
+        std::cmp::Reverse(ty.strength), target.entity_id));
+    let mut considered = Vec::new();
+    for &(target, enemy, kind) in ranked {
+        // Same type in the same local fight shares its counter budget.
+        if considered.iter().any(|(id, cell)| *id == target.type_id
+            && super::advance::cell_distance(*cell, target.cell) <= 24) { continue; }
+        if considered.len() >= 6 { break; }
+        considered.push((target.type_id, target.cell));
+        let attackers = threats.iter().filter(|(other,ty,k)| *k == kind
+            && ty.id == enemy.id && super::advance::cell_distance(other.cell,target.cell) <= 24).count();
+        let needed = attackers.saturating_mul(2).clamp(2, 6);
+        let protected = brain.census.units.iter().filter(|unit|
+            unit.traits.combat && !unit.traits.spawned && !unit.hand
+            && unit.points > 0 && unit.health_permille > 0
+            && !unit.traits.harvester && !unit.traits.yard_maker)
+            .filter(|unit| {
+                let Some(ty) = obs.object_type(rules,unit.type_id) else { return false; };
+                let quality = if ty.gunner {
+                    obs.active_gunner_weapon(rules,unit.entity_id).map_or(0, |weapon|
+                        counter_weapon_quality(rules,ty,enemy,kind,weapon))
+                } else { counter_quality(rules,ty,enemy,kind) };
+                quality > 0 && obs.can_hurt(rules,unit.entity_id,target.entity_id)
+            }).take(needed).count();
+        if protected >= needed { continue; }
+        let chosen = candidates.iter().copied().filter_map(|(ty,id,cost)| {
+            let quality = counter_quality(rules,ty,enemy,kind);
+            (quality > 0 && cost > 0).then_some((quality,ty,id,cost))
+        }).max_by_key(|(quality,ty,id,cost)| (
+            i64::from(*quality) * 1_000 / i64::from(*cost), *quality, ty.strength,
+            std::cmp::Reverse(*id)))
+            .map(|(_,ty,id,_)| (ty,id));
+        if chosen.is_some() { return chosen; }
+    }
+    None
+}
+
+/// Bring visible local threats ahead of native team suggestions. Keep the
+/// ordinary specialist quotas and the shared budget; no omniscient roster.
+fn local_counter_purchase<'r>(brain: &AssistBrain, rules: &'r RuleSet,
+    obs: &Observation<'_>, category: ProductionCategory, free: i32)
+    -> Option<(&'r ObjectType, InternedId)>
+{
+    if free <= 0 || !matches!(category, ProductionCategory::Infantry | ProductionCategory::Vehicle
+        | ProductionCategory::Aircraft) || brain.census.enemies.is_empty() { return None; }
+    let threats = local_threats(brain,rules,obs);
+    if threats.is_empty() { return None; }
+    let class = category.object_category();
+    let candidates: Vec<_> = build::class_types(rules,obs,class)
+        .filter(|(ty,_)| !ty.naval && super::orders::is_combat_unit(rules,ty)
+            && super::doctrine::may_produce(brain,rules,obs,ty)
+            && obs.can_build(rules,ty,true) == CanBuild::Yes && obs.has_producer(rules,ty)
+            && air_stock_allows(rules,obs,ty)
+            && (class != ObjectCategory::Aircraft || airship_due(brain,rules,obs,ty)))
+        .filter_map(|(ty,id)| {
+            let cost = obs.cost_of(rules,ty);
+            (cost > 0 && cost <= free).then_some((ty,id,cost))
+        }).collect();
+    counter_for_threats(brain,rules,obs,&candidates,&threats)
 }
 
 /// The fighting type of `category` the line should start next.
@@ -1541,58 +1667,40 @@ fn fighter<'r>(
     } else {
         unit_ceiling(budget.free)
     };
+    let emergency = brain.director.emergency_spending(obs);
     let affordable: Vec<(&ObjectType, InternedId, i32)> = build::class_types(rules, obs, category)
         .filter(|(ty, _)| naval.is_none_or(|wanted| ty.naval == wanted))
         .filter(|(ty, _)| super::orders::is_combat_unit(rules, ty))
+        .filter(|(ty, _)| obs.can_build(rules, ty, true) == CanBuild::Yes && obs.has_producer(rules, ty))
         .filter(|(ty, _)| super::doctrine::may_produce(brain,rules,obs,ty))
+        .filter(|(ty, _)| air_stock_allows(rules,obs,ty))
         .filter(|(ty, _)| category != ObjectCategory::Aircraft
             || airship_due(brain, rules, obs, ty))
         .filter_map(|(ty, type_id)| {
             let cost = obs.cost_of(rules, ty);
             (cost <= ceiling).then_some((ty, type_id, cost))
         })
+        .filter(|(ty, _, _)| !emergency || (obs.has_producer(rules, ty)
+            && !matches!(super::doctrine::duty(rules, ty),
+                super::doctrine::Duty::BombPlanter | super::doctrine::Duty::Disposable)))
         .collect();
-    if affordable.is_empty() {
-        return None;
-    }
-
     // Hard threats demand a matching weapon, not simply more army points.
     // This runs before the normal price/role scorer but yields once two real
     // counter-capable units exist per visible high-threat attacker.
-    if let Some((ty,id)) = emergency_counter(brain, rules, obs, &affordable) {
+    if brain.director.under_attack_now()
+        && let Some((ty,id)) = emergency_counter(brain, rules, obs, &affordable) {
         return Some((ty,id));
     }
-
-    // The previous push identified a real, visible battery that outranges
-    // everything in the fist. Buy an unlocked standoff vehicle rather than
-    // another short-range tank to lose under the guns. A siege asset is only
-    // bought when affordable; other categories keep their normal flow.
-    if category == ObjectCategory::Vehicle && brain.push_gate == "need-siege" {
-        // Use the reach measured at the *current attack target*. A huge gun
-        // on the opposite edge of the map must not make every affordable
-        // artillery candidate appear inadequate.
-        let target_reach = brain.siege_reach.unwrap_or(0);
-        let defended = brain.push_target.map(|(_,_,cell)| cell);
-        if let Some((ty,id,_)) = affordable.iter().copied()
-            .filter(|(ty,_,_)| (0..ty.weapon_record_count()).any(|slot| {
-                let Some(weapon) = ty.weapon_at(slot)
-                    .and_then(|name| rules.weapon(name)) else { return false; };
-                let Some(warhead) = weapon.warhead.as_deref()
-                    .and_then(|name| rules.warhead(name)) else { return false; };
-                !weapon.never_use
-                    && super::advance::weapon_reach_cells(weapon) > target_reach + 1
-                    && defended.is_some_and(|center| brain.census.enemies.iter().any(|enemy| {
-                        let Some(defense) = obs.object_type(rules, enemy.type_id)
-                        else { return false; };
-                        defense.is_base_defense
-                            && super::advance::cell_distance(center, enemy.cell) <= 14
-                            && f64::from_bits(warhead.interaction(defense.armor_id())
-                                .multiplier().bits()) > 0.0
-                    }))
-            }))
-            .min_by_key(|(_,id,cost)| (brain.census.type_count(*id), *cost, *id))
-        { return Some((ty,id)); }
+    if category == ObjectCategory::Vehicle && naval == Some(false)
+        && brain.mobilization.floor().is_some()
+    {
+        if let Some(line) = super::mobilization::vehicle(rules, obs, budget.free) { return Some(line); }
+        if !brain.director.under_attack_now() { return None; }
     }
+    if affordable.is_empty() { return None; }
+
+    // Specific anti-battery procurement has one owner in fill_lines.
+    // Do not reopen an uncapped siege-only purchase path here.
 
     // A campaign which has already secured income converts surplus into
     // endgame strength. This reads the live rule-derived role weights and the
@@ -1820,6 +1928,29 @@ fn has_aircraft_factory(rules: &RuleSet, obs: &Observation<'_>) -> bool {
     })
 }
 
+fn has_ground_line(rules: &RuleSet, obs: &Observation<'_>) -> bool {
+    build::class_types(rules,obs,ObjectCategory::Vehicle).any(|(ty,_)|
+        !ty.naval && super::orders::is_combat_unit(rules,ty)
+        && obs.can_build(rules,ty,true)==CanBuild::Yes && obs.has_producer(rules,ty))
+}
+
+pub(super) fn air_stock_allows(rules: &RuleSet, obs: &Observation<'_>, ty: &ObjectType) -> bool {
+    if !ty.airport_bound { return true; }
+    let mut pads = 0usize;
+    let mut stock = 0usize;
+    for entity in obs.own_entities().filter(|e| e.health > 0) {
+        let Some(owned) = obs.object_type(rules,entity.type_id) else { continue; };
+        if owned.category == ObjectCategory::Aircraft && owned.airport_bound { stock += 1; }
+        if owned.factory_type() == Some(crate::rules::object_type::FactoryType::AircraftType)
+            && !obs.building_under_construction(entity.entity_id) {
+            pads = pads.saturating_add(owned.number_of_docks.max(0) as usize);
+        }
+    }
+    // With a mod's unknown pad layout defer to native CanBuild rather than
+    // invent a zero capacity. Existing docked/servicing aircraft are stock.
+    pads == 0 || stock < pads
+}
+
 fn queue_unit(
     rules: &RuleSet,
     obs: &Observation<'_>,
@@ -1830,6 +1961,8 @@ fn queue_unit(
     let Some((ty, type_id)) = wanted else {
         return false;
     };
+    if obs.can_build(rules, ty, true) != CanBuild::Yes || !obs.has_producer(rules, ty)
+        || !air_stock_allows(rules,obs,ty) { return false; }
     let cost = obs.cost_of(rules, ty);
     if !budget.try_commit(cost) {
         return false;
@@ -1908,6 +2041,29 @@ mod tests {
         });
         assert_eq!(first, Some("CMIN"),
             "the war factory buys income before the infantry line spends it: {:?}", out.intents);
+    }
+
+    #[test]
+    fn a_buildable_replacement_mcv_gets_the_last_three_thousand_credits() {
+        let rules = crate::rules::retail_ini_fixture::retail_rulesmd_rules().expect("retail rules");
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xA17);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let owner = sim.interner.intern("Americans");
+        for (name, x, y) in [
+            ("GAWEAP", 8, 8), ("GADEPT", 16, 8), ("GAPILE", 16, 16),
+        ] {
+            sim.spawn_object(name, "Americans", x, y, 255, &rules).expect(name);
+        }
+        let mut brain = AssistBrain::new(0xA17);
+        brain.census = ledger(&rules, &sim, owner);
+        brain.director.observe(0, super::super::strategy::Signals::default());
+        let obs = Observation::new(&sim, owner);
+        let budget = Budget { free: 3_000, committed: 0, income: None };
+        let mut out = Outbox::default();
+        fill_lines(&mut brain, &rules, &obs, &budget, &mut out);
+        let type_id = sim.interner.get("AMCV").expect("Allied MCV");
+        assert_eq!(out.intents, vec![Intent::QueueProduction { type_id }]);
     }
 
     #[test]
@@ -2798,6 +2954,25 @@ mod v17_faction_tests {
 #[cfg(all(test, tests_sim_p_s))]
 mod v30_emergency_counter_tests {
     use super::*;
+
+    #[test]
+    fn last_income_vehicle_has_priority_only_when_both_are_unfunded() {
+        assert!(prefer_last_miner(3000,3000,1400));
+        assert!(!prefer_last_miner(4400,3000,1400));
+        assert!(!prefer_last_miner(1000,1000,2000));
+    }
+
+    #[test]
+    fn retail_controller_requires_immunity_or_safe_weapon_range() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+        else { return; };
+        let controller = rules.object("YURI").unwrap();
+        let tank = rules.object("MTNK").unwrap();
+        let sniper = rules.object("SNIPE").unwrap();
+        assert_eq!(threat_class(&rules,controller),Some(ThreatClass::MindControl));
+        assert_eq!(counter_quality(&rules,tank,controller,ThreatClass::MindControl),0);
+        assert!(counter_quality(&rules,sniper,controller,ThreatClass::MindControl)>0);
+    }
 
     #[test]
     fn retail_vehicle_array_kirov_is_an_airborne_counter_target() {

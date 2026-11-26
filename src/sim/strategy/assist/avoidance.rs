@@ -821,6 +821,7 @@ pub(super) fn run(
             Some(cell),
             Goal::Move { cell },
         ) {
+            brain.safety.mark_detour(unit.entity_id,tick);
             log::debug!(
                 "auto play: avoid {} around {} by {:?} ({} vs {} hp)",
                 unit.entity_id,

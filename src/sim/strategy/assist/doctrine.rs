@@ -267,7 +267,7 @@ mod tests {
         let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
         else { return; };
         for name in ["E1", "E2", "INIT", "HTNK", "LTNK"] {
-            assert_eq!(duty(&rules,rules.object(name).expect(name)),Duty::Line,name);
+            assert_eq!(duty(&rules,rules.object(name).expect(name)),Duty::Line,"{}",name);
         }
         for (name,kind) in [
             ("IVAN",Duty::BombPlanter), ("TERROR",Duty::Disposable),
@@ -275,7 +275,7 @@ mod tests {
             ("DESO",Duty::Radiation), ("SNIPE",Duty::Marksman),
             ("TNKD",Duty::TankHunter), ("YURI",Duty::Controller),
         ] {
-            assert_eq!(duty(&rules,rules.object(name).expect(name)),kind,name);
+            assert_eq!(duty(&rules,rules.object(name).expect(name)),kind,"{}",name);
         }
         assert_eq!(allowance(Duty::BombPlanter,0),0);
         assert_eq!(allowance(Duty::Parasite,4),0);

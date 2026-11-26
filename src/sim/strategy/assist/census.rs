@@ -18,7 +18,7 @@
 //! Determinism: entity-storage order and `BTreeMap` order only. The role
 //! arithmetic is `f64` and comparisons only, exactly as the weights it reads.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
@@ -507,6 +507,17 @@ pub(super) struct Census {
     pub(super) types: BTreeMap<InternedId, TypeFacts>,
     pub(super) lines: [Line; 6],
     pub(super) units: Vec<Unit>,
+    /// On-map products still in native war-factory delivery.
+    pub(super) factory_handoffs: BTreeMap<u64, u64>,
+    /// Own actors reserved for recovery, rearming or specialist jobs. This
+    /// is a projection of existing ownership, not another task controller.
+    pub(super) unavailable: BTreeSet<u64>,
+    /// Borrowed joint-operation members remain in their squad but cannot be
+    /// counted again in the main fist.
+    pub(super) detached: BTreeSet<u64>,
+    /// Existing guards on specialist leases retain their Defend membership.
+    /// They are still unavailable to any fresh assignment.
+    pub(super) borrowed_defenders: BTreeSet<u64>,
     pub(super) enemies: Vec<EnemyEntity>,
     /// Visible enemy buildings that carry an offensive superweapon, and how many
     /// enemy houses that is spread across. Read as a pair: a count alone says
@@ -714,30 +725,11 @@ pub(super) fn counter(ty: &ObjectType) -> Option<Role> {
 }
 
 impl Census {
-    /// What the lines have been promised and have not paid out yet: the
-    /// product on each line, plus the copies queued behind it.
-    ///
-    /// A build starts owing its `Cost_Of` and pays it down as it steps, so a
-    /// queue costs the wallet nothing today and a budget that reads the
-    /// balance alone spends the same credits twice. The queue holds
-    /// `QueueEntry` types the projection does not name, so a queued copy is
-    /// priced at the product it is queued behind — the answer is a floor, and
-    /// a floor is what a budget wants.
+    /// Native unpaid production, plus projected remaining active building repairs.
+    /// Do not count a completed paid product as a second bill. The actual
+    /// queued type is read from the native queue, never inferred from its head.
     pub(super) fn committed(&self, rules: &RuleSet, obs: &Observation<'_>) -> i32 {
-        let mut total = 0i32;
-        for line in &self.lines {
-            let Some(type_id) = line.product else {
-                continue;
-            };
-            let Some(ty) = obs.object_type(rules, type_id) else {
-                continue;
-            };
-            let copies = i32::try_from(line.queued)
-                .unwrap_or(i32::MAX)
-                .saturating_add(1);
-            total = total.saturating_add(obs.cost_of(rules, ty).saturating_mul(copies));
-        }
-        total
+        obs.production_commitment(rules).saturating_add(obs.repair_commitment(rules))
     }
 
     /// Rebuild the ledger from this frame's projection. Called once, at the
@@ -747,6 +739,10 @@ impl Census {
         self.by_type.clear();
         self.lines = [Line::default(); 6];
         self.units.clear();
+        self.factory_handoffs.clear();
+        self.unavailable.clear();
+        self.detached.clear();
+        self.borrowed_defenders.clear();
         self.enemies.clear();
         self.neutrals.clear();
         self.home_cells.clear();
@@ -776,6 +772,13 @@ impl Census {
                 continue;
             };
             let slot = Slot::of(category_for_object(ty));
+            let factory_handoff = if matches!(slot, Slot::Vehicle | Slot::Ship) {
+                obs.own_factory_handoff(rules, entity.entity_id)
+            } else { None };
+            if let Some(factory) = factory_handoff {
+                self.factory_handoffs.insert(entity.entity_id, factory);
+            }
+            let orderable = entity.orderable && factory_handoff.is_none();
             let max_health = ty.strength.max(0);
             let health_permille = if max_health > 0 {
                 let scaled = i64::from(entity.health.max(0)) * 1000 / i64::from(max_health);
@@ -845,7 +848,7 @@ impl Census {
                 // the force it could actually move.
                 if !entity.orderable {
                     self.limbo += 1;
-                } else {
+                } else if orderable {
                     self.fighters += 1;
                     // Idle: nothing to walk to and nothing to shoot at. The census
                     // runs before the frame's orders, so a unit that was given something
@@ -879,7 +882,7 @@ impl Census {
                 health_permille,
                 points,
                 mission: entity.mission,
-                orderable: entity.orderable,
+                orderable,
                 hand: obs.owned_by_hand(entity.entity_id),
                 slot,
                 tier,
@@ -1019,13 +1022,35 @@ impl Census {
         self.units.iter().filter(|unit| unit.traits.combat)
     }
 
+    /// Available to a team, not merely present in the ownership ledger.
+    pub(super) fn available(&self, unit: &Unit) -> bool {
+        unit.traits.combat && unit.controllable() && !unit.in_service()
+            && unit.points > 0 && !unit.traits.yard_maker && !unit.traits.harvester
+            && !self.unavailable.contains(&unit.entity_id)
+    }
+
+    /// The joint detachment owns its own orders; it is not main-fist strength.
+    pub(super) fn main_available(&self, unit: &Unit) -> bool {
+        self.available(unit) && !self.detached.contains(&unit.entity_id)
+            && !unit.traits.irreplaceable && unit.slot != Slot::Ship
+    }
+
+    pub(super) fn available_fighters(&self) -> usize {
+        self.units.iter().filter(|u| self.available(u)).count()
+    }
+
+    pub(super) fn available_points(&self) -> i32 {
+        self.units.iter().filter(|u| self.available(u))
+            .fold(0i32, |sum, u| sum.saturating_add(u.points))
+    }
+
     /// What the house has to fight with: one number, in hit points, so that a
     /// decision that asks "is this enough" has something to compare against
     /// rather than a count of things that are not alike.
     pub(super) fn army_points(&self) -> i32 {
         self.units
             .iter()
-            .filter(|unit| unit.orderable)
+            .filter(|unit| unit.orderable || self.factory_handoffs.contains_key(&unit.entity_id))
             .fold(0i32, |total, unit| total.saturating_add(unit.points))
     }
 

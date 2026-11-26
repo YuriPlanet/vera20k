@@ -30,7 +30,7 @@ use crate::rules::locomotor_type::MovementZone;
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::control::brain::Outbox;
-use crate::sim::control::observation::{EnemyEntity, Observation};
+use crate::sim::control::observation::{EnemyEntity, Engage, Observation};
 use crate::sim::mission::{MissionId, MissionType};
 
 use super::AssistBrain;
@@ -50,6 +50,7 @@ const ENGAGE_MARGIN_CELLS: i32 = 1;
 
 /// One unit's share of this cycle.
 struct Work {
+    unit: super::census::Unit,
     entity_id: u64,
     role: Role,
     cell: (u16, u16),
@@ -85,7 +86,10 @@ pub(super) fn run(
         .into_iter().flat_map(|team| brain.census.units.iter().filter(move |unit|
             team.members.contains(&unit.entity_id) && unit.controllable()
                 && !unit.in_service()).copied()).collect();
-    let raid_target = mining_raid_objective(rules, obs, brain, &raiders);
+    let rebuilding = brain.director.rebuilding_force() || brain.mobilization.active() || brain.campaign.economy_resting();
+    let raid_target = if rebuilding { None } else {
+        mining_raid_objective(rules, obs, brain, &raiders)
+    };
     if let Some((id, cell)) = raid_target {
         let since = brain.harass_focus.filter(|(old, until)|
             *old == id && tick < *until);
@@ -93,22 +97,12 @@ pub(super) fn run(
         brain.harass_site = Some((cell, tick.saturating_add(900)));
     } else {
         brain.harass_focus = None;
-        if brain.harass_site.is_some_and(|(_, until)| tick >= until) {
+        if rebuilding || brain.harass_site.is_some_and(|(_, until)| tick >= until) {
             brain.harass_site = None;
         }
     }
     // Snapshotted: the ledger and the teams are borrowed while they are read,
     // and the intent table is written below.
-    let mut work = collect(brain, rules, obs, tick);
-    // Eight orders a frame and the board drops the rest, so the scan's order
-    // decides who is ever served: the same leading units were re-engaged every
-    // frame and the rest of the army stood next to an enemy it never answered.
-    // Rotating the cycle by the tick gives every unit its turn, and an engage
-    // order holds for its term once given.
-    let turn = work.len();
-    if turn > 0 {
-        work.rotate_left((tick as usize) % turn);
-    }
     // Which hostiles in the ledger are buildings. A unit's guns reach both, and
     // the nearest one is a wall as often as a soldier — a unit that shells the
     // wall while a tank closes has its answer backwards.
@@ -159,15 +153,21 @@ pub(super) fn run(
         .collect();
     let economic_raiders: BTreeSet<u64> = aimed_at.iter()
         .filter_map(|(enemy, target)| economic_assets.contains(target).then_some(*enemy))
-        .collect();
+        .chain(obs.visible_enemy_entities().filter(|enemy|
+            super::convergence::mobile_threat(rules,obs,enemy)
+                && super::convergence::near_income(&brain.census,enemy.cell))
+            .map(|enemy| enemy.entity_id)).collect();
     // Existing friendly fire is evidence that a durable enemy is worth
     // finishing. Support that engagement, rather than scattering the spare
     // tanks among different targets. Don't waste three guns on a nearly dead
     // rifleman, and don't use last-known coordinates as current fire orders.
     let mut friendly_fire = std::collections::BTreeMap::<u64,usize>::new();
-    for unit in brain.census.units.iter().filter(|unit| unit.traits.combat && unit.orderable) {
+    for unit in brain.census.units.iter().filter(|unit| brain.census.available(unit)) {
         if let Some(target) = obs.attack_target(unit.entity_id)
             && visible_enemies.contains(&target)
+            && !obs.visible_enemy_invulnerable(target)
+            && obs.engage(rules,unit.entity_id,target)==Engage::Ready
+            && obs.can_hurt(rules,unit.entity_id,target)
         {
             *friendly_fire.entry(target).or_default() += 1;
         }
@@ -180,11 +180,16 @@ pub(super) fn run(
                 && obs.health(enemy).is_some_and(|hp| hp.saturating_mul(2) > ty.strength))
                 .then_some(enemy)
         }).collect();
+    let mut work=collect(brain,rules,obs,tick,&visible_enemies,&aimed_at,
+        &economic_raiders,&controllers,&liberators);
+    let turn=work.len();
+    if turn>0 {work.rotate_left((tick as usize)%turn);}
     let mut issued = 0;
     for item in work {
         if issued >= MICRO_ORDERS_PER_FRAME {
             break;
         }
+        let rebuilding_squad = rebuilding && matches!(item.role, Role::Attack | Role::Harass);
         // A step out of a shell's landing point is this frame's answer for the
         // unit; an engage order on top of it would walk it back into the blast.
         // A courier is not a new solo raiding squad after collecting its box.
@@ -267,13 +272,20 @@ pub(super) fn run(
         // whole reason the layer exists. "In reach" is reach and weapon
         // together, so a dog walks on past the tank to the infantry behind it
         // instead of being held on a target it cannot hurt.
-        let personnel_specialist = obs.entity_type(rules, item.entity_id)
-            .is_some_and(|ty| ty.disguise_when_still);
-        if let Some(enemy) = in_reach(
+        let personnel_specialist=obs.entity_type(rules,item.entity_id)
+            .is_some_and(|ty|ty.disguise_when_still);
+        if let Some(enemy) = in_reach_ready(
             brain.census.enemies.iter()
                 // A visible controller of our stolen unit is the legitimate
                 // target. Do not spend this cycle killing the captured tank.
                 .filter(|enemy| visible_enemies.contains(&enemy.entity_id))
+                .filter(|enemy| !rebuilding_squad
+                    || aimed_at.get(&enemy.entity_id) == Some(&item.entity_id)
+                    || economic_raiders.contains(&enemy.entity_id)
+                    || brain.census.base_cell.is_some_and(|home| {
+                        let radius = super::advance::THREAT_RADIUS;
+                        squared_distance(home, enemy.cell) <= radius * radius
+                    }))
                 .filter(|enemy| !super::orders::reclamation_reserved(
                     rules, obs, &brain.census, &brain.tracked, **enemy))
                 .filter(|enemy| obs.visible_liberation_target(enemy.entity_id).is_none())
@@ -282,7 +294,9 @@ pub(super) fn run(
                     enemy.entity_id,
                     enemy.cell,
                     structures.contains(&enemy.entity_id),
-                    aimed_at.get(&enemy.entity_id) == Some(&item.entity_id),
+                    aimed_at.get(&enemy.entity_id) == Some(&item.entity_id)
+                        && obs.engage(rules,enemy.entity_id,item.entity_id)==Engage::Ready
+                        && obs.can_hurt(rules,enemy.entity_id,item.entity_id),
                 )
             }),
             item.cell,
@@ -305,7 +319,10 @@ pub(super) fn run(
                     // Charge units are handled above by the wave commander.
                     && (item.role != Role::Attack
                         || !super::siege_counter::avoid_solo_tower_attack(
-                            rules, obs, item.entity_id, target))
+                            rules, obs, item.entity_id, target)
+                        || super::safety::supported_ready_fire(
+                            brain,rules,obs,&item.unit,Goal::Attack {target}))
+                    && !obs.visible_enemy_invulnerable(target)
                     && super::orders::admits(rules, obs, item.entity_id, &Goal::Attack { target })
                     && obs.can_hurt(rules, item.entity_id, target)
                     && (!super::tactics::unfavourable_vehicle_duel(
@@ -322,6 +339,7 @@ pub(super) fn run(
                 economic_raiders.contains(&target),
                 focus_targets.contains(&target),
             ),
+            |target|obs.engage(rules,item.entity_id,target)==Engage::Ready,
         ) {
             // A tank beside a soldier flattens him instead of trading shots:
             // `Crusher=` on the tank, `Crushable=` on the infantry, and the
@@ -455,7 +473,7 @@ pub(super) fn run(
         // handled above; any further voluntary combat/march belongs to the
         // persistent campaign's safe formation/staging operation below.
         // The Harass team is unaffected and keeps cutting enemy income.
-        if brain.campaign.holding_fist() && item.role == Role::Attack {
+        if rebuilding_squad || (brain.campaign.holding_fist() && item.role == Role::Attack) {
             continue;
         }
         // Nobody's building in the way. It is in no enemy list — nobody owns
@@ -766,6 +784,11 @@ fn collect(
     rules: &RuleSet,
     obs: &Observation<'_>,
     tick: u64,
+    visible:&BTreeSet<u64>,
+    aimed_at:&std::collections::BTreeMap<u64,u64>,
+    economic_raiders:&BTreeSet<u64>,
+    controllers:&BTreeSet<u64>,
+    liberators:&BTreeSet<u64>,
 ) -> Vec<Work> {
     let mut work = Vec::new();
     for squad in brain.squads.all() {
@@ -796,20 +819,19 @@ fn collect(
             // leaves it standing there for the rest of the match — the army
             // the play test reports as "a lot of units doing nothing".
             let current_target = obs.attack_target(unit.entity_id);
-            let fighting = unit.mission == MissionId::from_known(MissionType::Attack)
-                && current_target.is_some();
+            let fighting=unit.mission==MissionId::from_known(MissionType::Attack)
+                && current_target.is_some_and(|target|
+                    visible.contains(&target) && !obs.visible_enemy_invulnerable(target)
+                    && obs.engage(rules,unit.entity_id,target)==Engage::Ready
+                    && obs.can_hurt(rules,unit.entity_id,target));
             let deployed = obs.is_deployed(unit.entity_id);
             let reach = obs.object_type(rules, unit.type_id)
                 .map_or(0, |ty| super::advance::weapon_range_cells(rules, ty, deployed));
             let under_fire = brain.census.enemies.iter().any(|enemy| {
-                let enemy_reach = obs.entity_type(rules, enemy.entity_id)
-                    .map_or(0, |ty| super::advance::weapon_range_cells(
-                        rules, ty, obs.is_deployed(enemy.entity_id)));
-                obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
-                    && obs.attack_target(enemy.entity_id) == Some(unit.entity_id)
-                    && obs.can_hurt(rules, enemy.entity_id, unit.entity_id)
-                    && squared_distance(enemy.cell, unit.cell)
-                        <= (enemy_reach + ENGAGE_MARGIN_CELLS).pow(2)
+                visible.contains(&enemy.entity_id)
+                    && aimed_at.get(&enemy.entity_id)==Some(&unit.entity_id)
+                    && obs.engage(rules,enemy.entity_id,unit.entity_id)==Engage::Ready
+                    && obs.can_hurt(rules,enemy.entity_id,unit.entity_id)
             });
             // Preserve an ongoing attack unless the unit is *being hit* by a
             // reachable hostile. An attack on a neutral wall is not such a
@@ -836,9 +858,20 @@ fn collect(
                         && squared_distance(unit.cell, enemy.cell) <= (reach + 1).pow(2)
                         && obs.can_hurt(rules, unit.entity_id, enemy.entity_id)
                 });
+            let building_target=current_target.is_some_and(|id|
+                obs.entity_type(rules,id).is_some_and(|ty|ty.category==ObjectCategory::Building));
+            let priority_contact=building_target && brain.census.enemies.iter().any(|enemy|
+                visible.contains(&enemy.entity_id) && Some(enemy.entity_id)!=current_target
+                && (economic_raiders.contains(&enemy.entity_id)
+                    || controllers.contains(&enemy.entity_id)
+                    || liberators.contains(&enemy.entity_id))
+                && squared_distance(unit.cell,enemy.cell)<=(reach+1).pow(2)
+                && !obs.visible_enemy_invulnerable(enemy.entity_id)
+                && obs.engage(rules,unit.entity_id,enemy.entity_id)==Engage::Ready
+                && obs.can_hurt(rules,unit.entity_id,enemy.entity_id));
             if (preserve_existing_attack(fighting,
                 current_target.is_some_and(|id| obs.is_hostile(id)), under_fire)
-                && !losing_duel && !nearby_personnel) || unit.in_service()
+                && !losing_duel && !nearby_personnel && !priority_contact) || unit.in_service()
             {
                 continue;
             }
@@ -861,6 +894,7 @@ fn collect(
                 super::advance::weapon_range_cells(rules, ty, deployed)
             });
             work.push(Work {
+                unit:*unit,
                 entity_id: unit.entity_id,
                 role: squad.role,
                 cell: unit.cell,
@@ -886,12 +920,21 @@ fn collect(
 /// warhead cannot touch, and the infantry one cell further off is what it can
 /// actually take — so the reach test and the weapon test are the same search,
 /// and a dog with only tanks in reach is told nothing at all.
+#[cfg(all(test, tests_sim_p_s))]
 fn in_reach(
+    enemies: impl Iterator<Item=(u64,(u16,u16),bool,bool)>,
+    from:(u16,u16),reach:i32,answers:impl Fn(u64)->bool,rank:impl Fn(u64)->u8,
+)->Option<(u64,(u16,u16))> {
+    in_reach_ready(enemies,from,reach,answers,rank,|_|true)
+}
+
+fn in_reach_ready(
     enemies: impl Iterator<Item = (u64, (u16, u16), bool, bool)>,
     from: (u16, u16),
     reach: i32,
     answers: impl Fn(u64) -> bool,
     rank: impl Fn(u64) -> u8,
+    ready: impl Fn(u64) -> bool,
 ) -> Option<(u64, (u16, u16))> {
     if reach <= 0 {
         return None;
@@ -910,6 +953,7 @@ fn in_reach(
         .min_by_key(|(id, cell, structure, shooting_me)| {
             (
                 !*shooting_me,
+                !ready(*id),
                 rank(*id),
                 *structure,
                 squared_distance(*cell, from),
@@ -1357,7 +1401,8 @@ mod tests {
                     &rules,
                     &obs,
                     super::super::pilots::Preference::Armour,
-                    target
+                    target,
+                    false
                 )
             ),
             Some((tank, (23, 20))),
@@ -1373,7 +1418,7 @@ mod tests {
                 (20, 20),
                 6,
                 |_| true,
-                |target| prefer(&rules, &obs, super::super::pilots::Preference::Air, target)
+                |target| prefer(&rules, &obs, super::super::pilots::Preference::Air, target, false)
             ),
             Some((orca, (24, 20))),
             "the gunner goes for what flies"
@@ -1399,6 +1444,13 @@ mod tests {
 
     /// A mobile hostile outranks a wall at the same distance: the one that
     /// shoots back is the one that kills a unit busy shelling a building.
+    #[test]
+    fn a_real_shot_beats_a_nominally_preferred_pursuit() {
+        let targets=[(7u64,(23u16,20u16),false,false),(8,(22,20),true,false)];
+        assert_eq!(in_reach_ready(targets.into_iter(),(20,20),5,|_|true,
+            |id|if id==7 {0}else{3},|id|id==8),Some((8,(22,20))));
+    }
+
     #[test]
     fn a_mobile_hostile_outranks_a_structure_in_reach() {
         // 8 is the building at two cells, 9 the rifleman at three.

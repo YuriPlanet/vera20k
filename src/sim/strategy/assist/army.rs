@@ -30,7 +30,7 @@ impl Army {
     pub(super) fn of(census: &Census, obs: &Observation<'_>) -> Self {
         let members: Vec<Unit> = census
             .combat_units()
-            .filter(|unit| unit.controllable() && !unit.in_service())
+            .filter(|unit| census.main_available(unit))
             .copied()
             .collect();
         let anchor = members.first().map_or((0, 0), |unit| unit.cell);

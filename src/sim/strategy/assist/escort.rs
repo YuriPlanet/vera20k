@@ -240,7 +240,9 @@ pub(super) fn run(
             let chosen = select_guard(
                 &brain.census.units, &defenders, &reserved, cell,
                 |guard| {
-                    !out.ordered_this_frame(guard)
+                    !brain.census.unavailable.contains(&guard)
+                        && !brain.tracked.held(tick, guard)
+                        && !out.ordered_this_frame(guard)
                         && !obs.is_deployed(guard)
                         && obs.attack_target(guard).is_none()
                         && obs.destination(guard).is_none()

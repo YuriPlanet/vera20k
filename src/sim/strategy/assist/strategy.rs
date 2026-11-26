@@ -10,7 +10,7 @@
 //! specialist units, spending on nonessential structures). Urgent failures
 //! pre-empt a long-term plan; ordinary changes are held across frames.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
@@ -33,8 +33,16 @@ const BASE_RAID_CELLS: i32 = 18;
 const MIN_DIRECTIVE_FRAMES: u64 = 300;
 const ECONOMY_STABLE_FRAMES: u64 = 120;
 const BASE_QUIET_FRAMES: u64 = 150;
-const FORCE_SAMPLE_FRAMES: u64 = 300;
-const AFTER_LOSS_MUSTER_FRAMES: u64 = 450;
+const FORCE_SAMPLE_FRAMES: u64 = 120;
+const FORCE_HISTORY_FRAMES: u64 = 3_600;
+const MIN_RECOVERY_FRAMES: u64 = 450;
+const MAX_RECOVERY_FRAMES: u64 = 2_700;
+
+/// A large army must replace a meaningful fraction of its lost force.
+/// Use a bounded time, not a fixed tiny force that every large army already has.
+fn recovery_target(peak: i32) -> i32 {
+    (peak.max(0) / 4 * 3).max(1_200)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(super) enum Objective {
@@ -46,7 +54,9 @@ pub(super) enum Objective {
     /// A *currently visible* enemy is close to the base: keep the garrison
     /// and the production lines focused on immediate survival.
     HoldBase,
-    /// The army took a large loss or is not yet ready for a serious push.
+    /// A recently depleted fighting force is pulling back and replacing losses.
+    RebuildArmy,
+    /// The army is not yet ready for a serious push.
     #[default]
     Muster,
     /// There is a confirmed, sufficiently rich field beyond our bays and
@@ -136,18 +146,17 @@ impl Signals {
         known_ore: &BTreeMap<(u16, u16), u8>,
         income_per_minute: Option<i32>,
     ) -> Self {
-        let raiders_visible = census.base_cell.map_or(0, |home| {
-            census.enemies.iter()
-                // History may suggest where to search, but cannot trigger
-                // the same emergency as a unit currently attacking the base.
-                .filter(|enemy| obs.is_cell_visible(enemy.cell.0, enemy.cell.1))
-                .filter(|enemy| super::squared_distance(enemy.cell, home)
-                    <= BASE_RAID_CELLS * BASE_RAID_CELLS)
-                .filter(|enemy| obs.object_type(rules, enemy.type_id)
-                    .is_some_and(|ty| ty.category != ObjectCategory::Building
-                        || ty.weapon_list.iter().any(Option::is_some)))
-                .count()
-        });
+        let raiders_visible = obs.visible_enemy_entities().filter(|enemy| {
+            let near_home = census.base_cell.is_some_and(|home|
+                super::squared_distance(enemy.cell,home) <= BASE_RAID_CELLS*BASE_RAID_CELLS);
+            if super::convergence::mobile_threat(rules,obs,enemy) {
+                near_home || super::convergence::near_income(census,enemy.cell)
+            } else {
+                near_home && obs.object_type(rules,enemy.type_id).is_some_and(|ty|
+                    ty.category == ObjectCategory::Building && ty.weapon_list.iter().any(Option::is_some)
+                    && obs.visible_enemy_building_operational(rules,enemy.entity_id))
+            }
+        }).count();
         Self {
             yards: census.yards,
             yard_makers: census.yard_makers,
@@ -155,7 +164,7 @@ impl Signals {
             harvesters: census.harvesters,
             raiders_visible,
             attack_members,
-            fighters: census.fighters,
+            fighters: census.available_fighters(),
             fighting_points: census.army_points(),
             credits: obs.credits(),
             income_per_minute,
@@ -175,8 +184,9 @@ pub(super) struct Director {
     last_raid_at: Option<u64>,
     raided_now: bool,
     income_stable_since: Option<u64>,
-    force_sample: Option<(u64, i32)>,
-    replenish_until: u64,
+    force_samples: VecDeque<(u64, i32)>,
+    loss_recovery_since: Option<u64>,
+    had_income_chain: bool,
 }
 
 impl Director {
@@ -203,6 +213,17 @@ impl Director {
         self.initialized && self.objective == Objective::HoldBase
     }
 
+    pub(super) fn rebuilding_force(&self) -> bool {
+        self.loss_recovery_since.is_some()
+    }
+
+    pub(super) fn emergency_spending(&self, obs: &Observation<'_>) -> bool {
+        (self.initialized && (self.rebuilding_force()
+            || self.objective == Objective::RecoverYard
+            || (self.had_income_chain && self.recovering_income())))
+            || (obs.power_balance() < 0 && !obs.power_blackout_active())
+    }
+
     pub(super) fn under_attack_now(&self) -> bool {
         self.raided_now
     }
@@ -210,6 +231,10 @@ impl Director {
     pub(super) fn permits_build(&self, item: Item) -> bool {
         if !self.initialized {
             return true;
+        }
+        if self.rebuilding_force() {
+            return matches!(item, Item::Power | Item::Refinery | Item::Barracks
+                | Item::Weapons | Item::Support | Item::Repair);
         }
         match self.objective {
             Objective::RecoverYard | Objective::RecoverIncome => matches!(item,
@@ -221,9 +246,44 @@ impl Director {
             // stage, determines when an affordable strike can be mounted.
             Objective::ExpandOre => !matches!(item,
                 Item::SpySatellite | Item::CloningVats | Item::RobotControl),
-            Objective::Muster => true,
-            Objective::PressAttack => true,
+            Objective::RebuildArmy | Objective::Muster | Objective::PressAttack => true,
         }
+    }
+
+    fn observe_force(&mut self, now: u64, points: i32) {
+        if let Some(since) = self.loss_recovery_since {
+            let elapsed = now.saturating_sub(since);
+            let peak = self.force_samples.iter().map(|(_, value)| *value).max().unwrap_or(0);
+            let target = recovery_target(peak);
+            if elapsed >= MAX_RECOVERY_FRAMES
+                || (elapsed >= MIN_RECOVERY_FRAMES && points >= target)
+            {
+                let reason = if points >= target && elapsed >= MIN_RECOVERY_FRAMES { "threshold" } else { "timeout" };
+                log::info!("auto play: force_recovery_exit tick={now} elapsed={elapsed} recent_peak={peak} fighting_points={points} target={target} reason={reason}");
+                self.loss_recovery_since = None;
+                self.force_samples.clear();
+            } else {
+                return;
+            }
+        }
+        while self.force_samples.front()
+            .is_some_and(|(at, _)| now.saturating_sub(*at) > FORCE_HISTORY_FRAMES)
+        {
+            self.force_samples.pop_front();
+        }
+        if self.force_samples.back()
+            .is_some_and(|(at, _)| now.saturating_sub(*at) < FORCE_SAMPLE_FRAMES)
+        {
+            return;
+        }
+        let peak = self.force_samples.iter().map(|(_, points)| *points).max().unwrap_or(0);
+        if peak >= 1_500 && points.saturating_mul(100) < peak.saturating_mul(65)
+            && peak.saturating_sub(points) >= 700
+        {
+            self.loss_recovery_since = Some(now);
+            log::info!("auto play: force_recovery tick={now} recent_peak={peak} fighting_points={points}");
+        }
+        self.force_samples.push_back((now, points));
     }
 
     /// Returns a change only when the commitment actually changes. In
@@ -235,24 +295,12 @@ impl Director {
             self.last_raid_at = Some(now);
         }
         if signals.economy_ok() {
+            self.had_income_chain = true;
             self.income_stable_since.get_or_insert(now);
         } else {
             self.income_stable_since = None;
         }
-        if let Some((at, previous)) = self.force_sample {
-            if now.saturating_sub(at) >= FORCE_SAMPLE_FRAMES {
-                if previous >= 1_500
-                    && signals.fighting_points.saturating_mul(100)
-                        < previous.saturating_mul(65)
-                    && previous.saturating_sub(signals.fighting_points) >= 700
-                {
-                    self.replenish_until = now.saturating_add(AFTER_LOSS_MUSTER_FRAMES);
-                }
-                self.force_sample = Some((now, signals.fighting_points));
-            }
-        } else {
-            self.force_sample = Some((now, signals.fighting_points));
-        }
+        self.observe_force(now, signals.fighting_points);
 
         let threatened = signals.raiders_visible > 0 || self.last_raid_at
             .is_some_and(|at| now.saturating_sub(at) < BASE_QUIET_FRAMES);
@@ -264,8 +312,8 @@ impl Director {
             Objective::RecoverIncome
         } else if threatened {
             Objective::HoldBase
-        } else if now < self.replenish_until {
-            Objective::Muster
+        } else if self.rebuilding_force() {
+            Objective::RebuildArmy
         } else if should_expand_while_fighting(signals) {
             Objective::ExpandOre
         } else if signals.attack_members >= squads::ARMY_TO_ATTACK {
@@ -274,12 +322,13 @@ impl Director {
             Objective::Muster
         };
 
-        let urgent = matches!(desired,
+        let urgent = desired == Objective::RebuildArmy || matches!(desired,
             Objective::RecoverYard | Objective::RecoverIncome | Objective::HoldBase)
             && (desired == Objective::RecoverYard
                 || (desired == Objective::RecoverIncome && !signals.economy_ok())
                 || signals.raiders_visible > 0);
         if !self.initialized || desired != self.objective && (urgent
+            || self.objective == Objective::RebuildArmy
             || now.saturating_sub(self.started_at) >= MIN_DIRECTIVE_FRAMES)
         {
             let before = self.objective;
@@ -420,19 +469,52 @@ mod tests {
     }
 
     #[test]
-    fn a_large_force_loss_temporarily_stops_expansion() {
+    fn losses_across_multiple_samples_interrupt_expansion_and_recover() {
         let mut director = Director::default();
         let mut s = base();
         s.far_ore_stock = 40;
-        director.observe(0, s);
-        s.fighting_points = 900;
-        director.observe(400, s);
-        assert_eq!(director.objective(), Objective::Muster);
-        assert!(!director.may_expand());
-        director.observe(800, s);
-        assert_eq!(director.objective(), Objective::Muster);
-        director.observe(1_400, s);
+        ready(&mut director, s);
+        s.fighting_points = 1_700;
+        director.observe(520, s);
+        s.fighting_points = 1_400;
+        director.observe(640, s);
         assert_eq!(director.objective(), Objective::ExpandOre);
+        s.fighting_points = 1_190;
+        director.observe(760, s);
+        assert_eq!(director.objective(), Objective::RebuildArmy);
+        assert!(director.rebuilding_force());
+        assert!(!director.may_expand());
+        assert!(director.permits_build(Item::Weapons));
+        assert!(!director.permits_build(Item::Tech));
+        s.fighting_points = 1_300;
+        director.observe(1_209, s);
+        assert!(director.rebuilding_force());
+        director.observe(1_210, s);
+        assert!(director.rebuilding_force(), "65% of the prior peak is not a recovered force");
+        s.fighting_points = 1_500;
+        director.observe(1_211, s);
+        assert_eq!(director.objective(), Objective::ExpandOre);
+    }
+
+    #[test]
+    fn recovery_threshold_scales_with_the_previous_force() {
+        assert_eq!(recovery_target(2_000),1_500);
+        assert_eq!(recovery_target(12_000),9_000);
+        assert_eq!(recovery_target(1_500),1_200);
+    }
+
+    #[test]
+    fn force_recovery_times_out_and_clears_the_old_peak() {
+        let mut director = Director::default();
+        let mut s = base();
+        ready(&mut director, s);
+        s.fighting_points = 100;
+        director.observe(520, s);
+        assert!(director.rebuilding_force());
+        director.observe(520 + MAX_RECOVERY_FRAMES, s);
+        assert!(!director.rebuilding_force());
+        director.observe(520 + MAX_RECOVERY_FRAMES + FORCE_SAMPLE_FRAMES, s);
+        assert!(!director.rebuilding_force());
     }
 
     #[test]

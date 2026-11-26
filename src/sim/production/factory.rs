@@ -304,6 +304,7 @@ impl Factory {
             construction_order: self.insertion_seq,
             step_rate_frames: self.step_rate_frames,
             progress: self.progress,
+            balance: self.balance,
             on_hold: self.on_hold,
             suspended: self.suspended,
             object: self.object.as_ref(),
@@ -874,6 +875,7 @@ pub struct FactoryView<'a> {
     construction_order: u64,
     step_rate_frames: u16,
     pub progress: u16,
+    balance: i32,
     pub on_hold: bool,
     pub suspended: bool,
     pub object: Option<&'a PendingObject>,
@@ -881,6 +883,9 @@ pub struct FactoryView<'a> {
 }
 
 impl<'a> FactoryView<'a> {
+    /// Unpaid balance of the active product, not its original purchase price.
+    pub fn balance(&self) -> i32 { self.balance }
+
     pub fn construction_order(&self) -> u64 {
         self.construction_order
     }

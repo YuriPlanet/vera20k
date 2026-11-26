@@ -22,10 +22,8 @@ const INTEL_LIFETIME: u64 = 5_400;
 const INTEL_SAMPLE_FRAMES: u64 = 90;
 const CONTAIN_FRAMES: u64 = 180;
 const STOCKPILE_LIMIT: u64 = 3_600;
-const COMMIT_FRAMES: u64 = 1_350;
 const REFIT_FRAMES: u64 = 600;
 const MIN_COMMIT_FIGHTERS: usize = 7;
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum Phase {
     #[default]
@@ -104,12 +102,14 @@ impl Campaign {
     pub(super) fn phase(&self) -> Phase { self.phase }
     pub(super) fn route(&self) -> Route { self.route }
     pub(super) fn wanted(&self) -> usize { self.wanted }
+    // V53 recovery: low liquidity alone is not proof of combat attrition.
+    // Keep the query for existing consumers; cash disciplines live in production.
+    pub(super) fn economy_resting(&self) -> bool { false }
 
-    /// Only the main battle fist is held. The Harass/Defend/Scout squads are
-    /// deliberately unaffected, and a true raid on the base can preempt us.
-    pub(super) fn holding_fist(&self) -> bool {
-        matches!(self.phase, Phase::Contain | Phase::Stockpile | Phase::Refit)
-    }
+    /// Contain and stockpile are procurement advice, not blanket attack vetoes.
+    /// Advance still weighs the actual local enemy, and the force-loss
+    /// director still owns recovery. Only a large observed commitment-strength drop refits.
+    pub(super) fn holding_fist(&self) -> bool { self.phase == Phase::Refit }
 
     pub(super) fn prefer_quality(&self) -> bool {
         matches!(self.phase, Phase::Stockpile | Phase::Commit)
@@ -161,8 +161,7 @@ impl Campaign {
         let attack = teams.squad(squads::Role::Attack);
         let fighters: Vec<_> = attack.into_iter().flat_map(|team| census.units.iter()
             .filter(move |unit| team.members.contains(&unit.entity_id)
-                && unit.traits.combat && unit.controllable()
-                && !unit.traits.yard_maker && !unit.traits.harvester)).collect();
+                && census.main_available(unit))).collect();
         let attack_points = fighters.iter().fold(0i32, |sum, unit| sum.saturating_add(unit.points));
         // One linear pass for the formation; don't compare every fighter with
         // every other fighter on the 120-player maps. If the attack group is
@@ -240,8 +239,8 @@ impl Campaign {
                     else { Phase::Stockpile }
                 }
                 Phase::Commit => {
-                    if elapsed >= COMMIT_FRAMES || (self.committed_points >= 2_500
-                        && p.attack_points.saturating_mul(2) < self.committed_points)
+                    if self.committed_points >= 2_500
+                        && p.attack_points.saturating_mul(2) < self.committed_points
                     { Phase::Refit } else { Phase::Commit }
                 }
                 Phase::Refit => {
@@ -278,12 +277,16 @@ mod tests {
         let p = picture();
         c.update(0, p);
         assert_eq!(c.phase(), Phase::Contain);
+        assert!(!c.holding_fist());
         c.update(180, p);
         assert_eq!(c.phase(), Phase::Stockpile);
+        assert!(!c.holding_fist());
+        assert!(!c.economy_resting());
         c.update(180 + STOCKPILE_LIMIT, p);
         assert_eq!(c.phase(), Phase::Commit);
-        c.update(180 + STOCKPILE_LIMIT + COMMIT_FRAMES, p);
-        assert_eq!(c.phase(), Phase::Refit);
+        c.update(180 + STOCKPILE_LIMIT + 10_000, p);
+        assert_eq!(c.phase(), Phase::Commit);
+        assert!(!c.holding_fist());
     }
 
     #[test]
@@ -300,6 +303,7 @@ mod tests {
         p.attack_points = 1_000;
         c.update(202, p);
         assert_eq!(c.phase(), Phase::Refit);
+        assert!(c.holding_fist());
     }
 
     #[test]

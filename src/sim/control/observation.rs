@@ -159,6 +159,8 @@ pub struct IncomingShot {
 pub struct FactoryLine {
     /// The type being built, if any.
     pub product: Option<InternedId>,
+    /// Identity of the held object, including a completed unplaced building.
+    pub product_entity: Option<u64>,
     /// Held by the player (`FactoryClass`'s suspension) rather than running.
     pub suspended: bool,
     /// Copies queued behind the product.
@@ -409,6 +411,13 @@ impl<'a> Observation<'a> {
     pub fn power_balance(&self) -> i32 {
         let (output, drain) = self.power().unwrap_or((0, 0));
         output.wrapping_sub(drain)
+    }
+
+    /// An active timed outage suppresses the native power meter's output.
+    pub fn power_blackout_active(&self) -> bool {
+        self.sim.power_states().get(&self.house).is_some_and(|state| {
+            state.blackout_remaining(self.sim.session().binary_frame()) > 0
+        })
     }
 
     fn power(&self) -> Option<(i32, i32)> {
@@ -676,9 +685,64 @@ impl<'a> Observation<'a> {
             .view(self.house, category)?;
         Some(FactoryLine {
             product: factory.object.map(|object| object.type_id),
+            product_entity: factory.object.and_then(|object| object.entity_id),
             suspended: factory.suspended,
             queued: factory.queue.len(),
         })
+    }
+
+    /// Own native unpaid production balance plus actual queued type prices.
+    /// Queued prices are estimates at today's Cost_Of; the engine establishes
+    /// their final price when promoted. A finished paid product owes zero.
+    pub(crate) fn production_commitment(&self, rules: &RuleSet) -> i32 {
+        use ProductionCategory::*;
+        let mut total = 0i32;
+        for category in [Building, Defense, Infantry, Vehicle, Aircraft, Ship] {
+            let Some(line) = self.sim.production().factories().view(self.house, category)
+                else { continue; };
+            total = total.saturating_add(line.balance().max(0));
+            for entry in line.queue {
+                let cost = self.object_type(rules, entry.type_id)
+                    .map_or(i32::MAX, |ty| self.cost_of(rules, ty).max(0));
+                total = total.saturating_add(cost);
+            }
+        }
+        total
+    }
+
+    /// Remaining native building-wrench costs, including player-started work.
+    pub(crate) fn repair_commitment(&self, rules: &RuleSet) -> i32 {
+        self.sim.entities().values().filter(|e| e.owner() == self.house && e.is_alive()
+                && e.building.repairing.is_on())
+            .filter_map(|e| {
+                let ty = self.object_type(rules, e.type_ref())?;
+                (ty.category == ObjectCategory::Building).then_some(())?;
+                crate::sim::production::repair_remaining(e, ty, rules, self.tick() as u32)
+                    .map(|(_, cost)| cost.max(0))
+            }).fold(0i32, i32::saturating_add)
+    }
+
+    /// Price of a possible new repair; never toggle an already-running repair.
+    pub(crate) fn own_repair_quote(&self, rules: &RuleSet, id: u64) -> Option<(bool, i32)> {
+        let e = self.sim.entities().get(id)?;
+        if e.owner() != self.house || !e.is_alive() || e.constructing_or_selling() { return None; }
+        let ty = self.object_type(rules, e.type_ref())?;
+        if ty.category != ObjectCategory::Building || !ty.repairable { return None; }
+        let step = rules.general.repair_step;
+        let missing = ty.strength.saturating_sub(e.health.current());
+        if step <= 0 || missing <= 0 { return None; }
+        let cost = ((missing - 1) / step + 1)
+            .saturating_mul(crate::sim::production::repair_step_cost(rules,ty));
+        Some((e.building.repairing.is_on(),cost.max(0)))
+    }
+
+    /// Native cumulative spent-credit counter (not a fabricated sum of orders).
+    pub(crate) fn spent_credits(&self) -> i32 {
+        self.sim.houses().get(&self.house).map_or(0, |h| h.economy().spent_credits())
+    }
+
+    pub(crate) fn has_pending_production_commands(&self) -> bool {
+        self.sim.has_pending_production_commands(self.house)
     }
 
     /// Enemy objects an order may name as its target, in storage order.
@@ -1090,6 +1154,69 @@ impl<'a> Observation<'a> {
             crate::sim::components::NavTargetRef::Cell { rx, ry } => Some((rx, ry)),
             crate::sim::components::NavTargetRef::Object { .. } => None,
         }
+    }
+
+    /// Object destination of one of our own actors, without following its
+    /// pointer into fog. The caller must observe the target independently.
+    pub fn own_destination_object(&self, actor: u64) -> Option<u64> {
+        let e = self.sim.entities().get(actor)?;
+        if e.owner() != self.house { return None; }
+        match e.navigation.nav_com()? {
+            crate::sim::components::NavTargetRef::Object { id } => Some(id),
+            _ => None,
+        }
+    }
+
+    /// Current object position only if owned or presently visible. In
+    /// particular a retained native target pointer is not a scout report.
+    pub fn observed_object_cell(&self, actor: u64) -> Option<(u16,u16)> {
+        let e = self.sim.entities().get(actor)?;
+        let cell = (e.position.rx(), e.position.ry());
+        if e.lifecycle.in_limbo() || e.health.current() <= 0 { return None; }
+        (e.owner() == self.house || self.is_cell_visible(cell.0,cell.1)).then_some(cell)
+    }
+
+    /// Native factory-to-unit delivery is not an ordinary player mission.
+    /// Guard/Move can be visible while the door or track still owns the unit.
+    /// Follow the actual contact (including a factory captured during unload),
+    /// not the unit's age or a guessed distance from an arbitrary factory.
+    pub fn own_factory_handoff(&self, rules: &RuleSet, actor: u64) -> Option<u64> {
+        let unit = self.sim.entities().get(actor)?;
+        if unit.owner() != self.house || !self.sim.order_actor_admits(actor)
+            || unit.category() != crate::map::entities::EntityCategory::Unit { return None; }
+        [unit.seldom.radio_contacts.slot(0), unit.seldom.tether.partner()]
+            .into_iter().flatten().find(|id| self.sim.order_actor_admits(*id)
+                && self.sim.is_weapons_factory(*id, rules))
+    }
+
+    /// Own property may be queried without exposing a hidden enemy's owner.
+    pub fn owns_object(&self, actor: u64) -> bool {
+        self.sim.entities().get(actor).is_some_and(|e| e.owner() == self.house)
+    }
+
+    /// A native repair bay, not a busy or enemy docking destination. The
+    /// receiver still decides whether the actual Enter command can dock.
+    pub fn own_repair_bay_available(&self, rules: &RuleSet, actor: u64, bay: u64) -> bool {
+        let Some(e) = self.sim.entities().get(bay) else { return false; };
+        e.owner() == self.house && !e.lifecycle.in_limbo() && e.health.current()>0
+            && self.sim.object_type(e.type_ref(),rules).is_some_and(|ty| ty.unit_repair)
+            && !e.in_construction_bstate()
+            && e.mission.effective().known() != Some(crate::sim::mission::MissionType::Selling)
+            && e.seldom.radio_contacts.slot(0).is_none_or(|id| id == actor)
+    }
+
+    /// A native service relationship must be observed, not inferred from a
+    /// Sleep mission alone (newly produced units are asleep too).
+    pub fn own_repair_service(&self, rules: &RuleSet, actor: u64) -> bool {
+        use crate::sim::mission::MissionType;
+        let Some(e) = self.sim.entities().get(actor) else { return false; };
+        if e.owner() != self.house || !matches!(e.mission.effective().known(),
+            Some(MissionType::Sleep | MissionType::Repair)) { return false; }
+        let Some(bay) = e.seldom.radio_contacts.slot(0) else { return false; };
+        self.own_repair_bay_available(rules,actor,bay)
+            && self.sim.entities().get(bay).is_some_and(|b|
+                b.seldom.radio_contacts.slot(0) == Some(actor)
+                    && b.mission.effective().known() == Some(MissionType::Repair))
     }
 
     /// Whether `entity_id`'s weapon may fire this frame: the rearm timer has
@@ -2021,6 +2148,12 @@ impl<'a> Observation<'a> {
             false,
             count_in_production,
         )
+    }
+
+    /// The same producer search that begins native production.
+    pub(crate) fn has_producer(&self, rules: &RuleSet, object: &ObjectType) -> bool {
+        crate::sim::production::find_factory(self.sim, rules, self.house, object, false, true, true)
+            .is_some()
     }
 
     /// The finished product `category`'s factory still holds: the cameo a

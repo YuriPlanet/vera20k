@@ -51,6 +51,7 @@ const MAX_STEP_CELLS: i32 = 4;
 pub(super) struct Shell {
     pub(super) impact: (i32, i32),
     pub(super) frames: u32,
+    pub(super) damage: i32,
     /// `CellSpread=` in whole cells: `0.4` hurts the cell it lands in, `2.0`
     /// hurts everything within two cells.
     pub(super) spread: i32,
@@ -169,6 +170,7 @@ pub(super) fn run(
         let threat = Shell {
             impact: (i32::from(shot.impact.0), i32::from(shot.impact.1)),
             frames: shot.frames,
+            damage: shot.damage,
             spread,
         };
         if shot.homing {
@@ -248,15 +250,26 @@ pub(super) fn run(
         // that shell. Wide splashes, massed fire and wounded units retain
         // their normal emergency escape behaviour.
         if super::micro::firing(obs, unit.mission, unit.entity_id)
-            && obs.weapon_ready(unit.entity_id)
+            && obs.attack_target(unit.entity_id).is_some_and(|target|
+                obs.observed_object_cell(target).is_some() && obs.is_hostile(target)
+                    && obs.engage(rules,unit.entity_id,target)==crate::sim::control::observation::Engage::Ready)
+            && (!airborne || obs.weapon_ready(unit.entity_id))
             && unit.health_permille >= 750
             && threats.len() == 1 && threats[0].spread <= 1
+            && obs.health(unit.entity_id).is_some_and(|hp| threats[0].damage.max(0) <= hp/4)
         {
             continue;
         }
         let Some(target) = escape_cell(unit.cell, &threats, obs.map_extent()) else {
             continue;
         };
+        if !airborne {
+            let exposure_at = |cell: (u16,u16)| exposure_to_all(
+                (i32::from(cell.0),i32::from(cell.1)),&threats);
+            if exposure_at(target) > 0 || !obs.is_ground_walkable(target.0,target.1)
+                || !super::orders::reachable(rules,obs,unit.entity_id,target) { continue; }
+
+        }
         let here = (i32::from(unit.cell.0), i32::from(unit.cell.1));
         let Some(deadline) = threats
             .iter()
@@ -270,6 +283,12 @@ pub(super) fn run(
             .unsigned_abs()
             .max((i32::from(target.1) - here.1).unsigned_abs());
         let speed = crate::util::fixed_math::ra2_speed_to_leptons_per_frame(ty.speed);
+        if !airborne && obs.destination(unit.entity_id).is_some_and(|cell| {
+            let travel = super::advance::cell_distance(unit.cell,cell);
+            travel > 0 && travel <= MAX_STEP_CELLS
+                && exposure_to_all((i32::from(cell.0),i32::from(cell.1)),&threats)==0
+                && can_clear(travel as u32,speed,deadline,REACTION_FRAMES)
+        }) { continue; }
         if !can_clear(cells, speed, deadline, REACTION_FRAMES) {
             continue;
         }
@@ -296,6 +315,7 @@ mod tests {
         Shell {
             impact,
             frames,
+            damage: 50,
             spread,
         }
     }

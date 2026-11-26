@@ -82,7 +82,7 @@ impl AutoplaySession {
         let issued = self.host.step(sim, rules);
         let owner = self.host.owner();
         for command in &issued {
-            projection.mirror_auto_play(sim, rules, owner, command);
+            projection.model.mirror_auto_play(sim, rules, owner, command);
         }
         issued
     }

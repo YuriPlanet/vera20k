@@ -482,6 +482,14 @@ impl Tracker {
         self.restoring.remove(&unit);
     }
 
+    /// A safety abort is not a temporary dodge. Never resume its old target
+    /// or keep a task reservation for an order that was vetoed.
+    pub(super) fn cancel_for_safety(&mut self, unit: u64) {
+        self.intents.remove(&unit);
+        self.forget_primary(unit);
+        self.tasks.release(unit);
+    }
+
     /// Drop an intent the world does not show.
     ///
     /// An order that was refused, that had no path, or that a later order

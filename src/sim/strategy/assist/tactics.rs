@@ -4,7 +4,7 @@
 
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
-use crate::sim::control::observation::Observation;
+use crate::sim::control::observation::{EnemyEntity, Observation};
 
 use super::threats::distance;
 
@@ -62,7 +62,7 @@ pub(super) fn controller_covering(
 /// Checking only its endpoint missed the common case of an army marching
 /// *through* a Yuri's control radius to reach the next base. Clip the line
 /// segment to the actual square instead of sampling a handful of tiles.
-fn path_enters_control_box(
+pub(super) fn path_enters_control_box(
     from: (u16, u16), to: (u16, u16), at: (u16, u16), radius: i32,
 ) -> bool {
     let mut first = 0.0_f64;
@@ -138,44 +138,28 @@ pub(super) fn evade_controller(
     candidates.first().map(|(_, _, cell)| *cell)
 }
 
-/// Defensive fire is not merely more hit points: short-ranged infantry can
-/// be destroyed before they take a single shot. An existing standoff unit
-/// removes this gate; otherwise a rules-legal ranged vehicle must be
-/// obtainable, or there is no artillery strategy to wait for.
-pub(super) fn need_siege(
+/// A visible battery actually meeting the current front. Owning or being
+/// able to buy a longer-range weapon is not proof that its fire is effective.
+pub(super) fn siege_barrier(
     rules: &RuleSet, obs: &Observation<'_>,
     target: (u16,u16), fighters: &[&super::census::Unit],
-) -> Option<i32> {
-    let (defensive_reach, _defense, defender_id) = obs.visible_enemy_entities()
-        .filter_map(|enemy| {
-            let ty = obs.entity_type(rules,enemy.entity_id)?;
-            if !super::siege_counter::dangerous_battery(rules,ty)
-                || !obs.visible_enemy_building_operational(rules, enemy.entity_id)
-                || distance(enemy.cell,target) > 14
-                // Don't park the entire army at home because a gun exists
-                // on the far side of the map. Wait for artillery only when
-                // the main force is actually approaching its defended line.
-                || !fighters.iter().any(|unit| distance(unit.cell,enemy.cell) <= 18
-                    && (obs.can_hurt(rules,enemy.entity_id,unit.entity_id)
-                        || mind_control_reach(rules,ty).is_some()))
-            { return None; }
-            let reach = super::siege_counter::battery_reach(rules,ty);
-            (reach >= 4).then_some((reach,ty,enemy.entity_id))
-        })
-        .max_by_key(|(reach,ty,id)| (*reach,ty.strength,*id))?;
-    if fighters.iter().any(|unit| {
-        obs.entity_type(rules,unit.entity_id).is_some_and(|ty| {
-            super::siege_counter::ground_reach(rules,ty) > defensive_reach + 1
-                && obs.can_hurt(rules,unit.entity_id,defender_id)
-        })
-    }) { return None; }
-    // A live range-7+ battery is never a pillbox. If our currently legal
-    // tech does not yet produce a longer-ranged gun, keep the screen alive
-    // while tech/air/heavy procurement catches up. A truly concentrated
-    // *heavy* charge is separately authorized by `prepare_siege_charge`.
-    // This must also hold when a mod has no standoff type at all: blindly
-    // falling back to the old line-tank march caused the reported losses.
-    Some(defensive_reach)
+) -> Option<(crate::sim::control::observation::EnemyEntity,i32)> {
+    obs.visible_enemy_entities().filter_map(|enemy| {
+        let ty = obs.entity_type(rules,enemy.entity_id)?;
+        if !super::siege_counter::dangerous_battery(rules,ty)
+            || !obs.visible_enemy_building_operational(rules, enemy.entity_id)
+            || distance(enemy.cell,target) > 14
+            || !fighters.iter().any(|unit| distance(unit.cell,enemy.cell) <= 18
+                && (obs.can_hurt(rules,enemy.entity_id,unit.entity_id)
+                    || mind_control_reach(rules,ty).is_some()))
+        { return None; }
+        let reach = super::siege_counter::battery_reach(rules,ty);
+        // Light defenses are handled by normal local superiority and
+        // fragility checks; heavy / control guns get a dedicated operation.
+        (reach >= 7 || mind_control_reach(rules,ty).is_some())
+            .then_some((enemy,reach,ty.strength))
+    }).max_by_key(|(enemy,reach,hp)| (*reach,*hp,enemy.entity_id))
+        .map(|(enemy,reach,_)| (enemy,reach))
 }
 
 
@@ -437,6 +421,40 @@ pub(super) fn siege_post(
     rules: &RuleSet, obs: &Observation<'_>, actor: u64,
     from: (u16,u16), gun: (u16,u16), reach: i32,
 ) -> Option<(u16,u16)> {
+    siege_post_impl(rules,obs,actor,from,from,gun,reach,&[])
+}
+
+/// Main-fist staging uses a common approach direction. If that direction
+/// is unsafe or unreachable, the actor can still use its own safe side.
+pub(super) fn siege_post_on_lane(
+    rules:&RuleSet,obs:&Observation<'_>,actor:u64,
+    from:(u16,u16),approach_from:(u16,u16),gun:(u16,u16),reach:i32,
+    visible:&[EnemyEntity],
+)->Option<(u16,u16)> {
+    let guns=super::safety::envelopes(rules,obs,actor,visible,false);
+    let zone=obs.entity_type(rules,actor)?.movement_zone;
+    if let Some(post)=obs.destination(actor).filter(|post|
+        obs.attack_target(actor).is_none()
+        && distance(*post,gun)>=reach+2 && distance(*post,gun)<=reach+8
+        && standoff_lane(approach_from,gun,reach+2,0)
+            .is_some_and(|centre|distance(centre,*post)<=8)
+        && obs.is_ground_walkable(post.0,post.1)
+        && obs.can_reach(zone,from,*post)
+        && super::safety::safe_leg(&guns,from,*post,true)
+        && !unsafe_post(rules,obs,actor,*post))
+    {return Some(post);}
+    siege_post_impl(rules,obs,actor,from,approach_from,gun,reach,&guns)
+        .or_else(|| {
+            (approach_from!=from).then(||
+                siege_post_impl(rules,obs,actor,from,from,gun,reach,&guns)).flatten()
+        })
+}
+
+fn siege_post_impl(
+    rules:&RuleSet,obs:&Observation<'_>,actor:u64,
+    from:(u16,u16),approach_from:(u16,u16),gun:(u16,u16),reach:i32,
+    guns:&[super::safety::Envelope],
+)->Option<(u16,u16)> {
     let zone = obs.entity_type(rules, actor)?.movement_zone;
     // Give adjacent units distinct lanes; one shared post would turn the
     // staging line into a traffic jam. Actor IDs break ties deterministically.
@@ -446,12 +464,13 @@ pub(super) fn siege_post(
     // Starting at +3 made an otherwise winning gun park out of range.
     for radius in [reach + 2, reach + 3, reach + 5, reach + 7] {
         for shift in [lane * 2, 0, -lane * 2] {
-            let Some((x,y)) = standoff_lane(from,gun,radius,shift) else { continue; };
+            let Some((x,y)) = standoff_lane(approach_from,gun,radius,shift) else { continue; };
             let post = (x,y);
             if !obs.is_ground_walkable(x,y) || !obs.can_reach(zone,from,post) {
                 continue;
             }
-            if !unsafe_post(rules,obs,actor,post) { return Some(post); }
+            if super::safety::safe_leg(guns,from,post,true)
+                && !unsafe_post(rules,obs,actor,post) { return Some(post); }
         }
     }
     None

@@ -10,9 +10,6 @@ import tempfile
 import unittest
 
 from tools.autoplay_check import (
-    ALL_JOBS,
-    PROPOSABLE,
-    capability_report,
     compare_histories,
     judge,
     losses,
@@ -21,66 +18,17 @@ from tools.autoplay_check import (
     parse_report,
 )
 
-# One unit's decision lines, as the policy prints them. A cell target contains a
-# space — `Cell((172, 89))` — and a parser that assumed a non-space target
-# dropped every job that named one, so harvest and defend both read zero while
-# the log held ninety-six harvest lines.
-UNITS = """[INFO] policy v2 unit: id=2671 AMCV job=Deploy target=None standing=0
-[INFO] policy v2 unit: id=2771 CMIN job=Harvest target=Cell((172, 89)) standing=90
-[INFO] policy v2 unit: id=2771 CMIN job=Harvest target=Cell((172, 89)) standing=0
-[INFO] policy v2 unit: id=2772 CMIN job=Harvest target=Cell((166, 98)) standing=30
-[INFO] policy v2 unit: id=2673 MTNK job=Defend target=Cell((178, 100)) standing=0
-[INFO] policy v2 unit: id=2673 MTNK job=Assault target=Object(3985) standing=0
-[INFO] policy v2 unit: id=2673 MTNK job=ReturnHome target=Cell((169, 91)) standing=0
-[INFO] policy v2 unit: id=2661 GACNST job=none target=- standing=0
-"""
+class AssistStatusTests(unittest.TestCase):
+    def test_current_assist_status_fields(self):
+        text = (
+            "auto play: fighters=4 limbo=1 idle=2 unclaimed=1 push=hold squads=[Attack:2] pts=1000/2000 income=300/min\n"
+            "auto play: fighters=8 limbo=0 idle=1 unclaimed=0 push=push squads=[Attack:5] pts=2000/3000 income=500/min\n"
+        )
+        report = parse_report("24301", text, 1.0)
+        self.assertEqual((report.army, report.idle, report.unowned), (8, 1, 0))
+        self.assertEqual((report.peak_army, report.peak_limbo, report.army_at_push), (8, 1, 8))
+        self.assertEqual((report.push, report.push_flips, report.epoints, report.income), ("push", 1, 2000, 500))
 
-
-class CapabilityTests(unittest.TestCase):
-    def test_a_job_is_counted_by_the_units_that_took_it(self):
-        """Two trucks on harvest is two, not ninety-six log lines."""
-        report = parse_report("24301", UNITS, 1.0)
-        self.assertEqual(report.jobs_used["Harvest"], 2, "2771 and 2772, not per line")
-        self.assertEqual(report.jobs_used["Deploy"], 1)
-        self.assertEqual(report.jobs_used["Defend"], 1)
-        self.assertEqual(report.jobs_used["Assault"], 1)
-        self.assertEqual(report.jobs_used["ReturnHome"], 1)
-
-    def test_a_cell_target_with_a_space_is_read(self):
-        """The regression: `Cell((172, 89))` must not swallow the job name."""
-        report = parse_report("24301", UNITS, 1.0)
-        self.assertIn("Harvest", report.jobs_used)
-        self.assertIn("Defend", report.jobs_used)
-
-    def test_none_is_not_a_capability(self):
-        """A unit with no job is not a unit that exercised one."""
-        report = parse_report("24301", UNITS, 1.0)
-        self.assertNotIn("none", report.jobs_used)
-
-    def test_the_table_names_every_declared_kind_and_the_unused_ones(self):
-        """A ratio of zero is the finding: the code has it, the house never did."""
-        report = parse_report("24301", UNITS, 1.0)
-        self.assertEqual(sorted(report.capabilities), sorted(ALL_JOBS))
-        self.assertEqual(sorted(report.unused_capabilities), sorted(
-            kind for kind in ALL_JOBS
-            if kind not in report.jobs_used
-        ))
-        self.assertIn("Capture", report.unused_capabilities)
-        self.assertIn("Transport", report.unused_capabilities)
-        self.assertNotIn("Harvest", report.unused_capabilities)
-
-    def test_the_report_names_a_job_the_policy_should_always_issue(self):
-        """Defend and Harvest are issued every match; zero means something gated them."""
-        report = parse_report("24301", CURVE, 1.0)
-        printed = io.StringIO()
-        with contextlib.redirect_stdout(printed):
-            capability_report([report])
-        text = printed.getvalue()
-        self.assertIn("capabilities over 1 match(es)", text)
-        self.assertIn("never asked for", text)
-        self.assertIn("a job the policy can issue was never issued", text)
-        for kind in PROPOSABLE:
-            self.assertIn(kind, text)
 
 # A census curve: tick, credits, enemy credits, power, own, enemy, ready,
 # rejected, not ready. Own climbs from 13 to 15 and dips twice; enemy only falls.

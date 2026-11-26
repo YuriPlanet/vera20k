@@ -12,6 +12,26 @@ fn snapshot(seed: u64) -> Option<(Simulation, RuleSet)> {
     Some((sim, rules))
 }
 
+/// The arena with the whole map in sight for both houses.
+///
+/// The capture steps read the sight plane, not only the explored one: an
+/// engineer may only be sent at a building it can see. `rival_arena` starts
+/// under full shroud, so a target-choice test that keeps it refuses every
+/// target and reads as a broken step.
+fn snapshot_known(seed: u64) -> Option<(Simulation, RuleSet)> {
+    let (sim, rules) = snapshot(seed)?;
+    let mut sim = sim;
+    for name in ["Russians", "Americans"] {
+        let owner = sim.interner.intern(name);
+        for y in 0..32 {
+            for x in 0..32 {
+                sim.fog.mark_visible_for_owner(owner, x, y);
+            }
+        }
+    }
+    Some((sim, rules))
+}
+
 /// A transport carries the army; it does not fight in it. The night hawk
 /// carries a cannon, so "has a primary weapon" counted it as army and the
 /// house's fighting strength was measured in passenger seats.
@@ -36,7 +56,7 @@ fn a_transport_is_not_counted_as_army() {
 /// wishlist's "工程师…最后还是送死，完全不会识别威胁单位".
 #[test]
 fn an_engineer_drops_the_walk_when_the_ground_turns_bad() {
-    let Some((mut sim, rules)) = snapshot(0xA17) else {
+    let Some((mut sim, rules)) = snapshot_known(0xA17) else {
         return;
     };
     let owner = sim.interner.intern("Americans");
@@ -220,7 +240,7 @@ fn a_soldier_deploys_when_the_fight_reaches_it() {
 
     // Nothing in front of it: an empty field is not a fight.
     let mut out = Outbox::default();
-    deploy(&mut brain, &obs, &mut out);
+    deploy(&mut brain, &rules, &obs, &mut out);
     assert!(
         out.commands.is_empty(),
         "no hostile, no D key: {:?}",
@@ -234,7 +254,7 @@ fn a_soldier_deploys_when_the_fight_reaches_it() {
         cell: (23, 20),
     });
     let mut out = Outbox::default();
-    deploy(&mut brain, &obs, &mut out);
+    deploy(&mut brain, &rules, &obs, &mut out);
     assert!(
         out.commands.iter().any(|command| matches!(
             command,
@@ -248,7 +268,7 @@ fn a_soldier_deploys_when_the_fight_reaches_it() {
     // soldier still reads as standing. Asking again now would toggle it
     // straight back up, every frame.
     let mut again = Outbox::default();
-    deploy(&mut brain, &obs, &mut again);
+    deploy(&mut brain, &rules, &obs, &mut again);
     assert!(
         again.commands.is_empty(),
         "one D key per soldier: {:?}",
@@ -262,7 +282,7 @@ fn a_soldier_deploys_when_the_fight_reaches_it() {
 fn arena(seed: u64) -> Option<(Simulation, RuleSet)> {
     let retail = crate::rules::retail_ini_fixture::retail_battle_rules()?;
     let rules = retail.rules;
-    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, seed);
+    let mut sim = crate::sim::arena_fixture::rival_arena_known(&rules, seed);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     Some((sim, rules))
@@ -408,7 +428,7 @@ fn a_rifleman_garrisons_with_the_capture_click() {
          MaxNumberOccupants=5\n",
     ))
     .expect("garrison rules");
-    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xA17);
+    let mut sim = crate::sim::arena_fixture::rival_arena_known(&rules, 0xA17);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     let owner = sim.interner.intern("Americans");
@@ -487,15 +507,10 @@ fn a_hurt_vehicle_is_sent_into_the_depot() {
         "the hurt tank clicks the bay, it does not walk at its cell"
     );
 }
-/// And the other half of the retreat rule: a hurt unit in a fight the
-/// house is winning stays in it.
-///
-/// Every hurt unit walking home is a third of the attackers peeling off
-/// mid-exchange, which is what makes a push a string of small fights
-/// instead of one. The house's army outweighs what stands around the
-/// unit, so the unit keeps fighting.
+/// A local win does not heal the wounded actor. A ground casualty without
+/// a bay remains under recovery ownership, rather than being re-spent.
 #[test]
-fn a_hurt_unit_in_a_won_fight_stays_in_it() {
+fn a_hurt_unit_without_depot_remains_held_even_in_a_won_fight() {
     let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
         "[VehicleTypes]\n0=TANK\n\n\
          [TANK]\nStrength=100\nSpeed=5\nPrimary=Gun\nArmor=none\n\
@@ -535,8 +550,9 @@ fn a_hurt_unit_in_a_won_fight_stays_in_it() {
         !out.orders
             .iter()
             .any(|order| order.actor == tank && matches!(order.goal, Goal::Enter { .. })),
-        "the hurt tank stays in a fight the house is winning"
+        "a nonexistent bay must not get an Enter request"
     );
+    assert!(brain.tracked.held(0,tank), "winning nearby is not recovery");
 }
 
 /// The whole way in: the Capture click the brain now sends has to end with
@@ -879,7 +895,7 @@ fn the_wrench_is_clicked_once_per_wound() {
     let obs = Observation::new(&sim, owner);
     // Nothing but a healthy building: nothing to click.
     let mut out = Outbox::default();
-    repairs(&mut brain, &rules, &obs, &mut out);
+    repairs(&mut brain, &rules, &obs, &super::super::plan::Budget {committed:0,free:10_000,income:None}, &mut out);
     assert!(
         out.commands.is_empty(),
         "a building that has never stood whole is not a wound: {:?}",
@@ -888,7 +904,7 @@ fn the_wrench_is_clicked_once_per_wound() {
 
     brain.repaired.insert(hurt);
     let mut out = Outbox::default();
-    repairs(&mut brain, &rules, &obs, &mut out);
+    repairs(&mut brain, &rules, &obs, &super::super::plan::Budget {committed:0,free:10_000,income:None}, &mut out);
     assert_eq!(
         out.commands
             .iter()
@@ -899,7 +915,7 @@ fn the_wrench_is_clicked_once_per_wound() {
         out.commands
     );
     let mut again = Outbox::default();
-    repairs(&mut brain, &rules, &obs, &mut again);
+    repairs(&mut brain, &rules, &obs, &super::super::plan::Budget {committed:0,free:10_000,income:None}, &mut again);
     assert!(
         again.commands.is_empty(),
         "the wrench is already on: {:?}",
@@ -980,12 +996,11 @@ fn a_hero_pulls_out_well_before_the_ordinary_line() {
     managed(&mut brain, &rules, &obs, 0, &mut out);
 
     assert!(
-        out.attachments.iter().any(|a| a.actor == boris),
-        "the hero walks out at three quarters: {:?}",
-        out.attachments.iter().map(|a| a.actor).collect::<Vec<_>>()
+        brain.tracked.held(0,boris),
+        "the hero is held out of ordinary orders at three quarters"
     );
     assert!(
-        !out.attachments.iter().any(|a| a.actor == gi),
+        !brain.tracked.held(0,gi),
         "the conscript stays: three quarters is not its line"
     );
 }
@@ -1071,7 +1086,7 @@ fn a_building_that_does_not_sell_is_written_off() {
 /// The derrick standing in the same base is 500 credits and the engineer.
 #[test]
 fn an_engineer_takes_the_enemy_tech_before_the_maps_own_money() {
-    let Some((mut sim, rules)) = snapshot(0xA17) else {
+    let Some((mut sim, rules)) = snapshot_known(0xA17) else {
         return;
     };
     let owner = sim.interner.intern("Americans");
@@ -1111,7 +1126,7 @@ fn an_engineer_takes_the_enemy_tech_before_the_maps_own_money() {
 /// the enemy's own base, and the tech it will take afterwards waits.
 #[test]
 fn an_engineer_takes_the_derrick_while_the_house_has_no_income() {
-    let Some((mut sim, rules)) = snapshot(0xA17) else {
+    let Some((mut sim, rules)) = snapshot_known(0xA17) else {
         return;
     };
     let owner = sim.interner.intern("Americans");
@@ -1181,7 +1196,7 @@ fn a_structure_answers_for_every_cell_of_its_foundation() {
 /// house it stands in is neither the enemy's nor this one's.
 #[test]
 fn an_engineer_captures_the_neutral_building_nobody_owns() {
-    let Some((mut sim, rules)) = snapshot(0xA17) else {
+    let Some((mut sim, rules)) = snapshot_known(0xA17) else {
         return;
     };
     let owner = sim.interner.intern("Americans");
@@ -1226,7 +1241,7 @@ fn an_engineer_captures_the_neutral_building_nobody_owns() {
 /// it. The worth only decides between two targets equally safe.
 #[test]
 fn an_engineer_takes_the_unguarded_derrick_over_the_guarded_lab() {
-    let Some((mut sim, rules)) = snapshot(0xA17) else {
+    let Some((mut sim, rules)) = snapshot_known(0xA17) else {
         return;
     };
     let owner = sim.interner.intern("Americans");
@@ -1265,7 +1280,7 @@ fn an_engineer_takes_the_unguarded_derrick_over_the_guarded_lab() {
 /// Enemy buildings are cover the route has to get past.
 #[test]
 fn an_engineer_does_not_walk_through_the_enemy_base() {
-    let Some((mut sim, rules)) = snapshot(0xA17) else {
+    let Some((mut sim, rules)) = snapshot_known(0xA17) else {
         return;
     };
     let owner = sim.interner.intern("Americans");
@@ -1308,7 +1323,7 @@ fn an_engineer_does_not_walk_through_the_enemy_base() {
 /// an engineer walked through the tank and died half-way.
 #[test]
 fn an_engineer_does_not_walk_through_a_guard_to_reach_its_target() {
-    let Some((mut sim, rules)) = snapshot(0xA17) else {
+    let Some((mut sim, rules)) = snapshot_known(0xA17) else {
         return;
     };
     let owner = sim.interner.intern("Americans");
@@ -1454,7 +1469,7 @@ fn a_dog_is_not_sent_at_what_its_jaw_cannot_take() {
 /// and stood at.
 #[test]
 fn an_engineer_is_not_sent_at_a_building_it_cannot_take() {
-    let Some((mut sim, rules)) = snapshot(0xA17) else {
+    let Some((mut sim, rules)) = snapshot_known(0xA17) else {
         return;
     };
     let owner = sim.interner.intern("Americans");

@@ -110,12 +110,10 @@ const HARASS_MAX: usize = 4;
 const HARASS_MIN: usize = 2;
 
 fn harass_allocation(fighters: usize, garrison_and_scouts: usize) -> usize {
-    // Before the first ten fighters, raiding is an alternative to a push;
-    // afterwards preserve six fighting bodies and scale the raiders only
-    // from the genuine surplus. The old all-or-four rule stayed silent at
-    // 11–16 fighters, exactly the 1v1 window in which mining matters most.
-    let keep = if fighters < ARMY_TO_ATTACK { 0 } else { 6 };
-    let surplus = fighters.saturating_sub(garrison_and_scouts.saturating_add(keep));
+    // V49: raid from the surplus AFTER reserving a real main fist. In V48
+    // an opening of five fighters became four raiders and one defender,
+    // leaving an empty Attack squad and no way to form the first wave.
+    let surplus = fighters.saturating_sub(garrison_and_scouts.saturating_add(ARMY_TO_ATTACK));
     if surplus < HARASS_MIN { 0 } else { surplus.min(HARASS_MAX) }
 }
 
@@ -181,7 +179,7 @@ pub(super) fn winning_fight(
     }
     let reach = PUSH_MEET_CELLS.saturating_mul(PUSH_MEET_CELLS);
     let ours = census.units.iter()
-        .filter(|unit| unit.orderable && unit.points > 0)
+        .filter(|unit| census.available(unit))
         .filter(|unit| squared_distance(unit.cell, cell) <= reach)
         .fold(0i32, |total, unit| total.saturating_add(unit.points));
     ours.saturating_mul(1_000) >= theirs.saturating_mul(permille)
@@ -323,13 +321,18 @@ impl Squads {
         self.squads.clear();
 
         let mut taken: BTreeSet<u64> = BTreeSet::new();
+        // Detached actors retain Attack membership for the operation but
+        // cannot be recruited again for scouting, defence or raiding.
+        let available = census.units.iter().filter(|unit| census.available(unit)
+            && !census.detached.contains(&unit.entity_id)).count();
 
         // The scouts first: a dog that has been sent to look is not one of the
         // fist, and the fist is short of it either way.
         let scouts: BTreeSet<u64> = census
             .units
             .iter()
-            .filter(|unit| unit.traits.scout && unit.orderable && !unit.hand)
+            .filter(|unit| unit.traits.scout && census.available(unit)
+                && !census.detached.contains(&unit.entity_id))
             .map(|unit| unit.entity_id)
             .collect();
         // A scout is not a strength the house designs to: every dog and every
@@ -383,19 +386,20 @@ impl Squads {
         let want = if raiders > 0 {
             raiders
                 .max(DEFEND_MAX)
-                .min((census.fighters / 2).max(1))
-                .min(census.fighters)
+                .min((available / 2).max(1))
+                .min(available)
         } else {
-            standing_garrison(census.fighters)
+            standing_garrison(available.saturating_sub(scout_want))
         };
-        if want > 0 {
+        let borrowed: BTreeSet<_> = old_defend.intersection(&census.borrowed_defenders)
+            .copied().collect();
+        if want > 0 || !borrowed.is_empty() {
             let mut nearest: Vec<&Unit> = census
                 .units
                 .iter()
                 .filter(|unit| {
-                    unit.traits.combat
-                        && unit.orderable
-                        && !unit.hand
+                    census.available(unit)
+                        && !census.detached.contains(&unit.entity_id)
                         && !taken.contains(&unit.entity_id)
                 })
                 .collect();
@@ -412,13 +416,15 @@ impl Squads {
                  raid.is_none() && !old_defend.contains(&unit.entity_id),
                  !infantry, distance, unit.entity_id)
             });
-            let members: BTreeSet<u64> = nearest
+            let mut members: BTreeSet<u64> = nearest
                 .into_iter()
                 .take(want)
                 .map(|unit| unit.entity_id)
                 .collect();
+            let ready = members.len();
+            members.extend(borrowed.iter().copied());
             taken.extend(members.iter().copied());
-            let state = if members.len() >= want {
+            let state = if ready >= want {
                 SquadState::Ready
             } else {
                 SquadState::Muster
@@ -442,16 +448,20 @@ impl Squads {
         //
         // Not the whole army either way — a raid is worth a handful, and the
         // house still needs something at home for the raid that answers it.
-        let harass_count = if multiple_houses { 0 }
-            else { harass_allocation(census.fighters, taken.len()) };
+        // The denominator must match the actual actors available to advance.
+        // Ships, heroes and task-owned units cannot make up a land fist.
+        let main_total = census.units.iter().filter(|u| census.main_available(u)).count();
+        let main_taken = census.units.iter().filter(|u| census.main_available(u)
+            && taken.contains(&u.entity_id)).count();
+        let harass_count = if multiple_houses || raiders > 0 { 0 }
+            else { harass_allocation(main_total, main_taken) };
         if harass_count >= HARASS_MIN {
             let mut nearest: Vec<&Unit> = census
                 .units
                 .iter()
                 .filter(|unit| {
-                    unit.traits.combat
-                        && unit.orderable
-                        && !unit.hand
+                    census.main_available(unit)
+                        && matches!(unit.slot, super::census::Slot::Vehicle | super::census::Slot::Infantry)
                         && !taken.contains(&unit.entity_id)
                 })
                 .collect();
@@ -495,11 +505,12 @@ impl Squads {
         let attack: BTreeSet<u64> = census
             .units
             .iter()
-            .filter(|unit| unit.traits.combat && unit.orderable && !unit.hand)
+            .filter(|unit| census.available(unit))
             .map(|unit| unit.entity_id)
             .filter(|id| !taken.contains(id))
             .collect();
-        let state = if attack.len() >= ARMY_TO_ATTACK {
+        let state = if census.units.iter().filter(|u| attack.contains(&u.entity_id)
+            && census.main_available(u)).count() >= ARMY_TO_ATTACK {
             SquadState::Ready
         } else {
             SquadState::Muster
@@ -586,6 +597,41 @@ mod tests {
                 ..Default::default()
             },
         }
+    }
+
+    #[test]
+    fn unavailable_units_do_not_fill_a_fist_or_disappear_from_owned_health() {
+        let mut census = Census::default();
+        census.base_cell = Some((20,20));
+        for id in 0..18 { census.units.push(unit(id, (20,20))); }
+        census.fighters = 18;
+        census.unavailable.extend([0,1,2,3,4]);
+        census.detached.insert(17);
+        assert_eq!(census.available_fighters(), 13);
+        assert_eq!(census.available_points(), 1_300);
+        assert_eq!(census.army_points(), 1_800);
+        assert!(!census.main_available(&census.units[17]));
+        let mut squads = Squads::new();
+        squads.regroup(0, &census);
+        assert!(squads.members().is_disjoint(&census.unavailable));
+        assert!(squads.squad(Role::Attack).unwrap().members.contains(&17));
+    }
+
+    #[test]
+    fn borrowed_defender_keeps_membership_without_counting_as_available() {
+        let mut census = Census::default();
+        census.base_cell = Some((20,20));
+        for id in 0..12 { census.units.push(unit(id, (20,20))); }
+        census.fighters = 12;
+        let mut squads = Squads::new();
+        squads.regroup(0, &census);
+        let guard = *squads.squad(Role::Defend).unwrap().members.iter().next().unwrap();
+        census.borrowed_defenders.insert(guard);
+        census.unavailable.insert(guard);
+        squads.regroup(REGROUP_FRAMES, &census);
+        assert!(squads.squad(Role::Defend).unwrap().members.contains(&guard));
+        assert!(!squads.squad(Role::Attack).unwrap().members.contains(&guard));
+        assert_eq!(census.available_fighters(), 11);
     }
 
     #[test]
@@ -822,33 +868,16 @@ mod tests {
     /// An army too small to take a base is not an army that should be standing
     /// in its own yard: the nearest few go at what pays for the enemy's army.
     #[test]
-    fn an_army_too_small_to_take_a_base_goes_harassing() {
+    fn a_small_army_keeps_a_real_fist_before_adding_raiders() {
         let mut census = Census::default();
         census.base_cell = Some((20, 20));
-        for id in 0..5u64 {
-            census.units.push(unit(id, (24, 24)));
-        }
-        census.fighters = 5;
+        for id in 0..7u64 { census.units.push(unit(id, (24, 24))); }
+        census.fighters = 7;
         let mut squads = Squads::new();
         squads.regroup(0, &census);
-        let harass = squads
-            .squad(Role::Harass)
-            .expect("a small army does not stand in its yard");
-        assert_eq!(harass.members.len(), HARASS_MAX, "a handful, not the rest");
-        assert_eq!(
-            squads
-                .squad(Role::Attack)
-                .map_or(0, |squad| squad.members.len()),
-            0,
-            "five units are a garrison and a raid, not a fist"
-        );
-        assert_eq!(
-            squads
-                .squad(Role::Defend)
-                .map_or(0, |squad| squad.members.len()),
-            1,
-            "and one rifleman stays home"
-        );
+        assert!(squads.squad(Role::Harass).is_none());
+        assert_eq!(squads.squad(Role::Attack).unwrap().members.len(), 4);
+        assert_eq!(squads.squad(Role::Defend).unwrap().members.len(), 3);
     }
 
     #[test]
@@ -901,7 +930,7 @@ mod tests {
     /// without a retail install.
     fn arena(seed: u64) -> Option<(crate::sim::world::Simulation, RuleSet)> {
         let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()?;
-        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, seed);
+        let mut sim = crate::sim::arena_fixture::rival_arena_known(&rules, seed);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         Some((sim, rules))
@@ -992,9 +1021,10 @@ mod v29_raid_allocation_tests {
     use super::harass_allocation;
 
     #[test]
-    fn one_versus_one_raids_can_start_before_a_full_base_assault() {
-        assert_eq!(harass_allocation(11, 2), 3);
-        assert_eq!(harass_allocation(13, 2), 4);
+    fn raids_require_surplus_after_a_full_main_fist() {
+        assert_eq!(harass_allocation(11, 2), 0);
+        assert_eq!(harass_allocation(13, 2), 0);
+        assert_eq!(harass_allocation(14, 2), 2);
         assert_eq!(harass_allocation(30, 5), 4);
     }
 

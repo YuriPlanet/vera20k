@@ -127,6 +127,10 @@ pub(super) struct Budget {
 }
 
 impl Budget {
+    pub(super) fn without_reserve(self, credits: i32) -> Self {
+        Self { free: credits.saturating_sub(self.committed), ..self }
+    }
+
     /// Reserve an *accepted* new queue request against this frame's shared
     /// wallet. A building, soldier, aircraft and vehicle all see the same
     /// available credits; production itself charges later, so without this
@@ -138,6 +142,13 @@ impl Budget {
         self.free = self.free.saturating_sub(cost);
         self.committed = self.committed.saturating_add(cost);
         true
+    }
+
+    /// Account for already proposed same-frame purchases. This is debt,
+    /// not an optional reserve which emergency code may release.
+    pub(super) fn after_commitment(self, cost: i32) -> Self {
+        Self { committed: self.committed.saturating_add(cost.max(0)),
+            free: self.free.saturating_sub(cost.max(0)), ..self }
     }
 
     /// The same budget with `credits` held back.
@@ -153,6 +164,16 @@ impl Budget {
             income: self.income,
         }
     }
+}
+
+/// Accepted-for-submission proposals still have to be paid by native factories.
+pub(super) fn proposed_cost(rules: &RuleSet, obs: &Observation<'_>, out: &crate::sim::control::brain::Outbox) -> i32 {
+    use crate::sim::control::intent::Intent;
+    out.intents.iter().filter_map(|intent| match intent {
+        Intent::QueueProduction { type_id } => Some(obs.object_type(rules,*type_id)
+            .map_or(i32::MAX, |ty| obs.cost_of(rules,ty).max(0))),
+        _ => None,
+    }).fold(0i32,i32::saturating_add)
 }
 
 /// Read the budget: the ledger's own commitment, the reserve the house will not
@@ -183,8 +204,8 @@ pub(super) fn budget(
         committed,
         free: obs
             .credits()
-            .wrapping_sub(committed)
-            .wrapping_sub(held),
+            .saturating_sub(committed)
+            .saturating_sub(held),
         income,
     }
 }
@@ -607,7 +628,7 @@ pub(super) fn power_deficit(
 }
 
 pub(super) fn power_short(rules: &RuleSet, obs: &Observation<'_>, census: &Census) -> bool {
-    power_deficit(rules, obs, census, 0) > 0
+    !obs.power_blackout_active() && power_deficit(rules, obs, census, 0) > 0
 }
 
 /// Keep enough spare generation for newly completed defenses and damaged
@@ -626,10 +647,8 @@ pub(super) fn planned_drain(
 ) -> i32 {
     let mut draw = obs.power_drain();
     for line in &census.lines {
-        for type_id in [line.product, line.ready].into_iter().flatten() {
-            if let Some(ty) = obs.object_type(rules, type_id) {
-                draw = draw.saturating_add(ty.power.saturating_neg().max(0));
-            }
+        if let Some(ty) = line.product.or(line.ready).and_then(|id| obs.object_type(rules, id)) {
+            draw = draw.saturating_add(ty.power.saturating_neg().max(0));
         }
     }
     draw
@@ -654,7 +673,7 @@ fn projected_power_shortfall(output: i32, drain: i32) -> bool {
 pub(super) fn needs_power_reserve(
     rules: &RuleSet, obs: &Observation<'_>, census: &Census, free: i32,
 ) -> bool {
-    census.refineries > 0 && census.harvesters >= 2
+    !obs.power_blackout_active() && census.refineries > 0 && census.harvesters >= 2
         && free >= 2_500 && obs.power_drain() > 0
         && projected_power_shortfall(
             planned_output(rules, obs, census), planned_drain(rules, obs, census),
@@ -689,10 +708,8 @@ pub(super) fn planned_output(rules: &RuleSet, obs: &Observation<'_>, census: &Ce
     // Finished but unplaced, and factory lines that have not finished: they
     // supply nothing now but are commitments already bought and paid for.
     for line in &census.lines {
-        for type_id in [line.product, line.ready].into_iter().flatten() {
-            if let Some(ty) = obs.object_type(rules, type_id) {
-                output = output.saturating_add(ty.power.max(0));
-            }
+        if let Some(ty) = line.product.or(line.ready).and_then(|id| obs.object_type(rules, id)) {
+            output = output.saturating_add(ty.power.max(0));
         }
     }
     output
@@ -958,15 +975,18 @@ mod tests {
             return;
         };
         let owner = sim.interner.intern("Americans");
-        let mut census = Census::default();
+        let census = Census::default();
         let plant = sim.interner().get("GAPOWR").expect("the plant's id");
-        census.lines[crate::sim::strategy::assist::census::LINE_BUILDING].product = Some(plant);
+        let refinery = sim.interner().get("GAREFN").expect("refinery id");
+        let refinery_cost = Observation::new(&sim, owner).cost_of(&rules,rules.object("GAREFN").unwrap());
+        let registry = sim.production_mut_for_test().factories_mut_for_test();
+        registry.test_enqueue_kernel(owner, ProductionCategory::Building, plant, 0, 800);
+        registry.test_enqueue_kernel(owner, ProductionCategory::Building, refinery, 1, refinery_cost);
+        registry.test_factory_mut(owner, ProductionCategory::Building).unwrap().set_balance_for_test(123);
         let obs = Observation::new(&sim, owner);
-        let ty = rules.object("GAPOWR").expect("the plant");
-
         let budget = budget(&rules, &obs, &census, None);
-        assert_eq!(budget.committed, obs.cost_of(&rules, ty));
-        assert_eq!(budget.free, obs.credits().wrapping_sub(budget.committed));
+        assert_eq!(budget.committed, 123 + refinery_cost);
+        assert_eq!(budget.free, obs.credits().saturating_sub(budget.committed));
     }
 
     fn ledger(rules: &RuleSet, sim: &Simulation, owner: InternedId) -> Census {
@@ -1117,7 +1137,10 @@ mod tests {
 
     #[test]
     fn queued_consumers_count_against_the_power_meter_before_placement() {
-        let Some((mut sim, rules)) = arena(0xA17) else { return; };
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else { return; };
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
         let owner = sim.interner.intern("Americans");
         let pending = sim.interner().get("GAPILE").expect("the barracks type");
         let draw = rules.object("GAPILE").expect("the barracks")
@@ -1126,9 +1149,25 @@ mod tests {
         let obs = Observation::new(&sim, owner);
         let mut census = Census::default();
         assert_eq!(planned_drain(&rules, &obs, &census), obs.power_drain());
-        census.lines[crate::sim::strategy::assist::census::LINE_BUILDING].ready = Some(pending);
+        let line = &mut census.lines[crate::sim::strategy::assist::census::LINE_BUILDING];
+        line.product = Some(pending);
+        line.ready = Some(pending);
         assert_eq!(planned_drain(&rules, &obs, &census),
             obs.power_drain().saturating_add(draw));
+    }
+
+    #[test]
+    fn a_timed_blackout_does_not_make_the_planner_buy_replacement_generation() {
+        let rules = RuleSet::empty_for_test();
+        let mut sim = crate::sim::world::Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        let power = sim.power_states_mut_for_test().entry(owner).or_default();
+        power.set_total_drain_for_test(200);
+        assert!(power_short(rules, &Observation::new(&sim, owner), &Census::default()));
+        sim.power_states_mut_for_test().entry(owner).or_default().start_blackout(0, 75);
+        let obs = Observation::new(&sim, owner);
+        assert_eq!(obs.power_balance(), -200);
+        assert!(!power_short(rules, &obs, &Census::default()));
     }
 
     /// The index in [`STEPS`] of the entry wanting `count` of `item`.

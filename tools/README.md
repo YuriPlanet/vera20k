@@ -143,11 +143,22 @@ python -m tools.cargo_run -- build --locked --release --no-default-features --bi
 
 ## Autoplay measurement loop
 
+For V42.1 regression acceptance use `python -m tools.autoplay_benchmark` and
+[the fixed-seed benchmark guide](../autoplay/docs/benchmark-v42.1.md). It
+saves each result immediately, guards resume identity and supports exact paired
+comparisons. The legacy runner below is retained for ad hoc checks.
+
 ```sh
 python -m tools.autoplay_check                                   # the pinned seed
+python -m tools.autoplay_check --report target/autoplay-results/matrix.csv  # re-read a matrix
 python -m tools.autoplay_check --seeds 0x5EED,19,10              # three seeds at once
 python -m tools.autoplay_check --skip-tests --ticks 12000       # a shorter look
 python -m unittest tools.tests.test_autoplay_check -v
+
+A whole matrix -- every faction against every opponent on every map -- is the
+same script: `--local`, `--opponent-countries`, `--credits`, `--units`,
+`--wall-seconds`, `--csv` with `--resume`, and `--report` for the pivots.
+[autoplay/docs/matrix.md](../autoplay/docs/matrix.md) is the guide.
 ```
 
 One command for the loop an autoplay change needs: build the fast-profile

@@ -136,6 +136,9 @@ fn issue_at_rank(
     unit: u64,
     goal: Goal,
 ) -> bool {
+    // The native door/track owns this product until its factory radio contact
+    // is released. Do not record a tactical task for an unready product.
+    if obs.own_factory_handoff(rules, unit).is_some() { return false; }
     // A mobile construction yard may appear from a crate, not only a war
     // factory. Its value is the future base: never borrow it for an assault,
     // even while the squads are waiting for their next regroup. Only a
@@ -147,6 +150,13 @@ fn issue_at_rank(
         log::debug!("auto play: rejecting combat order {goal:?} on mobile yard {unit}");
         return false;
     }
+    // Engineer capture admission is shared by bridge, asset, retry and
+    // ordinary capture passes. A new target does not inherit the old escort's
+    // safety verdict. The final arbiter also checks native ongoing missions.
+    if let Goal::Capture { target } = goal
+        && obs.entity_type(rules, unit).is_some_and(|ty| ty.engineer)
+        && !super::super::safety::specialist_approach_safe(rules,obs,unit,target)
+    { return false; }
     // The map is the other thing a goal can be wrong about, and neither the
     // funnel nor `Funnel::prepare` looks at it: `Command::Move` to a cell past
     // the edge is accepted, the nav target is never reached, and the unit
@@ -376,7 +386,7 @@ mod tests {
 
     fn arena() -> Option<(crate::sim::world::Simulation, RuleSet)> {
         let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()?;
-        let sim = crate::sim::arena_fixture::rival_arena(&rules, 0xA17);
+        let sim = crate::sim::arena_fixture::rival_arena_known(&rules, 0xA17);
         Some((sim, rules))
     }
 

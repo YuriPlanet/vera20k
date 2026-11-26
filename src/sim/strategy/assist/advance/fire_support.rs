@@ -323,7 +323,7 @@ mod tests {
         let Some(weapon) = rules.weapon("V3Launcher") else { return; };
         assert_eq!(weapon.minimum_range_leptons,
             5 * crate::util::lepton::LEPTONS_PER_CELL_I32);
-        assert!(super::weapon_reach_cells(weapon) >= super::MIN_REAR_REACH);
+        assert!(super::super::weapon_reach_cells(weapon) >= super::MIN_REAR_REACH);
     }
 
     #[test]

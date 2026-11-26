@@ -16,7 +16,7 @@ use crate::sim::control::Goal;
 use crate::sim::control::brain::Outbox;
 use crate::sim::control::observation::Observation;
 use crate::sim::intern::InternedId;
-use crate::sim::production::ProductionCategory;
+use crate::sim::production::{CanBuild, ProductionCategory};
 
 use super::AssistBrain;
 use super::build;
@@ -153,7 +153,7 @@ pub(super) fn focus(brain: &AssistBrain, rules: &RuleSet,
     let front_units: Vec<_> = brain.census.units.iter().filter(|unit|
         squad.is_some_and(|s| s.members.contains(&unit.entity_id)))
         .map(|unit| unit.cell).take(96).collect();
-    let mut guns: Vec<_> = obs.visible_enemy_entities().take(BATTERY_LOOK)
+    let mut guns: Vec<_> = obs.visible_enemy_entities()
         .filter_map(|enemy| {
             let ty = obs.entity_type(rules, enemy.entity_id)?;
             if !dangerous_battery(rules, ty) || !obs.visible_enemy_building_operational(rules, enemy.entity_id)
@@ -164,7 +164,7 @@ pub(super) fn focus(brain: &AssistBrain, rules: &RuleSet,
             let near_army = front_units.iter().any(|cell|
                 cell_distance(*cell, enemy.cell) <= 30);
             (near_front || near_army).then_some((enemy.entity_id, enemy.cell, reach))
-        }).collect();
+        }).take(BATTERY_LOOK).collect();
     if guns.is_empty() { return None; }
     // Prefer the battery covering the current push; then its actual reach.
     guns.sort_unstable_by_key(|(id,cell,reach)| (
@@ -207,7 +207,7 @@ fn air_corridor_known(obs: &Observation<'_>, at: (u16,u16)) -> bool {
 fn air_approach_clear(rules: &RuleSet, obs: &Observation<'_>, battery: Battery,
     plane: &ObjectType, from: Option<(u16,u16)>) -> bool {
     if !air_corridor_known(obs, battery.cell) { return false; }
-    !obs.visible_enemy_entities().take(BATTERY_LOOK).any(|enemy| {
+    !obs.visible_enemy_entities().any(|enemy| {
         let Some(ty) = obs.entity_type(rules, enemy.entity_id) else { return false; };
         if ty.is_base_defense && !obs.visible_enemy_building_operational(rules, enemy.entity_id) {
             return false;
@@ -234,14 +234,17 @@ struct Choice<'r> {
 /// Allied Prism can both win a range trade despite only 150 HP; the V33
 /// `strength>=300` filter accidentally excluded both from the build list.
 fn choice<'r>(brain: &AssistBrain, rules: &'r RuleSet,
-    obs: &Observation<'_>, battery: Battery) -> Option<Choice<'r>> {
+    obs: &Observation<'_>, battery: Battery, free:i32) -> Option<Choice<'r>> {
     let tower = obs.entity_type(rules, battery.id)?;
     let mut options = Vec::new();
     for (category, line) in [
         (ObjectCategory::Vehicle, ProductionCategory::Vehicle),
         (ObjectCategory::Aircraft, ProductionCategory::Aircraft),
     ] {
+        if brain.census.line(line).busy() {continue;}
         for (ty, id) in build::class_types(rules, obs, category).take(128) {
+            if obs.can_build(rules, ty, true) != CanBuild::Yes || !obs.has_producer(rules, ty)
+                || !super::composition::air_stock_allows(rules,obs,ty) { continue; }
             let clear = is_flying(ty) && air_approach_clear(rules,obs,battery,ty,None);
             let Some((kind,range)) = viable(rules,ty,tower,battery.reach,clear) else { continue; };
             // This module should not pretend to have a production facility
@@ -250,8 +253,9 @@ fn choice<'r>(brain: &AssistBrain, rules: &'r RuleSet,
                 obs.object_type(rules, entity.type_id).is_some_and(|building|
                     building.factory_type() == Some(
                         crate::rules::object_type::FactoryType::AircraftType))) { continue; }
-            options.push(Choice { ty,id,category:line,kind,range,
-                price:obs.cost_of(rules,ty) });
+            let price = obs.cost_of(rules,ty);
+            if price<=0 || price>free || obs.in_production(rules,id) {continue;}
+            options.push(Choice { ty,id,category:line,kind,range,price });
         }
     }
     // True winning-range weapons outrank hazardous air runs. When no ground
@@ -279,24 +283,17 @@ fn desired_count(kind: Counter, reach: i32, towers: usize) -> usize {
 fn counter_held(brain: &AssistBrain, rules: &RuleSet,
     obs: &Observation<'_>, battery: Battery, kind: Counter) -> usize {
     let Some(tower) = obs.entity_type(rules, battery.id) else { return 0; };
-    brain.census.units.iter().filter(|unit| unit.controllable() && unit.traits.combat
-        && !unit.in_service() && unit.health_permille >= 600)
-        .take(256)
+    brain.census.units.iter().filter(|unit| unit.traits.combat && !unit.traits.spawned
+        && !unit.hand && unit.health_permille > 0 && !unit.traits.harvester
+        && !unit.traits.yard_maker)
         .filter(|unit| obs.entity_type(rules,unit.entity_id).is_some_and(|ty| {
-            let clear = kind == Counter::Air && is_flying(ty)
-                && air_approach_clear(rules,obs,battery,ty,Some(unit.cell));
+            // Stock is not the same as an immediately usable sortie. An
+            // aircraft rearming or on a different route still occupies its
+            // procurement allocation; readiness is evaluated by air orders.
+            let clear = kind == Counter::Air && is_flying(ty);
             viable(rules,ty,tower,battery.reach,clear)
                 .is_some_and(|(k,_)| k == kind)
         })).take(12).count()
-}
-
-pub(super) fn prefers_air_line(brain: &AssistBrain, rules: &RuleSet,
-    obs: &Observation<'_>) -> bool {
-    focus(brain,rules,obs).and_then(|battery| choice(brain,rules,obs,battery)
-        .map(|picked| (battery,picked)))
-        .is_some_and(|(battery,picked)| picked.category == ProductionCategory::Aircraft
-            && counter_held(brain,rules,obs,battery,picked.kind)
-                < desired_count(picked.kind,battery.reach,battery.nearby_guns))
 }
 
 /// A siege battalion cannot buy a Prism/V3/other advanced standoff cannon
@@ -306,15 +303,15 @@ pub(super) fn prefers_air_line(brain: &AssistBrain, rules: &RuleSet,
 pub(super) fn technology_step<'r>(
     brain: &AssistBrain, rules: &'r RuleSet, obs: &Observation<'_>,
 ) -> Option<super::plan::Chosen<'r>> {
-    if brain.census.fighters < 10 || brain.census.refineries == 0
+    if brain.mobilization.active() || brain.census.fighters < 10 || brain.census.refineries == 0
         || brain.census.harvesters == 0 || brain.director.under_attack_now()
         || brain.director.recovering_income()
         || build::count_in(obs, rules, &brain.census, &rules.build_tech_types) > 0
     { return None; }
     let battery = focus(brain, rules, obs)?;
     let tower = obs.entity_type(rules, battery.id)?;
-    let already_ranged = brain.census.units.iter().any(|unit| unit.controllable()
-        && unit.traits.combat && obs.entity_type(rules, unit.entity_id)
+    let already_ranged = brain.census.units.iter().any(|unit| unit.health_permille > 0 && !unit.traits.spawned
+        && obs.entity_type(rules, unit.entity_id)
             .is_some_and(|ty| valid_ground_reach(rules, ty, tower) > battery.reach + 1));
     if already_ranged { return None; }
     let (item, selected) = if let Some(lab) = build::tech_building(rules, obs) {
@@ -328,49 +325,38 @@ pub(super) fn technology_step<'r>(
     })
 }
 
-/// An unlocked counter has a real cost. Until the wallet can pay it, do not
-/// buy a stream of riflemen which repeatedly resets the saved amount.
-pub(super) fn saving_for_counter(
-    brain: &AssistBrain, rules: &RuleSet, obs: &Observation<'_>, free: i32,
-) -> bool {
-    if brain.census.refineries == 0 || brain.census.harvesters == 0
-        || brain.director.under_attack_now() || brain.director.recovering_income()
-    { return false; }
-    let Some(battery) = focus(brain, rules, obs) else { return false; };
-    let Some(picked) = choice(brain, rules, obs, battery) else { return false; };
-    picked.price > free && !obs.in_production(rules, picked.id)
-        && counter_held(brain, rules, obs, battery, picked.kind)
-            < desired_count(picked.kind, battery.reach, battery.nearby_guns)
-}
-
-/// Some(None) reserves the selected production line's money; the other lines
-/// remain free to respond to emergencies and save for the tech prerequisite.
-pub(super) fn purchase<'r>(brain: &AssistBrain, rules: &'r RuleSet,
-    obs: &Observation<'_>, category: ProductionCategory, free: i32)
-    -> Option<Option<(&'r ObjectType,InternedId)>>
-{
-    if brain.census.refineries == 0 || brain.census.harvesters == 0
-        || brain.director.under_attack_now() || brain.director.recovering_income()
-    { return None; }
+/// Single owner for counter funding and purchase. A busy line, already held
+/// stock, impossible funding horizon or current emergency returns no request.
+/// This is a proposal, not an accepted native purchase.
+pub(super) fn procurement<'r>(
+    brain: &AssistBrain, rules: &'r RuleSet, obs: &Observation<'_>,
+    free: i32, income: Option<i32>,
+) -> Option<(ProductionCategory, &'r ObjectType, InternedId)> {
+    if brain.mobilization.active() || brain.census.refineries == 0
+        || brain.census.harvesters == 0 || brain.director.under_attack_now()
+        || brain.director.recovering_income() || brain.director.rebuilding_force()
+        || brain.campaign.economy_resting() || brain.siege_charge.is_some() {
+        return None;
+    }
     let battery = focus(brain,rules,obs)?;
-    let picked = choice(brain,rules,obs,battery)?;
-    if picked.category != category { return None; }
-    let already = counter_held(brain,rules,obs,battery,picked.kind);
-    let queued = usize::from(obs.in_production(rules,picked.id));
-    if already.saturating_add(queued) >=
-        desired_count(picked.kind,battery.reach,battery.nearby_guns)
-    { return None; }
-    Some((picked.price <= free && queued == 0).then_some((picked.ty,picked.id)))
-}
-
-/// A ready standoff/air solution makes a massed line-tank suicide obsolete.
-/// Used by the charge planner, which otherwise sees only units already on
-/// the ground and forms a charge *before* the factory chooses a counter.
-pub(super) fn has_specialist_answer(brain: &AssistBrain, rules: &RuleSet,
-    obs: &Observation<'_>, id: u64) -> bool {
-    focus(brain,rules,obs).is_some_and(|battery| battery.id == id
-        && choice(brain,rules,obs,battery)
-            .is_some_and(|c| c.kind != Counter::Heavy))
+    if counter_held(brain,rules,obs,battery,Counter::Standoff)
+        >=desired_count(Counter::Standoff,battery.reach,battery.nearby_guns) {
+        return None;
+    }
+    let picked = choice(brain,rules,obs,battery,free)?;
+    if picked.kind==Counter::Heavy
+        && counter_held(brain,rules,obs,battery,Counter::Air)
+            >=desired_count(Counter::Air,battery.reach,battery.nearby_guns) {
+        return None;
+    }
+    if brain.census.line(picked.category).busy()
+        || obs.in_production(rules,picked.id)
+        || !super::economy::can_save_for(free,picked.price,income)
+        || counter_held(brain,rules,obs,battery,picked.kind)
+            >= desired_count(picked.kind,battery.reach,battery.nearby_guns) {
+        return None;
+    }
+    Some((picked.category,picked.ty,picked.id))
 }
 
 /// Prevent per-second micro from breaking the siege gate by giving a
@@ -391,6 +377,34 @@ pub(super) fn avoid_solo_tower_attack(
     hostile_range >= 7 && friendly_range <= hostile_range + 1
 }
 
+/// A proposal to move into a safe firing annulus or fire from it. The
+/// native mission remains authoritative. Never replace a not-yet-in-range
+/// Move with Attack, which would restart the chase through the gunline.
+pub(super) fn work_battery(tracker: &mut super::tracked::Tracker, trace: Option<u64>,
+    rules: &RuleSet, obs: &Observation<'_>, out: &mut Outbox,
+    unit: &super::census::Unit, target: u64, at: (u16,u16), search: bool) -> bool {
+    let id = unit.entity_id;
+    if super::safety::firing_here(rules,obs,unit,target) {
+        if obs.attack_target(id) == Some(target) { return false; }
+        return orders::issue_tracked(tracker,trace,out,rules,obs,id,
+            TrackedKind::Attack,Some(target),Some(at),Goal::Attack {target});
+    }
+    if let Some(post) = super::safety::firing_post(rules,obs,unit,target,at,search) {
+        if obs.destination(id) == Some(post) && obs.attack_target(id).is_none() { return false; }
+        if orders::issue_tracked(tracker,trace,out,rules,obs,id,
+            TrackedKind::Avoid,Some(target),Some(post),Goal::Move {cell:post}) {
+            log::info!("auto play: siege_post_request tick={} actor={} target={}",obs.tick(),id,target);
+            return true;
+        }
+    } else if obs.attack_target(id) == Some(target) {
+        // A prior legal shot may become an unsafe chase after a target moves
+        // or the weapon is no longer in range. Stop the old pursuit.
+        return orders::issue_tracked(tracker,trace,out,rules,obs,id,
+            TrackedKind::Avoid,None,None,Goal::Stop);
+    }
+    false
+}
+
 /// Shell a live fixed battery *during* Stockpile/Contain, from a real
 /// winning-range annulus. Reservists with short-range cannons remain behind
 /// the screen; artillery which already reached its safe firing post should
@@ -405,8 +419,8 @@ pub(super) fn standoff_strike(brain: &mut AssistBrain, rules: &RuleSet,
     for unit in &brain.census.units {
         if issued >= 3 { break; }
         if !members.contains(&unit.entity_id) || brain.joint_ops.reserves(unit.entity_id)
-            || !unit.controllable() || unit.in_service()
-            || unit.health_permille < 500 || !unit.traits.combat
+            || !brain.census.main_available(unit)
+            || unit.health_permille < 500
             || obs.is_deployed(unit.entity_id)
             || orders::ordered_this_frame(out,unit.entity_id)
         { continue; }
@@ -414,19 +428,14 @@ pub(super) fn standoff_strike(brain: &mut AssistBrain, rules: &RuleSet,
         if is_flying(ty) || ty.naval || ty.gunner { continue; }
         let Some(tower) = obs.entity_type(rules,battery.id) else { continue; };
         let max = valid_ground_reach(rules,ty,tower);
-        let distance = cell_distance(unit.cell,battery.cell);
-        // Do not issue Attack from outside the legal annulus: native Attack
-        // would advance the fragile gun toward the tower automatically.
-        if max <= battery.reach + 1 || distance <= battery.reach + 1
-            || distance > max || !obs.can_hurt(rules,unit.entity_id,battery.id)
-            || super::tactics::unsafe_post(rules,obs,unit.entity_id,unit.cell)
-            || obs.attack_target(unit.entity_id) == Some(battery.id)
-        { continue; }
-        let goal = Goal::Attack { target: battery.id };
-        if !orders::admits(rules,obs,unit.entity_id,&goal) { continue; }
-        if orders::issue_tracked(&mut brain.tracked,brain.trace,out,rules,obs,
-            unit.entity_id,TrackedKind::Attack,Some(battery.id),Some(battery.cell),goal)
-        { issued += 1; }
+        if max <= battery.reach + 1 || !obs.can_hurt(rules,unit.entity_id,battery.id) { continue; }
+        let search = !brain.director.rebuilding_force() && !brain.mobilization.active() && !brain.campaign.economy_resting()
+            && obs.tick()%15 == unit.entity_id%15;
+        // During recovery preserve safe fire, but do not advance the gun.
+        if (brain.director.rebuilding_force() || brain.mobilization.active() || brain.campaign.economy_resting())
+            && !super::safety::firing_here(rules,obs,unit,battery.id) { continue; }
+        if work_battery(&mut brain.tracked,brain.trace,rules,obs,out,
+            unit,battery.id,battery.cell,search) { issued += 1; }
     }
 }
 
@@ -435,7 +444,8 @@ pub(super) fn standoff_strike(brain: &mut AssistBrain, rules: &RuleSet,
 /// flight engine still decide whether a sortie launches and hits.
 pub(super) fn air_strike(brain: &mut AssistBrain, rules: &RuleSet,
     obs: &Observation<'_>, out: &mut Outbox) {
-    if brain.director.under_attack_now() { return; }
+    if brain.director.under_attack_now() || brain.director.rebuilding_force()
+        || brain.mobilization.active() || brain.campaign.economy_resting() { return; }
     let Some(battery) = focus(brain,rules,obs) else { return; };
     let Some(squad) = brain.squads.squad(Role::Attack) else { return; };
     let attack_members = squad.members.clone();
@@ -444,7 +454,7 @@ pub(super) fn air_strike(brain: &mut AssistBrain, rules: &RuleSet,
         if issued >= AIR_RAID_ORDERS { break; }
         if !attack_members.contains(&unit.entity_id)
             || brain.joint_ops.reserves(unit.entity_id)
-            || !unit.controllable() || unit.in_service() || !unit.traits.combat
+            || !brain.census.main_available(unit)
             || super::orders::ordered_this_frame(out, unit.entity_id)
             || obs.is_deployed(unit.entity_id)
         { continue; }
@@ -511,9 +521,9 @@ mod tests {
         assert!(effective_ground_warhead(&rules,v3,rangefinder,tower),
             "the 200-damage spawned rocket's warhead, not Special, decides armour");
         assert_eq!(desired_count(Counter::Standoff,reach,1),3);
-        assert_eq!(super::advance::weapon_reach_cells(
+        assert_eq!(super::super::advance::weapon_reach_cells(
             rules.weapon("V3Launcher").expect("v3 launcher")),18);
-        assert_eq!(super::advance::weapon_reach_cells(
+        assert_eq!(super::super::advance::weapon_reach_cells(
             rules.weapon("GrandCannonWeapon").expect("grand cannon")),15);
     }
 

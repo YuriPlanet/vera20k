@@ -26,7 +26,7 @@ use vera20k_core::sim::intern::InternedId;
 use vera20k_core::sim::production::ProductionCategory;
 use vera20k_core::sim::strategy::assist::AssistBrain;
 use vera20k_core::sim::world::Simulation;
-use vera20k_core::skirmish_launch::{AiDifficulty, LaunchCountry};
+use vera20k_core::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchTeam, SkirmishLaunchOptions};
 
 /// The map main's own match bench loads by default, so it is known to have the
 /// ore, the starts and the trigger data a match needs.
@@ -59,6 +59,14 @@ struct Args {
     /// How many computer houses play against the local one.
     opponents: usize,
     difficulty: AiDifficulty,
+    /// The local house's country. `battle_session` hard-codes America, so a
+    /// run that wants another side has to name it here.
+    country: LaunchCountry,
+    /// The local house's starting credits, or `None` for the retail default.
+    credits: Option<i32>,
+    /// How many starting units the local house gets, or `None` for the retail
+    /// default. `Some(0)` is the "no army, one wallet" problem.
+    units: Option<i32>,
     /// Print what the brain asks for, from a separate brain reading the same
     /// state, for the first this many frames. Diagnostics only: the run itself
     /// is driven by the host's own brain, whose generator has moved on.
@@ -82,6 +90,9 @@ fn parse_args() -> Result<Args, String> {
     let mut opponent = LaunchCountry::Russia;
     let mut opponents = 1_usize;
     let mut difficulty = AiDifficulty::Normal;
+    let mut country = LaunchCountry::America;
+    let mut credits = None;
+    let mut units = None;
     let mut dump = 0_u64;
     let mut dump_teams = 0_u64;
 
@@ -115,6 +126,21 @@ fn parse_args() -> Result<Args, String> {
                     .map_err(|_| "opponents is a count".to_string())?
             }
             "--difficulty" => difficulty = parse_difficulty(&value()?)?,
+            "--country" => country = parse_country(&value()?)?,
+            "--credits" => {
+                credits = Some(
+                    value()?
+                        .parse()
+                        .map_err(|_| "credits is an i32".to_string())?,
+                )
+            }
+            "--units" => {
+                units = Some(
+                    value()?
+                        .parse()
+                        .map_err(|_| "units is an i32".to_string())?,
+                )
+            }
             "--dump" => dump = value()?.parse().map_err(|_| "dump is a u64".to_string())?,
             "--dump-teams" => {
                 dump_teams = value()?
@@ -136,6 +162,9 @@ fn parse_args() -> Result<Args, String> {
         opponent,
         opponents,
         difficulty,
+        country,
+        credits,
+        units,
         dump,
         dump_teams,
     })
@@ -174,9 +203,13 @@ autoplay-match: a headless skirmish with auto play on the local house
   --seed <u32>       the pinned seed (default 0x5eed)
   --ticks <u64>      how many frames to play (default 36000, forty minutes)
   --progress <u64>   a progress line every this many frames (default 1800)
-  --per-frame <n>    commands the control layer admits per frame (default 8)
+  --per-frame <n>    commands the control layer admits per frame (default 512)
   --opponent <name>  the computer house's country (default russia)
+  --opponents <n>    how many computer houses play (default 1)
   --difficulty <n>   easy | normal | hard (default normal)
+  --country <name>   the local house's country (default america)
+  --credits <n>      the local house's starting credits (default: the map's)
+  --units <n>        the local house's starting units (default: the map's)
   --dump <n>         print the brain's orders for the first n frames
   --dump-teams <n>   print the native team pipeline (teams, scripts, cursors,
                      members) for the first n frames, a census every 600
@@ -520,7 +553,27 @@ fn main() -> Result<(), String> {
 
     let seats: Vec<(LaunchCountry, AiDifficulty)> =
         std::iter::repeat_n((args.opponent, args.difficulty), args.opponents.max(1)).collect();
-    let session = headless_scenario::battle_session(&args.map, &seats);
+    // `battle_session` is `battle_session_with_seats` with America, the retail
+    // options and no team, so a run that names none of the three gets the same
+    // session it always did.
+    let mut options = SkirmishLaunchOptions::default();
+    if let Some(credits) = args.credits {
+        options.starting_credits = credits;
+    }
+    if let Some(units) = args.units {
+        options.unit_count = units;
+    }
+    // Offline benchmark provenance, before handing the launch options to the
+    // engine. The historical V41 logs do not contain this receipt.
+    println!("autoplay-match: launch local={:?} opponent={:?} difficulty={:?} opponents={} options={options:?}",
+        args.country, args.opponent, args.difficulty, args.opponents);
+    let session = headless_scenario::battle_session_with_seats(
+        &args.map,
+        &seats,
+        args.country,
+        options,
+        LaunchTeam::None,
+    );
     let mut scenario =
         headless_scenario::load_session(&args.ra2_dir, &args.map, args.seed, session)?;
     let sim = &scenario.runtime.simulation;

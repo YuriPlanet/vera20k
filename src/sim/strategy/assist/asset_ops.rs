@@ -105,6 +105,45 @@ struct Site {
     failures: u8,
 }
 
+/// Lower-tier neutral assets justify a limited nearby clearance mission.
+/// Remote speculative public prizes do not borrow the main fist.
+fn security_priority(value:Value,income:bool,distance_sq:i32)->Option<i32> {
+    if value>=Value::Factory || (income && distance_sq<=28*28)
+        || (value>=Value::Technology && distance_sq<=28*28)
+        || distance_sq<=20*20
+    {
+        Some(value.score()+if income {35} else {0})
+    } else {None}
+}
+
+fn prize_ready(contested: bool, restricted: bool, remote: bool, income: bool, guards: usize) -> bool {
+    !contested && (!restricted || !remote || income || guards >= 2)
+}
+
+pub(super) fn capture_opportunity(brain: &AssistBrain, rules: &RuleSet,
+    obs: &Observation<'_>, target: &EnemyEntity, visible: &[EnemyEntity]) -> bool {
+    let Some(ty) = obs.object_type(rules,target.type_id) else { return false; };
+    // Do not interpret absence of a currently seen guard as a safe remote
+    // building in fog. Public assets still retain their normal recon path.
+    if !obs.is_cell_visible(target.cell.0,target.cell.1) { return false; }
+    if !super::site_risk::capture_site_safe(&brain.census,rules,obs,target.entity_id,visible) { return false; }
+    if value_of(rules,ty).is_none() { return true; }
+    let restricted = obs.is_hostile(target.entity_id) && brain.census.yards > 0
+        && (brain.mobilization.active()
+        || brain.campaign.economy_resting() || brain.director.rebuilding_force()
+        || brain.census.available_fighters() < 6);
+    let remote = brain.census.base_cell.is_none_or(|home| squared_distance(home,target.cell)>16*16)
+        && brain.census.refinery_cells.iter().all(|home| squared_distance(*home,target.cell)>16*16);
+    let income = ty.produce_cash_amount > 0 || ty.resource_destination;
+    let guards = if restricted && remote && !income { brain.census.units.iter().filter(|u|
+        brain.census.available(u) && u.health_permille >= 600 && !u.traits.aircraft
+            && matches!(u.slot,super::census::Slot::Infantry|super::census::Slot::Vehicle)
+            && squared_distance(u.cell,target.cell)<=10*10).take(2).count() } else { 0 };
+    // Destination/route danger is evaluated with real weapons. An otherwise
+    // clear neutral technology site need not wait for two idle guards.
+    prize_ready(false,restricted,remote,income,guards)
+}
+
 fn muster_capacity(defenders: usize) -> usize {
     defenders.saturating_sub(GUARD_RESERVE).min(2)
 }
@@ -118,24 +157,6 @@ fn attempt_failed(site: &mut Site, now: u64) {
     site.phase = Phase::Cooldown;
     site.claimant = None;
     site.retry_after = now.saturating_add(backoff(site.failures));
-}
-
-fn threat_on_approach(rules: &RuleSet, obs: &Observation<'_>,
-    target: (u16, u16), origin: (u16, u16),
-) -> bool {
-    // All danger comes from current legal sight, never hidden world objects.
-    obs.visible_enemy_entities().take(256).any(|enemy| {
-        let Some(ty) = obs.object_type(rules, enemy.type_id) else { return false };
-        if ty.category == ObjectCategory::Building {
-            ty.is_base_defense
-                && obs.visible_enemy_building_operational(rules, enemy.entity_id)
-                && (squared_distance(enemy.cell, target) <= 11 * 11
-                    || orders::path_crosses(&[enemy.cell], origin, target, 7))
-        } else {
-            squared_distance(enemy.cell, target) <= 7 * 7
-                || orders::path_crosses(&[enemy.cell], origin, target, 4)
-        }
-    })
 }
 
 #[derive(Debug, Default)]
@@ -159,19 +180,22 @@ impl Director {
 
     /// Select only *currently visible* valuable unowned sites that actually
     /// need a security operation. Never interrogate hidden enemy ownership.
-    pub(super) fn coalition_target(&self, obs: &Observation<'_>,
-        home: (u16,u16), after: &BTreeMap<u64,u64>,
-    ) -> Option<(u64,(u16,u16))> {
-        let now = obs.tick();
+    pub(super) fn coalition_target(&self,rules:&RuleSet,obs:&Observation<'_>,
+        home:(u16,u16),after:&BTreeMap<u64,u64>,
+    )->Option<(u64,(u16,u16))> {
+        let now=obs.tick();
         self.sites.iter().filter(|(id,site)|
-            site.phase == Phase::Secure && !site.hostile
-                && site.value >= Value::Factory && now >= site.retry_after
-                && now >= after.get(*id).copied().unwrap_or(0)
+            site.phase==Phase::Secure && !site.hostile && now>=site.retry_after
+                && now>=after.get(*id).copied().unwrap_or(0)
                 && obs.is_cell_visible(site.cell.0,site.cell.1)
-        ).max_by_key(|(id,site)|
-            (site.value.score() * 200 - squared_distance(home,site.cell) / 12,
-                std::cmp::Reverse(**id))
-        ).map(|(id,site)| (*id,site.cell))
+        ).filter_map(|(id,site)|{
+            let ty=obs.object_type(rules,site.type_id)?;
+            let distance=squared_distance(home,site.cell);
+            let priority=security_priority(site.value,ty.produce_cash_amount>0
+                || ty.resource_destination,distance)?;
+            Some((priority*200-distance/12,std::cmp::Reverse(*id),site.cell))
+        }).max_by_key(|(score,id,_)|(*score,*id))
+            .map(|(_,id,cell)|(id.0,cell))
     }
 
     pub(super) fn coalition_status(&self, obs: &Observation<'_>,
@@ -197,14 +221,9 @@ impl Director {
     /// Never ask production to buy an engineer using an unseen neutral
     /// structure's current existence or ownership. A remembered location
     /// belongs to reconnaissance until it is again visible.
-    pub(super) fn visible_opportunities(&self, obs: &Observation<'_>) -> usize {
-        let now = obs.tick();
-        self.sites.values().filter(|site|
-            !site.hostile && site.value >= Value::Technology
-                && matches!(site.phase, Phase::Ready | Phase::Secure | Phase::Capturing)
-                && now >= site.retry_after
-                && obs.is_cell_visible(site.cell.0, site.cell.1)
-        ).take(8).count()
+    /// A live site cooldown or another claimant must not trigger new purchases.
+    pub(super) fn purchase_ready(&self,target:u64)->bool {
+        self.sites.get(&target).is_none_or(|site|site.phase==Phase::Ready)
     }
 
     pub(super) fn recon_request(&self, obs: &Observation<'_>) -> Option<(u16, u16)> {
@@ -221,8 +240,12 @@ impl Director {
         if self.surveyed_at.is_some_and(|time| now.saturating_sub(time) < SURVEY_INTERVAL) {
             return;
         }
+        if self.surveyed_at.is_none() {
+            log::info!("auto play: asset_control_metrics tick={now} schema=1");
+        }
         self.surveyed_at = Some(now);
         let owned: BTreeSet<u64> = obs.own_entities().map(|entity| entity.entity_id).collect();
+        let threats: Vec<_> = obs.visible_enemy_entities().collect();
         let mut visible = BTreeSet::new();
         // Capture targets are enumerated globally by the native simulation;
         // visibility filtering MUST happen before their details influence us.
@@ -252,6 +275,10 @@ impl Director {
             if owned.contains(id) {
                 if site.phase != Phase::Owned {
                     log::info!("auto play: asset operation confirmed ownership of {} at {:?}", id, site.cell);
+                    if let Some(ty)=obs.object_type(rules,site.type_id) {
+                        log::info!("auto play: asset_control_confirmed tick={now} target={} type={} from_nonhostile={} income={}",
+                            id,ty.id,!site.hostile,ty.produce_cash_amount>0 || ty.resource_destination);
+                    }
                     if site.value == Value::Yard
                         && obs.object_type(rules, site.type_id)
                             .is_some_and(|ty| super::build::foreign_yard(rules, obs, ty))
@@ -284,11 +311,10 @@ impl Director {
             } else if site.phase == Phase::Cooldown {
                 if now >= site.retry_after { site.phase = Phase::Ready; }
             } else {
-                let origin = site.claimant.and_then(|actor|
-                    census.units.iter().find(|unit| unit.entity_id == actor)
-                        .map(|unit| unit.cell))
-                    .or(census.base_cell).unwrap_or(site.cell);
-                site.phase = if threat_on_approach(rules, obs, site.cell, origin) {
+                // Grade the actual prospective asset. A passive unit or
+                // nominal AA weapon is not automatically a lethal approach.
+                // The claimant's route is checked again by the order owner.
+                site.phase = if !super::site_risk::capture_site_safe(census,rules,obs,*id,&threats) {
                     Phase::Secure
                 } else { Phase::Ready };
             }
@@ -322,15 +348,12 @@ impl Director {
     /// and native CanTakeBuilding checks are done by `orders::captures`.
     pub(super) fn preferred_target(&self, obs: &Observation<'_>,
         engineer: u64, from: (u16, u16), candidates: &[EnemyEntity],
-        guards: &[(u16,u16)], guns: &[(u16,u16)], focus: Option<u64>,
+        _guards: &[(u16,u16)], _guns: &[(u16,u16)], focus: Option<u64>,
     ) -> Option<EnemyEntity> {
         candidates.iter().filter(|target| {
             let Some(site) = self.sites.get(&target.entity_id) else { return false };
             site.phase == Phase::Ready
                 && obs.is_cell_visible(target.cell.0, target.cell.1)
-                && !guards.iter().any(|cell| squared_distance(*cell, target.cell) <= 6*6)
-                && !orders::path_crosses(guards, from, target.cell, 3)
-                && !orders::path_crosses(guns, from, target.cell, 4)
                 && site.claimant.is_none_or(|claim| claim == engineer)
         }).max_by_key(|target| {
             let site = &self.sites[&target.entity_id];
@@ -381,7 +404,8 @@ impl Director {
         if brain.asset_ops.musters.is_empty() && now < brain.asset_ops.muster_after {
             return;
         }
-        let home_raid = brain.director.under_attack_now();
+        let home_raid = brain.director.under_attack_now() || brain.campaign.economy_resting()
+            || brain.mobilization.active() || brain.director.rebuilding_force();
         let defenders: BTreeSet<u64> = brain.squads.squad(Role::Defend)
             .map(|squad| squad.members.clone()).unwrap_or_default();
         // Forget a muster once the prize is clear, the guard is gone, or
@@ -409,15 +433,21 @@ impl Director {
         if now < brain.asset_ops.muster_after || home_raid { return; }
         let capacity = muster_capacity(defenders.len());
         if brain.asset_ops.musters.len() >= capacity { return; }
-        let Some((target, cell)) = brain.asset_ops.sites.iter()
-            .filter(|(_,site)| site.phase == Phase::Secure
-                && site.value >= Value::Factory && !site.hostile
-                && obs.is_cell_visible(site.cell.0, site.cell.1))
-            .max_by_key(|(id,site)| (site.value, std::cmp::Reverse(**id)))
-            .map(|(id,site)| (*id,site.cell)) else { return };
+        let Some(home)=brain.census.base_cell else {return;};
+        let Some((target,cell))=brain.asset_ops.sites.iter()
+            .filter(|(_,site)|site.phase==Phase::Secure && !site.hostile
+                && now>=site.retry_after && obs.is_cell_visible(site.cell.0,site.cell.1))
+            .filter_map(|(id,site)|{
+                let ty=obs.object_type(rules,site.type_id)?;
+                let distance=squared_distance(home,site.cell);
+                let priority=security_priority(site.value,ty.produce_cash_amount>0
+                    || ty.resource_destination,distance)?;
+                Some((priority*200-distance/12,std::cmp::Reverse(*id),site.cell))
+            }).max_by_key(|(score,id,_)|(*score,*id))
+            .map(|(_,id,cell)|(id.0,cell)) else {return;};
         let Some(guard) = brain.census.units.iter()
             .filter(|unit| defenders.contains(&unit.entity_id)
-                && unit.controllable() && unit.traits.combat && unit.traits.armed
+                && brain.census.available(unit) && unit.traits.armed
                 && !unit.in_service() && !unit.traits.irreplaceable
                 && !unit.traits.aircraft && !obs.is_deployed(unit.entity_id)
                 && !out.ordered_this_frame(unit.entity_id)
@@ -478,7 +508,9 @@ mod tests {
             value: Value::Yard, hostile: false, last_seen: 10,
             phase: Phase::Ready, claimant: None, submitted_at: 0,
             retry_after: 0, failures: 0 });
+        assert!(op.purchase_ready(id));
         op.submitted(20, 8, id);
+        assert!(!op.purchase_ready(id));
         assert_eq!(op.sites[&id].phase, Phase::Capturing);
         assert_eq!(op.sites[&id].claimant, Some(8));
         assert!(op.permits_capture(8, id));
@@ -487,6 +519,7 @@ mod tests {
         assert_eq!(op.sites[&id].submitted_at, 20);
         attempt_failed(op.sites.get_mut(&id).unwrap(), 120);
         assert!(!op.permits_capture(8, id));
+        assert!(!op.purchase_ready(id));
         assert_eq!(op.sites[&id].phase, Phase::Cooldown);
         assert!(op.sites[&id].retry_after > 120);
     }
@@ -521,5 +554,26 @@ mod tests {
         assert_eq!(backoff(1), RETRY_BASE);
         assert_eq!(backoff(2), RETRY_BASE * 2);
         assert_eq!(backoff(20), RETRY_BASE * 4);
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod acquisition_tests {
+    use super::*;
+    #[test]
+    fn nearby_income_and_technology_can_request_limited_clearance() {
+        assert!(security_priority(Value::Public,true,28*28).is_some());
+        assert!(security_priority(Value::Technology,false,24*24).is_some());
+        assert!(security_priority(Value::Public,false,20*20).is_some());
+        assert!(security_priority(Value::Public,true,29*29).is_none());
+        assert!(security_priority(Value::Public,false,21*21).is_none());
+        assert!(security_priority(Value::Factory,false,60*60).is_some());
+    }
+    #[test]
+    fn contested_prize_is_not_made_safe_by_a_large_escort() {
+        assert!(!prize_ready(true,false,false,true,10));
+        assert!(!prize_ready(false,true,true,false,1));
+        assert!(prize_ready(false,true,true,false,2));
+        assert!(prize_ready(false,true,true,true,0));
     }
 }

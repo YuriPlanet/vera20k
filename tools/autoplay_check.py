@@ -59,6 +59,15 @@ DEFAULT_HISTORY = ROOT / "target" / "autoplay-results" / "history.jsonl"
 # this folder came to describe an easier game than the one being judged, so the
 # difficulty is now a recorded field and a flag.
 DEFAULT_DIFFICULTY = "normal"
+# A matrix that cannot end is a matrix that never finishes: a stalled board runs
+# to the tick cap and holds a worker for the better part of an hour. The wall cap
+# is the honest bound -- it records `wallclock` rather than pretending the match
+# was decided.
+DEFAULT_WALL_SECONDS = 900.0
+# The status line's own readings, used by the matrix report. `enemy_credits=`
+# contains `credits=`, so the lookbehind is what keeps the two apart.
+CREDITS = re.compile(r"(?<!enemy_)credits=(-?\d+)")
+POWER = re.compile(r"power=(-?\d+)")
 # The game speed index is not a flag any more: src/bin/autoplay-match.rs does
 # not parse one, and the index it uses is the same for every run, so runs stay
 # comparable to each other. It is written here because the harness used to pass
@@ -180,6 +189,11 @@ class MatchReport:
     peak_army: int = 0
     peak_limbo: int = 0
     army_at_push: int = 0
+    # The last status line's wallet and power. A loss with credits in the bank is
+    # a different failure from a loss with an empty one, and the matrix report
+    # separates them.
+    credits: int = 0
+    power: int = 0
 
     @property
     def won(self) -> bool:
@@ -277,6 +291,10 @@ def parse_report(seed: str, text: str, seconds: float) -> MatchReport:
     report.walls = max((int(value) for value in STANDING.findall(text)), default=0)
     roster = ROSTER.findall(text)
     report.roster = roster[0] if roster else ""
+    credits = CREDITS.findall(text)
+    report.credits = int(credits[-1]) if credits else 0
+    power = POWER.findall(text)
+    report.power = int(power[-1]) if power else 0
     return report
 
 
@@ -616,6 +634,10 @@ def run_match(
     opponents: int = 1,
     country: str = "america",
     difficulty: str = DEFAULT_DIFFICULTY,
+    local: str = "america",
+    credits: int | None = None,
+    units: int | None = None,
+    wall_seconds: float = DEFAULT_WALL_SECONDS,
 ) -> MatchReport:
     """Run one match and read its log.
 
@@ -629,7 +651,7 @@ def run_match(
     match rather than as a refusal.
     """
     stem = map_name.replace("/", "_").replace("\\", "_")
-    log = log_dir / f"match-{stem}-{seed}-{country}-{difficulty}.log"
+    log = log_dir / f"match-{stem}-{seed}-{local}-vs-{country}-{difficulty}.log"
     started = time.monotonic()
     command = [
         str(binary),
@@ -640,21 +662,136 @@ def run_match(
         "--opponent", country,
         "--difficulty", difficulty,
         "--progress", str(PROGRESS_FRAMES),
+        "--country", local,
     ]
+    if credits is not None:
+        command += ["--credits", str(credits)]
+    if units is not None:
+        command += ["--units", str(units)]
+    timed_out = False
     with log.open("w", encoding="utf-8") as handle:
-        subprocess.call(
-            command,
-            cwd=ROOT,
-            stdout=handle,
-            stderr=subprocess.STDOUT,
-            env={**os.environ, "RUST_LOG": "info"},
-        )
+        try:
+            subprocess.call(
+                command,
+                cwd=ROOT,
+                stdout=handle,
+                stderr=subprocess.STDOUT,
+                env={**os.environ, "RUST_LOG": "info"},
+                timeout=wall_seconds or None,
+            )
+        except subprocess.TimeoutExpired:
+            timed_out = True
     seconds = time.monotonic() - started
     text = log.read_text(encoding="utf-8", errors="replace")
     report = parse_report(seed, text, seconds)
     report.map = map_name
     report.country = country
+    if timed_out:
+        report.result = "wallclock"
     return report
+
+
+CSV_COLUMNS = ("map", "local", "opponent", "seed", "outcome", "tick",
+               "own", "enemy", "credits", "power", "seconds")
+
+
+def write_csv(path: Path, reports: list[MatchReport], args) -> None:
+    """One row per match, appended, so a long matrix survives a stop.
+
+    The row is the whole reading of a match: who played whom on what, how it
+    ended, and the last wallet and power reading. Everything the pivot report
+    prints comes from here, which is what makes a run re-readable without
+    re-running it.
+    """
+    import csv
+
+    fresh = not path.exists() or path.stat().st_size == 0
+    with path.open("a", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        if fresh:
+            writer.writerow(CSV_COLUMNS)
+        for report in reports:
+            writer.writerow([
+                report.map, args.local, report.country, report.seed,
+                report.result.split(" at tick ")[0], report.tick,
+                report.own, report.enemy, report.credits, report.power,
+                f"{report.seconds:.0f}",
+            ])
+
+
+def report_csv(path: Path) -> int:
+    """Print the pivot tables: by local faction, by opponent, by map, by pairing.
+
+    A single win rate hides which part of the matrix moved it, and the parts
+    disagree: a faction that is 60%% against one opponent and 10%% against
+    another is not a strong faction. The tables are printed rather than drawn
+    because the question is which cell to look at next.
+    """
+    import csv
+    from collections import defaultdict
+
+    with path.open(encoding="utf-8", newline="") as handle:
+        rows = [row for row in csv.DictReader(handle) if row.get("outcome")]
+
+    decided = [row for row in rows if row["outcome"] in ("won", "lost")]
+    if not decided:
+        print(f"no decided matches in {path}")
+        return 1
+
+    def table(title: str, key: str) -> None:
+        cells: dict[str, list[str]] = defaultdict(list)
+        for row in decided:
+            cells[row[key]].append(row["outcome"])
+        print(f"\n=== {title} ===")
+        print(f"{'key':<18}{'win%':>7}{'won':>6}{'n':>6}")
+        for name, outcomes in sorted(cells.items(), key=lambda item: -sum(
+                1 for value in item[1] if value == "won") / len(item[1])):
+            won = sum(1 for value in outcomes if value == "won")
+            print(f"{name:<18}{won / len(outcomes) * 100:>6.1f}{won:>6}{len(outcomes):>6}")
+
+    print(f"matches {len(rows)} decided {len(decided)} "
+          f"won {sum(1 for row in decided if row['outcome'] == 'won')} "
+          f"wallclock {sum(1 for row in rows if row['outcome'] not in ('won', 'lost'))}")
+    table("by local faction", "local")
+    table("by opponent", "opponent")
+    table("by map", "map")
+    table("by pairing", "local")
+    pairs: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for row in decided:
+        pairs[(row["local"], row["opponent"])].append(row["outcome"])
+    print("\n=== pairing extremes (n>=8) ===")
+    ranked = sorted(
+        ((sum(1 for value in outcomes if value == "won") / len(outcomes), pair, outcomes)
+         for pair, outcomes in pairs.items() if len(outcomes) >= 8),
+        key=lambda item: item[0],
+    )
+    for rate, (local, opponent), outcomes in ranked[:8]:
+        print(f"  worst {local} vs {opponent}: {rate * 100:.0f}% "
+              f"({sum(1 for v in outcomes if v == 'won')}/{len(outcomes)})")
+    for rate, (local, opponent), outcomes in ranked[-8:]:
+        print(f"  best  {local} vs {opponent}: {rate * 100:.0f}% "
+              f"({sum(1 for v in outcomes if v == 'won')}/{len(outcomes)})")
+    return 0
+
+
+def existing_cells(path: Path) -> set[tuple[str, str, str, str]]:
+    """The (map, local, opponent, seed) cells a CSV already holds.
+
+    A matrix that runs for hours is stopped on purpose -- a deadline, a build
+    that has to land, a machine that has to be free -- and the cells already
+    played are the expensive part. Reading them back is what makes the stop
+    cheap instead of a restart.
+    """
+    import csv
+
+    if not path.exists():
+        return set()
+    with path.open(encoding="utf-8", newline="") as handle:
+        return {
+            (row.get("map", ""), row.get("local", ""),
+             row.get("opponent", ""), row.get("seed", ""))
+            for row in csv.DictReader(handle)
+        }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -692,7 +829,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-build", action="store_true", help="use the binary as it is")
     parser.add_argument("--skip-tests", action="store_true", help="do not run the retail tests")
     parser.add_argument("--log-dir", default=None, help="where the match logs go")
+    parser.add_argument("--local", default="america",
+                        help="the faction the assist brain drives")
+    parser.add_argument("--opponent-countries", default="",
+                        help="comma separated computer factions; defaults to --countries")
+    parser.add_argument("--credits", type=int, default=None,
+                        help="opening credits (the match binary's own default when omitted)")
+    parser.add_argument("--units", type=int, default=None,
+                        help="opening units per side (0: the build yard alone)")
+    parser.add_argument("--wall-seconds", type=float, default=DEFAULT_WALL_SECONDS,
+                        help="per-match wall clock cap; a capped match is recorded as "
+                             "`wallclock`, not as a result (0: no cap)")
+    parser.add_argument("--csv", default="",
+                        help="append one row per match here (matrix results)")
+    parser.add_argument("--resume", action="store_true",
+                        help="with --csv, skip the cells that file already holds")
+    parser.add_argument("--report", default="",
+                        help="print the pivot tables from this CSV and run nothing")
     args = parser.parse_args(argv)
+
+    if args.report:
+        return report_csv(Path(args.report))
 
     if args.compare and not args.baseline:
         parser.error("--compare needs --baseline <file>")
@@ -737,13 +894,23 @@ def main(argv: list[str] | None = None) -> int:
 
     maps = [name.strip() for name in args.maps.split(",") if name.strip()] or [args.map]
     countries = [name.strip() for name in args.countries.split(",") if name.strip()] or ["america"]
-    combos = [(name, country, seed) for name in maps for country in countries for seed in seeds]
+    opponents = [name.strip() for name in args.opponent_countries.split(",") if name.strip()] \
+        or countries
+    combos = [(name, opponent, seed) for name in maps for opponent in opponents for seed in seeds]
+    if args.resume and args.csv:
+        done = existing_cells(Path(args.csv))
+        before = len(combos)
+        combos = [combo for combo in combos
+                  if (combo[0], args.local, combo[1], combo[2]) not in done]
+        print(f"resume: {before - len(combos)} of {before} cells already in "
+              f"{args.csv}", flush=True)
     jobs = args.jobs or min(len(combos), default_jobs())
     with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
         reports = list(pool.map(
             lambda combo: run_match(
                 binary, combo[2], combo[0], args.ticks, log_dir,
-                args.opponents, combo[1], args.difficulty,
+                args.opponents, combo[1], args.difficulty, args.local,
+                args.credits, args.units, args.wall_seconds,
             ),
             combos,
         ))
@@ -769,6 +936,9 @@ def main(argv: list[str] | None = None) -> int:
 
     append_history(reports, args, history)
     print(f"\nhistory: {history}", flush=True)
+    if args.csv:
+        write_csv(Path(args.csv), reports, args)
+        print(f"csv: {args.csv}", flush=True)
     if args.baseline:
         compare_histories(Path(args.baseline), history)
     return 0

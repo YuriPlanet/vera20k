@@ -266,6 +266,7 @@ pub(super) fn deploy_yard_maker(
     let Some((entity_id, cell, yard)) = picked else {
         return;
     };
+    let risk = super::site_risk::YardSurvey::read(rules,obs,yard,Some(entity_id));
     // Reserve a durable deployment job. The plot is kept across native Move
     // interruptions, and the yard receipt is checked when this maker vanishes.
     let intended = brain.maker_journeys.get(&entity_id)
@@ -365,6 +366,8 @@ pub(super) fn deploy_yard_maker(
             // deployment plot in the main base until it fits or stalls.
             if let Some((site, old, progress)) = brain.maker_journeys.get(&entity_id).copied() {
                 let progressed = if old != cell { obs.tick() } else { progress };
+                // Let the final risk arbiter cancel the still-live native trip.
+                if !risk.site(&brain.census,Some(cell),site) { return; }
                 if maker_trip_stalled(obs.tick(), progressed)
                     || !obs.entity_type(rules, entity_id).is_some_and(|ty|
                         obs.can_reach(ty.movement_zone, cell, site)) {
@@ -385,7 +388,8 @@ pub(super) fn deploy_yard_maker(
                     brain.maker_journeys.remove(&entity_id);
                 }
             }
-            if obs.deploy_site_admits(rules, entity_id, yard) {
+            if obs.deploy_site_admits(rules, entity_id, yard)
+                && risk.site(&brain.census,Some(cell),cell) {
                 // A deploy request is not proof of a finished construction
                 // yard. Retain this task until the actual native building
                 // appears, but do not restart Deploy every simulation frame.
@@ -408,6 +412,7 @@ pub(super) fn deploy_yard_maker(
             let fits = |site: (u16, u16)| {
                 home.is_some_and(|anchor| cell_distance(site, anchor) <= 18)
                     && !matches!(space.ground_at(site), super::terrain::Ground::Enemy)
+                    && risk.site(&brain.census,Some(cell),site)
                     && obs.deploy_admits_at(rules, entity_id, yard, site)
                     && obs.entity_type(rules, entity_id).is_some_and(|ty|
                         obs.can_reach(ty.movement_zone, cell, site))
@@ -493,6 +498,7 @@ pub(super) fn deploy_yard_maker(
         let progress = if cell != last_cell { obs.tick() } else { last_progress };
         let reachable = obs.entity_type(rules, entity_id)
             .is_some_and(|ty| obs.can_reach(ty.movement_zone, cell, site));
+        if !risk.site(&brain.census,Some(cell),site) { return; }
         if maker_trip_stalled(obs.tick(), progress) || !reachable {
             brain.maker_journeys.remove(&entity_id);
             if let Some(id) = obs.type_id(&yard.id) {
@@ -518,7 +524,8 @@ pub(super) fn deploy_yard_maker(
         cell_distance(cell, dest) > 2) {
         return;
     }
-    if obs.deploy_site_admits(rules, entity_id, yard) {
+    if obs.deploy_site_admits(rules, entity_id, yard)
+        && risk.site(&brain.census,Some(cell),cell) {
         // The one guard the pack also runs: a yard the house only just packed
         // home is inside its term, and deploying it again is the round trip the
         // commitment exists to stop.
@@ -540,7 +547,7 @@ pub(super) fn deploy_yard_maker(
     // structure uses.
     let attempt = brain.maker_site_attempts.get(&yard_id).copied().unwrap_or(0);
     match Placement::new(obs, rules).cell_for(yard_id, attempt) {
-        Some(target) if target != cell => {
+        Some(target) if target != cell && risk.site(&brain.census,Some(cell),target) => {
             if obs.entity_type(rules, entity_id)
                 .is_some_and(|ty| obs.can_reach(ty.movement_zone, cell, target))
             {
@@ -575,7 +582,7 @@ pub(super) fn deploy_yard_maker(
                 &brain.census.home_cells,
                 brain.census.base_cell,
             );
-            match nearest_deploy_site(obs, rules, &space, entity_id, yard, cell) {
+            match nearest_deploy_site(obs, rules, &space, &brain.census, &risk, entity_id, yard, cell) {
                 Some(target) => {
                     if super::orders::issue(
                         brain,
@@ -628,12 +635,15 @@ fn nearest_deploy_site(
     obs: &Observation<'_>,
     rules: &RuleSet,
     space: &super::terrain::Space,
+    census: &Census,
+    risk: &super::site_risk::YardSurvey,
     entity_id: u64,
     yard: &ObjectType,
     from: (u16, u16),
 ) -> Option<(u16, u16)> {
     let zone = obs.entity_type(rules, entity_id).map(|ty| ty.movement_zone);
-    let fits = |cell: (u16, u16)| obs.deploy_admits_at(rules, entity_id, yard, cell)
+    let fits = |cell: (u16, u16)| risk.site(census,Some(from),cell)
+        && obs.deploy_admits_at(rules, entity_id, yard, cell)
         && zone.is_none_or(|zone| obs.can_reach(zone, from, cell));
     // Ground the house may build on first, any cell the deploy physically fits
     // on second. `deploy_admits_at` answers whether the footprint is clear, not
@@ -763,7 +773,12 @@ pub(super) fn expansion_is_worth_saving_for(
 ) -> bool {
     // An optional second yard must have strategic permission. This is not
     // the lost-yard recovery path, which still buys its MCV unconditionally.
-    if !brain.director.may_expand() {
+    if !brain.director.may_expand() || brain.mobilization.active() || brain.campaign.economy_resting() {
+        return false;
+    }
+    if brain.director.initialized() && (brain.census.refineries == 0
+        || brain.census.harvesters < 2 || brain.census.available_fighters() < 8
+        || brain.census.base_cell.is_none_or(|home| !far_ore(&brain.ore_known,home))) {
         return false;
     }
     if !yard_stands(&brain.census) || owns_yard_maker(&brain.census) {
@@ -858,6 +873,7 @@ fn deploy_second_yard(
     // that, but a maker that stopped running one cell later must not deploy
     // there anyway: that is the wishlist's "占领敌方MCV 收缩后又原地展开".
     let space = super::terrain::Space::read(obs, rules, &brain.census.home_cells, Some(home));
+    let risk=super::site_risk::YardSurvey::read(rules,obs,yard,Some(entity_id));
     // The selected ore-side plot, not merely "somewhere ten cells from home",
     // owns the deploy decision. An MCV that stops short of its target used to
     // unfold at the first legal roadside cell and later get packed again.
@@ -870,6 +886,7 @@ fn deploy_second_yard(
         let progress = if cell != last_cell { obs.tick() } else { progress };
         let reachable = obs.entity_type(rules, entity_id).is_some_and(|ty|
             obs.can_reach(ty.movement_zone, cell, site));
+        if !risk.site(&brain.census,Some(cell),site) { return; }
         if brain.blocked_expansion_sites.contains_key(&site)
             || !reachable || maker_trip_stalled(obs.tick(), progress)
         {
@@ -917,7 +934,8 @@ fn deploy_second_yard(
         && obs.destination(entity_id).is_none_or(|dest|
             dest == cell || selected == Some(dest))
         && cell_distance(cell, home) >= EXPAND_MIN_CELLS
-        && space.ground_at(cell).buildable()
+        && space.ground_at(cell) != super::terrain::Ground::Enemy
+        && risk.site(&brain.census,Some(cell),cell)
         && obs.deploy_site_admits(rules, entity_id, yard)
     {
         if (!yard_committed(brain, obs.tick(), entity_id)
@@ -1086,8 +1104,9 @@ pub(super) fn expansion_site(
             Some((unit.cell, ty.movement_zone))
         })
     });
+    let risk=super::site_risk::YardSurvey::read(rules,obs,yard,maker);
     let admits = |cell: (u16, u16)| {
-        if rejected.contains(&cell) { return false; }
+        if rejected.contains(&cell) || !risk.site(&brain.census,maker_position.map(|p|p.0),cell) { return false; }
         let reachable = maker_position.is_none_or(|(from, zone)| obs.can_reach(zone, from, cell));
         reachable && match maker {
             Some(id) => obs.deploy_admits_at(rules, id, yard, cell),
@@ -1108,6 +1127,7 @@ pub(super) fn expansion_site(
         let travelling_to_site = maker.is_some_and(|id|
             obs.destination(id) == Some(site));
         if !rejected.contains(&site)
+            && risk.site(&brain.census,maker_position.map(|p|p.0),site)
             && reachable
             && (travelling_to_site
                 || keep_expansion_appointment(tick, selected_at, reachable, admits(site)))
@@ -1115,6 +1135,8 @@ pub(super) fn expansion_site(
             return Some(site);
         }
     }
+    if brain.expansion_probe.is_some_and(|(at,site)|site.is_none()
+        && tick.saturating_sub(at)<EXPAND_PROBE_FRAMES) {return None;}
     let Some(home) = brain.census.base_cell else {
         brain.expansion_probe = Some((tick, None));
         return None;
@@ -1250,6 +1272,7 @@ fn search_rings_from(
         return None;
     }
     for ring in min_ring..=max_ring {
+        let mut supported = None;
         for dy in -ring..=ring {
             for dx in -ring..=ring {
                 if dx.abs().max(dy.abs()) != ring {
@@ -1279,12 +1302,18 @@ fn search_rings_from(
                 // the wishlist's "new buildings appear in the enemy's face".
                 // Read through the shared map reading rather than a second
                 // distance rule of this file's own.
-                if !space.ground_at((rx, ry)).buildable() {
-                    continue;
+                // `admits` above has checked actual visible weapon cover and
+                // nearby support. Contested ground is not automatically lethal.
+                match space.ground_at((rx, ry)) {
+                    super::terrain::Ground::Enemy => continue,
+                    super::terrain::Ground::Contested => { supported.get_or_insert((rx,ry)); }
+                    _ => return Some((rx,ry)),
                 }
-                return Some((rx, ry));
             }
         }
+        // Prefer quieter ground at the same distance; a supported contested
+        // site can still be worth the expansion instead of waiting forever.
+        if supported.is_some() {return supported;}
     }
     None
 }
@@ -1533,12 +1562,18 @@ mod tests {
             &brain.census.home_cells,
             brain.census.base_cell,
         );
-        let cell = super::nearest_deploy_site(&obs, &rules, &space, maker, yard, (20, 20))
-            .expect("a cell that takes the deploy");
-        assert!(
-            space.ground_at(cell).buildable(),
-            "the maker is sent to ground the house may build on, got {cell:?}"
-        );
+        // Isolate the old terrain preference from the new threat gate;
+        // the hostile infantry also serves as a genuine footprint blocker.
+        let terrain_only = super::super::site_risk::YardSurvey::terrain_only_for_test();
+        let cell = super::nearest_deploy_site(&obs, &rules, &space, &brain.census,
+            &terrain_only, maker, yard, (20, 20)).expect("a cell that takes the deploy");
+        assert!(space.ground_at(cell).buildable(),
+            "the maker prefers buildable ground, got {cell:?}");
+        let survey = super::super::site_risk::YardSurvey::read(&rules,&obs,yard,Some(maker));
+        if let Some(candidate) = super::nearest_deploy_site(&obs, &rules, &space,
+            &brain.census, &survey, maker, yard, (20,20)) {
+            assert!(survey.site(&brain.census,Some((20,20)),candidate));
+        }
     }
 
     /// The maker belongs to the yard it becomes: an American house's maker
@@ -1598,7 +1633,7 @@ mod tests {
     /// The flat arena with the computer `Russians` and the human `Americans`.
     fn arena(seed: u64) -> Option<(Simulation, RuleSet, InternedId)> {
         let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()?;
-        let mut sim = arena_fixture::rival_arena(&rules, seed);
+        let mut sim = arena_fixture::rival_arena_known(&rules, seed);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         let owner = sim.interner.intern("Americans");

@@ -215,11 +215,13 @@ pub(super) fn run(
     // touch is taken over rather than damaged. Collected apart from the firing
     // threats because the answer to one is not the answer to the other.
     let mut parasites: Vec<((u16, u16), i32)> = Vec::new();
-    for enemy in &brain.census.enemies {
+    for enemy in obs.visible_enemy_entities() {
         let Some(ty) = obs.object_type(rules, enemy.type_id) else {
             continue;
         };
-        let reach = super::advance::weapon_range_cells(rules, ty, false);
+        if ty.category == ObjectCategory::Building
+            && !obs.visible_enemy_building_operational(rules,enemy.entity_id) { continue; }
+        let reach = super::advance::weapon_range_cells(rules, ty, obs.is_deployed(enemy.entity_id));
         enemy_cell.insert(enemy.entity_id, (enemy.cell, reach));
         if reach > 0 {
             index.insert(Threat::gun(enemy.entity_id, enemy.cell, reach));
@@ -307,6 +309,9 @@ pub(super) fn run(
         if native_target.is_none() && obs.attack_target(unit.entity_id).is_some() {
             continue;
         }
+        if native_target.is_some_and(|(target,_)|
+            super::safety::supported_ready_fire(brain,rules,obs,unit,Goal::Attack {target}))
+        {continue;}
         // The direction half may use whatever is closest when the unit has no
         // target: stepping away from a tank is right even for a unit that was
         // shooting a building.
@@ -320,32 +325,18 @@ pub(super) fn run(
                 .map(|enemy| enemy.cell)
         });
 
-        let threats: Vec<Threat> = index.near(unit.cell, THREAT_REACH_CELLS);
+        let threats: Vec<Threat> = index.near(unit.cell, THREAT_REACH_CELLS).into_iter()
+            .filter_map(|mut threat| {
+                let reach = super::tactics::actual_threat_reach(rules,obs,threat.entity_id,unit.entity_id);
+                if reach <= 0 || !obs.can_hurt(rules,threat.entity_id,unit.entity_id) { return None; }
+                threat.reach = reach;
+                Some(threat)
+            }).collect();
 
-        if obs.weapon_ready(unit.entity_id) {
-            // Loaded. If the target is out of reach, walk back in: the micro
-            // pass only orders what is already in reach, so a kite that stepped
-            // out would otherwise stand at its own edge and never fire again.
-            let Some((target_id, target_cell)) = native_target else {
-                continue;
-            };
-            if chebyshev(unit.cell, target_cell) <= mine {
-                continue;
-            }
-            super::orders::issue_tracked(
-                &mut brain.tracked,
-                brain.trace,
-                out,
-                rules,
-                obs,
-                unit.entity_id,
-                TrackedKind::Kite,
-                Some(target_id),
-                None,
-                Goal::Attack { target: target_id },
-            );
-            continue;
-        }
+        // A loaded gun must not restore its old target by itself: the old
+        // order may now lead into a tower or simply be out of range. The
+        // main combat commander and safety review own target renewal.
+        if obs.weapon_ready(unit.entity_id) { continue; }
 
         // Reloading: step out of what can hit this cell, towards the target's
         // side so the next shot is one step back.
@@ -360,7 +351,22 @@ pub(super) fn run(
         let Some(step) = step_out(unit.cell, &threats, direction_target) else {
             continue;
         };
-        if !obs.is_ground_walkable(step.0, step.1) {
+        if !obs.is_ground_walkable(step.0, step.1)
+            || !super::orders::reachable(rules,obs,unit.entity_id,step) { continue; }
+        let before = exposure(unit.cell,&threats);
+        let after = exposure(step,&threats);
+        // A healthy firing unit should not step out of its own effective
+        // range just to shave one enemy arc. Critical withdrawal remains in
+        // the casualty/avoidance passes; parasite evasion ran above.
+        if let Some((target,at)) = native_target {
+            let reach = super::tactics::effective_reach_against(rules,obs,unit.entity_id,target);
+            if unit.health_permille >= 600 && reach > 0
+                && chebyshev(unit.cell,at) <= reach && chebyshev(step,at) > reach {
+                continue;
+            }
+        }
+        if matches!(brain.tracked.live_kind(obs.tick(),unit.entity_id),Some(TrackedKind::Dodge | TrackedKind::Kite))
+            && obs.destination(unit.entity_id).is_some_and(|cell| exposure(cell,&threats).covered <= after.covered) {
             continue;
         }
         // A one-cell shuffle still inside the *same* gun coverage costs an
@@ -370,8 +376,9 @@ pub(super) fn run(
         // against a lone opponent. Parasites and lethal controller threats
         // have their independent emergency paths above this decision.
         if !worth_interrupting_fire(
-            exposure(unit.cell, &threats), exposure(step, &threats),
-            native_target.is_some_and(|(_, target)| chebyshev(unit.cell, target) <= mine),
+            before, after,
+            native_target.is_some_and(|(id, _)| obs.engage(rules,unit.entity_id,id)
+                == crate::sim::control::observation::Engage::Ready),
             unit.health_permille,
         ) {
             continue;

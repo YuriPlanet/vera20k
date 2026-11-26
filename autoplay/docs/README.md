@@ -16,6 +16,8 @@ This folder is the policy crate's documentation. `../src/` is the code;
 | [spec.md](spec.md) | The acceptance criteria: every requirement and its observable test. |
 | [acceptance.md](acceptance.md) | How a match is scored, and what the reference replays are for. |
 | [reference-1v29-win.md](reference-1v29-win.md) | A human 1v29 win read back as a reference. |
+| [matrix.md](matrix.md) | Running a whole matrix: factions x opponents x maps, the CSV, and the pivot tables. |
+| [benchmark-v42.1.md](benchmark-v42.1.md) | Fixed V41 seeds, durable staged regression runs, same-engine A/B and recovery diagnostics. |
 | [split-orders.md](split-orders.md) | The plan for splitting `assist::orders`: scope, the function-by-function target tree, and why the eight-way split was rejected. Not applied. |
 
 ## history/
