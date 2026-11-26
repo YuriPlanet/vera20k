@@ -42,6 +42,7 @@ released_saves! {
     main_2e39b88dd: "main-2e39b88dd", 0xB65C_0664, Skirmish;
     main_2e67ebaa8: "main-2e67ebaa8", 0xE527_9FB2, Skirmish;
     main_fb29ff473: "main-fb29ff473", 0xBA51_A42C, Skirmish;
+    main_b268ba798: "main-b268ba798", 0xC66C_E753, Skirmish;
 }
 
 const TUNNEL_FIXTURE: &str = "v0.3.9-tunnel";

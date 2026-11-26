@@ -34,6 +34,7 @@ def main():
     commits["2e39b88dde2230909dffc491638fc831e9232b30"] = "main-2e39b88dd"
     commits["2e67ebaa84545e3317e2273162ac5c2a72b3e1f1"] = "main-2e67ebaa8"
     commits["fb29ff47307cea7f0615774ab49932841156799d"] = "main-fb29ff473"
+    commits["b268ba798a3f24d88c14218f82a5222165f841f7"] = "main-b268ba798"
     tag = commits.get(git("rev-parse", "HEAD"))
     if not tag or git("branch", "--show-current") or git("status", "--porcelain", "-uno"):
         raise SystemExit("Run in a clean, detached checkout of a listed fixture revision.")

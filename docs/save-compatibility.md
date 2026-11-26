@@ -71,8 +71,8 @@ switch off. Later writers each stored part of the current layout: the
 `d17e45e42` writer's layout `0x919AB3CD` the modules with their control points.
 Each converts with its missing parts empty: no projectile path, push or
 immunity modifier, no swapped image, and without the reads the switch stays
-off, as those matches played. No frozen save holds `0x8C73B1B3`. A writer of
-the current layout `0xC66CE753` is not frozen yet.
+off, as those matches played. No frozen save holds `0x8C73B1B3`. The
+`b268ba798` writer covers direct loading of the current layout `0xC66CE753`.
 
 Run the menu and compatibility tests with this command.
 
