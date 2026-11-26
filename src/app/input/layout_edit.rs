@@ -23,8 +23,8 @@
 
 use vera20k_gui::{NodeId, NodeKind, Prop, Value};
 
-use crate::app::AppState;
 use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
@@ -127,19 +127,38 @@ pub(crate) fn active(presentation: &MatchPresentationState) -> bool {
 
 /// The Edit Layout key: turn the mode on, or leave it without saving. It
 /// exists in a match only.
-pub(crate) fn toggle(state: &mut AppState) {
-    if active(&state.match_state.match_presentation) {
-        finish(state, false);
+pub(crate) fn toggle(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+) {
+    if active(&match_state.match_presentation) {
+        finish(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            false,
+        );
     } else {
         start(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
         );
     }
 }
@@ -188,37 +207,72 @@ pub(crate) fn start(
 }
 
 /// Esc while the mode is on: leave it without saving.
-pub(crate) fn cancel(state: &mut AppState) {
-    finish(state, false);
+pub(crate) fn cancel(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+) {
+    finish(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        false,
+    );
 }
 
 /// End the mode: Save writes what moved, anything else puts back the file
 /// the mode started from.
-fn finish(state: &mut AppState, save: bool) {
-    let presentation = &mut state.match_state.match_presentation;
+fn finish(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    save: bool,
+) {
+    let presentation = &mut match_state.match_presentation;
     let Some(edit) = presentation.layout_edit.take() else {
         return;
     };
     presentation.dialog_ui.close(EDIT_DIALOG);
     let changed = presentation.player_layout_text != edit.before;
     if edit.leave(&mut presentation.player_layout_text, save) {
-        crate::app::presentation::player_layout::write(
-            &state.platform,
-            &state.match_state.match_presentation,
-        );
+        crate::app::presentation::player_layout::write(platform, &match_state.match_presentation);
     } else if changed {
         // The parts go back where the mode found them.
-        relayout(state);
+        relayout(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+        );
     }
     crate::app::input::messages::post_layout_edit(
-        &state.platform,
-        &state.renderer,
-        &state.diag,
-        &state.frontend,
-        &mut state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
-        &state.persistence,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        &mut audio.sfx_player,
+        persistence,
         if save {
             crate::app::input::messages::LayoutEditLine::Saved
         } else {
@@ -229,13 +283,21 @@ fn finish(state: &mut AppState, save: bool) {
 
 /// Reset: the side's layout leaves the player's file, so its parts stand as
 /// the mod, or the original, has them. Save keeps it.
-fn reset(state: &mut AppState) {
-    let Some(side) =
-        sidebar_render::local_side_name(&state.frontend, &state.match_state).map(str::to_owned)
+fn reset(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+) {
+    let Some(side) = sidebar_render::local_side_name(frontend, match_state).map(str::to_owned)
     else {
         return;
     };
-    let presentation = &mut state.match_state.match_presentation;
+    let presentation = &mut match_state.match_presentation;
     let Some(layout) = presentation.match_layouts.layout_name_for_side(Some(&side)) else {
         return;
     };
@@ -243,20 +305,47 @@ fn reset(state: &mut AppState) {
         &presentation.player_layout_text,
         layout,
     );
-    relayout(state);
+    relayout(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+    );
 }
 
 /// Read the layouts again from the player's text and lay the match out by
 /// them.
-fn relayout(state: &mut AppState) {
+fn relayout(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+) {
     crate::app::presentation::player_layout::rebuild(
-        &state.platform,
-        &state.frontend,
-        &mut state.match_state,
-        &state.persistence,
+        platform,
+        frontend,
+        match_state,
+        persistence,
         false,
     );
-    sidebar_render::refresh_sidebar_projection(state);
+    sidebar_render::refresh_sidebar_projection(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+    );
 }
 
 /// How `X` and `Y` change for a frame pixel: by the holder's scale, and
@@ -556,21 +645,32 @@ fn pressed_button(presentation: &MatchPresentationState) -> Option<EditButton> {
 
 /// A left press on a button holds it; one elsewhere grabs the topmost part
 /// under the cursor. Letting go over the held button runs it.
-pub(crate) fn mouse(state: &mut AppState, button: winit::event::MouseButton, pressed: bool) {
+pub(crate) fn mouse(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    button: winit::event::MouseButton,
+    pressed: bool,
+) {
     if button != winit::event::MouseButton::Left {
         return;
     }
-    let cursor = state.match_state.input.cursor_px();
+    let cursor = match_state.input.cursor_px();
     if pressed {
         let targets = sync_nodes(
-            &state.platform,
-            &state.renderer,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
         );
-        let ui = &mut state.match_state.match_presentation.dialog_ui;
+        let ui = &mut match_state.match_presentation.dialog_ui;
         ui.on_pointer_move(cursor.0, cursor.1);
         ui.on_pointer_down(cursor.0, cursor.1);
         let _ = ui.drain_events();
@@ -588,33 +688,61 @@ pub(crate) fn mouse(state: &mut AppState, button: winit::event::MouseButton, pre
                 per_pixel: target.per_pixel,
                 at: target.xy,
             });
-        if let Some(edit) = &mut state.match_state.match_presentation.layout_edit {
+        if let Some(edit) = &mut match_state.match_presentation.layout_edit {
             edit.grab = grab;
         }
         return;
     }
-    let ui = &mut state.match_state.match_presentation.dialog_ui;
+    let ui = &mut match_state.match_presentation.dialog_ui;
     ui.on_pointer_up(cursor.0, cursor.1);
     let events = ui.drain_events();
     let ran = events.iter().find_map(|event| match event {
         vera20k_gui::UiEvent::Activated { node } => EditButton::of(ui.gui().id_of(*node)?),
         _ => None,
     });
-    let Some(edit) = &mut state.match_state.match_presentation.layout_edit else {
+    let Some(edit) = &mut match_state.match_presentation.layout_edit else {
         return;
     };
     edit.grab = None;
     match ran {
-        Some(EditButton::Save) => finish(state, true),
-        Some(EditButton::Reset) => reset(state),
+        Some(EditButton::Save) => finish(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            true,
+        ),
+        Some(EditButton::Reset) => reset(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+        ),
         None => {}
     }
 }
 
 /// A grabbed part follows the cursor.
-pub(crate) fn cursor_moved(state: &mut AppState) {
-    let cursor = state.match_state.input.cursor_px();
-    let Some(edit) = &mut state.match_state.match_presentation.layout_edit else {
+pub(crate) fn cursor_moved(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+) {
+    let cursor = match_state.input.cursor_px();
+    let Some(edit) = &mut match_state.match_presentation.layout_edit else {
         return;
     };
     let Some(grab) = &mut edit.grab else {
@@ -630,12 +758,11 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     }
     grab.at = at;
     let name = grab.name.clone();
-    let Some(side) =
-        sidebar_render::local_side_name(&state.frontend, &state.match_state).map(str::to_owned)
+    let Some(side) = sidebar_render::local_side_name(frontend, match_state).map(str::to_owned)
     else {
         return;
     };
-    let presentation = &mut state.match_state.match_presentation;
+    let presentation = &mut match_state.match_presentation;
     presentation.player_layout_text = placed_in_text(
         &presentation.player_layout_text,
         presentation.match_layouts.layout_name_for_side(Some(&side)),
@@ -643,7 +770,16 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         &name,
         at,
     );
-    relayout(state);
+    relayout(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+    );
 }
 
 /// The player's file with part `name` of the side's layout at `at`: `X` and

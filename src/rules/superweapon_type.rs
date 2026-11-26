@@ -122,6 +122,15 @@ impl AresSuperWeaponFlags {
 }
 
 impl SuperWeaponKind {
+    /// SW_Protect::HandlesType (Ares.dll 0x10074B40) also claims the
+    /// original Iron Curtain. Keep the stored kind for stock play and indices.
+    pub const fn ares_handler_kind(self) -> Self {
+        match self {
+            Self::IronCurtain => Self::Protect,
+            other => other,
+        }
+    }
+
     /// The implemented NewSWType Activate owners, which only a game read the
     /// Ares way uses: the new types and the stock Types whose redirect is
     /// ported.
@@ -134,14 +143,16 @@ impl SuperWeaponKind {
     /// SW_ChronoWarp (100700A0), SW_NuclearMissile (10073350),
     /// SW_GeneticMutator (10072080), SW_PsychicDominator (10070980),
     /// SW_PsychicReveal (100752E0), SW_SpyPlane (100757F0), SW_LightningStorm (10072C30), SW_ParaDrop
-    /// (10073DA0: ParaDrop and AmerParaDrop). Its handler's
+    /// (10073DA0: ParaDrop and AmerParaDrop), SW_Protect (10074B40: IronCurtain).
+    /// Its handler's
     /// Initialize, LoadFromINI,
     /// Activate and Flags replace the stock reads and Launch case; the other
     /// stock Types keep their stock owners in this port.
     pub(crate) const fn is_ares_redirect(self) -> bool {
         matches!(
             self,
-            Self::ChronoSphere
+            Self::IronCurtain
+                | Self::ChronoSphere
                 | Self::ChronoWarp
                 | Self::MultiMissile
                 | Self::GeneticConverter
@@ -930,7 +941,7 @@ impl SuperWeaponType {
             // InitializeConstants supplies an Attack cursor. Stock ReadAction
             // keeps its 0x20-byte ReadString (`0x00474EE0`), which a stock-way
             // read uses for every Type.
-            action: match kind {
+            action: match kind.ares_handler_kind() {
                 // Firestorm 2.0 ReadAction 0x44AB90 (called at 0x60D1F6) knows
                 // the IonCannon action (its table 0x6CCC70, index 37), which
                 // gamemd's lacks; this type reads it beside gamemd's names.

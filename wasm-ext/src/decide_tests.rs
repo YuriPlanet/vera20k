@@ -170,6 +170,12 @@ fn fixed_layouts_round_trip() {
     let bytes = path.to_bytes();
     assert_eq!(result_len(EVENT_LAUNCH, bytes.len() as i64, 416), Some(80));
     assert_eq!(PathSpec::from_bytes(&bytes, bytes.len()), Some(path));
+    let over_limit = PathSpec {
+        points: vec![[0; 3]; crate::decide::MAX_PATH_POINTS + 1],
+        ..PathSpec::default()
+    }
+    .to_bytes();
+    assert_eq!(PathSpec::from_bytes(&over_limit, over_limit.len()), None);
     let step = ProjectileStep {
         flags: ProjectileStep::SET_VELOCITY | ProjectileStep::DETONATE,
         velocity: [65_536, 0, -1],

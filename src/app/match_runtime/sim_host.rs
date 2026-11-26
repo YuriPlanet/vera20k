@@ -643,7 +643,7 @@ impl SimWorker {
         std::thread::Builder::new()
             .name("simulation".into())
             // The main thread's size: a tick recurses as deep there.
-            .stack_size(8 << 20)
+            .stack_size(crate::util::GAME_STACK_BYTES)
             .spawn(move || run_jobs(&job_queue, &send_back))
             .expect("start the simulation thread");
         Self { jobs, returned }

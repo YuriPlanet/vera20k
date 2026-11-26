@@ -15,6 +15,7 @@ use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use anyhow::{Result, anyhow, ensure};
 
 use crate::app::AppState;
+use crate::app::shell_main_menu::ClientStep;
 use crate::app::shell_network_setup as setup;
 use crate::app::shell_network_setup::maps::{self as shared, GeneratedMapManifest};
 use crate::map::source::{LoadedTransferAsset, TransferMapSource, TransferResource};
@@ -859,19 +860,20 @@ impl Transfers {
         Ok(())
     }
 
-    fn fail(&mut self, state: &mut AppState) {
+    /// Stop the transfer; the returned step fails the GO handoff.
+    fn fail(
+        &mut self,
+        network_setup_protocol: &mut Option<setup::NetworkSetupProtocol>,
+        session: &crate::app::match_runtime::session::MatchSession,
+    ) -> ClientStep {
         self.flow = Flow::Failed;
         self.pending_job = None;
         self.deadline = None;
         self.worker = None;
         self.host_bytes.clear();
         self.peers.clear();
-        setup::set_network_map_progress(
-            &mut state.frontend.network_setup_protocol,
-            &state.match_state.session,
-            None,
-        );
-        setup::fail_go_handoff(state);
+        setup::set_network_map_progress(network_setup_protocol, session, None);
+        ClientStep::Now(Box::new(setup::fail_go_handoff))
     }
 }
 
@@ -907,7 +909,11 @@ pub(super) fn received_options(
         generated,
     );
     if result.is_err() {
-        maps.fail(state);
+        let step = maps.fail(
+            &mut state.frontend.network_setup_protocol,
+            &state.match_state.session,
+        );
+        crate::app::App::apply_step(state, step);
     }
     // The step above runs with the whole app state and can close the visit;
     // the transfer state then ends with the service it belonged to.
@@ -1005,7 +1011,11 @@ pub(super) fn poll(state: &mut AppState) {
     })();
     if let Err(error) = result {
         log::warn!("LAN map transfer failed: {error:#}");
-        maps.fail(state);
+        let step = maps.fail(
+            &mut state.frontend.network_setup_protocol,
+            &state.match_state.session,
+        );
+        crate::app::App::apply_step(state, step);
     }
     if let Some(service) = state.match_state.lan_service.as_mut() {
         service.maps = maps;

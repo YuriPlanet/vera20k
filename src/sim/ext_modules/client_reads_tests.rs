@@ -263,6 +263,38 @@ fn own_objects_read_own_properties_but_not_simulation_ones() {
 }
 
 #[test]
+fn nearby_enemy_count_uses_visible_objects_and_their_apparent_houses() {
+    let mut scene = scene();
+    let tank = scene.own_tank;
+    scene
+        .sim_mut()
+        .entity_mut_for_test(tank)
+        .expect("own tank")
+        .seldom
+        .sight
+        .set_vision_range_for_test(24);
+    let view = scene.player();
+    let reference = tank as i64;
+    // All five Russian objects are nearby. Only the visible tank looks hostile.
+    assert_eq!(
+        view.reader()
+            .read_in(reference, prop("NearbyEnemyCount"), view.own_view())
+            .expect("simulation count"),
+        (5, Status::Ok)
+    );
+    assert_eq!(read(&view, reference, "NearbyEnemyCount"), (1, Status::Ok));
+    let player = scene.sim_mut().interner.get("Americans").expect("player");
+    scene
+        .sim_mut()
+        .fog_mut_for_test()
+        .sensors_add_at(player, (8, 20), 2);
+    assert_eq!(
+        read(&scene.player(), reference, "NearbyEnemyCount"),
+        (2, Status::Ok)
+    );
+}
+
+#[test]
 fn a_seen_enemy_shows_only_type_place_owner_and_health() {
     let scene = scene();
     let view = scene.player();
@@ -795,4 +827,3 @@ fn references_to_nothing_are_gone() {
     assert!(!sees_object(&view, house_ref(scene.americans)));
     assert!(get(&view, -5, prop("Type")).is_err());
 }
-

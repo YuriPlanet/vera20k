@@ -1671,14 +1671,22 @@ impl ObjectType {
         self.undeploys_into.is_some() && self.foundation.dimensions() == (1, 1)
     }
 
+    /// BuildingType::ReadINI at 0x0046108A negates a negative `Power=`
+    /// into the signed drain dword. INT_MIN stays negative on x86.
+    pub(crate) fn power_drain(&self) -> i32 {
+        if self.power < 0 {
+            self.power.wrapping_neg()
+        } else {
+            0
+        }
+    }
+
     /// YRpp `BuildingTypeClass::CanTogglePower`, inlined in DetermineAction's
     /// power arm (`0x0069286F..0x00692891`) and Ares 3.0's (`1005C790`):
     /// `TogglePower=` (`+0x154A`) with a positive drain (`+0xEE4`) or
     /// `Powered=` (`+0x1573`).
     pub fn can_toggle_power(&self) -> bool {
-        self.toggle_power
-            && (crate::sim::power_system::native_building_power_drain(self.power) > 0
-                || self.powered)
+        self.toggle_power && (self.power_drain() > 0 || self.powered)
     }
 
     /// BuildingClass::CanBeSelectedNow's type test (`0x00459C03`): whether a

@@ -1,9 +1,16 @@
 //! System-clock620 for the shared ScenarioPause684060/684180 owner.
 //! Simulation's ScenarioSession owns62C/630 and the input-lock transitions.
 //! This leaf supplies no gameplay clock, RNG or competing pause counter.
-use crate::app::AppState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_diagnostics::MatchDiagnosticsState;
 use crate::app::match_runtime::sim_host::{SimHost, SimWrite};
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::{AppState, PlatformState};
 use crate::sim::replay::{ReplayLog, ScenarioPauseInput, ScenarioServiceInput};
 use crate::sim::scenario_session::ScenarioPauseChange;
 use crate::sim::timer::CdTimer;
@@ -133,19 +140,38 @@ pub(crate) fn resume_with_owners(
 /// Main_Tick55D7C2..55D82E: only modes0/5 inspect620. Restored timers
 /// begin at zero (PostRead683571..68358E); a saved timed hold releases on
 /// the first live poll, while untimed holds remain with their existing owner.
-pub(crate) fn poll(state: &mut AppState, wall_ms: u64) {
+pub(crate) fn poll(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    wall_ms: u64,
+) {
     if matches!(
-        state.match_state.session_mode(),
+        match_state.session_mode(),
         super::session::SessionMode::Campaign | super::session::SessionMode::Skirmish
-    ) && state
-        .match_state
+    ) && match_state
         .match_presentation
         .scenario_pause
         .elapsed(wall_ms)
-        && let Some(rt) = state.match_state.sim_runtime.runtime()
+        && let Some(rt) = match_state.sim_runtime.runtime()
         && rt.simulation.session().scenario_pause_timed()
     {
-        apply_pause_service(state, ScenarioPauseInput::ExpireTimedPause);
+        apply_pause_service(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            ScenarioPauseInput::ExpireTimedPause,
+        );
     }
 }
 
@@ -153,10 +179,20 @@ pub(crate) fn poll(state: &mut AppState, wall_ms: u64) {
 /// barrier. A pause service changes only ScenarioPause684060/684180, so its
 /// change goes to the handlers [`super::sim_tick::apply_trigger_effects`]
 /// runs for the same effects, in the same order.
-pub(crate) fn apply_pause_service(state: &mut AppState, input: ScenarioPauseInput) {
+pub(crate) fn apply_pause_service(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    input: ScenarioPauseInput,
+) {
     let change = apply_live_service(
-        &mut state.match_state.sim_runtime,
-        &mut state.match_state.match_diagnostics,
+        &mut match_state.sim_runtime,
+        &mut match_state.match_diagnostics,
         input,
         ScenarioPauseInput::apply,
         ReplayLog::apply_scenario_pause,
@@ -169,28 +205,39 @@ pub(crate) fn apply_pause_service(state: &mut AppState, input: ScenarioPauseInpu
             lock_input,
         } => {
             let now = super::frame_pacer::wall_clock_ms();
-            enter(
-                &mut state.match_state,
-                &mut state.audio,
-                duration,
-                outermost,
-                now,
-            );
+            enter(match_state, audio, duration, outermost, now);
             if lock_input {
-                crate::app::input::campaign_input::apply_lock_effect(state, true, false);
+                crate::app::input::campaign_input::apply_lock_effect(
+                    platform,
+                    renderer,
+                    diag,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    audio,
+                    persistence,
+                    true,
+                    false,
+                );
             }
         }
         ScenarioPauseChange::Resume { unlock_input } => {
             if let Some(was_locked) = unlock_input {
-                crate::app::input::campaign_input::apply_lock_effect(state, false, was_locked);
+                crate::app::input::campaign_input::apply_lock_effect(
+                    platform,
+                    renderer,
+                    diag,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    audio,
+                    persistence,
+                    false,
+                    was_locked,
+                );
             }
             let now = super::frame_pacer::wall_clock_ms();
-            resume(
-                &state.frontend.screen,
-                &mut state.match_state,
-                &mut state.audio,
-                now,
-            );
+            resume(&frontend.screen, match_state, audio, now);
         }
     }
 }

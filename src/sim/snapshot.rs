@@ -70,7 +70,7 @@ fn snapshot_layout() -> u32 {
 fn traced_on_a_game_stack() -> u32 {
     std::thread::Builder::new()
         .name("snapshot layout".into())
-        .stack_size(8 << 20)
+        .stack_size(crate::util::GAME_STACK_BYTES)
         .spawn(traced_snapshot_layout)
         .ok()
         .and_then(|trace| trace.join().ok())

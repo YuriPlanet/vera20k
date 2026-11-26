@@ -397,10 +397,18 @@ fn render_skirmish_shell_with_atlas(
     // that clears "Working / Please Wait" is the one showing the finished map.
     // While a job is in flight the shell keeps asking for frames -- nothing else
     // is driving redraws, and without this the dialog would freeze on the first
-    // "working" frame until the player moved the mouse.
-    if crate::app::App::poll_random_map_generation(state)
-        || state.frontend.random_map_generation.is_some()
-    {
+    // "working" frame until the player moved the mouse. An OK that waited
+    // for the map begins its teardown slide here, before the frame lays
+    // anything out.
+    let (changed, step) = crate::app::App::poll_random_map_generation(
+        &mut state.frontend,
+        &mut state.match_state.sim_runtime,
+        &mut state.process_assets,
+    );
+    if let Some(step) = step {
+        crate::app::App::apply_step(state, step);
+    }
+    if changed || state.frontend.random_map_generation.is_some() {
         state.platform.window.request_redraw();
     }
     let layout =
@@ -911,11 +919,17 @@ fn render_skirmish_shell_with_atlas(
                 .create_instance_buffer(&state.renderer.gpu, &d.instances)
         })
         .collect();
-    let cursor_instances: Vec<SpriteInstance> =
-        crate::app::frontend::shell_pass::software_cursor(state, SHELL_CURSOR_DEPTH)
-            .map(|(_, instance)| instance)
-            .into_iter()
-            .collect();
+    let cursor_instances: Vec<SpriteInstance> = crate::app::frontend::shell_pass::software_cursor(
+        &mut state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+        SHELL_CURSOR_DEPTH,
+    )
+    .map(|(_, instance)| instance)
+    .into_iter()
+    .collect();
     let cursor_buffer = state
         .renderer
         .batch_renderer
@@ -2017,41 +2031,6 @@ mod wol_lobby;
 mod wol_login;
 mod wol_page;
 mod wol_quick_match;
-/// Android: the room chat edit's rect beside VERA's send key, sized as the
-/// online room's: the log's width less the send tile and its gap (`26 + 6`
-/// authored px).
-#[cfg(target_os = "android")]
-pub(crate) fn room_chat_text_rect(
-    chat: crate::ui::shell::geom::RectPx,
-    log: crate::ui::shell::geom::RectPx,
-    scale: crate::ui::shell::geom::ShellScale,
-) -> crate::ui::shell::geom::RectPx {
-    let tile = (26.0 * scale.factor()).round() as i32;
-    let gap = (6.0 * scale.factor()).round() as i32;
-    crate::ui::shell::geom::RectPx::new(chat.x, chat.y, (log.w - tile - gap).max(1), chat.h)
-}
-
-/// Android: the room's send tile, at the online room's emote slot: just
-/// right of the box, one pixel above it and `26 x 23` authored px. A phone has
-/// no Enter key, so a press on it sends the line.
-#[cfg(target_os = "android")]
-pub(crate) fn room_chat_send_rect(
-    chat: crate::ui::shell::geom::RectPx,
-    log: crate::ui::shell::geom::RectPx,
-    scale: crate::ui::shell::geom::ShellScale,
-) -> crate::ui::shell::geom::RectPx {
-    let text = room_chat_text_rect(chat, log, scale);
-    let tile_w = (26.0 * scale.factor()).round() as i32;
-    let tile_h = (23.0 * scale.factor()).round() as i32;
-    let gap = (6.0 * scale.factor()).round() as i32;
-    crate::ui::shell::geom::RectPx::new(
-        text.x + text.w + gap,
-        chat.y - (1.0 * scale.factor()).round() as i32,
-        tile_w,
-        tile_h,
-    )
-}
-
 /// Android: VERA's send key in `rect`, drawn with the online room's emote
 /// button art (`0x3ED`'s released image, as `Picture::Emote` draws it).
 #[cfg(target_os = "android")]

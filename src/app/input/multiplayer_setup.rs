@@ -639,7 +639,7 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         // the emote button's, whose tile it borrows (`STT:EmoteButton`).
         #[cfg(target_os = "android")]
         let send_help = (!view.dialog.wol() && {
-            let key = crate::app::frontend::skirmish_shell_render::room_chat_send_rect(
+            let key = crate::ui::shell::geom::room_chat_send_rect(
                 _layout.chat,
                 _layout.chat_log,
                 _layout.page.scale,
@@ -702,7 +702,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     // sends the line.
     #[cfg(target_os = "android")]
     if pressed
-        && crate::app::frontend::skirmish_shell_render::room_chat_send_rect(
+        && crate::ui::shell::geom::room_chat_send_rect(
             layout.chat,
             layout.chat_log,
             layout.page.scale,

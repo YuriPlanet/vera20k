@@ -2373,13 +2373,11 @@ pub(crate) fn sync(
             // Android: the chat edit leaves room for VERA's send key.
             #[cfg(target_os = "android")]
             if dialog == page && id == CHAT {
-                return Some(
-                    crate::app::frontend::skirmish_shell_render::room_chat_text_rect(
-                        rect,
-                        layout.chat_log,
-                        scale,
-                    ),
-                );
+                return Some(crate::ui::shell::geom::room_chat_text_rect(
+                    rect,
+                    layout.chat_log,
+                    scale,
+                ));
             }
             Some(rect)
         });

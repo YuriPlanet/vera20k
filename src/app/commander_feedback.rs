@@ -56,11 +56,13 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use crate::app::AppState;
+use crate::app::PlatformState;
 use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::sim_host::SimHost;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::presentation::state::MatchPresentationState;
 use crate::app::process_assets::ProcessAssets;
@@ -340,13 +342,33 @@ pub(crate) fn verdict_card_shown_at_ms(presentation: &MatchPresentationState) ->
 /// clip changes nothing about the numbers. It retires the clip's FIFO and ends
 /// the wait, and the exit router takes the verdict on its next pass — the same
 /// card, the same theme and the same score page the clip would have led to.
-pub(crate) fn skip_verdict_clip(state: &mut AppState, wall_ms: u64) {
-    if !verdict_is_waiting_for_clip(&state.match_state.match_presentation) {
+pub(crate) fn skip_verdict_clip(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    wall_ms: u64,
+) {
+    if !verdict_is_waiting_for_clip(&match_state.match_presentation) {
         return;
     }
     // The clip's own EVA hold and both queues belong to this FIFO.
-    crate::app::radar_movie::retire(state, wall_ms);
-    let feedback = &mut state.match_state.match_presentation.commander_feedback;
+    crate::app::radar_movie::retire(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        wall_ms,
+    );
+    let feedback = &mut match_state.match_presentation.commander_feedback;
     feedback.queue.clear();
     feedback.verdict_wait = None;
     // Never re-open: the verdict is the router's now.

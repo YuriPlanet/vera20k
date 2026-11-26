@@ -31,8 +31,8 @@
 //! the radar press it would need, so no release reaches both. Player effect:
 //! none known. Downstream risk: none.
 
-use crate::app::AppState;
 use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::PlaceAction;
 use crate::app::input::cursor::ActionQuery;
@@ -40,8 +40,10 @@ use crate::app::input::dispatch::LeftUp;
 use crate::app::input::entity_pick::HoverObject;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::app::types::{CursorFeedbackKind, CursorId};
+use crate::audio::sfx::SfxPlayer;
 use crate::render::radar::NativeRadarInputTarget;
 use winit::event::MouseButton;
 
@@ -551,21 +553,25 @@ pub(crate) fn begin_context_press(
 /// `Action=` is the listed index's action, not the armed type; with the Ares
 /// superweapons on, the armed type for an Ares action or its own `Action=`,
 /// else none ([`crate::app::input::commands::special_place_type`]).
-pub(crate) fn finish_order_press(state: &mut AppState, button: MouseButton) {
-    if !state.match_state.input.finish_minimap_press(button) {
+pub(crate) fn finish_order_press(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    button: MouseButton,
+) {
+    if !match_state.input.finish_minimap_press(button) {
         return;
     }
     let Some(Hover {
         target,
         action: Some(action),
         ..
-    }) = hover(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
-    )
+    }) = hover(platform, renderer, frontend, match_state, persistence)
     else {
         return;
     };
@@ -583,7 +589,14 @@ pub(crate) fn finish_order_press(state: &mut AppState, button: MouseButton) {
         _ => None,
     };
     crate::app::input::dispatch::band_box_left_up(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         LeftUp::Radar {
             target,
             super_weapon,

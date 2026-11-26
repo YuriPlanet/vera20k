@@ -124,6 +124,18 @@ impl ModuleProjectiles {
         self.entries.is_empty()
     }
 
+    pub(super) fn valid_saved_paths(&self) -> bool {
+        self.entries
+            .values()
+            .filter_map(|entry| entry.path.as_ref())
+            .all(|path| {
+                Path::valid_shape(path.kind, path.points.len(), path.param[1])
+                    && (1..=i64::MAX / ONE).contains(&path.length)
+                    && (1..=i64::from(MAX_STEP) * ONE).contains(&path.speed)
+                    && path.progress >= 0
+            })
+    }
+
     pub(crate) fn forget(&mut self, id: u64) {
         if !self.entries.is_empty() {
             self.entries.remove(&id);
@@ -186,25 +198,30 @@ impl ModuleProjectiles {
 }
 
 impl Path {
+    fn valid_shape(kind: u8, count: usize, period: i64) -> bool {
+        match kind {
+            PATH_BEZIER | PATH_WAYPOINTS => {
+                (1..=vera20k_wasm_ext::decide::MAX_PATH_POINTS).contains(&count)
+            }
+            PATH_PARABOLA => count == 1,
+            PATH_SPIRAL => count == 1 && period > 0,
+            _ => false,
+        }
+    }
+
     /// The path `spec` describes from `start`; `None` for a kind, point
     /// count or parameter it does not admit. `native_speed` is the bullet's
     /// current speed in leptons per frame.
     fn new(spec: &PathSpec, start: ProjectileCoord, native_speed: i64) -> Option<Self> {
         let kind = u8::try_from(spec.kind).ok()?;
+        if !Self::valid_shape(kind, spec.points.len(), spec.param[1]) {
+            return None;
+        }
         let points: Vec<[i32; 3]> = spec
             .points
             .iter()
             .map(|point| point.map(|v| v.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32))
             .collect();
-        let valid = match kind {
-            PATH_BEZIER | PATH_WAYPOINTS => !points.is_empty(),
-            PATH_PARABOLA => points.len() == 1,
-            PATH_SPIRAL => points.len() == 1 && spec.param[1] > 0,
-            _ => false,
-        };
-        if !valid {
-            return None;
-        }
         let limit = i64::from(MAX_STEP) * ONE;
         let speed = match spec.speed {
             speed if speed > 0 => speed.min(limit),
@@ -237,34 +254,42 @@ impl Path {
         self.frames = self.frames.wrapping_add(1);
         self.progress = self.progress.saturating_add(self.speed);
         let done = self.progress >= self.length.saturating_mul(ONE);
-        let u = if done { ONE } else { self.progress / self.length };
-        let end = *self.points.last().expect("a path has a point");
+        let end = *self.points.last().expect("validated path has a point");
+        if done {
+            return (end, true);
+        }
+        let u = self.progress / self.length;
         let at = match self.kind {
-            PATH_WAYPOINTS => self.along_polyline(),
+            PATH_WAYPOINTS => self.along_polyline().map(clamp_i32),
             PATH_BEZIER => {
-                let mut points: Vec<[i64; 3]> = std::iter::once(&self.start)
-                    .chain(self.points.iter())
-                    .map(|p| p.map(i64::from))
-                    .collect();
-                while points.len() > 1 {
-                    points = points.windows(2).map(|w| lerp(w[0], w[1], u)).collect();
+                let mut points = [[0; 3]; vera20k_wasm_ext::decide::MAX_PATH_POINTS + 1];
+                points[0] = self.start.map(i64::from);
+                for (slot, point) in points[1..].iter_mut().zip(&self.points) {
+                    *slot = point.map(i64::from);
                 }
-                points[0]
+                for width in (1..=self.points.len()).rev() {
+                    for i in 0..width {
+                        points[i] = lerp(points[i], points[i + 1], u);
+                    }
+                }
+                points[0].map(clamp_i32)
             }
             _ => {
-                let mut at = lerp(self.start.map(i64::from), end.map(i64::from), u);
+                let mut at = lerp(self.start.map(i64::from), end.map(i64::from), u).map(i128::from);
                 // 4 u (1 - u), 16 fraction bits: 0 at both ends, 1 midway.
                 let bulge = 4 * u * (ONE - u) / ONE;
+                // Module radii span i64. Keep the projection and its addition to the
+                // base coordinate wide until the final coordinate clamp.
+                let amplitude = mul_q16(i128::from(self.param[0]), bulge);
                 if self.kind == PATH_PARABOLA {
-                    at[2] += mul_q16(self.param[0], bulge);
+                    at[2] += amplitude;
                 } else {
-                    let radius = mul_q16(self.param[0], bulge);
                     let turn = ((i64::from(self.frames) * ONE) / self.param[1]).rem_euclid(ONE);
-                    let across = mul_q16(radius, cos_q16(turn));
-                    let up = mul_q16(radius, sin_q16(turn));
-                    let dx = i64::from(end[0]) - i64::from(self.start[0]);
-                    let dy = i64::from(end[1]) - i64::from(self.start[1]);
-                    let flat = isqrt((dx * dx + dy * dy) as u128) as i64;
+                    let across = mul_q16(amplitude, cos_q16(turn));
+                    let up = mul_q16(amplitude, sin_q16(turn));
+                    let dx = i128::from(end[0]) - i128::from(self.start[0]);
+                    let dy = i128::from(end[1]) - i128::from(self.start[1]);
+                    let flat = i128::from(isqrt((dx * dx + dy * dy) as u128));
                     if flat == 0 {
                         at[0] += across;
                     } else {
@@ -273,11 +298,10 @@ impl Path {
                     }
                     at[2] += up;
                 }
-                at
+                at.map(|v| v.clamp(i128::from(i32::MIN), i128::from(i32::MAX)) as i32)
             }
         };
-        let at = if done { end } else { at.map(clamp_i32) };
-        (at, done)
+        (at, false)
     }
 
     /// The polyline position `progress` leptons from the start.
@@ -306,8 +330,8 @@ fn lerp(a: [i64; 3], b: [i64; 3], u: i64) -> [i64; 3] {
 }
 
 /// `a * b`, `b` with 16 fraction bits.
-fn mul_q16(a: i64, b: i64) -> i64 {
-    ((a as i128 * b as i128) >> 16) as i64
+fn mul_q16(a: i128, b: i64) -> i128 {
+    (a * i128::from(b)) >> 16
 }
 
 fn clamp_i32(value: i64) -> i32 {
@@ -714,6 +738,15 @@ pub(crate) mod tests_support {
             points: vec![[1, 0, 0]],
         };
         assert!(Path::new(&spiral, origin, 0).is_none());
+        // Full-width radii project onto an ordinary one-cell path.
+        let wide = PathSpec {
+            speed: 128 * ONE,
+            param: [i64::MIN, 2],
+            points: vec![[256, 0, 0]],
+            ..spiral
+        };
+        let mut path = Path::new(&wide, origin, 0).expect("a spiral");
+        assert_eq!(path.advance(), ([128, i32::MAX, 0], false));
         let two = PathSpec {
             points: vec![[1, 0, 0], [2, 0, 0]],
             ..parabola

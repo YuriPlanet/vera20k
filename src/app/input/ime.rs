@@ -143,25 +143,42 @@ fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
     {
         return None;
     }
-    edit_target(state)
+    #[cfg(not(target_os = "android"))]
+    {
+        edit_target(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.persistence,
+        )
+    }
+    #[cfg(target_os = "android")]
+    {
+        edit_target(state)
+    }
 }
 
 /// The desktop's and the browser's edits that take an input method.
 #[cfg(not(target_os = "android"))]
-fn edit_target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
+fn edit_target(
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    persistence: &crate::app::persistence::PersistenceState,
+) -> Option<(ImeTarget, RectPx)> {
     use crate::app::input::precedence::{InputLayer, ScreenPage};
     use crate::app::{App, GameScreen};
     use crate::render::shell_text::{ScissorRect, TextRect};
     use crate::ui::pause_menu::InGameMenuState;
     // The conversion edit owns the keys when a battlefield chat edit is
     // underneath it; a prompt over the name keeps the IME closed.
-    let saved_browser = match state.frontend.screen {
-        GameScreen::MainMenu => state.frontend.load_saved_game.as_ref(),
-        GameScreen::InGame => state
-            .match_state
-            .match_presentation
-            .saved_game_browser
-            .as_ref(),
+    let saved_browser = match frontend.screen {
+        GameScreen::MainMenu => frontend.load_saved_game.as_ref(),
+        GameScreen::InGame => match_state.match_presentation.saved_game_browser.as_ref(),
         _ => None,
     };
     if let Some(browser) = saved_browser.filter(|browser| browser.is_naming_conversion()) {
@@ -169,28 +186,25 @@ fn edit_target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
             return None;
         }
         let (target, layout) = match crate::app::input::precedence::input_layer(
-            &state.platform,
-            &state.renderer,
-            &state.frontend,
-            &state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
         ) {
             InputLayer::Screen(ScreenPage::LoadSavedGame) => (
                 ImeTarget::MainMenuConversionName,
-                crate::app::frontend::shell_layout::load_saved_game_layout(
-                    &state.renderer.gpu,
-                    &state.frontend,
-                )
-                .browser,
+                crate::app::frontend::shell_layout::load_saved_game_layout(&renderer.gpu, frontend)
+                    .browser,
             ),
             InputLayer::Screen(ScreenPage::InGameShell(InGameMenuState::SavedGame(_))) => (
                 ImeTarget::InGameConversionName,
                 App::saved_game_layout(
-                    &state.platform,
-                    &state.renderer,
-                    &state.frontend,
-                    &state.match_state,
-                    &state.persistence,
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    persistence,
                     browser.mode,
                 )?,
             ),
@@ -200,11 +214,11 @@ fn edit_target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
         // The launcher is in window pixels. An active-game shell's edit
         // shares the text's sidebar and match zoom before it reaches them.
         let rect = match crate::app::presentation::window_ui::shell_raster(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &state.match_state.match_presentation,
-            &state.persistence,
+            platform,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation,
+            persistence,
             true,
         ) {
             Some(raster) => {
@@ -219,36 +233,36 @@ fn edit_target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
         (
             ImeTarget::InGameChat,
             crate::app::input::messages::ime_edit_rect(
-                &state.renderer,
-                &state.frontend.screen,
-                &state.match_state.match_presentation,
+                renderer,
+                &frontend.screen,
+                &match_state.match_presentation,
             ),
         ),
         (
             ImeTarget::LanLobbyChat,
-            crate::app::shell_lan::ime_chat_rect(&state.renderer.gpu, &state.frontend),
+            crate::app::shell_lan::ime_chat_rect(&renderer.gpu, frontend),
         ),
         (
             ImeTarget::SetupChat,
             crate::app::input::multiplayer_setup::ime_chat_rect(
-                &state.renderer,
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
             ),
         ),
         (
             ImeTarget::WolLobbyEdit,
-            crate::app::shell_wol::lobby::ime_edit_rect(&state.frontend, &state.renderer.gpu),
+            crate::app::shell_wol::lobby::ime_edit_rect(frontend, &renderer.gpu),
         ),
         (
             ImeTarget::ChooseMapSearch,
             crate::app::App::choose_map_search_ime_rect(
-                &state.platform,
-                &state.renderer,
-                &state.frontend,
-                &state.match_state,
-                &state.persistence,
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
             ),
         ),
     ]

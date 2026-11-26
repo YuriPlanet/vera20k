@@ -3,6 +3,7 @@
 use super::{App, AppState, GameScreen, Instant, ModifiersState};
 use crate::app::PlatformState;
 use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::match_runtime::state::MatchState;
@@ -114,7 +115,17 @@ impl App {
         );
         state.match_state.input.planning.reset();
         let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-        crate::app::radar_movie::retire(state, wall_ms);
+        crate::app::radar_movie::retire(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &state.persistence,
+            wall_ms,
+        );
         crate::app::commander_feedback::retire(&mut state.match_state.match_presentation);
         crate::app::chrono_screen::retire(
             &state.frontend.screen,
@@ -299,39 +310,46 @@ impl App {
     /// modifier that performed an Alt+Tab never delivers its release to this
     /// window, so it would otherwise stay latched and suppress force-fire and
     /// the ordinary cursor for the rest of the match.
-    pub(super) fn set_window_active(state: &mut AppState, active: bool) {
-        if state.platform.window_active == active {
+    pub(super) fn set_window_active(
+        platform: &mut PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        persistence: &PersistenceState,
+        audio: &mut AppAudioRuntime,
+        active: bool,
+    ) {
+        if platform.window_active == active {
             return;
         }
-        state.platform.window_active = active;
-        Self::sync_window_movies(&state.platform, &mut state.frontend);
+        platform.window_active = active;
+        Self::sync_window_movies(platform, frontend);
         if active {
-            state.platform.clear_attention();
+            platform.clear_attention();
         }
-        let movie_active = crate::app::radar_movie::playback_active(
-            &state.platform,
-            &state.match_state.match_presentation,
-        );
-        state
-            .match_state
+        let movie_active =
+            crate::app::radar_movie::playback_active(platform, &match_state.match_presentation);
+        match_state
             .match_presentation
             .radar_movies
             .set_active(movie_active);
-        state.match_state.input.keys_held.clear();
+        match_state.input.keys_held.clear();
         // VERA formation line: its held key's release may never arrive.
-        state.match_state.input.formation_line.clear_key();
-        state.match_state.input.hotkey_modifiers = ModifiersState::empty();
-        state.platform.live_modifiers = ModifiersState::empty();
-        state.platform.held_modifier_keys.clear();
-        state.match_state.input.type_select.clear_held();
+        match_state.input.formation_line.clear_key();
+        match_state.input.hotkey_modifiers = ModifiersState::empty();
+        platform.live_modifiers = ModifiersState::empty();
+        platform.held_modifier_keys.clear();
+        match_state.input.type_select.clear_held();
         crate::app::input::planning_mode::release_on_focus_change(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
         );
         // gamemd-derived: the `WM_ACTIVATEAPP` changed edge at 0x007778AC
         // stops/restores the primary DirectSound output through 0x00407020 /
@@ -340,25 +358,22 @@ impl App {
         // `g_ApplicationActive` (0x00A8ED80) edge — never with a setting — so
         // the audio gate rides on every activation edge, and a window the
         // player minimises goes silent.
-        if let Some(player) = state.audio.music_player.as_mut() {
+        if let Some(player) = audio.music_player.as_mut() {
             player.set_focus_output_active(active);
         }
-        if let Some(player) = state.audio.sfx_player.as_mut() {
+        if let Some(player) = audio.sfx_player.as_mut() {
             player.set_focus_output_active(active);
         }
-        if state.platform.pause_on_focus_loss
-            && active
-            && state.match_state.session_mode().is_single_player()
-        {
+        if platform.pause_on_focus_loss && active && match_state.session_mode().is_single_player() {
             // Only the configured freeze leaves a deactivated span to forget:
             // without it the match keeps pacing in the background. Forget the
             // pacing window so exactly one frame runs immediately on return,
             // then normal pacing resumes; the span must not buy a catch-up
             // frame.
-            state.platform.frame_pacer.reset_for_immediate_frame();
+            platform.frame_pacer.reset_for_immediate_frame();
         }
         if active {
-            state.platform.window.request_redraw();
+            platform.window.request_redraw();
         }
         log::info!(
             "Window {}",
@@ -410,26 +425,43 @@ impl App {
 
     /// Route one Escape press, or the Options Back control, through the
     /// in-scenario modal machine.
-    pub(super) fn route_in_game_menu_escape(state: &mut AppState) {
+    pub(super) fn route_in_game_menu_escape(
+        platform: &mut PlatformState,
+        renderer: &mut RendererState,
+        diag: &DiagnosticsState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &mut PersistenceState,
+    ) {
         use crate::ui::pause_menu::InGameMenuState;
 
-        let current = state.match_state.match_presentation.in_game_menu;
+        let current = match_state.match_presentation.in_game_menu;
         if current == InGameMenuState::Menu
-            && (crate::app::input::pause_menu::close_options_list(state)
-                || crate::app::input::pause_menu::back_from_options(
-                    &mut state.match_state.match_presentation,
-                ))
+            && (crate::app::input::pause_menu::close_options_list(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+            ) || crate::app::input::pause_menu::back_from_options(
+                &mut match_state.match_presentation,
+            ))
         {
             return;
         }
         Self::enter_in_game_menu_state(
-            &mut state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             current.on_escape(),
         );
     }
@@ -635,57 +667,73 @@ impl App {
 
     /// Every physical or fallback modal commits through the same state/exit owner.
     pub(crate) fn apply_in_game_modal_outcome(
-        state: &mut AppState,
+        platform: &mut PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &mut PersistenceState,
         outcome: crate::ui::pause_menu::ModalOutcome,
     ) {
         use crate::ui::pause_menu::ModalOutcome;
         match outcome {
             ModalOutcome::Stay => {}
             ModalOutcome::Enter(next) => Self::enter_in_game_menu_state(
-                &mut state.platform,
-                &state.renderer,
-                &mut state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio,
-                &mut state.persistence,
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
                 next,
             ),
             ModalOutcome::LeaveMatch { destruct } => {
                 if destruct {
-                    Self::queue_local_destruct(&mut state.match_state);
+                    Self::queue_local_destruct(match_state);
                 }
-                Self::exit_match_to_shell(state)
+                Self::exit_match_to_shell(
+                    platform,
+                    renderer,
+                    diag,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    audio,
+                    persistence,
+                )
             }
             ModalOutcome::Observe => {
                 // 0x0048CAB2: DESTRUCT and the latch clear; no EXIT. The
                 // latch keeps every modal closed until the House is
                 // Defeated, which re-arms it (0x0048C911).
-                Self::queue_local_destruct(&mut state.match_state);
-                state.match_state.match_presentation.modal_latch = false;
+                Self::queue_local_destruct(match_state);
+                match_state.match_presentation.modal_latch = false;
                 Self::enter_in_game_menu_state(
-                    &mut state.platform,
-                    &state.renderer,
-                    &mut state.frontend,
-                    &mut state.match_state,
-                    &state.process_assets,
-                    &mut state.audio,
-                    &mut state.persistence,
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    audio,
+                    persistence,
                     crate::ui::pause_menu::InGameMenuState::Closed,
                 );
             }
             ModalOutcome::RestartScenario => {
                 // State machine48CB2E raises8B41C0 and the modal state
                 // returns to 0; the router consumes it on the next pass.
-                state.match_state.scenario_restart_requested = true;
+                match_state.scenario_restart_requested = true;
                 Self::enter_in_game_menu_state(
-                    &mut state.platform,
-                    &state.renderer,
-                    &mut state.frontend,
-                    &mut state.match_state,
-                    &state.process_assets,
-                    &mut state.audio,
-                    &mut state.persistence,
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    audio,
+                    persistence,
                     crate::ui::pause_menu::InGameMenuState::Closed,
                 );
             }
@@ -720,7 +768,16 @@ impl App {
     /// defeat teardown — no outcome announcement, no result screen, straight
     /// back to the shell. Confirmation itself only constructs and queues the
     /// event; teardown begins after the event-tail dispatcher executes it.
-    fn exit_match_to_shell(state: &mut AppState) {
+    fn exit_match_to_shell(
+        platform: &mut PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &mut PersistenceState,
+    ) {
         // The result is already decided and only its commander clip is left.
         // Leaving now cuts that clip: the card, the theme and the score page
         // follow exactly as they would after it — the terminal frame latched
@@ -728,18 +785,28 @@ impl App {
         // would go nowhere: no frame runs after a published result, so the
         // event would never execute.
         if crate::app::commander_feedback::verdict_is_waiting_for_clip(
-            &state.match_state.match_presentation,
+            &match_state.match_presentation,
         ) {
             let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-            crate::app::commander_feedback::skip_verdict_clip(state, wall_ms);
+            crate::app::commander_feedback::skip_verdict_clip(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+                wall_ms,
+            );
             Self::enter_in_game_menu_state(
-                &mut state.platform,
-                &state.renderer,
-                &mut state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio,
-                &mut state.persistence,
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
                 crate::ui::pause_menu::InGameMenuState::Closed,
             );
             return;
@@ -748,17 +815,16 @@ impl App {
         // 0x0048CAA1 clears the admission latch after queueing EXIT, even
         // when the event ring is full: until EXIT runs, State_Machine opens
         // no modal for a player who is not defeated.
-        state.match_state.match_presentation.modal_latch = false;
-        if state.match_state.scenario_exit.is_some() {
+        match_state.match_presentation.modal_latch = false;
+        if match_state.scenario_exit.is_some() {
             return;
         }
-        let Some(owner) = crate::app::input::commands::preferred_local_owner(&state.match_state)
-        else {
+        let Some(owner) = crate::app::input::commands::preferred_local_owner(match_state) else {
             log::warn!("Abort Mission confirmation has no local command owner");
             return;
         };
         if crate::app::input::commands::try_schedule_command(
-            &mut state.match_state,
+            match_state,
             &owner,
             crate::sim::command::Command::ExitMatch,
         )
@@ -767,19 +833,19 @@ impl App {
             log::warn!("Abort Mission EXIT event could not be queued for '{owner}'");
             return;
         }
-        if let Some(live) = state.match_state.live_network.as_mut() {
+        if let Some(live) = match_state.live_network.as_mut() {
             // Keep the native EXIT in its queue. The network owner resumes
             // through any pending pause request so this event can execute.
             live.keep_running_for_exit();
         }
         Self::enter_in_game_menu_state(
-            &mut state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             crate::ui::pause_menu::InGameMenuState::Closed,
         );
     }
@@ -787,39 +853,91 @@ impl App {
     /// Consume EventClass opcode `0x13`'s executed edge and enter the existing
     /// battle-abort teardown. A repeated drain without another dispatch is a
     /// no-op because the simulation edge is taken.
-    pub(super) fn consume_executed_abort_exit(state: &mut AppState, wall_ms: u64) {
-        if Self::house_outcome_wait_pending(&state.match_state.sim_runtime) {
+    pub(super) fn consume_executed_abort_exit(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &PersistenceState,
+        wall_ms: u64,
+    ) {
+        if Self::house_outcome_wait_pending(&match_state.sim_runtime) {
             return;
         }
         // Remote EXIT senders run DestroyConnection first (0x0064C9B1).
-        crate::app::match_runtime::network_match::drain_departures(state);
-        crate::app::match_runtime::network_match::post_speed_changes(state);
-        crate::app::match_runtime::network_match::post_pause_changes(state);
-        crate::app::match_runtime::network_match::post_connection_changes(state);
-        crate::app::match_runtime::network_match::post_caught_up(state);
-        let local_owner = crate::app::input::commands::preferred_local_owner(&state.match_state);
+        crate::app::match_runtime::network_match::drain_departures(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
+        );
+        crate::app::match_runtime::network_match::post_speed_changes(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
+        );
+        crate::app::match_runtime::network_match::post_pause_changes(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
+        );
+        crate::app::match_runtime::network_match::post_connection_changes(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
+        );
+        crate::app::match_runtime::network_match::post_caught_up(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
+        );
+        let local_owner = crate::app::input::commands::preferred_local_owner(match_state);
         let local_owner_id = local_owner.as_deref().and_then(|owner| {
-            state
-                .match_state
+            match_state
                 .sim_runtime
                 .runtime()
                 .map(|rt| &rt.simulation)
                 .and_then(|sim| sim.interner().get(owner))
         });
-        let local_outcome_exit_ready = Self::local_outcome_exit_ready(&state.match_state);
+        let local_outcome_exit_ready = Self::local_outcome_exit_ready(match_state);
         // Almost every pass has no EXIT to take. Only one that does takes
         // the world for writing, which waits for a tick on the simulation
         // thread and drops the published frame.
-        if !state
-            .match_state
+        if !match_state
             .sim_runtime
             .runtime()
             .is_some_and(|rt| rt.simulation.executed_exit_owner_pending())
         {
             return;
         }
-        let executed_owner = state
-            .match_state
+        let executed_owner = match_state
             .sim_runtime
             .write_sim(SimWrite::Lifecycle)
             .map(|rt| &mut rt.simulation)
@@ -843,39 +961,44 @@ impl App {
             // edge is still consumed, but cannot clear or replace that route.
             return;
         }
-        if state.match_state.scenario_exit.is_some() {
+        if match_state.scenario_exit.is_some() {
             return;
         }
 
         // Abort is the independent EXIT-event route: it never inherits the
         // victory/defeat HouseClass SavourDelay or its outcome-voice wait.
-        state.match_state.scenario_outcome = None;
+        match_state.scenario_outcome = None;
         Self::record_match_result(
-            &mut state.frontend,
-            &state.match_state,
+            frontend,
+            match_state,
             super::cncnet::ExternalMatchResult::Quit,
         );
         //686570 clears the movie queue before its independent audio fade.
-        crate::app::radar_movie::retire(state, wall_ms);
-        crate::app::commander_feedback::retire(&mut state.match_state.match_presentation);
-        crate::app::chrono_screen::retire(
-            &state.frontend.screen,
-            &mut state.match_state,
-            &mut state.audio,
+        crate::app::radar_movie::retire(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             wall_ms,
         );
-        let elapsed_seconds = state.match_state.scenario_elapsed_clock.stop(wall_ms);
+        crate::app::commander_feedback::retire(&mut match_state.match_presentation);
+        crate::app::chrono_screen::retire(&frontend.screen, match_state, audio, wall_ms);
+        let elapsed_seconds = match_state.scenario_elapsed_clock.stop(wall_ms);
         // gamemd provenance: battle abort teardown; verified
         // GameExit__BattleControlTerminated @ 0x00686570 starts Theme's fade
         // (`ThemeClass::Stop(1)` @ 0x006865FA), then fades the independent
         // audio master, bounds its voice pump to 300 timer buckets, and
         // finally hard-stops audio.
-        state.audio.fade_out_theme(wall_ms);
+        audio.fade_out_theme(wall_ms);
         let destination = Self::aborted_score_destination(
-            &mut state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            &state.persistence.options_profile,
+            frontend,
+            match_state,
+            process_assets,
+            &persistence.options_profile,
             elapsed_seconds,
         )
         .unwrap_or(crate::app::match_runtime::scenario_exit::ScenarioExitDestination::MainMenu);
@@ -894,14 +1017,9 @@ impl App {
         // `0x00686570` requests EVA_BattleControlTerminated as an INTERRUPT
         // immediately before waiting for the two simultaneous audio fades.
         if let Some(action) = scenario_exit.take_start_voice_action() {
-            Self::apply_scenario_exit_voice_action(
-                &state.match_state,
-                &state.process_assets,
-                &mut state.audio,
-                action,
-            );
+            Self::apply_scenario_exit_voice_action(match_state, process_assets, audio, action);
         }
-        state.match_state.scenario_exit = Some(scenario_exit);
+        match_state.scenario_exit = Some(scenario_exit);
     }
 
     /// The score page for a skirmish the player left on purpose, or `None`
@@ -969,18 +1087,32 @@ impl App {
     /// immediately; `render_frame` drives it to completion and then exits the
     /// event loop. `Main_PrepareSession` case 7 opens with Theme `Stop(1)`
     /// (`0x0052E764..0x0052E76B`), Theme's own 1000 ms stream fade.
-    pub(super) fn start_quit_cascade(state: &mut AppState) {
+    pub(super) fn start_quit_cascade(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &PersistenceState,
+    ) {
         let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-        crate::app::radar_movie::retire(state, wall_ms);
-        crate::app::commander_feedback::retire(&mut state.match_state.match_presentation);
-        crate::app::chrono_screen::retire(
-            &state.frontend.screen,
-            &mut state.match_state,
-            &mut state.audio,
+        crate::app::radar_movie::retire(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             wall_ms,
         );
-        state.audio.fade_out_theme(wall_ms);
-        state.frontend.quit_cascade = Some(crate::app::frontend::quit_cascade::QuitCascade::start(
+        crate::app::commander_feedback::retire(&mut match_state.match_presentation);
+        crate::app::chrono_screen::retire(&frontend.screen, match_state, audio, wall_ms);
+        audio.fade_out_theme(wall_ms);
+        frontend.quit_cascade = Some(crate::app::frontend::quit_cascade::QuitCascade::start(
             Instant::now(),
         ));
     }

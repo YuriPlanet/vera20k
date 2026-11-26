@@ -20,7 +20,6 @@
 //! packet `0x22`. The label box under the beacon is
 //! [`crate::app::presentation::beacon_labels`].
 
-use crate::app::AppState;
 use crate::app::match_runtime::session::SessionMode;
 use crate::net::lan_messages::ingame::BeaconRecord;
 use crate::sim::radar::{RadarEventRequest, RadarEventType};
@@ -374,15 +373,21 @@ pub(crate) fn draws(
 /// every other node (`0x00430D99..0x00430E4E`); a visible allied beacon raises
 /// radar event `0xB` and, once admitted, `EVA_BeaconDetected`.
 pub(crate) fn place_beacon(
-    state: &mut AppState,
+    platform: &crate::app::state::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    diag: &crate::app::diagnostics::state::DiagnosticsState,
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    sfx_player: &mut Option<crate::audio::sfx::SfxPlayer>,
+    persistence: &crate::app::persistence::PersistenceState,
     house: usize,
     coord: [i32; 3],
     slot: Option<usize>,
 ) {
     // The registry, rather than the native eight-row array, bounds VERA's
     // admitted House indices. Invalid received indices still create no row.
-    if !state
-        .match_state
+    if !match_state
         .sim_runtime
         .runtime()
         .is_some_and(|runtime| runtime.simulation.houses().order().get(house).is_some())
@@ -390,23 +395,18 @@ pub(crate) fn place_beacon(
         return;
     }
     let received = slot.is_some();
-    let Some(slot) = state
-        .match_state
+    let Some(slot) = match_state
         .match_presentation
         .beacons
         .store(house, coord, slot)
     else {
         return;
     };
-    let visible = visible_to_player(
-        &state.match_state.sim_runtime,
-        house,
-        &Beacon::placed(coord),
-    );
+    let visible = visible_to_player(&match_state.sim_runtime, house, &Beacon::placed(coord));
     match placement_feedback(
-        state.match_state.session_mode(),
+        match_state.session_mode(),
         house,
-        local_house_index(&state.match_state.sim_runtime),
+        local_house_index(&match_state.sim_runtime),
         visible,
         received,
     ) {
@@ -414,44 +414,43 @@ pub(crate) fn place_beacon(
         PlacementFeedback::Local => {
             use crate::app::input::messages::{HudMessage, post_hud_message};
             post_hud_message(
-                &state.platform,
-                &state.renderer,
-                &state.diag,
-                &state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
-                &state.persistence,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
                 HudMessage::BeaconHelp("TXT_BEACON_HELP1"),
             );
             post_hud_message(
-                &state.platform,
-                &state.renderer,
-                &state.diag,
-                &state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
-                &state.persistence,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
                 HudMessage::BeaconHelp("TXT_BEACON_HELP2"),
             );
             crate::app::input::dispatch::push_local_eva(
-                &mut state.match_state.match_audio,
+                &mut match_state.match_audio,
                 EVA_BEACON_PLACED,
             );
             if let Some(sound_id) =
-                crate::app::state::active_rules(&state.frontend, &state.match_state).and_then(
-                    |rules| Some(rules.sound_name(rules.general.place_beacon_sound.as_deref()?)),
-                )
+                crate::app::state::active_rules(frontend, match_state).and_then(|rules| {
+                    Some(rules.sound_name(rules.general.place_beacon_sound.as_deref()?))
+                })
             {
-                state
-                    .match_state
+                match_state
                     .match_audio
                     .sound_events
                     .push(crate::audio::events::GameSoundEvent::UiSound { sound_id });
             }
             send(
-                &mut state.match_state.session,
+                &mut match_state.session,
                 BeaconRecord::Placed {
                     house: house as i8,
                     slot: slot as i8,
@@ -460,9 +459,9 @@ pub(crate) fn place_beacon(
             );
         }
         PlacementFeedback::Detected => {
-            if admit_radar_event(&mut state.match_state, coord) {
+            if admit_radar_event(match_state, coord) {
                 crate::app::input::dispatch::push_local_eva(
-                    &mut state.match_state.match_audio,
+                    &mut match_state.match_audio,
                     EVA_BEACON_DETECTED,
                 );
             }
@@ -609,19 +608,28 @@ fn delete_all_beacons(
 
 /// MPlayer_Defeated's local branch: DeleteAllBeacons for PlayerPtr
 /// (`0x004FC1BD..0x004FC1C6`), then beacon mode off (`0x004FC1FA`).
-pub(crate) fn local_player_defeated(state: &mut AppState) {
-    if let Some(local) = local_house_index(&state.match_state.sim_runtime) {
-        delete_all_beacons(&mut state.match_state, local);
+pub(crate) fn local_player_defeated(
+    platform: &crate::app::state::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    diag: &crate::app::diagnostics::state::DiagnosticsState,
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    sfx_player: &mut Option<crate::audio::sfx::SfxPlayer>,
+    persistence: &crate::app::persistence::PersistenceState,
+) {
+    if let Some(local) = local_house_index(&match_state.sim_runtime) {
+        delete_all_beacons(match_state, local);
     }
     crate::app::input::beacon::set_place_beacon_mode(
-        &state.platform,
-        &state.renderer,
-        &state.diag,
-        &state.frontend,
-        &mut state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
-        &state.persistence,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         crate::app::input::beacon::BeaconModeRequest::Off,
     );
 }
@@ -629,19 +637,41 @@ pub(crate) fn local_player_defeated(state: &mut AppState) {
 /// The receive arms `0x0048D798..0x0048D7EF`. The record's House and slot
 /// index the manager directly natively; a record outside the actual House
 /// registry is dropped by the shared placement owner.
-pub(crate) fn receive(state: &mut AppState, record: BeaconRecord) {
+pub(crate) fn receive(
+    platform: &crate::app::state::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    diag: &crate::app::diagnostics::state::DiagnosticsState,
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    sfx_player: &mut Option<crate::audio::sfx::SfxPlayer>,
+    persistence: &crate::app::persistence::PersistenceState,
+    record: BeaconRecord,
+) {
     match record {
         BeaconRecord::Placed { house, slot, coord } => {
             let (Ok(house), Ok(slot)) = (usize::try_from(house), usize::try_from(slot)) else {
                 return;
             };
             if slot < BEACONS_PER_HOUSE {
-                place_beacon(state, house, coord, Some(slot));
+                place_beacon(
+                    platform,
+                    renderer,
+                    diag,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    sfx_player,
+                    persistence,
+                    house,
+                    coord,
+                    Some(slot),
+                );
             }
         }
         BeaconRecord::Deleted { house, slot } => {
             if let (Ok(house), Ok(slot)) = (usize::try_from(house), usize::try_from(slot)) {
-                delete_beacon(&mut state.match_state, BeaconTarget::Slot { house, slot });
+                delete_beacon(match_state, BeaconTarget::Slot { house, slot });
             }
         }
     }

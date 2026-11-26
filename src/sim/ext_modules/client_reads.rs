@@ -498,6 +498,14 @@ fn object_read(
         return Ok(HIDDEN);
     }
     let reader = view.reader();
+    if name == "NearbyEnemyCount" {
+        let count = reader.nearby_enemy_count(entity, |other| match sight(view, other) {
+            Sight::Unseen => None,
+            Sight::AsItself => Some(other.owner()),
+            Sight::Disguised { house, .. } => view.sim().houses.order().get(house).copied(),
+        });
+        return Ok((count, Status::Ok));
+    }
     let Sight::Disguised { worn, house } = seen else {
         return reader.read_in(reference, prop, at);
     };

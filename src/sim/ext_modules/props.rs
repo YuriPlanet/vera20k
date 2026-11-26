@@ -326,7 +326,7 @@ impl Reader<'_> {
                     .as_ref()
                     .is_some_and(|cloak| cloak.is_fully_cloaked()),
             ),
-            "NearbyEnemyCount" => self.nearby_enemy_count(entity),
+            "NearbyEnemyCount" => self.nearby_enemy_count(entity, |other| Some(other.owner())),
             "TargetInRange" | "CanFireAtTarget" => match entity.attack_target.target() {
                 None => 0,
                 Some(target) => {
@@ -363,8 +363,13 @@ impl Reader<'_> {
 
     /// `NearbyEnemyCount`: the objects on the map within `entity`'s
     /// `Sight=` (cells, measured in leptons between the centres) whose owner
-    /// is an enemy of `entity`'s owner, as `Relation` reads it.
-    fn nearby_enemy_count(&self, entity: &GameEntity) -> i64 {
+    /// is an enemy of `entity`'s owner, as `Relation` reads it. A client
+    /// supplies the house it can see, or `None` for a hidden object.
+    pub(super) fn nearby_enemy_count(
+        &self,
+        entity: &GameEntity,
+        owner_of: impl Fn(&GameEntity) -> Option<InternedId>,
+    ) -> i64 {
         use crate::sim::movement::ground_pose::position_world_xy;
         let Some(owner) = self.sim.houses.index_of(entity.owner()) else {
             return 0;
@@ -384,7 +389,8 @@ impl Reader<'_> {
                 let (dx, dy) = (i64::from(ox) - i64::from(x), i64::from(oy) - i64::from(y));
                 dx * dx + dy * dy <= reach * reach
             })
-            .filter(|other| self.relation(other.owner(), view) == (RELATION_ENEMY, Status::Ok))
+            .filter_map(owner_of)
+            .filter(|&owner| self.relation(owner, view) == (RELATION_ENEMY, Status::Ok))
             .count() as i64
     }
 

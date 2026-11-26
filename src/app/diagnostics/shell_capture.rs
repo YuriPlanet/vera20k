@@ -2499,11 +2499,16 @@ impl ShellCaptureSession {
             .is_some_and(|capture| capture.observes_every_frame())
     }
 
-    pub(crate) fn prepare_state(&mut self, state: &mut AppState) {
-        state.match_state.input.cursor_x = self.request.cursor_x as f32;
-        state.match_state.input.cursor_y = self.request.cursor_y as f32;
-        state.frontend.native_shell_ui = self.request.native_shell_ui();
-        state.frontend.wol_capture_provider = self.request.wol_welcome_provider();
+    pub(crate) fn prepare_state(
+        &mut self,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
+    ) {
+        match_state.input.cursor_x = self.request.cursor_x as f32;
+        match_state.input.cursor_y = self.request.cursor_y as f32;
+        frontend.native_shell_ui = self.request.native_shell_ui();
+        frontend.wol_capture_provider = self.request.wol_welcome_provider();
         // As the Language list applies a pick; a language no file provides
         // fails the capture instead of drawing English under its name.
         let language = self
@@ -2512,9 +2517,9 @@ impl ShellCaptureSession {
             .clone()
             .unwrap_or_else(|| crate::i18n::DEFAULT_LANGUAGE.to_owned());
         if !crate::app::shell_main_menu::use_language(
-            &mut state.frontend,
-            &mut state.match_state,
-            &mut state.process_assets,
+            frontend,
+            match_state,
+            process_assets,
             &language,
         ) {
             self.fail(format!(
@@ -2590,31 +2595,40 @@ impl ShellCaptureSession {
         Ok(())
     }
 
-    fn steady_ready(&self, state: &AppState) -> Result<bool> {
+    fn steady_ready(
+        &self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        persistence: &PersistenceState,
+    ) -> Result<bool> {
         if let Some(capture) = &self.movies {
-            return capture.ready(state);
+            return capture.ready(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                persistence,
+            );
         }
         if let Some(capture) = &self.score {
-            return capture.ready(&state.frontend);
+            return capture.ready(frontend);
         }
         if let Some(capture) = &self.campaign_score {
-            return capture.ready(&state.frontend);
+            return capture.ready(frontend);
         }
         match &self.skirmish {
-            Some(capture) => capture.ready(
-                &state.platform,
-                &state.renderer,
-                &state.frontend,
-                &state.match_state,
-                &state.persistence,
-            ),
+            Some(capture) => capture.ready(platform, renderer, frontend, match_state, persistence),
             None => {
                 let mut snapshot = MainMenuCaptureSnapshot::from_state(
-                    &state.platform,
-                    &state.renderer,
-                    &state.frontend,
-                    &state.match_state,
-                    &state.persistence,
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    persistence,
                 );
                 let window = (self.request.width, self.request.height);
                 if (snapshot.width, snapshot.height) == window {
@@ -2654,7 +2668,15 @@ impl ShellCaptureSession {
         Ok(())
     }
 
-    pub(crate) fn should_capture_current_frame(&mut self, state: &AppState) -> Result<bool> {
+    pub(crate) fn should_capture_current_frame(
+        &mut self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        persistence: &PersistenceState,
+    ) -> Result<bool> {
         ensure!(
             self.outcome.is_none(),
             "shell capture attempted after its outcome was recorded"
@@ -2678,7 +2700,14 @@ impl ShellCaptureSession {
             !self.readback_started,
             "shell capture attempted more than one readback"
         );
-        let ready = self.steady_ready(state)?;
+        let ready = self.steady_ready(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+        )?;
         if ready {
             self.readback_started = true;
         }
@@ -2840,7 +2869,13 @@ impl ShellCaptureSession {
 
     pub(crate) fn complete(
         &mut self,
-        state: &AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        sfx_player: &Option<SfxPlayer>,
+        persistence: &PersistenceState,
         surface_format: wgpu::TextureFormat,
         pixels: &[u8],
     ) -> Result<()> {
@@ -2869,7 +2904,7 @@ impl ShellCaptureSession {
                     .as_mut()
                     .expect("animation sequence has a campaign capture");
                 capture.record_animation_sample(
-                    &state.frontend,
+                    frontend,
                     self.request.width,
                     self.request.height,
                     pixels,
@@ -2933,7 +2968,14 @@ impl ShellCaptureSession {
             pixels.len()
         );
         ensure!(
-            self.steady_ready(state)?,
+            self.steady_ready(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                persistence,
+            )?,
             "capture state changed before bundle write"
         );
 
@@ -2954,13 +2996,13 @@ impl ShellCaptureSession {
                 surface_format,
                 pixels,
                 self.frames_seen,
-                &state.platform,
-                &state.renderer,
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
-                &state.audio.sfx_player,
-                &state.persistence,
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
             )?),
             (None, None, Some(capture), _) => serde_json::to_vec_pretty(&capture.manifest(
                 &self.request,
