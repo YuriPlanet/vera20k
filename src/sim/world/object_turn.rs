@@ -1070,9 +1070,6 @@ impl Simulation {
             if let Some(check) = check {
                 sim.finish_sleep_check(stable_id, *check);
             }
-            sim.sleep_after_turn(stable_id, rules);
-            sim.quiet_after_turn(stable_id, rules);
-            sim.steady_after_turn(stable_id, rules);
             #[cfg(feature = "debug-tools")]
             if let Some(before) = debug_before
                 && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
@@ -1102,6 +1099,7 @@ impl Simulation {
         self.finish_batched_scans();
         self.end_turn_streams();
         walked?;
+        self.mark_resting_after_pass(rules);
         Ok(outcome)
     }
 
