@@ -227,7 +227,7 @@ pub(crate) fn still_frame(
                 detail_fps: detail.frame_rate(),
                 talk_bubble: presentation.talk_bubble.shown(clock.wall_ms),
                 atlas_growths: presentation.atlas_growth.published(),
-                modules: state.match_state.ui_modules.as_ref().map(|ui| {
+                modules: match_state.ui_modules.as_ref().map(|ui| {
                     crate::app::ui_modules::paint::layers_key(presentation.dialog_ui.gui(), ui)
                 }),
                 panel_due,

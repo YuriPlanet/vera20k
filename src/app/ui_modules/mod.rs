@@ -607,7 +607,7 @@ fn storage_root(state: &AppState) -> PathBuf {
         .platform
         .game_config
         .as_ref()
-        .map(|config| config.paths.settings_dir().join("wasm-storage"))
+        .map(|config| config.paths.wasm_storage_dir())
         .unwrap_or_else(|| PathBuf::from("wasm-storage"))
 }
 

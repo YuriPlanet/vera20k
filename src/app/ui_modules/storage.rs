@@ -248,35 +248,28 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 mod tests {
     use super::*;
 
-    fn temp_root(name: &str) -> PathBuf {
-        let root =
-            std::env::temp_dir().join(format!("vera-wasm-storage-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        root
-    }
+    use crate::map::source::test_support::TestDirectory;
 
     #[test]
     fn values_round_trip_through_the_file() {
-        let root = temp_root("round-trip");
+        let root = TestDirectory::new("wasm-storage-round-trip");
         {
-            let mut store = Storage::open(&root, "My Mod");
+            let mut store = Storage::open(root.path(), "My Mod");
             assert_eq!(store.read("best"), Ok((None, Status::NotFound)));
             assert_eq!(store.write("best", b"42"), Ok(Status::Ok));
             assert_eq!(store.write("other", b"x"), Ok(Status::Ok));
             assert_eq!(store.write("other", b""), Ok(Status::Ok));
             assert_eq!(store.write("missing", b""), Ok(Status::Ok));
         }
-        let mut store = Storage::open(&root, "MY MOD");
+        let mut store = Storage::open(root.path(), "MY MOD");
         assert_eq!(store.read("best"), Ok((Some(b"42".to_vec()), Status::Ok)));
         assert_eq!(store.read("other"), Ok((None, Status::NotFound)));
-        drop(store);
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn quotas_refuse_and_change_nothing() {
-        let root = temp_root("quotas");
-        let mut store = Storage::open(&root, "quotas");
+        let root = TestDirectory::new("wasm-storage-quotas");
+        let mut store = Storage::open(root.path(), "quotas");
         let long_key = "k".repeat(MAX_KEY_BYTES + 1);
         assert_eq!(store.write("", b"x"), Ok(Status::Refused));
         assert_eq!(store.write(&long_key, b"x"), Ok(Status::Refused));
@@ -312,7 +305,7 @@ mod tests {
         );
 
         // 256 keys at most.
-        let mut store = Storage::open(&root, "keys");
+        let mut store = Storage::open(root.path(), "keys");
         for n in 0..MAX_KEYS {
             assert_eq!(store.write(&format!("k{n}"), b"1"), Ok(Status::Ok));
         }
@@ -320,8 +313,6 @@ mod tests {
         assert_eq!(store.write("k0", b"2"), Ok(Status::Ok));
         assert_eq!(store.write("k0", b""), Ok(Status::Ok));
         assert_eq!(store.write("one more", b"1"), Ok(Status::Ok));
-        drop(store);
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
