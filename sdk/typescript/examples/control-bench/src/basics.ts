@@ -307,7 +307,7 @@ export function frame(now: i32): void {
 
 function hostCalls(now: i32): void {
   check("basics.frame", sdkFrame() == now && now > 0, "frame() differs");
-  let inRange = true;
+  let inRange: bool = true;
   for (let i = 0; i < 8; i++) {
     const n = random(3, 9);
     inRange = inRange && n >= 3 && n <= 9;
@@ -594,7 +594,7 @@ function viewpointReads(): void {
     .where(Prop.Relation, Op.Eq, <i64>Relation.SameHouse)
     .page(out, 0);
   const own = ok() && me.count == 1 && out[0] == player();
-  let hostile = false;
+  let hostile: bool = false;
   const htnk = Rules.technoType("HTNK");
   if (htnk != NO_HANDLE) {
     const found = Find.objects()
@@ -693,13 +693,13 @@ function variables(): void {
     waveOk && wave == 7 && scoreOk && score == 3 && tagOk && tag == 5,
     "declared defaults read wrong",
   );
-  let global = BenchWave.set(11) == Status.Ok;
+  let global: bool = BenchWave.set(11) == Status.Ok;
   if (global) {
     const back = BenchWave.get();
     global = ok() && back == 11;
   }
   check("basics.var-global", global, "the global variable does not read back");
-  let house = BenchScore.set(enemy(), 9) == Status.Ok;
+  let house: bool = BenchScore.set(enemy(), 9) == Status.Ok;
   if (house) {
     const theirs = BenchScore.get(enemy());
     const theirsOk = ok();
@@ -707,7 +707,7 @@ function variables(): void {
     house = theirsOk && theirs == 9 && ok() && ours == 3;
   }
   check("basics.var-house", house, "the house variable does not read back");
-  let object = BenchTag.set(a, 42) == Status.Ok;
+  let object: bool = BenchTag.set(a, 42) == Status.Ok;
   if (object) {
     const onA = BenchTag.get(a);
     const onAOk = ok();
@@ -720,7 +720,7 @@ function variables(): void {
   const plainOk = ok();
   const prefixed = lookup(NameKind.Variable, "mod.BenchWave");
   const prefixedOk = ok();
-  let rawOk = false;
+  let rawOk: bool = false;
   if (plainOk) rawOk = sys.var_get(0, plain, RAW_VALUE) == 0 && load<i64>(RAW_VALUE) == 11;
   check(
     "basics.var-lookup",
@@ -804,8 +804,8 @@ function findCellsAndSupers(): void {
     return;
   }
   const found = rawFindAll(8, player(), kind, out);
-  let ownerOk = false;
-  let read = false;
+  let ownerOk: bool = false;
+  let read: bool = false;
   const v = V3;
   if (found == 1) {
     ownerOk = is(out[0], Prop.Owner, player());
@@ -1230,7 +1230,7 @@ function typeNameAndPoints(): void {
     return;
   }
   const id = getOr(mtnk, Prop.Name, 0);
-  let named = false;
+  let named: bool = false;
   if (id > 0) {
     const name = nameOrNull(NameKind.String, <i32>id);
     named = name != null && name == "MTNK";
@@ -1265,7 +1265,7 @@ function gameMode(): void {
     benchFail("basics.game-mode", "GameMode does not read");
     return;
   }
-  let good = id == 0;
+  let good: bool = id == 0;
   if (!good) {
     const mode = nameOrNull(NameKind.String, <i32>id);
     good = mode != null && mode.length > 0 && lookupIs(NameKind.String, mode, <i32>id);
@@ -1281,7 +1281,7 @@ function findTypes(): void {
   let total = 0;
   let vehicles = 0;
   let after: i64 = 0;
-  let hasTank = false;
+  let hasTank: bool = false;
   const all = Find.types(TypeRef.any(NameKind.TechnoType));
   while (true) {
     const page = all.page(out, after);
@@ -1367,7 +1367,7 @@ function cloakStart(): void {
     return;
   }
   cloaker = c;
-  let good = is(c, Prop.Cloaked, 0);
+  let good: bool = is(c, Prop.Cloaked, 0);
   if (good) {
     Modifier.create(c, Prop.Cloakable, ModifierOp.Override, 1, -1, 0, 97);
     good = ok();
