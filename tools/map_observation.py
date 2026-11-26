@@ -2274,9 +2274,18 @@ def _command_bar_thumb(value: Any, label: str) -> int:
         if edge['dispatch'] is not None:
             dispatch_label = f'{edge_label}.dispatch'
             dispatch = require_object(edge['dispatch'], dispatch_label)
-            require_exact_keys(dispatch, ('masked_flags', 'modifier', 'key_after', 'action_result'), dispatch_label)
-            for key, bits in (('masked_flags', 16), ('modifier', 8), ('key_after', 16), ('action_result', 32)):
-                _bounded_int(dispatch[key], f'{dispatch_label}.{key}', 0, (1 << bits) - 1)
+            if 'fired' in dispatch or 'right' in dispatch:
+                require_exact_keys(dispatch, ('fired', 'right'), dispatch_label)
+                for key in ('fired', 'right'):
+                    if type(dispatch[key]) is not bool:
+                        raise ValidationError(f'{dispatch_label}.{key} must be boolean')
+                if dispatch['right'] and not dispatch['fired']:
+                    raise ValidationError(f'{dispatch_label}.right requires a fired control')
+            else:
+                # Captures from before the GUI migration store native gadget dispatch.
+                require_exact_keys(dispatch, ('masked_flags', 'modifier', 'key_after', 'action_result'), dispatch_label)
+                for key, bits in (('masked_flags', 16), ('modifier', 8), ('key_after', 16), ('action_result', 32)):
+                    _bounded_int(dispatch[key], f'{dispatch_label}.{key}', 0, (1 << bits) - 1)
             samples += 1
     # The driver restores physical input even when the Scenario guard prevents
     # gadget entry. These are input observations, not expected bar outcomes.
