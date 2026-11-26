@@ -1032,7 +1032,15 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
     }
     let event = match event {
         WolServiceEvent::Account(result) => {
-            super::login::account_answered(state, result);
+            let step = super::login::account_answered(
+                &mut state.frontend,
+                &state.renderer,
+                state.platform.game_config.as_ref(),
+                result,
+            );
+            if let Some(step) = step {
+                App::apply_step(state, step);
+            }
             return;
         }
         WolServiceEvent::Page { from, text, ansi } => {
@@ -1653,7 +1661,9 @@ pub(super) fn box_command(state: &mut AppState, answer: usize) {
     };
     let step = match &visit.page {
         WolPage::Lobby | WolPage::QuickMatch(_) => {
-            super::lobby::box_command(state, answer);
+            if let Some(step) = super::lobby::box_command(state, answer) {
+                App::apply_step(state, step);
+            }
             state.platform.window.request_redraw();
             return;
         }

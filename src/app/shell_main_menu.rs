@@ -2247,7 +2247,17 @@ impl App {
                         &mut state.audio.sfx_player,
                         &mut state.persistence.options_profile,
                     ),
-                    _ => Self::open_wol_welcome_page(state),
+                    _ => {
+                        let step = Self::open_wol_welcome_page(
+                            &mut state.frontend,
+                            state.platform.game_config.as_ref(),
+                            &state.process_assets,
+                            &state.renderer,
+                            &mut state.persistence.options_profile,
+                            &mut state.audio,
+                        );
+                        Self::apply_step(state, step);
+                    }
                 }
             }
         }

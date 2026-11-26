@@ -124,7 +124,11 @@ fn apply(state: &mut AppState, effects: Vec<WolLobbyEffect>) {
             WolLobbyEffect::CardDismissed => {
                 super::player_card::dismissed(&mut state.frontend, &state.platform.window)
             }
-            WolLobbyEffect::Action(action) => dispatch(state, action),
+            WolLobbyEffect::Action(action) => {
+                if let Some(step) = dispatch(state, action) {
+                    App::apply_step(state, step);
+                }
+            }
         }
     }
     state.frontend.shell_status_line.repaint();

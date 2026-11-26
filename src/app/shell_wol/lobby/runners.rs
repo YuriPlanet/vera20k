@@ -17,12 +17,15 @@ use super::{
 };
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::MatchSession;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
+use crate::app::shell_main_menu::ClientStep;
 use crate::app::shell_wol::WolVisit;
 use crate::render::gpu::GpuContext;
 use crate::util::config::GameConfig;
+use winit::window::Window;
 
 pub(super) fn new_runner(
     runner: Runner,
@@ -98,21 +101,49 @@ pub(in crate::app::shell_wol) fn open_runner(
 }
 
 /// `0x00788800` for the Quick Match lobby (stage 2): a lobby already
-/// joined or pending answers 0 without a request.
+/// joined or pending answers 0 without a request. The join's step is
+/// returned.
+#[must_use]
 pub(in crate::app::shell_wol) fn quick_match_join(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
     channel: WolChannel,
     key: &str,
-) {
-    join_channel(state, channel, key, false, false);
+) -> Option<ClientStep> {
+    join_channel(
+        frontend,
+        window,
+        match_state,
+        process_assets,
+        renderer,
+        options_profile,
+        channel,
+        key,
+        false,
+        false,
+    )
 }
 
 /// `0x00789960(record, DL=0)` for the host's game the guest found: the
 /// admission `0x0079BA60` with Quick Match's ranked test, then the join.
 /// RESIDUAL: `DL=0`'s internals are not traced; the Quick Match game has
-/// no key and no resolution bits, so neither popup can follow.
-pub(in crate::app::shell_wol) fn quick_match_join_game(state: &mut AppState, channel: WolChannel) {
-    let context = admission_context(state.frontend.wol.as_ref(), &state.process_assets);
+/// no key and no resolution bits, so neither popup can follow. The join's
+/// step is returned.
+#[must_use]
+pub(in crate::app::shell_wol) fn quick_match_join_game(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+    channel: WolChannel,
+) -> Option<ClientStep> {
+    let context = admission_context(frontend.wol.as_ref(), process_assets);
     if let Err(reason) = admit(&channel, false, context) {
         // VERA: the log keeps what was compared; gamemd records nothing.
         log::warn!(
@@ -122,16 +153,21 @@ pub(in crate::app::shell_wol) fn quick_match_join_game(state: &mut AppState, cha
             context.local_hash,
             channel.ex_info,
         );
-        super::quick_match::game_refused(
-            &mut state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            &state.renderer,
-            reason,
-        );
-        return;
+        super::quick_match::game_refused(frontend, match_state, process_assets, renderer, reason);
+        return None;
     }
-    join_channel(state, channel, "", true, false);
+    join_channel(
+        frontend,
+        window,
+        match_state,
+        process_assets,
+        renderer,
+        options_profile,
+        channel,
+        "",
+        true,
+        false,
+    )
 }
 
 /// `0x00789B60`'s Quick Match branch (`0x00789BA8..0x00789D60`,
@@ -268,32 +304,50 @@ pub(crate) fn host_setup_left(mut wol: Option<&mut WolVisit>) {
 /// first: `0x116`'s observer box does not recompute Join's enable, so the
 /// game may refuse here; then `0x00789960` returns false and the loop goes
 /// on. RESIDUAL: its refusal line (`show` = 1) goes to a list that is not
-/// traced while `0x116` is down; none is printed.
-pub(in crate::app::shell_wol) fn buddy_join(state: &mut AppState, channel: WolChannel) {
-    if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
+/// traced while `0x116` is down; none is printed. The join's step is
+/// returned.
+#[must_use]
+pub(in crate::app::shell_wol) fn buddy_join(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+    channel: WolChannel,
+) -> Option<ClientStep> {
+    if let Some(lobby) = lobby_mut(frontend.wol.as_mut()) {
         lobby.step = Step::Ready;
         lobby.shown = false;
     }
-    let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
+    let observer = frontend.multiplayer_shell_runtime.lan_observer();
     if admit(
         &channel,
         observer,
-        admission_context(state.frontend.wol.as_ref(), &state.process_assets),
+        admission_context(frontend.wol.as_ref(), process_assets),
     )
     .is_err()
     {
         join_failed_locally(
-            &mut state.frontend,
-            &state.platform.window,
-            &mut state.match_state,
-            &state.process_assets,
-            &state.renderer,
-            &state.persistence.options_profile,
+            frontend,
+            window,
+            match_state,
+            process_assets,
+            renderer,
+            options_profile,
             true,
         );
-        return;
+        return None;
     }
-    continue_join(state, channel);
+    continue_join(
+        frontend,
+        window,
+        match_state,
+        process_assets,
+        renderer,
+        options_profile,
+        channel,
+    )
 }
 
 /// Join from `0x116` for a game the list lacks: type `0x29` again behind
