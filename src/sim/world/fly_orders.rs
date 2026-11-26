@@ -162,20 +162,34 @@ impl Simulation {
             object.unit_repair || object.unit_reload,
             object.helipad,
         );
-        let (Some(aircraft), Some(target)) = (
-            self.substrate.entities.get(id),
-            self.substrate.entities.get(building),
-        ) else {
-            return ControlFlow::Continue(Some(dock));
+        let (dead, in_contact, has_slot, holds_aircraft) = {
+            let (Some(aircraft), Some(target)) = (
+                self.substrate.entities.get(id),
+                self.substrate.entities.get(building),
+            ) else {
+                return ControlFlow::Continue(Some(dock));
+            };
+            (
+                !aircraft.is_alive(),
+                !aircraft.seldom.radio_contacts.is_empty(),
+                target.seldom.radio_contacts.has_free_or(id),
+                target.seldom.radio_contacts.contains(id),
+            )
         };
-        let in_contact = !aircraft.seldom.radio_contacts.is_empty();
-        let has_slot = target.seldom.radio_contacts.has_free_or(id);
-        let holds_aircraft = target.seldom.radio_contacts.contains(id);
         let archive = |sim: &mut Self, target: Option<NavTargetRef>| {
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity.set_archive_target(target.map(TargetKind::from));
             }
         };
+        // A destroyed aircraft that is still in the frame has no radio peer:
+        // the dock's HELLO is refused ("a dead receiver answers 0"), so the
+        // link can never be established and CAN_DOCK -> MOVE_HERE -> class
+        // setter -> CAN_DOCK would repeat forever. Native never docks a dead
+        // object; keep the destination and end the setter here.
+        if dead {
+            archive(self, Some(dock));
+            return ControlFlow::Continue(Some(dock));
+        }
         if in_contact {
             if !has_slot {
                 archive(self, Some(dock));
