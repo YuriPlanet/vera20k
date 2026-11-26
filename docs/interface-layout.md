@@ -489,7 +489,7 @@ Y=8
 
 A layout can add parts of its own: a button that gives a command when it is clicked, a
 text that shows a value or a label, a picture, a bar and a list. The last few are for a
-mod's interface module (`ui.wasm`), which finds a part by its name and changes it while
+mod's or a map's interface module (`ui.wasm`), which finds a part by its name and changes it while
 the match runs; see [Parts for interface modules](#parts-for-interface-modules).
 
 Give the new part a name, put the name in the `Parts=` of `Side` or of `Field`, and
@@ -677,9 +677,12 @@ Hold=TopRight
 
 - Without a module these parts just sit there: a button without a command does
   nothing, a bar stays empty and a list shows nothing.
-- A button is clicked on by the modules unless a module says otherwise; a click on it
-  never reaches the map.
+- A layout's button tells the modules when it is clicked unless a module turns that
+  off (its `Clickable` starts at 1); a click on it never reaches the map.
 - Rows and columns may hold them, as they hold buttons and texts.
+- How a module finds and changes these parts: the
+  [client module tutorial](wasm-modules-ui-tutorial.md) and the
+  [Rust SDK reference](wasm-modules-sdk.md#nodes).
 
 ### A map's own parts
 
