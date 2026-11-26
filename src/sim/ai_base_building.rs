@@ -839,7 +839,7 @@ fn power_plant_to_splice(
     let side = sim.houses.get(&owner)?.side_index();
     let unpowered = PowerState::default();
     let power = sim.power_states.get(&owner).unwrap_or(&unpowered);
-    let drain = crate::sim::power_system::native_building_power_drain(ty.power);
+    let drain = ty.power_drain();
     // `0x004FE6FC..0x004FE71D`: dword SUB, ADD and a signed compare.
     let output = power
         .total_output()

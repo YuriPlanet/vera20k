@@ -135,9 +135,7 @@ impl Simulation {
         let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
             return;
         };
-        if Self::anim_power_policy(object, entity, rules)
-            && crate::sim::power_system::native_building_power_drain(object.power) > 0
-        {
+        if Self::anim_power_policy(object, entity, rules) && object.power_drain() > 0 {
             self.apply_building_anim_power(id, operational, rules);
         }
         if !object.powered_special {
