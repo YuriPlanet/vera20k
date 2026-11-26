@@ -781,7 +781,7 @@ impl BattleOpening {
             }
             Step::Approaching if host => {
                 let [actor, target] = self.fighter_ids()?;
-                if mouse_can_pick(state, target)? {
+                if mouse_can_pick(&state.platform, &state.frontend, &state.match_state, target)? {
                     select_entity(state, actor)?;
                     click_entity(state, target)?;
                     self.attack_input_frame = Some(frame);
@@ -3121,21 +3121,21 @@ fn legal_move_cell(
     anyhow::bail!("no ordinary GI Move goal near {desired:?}")
 }
 
-fn mouse_can_pick(state: &AppState, id: u64) -> Result<bool> {
-    let sim = simulation(&state.match_state.sim_runtime)?;
+fn mouse_can_pick(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    id: u64,
+) -> Result<bool> {
+    let sim = simulation(&match_state.sim_runtime)?;
     let entity = sim.entities().get(id).context("opposing GI")?;
-    let presented = crate::app::input::entity_pick::presented(
-        &state.platform,
-        &state.frontend,
-        &state.match_state,
-        sim,
-    );
+    let presented = crate::app::input::entity_pick::presented(platform, frontend, match_state, sim);
     let world = presented.screen_position(entity);
     Ok(crate::app::input::entity_pick::hover_object_at_point(
         presented,
         world.0,
         world.1,
-        &local_owner(&state.match_state.session)?,
+        &local_owner(&match_state.session)?,
         false,
     )
     .and_then(|object| object.techno())

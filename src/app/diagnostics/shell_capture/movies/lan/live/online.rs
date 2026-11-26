@@ -310,12 +310,19 @@ impl LiveRoundFlow {
         Ok(())
     }
 
-    fn heartbeat(&mut self, state: &AppState, rendered: PresentedShell) {
+    fn heartbeat(
+        &mut self,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        rendered: PresentedShell,
+    ) {
         if self.last_heartbeat.elapsed() < std::time::Duration::from_secs(10) {
             return;
         }
         self.last_heartbeat = Instant::now();
-        let (page, pending) = state.frontend.wol.as_ref().map_or(("none", 0), |visit| {
+        let (page, pending) = frontend.wol.as_ref().map_or(("none", 0), |visit| {
             use crate::app::shell_wol::WolPage;
             let page = match &visit.page {
                 WolPage::Welcome => "welcome",
@@ -333,15 +340,14 @@ impl LiveRoundFlow {
             };
             (page, visit.pending_service_request_count())
         });
-        let (lobby_shown, lobby_wait, lobby_message) = state
-            .frontend
+        let (lobby_shown, lobby_wait, lobby_message) = frontend
             .wol
             .as_ref()
             .and_then(|visit| visit.lobby())
             .map_or((false, false, false), |lobby| {
                 (lobby.shown, lobby.wait.is_some(), lobby.message().is_some())
             });
-        let session = &state.match_state.session;
+        let session = &match_state.session;
         let setup = session.network_setup();
         let setup_humans = setup.map(|launch| launch.humans.len());
         let bound_rows = setup.map(|launch| {
@@ -360,16 +366,10 @@ impl LiveRoundFlow {
         let local = setup.and_then(|launch| launch.humans.get(launch.local_player_index));
         let local_row = local.and_then(|human| human.raw_slot_index);
         let local_start = local.map(|human| human.slot.start_position);
-        let accept_enabled = setup::view(
-            &state.renderer,
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-        )
-        .map(|view| view.accept_enabled);
+        let accept_enabled = setup::view(renderer, frontend, match_state, process_assets)
+            .map(|view| view.accept_enabled);
         let desired_start = self.config.as_ref().and_then(|config| config.start);
-        let sim = state
-            .match_state
+        let sim = match_state
             .sim_runtime
             .runtime()
             .map(|runtime| &runtime.simulation);
@@ -379,25 +379,23 @@ impl LiveRoundFlow {
             .map(|timing| timing.frames_per_second());
         let max_ahead = sim.and_then(|sim| sim.session().network_max_ahead_frames());
         let local_commands = sim.map(|sim| sim.pending_local_command_count());
-        let live_wait = state
-            .match_state
+        let live_wait = match_state
             .live_network
             .as_ref()
             .and_then(|live| live.wait_info())
             .map(|wait| wait.kind);
-        let live_phase = state
-            .match_state
+        let live_phase = match_state
             .live_network
             .as_ref()
             .and_then(|live| live.phase());
         log::info!(
             "Network capture heartbeat: phase={:?}, page={page}, presented={rendered:?}, shell_exit={}, pending_requests={pending}, native_frame={native_frame:?}, timing_fps={fps:?}, max_ahead={max_ahead:?}, local_commands={local_commands:?}, live_wait={live_wait:?}, live_phase={live_phase:?}, setup_humans={setup_humans:?}, bound_rows={bound_rows:?}, seed_present={seed_present}, map_capacity={map_capacity:?}, setup_capacity={setup_capacity:?}, selected_map_present={selected_map_present}, local_row={local_row:?}, local_start={local_start:?}, accept_enabled={accept_enabled:?}, desired_start={desired_start:?}, lobby_shown={lobby_shown}, lobby_wait={lobby_wait}, lobby_message={lobby_message}, slide_first_paint={}, active_slide={:?}",
             self.phase,
-            state.frontend.shell_exit.is_some(),
-            state.frontend.shell_first_paint_slide.is_some(),
-            state.frontend.shell_slide_active_shell,
+            frontend.shell_exit.is_some(),
+            frontend.shell_first_paint_slide.is_some(),
+            frontend.shell_slide_active_shell,
         );
-        if let (Some(sim), Some(live)) = (sim, state.match_state.live_network.as_ref()) {
+        if let (Some(sim), Some(live)) = (sim, match_state.live_network.as_ref()) {
             crate::app::match_runtime::network_match::log_live_progress(
                 session,
                 sim,
@@ -494,7 +492,13 @@ impl LiveRoundFlow {
         rendered: PresentedShell,
         frame: u32,
     ) -> Result<()> {
-        self.heartbeat(state, rendered);
+        self.heartbeat(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            rendered,
+        );
         if self.profile.is_none()
             && core
                 .config

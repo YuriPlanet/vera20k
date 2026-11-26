@@ -1232,7 +1232,13 @@ impl App {
             state.match_state.input.cursor_x as i32,
             state.match_state.input.cursor_y as i32,
         );
-        let layout = shell_layout::launcher_options_layout(state, dialog.category());
+        let layout = shell_layout::launcher_options_layout(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.persistence.options_profile,
+            dialog.category(),
+        );
         match down {
             Some(true) => dialog.shell_mouse_down(x, y, &layout),
             Some(false) => dialog.shell_mouse_up(x, y, &layout),
@@ -1940,9 +1946,13 @@ impl App {
 
     /// Run a finished teardown slide's result.
     pub(super) fn drive_shell_exit(state: &mut AppState) {
-        if let Some(then) =
-            crate::app::frontend::shell_transition::advance_shell_exit(state, Instant::now())
-        {
+        if let Some(then) = crate::app::frontend::shell_transition::advance_shell_exit(
+            &state.platform,
+            &mut state.frontend,
+            &state.match_state,
+            &mut state.audio.sfx_player,
+            Instant::now(),
+        ) {
             then(state);
         }
     }

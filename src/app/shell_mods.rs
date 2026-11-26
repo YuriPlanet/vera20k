@@ -1112,7 +1112,8 @@ impl App {
     /// page's own text.
     #[cfg(target_os = "android")]
     pub(crate) fn draw_name_dialog_over(
-        state: &AppState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
         encoder: &mut wgpu::CommandEncoder,
         destination: &wgpu::Texture,
     ) {
@@ -1120,14 +1121,14 @@ impl App {
         use crate::render::shell_paint::{self, ModalButton, ModalDepths};
         use crate::render::shell_text::TextRect;
         use crate::ui::shell::geom::{RectPx, ShellAlign};
-        let Some(dialog) = state.frontend.mods.name_dialog.as_ref() else {
+        let Some(dialog) = frontend.mods.name_dialog.as_ref() else {
             return;
         };
-        let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
+        let Some(atlas) = frontend.skirmish_shell_chrome.as_ref() else {
             return;
         };
-        let scale = mods_layout(&state.renderer.gpu).page.scale;
-        let parts = Self::name_dialog_parts(&state.renderer.gpu, &state.frontend);
+        let scale = mods_layout(&renderer.gpu).page.scale;
+        let parts = Self::name_dialog_parts(&renderer.gpu, frontend);
         let mut sprites = Vec::new();
         if let Some(art) = atlas.ra2_dialog_background {
             shell_paint::push_entry_sized(
@@ -1165,7 +1166,7 @@ impl App {
                 text: 0.00060,
             },
         ));
-        let font = &state.renderer.bit_font;
+        let font = &renderer.bit_font;
         let enabled = shell_paint::SHELL_TEXT_RGB_ENABLED;
         let line = |text: &str, rect, align| {
             crate::render::shell_text::draw_in_rect_scaled(
@@ -1192,7 +1193,7 @@ impl App {
             line_h + 2 * inset,
         );
         let mut text = Vec::new();
-        let controller = &state.frontend.shell_controller;
+        let controller = &frontend.shell_controller;
         let node = controller
             .root_in(mods_shell::DIALOG)
             .and_then(|root| find_child(controller.gui(), root, mods_shell::NAME_EDIT));
@@ -1230,7 +1231,7 @@ impl App {
             instances: sprites,
         }];
         crate::app::frontend::shell_pass::encode_shell_pass_over_page(
-            &state.renderer,
+            renderer,
             encoder,
             destination,
             "Mods Name Dialog",

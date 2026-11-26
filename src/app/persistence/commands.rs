@@ -535,7 +535,14 @@ pub(crate) fn request_saved_game_load(
 pub(crate) fn pump_saved_game_load(state: &mut AppState) -> Option<bool> {
     let mut pending = state.persistence.pending_load.take()?;
     let Some(path) = pending.advance(|| {
-        match crate::app::loading::pump::present_saved_game_loading(state) {
+        match crate::app::loading::pump::present_saved_game_loading(
+            &mut state.platform,
+            &mut state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.persistence,
+        ) {
             Ok(presented) => presented,
             Err(error) => {
                 // Like missing native progress artwork, presentation failure
@@ -594,7 +601,14 @@ pub(crate) fn try_load_save_file(
     state: &mut AppState,
     path: &Path,
 ) -> Result<(), crate::app::persistence::PreparedLoadError> {
-    if let Err(error) = crate::app::loading::pump::present_saved_game_loading(state) {
+    if let Err(error) = crate::app::loading::pump::present_saved_game_loading(
+        &mut state.platform,
+        &mut state.renderer,
+        &mut state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &state.persistence,
+    ) {
         log::warn!("Saved-game loading dialog presentation failed: {error:#}");
     }
     restore_save_file(state, path)

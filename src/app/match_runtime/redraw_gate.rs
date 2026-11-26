@@ -40,9 +40,14 @@
 //! and no recovery line, which reads the wall clock, shows.
 
 use super::frame_pacer::{FRAME_BUCKET, SERVICE_WAKE};
-use crate::app::AppState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::precedence::ScreenPage;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::ui::game_screen::GameScreen;
 use crate::ui::pause_menu::InGameMenuState;
 use crate::util::time::{Duration, Instant};
@@ -124,39 +129,42 @@ impl PictureClock {
 /// in-game menu, exits and loads, a held mouse button (gadgets repeat on it)
 /// and a shake still decaying.
 pub(crate) fn still_frame(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
     capture: bool,
     shake_px: Option<[i32; 2]>,
     clock: PictureClock,
 ) -> Option<StillFrame> {
     let (modal, page) = crate::app::input::precedence::presented(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
     );
-    let presentation = &state.match_state.match_presentation;
-    let input = &state.match_state.input;
-    let simulation = state
-        .match_state
+    let presentation = &match_state.match_presentation;
+    let input = &match_state.input;
+    let simulation = match_state
         .sim_runtime
         .runtime()
         .map(|runtime| &runtime.simulation);
     let still = !capture
         && modal.is_none()
-        && state.frontend.screen == GameScreen::InGame
-        && !network_picture_moves(&state.match_state, simulation, clock)
-        && !state.match_state.match_diagnostics.is_replay_playback()
-        && !state
-            .match_state
+        && frontend.screen == GameScreen::InGame
+        && !network_picture_moves(match_state, simulation, clock)
+        && !match_state.match_diagnostics.is_replay_playback()
+        && !match_state
             .match_diagnostics
             .actor_presentation_observer_active()
-        && state.persistence.pending_load.is_none()
-        && state.frontend.quit_cascade.is_none()
-        && state.match_state.scenario_exit.is_none()
-        && state.match_state.scenario_outcome.is_none()
-        && !crate::app::App::house_outcome_wait_pending(&state.match_state.sim_runtime)
+        && persistence.pending_load.is_none()
+        && frontend.quit_cascade.is_none()
+        && match_state.scenario_exit.is_none()
+        && match_state.scenario_outcome.is_none()
+        && !crate::app::App::house_outcome_wait_pending(&match_state.sim_runtime)
         && !input.tactical_mouse.left_held()
         && !input.tactical_mouse.right_held()
         && !simulation.is_some_and(|sim| {
@@ -172,10 +180,10 @@ pub(crate) fn still_frame(
         .tooltips
         .active()
         .map(|tip| (tip.id, tip.x, tip.y));
-    let panel_due = state.renderer.performance_overlay.readings_due(clock.at);
+    let panel_due = renderer.performance_overlay.readings_due(clock.at);
     let fonts = crate::render::text_engine::fetched_fonts();
     match page {
-        ScreenPage::InGameShell(menu) if state.match_state.live_network.is_none() => {
+        ScreenPage::InGameShell(menu) if match_state.live_network.is_none() => {
             Some(StillFrame::Menu {
                 menu,
                 revision,
@@ -192,22 +200,22 @@ pub(crate) fn still_frame(
         }
         ScreenPage::Battlefield => {
             let detail = presentation.detail.borrow();
-            let moving = state.match_state.paused()
-                || !crate::app::input::camera::zoom_settled(&state.match_state.input)
+            let moving = match_state.paused()
+                || !crate::app::input::camera::zoom_settled(&match_state.input)
                 || presentation
                     .radar_anim
                     .as_ref()
                     .is_some_and(|radar| radar.housing_moving())
-                || crate::app::radar_movie::has_pending(&state.match_state.match_presentation)
+                || crate::app::radar_movie::has_pending(&match_state.match_presentation)
                 || presentation.chrono_screen.active()
                 || presentation.power_bar_anim.in_motion()
                 || presentation.message_list.revealing()
                 || detail.threshold_wraps()
                 // Ares' FPS counter line shows each new sample's average.
                 || (presentation.ares_fps_counter
-                    && crate::app::state::active_rules(&state.frontend, &state.match_state).is_some_and(crate::rules::ruleset::RuleSet::ares))
-                || (crate::app::state::use_software_cursor(&state.platform, &state.renderer, &state.frontend, &state.match_state, &state.persistence) && input.software_cursor_step_due())
-                || crate::app::presentation::super_timers::blink_due(&state.diag, &state.match_state);
+                    && crate::app::state::active_rules(frontend, match_state).is_some_and(crate::rules::ruleset::RuleSet::ares))
+                || (crate::app::state::use_software_cursor(platform, renderer, frontend, match_state, persistence) && input.software_cursor_step_due())
+                || crate::app::presentation::super_timers::blink_due(diag, match_state);
             (!moving).then(|| StillFrame::Battlefield {
                 revision,
                 composite: presentation.tactical_composite.ticks(),

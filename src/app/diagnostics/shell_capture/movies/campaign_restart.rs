@@ -1252,34 +1252,41 @@ impl RestartCapture {
             "physical": audio.music_player.as_ref().map(|player| format!("{:?}", player.state()))}));
     }
 
-    pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
+    pub(super) fn ready(
+        &self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+    ) -> Result<bool> {
         Ok(match self.target {
             RestartTarget::AbortShown => {
                 self.step == Step::Settling(0)
-                    && state.match_state.match_presentation.in_game_menu
+                    && match_state.match_presentation.in_game_menu
                         == crate::ui::pause_menu::InGameMenuState::AbortConfirm
                     && crate::app::input::abort::current_abort_layout(
-                        &state.platform,
-                        &state.renderer,
-                        &state.frontend,
-                        &state.match_state,
-                        &state.persistence,
+                        platform,
+                        renderer,
+                        frontend,
+                        match_state,
+                        persistence,
                     )
                     .is_some_and(|layout| layout.secondary.is_some())
             }
             RestartTarget::DefeatPrompt => {
-                self.step == Step::Settling(0) && state.frontend.shell_message_box.is_some()
+                self.step == Step::Settling(0) && frontend.shell_message_box.is_some()
             }
             RestartTarget::DefeatReturned
             | RestartTarget::DefeatReturnedEnter
             | RestartTarget::DefeatReturnedNumpadEnter
             | RestartTarget::DefeatReturnedEscape
             | RestartTarget::DefeatReturnedRepeatedEnter => {
-                self.step == Step::Done && state.frontend.screen == GameScreen::MainMenu
+                self.step == Step::Done && frontend.screen == GameScreen::MainMenu
             }
             RestartTarget::Restate => {
                 self.step == Step::Settling(0)
-                    && state.match_state.match_presentation.in_game_menu
+                    && match_state.match_presentation.in_game_menu
                         == crate::ui::pause_menu::InGameMenuState::MissionBriefing
             }
             RestartTarget::AbortRestarted
@@ -1288,20 +1295,19 @@ impl RestartCapture {
             | RestartTarget::MenuDefeatReplayed
             | RestartTarget::SavedVictory
             | RestartTarget::InheritedTimerVictory => {
-                self.step == Step::Done && state.frontend.screen == GameScreen::InGame
+                self.step == Step::Done && frontend.screen == GameScreen::InGame
             }
             RestartTarget::MapSelectFailurePrompt => {
-                self.step == Step::HoldMapSelectFailure(0)
-                    && state.frontend.shell_message_box.is_some()
+                self.step == Step::HoldMapSelectFailure(0) && frontend.shell_message_box.is_some()
             }
             RestartTarget::MapSelectFailureReplayed | RestartTarget::MapSelectFailureEscape => {
-                self.step == Step::Done && state.frontend.screen == GameScreen::InGame
+                self.step == Step::Done && frontend.screen == GameScreen::InGame
             }
             RestartTarget::AlternateHomeVictory => {
-                self.step == Step::Done && state.frontend.screen == GameScreen::InGame
+                self.step == Step::Done && frontend.screen == GameScreen::InGame
             }
             RestartTarget::ObjectiveExpiry => {
-                self.step == Step::Done && state.frontend.screen == GameScreen::InGame
+                self.step == Step::Done && frontend.screen == GameScreen::InGame
             }
         })
     }

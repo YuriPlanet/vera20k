@@ -10,11 +10,11 @@
 
 use super::gui_paint::{ButtonArt, GuiStyle, HostRows};
 use super::in_game_shell;
-use crate::app::AppState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::input::connection::DIALOG;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::app::state::PlatformState;
 use crate::ui::shell::connection::{CONNECTION_ROWS, ConnectionControl, PAINT_ORDER};
@@ -44,71 +44,107 @@ pub(crate) fn connection_shell_drawable(
 }
 
 pub(crate) fn render_connection_shell(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    renderer: &mut RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    crate::app::input::connection::sync(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &mut state.match_state,
-        &state.persistence,
+    crate::app::input::connection::sync(platform, renderer, frontend, match_state, persistence)
+        .expect("active 0xEA geometry");
+    let frame = in_game_shell::paint_dialog(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        &DIALOG,
+        |paint, ui| {
+            let (ime, bit_font) = (&platform.ime, &renderer.bit_font);
+            let page = match_state.network_wait.page().expect("open 0xEA");
+            // Paging, shown only where there is more than one page, paints on the
+            // side art and the texts only: before the captions, as it always did.
+            let counter = |id: i32| {
+                (id == i32::from(paging::COUNTER)).then(|| {
+                    let index = page.page.index(page.rows.len(), CONNECTION_ROWS);
+                    paging::counter_text(index, page.page_count())
+                })
+            };
+            let style = GuiStyle {
+                buttons: ButtonArt::Side,
+                side: Some(paint.side_buttons()),
+                text_of: Some(&counter),
+                ..Default::default()
+            };
+            paint.nodes(
+                ime,
+                bit_font,
+                frontend,
+                match_state,
+                process_assets,
+                ui,
+                &[paging::PREVIOUS, paging::NEXT, paging::COUNTER],
+                style,
+            );
+            let first = page.visible_range().start;
+            let text_of = |id: i32| -> Option<String> {
+                match ConnectionControl::from_id(u16::try_from(id).ok()?)? {
+                    ConnectionControl::Player(slot) => {
+                        Some(page.rows.get(first + slot)?.name.clone())
+                    }
+                    ConnectionControl::Countdown => Some(match &page.countdown {
+                        Some(countdown) => countdown.clone(),
+                        None => process_assets.csf_label("GUI:TimeRemaining", "Time Remaining:"),
+                    }),
+                    _ => None,
+                }
+            };
+            // List 0x651's lines in the label colour; those above its top are
+            // never shown and stay empty.
+            let rows_of = |id: i32| -> Option<HostRows> {
+                (id == i32::from(ConnectionControl::List.id())).then(|| {
+                    let skipped =
+                        (0..page.top.min(page.lines.len())).map(|_| (String::new(), u32::MAX));
+                    let shown = page.lines.iter().skip(page.top);
+                    skipped
+                        .chain(shown.map(|line| (String::from_utf16_lossy(&line.text), u32::MAX)))
+                        .collect()
+                })
+            };
+            // 0x00609FC7..0x00609FE2 / 0x0060A330: the row buttons are type3,
+            // MNBTTN, with the type-2 caption.
+            let style = GuiStyle {
+                buttons: ButtonArt::ModalType2,
+                text_of: Some(&text_of),
+                rows_of: Some(&rows_of),
+                ..Default::default()
+            };
+            paint.nodes(
+                ime,
+                bit_font,
+                frontend,
+                match_state,
+                process_assets,
+                ui,
+                &PAINT_ORDER,
+                style,
+            );
+        },
+    );
+    in_game_shell::render_in_game_shell_frame(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        encoder,
+        destination,
+        frame,
     )
-    .expect("active 0xEA geometry");
-    in_game_shell::paint_dialog(state, encoder, destination, &DIALOG, |paint, ui| {
-        let state = paint.state;
-        let page = state.match_state.network_wait.page().expect("open 0xEA");
-        // Paging, shown only where there is more than one page, paints on the
-        // side art and the texts only: before the captions, as it always did.
-        let counter = |id: i32| {
-            (id == i32::from(paging::COUNTER)).then(|| {
-                let index = page.page.index(page.rows.len(), CONNECTION_ROWS);
-                paging::counter_text(index, page.page_count())
-            })
-        };
-        let style = GuiStyle {
-            buttons: ButtonArt::Side,
-            side: Some(paint.side_buttons()),
-            text_of: Some(&counter),
-            ..Default::default()
-        };
-        paint.nodes(ui, &[paging::PREVIOUS, paging::NEXT, paging::COUNTER], style);
-        let first = page.visible_range().start;
-        let text_of = |id: i32| -> Option<String> {
-            match ConnectionControl::from_id(u16::try_from(id).ok()?)? {
-                ConnectionControl::Player(slot) => Some(page.rows.get(first + slot)?.name.clone()),
-                ConnectionControl::Countdown => Some(match &page.countdown {
-                    Some(countdown) => countdown.clone(),
-                    None => state
-                        .process_assets
-                        .csf_label("GUI:TimeRemaining", "Time Remaining:"),
-                }),
-                _ => None,
-            }
-        };
-        // List 0x651's lines in the label colour; those above its top are
-        // never shown and stay empty.
-        let rows_of = |id: i32| -> Option<HostRows> {
-            (id == i32::from(ConnectionControl::List.id())).then(|| {
-                let skipped =
-                    (0..page.top.min(page.lines.len())).map(|_| (String::new(), u32::MAX));
-                let shown = page.lines.iter().skip(page.top);
-                skipped
-                    .chain(shown.map(|line| (String::from_utf16_lossy(&line.text), u32::MAX)))
-                    .collect()
-            })
-        };
-        // 0x00609FC7..0x00609FE2 / 0x0060A330: the row buttons are type3,
-        // MNBTTN, with the type-2 caption.
-        let style = GuiStyle {
-            buttons: ButtonArt::ModalType2,
-            text_of: Some(&text_of),
-            rows_of: Some(&rows_of),
-            ..Default::default()
-        };
-        paint.nodes(ui, &PAINT_ORDER, style);
-    })
 }
 
 #[cfg(all(test, tests_app_frontend))]

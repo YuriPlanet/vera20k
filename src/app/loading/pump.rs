@@ -3589,55 +3589,59 @@ pub(crate) fn next_native_loading_frame(
 /// The retained B7 browser is not painted or mutated, so failure can redraw it.
 /// The dialog paints no pointer; the window's own stays as the frame owner
 /// last set it, hidden wherever mouse.sha loaded.
-pub(crate) fn present_saved_game_loading(state: &mut AppState) -> anyhow::Result<bool> {
+pub(crate) fn present_saved_game_loading(
+    platform: &mut crate::app::PlatformState,
+    renderer: &mut crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    persistence: &crate::app::persistence::PersistenceState,
+) -> anyhow::Result<bool> {
     if !crate::app::App::ensure_skirmish_shell_chrome(
-        &state.renderer,
-        &mut state.frontend,
-        &state.process_assets,
-        &state.persistence.options_profile,
+        renderer,
+        frontend,
+        process_assets,
+        &persistence.options_profile,
     ) {
         anyhow::bail!("Saved-game loading dialog has no shell chrome");
     }
-    let Some(output) = state
-        .renderer
+    let Some(output) = renderer
         .gpu
         .acquire_frame()
         .map_err(|error| anyhow::anyhow!("saved-game loading surface: {error}"))?
     else {
         return Ok(false);
     };
-    let mut encoder =
-        state
-            .renderer
-            .gpu
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Saved Game Loading"),
-            });
-    state.renderer.window_ui.begin_frame();
+    let mut encoder = renderer
+        .gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Saved Game Loading"),
+        });
+    renderer.window_ui.begin_frame();
     crate::app::frontend::skirmish_shell_render::render_saved_game_loading(
-        state,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
         &mut encoder,
         &output.texture,
     )?;
-    state.renderer.performance_overlay.encode(
-        &state.renderer.gpu,
-        &state.renderer.batch_renderer,
+    renderer.performance_overlay.encode(
+        &renderer.gpu,
+        &renderer.batch_renderer,
         &mut encoder,
         &output.texture,
-        &state.renderer.bit_font,
+        &renderer.bit_font,
         None,
     );
-    state
-        .renderer
+    renderer
         .gpu
         .encode_color_vision(&mut encoder, &output.texture);
-    state
-        .renderer
-        .gpu
-        .queue
-        .submit(std::iter::once(encoder.finish()));
-    output.present(&state.renderer.gpu.queue);
+    renderer.gpu.queue.submit(std::iter::once(encoder.finish()));
+    output.present(&renderer.gpu.queue);
     Ok(true)
 }
 
