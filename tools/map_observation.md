@@ -99,9 +99,10 @@ those retained outcomes, marked tank occupancy and 6,000 credits spent. The pad
 is the radio producer's building origin plus `(3,1)`, distinct from the ART
 queueing offset `(4,1)`. Actor selectors bind after normal production. Exact steps
 are this Rust integration witness, not native timing goldens or direct query-PC
-observations; native Unit-query/caller controls remain separate evidence. The dock
-contact is checked as present and the unload within a window, because stable IDs
-and the unload's steps shift with unrelated changes.
+observations; native Unit-query/caller controls remain separate evidence. The tank
+must stay clear from step 6600 to the end. In that window the miner must switch
+to Teleport, reach the pad and unload. At the final step it must have released
+the contact and resumed harvesting, with the house 500 credits richer.
 
 Inspect a completed capture without restarting the game:
 
