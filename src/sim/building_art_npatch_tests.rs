@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::sim::combat::TargetKind;
 use crate::sim::house_state::HouseState;
 
 /// NPatch (NPExt bug-fix changelog item 95, issue #2971): a tech building's
@@ -136,4 +137,51 @@ fn npatch_tech_derrick_pump_starts_on_capture_not_placement() {
         &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(pump(&sim, civilian).is_some(), "non-tech keeps its anim");
+}
+
+/// NPatch (NPExt item 30, #2973): an owner change clears every attacker
+/// whose Target still names the captured building, so the capture is not
+/// demolished by the capturing side's own Tanya.
+#[test]
+fn npatch_capture_drops_attackers_that_still_target_the_building() {
+    let mut rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+        "[InfantryTypes]\n0=E1\n[BuildingTypes]\n0=GAPILE\n\
+         [E1]\nStrength=125\n[GAPILE]\nStrength=1000\nArmor=wood\n\
+         [CombatDamage]\nC4Warhead=SA\n",
+    ))
+    .unwrap();
+    rules.set_npatch_for_test(true);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 41);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let building = sim
+        .spawn_object("GAPILE", "Russians", 10, 10, 0, &rules)
+        .unwrap();
+    let tanya = sim
+        .spawn_object("E1", "Americans", 12, 10, 0, &rules)
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(tanya)
+        .unwrap()
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(building)));
+    let americans = sim.interner.intern("Americans");
+    sim.change_owner_with_rules(
+        building,
+        americans,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert!(
+        sim.substrate
+            .entities
+            .get(tanya)
+            .unwrap()
+            .attack_target
+            .target()
+            .is_none(),
+        "the stale attacker target was cleared"
+    );
 }

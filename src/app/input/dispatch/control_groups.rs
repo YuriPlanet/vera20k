@@ -326,6 +326,16 @@ pub(super) fn handle_control_group_command(
             .match_presentation
             .sidebar_gadget_state
             .disable_selection_modes(match_state.input.armed_building_type().is_some());
+        // NPatch (NPExt item 89, #2940): Recall, Center and AddTeam also
+        // drop the bare Super pointer, so its reference ring does not stay
+        // attached after an ordinary team key.
+        if crate::app::state::active_rules(frontend, match_state)
+            .is_some_and(|rules| rules.npatch())
+            && match_state.input.armed_super_weapon_type().is_some()
+        {
+            match_state.input.targeting_mode = None;
+            match_state.input.building_placement_preview = None;
+        }
         crate::app::input::beacon::set_place_beacon_mode(
             platform,
             renderer,

@@ -843,3 +843,29 @@ fn ares_cycle_hook_tests_the_charged_value_and_restarts_a_cyclic_type() {
     assert_eq!(charge(150, 2, Some(false)), (2, 150, true, false, 0));
     assert_eq!(charge(150, 2, Some(true)), (0, 0, false, false, 1));
 }
+
+/// NPatch (NPExt item 73, #2970): entering the Selling mission releases the
+/// Report loop immediately instead of waiting for stage 2's limbo.
+#[test]
+fn npatch_sale_stops_a_looping_gattling_report() {
+    let rules = unit_fire_rules(true, true);
+    let mut sim = crate::sim::world::Simulation::new();
+    let id = sim
+        .spawn_object("GTNK", "Americans", 10, 10, 0, &rules)
+        .expect("spawn GTNK");
+    sim.substrate.entities.get_mut(id).unwrap().gattling = GattlingState::from_fields(1, 600, true);
+    sim.gattling_stop_sale_loop(id);
+    assert!(
+        !sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .gattling
+            .report_latched()
+    );
+    assert!(sim.sound_events.iter().any(|event| matches!(
+        event,
+        crate::sim::world::SimSoundEvent::GattlingLoopRelease { owner }
+            if *owner == crate::sim::combat::gattling::gattling_sound_owner(id)
+    )));
+}

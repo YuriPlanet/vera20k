@@ -279,6 +279,41 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
     ) -> Vec<CaptureLinkCoordinates> {
+        self.capture_link_coordinates_inner(id, rules, false)
+    }
+
+    /// NPatch (NPExt items 62-63, #2974/#2975): a selected transport or
+    /// battle fortress also exposes the links of the psychics riding inside,
+    /// and their origin follows the outermost hull the chain rides in.
+    pub fn selected_capture_link_coordinates(
+        &self,
+        id: u64,
+        rules: &RuleSet,
+    ) -> Vec<CaptureLinkCoordinates> {
+        let mut links = self.capture_link_coordinates_inner(id, rules, false);
+        if !rules.npatch() {
+            return links;
+        }
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return links;
+        };
+        if entity.capture_manager.is_some() {
+            return links;
+        }
+        if let Some(cargo) = entity.passenger_role().cargo() {
+            for passenger in cargo.passengers() {
+                links.extend(self.capture_link_coordinates_inner(*passenger, rules, true));
+            }
+        }
+        links
+    }
+
+    fn capture_link_coordinates_inner(
+        &self,
+        id: u64,
+        rules: &RuleSet,
+        force_selected: bool,
+    ) -> Vec<CaptureLinkCoordinates> {
         use crate::rules::flh::Flh;
         use crate::sim::combat::fire_coord::{FireSource, fire_coordinate};
         use crate::sim::movement::ground_pose::position_world_coord;
@@ -291,7 +326,17 @@ impl Simulation {
         let Some(object) = self.object_type(controller.type_ref(), rules) else {
             return Vec::new();
         };
-        let selected = controller.seldom.selection.is_selected();
+        let selected = force_selected || controller.seldom.selection.is_selected();
+        // A controller riding in a hull keeps a stale position. NPExt draws
+        // from the outermost transport instead.
+        let origin = if rules.npatch() {
+            self.outermost_transporter(id).unwrap_or(id)
+        } else {
+            id
+        };
+        let Some(origin_entity) = self.substrate.entities.get(origin) else {
+            return Vec::new();
+        };
         #[cfg(feature = "phobos")]
         let visible_to = rules.mind_control_link_visible_to_house_for(object);
         // Rendering queries isolate the canonical fallback CellClass.
@@ -318,7 +363,7 @@ impl Simulation {
                     let from = fire_coordinate(
                         self,
                         rules,
-                        &FireSource::of_entity(controller),
+                        &FireSource::of_entity_at(controller, origin_entity),
                         object,
                         -1 - (index % 5) as i32,
                         controller.seldom.weapon_burst.index() as u8,
@@ -340,6 +385,37 @@ impl Simulation {
                 })
                 .collect()
         })
+    }
+
+    /// Whether `id`'s cloak is active (state 1..3), for draw consumers that
+    /// must not reveal a cloaked owner.
+    pub fn is_object_cloaked(&self, id: u64) -> bool {
+        self.substrate
+            .entities
+            .get(id)
+            .and_then(|entity| entity.cloak.as_ref())
+            .is_some_and(|cloak| cloak.state() != 0)
+    }
+
+    /// Follow `TechnoClass+0x11C` links outward. A cycle or a missing hull
+    /// keeps the last known controller position.
+    pub(crate) fn outermost_transporter(&self, id: u64) -> Option<u64> {
+        let mut current = id;
+        for _ in 0..8 {
+            let Some(next) = self
+                .substrate
+                .entities
+                .get(current)
+                .and_then(|entity| entity.passenger_role().transporter())
+            else {
+                break;
+            };
+            if next == id || self.substrate.entities.get(next).is_none() {
+                break;
+            }
+            current = next;
+        }
+        (current != id).then_some(current)
     }
 }
 

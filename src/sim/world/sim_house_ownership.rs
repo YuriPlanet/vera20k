@@ -588,12 +588,7 @@ impl Simulation {
             return;
         };
         crate::sim::ra2_all02_diagnostic::on_owner_change(
-            self,
-            stable_id,
-            old_owner,
-            new_owner,
-            rules,
-            "BEFORE",
+            self, stable_id, old_owner, new_owner, rules, "BEFORE",
         );
         // FootChangeOwner4DBEFB removes at the current cell before its
         // Techno delegate, including the same-owner refusal at7014A0.
@@ -835,12 +830,7 @@ impl Simulation {
             new_owner,
         );
         crate::sim::ra2_all02_diagnostic::on_owner_change(
-            self,
-            stable_id,
-            old_owner,
-            new_owner,
-            rules,
-            "AFTER",
+            self, stable_id, old_owner, new_owner, rules, "AFTER",
         );
         // Ares3.0 ChangeOwner7015EB ->1004E7F0 follows the two tracking
         // calls and precedes both the capture stats and owner pointer store.
@@ -1337,6 +1327,26 @@ impl Simulation {
         let factory_unloading = self.weapons_factory_unloading(stable_id, rules);
         let in_limbo = entity.lifecycle.in_limbo();
         let now = self.session.binary_frame();
+        // NPatch (NPExt item 30, #2973): a captured building must stop being
+        // everyone's current attack target. Native only resets the captured
+        // object's own orders, so a Tanya or Boris keeps walking its stale
+        // Target into a building its house now owns.
+        if rules.npatch() {
+            let attackers: Vec<u64> = self
+                .live_object_order_snapshot()
+                .into_iter()
+                .filter(|&id| {
+                    id != stable_id
+                        && self.substrate.entities.get(id).is_some_and(|entity| {
+                            entity.attack_target.target()
+                                == Some(crate::sim::combat::TargetKind::Entity(stable_id))
+                        })
+                })
+                .collect();
+            for attacker in attackers {
+                let _ = self.assign_target_represented(attacker, None, rules, effects);
+            }
+        }
         let rescue = self.substrate.entities.get(stable_id).is_some_and(|e| {
             e.mission.current().known() == Some(MissionType::Rescue)
                 || e.mission.queued().known() == Some(MissionType::Rescue)

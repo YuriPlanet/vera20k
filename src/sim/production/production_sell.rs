@@ -535,6 +535,12 @@ pub(crate) fn begin_selling(sim: &mut Simulation, rules: &RuleSet, id: u64, rout
         entity.bind_building_sell_rate(sell_rate);
     }
     entity.install_building_down(route);
+    if rules.npatch() {
+        // NPatch (NPExt item 73, #2970): the sale takes the Selling mission
+        // now, but the gattling report loop would otherwise survive until
+        // stage 2's limbo.
+        sim.gattling_stop_sale_loop(id);
+    }
 }
 
 /// `BuildingClass::CanSell @ 0x004494C0` (vt+0x98), which the sell cursor

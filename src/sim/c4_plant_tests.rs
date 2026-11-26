@@ -952,6 +952,36 @@ fn the_sourceless_blasts_kill_a_c4_infantryman_standing_in_its_cell() {
     assert!(tanya.lifecycle.object_alive());
 }
 
+/// NPatch (NPExt item 30, #2973): a demolition infantryman does not plant a
+/// fresh charge on a building its own house now owns.
+#[test]
+fn npatch_a_friendly_c4_plant_is_refused() {
+    let art = IniFile::from_str(ART);
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(RULES),
+        &art,
+    )
+    .unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+    rules.set_npatch_for_test(true);
+    let (mut sim, _) = arena(&rules);
+    let building = spawn(&mut sim, &rules, "GAPILE", "Americans", 16, 10);
+    let actor = spawn(&mut sim, &rules, "TANY", "Americans", 15, 10);
+    stand_in(&mut sim, actor, building);
+    sim.infantry_per_cell_c4(actor, &rules, None, &mut FrameEffects::default())
+        .unwrap();
+    assert!(
+        sim.substrate
+            .entities
+            .get(building)
+            .unwrap()
+            .building
+            .pending_c4_detonation
+            .pending()
+            .is_none()
+    );
+}
+
 /// Ares 10025730 (hook 0x51A4D2): a veteran whose rank holds the C4 ability
 /// plants on a Sabotage arrival though its type is not `C4=`; a rookie of
 /// the same type does not.

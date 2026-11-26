@@ -622,6 +622,19 @@ impl Simulation {
         }
         let context =
             self.wave_update_context(self.waves.get(id).expect("represented Wave"), rules);
+        // NPatch (NPExt item 75, #2962): a wave that decays (a target switch
+        // or a range end) must not leave its held victim aloft with no beam.
+        let held_by_this_wave = rules
+            .npatch()
+            .then(|| {
+                let wave = self.waves.get(id)?;
+                let owner = wave.owner_id()?;
+                let crate::sim::combat::TargetKind::Entity(target) = wave.target_ref()? else {
+                    return None;
+                };
+                Some((owner, target))
+            })
+            .flatten();
         let terrain = self.resolved_terrain.as_ref();
         let (request, result) = self
             .waves
@@ -630,6 +643,15 @@ impl Simulation {
         // Fade-terminal UnInit dispatches exact pointer expiry before the
         // stale AI-20 cell vector is damaged on AI-21.
         if result.uninitialized {
+            if let Some((owner, target)) = held_by_this_wave
+                && self
+                    .substrate
+                    .entities
+                    .get(owner)
+                    .is_some_and(|entity| entity.lift.target() == Some(target))
+            {
+                self.release_locomotor(owner, true, rules, ctx.overlay_registry, &mut ctx.effects);
+            }
             self.clear_active_wave_link(id);
         }
         if let Some(request) = request {

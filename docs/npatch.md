@@ -245,14 +245,55 @@ The sections follow the behavior chains of #3024.
   Mutator over an occupied cell allocated a fresh brute on every completed
   frame and never destroyed the refused one — unbounded object growth while
   the cell stayed blocked. The anim still steps its stage back and retries.
-- #2956 (NPExt changelog item 19, part 1 of 4): a unit the Magnetron lifts
-  is not self-propelled — held locomotion plays no move sounds. Native ran
-  the victim's own foot move-sound tail over the held jumpjet route
-  (`FootClass::AI @ 0x004DA530`); the skip also skips that tail's Main RNG
-  draw (`0x004DAACB`). The lift speed, drop crash sounds and held-aircraft
-  death parts of the chain remain open.
+- #2956 (NPExt changelog item 19, parts 1 and 2 of 4): a unit the Magnetron
+  lifts is not self-propelled — held locomotion plays no move sounds, and a
+  drop plays neither the crash voice nor the crashing sound. Native ran the
+  victim's own foot move-sound tail over the held jumpjet route
+  (`FootClass::AI @ 0x004DA530`), whose skip also drops that tail's Main RNG
+  draw (`0x004DAACB`), and its drop edge raised the crash latch
+  (`0x004DEBD3..0x004DEC5F`) before the release ran. The held-aircraft speed
+  and mid-air destruction parts of the chain remain open.
+- #2967 (NPExt changelog item 52): a manual garrison release with no ring
+  exit is a no-op under NPatch instead of `KillOccupants(NULL)`
+  (`SellBuilding @ 0x004580A9`, no-exit arm `0x00458180..0x00458190`), so a
+  walled-in garrison no longer vanishes without a kill record.
+- #2983 (NPExt changelog item 69): the water `DoAction` remap
+  (`InfantryClass::Do_Action @ 0x0051D6F0`) maps Down to Tread like
+  Walk/Stop, so Tanya or a SEAL ordered to lie down on water uses the
+  tread pose instead of the native swim/standing inconsistency.
 
 ### Capture, mind control, lift and retaliation
+
+- #2939 (NPExt changelog item 81): a C4 demolition, one fatal forced packet
+  at the building's current health (`BuildingClass::Update`), still raises
+  the owner's NotifyUnderAttack alarm before the death postlude. Native's
+  non-fatal hit-response block never ran for that packet.
+- #2943 (NPExt changelog item 13): a `BalloonHover=no` helicopter's crash
+  takes the DeathWeapon arm, not only the `BalloonHover=yes` branch
+  (`FootClass` crash end); a crashing helicopter now fires its death weapon
+  whether it balloons or falls.
+- #2959 (NPExt changelog item 58): when a squid's owner is defeated and the
+  eater dies, the host's `ParalysisTimer` is cleared with the dropped
+  `Parasite.Victim` link. Native only cleared the link
+  (`0x004D998C..0x004D99A4`), leaving the ship paralyzed forever.
+- #2962 (NPExt changelog item 74, parts 1 and 2): Stop on a lifting Magnetron
+  releases the lift (`0x004C75F8` tail), and a wave that decays — on a target
+  switch or at the end of its tracking — releases the victim it still holds.
+  Native's IDLE event cleared only radio, destination and target, so the beam
+  ended while the victim kept flying.
+- #2973 (NPExt changelog item 30): capturing a building clears every other
+  entity's attack target that still names it (`ChangeOwner` mission tail,
+  `0x00448CEF`), and a C4 plant is refused when the target is already
+  allied to the planter, so a Tanya or Boris cannot demolish the capture.
+- #2974 (NPExt changelog item 62): a garrisoned psychic's control link
+  follows the outermost transport hull instead of its stale stored
+  position; the origin uses the `TechnoClass+0x11C` chain.
+- #2975 (NPExt changelog item 63): selecting a battle fortress or transport
+  exposes the control links of the psychics riding inside, through
+  `CaptureManagerClass::DrawLinks`.
+- #2976 (NPExt changelog item 64): a control ring whose owner is cloaked
+  is not drawn until the owner decloaks; the anim and its state stay
+  untouched.
 
 ### UI, presentation, audio and scenario lifetime
 
@@ -260,6 +301,20 @@ The sections follow the behavior chains of #3024.
   shake. Native's offset is the global Map's `+4`/`+8` (`0x0087F7E8`), which
   only decays while battle input runs (`0x004F4BB0`), so quitting mid-shake
   started the next game with leftover camera movement.
+- #2932 (NPExt changelog items 82-83): a country's initial-veteran lists
+  apply to every trainable category in the side bar, and a naval type never
+  takes the spy-granted war-factory veteran flag (only its country's initial
+  veterans).
+- #2940 (NPExt changelog item 89): a bare Super weapon selection is
+  cancelled by a control-group key or by the repair/sell toggles, mirroring
+  the modes those Display setters already clear (`0x004AC660`, `0x004AC8C0`,
+  `0x00731205`).
+- #2941 (NPExt changelog item 95): a key release clears the held-key state
+  even while the pause gate refuses the edge, so a held scroll key cannot
+  keep the camera moving after a pause or focus loss.
+- #2970 (NPExt changelog item 73): a building entering the Selling mission
+  releases its gattling `Report=` loop immediately, instead of waiting for
+  stage 2's limbo release (`0x006F6C6B`), so a sold Gatling cannon is silent.
 - #2979 (NPExt changelog item 28): the action determination's warp rung also
   catches a still-warping-in actor over an entity target. Native limits the
   warp-in arm to Cell targets, so a pre-emergence chrono legionnaire fell

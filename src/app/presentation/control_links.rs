@@ -28,7 +28,7 @@ pub(crate) fn prepare(
         if entity.health.current() == 0 {
             continue;
         }
-        if entity.capture_manager.is_some() {
+        if entity.capture_manager.is_some() || !entity.hud.capture_links().is_empty() {
             last_visit.insert(id, (rank * 2, id));
         }
         if let Some(controller) = entity.hud.controller() {
@@ -44,6 +44,9 @@ pub(crate) fn prepare(
         std::collections::HashMap::new();
     for (controller, (_, after_entity)) in managers {
         // `Simulation::capture_link_coordinates`, captured.
+        // Tactical6D47A6/6D47CB visits a Techno's manager, then its
+        // controller's; NPatch also exposes a selected hull's cargo managers
+        // (#2975), whose links the projection already resolved.
         let links = frame
             .object(controller)
             .map_or(&[][..], |controller| controller.hud.capture_links());

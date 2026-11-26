@@ -343,7 +343,18 @@ impl Simulation {
             || crate::sim::superweapon::invulnerability::is_invulnerable(
                 target.invulnerability.as_ref(),
                 frame,
-            );
+            )
+            // NPatch (NPExt item 30, #2973): a building captured by an ally
+            // must not take a fresh charge from that ally's demolition unit.
+            || (rules.npatch()
+                && self.substrate.entities.get(id).is_some_and(|planter| {
+                    crate::sim::combat::combat_weapon::is_ally_by_object(
+                        Some(&self.house_alliances),
+                        &self.interner,
+                        planter.owner(),
+                        target.owner(),
+                    )
+                }));
         if !refused {
             if target.building.pending_c4_detonation.pending().is_some() {
                 self.assign_null_destination(id, rules, registry, effects);

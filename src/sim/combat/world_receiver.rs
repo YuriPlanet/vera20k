@@ -2058,6 +2058,16 @@ fn commit_entity(
             }
         }
 
+        // NPatch (NPExt item 81, #2939): a C4 packet is one fatal forced
+        // hit, so the surviving-building response above never runs. Warn
+        // before the death postlude removes the building.
+        if entered_techno_death
+            && rules.npatch()
+            && fatal_category == EntityCategory::Structure
+            && event.warhead_ref == world.interner.intern(&rules.bridge_warheads.c4_name)
+        {
+            world.building_c4_alarm(target_id, rules, overlay_registry, run.effects());
+        }
         if entered_techno_death {
             // 0x00737D97: the dying unit's own bunker link (`+0x2E4`) names a
             // building — `BuildingClass::ClearBunker @ 0x00459470` at the

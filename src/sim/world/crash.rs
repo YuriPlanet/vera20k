@@ -712,15 +712,21 @@ impl Simulation {
             let object = interner.object_type(entity.type_ref(), rules);
             let voice = object.and_then(|object| object.voice_crashing.as_deref());
             let crashing_sound = object.and_then(|object| object.crashing_sound.as_deref());
+            // NPatch (NPExt item 19, #2956): a Magnetron drop is not a
+            // self-powered crash; NPExt suppresses the crash voice and sound.
+            let magnetron_drop = rules.npatch() && entity.seldom.drop_credit.being_manipulated();
             if let Some(voice) = voice
                 && Simulation::is_human_player(session, houses, owner)
+                && !magnetron_drop
             {
                 sound_events.emit(super::SimSoundEvent::voc_at(
                     rules.sound_name(voice),
                     &entity.position,
                 ));
             }
-            if let Some(sound) = crashing_sound {
+            if let Some(sound) = crashing_sound
+                && !magnetron_drop
+            {
                 let world = Self::movement_sound_world(entity);
                 sound_events.emit(super::SimSoundEvent::AnimationStarted {
                     anim_id: id,

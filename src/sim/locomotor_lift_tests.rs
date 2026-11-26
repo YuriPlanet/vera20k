@@ -607,6 +607,35 @@ fn retail_magnetron_lift_keeps_the_victims_idle_turret_aim() {
     assert!(checked > 60, "the held tank passes the idle turret dwell");
 }
 
+#[test]
+fn npatch_target_switch_releases_the_held_tank_without_a_beam() {
+    let Some(mut rules) = retail_rules() else {
+        return;
+    };
+    rules.set_npatch_for_test(true);
+    let (mut sim, grid, magnetron, tank) = lift(&rules);
+    let other = spawn(&mut sim, &rules, "MTNK", "Russians", 12, 16);
+    assert_eq!(entity(&sim, magnetron).lift.target(), Some(tank));
+
+    order(
+        &mut sim,
+        "Americans",
+        Command::Attack {
+            attacker_id: magnetron,
+            target_id: other,
+        },
+    );
+    assert!(
+        run_until(&mut sim, &rules, &grid, 400, |sim| {
+            !entity(sim, tank).lift.swap_active()
+        }),
+        "the tank is released when the wave stops tracking it"
+    );
+    let released = entity(&sim, tank);
+    assert_eq!(released.lift.source(), None);
+    assert_eq!(entity(&sim, magnetron).lift.target(), Some(other));
+}
+
 /// Held all the way, the tank reaches the cell beside the Magnetron that the
 /// Jumpjet's `Move_To` found free (`0x0054B275..0x0054B2D9`; the Magnetron's
 /// own cell is taken), is let go there by State 3's arrival (`0x0054C1CB`)

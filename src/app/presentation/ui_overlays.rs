@@ -189,6 +189,8 @@ impl HudFacts {
                 }),
             capture_links: if entity.capture_manager.is_some() {
                 sim.capture_link_coordinates(id, rules)
+            } else if rules.npatch() && entity.passenger_role().cargo().is_some() {
+                sim.selected_capture_link_coordinates(id, rules)
             } else {
                 Vec::new()
             },

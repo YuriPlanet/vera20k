@@ -301,6 +301,12 @@ fn eject_garrison_passengers_at_edges(
     let mut ejected: usize = 0;
 
     let Some((exit_rx, exit_ry)) = exit_cell else {
+        // NPatch (NPExt item 52, #2967): a manual Release order with no
+        // ring exit leaves the garrison inside instead of silently
+        // UnIniting every occupant without a kill record.
+        if rules.npatch() && matches!(mode, GarrisonEjectMode::Release) {
+            return Some(0);
+        }
         // 458180..458190: no exit and not interior -> KillOccupants(NULL),
         // then return without the placement bracket or the 4581D6 refresh.
         kill_building_occupants(sim, building_id, None, uninit_context);
@@ -479,7 +485,11 @@ pub(crate) fn sell_building_occupants(
     ) else {
         return 0;
     };
-
+    // NPatch (NPExt item 52, #2967): the Release arm's no-exit path is a
+    // no-op, so the wrapper must not clear the occupant vector.
+    if rules.npatch() && matches!(mode, GarrisonEjectMode::Release) && ejected == 0 {
+        return 0;
+    }
     if let Some(building) = sim.substrate.entities.get_mut(building_id) {
         building.passenger_role_mut().occupants.clear();
     }
@@ -1036,6 +1046,39 @@ pub(crate) mod tests {
         );
         sim.flush_pending_delete();
         assert!(sim.substrate.entities.get(21).is_none());
+    }
+
+    #[test]
+    fn npatch_release_without_exit_leaves_the_garrison_inside() {
+        let mut rules = garrison_edge_rules();
+        rules.set_npatch_for_test(true);
+        let mut sim = garrison_map(&rules);
+        insert_captured_player_owned_garrison(&mut sim, &rules, 20, 21);
+        block_all_garrison_exit_cells(&mut sim, &rules, 10, 10, 2, 2);
+        assert_eq!(
+            sell_building_occupants(
+                &mut sim,
+                &rules,
+                None,
+                20,
+                GarrisonEjectMode::Release,
+                &mut FrameEffects::default(),
+            ),
+            0
+        );
+        let pax = sim.substrate.entities.get(21).unwrap();
+        assert!(pax.lifecycle.object_alive());
+        assert!(!pax.passenger_role().is_none());
+        assert!(
+            sim.substrate
+                .entities
+                .get(20)
+                .unwrap()
+                .passenger_role()
+                .occupants()
+                .ids()
+                .contains(&21)
+        );
     }
 
     #[test]
