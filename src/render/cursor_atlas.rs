@@ -167,10 +167,9 @@ pub(crate) struct SoftwareCursor {
     /// Built from the Ares cursor list ([`build_ares_software_cursor`]):
     /// `sequences` holds only [`CursorId::Ares`] keys.
     ares: bool,
-    /// mouse.sha and its palette, for the window system's images
+    /// The cursor art, for the window system's images
     /// (`app::input::hardware_cursor`).
-    shp: ShpFile,
-    palette: Palette,
+    art: MouseArt,
     /// Tells this load's art from another's.
     art_id: u64,
 }
@@ -208,9 +207,7 @@ impl SoftwareCursor {
     pub(crate) fn os_image(&self, id: CursorId, frame: usize, scale: f32) -> Option<OsCursorImage> {
         let sequence = self.get(id)?;
         let shp_frame = sequence.frames.get(frame)?.shp_frame;
-        let canvas = frame_to_canvas_rgba(&self.shp, shp_frame, &self.palette).ok()?;
-        let size = (u32::from(self.shp.width), u32::from(self.shp.height));
-        Some(os_cursor_image(&canvas, size, sequence.hotspot, scale))
+        self.art.os_image(shp_frame, sequence.hotspot, scale)
     }
 
     /// Look up a cursor sequence by id, falling back to Default if not found.
@@ -256,6 +253,7 @@ fn next_art_id() -> u64 {
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::Palette;
+use crate::assets::picture_file::PictureFrames;
 use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::gpu::GpuContext;
@@ -699,9 +697,9 @@ const CURSOR_DEFS: &[(CursorId, usize, usize, u64, CursorHotspot)] = &[
     ),
 ];
 
-/// MOUSE.SHA and MOUSEPAL.PAL, the one shape and palette every software
-/// cursor draws from.
-fn load_mouse_shape(asset_manager: &AssetManager) -> Option<(ShpFile, Palette)> {
+/// The art every cursor draws from: MOUSE.SHA, and its pixels through
+/// MOUSEPAL.PAL or from the picture beside it ([`MouseArt`]).
+fn load_mouse_shape(asset_manager: &AssetManager) -> Option<MouseArt> {
     // Init_Game 0x0052BA60 converts MOUSEPAL.PAL like every palette load.
     let palette = ui_art_candidates(asset_manager, "mousepal.pal")
         .find_map(|asset| Palette::from_bytes(asset.bytes).ok())?;
@@ -726,7 +724,162 @@ fn load_mouse_shape(asset_manager: &AssetManager) -> Option<(ShpFile, Palette)> 
         return None;
     }
     maybe_export_mouse_sheet(&shp, &palette);
-    Some((shp, palette))
+    let pixels = mouse_pixels(asset_manager, &shp, palette);
+    Some(MouseArt { shp, pixels })
+}
+
+/// VERA-only, experimental (`docs/picture-model-art.md`, "Interface art"):
+/// the picture `mouse.png` beside mouse.sha, found as any asset is (loose
+/// file, then the archives). The cursors are presentation only, so the file
+/// name declares it. Without the file, or with one that does not fit
+/// ([`fit_mouse_picture`], reported in the game), mouse.sha's own pixels.
+fn mouse_pixels(asset_manager: &AssetManager, shp: &ShpFile, palette: Palette) -> MousePixels {
+    let Some(bytes) = asset_manager.get_ref(MOUSE_PICTURE) else {
+        return MousePixels::Shp(palette);
+    };
+    let fitted = PictureFrames::decode(bytes)
+        .map_err(|error| format!("it is not readable ({error})"))
+        .and_then(|picture| fit_mouse_picture(picture, shp));
+    match fitted {
+        Ok((picture, scale)) => {
+            log::info!("Cursors drawn from {MOUSE_PICTURE} at {scale}x mouse.sha");
+            MousePixels::Picture { picture, scale }
+        }
+        Err(problem) => {
+            log::warn!("{MOUSE_PICTURE} cannot be drawn: {problem}");
+            crate::rules::art_problems::report(
+                "mouse.sha",
+                MOUSE_PICTURE,
+                &problem,
+                "the cursors draw mouse.sha's own pixels",
+            );
+            MousePixels::Shp(palette)
+        }
+    }
+}
+
+const MOUSE_PICTURE: &str = "mouse.png";
+
+/// Interface pictures are whole multiples of their SHP's canvas, up to this.
+const PICTURE_SCALE_MAX: u32 = 8;
+
+/// `picture` and its scale when it has mouse.sha's frame count and each frame
+/// is the canvas times one whole scale (1 to [`PICTURE_SCALE_MAX`]) on both
+/// axes; else what is wrong with it.
+fn fit_mouse_picture(
+    picture: PictureFrames,
+    shp: &ShpFile,
+) -> Result<(PictureFrames, u32), String> {
+    if picture.frames.len() != shp.frames.len() {
+        return Err(format!(
+            "it has {} frames and mouse.sha {}",
+            picture.frames.len(),
+            shp.frames.len()
+        ));
+    }
+    let (width, height) = (u32::from(shp.width), u32::from(shp.height));
+    let scale = picture.width / width.max(1);
+    if scale == 0
+        || scale > PICTURE_SCALE_MAX
+        || picture.width != width * scale
+        || picture.height != height * scale
+    {
+        return Err(format!(
+            "it is {}x{}, not mouse.sha's {width}x{height} times 1 to {PICTURE_SCALE_MAX}",
+            picture.width, picture.height
+        ));
+    }
+    Ok((picture, scale))
+}
+
+/// mouse.sha, whose canvas sets every cursor's size and hotspot, and the
+/// pixels the cursors draw.
+pub(crate) struct MouseArt {
+    shp: ShpFile,
+    pixels: MousePixels,
+}
+
+enum MousePixels {
+    /// mouse.sha's own, through MOUSEPAL.PAL.
+    Shp(Palette),
+    /// `mouse.png` ([`mouse_pixels`]): frame for frame mouse.sha's, `scale`
+    /// picture pixels to a mouse.sha pixel.
+    Picture { picture: PictureFrames, scale: u32 },
+}
+
+impl MouseArt {
+    fn canvas(&self) -> (u32, u32) {
+        (u32::from(self.shp.width), u32::from(self.shp.height))
+    }
+
+    /// Frame `frame` for the sprite, drawn at the canvas size: the SHP's
+    /// sampled nearest, the picture's linearly.
+    fn texture(
+        &self,
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        frame: usize,
+    ) -> Option<BatchTexture> {
+        match &self.pixels {
+            MousePixels::Shp(palette) => {
+                let rgba = frame_to_canvas_rgba(&self.shp, frame, palette).ok()?;
+                let (width, height) = self.canvas();
+                Some(batch.create_texture(gpu, &rgba, width, height))
+            }
+            MousePixels::Picture { picture, .. } => {
+                let rgba =
+                    bleed_into_holes(picture.frames.get(frame)?, picture.width, picture.height);
+                let (_, texture) = batch.create_updatable_texture(
+                    &gpu.device,
+                    &gpu.queue,
+                    &rgba,
+                    picture.width,
+                    picture.height,
+                    wgpu::FilterMode::Linear,
+                );
+                Some(texture)
+            }
+        }
+    }
+
+    /// Frame `frame` at the canvas size for the planning badges, whose pixels
+    /// are drawn or not: the picture shrunk by the picture art's coverage
+    /// rule (`PictureFrames::shrunk_region`).
+    fn badge(&self, frame: usize) -> Option<PlanningBadge> {
+        let (width, height) = self.canvas();
+        let rgba = match &self.pixels {
+            MousePixels::Shp(palette) => frame_to_canvas_rgba(&self.shp, frame, palette).ok()?,
+            MousePixels::Picture { picture, scale } => {
+                picture.shrunk_region(frame, *scale, [width, height])?
+            }
+        };
+        Some(PlanningBadge {
+            width: width as i32,
+            height: height as i32,
+            rgba,
+        })
+    }
+
+    /// Frame `frame` for the window system, `scale` window pixels to a
+    /// mouse.sha pixel, its `hotspot` in mouse.sha pixels. The SHP's pixels
+    /// stay hard, as the sprite's nearest sampler draws them; the picture is
+    /// resampled smoothly to the same size.
+    fn os_image(&self, frame: usize, hotspot: [f32; 2], scale: f32) -> Option<OsCursorImage> {
+        let canvas = self.canvas();
+        let drawn = drawn_size(canvas, scale);
+        let pixels = match &self.pixels {
+            MousePixels::Shp(palette) => {
+                let rgba = frame_to_canvas_rgba(&self.shp, frame, palette).ok()?;
+                nearest_resample(&rgba, canvas, scale)
+            }
+            MousePixels::Picture { picture, .. } => smooth_resample(
+                picture.frames.get(frame)?,
+                (picture.width, picture.height),
+                drawn,
+            ),
+        };
+        Some(os_cursor_image(&pixels, drawn, hotspot, scale))
+    }
 }
 
 pub(crate) fn build_software_cursor(
@@ -734,20 +887,13 @@ pub(crate) fn build_software_cursor(
     batch: &BatchRenderer,
     asset_manager: &AssetManager,
 ) -> Option<SoftwareCursor> {
-    let (shp, palette) = load_mouse_shape(asset_manager)?;
+    let art = load_mouse_shape(asset_manager)?;
 
     let mut sequences: HashMap<CursorId, SoftwareCursorSequence> = HashMap::new();
     for &(id, start, count, interval_ms, hotspot) in CURSOR_DEFS {
-        if let Some(seq) = build_cursor_sequence(
-            gpu,
-            batch,
-            &shp,
-            &palette,
-            start,
-            count,
-            interval_ms,
-            hotspot,
-        ) {
+        if let Some(seq) =
+            build_cursor_sequence(gpu, batch, &art, start, count, interval_ms, hotspot)
+        {
             sequences.insert(id, seq);
         } else if id == CursorId::Default {
             // Default cursor must load successfully — bail if it fails.
@@ -755,19 +901,12 @@ pub(crate) fn build_software_cursor(
         }
         // Non-default cursors that fail silently skip; SoftwareCursor::get() falls back to Default.
     }
-    let planning_badges = [433, 434].map(|frame| {
-        Some(PlanningBadge {
-            width: i32::from(shp.width),
-            height: i32::from(shp.height),
-            rgba: frame_to_canvas_rgba(&shp, frame, &palette).ok()?,
-        })
-    });
+    let planning_badges = [433, 434].map(|frame| art.badge(frame));
     Some(SoftwareCursor {
         sequences,
         planning_badges,
         ares: false,
-        shp,
-        palette,
+        art,
         art_id: next_art_id(),
     })
 }
@@ -780,8 +919,7 @@ mod ares;
 fn build_cursor_sequence(
     gpu: &GpuContext,
     batch: &BatchRenderer,
-    shp: &ShpFile,
-    palette: &Palette,
+    art: &MouseArt,
     start: usize,
     count: usize,
     interval_ms: u64,
@@ -789,7 +927,7 @@ fn build_cursor_sequence(
 ) -> Option<SoftwareCursorSequence> {
     let mut frames = Vec::new();
     for frame_idx in start..start + count {
-        if let Some(frame) = build_cursor_frame(gpu, batch, shp, palette, frame_idx) {
+        if let Some(frame) = build_cursor_frame(gpu, batch, art, frame_idx) {
             frames.push(frame);
         }
     }
@@ -799,7 +937,7 @@ fn build_cursor_sequence(
     Some(SoftwareCursorSequence {
         frames,
         interval_ms,
-        hotspot: resolve_hotspot(hotspot, shp),
+        hotspot: resolve_hotspot(hotspot, &art.shp),
     })
 }
 
@@ -836,20 +974,18 @@ fn hotspot_offset(hotspot: CursorHotspot, width: u16, height: u16) -> [f32; 2] {
 fn build_cursor_frame(
     gpu: &GpuContext,
     batch: &BatchRenderer,
-    shp: &ShpFile,
-    palette: &Palette,
+    art: &MouseArt,
     frame_idx: usize,
 ) -> Option<SoftwareCursorFrame> {
-    if frame_idx >= shp.frames.len() {
+    if frame_idx >= art.shp.frames.len() {
         return None;
     }
-    let rgba = frame_to_canvas_rgba(shp, frame_idx, palette).ok()?;
-    let texture = batch.create_texture(gpu, &rgba, shp.width as u32, shp.height as u32);
+    let texture = art.texture(gpu, batch, frame_idx)?;
     Some(SoftwareCursorFrame {
         shp_frame: frame_idx,
         texture,
-        width: shp.width as f32,
-        height: shp.height as f32,
+        width: art.shp.width as f32,
+        height: art.shp.height as f32,
     })
 }
 
@@ -992,29 +1128,32 @@ fn frame_to_canvas_rgba(shp: &ShpFile, frame_idx: usize, palette: &Palette) -> R
     Ok(canvas)
 }
 
-/// `canvas` (`size` pixels) for the window system: resampled as the sprite's
-/// nearest-neighbour sampler does, on an image grown to hold the hotspot. A
-/// far-edge hotspot lies one pixel past the canvas (`hotspot_offset`), and an
-/// OS cursor's must lie inside its image.
+/// A canvas of `size` pixels drawn `scale` window pixels to a pixel.
+fn drawn_size(size: (u32, u32), scale: f32) -> (u32, u32) {
+    let drawn = |length: u32| ((length as f32 * scale).round() as u32).max(1);
+    (drawn(size.0), drawn(size.1))
+}
+
+/// `drawn` pixels (straight RGBA, `drawn` across) for the window system, on
+/// an image grown to hold the hotspot, `hotspot` canvas pixels at `scale`
+/// window pixels each. A far-edge hotspot lies one pixel past the canvas
+/// (`hotspot_offset`), and an OS cursor's must lie inside its image.
 fn os_cursor_image(
-    canvas: &[u8],
-    size: (u32, u32),
+    drawn_rgba: &[u8],
+    drawn: (u32, u32),
     hotspot: [f32; 2],
     scale: f32,
 ) -> OsCursorImage {
-    let drawn = |length: u32| ((length as f32 * scale).round() as u32).max(1);
-    let (drawn_width, drawn_height) = (drawn(size.0), drawn(size.1));
+    let (drawn_width, drawn_height) = drawn;
     let hotspot = hotspot.map(|offset| (offset * scale).round() as u32);
     let width = drawn_width.max(hotspot[0] + 1);
     let height = drawn_height.max(hotspot[1] + 1);
-    let source = |pixel: u32, length: u32| (((pixel as f32 + 0.5) / scale) as u32).min(length - 1);
     let mut rgba = vec![0; (width * height * 4) as usize];
+    let row = (drawn_width * 4) as usize;
     for y in 0..drawn_height {
-        for x in 0..drawn_width {
-            let from = ((source(y, size.1) * size.0 + source(x, size.0)) * 4) as usize;
-            let to = ((y * width + x) * 4) as usize;
-            rgba[to..to + 4].copy_from_slice(&canvas[from..from + 4]);
-        }
+        let from = y as usize * row;
+        let to = ((y * width) * 4) as usize;
+        rgba[to..to + row].copy_from_slice(&drawn_rgba[from..from + row]);
     }
     OsCursorImage {
         rgba,
@@ -1022,6 +1161,113 @@ fn os_cursor_image(
         height: height as u16,
         hotspot: (hotspot[0] as u16, hotspot[1] as u16),
     }
+}
+
+/// `canvas` (`size` pixels) at `scale` window pixels to a pixel
+/// ([`drawn_size`]), as the sprite's nearest-neighbour sampler draws it.
+fn nearest_resample(canvas: &[u8], size: (u32, u32), scale: f32) -> Vec<u8> {
+    let drawn = drawn_size(size, scale);
+    let source = |pixel: u32, length: u32| (((pixel as f32 + 0.5) / scale) as u32).min(length - 1);
+    let mut rgba = Vec::with_capacity((drawn.0 * drawn.1 * 4) as usize);
+    for y in 0..drawn.1 {
+        for x in 0..drawn.0 {
+            let at = ((source(y, size.1) * size.0 + source(x, size.0)) * 4) as usize;
+            rgba.extend_from_slice(&canvas[at..at + 4]);
+        }
+    }
+    rgba
+}
+
+/// VERA-only (`MousePixels::Picture`): straight-RGBA `source` (`size`
+/// pixels) at `drawn` pixels, by the area each drawn pixel covers when
+/// shrinking and bilinearly when growing, with colour weighted by alpha so
+/// holes do not darken the edges.
+fn smooth_resample(source: &[u8], size: (u32, u32), drawn: (u32, u32)) -> Vec<u8> {
+    let columns = resample_weights(size.0, drawn.0);
+    let rows = resample_weights(size.1, drawn.1);
+    let mut rgba = Vec::with_capacity((drawn.0 * drawn.1 * 4) as usize);
+    for row in &rows {
+        for column in &columns {
+            let (mut colour, mut alpha) = ([0.0f32; 3], 0.0f32);
+            for &(y, wy) in row {
+                for &(x, wx) in column {
+                    let at = ((y * size.0 + x) * 4) as usize;
+                    let weight = wx * wy * f32::from(source[at + 3]);
+                    alpha += weight;
+                    for channel in 0..3 {
+                        colour[channel] += weight * f32::from(source[at + channel]);
+                    }
+                }
+            }
+            let byte = |value: f32| value.round().clamp(0.0, 255.0) as u8;
+            if alpha > 0.0 {
+                rgba.extend_from_slice(&colour.map(|sum| byte(sum / alpha)));
+            } else {
+                rgba.extend_from_slice(&[0; 3]);
+            }
+            rgba.push(byte(alpha));
+        }
+    }
+    rgba
+}
+
+/// For each of `drawn` pixels along an axis of `length` source pixels, the
+/// source pixels it reads and their weights, which sum to 1.
+fn resample_weights(length: u32, drawn: u32) -> Vec<Vec<(u32, f32)>> {
+    let ratio = length as f32 / drawn as f32;
+    (0..drawn)
+        .map(|pixel| {
+            if ratio >= 1.0 {
+                let (start, end) = (pixel as f32 * ratio, (pixel + 1) as f32 * ratio);
+                (start.floor() as u32..(end.ceil() as u32).min(length))
+                    .filter_map(|source| {
+                        let lo = start.max(source as f32);
+                        let hi = end.min(source as f32 + 1.0);
+                        (hi > lo).then(|| (source, (hi - lo) / ratio))
+                    })
+                    .collect()
+            } else {
+                let centre = ((pixel as f32 + 0.5) * ratio - 0.5).clamp(0.0, (length - 1) as f32);
+                let left = centre.floor() as u32;
+                let t = centre - left as f32;
+                vec![(left, 1.0 - t), ((left + 1).min(length - 1), t)]
+            }
+        })
+        .collect()
+}
+
+/// VERA-only (`MousePixels::Picture`): `rgba` (`width` x `height`) with each
+/// hole (alpha 0) beside a drawn pixel coloured by its drawn neighbours'
+/// mean, still transparent, so linear sampling at the edge blends towards the
+/// edge's colour, not towards black.
+fn bleed_into_holes(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let mut out = rgba.to_vec();
+    for y in 0..height {
+        for x in 0..width {
+            let at = ((y * width + x) * 4) as usize;
+            if rgba[at + 3] != 0 {
+                continue;
+            }
+            let (mut count, mut sum) = (0u32, [0u32; 3]);
+            for ny in y.saturating_sub(1)..(y + 2).min(height) {
+                for nx in x.saturating_sub(1)..(x + 2).min(width) {
+                    let near = ((ny * width + nx) * 4) as usize;
+                    if rgba[near + 3] != 0 {
+                        count += 1;
+                        for channel in 0..3 {
+                            sum[channel] += u32::from(rgba[near + channel]);
+                        }
+                    }
+                }
+            }
+            if count > 0 {
+                for channel in 0..3 {
+                    out[at + channel] = ((sum[channel] + count / 2) / count) as u8;
+                }
+            }
+        }
+    }
+    out
 }
 
 #[cfg(all(test, tests_render_a_r))]
@@ -1036,8 +1282,8 @@ mod tests {
         const BLUE: [u8; 4] = [0, 0, 255, 255];
         let canvas = [RED, BLUE].concat();
         let image = os_cursor_image(
-            &canvas,
-            (2, 1),
+            &nearest_resample(&canvas, (2, 1), 2.0),
+            drawn_size((2, 1), 2.0),
             hotspot_offset(CursorHotspot::RightBottom, 2, 1),
             2.0,
         );
@@ -1048,6 +1294,103 @@ mod tests {
         assert_eq!(row(2), [0; 20], "the hotspot's added row stays transparent");
         let (width, height, (x, y)) = (image.width, image.height, image.hotspot);
         assert!(winit::window::CustomCursor::from_rgba(image.rgba, width, height, x, y).is_ok());
+    }
+
+    /// A `width` x `height` mouse.sha of `frames` empty frames.
+    fn mouse_shp(width: u16, height: u16, frames: usize) -> ShpFile {
+        let frame = || crate::assets::shp_file::ShpFrame {
+            frame_x: 0,
+            frame_y: 0,
+            frame_width: 0,
+            frame_height: 0,
+            format: 0,
+            radar_color: [0; 3],
+            pixels: Vec::new(),
+        };
+        ShpFile {
+            width,
+            height,
+            frames: (0..frames).map(|_| frame()).collect(),
+        }
+    }
+
+    /// A 2x picture of a 2x1 mouse.sha whose frame 0 is red and frame 1 red
+    /// then blue.
+    fn two_frame_picture() -> PictureFrames {
+        const RED: [u8; 4] = [255, 0, 0, 255];
+        const BLUE: [u8; 4] = [0, 0, 255, 255];
+        let row = |left: [u8; 4], right: [u8; 4]| [left, left, right, right].concat();
+        PictureFrames {
+            width: 4,
+            height: 2,
+            frames: vec![
+                [row(RED, RED), row(RED, RED)].concat(),
+                [row(RED, BLUE), row(RED, BLUE)].concat(),
+            ],
+        }
+    }
+
+    /// The picture must have mouse.sha's frames, each its canvas times one
+    /// whole scale up to 8; anything else leaves the SHP's pixels.
+    #[test]
+    fn a_mouse_picture_needs_the_shp_frame_count_and_a_whole_scale() {
+        let shp = mouse_shp(2, 1, 2);
+        let fitted = fit_mouse_picture(two_frame_picture(), &shp).map(|(_, scale)| scale);
+        assert_eq!(fitted, Ok(2));
+        let one_frame = PictureFrames {
+            frames: vec![two_frame_picture().frames[0].clone()],
+            ..two_frame_picture()
+        };
+        let error = fit_mouse_picture(one_frame, &shp).unwrap_err();
+        assert_eq!(error, "it has 1 frames and mouse.sha 2");
+        let sized = |width: u32, height: u32| PictureFrames {
+            width,
+            height,
+            frames: vec![vec![0; (width * height * 4) as usize]; 2],
+        };
+        assert!(
+            fit_mouse_picture(sized(4, 1), &shp).is_err(),
+            "2x1 scales apart"
+        );
+        assert!(fit_mouse_picture(sized(18, 9), &shp).is_err(), "9x");
+        assert!(fit_mouse_picture(sized(16, 8), &shp).is_ok(), "8x");
+    }
+
+    /// The window system's image of a picture frame is that frame resampled
+    /// to the SHP's drawn size, smoothly, with the hotspot scaled as the
+    /// SHP's.
+    #[test]
+    fn a_picture_cursor_image_resamples_its_frame_to_the_shp_size() {
+        let art = MouseArt {
+            shp: mouse_shp(2, 1, 2),
+            pixels: MousePixels::Picture {
+                picture: two_frame_picture(),
+                scale: 2,
+            },
+        };
+        let hotspot = hotspot_offset(CursorHotspot::RightBottom, 2, 1);
+        let at = |image: &OsCursorImage, x: u32| {
+            let at = (x * 4) as usize;
+            [0, 1, 2, 3].map(|channel| image.rgba[at + channel])
+        };
+        // 1x shrinks each 2x2 block to its mean: frame 1's red and blue.
+        let image = art.os_image(1, hotspot, 1.0).unwrap();
+        assert_eq!((image.width, image.height, image.hotspot), (3, 2, (2, 1)));
+        assert_eq!(
+            (at(&image, 0), at(&image, 1)),
+            ([255, 0, 0, 255], [0, 0, 255, 255])
+        );
+        // 3x grows 4 picture pixels to 6 window pixels, blending at the seam.
+        let image = art.os_image(1, hotspot, 3.0).unwrap();
+        assert_eq!((image.width, image.height, image.hotspot), (7, 4, (6, 3)));
+        assert_eq!(at(&image, 0), [255, 0, 0, 255]);
+        let seam = at(&image, 3);
+        assert!(seam[0] > 0 && seam[2] > 0 && seam[3] == 255, "{seam:?}");
+        assert_eq!(at(&image, 5), [0, 0, 255, 255]);
+        assert_eq!(
+            at(&art.os_image(0, hotspot, 3.0).unwrap(), 5),
+            [255, 0, 0, 255]
+        );
     }
 
     fn row(id: CursorId) -> (usize, usize, u64) {
