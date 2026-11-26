@@ -544,22 +544,27 @@ pub extern "C" fn on_events(ptr: i32, count: i32) {
     }
 }
 
+/// Dispatches one engine decision batch.
+///
+/// # Safety
+/// The engine must supply a valid, exclusively accessible decision batch and
+/// its associated result areas for the duration of the call.
 #[unsafe(no_mangle)]
-pub extern "C" fn on_decide(ptr: i32, count: i32) {
-    // SAFETY: the engine's own arguments, used only here.
+pub unsafe extern "C" fn on_decide(ptr: i32, count: i32) {
+    // SAFETY: the caller supplies the engine's batch, used only in this call.
     let records = unsafe { DecideRecord::batch(ptr, count) };
     // As in `on_events`; an unanswered decision keeps the engine's result.
     let finale = finale_started();
-    for record in records.iter_mut() {
+    for mut record in records {
         if finale && area_of(record.event.key) != FINALE {
             continue;
         }
         match area_of(record.event.key) {
-            BASICS => basics::decide(record),
-            TRIGGERS => triggers::decide(record),
-            COMBAT => combat::decide(record),
-            MOVEMENT => movement::decide(record),
-            FINALE => finale::decide(record),
+            BASICS => basics::decide(&mut record),
+            TRIGGERS => triggers::decide(&mut record),
+            COMBAT => combat::decide(&mut record),
+            MOVEMENT => movement::decide(&mut record),
+            FINALE => finale::decide(&mut record),
             _ => {}
         }
     }

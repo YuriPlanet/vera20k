@@ -25,9 +25,9 @@ RA2_DIR=<原版目录> python3 -m tools.cargo_run -- test --locked -p vera20k-co
 `mod.ini`、`rulesmd.ini`（原版 `rulesmd.ini` 并进本目录的 `rulesmd.ini`：mod 的 `rulesmd.ini`
 会整个顶替原版的，所以要并进完整的一份）和 `ControlBench.map`，再选这个 mod 开一局。
 这样模块的 `vera_init` 和 `on_rules` 在规则处理时运行，INI 触发器来自 mod 的 `rulesmd.ini`。
-默认 6000 帧，`VERA20K_TEST_CONTROL_BENCH_FRAMES` 可改。模块必须一直在运行、日志里不能有
-`refused`、必须有 `DEMO-OK bench.all`；否则失败信息列出最近一次 `BENCH-MISSING` 点名的标记
-（模块每 1500 帧对每个还没到的标记写一行 `BENCH-MISSING <标记>`）。
+默认运行 6000 帧，可用 `VERA20K_TEST_CONTROL_BENCH_FRAMES` 调整。模块要一直运行到最后并写出
+`DEMO-OK bench.all`。只要日志中出现 `BENCH-FAIL` 或 `refused`，测试就会失败，即使后面集齐了标记。
+失败信息会列出相关日志，以及最近一次 `BENCH-MISSING` 报告中仍然缺少的标记。
 
 ## 分区（各占一个文件，互不干扰）
 
@@ -41,7 +41,7 @@ RA2_DIR=<原版目录> python3 -m tools.cargo_run -- test --locked -p vera20k-co
 | `triggers` | 99 | 触发器生命周期与各种绑定、投递事件（受伤、击杀、开火、计时、出生、乘客上下、易主、心控、超武、修饰器事件、模块事件）、原版对象/房屋/逻辑/单元格事件、各种轮询、过滤子句、立即动作与连锁、几乎全部原子动作和几个原版动作、房屋命令及 `Commanded`/`OrderRefused`、控制域认领、INI 触发器、队伍类型的 `lookup`/`name_of`、援军（原版动作 7、80）、超时空援军（107）和触发器造出的建筑（125）的 `Birth` |
 | `combat` | 10 | `TakeDamage` 决策与事件、`DamageIncoming`、`FatalDamage`（泰矿残留位）、`Fire` 射击计划、`FireAllowed`、`Retaliate`、`Launch`、`ProjectileFrame`、`CrushAllowed` |
 | `movement` | 17 | `ProductionAllowed`、`ProductionQueued`、`CommandAllowed`、`DestinationSet`、`HarvestCell`、`DeployAllowed`（攻城直升机）、站立步兵的部署、基地车的部署和展开出的建造厂的 `Birth`、建筑被毁后幸存者的 `Birth`、`IdleMission`、`MissionStep`、`MoveFrame`、`PathFound`、`ApproachPoint`、推动、`SetFacing` |
-| `finale` | 6 | 前面全部到齐后运行，最迟第 4800 帧开始（每步有时限，约 1050 帧内走完）；开始后各区域的逐帧工作、事件和决策都不再执行：认领电脑的 `Production` 控制域（电脑 AI 不再开工，生产走房屋命令），`QueueProduction` 一个电脑没在造的类型，开工后下 `SuspendProduction`（工厂进度停住）再 `QueueProduction` 同类型（进度继续），之后放回认领（电脑 AI 用工厂建筑自己的工厂生产，`SuspendProduction` 只暂停房屋的工厂，所以要先认领）；移除电脑的全部对象，`Defeat` 先否决一次（之后几帧仍未战败）再放行（读到 `IsDefeated`）；`EndFor` 宣布玩家获胜（调用前记标记），之后模块继续运行 30 帧 |
+| `finale` | 6 | 前面全部到齐后运行，最迟第 4800 帧开始（每步有时限，约 1050 帧内走完）；开始后各区域的逐帧工作、事件和决策都不再执行：认领电脑的 `Production` 控制域（电脑 AI 不再开工，生产走房屋命令），`QueueProduction` 一个电脑没在造的类型，开工后下 `SuspendProduction`（工厂进度停住）再 `QueueProduction` 同类型（进度继续），之后放回认领（电脑 AI 用工厂建筑自己的工厂生产，`SuspendProduction` 只暂停房屋的工厂，所以要先认领）；移除电脑的全部对象，`Defeat` 先否决一次（之后几帧仍未战败）再放行（读到 `IsDefeated`）；`EndFor` 宣布玩家获胜（调用成功后记标记），之后模块继续运行 30 帧 |
 
 ## 没覆盖的点
 

@@ -80,9 +80,10 @@ with the bench's merged in, since a mod's `rulesmd.ini` replaces the game's;
 `mod.ini`; `ControlBench.map`, XMP03T4 with the bench's `map.ini` TeamTypes) and
 loads the Battle against one computer house through that mod
 (`headless_scenario::load_with_mod_folder`), so `vera_init` and `on_rules` run
-at the rules stage. It needs `DEMO-OK bench.all`, which the bench logs after its
-finale (`SuspendProduction`, `Defeat` veto then defeat, `EndFor`; it starts when the areas are done or at frame 4800); a failure names
-the marks of its latest `BENCH-MISSING` lines that never arrived. Its `README.zh-CN.md` lists what
+at the rules stage. The finale starts when the areas are done or at frame 4800.
+It exercises `SuspendProduction`, vetoes then allows `Defeat`, and calls `EndFor`.
+The test requires `DEMO-OK bench.all` and fails on any `BENCH-FAIL` or refusal.
+It reports the failures and marks still missing. Its `README.zh-CN.md` lists what
 it leaves out and why. The examples' `.cargo/config.toml` is ignored by the root
 `.gitignore`; add a new one with `git add -f`.
 

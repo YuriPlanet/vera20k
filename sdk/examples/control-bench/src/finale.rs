@@ -20,7 +20,7 @@
 //!    answer vetoes (`defeat-veto`: the house is still not defeated frames
 //!    later, the gate asking again), the next allows (`defeat`: the house
 //!    reads `IsDefeated`).
-//! 3. `EndFor` the player as the winner (`end`, logged before the call);
+//! 3. `EndFor` the player as the winner (`end`, logged when the action succeeds);
 //!    `after-end` once the module has run 30 more frames.
 //!
 //! It starts once every area's `MARKS` is reached, or at lib's
@@ -177,13 +177,13 @@ pub fn frame(now: i32) {
         REMOVE => remove(now, since),
         DEFEAT => defeat(now, since),
         END => {
-            // Logged before the call, so the line exists if the call
-            // stops the module.
-            crate::mark("finale.end");
-            if Action::end_for(crate::player(), Outcome::Win).is_err() {
+            if Action::end_for(crate::player(), Outcome::Win).is_ok() {
+                crate::mark("finale.end");
+                stage(AFTER, now);
+            } else {
                 crate::bench_fail("finale.end", "EndFor answered an error");
+                stage(DONE, now);
             }
-            stage(AFTER, now);
         }
         AFTER if since >= 30 => {
             crate::mark("finale.after-end");

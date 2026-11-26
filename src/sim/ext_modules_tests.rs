@@ -357,27 +357,25 @@ fn ini_demo_mods_reach_their_marks() {
     }
 }
 
-/// The map the Control Bench plays: XMP03T4 with the bench's `map.ini`
-/// merged in, shipped in the mod's folder.
-const BENCH_MAP: &str = "ControlBench.map";
-
 /// The Control Bench (`sdk/examples/control-bench`) played as a mod when
 /// `VERA20K_TEST_CONTROL_BENCH` names its built module
 /// (`VERA20K_TEST_CONTROL_BENCH_FRAMES` frames, 6000 by default). The test
 /// makes the mod's folder as a modder ships it (docs/modding.md): the module
 /// as `rules.wasm`; `rulesmd.ini`, the retail file with the bench's
 /// `rulesmd.ini` merged in, since a mod's `rulesmd.ini` takes the place of
-/// the game's; `mod.ini`; and [`BENCH_MAP`]. The match then loads through
+/// the game's; `mod.ini`; and the bench's `ControlBench.map`. The match then loads through
 /// the mod: the module's `vera_init` and `on_rules` run while the rules are
 /// processed, its `Wasm.Tags` triggers come from the mod's `rulesmd.ini`.
 /// A Battle on the bench's map against one computer house runs that many
-/// frames. The module must still be running, nothing may be refused and its
-/// log must hold `DEMO-OK bench.all`; otherwise the failure names the marks
+/// frames. The module must still be running, reach `DEMO-OK bench.all` and
+/// log no refusals or `BENCH-FAIL` lines. A failure names the marks
 /// of the bench's latest `BENCH-MISSING` lines that no `DEMO-OK` line
 /// reached later. Prints the log
 /// (`--nocapture`).
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 #[test]
 fn control_bench_reaches_every_mark() {
+    const BENCH_MAP: &str = "ControlBench.map";
     let Some(wasm) = std::env::var_os("VERA20K_TEST_CONTROL_BENCH") else {
         return;
     };
@@ -403,9 +401,8 @@ fn control_bench_reaches_every_mark() {
             .bytes
             .to_vec()
     };
-    let folder = std::env::temp_dir().join(format!("vera20k-control-bench-{}", std::process::id()));
-    std::fs::create_dir_all(&folder).expect("the mod folder is made");
-    std::fs::copy(&wasm, folder.join("rules.wasm")).expect("the module copies");
+    let folder = tempfile::tempdir().expect("create the bench mod folder");
+    std::fs::copy(&wasm, folder.path().join("rules.wasm")).expect("the module copies");
     let files = [
         ("mod.ini", read("mod.ini").into_bytes()),
         (
@@ -418,17 +415,16 @@ fn control_bench_reaches_every_mark() {
         ),
     ];
     for (name, bytes) in files {
-        std::fs::write(folder.join(name), bytes).expect("the mod's file is written");
+        std::fs::write(folder.path().join(name), bytes).expect("the mod's file is written");
     }
-    let loaded = crate::headless_scenario::load_with_mod_folder(
+    let mut scene = crate::headless_scenario::load_with_mod_folder(
         &retail,
         BENCH_MAP,
         SEED,
         session_against_computer(BENCH_MAP),
-        &folder,
-    );
-    let _ = std::fs::remove_dir_all(&folder);
-    let mut scene = loaded.expect("the bench loads as a mod");
+        folder.path(),
+    )
+    .expect("the bench loads as a mod");
     // The rules stage's lines, then each frame's: the engine keeps only the
     // latest lines, so collect them as they come.
     let mut log = scene.runtime.simulation.ext_modules_mut().take_log();
@@ -445,9 +441,12 @@ fn control_bench_reaches_every_mark() {
         matches!(status.as_slice(), [(ModuleSource::Mod, None)]),
         "the bench is not running: {status:?}"
     );
-    let refused: Vec<&String> = log.iter().filter(|l| l.contains("refused")).collect();
-    assert!(refused.is_empty(), "refused: {refused:?}");
-    if !log.iter().any(|l| l == "DEMO-OK bench.all") {
+    let failures: Vec<_> = log
+        .iter()
+        .filter(|line| line.starts_with("BENCH-FAIL ") || line.contains("refused"))
+        .collect();
+    let complete = log.iter().any(|line| line == "DEMO-OK bench.all");
+    if !complete || !failures.is_empty() {
         // The latest report's list (the lines after the last `BENCH frame`
         // line that has any), less the marks that came after it.
         let mut missing: Vec<&str> = Vec::new();
@@ -468,9 +467,8 @@ fn control_bench_reaches_every_mark() {
             .filter_map(|l| l.strip_prefix("DEMO-OK "))
             .collect();
         missing.retain(|name| !reached.contains(name));
-        let failed: Vec<&String> = log.iter().filter(|l| l.starts_with("BENCH-FAIL")).collect();
         panic!(
-            "no `DEMO-OK bench.all` after {frames} frames; missing: {missing:?}; failed: {failed:?}"
+            "after {frames} frames: bench.all={complete}, missing={missing:?}, failures={failures:?}"
         );
     }
 }
