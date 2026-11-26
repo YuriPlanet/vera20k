@@ -8,6 +8,9 @@
 // the world pixel it covers, computes that pixel's native Z with the
 // zsprite shader's row walker (`native_row_z`) and compares it with the
 // world's stored depth there, so it passes exactly where the 1x draw passed.
+// It then draws only where the world still shows this instance's own 1x
+// pixel there (`own_world_pixel`): a unit, smoke or an explosion drawn over
+// the object later in the world keeps its magnified pixels.
 // Palette light, the A plane and unlit indices go through the shared
 // `palette_light.wgsl` functions (`tactical_shader::world_source`).
 
@@ -30,6 +33,9 @@ struct Camera {
 @group(1) @binding(0) var t_hd: texture_2d<f32>;
 @group(1) @binding(1) var s_hd: sampler;
 @group(1) @binding(2) var hd_indices: texture_2d<u32>;
+// The page itself, as the world drew from it: sRGB colour and index plane.
+@group(1) @binding(3) var t_low: texture_2d<f32>;
+@group(1) @binding(4) var low_indices: texture_2d<u32>;
 
 // Where the world lands in the target, and how the instance's run tests Z.
 struct Params {
@@ -52,6 +58,8 @@ struct Params {
 @group(2) @binding(1) var<uniform> params: Params;
 @group(2) @binding(2) var frame_now: texture_2d<f32>;
 @group(2) @binding(3) var frame_before: texture_2d<f32>;
+// The completed world at one texel per world pixel, read as encoded colour.
+@group(2) @binding(4) var world_color: texture_2d<f32>;
 
 // BUILDNGZ's remapped R8 canvas, as zsprite_shader.wgsl binds it.
 @group(3) @binding(0) var t_zshape: texture_2d<f32>;
@@ -82,6 +90,10 @@ struct VertexOutput {
     @location(7) @interpolate(flat) z_gradient: u32,
     @location(8) @interpolate(flat) zshape_origin: vec2f,
     @location(9) @interpolate(flat) palette_light: vec4u,
+    // The world draw's rounded quad, world-target pixels: top left, bottom
+    // right; and the instance's UV origin and size.
+    @location(10) @interpolate(flat) quad: vec4f,
+    @location(11) @interpolate(flat) uv_frame: vec4f,
 };
 
 @vertex
@@ -91,12 +103,17 @@ fn vs_main(@builtin(vertex_index) idx: u32, instance: Instance) -> VertexOutput 
         vec2f(0.0, 1.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0),
     );
     let corner = quad[idx];
+    var output: VertexOutput;
     // The world pass at zoom 1 rounds each corner to a whole target pixel
     // (zsprite_shader.wgsl `shp_vertex`); the magnified quad covers exactly
     // the window pixels of those world pixels.
     let world_target = floor(instance.position + corner * instance.size - camera.camera_pos + vec2f(0.5));
+    output.quad = vec4f(
+        floor(instance.position - camera.camera_pos + vec2f(0.5)),
+        floor(instance.position + instance.size - camera.camera_pos + vec2f(0.5)),
+    );
+    output.uv_frame = vec4f(instance.uv_origin, instance.uv_size);
     let pixel = params.origin + world_target * params.scale;
-    var output: VertexOutput;
     output.position = vec4f(
         pixel.x / params.target_size.x * 2.0 - 1.0,
         1.0 - pixel.y / params.target_size.y * 2.0,
@@ -187,6 +204,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
         }
     }
 
+    if !own_world_pixel(input, texel) {
+        discard;
+    }
+
     let index_dims = vec2f(textureDimensions(hd_indices));
     let index_texel = vec2i(clamp(uv * index_dims, vec2f(0.0), index_dims - 1.0));
     // A filtered edge texel whose nearest texel is a hole is lit.
@@ -195,4 +216,31 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     let light = opaque_palette(input.palette_light, input.alpha, input.fx_flags);
     let rgb = resolve_palette(encoded, input.tint, light, index, tactical_a_at(world_target));
     return vec4f(rgb, 1.0);
+}
+
+// Whether the world pixel `texel` still holds what this instance's 1x draw
+// stored there: the zsprite shader's colour for the page texel its quad maps
+// that pixel's centre to (`sampled_source_color`, nearest), lit with the A
+// plane at that centre (`zsprite_store`). A 1x hole, or any later draw over
+// the pixel, fails.
+fn own_world_pixel(input: VertexOutput, texel: vec2i) -> bool {
+    let centre = vec2f(texel) + vec2f(0.5);
+    let extent = max(input.quad.zw - input.quad.xy, vec2f(1.0));
+    let uv = input.uv_frame.xy + (centre - input.quad.xy) / extent * input.uv_frame.zw;
+    let dims = vec2f(textureDimensions(t_low));
+    let page_texel = vec2i(clamp(floor(uv * dims), vec2f(0.0), dims - 1.0));
+    let sampled = textureLoad(t_low, page_texel, 0);
+    if sampled.a < 0.01 {
+        return false;
+    }
+    let index_dims = vec2f(textureDimensions(low_indices));
+    let index_texel = vec2i(clamp(floor(uv * index_dims), vec2f(0.0), index_dims - 1.0));
+    let index = textureLoad(low_indices, index_texel, 0).r;
+    let light = opaque_palette(input.palette_light, sampled.a * input.alpha, input.fx_flags);
+    let own = resolve_palette(srgb_encode(sampled.rgb), input.tint, light, index, tactical_a_at(centre));
+    let world_last = vec2i(textureDimensions(world_color)) - 1;
+    let stored = textureLoad(world_color, clamp(texel, vec2i(0), world_last), 0).rgb;
+    // The target stores the encoding in 8 bits, encoded by the GPU; allow its
+    // rounding. Neighbouring RGB565 colours lie about 4 apart there.
+    return all(abs(srgb_encode(own) - stored) * 255.0 <= vec3f(2.5));
 }

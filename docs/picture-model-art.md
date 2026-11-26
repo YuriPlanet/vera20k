@@ -351,8 +351,11 @@ so it sorts, shades and shadows by the same rules:
   rounded up, at most 4x, into its HD twin with the same layout
   (`model_draw::HdTwin`), which the atlas holds as the page's HD page, so
   the zoomed draw takes model instances as it takes picture instances.
-  Model shadows keep their 1x pixels. Known residual: such an object then
-  draws over smoke and explosions in front of it.
+  Model shadows keep their 1x pixels. A sharp pixel replaces a magnified
+  one only where the completed world still holds the object's own 1x pixel
+  (the shader recomputes that pixel from the 1x page and compares it with
+  the world's colour), so units, SHP anims, smoke and explosions drawn over
+  the object later keep their magnified pixels instead of being covered.
 - **Model textures** carry mipmaps (each level the alpha-weighted mean of
   the one above, in linear light for colour) and are sampled at the level
   the screen derivatives pick, so a texture shrunk to a few pixels averages
@@ -624,6 +627,15 @@ current: say what was done, what was not, and what comes next.
   hash after 9,000 ticks at 1v29; mean frame within 0.15 ms of main
   (3.70–4.03 ms); the zoom-100 capture differs in 2–5 pixels, no more than
   two main runs differ from each other (within the noise rule).
+- Zoomed units in front (fix): the zoomed HD copy of a picture building
+  covered infantry standing in front of it, and its own SHP `ActiveAnim`,
+  because those draw after it without writing Z. Production check,
+  `map_observation.barracks-output` with GIs moved to the barracks front,
+  `GAPILE` and `GAPOWR` 2x pictures, wheel view distance 0.8: before the
+  fix the barracks covers a GI's upper body and its flag; after, both show
+  and every other pixel of the buildings stays sharp (with `GAPOWR_A` also
+  declared, the frames differ only at the GI, the flag and a few edge
+  pixels).
 - Final off-state check after the follow-up fixes and merging main
   (74b9d8187 against 8b6897245): same final and rules hash; mean frame 3.82
   ms against main's 4.14 ms; Options zoom 100 and 150 at steps 300, 1200

@@ -5,7 +5,8 @@
 //! Once per frame, from the lowered object runs, every opaque world instance
 //! drawn from a picture page with an HD twin is copied, unchanged: the twin
 //! sits at the same UV. The world pass still draws the 1x copy in native
-//! order; the HD copy goes over it after the magnification, into the frame
+//! order; the HD copy goes over it, where the world still shows that copy,
+//! after the magnification, into the frame
 //! after `WorldZoomPass::composite`, or into the window after
 //! `WorldZoomPass::draw_window_copy` when the Options zoom scales the frame.
 //! Everything here returns at once unless the sprite atlas has HD pages.
@@ -260,6 +261,14 @@ fn draw(
             &zshape.bind_group
         });
     let gpu = &state.renderer.gpu;
+    // The completed world the frame or the window copy was made from, read
+    // as its encoded bytes.
+    let composition = state.renderer.combat_light_renderer.composition_texture();
+    let world_color = composition.create_view(&wgpu::TextureViewDescriptor {
+        format: Some(composition.format().remove_srgb_suffix()),
+        usage: Some(wgpu::TextureUsages::TEXTURE_BINDING),
+        ..Default::default()
+    });
     pass.draw(
         &gpu.device,
         &gpu.queue,
@@ -267,6 +276,7 @@ fn draw(
         view,
         placement,
         world.depth_view(),
+        &world_color,
         atlas,
         batch,
         zshape,

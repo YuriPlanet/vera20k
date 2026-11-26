@@ -13,9 +13,12 @@
 //! compares it with the world's own depth there (no copied depth), so the
 //! sharp pixels replace the magnified ones exactly where the 1x draw passed.
 //!
-//! Known residual: anything drawn over such an object later in the world
-//! without writing Z (smoke, explosions, units in front) is covered by the
-//! sharp copy. Translucent, FX and packed (destination-reading) draws keep
+//! A sharp pixel replaces a magnified one only where the completed world
+//! still shows the instance's own 1x pixel: the shader recomputes what the 1x
+//! draw stored there from the page itself and compares it with the world's
+//! colour, so anything drawn over the object later in the world without
+//! writing Z (units in front, smoke, explosions, light) keeps its magnified
+//! pixels. Translucent, FX and packed (destination-reading) draws keep
 //! their magnified 1x pixels. The WebGL2 fallback cannot load a depth texture
 //! in a shader, so it builds no HD pages and the pass never runs there.
 //!
@@ -201,6 +204,9 @@ impl PictureZoomPass {
                     count: None,
                 },
                 texture_entry(2, wgpu::TextureSampleType::Uint),
+                // The page as the world drew from it (`own_world_pixel`).
+                texture_entry(3, wgpu::TextureSampleType::Float { filterable: false }),
+                texture_entry(4, wgpu::TextureSampleType::Uint),
             ],
         });
         let frame = wgpu::TextureSampleType::Float { filterable: false };
@@ -220,6 +226,7 @@ impl PictureZoomPass {
                 },
                 texture_entry(2, frame),
                 texture_entry(3, frame),
+                texture_entry(4, frame),
             ],
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -370,8 +377,9 @@ impl PictureZoomPass {
 
     /// Draw this frame's runs into `view` at `placement`, inside `scissor`
     /// (target pixels), testing Z against `world_depth`, the world's own
-    /// depth at one texel per world pixel. `zshape` is the world runs' shape
-    /// binding (`draw_native_object_pass`).
+    /// depth at one texel per world pixel, and ownership against
+    /// `world_color`, the completed world's encoded colour there. `zshape` is
+    /// the world runs' shape binding (`draw_native_object_pass`).
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn draw(
         &self,
@@ -381,6 +389,7 @@ impl PictureZoomPass {
         view: &wgpu::TextureView,
         placement: &HdPlacement<'_>,
         world_depth: &wgpu::TextureView,
+        world_color: &wgpu::TextureView,
         atlas: &SpriteAtlas,
         batch: &BatchRenderer,
         zshape: &wgpu::BindGroup,
@@ -451,6 +460,10 @@ impl PictureZoomPass {
                     binding: 3,
                     resource: wgpu::BindingResource::TextureView(before),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(world_color),
+                },
             ],
         });
         // One bind group per HD page this frame draws from.
@@ -459,7 +472,8 @@ impl PictureZoomPass {
             if page_groups.iter().any(|(page, _)| *page == run.page) {
                 continue;
             }
-            let Some(page) = atlas.picture_hd_page(run.page) else {
+            let (Some(page), Some(low)) = (atlas.picture_hd_page(run.page), atlas.page(run.page))
+            else {
                 continue;
             };
             let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -477,6 +491,14 @@ impl PictureZoomPass {
                     wgpu::BindGroupEntry {
                         binding: 2,
                         resource: wgpu::BindingResource::TextureView(&page.indices),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(&low.texture.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(&low.texture.source_indices),
                     },
                 ],
             });

@@ -369,6 +369,10 @@ pub struct BatchTexture {
     /// A palette-indexed SHP atlas page (`create_indexed_page`) has no colour
     /// texture: this is its R8Uint index view.
     pub view: wgpu::TextureView,
+    /// The palette-index plane bound beside `view` (a 1x1 placeholder for a
+    /// page without one). VERA-only, experimental (docs/picture-model-art.md):
+    /// the zoomed picture draw reads a page's own pixels through it.
+    pub source_indices: wgpu::TextureView,
     /// Texture width in pixels.
     pub width: u32,
     /// Texture height in pixels.
@@ -1773,6 +1777,7 @@ impl BatchRenderer {
         BatchTexture {
             bind_group,
             view,
+            source_indices: self.default_source_indices.clone(),
             width,
             height,
         }
@@ -1920,6 +1925,7 @@ impl BatchRenderer {
         (
             BatchTexture {
                 bind_group,
+                source_indices: view.clone(),
                 view,
                 width,
                 height,
@@ -1952,6 +1958,7 @@ impl BatchRenderer {
         BatchTexture {
             bind_group,
             view,
+            source_indices: source_indices.clone(),
             width,
             height,
         }
@@ -2356,6 +2363,7 @@ impl BatchRenderer {
         let batch_tex = BatchTexture {
             bind_group,
             view,
+            source_indices: self.default_source_indices.clone(),
             width,
             height,
         };
