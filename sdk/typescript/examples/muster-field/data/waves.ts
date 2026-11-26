@@ -52,4 +52,3 @@ export function get(number: i64): Wave {
   const at = number - 1 < 0 ? 0 : number - 1 > <i64>(WAVES - 1) ? <i64>(WAVES - 1) : number - 1;
   return LIST[<i32>at];
 }
-
