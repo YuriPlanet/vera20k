@@ -12,6 +12,9 @@
 //! N x N), to be declared with `PictureSize=` the SHP's canvas. Files made
 //! from retail art stay on the player's machine.
 //!
+//! `--plain` keeps indices 16–31 their palette colour, for art that has no
+//! house colour (overlays, terrain objects, smudges).
+//!
 //! A name with another extension is that file: a theater SHP (`TREE01.TEM`)
 //! writes `<NAME>.<ext>.png`, the name a `Theater=yes` section's picture is
 //! looked up by; a TMP template (`CLEAR01.TEM`) writes `<NAME>.png`, one
@@ -109,7 +112,7 @@ pub fn run(
                 let at = ((y * width + x) * 4) as usize;
                 let color = palette.color(value);
                 let (rgb, mark) = match value {
-                    16..=31 => {
+                    16..=31 if !opts.plain => {
                         house_pixels += 1;
                         let grey = 255 - (value - 16) * 17;
                         ([grey; 3], [255, 0, 0, 255])

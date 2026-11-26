@@ -120,7 +120,8 @@ VERBS
   export-picture <NAME>  Write an SHP as picture art (APNG and mask) for
                        Picture= (docs/picture-model-art.md). --palette, --out,
                        --theater <T> (tem, sno, urb, lun, des, ubn) to reach
-                       a theater's archives.
+                       a theater's archives, --plain for art without house
+                       colour; a theater SHP or TMP by its full file name.
   export-model <NAME>  Write NAME.VXL with NAMETUR/NAMEBARL and their HVAs as
                        model art (NAME.glb, mask) for Model=, and suggest
                        ModelSize= (docs/picture-model-art.md). --palette,
@@ -613,6 +614,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
                 cli.compare.scale = Some(n);
             }
             "--house" => cli.render.house = Some(number::<u8>(&mut args, "--house")?),
+            "--plain" => cli.render.plain = true,
             "--palette" => {
                 let name = value(&mut args, "--palette")?;
                 cli.render.palette = Some(name.clone());
