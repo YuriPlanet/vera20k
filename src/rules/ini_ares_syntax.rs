@@ -1,66 +1,22 @@
-//! Ares 3.0's syntax inside `INIClass::LoadFromStraw` (`0x00525A60`).
+//! INI auto-numbering and section inheritance inside `LoadFromStraw` (`0x00525A60`).
 //!
-//! An Ares launch hooks the text reader every INI load goes through. It has
-//! two arms, chosen once per load by whether the INI already holds a section
-//! (`0x00525A8E`):
-//! - the fresh arm builds each section object and links it once the section
-//!   ends (`0x005261F7`): [`load_fresh`], which is `IniFile::from_str` in a
-//!   game read the Ares way;
-//! - the merge arm (`0x00525BFA`) writes every entry through
-//!   `INIClass::PutString` (`0x00528660`). `ReadCCFile` takes it for each
-//!   Ares `[#include]` or Phobos `$Include` file, which loads into the INI that
-//!   lists it: [`load_into`]. It also hands back the file's own entries of its
-//!   include section, the list VERA's traversal follows next.
+//! P1 renames `+` with one signed counter (`0x10066200`/`0x10066270`),
+//! cleared by `Scenario_ClearClasses` at `0x10004FF7`. VERA starts a counter
+//! for each ordered source selection and passes it through distinct roots and
+//! includes. Standalone probes and map reads have independent sequences.
 //!
-//! Ares.dll hooks in both arms (`Misc/IniIteratorChar.cpp`,
-//! `Misc/IniSectionIncludes.cpp`):
-//! - A key `+` becomes `var_<n>` from one counter both arms share:
-//!   `INIClass_Parse_IteratorChar1` (`10065280`, fresh arm `0x005260A2`) and
-//!   `_IteratorChar2` (`100652F0`, merge arm `0x00525D23`). Only `Ares::Clear`
-//!   (`10004D90`, reached from `Scenario_ClearClasses` `0x00685659`) resets it.
-//! - `[Child]:[Base]`: `_IniSectionIncludes_PreProcess1` (`100655B0`, merge arm
-//!   `0x00525CA5`) and `_PreProcess2` (`100655E0`, fresh arm `0x00525DDB`) read
-//!   the base name after the header's `]` and look it up in the INI being
-//!   loaded (`IniSectionIncludes::PreProcess` `10065470`). `_CopySection1`
-//!   (`10065550`, `0x00525C28`) and `_CopySection2` (`10065580`, `0x00525E44`)
-//!   then `WriteString` every base entry, in list order, under the new
-//!   section's name (`IniSectionIncludes::CopySection` `10065380`). A base that
-//!   is missing or defined later is logged and copies nothing. A base in
-//!   another file is found when that file loaded into the same INI first, as an
-//!   including file has for the files it includes; rules, mode and map layers
-//!   are separate INIs, so a map cannot inherit a rules section.
-//! - `INIClass_Parse_Override` (`10065610`, fresh arm `0x005260D9`): a key
-//!   whose CRC an earlier entry of the section has deletes that entry, so the
-//!   later one wins and is listed last. The merge arm's PutString does so
-//!   already.
+//! P1 `PreProcess` (`0x100663F0`) looks up a parent already in the same INI.
+//! Its fresh copy (`0x10066500`) uses `PutString` before the child is linked;
+//! its merge copy (`0x100664D0`) skips the first header's own parent suffix.
+//! VERA writes fresh defaults into the child's single physical section and
+//! recognizes a parent suffix on every committed header, including the first
+//! in an include. The loaded-text budget bounds allocations for these copies.
+//! Separate files that are not included still have separate section stores.
 //!
-//! The fresh arm copies before the new section object is linked, so PutString
-//! finds an earlier section of that name or appends one of its own: a section
-//! that inherits and has entries of its own becomes two sections of one name,
-//! and readers see whichever the CRC index answers (Ares bug 895552: in the
-//! main rules file the child loses either its own keys or the base's). In an
-//! included file the copy and the child's entries share one section.
-//!
-//! RESIDUALS:
-//! - VERA numbers `+` keys from 0 per INI and continues through its included
-//!   files; native numbering continues across every INI loaded since the
-//!   last scenario clear. Keys stay unique within an INI, which is all a
-//!   registry walk needs. A mod key literally named `var_<n>`, and GetCRC over
-//!   the renamed keys (network hashes against a native peer), can differ.
-//! - The section index's cached pair is followed within one load only. It
-//!   decides between same-named sections when a later read asks for the last
-//!   name a load looked up; VERA's readers search the sorted index.
-//! - A header on the merge arm's unterminated last line leaves its base set
-//!   for the next load's first header (`0x00525D4D` ends the load before
-//!   `0x00525C28` copies); VERA drops it.
-//! - Ares copies a base for every header that names it, with no limit, so a
-//!   few kilobytes of `[Cn]:[Big]` headers can ask for gigabytes. VERA charges
-//!   each copy's key and value bytes against [`CopyBudget`], the policy
-//!   `$Inherits` uses, and skips a copy past it with a warning. Trigger: copies
-//!   adding more than 64 times the text loaded into the INI (at least 1 MiB,
-//!   at most 32 MiB); effect: the later children lack the base's keys;
-//!   frequency: hostile or generated files only.
-//! None of these draws RNG, writes a timer or detaches an object.
+//! Ares mode keeps its later-wins repeated-key policy (`0x10066590`). INIs
+//! read with Ares Off keep their first authored value. Both modes let the
+//! child replace an inherited default. See `docs/ares-ini-syntax.md` for the
+//! native load boundaries. There are no RNG draws, timers or pointer detaches.
 
 // Outside data reaches this module: it refuses bad input, never panics.
 #![cfg_attr(
@@ -74,7 +30,7 @@
 )]
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::ini_value::truncate_native_bytes;
 use super::{
@@ -229,7 +185,7 @@ fn is_blank(c: char) -> bool {
 /// `IniSectionIncludes::PreProcess` (Ares.dll `10065470`) over the text after
 /// a header's `]`: blanks, `:`, blanks, `[`, blanks, the base name, blanks,
 /// `]`, where a `;` first ends the header. The INI being loaded answers.
-fn pre_process(index: &mut LiveSectionIndex, tail: &str) -> Option<usize> {
+fn inheritance_base(tail: &str) -> Option<&str> {
     let rest = tail.trim_start_matches(is_blank).strip_prefix(':')?;
     let rest = rest.trim_start_matches(is_blank).strip_prefix('[')?;
     let rest = rest.trim_start_matches(is_blank);
@@ -238,13 +194,7 @@ fn pre_process(index: &mut LiveSectionIndex, tail: &str) -> Option<usize> {
     if !rest[end..].starts_with(']') || name.is_empty() {
         return None;
     }
-    let base = index.find(ini_name_crc(name));
-    if base.is_none() {
-        log::warn!(
-            "An INI section inherits from section '{name}', which doesn't exist or has not been parsed yet."
-        );
-    }
-    base
+    Some(name)
 }
 
 /// VERA's budget on the text `[Child]:[Base]` copies add to one INI, across
@@ -275,35 +225,46 @@ impl CopyBudget {
 /// `IniSectionIncludes::CopySection` (Ares.dll `10065380`): PutString each
 /// entry of `base`, in list order, under `name`, once [`CopyBudget`] admits
 /// the copy.
-fn copy_section(
+fn inherited_entries(
     ini: &mut IniFile,
     index: &mut LiveSectionIndex,
-    written: &mut WrittenSections,
-    base: usize,
+    including: Option<&IniFile>,
     name: &str,
-) {
-    let bytes = ini.sections[base]
-        .physical_entries()
-        .map(|(key, value)| key.len() + value.len())
-        .sum();
+    tail: &str,
+) -> Vec<(String, String)> {
+    let Some(base) = inheritance_base(tail) else {
+        return Vec::new();
+    };
+    // A stock include is parsed separately before its ordinary overlay. Look
+    // up defaults from the accumulated root, then from earlier in this file.
+    let outer = including.and_then(|document| document.section(base));
+    let earlier = index.find(ini_name_crc(base)).map(|at| &ini.sections[at]);
+    if outer.is_none() && earlier.is_none() {
+        log::warn!(
+            "An INI section inherits from section '{base}', which doesn't exist or has not been parsed yet."
+        );
+        return Vec::new();
+    }
+    let entries = || {
+        outer
+            .into_iter()
+            .chain(earlier)
+            .flat_map(IniSection::physical_entries)
+    };
+    let bytes = entries().map(|(key, value)| key.len() + value.len()).sum();
     if !ini.ares_copies.charge(bytes) {
         // Log only: every INI the game reads comes through this parser,
         // which cannot fail and has no channel to the player. Telling the
         // player takes a notice carried from the rules load to the loading
         // screen, which is the rules stack's to add (`retail_sources`).
         log::warn!(
-            "Section '{name}' does not inherit from '{}': the INI's inherited sections exceed VERA's copy limit.",
-            ini.sections[base].name
+            "Section '{name}' does not inherit from '{base}': the INI's inherited sections exceed VERA's copy limit."
         );
-        return;
+        return Vec::new();
     }
-    let entries: Vec<(String, String)> = ini.sections[base]
-        .physical_entries()
+    entries()
         .map(|(key, value)| (key.to_owned(), value.to_owned()))
-        .collect();
-    for (key, value) in &entries {
-        put_string(ini, index, written, name, key, value);
-    }
+        .collect()
 }
 
 /// Both iterator hooks: a key that is exactly `+` becomes `var_%d` of the
@@ -318,36 +279,41 @@ fn iterator_key<'a>(key: &'a str, counter: &mut i32) -> Cow<'a, str> {
 }
 
 /// `LoadFromStraw`'s fresh arm with Ares's hooks.
-pub(super) fn load_fresh(text: &str) -> IniFile {
+pub(super) fn load_fresh(
+    text: &str,
+    ares_way: bool,
+    first_iterator_key: i32,
+    including: Option<&IniFile>,
+) -> IniFile {
     let mut ini = IniFile::empty();
+    ini.next_iterator_key = first_iterator_key;
+    if let Some(including) = including {
+        ini.ares_copies = including.ares_copies.clone();
+    }
     ini.ares_copies.load(text.len());
     let mut index = LiveSectionIndex::new();
-    let mut written = WrittenSections::default();
-    // The section being read, linked only once it ends.
-    let mut current: Option<(IniSection, HashMap<i32, String>)> = None;
+    let mut current: Option<FreshSection> = None;
     for line in read_lines(text) {
         match lex_line(&line) {
             Some(NativeLine::Header { name, tail }) => {
-                link(&mut ini, &mut index, current.take());
-                // `_PreProcess2`, then `_CopySection2` once the new section
-                // object exists, still unlinked.
-                if let Some(base) = pre_process(&mut index, tail) {
-                    copy_section(&mut ini, &mut index, &mut written, base, name);
-                }
-                current = Some((IniSection::new(name.to_owned()), HashMap::new()));
+                link(
+                    &mut ini,
+                    &mut index,
+                    current.take().map(|fresh| fresh.section),
+                );
+                let inherited = inherited_entries(&mut ini, &mut index, including, name, tail);
+                current = Some(FreshSection::new(name, inherited, ares_way));
             }
             Some(NativeLine::Entry { key, value }) => {
-                if let Some((section, by_crc)) = &mut current {
-                    // `_IteratorChar1` renames the new entry's key, then the
-                    // override deletes the entry it repeats.
+                if let Some(section) = &mut current {
                     let key = iterator_key(key, &mut ini.next_iterator_key);
-                    replace_entry(section, by_crc, &key, value);
+                    section.write(&key, value, ares_way);
                 }
             }
             None => {}
         }
     }
-    link(&mut ini, &mut index, current);
+    link(&mut ini, &mut index, current.map(|fresh| fresh.section));
     index.store(&mut ini);
     for section in &mut ini.sections {
         section.build_fresh_index();
@@ -356,14 +322,48 @@ pub(super) fn load_fresh(text: &str) -> IniFile {
     ini
 }
 
+struct FreshSection {
+    section: IniSection,
+    by_crc: HashMap<i32, String>,
+    inherited_keys: HashSet<String>,
+}
+
+impl FreshSection {
+    fn new(name: &str, inherited: Vec<(String, String)>, ares_way: bool) -> Self {
+        let mut fresh = Self {
+            section: IniSection::new(name.to_owned()),
+            by_crc: HashMap::new(),
+            inherited_keys: HashSet::new(),
+        };
+        // P1 0x525E44 -> 0x10066500 copies before the child is linked.
+        // Keep the copy on that child so an authored override and a base
+        // value cannot end up in separate, indistinguishable CRC entries.
+        for (key, value) in inherited {
+            if ares_way {
+                replace_entry(&mut fresh.section, &mut fresh.by_crc, &key, &value);
+            } else {
+                fresh.section.set(&key, &value);
+                fresh.inherited_keys.insert(key);
+            }
+        }
+        fresh
+    }
+
+    fn write(&mut self, key: &str, value: &str, ares_way: bool) {
+        if ares_way {
+            replace_entry(&mut self.section, &mut self.by_crc, key, value);
+        } else if self.inherited_keys.remove(key) {
+            self.section.set(key, value);
+        } else {
+            self.section.insert_initial(key, value);
+        }
+    }
+}
+
 /// The fresh arm's section end (`0x005261F7..0x0052636A`): a section with an
 /// entry is linked last and indexed; an empty one is destroyed.
-fn link(
-    ini: &mut IniFile,
-    index: &mut LiveSectionIndex,
-    section: Option<(IniSection, HashMap<i32, String>)>,
-) {
-    let Some((section, _)) = section else {
+fn link(ini: &mut IniFile, index: &mut LiveSectionIndex, section: Option<IniSection>) {
+    let Some(section) = section else {
         return;
     };
     if section.entry_count() == 0 {
@@ -387,30 +387,26 @@ pub(super) fn load_into(ini: &mut IniFile, data: &[u8], list: &str) -> IniSectio
     ini.ares_copies.load(data.len());
     let mut index = LiveSectionIndex::resume(ini);
     let mut written = WrittenSections::default();
-    // The lines before the first header are skipped, and that header is read
-    // before the loop the hooks sit in (`0x00525BFA`), so it never inherits.
+    // Ignore lines before the first header. Unlike the P1 merge loop at
+    // 0x00525BFA, VERA processes the first header's own parent suffix.
     let mut section: Option<String> = None;
-    let mut first_header = true;
     let mut listed = (IniSection::new(list.to_owned()), HashMap::new());
     'load: for (part, bytes) in lines.into_iter().enumerate() {
         let text = crate::util::native_string::widen_bytes(bytes);
         for line in read_lines(&text) {
             match lex_line(&line) {
                 Some(NativeLine::Header { name, tail }) => {
-                    let base = if first_header {
-                        None
-                    } else {
-                        // `_PreProcess1`.
-                        pre_process(&mut index, tail)
-                    };
-                    first_header = false;
                     // The end flag is tested before the header is used.
                     if part == 1 {
                         break 'load;
                     }
-                    // `_CopySection1`, before the name is copied for PutString.
-                    if let Some(base) = base {
-                        copy_section(ini, &mut index, &mut written, base, name);
+                    // P1 0x525C28 -> 0x100664D0 copies before entries are put.
+                    // Also recognize the first header in VERA's include loader.
+                    for (key, value) in inherited_entries(ini, &mut index, None, name, tail) {
+                        put_string(ini, &mut index, &mut written, name, &key, &value);
+                        if name == list {
+                            replace_entry(&mut listed.0, &mut listed.1, &key, &value);
+                        }
                     }
                     section = Some(name.to_owned());
                 }

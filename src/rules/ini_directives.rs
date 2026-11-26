@@ -482,6 +482,8 @@ fn including_ini(root: IniFile) -> IniFile {
     } else {
         let mut merged = IniFile::empty();
         merged.merge(&root);
+        merged.next_iterator_key = root.next_iterator_key;
+        merged.ares_copies = root.ares_copies;
         merged
     }
 }
@@ -498,13 +500,16 @@ fn load_included(
     if crate::rules::ares_switch::ares_way() {
         return Ok(Some(merged.merge_load(bytes, list)));
     }
-    let child = IniFile::from_bytes(bytes)?;
+    let child = IniFile::read_ini_bytes(bytes, merged.next_iterator_key(), Some(merged))?;
+    merged.next_iterator_key = child.next_iterator_key();
     match dialect {
         // Keep the stock parser's choices for repeated keys in both files.
         IncludeDialect::Ares => merged.merge_source_sections(&child, true),
         IncludeDialect::Phobos => merged.merge(&child),
     }
-    Ok(child.section(list).cloned())
+    let listed = child.section(list).cloned();
+    merged.ares_copies = child.ares_copies;
+    Ok(listed)
 }
 
 /// What [`read_include`] did with one listed name.

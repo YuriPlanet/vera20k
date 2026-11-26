@@ -72,8 +72,19 @@ pub fn select_ini_with_options(
     name: &str,
     options: DirectiveOptions,
 ) -> Result<SelectedIni, String> {
-    let mut selected = select_physical_ini(assets, name)?;
+    let mut next_iterator_key = 0;
+    select_ini_numbered(assets, name, options, &mut next_iterator_key)
+}
+
+fn select_ini_numbered(
+    assets: &AssetManager,
+    name: &str,
+    options: DirectiveOptions,
+    next_iterator_key: &mut i32,
+) -> Result<SelectedIni, String> {
+    let mut selected = select_physical_ini(assets, name, *next_iterator_key)?;
     let (expanded, included_sources) = expand_ini_with_assets(assets, selected.ini, name, options)?;
+    *next_iterator_key = expanded.ini.next_iterator_key();
     selected.ini = expanded.ini;
     selected.included_sources = included_sources;
     selected.directive_diagnostics = expanded.diagnostics;
@@ -138,20 +149,28 @@ pub(crate) fn expand_ini_with_assets(
     Ok((expanded, included_sources))
 }
 
-fn select_physical_ini(assets: &AssetManager, name: &str) -> Result<SelectedIni, String> {
+fn select_physical_ini(
+    assets: &AssetManager,
+    name: &str,
+    first_iterator_key: i32,
+) -> Result<SelectedIni, String> {
     let selected = assets
         .resolve_ref(name)
         .ok_or_else(|| format!("retail INI {name} is unavailable"))?;
-    parse_physical_ini(name, selected)
+    parse_physical_ini(name, selected, first_iterator_key)
 }
 
-fn parse_physical_ini(name: &str, selected: AssetResolutionRef<'_>) -> Result<SelectedIni, String> {
+fn parse_physical_ini(
+    name: &str,
+    selected: AssetResolutionRef<'_>,
+    first_iterator_key: i32,
+) -> Result<SelectedIni, String> {
     log::info!(
         "Loading {name} ({} bytes) from {}",
         selected.bytes.len(),
         selected.source_archive
     );
-    let ini = IniFile::from_bytes(selected.bytes)
+    let ini = IniFile::from_bytes_numbered(selected.bytes, first_iterator_key)
         .map_err(|error| format!("parse {name} from {}: {error}", selected.source_archive))?;
     Ok(SelectedIni {
         ini: ini.clone(),
@@ -231,12 +250,23 @@ impl RetailRulesSources {
     /// archives `assets` mounted: a fixture that reads a stock install as an
     /// Ares game says so here.
     pub(crate) fn select_for_game(assets: &AssetManager, ships_ares: bool) -> Result<Self, String> {
-        let rulesmd = select_game_ini(assets, assets.ini_roots().rules(), ships_ares)?;
+        let _ares_way = crate::rules::ares_switch::read_ares_way(ships_ares);
+        // P1's two `+` hooks (0x10066200/0x10066270) advance the same
+        // signed counter. Share it for this ordered startup selection and
+        // every include it consumes. Independent observers start afresh.
+        let mut next_iterator_key = 0;
+        let options = DirectiveOptions::production();
+        let rulesmd = select_ini_numbered(
+            assets,
+            assets.ini_roots().rules(),
+            options,
+            &mut next_iterator_key,
+        )?;
         // VERA's Original mode deliberately omits the optional LANGRULE pass
         // of Load_Game_Rules (0x0052CD70) and Reset (0x00668B05). A selected
         // mod keeps it, including its native Digest validation and layering.
         let langrule = if assets.mod_selected() {
-            select_optional_ini(assets, "langrule.ini", ships_ares)
+            select_optional_ini(assets, "langrule.ini", options, &mut next_iterator_key)
         } else {
             OptionalIniSelection::Absent
         };
@@ -245,7 +275,12 @@ impl RetailRulesSources {
             OptionalIniSelection::Selected(selected) => (Some(selected), None),
             OptionalIniSelection::SelectionFailed(error) => (None, Some(error)),
         };
-        let artmd = select_game_ini(assets, assets.ini_roots().art(), ships_ares)?;
+        let artmd = select_ini_numbered(
+            assets,
+            assets.ini_roots().art(),
+            options,
+            &mut next_iterator_key,
+        )?;
         Ok(Self {
             rulesmd,
             langrule,
@@ -336,12 +371,13 @@ impl RetailRulesSources {
 fn select_optional_ini(
     assets: &AssetManager,
     name: &str,
-    ships_ares: bool,
+    options: DirectiveOptions,
+    next_iterator_key: &mut i32,
 ) -> OptionalIniSelection {
     if assets.resolve_ref(name).is_none() {
         return OptionalIniSelection::Absent;
     }
-    match select_game_ini(assets, name, ships_ares) {
+    match select_ini_numbered(assets, name, options, next_iterator_key) {
         Ok(selected) => OptionalIniSelection::Selected(selected),
         Err(error) => OptionalIniSelection::SelectionFailed(error),
     }
@@ -602,7 +638,7 @@ mod tests {
     }
 
     #[test]
-    fn rules_subdirectory_include_uses_the_stock_reader_without_ares() {
+    fn rules_subdirectory_include_keeps_stock_repeated_keys_without_ares() {
         let directory = TestDirectory::new("stock-subdirectory-include");
         directory.write(
             "rulesmd.ini",
@@ -627,8 +663,8 @@ mod tests {
                 .read_int("Repeat", 0)
         );
         let types = selected.ini.section_or_empty("VehicleTypes");
-        assert_eq!(types.read_name("+", 16), Some("TEST"));
-        assert_eq!(types.read_name("var_0", 16), None);
+        assert_eq!(types.read_name("+", 16), None);
+        assert_eq!(types.read_name("var_0", 16), Some("TEST"));
         assert_eq!(
             selected
                 .ini
@@ -776,9 +812,9 @@ mod tests {
     }
 
     /// A selected mod that mounts `ares.mix` (Load_Bootstrap_AresMIX, hook
-    /// `0x0053029E`) selects its INIs with Ares' syntax. No mod ignores the
-    /// installed archive and keeps gamemd's syntax. The game's asset manager
-    /// gives that answer, whichever way the calling thread reads.
+    /// `0x0053029E`) selects the later-wins rule. Auto-numbering works in both
+    /// modes, and the selected game controls repeated keys independently of
+    /// the calling thread's reading mode.
     #[test]
     fn a_game_with_ares_mix_selects_its_rules_with_ares_syntax() {
         use crate::assets::asset_manager::MediaArchiveMode;
@@ -789,7 +825,7 @@ mod tests {
             );
             std::fs::write(
                 directory.path().join("rulesmd.ini"),
-                b"[BuildingTypes]\n+=GAPOWR\n",
+                b"[BuildingTypes]\n+=GAPOWR\n[General]\nRepeat=11\nRepeat=22\n",
             )
             .unwrap();
             std::fs::write(
@@ -813,12 +849,17 @@ mod tests {
                     .keys()
                     .map(str::to_owned)
                     .collect();
-                (assets.ships_ares(), sources.ships_ares, keys)
+                let repeat = sources
+                    .rulesmd
+                    .ini
+                    .section_or_empty("General")
+                    .read_int("Repeat", 0);
+                (assets.ships_ares(), sources.ships_ares, keys, repeat)
             };
-            assert_eq!(keys(false), (false, false, vec!["+".to_owned()]));
+            assert_eq!(keys(false), (false, false, vec!["var_0".to_owned()], 11));
             directory.write_mix("ares.mix", "ares.txt", b"ares");
-            assert_eq!(keys(false), (false, false, vec!["+".to_owned()]));
-            assert_eq!(keys(true), (true, true, vec!["var_0".to_owned()]));
+            assert_eq!(keys(false), (false, false, vec!["var_0".to_owned()], 11));
+            assert_eq!(keys(true), (true, true, vec!["var_0".to_owned()], 22));
         }
     }
 

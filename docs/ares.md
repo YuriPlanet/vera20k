@@ -23,8 +23,8 @@ With Auto, this selects Ares reading before archives or INIs load, even without
 `ares.mix`. On selects the same reading; Off refuses a mod with this requirement.
 The declaration does not change the player's saved setting or supply missing assets.
 
-A game selected this way reads its INIs with Ares' syntax (`+=`
-keys, `[Child]:[Base]` sections, a later key winning) and `[#include]`, its Rules are read
+A game selected this way reads repeated INI keys with the later value winning. Authored
+`+=` keys, `[Child]:[Base]` sections and `[#include]` work in either mode. Its Rules are read
 with every Ares key VERA20K reads, available Ares sound bags and string tables are added, and the
 whole simulation, the Country loading screen, the sidebar, superweapon targeting, the HUD's
 markers, the flying credits, `IvanBomb.Image`, messages and sounds, the skirmish shell's random
@@ -334,8 +334,8 @@ Supported extensions:
   [remaining work](ares-remaining.md).
 - [INI Include and inheritance](ini-directives.md). The read-only `asset ini-expand` probe works
   in every build.
-- [INI syntax](ares-ini-syntax.md): `+=` keys, `[Child]:[Base]` sections and later-wins
-  repeated keys in every INI load, with included files loaded into the INI that lists them.
+- [INI syntax](ares-ini-syntax.md): built-in `+=` keys and `[Child]:[Base]` sections,
+  and later-wins repeated keys in Ares mode.
 - [Extended authored House ally lists](../tools/input_oracle/ares_allies_reader.md).
 
 ## VERA20K porting credits

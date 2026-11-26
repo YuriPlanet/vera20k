@@ -44,10 +44,9 @@
 //! How a game is read follows the game too. Ares.dll replaces some stock
 //! reads (list capacities, the `[WeaponTypes]` pre-allocation, the generic
 //! prerequisites and armors), adds its own, and hooks every INI text load
-//! (its `+` keys, `[Child]:[Base]` sections, and later-wins keys); a game
-//! that ships `ares.mix` has its INIs loaded and its
-//! Rules processed and projected the Ares way ([`ares_way`]), any other game
-//! the stock way. An explicit `[#include]` works with either reader. With
+//! (including its later-wins keys); a game that ships `ares.mix` has its INIs
+//! loaded and its Rules processed and projected the Ares way ([`ares_way`]).
+//! Explicit `+` keys, `[Child]:[Base]` and `[#include]` work with either reader. With
 //! no mod selected, an installed `ares.mix` is ignored
 //! unless the player's Ares setting is On; a selected mod can mount its own
 //! or the installation's copy, and the setting Off mounts none
