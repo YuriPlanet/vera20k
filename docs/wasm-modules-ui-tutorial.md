@@ -384,8 +384,8 @@ simulation does.
 
 ## 8. Rules to keep in mind
 
-- The client module may use floats, `client::random` and anything else: it changes the
-  game only through messages, which the simulation module checks.
+- The client module may use floats and `client::random` for local effects. The shop
+  sends purchase requests to its simulation module, which checks them.
 - The simulation module must treat every message as untrusted: check the length, every
   value, and whether the sender may do it now.
 - Client modules are not saved. After a load they start again (`on_start`); keep what

@@ -41,8 +41,8 @@ in step:
 **A client module (`ui.wasm`)** runs only on the local machine, once per drawn frame. It
 shows what this player may see: it adds buttons, texts, pictures, bars and lists to the
 match interface and changes the layout's parts, moves the camera, plays sounds and
-registers hotkeys. It changes the game only by sending a message to its simulation
-module, which checks it and acts, so every machine stays in step.
+registers hotkeys. It sends requests to its simulation module, which validates them.
+`Client::order` can also send standard player orders when the room allows automation.
 
 Both run in a sandbox: no files, no network, no clock, nothing else on your computer. A
 simulation module that crashes, loops or breaks the API is stopped on every machine at
@@ -73,7 +73,7 @@ Budget=500000      ; operations per frame for the mod's rules.wasm (default and 
 MapBudget=100000   ; operations per frame for a map's rules.wasm (default 100000, most 500000)
 MapWasm=yes        ; no: maps carrying a rules.wasm cannot start with this mod
 MapUI=overlay      ; a map's ui.wasm and [VeraUI] parts: overlay (default), full or no
-Controller=no      ; yes: the lobby offers "mod AI" for computer seats (RFC 6i)
+Controller=no      ; yes: the mod module controls computer seats marked "mod AI" in the launch data (RFC 6i)
 SeatBudget=500000  ; operations each "mod AI" seat adds to the mod's budget
 ```
 
@@ -378,8 +378,8 @@ over frames.
   shows within 15 frames.
 - Determinism: use `random(lo, hi)` (the module's own stream, the same on every machine)
   and `frame()` (15 frames a second at normal speed); there is no clock. Floats work, with
-  NaN made the same everywhere, but prefer integers or `fixed()` for game values. A
-  client module may use anything, since it changes the game only through messages.
+  NaN made the same everywhere, but prefer integers or `fixed()` for game values. Client-side
+  animation and random effects run locally.
 - A browser build runs the same modules with the browser's own WebAssembly engine and
   plays in the same rooms.
 
