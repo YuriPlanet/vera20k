@@ -104,9 +104,7 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return false;
         };
-        if crate::sim::power_system::native_building_power_drain(object.power) <= 0
-            && !object.powered
-        {
+        if object.power_drain() <= 0 && !object.powered {
             return false;
         }
         let owner = entity.owner();

@@ -143,7 +143,7 @@ pub(crate) fn sight_viewers(
 /// player, and the sight it gives is the sight it later takes back.
 pub(crate) fn carry(from: &GameEntity, to: &mut GameEntity) {
     to.seldom.limpets = from.seldom.limpets.clone();
-    to.foot_speed.set_limpeted(to.seldom.limpets.is_attached());
+    to.foot_speed.sync_limpets(&to.seldom.limpets);
 }
 
 /// The limpet's speed factor, Firestorm 2.0 `0x00630241..0x00630261`:
@@ -337,8 +337,7 @@ impl Simulation {
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             change(&mut entity.seldom.limpets);
-            let limpeted = entity.seldom.limpets.is_attached();
-            entity.foot_speed.set_limpeted(limpeted);
+            entity.foot_speed.sync_limpets(&entity.seldom.limpets);
         }
         if sees {
             self.update_object_sight_with_context(id, 0, None, context);

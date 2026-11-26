@@ -20,6 +20,10 @@ fn engine() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| {
         let mut config = Config::new();
+        // Both supported Macs are 64-bit little-endian. Interpret guest code so
+        // a notarized game can call it under the hardened runtime.
+        #[cfg(target_os = "macos")]
+        config.target("pulley64").expect("valid Pulley target");
         config.consume_fuel(false);
         config.cranelift_nan_canonicalization(false);
         config.wasm_simd(false);
