@@ -19,6 +19,7 @@ use crate::assets::pal_file::{Color, Palette};
 use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, SpriteInstance};
 use crate::render::palette_light::PaletteLight;
+use crate::render::picture_atlas::PictureSprite;
 use crate::render::selection_overlay::CenteredShapeStrip;
 use crate::render::sidebar_chrome::side_mix_file;
 
@@ -34,12 +35,17 @@ pub struct BeaconDraw {
 }
 
 pub struct BeaconArt {
-    /// PBEACON.SHP in each row's ColorScheme Convert.
+    /// PBEACON.SHP in each row's ColorScheme Convert, or VERA's picture
+    /// beside it with its mask's house pixels in the row's ramp.
     tactical: Vec<Option<CenteredShapeStrip>>,
     tactical_frames: u32,
     radar: Option<ShpFile>,
     /// Each row's Convert of every RDRBEACN index at brightness 1000.
     radar_colors: Vec<[[u8; 4]; 256]>,
+    /// VERA-only, experimental (`docs/picture-model-art.md`, "Interface
+    /// art"): `rdrbeacn.png` beside RDRBEACN.SHP at game pixels, each row's
+    /// frames with its ramp, drawn in place of the SHP's pixels.
+    radar_picture: Vec<Vec<Option<PictureSprite>>>,
 }
 
 impl BeaconArt {
@@ -59,6 +65,7 @@ impl BeaconArt {
         unit_palette: Option<&Palette>,
         ramps: &[[Color; 16]],
     ) -> Self {
+        let file = |name: &str| side_mix_file(assets, side_index, ares, name);
         let shape = |name| {
             use crate::render::shell_ui_style_assets::{decode_ui_shp, ui_art_candidates};
             if assets.mod_selected() {
@@ -77,17 +84,31 @@ impl BeaconArt {
                     .collect()
             })
             .unwrap_or_default();
+        // VERA-only, experimental: the pictures beside the shapes, by name
+        // in the same side MIX lookup (`render::interface_picture`).
+        let picture = |name, shp: Option<&ShpFile>| {
+            crate::render::interface_picture::find(name, shp?, true, file)?.game_frames()
+        };
         let tactical_shape = shape("pbeacon.shp");
+        let tactical_picture = picture("pbeacon.shp", tactical_shape.as_ref());
         let tactical = palettes
             .iter()
-            .map(|palette| {
-                CenteredShapeStrip::from_shp_on_device(
+            .zip(ramps)
+            .map(|(palette, ramp)| match &tactical_picture {
+                Some(frames) => CenteredShapeStrip::from_picture_on_device(
+                    device,
+                    queue,
+                    batch,
+                    frames,
+                    Some(ramp),
+                ),
+                None => CenteredShapeStrip::from_shp_on_device(
                     device,
                     queue,
                     batch,
                     tactical_shape.as_ref()?,
                     palette,
-                )
+                ),
             })
             .collect();
         let convert = PaletteLight::color_scheme([1000; 3], 1000);
@@ -103,6 +124,19 @@ impl BeaconArt {
             })
             .collect();
         let radar = shape("rdrbeacn.shp");
+        let radar_picture = picture("rdrbeacn.shp", radar.as_ref())
+            .map(|frames| {
+                ramps
+                    .iter()
+                    .take(palettes.len())
+                    .map(|ramp| {
+                        (0..frames.frame_count())
+                            .map(|frame| frames.sprite(frame, Some(ramp)))
+                            .collect()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         // 0x00430A2D and 0x00430A97 report each missing shape to the debug
         // log; play goes on without it.
         if tactical_shape.is_none() {
@@ -116,7 +150,17 @@ impl BeaconArt {
             tactical_frames: tactical_shape.map_or(0, |shp| shp.frames.len() as u32),
             radar,
             radar_colors,
+            radar_picture,
         }
+    }
+
+    /// VERA-only, experimental: whether a row's strip has an HD twin, which
+    /// the zoomed draw needs.
+    pub(crate) fn has_hd_pages(&self) -> bool {
+        self.tactical
+            .iter()
+            .flatten()
+            .any(|strip| strip.hd_page().is_some())
     }
 
     /// The row's PBEACON strip, the texture of [`Self::tactical_instance`].
@@ -150,9 +194,35 @@ impl BeaconArt {
         let (Some(shp), Some(colors)) = (self.radar.as_ref(), self.radar_colors.get(house)) else {
             return;
         };
-        let Some(shape) =
-            radar_frame(shp.frames.len() as u32, frame).and_then(|i| shp.frames.get(i))
-        else {
+        let Some(index) = radar_frame(shp.frames.len() as u32, frame) else {
+            return;
+        };
+        if let Some(sprites) = self.radar_picture.get(house) {
+            let Some(sprite) = sprites.get(index).and_then(Option::as_ref) else {
+                return;
+            };
+            // The SHP's convert at brightness 1000, on the picture's colours.
+            let convert = PaletteLight::color_scheme([1000; 3], 1000);
+            let origin = (
+                center.0 - i32::from(shp.width / 2) + sprite.origin[0] as i32,
+                center.1 - i32::from(shp.height / 2) + sprite.origin[1] as i32,
+            );
+            let width = sprite.size[0] as usize;
+            for (offset, &index) in sprite.indices.iter().enumerate() {
+                if index != 0 {
+                    let rgb = &sprite.rgba[offset * 4..offset * 4 + 3];
+                    let word = convert.rgb565([rgb[0], rgb[1], rgb[2]], index, 127);
+                    let [r, g, b] = crate::render::native_surface_format::RGB565.unpack_rgb8(word);
+                    let pixel = (
+                        origin.0 + (offset % width) as i32,
+                        origin.1 + (offset / width) as i32,
+                    );
+                    put(pixel, [r, g, b, 255]);
+                }
+            }
+            return;
+        }
+        let Some(shape) = shp.frames.get(index) else {
             return;
         };
         let origin = (

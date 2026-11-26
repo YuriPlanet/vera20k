@@ -13,11 +13,11 @@ follows; each section that is built says so in [Status](#status).
   exactly what it does without this feature. Retail data declares none, so the
   game with retail data is unchanged, frame for frame and pixel for pixel.
 
-Non-goals for now: the sidebar's own art, the shell UI, the hard-coded
-interface SHPs other than the cursors (pips, health bars, the placement grid,
-beacons, shroud), superweapon cameos, skinned or morphing models (see
-[Not covered](#not-covered)). The cursors take a picture by file name
-([Interface art](#interface-art-mousepng)).
+Non-goals for now: the sidebar's own art, the shell UI, the remaining
+hard-coded interface SHPs (shroud, `GRFXTXT`), superweapon cameos, skinned or
+morphing models (see [Not covered](#not-covered)). The cursors, pips, health
+bars, status markers, placement grid and beacons take a picture by file name
+([Interface art](#interface-art-namepng)).
 
 ## The switch
 
@@ -29,8 +29,8 @@ The art section decides, nothing else:
   never looks for a picture or a model for it, by key or by file name.
 
 The one exception is interface art no section names, which only draws and
-never reaches the simulation: the cursors' `mouse.png` is found by its name
-([Interface art](#interface-art-mousepng)).
+never reaches the simulation: its pictures are found by file name
+([Interface art](#interface-art-namepng)).
 
 There is no player option and no build feature. The simulation takes some
 values from the art files (below), so turning the new art off on one machine
@@ -171,45 +171,65 @@ not change. Without a mask the picture has no house colour and no unlit pixels.
   (height, ramp, land, extra-data placement, Z data, radar colours), so the
   simulation and the tile's Z and occlusion are the TMP's.
 
-### Interface art: `mouse.png`
+### Interface art: `NAME.png`
 
-VERA-only, experimental, presentation only. `mouse.sha` (the cursors, drawn
-through `mousepal.pal`) has no art section, so its picture is declared by its
-file name beside it: `mouse.png`, found as any asset is (a loose file in the
-game folder or a mod, else the archives). The engine looks it up once per
-cursor load (the startup menu, each match), never per frame; it is not in the
-config hash and is not part of the simulation, so players may differ.
+VERA-only, experimental, presentation only. The hard-coded interface SHPs
+have no art section, so a picture for one is declared by its file name:
+`NAME.png` beside `NAME.shp` (or `NAME.sha`), found through the SHP's own
+lookup (a loose file in the game folder or a mod, else the archives; for the
+beacons, the side MIX group the SHP comes from). The engine looks for it once
+when the SHP loads (the startup menu, each match), never per frame; it is not
+in the config hash and not part of the simulation, so players may differ.
+One owner reads and checks it for every file (`render::interface_picture`).
 
 | What | Rule |
 |---|---|
-| Name | `mouse.png`, beside `mouse.sha`. No mask. |
-| Frames | An APNG (blend and dispose as any picture) with exactly `mouse.sha`'s frame count (retail: 517), frame N for SHP frame N. |
-| Size | Each frame is `mouse.sha`'s canvas times one whole scale `k`, 1 to 8, on both axes (`k * width` x `k * height`). |
-| Pixels | Straight RGBA; partial alpha is kept (soft edges). |
+| Name | `NAME.png` beside `NAME.shp`; `NAME.mask.png` beside it where house colour applies (beacons), red at 128 or more marking house colour, green unlit, as any mask. |
+| Frames | An APNG (blend and dispose as any picture) with exactly the SHP's frame count, frame N for SHP frame N. The APNG's delays are ignored: timing stays the SHP's. |
+| Size | Each frame is the SHP's canvas times one whole scale `k`, 1 to 8, on both axes (`k * width` x `k * height`); whole-canvas frames. |
+| Pixels | Straight RGBA. |
 
-When it fits, it replaces mouse.sha's pixels everywhere a cursor is drawn
-(`render::cursor_atlas::MouseArt`), stock and Ares `[MouseCursors]` lists
-alike; frame numbers, hotspots, animation and size stay mouse.sha's:
+| File | Drawn by | Frames (retail) | Palette effects kept |
+|---|---|---|---|
+| `mouse.png` | cursors (`render::cursor_atlas`) | 517 | none (no mask) |
+| `pips.png`, `pips2.png`, `pipbrd.png` | health bars, rank, self-heal, cargo and mind-control pips (`render::selection_overlay`) | as the SHPs | the A plane where the world draw reads it (PIPBRD, rank); the self-heal pulse's index mask |
+| `bombcurs.png`, `wrench.png`, `poweroff.png`, `talkbubl.png` | Ivan bomb clock, repair wrench, Ares power-off, talk bubble | 13, 7, 7, as the SHP | the A plane (bomb, wrench, power-off) |
+| `place.png` | the placement grid | as the SHP | the plain Convert at brightness 1000 |
+| `pbeacon.png`, `rdrbeacn.png` | tactical and radar beacons (`render::beacon_art`) | as the SHPs | house colour through the mask, each row's ramp |
 
-- The window system's cursor image (`hardware_cursor`) is the frame resampled
-  to the size the SHP's would take (canvas times menu or zoom scale, window
-  pixels), by the area each window pixel covers when shrinking and
-  bilinearly when growing, alpha-weighted; the hotspot is scaled as the SHP's.
-  The SHP's image stays nearest-neighbour, as before.
-- The software sprite draws the frame's texture, sampled linearly, at the
-  canvas size it always has. Transparent texels beside drawn ones take their
-  neighbours' colour first, so the edge does not blend to black.
-- The planning badges (frames 433/434), drawn pixel by pixel into the
-  tactical surface, take the frame shrunk to the canvas by the coverage rule
-  above (half covered is drawn).
+When a picture fits, it replaces the SHP's pixels everywhere that SHP is
+drawn; frame numbers, offsets, hotspots, animation and size stay the SHP's.
 
-A picture that is unreadable, has another frame count or another size is
-reported in the game (`[mouse.sha] mouse.png: ...`) and the cursors draw
-mouse.sha's own pixels. Without `mouse.png` nothing changes: no other file
-is read and every image is what it was.
+- **At game pixels** (the tactical view at 1x, the radar, the planning
+  badges) each frame is shrunk to the SHP canvas by the picture art's rule
+  (`GamePictureFrames::shrink`): a game pixel is drawn when half its picture
+  pixels are, its colour their mean. The strip is cropped and placed as the
+  SHP's frames, with index 1 for drawn pixels (240 for the mask's unlit
+  ones), so the draws' palette light, A plane and index masks work on it as
+  on any picture page.
+- **Zoomed** (wheel or Options zoom), a picture above 1x draws again from
+  its frames at their own resolution in the HD pass (chain 6,
+  `render::picture_zoom`), as the world's picture art does: each strip keeps
+  an HD twin at the same normalised coordinates, and the pass copies the
+  strip's opaque instances after the world's, in draw order, with the camera
+  the world draw bound (the tactical A plane, or the neutral one for draws
+  that bypass A). Translucent draws (a placement cell's fade) and the packed
+  self-heal pulse keep their magnified pixels. Health bars under the wheel
+  zoom are drawn after the magnification at window pixels and stay 1x.
+- **The cursors** are not tactical sprites. The window system's image
+  (`hardware_cursor`) is the frame resampled to the size the SHP's would take
+  (canvas times menu or zoom scale, window pixels), by the area each window
+  pixel covers when shrinking and bilinearly when growing, alpha-weighted;
+  the hotspot is scaled as the SHP's, and the SHP's own image stays
+  nearest-neighbour. The software sprite draws the frame's texture sampled
+  linearly at the canvas size, holes beside drawn pixels coloured by their
+  neighbours first. The planning badges (frames 433/434) take the frame
+  shrunk to the canvas as above. Partial alpha is kept (soft edges).
 
-Other interface SHPs do not share this path and keep their SHP only (see
-[Not covered](#not-covered)).
+A picture that is unreadable, has another frame count or another size (or a
+mask that does not match it) is reported in the game
+(`[NAME.shp] NAME.png: ...`) and the SHP's own pixels are drawn. Without the
+file nothing changes: no other file is read and every image is what it was.
 
 ### Model: `NAME.glb`
 
@@ -505,13 +525,20 @@ against this list.
   cameo atlas (`render_picture_cameo`) take the pictures;
   `asset export-picture` takes theater SHPs and TMP templates.
 
-- Interface art (branch `feature/hd-cursor`): `render::cursor_atlas` holds
-  mouse.sha and its pixels as `MouseArt` (`MousePixels::Shp` or
-  `::Picture`); `load_mouse_shape` looks up `mouse.png`; the sprite texture,
-  the window-system image (`MouseArt::os_image`) and the planning badges
-  take their pixels from it, stock and Ares lists alike. `os_cursor_image`
-  now places already-resampled pixels (`nearest_resample` keeps the SHP's
-  formula). No other file changes.
+- Interface art (branch `feature/hd-cursor`): `render::interface_picture`
+  finds and checks `NAME.png`. `render::cursor_atlas` holds mouse.sha and its
+  pixels as `MouseArt` (`MousePixels::Shp` or `::Picture`); the sprite
+  texture, the window-system image (`MouseArt::os_image`) and the planning
+  badges take their pixels from it, stock and Ares lists alike;
+  `os_cursor_image` places already-resampled pixels (`nearest_resample` keeps
+  the SHP's formula). `SelectionOverlay` loads its stock strips through
+  `CenteredShapeStrip::from_interface_assets_on_device`;
+  `from_picture_on_device` builds an HD twin (`hd_page`) for art above 1x;
+  `BeaconArt` draws `pbeacon.png`/`rdrbeacn.png` with each row's ramp.
+  `PictureZoomPass::draw` takes a page lookup (`HdSource`: an atlas page or an
+  `InterfaceStrip`) and binds each run's camera (`HdRun::neutral_a`);
+  `app::presentation::render::picture_zoom::prepare` also takes the frame's
+  beacons and PLACE cells and appends the strips' instances.
 
 ## Verification
 
@@ -542,25 +569,15 @@ Art that still only comes from SHP, PCX or TMP, and why:
 
 - The sidebar's own art (`side1.shp`, tabs, buttons, power bar, radar
   frame, `GCLOCK2`, `DARKEN`), the shell UI (main menu, loading screens,
-  dialogs) and the interface SHPs (`pips.shp`, `pips2.shp`, `pipbrd.shp`,
-  `place.shp`, beacons, `talkbubl.shp`, `GRFXTXT.SHP`) and shroud/fog: no
-  art or rules section names them; a mod replaces them only by shipping a
-  file of the same name. Declaring pictures for them needs a naming scheme
-  first (for the sidebar, `Art=` on the original parts that
-  [interface-layout.md](interface-layout.md) reserves). The cursors
-  (`mouse.sha`) take `mouse.png` ([Interface art](#interface-art-mousepng)).
-- Follow-ups for the same `<name>.png` rule, each on its own draw path, not
-  the cursor's: the markers over buildings and units in
-  `render::selection_overlay` (`WRENCH.SHP` repair wrench, Ares
-  `POWEROFF.SHP`, `BOMBCURS.SHP` Ivan bomb clock), `PLACE.SHP` (the
-  placement grid, same atlas) and `PBEACON.SHP`/`RDRBEACN.SHP`
-  (`render::beacon_art`). These are tactical sprites drawn at game pixels
-  through `CenteredShapeStrip` with their palette indices (PaletteLight), so
-  a picture there gains detail only through the zoomed HD path
-  (`render::picture_zoom`); `bombcurs.png`, `wrench.png` and `poweroff.png`
-  placed beside their SHPs are not read yet. The sidebar's repair, sell and
-  power modes are cursor rows of `mouse.sha`, so they already take
-  `mouse.png`.
+  dialogs), `GRFXTXT.SHP` and shroud/fog: no art or rules section names
+  them; a mod replaces them only by shipping a file of the same name.
+  Declaring pictures for the sidebar needs a naming scheme first (`Art=` on
+  the original parts that [interface-layout.md](interface-layout.md)
+  reserves); `GRFXTXT` and the shroud could take the `NAME.png` rule
+  ([Interface art](#interface-art-namepng)) on their own draw paths.
+- Interface strips loaded from rules keys (Ares `IvanBomb.Image`, Phobos
+  and Ares insignia, Phobos DigitalDisplay shapes) keep their SHPs: the
+  `NAME.png` rule covers only the hard-coded names.
 - Superweapon cameos (`SidebarImage=` is a rules key without an art
   section) and Phobos `SuperWeaponSidebar` PCXs, Insignia, DigitalDisplay
   and shield pips (rules keys naming files): a picture form of those keys
@@ -661,10 +678,13 @@ current: say what was done, what was not, and what comes next.
   shadow pairs), `render::sidebar_cameo_atlas` (2x cameo crop), and the
   existing `render::sprite_atlas`, `render::bridge_atlas`, `rules::art_data`
   groups, with retail `ini/` and `RA2_DIR`; `check --features wasm` builds.
-- Interface art, cursors (`mouse.png`, branch `feature/hd-cursor`):
-  written with focused tests in `render::cursor_atlas` (fit rule, smooth
-  window image of the picture frame, retail nearest image unchanged); not
-  yet seen in a match.
+- Interface art (`NAME.png`, branch `feature/hd-cursor`): written with
+  focused tests in `render::interface_picture` (fit rule, lookup by name,
+  reported misfit), `render::cursor_atlas` (smooth window image of the
+  picture frame, retail nearest image unchanged) and
+  `app::presentation::render::picture_zoom` (strip instances and their
+  cameras in the HD list); not yet seen in a match, so the strips' HD copy
+  (its ownership test against the A-lit world pixels) is unseen.
 - Tooling: `tools/same_as_base.py` (sim-bench hashes and frame times,
   map_observation pixels at Options and wheel zooms against a base ref);
   `presentation.wheel_zoom` in map_observation profiles.

@@ -729,67 +729,19 @@ fn load_mouse_shape(asset_manager: &AssetManager) -> Option<MouseArt> {
 }
 
 /// VERA-only, experimental (`docs/picture-model-art.md`, "Interface art"):
-/// the picture `mouse.png` beside mouse.sha, found as any asset is (loose
-/// file, then the archives). The cursors are presentation only, so the file
-/// name declares it. Without the file, or with one that does not fit
-/// ([`fit_mouse_picture`], reported in the game), mouse.sha's own pixels.
+/// mouse.sha's pixels from `mouse.png` beside it when one fits
+/// (`render::interface_picture`), else its own.
 fn mouse_pixels(asset_manager: &AssetManager, shp: &ShpFile, palette: Palette) -> MousePixels {
-    let Some(bytes) = asset_manager.get_ref(MOUSE_PICTURE) else {
-        return MousePixels::Shp(palette);
-    };
-    let fitted = PictureFrames::decode(bytes)
-        .map_err(|error| format!("it is not readable ({error})"))
-        .and_then(|picture| fit_mouse_picture(picture, shp));
-    match fitted {
-        Ok((picture, scale)) => {
-            log::info!("Cursors drawn from {MOUSE_PICTURE} at {scale}x mouse.sha");
-            MousePixels::Picture { picture, scale }
-        }
-        Err(problem) => {
-            log::warn!("{MOUSE_PICTURE} cannot be drawn: {problem}");
-            crate::rules::art_problems::report(
-                "mouse.sha",
-                MOUSE_PICTURE,
-                &problem,
-                "the cursors draw mouse.sha's own pixels",
-            );
-            MousePixels::Shp(palette)
-        }
+    let found = crate::render::interface_picture::find("mouse.sha", shp, false, |name| {
+        asset_manager.get_ref(name)
+    });
+    match found {
+        Some(found) => MousePixels::Picture {
+            picture: found.picture,
+            scale: found.scale,
+        },
+        None => MousePixels::Shp(palette),
     }
-}
-
-const MOUSE_PICTURE: &str = "mouse.png";
-
-/// Interface pictures are whole multiples of their SHP's canvas, up to this.
-const PICTURE_SCALE_MAX: u32 = 8;
-
-/// `picture` and its scale when it has mouse.sha's frame count and each frame
-/// is the canvas times one whole scale (1 to [`PICTURE_SCALE_MAX`]) on both
-/// axes; else what is wrong with it.
-fn fit_mouse_picture(
-    picture: PictureFrames,
-    shp: &ShpFile,
-) -> Result<(PictureFrames, u32), String> {
-    if picture.frames.len() != shp.frames.len() {
-        return Err(format!(
-            "it has {} frames and mouse.sha {}",
-            picture.frames.len(),
-            shp.frames.len()
-        ));
-    }
-    let (width, height) = (u32::from(shp.width), u32::from(shp.height));
-    let scale = picture.width / width.max(1);
-    if scale == 0
-        || scale > PICTURE_SCALE_MAX
-        || picture.width != width * scale
-        || picture.height != height * scale
-    {
-        return Err(format!(
-            "it is {}x{}, not mouse.sha's {width}x{height} times 1 to {PICTURE_SCALE_MAX}",
-            picture.width, picture.height
-        ));
-    }
-    Ok((picture, scale))
 }
 
 /// mouse.sha, whose canvas sets every cursor's size and hotspot, and the
@@ -1296,24 +1248,6 @@ mod tests {
         assert!(winit::window::CustomCursor::from_rgba(image.rgba, width, height, x, y).is_ok());
     }
 
-    /// A `width` x `height` mouse.sha of `frames` empty frames.
-    fn mouse_shp(width: u16, height: u16, frames: usize) -> ShpFile {
-        let frame = || crate::assets::shp_file::ShpFrame {
-            frame_x: 0,
-            frame_y: 0,
-            frame_width: 0,
-            frame_height: 0,
-            format: 0,
-            radar_color: [0; 3],
-            pixels: Vec::new(),
-        };
-        ShpFile {
-            width,
-            height,
-            frames: (0..frames).map(|_| frame()).collect(),
-        }
-    }
-
     /// A 2x picture of a 2x1 mouse.sha whose frame 0 is red and frame 1 red
     /// then blue.
     fn two_frame_picture() -> PictureFrames {
@@ -1330,39 +1264,13 @@ mod tests {
         }
     }
 
-    /// The picture must have mouse.sha's frames, each its canvas times one
-    /// whole scale up to 8; anything else leaves the SHP's pixels.
-    #[test]
-    fn a_mouse_picture_needs_the_shp_frame_count_and_a_whole_scale() {
-        let shp = mouse_shp(2, 1, 2);
-        let fitted = fit_mouse_picture(two_frame_picture(), &shp).map(|(_, scale)| scale);
-        assert_eq!(fitted, Ok(2));
-        let one_frame = PictureFrames {
-            frames: vec![two_frame_picture().frames[0].clone()],
-            ..two_frame_picture()
-        };
-        let error = fit_mouse_picture(one_frame, &shp).unwrap_err();
-        assert_eq!(error, "it has 1 frames and mouse.sha 2");
-        let sized = |width: u32, height: u32| PictureFrames {
-            width,
-            height,
-            frames: vec![vec![0; (width * height * 4) as usize]; 2],
-        };
-        assert!(
-            fit_mouse_picture(sized(4, 1), &shp).is_err(),
-            "2x1 scales apart"
-        );
-        assert!(fit_mouse_picture(sized(18, 9), &shp).is_err(), "9x");
-        assert!(fit_mouse_picture(sized(16, 8), &shp).is_ok(), "8x");
-    }
-
     /// The window system's image of a picture frame is that frame resampled
     /// to the SHP's drawn size, smoothly, with the hotspot scaled as the
     /// SHP's.
     #[test]
     fn a_picture_cursor_image_resamples_its_frame_to_the_shp_size() {
         let art = MouseArt {
-            shp: mouse_shp(2, 1, 2),
+            shp: crate::render::interface_picture::test_shp(2, 1, 2),
             pixels: MousePixels::Picture {
                 picture: two_frame_picture(),
                 scale: 2,

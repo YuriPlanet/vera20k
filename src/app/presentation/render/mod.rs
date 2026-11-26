@@ -1081,6 +1081,8 @@ pub(crate) fn render_game(
         &state.match_state.match_presentation,
         &state.frontend.screen,
         &world.object_layers,
+        &ui.beacons,
+        &ui.placement,
     );
 
     // Phase 7: Dispatch draw calls in render order.

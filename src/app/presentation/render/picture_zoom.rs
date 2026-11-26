@@ -9,15 +9,59 @@
 //! after the magnification, into the frame
 //! after `WorldZoomPass::composite`, or into the window after
 //! `WorldZoomPass::draw_window_copy` when the Options zoom scales the frame.
-//! Everything here returns at once unless the sprite atlas has HD pages.
+//! The interface pictures' strips (`render::interface_picture`) follow the
+//! same way, after the world's: the status markers, pips and health bars of
+//! each layer, the beacons, then the placement grid, in the order
+//! `dispatch_draw_passes` draws them.
+//! Everything here returns at once unless some art has HD pages.
 
-use super::draw_plan_lowering::{ObjectDrawRun, ObjectLayerPass, ObjectTexture};
+use super::draw_plan_lowering::{ObjectDrawRun, ObjectExtrasRun, ObjectLayerPass, ObjectTexture};
 use crate::app::presentation::state::MatchPresentationState;
 use crate::app::renderer_state::RendererState;
 use crate::ui::game_screen::GameScreen;
-use crate::render::batch::SpriteInstance;
-use crate::render::picture_zoom::{HdDepth, HdMask, HdPlacement, HdRun, HdTarget, PictureZoomPass};
+use crate::render::batch::{BatchTexture, SpriteInstance};
+use crate::render::picture_zoom::{
+    HdDepth, HdMask, HdPlacement, HdRun, HdSource, HdTarget, PictureHdPage, PictureZoomPass,
+};
+use crate::render::selection_overlay::InterfaceStrip;
 use crate::render::tactical_draw_plan::RenderZPolicy;
+
+/// Whether any art this match draws has an HD twin.
+fn has_hd_pages(presentation: &MatchPresentationState) -> bool {
+    presentation
+        .sprite_atlas
+        .as_ref()
+        .is_some_and(|atlas| atlas.has_picture_hd_pages())
+        || presentation
+            .selection_overlay
+            .as_ref()
+            .is_some_and(|overlay| overlay.has_hd_pages())
+        || presentation
+            .beacon_art
+            .as_ref()
+            .is_some_and(|art| art.has_hd_pages())
+}
+
+/// The HD twin of `source` and the page the world drew it from.
+fn hd_page(
+    presentation: &MatchPresentationState,
+    source: HdSource,
+) -> Option<(&PictureHdPage, &BatchTexture)> {
+    let strip = match source {
+        HdSource::Atlas(page) => {
+            let atlas = presentation.sprite_atlas.as_ref()?;
+            return Some((atlas.picture_hd_page(page)?, &atlas.page(page)?.texture));
+        }
+        HdSource::Interface(InterfaceStrip::Beacon(house)) => {
+            presentation.beacon_art.as_ref()?.tactical_strip(house)?
+        }
+        HdSource::Interface(strip) => presentation
+            .selection_overlay
+            .as_ref()?
+            .interface_strip(strip)?,
+    };
+    Some((strip.hd_page()?, strip.texture()))
+}
 
 /// Whether the Options zoom alone magnifies picture art this frame, so the
 /// world needs `WorldZoomPass` (at wheel zoom 1) for its window copy, which
@@ -27,31 +71,27 @@ pub(super) fn needs_world_pass(
     presentation: &MatchPresentationState,
     screen: &GameScreen,
 ) -> bool {
-    presentation
-        .sprite_atlas
-        .as_ref()
-        .is_some_and(|atlas| atlas.has_picture_hd_pages())
+    has_hd_pages(presentation)
         && renderer
             .tactical_zoom(screen)
             .is_some_and(|zoom| zoom.percent > 100)
 }
 
-/// Build this frame's HD instances from `layers`, or clear them when nothing
-/// is magnified or nothing draws from an HD page.
+/// Build this frame's HD instances from `layers`, the beacon rows'
+/// `beacons` and the `placement` cells, or clear them when nothing is
+/// magnified or nothing draws from an HD page.
 pub(super) fn prepare(
     renderer: &mut RendererState,
     presentation: &MatchPresentationState,
     screen: &GameScreen,
     layers: &[ObjectLayerPass; 5],
+    beacons: &[Vec<SpriteInstance>],
+    placement: &[SpriteInstance],
 ) {
-    let Some(atlas) = presentation
-        .sprite_atlas
-        .as_ref()
-        .filter(|atlas| atlas.has_picture_hd_pages())
-    else {
+    if !has_hd_pages(presentation) {
         clear(renderer);
         return;
-    };
+    }
     // The same choice `render_game` makes for the window copy.
     let window = renderer
         .tactical_zoom(screen)
@@ -69,7 +109,14 @@ pub(super) fn prepare(
         clear(renderer);
         return;
     };
-    let (instances, runs) = hd_instances(layers, |page| atlas.picture_hd_page(page).is_some());
+    let mut list = HdList::default();
+    world_instances(&mut list, layers, |page| {
+        hd_page(presentation, HdSource::Atlas(page)).is_some()
+    });
+    interface_instances(&mut list, layers, beacons, placement, |strip| {
+        hd_page(presentation, HdSource::Interface(strip)).is_some()
+    });
+    let HdList { instances, runs } = list;
     if runs.is_empty() {
         clear(renderer);
         return;
@@ -92,18 +139,53 @@ fn clear(renderer: &mut RendererState) {
     }
 }
 
+/// The instances to draw again, in runs.
+#[derive(Default)]
+struct HdList {
+    instances: Vec<SpriteInstance>,
+    runs: Vec<HdRun>,
+}
+
+impl HdList {
+    /// Add `instance` when it is opaque, extending the last run when it has
+    /// the same page, Z test and camera.
+    fn push(&mut self, page: HdSource, depth: HdDepth, neutral_a: bool, instance: &SpriteInstance) {
+        if !opaque(instance) {
+            return;
+        }
+        let at = self.instances.len() as u32;
+        self.instances.push(*instance);
+        match self.runs.last_mut() {
+            Some(last)
+                if last.page == page
+                    && last.depth == depth
+                    && last.neutral_a == neutral_a
+                    && last.start + last.count == at =>
+            {
+                last.count += 1;
+            }
+            _ => self.runs.push(HdRun {
+                page,
+                depth,
+                neutral_a,
+                start: at,
+                count: 1,
+            }),
+        }
+    }
+}
+
 /// The world instances to draw again from an HD page, in the world's order:
 /// the building bases (`ObjectDrawPhase::BuildingBase`, drawn from layer 2),
 /// then layers 0 to 4. Only opaque stores to an SHP page whose page
 /// `has_hd`; translucent, FX, packed and linear-shape draws keep their 1x
 /// pixels (`merge_passes::restarts_shadow_count` names the same opaque
 /// stores).
-fn hd_instances(
+fn world_instances(
+    list: &mut HdList,
     layers: &[ObjectLayerPass; 5],
     has_hd: impl Fn(usize) -> bool,
-) -> (Vec<SpriteInstance>, Vec<HdRun>) {
-    let mut instances = Vec::new();
-    let mut runs: Vec<HdRun> = Vec::new();
+) {
     let bases = layers[2]
         .building_base_runs
         .iter()
@@ -136,27 +218,93 @@ fn hd_instances(
         else {
             continue;
         };
-        for instance in drawn.iter().filter(|instance| opaque(instance)) {
-            let at = instances.len() as u32;
-            instances.push(*instance);
-            match runs.last_mut() {
-                Some(last)
-                    if last.page == page
-                        && last.depth == depth
-                        && last.start + last.count == at =>
-                {
-                    last.count += 1;
-                }
-                _ => runs.push(HdRun {
-                    page,
-                    depth,
-                    start: at,
-                    count: 1,
-                }),
-            }
+        for instance in drawn {
+            list.push(HdSource::Atlas(page), depth, false, instance);
         }
     }
-    (instances, runs)
+}
+
+/// The interface strips' instances to draw again, as
+/// `dispatch_draw_passes` draws them after the world: each layer's status
+/// parents (`object_extras::draw_status_run`), the beacons, then the PLACE
+/// cells. All bypass Z; the camera each draw binds says whether it reads
+/// the A plane. A pulsing self-heal marker is a packed composite and keeps
+/// its 1x pixels.
+fn interface_instances(
+    list: &mut HdList,
+    layers: &[ObjectLayerPass; 5],
+    beacons: &[Vec<SpriteInstance>],
+    placement: &[SpriteInstance],
+    has_hd: impl Fn(InterfaceStrip) -> bool,
+) {
+    let mut push = |strip: InterfaceStrip, neutral_a: bool, instance: Option<&SpriteInstance>| {
+        if let Some(instance) = instance
+            && has_hd(strip)
+        {
+            list.push(
+                HdSource::Interface(strip),
+                HdDepth::None,
+                neutral_a,
+                instance,
+            );
+        }
+    };
+    for layer in layers {
+        let at = |index: &Option<u32>| {
+            index.and_then(|index| layer.extras_instances.get(index as usize))
+        };
+        let range = |range: &std::ops::Range<u32>| {
+            layer
+                .extras_instances
+                .get(range.start as usize..range.end as usize)
+                .unwrap_or_default()
+        };
+        for run in &layer.extras_runs {
+            let ObjectExtrasRun::Status {
+                bomb_clock,
+                wrench,
+                power_off,
+                rank,
+                rank_insignia,
+                background,
+                shield_background,
+                fills,
+                scale,
+                self_heal,
+                talk_bubble,
+                ..
+            } = run
+            else {
+                continue;
+            };
+            push(InterfaceStrip::BombClock, false, at(bomb_clock));
+            push(InterfaceStrip::Wrench, false, at(wrench));
+            push(InterfaceStrip::PowerOff, false, at(power_off));
+            if rank_insignia.is_none() {
+                push(InterfaceStrip::Pips, false, at(rank));
+            }
+            push(InterfaceStrip::Pipbrd, false, at(background));
+            push(InterfaceStrip::Pipbrd, false, at(shield_background));
+            for fill in range(fills) {
+                push(InterfaceStrip::Pips, true, Some(fill));
+            }
+            for pip in range(scale) {
+                push(InterfaceStrip::ScalePips, true, Some(pip));
+            }
+            if !super::object_extras::has_pulse_marker(run, &layer.extras_instances) {
+                push(InterfaceStrip::Pips, true, at(self_heal));
+            }
+            push(InterfaceStrip::TalkBubble, true, at(talk_bubble));
+        }
+    }
+    for (house, row) in beacons.iter().enumerate() {
+        for beacon in row {
+            push(InterfaceStrip::Beacon(house), true, Some(beacon));
+        }
+    }
+    for cell in placement {
+        push(InterfaceStrip::Placement, true, Some(cell));
+    }
 }
 
 /// An instance whose drawn pixels replace the destination, so its HD copy
@@ -260,10 +408,7 @@ fn draw(
     placement: &HdPlacement<'_>,
     scissor: [u32; 4],
 ) {
-    let (Some(atlas), Some(world)) = (
-        presentation.sprite_atlas.as_ref(),
-        renderer.world_zoom_pass.as_ref(),
-    ) else {
+    let Some(world) = renderer.world_zoom_pass.as_ref() else {
         return;
     };
     let batch = &renderer.batch_renderer;
@@ -291,9 +436,68 @@ fn draw(
         placement,
         world.depth_view(),
         &world_color,
-        atlas,
+        &|source| hd_page(presentation, source),
         batch,
         zshape,
         scissor,
     );
+}
+
+#[cfg(all(test, tests_app_presentation_render))]
+mod tests {
+    use super::*;
+
+    /// A status marker drawn with the A plane, health fills drawn at
+    /// neutral A and the PLACE cells come back in draw order, each with the
+    /// camera its world draw bound; a strip without an HD twin and a
+    /// see-through cell are left out.
+    #[test]
+    fn interface_strips_with_twins_draw_again_with_their_world_camera() {
+        let drawn = SpriteInstance {
+            alpha: 1.0,
+            ..Default::default()
+        };
+        let mut layers: [ObjectLayerPass; 5] = Default::default();
+        layers[0].extras_instances = vec![drawn; 3];
+        layers[0].extras_runs.push(ObjectExtrasRun::Status {
+            parent: 1,
+            bomb_clock: Some(0),
+            wrench: Some(1),
+            power_off: None,
+            rank: None,
+            rank_insignia: None,
+            background: None,
+            shield_background: None,
+            fills: 2..3,
+            scale: 0..0,
+            self_heal: None,
+            group_rectangles: 0..0,
+            group_text: 0..0,
+            digital_text: Vec::new(),
+            digital_shapes: Vec::new(),
+            talk_bubble: None,
+        });
+        let faint = SpriteInstance {
+            alpha: 0.5,
+            ..Default::default()
+        };
+        let placement = [drawn, faint];
+        let mut list = HdList::default();
+        interface_instances(&mut list, &layers, &[], &placement, |strip| {
+            strip != InterfaceStrip::BombClock
+        });
+        let runs: Vec<_> = list
+            .runs
+            .iter()
+            .map(|run| (run.page, run.neutral_a, run.count))
+            .collect();
+        assert_eq!(
+            runs,
+            [
+                (HdSource::Interface(InterfaceStrip::Wrench), false, 1),
+                (HdSource::Interface(InterfaceStrip::Pips), true, 1),
+                (HdSource::Interface(InterfaceStrip::Placement), true, 1),
+            ]
+        );
+    }
 }

@@ -22,12 +22,19 @@
 //! their magnified 1x pixels. The WebGL2 fallback cannot load a depth texture
 //! in a shader, so it builds no HD pages and the pass never runs there.
 //!
+//! The interface strips drawn from pictures (`render::interface_picture`:
+//! status markers, pips, health bars, the placement grid, beacons) have HD
+//! twins of their own ([`HdSource::Interface`]); their copies follow the
+//! world's, in the order the world drew them.
+//!
 //! Nothing here exists, allocates or walks anything unless the sprite atlas
-//! has HD picture pages (`SpriteAtlas::has_picture_hd_pages`).
+//! or an interface strip has an HD page (`SpriteAtlas::has_picture_hd_pages`,
+//! `SelectionOverlay::has_hd_pages`, `BeaconArt::has_hd_pages`).
 
-use crate::render::batch::{BatchRenderer, SPRITE_INSTANCE_ATTRIBUTES, SpriteInstance};
+use crate::render::batch::{
+    BatchRenderer, BatchTexture, SPRITE_INSTANCE_ATTRIBUTES, SpriteInstance,
+};
 use crate::render::picture_atlas::HdPage;
-use crate::render::sprite_atlas::SpriteAtlas;
 
 /// One HD page on the GPU: premultiplied encoded colour with mipmaps down to
 /// one texel per game pixel, and its level-0 index plane.
@@ -101,11 +108,23 @@ pub(crate) enum HdDepth {
     LessEqual = 2,
 }
 
+/// The page a run of HD instances draws from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HdSource {
+    /// A sprite atlas page with a twin (`SpriteAtlas::picture_hd_page`).
+    Atlas(usize),
+    /// An interface strip drawn from a picture.
+    Interface(crate::render::selection_overlay::InterfaceStrip),
+}
+
 /// A run of HD instances drawn from one page with one Z test.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct HdRun {
-    pub page: usize,
+    pub page: HdSource,
     pub depth: HdDepth,
+    /// The world draw bound the surface camera, whose A plane is neutral
+    /// (`BatchRenderer::surface_camera_bind_group`): stores that bypass A.
+    pub neutral_a: bool,
     pub start: u32,
     pub count: u32,
 }
@@ -378,10 +397,11 @@ impl PictureZoomPass {
     /// Draw this frame's runs into `view` at `placement`, inside `scissor`
     /// (target pixels), testing Z against `world_depth`, the world's own
     /// depth at one texel per world pixel, and ownership against
-    /// `world_color`, the completed world's encoded colour there. `zshape` is
+    /// `world_color`, the completed world's encoded colour there. `pages`
+    /// gives each run's HD twin and the page the world drew from. `zshape` is
     /// the world runs' shape binding (`draw_native_object_pass`).
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn draw(
+    pub(crate) fn draw<'a>(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -390,7 +410,7 @@ impl PictureZoomPass {
         placement: &HdPlacement<'_>,
         world_depth: &wgpu::TextureView,
         world_color: &wgpu::TextureView,
-        atlas: &SpriteAtlas,
+        pages: &dyn Fn(HdSource) -> Option<(&'a PictureHdPage, &'a BatchTexture)>,
         batch: &BatchRenderer,
         zshape: &wgpu::BindGroup,
         scissor: [u32; 4],
@@ -467,13 +487,12 @@ impl PictureZoomPass {
             ],
         });
         // One bind group per HD page this frame draws from.
-        let mut page_groups: Vec<(usize, wgpu::BindGroup)> = Vec::new();
+        let mut page_groups: Vec<(HdSource, wgpu::BindGroup)> = Vec::new();
         for run in &self.runs {
             if page_groups.iter().any(|(page, _)| *page == run.page) {
                 continue;
             }
-            let (Some(page), Some(low)) = (atlas.picture_hd_page(run.page), atlas.page(run.page))
-            else {
+            let Some((page, low)) = pages(run.page) else {
                 continue;
             };
             let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -494,11 +513,11 @@ impl PictureZoomPass {
                     },
                     wgpu::BindGroupEntry {
                         binding: 3,
-                        resource: wgpu::BindingResource::TextureView(&low.texture.view),
+                        resource: wgpu::BindingResource::TextureView(&low.view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 4,
-                        resource: wgpu::BindingResource::TextureView(&low.texture.source_indices),
+                        resource: wgpu::BindingResource::TextureView(&low.source_indices),
                     },
                 ],
             });
@@ -521,7 +540,6 @@ impl PictureZoomPass {
             multiview_mask: None,
         });
         pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, batch.camera_bind_group(), &[]);
         pass.set_bind_group(3, zshape, &[]);
         pass.set_vertex_buffer(0, buffer.slice(..));
         pass.set_scissor_rect(x, y, width, height);
@@ -530,6 +548,14 @@ impl PictureZoomPass {
                 continue;
             };
             let offset = run.depth as u64 * self.params_stride;
+            // The camera the world draw bound: the same view, with the
+            // tactical A plane or the neutral one.
+            let camera = if run.neutral_a {
+                batch.surface_camera_bind_group()
+            } else {
+                batch.camera_bind_group()
+            };
+            pass.set_bind_group(0, camera, &[]);
             pass.set_bind_group(1, group, &[]);
             pass.set_bind_group(2, &view_group, &[offset as u32]);
             pass.draw(0..6, run.start..run.start + run.count);
