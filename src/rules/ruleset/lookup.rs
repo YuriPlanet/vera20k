@@ -919,6 +919,13 @@ impl RuleSet {
         self.npatch_fixes = npatch;
     }
 
+    /// Test hook for the master switch alone, so a fixture can compare games
+    /// that share every feature key and file but differ on the fixes.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_npatch_fixes_for_test(&mut self, fixes: bool) {
+        self.npatch_fixes = fixes;
+    }
+
     /// VERA: whether this game plays RA2 Mode (docs/ra2-mode.md): original
     /// Red Alert 2's rules where they differ from Yuri's Revenge. Sim and
     /// rules read this one answer; app, asset and INI-root code read the

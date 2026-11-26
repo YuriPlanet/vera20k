@@ -1353,6 +1353,9 @@ impl RuleSet {
             }
         }
         let general = &self.general;
+        if self.npatch_fixes() {
+            b"npatch-fixes-v1".hash(&mut hasher);
+        }
         if self.npatch() {
             general.vehicle_parachute.hash(&mut hasher);
         }

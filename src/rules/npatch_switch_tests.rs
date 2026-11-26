@@ -68,6 +68,19 @@ fn a_feature_key_does_not_turn_the_fixes_on() {
     assert!(!rules.npatch_fixes());
 }
 
+/// The fixes change what a match plays, so a game with the same files and
+/// feature key but no master switch must not agree with one that has it.
+#[test]
+fn the_fix_master_switch_changes_the_config_hash() {
+    let mut feature = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nDisableParallelAIQueues=yes\n",
+    ))
+    .unwrap();
+    let hash = feature.simulation_config_hash();
+    feature.set_npatch_fixes_for_test(true);
+    assert_ne!(hash, feature.simulation_config_hash());
+}
+
 /// An explicit `no` keeps NPatch off even when an NPatch-only key would
 /// otherwise turn it on.
 #[test]
