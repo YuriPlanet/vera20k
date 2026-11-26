@@ -129,10 +129,9 @@ This product includes software developed by the Kratos Authors.
 
 ## Game files
 
-VERA20K includes 240 ice and shoreline tiles from Command & Conquer: Tiberian Sun – Firestorm
-with permission. The [bundled ice archive](Terrain/vera_ice.mix) adapts them to the
-Yuri's Revenge tile size and snow palette. Electronic Arts owns the artwork. VERA20K's code
-and art licenses grant no rights to reuse it separately. EA has not endorsed and does not support this product.
+The [bundled ice archive](Terrain/vera_ice.mix) uses the Yuri's Revenge tile size and snow palette.
+VERA20K's code and art licenses grant no rights to reuse that artwork separately.
+EA has not endorsed and does not support this product.
 
 Players supply their own copy of Red Alert 2: Yuri's Revenge. Its retail files belong to
 Electronic Arts and are distributed separately from VERA20K.
