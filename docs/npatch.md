@@ -245,14 +245,17 @@ The sections follow the behavior chains of #3024.
   Mutator over an occupied cell allocated a fresh brute on every completed
   frame and never destroyed the refused one — unbounded object growth while
   the cell stayed blocked. The anim still steps its stage back and retries.
-- #2956 (NPExt changelog item 19, parts 1 and 2 of 4): a unit the Magnetron
-  lifts is not self-propelled — held locomotion plays no move sounds, and a
+- #2956 (NPExt changelog item 19, parts 1–3): a unit the Magnetron lifts
+  is not self-propelled — held locomotion plays no move sounds, flies on
+  its ordinary `Speed=` instead of the type's higher `JumpjetSpeed=`, and a
   drop plays neither the crash voice nor the crashing sound. Native ran the
   victim's own foot move-sound tail over the held jumpjet route
   (`FootClass::AI @ 0x004DA530`), whose skip also drops that tail's Main RNG
-  draw (`0x004DAACB`), and its drop edge raised the crash latch
-  (`0x004DEBD3..0x004DEC5F`) before the release ran. The held-aircraft speed
-  and mid-air destruction parts of the chain remain open.
+  draw (`0x004DAACB`), copied the Jumpjet block at `0x54AD5C`, and raised
+  the drop edge's crash latch (`0x004DEBD3..0x004DEC5F`). The changelog's
+  held-aircraft death claim is wrong: native takes the Aircraft death
+  explosion (`0x0041661F`), then `Crash` (`0x00416694`) and the Jumpjet
+  drop (`0x0054AF33..0x0054AF60`), and VERA already falls that way.
 - #2967 (NPExt changelog item 52): a manual garrison release with no ring
   exit is a no-op under NPatch instead of `KillOccupants(NULL)`
   (`SellBuilding @ 0x004580A9`, no-exit arm `0x00458180..0x00458190`), so a

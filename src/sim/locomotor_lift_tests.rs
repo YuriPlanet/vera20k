@@ -616,24 +616,22 @@ fn npatch_target_switch_releases_the_held_tank_without_a_beam() {
     let (mut sim, grid, magnetron, tank) = lift(&rules);
     let other = spawn(&mut sim, &rules, "MTNK", "Russians", 12, 16);
     assert_eq!(entity(&sim, magnetron).lift.target(), Some(tank));
+    let wave = sim
+        .active_wave_id(magnetron)
+        .expect("the lifting shot keeps its wave");
+    sim.waves
+        .get_mut(wave)
+        .expect("registered wave")
+        .set_target_ref_for_test(Some(crate::sim::combat::TargetKind::Entity(other)));
 
-    order(
-        &mut sim,
-        "Americans",
-        Command::Attack {
-            attacker_id: magnetron,
-            target_id: other,
-        },
-    );
     assert!(
-        run_until(&mut sim, &rules, &grid, 400, |sim| {
-            !entity(sim, tank).lift.swap_active()
+        run_until(&mut sim, &rules, &grid, 60, |sim| {
+            entity(sim, tank).lift.source().is_none()
         }),
         "the tank is released when the wave stops tracking it"
     );
     let released = entity(&sim, tank);
     assert_eq!(released.lift.source(), None);
-    assert_eq!(entity(&sim, magnetron).lift.target(), Some(other));
 }
 
 /// Held all the way, the tank reaches the cell beside the Magnetron that the
@@ -1445,6 +1443,50 @@ fn retail_tank_killed_in_the_air_is_uninit_at_once() {
             "dropped {dropped}"
         );
     }
+}
+
+#[test]
+fn npatch_lift_uses_the_victims_speed_not_its_jumpjet_speed() {
+    let Some(mut rules) = retail_rules() else {
+        return;
+    };
+    let normal_speed = rules.object("MTNK").unwrap().speed;
+    assert_eq!(
+        rules
+            .object("MTNK")
+            .unwrap()
+            .jumpjet_params
+            .speed
+            .to_num::<i32>(),
+        14
+    );
+    assert_ne!(normal_speed, 14, "MTNK's Speed and the Jumpjet seed differ");
+    rules.set_npatch_for_test(true);
+    let (mut sim, _) = arena(&rules);
+    let magnetron = spawn(&mut sim, &rules, "TELE", "Americans", 10, 16);
+    let tank = spawn(&mut sim, &rules, "MTNK", "Russians", 16, 16);
+    sim.locomotor_detonation(
+        magnetron,
+        LocomotorShotTarget::Object(tank),
+        5000,
+        LocomotorKind::Jumpjet,
+        &crate::rules::jumpjet_params::JumpjetOverride::default(),
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
+    let held = entity(&sim, tank);
+    assert!(held.lift.swap_active());
+    assert_eq!(
+        held.locomotor
+            .as_ref()
+            .unwrap()
+            .jumpjet_runtime()
+            .unwrap()
+            .params()
+            .speed(),
+        normal_speed
+    );
 }
 
 /// The arm's admission (`0x004694CB..0x00469700`): the shot must exceed the

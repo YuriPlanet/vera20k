@@ -629,20 +629,32 @@ impl Simulation {
             .then(|| {
                 let wave = self.waves.get(id)?;
                 let owner = wave.owner_id()?;
-                let crate::sim::combat::TargetKind::Entity(target) = wave.target_ref()? else {
-                    return None;
-                };
-                Some((owner, target))
+                self.substrate
+                    .entities
+                    .get(owner)
+                    .and_then(|entity| entity.lift.target())
+                    .map(|target| (owner, target))
             })
             .flatten();
+        let beam_was_active = self
+            .waves
+            .get(id)
+            .is_some_and(|wave| wave.active_geometry());
         let terrain = self.resolved_terrain.as_ref();
         let (request, result) = self
             .waves
             .advance_one(id, context, terrain)
             .expect("wave remained present for its Logic slot");
-        // Fade-terminal UnInit dispatches exact pointer expiry before the
-        // stale AI-20 cell vector is damaged on AI-21.
-        if result.uninitialized {
+        // A wave whose tracking failed (`active_geometry` cleared) stops
+        // drawing its magnetic beam; NPatch also lets its held victim go
+        // there, without waiting for the fade's terminal UnInit.
+        let beam_gone = result.uninitialized
+            || (beam_was_active
+                && self
+                    .waves
+                    .get(id)
+                    .is_some_and(|wave| !wave.active_geometry()));
+        if beam_gone {
             if let Some((owner, target)) = held_by_this_wave
                 && self
                     .substrate
@@ -652,6 +664,10 @@ impl Simulation {
             {
                 self.release_locomotor(owner, true, rules, ctx.overlay_registry, &mut ctx.effects);
             }
+        }
+        // Fade-terminal UnInit dispatches exact pointer expiry before the
+        // stale AI-20 cell vector is damaged on AI-21.
+        if result.uninitialized {
             self.clear_active_wave_link(id);
         }
         if let Some(request) = request {
