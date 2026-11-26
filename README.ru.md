@@ -125,21 +125,15 @@ Phobos по-прежнему нужна версия игры, собранна�
 ## Медиа
 
 <p>
-  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a>&ensp;Канал <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> показал VERA20K.
+  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="bottom" alt="Command &amp; Conquer Vietnam (YouTube)"></a>&ensp;Канал <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> показал VERA20K.<br>
+  &emsp;&emsp;&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 против 29 ИИ уровня Brutal на Arctic Circle 30</a><br>
+  &emsp;&emsp;&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a>
 </p>
-
-<ul type="none">
-  <li>&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 против 29 ИИ уровня Brutal на Arctic Circle 30</a></li>
-  <li>&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
-</ul>
 
 <p>
-  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="64" height="64" align="middle" alt="HaoJun Yang"></a>&ensp;Канал <a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> показал VERA20K.
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="64" height="64" align="bottom" alt="HaoJun Yang"></a>&ensp;Канал <a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> показал VERA20K.<br>
+  &emsp;&emsp;&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 в VERA20K 0.41</a>
 </p>
-
-<ul type="none">
-  <li>&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 в VERA20K 0.41</a></li>
-</ul>
 
 ## Благодарности и правовая информация
 

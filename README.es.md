@@ -129,21 +129,15 @@ Pagos a los colaboradores:
 ## Medios
 
 <p>
-  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a>&ensp;VERA20K aparece en <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a>.
+  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="bottom" alt="Command &amp; Conquer Vietnam (YouTube)"></a>&ensp;VERA20K aparece en <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a>.<br>
+  &emsp;&emsp;&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 contra 29 IA en dificultad brutal en Arctic Circle 30</a><br>
+  &emsp;&emsp;&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a>
 </p>
-
-<ul type="none">
-  <li>&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 contra 29 IA en dificultad brutal en Arctic Circle 30</a></li>
-  <li>&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
-</ul>
 
 <p>
-  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="64" height="64" align="middle" alt="HaoJun Yang"></a>&ensp;VERA20K aparece en <a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a>.
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="64" height="64" align="bottom" alt="HaoJun Yang"></a>&ensp;VERA20K aparece en <a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a>.<br>
+  &emsp;&emsp;&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 en VERA20K 0.41</a>
 </p>
-
-<ul type="none">
-  <li>&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 en VERA20K 0.41</a></li>
-</ul>
 
 ## Créditos y aviso legal
 
