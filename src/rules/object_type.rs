@@ -553,7 +553,8 @@ pub struct ObjectType {
     /// `Soylent=` (TechnoType `+0x614`): when nonzero, the refund
     /// `TechnoTypeClass::GetRefund @ 0x00711F60` returns instead of the cost.
     pub soylent: i32,
-    /// `Points=` (TechnoType), the type's score value. Read only for Wasm
+    /// `Points=` (TechnoType +0x728, initialized at 0x00711237 and read by
+    /// TechnoTypeClass::ReadINI at 0x007149A7). Exposed to Wasm
     /// modules' TechnoType `Points` (RFC 0001 appendix 7.7); no simulation
     /// rule uses it.
     pub points: i32,

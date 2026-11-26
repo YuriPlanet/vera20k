@@ -139,7 +139,7 @@ impl Simulation {
         shooter: u64,
         target: TargetKind,
         slot: i32,
-        weapon: i32,
+        weapon: Option<&str>,
     ) -> bool {
         if !self.trigger_runtime.module_decides(EVENT_FIRE_ALLOWED) {
             return true;
@@ -149,7 +149,9 @@ impl Simulation {
             other,
             cell,
             value: i64::from(slot),
-            id: weapon,
+            id: weapon
+                .and_then(|name| rules.weapon_index(name))
+                .map_or(-1, |index| index as i32),
             ..ModuleEvent::new(EVENT_FIRE_ALLOWED, shooter)
         };
         self.decide_module_event(rules, &event, None, None, 1, allow) != Some(0)
@@ -163,7 +165,7 @@ impl Simulation {
         rules: &RuleSet,
         victim: u64,
         source: u64,
-        warhead: i32,
+        warhead: crate::sim::intern::InternedId,
         native: bool,
     ) -> bool {
         if !self.trigger_runtime.module_decides(EVENT_RETALIATE) {
@@ -171,7 +173,9 @@ impl Simulation {
         }
         let event = ModuleEvent {
             other: source,
-            id: warhead,
+            id: rules
+                .warhead_index(self.interner.resolve(warhead))
+                .map_or(-1, |index| index as i32),
             ..ModuleEvent::new(EVENT_RETALIATE, victim)
         };
         self.decide_module_event(rules, &event, None, None, i64::from(native), allow)

@@ -26,21 +26,60 @@
 
 use crate::{Cell, EventRecord, House, Mission, NameKind, Projectile, Ref, Techno, TypeRef, sys};
 
-/// One decision request (`DecideRecord`), valid during its `on_decide`
-/// call.
-pub type DecideRecord = sys::DecideRecord;
+/// One engine decision and its uniquely borrowed result area, valid during
+/// the `on_decide` call.
+pub struct DecideRecord<'a> {
+    raw: &'a mut sys::DecideRecord,
+    result_bytes: &'a mut [u8],
+}
 
-impl DecideRecord {
+impl core::ops::Deref for DecideRecord<'_> {
+    type Target = sys::DecideRecord;
+
+    fn deref(&self) -> &Self::Target {
+        self.raw
+    }
+}
+
+impl core::ops::DerefMut for DecideRecord<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.raw
+    }
+}
+
+impl<'a> DecideRecord<'a> {
     /// The records `on_decide(ptr, count)` received.
     ///
     /// # Safety
-    /// `ptr` and `count` must be the arguments the engine passed to
-    /// `on_decide`, and the slice must not outlive that call.
-    pub unsafe fn batch<'a>(ptr: i32, count: i32) -> &'a mut [DecideRecord] {
-        // SAFETY: the engine wrote `count` records at `ptr`, in the
-        // `vera.delivery` area (8-byte aligned, checked at load).
-        unsafe {
-            core::slice::from_raw_parts_mut(ptr as usize as *mut DecideRecord, count as usize)
+    /// The caller must use the engine's original arguments and records, all
+    /// initialized, aligned and exclusively accessible, with disjoint result
+    /// areas. The iterator and its items must not outlive this callback.
+    pub unsafe fn batch(ptr: i32, count: i32) -> impl Iterator<Item = Self> {
+        // SAFETY: the engine wrote the records in its aligned delivery area.
+        let records = unsafe {
+            core::slice::from_raw_parts_mut(ptr as usize as *mut sys::DecideRecord, count as usize)
+        };
+        records.iter_mut().map(|raw| {
+            let result_bytes = if raw.area_cap > 0 {
+                // SAFETY: each initialized area is exclusive to this record
+                // throughout the callback. Borrow it before exposing the record.
+                unsafe {
+                    core::slice::from_raw_parts_mut(
+                        raw.area as usize as *mut u8,
+                        raw.area_cap as usize,
+                    )
+                }
+            } else {
+                &mut []
+            };
+            Self { raw, result_bytes }
+        })
+    }
+
+    fn reborrow(&mut self) -> DecideRecord<'_> {
+        DecideRecord {
+            raw: self.raw,
+            result_bytes: self.result_bytes,
         }
     }
 
@@ -70,14 +109,7 @@ impl DecideRecord {
     /// without one. It holds the previous link's result in its first
     /// `previous_len` bytes, the rest zeroed.
     pub fn area(&mut self) -> &mut [u8] {
-        if self.area == 0 || self.area_cap <= 0 {
-            return &mut [];
-        }
-        // SAFETY: the engine placed `area_cap` bytes at `area`, in the
-        // delivery area past this record, for this call only.
-        unsafe {
-            core::slice::from_raw_parts_mut(self.area as usize as *mut u8, self.area_cap as usize)
-        }
+        self.result_bytes
     }
 }
 
@@ -111,11 +143,11 @@ fn take<T: Copy + Default>(area: &[u8], at: usize) -> Option<T> {
 macro_rules! decision {
     ($(#[$doc:meta])* $name:ident { $($(#[$fdoc:meta])* $field:ident: $ty:ty = |$r:ident| $read:expr),* $(,)? }) => {
         $(#[$doc])*
-        pub struct $name<'a>(pub &'a mut DecideRecord);
+        pub struct $name<'a>(pub DecideRecord<'a>);
 
-        impl<'a> From<&'a mut DecideRecord> for $name<'a> {
-            fn from(record: &'a mut DecideRecord) -> Self {
-                Self(record)
+        impl<'a> From<&'a mut DecideRecord<'_>> for $name<'a> {
+            fn from(record: &'a mut DecideRecord<'_>) -> Self {
+                Self(record.reborrow())
             }
         }
 
@@ -142,8 +174,8 @@ macro_rules! decision {
             }
 
             /// The whole request.
-            pub fn request(&self) -> &DecideRecord {
-                self.0
+            pub fn request(&self) -> &DecideRecord<'_> {
+                &self.0
             }
         }
     };
@@ -679,13 +711,15 @@ impl ApproachPointDecision<'_> {
 macro_rules! on_decide {
     (shared_delivery: $($key:path => $handler:path),* $(,)?) => {
         #[unsafe(no_mangle)]
-        pub extern "C" fn on_decide(ptr: i32, count: i32) {
+        /// # Safety
+        /// Only the engine may call this export with its current delivery records.
+        pub unsafe extern "C" fn on_decide(ptr: i32, count: i32) {
             // SAFETY: these are the engine's own arguments, used only here.
             let records = unsafe { $crate::DecideRecord::batch(ptr, count) };
-            for record in records.iter_mut() {
+            for mut record in records {
                 $(
                     if record.event.key == $key {
-                        $handler(::core::convert::From::from(&mut *record));
+                        $handler(::core::convert::From::from(&mut record));
                         continue;
                     }
                 )*
