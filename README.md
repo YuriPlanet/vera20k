@@ -21,7 +21,7 @@
 从 [Switch Release](https://github.com/Fisheatingcats/vera20k-switch/releases/latest) 下载并安装 NSP。
 安装包不含游戏资源：请从自己的游戏安装目录复制资源到 Switch SD 卡根目录的 `game/`。
 
-Switch 真机运行截图（早期版本，左上角为调试信息）：
+Switch 真机运行照片（左上角为调试信息）：
 
 ![Switch 实机上的对局开始画面](docs/images/switch/base-start.jpg)
 ![Switch 实机上的基地建设画面](docs/images/switch/base-buildings.jpg)
