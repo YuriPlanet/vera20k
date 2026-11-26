@@ -173,16 +173,12 @@ export namespace Client {
   export function findPage(query: Find, out: StaticArray<i64>, after: i64): FindPage {
     PAGE.count = 0;
     PAGE.next = 0;
-    // `Find` keeps its query bytes and overflow flag private to core.ts;
-    // read them by field offset, the same bytes `Find.page` sends.
-    const self = changetype<usize>(query);
-    if (load<bool>(self + offsetof<Find>("overflow"))) {
+    const ptr = query.raw(after);
+    if (!ptr) {
       check(Status.Refused);
       return PAGE;
     }
-    const ptr = load<usize>(self + offsetof<Find>("buf"));
-    store<i64>(ptr, after, 48); // Query.after
-    const len = sys.QUERY_BYTES + load<i32>(ptr, 56) * sys.CLAUSE_BYTES; // Query.clauses
+    const len = query.rawLen;
     if (check(sys.client_find(ptr, len, changetype<usize>(out), out.length, OUT)) == Status.Ok) {
       PAGE.count = load<i32>(OUT);
       PAGE.next = load<i64>(OUT, 8);

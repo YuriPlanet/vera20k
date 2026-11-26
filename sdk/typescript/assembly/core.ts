@@ -558,19 +558,34 @@ export class Find {
   }
 
   /**
+   * @internal The query bytes with `after` set, or 0 for a query with too
+   * many clauses; `rawLen` is their length. `Client.findPage` sends them
+   * with `client_find`.
+   */
+  raw(after: i64): usize {
+    if (this.overflow) return 0;
+    store<i64>(this.ptr, after, Q_AFTER);
+    return this.ptr;
+  }
+
+  /** @internal The byte length of `raw`'s query. */
+  get rawLen(): i32 {
+    return sys.QUERY_BYTES + load<i32>(this.ptr, Q_CLAUSES) * sys.CLAUSE_BYTES;
+  }
+
+  /**
    * One page from sort key `after` (0 first) into `out`. The returned page
    * is shared: read it before the next search.
    */
   page(out: StaticArray<i64>, after: i64): FindPage {
     PAGE.count = 0;
     PAGE.next = 0;
-    if (this.overflow) {
+    const query = this.raw(after);
+    if (!query) {
       last = Status.Refused;
       return PAGE;
     }
-    store<i64>(this.ptr, after, Q_AFTER);
-    const len = sys.QUERY_BYTES + load<i32>(this.ptr, Q_CLAUSES) * sys.CLAUSE_BYTES;
-    if (check(sys.find(this.ptr, len, changetype<usize>(out), out.length, OUT)) == Status.Ok) {
+    if (check(sys.find(query, this.rawLen, changetype<usize>(out), out.length, OUT)) == Status.Ok) {
       PAGE.count = load<i32>(OUT);
       PAGE.next = load<i64>(OUT, 8);
     }
