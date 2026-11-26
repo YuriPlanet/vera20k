@@ -2,7 +2,7 @@
 
 [简体中文](0001-wasm-extension-modules-api.zh-CN.md)
 
-Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.0.23, revised in the same commit as the main text, which takes precedence. Rules are stated only in the main text. Version 1 contents are in [section 9](#9-version-1-inventory) and the tier columns.
+Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.0.25, revised in the same commit as the main text, which takes precedence. Rules are stated only in the main text. Version 1 contents are in [section 9](#9-version-1-inventory) and the tier columns.
 
 ## Contents
 
@@ -1393,9 +1393,9 @@ Client-only references, writable with `client_set` and `client_set_bytes`. They 
 
 | Property | Value | Applies to | Notes |
 | --- | --- | --- | --- |
-| `Name` | string | All | Read-only name for `client_node_find`. For a `veraui.ini` node, the part name after the layout prefix in the section name |
+| `Name` | string | All | Name for `client_node_find`. For a `veraui.ini` node, the part name after the layout prefix in the section name, read-only. A module names a node it created once with `client_set_bytes`, unique among its source's nodes. Naming again, a taken name or another's node returns `Refused` |
 | `Label` | string | `Text`, `Button`, `Decoration` | CSF entry name or literal. Display the CSF entry if it exists, otherwise the literal text |
-| `Art` | string | `Button`, `Image`, `Decoration` | Image name, resolved by name; the engine decides the format |
+| `Art` | string | `Button`, `Image`, `Decoration` | Image name, resolved by name; the engine decides the format. Drawn unscaled from the node's top left. A module node's or map part's button draws its `Label` over the picture (one pixel down and right while held); the picture dims while disabled (the label greys), brightens under the pointer and darkens while held. A `veraui.ini` layout's own picture button draws the picture alone |
 | `X`, `Y`, `Width`, `Height` | int | All | Pixels |
 | `Hold` | enum `Hold` | All | |
 | `Gap` | int | `Row`, `Column` | Gap between parts in pixels |
@@ -1408,6 +1408,7 @@ Client-only references, writable with `client_set` and `client_set_bytes`. They 
 | `ItemProgress` | bytes | `CameoGrid` | `later`. One `i32` per entry in `Items` order: 0..100, −1 for none |
 | `ItemTooltips` | string | `CameoGrid` | One `typeName=extra text` per line, appended to the type's tooltip. Also writable on native grids |
 | `Fill` | int | `Bar` | 0..100 |
+| `Backdrop` | bool | `Text` | Whether a text over the battlefield stands on black, 1 by default; 0 for a text on the module's own picture |
 | `Anchor` | ref (object) | `Decoration` | Attached object. Hide the decoration when the object is invisible |
 | `Palette` | string | `Decoration` | |
 | `Tint`, `TintIntensity` | int | `Decoration` | Local tint (see 7.2 for simulation tint) |

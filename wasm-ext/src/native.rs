@@ -11,10 +11,10 @@ use wasmtime::{
     Caller, Config, Engine, Extern, Instance, Linker, Memory, Module, Store, Trap, Val, ValType,
 };
 
-use crate::SIM_IMPORT_MODULE;
+use crate::client_host::{self, for_each_client_import};
 use crate::host::{self, Ctx, Guest, for_each_import};
 use crate::instrument::METER;
-use crate::module::{Runtime, TrapKind};
+use crate::module::{Arg, Runtime, TrapKind, World};
 
 fn engine() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
@@ -93,23 +93,37 @@ impl Guest for Cx<'_, '_> {
     }
 }
 
-fn linker(engine: &Engine) -> Linker<Ctx> {
+/// A linker holding `world`'s imports.
+fn linker(engine: &Engine, world: World) -> Linker<Ctx> {
     let mut linker = Linker::new(engine);
+    let import_module = world.import_module();
+    // The simulation list names [`host`] functions, the client list its
+    // module.
     macro_rules! wrap {
         ($name:literal, $f:ident($($a:ident: $t:ty),*) -> $r:ty) => {
+            wrap!(host, $name, $f($($a: $t),*) -> $r);
+        };
+        ($m:ident, $name:literal, $f:ident($($a:ident: $t:ty),*) -> $r:ty) => {
             linker
                 .func_wrap(
-                    SIM_IMPORT_MODULE,
+                    import_module,
                     $name,
                     |mut caller: Caller<'_, Ctx>, $($a: $t),*| -> wasmtime::Result<$r> {
-                        host::$f(&mut Cx(&mut caller), $($a),*)
+                        $m::$f(&mut Cx(&mut caller), $($a),*)
                             .map_err(|host::Stop| wasmtime::Error::msg("stopped by a host call"))
                     },
                 )
                 .expect("each import is defined once with a valid signature");
         };
     }
-    for_each_import!(wrap);
+    match world {
+        World::Sim => {
+            for_each_import!(wrap);
+        }
+        World::Client => {
+            for_each_client_import!(wrap);
+        }
+    }
     linker
 }
 
@@ -129,11 +143,11 @@ fn trap_kind(error: &wasmtime::Error) -> TrapKind {
 }
 
 impl Runtime for Wasmtime {
-    fn instantiate(bytes: &[u8], ctx: Ctx) -> Result<Self, String> {
+    fn instantiate(bytes: &[u8], ctx: Ctx, world: World) -> Result<Self, String> {
         let engine = engine();
         let module = Module::new(engine, bytes).map_err(|e| format!("{e:#}"))?;
         let mut store = Store::new(engine, ctx);
-        let instance = linker(engine)
+        let instance = linker(engine, world)
             .instantiate(&mut store, &module)
             .map_err(|e| format!("{e:#}"))?;
         let memory = instance.get_memory(&mut store, "memory");
@@ -148,15 +162,23 @@ impl Runtime for Wasmtime {
         f(self.store.data_mut())
     }
 
-    fn call(&mut self, name: &str, args: &[i32]) -> Result<(), TrapKind> {
+    fn call(&mut self, name: &str, args: &[Arg]) -> Result<(), TrapKind> {
         let result = match *args {
             [] => self
                 .instance
                 .get_typed_func::<(), ()>(&mut self.store, name)
                 .and_then(|f| f.call(&mut self.store, ())),
-            [a, b] => self
+            [Arg::I32(a), Arg::I32(b)] => self
                 .instance
                 .get_typed_func::<(i32, i32), ()>(&mut self.store, name)
+                .and_then(|f| f.call(&mut self.store, (a, b))),
+            [Arg::I64(a), Arg::I32(b), Arg::I32(c)] => self
+                .instance
+                .get_typed_func::<(i64, i32, i32), ()>(&mut self.store, name)
+                .and_then(|f| f.call(&mut self.store, (a, b, c))),
+            [Arg::F32(a), Arg::F32(b)] => self
+                .instance
+                .get_typed_func::<(f32, f32), ()>(&mut self.store, name)
                 .and_then(|f| f.call(&mut self.store, (a, b))),
             _ => return Err(TrapKind::Other),
         };

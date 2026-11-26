@@ -849,7 +849,7 @@ fn cloaked_reads_the_cloak_state() {
         runtime
             .simulation
             .with_module_host(&runtime.resources.rules, super::ModuleSource::Map, |host| {
-                host.read(unit as i64, super::tests::prop("Cloaked"))
+                host.reader().read(unit as i64, super::tests::prop("Cloaked"))
             })
             .expect("a valid read")
     };

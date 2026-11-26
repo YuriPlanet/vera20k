@@ -487,8 +487,10 @@ Y=8
 
 ## Adding buttons and text
 
-A layout can add parts of its own, of two kinds: a button that gives a command when it
-is clicked, and a text that shows a value.
+A layout can add parts of its own: a button that gives a command when it is clicked, a
+text that shows a value or a label, a picture, a bar and a list. The last few are for a
+mod's interface module (`ui.wasm`), which finds a part by its name and changes it while
+the match runs; see [Parts for interface modules](#parts-for-interface-modules).
 
 Give the new part a name, put the name in the `Parts=` of `Side` or of `Field`, and
 give it a section with `Type=`:
@@ -520,11 +522,11 @@ the battlefield.
 
 | Key | Meaning |
 | --- | --- |
-| `Type` | `Button` or `Text`. `Row`, `Column` and `CameoGrid` are below |
-| `Command` | For a button: what a click does. See [Commands](#commands) |
-| `Label` | For a button without a picture: the words on it. It is the name of a line in the game's string table, like `GUI:Stop`, and shows that line's text; a name the table doesn't have shows as `MISSING:'name'`, as everywhere else in the game (and the name itself while no table is loaded). Without `Label` the button's label is its command's name, looked up the same way |
-| `Art` | For a button: its picture, an SHP file like `mybutton.shp`. Frame 0 is the button and frame 1 the button held down. It uses the sidebar's palette (`sidebar.pal`), as the command bar's buttons do |
-| `Value` | For a text: what it shows. See [Values](#values) |
+| `Type` | `Button` or `Text`. `Row`, `Column` and `CameoGrid` are below, `Image`, `Bar` and `List` in [Parts for interface modules](#parts-for-interface-modules) |
+| `Command` | For a button: what a click does. See [Commands](#commands). A button with a `Label` or an `Art` may leave it out: a click then only tells the interface modules |
+| `Label` | For a button without a picture: the words on it. For a text, in place of `Value`: words that stay as written until a module changes them. It is the name of a line in the game's string table, like `GUI:Stop`, and shows that line's text; a name the table doesn't have shows as `MISSING:'name'`, as everywhere else in the game (and the name itself while no table is loaded). Without `Label` the button's label is its command's name, looked up the same way |
+| `Art` | For a button: its picture, an SHP file like `mybutton.shp`. Frame 0 is the button and frame 1 the button held down. It uses the sidebar's palette (`sidebar.pal`), as the command bar's buttons do. In a map's `[VeraUI]` and on a client module's button, the `Label` is drawn over the picture, and the picture dims while the button is disabled and brightens under the mouse |
+| `Value` | For a text: what it shows. See [Values](#values). A text needs `Value` or `Label` |
 | `Hold` | The corner or edge of `Side` or `Field` the part is measured from: the nine words of [On the battlefield](#on-the-battlefield). `TopLeft` if you leave it out |
 | `X`, `Y` | How far in from there the part sits |
 | `Width`, `Height` | The part's size. Left out, it is as big as its words or its picture. A picture is never stretched |
@@ -626,6 +628,99 @@ Y=1
 - To show all four tabs at once, add a grid for each. You can then leave `Cameos` out
   of `Side` and `Tabs` out of `Middle`.
 
+### Parts for interface modules
+
+A mod's or a map's interface module (`ui.wasm`) finds a part by the name in its section
+after the layout's (`Buy` for `[Mine.Buy]`) and changes it while the match runs: shows
+or hides it, changes its words or its picture, fills a bar, writes a list. These parts
+are made for that:
+
+```ini
+[Mine.Field]
+Parts=Messages,Timers,Banner,Powers,Tooltip,Buy,Status,Charge,Log,Logo
+
+[Mine.Buy]
+Type=Button
+Label=GUI:Buy
+X=10
+Y=40
+
+[Mine.Status]
+Type=Text
+Label=Ready
+
+[Mine.Charge]
+Type=Bar
+Width=120
+Height=8
+Y=20
+
+[Mine.Log]
+Type=List
+Width=200
+Height=60
+Y=60
+
+[Mine.Logo]
+Type=Image
+Art=mylogo.shp
+Hold=TopRight
+```
+
+| `Type` | What it is |
+| --- | --- |
+| `Button` without `Command` | A button that does nothing itself: a click only tells the modules. It needs a `Label` or an `Art` |
+| `Text` with `Label` | Words that stay as written until a module changes them |
+| `Image` | A picture, `Art=` (frame 0), at its own size |
+| `Bar` | A bar a module fills, framed in the side's text colour. Empty until a module fills it; 100 by 8 pixels unless you give it a size |
+| `List` | Lines a module writes, one under another. Empty until a module writes them |
+
+- Without a module these parts just sit there: a button without a command does
+  nothing, a bar stays empty and a list shows nothing.
+- A button is clicked on by the modules unless a module says otherwise; a click on it
+  never reaches the map.
+- Rows and columns may hold them, as they hold buttons and texts.
+
+### A map's own parts
+
+A map can add parts of its own, for its own interface module, in the map file itself:
+`[VeraUI]` with `Parts=` listing the map's top-level parts, and a `[VeraUI.<part>]`
+section for each, with the keys of an added part above:
+
+```ini
+[VeraUI]
+Parts=Shop,Score
+
+[VeraUI.Shop]
+Type=Row
+Hold=Bottom
+Y=8
+Gap=4
+Parts=Buy,Sell
+
+[VeraUI.Buy]
+Type=Button
+Label=Buy
+
+[VeraUI.Sell]
+Type=Button
+Label=Sell
+
+[VeraUI.Score]
+Type=Text
+Value=Kills
+Hold=TopRight
+X=6
+Y=6
+```
+
+- A map's parts are the same for every side. They only add parts: a map cannot move or
+  change the mod's or the original interface.
+- They sit over the whole screen, in screen pixels, drawn above the match interface;
+  the sidebar's `Side` is not theirs. A `CameoGrid` is not one of them.
+- A player's own layout does not move them.
+- A mod whose `rulesmd.ini` says `[VeraWasm] MapUI=no` leaves them out.
+
 ### Commands
 
 A button gives a command the game already has, as if you pressed its key:
@@ -701,7 +796,7 @@ skipped, and the game tells you.
 
 | Key | What it is for |
 | --- | --- |
-| `Type` on an original part | The kind of part: `Screen`, `Battlefield`, `Box`, `Tooltip`, `Panel`, `Image`, `Text`, `Button`, `Tab`, `Radar`, `Minimap`, `CameoGrid`, `PowerBar` or `CommandBar`. A layout can only add a `Button`, a `Text`, a `Row`, a `Column` or a `CameoGrid` |
+| `Type` on an original part | The kind of part: `Screen`, `Battlefield`, `Box`, `Tooltip`, `Panel`, `Image`, `Text`, `Button`, `Tab`, `Radar`, `Minimap`, `CameoGrid`, `PowerBar` or `CommandBar`. A layout can only add a `Button`, a `Text`, a `Row`, a `Column`, a `CameoGrid`, an `Image`, a `Bar` or a `List` |
 | `Parts` on `Radar`, `Tabs`, `Cameos`, `Power` and `Bar` | The parts inside them: the map picture, the four tabs and the two scroll buttons stay where they are |
 | `Hold`, `Width`, `Height` | A part's edge and size, for the sidebar's own parts and `Field`. `Rest` means what is left |
 | `Font`, and `Align` on an added text | The font a text is drawn in, and where its words sit in its box |
@@ -710,8 +805,8 @@ skipped, and the game tells you.
 
 The three big parts hold on to their edges: they have no `X` or `Y`. The command bar
 can't stand on the left or the right, and its buttons can't be changed here yet. A
-layout can add [buttons, text, rows, columns and grids of build
-pictures](#adding-buttons-and-text) but no other kind of part yet, and a section that
+layout can add [buttons, text, rows, columns, grids of build pictures, pictures, bars
+and lists](#adding-buttons-and-text) but no other kind of part yet, and a section that
 is neither an original part nor one of those is skipped.
 
 ## If you make a mistake
@@ -724,7 +819,7 @@ A mistake in the file never stops the game.
 | A value that isn't a whole number | Skips it and keeps the original |
 | A number that is far too big or too small | Uses the nearest number it allows |
 | A `Parts=` list with a name that is no part, or a part held somewhere else | Skips that name and keeps the rest of the list |
-| A button with a `Command=` the game doesn't have, or a text with a `Value=` it doesn't show | Leaves that part out |
+| A button with a `Command=` the game doesn't have or with no `Command=`, `Label=` or `Art=`, a text with a `Value=` it doesn't show or with neither `Value=` nor `Label=`, or a picture without `Art=` | Leaves that part out |
 | A layout named in `[Layouts]` that the file doesn't have | Keeps the original interface for that side |
 | A `Base=` that names nothing, or `Base=` lines that go round in a loop | Starts from the original interface of the side instead |
 | `@` and a word that is not `Allied`, `Soviet` or `Yuri` | Skips that key |

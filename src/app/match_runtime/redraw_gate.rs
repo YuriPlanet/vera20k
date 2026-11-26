@@ -120,10 +120,10 @@ impl PictureClock {
 /// input, a page switch, a world change, a tooltip, the Save page's blinking
 /// caret or the screen shake (`shake_px`, the offset this pass draws). The
 /// offline battlefield also changes with the camera, the sidebar view, the
-/// message rows, the published detail frame rate, the talk bubble and each
-/// published atlas growth, and stands only while none of its self-moving
-/// owners runs (module docs). The shown performance panel changes it once a
-/// second, when it has new figures.
+/// message rows, the published detail frame rate, the talk bubble, each
+/// published atlas growth and the client modules' nodes, and stands only
+/// while none of its self-moving owners runs (module docs). The shown
+/// performance panel changes it once a second, when it has new figures.
 /// `None` keeps drawing within the limits: captures, modals, other screens,
 /// replay matches, a network match's moving composite, recovery line or
 /// in-game menu, exits and loads, a held mouse button (gadgets repeat on it)
@@ -227,6 +227,9 @@ pub(crate) fn still_frame(
                 detail_fps: detail.frame_rate(),
                 talk_bubble: presentation.talk_bubble.shown(clock.wall_ms),
                 atlas_growths: presentation.atlas_growth.published(),
+                modules: match_state.ui_modules.as_ref().map(|ui| {
+                    crate::app::ui_modules::paint::layers_key(presentation.dialog_ui.gui(), ui)
+                }),
                 panel_due,
                 fonts,
             })
@@ -399,6 +402,13 @@ pub(crate) enum StillFrame {
         /// Atlas growths published; each draws sprites the last picture
         /// lacked.
         atlas_growths: u64,
+        /// The client modules' and the map's layers while the match has
+        /// them (`ui_modules::paint::layers_key`): a node a module
+        /// made, removed, moved or rewrote changes it, and so does the
+        /// layout their drawing gives them, which the picture judged after
+        /// the draw already holds, and a button the pointer came over,
+        /// left, held down or let go.
+        modules: Option<((usize, u64), u64)>,
         /// Whether the shown performance panel has new figures.
         panel_due: bool,
         fonts: usize,
@@ -682,6 +692,7 @@ mod tests {
             detail_fps: 15,
             talk_bubble: bubble,
             atlas_growths: 0,
+            modules: None,
             panel_due: false,
             fonts: 0,
         }
@@ -735,6 +746,11 @@ mod tests {
         if let StillFrame::Battlefield { panel_due, .. } = &mut new_figures {
             *panel_due = true;
         }
+        // A client module's node changed the match GUI.
+        let mut module_nodes = shown;
+        if let StillFrame::Battlefield { modules, .. } = &mut module_nodes {
+            *modules = Some(((1, 1), 0));
+        }
         let mut gate = RedrawGate::default();
         gate.record_presented(Some(shown), t, LIMITS);
         assert_eq!(gate.next_pass(after_limit), NextPass::Probe);
@@ -749,6 +765,7 @@ mod tests {
             battlefield(120, 480.0, 7, false),
             menu(120, false, [0, 0]),
             new_figures,
+            module_nodes,
         ] {
             assert_eq!(
                 gate.probe_verdict(Some(changed), after_limit),

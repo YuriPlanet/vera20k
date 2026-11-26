@@ -306,7 +306,7 @@ fn factory_properties_follow_a_queued_production() {
     );
     let read = |sim: &mut crate::sim::world::Simulation, name: &str| {
         sim.with_module_host(rules, ModuleSource::Map, |host| {
-            host.read(house, prop(name))
+            host.reader().read(house, prop(name))
         })
         .expect("a valid read")
     };
@@ -439,7 +439,7 @@ fn host_read(scene: &mut HeadlessScenario, reference: i64, name: &str) -> (i64, 
     runtime
         .simulation
         .with_module_host(&runtime.resources.rules, ModuleSource::Map, |host| {
-            host.read(reference, prop(name))
+            host.reader().read(reference, prop(name))
         })
         .expect("a valid read")
 }
@@ -647,7 +647,7 @@ fn types_read_their_names_points_and_buildability() {
     sim.with_module_host(rules, ModuleSource::Map, |host| {
         let name = prop("Name");
         assert_eq!(
-            host.read(htnk, name).expect("read"),
+            host.reader().read(htnk, name).expect("read"),
             (0, Status::NotFound),
             "no get has held HTNK"
         );
@@ -659,7 +659,7 @@ fn types_read_their_names_points_and_buildability() {
             ("MTNK".to_owned(), Status::Ok)
         );
         assert_eq!(host.get(mtnk, name).expect("get"), (id, Status::Ok));
-        assert_eq!(host.read(mtnk, name).expect("read"), (id, Status::Ok));
+        assert_eq!(host.reader().read(mtnk, name).expect("read"), (id, Status::Ok));
         assert_eq!(
             host.get(mtnk, prop("Points")).expect("get"),
             (i64::from(points), Status::Ok)
@@ -685,7 +685,7 @@ fn types_read_their_names_points_and_buildability() {
             assert_eq!(yes.found.len() + no.found.len(), total);
         }
         assert_eq!(
-            host.read(mtnk, prop("Buildable")).expect("read"),
+            host.reader().read(mtnk, prop("Buildable")).expect("read"),
             (0, Status::Unsupported)
         );
         assert!(host.find(&query(0, 0, None), 16).is_err());

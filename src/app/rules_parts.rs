@@ -71,6 +71,11 @@ pub(crate) struct RulesSettings {
     /// has the parts it had before the setting was named here.
     #[serde(skip_serializing_if = "is_zero")]
     pub(crate) wasm_budget: u32,
+    /// The room switch "Allow automation" (Wasm client modules, RFC 0001
+    /// 6i). Left out while off, so a game without it has the parts it had
+    /// before the switch was named here.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) automation_allowed: bool,
     /// The Ares setting where it decides which game this is, as the digest
     /// counts it (`ProcessAssets::agreed_ares_setting`): `on`, `off`, or
     /// `auto` for Auto and for a setting that opens the game Auto opens.
@@ -221,6 +226,7 @@ impl RulesParts {
                 superweapon_limit: 0,
                 building_production_queue: false,
                 wasm_budget: 0,
+                automation_allowed: false,
                 ares: "auto",
                 ares_mix: false,
                 kratos: false,
@@ -323,6 +329,7 @@ mod tests {
         let mut all = settings();
         all.building_production_queue = true;
         all.wasm_budget = 1;
+        all.automation_allowed = true;
         let settings = serde_json::to_value(&all).unwrap();
         let personal = serde_json::to_value(
             crate::rules::personal_rules::PersonalRules::default(),

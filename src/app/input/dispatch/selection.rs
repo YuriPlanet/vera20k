@@ -690,7 +690,7 @@ pub(super) fn selection_voice_recipients(
     }
 }
 
-pub(super) fn queue_selection_snapshot_command(
+pub(crate) fn queue_selection_snapshot_command(
     platform: &PlatformState,
     renderer: &RendererState,
     diag: &DiagnosticsState,

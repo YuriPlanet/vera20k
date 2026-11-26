@@ -113,6 +113,9 @@ agree.
   map prefixes, multiplayer and theme archives, movie prefix); otherwise it is left out. The
   sound, EVA, theme, campaign, mission and map-selection roots are in no part: the digest does
   not compare their names.
+  When the host enables automation, the rules parts include
+  `settings.automation_allowed: true`. The player-facing label is “Allow automation”.
+  While the switch is off, the field is omitted.
 - `mod_check`: with a mod that carries a `mod-files.txt`, where its files part from that list
   (`changed`, `missing`, `extra`, at most 20 paths each); otherwise null. It can name a file the
   `mod_files` part leaves out: one that only shows, plays or tells something, such as a `.csf`

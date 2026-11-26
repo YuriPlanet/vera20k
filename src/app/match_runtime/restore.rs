@@ -99,6 +99,8 @@ pub(crate) fn commit_prepared_load(
             launch_dir,
         )
     });
+    // The client modules look for the saved map's file there too.
+    let launch_dir = launch_dir.map(std::path::Path::to_path_buf);
     state.match_state.startup.acknowledge_saved_load(campaign);
     if from_menu {
         // Main_Game sets State_Machine's admission latch at 0x0048CE7E
@@ -369,5 +371,25 @@ pub(crate) fn commit_prepared_load(
     // Apply after the incoming local view, so lock cleanup cannot be undone
     // by the saved targeting/cursor projection.
     super::sim_tick::apply_trigger_effects(state, &pause_effects);
+    // A save carries no client module (RFC 0001 section 10): the restored
+    // match reads the mod's and the map's again and installs them as a new
+    // match does; `client_on_start` comes with its first frame.
+    let ui_sources = match (
+        state.process_assets.manager(),
+        state.match_state.loaded_map_source.as_ref(),
+    ) {
+        (Some(assets), Some(map_source)) => crate::app::ui_modules::UiModuleSources::read_restored(
+            assets,
+            map_source,
+            state
+                .platform
+                .game_config
+                .as_ref()
+                .map(|config| config.paths.ra2_dir.as_path()),
+            launch_dir.as_deref(),
+        ),
+        _ => Default::default(),
+    };
+    crate::app::ui_modules::install(state, ui_sources);
     log::info!("Load: restored simulation from {}", path.display());
 }

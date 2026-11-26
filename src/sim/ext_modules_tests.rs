@@ -2288,3 +2288,13 @@ fn wasm_budgets_default_clamp_and_refuse() {
     assert!(error.contains("MapBudget=5000"), "{error}");
     assert!(WasmPolicy::read(&IniFile::empty(), 100).is_err());
 }
+
+#[test]
+fn map_ui_is_read_from_the_mods_rules_alone() {
+    use super::MapUi;
+    let read = |text: &str| MapUi::read(&IniFile::from_str(text));
+    assert_eq!(read(""), MapUi::Overlay);
+    assert_eq!(read("[VeraWasm]\nMapUI=full\n"), MapUi::Full);
+    assert_eq!(read("[VeraWasm]\nMapUI=No\n"), MapUi::No);
+    assert_eq!(read("[VeraWasm]\nMapUI=sideways\n"), MapUi::Overlay);
+}

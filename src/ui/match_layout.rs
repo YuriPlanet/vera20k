@@ -21,9 +21,9 @@
 use std::sync::{Arc, LazyLock};
 
 use crate::rules::ini_parser::{IniFile, IniSection};
-use crate::ui::added_parts::{AddedKind, AddedPart, Holder, TextValue};
+use crate::ui::added_parts::{AddedKind, AddedPart, Holder, TextShows, TextValue};
 use crate::ui::field_layout::{FieldLayout, FieldPart, Hold, PartBox, TooltipPlace};
-use crate::ui::match_layout_tree::{TABLES, Tree, TreeProblem, exists, part_of};
+use crate::ui::match_layout_tree::{TABLES, Tree, TreeProblem, VALUE_CAPACITY, exists, part_of};
 use crate::ui::sidebar::{Edge, PanelPlaces, SidebarChromeLayoutSpec, SidebarPart, SidebarTheme};
 
 /// The file's name in the game folder or a mod MIX.
@@ -155,7 +155,7 @@ const TYPE_KEYS: &[(&str, &[&str])] = &[
     ("Tooltip", &[]),
     ("Panel", &["Float"]),
     ("Image", &[]),
-    ("Text", &["Value", "Align", "Font"]),
+    ("Text", &["Value", "Label", "Align", "Font"]),
     ("Button", &["Command", "Label"]),
     ("Tab", &["Tab"]),
     ("Radar", &[]),
@@ -187,10 +187,22 @@ const TYPE_KEYS: &[(&str, &[&str])] = &[
     ("CommandBar", &["Rail", "LeftCap", "RightCap", "Slot"]),
     ("Row", &["Gap"]),
     ("Column", &["Gap"]),
+    // Added for client modules (RFC 0001 section 10): a module fills them.
+    ("Bar", &[]),
+    ("List", &[]),
 ];
 
 /// The types a layout can add a part of.
-const ADDED_TYPES: [&str; 5] = ["Button", "Text", "Row", "Column", "CameoGrid"];
+const ADDED_TYPES: [&str; 8] = [
+    "Button",
+    "Text",
+    "Row",
+    "Column",
+    "CameoGrid",
+    "Image",
+    "Bar",
+    "List",
+];
 
 /// Why a line of the file was not used as written.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -583,7 +595,8 @@ impl MatchLayoutFile {
         self.layouts.iter_mut().flatten()
     }
 
-    /// The picture files the layouts' added buttons name (`Art=`), each once.
+    /// The picture files the layouts' added buttons and pictures name
+    /// (`Art=`), each once.
     pub fn art_names(&self) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
         for part in self
@@ -592,9 +605,11 @@ impl MatchLayoutFile {
             .flatten()
             .flat_map(|layout| layout.added.iter())
         {
-            if let AddedKind::Button { art: Some(art), .. } = &part.kind
-                && !names.iter().any(|name| name.eq_ignore_ascii_case(art))
-            {
+            let art = match &part.kind {
+                AddedKind::Button { art: Some(art), .. } | AddedKind::Image { art } => art,
+                _ => continue,
+            };
+            if !names.iter().any(|name| name.eq_ignore_ascii_case(art)) {
                 names.push(art.clone());
             }
         }
@@ -609,50 +624,9 @@ impl MatchLayoutFile {
     pub fn check_commands(&mut self, known: impl Fn(&str) -> bool) {
         let mut refused: Vec<LayoutProblem> = Vec::new();
         for layout in self.all_layouts_mut() {
-            let keep: Vec<bool> = layout
-                .added
-                .iter()
-                .map(|part| match &part.kind {
-                    AddedKind::Button { command, .. } => known(command),
-                    AddedKind::Text { .. }
-                    | AddedKind::Group { .. }
-                    | AddedKind::CameoGrid { .. } => true,
-                })
-                .collect();
-            if keep.iter().all(|&keep| keep) {
-                continue;
+            if let Some(kept) = known_commands(&layout.added, &known, &mut refused) {
+                layout.added = kept.into();
             }
-            // A group's parts name it by its place in the list, which moves
-            // up by the parts left out before it.
-            let mut next = 0;
-            let moved: Vec<usize> = keep
-                .iter()
-                .map(|&keep| {
-                    let place = next;
-                    next += usize::from(keep);
-                    place
-                })
-                .collect();
-            let mut kept = Vec::with_capacity(next);
-            for (index, part) in layout.added.iter().enumerate() {
-                if keep[index] {
-                    let mut part = part.clone();
-                    if let Holder::Group(group) = part.holder {
-                        part.holder = Holder::Group(moved[group]);
-                    }
-                    kept.push(part);
-                } else {
-                    let problem = LayoutProblem {
-                        section: part.section.clone(),
-                        key: "Command".to_owned(),
-                        kind: LayoutProblemKind::UnknownCommand,
-                    };
-                    if !refused.contains(&problem) {
-                        refused.push(problem);
-                    }
-                }
-            }
-            layout.added = kept.into();
         }
         // A built-in part's `Command=` other than its own, and a built-in
         // text's `Value=` and `Align=`: the parts' own code reads them once
@@ -757,6 +731,118 @@ impl MatchLayoutFile {
             text
         }
     }
+}
+
+/// `added` without the buttons whose `Command=` is not `known`, with a line
+/// for each in `refused`; `None` when every part stays. A button without a
+/// `Command=` stays: it only tells the client modules of its clicks.
+fn known_commands(
+    added: &[AddedPart],
+    known: &impl Fn(&str) -> bool,
+    refused: &mut Vec<LayoutProblem>,
+) -> Option<Vec<AddedPart>> {
+    let keep: Vec<bool> = added
+        .iter()
+        .map(|part| match &part.kind {
+            AddedKind::Button { command, .. } => command.as_deref().is_none_or(known),
+            AddedKind::Text { .. }
+            | AddedKind::Image { .. }
+            | AddedKind::Bar
+            | AddedKind::List
+            | AddedKind::Group { .. }
+            | AddedKind::CameoGrid { .. } => true,
+        })
+        .collect();
+    if keep.iter().all(|&keep| keep) {
+        return None;
+    }
+    // A group's parts name it by its place in the list, which moves up by
+    // the parts left out before it.
+    let mut next = 0;
+    let moved: Vec<usize> = keep
+        .iter()
+        .map(|&keep| {
+            let place = next;
+            next += usize::from(keep);
+            place
+        })
+        .collect();
+    let mut kept = Vec::with_capacity(next);
+    for (index, part) in added.iter().enumerate() {
+        if keep[index] {
+            let mut part = part.clone();
+            if let Holder::Group(group) = part.holder {
+                part.holder = Holder::Group(moved[group]);
+            }
+            kept.push(part);
+        } else {
+            let problem = LayoutProblem {
+                section: part.section.clone(),
+                key: "Command".to_owned(),
+                kind: LayoutProblemKind::UnknownCommand,
+            };
+            if !refused.contains(&problem) {
+                refused.push(problem);
+            }
+        }
+    }
+    Some(kept)
+}
+
+/// The section a map's own parts are named under: `[VeraUI]` (its
+/// `Parts=` lists the top-level parts) and `[VeraUI.<part>]`.
+pub const MAP_SECTION: &str = "VeraUI";
+
+/// A map's own interface parts (RFC 0001 section 10, "Static layouts"):
+/// `[VeraUI] Parts=` lists the top-level parts and each `[VeraUI.<part>]`
+/// is one, with the keys of a `veraui.ini` added part. The same for every
+/// side; it only adds parts, never a built-in one. A top-level part's
+/// holder is [`Holder::Field`], which for a map's part means the screen's
+/// overlay above the match interface (screen pixels); a row's or a
+/// column's parts are in their group. Buttons whose `Command=` is not
+/// `known` are left out, each with a line.
+pub fn map_parts(
+    map: &IniFile,
+    known: impl Fn(&str) -> bool,
+) -> (Vec<AddedPart>, Vec<LayoutProblem>) {
+    // The map's sections are its own: over an empty bottom layer, so none
+    // reads as a built-in part.
+    let empty = IniFile::empty();
+    let files = [&empty, map];
+    let mut tree_problems = Vec::new();
+    // Over the first position table, which a map's file has no sections of:
+    // the chain of bases ends there.
+    let tree = Tree::read(&files, MAP_SECTION, TABLES[0], &mut tree_problems);
+    let mut reader = Reader {
+        tree: &tree,
+        read: Vec::new(),
+        problems: Vec::new(),
+    };
+    for problem in tree_problems {
+        if let TreeProblem::UnknownSide { section, key } = problem {
+            reader.problem(&section, &key, LayoutProblemKind::UnknownKey);
+        }
+    }
+    let mut listed: Vec<(ListedIn, String, String)> = Vec::new();
+    if let Some(section) = find_section(map, MAP_SECTION) {
+        let section_name = MAP_SECTION.to_owned();
+        let parts = section
+            .keys()
+            .find(|key| key.eq_ignore_ascii_case("Parts"))
+            .and_then(|key| section.read_name(key, VALUE_CAPACITY))
+            .map(|text| names(&text))
+            .unwrap_or_default();
+        listed.extend(
+            parts
+                .into_iter()
+                .map(|name| (ListedIn::Field, name, section_name.clone())),
+        );
+    }
+    let added = read_added(&mut reader, listed);
+    read_leftovers(&mut reader);
+    let mut problems = reader.problems;
+    let added = known_commands(&added, &known, &mut problems).unwrap_or(added);
+    (added, problems)
 }
 
 fn find_section<'a>(ini: &'a IniFile, name: &str) -> Option<&'a IniSection> {
@@ -1375,29 +1461,48 @@ fn read_added_part(
         let command = reader.value(node, "Command", word);
         let label = reader.value(node, "Label", word);
         let art = reader.value(node, "Art", word);
-        let Some(command) = command else {
+        // A button with a label or a picture and no command only tells the
+        // client modules of its clicks (RFC 0001 section 10).
+        if command.is_none() && label.is_none() && art.is_none() {
             reader.problem(section, "Command", LayoutProblemKind::UnknownCommand);
             return None;
-        };
+        }
         AddedKind::Button {
-            label: label.unwrap_or_else(|| command.clone()),
+            label: label.or_else(|| command.clone()).unwrap_or_default(),
             art,
             command,
         }
+    } else if is("Image") {
+        let Some(art) = reader.value(node, "Art", word) else {
+            reader.problem(section, "Art", LayoutProblemKind::UnknownValue);
+            return None;
+        };
+        AddedKind::Image { art }
+    } else if is("Bar") {
+        AddedKind::Bar
+    } else if is("List") {
+        AddedKind::List
     } else {
         let values: Vec<(&str, TextValue)> = TextValue::ALL
             .into_iter()
             .map(|value| (value.name(), value))
             .collect();
-        let Some(value) = reader.value(
+        let value = reader.value(
             node,
             "Value",
             one_of(&values, LayoutProblemKind::UnknownValue),
-        ) else {
-            reader.problem(section, "Value", LayoutProblemKind::UnknownValue);
-            return None;
+        );
+        // `Label=` in place of `Value=`: a text a client module may change.
+        let label = reader.value(node, "Label", word);
+        let shows = match (value, label) {
+            (Some(value), _) => TextShows::Value(value),
+            (None, Some(label)) => TextShows::Label(label),
+            (None, None) => {
+                reader.problem(section, "Value", LayoutProblemKind::UnknownValue);
+                return None;
+            }
         };
-        AddedKind::Text { value }
+        AddedKind::Text { shows }
     };
     Some(AddedPart {
         section: section.to_owned(),
@@ -1939,6 +2044,115 @@ mod tests {
         );
     }
 
+    /// The parts a client module drives: a button with no command, a text
+    /// with a label, a picture, a bar and a list.
+    #[test]
+    fn a_layout_adds_the_parts_client_modules_drive() {
+        let mut file = MatchLayoutFile::from_bytes(
+            b"[Layouts]\nGDI=Hud\n\
+              [Hud.Field]\nParts=Messages,Timers,Banner,Powers,Tooltip,Buy,Note,Logo,Charge,Log,Mute,Empty\n\
+              [Hud.Buy]\nType=Button\nLabel=Buy\n\
+              [Hud.Logo]\nType=Image\nArt=logo.shp\nX=4\n\
+              [Hud.Note]\nType=Text\nLabel=GUI:Hello\n\
+              [Hud.Charge]\nType=Bar\nWidth=80\nHeight=6\n\
+              [Hud.Log]\nType=List\nWidth=200\nHeight=60\n\
+              [Hud.Mute]\nType=Button\nArt=mute.shp\n\
+              [Hud.Empty]\nType=Button\n",
+        );
+        file.check_commands(|_| false);
+        assert_eq!(
+            problems(&file),
+            expect(&[
+                // A button with no command, label or picture is refused, and
+                // its list names a part that is not there.
+                ("[Hud.Empty] Command", LayoutProblemKind::UnknownCommand),
+                ("[Hud.Field] Parts", LayoutProblemKind::UnknownPart),
+            ])
+        );
+        assert_eq!(file.art_names(), ["logo.shp", "mute.shp"]);
+        let kinds: Vec<AddedKind> = file
+            .for_side(Some("GDI"), true)
+            .unwrap()
+            .added()
+            .iter()
+            .map(|part| part.kind.clone())
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                AddedKind::Button {
+                    command: None,
+                    label: "Buy".to_owned(),
+                    art: None,
+                },
+                AddedKind::Text {
+                    shows: TextShows::Label("GUI:Hello".to_owned()),
+                },
+                AddedKind::Image {
+                    art: "logo.shp".to_owned(),
+                },
+                AddedKind::Bar,
+                AddedKind::List,
+                AddedKind::Button {
+                    command: None,
+                    label: String::new(),
+                    art: Some("mute.shp".to_owned()),
+                },
+            ]
+        );
+    }
+
+    /// A map's `[VeraUI]` parts: the top-level list, a row's own, the keys
+    /// of added parts, and the commands the game has.
+    #[test]
+    fn a_map_adds_its_own_parts() {
+        let map = IniFile::from_str(
+            "[Basic]\nName=Test\n\
+             [VeraUI]\nParts=Shop,Score\n\
+             [VeraUI.Shop]\nType=Row\nHold=Bottom\nGap=2\nParts=Buy,Stop\n\
+             [VeraUI.Buy]\nType=Button\nLabel=Buy\n\
+             [VeraUI.Stop]\nType=Button\nCommand=StopObject\n\
+             [VeraUI.Fly]\nType=Button\nCommand=Levitate\n\
+             [VeraUI.Score]\nType=Text\nValue=Kills\nHold=TopRight\nSpeed=2\n",
+        );
+        let (parts, problems) = map_parts(&map, |name| name.eq_ignore_ascii_case("StopObject"));
+        let places: Vec<String> = problems.iter().map(LayoutProblem::place).collect();
+        assert_eq!(places, ["[VeraUI.Fly]", "[VeraUI.Score] Speed"]);
+        let [shop, score, buy, stop] = &parts[..] else {
+            panic!("four parts: {parts:?}");
+        };
+        assert_eq!(shop.holder, Holder::Field);
+        assert_eq!(
+            shop.kind,
+            AddedKind::Group {
+                column: false,
+                gap: 2
+            }
+        );
+        assert_eq!(
+            score.kind,
+            AddedKind::Text {
+                shows: TextShows::Value(TextValue::Kills)
+            }
+        );
+        assert_eq!(
+            (buy.holder, stop.holder),
+            (Holder::Group(0), Holder::Group(0))
+        );
+        assert_eq!(buy.section, "VeraUI.Buy");
+        assert_eq!(
+            stop.kind,
+            AddedKind::Button {
+                command: Some("StopObject".to_owned()),
+                label: "StopObject".to_owned(),
+                art: None,
+            }
+        );
+        // A map without the sections adds nothing.
+        let (none, problems) = map_parts(&IniFile::from_str("[Basic]\n"), |_| true);
+        assert!(none.is_empty() && problems.is_empty());
+    }
+
     #[test]
     fn a_layout_adds_buttons_and_texts_to_the_sidebar_and_the_battlefield() {
         let mut file = MatchLayoutFile::from_bytes(
@@ -1974,7 +2188,7 @@ mod tests {
         assert_eq!(
             halt.kind,
             AddedKind::Button {
-                command: "StopObject".to_owned(),
+                command: Some("StopObject".to_owned()),
                 label: "Stop".to_owned(),
                 art: Some("button08.shp".to_owned()),
             }
@@ -1987,7 +2201,7 @@ mod tests {
         assert_eq!(
             clock.kind,
             AddedKind::Text {
-                value: TextValue::Time
+                shows: TextShows::Value(TextValue::Time)
             }
         );
         assert_eq!(clock.rect_in([0, 0, 632, 568], [40, 13]), [586, 6, 40, 13]);
@@ -2272,7 +2486,7 @@ mod tests {
         assert_eq!(
             added[1].kind,
             AddedKind::Text {
-                value: TextValue::Time
+                shows: TextShows::Value(TextValue::Time)
             }
         );
         assert!(
@@ -2469,14 +2683,14 @@ mod tests {
             [
                 (
                     AddedKind::Text {
-                        value: TextValue::Time
+                        shows: TextShows::Value(TextValue::Time)
                     },
                     4,
                     5
                 ),
                 (
                     AddedKind::Text {
-                        value: TextValue::Kills
+                        shows: TextShows::Value(TextValue::Kills)
                     },
                     4,
                     20
@@ -2544,7 +2758,7 @@ mod tests {
         assert_eq!(
             halt.kind,
             AddedKind::Button {
-                command: "StopObject".to_owned(),
+                command: Some("StopObject".to_owned()),
                 label: "StopObject".to_owned(),
                 art: Some("diplobtn.shp".to_owned()),
             }

@@ -123,3 +123,59 @@ fn a_module_submits_a_health_bar_template_once_and_the_host_paints_it_per_object
         }
     );
 }
+
+/// A second module, the map's: its own origin.
+const MAP: Origin = Origin::External(2);
+
+#[test]
+fn a_bridge_looks_names_up_per_origin_in_its_own_order() {
+    let mut hud = Gui::new(64);
+    // The host's chrome sits in a host-only layer; the bridge still finds
+    // its parts by name, origin by origin.
+    let chrome = hud.create(NodeKind::Dialog, None).unwrap();
+    let buy = hud.create(NodeKind::Button, Some(chrome)).unwrap();
+    hud.set(buy, Prop::Name, Value::Text("Buy".into())).unwrap();
+    let panel = hud.create_root(Layer::Overlay, MAP, NodeKind::Panel).unwrap();
+    let first = hud.create_by(NodeKind::Text, Some(panel), MAP).unwrap();
+    let second = hud.create_by(NodeKind::Text, Some(panel), MAP).unwrap();
+    for node in [first, second] {
+        hud.set(node, Prop::Name, Value::Text("buy".into())).unwrap();
+    }
+    assert_eq!(hud.find_by(Origin::Host, "BUY"), Some(buy));
+    assert_eq!(hud.find_by(MAP, "Buy"), Some(first));
+    assert_eq!(hud.find_by(MODULE, "Buy"), None);
+    assert_eq!(hud.roots(Layer::Overlay), &[panel]);
+    assert_eq!(hud.roots(Layer::Panels), &[] as &[crate::NodeId]);
+}
+
+#[test]
+fn a_bridge_asks_which_of_its_nodes_the_pointer_is_over() {
+    let mut hud = Gui::new(64);
+    let under = hud.create_root(Layer::Panels, MODULE, NodeKind::Panel).unwrap();
+    hud.set(under, Prop::Rect, Value::Rect(Rect::new(0, 0, 100, 100))).unwrap();
+    let over = hud.create_root(Layer::Overlay, MAP, NodeKind::Panel).unwrap();
+    hud.set(over, Prop::Rect, Value::Rect(Rect::new(50, 50, 100, 100))).unwrap();
+    let button = hud.create_by(NodeKind::Button, Some(over), MAP).unwrap();
+    hud.set(button, Prop::Rect, Value::Rect(Rect::new(60, 60, 10, 10))).unwrap();
+    let layers = [Layer::Overlay, Layer::Panels];
+    // The overlay's child over its parent, the overlay over the panels.
+    assert_eq!(hud.top_at(&layers, 65, 65, |_| true), Some(button));
+    assert_eq!(hud.top_at(&layers, 55, 55, |_| true), Some(over));
+    assert_eq!(hud.top_at(&layers, 10, 10, |_| true), Some(under));
+    // What the bridge does not take passes to what is under it.
+    assert_eq!(hud.top_at(&layers, 65, 65, |id| id != button && id != over), Some(under));
+    // A hidden parent hides its subtree from the pointer.
+    hud.set(over, Prop::Visible, Value::Bool(false)).unwrap();
+    assert!(!hud.shown(button));
+    assert_eq!(hud.top_at(&layers, 65, 65, |_| true), Some(under));
+    hud.set(under, Prop::Enabled, Value::Bool(false)).unwrap();
+    assert!(!hud.enabled(under));
+    assert_eq!(hud.top_at(&[Layer::Field], 10, 10, |_| true), None);
+}
+
+#[test]
+fn a_bridge_caps_each_client_within_the_others_share() {
+    let hud = Gui::new(400);
+    assert_eq!(MODULE.share(hud.node_limit()), 300);
+    assert_eq!(Origin::Host.share(hud.node_limit()), 400);
+}

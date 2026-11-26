@@ -365,6 +365,16 @@ impl SimHost {
             .map(SimRuntime::take_radar_terrain_dirty)
     }
 
+    /// The simulation's client outbox (`Simulation::take_client_outbox`):
+    /// the `Notify`s and `SimEvent`s its frames since the last take left
+    /// for client modules (RFC 0001 section 10). A [`SimWrite::Presentation`]
+    /// write: hand-off state that is neither saved nor hashed. `None`
+    /// without a world. Taken at a frame's tail, while the runtime is home.
+    pub(crate) fn take_client_outbox(&mut self) -> Option<crate::sim::ext_modules::ClientOutbox> {
+        self.write_sim(SimWrite::Presentation)
+            .map(|runtime| runtime.simulation.take_client_outbox())
+    }
+
     /// Mutable access to the installed runtime for one write route; a lent
     /// runtime comes back first.
     pub(crate) fn write_sim(&mut self, _route: SimWrite) -> Option<&mut SimRuntime> {

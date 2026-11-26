@@ -2,7 +2,7 @@
 
 [English](0001-wasm-extension-modules-api.md)
 
-[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.0.23，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单见[第 9 节](#9-版本-1-清单)和各表的层级列。
+[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.0.25，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单见[第 9 节](#9-版本-1-清单)和各表的层级列。
 
 ## 目录
 
@@ -1393,9 +1393,9 @@ Ares 和 Phobos 的键尚未分类。
 
 | 属性 | 值 | 适用于 | 说明 |
 | --- | --- | --- | --- |
-| `Name` | string | 全部 | `client_node_find` 用的名字；`veraui.ini` 节点为部件名（节名中布局前缀之后的部分），只读 |
+| `Name` | string | 全部 | `client_node_find` 用的名字；`veraui.ini` 节点为部件名（节名中布局前缀之后的部分），只读。模块新建的节点可用 `client_set_bytes` 命名一次，名字在本来源的节点中唯一；再次命名、重名、命名别处的节点返回 `Refused` |
 | `Label` | string | `Text`、`Button`、`Decoration` | CSF 条目名或文字：有该名字的 CSF 条目时显示条目，否则显示文字本身 |
-| `Art` | string | `Button`、`Image`、`Decoration` | 图片名，按名字解析，格式由引擎决定 |
+| `Art` | string | `Button`、`Image`、`Decoration` | 图片名，按名字解析，格式由引擎决定；图片不缩放，按自身大小画在节点左上角。模块节点和地图部件的按钮把 `Label` 画在图片上（按下时下移右移一像素），禁用时图片变暗、文字变灰，悬停时图片变亮，按下时变暗；`veraui.ini` 自身的图片按钮只画图片 |
 | `X`、`Y`、`Width`、`Height` | int | 全部 | 像素 |
 | `Hold` | enum `Hold` | 全部 | |
 | `Gap` | int | `Row`、`Column` | 各部分间距（像素） |
@@ -1408,6 +1408,7 @@ Ares 和 Phobos 的键尚未分类。
 | `ItemProgress` | bytes | `CameoGrid` | `later`。按 `Items` 的顺序每个条目一个 `i32`：0..100，−1 为没有 |
 | `ItemTooltips` | string | `CameoGrid` | 每行 `类型名=附加文字`，附加在该类型的提示文字之后；原生网格也可写 |
 | `Fill` | int | `Bar` | 0..100 |
+| `Backdrop` | bool | `Text` | 战场上的文字是否垫黑底，默认 1；压在模块自己的图片上的文字可设为 0 |
 | `Anchor` | ref（对象） | `Decoration` | 所挂的对象；对象看不见时不显示 |
 | `Palette` | string | `Decoration` | |
 | `Tint`、`TintIntensity` | int | `Decoration` | 本机染色（模拟中的染色见 7.2） |

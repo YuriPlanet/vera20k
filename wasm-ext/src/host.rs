@@ -2,6 +2,11 @@
 //! every runtime by [`for_each_import`]. Each is a thin adapter onto
 //! [`SimHost`]: it checks arguments, charges the call's budget through the
 //! rewrite's meter, and copies data in and out of module memory.
+//!
+//! The reads both worlds share (`frame`, `log`, `has_kind`, `lookup`,
+//! `name_of`, `get`, `get_many`, `find`, `var_get`) go through [`Reads`],
+//! so the `vera:client@1.0` imports ([`crate::client_host`]) use the same
+//! functions (appendix 2.1, "As `lookup`", "as for `get_many`").
 
 use std::ops::Range;
 use std::ptr::NonNull;
@@ -10,16 +15,20 @@ use std::sync::Arc;
 use crate::sections::Sections;
 use crate::triggers::{ActionDef, NAME_MODULE_ACTION, TriggerDef};
 use crate::{
-    ActionParams, ENTRY_COST, Export, Fault, HOST_CALL_COST, INI_EVENT, INI_KEY, INI_REGISTRY,
-    INI_SECTIONS, Invalid, MAX_SCAN, NAME_ACTION_KIND, NAME_KINDS, NAME_PROPERTY, Order, Query,
-    SKIPS_PER_OP, SimHost, Status, action_kind_id, action_kind_name, ini_name_valid, property_id,
-    property_name,
+    ActionParams, ClientHost, ENTRY_COST, Export, Fault, FindPage, HOST_CALL_COST, INI_EVENT,
+    INI_KEY, INI_REGISTRY, INI_SECTIONS, Invalid, MAX_NOTIFY_BYTES, MAX_SCAN, NAME_ACTION_KIND,
+    NAME_KINDS, NAME_NOTIFY,
+    NAME_PROPERTY, Order, Query, SKIPS_PER_OP, SimHost, Status, action_kind_id, action_kind_name,
+    ini_name_valid, property_id, property_name,
 };
 
 /// What the imports keep per module, beside the runtime's own store data.
 pub(crate) struct Ctx {
-    /// Set only for the duration of a module call.
+    /// Set only for the duration of a simulation module call.
     pub host: Option<NonNull<dyn SimHost>>,
+    /// Set only for the duration of a client module call
+    /// ([`crate::ClientModuleOn`]).
+    pub client: Option<NonNull<dyn ClientHost>>,
     /// The first invalid argument or budget fault a host call raised.
     pub fault: Option<Fault>,
     /// The module's custom sections; `lookup(ModuleAction)` reads them.
@@ -28,23 +37,33 @@ pub(crate) struct Ctx {
     pub export: Option<Export>,
     /// The budget the running call started with; `find` sizes its pages by it.
     pub budget: u64,
+    /// Client modules: the running call is `client_init`, where only
+    /// `client_lookup`, `client_name_of`, `client_has_kind` and `client_log`
+    /// are available (appendix 2.1).
+    pub client_init: bool,
+    /// Client modules: `client_random`'s xorshift64 state, never 0.
+    pub rng: u64,
 }
 
-// SAFETY: `host` is non-null only inside a module call, which holds the
-// `&mut dyn SimHost` it came from for its whole duration on this thread.
+// SAFETY: `host` and `client` are non-null only inside a module call, which
+// holds the `&mut dyn SimHost` or `&mut dyn ClientHost` it came from for its
+// whole duration on this thread.
 unsafe impl Send for Ctx {}
-// SAFETY: `host` is only dereferenced through a runtime's `&mut` store inside
-// a call; shared access to the store never reads it.
+// SAFETY: `host` and `client` are only dereferenced through a runtime's
+// `&mut` store inside a call; shared access to the store never reads them.
 unsafe impl Sync for Ctx {}
 
 impl Ctx {
     pub fn new(sections: Arc<Sections>) -> Self {
         Self {
             host: None,
+            client: None,
             fault: None,
             sections,
             export: None,
             budget: 0,
+            client_init: false,
+            rng: 1,
         }
     }
 }
@@ -69,7 +88,8 @@ pub(crate) trait Guest {
 pub(crate) struct Stop;
 
 /// Every import: its name, the [`host`](self) function and its core Wasm
-/// signature. `$wrap!` links one import into a runtime.
+/// signature. `$wrap!` links one import into a runtime; the client world's
+/// list is [`crate::client_host::for_each_client_import`].
 macro_rules! for_each_import {
     ($wrap:ident) => {
         $wrap!("frame", frame() -> i32);
@@ -93,13 +113,14 @@ macro_rules! for_each_import {
         $wrap!("trigger_unbind", trigger_unbind(trigger: i64, reference: i64) -> i32);
         $wrap!("rules_get", rules_get(sec: i32, sec_len: i32, key: i32, key_len: i32, out: i32, cap: i32, len_out: i32) -> i32);
         $wrap!("rules_set", rules_set(sec: i32, sec_len: i32, key: i32, key_len: i32, val: i32, val_len: i32) -> i32);
+        $wrap!("send_notify", send_notify(to: i64, id: i32, ptr: i32, len: i32) -> i32);
         $wrap!("order", order(house: i64, ptr: i32, len: i32) -> i32);
         $wrap!("ini_register", ini_register(kind: i32, section: i32, ptr: i32, len: i32, key: i32, out: i32) -> i32);
     };
 }
 pub(crate) use for_each_import;
 
-type R<T> = Result<T, Stop>;
+pub(crate) type R<T> = Result<T, Stop>;
 
 /// Charges one host call and hands back the host. A host call that runs past
 /// the budget stops the module as a budget fault.
@@ -116,9 +137,91 @@ fn host<'a>(g: &'a mut dyn Guest) -> R<&'a mut dyn SimHost> {
     }
 }
 
+/// The host of the calling module's world, for the reads both worlds share.
+pub(crate) enum Reads<'a> {
+    Sim(&'a mut dyn SimHost),
+    Client(&'a mut dyn ClientHost),
+}
+
+impl Reads<'_> {
+    fn frame(&mut self) -> i32 {
+        match self {
+            Self::Sim(h) => h.frame(),
+            Self::Client(h) => h.frame(),
+        }
+    }
+
+    fn log(&mut self, line: &str) {
+        match self {
+            Self::Sim(h) => h.log(line),
+            Self::Client(h) => h.log(line),
+        }
+    }
+
+    fn has_kind(&mut self, table: i32, id: i32) -> bool {
+        match self {
+            Self::Sim(h) => h.has_kind(table, id),
+            Self::Client(h) => h.has_kind(table, id),
+        }
+    }
+
+    fn lookup(&mut self, kind: i32, name: &str) -> Result<(i32, Status), Invalid> {
+        match self {
+            Self::Sim(h) => h.lookup(kind, name),
+            Self::Client(h) => h.lookup(kind, name),
+        }
+    }
+
+    fn name_of(&mut self, kind: i32, id: i32) -> Result<(String, Status), Invalid> {
+        match self {
+            Self::Sim(h) => h.name_of(kind, id),
+            Self::Client(h) => h.name_of(kind, id),
+        }
+    }
+
+    fn get(&mut self, reference: i64, prop: i32) -> Result<(i64, Status), Invalid> {
+        match self {
+            Self::Sim(h) => h.get(reference, prop),
+            Self::Client(h) => h.get(reference, prop),
+        }
+    }
+
+    fn find(&mut self, query: &Query, cap: usize) -> Result<(FindPage, Status), Invalid> {
+        match self {
+            Self::Sim(h) => h.find(query, cap),
+            Self::Client(h) => h.find(query, cap),
+        }
+    }
+
+    fn var_get(&mut self, scope: i64, var: i32) -> Result<(i64, Status), Invalid> {
+        match self {
+            Self::Sim(h) => h.var_get(scope, var),
+            Self::Client(h) => h.var_get(scope, var),
+        }
+    }
+}
+
+/// The calling module's host, of either world.
+fn reads<'a>(g: &'a mut dyn Guest) -> R<Reads<'a>> {
+    let (sim, client) = (g.ctx().host, g.ctx().client);
+    match (sim, client) {
+        // SAFETY: see `Ctx::host`.
+        (Some(mut host), _) => Ok(Reads::Sim(unsafe { host.as_mut() })),
+        // SAFETY: see `Ctx::client`.
+        (None, Some(mut host)) => Ok(Reads::Client(unsafe { host.as_mut() })),
+        (None, None) => Err(fail(g, Invalid("host call outside a module call".into()))),
+    }
+}
+
+/// [`enter`] for the reads both worlds share.
+fn enter_reads<'a>(g: &'a mut dyn Guest, extra: u64) -> R<Reads<'a>> {
+    charge(g, HOST_CALL_COST.saturating_add(extra))?;
+    reads(g)
+}
+
 /// Takes `cost` operations from the call's budget; running out is a budget
 /// fault.
-fn charge(g: &mut dyn Guest, cost: u64) -> R<()> {
+pub(crate) fn charge(g: &mut dyn Guest, cost: u64) -> R<()> {
     let left = g.meter();
     if left < cost {
         return Err(out_of_budget(g));
@@ -127,12 +230,12 @@ fn charge(g: &mut dyn Guest, cost: u64) -> R<()> {
     Ok(())
 }
 
-fn out_of_budget(g: &mut dyn Guest) -> Stop {
+pub(crate) fn out_of_budget(g: &mut dyn Guest) -> Stop {
     g.ctx_mut().fault = Some(Fault::Budget);
     Stop
 }
 
-fn fail(g: &mut dyn Guest, why: Invalid) -> Stop {
+pub(crate) fn fail(g: &mut dyn Guest, why: Invalid) -> Stop {
     g.ctx_mut().fault.get_or_insert(Fault::Invalid(why.0));
     Stop
 }
@@ -143,7 +246,7 @@ fn memory_len(g: &mut dyn Guest) -> Result<usize, Invalid> {
 }
 
 /// Checks that `count` entries of `size` bytes at `ptr` lie in module memory.
-fn check_buffer(
+pub(crate) fn check_buffer(
     g: &mut dyn Guest,
     ptr: i32,
     count: usize,
@@ -162,24 +265,24 @@ fn check_buffer(
 }
 
 /// A count or capacity argument, which may not be negative.
-fn count_arg(value: i32, what: &str) -> Result<usize, Invalid> {
+pub(crate) fn count_arg(value: i32, what: &str) -> Result<usize, Invalid> {
     usize::try_from(value).map_err(|_| Invalid(format!("negative {what} {value}")))
 }
 
-fn input_buffer(g: &mut dyn Guest, ptr: i32, len: i32) -> R<Range<usize>> {
+pub(crate) fn input_buffer(g: &mut dyn Guest, ptr: i32, len: i32) -> R<Range<usize>> {
     let len = count_arg(len, "buffer length").map_err(|e| fail(g, e))?;
     check_buffer(g, ptr, len, 1).map_err(|e| fail(g, e))
 }
 
 /// The bytes at `range`, which a check placed inside module memory.
-fn read(g: &mut dyn Guest, range: Range<usize>) -> Vec<u8> {
+pub(crate) fn read(g: &mut dyn Guest, range: Range<usize>) -> Vec<u8> {
     let mut bytes = vec![0u8; range.len()];
     g.read_memory(range.start, &mut bytes);
     bytes
 }
 
 /// Variable-size copies use both the guest memory bounds and the budget.
-fn copy_input(g: &mut dyn Guest, ptr: i32, len: i32) -> R<Vec<u8>> {
+pub(crate) fn copy_input(g: &mut dyn Guest, ptr: i32, len: i32) -> R<Vec<u8>> {
     let range = input_buffer(g, ptr, len)?;
     charge(g, range.len() as u64)?;
     Ok(read(g, range))
@@ -187,7 +290,7 @@ fn copy_input(g: &mut dyn Guest, ptr: i32, len: i32) -> R<Vec<u8>> {
 
 /// A section, key or value name: UTF-8 text in module memory. Text that is
 /// not UTF-8 is an invalid argument.
-fn read_str(g: &mut dyn Guest, ptr: i32, len: i32) -> R<String> {
+pub(crate) fn read_str(g: &mut dyn Guest, ptr: i32, len: i32) -> R<String> {
     let bytes = copy_input(g, ptr, len)?;
     String::from_utf8(bytes)
         .map_err(|_| fail(g, Invalid(format!("text at {ptr}+{len} is not UTF-8"))))
@@ -204,7 +307,7 @@ fn write_bytes(g: &mut dyn Guest, ptr: i32, bytes: &[u8]) -> Result<(), Invalid>
     }
 }
 
-fn write(g: &mut dyn Guest, ptr: i32, bytes: &[u8]) -> R<()> {
+pub(crate) fn write(g: &mut dyn Guest, ptr: i32, bytes: &[u8]) -> R<()> {
     write_bytes(g, ptr, bytes).map_err(|e| fail(g, e))
 }
 
@@ -249,7 +352,7 @@ fn in_init(g: &dyn Guest) -> bool {
 }
 
 pub(crate) fn frame(g: &mut dyn Guest) -> R<i32> {
-    Ok(enter(g, 0)?.frame())
+    Ok(enter_reads(g, 0)?.frame())
 }
 
 pub(crate) fn random(g: &mut dyn Guest, lo: i32, hi: i32, out: i32) -> R<i32> {
@@ -265,12 +368,12 @@ pub(crate) fn log(g: &mut dyn Guest, ptr: i32, len: i32) -> R<()> {
     charge(g, HOST_CALL_COST)?;
     let bytes = copy_input(g, ptr, len)?;
     let line = String::from_utf8_lossy(&bytes);
-    host(g)?.log(&line);
+    reads(g)?.log(&line);
     Ok(())
 }
 
 pub(crate) fn has_kind(g: &mut dyn Guest, table: i32, id: i32) -> R<i32> {
-    Ok(i32::from(enter(g, 0)?.has_kind(table, id)))
+    Ok(i32::from(enter_reads(g, 0)?.has_kind(table, id)))
 }
 
 pub(crate) fn lookup(g: &mut dyn Guest, kind: i32, ptr: i32, len: i32, out: i32) -> R<i32> {
@@ -279,12 +382,20 @@ pub(crate) fn lookup(g: &mut dyn Guest, kind: i32, ptr: i32, len: i32, out: i32)
     }
     charge(g, HOST_CALL_COST)?;
     let bytes = copy_input(g, ptr, len)?;
-    // This module's own `vera.actions` answers ModuleAction.
+    // This module's own `vera.actions` answers ModuleAction, its own
+    // `vera.notify` Notify (RFC 0001 section 10: a name it did not declare
+    // is not found).
     let module_action = std::str::from_utf8(&bytes)
         .ok()
         .filter(|_| kind == NAME_MODULE_ACTION)
         .map(|name| g.ctx().sections.action_key(name));
-    let host = host(g)?;
+    // Only a simulation module declares notifications; a client module's
+    // `lookup(Notify)` asks its host for the match's declared names.
+    let notify = std::str::from_utf8(&bytes)
+        .ok()
+        .filter(|_| kind == NAME_NOTIFY && g.ctx().client.is_none())
+        .map(|name| g.ctx().sections.notify_lookup(name));
+    let mut host = reads(g)?;
     // A name that is not UTF-8 names nothing.
     let result = match std::str::from_utf8(&bytes) {
         Err(_) => Ok((-1, Status::NotFound)),
@@ -294,6 +405,9 @@ pub(crate) fn lookup(g: &mut dyn Guest, kind: i32, ptr: i32, len: i32, out: i32)
         Ok(_) if kind == NAME_MODULE_ACTION => Ok(module_action
             .flatten()
             .map_or((-1, Status::NotFound), |key| (key, Status::Ok))),
+        Ok(_) if notify.is_some() => Ok(notify
+            .flatten()
+            .map_or((-1, Status::NotFound), |id| (id, Status::Ok))),
         Ok(name) if kind == NAME_ACTION_KIND => {
             Ok(action_kind_id(name).map_or((-1, Status::NotFound), |id| (id, Status::Ok)))
         }
@@ -317,11 +431,17 @@ pub(crate) fn name_of(
     if !(0..NAME_KINDS).contains(&kind) {
         return Err(fail(g, Invalid(format!("unknown name kind {kind}"))));
     }
-    let module_action = (kind == NAME_MODULE_ACTION)
-        .then(|| g.ctx().sections.action_name(id).map(str::to_owned));
-    let host = enter(g, 0)?;
+    let module_action = match kind {
+        NAME_MODULE_ACTION => Some(g.ctx().sections.action_name(id).map(str::to_owned)),
+        NAME_NOTIFY if g.ctx().client.is_none() => {
+            Some(g.ctx().sections.notify_name(id).map(str::to_owned))
+        }
+        _ => None,
+    };
+    let mut host = enter_reads(g, 0)?;
     let result = if let Some(name) = module_action {
-        // Any i32 is a dispatch key; one `vera.actions` lacks has no name.
+        // Any i32 is a dispatch key or a notification ID; one the module's
+        // section lacks has no name.
         Ok(name.map_or((String::new(), Status::NotFound), |n| (n, Status::Ok)))
     } else if id == -1 {
         Ok((String::new(), Status::NotFound))
@@ -360,7 +480,7 @@ pub(crate) fn get(g: &mut dyn Guest, reference: i64, prop: i32, out: i32) -> R<i
     if property_name(prop).is_none() {
         return Err(fail(g, Invalid(format!("unknown property {prop}"))));
     }
-    let result = enter(g, 0)?.get(reference, prop);
+    let result = enter_reads(g, 0)?.get(reference, prop);
     let (value, status) = result.map_err(|e| fail(g, e))?;
     let value = if status == Status::Ok { value } else { 0 };
     write(g, out, &value.to_le_bytes())?;
@@ -405,7 +525,7 @@ pub(crate) fn get_many(
     if let Some(bad) = props.iter().find(|p| property_name(**p).is_none()) {
         return Err(fail(g, Invalid(format!("unknown property {bad}"))));
     }
-    let host = host(g)?;
+    let mut host = reads(g)?;
     let mut first = Status::Ok;
     let mut values = Vec::with_capacity(total * 8);
     let mut result = Ok(());
@@ -500,7 +620,7 @@ pub(crate) fn find(g: &mut dyn Guest, query: i32, len: i32, out: i32, cap: i32, 
     let scan_cost = query.scan_cost();
     let page_limit = MAX_SCAN.min(g.ctx().budget / 2 / scan_cost).max(1);
     query.max_scan = page_limit.min(g.meter() / scan_cost);
-    let result = host(g)?.find(&query, cap);
+    let result = reads(g)?.find(&query, cap);
     let (page, status) = result.map_err(|e| fail(g, e))?;
     if page.found.len() > cap {
         return Err(fail(g, Invalid("host returned more than a page".into())));
@@ -537,7 +657,7 @@ pub(crate) fn find(g: &mut dyn Guest, query: i32, len: i32, out: i32, cap: i32, 
 }
 
 pub(crate) fn var_get(g: &mut dyn Guest, scope: i64, var: i32, out: i32) -> R<i32> {
-    let result = enter(g, 0)?.var_get(scope, var);
+    let result = enter_reads(g, 0)?.var_get(scope, var);
     let (value, status) = result.map_err(|e| fail(g, e))?;
     write(g, out, &value.to_le_bytes())?;
     Ok(status as i32)
@@ -663,6 +783,29 @@ pub(crate) fn rules_set(
     let key = read_str(g, key, key_len)?;
     let value = read_str(g, val, val_len)?;
     let result = host(g)?.rules_set(&section, &key, &value);
+    Ok(result.map_err(|e| fail(g, e))? as i32)
+}
+
+/// `send_notify` (RFC 0001 section 10, appendix 1.1 #22): an ID the
+/// module's `vera.notify` does not declare is `NotFound`, data over
+/// [`MAX_NOTIFY_BYTES`] `Refused`, both before the host is asked; the host
+/// counts the frame's notifications. Unavailable in `vera_init`.
+pub(crate) fn send_notify(g: &mut dyn Guest, to: i64, id: i32, ptr: i32, len: i32) -> R<i32> {
+    deny_in_decide(g, "send_notify")?;
+    let range = input_buffer(g, ptr, len)?;
+    if in_init(g) {
+        return Ok(Status::Unsupported as i32);
+    }
+    charge(g, HOST_CALL_COST)?;
+    if g.ctx().sections.notify_name(id).is_none() {
+        return Ok(Status::NotFound as i32);
+    }
+    if range.len() > MAX_NOTIFY_BYTES {
+        return Ok(Status::Refused as i32);
+    }
+    charge(g, range.len() as u64)?;
+    let data = read(g, range);
+    let result = host(g)?.send_notify(to, id, &data);
     Ok(result.map_err(|e| fail(g, e))? as i32)
 }
 

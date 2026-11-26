@@ -7,7 +7,8 @@ content as work lands; do not append a diary.
 ## Where the work is
 
 - Repository: `YuriPlanet/vera20k`. Phase 1 is on `main` (#5183); the control
-  points below (phase 2a) follow it.
+  points below (phase 2a) follow it (#5245). The client modules (phase 2,
+  `ui.wasm`) are in #5251.
 - Scope: RFC phase 1 (`rules.wasm`) first, then phase 2 (`ui.wasm`), then phase 3.
   The TypeScript SDK is deferred by the maintainer; validate with the Rust SDK.
 - Feedback: the RFC draft PR
@@ -95,8 +96,8 @@ module (merge timers into one function).
 ## Playtest setup
 
 - Fast client: `python3 -m tools.cargo_run -- build --profile fast -p vera20k --bin
-  vera20k --bin asset` with `CARGO_TARGET_DIR=/Volumes/扩展盘/vera20k-build/cargo-target/wx-engine`;
-  the binaries land in `owned-worktrees/<sha256(worktree path)[:16]>/fast/`. Put a
+  vera20k --bin asset`, with `CARGO_TARGET_DIR` set to a build directory of your
+  choice; the binaries land in `owned-worktrees/<sha256(worktree path)[:16]>/fast/`. Put a
   `config.toml` beside them (`[paths] ra2_dir = "<retail install>"`), or the client
   finds no `ra2md.mix` and the mod fails to start. `cargo_run`'s cache retention
   deletes the namespaces of removed worktrees, binaries included.
@@ -451,7 +452,7 @@ RFC 0001 section 6i's read surface (claims and orders are separate work):
   House slot factory or, for a computer house, the first building-held one.
 - Cells: `Zone.<MovementZone>` (MapClass::GetZoneID `0x0056D230`), `Obstructed`
   (a building in the cell, or a wall or impassable overlay).
-- Global `AutomationAllowed` reads 0 until the room switch exists (phase 2).
+- Global `AutomationAllowed` reads 0 until the lobby offers the room switch.
 - Superweapons: references (bit 46, house index and `[SuperWeaponTypes]` index),
   `Type`, `Owner`, `Ready`, `ChargePercent` (writing runs stock action 129), and
   `find` scope 8 `SuperWeapons` over granted Supers, by house then type.
@@ -550,10 +551,9 @@ budget loop over no slots.
 - RFC 0.0.21 section 6i: the simulation side is implemented (claims and native AI
   gates, "mod AI" seats, `Commanded`/`OrderRefused`, the command table, the read
   properties, budgets 500,000/100,000/`SeatBudget`, `[VERA] WasmBudget` as a personal
-  rule, 8 MiB per "mod AI" seat). Left: the client side (`SimEvent`,
-  `AutomationAllowed` and the client order rate limit) with phase 2 (`ui.wasm`); the
-  lobby and launcher offering "mod AI" seats (`mod_ai_slots`); a random map's seats get
-  no extra memory.
+  rule, 8 MiB per "mod AI" seat). The client side (`SimEvent`, `AutomationAllowed`,
+  the client order rate limit) came with phase 2 (below). Left: the lobby and launcher
+  offering "mod AI" seats (`mod_ai_slots`); a random map's seats get no extra memory.
 
 Phase 1 is complete as far as this engine has owners for the RFC's tables; what is
 left is listed under residuals. Small follow-ups found by the playtest mods:
@@ -563,19 +563,8 @@ left is listed under residuals. Small follow-ups found by the playtest mods:
 - Build-dependent effects: `Unkillable` and the crit modifiers exist only in Phobos
   builds; a module cannot tell up front (raised on the RFC PR).
 
-Phase 2 (`ui.wasm`) should build on the GUI crate of `feature/gui-crate`
-([YuriPlanet/vera20k#4973](https://github.com/YuriPlanet/vera20k/pull/4973), not
-merged). Its `docs/gui-library-api.md` already maps the `client_node_*` and
-`client_set/get` calls (sections 3 and 15) and its `Gui` tree has create, set, get,
-cascading remove, `Refused` and a node cap. Missing for the RFC: the in-match UI
-(only out-of-game screens moved), lookup by part name, node owners, the
-`veraui.ini` loader, and the RFC v1 kinds `Row`, `Column`, `CameoGrid`, `Image`,
-`Bar`, `Decoration` and `MapMarker`. Order: move the in-match UI onto the crate,
-add names, owners and those kinds, then a thin `client_*` bridge that checks the
-section 10 permissions.
-
 Before version 1 (RFC "Process"): the TypeScript SDK
-(deferred by the maintainer), phase 2 (`ui.wasm`), phase 3 (a real mission with
+(deferred by the maintainer), phase 3 (a real mission with
 modules, external modders, freeze), and the later items (peer calls,
 `TargetChanged`'s decision form, `MissionChanged`).
 
@@ -662,6 +651,67 @@ modules, external modders, freeze), and the later items (peer calls,
   names, points, `GameMode`, `Types` with `Buildable`),
   `ext_modules_control_tests.rs` (`Cloaked` under the cloak modifiers). Control
   Bench marks `basics.type-name` .. `basics.door-open`.
+
+## Done (phase 2: client modules, RFC 0.0.24)
+
+PR #5251 (on the control points, #5245). A mod's and a
+map's `ui.wasm` run under `vera:client@1.0` on the presentation side.
+
+- Sandbox: `wasm-ext/src/client.rs` (`ClientHost`, `ClientEvent`, records, kinds),
+  `client_module.rs` (`ClientModule`: load checks, `client_init`, `client_on_start`,
+  `client_on_events` batches in the delivery area, `client_on_render(dt, alpha)`),
+  `client_host.rs` (the 20 imports; the reads both worlds share go through
+  `host.rs` `Reads`). One budget of 100,000 operations and 1,024 events per render
+  frame; `client_init` and `client_on_start` get 5,000,000 each (an assumption by
+  analogy with the simulation's one-time calls). Floats are allowed; the rewrite still
+  canonicalises NaNs. `client_random` is the sandbox's own xorshift.
+- Simulation (`src/sim/ext_modules/`): `Command::ModuleMessage` (VERA opcode `0x34`,
+  98-byte body) through the command stream into `on_message` (`messages.rs`: 96 bytes,
+  2 per player per source per frame, 16 in 15 frames, observers and ended games
+  dropped, saved and hashed only while any wait); `send_notify` and `vera.notify`
+  (`sections.rs`, FNV-1a IDs, load-time collision check); the client outbox
+  (`client_outbox.rs`: notifications and forwarded `SimEvent`s, never saved or hashed,
+  newest 4,096 kept); global `AutomationAllowed` from the room's rules
+  (`HostRules`/`RulesSettings`, default off).
+- Client reads: `sim::ext_modules::client_reads` (in the core crate, beside the
+  simulation's own readers, which it calls behind a visibility gate:
+  `object_seen_by`, disguise as the screen shows it, allies' `seen` properties only,
+  spectators per the room). The app re-exports it (`src/app/ui_modules/reads.rs`).
+- App (`src/app/ui_modules/`): `mod.rs` (loading the mod's and the map's modules
+  under `MapUI=`, a fresh load and a save restore alike; the render-frame order;
+  catch-up skips the modules and owes `client_on_start`; a fault disables one module
+  and takes its nodes), `host.rs` (import routing), `tree.rs` (nodes on the match's
+  own `Gui`, owners per RFC 10, names, the cursor, pointer routing, the map's
+  `[VeraUI]` parts, button looks), `paint.rs` (the Panels and Overlay layers, pictures
+  by name loaded on first use), `local.rs` (client actions, hotkeys, selection,
+  `Notify`/`SimEvent` delivery, orders and messages; replays refuse both), `storage.rs`
+  (`<settings>/wasm-storage/<key>/store.bin`, write-through at most once a second).
+- `veraui.ini`: types `Image`, `Bar`, `List`; a button without `Command`; a text
+  with `Label` (`docs/interface-layout.md`).
+- SDK: the Rust bindings (`client.rs`, `notify.rs`) and the examples
+  (`ui-reinforcements`, `ui-ping`, muster-field's `ui.wasm`) are in their own pull
+  request; this one keeps only the `Backdrop` constant `wasm-ext`'s table test reads.
+- Saves: layout `CLIENT_MESSAGES` `0x9909B4E7` (`snapshot/migration.rs`); older
+  worlds hold no waiting message and did not allow automation.
+- Verified, with the SDK pull request's examples: the round trip `ui_reinforcements_round_trip` (message to one Rhino and
+  one notification; a second purchase refused); no-module `sim-bench` release builds
+  of 60d988324 and this branch give the same final hashes (skirmish 9000 ticks
+  `9d2f3b9e068b45ec`, match 1800 ticks `89503a631feffc5c`) and the same frame times;
+  a mixed relay room (`tools/spawn/run.sh browser`, `BROWSERS=1`, `MOD=` the
+  `sdk/examples/ui-ping` mod, desktop built `--no-default-features --features
+  wasm-net`): each player's `ui.wasm` sent its message by itself, both machines'
+  `rules.wasm` received both messages (each credits its sender), each player got
+  only its own `Pong`, no desync.
+
+Not yet: the lobby hint for
+`MapUI=no` and the room switch "allow automation"; `Decoration`, `MapMarker`,
+`ItemProgress` (`later`). Choices to review: one `ItemTooltips` value per grid (the
+last writer wins); a module's `Art` on a `veraui.ini` part shows only pictures that
+`veraui.ini` names; a text button's hover is a quarter shade; module calls skip a
+render frame while a lent tick holds the world (its published frame has no objects);
+`Storage::read` in the SDK asks the length with `Storage::len` instead of a second
+read; a map whose file changed since a save loses its `[VeraUI]` parts on restore
+(logged only).
 
 ## Residuals
 
@@ -765,7 +815,7 @@ modules, external modders, freeze), and the later items (peer calls,
 ## Validation commands
 
 ```
-export CARGO_TARGET_DIR=/Volumes/扩展盘/vera20k-build/cargo-target/wx-engine
+export CARGO_TARGET_DIR=<your build directory>
 python3 -m tools.cargo_run -- test -p vera20k-wasm-ext --lib
 # Build each sdk/examples/* with `cargo build --release`, then point the
 # VERA20K_TEST_*_WASM variables (RULES, MODIFIER, TRIGGERS, ACTIONS, ORDERS, DECIDE)

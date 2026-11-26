@@ -7,12 +7,18 @@
 //! the trees take no input, which is the gadgets'. A button's command is one
 //! the game already has: a command-bar button's (`uimd.ini` `ButtonList=`
 //! names) runs as that button does, any other name is a hotkey's from the
-//! keyboard file and runs as the key does.
+//! keyboard file and runs as the key does; a button with no command only
+//! tells the client modules of its clicks.
+//!
+//! Each part is also a node of the match's chrome, named by the part
+//! (`input::chrome_input`), which a client module finds and writes
+//! (RFC 0001 section 10, `app::ui_modules::tree`): what it wrote there
+//! (`Visible`, `Label`, `Art`, `Fill`, `Items`) is what the part shows.
 //!
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use vera20k_gui::{Layer, Origin, Rect, Rgba};
+use vera20k_gui::{Gui, Layer, NodeId, Origin, Prop, Rect, Rgba, Value};
 
 use crate::app::AppState;
 use crate::app::frontend::state::FrontendState;
@@ -25,10 +31,10 @@ use crate::app::renderer_state::RendererState;
 use crate::app::state::PlatformState;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
-use crate::render::hud_paint::{HudSpace, Material, NodeDraw, Picture};
+use crate::render::hud_paint::{HudPaint, HudSpace, Material, NodeDraw, Picture};
 use crate::render::retained_hud::{Rest, RetainedHud, rounded};
 use crate::render::sidebar_chrome::SidebarChromeEntry;
-use crate::ui::added_parts::{AddedKind, Holder, TextValue};
+use crate::ui::added_parts::{AddedKind, Holder, TextShows, TextValue};
 use crate::ui::game_screen::GameScreen;
 use crate::ui::match_layout::{MatchLayout, MoneyText};
 use crate::ui::sidebar::{SidebarPart, SidebarTheme};
@@ -143,13 +149,82 @@ pub(crate) struct Placed {
     pub picture: Option<SidebarChromeEntry>,
     /// Whether the button is held down.
     pub pressed: bool,
+    /// Whether the pointer is over the button (a client module's or a map
+    /// part's, `app::ui_modules::paint`; a layout's own button has no
+    /// hover look).
+    pub hovered: bool,
     /// A row or a column, which places its parts and draws nothing itself,
     /// or a cameo grid, which the sidebar's view draws and clicks.
     pub group: bool,
+    /// A client module hid it (`Visible=0` on its node): drawn nowhere and
+    /// clicked nowhere.
+    pub hidden: bool,
+    /// A bar: how full, 0..=100.
+    pub fill: Option<i32>,
+    /// A list: its lines, top to bottom.
+    pub lines: Vec<String>,
+    /// Drawn greyed out: a client module's button or list it disabled
+    /// (`app::ui_modules::paint`). A layout's own part never is.
+    pub disabled: bool,
+    /// A node of the client modules' tree (`app::ui_modules::paint`): a
+    /// button with a picture shows its label over it, and the picture dims
+    /// while disabled, brightens under the pointer and darkens while held.
+    /// A layout's own picture button shows its picture alone.
+    pub node: bool,
+    /// A text over the battlefield stands on black (a node's `Backdrop`;
+    /// a layout's own text always does).
+    pub backdrop: bool,
+}
+
+/// A bar's size when the layout gives it none.
+const BAR_SIZE: [i32; 2] = [100, 8];
+
+/// What a disabled part draws in instead of the side's colour.
+const DISABLED: [f32; 3] = [128.0 / 255.0; 3];
+
+/// How much of the side's colour fills a button under the pointer.
+const HOVER_SHADE: f32 = 0.25;
+
+/// What a node's button picture is multiplied by: disabled, held down and
+/// under the pointer (`Placed::node`).
+const PICTURE_DISABLED: [f32; 3] = [0.45; 3];
+const PICTURE_PRESSED: [f32; 3] = [0.75; 3];
+const PICTURE_HOVERED: [f32; 3] = [1.3; 3];
+
+/// What a client module wrote on part `index`'s node, read as the part
+/// draws: none while the chrome has no node for it.
+struct Written<'a> {
+    gui: &'a Gui,
+    node: Option<NodeId>,
+}
+
+impl Written<'_> {
+    fn of(presentation: &MatchPresentationState, index: usize) -> Option<Written<'_>> {
+        let (gui, node) = crate::app::input::chrome_input::layout_part_node(presentation, index)?;
+        Some(Written {
+            gui,
+            node: Some(node),
+        })
+    }
+
+    fn get(&self, prop: Prop) -> Option<&Value> {
+        self.gui.get(self.node?, prop).ok().flatten()
+    }
+
+    fn text(&self, prop: Prop) -> Option<&str> {
+        match self.get(prop) {
+            Some(Value::Text(text)) => Some(text),
+            _ => None,
+        }
+    }
+
+    fn hidden(&self) -> bool {
+        matches!(self.get(Prop::Visible), Some(Value::Bool(false)))
+    }
 }
 
 /// What a text part shows now.
-fn value_text(match_state: &MatchState, value: TextValue) -> String {
+pub(crate) fn value_text(match_state: &MatchState, value: TextValue) -> String {
     let view = crate::app::presentation::sidebar_render::current_sidebar_view(
         &match_state.match_presentation,
     );
@@ -233,17 +308,57 @@ pub(crate) fn placed(
                 &match_state.match_presentation,
                 index,
             );
+            let written = Written::of(&match_state.match_presentation, index);
+            let written = written.as_ref();
+            let label_of = |own: &str| {
+                let label = written.and_then(|w| w.text(Prop::Label)).unwrap_or(own);
+                label_text(process_assets, label)
+            };
+            // A picture by its name (the module's, else the layout's):
+            // frame 0, or frame 1 while held down.
+            let picture_of = |own: Option<&str>, frame: usize| {
+                written
+                    .and_then(|w| w.text(Prop::Art))
+                    .or(own)
+                    .and_then(|name| art?.frames(name))
+                    .map(|frames| *frames[frame])
+            };
+            let (mut fill, mut lines) = (None, Vec::new());
             let (text, button, picture) = match &part.kind {
                 AddedKind::Button {
                     label, art: name, ..
-                } => {
-                    let picture = name
-                        .as_deref()
-                        .and_then(|name| art?.frames(name))
-                        .map(|frames| *frames[usize::from(pressed)]);
-                    (label_text(process_assets, label), true, picture)
+                } => (
+                    label_of(label.as_str()),
+                    true,
+                    picture_of(name.as_deref(), usize::from(pressed)),
+                ),
+                AddedKind::Text { shows } => {
+                    let text = match (written.and_then(|w| w.text(Prop::Label)), shows) {
+                        (Some(label), _) => label_text(process_assets, label),
+                        (None, TextShows::Value(value)) => value_text(match_state, *value),
+                        (None, TextShows::Label(label)) => label_text(process_assets, label),
+                    };
+                    (text, false, None)
                 }
-                AddedKind::Text { value } => (value_text(match_state, *value), false, None),
+                AddedKind::Image { art: name } => {
+                    (String::new(), false, picture_of(Some(name.as_str()), 0))
+                }
+                AddedKind::Bar => {
+                    fill = Some(match written.and_then(|w| w.get(Prop::Fill)) {
+                        Some(Value::Int(fill)) => (*fill).clamp(0, 100),
+                        _ => 0,
+                    });
+                    (String::new(), false, None)
+                }
+                AddedKind::List => {
+                    if let Some(Value::Items(items)) = written.and_then(|w| w.get(Prop::Items)) {
+                        lines = items
+                            .iter()
+                            .map(|item| label_text(process_assets, item))
+                            .collect();
+                    }
+                    (String::new(), false, None)
+                }
                 // A group places its parts; a cameo grid is the sidebar
                 // view's (`ui::sidebar::append_added_grids`).
                 AddedKind::Group { .. } | AddedKind::CameoGrid { .. } => {
@@ -254,7 +369,17 @@ pub(crate) fn placed(
             // A picture is as big as its file draws it; words as their text.
             let natural = match (&part.kind, picture) {
                 (AddedKind::Group { .. } | AddedKind::CameoGrid { .. }, _) => [0, 0],
+                (AddedKind::Bar, _) => BAR_SIZE,
+                (AddedKind::List, _) => [
+                    lines
+                        .iter()
+                        .map(|line| font.text_width(line) as i32)
+                        .max()
+                        .unwrap_or(0),
+                    font.cell_height() as i32 * lines.len() as i32,
+                ],
                 (_, Some(picture)) => picture.pixel_size.map(|v| v as i32),
+                (AddedKind::Image { .. }, None) => [0, 0],
                 (_, None) => [
                     font.text_width(&text) as i32 + 2 * pad[0],
                     font.cell_height() as i32 + 2 * pad[1],
@@ -267,10 +392,17 @@ pub(crate) fn placed(
                 button,
                 picture,
                 pressed,
+                hovered: false,
                 group: matches!(
                     part.kind,
                     AddedKind::Group { .. } | AddedKind::CameoGrid { .. }
                 ),
+                hidden: written.is_some_and(Written::hidden),
+                fill,
+                lines,
+                disabled: false,
+                node: false,
+                backdrop: true,
             }
         })
         .collect();
@@ -370,8 +502,13 @@ pub(crate) fn clicked(state: &mut AppState, index: usize, right: bool) {
         .added_parts
         .get(index)
         .and_then(|part| match &part.kind {
-            AddedKind::Button { command, .. } => command_named(command),
-            AddedKind::Text { .. } | AddedKind::Group { .. } | AddedKind::CameoGrid { .. } => None,
+            AddedKind::Button { command, .. } => command.as_deref().and_then(command_named),
+            AddedKind::Text { .. }
+            | AddedKind::Image { .. }
+            | AddedKind::Bar
+            | AddedKind::List
+            | AddedKind::Group { .. }
+            | AddedKind::CameoGrid { .. } => None,
         });
     if let Some(command) = command {
         run(state, command, right);
@@ -460,12 +597,8 @@ impl PartsHud {
         camera: [f32; 2],
         font: &BitFont,
     ) {
-        self.update(parts, tint);
-        let space = HudSpace {
-            origin: camera,
-            scale: 1.0,
-        };
-        let paint = self.nodes.finish(space, Some(font));
+        self.paint(parts, tint, camera, font);
+        let paint = self.nodes.painted();
         for (lane, material) in [
             (&mut self.pictures, Material::Pictures),
             (&mut self.boxes, Material::Solid),
@@ -474,6 +607,30 @@ impl PartsHud {
             lane.clear();
             lane.extend(paint.lane(material).copied());
         }
+    }
+
+    /// Show this frame's `parts` and paint them, as [`Self::draw`] does,
+    /// into one list whose runs keep their order across the lanes: for a
+    /// host that draws the runs one after another, so a part over another
+    /// covers it whatever it is drawn with.
+    pub(crate) fn paint(
+        &mut self,
+        parts: &[Placed],
+        tint: [f32; 3],
+        camera: [f32; 2],
+        font: &BitFont,
+    ) -> &HudPaint {
+        self.update(parts, tint);
+        let space = HudSpace {
+            origin: camera,
+            scale: 1.0,
+        };
+        self.nodes.finish(space, Some(font))
+    }
+
+    /// The last paint's instances and runs.
+    pub(crate) fn painted(&self) -> &HudPaint {
+        self.nodes.painted()
     }
 
     /// The buttons' pictures, for a lane drawn with the sidebar's picture
@@ -493,39 +650,103 @@ impl PartsHud {
     }
 
     /// Bring the tree to `parts`. A picture is not stretched: it draws at
-    /// its own size from the part's corner. A button without one is a fill
+    /// its own size from the part's corner; a node's button draws its label
+    /// over it, one pixel down and right while held. A button without one is a fill
     /// inside a one-pixel frame in `tint`, the fill black and the label in
-    /// `tint`, the two swapped while it is held down.
+    /// `tint`, the two swapped while it is held down; under the pointer the
+    /// fill is `tint` at a quarter ([`HOVER_SHADE`]). A disabled part draws
+    /// in grey instead of `tint`.
     fn update(&mut self, parts: &[Placed], tint: [f32; 3]) {
         self.nodes.begin();
-        let (tint, black) = (rounded(tint), rounded([0.0; 3]));
+        let (side, grey, black) = (rounded(tint), rounded(DISABLED), rounded([0.0; 3]));
+        let shade = rounded(tint.map(|channel| channel * HOVER_SHADE));
         for part in parts {
-            if part.group || part.holder != self.holder {
+            if part.group || part.hidden || part.holder != self.holder {
                 continue;
             }
+            let tint = if part.disabled { grey } else { side };
             if let Some(picture) = part.picture {
+                let looks = part.node && part.button;
+                let shade = if !looks {
+                    None
+                } else if part.disabled {
+                    Some(PICTURE_DISABLED)
+                } else if part.pressed {
+                    Some(PICTURE_PRESSED)
+                } else if part.hovered {
+                    Some(PICTURE_HOVERED)
+                } else {
+                    None
+                };
                 let draw = NodeDraw {
                     picture: Some(Picture {
                         uv_origin: picture.uv_origin,
                         uv_size: picture.uv_size,
                         pixel_size: picture.pixel_size,
                     }),
+                    tint: shade,
                     ..Default::default()
                 };
                 self.nodes.picture(rect_of(part.rect), draw);
+                if looks && !part.text.is_empty() {
+                    let [x, y, width, height] = part.rect;
+                    let [across, down] = BUTTON_PAD;
+                    let held = i32::from(part.pressed);
+                    let words = [
+                        x.saturating_add(across + held),
+                        y.saturating_add(down + held),
+                        width.saturating_sub(2 * across),
+                        height.saturating_sub(2 * down),
+                    ];
+                    self.nodes
+                        .text(rect_of(words), &part.text, tint, NodeDraw::default());
+                }
                 continue;
             }
             let [x, y, width, height] = part.rect;
-            // A held button shows its label dark on the side's colour.
+            if let Some(fill) = part.fill {
+                // A bar: a frame in `tint`, black inside, filled from the
+                // left in `tint`.
+                self.fill(part.rect, tint);
+                let inside = grown(part.rect, -1);
+                self.fill(inside, black);
+                let full = inside[2].max(0) * fill / 100;
+                if full > 0 {
+                    self.fill([inside[0], inside[1], full, inside[3]], tint);
+                }
+                continue;
+            }
+            if part.text.is_empty() && !part.button {
+                // A list: its lines one under another; a picture that did
+                // not load draws nothing.
+                let line = height
+                    .checked_div(part.lines.len() as i32)
+                    .unwrap_or(0)
+                    .max(1);
+                for (at, words) in part.lines.iter().enumerate() {
+                    let top = y.saturating_add(line.saturating_mul(at as i32));
+                    self.nodes.text(
+                        rect_of([x, top, width, line]),
+                        words,
+                        tint,
+                        NodeDraw::default(),
+                    );
+                }
+                continue;
+            }
+            // A held button shows its label dark on the side's colour; one
+            // under the pointer, on a shade of it.
             let (fill, ink) = if part.pressed {
                 (tint, black)
+            } else if part.hovered && !part.disabled {
+                (shade, tint)
             } else {
                 (black, tint)
             };
             if part.button {
                 self.fill(part.rect, tint);
                 self.fill(grown(part.rect, -1), fill);
-            } else if self.holder == Holder::Field {
+            } else if self.holder == Holder::Field && part.backdrop {
                 // Over the battlefield a text stands on black, one pixel out
                 // on every side, as the timers' and the messages' text does.
                 self.fill(grown(part.rect, 1), black);
@@ -659,7 +880,14 @@ mod tests {
             button,
             picture: None,
             pressed,
+            hovered: false,
             group: false,
+            hidden: false,
+            fill: None,
+            lines: Vec::new(),
+            disabled: false,
+            node: false,
+            backdrop: true,
         }
     }
 
@@ -705,5 +933,32 @@ mod tests {
         assert_eq!(hud.boxes().len(), 1);
         assert_eq!(hud.texts().len(), 4);
         assert_eq!(hud.texts()[0].tint, tint);
+    }
+
+    /// A button under the pointer fills with a quarter of the side's
+    /// colour, its label in it; held, the two swap; disabled, no hover.
+    #[test]
+    fn a_hovered_button_fills_with_a_shade() {
+        let mut hud = PartsHud::new(Holder::Field);
+        let (font, tint) = (font(), [1.0, 200.0 / 255.0, 0.0]);
+        let mut button = part([0, 0, 40, 21], true, false);
+        button.hovered = true;
+        hud.draw(std::slice::from_ref(&button), tint, CAMERA, &font);
+        let shade = [64.0 / 255.0, 50.0 / 255.0, 0.0];
+        let tints: Vec<_> = hud.boxes().iter().map(|quad| quad.tint).collect();
+        assert_eq!(tints, [tint, shade]);
+        assert_eq!(hud.texts()[0].tint, tint);
+
+        button.pressed = true;
+        hud.draw(std::slice::from_ref(&button), tint, CAMERA, &font);
+        let tints: Vec<_> = hud.boxes().iter().map(|quad| quad.tint).collect();
+        assert_eq!(tints, [tint, tint]);
+        assert_eq!(hud.texts()[0].tint, [0.0; 3]);
+
+        button.pressed = false;
+        button.disabled = true;
+        hud.draw(std::slice::from_ref(&button), tint, CAMERA, &font);
+        let tints: Vec<_> = hud.boxes().iter().map(|quad| quad.tint).collect();
+        assert_eq!(tints[1], [0.0; 3]);
     }
 }

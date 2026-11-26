@@ -413,6 +413,12 @@ impl HotkeyBindings {
         }
     }
 
+    /// Every encoded key some command is bound to (client module hotkeys
+    /// yield to these: RFC 0001 section 10).
+    pub(crate) fn bound_keys(&self) -> impl Iterator<Item = u16> + '_ {
+        self.by_key.keys().copied()
+    }
+
     pub(crate) fn command_at(&self, encoded: u16) -> Option<HotkeyCommand> {
         self.by_key.get(&encoded).copied()
     }
