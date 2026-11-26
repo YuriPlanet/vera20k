@@ -85,7 +85,7 @@ class ScaleBenchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             folder = Path(scratch)
 
-            def play(report):
+            def play(report, exit_code=0):
                 def run(command, **kwargs):
                     self.assertEqual(command[1:], ['-SPAWN'])
                     self.assertEqual(
@@ -93,14 +93,18 @@ class ScaleBenchTests(unittest.TestCase):
                          kwargs['env']['VERA20K_SPAWN_LEAVE_AT_FRAME']), ('1', '300', '900'))
                     if report is not None:
                         (folder / 'spawn_result.json').write_text(report, encoding='utf-8')
-                    return mock.Mock(returncode=0)
+                    return mock.Mock(returncode=exit_code)
                 with mock.patch.object(scale_bench_client.subprocess, 'run', side_effect=run):
                     return scale_bench_client.client_run(Path('vera20k'), folder, (300, 900), 60.0)
 
-            cost = play('{"result":"quit","frame_cost":{"frame_ms":12.5,"last_frame":903}}')
+            cost = play('{"result":"quit","exit_code":0,"frame_cost":{"frame_ms":12.5,"last_frame":903}}')
             self.assertEqual((cost['frame_ms'], cost['last_frame']), (12.5, 903))
+            winner = '{"result":"won","exit_code":10,"frame_cost":{"last_frame":900}}'
+            self.assertEqual(play(winner, exit_code=10)['last_frame'], 900)
+            with self.assertRaisesRegex(scale_bench.BenchError, 'exited with -6'):
+                play(winner, exit_code=-6)
             with self.assertRaisesRegex(scale_bench.BenchError, 'ended early'):
-                play('{"result":"quit","frame_cost":{"frame_ms":12.5,"last_frame":640}}')
+                play('{"result":"quit","exit_code":0,"frame_cost":{"frame_ms":12.5,"last_frame":640}}')
             with self.assertRaisesRegex(scale_bench.BenchError, 'no frame cost'):
                 play('{"result":"quit"}')
             with self.assertRaisesRegex(scale_bench.BenchError, 'no frame cost'):
