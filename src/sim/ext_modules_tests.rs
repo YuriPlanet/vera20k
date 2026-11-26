@@ -251,6 +251,62 @@ fn a_rust_built_module_runs() {
     );
 }
 
+/// RFC 0001 open question 2's experiment for the TypeScript SDK, when
+/// `VERA20K_TEST_TS_WASM` lists AssemblyScript-built modules, `:`-separated
+/// (`sdk/typescript/examples`, `vera20k build`): each plays 9,000 frames of
+/// a Battle against one computer house, saved and loaded at frame 4,500.
+/// The loaded match must end with the live one's full state hash and module
+/// digests, the module must still be running (no trap and no budget
+/// overrun) and its memory must stay bounded. Prints each log and memory
+/// size (`--nocapture`).
+#[test]
+fn typescript_modules_resume_from_a_save_exactly() {
+    let Some(paths) = std::env::var_os("VERA20K_TEST_TS_WASM") else {
+        return;
+    };
+    for path in std::env::split_paths(&paths) {
+        let Some(mut live) = scenario_with_computer() else {
+            return;
+        };
+        let bytes = std::fs::read(&path).expect("module file reads");
+        live.runtime
+            .simulation
+            .install_ext_module(&live.runtime.resources.rules, ModuleSource::Mod, &bytes)
+            .expect("module installs");
+        for _ in 0..4500 {
+            live.tick();
+        }
+        let halfway = live.sim().ext_modules().memory_bytes()[0];
+        let mut resumed = saved_and_loaded_with(&live, scenario_with_computer);
+        let digests = |scene: &HeadlessScenario| {
+            scene
+                .sim()
+                .ext_modules
+                .checksum_digests()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(digests(&resumed), digests(&live), "{}", path.display());
+        for frame in 0..4500 {
+            live.tick();
+            resumed.tick();
+            if frame % 500 == 0 {
+                assert_eq!(digests(&resumed), digests(&live), "{} frame {frame}", path.display());
+            }
+        }
+        assert_eq!(resumed.sim().state_hash(), live.sim().state_hash(), "{}", path.display());
+        let status = live.sim().ext_modules().status();
+        let log = live.runtime.simulation.ext_modules_mut().take_log();
+        let end = live.sim().ext_modules().memory_bytes()[0];
+        eprintln!("== {}: memory {halfway} bytes at 4,500, {end} at 9,000", path.display());
+        for line in &log {
+            eprintln!("   {line}");
+        }
+        assert_eq!(status[0].1, None, "{} stopped; log {log:?}", path.display());
+        assert_eq!(resumed.sim().ext_modules().status(), status);
+        assert_eq!(end, halfway, "{}: memory grew after frame 4,500", path.display());
+    }
+}
+
 /// Smoke-runs the playtest mods (`sdk/examples/veteran-fury`,
 /// `siege-doctrine`, `meteor-storm`, `trigger-lab`) when
 /// `VERA20K_TEST_PLAYTEST_WASM` lists their modules, `:`-separated: each
@@ -1373,6 +1429,14 @@ pub(super) fn ext_hash(scene: &HeadlessScenario) -> u64 {
 /// A save of `live` loaded into a fresh scenario, as the existing save test
 /// does it.
 pub(super) fn saved_and_loaded(live: &HeadlessScenario) -> HeadlessScenario {
+    saved_and_loaded_with(live, scenario)
+}
+
+/// [`saved_and_loaded`] into a fresh scenario from `fresh`.
+fn saved_and_loaded_with(
+    live: &HeadlessScenario,
+    fresh: fn() -> Option<HeadlessScenario>,
+) -> HeadlessScenario {
     use crate::sim::snapshot::GameSnapshot;
     let rules = &live.runtime.resources.rules;
     let bytes = GameSnapshot::save_validated(
@@ -1395,7 +1459,7 @@ pub(super) fn saved_and_loaded(live: &HeadlessScenario) -> HeadlessScenario {
         .restore_map_authority_after_snapshot_load(rules, rules.overlay_registry(), None)
         .expect("map authority restores");
     loaded.resolve_type_handles(rules);
-    let mut resumed = scenario().expect("second load");
+    let mut resumed = fresh().expect("second load");
     resumed.runtime.simulation = loaded;
     resumed
 }
