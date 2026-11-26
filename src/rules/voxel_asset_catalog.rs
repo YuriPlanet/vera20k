@@ -202,6 +202,12 @@ fn admit_declared_model(
                     "[{section}] Model={} is not found; it draws nothing",
                     decl.file
                 );
+                crate::rules::art_problems::report(
+                    section,
+                    &format!("Model={}", decl.file),
+                    "the file is not found",
+                    "it draws nothing",
+                );
                 return None;
             };
             match Model::from_glb(bytes) {
@@ -210,6 +216,12 @@ fn admit_declared_model(
                     log::warn!(
                         "[{section}] Model={} cannot be read ({error}); it draws nothing",
                         decl.file
+                    );
+                    crate::rules::art_problems::report(
+                        section,
+                        &format!("Model={}", decl.file),
+                        &format!("cannot be read ({error})"),
+                        "it draws nothing",
                     );
                     None
                 }
@@ -223,6 +235,12 @@ fn admit_declared_model(
         log::warn!(
             "[{section}] Model={} has no body node with a forward length; it draws nothing",
             decl.file
+        );
+        crate::rules::art_problems::report(
+            section,
+            &format!("Model={}", decl.file),
+            "has no body node with a forward length",
+            "it draws nothing",
         );
         return None;
     };
@@ -241,10 +259,20 @@ fn admit_declared_model(
                 decl.file,
                 object.turret_count
             );
+            crate::rules::art_problems::report(
+                section,
+                &format!("Model={}", decl.file),
+                &format!(
+                    "has no turret{missing} node for TurretCount={}",
+                    object.turret_count
+                ),
+                "it draws nothing",
+            );
             return None;
         }
     }
-    let no_spawn_alt = (object.category == ObjectCategory::Vehicle && object.no_spawn_alt)
+    let no_spawn_alt = object
+        .is_some_and(|object| object.category == ObjectCategory::Vehicle && object.no_spawn_alt())
         .then(|| no_spawn_alt_model(section, decl, half_sizes, assets))
         .flatten()
         .map(Arc::new);
@@ -397,36 +425,42 @@ fn shared_debris_model(
         return None;
     }
     let main = kind.model_slots.main;
-    let source = kind.share_source.as_deref().and_then(|name| {
-        [
-            ObjectCategory::Infantry,
-            ObjectCategory::Vehicle,
-            ObjectCategory::Aircraft,
-            ObjectCategory::Building,
-        ]
-        .into_iter()
-        .find_map(|category| {
-            rules
-                .all_objects()
-                .find(|object| object.category == category && object.id.eq_ignore_ascii_case(name))
-        })
+    // Rules processing copied the source's pair into the main slot
+    // (`74B4D0..74B55B`) and keeps no name: the source is the first type, in
+    // the order ShareSource= is looked up, whose shared slot holds that pair.
+    let slot = if kind.share_body_data {
+        0
+    } else if kind.share_turret_data {
+        1
+    } else {
+        2
+    };
+    let shared_pair = |object: &crate::rules::object_type::ObjectType| {
+        let slots = &object.voxel_model_slots;
+        [slots.main, slots.auxiliary, slots.barrel][slot]
+    };
+    if main == ModelPair::default() {
+        // No source, or one without that part: the copied pair is null
+        // (74B555) and nothing draws; a restored game holds its own image.
+        return Some(None);
+    }
+    let source = [
+        ObjectCategory::Infantry,
+        ObjectCategory::Vehicle,
+        ObjectCategory::Aircraft,
+        ObjectCategory::Building,
+    ]
+    .into_iter()
+    .find_map(|category| {
+        rules
+            .all_objects()
+            .find(|object| object.category == category && shared_pair(object) == main)
     });
     let Some(source) = source else {
-        // No source: the copied pair is null (74B555) and nothing draws; a
-        // restored game holds its own image.
-        return (main == ModelPair::default()).then_some(None);
-    };
-    let slots = &source.voxel_model_slots;
-    let (pair, slot) = if kind.share_body_data {
-        (slots.main, 0)
-    } else if kind.share_turret_data {
-        (slots.auxiliary, 1)
-    } else {
-        (slots.barrel, 2)
-    };
-    if main != pair {
+        // The pair is the type's own image's load: it draws as one that
+        // shares nothing.
         return None;
-    }
+    };
     let id = source.id.to_ascii_uppercase();
     let found = match (source.category, slot) {
         (ObjectCategory::Building, 1 | 2) => building_guns.get(&id).map(|model| {
@@ -575,6 +609,12 @@ pub(crate) struct VoxelAssetCatalog {
     /// art declares `Model=`, or that share a part of a type whose art
     /// declares one ([`shared_debris_model`]).
     voxel_anim_models: BTreeMap<usize, DebrisModel>,
+    /// VERA: the game-folder files that change which main models load or a
+    /// main VXL's half sizes: a library that is there or reads where the
+    /// retail copy does not (or the reverse), whatever part it is, as one
+    /// bad part unloads the whole model; and a main VXL of other half
+    /// sizes. Not hashed or compared.
+    folder_files: BTreeSet<String>,
 }
 impl PartialEq for VoxelAssetCatalog {
     fn eq(&self, other: &Self) -> bool {
@@ -867,6 +907,19 @@ impl VoxelAssetCatalog {
                 .chain(projectiles.values())
                 .chain(voxel_anim_models.values().map(|debris| &debris.model))
                 .any(Option::is_some);
+        // Only a type's main model reaches the simulation (`loaded`), and
+        // of its files only the VXL's half sizes.
+        let main_vxls: BTreeSet<&LibraryRequest> = rules
+            .all_objects()
+            .filter_map(|object| plan.library(object.voxel_model_slots.main.vxl))
+            .collect();
+        let folder_files = libraries
+            .iter()
+            .filter(|(request, read)| {
+                read.validity_differs || (read.half_sizes_differ && main_vxls.contains(request))
+            })
+            .filter_map(|(_, read)| read.folder_file.clone())
+            .collect();
         Self {
             bound: true,
             loaded,
@@ -877,6 +930,7 @@ impl VoxelAssetCatalog {
             building_guns,
             projectiles,
             voxel_anim_models,
+            folder_files,
         }
     }
     /// VERA: the game-folder files that change the types' main models.
@@ -888,6 +942,13 @@ impl VoxelAssetCatalog {
     }
     pub(crate) fn declares_models(&self) -> bool {
         self.declared_models
+    }
+
+    /// VERA: which types' main models loaded and their first limb's half
+    /// sizes, without which image supplied each part: what
+    /// `RuleSet::file_inputs_hash` folds of this catalog.
+    pub(crate) fn fold_loaded(&self, state: &mut impl std::hash::Hasher) {
+        std::hash::Hash::hash(&self.loaded, state);
     }
     pub(crate) fn model(&self, category: ObjectCategory, name: &str) -> Option<&LoadedVoxelModel> {
         self.models.get(&(category, name.to_ascii_uppercase()))

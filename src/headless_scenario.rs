@@ -849,7 +849,7 @@ fn load_with_assets_and_mod_module(
     );
     rules.bind_alpha_images(&assets);
     let overlay_shp_ids = crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
-        &overlay_registry,
+        rules.overlay_registry(),
         rules.art(),
         &assets,
         theater.extension,

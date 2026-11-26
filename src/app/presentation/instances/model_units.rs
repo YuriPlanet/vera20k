@@ -45,7 +45,7 @@ use crate::render::tactical_draw_plan::RenderZPolicy;
 use crate::render::terrain_draw::TerrainPiece;
 use crate::render::unit_atlas::PoseTilt;
 use crate::render::vxl_raster::{BodyTilt, GroundPose, VxlRenderParams};
-use crate::rules::house_colors::{self, HouseColorIndex};
+use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::voxel_asset_catalog::DeclaredModel;
 use crate::rules::voxel_frame_catalog::NO_SPAWN_ALT_SUFFIX;
 
@@ -64,7 +64,7 @@ pub(super) fn declared_model_of<'r>(
     let split = type_id.len().checked_sub(NO_SPAWN_ALT_SUFFIX.len())?;
     let (base, suffix) = (type_id.get(..split)?, type_id.get(split..)?);
     if !suffix.eq_ignore_ascii_case(NO_SPAWN_ALT_SUFFIX)
-        || !rules.object(base).is_some_and(|object| object.no_spawn_alt)
+        || !rules.object(base).is_some_and(|object| object.no_spawn_alt())
     {
         return None;
     }
@@ -132,14 +132,17 @@ pub(super) enum ShadowDepth {
 /// while no type declares a model, so retail data allocates and walks
 /// nothing here.
 pub(crate) fn begin_model_frame(state: &mut AppState) {
-    if !state.rules().is_some_and(|rules| rules.declares_models()) {
+    if !crate::app::state::active_rules(&state.frontend, &state.match_state)
+        .is_some_and(|rules| rules.declares_models())
+    {
         return;
     }
     // How much the view magnifies the world: the wheel zoom times the
     // Options zoom. Above 1 the model page gets an HD twin at about that
     // multiple, which the zoomed draw takes (`render::picture_zoom`).
     let options = state
-        .tactical_zoom()
+        .renderer
+        .tactical_zoom(&state.frontend.screen)
         .filter(|zoom| zoom.percent > 100)
         .map_or(1.0, |zoom| zoom.scale());
     let magnified = state.match_state.input.zoom_level.max(1.0) * options;
@@ -240,22 +243,26 @@ fn pose_matrices(declared: &DeclaredModel, pose: &ModelUnitPose) -> [glam::Mat4;
 /// Draw `declared` for the unit in `draw` at `pose`: its shadow, when
 /// `shadow` admits one, then its body, from the model page; nothing when the
 /// frame has no room for the body.
+/// The match state a unit's model draw reads.
+#[derive(Clone, Copy)]
+pub(super) struct ModelUnitContext<'a> {
+    pub platform: &'a crate::app::state::PlatformState,
+    pub renderer: &'a crate::app::renderer_state::RendererState,
+    pub frontend: &'a crate::app::frontend::state::FrontendState,
+    pub match_state: &'a crate::app::match_runtime::state::MatchState,
+    pub persistence: &'a crate::app::persistence::PersistenceState,
+}
+
 pub(super) fn emit_model_unit(
-    state: &AppState,
+    state: ModelUnitContext<'_>,
     declared: &Arc<DeclaredModel>,
     pose: ModelUnitPose,
     draw: ModelUnitDraw<'_>,
     shadow: Option<ModelShadowDraw>,
     pieces: &mut Vec<ObjectPieceInstance>,
 ) {
-    let ramp = (draw.house != house_colors::NO_REMAP)
-        .then(|| {
-            state
-                .rules()
-                .map(|rules| rules.house_color_ramps.ramp(draw.house))
-        })
-        .flatten()
-        .map(|ramp| ramp.map(|color| [color.r, color.g, color.b]));
+    let ramp = crate::app::state::active_rules(state.frontend, state.match_state)
+        .and_then(|rules| super::model_art::model_ramp(rules, draw.house));
     let request = ModelPose {
         model: Arc::clone(declared),
         matrices: pose_matrices(declared, &pose),
@@ -272,7 +279,7 @@ pub(super) fn emit_model_unit(
     let top = center_y + y as f32;
     let bottom = top + height as f32;
     let depth = body_sort_depth(
-        state,
+        &state.match_state.match_presentation,
         draw.entity,
         bottom + draw.dock_depth_y_offset,
         draw.z,
@@ -294,9 +301,19 @@ pub(super) fn emit_model_unit(
     };
     // The bridge split is two SHP blits here, so the voxel shader's split
     // flag and clip height are not set.
-    let draw_state = unit_body_draw_state(state, draw.entity, draw.draw_state, false, bounds);
-    let split = super::foot_depth::unit_bridge_split(state, draw.entity, true);
-    let z_adjust = super::foot_depth::unit_z_adjust(state, draw.entity, true, None);
+    let draw_state = unit_body_draw_state(
+        state.platform,
+        state.renderer,
+        &state.frontend.screen,
+        state.match_state,
+        state.persistence,
+        draw.entity,
+        draw.draw_state,
+        bounds,
+    );
+    let split = super::foot_depth::unit_bridge_split(&state.match_state.sim_runtime, draw.entity, true);
+    let z_adjust =
+        super::foot_depth::unit_z_adjust(&state.match_state.sim_runtime, draw.entity, true, None);
     for region in body_blits(native[1], height, z_adjust, split)
         .into_iter()
         .flatten()
@@ -334,7 +351,7 @@ pub(super) fn emit_model_unit(
 /// for the shadow key's facing and slope, through the SHP shadow edit, Z
 /// read as the voxel stencil's (`0x00707280`'s blit, gradient Vertical).
 fn emit_model_shadow(
-    state: &AppState,
+    state: ModelUnitContext<'_>,
     declared: &Arc<DeclaredModel>,
     entity: &crate::app::presentation::frame::ObjectRecord,
     shadow: ModelShadowDraw,
@@ -364,8 +381,13 @@ fn emit_model_shadow(
     let bottom = anchor_y + y as f32 + height as f32;
     let depth = match shadow.depth {
         ShadowDepth::Body => body_depth,
-        ShadowDepth::Own => body_sort_depth(state, entity, bottom, entity.position.z()),
-        ShadowDepth::Ground => compute_sprite_depth(state, bottom, 0),
+        ShadowDepth::Own => body_sort_depth(
+            &state.match_state.match_presentation,
+            entity,
+            bottom,
+            entity.position.z(),
+        ),
+        ShadowDepth::Ground => compute_sprite_depth(&state.match_state.match_presentation, bottom, 0),
     };
     pieces.push(ObjectPieceInstance {
         target: ObjectTexture::SpriteAtlasEdit(image.page, TerrainPiece::Shadow),

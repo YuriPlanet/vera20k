@@ -1209,3 +1209,69 @@ fn a_world_of_declared_models_makes_the_atlas() {
         Some(&interner)
     ));
 }
+
+/// A placed sprite waits for its upload as the resident cache's pixels
+/// themselves, not a second copy of them.
+#[test]
+fn a_placed_sprite_waits_for_its_upload_without_a_copy() {
+    let atlas = UnitAtlas::from_test_sprites(vec![CachedUnitSprite {
+        key: UnitSpriteKey {
+            type_id: "staged".into(),
+            turret_index: 0,
+            facing: 0,
+            layer: VxlLayer::Body,
+            frame: 0,
+            slope_type: 0,
+            barrel_pitch: 0,
+        },
+        pixels: vec![1, 2, 3, 4],
+        width: 2,
+        height: 2,
+        offset_x: 0.,
+        offset_y: 0.,
+        native_draw_bounds: None,
+        shadow_center: None,
+        pool_bytes: 0,
+        hd: None,
+    }]);
+    let resident = atlas.resident.borrow();
+    let [pending] = resident.uploads.as_slice() else {
+        panic!("one sprite placed, one upload staged");
+    };
+    let staged = pending.texels.bytes(&resident.rendered_cache);
+    assert_eq!(staged, [1, 2, 3, 4]);
+    assert!(std::ptr::eq(
+        staged,
+        resident.rendered_cache[0].pixels.as_slice()
+    ));
+}
+
+/// Phobos `[General] ArtImageSwap=true`: a vehicle's own ART `Image=` names
+/// its VXL, while `Voxel=` and the other flags stay on that own section.
+/// Retail assets prove the renamed `SAPC` files actually load; the naming
+/// assertions run even without a game directory.
+#[test]
+fn phobos_art_image_swap_names_vehicle_voxel_from_art() {
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[General]\nArtImageSwap=true\n\
+             [VehicleTypes]\n0=SAPCX\n\
+             [SAPCX]\nName=Subterranean APC\nStrength=500\nSpeed=6\nTurret=no\n",
+        ),
+        &IniFile::from_str("[SAPCX]\nImage=SAPC\nVoxel=yes\nRemapable=yes\nCameo=sapicon\n"),
+    )
+    .unwrap();
+    assert_eq!(rules.object("SAPCX").unwrap().image, "SAPCX");
+    assert_eq!(
+        rules.object("SAPCX").unwrap().voxel_image_load(),
+        Some("SAPC")
+    );
+    assert_eq!(voxel_image_id("SAPCX", Some(&rules)), "SAPC");
+
+    use crate::rules::retail_ini_fixture::retail_assets;
+    let Some((_, assets)) = retail_assets() else {
+        return;
+    };
+    let model = UnitModel::load(&assets, "SAPCX", Some(&rules)).expect("SAPC.VXL loads");
+    assert_eq!(model.body.unwrap().identity().0, "SAPC");
+}

@@ -3808,7 +3808,7 @@ fn load_map_first_step(
                                         "authored materialization retained its pending Fill owner",
                                     );
                                             let overlay_shp_ids = resolved_overlay_shp_ids(
-                                                &overlay_registry,
+                                                rules.overlay_registry(),
                                                 rules.art(),
                                                 services.asset_manager,
                                                 theater_ext,

@@ -21,8 +21,8 @@ pub(super) struct MapAudioProfile {
 
 /// The battle's Options presentation choices for one capture, as their
 /// `[VERA]` values. Absent, a capture keeps zoom 100%, the Normal sidebar,
-/// the native radar and the sidebar's own pixels.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+/// the native radar, the sidebar's own pixels and the stock view distance.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub(super) struct MapPresentationProfile {
     /// `Zoom=`: 0 for Auto, otherwise a percent.
@@ -35,6 +35,13 @@ pub(super) struct MapPresentationProfile {
     /// `SmoothSidebar=`: optional, off when absent.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(super) smooth_sidebar: bool,
+    /// Optional mouse-wheel view distance (`MouseWheelZoom=`), as the
+    /// multiple of the stock view a wheel notch selects
+    /// (`ViewDistanceTier::scale`). An f64, so the receipt echoes the
+    /// profile's decimal exactly (an f32 0.8 reads back as
+    /// 0.800000011920929).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) wheel_zoom: Option<f64>,
 }
 
 impl MapPresentationProfile {
@@ -47,6 +54,79 @@ impl MapPresentationProfile {
         ensure!(
             SidebarSize::from_ini_value(self.sidebar).ini_value() == self.sidebar,
             "presentation.sidebar must be 100, 150 or 200"
+        );
+        self.wheel_tier()?;
+        Ok(())
+    }
+
+    /// The wheel's view-distance tier `wheel_zoom` names, if any.
+    fn wheel_tier(&self) -> Result<Option<crate::app::input::camera::ViewDistanceTier>> {
+        use crate::app::input::camera::ViewDistanceTier;
+        self.wheel_zoom
+            .map(|scale| {
+                ViewDistanceTier::ALL
+                    .into_iter()
+                    .find(|tier| tier.scale() == scale as f32)
+                    .with_context(|| {
+                        format!(
+                            "presentation.wheel_zoom {scale} must be a view distance scale \
+                             (0.5, 2/3, 0.8, 1, 1.25 or 1.5)"
+                        )
+                    })
+            })
+            .transpose()
+    }
+
+    /// Select `wheel_zoom` once the battle has loaded, before the first
+    /// observed frame: one `cycle_view_distance` call per wheel notch from
+    /// the stock view, the owner a live wheel notch over the battlefield
+    /// calls (`handler.rs`), then the production ease (`animate_zoom`) until
+    /// it settles, so every observed frame shows the selected distance.
+    pub(super) fn apply_wheel_zoom(&self, state: &mut AppState) -> Result<()> {
+        use crate::app::input::camera::{self, ViewDistanceTier};
+        let Some(tier) = self.wheel_tier()? else {
+            return Ok(());
+        };
+        let index =
+            |tier: ViewDistanceTier| ViewDistanceTier::ALL.iter().position(|each| *each == tier);
+        let (target, stock) = (
+            index(tier).context("wheel tier absent")?,
+            index(ViewDistanceTier::Default).context("stock wheel tier absent")?,
+        );
+        ensure!(
+            state.match_state.input.zoom_target == ViewDistanceTier::Default.zoom(),
+            "presentation.wheel_zoom requires the loaded battle at the stock view distance"
+        );
+        // `ALL` runs from the smallest view distance to the largest; a
+        // wheel-down notch (negative lines) selects the next larger one.
+        let notch = if target > stock { -1.0 } else { 1.0 };
+        for _ in 0..target.abs_diff(stock) {
+            camera::cycle_view_distance(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
+                notch,
+            );
+        }
+        for _ in 0..256 {
+            if camera::zoom_settled(&state.match_state.input) {
+                break;
+            }
+            camera::animate_zoom(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
+            );
+        }
+        let zoom = state.match_state.input.zoom_level;
+        ensure!(
+            camera::zoom_settled(&state.match_state.input) && (zoom - tier.zoom()).abs() <= 1e-6,
+            "presentation.wheel_zoom settled at zoom {zoom}, not {}",
+            tier.zoom()
         );
         Ok(())
     }

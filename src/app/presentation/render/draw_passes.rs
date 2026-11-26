@@ -405,10 +405,10 @@ pub(super) fn dispatch_draw_passes(
     );
     // VERA-only, experimental: the declared models this frame drew
     // (`render::model_draw`); nothing when it drew none.
-    state.renderer.model_frame.borrow_mut().encode(
-        &state.renderer.gpu.device,
-        &state.renderer.gpu.queue,
-        state.process_assets.manager(),
+    renderer.model_frame.borrow_mut().encode(
+        &renderer.gpu.device,
+        &renderer.gpu.queue,
+        process_assets.manager(),
         encoder,
     );
     // The sidebar's surface is complete before the frame begins; the
@@ -1314,7 +1314,12 @@ pub(super) fn dispatch_draw_passes(
             pool,
             drag_tex,
             |encoder| {
-                super::picture_zoom::draw_over_frame(state, encoder, [tac_x, tac_y, tac_w, tac_h])
+                super::picture_zoom::draw_over_frame(
+                    renderer,
+                    &match_state.match_presentation,
+                    encoder,
+                    frame_tactical,
+                )
             },
         );
         zoom.color_view()
@@ -1871,12 +1876,9 @@ fn draw_zoomed_drag_rect(
     drag: Option<&BatchTexture>,
     after_world: impl FnOnce(&mut wgpu::CommandEncoder),
 ) {
-    zoom.composite(device, encoder, world, tactical, super::CLEAR_COLOR);
     // VERA-only, experimental (docs/picture-model-art.md): picture art at
     // its own resolution, over the magnified world and under the band box.
     after_world(encoder);
-    // Draw on the final pixel grid: a 1px border must not become a subpixel
-    // span on the world attachment and disappear before the filtered copy.
     if drag.is_some() && pool.get("drag").is_some_and(|(_, count)| count != 0) {
         let mut pass = begin_main_load_pass(encoder, zoom.color_view(), zoom.frame_depth_view());
         pass.set_scissor_rect(tactical[0], tactical[1], tactical[2], tactical[3]);
@@ -2073,11 +2075,18 @@ pub(crate) fn draw_world_window_copy(
     // VERA-only, experimental (docs/picture-model-art.md): picture art at
     // its own resolution, over the world the copy just drew.
     super::picture_zoom::draw_over_window(
-        state,
+        renderer,
+        presentation,
         encoder,
         view,
         zoom,
-        crate::app::input::camera::tactical_viewport_px(state),
+        crate::app::input::camera::tactical_viewport_px(
+            platform,
+            renderer,
+            screen,
+            presentation,
+            persistence,
+        ),
     );
 }
 

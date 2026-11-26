@@ -219,7 +219,7 @@ fn assert_shp_light_on_frame(
             ignore_visibility: true,
             lighting: light,
             house_colors: &colors,
-            building_zshape: false,
+            building_zshape: None,
             model_frame: None,
         },
         &mut draws,

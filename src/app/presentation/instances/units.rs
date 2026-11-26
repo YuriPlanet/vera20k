@@ -485,7 +485,7 @@ fn aircraft_body_anchor(
 /// The entity's height comes off the sort key. Bridge depth treatment belongs
 /// to the unit's composite blit, never to a separate object painter queue.
 pub(super) fn body_sort_depth(
-    state: &AppState,
+    presentation: &MatchPresentationState,
     entity: &crate::app::presentation::frame::ObjectRecord,
     drawn_row_y: f32,
     z: u8,
@@ -583,12 +583,12 @@ pub(crate) fn unit_visitor<'a>(
     let local_owner_id = local_owner.as_deref().and_then(|o| sim.interner().get(o));
     let ignore_visibility = match_state.sandbox_full_visibility;
     let art_reg: Option<&crate::rules::art_data::ArtRegistry> =
-        state.rules().map(|rules| rules.art());
+        crate::app::state::active_rules(frontend, match_state).map(|rules| rules.art());
     // VERA-only, experimental (docs/picture-model-art.md): the rules when a
     // type declares a model, else None and no draw looks for one.
-    let model_art = state.rules().filter(|rules| rules.declares_models());
-    let terrain = state
-        .match_state
+    let model_art = crate::app::state::active_rules(frontend, match_state)
+        .filter(|rules| rules.declares_models());
+    let terrain = match_state
         .sim_runtime
         .presentation()
         .and_then(|rt| rt.view().resolved_terrain());
@@ -918,7 +918,8 @@ pub(crate) fn unit_visitor<'a>(
                         _ => (render_pose.body, render_pose.barrel),
                     };
                     let shadow = model_shadow_draw(
-                        state,
+                        match_state,
+                        crate::app::state::active_rules(frontend, match_state),
                         entity,
                         [type_str, sim.interner().resolve(entity.type_ref())],
                         no_shadow,
@@ -929,7 +930,13 @@ pub(crate) fn unit_visitor<'a>(
                         [center_x, center_y],
                     );
                     super::model_units::emit_model_unit(
-                        state,
+                        super::model_units::ModelUnitContext {
+                            platform,
+                            renderer,
+                            frontend,
+                            match_state,
+                            persistence,
+                        },
                         declared,
                         super::model_units::ModelUnitPose {
                             tilt: match body {
@@ -953,7 +960,7 @@ pub(crate) fn unit_visitor<'a>(
                             center: aircraft_body_anchor(
                                 sim,
                                 entity,
-                                state.rules(),
+                                crate::app::state::active_rules(frontend, match_state),
                                 cells.as_ref(),
                                 [center_x, center_y],
                             ),
@@ -1223,7 +1230,9 @@ pub(crate) fn unit_visitor<'a>(
                 // A declared model draws its own shadow (`model_units`).
                 if declared_model.is_none() {
                     emit_lifted_unit_shadow(
-                        state,
+                        &renderer.vxl_pose_frame_cache,
+                        frontend,
+                        match_state,
                         atlas,
                         drawer,
                         entity,
@@ -2603,7 +2612,8 @@ fn emit_lifted_unit_shadow(
 /// sinking and Tunnel travel refuse it as they refuse the voxel shadow.
 #[allow(clippy::too_many_arguments)]
 fn model_shadow_draw(
-    state: &AppState,
+    match_state: &MatchState,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
     entity: &crate::app::presentation::frame::ObjectRecord,
     types: [&str; 2],
     no_shadow: bool,
@@ -2614,7 +2624,7 @@ fn model_shadow_draw(
     body_anchor: [f32; 2],
 ) -> Option<super::model_units::ModelShadowDraw> {
     use super::model_units::{ModelShadowDraw, ShadowDepth};
-    let rules = state.rules()?;
+    let rules = rules?;
     let considered_aircraft = types
         .into_iter()
         .find_map(|type_id| crate::render::unit_atlas::voxel_shadow_viewer(rules, type_id))?;
@@ -2626,16 +2636,21 @@ fn model_shadow_draw(
             slope: pose.slope,
             considered_aircraft,
             depth: ShadowDepth::Ground,
-            z_adjust: super::foot_depth::unit_z_adjust(state, entity, false, Some(pose.world_z))
-                as f32,
+            z_adjust: super::foot_depth::unit_z_adjust(
+                &match_state.sim_runtime,
+                entity,
+                false,
+                Some(pose.world_z),
+            ) as f32,
         });
     }
     if !unit_shadow_admitted(entity, no_shadow, band) {
         return None;
     }
-    let z_adjust = super::foot_depth::unit_z_adjust(state, entity, true, None) as f32;
+    let z_adjust =
+        super::foot_depth::unit_z_adjust(&match_state.sim_runtime, entity, true, None) as f32;
     if has_lifted_unit_shadow(entity) {
-        let runtime = state.match_state.sim_runtime.presentation()?;
+        let runtime = match_state.sim_runtime.presentation()?;
         let view = runtime.view();
         let mut pose = lifted_unit_shadow_pose(
             entity,
@@ -2875,7 +2890,11 @@ fn composite_draw_bounds(
 }
 
 pub(super) fn unit_body_draw_state(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
     entity: &crate::app::presentation::frame::ObjectRecord,
     draw_state: DrawState,
     bounds: CompositeDrawBounds,

@@ -205,10 +205,17 @@ pub(crate) fn voxel_anim_visitor<'a>(
                 presentation.lighting.grid(),
             );
             let remap_row = palette.0;
-            if let Some(object) =
-                voxel_anim_draw_on(id, piece, kind, palette, &view, order, |section, matrix| {
+            voxel_anim_draw_instance(
+                id,
+                piece,
+                kind,
+                palette,
+                &view,
+                order,
+                objects,
+                |section, matrix| {
                     super::model_art::voxel_anim_model_entry(
-                        &state.renderer.model_frame,
+                        &renderer.model_frame,
                         rules,
                         declared,
                         debris.shared,
@@ -216,10 +223,8 @@ pub(crate) fn voxel_anim_visitor<'a>(
                         matrix,
                         remap_row,
                     )
-                })
-            {
-                objects.push(object);
-            }
+                },
+            );
             return;
         }
         let Some(model) = rules.voxel_anim_model(piece.type_id()) else {
@@ -251,8 +256,9 @@ pub(crate) fn voxel_anim_visitor<'a>(
                 if let Some(shadow) = shadow {
                     images.render_shadow(None, false, 0, shadow.native_size());
                 }
+                let page = |entry: UnitSpriteEntry| (ObjectTexture::UnitPosePage(entry.page), entry);
                 if !images.render_part(false, body.native_size()).stale {
-                    return Some((body, shadow));
+                    return Some((page(body), shadow.map(page)));
                 }
                 let (body, _) = cache.render_tumble(
                     assets,
@@ -262,7 +268,7 @@ pub(crate) fn voxel_anim_visitor<'a>(
                     true,
                     Some(images.depth_map()),
                 )?;
-                Some((body, shadow))
+                Some((page(body), shadow.map(page)))
             },
         );
     })
@@ -271,43 +277,20 @@ pub(crate) fn voxel_anim_visitor<'a>(
 /// One admitted piece's draw ([`DebrisView::admits`]). Display membership is
 /// admission: storage alone never draws a piece. `render` rasterizes the
 /// bound physical model at the drawing matrix and places its body and shadow
-/// on the pose page. Plans the draw into `objects`; `None` when it draws
-/// nothing.
+/// on a texture of its choosing: the pose page for a VXL, the model page for
+/// a declared model (`docs/picture-model-art.md`), which samples its RGBA
+/// texels (`source_palette` 0). Plans the draw into `objects`; `None` when it
+/// draws nothing.
 fn voxel_anim_draw_instance(
-    id: u64,
-    piece: &VoxelAnimObject,
-    kind: &VoxelAnimType,
-    palette: (u32, u32, PaletteLight),
-    view: &DebrisView<'_>,
-    order: &NativeDisplayOrder,
-    objects: &mut PlannedObjects,
-    render: impl FnOnce(i32, glam::Mat4) -> Option<(UnitSpriteEntry, Option<UnitSpriteEntry>)>,
-) -> Option<PlannedObjectInstance> {
-    voxel_anim_draw_on(id, piece, kind, palette, view, order, |section, matrix| {
-        let (body, shadow) = render(section, matrix)?;
-        Some((
-            (ObjectTexture::UnitPosePage(body.page), body),
-            shadow.map(|shadow| (ObjectTexture::UnitPosePage(shadow.page), shadow)),
-        ))
-    })
-}
-
-/// A body (and shadow) image on the texture it was placed on.
-type PieceImage = super::model_art::DebrisImage;
-
-/// [`voxel_anim_draw_instance`] whose `render` places the body and shadow on
-/// textures of its choosing: the pose page for a VXL, the model page for a
-/// declared model (`docs/picture-model-art.md`), which samples its RGBA
-/// texels (`source_palette` 0).
-fn voxel_anim_draw_on(
     id: u64,
     piece: &VoxelAnimObject,
     kind: &VoxelAnimType,
     (remap_row, source_palette, palette_light): (u32, u32, PaletteLight),
     view: &DebrisView<'_>,
     order: &NativeDisplayOrder,
+    objects: &mut PlannedObjects,
     render: impl FnOnce(i32, glam::Mat4) -> Option<(PieceImage, Option<PieceImage>)>,
-) -> Option<PlannedObjectInstance> {
+) -> Option<()> {
     let parent = order.object_draw(id, SpriteEncoding::Voxel)?;
     let location = piece.world_coord();
     let (ground_z, deck) = super::foot_depth::floor_probe(view.terrain, location.x, location.y)?;
@@ -321,8 +304,7 @@ fn voxel_anim_draw_on(
         view.axis.origin_y,
         view.axis.world_height,
     );
-    let mut pieces = Vec::with_capacity(2);
-    if let Some(shadow) = shadow {
+    let shadow = shadow.map(|shadow| {
         // `0x2001`: the shadow blitter darkens what lies beneath. A model's
         // shadow mask is an SHP shadow edit, whose darkening is its target's
         // (docs/picture-model-art.md).
@@ -362,6 +344,9 @@ fn voxel_anim_draw_on(
     objects.object(parent, shadow.into_iter().chain([body]));
     Some(())
 }
+
+/// A body (and shadow) image on the texture it was placed on.
+type PieceImage = super::model_art::DebrisImage;
 
 fn pose_piece(
     (target, entry): PieceImage,

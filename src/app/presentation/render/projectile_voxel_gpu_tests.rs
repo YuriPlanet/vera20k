@@ -483,6 +483,7 @@ fn kirov_voxel_pose_upload_and_retained_replay_survive_a_changed_second_frame() 
                         false,
                         None,
                     )
+                    .map(|entry| (ObjectTexture::UnitPosePage(entry.page), entry))
                 },
             )
             .unwrap();

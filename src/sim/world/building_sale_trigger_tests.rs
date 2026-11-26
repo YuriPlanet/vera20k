@@ -157,7 +157,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
     );
     let overlay_shps = crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
-        &overlays,
+        rules.overlay_registry(),
         rules.art(),
         &assets,
         theater.extension,

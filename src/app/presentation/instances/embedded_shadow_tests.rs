@@ -397,6 +397,7 @@ fn stock_turreted_shp_pieces(carrier: Option<[f32; 2]>) -> Vec<ObjectPieceInstan
         lighting: &crate::map::lighting::CellLightGrid::new(),
         house_colors: &colors,
         building_zshape: None,
+        model_frame: None,
     };
     let order = frame.display_order();
     if let Some(carrier) = carrier {

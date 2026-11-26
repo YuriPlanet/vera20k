@@ -474,45 +474,7 @@ impl PictureSources {
                     .picture_candidates(section, decl, theater_name)
                     .into_iter()
                     .find_map(|file| asset_manager.get_ref(&file).map(|bytes| (file, bytes)))?;
-                let mask_name = format!(
-                    "{}.mask.png",
-                    file.rsplit_once('.')
-                        .map_or(file.as_str(), |(stem, _)| stem)
-                );
-                let decoded = PictureFrames::decode(bytes).and_then(|picture| {
-                    let mask = asset_manager
-                        .get_ref(&mask_name)
-                        .map(PictureFrames::decode)
-                        .transpose()?;
-                    Ok((picture, mask))
-                });
-                let shrunk = decoded
-                    .map_err(PictureArtError::from)
-                    .and_then(|(picture, mask)| {
-                        let canvas = decl.size.map(|size| size.map(|side| side.unsigned_abs()));
-                        GamePictureFrames::shrink(&picture, mask.as_ref(), canvas)
-                    });
-                match shrunk {
-                    Ok(frames) => {
-                        log::info!(
-                            "[{section}] {file}: {} frames of {}x{}",
-                            frames.frame_count(),
-                            frames.canvas[0],
-                            frames.canvas[1]
-                        );
-                        Some(frames)
-                    }
-                    Err(error) => {
-                        log::warn!("[{section}] {file} cannot be drawn: {error}");
-                        crate::rules::art_problems::report(
-                            section,
-                            &format!("Picture={}", decl.file),
-                            &format!("{file} cannot be drawn ({error})"),
-                            "it draws nothing",
-                        );
-                        None
-                    }
-                }
+                decode_declared_picture(section, &file, bytes, &decl, asset_manager)
             })
             .as_ref()
     }
@@ -653,6 +615,12 @@ fn decode_declared_picture(
         }
         Err(error) => {
             log::warn!("[{section}] {file} cannot be drawn: {error}");
+            crate::rules::art_problems::report(
+                section,
+                &format!("Picture={}", decl.file),
+                &format!("{file} cannot be drawn ({error})"),
+                "it draws nothing",
+            );
             None
         }
     }

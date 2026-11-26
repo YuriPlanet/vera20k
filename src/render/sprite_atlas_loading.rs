@@ -60,9 +60,9 @@ impl PreparedSpriteAtlas {
         let mut completion = completion;
         let pictures = completion.take_pictures();
         // A map-load build that cannot draw a required frame fails here.
-        let Some((rendered, unrenderable, palettes)) = completion.drawn(work.render()) else {
-            return Ok(SpriteAtlasLoadingJob::ready(None));
-        };
+        let (rendered, unrenderable, palettes) = completion
+            .drawn(work.render())
+            .map_err(sprite_atlas_load_error)?;
         let added = rendered.len() + pictures.len();
         if rendered.is_empty() {
             log::warn!("No SHP sprites rendered");

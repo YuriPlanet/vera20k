@@ -141,7 +141,7 @@ impl Patriot {
             ignore_visibility: true,
             lighting: &lighting,
             house_colors: &colors,
-            building_zshape: false,
+            building_zshape: None,
             model_frame: None,
         };
         let order = NativeDisplayOrder::from_world(&self.runtime.simulation, None);

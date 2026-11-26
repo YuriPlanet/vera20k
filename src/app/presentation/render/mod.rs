@@ -433,9 +433,18 @@ pub(crate) fn render_game(
     // Wheel zoom is a presentation copy of the fully resolved world. Keep all
     // native source/depth/packed operations on the same one-texel lattice;
     // filtering each sprite (or its palette indices) loses edges and details.
-    // VERA-only, experimental (docs/picture-model-art.md): picture art the
-    // Options zoom magnifies follows the world's window copy, at zoom 1 too.
-    if z == 1.0 && !picture_zoom::needs_world_pass(state) {
+    // HD art (`render::hd_switch`) draws its art on the zoom's copy, so it keeps
+    // one at 100% too; so does picture art the Options zoom magnifies
+    // (VERA-only, experimental, docs/picture-model-art.md), which follows the
+    // world's window copy.
+    if z == 1.0
+        && !hd_art_on
+        && !picture_zoom::needs_world_pass(
+            &state.renderer,
+            &state.match_state.match_presentation,
+            &state.frontend.screen,
+        )
+    {
         state.renderer.world_zoom_pass = None;
     } else {
         // When the Options zoom scales the frame, the world also goes
@@ -522,8 +531,27 @@ pub(crate) fn render_game(
     });
     // VERA-only, experimental: the page declared models draw on this frame.
     crate::app::presentation::instances::begin_model_frame(state);
-    let mut world =
-        build_instances::build_world_instances(state, vsw, vsh, bracket_palette, &cursor_targets);
+    let mut world = build_instances::build_world_instances(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &state.persistence,
+        vsw,
+        vsh,
+        bracket_palette,
+        &cursor_targets,
+    );
+    // The skip table the bodies just built name, before any of this picture's
+    // command buffers (`PassSubmission` submits inside the draw passes).
+    state
+        .match_state
+        .match_presentation
+        .zshape_skips
+        .borrow_mut()
+        .upload(&state.renderer.batch_renderer, &state.renderer.gpu.queue);
     for layer in &mut world.object_layers {
         object_extras::defer_health_to_frame(layer, world_camera.camera_pos, z);
     }
@@ -1048,7 +1076,12 @@ pub(crate) fn render_game(
 
     // VERA-only, experimental (docs/picture-model-art.md): the picture art
     // drawn again after the magnification, from the lowered runs.
-    picture_zoom::prepare(state, &world.object_layers);
+    picture_zoom::prepare(
+        &mut state.renderer,
+        &state.match_state.match_presentation,
+        &state.frontend.screen,
+        &world.object_layers,
+    );
 
     // Phase 7: Dispatch draw calls in render order.
     draw_passes::dispatch_draw_passes(

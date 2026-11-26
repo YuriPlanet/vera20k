@@ -280,16 +280,26 @@ fn presentation_takes_only_options_values() {
         sidebar: 150,
         hd_radar: true,
         smooth_sidebar: true,
+        wheel_zoom: Some(1.5),
     });
     profile.validate().unwrap();
-    for (zoom, sidebar) in [(125, 100), (100, 120)] {
+    for (zoom, sidebar, wheel_zoom) in [
+        (125, 100, None),
+        (100, 120, None),
+        (100, 100, Some(2.0)),
+        (100, 100, Some(0.667)),
+    ] {
         profile.presentation = Some(MapPresentationProfile {
             zoom,
             sidebar,
             hd_radar: false,
             smooth_sidebar: false,
+            wheel_zoom,
         });
-        assert!(profile.validate().is_err(), "{zoom} {sidebar}");
+        assert!(
+            profile.validate().is_err(),
+            "{zoom} {sidebar} {wheel_zoom:?}"
+        );
     }
 }
 

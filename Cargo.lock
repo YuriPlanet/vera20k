@@ -3777,6 +3777,7 @@ dependencies = [
  "miniz_oxide",
  "num-bigint",
  "num-traits",
+ "once_cell",
  "png",
  "rayon",
  "rustix 1.1.4",

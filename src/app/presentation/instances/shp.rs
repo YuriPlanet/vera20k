@@ -77,7 +77,8 @@ pub(crate) struct ShpInputs<'a> {
     pub ignore_visibility: bool,
     pub lighting: &'a crate::map::lighting::CellLightGrid,
     pub house_colors: &'a crate::map::houses::HouseColorMap,
-    pub building_zshape: bool,
+    /// The loaded BUILDNGZ frame's offset in its canvas.
+    pub building_zshape: Option<(i32, i32)>,
     /// VERA-only, experimental (`docs/picture-model-art.md`): the frame's
     /// model drawing, for a building whose voxel guns' art declares
     /// `Model=`; None draws no model.
@@ -155,8 +156,11 @@ pub(crate) fn shp_inputs<'a>(
         ignore_visibility: match_state.sandbox_full_visibility,
         lighting: presentation.lighting.grid(),
         house_colors: presentation.effective_house_color_map(),
-        building_zshape: presentation.building_zshape.is_some(),
-        model_frame: Some(&state.renderer.model_frame),
+        building_zshape: presentation
+            .building_zshape
+            .as_ref()
+            .map(|zshape| zshape.frame_offset),
+        model_frame: Some(&renderer.model_frame),
     })
 }
 

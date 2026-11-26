@@ -4,7 +4,8 @@
 //! While the frame's pieces are built, each object that draws a declared
 //! model asks for its pose ([`ModelFrame::request`]); equal poses share one
 //! image. Before the world draws, one render pass draws every asked pose's
-//! body, turret and barrel meshes into the sprite atlas's model page
+//! body, turret and barrel meshes, or a building's guns or one mesh node
+//! ([`ModelFrame::request_nodes`]), into the sprite atlas's model page
 //! ([`SpriteAtlas::install_model_page`]), each image in the rectangle a voxel
 //! draw of the same pose takes ([`native_draw_bounds_from_extents`]). The
 //! page is RGBA, lit with the voxel world light, with a palette-index plane
@@ -235,12 +236,10 @@ impl PartLayout {
 struct Layout {
     /// glTF model space to voxel space.
     to_voxels: Mat4,
-    /// Each part's mesh nodes with their rest-pose model matrices, and the
-    /// part's rest bounds.
-    parts: Vec<(ModelPart, Vec<(usize, Mat4)>, Option<ModelBounds>)>,
-    /// Every node with a mesh, in file order, alone with its rest-pose model
-    /// matrix, and the rest bounds of its own meshes ([`ModelNodes::MeshNode`]).
-    mesh_nodes: Vec<(Vec<(usize, Mat4)>, Option<ModelBounds>)>,
+    parts: Vec<(ModelPart, PartLayout)>,
+    /// Every node with a mesh, in file order, alone at rest with the rest
+    /// bounds of its own meshes and no clip ([`ModelNodes::MeshNode`]).
+    mesh_nodes: Vec<PartLayout>,
 }
 
 impl Layout {
@@ -270,11 +269,13 @@ impl Layout {
             .filter_map(|(index, node)| {
                 let part = node.name.as_deref().and_then(ModelPart::from_name)?;
                 // The first node naming a part is the part (`Model::part`).
-                (model.part(part) == Some(index)).then(|| PartLayout {
-                    part,
-                    nodes: part_nodes(model, index),
-                    bounds: model.part_bounds(index),
-                    clip: model.part_clip(part),
+                (model.part(part) == Some(index)).then(|| {
+                    let layout = PartLayout {
+                        nodes: part_nodes(model, index),
+                        bounds: model.part_bounds(index),
+                        clip: model.part_clip(part),
+                    };
+                    (part, layout)
                 })
             })
             .collect();
@@ -282,10 +283,18 @@ impl Layout {
             .nodes
             .iter()
             .enumerate()
-            .filter(|(_, node)| node.mesh.is_some())
-            .map(|(index, _)| {
-                let world = Mat4::from_cols_array(&model.rest_world_matrix(index));
-                (vec![(index, world)], node_mesh_bounds(model, index, world))
+            .filter_map(|(index, node)| Some((index, node.mesh?)))
+            .map(|(index, mesh)| {
+                let rest = Mat4::from_cols_array(&model.rest_world_matrix(index));
+                PartLayout {
+                    nodes: vec![PartNode {
+                        node: index,
+                        rest,
+                        local: model.mesh_bounds(mesh),
+                    }],
+                    bounds: node_mesh_bounds(model, index, rest),
+                    clip: None,
+                }
             })
             .collect();
         Self {
@@ -296,7 +305,10 @@ impl Layout {
     }
 
     fn part(&self, part: ModelPart) -> Option<&PartLayout> {
-        self.parts.iter().find(|found| found.part == part)
+        self.parts
+            .iter()
+            .find(|(found, _)| *found == part)
+            .map(|(_, layout)| layout)
     }
 
     /// The parts `nodes` and `gun` draw with, with the draw matrix index and
@@ -329,10 +341,7 @@ impl Layout {
         parts
             .into_iter()
             .flatten()
-            .filter_map(|(matrix, part)| {
-                let (_, nodes, bounds) = self.part(part)?;
-                Some((matrix, nodes, *bounds))
-            })
+            .filter_map(|(matrix, part, frame)| Some((matrix, self.part(part)?, frame)))
             .chain(mesh_node)
     }
 
@@ -486,8 +495,7 @@ fn node_mesh_bounds(model: &Model, node: usize, world: Mat4) -> Option<ModelBoun
 
 /// A request placed on this frame's page.
 struct Placed {
-    pose: ModelPose,
-    nodes: ModelNodes,
+    model: Arc<DeclaredModel>,
     corner: [u32; 2],
     rect: [i32; 4],
     /// Each mesh node drawn, with its model-to-camera matrix (anchor-relative
@@ -741,6 +749,9 @@ impl ModelFrame {
                 .map(|matrix| matrix.to_cols_array().map(f32::to_bits)),
             gun: pose.gun,
             ramp: pose.ramp,
+            // Frames select nothing in a model without animations, so its
+            // equal poses share whatever the frames.
+            frames: if animated { pose.frames } else { [0; 2] },
             nodes,
             light: pose.light,
         };
@@ -878,12 +889,8 @@ impl ModelFrame {
             rect,
         };
         self.keys.insert(key, image);
-        self.placed.push(Placed {
-            pose,
-            nodes,
-            corner,
-            rect,
-        });
+        placed.corner = corner;
+        self.placed.push(placed);
         Some(image)
     }
 

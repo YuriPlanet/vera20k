@@ -605,7 +605,7 @@ fn render_original_body_pixels(
                         ignore_visibility: true,
                         lighting: &light_grid,
                         house_colors: &house_colors,
-                        building_zshape: false,
+                        building_zshape: None,
                         model_frame: None,
                     },
                     &mut objects,

@@ -159,15 +159,16 @@ impl RubbleAssetCatalog {
                 )
                 .into_iter()
                 .find_map(|candidate| {
-                    let data = asset_manager.get_ref(&candidate)?;
+                    let data = folder.read_noting(
+                        &candidate,
+                        |bytes| frame_word(bytes).and_then(rubble_body_frame),
+                        &mut catalog.folder_files,
+                    )?;
                     Some((candidate, data))
                 }) else {
                     continue;
                 };
-                let Some(raw) = data
-                    .get(6..8)
-                    .map(|word| i16::from_le_bytes([word[0], word[1]]))
-                else {
+                let Some(raw) = frame_word(data) else {
                     continue;
                 };
                 (shp, raw, None)

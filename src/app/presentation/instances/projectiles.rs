@@ -160,7 +160,7 @@ pub(crate) fn projectile_visitor<'a>(
             .voxel
             .then(|| rules.projectile_model(&kind.id))
             .flatten();
-        if let Some(object) = projectile_draw_instance_on(
+        projectile_draw_instance_for_frame(
             projectile,
             sim.session().binary_frame(),
             ares,
@@ -178,19 +178,15 @@ pub(crate) fn projectile_visitor<'a>(
             |image, matrix| {
                 if let Some(model) = model {
                     return super::model_art::projectile_model_entry(
-                        &state.renderer.model_frame,
+                        &renderer.model_frame,
                         rules,
                         model?,
                         matrix,
                         kind.color_scheme(),
                     );
                 }
-                let mut images = state
-                    .match_state
-                    .match_presentation
-                    .voxel_images
-                    .borrow_mut();
-                let mut cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
+                let mut images = match_state.match_presentation.voxel_images.borrow_mut();
+                let mut cache = renderer.vxl_pose_frame_cache.borrow_mut();
                 let mut render = |depth_tested, depth| {
                     cache.render_matrix(
                         assets?,
@@ -251,7 +247,10 @@ pub(crate) fn projectile_draw_instance(
         axis,
         order,
         &mut objects,
-        render_voxel,
+        |image, matrix| {
+            render_voxel(image, matrix)
+                .map(|entry| (ObjectTexture::UnitPosePage(entry.page), entry))
+        },
     )?;
     objects.into_owned().pop()
 }
@@ -266,8 +265,9 @@ fn projectile_in_view(projectile: &Projectile, admission: TacticalAdmission) -> 
 
 /// Plans `projectile`'s draw into `objects`; `None` when it draws nothing.
 /// `ares`: the Rules were read the Ares way (`RuleSet::ares_form`), which
-/// picks Ares' SHP frame getter. The VXL body's draw, for tests.
-#[cfg(test)]
+/// picks Ares' SHP frame getter. `render_voxel` places a voxel body on a
+/// texture of its choosing: the pose page for a VXL, the model page for a
+/// declared model (`docs/picture-model-art.md`).
 pub(crate) fn projectile_draw_instance_for_frame(
     projectile: &Projectile,
     logic_frame: u32,
@@ -282,50 +282,12 @@ pub(crate) fn projectile_draw_instance_for_frame(
     axis: DepthAxis,
     order: &NativeDisplayOrder,
     objects: &mut PlannedObjects,
-    render_voxel: impl FnOnce(&str, glam::Mat4) -> Option<crate::render::unit_atlas::UnitSpriteEntry>,
-) -> Option<PlannedObjectInstance> {
-    projectile_draw_instance_on(
-        projectile,
-        logic_frame,
-        ares,
-        kind,
-        type_id,
-        scheme,
-        scheme_rgb,
-        atlas,
-        terrain,
-        admission,
-        axis,
-        order,
-        |image, matrix| {
-            render_voxel(image, matrix)
-                .map(|entry| (ObjectTexture::UnitPosePage(entry.page), entry))
-        },
-    )
-}
-
-/// [`projectile_draw_instance_for_frame`] whose voxel body `render_voxel`
-/// places on a texture of its choosing: the pose page for a VXL, the model
-/// page for a declared model (`docs/picture-model-art.md`).
-fn projectile_draw_instance_on(
-    projectile: &Projectile,
-    logic_frame: u32,
-    ares: bool,
-    kind: &ProjectileType,
-    type_id: &str,
-    scheme: HouseColorIndex,
-    scheme_rgb: [i32; 3],
-    atlas: Option<&SpriteAtlas>,
-    terrain: &ResolvedTerrainGrid,
-    admission: TacticalAdmission,
-    axis: DepthAxis,
-    order: &NativeDisplayOrder,
     render_voxel: impl FnOnce(
         &str,
         glam::Mat4,
     )
         -> Option<(ObjectTexture, crate::render::unit_atlas::UnitSpriteEntry)>,
-) -> Option<PlannedObjectInstance> {
+) -> Option<()> {
     let encoding = if kind.voxel {
         SpriteEncoding::Voxel
     } else {

@@ -185,14 +185,13 @@ impl BuildupAssetCatalog {
             } else {
                 let Some(data) = crate::rules::art_data::building_shp_names(buildup, theater_name)
                     .iter()
-                    .find_map(|candidate| asset_manager.get_ref(candidate))
+                    .find_map(|candidate| {
+                        folder.read_noting(candidate, frame_word, &mut catalog.folder_files)
+                    })
                 else {
                     continue;
                 };
-                let Some(raw) = data
-                    .get(6..8)
-                    .map(|word| i16::from_le_bytes([word[0], word[1]]))
-                else {
+                let Some(raw) = frame_word(data) else {
                     continue;
                 };
                 raw

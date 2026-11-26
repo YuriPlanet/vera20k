@@ -747,6 +747,9 @@ pub struct SpriteAtlas {
     /// VERA-only, experimental: the RGBA picture pages among `pages`
     /// (`render::picture_atlas`), which bind no palette rows.
     picture_pages: HashSet<usize>,
+    /// VERA-only, experimental: the HD twins of the picture pages of art
+    /// above 1x, by page (`render::picture_zoom`). Empty without such art.
+    picture_hd_pages: HashMap<usize, crate::render::picture_zoom::PictureHdPage>,
     /// VERA-only, experimental: the RGBA page among `pages` that declared
     /// models are drawn on each frame (`render::model_draw`), once one is.
     model_page: Option<usize>,
@@ -826,6 +829,7 @@ impl SpriteAtlas {
             growth_indices: HashMap::new(),
             palettes,
             picture_pages: HashSet::new(),
+            picture_hd_pages: HashMap::new(),
             model_page: None,
         }
     }
@@ -4120,9 +4124,24 @@ impl ShpAtlasUpload {
         output: ShpRasterOutput,
         atlas: &mut Option<SpriteAtlas>,
     ) -> bool {
-        let Some((rendered, unrenderable, rows)) = self.drawn(output) else {
-            return false;
-        };
+        match self.drawn(output) {
+            Ok(drawn) => self.finish_drawn(device, queue, batch, drawn, atlas),
+            Err(failure) => {
+                keep_previous_sprite_atlas(&failure);
+                false
+            }
+        }
+    }
+
+    /// [`Self::finish`] once the frames are drawn.
+    fn finish_drawn(
+        self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        (rendered, unrenderable, rows): DrawnShpSprites,
+        atlas: &mut Option<SpriteAtlas>,
+    ) -> bool {
         let mut upload = self;
         let pictures = upload.take_pictures();
         let added = rendered.len() + pictures.len();
@@ -4148,12 +4167,9 @@ impl ShpAtlasUpload {
         std::mem::take(&mut self.pictures)
     }
 
-    /// The drawn frames, unrenderable keys and palette rows, or None once an
-    /// abandoned refresh is reported.
-    fn drawn(
-        &self,
-        output: ShpRasterOutput,
-    ) -> Option<(Vec<RenderedShpSprite>, Vec<ShpSpriteKey>, ShpPalettes)> {
+    /// The drawn frames, unrenderable keys and palette rows, or why the
+    /// raster abandoned them.
+    fn drawn(&self, output: ShpRasterOutput) -> Result<DrawnShpSprites, String> {
         match output.0 {
             ShpRaster::Drawn {
                 rendered,

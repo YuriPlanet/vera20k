@@ -124,23 +124,22 @@ impl TerrainAssetCatalog {
             // VERA-only (docs/picture-model-art.md): a type whose art declares
             // `Picture=` counts the picture's frames; its SHP is never opened.
             let picture = terrain.declared_picture(art);
+            let spawner = terrain.spawns_tiberium && terrain.is_animated;
+            let frame_count = |bytes: &[u8]| ShpFile::frame_count_from_bytes(bytes).ok();
             let count = match picture {
                 Some((section, decl)) => art
                     .picture_header(section, decl, asset_manager, theater_name)
                     .map(|facts| facts.frames.clamp(0, i32::from(u16::MAX)) as u16),
-                None => asset_manager
-                    .get_ref(&filename)
-                    .and_then(|bytes| ShpFile::frame_count_from_bytes(bytes).ok()),
+                None => {
+                    // Only a spawner's frame count reaches the simulation.
+                    let bytes = if spawner {
+                        folder.read_noting(&filename, frame_count, &mut catalog.folder_files)
+                    } else {
+                        asset_manager.get_ref(&filename)
+                    };
+                    bytes.and_then(frame_count)
+                }
             };
-            let spawner = terrain.spawns_tiberium && terrain.is_animated;
-            let frame_count = |bytes: &[u8]| ShpFile::frame_count_from_bytes(bytes).ok();
-            // Only a spawner's frame count reaches the simulation.
-            let bytes = if spawner {
-                folder.read_noting(&filename, frame_count, &mut catalog.folder_files)
-            } else {
-                asset_manager.get_ref(&filename)
-            };
-            let count = bytes.and_then(frame_count);
             if spawner && count.is_none() {
                 log::warn!(
                     "Terrain spawner [{name}] has no valid SHP {filename}; no validated midpoint is available"

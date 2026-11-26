@@ -144,8 +144,11 @@ impl AlphaImage {
         if left >= right {
             return Some(Self {
                 canvas: canvas.map(word),
-                frame_bounds: [0; 4],
-                pixels: Vec::new(),
+                facing_bits: 0,
+                frames: vec![AlphaFrame {
+                    bounds: [0; 4],
+                    pixels: Vec::new(),
+                }],
             });
         }
         let mut pixels = Vec::with_capacity(((right - left) * (bottom - top)) as usize);
@@ -162,16 +165,20 @@ impl AlphaImage {
         }
         Some(Self {
             canvas: canvas.map(word),
-            frame_bounds: [
-                word(left),
-                word(top),
-                word(right - left),
-                word(bottom - top),
-            ],
-            pixels,
+            facing_bits: 0,
+            frames: vec![AlphaFrame {
+                bounds: [
+                    word(left),
+                    word(top),
+                    word(right - left),
+                    word(bottom - top),
+                ],
+                pixels,
+            }],
         })
     }
 
+    /// A one-frame image.
     #[cfg(any(test, feature = "test-support"))]
     pub fn for_test(canvas: [i32; 2], frame_bounds: [i32; 4], pixels: Vec<u8>) -> Self {
         Self::frames_for_test(canvas, vec![(frame_bounds, pixels)])
@@ -210,6 +217,9 @@ pub struct AlphaImageCatalog {
     /// VERA-only, experimental: the names whose art declares `Picture=`,
     /// and whether that picture loaded.
     pictures: BTreeMap<String, bool>,
+    /// VERA: by image name, the game-folder file that supplied a loaded SHP
+    /// where a retail install loads none (`retail_sources::FolderFiles`).
+    folder_files: BTreeMap<String, String>,
 }
 
 impl AlphaImageCatalog {
@@ -221,6 +231,8 @@ impl AlphaImageCatalog {
             }
         });
         let mut pictures = BTreeMap::new();
+        let mut folder_files = BTreeMap::new();
+        let folder = crate::rules::retail_sources::FolderFiles::new(assets);
         let images = names
             .into_iter()
             .filter_map(|name| {
@@ -249,11 +261,35 @@ impl AlphaImageCatalog {
                     pictures.insert(name.clone(), image.is_some());
                     return Some((name, Arc::new(image?)));
                 }
-                let load = assets.load_file_from_mix(&format!("{name}.SHP"))?;
-                Some((name, Arc::new(AlphaImage::from_shp(&load.bytes)?)))
+                let file = format!("{name}.SHP");
+                let load = assets.load_file_from_mix(&file)?;
+                let image = Arc::new(AlphaImage::from_shp(&load.bytes)?);
+                let shipped_loads = || {
+                    folder
+                        .shipped(&file)
+                        .is_some_and(|bytes| AlphaImage::from_shp(bytes).is_some())
+                };
+                if !crate::rules::retail_sources::shipped_source(&load.source_archive)
+                    && !shipped_loads()
+                {
+                    folder_files.insert(
+                        name.clone(),
+                        crate::rules::retail_sources::game_folder_file(&load.source_archive),
+                    );
+                }
+                Some((name, image))
             })
             .collect();
-        Self { images, pictures }
+        Self {
+            images,
+            pictures,
+            folder_files,
+        }
+    }
+
+    /// VERA: the game-folder file that makes the SHP of `name` load.
+    pub(crate) fn folder_file(&self, name: &str) -> Option<&str> {
+        self.folder_files.get(name).map(String::as_str)
     }
 
     /// VERA-only, experimental (`docs/picture-model-art.md`): what the
@@ -370,8 +406,7 @@ mod tests {
             &IniFile::from_str("[PANEL]\nPicture=panel.png\nPictureSize=4,2\n"),
         ));
         let unbound_hash = rules.simulation_config_hash();
-        let overlays = OverlayTypeRegistry::from_ini(&ini, None);
-        rules.bind_alpha_images(&overlays, &assets);
+        rules.bind_alpha_images(&assets);
 
         assert_eq!(
             rules.alpha_image("PANEL").map(|image| &**image),

@@ -150,6 +150,12 @@ fn parse_model_decl(section_name: &str, section: &IniSection) -> Option<ModelDec
             "[{section_name}] Model={file} needs ModelSize= from 1 to {MODEL_SIZE_MAX} leptons; \
              the model is not used"
         );
+        crate::rules::art_problems::report(
+            section_name,
+            "ModelSize=",
+            &format!("must be 1 to {MODEL_SIZE_MAX} leptons with Model={file}"),
+            "the VXL is used",
+        );
         return None;
     };
     Some(ModelDecl { file, size })
@@ -3052,7 +3058,17 @@ impl ArtRegistry {
 
         let mut populated: u32 = 0;
         let mut fallback: u32 = 0;
-        for (name, image_id) in pending {
+        let mut folder_files = BTreeSet::new();
+        let folder = crate::rules::retail_sources::FolderFiles::new(asset_manager);
+        let middle_frame_is_large = |bytes: &[u8]| {
+            let shp = crate::assets::shp_file::ShpFile::from_bytes(bytes).ok()?;
+            let frame = shp.frames.get(shp.frames.len() / 2)?;
+            Some(smudge_frame_is_large(
+                i32::from(frame.frame_width),
+                i32::from(frame.frame_height),
+            ))
+        };
+        for (name, image_id, sized) in pending {
             // VERA-only, experimental: a picture's frames all have the
             // canvas `PictureSize=` gives (docs/picture-model-art.md).
             if let Some(decl) = self.get(&name).and_then(|entry| entry.picture.clone()) {

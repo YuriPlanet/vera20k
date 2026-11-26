@@ -215,16 +215,22 @@ pub(crate) fn install_world_presentation(
     match_state.match_presentation.atlas_check = Default::default();
     match_state.match_presentation.unit_atlas = assets.unit_atlas;
     // Both voxel caches resolve model images through the replaced RuleSet.
-    *state.renderer.vxl_pose_frame_cache.borrow_mut() = Default::default();
+    *renderer.vxl_pose_frame_cache.borrow_mut() = Default::default();
     // The declared models' GPU copies belong to the replaced RuleSet.
-    *state.renderer.model_frame.borrow_mut() = Default::default();
-    state.match_state.match_presentation.palette_set = assets.palette_set;
-    state.match_state.match_presentation.surface_palette = Default::default();
-    state.match_state.match_presentation.sprite_atlas = assets.sprite_atlas;
-    state.match_state.match_presentation.overlay_atlas = assets.overlay_atlas;
-    state.match_state.match_presentation.bridge_atlas = assets.bridge_atlas;
-    state.match_state.match_presentation.sidebar_cameo_atlas = assets.sidebar_cameo_atlas;
-    state.match_state.match_presentation.sidebar_chrome = assets.sidebar_chrome;
+    *renderer.model_frame.borrow_mut() = Default::default();
+    match_state.match_presentation.palette_set = assets.palette_set;
+    match_state.match_presentation.surface_palette = Default::default();
+    match_state.match_presentation.sprite_atlas = assets.sprite_atlas;
+    // The skip table decoded its frames from the atlas just replaced.
+    match_state
+        .match_presentation
+        .zshape_skips
+        .get_mut()
+        .forget_frames();
+    match_state.match_presentation.overlay_atlas = assets.overlay_atlas;
+    match_state.match_presentation.bridge_atlas = assets.bridge_atlas;
+    match_state.match_presentation.sidebar_cameo_atlas = assets.sidebar_cameo_atlas;
+    match_state.match_presentation.sidebar_chrome = assets.sidebar_chrome;
     // The side's layout, the mod's with the player's own over it, sizes the
     // sidebar, and with it the battlefield, from the world's first frame.
     crate::app::presentation::player_layout::install(
@@ -818,8 +824,26 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         message_list.set_width(tactical_width as i32);
     }
     state.match_state.match_presentation.message_list = message_list;
-    crate::app::input::messages::post_layout_problem(state);
-    crate::app::input::messages::post_art_problems(state);
+    crate::app::input::messages::post_layout_problem(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        &state.persistence,
+    );
+    crate::app::input::messages::post_art_problems(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        &state.persistence,
+    );
     state.match_state.match_presentation.chat = Default::default();
     // Clear_Scene6851F0 -> 534450 resets BeaconManagerClass (53499B).
     // Display Init_Clear4A88C0 clears +11B0..+11B2, not beacon mode +11B4.

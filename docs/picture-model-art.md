@@ -53,7 +53,10 @@ key; a refused `Picture=` leaves the section with no art (it draws nothing), as
 a missing SHP does today. `Model=` without a valid `ModelSize=` (1 to 1536,
 six cells) is refused and the section keeps its VXL path; a declared model
 that is missing or unreadable, or lacks a `body` node, draws nothing and its
-VXL and HVA are never opened, as a missing VXL does today.
+VXL and HVA are never opened, as a missing VXL does today. A file that is
+missing, cannot be read or cannot be drawn is told in the game too: the match
+shows these once, when it has loaded, the first three, then how many more the
+log file lists.
 
 `Model=` takes effect for a type that loads a voxel model, that is whose art
 section also says `Voxel=yes`; the section is the one the VXL would be read
@@ -393,12 +396,15 @@ against this list.
 - Asset lookup: no new probes; a picture or model is opened only by its key.
 - The sprite atlas: no SHP keys for a type with `Picture=`; picture pages and
   entries appended. Existing shaders, pipelines, layouts and passes untouched.
+- Zoomed drawing (chain 6, `render::picture_zoom`): `WorldZoomPass` exposes
+  its scale and window-copy frames; `render_game` prepares the HD list once
+  per frame and keeps the world zoom pass when the Options zoom alone
+  magnifies picture art; `draw_passes` draws it after the frame composite and
+  after the window copy; `SpriteAtlas` holds the HD twin pages.
 - The overlay and bridge atlases: a building whose rubble art names a
   declared picture takes its rubble body and shadow frames from the picture
   (`picture_atlas::rubble_picture`). Those atlases are already RGBA pages
   with an index plane, so the frames share their page and draw path.
-- The world zoom pass (chain 6): one call that draws the new art after
-  magnification.
 - Models: `VoxelAssetCatalog::bind` admits declared models and leaves their
   VXL/HVA requests unopened (`VoxelModelPlan::slot_requests`); the sprite
   atlas holds one model page (`install_model_page`); `BatchRenderer` makes
@@ -407,7 +413,14 @@ against this list.
   shadows; `render_game` begins and `dispatch_draw_passes` encodes the
   frame's models (`RendererState::model_frame`). `vxl_raster` exposes the body
   draw matrix and `vxl_normals` the world light; the native model units per
-  lepton moved to `map::voxel_pose`.
+  lepton moved to `map::voxel_pose`. For shadows, node animations and
+  `NoSpawnAlt`: `instances::units` asks `model_units::declared_model_of` for
+  the drawn type's model (its `WO` name included), passes the voxel shadow
+  path's anchor and admission (`model_shadow_draw`) and shares its frame
+  rule (`animation_frames_with`, split out of `animation_frames_of`
+  unchanged); `unit_atlas::voxel_shadow_viewer` exposes the shadow types'
+  gate; `AircraftShadowPose` is `Copy`; `VoxelAssetCatalog` reads
+  `NAMEWO.glb` into `DeclaredModel::no_spawn_alt`.
 - Models, chain 5: `VoxelAssetCatalog::bind` also admits the models of
   building guns, voxel projectiles and debris, leaves the building's and
   debris' VXL/HVA requests unopened, hashes their models where their VXLs
@@ -755,10 +768,16 @@ current: say what was done, what was not, and what comes next.
 - Chain 6: picture art drawn (`render::picture_zoom`), written but not yet compiled or run; models follow with chain 4.
 - Chains 4 and 5 (`Model=`), written, not yet compiled or run: keys and the
   model-loaded and tilt facts in the core crate; the GPU draw of voxel units'
-  and aircraft's bodies, turrets and barrels. Not yet: model shadows (the
-  `shadow` node or body bounds), node animations (the rest pose draws),
-  normal maps (`NAME.normals.png`), the bridge split of a model's depth
-  rectangle, and the `NoSpawnAlt` `WO` model.
+  and aircraft's bodies, turrets and barrels, posed by node animations at
+  their HVA frame numbers, with normal maps; their shadows; the bridge split
+  of their depth rectangle; the `NoSpawnAlt` `WO` model. Known residuals of
+  the model draw: a shadow is the exact footprint of the flattened mesh, not
+  the two-pixel-wide columns `0x00756860` marks, and takes no body mask (the
+  body drawn after it covers it, so where native leaves a high-flying
+  Jumpjet's unmasked shadow over its own body, the model shadow stays under
+  it); an animated part's rectangle is the box of its nodes' boxes, larger
+  than its rest bounds; alpha-masked texels cast shadow; the `WO` model is
+  not in the config hash.
 - Chain 5, written, not yet compiled or run: building voxel guns, voxel
   projectiles and debris draw declared models on the model page; the guns
   animate at the building's HVA frame counter; a debris model casts its

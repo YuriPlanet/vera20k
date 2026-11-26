@@ -215,6 +215,8 @@ num-traits = { version = "0.2", features = ["libm"] }
 unicode-ident = "1"
 # `png` (picture art) brings bitflags; the client's other crates enable std.
 bitflags = { version = "2", features = ["std"] }
+# Extension module tests write their modules in WAT.
+wat = "1"
 
 # The native client's tungstenite -> rand enables chacha20's RNG support and
 # getrandom's std and sys_rng, and its handshake's sha1 -> hybrid-array enables

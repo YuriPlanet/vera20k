@@ -1551,3 +1551,104 @@ fn a_tile_picture_draws_its_cells_and_a_misfit_keeps_the_tmp() {
         "a 9x4 picture is no whole multiple of the 8x4 cell: the TMP draws"
     );
 }
+
+/// VERA: a load of the original terrain reads the theater INI and tiles a
+/// retail install reads, past a tile pack in `expandmd06.mix` and loose
+/// files: the pack's table, its bytes for a retail tile, its tile in a slot
+/// retail leaves empty and a loose variant are all passed over, and every
+/// later read of those names follows until the next load. A loose theater
+/// MIX that does not open still leaves the shipped copy it hides.
+#[test]
+fn original_terrain_reads_past_the_game_folders_terrain_files() {
+    use crate::assets::asset_manager::MediaArchiveMode;
+    let dir = terrain_test_install("original-terrain");
+    let open = || AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    let mut assets = open();
+
+    let original = load_theater_with(&mut assets, "SNOW", TerrainFiles::Original).unwrap();
+    assert!(assets.names_pinned());
+    assert!(!original.lookup.is_morphable(0));
+    assert_eq!(original.lookup.variant_filenames(0), ["clear01a.sno"]);
+    assert_eq!(assets.get_ref("clear01.sno"), Some(&b"tile"[..]));
+    assert_eq!(assets.get_ref("clear02.sno"), None, "the pack's tile");
+    assert_eq!(assets.get_ref("clear01b.sno"), None, "the loose variant");
+
+    let folder = load_theater(&mut assets, "SNOW").unwrap();
+    assert!(!assets.names_pinned());
+    assert!(folder.lookup.is_morphable(0));
+    assert_eq!(
+        folder.lookup.variant_filenames(0),
+        ["clear01a.sno", "clear01b.sno"]
+    );
+    assert_eq!(assets.get_ref("clear01.sno"), Some(&b"changed"[..]));
+    assert_eq!(assets.get_ref("clear02.sno"), Some(&b"added"[..]));
+
+    std::fs::write(dir.path().join("isosnomd.mix"), b"not a MIX").unwrap();
+    let mut assets = open();
+    load_theater_with(&mut assets, "SNOW", TerrainFiles::Original).unwrap();
+    assert_eq!(assets.get_ref("clear01.sno"), Some(&b"tile"[..]));
+}
+
+/// VERA: on a retail install the original terrain is the terrain every other
+/// load reads: one INI, one table, the same variants and bytes. A network
+/// match then loads what a skirmish does.
+#[test]
+fn a_retail_installs_original_terrain_is_what_it_reads_anyway() {
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let read = |assets: &AssetManager, lookup: &TilesetLookup| -> Vec<Option<(usize, u64)>> {
+        let names = lookup.entries.iter().flatten();
+        names
+            .chain(lookup.variant_filenames.iter().flatten())
+            .map(|name| {
+                let bytes = assets.get_ref(name)?;
+                let sum = bytes.iter().fold(0u64, |sum, &byte| {
+                    sum.wrapping_mul(31).wrapping_add(u64::from(byte))
+                });
+                Some((bytes.len(), sum))
+            })
+            .collect()
+    };
+    let folder = load_theater(&mut assets, "TEMPERATE").expect("retail Temperate");
+    let folder_tiles = read(&assets, &folder.lookup);
+    let original = load_theater_with(&mut assets, "TEMPERATE", TerrainFiles::Original)
+        .expect("the original Temperate");
+    assert!(assets.names_pinned());
+    assert_eq!(original.ini_data, folder.ini_data);
+    assert_eq!(original.lookup.entries, folder.lookup.entries);
+    assert_eq!(
+        original.lookup.variant_filenames,
+        folder.lookup.variant_filenames
+    );
+    assert!(folder_tiles.iter().flatten().count() > 500);
+    assert_eq!(read(&assets, &original.lookup), folder_tiles);
+}
+
+/// A map cell names its subtile in one byte, so a template's cells past the
+/// 256th are not pre-loaded, and never under a wrapped subtile.
+#[test]
+fn template_cells_past_the_256th_are_not_preloaded() {
+    use crate::map::source::test_support::TestDirectory;
+    // A 17x16 template of 8x4 tiles whose only image is cell 256.
+    const CELLS: usize = 17 * 16;
+    let cell_offset = 16 + 4 * CELLS;
+    let mut tmp = vec![0u8; cell_offset + 52 + 16];
+    let header = [
+        (0, 17),
+        (4, 16),
+        (8, 8),
+        (12, 4),
+        (16 + 4 * 256, cell_offset as u32),
+    ];
+    for (offset, value) in header {
+        tmp[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    let dir = TestDirectory::new("theater-wide-template");
+    dir.write("big01.tem", &tmp);
+    let assets = AssetManager::from_loose_root_for_test(dir.path());
+    let lookup = parse_tileset_ini(b"[TileSet0000]\nFileName=big\nTilesInSet=1\n", "tem").unwrap();
+    let mut needed = HashSet::new();
+    inject_template_tiles(&mut needed, 0, &lookup, &assets).unwrap();
+    assert!(needed.is_empty(), "cell 256 is not subtile 0: {needed:?}");
+}

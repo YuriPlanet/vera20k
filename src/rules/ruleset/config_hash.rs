@@ -1551,6 +1551,7 @@ impl RuleSet {
         self.buildup_assets.hash(&mut hasher);
         self.rubble_assets.hash(&mut hasher);
         self.terrain_assets.hash(&mut hasher);
+        self.alpha_images.hash_declared_pictures(&mut hasher);
         b"art-smudge-config-v2".hash(&mut hasher);
         self.art_registry.fold_smudge_anim_dims(&mut hasher);
         // These effective Bullet values feed FireAt and drawing after load. Hash

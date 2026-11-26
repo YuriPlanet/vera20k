@@ -12,7 +12,9 @@
 //! Everything here returns at once unless the sprite atlas has HD pages.
 
 use super::draw_plan_lowering::{ObjectDrawRun, ObjectLayerPass, ObjectTexture};
-use crate::app::state::AppState;
+use crate::app::presentation::state::MatchPresentationState;
+use crate::app::renderer_state::RendererState;
+use crate::ui::game_screen::GameScreen;
 use crate::render::batch::SpriteInstance;
 use crate::render::picture_zoom::{HdDepth, HdMask, HdPlacement, HdRun, HdTarget, PictureZoomPass};
 use crate::render::tactical_draw_plan::RenderZPolicy;
@@ -20,32 +22,41 @@ use crate::render::tactical_draw_plan::RenderZPolicy;
 /// Whether the Options zoom alone magnifies picture art this frame, so the
 /// world needs `WorldZoomPass` (at wheel zoom 1) for its window copy, which
 /// the HD draw follows.
-pub(super) fn needs_world_pass(state: &AppState) -> bool {
-    state
-        .match_state
-        .match_presentation
+pub(super) fn needs_world_pass(
+    renderer: &RendererState,
+    presentation: &MatchPresentationState,
+    screen: &GameScreen,
+) -> bool {
+    presentation
         .sprite_atlas
         .as_ref()
         .is_some_and(|atlas| atlas.has_picture_hd_pages())
-        && state.tactical_zoom().is_some_and(|zoom| zoom.percent > 100)
+        && renderer
+            .tactical_zoom(screen)
+            .is_some_and(|zoom| zoom.percent > 100)
 }
 
 /// Build this frame's HD instances from `layers`, or clear them when nothing
 /// is magnified or nothing draws from an HD page.
-pub(super) fn prepare(state: &mut AppState, layers: &[ObjectLayerPass; 5]) {
-    let Some(atlas) = state
-        .match_state
-        .match_presentation
+pub(super) fn prepare(
+    renderer: &mut RendererState,
+    presentation: &MatchPresentationState,
+    screen: &GameScreen,
+    layers: &[ObjectLayerPass; 5],
+) {
+    let Some(atlas) = presentation
         .sprite_atlas
         .as_ref()
         .filter(|atlas| atlas.has_picture_hd_pages())
     else {
-        clear(state);
+        clear(renderer);
         return;
     };
     // The same choice `render_game` makes for the window copy.
-    let window = state.tactical_zoom().filter(|zoom| zoom.percent > 100);
-    let target = state.renderer.world_zoom_pass.as_ref().and_then(|world| {
+    let window = renderer
+        .tactical_zoom(screen)
+        .filter(|zoom| zoom.percent > 100);
+    let target = renderer.world_zoom_pass.as_ref().and_then(|world| {
         let window = window.filter(|_| world.window_copy_frames().is_some());
         let scale = world.scale() * window.map_or(1.0, |zoom| zoom.scale());
         (scale > 1.0).then_some(if window.is_some() {
@@ -55,15 +66,14 @@ pub(super) fn prepare(state: &mut AppState, layers: &[ObjectLayerPass; 5]) {
         })
     });
     let Some(target) = target else {
-        clear(state);
+        clear(renderer);
         return;
     };
     let (instances, runs) = hd_instances(layers, |page| atlas.picture_hd_page(page).is_some());
     if runs.is_empty() {
-        clear(state);
+        clear(renderer);
         return;
     }
-    let renderer = &mut state.renderer;
     let gpu = &renderer.gpu;
     let pass = renderer.picture_zoom.get_or_insert_with(|| {
         PictureZoomPass::new(
@@ -76,8 +86,8 @@ pub(super) fn prepare(state: &mut AppState, layers: &[ObjectLayerPass; 5]) {
     pass.set_frame(&gpu.device, &gpu.queue, &instances, runs, target);
 }
 
-fn clear(state: &mut AppState) {
-    if let Some(pass) = state.renderer.picture_zoom.as_mut() {
+fn clear(renderer: &mut RendererState) {
+    if let Some(pass) = renderer.picture_zoom.as_mut() {
         pass.clear();
     }
 }
@@ -162,13 +172,14 @@ fn opaque(instance: &SpriteInstance) -> bool {
 /// The HD draw over the frame, right after the world went in
 /// (`composite_world_with_drag_rect`), inside the frame's `tactical` rect.
 pub(super) fn draw_over_frame(
-    state: &AppState,
+    renderer: &RendererState,
+    presentation: &MatchPresentationState,
     encoder: &mut wgpu::CommandEncoder,
     tactical: [u32; 4],
 ) {
     let (Some(pass), Some(world)) = (
-        state.renderer.picture_zoom.as_ref(),
-        state.renderer.world_zoom_pass.as_ref(),
+        renderer.picture_zoom.as_ref(),
+        renderer.world_zoom_pass.as_ref(),
     ) else {
         return;
     };
@@ -182,7 +193,8 @@ pub(super) fn draw_over_frame(
         mask: None,
     };
     draw(
-        state,
+        renderer,
+        presentation,
         pass,
         encoder,
         world.color_view(),
@@ -194,15 +206,16 @@ pub(super) fn draw_over_frame(
 /// The HD draw over the window, right after the world's window copy
 /// (`draw_world_window_copy`), over the window pixels the copy covers.
 pub(super) fn draw_over_window(
-    state: &AppState,
+    renderer: &RendererState,
+    presentation: &MatchPresentationState,
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
-    zoom: crate::render::upscale_pass::ZoomGeometry,
+    zoom: crate::ui::main_menu_dialogs::options::ZoomGeometry,
     tactical: (u32, u32, u32, u32),
 ) {
     let (Some(pass), Some(world)) = (
-        state.renderer.picture_zoom.as_ref(),
-        state.renderer.world_zoom_pass.as_ref(),
+        renderer.picture_zoom.as_ref(),
+        renderer.world_zoom_pass.as_ref(),
     ) else {
         return;
     };
@@ -228,7 +241,8 @@ pub(super) fn draw_over_window(
         }),
     };
     draw(
-        state,
+        renderer,
+        presentation,
         pass,
         encoder,
         view,
@@ -238,21 +252,21 @@ pub(super) fn draw_over_window(
 }
 
 fn draw(
-    state: &AppState,
+    renderer: &RendererState,
+    presentation: &MatchPresentationState,
     pass: &PictureZoomPass,
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
     placement: &HdPlacement<'_>,
     scissor: [u32; 4],
 ) {
-    let presentation = &state.match_state.match_presentation;
     let (Some(atlas), Some(world)) = (
         presentation.sprite_atlas.as_ref(),
-        state.renderer.world_zoom_pass.as_ref(),
+        renderer.world_zoom_pass.as_ref(),
     ) else {
         return;
     };
-    let batch = &state.renderer.batch_renderer;
+    let batch = &renderer.batch_renderer;
     // The shape binding the world's SHP runs draw with (`dispatch_draw_passes`).
     let zshape = presentation
         .building_zshape
@@ -260,10 +274,10 @@ fn draw(
         .map_or(batch.default_zshape_bind_group(), |zshape| {
             &zshape.bind_group
         });
-    let gpu = &state.renderer.gpu;
+    let gpu = &renderer.gpu;
     // The completed world the frame or the window copy was made from, read
     // as its encoded bytes.
-    let composition = state.renderer.combat_light_renderer.composition_texture();
+    let composition = renderer.combat_light_renderer.composition_texture();
     let world_color = composition.create_view(&wgpu::TextureViewDescriptor {
         format: Some(composition.format().remove_srgb_suffix()),
         usage: Some(wgpu::TextureUsages::TEXTURE_BINDING),
