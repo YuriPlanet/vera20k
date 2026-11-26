@@ -424,6 +424,11 @@ pub struct AssetManager {
     /// (`util::kratos_launch::KratosSetting`). It decides `RuleSet::kratos`
     /// in every game whose rules this manager selects.
     kratos_setting: crate::util::kratos_launch::KratosSetting,
+    /// VERA: the player's NPatch setting this game opened with
+    /// (`util::npatch_launch::NpatchSetting`). It decides `RuleSet::npatch`
+    /// and `RuleSet::npatch_fixes` in every game whose rules this manager
+    /// selects.
+    npatch_setting: crate::util::npatch_launch::NpatchSetting,
     /// VERA: names every lookup reads from fixed archives alone
     /// ([`Self::pin_names`]); `None` reads all names as found.
     pinned_names: Option<PinnedNames>,
@@ -460,6 +465,7 @@ impl Clone for AssetManager {
             client_install: self.client_install.clone(),
             ares_setting: self.ares_setting,
             kratos_setting: self.kratos_setting,
+            npatch_setting: self.npatch_setting,
             pinned_names: self.pinned_names.clone(),
         }
     }
@@ -754,11 +760,21 @@ impl AssetManager {
         self.kratos_setting
     }
 
+    /// The player's NPatch setting this game opened with.
+    pub fn npatch_setting(&self) -> crate::util::npatch_launch::NpatchSetting {
+        self.npatch_setting
+    }
+
     /// Read the launch's Kratos setting before the game's rules are selected.
     /// A launch does this once, from the Options profile, as it sets the Ares
     /// setting when it opens its archives.
     pub fn set_kratos_setting(&mut self, setting: crate::util::kratos_launch::KratosSetting) {
         self.kratos_setting = setting;
+    }
+
+    /// Read the launch's NPatch setting before the game's rules are selected.
+    pub fn set_npatch_setting(&mut self, setting: crate::util::npatch_launch::NpatchSetting) {
+        self.npatch_setting = setting;
     }
 
     /// Whether the Ares setting Auto mounts `ares.mix` for this game: a mod
@@ -817,6 +833,7 @@ impl AssetManager {
             client_install: None,
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
+            npatch_setting: Default::default(),
             pinned_names: None,
         })
     }
@@ -3392,6 +3409,7 @@ mod tests {
             client_install: None,
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
+            npatch_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3482,6 +3500,7 @@ mod tests {
             client_install: None,
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
+            npatch_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3562,6 +3581,7 @@ mod tests {
             client_install: None,
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
+            npatch_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3610,6 +3630,7 @@ mod tests {
             client_install: None,
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
+            npatch_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3656,6 +3677,7 @@ mod tests {
             client_install: None,
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
+            npatch_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3703,6 +3725,7 @@ mod tests {
             client_install: None,
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
+            npatch_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3747,6 +3770,7 @@ mod tests {
             client_install: None,
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
+            npatch_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3810,6 +3834,7 @@ mod tests {
             client_install: None,
             ares_setting: Default::default(),
             kratos_setting: Default::default(),
+            npatch_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();

@@ -303,6 +303,12 @@ pub(crate) struct RetailOptionsProfile {
     /// change applies from the next start. Auto keeps the game's data in
     /// charge; an unknown value reads as Auto.
     pub(crate) kratos: crate::util::kratos_launch::KratosSetting,
+    /// `[VERA] NPatch=Auto|On|Off`: the NPatch extension setting
+    /// (`util::npatch_launch::NpatchSetting`). Read at start, like the other
+    /// extension settings: a change applies from the next start. Auto keeps
+    /// the game's data in charge, including `[General] NPatch=`; an unknown
+    /// value reads as Auto.
+    pub(crate) npatch: crate::util::npatch_launch::NpatchSetting,
     /// `[VERA] RA2Mode=`: the Options page's RA2 Mode box (docs/ra2-mode.md).
     /// On, the game plays original Red Alert 2 from the installation's
     /// non-md files (`util::ra2_launch`). Read at start, like the Ares
@@ -473,6 +479,7 @@ impl Default for RetailOptionsProfile {
             health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode::Vanilla,
             ares: crate::util::ares_launch::AresSetting::Auto,
             kratos: crate::util::kratos_launch::KratosSetting::Auto,
+            npatch: crate::util::npatch_launch::NpatchSetting::Auto,
             color_vision: crate::ui::main_menu_dialogs::options::ColorVisionMode::Off,
             hd_art_on: false,
             chat_translation: Default::default(),
@@ -503,7 +510,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 48],
+    pub(crate) vera: [(&'static str, String); 49],
 }
 
 impl RetailOptionsLoad {
@@ -793,6 +800,10 @@ impl RetailOptionsProfile {
             self.kratos = crate::util::kratos_launch::KratosSetting::from_ini_text(
                 &vera.read_string("Kratos", self.kratos.ini_value(), 16),
             );
+            // Absent keeps the current value; an unknown one reads as Auto.
+            self.npatch = crate::util::npatch_launch::NpatchSetting::from_ini_text(
+                &vera.read_string("NPatch", self.npatch.ini_value(), 16),
+            );
             // Absent keeps the current value; a value this build does not know
             // reads as Off instead of enabling a filter with no matrix.
             self.color_vision =
@@ -955,6 +966,7 @@ impl RetailOptionsProfile {
                 ("HealthBars", self.health_bars.ini_value().to_string()),
                 ("Ares", self.ares.ini_value().to_string()),
                 ("Kratos", self.kratos.ini_value().to_string()),
+                ("NPatch", self.npatch.ini_value().to_string()),
                 ("HdRadar", format_bool(self.hd_radar).to_string()),
                 (
                     "SmoothSidebar",

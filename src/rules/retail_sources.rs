@@ -233,6 +233,10 @@ pub struct RetailRulesSources {
     /// The player's Kratos setting (`AssetManager::kratos_setting`), which
     /// every game this owner loads carries into `RuleSet::kratos`.
     kratos_setting: crate::util::kratos_launch::KratosSetting,
+    /// The player's NPatch setting (`AssetManager::npatch_setting`), which
+    /// every game this owner loads carries into `RuleSet::npatch` and
+    /// `RuleSet::npatch_fixes`.
+    npatch_setting: crate::util::npatch_launch::NpatchSetting,
 }
 
 impl RetailRulesSources {
@@ -271,6 +275,7 @@ impl RetailRulesSources {
             ships_ares,
             ares_keys_off: assets.ares_setting() == crate::util::ares_launch::AresSetting::Off,
             kratos_setting: assets.kratos_setting(),
+            npatch_setting: assets.npatch_setting(),
         })
     }
 
@@ -308,6 +313,7 @@ impl RetailRulesSources {
             self.ships_ares,
             self.ares_keys_off,
             self.kratos_setting,
+            self.npatch_setting,
         )
         .map_err(|error| format!("Native rules cold startup failed: {error}"))?;
         Ok(owner)

@@ -113,6 +113,22 @@ pub(crate) fn kratos_label(setting: crate::util::kratos_launch::KratosSetting) -
     })
 }
 
+/// The `[VERA] NPatch=` list's rows, top to bottom; the first is the default.
+pub(crate) fn npatch_choices() -> Vec<crate::util::npatch_launch::NpatchSetting> {
+    use crate::util::npatch_launch::NpatchSetting;
+    vec![NpatchSetting::Auto, NpatchSetting::On, NpatchSetting::Off]
+}
+
+/// The `[VERA] NPatch=` list's row text.
+pub(crate) fn npatch_label(setting: crate::util::npatch_launch::NpatchSetting) -> String {
+    use crate::util::npatch_launch::NpatchSetting;
+    crate::i18n::tr(match setting {
+        NpatchSetting::Auto => "VERA:NPatchSettingAuto",
+        NpatchSetting::On => "VERA:NPatchSettingOn",
+        NpatchSetting::Off => "VERA:NPatchSettingOff",
+    })
+}
+
 /// A Zoom row: the zoom and the battle's size in game pixels in this window,
 /// what `App::sync_zoom_pass` will give the match.
 pub(crate) fn zoom_label(zoom: Zoom, (width, height): (u32, u32), original_shape: bool) -> String {
@@ -816,6 +832,9 @@ pub(crate) enum LauncherComboId {
     /// The Kratos extension setting, from the next start
     /// (`util::kratos_launch::KratosSetting`).
     Kratos,
+    /// The NPatch extension setting, from the next start
+    /// (`util::npatch_launch::NpatchSetting`).
+    Npatch,
     /// The `[VERA] GraphicsAPI=` list: the renderer, from the next start;
     /// on the page where it chooses anything ([`HAS_GRAPHICS_API`]).
     GraphicsApi,
@@ -1148,6 +1167,7 @@ pub(crate) const ROWS: &[Row] = {
         row!(Gameplay, Checkbox(Ra2Mode), "Ra2Mode"),
         row!(Gameplay, List(Ares), "AresSetting"),
         row!(Gameplay, List(Kratos), "KratosSetting"),
+        row!(Extensions, List(Npatch), "NPatchSetting"),
         row!(
             Gameplay,
             Checkbox(CustomEndGameBanner),
@@ -1349,6 +1369,7 @@ pub(crate) enum LauncherOptionsEvent {
     AresSelected(crate::util::ares_launch::AresSetting),
     /// Played from the next start.
     KratosSelected(crate::util::kratos_launch::KratosSetting),
+    NpatchSelected(crate::util::npatch_launch::NpatchSetting),
     /// The `[VERA] GraphicsAPI=` list's pick, read at the next start.
     GraphicsApiSelected(GraphicsApi),
     ColorVisionModeSelected(ColorVisionMode),
@@ -1414,6 +1435,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) health_bars: HealthBarMode,
     pub(crate) ares: crate::util::ares_launch::AresSetting,
     pub(crate) kratos: crate::util::kratos_launch::KratosSetting,
+    pub(crate) npatch: crate::util::npatch_launch::NpatchSetting,
     /// The Graphics API list's choice; it applies from the next start.
     pub(crate) graphics_api: GraphicsApi,
     pub(crate) color_vision: ColorVisionMode,
@@ -1445,6 +1467,7 @@ impl Default for LauncherOptionsValues {
             health_bars: HealthBarMode::default(),
             ares: Default::default(),
             kratos: Default::default(),
+            npatch: Default::default(),
             graphics_api: GraphicsApi::default(),
             color_vision: ColorVisionMode::default(),
             hd_look: HdLook::default(),
@@ -1794,6 +1817,7 @@ impl OptionsDialogState {
             E::HealthBarModeSelected(mode) => v.health_bars = *mode,
             E::AresSelected(setting) => v.ares = *setting,
             E::KratosSelected(setting) => v.kratos = *setting,
+            E::NpatchSelected(setting) => v.npatch = *setting,
             E::GraphicsApiSelected(api) => v.graphics_api = *api,
             E::ColorVisionModeSelected(mode) => v.color_vision = *mode,
             E::HdLookSelected(look) => v.hd_look = *look,

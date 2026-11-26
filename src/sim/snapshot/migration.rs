@@ -62,9 +62,12 @@ const MODULES_AND_IMAGE_SWAP: u32 = 0xB65C_0664;
 // the webs, without the modules or the image swap. Older worlds ran no NPatch
 // switch: their rules keep every NPatch key dormant, as they played when saved.
 const NPATCH_INPUTS: u32 = 0xE527_9FB2;
-// The current writer stores the modules, the image swap and the NPatch key
-// reads.
+// The previous current writer stored the modules, the image swap and the
+// NPatch key reads, without the player's NPatch launch setting.
 const MODULES_SWAP_AND_NPATCH: u32 = 0xBA51_A42C;
+// The current writer also stores the NPatch launch setting beside those key
+// reads, so a loaded game keeps the launch policy it was saved under.
+const NPATCH_SETTING: u32 = 0xA4F1_2FAC;
 
 /// The rules digest a converted save carries: the loader takes the rules the
 /// game has instead of proving the digest the old writer computed, whose
@@ -98,7 +101,7 @@ pub fn supports(header: &GameSnapshotHeader) -> bool {
         && previous_layout(header.layout).is_some()
         && header.compatibility().matches_build()
         && SNAPSHOT_ENVELOPE_VERSION == MIGRATION_ENVELOPE_VERSION
-        && snapshot_layout() == MODULES_SWAP_AND_NPATCH
+        && snapshot_layout() == NPATCH_SETTING
 }
 
 fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
@@ -128,6 +131,9 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     // Worlds older than the NPatch switch stored no key reads either: their
     // rules kept the switch off, which the all-zero empty read list restores.
     const NPATCH_KEYS: (&str, &[&str]) = ("ProcessedRulesLayers", &["npatch_inputs"]);
+    // The earlier NPatch reader stored the key reads but not the player's
+    // launch setting, which decodes as Auto.
+    const NPATCH_SETTING_FIELD: (&str, &[&str]) = ("NPatchInputs", &["setting"]);
     let absent_fields: &'static [_] = match source {
         V0_3_8_AND_0_3_9 | V0_4_0 => &[
             IMAGE_FLAGS,
@@ -310,7 +316,13 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
         WASM_MODULES => &[IMAGE_SWAP, NPATCH_KEYS],
         ART_IMAGE_SWAP => &[EXT_MODULES, MODULE_TRIGGERS, NPATCH_KEYS],
         MODULES_AND_IMAGE_SWAP => &[NPATCH_KEYS],
-        NPATCH_INPUTS => &[EXT_MODULES, MODULE_TRIGGERS, IMAGE_SWAP],
+        MODULES_SWAP_AND_NPATCH => &[NPATCH_SETTING_FIELD],
+        NPATCH_INPUTS => &[
+            NPATCH_SETTING_FIELD,
+            EXT_MODULES,
+            MODULE_TRIGGERS,
+            IMAGE_SWAP,
+        ],
         _ => return None,
     };
     Some(save_codec::PreviousLayout {
@@ -326,7 +338,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
 /// only its stock Arctic setting and latch. Keep both exactly as saved.
 pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     let target = snapshot_layout();
-    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != MODULES_SWAP_AND_NPATCH
+    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != NPATCH_SETTING
     {
         return Err(MigrationError::UnsupportedTarget(target));
     }
@@ -460,7 +472,7 @@ mod tests {
         let error = migrate(&mut bytes).unwrap_err();
         assert_eq!(bytes, original);
         if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
-            || snapshot_layout() != MODULES_SWAP_AND_NPATCH
+            || snapshot_layout() != NPATCH_SETTING
         {
             assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
             return;

@@ -259,6 +259,9 @@ pub(crate) fn load_process_sources(
         kratos_setting,
     )
     .map_err(anyhow::Error::msg)?;
+    // The probe loads what the same start would: VERA.INI's NPatch setting
+    // decides the features and fixes in the sources it reports.
+    let npatch_setting = existing_profile(config.paths.settings_dir()).npatch;
     let mut assets = AssetManager::with_mod_and_ares(
         &config.paths.ra2_dir,
         resources.mod_folder.as_deref(),
@@ -269,12 +272,14 @@ pub(crate) fn load_process_sources(
     .and_then(|assets| assets.with_resource_config(&resources))
     .context("could not load the game archives")?;
     assets.set_kratos_setting(kratos_setting);
+    assets.set_npatch_setting(npatch_setting);
     let mut process = ProcessAssets::new(media_archive_mode, load_audio_index)
         .with_resources(resources)
         .with_mod_name(active_mod.map(|active| active.folder))
         .with_personal_rules(personal_rules)
         .with_ares_setting(ares_setting)
-        .with_kratos_setting(kratos_setting);
+        .with_kratos_setting(kratos_setting)
+        .with_npatch_setting(npatch_setting);
     // Startup reads this game's INIs as its launch does
     // (`rules::ares_switch::ares_way`); a caller that plays the game says so
     // after (`AssetManager::open_for_play`).

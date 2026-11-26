@@ -141,6 +141,10 @@ struct NativeRulesSourceSnapshot {
     /// VERA: the player's Kratos setting (`AssetManager::kratos_setting`),
     /// which decides `RuleSet::kratos` in every game this process loads.
     kratos_setting: crate::util::kratos_launch::KratosSetting,
+    /// VERA: the player's NPatch setting (`AssetManager::npatch_setting`),
+    /// which decides `RuleSet::npatch` and `RuleSet::npatch_fixes` in every
+    /// game this process loads.
+    npatch_setting: crate::util::npatch_launch::NpatchSetting,
 }
 
 impl NativeRulesSourceSnapshot {
@@ -379,6 +383,7 @@ impl NativeRulesProcessOwner {
             crate::rules::ares_switch::ares_way(),
             false,
             crate::util::kratos_launch::KratosSetting::Auto,
+            crate::util::npatch_launch::NpatchSetting::Auto,
         )
     }
 
@@ -399,6 +404,7 @@ impl NativeRulesProcessOwner {
         ships_ares: bool,
         ares_keys_off: bool,
         kratos_setting: crate::util::kratos_launch::KratosSetting,
+        npatch_setting: crate::util::npatch_launch::NpatchSetting,
     ) -> Result<Self, RulesError> {
         let movies = crate::rules::movies::MovieRegistry::from_art(&fixed_art);
         if let Some(NativeLangRuleSource::SelectionFailed(error)) = langrule.as_ref() {
@@ -416,6 +422,7 @@ impl NativeRulesProcessOwner {
             ships_ares,
             ares_keys_off,
             kratos_setting,
+            npatch_setting,
         };
         let cold_trace = sources.cold_registry()?;
         Ok(Self {
@@ -457,6 +464,7 @@ impl NativeRulesProcessOwner {
             ships_ares,
             sources.ares_keys_off,
             sources.kratos_setting,
+            sources.npatch_setting,
         )
         .expect("the same sources cold-started once already")
     }
@@ -1406,7 +1414,8 @@ impl NativeRulesProcessOwner {
         let mut layers = RulesLayerStack::new(self.scenario_root().into_owned())
             .with_ares_mix(self.sources.ships_ares)
             .with_ares_keys_off(self.sources.ares_keys_off)
-            .with_kratos_setting(self.sources.kratos_setting);
+            .with_kratos_setting(self.sources.kratos_setting)
+            .with_npatch_setting(self.sources.npatch_setting);
         if let Some(langrule) = langrule {
             layers.push(RulesLayerKind::LangRule, langrule.clone());
         }

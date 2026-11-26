@@ -305,6 +305,9 @@ pub struct RulesLayerStack {
     /// VERA: the player's Kratos setting (`AssetManager::kratos_setting`);
     /// Auto lets the game's data decide (`rules::kratos_switch`).
     kratos_setting: crate::util::kratos_launch::KratosSetting,
+    /// VERA: the player's NPatch setting (`AssetManager::npatch_setting`);
+    /// Auto lets the game's data decide (`rules::npatch_switch`).
+    npatch_setting: crate::util::npatch_launch::NpatchSetting,
 }
 
 impl RulesLayerStack {
@@ -321,6 +324,7 @@ impl RulesLayerStack {
             ships_ares: crate::rules::ares_switch::ares_way(),
             ares_keys_off: false,
             kratos_setting: crate::util::kratos_launch::KratosSetting::Auto,
+            npatch_setting: crate::util::npatch_launch::NpatchSetting::Auto,
         }
     }
 
@@ -352,6 +356,18 @@ impl RulesLayerStack {
         setting: crate::util::kratos_launch::KratosSetting,
     ) -> Self {
         self.kratos_setting = setting;
+        self
+    }
+
+    /// VERA: the stack of a launch whose player chose an NPatch setting
+    /// (`util::npatch_launch::NpatchSetting`). The game's owner sets it from
+    /// the launch (`NativeRulesProcessOwner::startup_layers`); a stack built
+    /// without saying reads as Auto.
+    pub fn with_npatch_setting(
+        mut self,
+        setting: crate::util::npatch_launch::NpatchSetting,
+    ) -> Self {
+        self.npatch_setting = setting;
         self
     }
 
@@ -672,8 +688,10 @@ impl RulesLayerStack {
             &processor.ares_reads,
             self.kratos_setting,
         );
-        let npatch_inputs =
-            crate::rules::npatch_switch::NPatchInputs::from_passes(&processor.ares_reads);
+        let npatch_inputs = crate::rules::npatch_switch::NPatchInputs::from_passes(
+            &processor.ares_reads,
+            self.npatch_setting,
+        );
         let (ini, native_type_construction_trace) = processor.finish();
         ProcessedRulesLayers {
             ini,

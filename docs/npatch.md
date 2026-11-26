@@ -26,6 +26,14 @@ individual NPatch key turns on its own feature paths (the canopy, AI queue or bu
 behavior it names), not every NPExt fix. `NPatch=no` or an absent master key keeps the
 fixes off while their automatic feature detection still runs.
 
+The player's launch setting, `[VERA] NPatch=Auto|On|Off` (Options → Game Options →
+Extensions), is the stronger outer answer and holds from one start to the next. **On**
+plays every NPatch feature and NPExt fix, `[General] NPatch=no` included; **Off** ignores
+the global and every feature key; **Auto** keeps the data answer above. The processed
+rules carry the setting, so a save, a replay and every peer reach the same answer, and the
+effective switch is part of the network agreement (`settings.npatch`,
+`settings.npatch_fixes`, and `settings.npatch_setting` while not Auto).
+
 Without the global key, `rules::npatch_switch` decides per game from any key only an NPatch
 reader found (`VehicleParachute`, `DisableParallelAIQueues` or its ext173 name
 `DisableAIParallelProduction`, `EnableAIBuildLimitation`, a TechnoType's `AIBuildLimit=`,
