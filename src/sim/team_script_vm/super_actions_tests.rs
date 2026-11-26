@@ -551,3 +551,45 @@ fn ares_iron_curtain_action_matches_ai_mode_and_group() {
         assert!(sim.team_script_vm.teams[&team].advance_pending);
     }
 }
+
+#[test]
+fn action_55_uses_the_leaders_house_and_group_with_ares_off() {
+    let _ares = crate::rules::ares_switch::read_ares_way(false);
+    let mut row = rows()
+        .into_iter()
+        .find(|row| int(&row["action"]) == 55 && replayable(row) && !events(row, "fire").is_empty())
+        .unwrap();
+    // SW1 is the charged stock curtain; SW2 is a second curtain in group 9.
+    row["supers"][2]["kind"] = json!(1);
+    for (has_custom, argument, expected) in [(false, 0, "SW1"), (true, 0, "SW1"), (true, 9, "SW2")]
+    {
+        row["supers"][2]["granted"] = json!(has_custom);
+        row["supers"][2]["charged"] = json!(has_custom);
+        let Replay {
+            mut sim,
+            rules,
+            team,
+            ..
+        } = replay_with(&row, false, &[(2, "SW.Group=9\n")]);
+        let owner = sim.interner.get(OWNER).unwrap();
+        let enemy = sim.interner.get(ENEMY).unwrap();
+        let custom = sim.interner.get("SW2").unwrap();
+        let mut enemy_curtain = SuperWeaponInstance::new(custom, enemy, 0);
+        enemy_curtain.set_is_active_for_test(true);
+        enemy_curtain.set_is_ready_for_test(true);
+        sim.super_weapons
+            .map_mut_for_test()
+            .entry(enemy)
+            .or_default()
+            .insert(custom, enemy_curtain);
+
+        sim.team_action_iron_curtain(team, argument, &rules, None, &mut Default::default());
+        let fired = sim.interner.get(expected).unwrap();
+        assert!(
+            !sim.super_weapons[&owner][&fired].is_ready(),
+            "{expected} should fire"
+        );
+        assert!(sim.super_weapons[&enemy][&custom].is_ready());
+        assert!(sim.team_script_vm.teams[&team].advance_pending);
+    }
+}

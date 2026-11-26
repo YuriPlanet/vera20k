@@ -87,6 +87,23 @@ fn merge_load_inherits_from_the_including_file_and_continues_its_counter() {
 }
 
 #[test]
+fn stock_children_inherit_the_value_the_parent_reads_for_repeated_keys() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let ini = IniFile::from_str(
+        "[Base]\nStrength=100\nStrength=200\n[Child]:[Base]\nSpeed=5\n\
+         [Other]\nStrength=300\nStrength=400\nStrength=500\n[OtherChild]:[Other]\n",
+    );
+    for (parent, child) in [("Base", "Child"), ("Other", "OtherChild")] {
+        let parent_strength = ini.section(parent).unwrap().read_int("Strength", 0);
+        assert_eq!(
+            ini.section(child).unwrap().read_int("Strength", 0),
+            parent_strength,
+            "{child} must inherit the value selected in {parent}",
+        );
+    }
+}
+
+#[test]
 fn builtin_ini_syntax_reads_the_first_included_child_with_ares_off() {
     use super::super::directives::{DirectiveOptions, process_directives};
     let _stock = crate::rules::ares_switch::read_ares_way(false);

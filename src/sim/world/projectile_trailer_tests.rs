@@ -22,9 +22,42 @@ const ATTACHED_SYSTEM_RULES: &str = "[VehicleTypes]\n0=Launcher\n[Launcher]\nStr
 [ParticleSystems]\n0=TrailSystem\n[TrailSystem]\nBehavesLike=Smoke\nHoldsWhat=TrailPart\nSpawnFrames=1\n\
 [Particles]\n0=TrailPart\n[TrailPart]\nBehavesLike=Smoke\nMaxEC=10\n";
 
+fn fire_trail_shell(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    firer: u64,
+    origin: ProjectileCoord,
+) -> u64 {
+    use crate::sim::combat::{FiredBullet, admit_fired_bullet};
+
+    let weapon = rules.weapon("SmokeLob").unwrap();
+    let payload = ProjectilePayload::new(
+        weapon.damage,
+        sim.intern("AP"),
+        Some(sim.intern("TrailShell")),
+        false,
+    )
+    .with_installed_weapon(Some(sim.intern("SmokeLob")));
+    let bullet = sim.substrate.allocate_stable_id();
+    let native_id = sim.next_native_runtime_id();
+    let shot = FiredBullet::launched(
+        sim,
+        rules,
+        native_id,
+        firer,
+        ProjectileTarget::Cell { rx: 18, ry: 12 },
+        payload,
+        12,
+        origin,
+        ProjectileVelocity::new(90, 0, 0),
+    )
+    .unwrap();
+    admit_fired_bullet(sim, rules, weapon, bullet, shot);
+    bullet
+}
+
 #[test]
 fn projectile_attached_system_follows_the_shot_and_fades_after_snapshot_restore() {
-    use crate::sim::combat::{FiredBullet, admit_fired_bullet};
     use crate::sim::snapshot::GameSnapshot;
     use crate::sim::world::UninitContext;
     use glam::IVec3;
@@ -41,30 +74,8 @@ fn projectile_attached_system_follows_the_shot_and_fades_after_snapshot_restore(
         .spawn_object("Launcher", "Americans", 12, 12, 0, &rules)
         .unwrap();
     let owner = sim.substrate.entities.get(firer).unwrap().owner();
-    let weapon = rules.weapon("SmokeLob").unwrap();
-    let payload = ProjectilePayload::new(
-        weapon.damage,
-        sim.intern("AP"),
-        Some(sim.intern("TrailShell")),
-        false,
-    )
-    .with_installed_weapon(Some(sim.intern("SmokeLob")));
-    let bullet = sim.substrate.allocate_stable_id();
-    let native_id = sim.next_native_runtime_id();
     let origin = ProjectileCoord::new(3200, 3200, 480);
-    let shot = FiredBullet::launched(
-        &sim,
-        &rules,
-        native_id,
-        firer,
-        ProjectileTarget::Cell { rx: 18, ry: 12 },
-        payload,
-        12,
-        origin,
-        ProjectileVelocity::new(90, 0, 0),
-    )
-    .unwrap();
-    admit_fired_bullet(&mut sim, &rules, weapon, bullet, shot);
+    let bullet = fire_trail_shell(&mut sim, &rules, firer, origin);
 
     let mut systems = sim.particle_systems().iter();
     let (&system, smoke) = systems.next().expect("Bullet Put creates its Smoke system");
@@ -113,6 +124,53 @@ fn projectile_attached_system_follows_the_shot_and_fades_after_snapshot_restore(
     );
     let smoke = restored.particle_systems().get(system).unwrap();
     assert_eq!(smoke.ares().unwrap().smoke().len(), records.len());
+}
+
+#[test]
+fn projectile_attached_system_alpha_art_is_local_to_drawing() {
+    use crate::rules::alpha_image_assets::AlphaImage;
+    use crate::sim::world::UninitContext;
+
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+        "{ATTACHED_SYSTEM_RULES}AlphaImage=TRAILGLOW\n"
+    ));
+    let mut rules = RuleSet::from_ini(&ini).unwrap();
+    assert!(!rules.ares());
+    let shot = |rules: &RuleSet| {
+        let mut sim = crate::sim::arena_fixture::rival_arena(rules, 19);
+        sim.intern_rule_type_ids(rules);
+        let firer = sim
+            .spawn_object("Launcher", "Americans", 12, 12, 0, rules)
+            .unwrap();
+        let bullet = fire_trail_shell(
+            &mut sim,
+            rules,
+            firer,
+            ProjectileCoord::new(3200, 3200, 480),
+        );
+        let (&system, smoke) = sim.particle_systems().iter().next().unwrap();
+        assert_eq!(smoke.owner_entity(), Some(bullet));
+        assert!(
+            smoke.ares().is_none(),
+            "AlphaImage needs ordinary ParticleClass children"
+        );
+        crate::sim::particles::system_ai::tick_particle_system(
+            &mut sim,
+            rules,
+            system,
+            UninitContext::new(rules),
+        );
+        (sim.state_hash(), sim.clone_scenario_rng().logical_state())
+    };
+    let without_art = shot(&rules);
+    let config = rules.simulation_config_hash();
+    rules.supply_alpha_image_for_test(
+        "TRAILGLOW",
+        AlphaImage::for_test([1, 1], [0, 0, 1, 1], vec![96]),
+    );
+    assert_eq!(shot(&rules), without_art);
+    assert_eq!(rules.simulation_config_hash(), config);
 }
 
 #[test]

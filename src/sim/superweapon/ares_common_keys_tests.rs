@@ -400,6 +400,44 @@ fn protect_curtains_its_rectangle_with_its_duration_and_affected_houses() {
 }
 
 #[test]
+fn protect_oversized_ranges_reach_map_targets_and_keep_the_native_row_boundary() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    for (range, last_target_protected) in [("2050,1", false), ("2100", true)] {
+        let rules = rules(&format!(
+            "[SuperWeaponTypes]\n0=Shield\n[Shield]\nType=Protect\nRechargeTime=1\n\
+             IsPowered=no\nProtect.Duration=200\nSW.Range={range}\n"
+        ));
+        let (mut sim, owner, sw) = scene(&rules, "Shield");
+        let mut spawn = |x, y| {
+            sim.spawn_object("TANK", "Americans", x, y, 0, &rules)
+                .unwrap()
+        };
+        let center = spawn(10, 10);
+        // Ares TryGetCellAt aliases the rectangle's final column (1034,10)
+        // to (10,12) on the retail 512-stride map; (11,12) is outside it.
+        let last_column = spawn(10, 12);
+        let next_column = spawn(11, 12);
+        grant(&mut sim, &rules, owner, sw);
+        sim.super_weapons
+            .instance_mut(&owner, &sw)
+            .unwrap()
+            .is_ready = true;
+        assert!(fire(&mut sim, &rules, owner, sw, (10, 10)));
+        let protected = |id| {
+            sim.substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .invulnerability
+                .is_some()
+        };
+        assert!(protected(center), "{range}");
+        assert!(protected(last_column), "{range}");
+        assert_eq!(protected(next_column), last_target_protected, "{range}");
+    }
+}
+
+#[test]
 fn sonar_pulse_marks_affected_enemies_in_range_and_whole_map_pulses_need_no_target() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
