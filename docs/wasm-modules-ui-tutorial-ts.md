@@ -126,8 +126,8 @@ Step by step:
    generates `src/generated/vars.ts` with `ReinforcementsBought`, a `HouseVar`.
 2. **`notify` in `vera.json`** declares every notification name the module sends; the
    game refuses a notification whose name was not declared. The build generates
-   `src/generated/notify.ts` with `Reinforced`. Build once (`npm run build`) before
-   `npm run check`, so both generated files exist.
+   `src/generated/notify.ts` with `Reinforced`. `npm run check` writes both generated
+   files too (`vera20k generate`), so it works before the first build.
 3. **`onMessage`** registers the handler for messages. `sender` comes from the game; the
    bytes come from a player's machine and may be anything, so check their length and
    values before you trust them. The handler runs in the module phase, on every machine.
@@ -228,9 +228,9 @@ Step by step:
 Reading the variable every frame is cheap. A client module has 100,000 operations per
 drawn frame; most interfaces use a small part of it.
 
-`onStart` and `onRender` each take one function (a second call replaces the first);
-`onClientEvent` may be called for as many kinds as you like, and several times for one
-kind.
+`onStart`, `onRender` and `onClientEvent` may each be called several times
+(`onClientEvent` for as many kinds as you like); every function you register runs, in
+registration order.
 
 **Variables and notifications from `vera.json`.** Instead of writing `new ClientVar(...)`
 and `new NotifyName(...)` by hand, a client project can list the names in its own
@@ -270,7 +270,8 @@ onRender((dt: f32, alpha: f32): void => {
 ```
 
 In a client project these entries declare nothing: the simulation module owns the
-variables. Every entry still needs its `scope`. A name of the other source's module is
+variables. Every entry becomes a `ClientVar`, so it needs only its `name`; `scope` and the
+other keys are ignored. A name of the other source's module is
 written `mod.Name` or `map.Name`.
 
 ## 5. Build and try it
@@ -355,8 +356,8 @@ module the same way, in `[VeraUI]` ([a map's own parts](interface-layout.md#a-ma
 ## 7. More things a client module can do
 
 Each snippet is a complete client module you can build alone. To add one to the button
-module, merge its `onStart` body into the existing `onStart`: a module has one `onStart`,
-and a second call replaces the first.
+module, copy it into the button module's file, leaving out the imports and declarations it already has (such as `BUY_MESSAGE`):
+its `onStart` runs after the existing one.
 
 **A hotkey.** Register it in `onStart` (not in top-level code, where only lookups work)
 and compare the event's `id`:

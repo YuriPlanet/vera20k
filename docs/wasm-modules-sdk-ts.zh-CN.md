@@ -33,8 +33,9 @@ Wasm 模块的 TypeScript SDK `@vera20k/sdk`（VERA20K 源码里的 `sdk/typescr
 | `vera20k init <dir> --ui` | 同上，建客户端项目：`"kind": "ui"`，以及客户端的 `src/index.ts` |
 | `vera20k build [dir] [--out file] [--debug]` | 构建 `dir`（默认 `.`）里的项目。`--out` 覆盖 `vera.json` 的 `out`（相对于项目）。`--debug` 用 `-O1` 并带调试信息构建，而不是优化体积的发布构建 |
 | `vera20k watch [dir] [--out file] [--debug]` | 先构建，之后入口文件所在文件夹（`src/`，不含 `src/generated/`）或 `vera.json` 每次变动后 100 毫秒再构建 |
+| `vera20k generate [dir]` | 检查 `vera.json` 并据此写出 `src/generated/`，不编译（`tsc` 需要这些文件） |
 
-在项目里由 `npm run build`、`npm run watch` 和 `npm run check`（`tsc --noEmit -p .`）运行它们；选项写在 `--` 后面，如 `npm run build -- --out ../mod/rules.wasm`。`npm run check` 需要生成的文件，所以声明了变量或通知的项目要先构建一次。
+在项目里由 `npm run build`、`npm run watch` 和 `npm run check`（`vera20k generate && tsc --noEmit -p .`）运行它们；选项写在 `--` 后面，如 `npm run build -- --out ../mod/rules.wasm`。`check` 会先生成 `src/generated/`，所以第一次构建之前也能用。
 
 ### `vera.json`
 
@@ -51,7 +52,7 @@ Wasm 模块的 TypeScript SDK `@vera20k/sdk`（VERA20K 源码里的 `sdk/typescr
 | 键 | 取值 |
 | --- | --- |
 | `name` | 不含空格的可打印 ASCII，最长 65,535 字节；忽略大小写后不能重复 |
-| `scope` | `"global"`、`"house"` 或 `"object"`；必填 |
+| `scope` | `"global"`、`"house"` 或 `"object"`；模拟项目里必填，缺了或写错都是构建错误 |
 | `visibility` | `"private"`（默认）、`"allies"`、`"insight"`（也可写 `"in-sight"`）、`"public"`；不区分大小写 |
 | `initial` | 初始值，整数（默认 0）；也可以写成 `default` |
 
@@ -67,15 +68,15 @@ Wasm 模块的 TypeScript SDK `@vera20k/sdk`（VERA20K 源码里的 `sdk/typescr
 }
 ```
 
-在客户端项目（`"kind": "ui"`）里，`vars` 和 `notify` 不声明任何东西：它们只为模拟模块声明的名字生成 `ClientVar` 和 `NotifyName` 常量。那里每个 `vars` 条目仍然要写 `scope`；`visibility` 和 `initial` 会被忽略。
+在客户端项目（`"kind": "ui"`）里，`vars` 和 `notify` 不声明任何东西：它们只为模拟模块声明的名字生成 `ClientVar` 和 `NotifyName` 常量。那里每个 `vars` 条目都生成 `ClientVar`，所以不用写 `scope`、`visibility` 和 `initial`，写了也会被忽略。
 
 ### `vera20k build` 做了什么
 
-1. 读取 `vera.json`，检查变量名和通知名（可打印 ASCII，忽略大小写后不重复）。
-2. 在入口文件旁边生成 `generated/vars.ts`（每个变量一个常量：模拟项目里是 `GlobalVar`、`HouseVar` 或 `ObjectVar`，客户端项目里是 `ClientVar`）和 `generated/notify.ts`（每个名字一个 `Notify` 或 `NotifyName`）。列表为空时不写对应的文件，内容没变时也不重写。名字里字母、数字、`_`、`$` 以外的字符变成 `_`，作为标识符（`map.Wave` 变成 `map_Wave`）。
+1. 读取 `vera.json`，检查变量名和通知名（可打印 ASCII，忽略大小写后不重复），模拟项目里还检查每个变量的 `scope`。
+2. 在入口文件旁边生成 `generated/vars.ts`（每个变量一个常量：模拟项目里是 `GlobalVar`、`HouseVar` 或 `ObjectVar`，客户端项目里是 `ClientVar`）和 `generated/notify.ts`（每个名字一个 `Notify` 或 `NotifyName`）。列表为空时不写对应的文件，列表清空后会删掉原来的文件，内容没变时也不重写。`vera20k generate` 只做这一步。名字里字母、数字、`_`、`$` 以外的字符变成 `_`，作为标识符（`map.Wave` 变成 `map_Wave`）。
 3. 把入口文件和 SDK 对应种类的导出文件一起编译，使用 AssemblyScript 的 incremental 运行时、`--noAssert`（去掉 `assert` 调用），不带 `--debug` 时还有 `-O3 --shrinkLevel 2 --converge`。
    - 顶层代码变成 `vera_init` 导出（客户端模块是 `client_init`），绝不会生成 `start` 段。
-   - 没有 `env.abort` 导入：`abort`（越界检查失败、`throw`）直接陷入（trap）。
+   - 没有 `env.abort` 导入：运行时错误（下标越界、解引用 `null`、`throw`）先通过模块自己的日志记下 `abort: <message> at <file>:<line>:<column>`，再陷入（trap）。
    - 1,024 以下的内存地址留给投递区。
    - 只保留代码里登记过的生命周期导出：只有调用了 `onFrame` 才有 `on_frame`，只有用了 `enqueue`、`enqueueWith`、`ActionDef.module`、`namedAction`、`Ini.key` 或 `Ini.registry` 才有 `on_events`，只有用了 `decideSync`，或者 `namedAction` 的处理函数接收决定视图，才有 `on_decide`，依此类推，所以引擎不会做模块不需要的调用。构建是在源码文字里找这些调用的（忽略注释）。
 4. 收集 `namedAction("Name", fn)` 的名字。名字必须是字符串字面量。忽略大小写后不能重复；两个名字的分派键撞了也会被拒绝（“rename one”）。
@@ -100,7 +101,7 @@ Wasm 模块的 TypeScript SDK `@vera20k/sdk`（VERA20K 源码里的 `sdk/typescr
   用错了接口不会返回状态：无效的参数（作用域和变量不符、随机数范围是负的、在决定函数里写东西……）会让模块被停用。
 - **引用是 `i64`。** `Techno`、`House`、`Cell` 等引用类型都是 `i64` 的别名，通过命名空间函数读写，引用放第一个参数（`Techno.health(t)`）。`NO_HANDLE`（0）表示没有对象。
 - **视图**（`KilledEvent`、`TakeDamageDecision`、`ClickEvent`……）直接读取引擎的记录，只在回调期间有效。每个视图都有 `record`（完整的 `EventRecord`）；决定视图还有 `request`（`DecideRecord`）。
-- **每种登记只保留一个函数。** `onRules`、`onScenarioStart`、`onMessage`、`onStart`、`onRender` 各自只保留一个函数：后一次调用替换前一次的。`onFrame` 和 `onClientEvent` 每调用一次就多一个。
+- **每次登记都会运行。** `onRules`、`onScenarioStart`、`onMessage`、`onStart`、`onRender`、`onFrame` 和 `onClientEvent` 每调用一次就多一个函数，全部按登记顺序运行。
 - **语言。** 代码是 AssemblyScript 兼容的 TypeScript；[教程](wasm-modules-tutorial-ts.zh-CN.md#6-这里的-typescript-和平常有什么不同)列出了因此不能用的写法（捕获局部变量的闭包、`for…of`、`try`、联合类型、没有类型的对象字面量）。
 - 源码里标了 `@internal` 的名字（`check`、`utf8`、`OUT`、`keyOf`、`run*`……）虽然导出了，但只供 SDK 自己用，不要依赖它们。
 
@@ -121,7 +122,7 @@ Wasm 模块的 TypeScript SDK `@vera20k/sdk`（VERA20K 源码里的 `sdk/typescr
 | `onScenarioStart(fn: () => void)` | `on_scenario_start` | 对局开始时调用一次，在模块的 INI 记录之后 |
 | `onFrame(every: Every, fn: () => void)` | `on_frame` | 帧号能被 `every.frames` 整除的每一帧，在模块阶段结束时调用。每个函数调用一次 `onFrame`，各有各的间隔 |
 | `new Every(frames: i32)` | | `onFrame` 的间隔（正常速度下 15 帧是一秒；小于 1 按 1 算） |
-| `onMessage(fn: (sender: House, data: Uint8Array) => void)` | `on_message` | 在模块阶段、事件之前调用，同一来源的客户端模块每发一条消息调用一次。`data` 是消息的字节 |
+| `onMessage(fn: (sender: House, data: Uint8Array) => void)` | `on_message` | 在模块阶段、事件之前调用，同一来源的客户端模块每发一条消息调用一次。`data` 是消息字节的副本 |
 | `namedAction<T>(name: string, fn: (e: T) => void): i32` | `on_events`（`fn` 接收决定视图时是 `on_decide`）、`vera.actions` 段 | 给 `fn` 起名字供 INI 使用（`Action=Wasm:name`；接收决定视图的处理函数用 `Decide=Wasm:name`），返回它的分派键。`name` 必须是字符串字面量 |
 | `actionKey(name: string): i32` | | 命名动作的分派键（对小写后的名字做 FNV-1a，置第 30 位），和构建写进去的一样 |
 

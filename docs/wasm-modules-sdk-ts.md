@@ -59,11 +59,12 @@ type-checks.
 | `vera20k init <dir> --ui` | The same as a client project: `"kind": "ui"` and a client `src/index.ts` |
 | `vera20k build [dir] [--out file] [--debug]` | Builds the project in `dir` (default `.`). `--out` overrides `vera.json`'s `out` (relative to the project). `--debug` builds with `-O1` and debug information instead of the size-optimized release build |
 | `vera20k watch [dir] [--out file] [--debug]` | Builds, then builds again 100 ms after each change in the entry's folder (`src/`, except `src/generated/`) or in `vera.json` |
+| `vera20k generate [dir]` | Checks `vera.json` and writes `src/generated/` from it, without compiling (what `tsc` needs) |
 
-In a project, `npm run build`, `npm run watch` and `npm run check` (`tsc --noEmit -p .`)
-run them; pass options after `--`, as in `npm run build -- --out ../mod/rules.wasm`.
-`npm run check` needs the generated files, so build once first in a project that
-declares variables or notifications.
+In a project, `npm run build`, `npm run watch` and `npm run check`
+(`vera20k generate && tsc --noEmit -p .`) run them; pass options after `--`, as in
+`npm run build -- --out ../mod/rules.wasm`. Because `check` generates `src/generated/`
+first, it works before the first build.
 
 ### `vera.json`
 
@@ -80,7 +81,7 @@ A `vars` entry:
 | Key | Values |
 | --- | --- |
 | `name` | Printable ASCII without spaces, up to 65,535 bytes; unique ignoring case |
-| `scope` | `"global"`, `"house"` or `"object"`; required |
+| `scope` | `"global"`, `"house"` or `"object"`; required in a simulation project, where a missing or invalid one is a build error |
 | `visibility` | `"private"` (default), `"allies"`, `"insight"` (also `"in-sight"`), `"public"`; ignoring case |
 | `initial` | The starting value, an integer (default 0); `default` is accepted as another name |
 
@@ -98,16 +99,18 @@ A `vars` entry:
 
 In a client project (`"kind": "ui"`), `vars` and `notify` declare nothing: they only
 generate `ClientVar` and `NotifyName` constants for names a simulation module declares.
-Each `vars` entry still needs a `scope` there; `visibility` and `initial` are ignored.
+Every `vars` entry there becomes a `ClientVar`, so `scope`, `visibility` and `initial` are
+not needed and are ignored.
 
 ### What `vera20k build` does
 
 1. Reads `vera.json` and checks the variable and notification names (printable ASCII,
-   unique ignoring case).
+   unique ignoring case) and, in a simulation project, each variable's `scope`.
 2. Generates, next to the entry, `generated/vars.ts` (one constant per variable:
    `GlobalVar`, `HouseVar` or `ObjectVar` in a simulation project, `ClientVar` in a
    client project) and `generated/notify.ts` (one `Notify`, or `NotifyName`, per name).
-   Each is written only when its list is not empty, and only when its text changes. A
+   Each is written only when its list is not empty, and only when its text changes; a
+   list that becomes empty deletes its file. `vera20k generate` does this step alone. A
    name becomes an identifier by turning characters other than letters, digits, `_` and
    `$` into `_` (`map.Wave` becomes `map_Wave`).
 3. Compiles the entry together with the SDK's exports file for the kind, with
@@ -115,7 +118,9 @@ Each `vars` entry still needs a `scope` there; `visibility` and `initial` are ig
    unless `--debug`, `-O3 --shrinkLevel 2 --converge`.
    - Top-level code becomes the `vera_init` export (`client_init` for a client module),
      never a `start` section.
-   - There is no `env.abort` import: an `abort` (a failed bounds check, a `throw`) traps.
+   - There is no `env.abort` import: a runtime error (an index out of range, a null
+     dereference, a `throw`) logs `abort: <message> at <file>:<line>:<column>` through
+     the module's own log, then traps.
    - Memory addresses below 1,024 are reserved for the delivery area.
    - Only the lifecycle exports the code registers something for are kept: `on_frame`
      only with an `onFrame` call, `on_events` only with `enqueue`, `enqueueWith`,
@@ -160,9 +165,9 @@ It does not run the engine's other load checks; `asset wasm-check` does.
 - **Views** (`KilledEvent`, `TakeDamageDecision`, `ClickEvent`, ...) read the engine's
   record in place and are valid only during their callback. Each has `record` (the whole
   `EventRecord`); decision views also have `request` (the `DecideRecord`).
-- **One function per registration.** `onRules`, `onScenarioStart`, `onMessage`,
-  `onStart` and `onRender` each keep one function: a later call replaces the earlier.
-  `onFrame` and `onClientEvent` add one each time.
+- **Every registration runs.** `onRules`, `onScenarioStart`, `onMessage`, `onStart`,
+  `onRender`, `onFrame` and `onClientEvent` add a function each time they are called;
+  all of them run, in registration order.
 - **Language.** The code is AssemblyScript-compatible TypeScript; the
   [tutorial](wasm-modules-tutorial-ts.md#6-how-this-typescript-differs) lists what that
   rules out (closures over locals, `for…of`, `try`, unions, untyped object literals).
@@ -187,7 +192,7 @@ Register callbacks in top-level code. The build keeps the engine export each one
 | `onScenarioStart(fn: () => void)` | `on_scenario_start` | Once, when the match starts, after the module's INI records |
 | `onFrame(every: Every, fn: () => void)` | `on_frame` | On every frame divisible by `every.frames`, at the end of the module phase. Call it once per function; each has its own interval |
 | `new Every(frames: i32)` | | The interval for `onFrame` (15 frames are one second at normal speed; below 1 counts as 1) |
-| `onMessage(fn: (sender: House, data: Uint8Array) => void)` | `on_message` | In the module phase before the events, once per message a client module of the same source sent. `data` is the message's bytes |
+| `onMessage(fn: (sender: House, data: Uint8Array) => void)` | `on_message` | In the module phase before the events, once per message a client module of the same source sent. `data` is a copy of the message's bytes |
 | `namedAction<T>(name: string, fn: (e: T) => void): i32` | `on_events` (`on_decide` when `fn` takes a decision view), section `vera.actions` | Names `fn` for INI (`Action=Wasm:name`; `Decide=Wasm:name` for a handler that takes a decision view) and returns its dispatch key. `name` must be a string literal |
 | `actionKey(name: string): i32` | | The dispatch key of a named action (FNV-1a over the lowercased name, bit 30 set), the same the build writes |
 

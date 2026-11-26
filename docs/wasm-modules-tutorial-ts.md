@@ -183,8 +183,9 @@ npm run check        # type-checks src/ with tsc
 
 The result is `build/rules.wasm`, already the name the game wants. The build prints its
 size; it fails with a message when the code does not compile or calls something the game
-would refuse. `npm run check` runs the TypeScript type checker, whose messages are often
-easier to read than the compiler's.
+would refuse. `npm run check` writes `src/generated/` from `vera.json` (`vera20k generate`)
+and runs the TypeScript type checker, whose messages are often easier to read than the
+compiler's. It needs no build first.
 
 While you work, `npm run watch` builds again each time you save a file in `src/` or
 `vera.json`.
@@ -380,9 +381,8 @@ A few ideas to keep in mind:
   made per reference, which keeps the module small and fast. `NO_HANDLE` (0) is "none".
 - **Top-level code is the module's initialization.** Statements at the top level of your
   files run once, when the module loads. Register your callbacks there: `onScenarioStart`,
-  `onFrame`, `namedAction`, `Ini.key`... Each of `onRules`, `onScenarioStart` and
-  `onMessage` takes one function: a second call replaces the first. `onFrame` may be
-  called several times.
+  `onFrame`, `namedAction`, `Ini.key`... Each of them may be called several times: every
+  function you register runs, in registration order.
 - **Errors are values.** A call that writes (an action, a property write) returns a
   `Status`: `Status.Ok`, or the reason, such as `Gone` (the object no longer exists),
   `NotFound` (no such name), `Refused` (the game refused) or `Unsupported` (not in this
@@ -563,8 +563,8 @@ module's own variables are declared in `vera.json`:
 ```
 
 The build writes them into the module's `vera.vars` section and generates
-`src/generated/vars.ts` with one constant per variable, so build once before you import
-it:
+`src/generated/vars.ts` with one constant per variable, which you import (`npm run check`
+and `vera20k generate` write the file too, without compiling):
 
 ```ts
 import { Techno, Var } from "@vera20k/sdk";
@@ -580,7 +580,7 @@ function example(unit: Techno): void {
 ```
 
 `scope` is `global` (one value per match), `house` (one per house) or `object` (one per
-unit or building). `visibility` says which client modules may read it: `private` (the
+unit or building); it is required. `visibility` says which client modules may read it: `private` (the
 house's own player), `allies`, `insight` (object scope), `public`. Variables are saved
 with the game. `notify` declares notification names for client modules (generated into
 `src/generated/notify.ts`); the [client tutorial](wasm-modules-ui-tutorial-ts.md) uses
@@ -823,7 +823,7 @@ function and the reason. Common reasons:
 | Reason in the line | Meaning | What to do |
 | --- | --- | --- |
 | `exceeded its operation budget` | Too much work in one call | Spread it over frames (`new Every(N)`), read in batches with `Techno.read` or `getMany` |
-| `trapped: …` | The code crashed: an index out of bounds, a `null` used as an object, a `throw`, a `fail(...)`, memory used up | Check lengths before indexing, `if (x != null)` before use. The compiler's own error text does not reach the game, so `log` what you are about to do when you hunt a trap |
+| `trapped: …` | The code crashed: an index out of bounds, a `null` used as an object, a `throw`, a `fail(...)`, memory used up | Check lengths before indexing, `if (x != null)` before use. For an index out of range, a `null` dereference or a `throw`, the module's log line just before reads `abort: <message> at <file>:<line>:<column>`, the place in your source |
 | `made an invalid call: …` | The API was used wrongly: an argument out of range, a variable of the wrong scope, a write in a decision handler, a registration outside the top level; the reason follows | Check the call against the [SDK reference](wasm-modules-sdk-ts.md) |
 | `cannot keep up: … event records are waiting` | More events than the module can handle | Bind fewer objects or add filter clauses with `.where(...)` |
 
@@ -836,7 +836,8 @@ function and the reason. Common reasons:
 | `namedAction's name must be a string literal` | `namedAction(NAME, fn)` with a variable; write the name in quotes |
 | `named actions "A" and "B" share dispatch key …` | Two names hash alike; rename one |
 | `variable "…" repeats "…" (names ignore case)` | Two declarations in `vera.json` differ only in case |
-| `Cannot find module './generated/vars'` (from `npm run check`) | Build once: the build writes `src/generated/` from `vera.json` |
+| `vera.json: variable … scope must be global, house or object` | A `vars` entry without a valid `scope` |
+| `Cannot find module './generated/vars'` (from `tsc`) | `src/generated/` is missing: run `npm run check` or `vera20k generate`, which write it from `vera.json`. With no `vars` in `vera.json` there is no `vars.ts` to import |
 
 The build also prints `Last converge was suboptimal.` now and then. That is the optimizer
 talking; the module is fine.

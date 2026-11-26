@@ -144,7 +144,7 @@ npm run build        # 生成 build/rules.wasm
 npm run check        # 用 tsc 检查 src/ 的类型
 ```
 
-编译结果是 `build/rules.wasm`，名字已经是游戏要的。构建会打印文件大小；代码编译不过，或者调用了游戏会拒绝的东西时，构建会失败并说明原因。`npm run check` 运行 TypeScript 的类型检查，它的报错往往比编译器的更好懂。
+编译结果是 `build/rules.wasm`，名字已经是游戏要的。构建会打印文件大小；代码编译不过，或者调用了游戏会拒绝的东西时，构建会失败并说明原因。`npm run check` 先根据 `vera.json` 写出 `src/generated/`（`vera20k generate`），再运行 TypeScript 的类型检查，它的报错往往比编译器的更好懂。不用先构建。
 
 开发时可以用 `npm run watch`：每次保存 `src/` 里的文件或 `vera.json`，就自动重新编译。
 
@@ -304,7 +304,7 @@ AssemblyScript 编译的是 TypeScript 的一个严格子集。SDK 只用 TypeSc
 
 - **数值类型**：写 `i32`（32 位整数）、`i64`（64 位整数）、`f32`、`f64`、`u8`、`bool`。`0` 这样的字面量是 `i32`，要存 64 位值的变量得写明：`let after: i64 = 0`。整数除法结果还是整数：`7 / 2` 是 `3`。游戏里的值和引用都是 `i64`。
 - **引用是数值，不是对象**：`Techno`、`House`、`Cell`、`TypeRef` 等都是 `i64` 的别名。读写属性用命名空间函数，引用放第一个参数：`Techno.health(t)`、`Techno.setMission(t, Mission.Hunt)`。这样每个引用不用单独分配对象，模块又小又快。`NO_HANDLE`（0）表示“没有”。
-- **顶层代码就是初始化**：写在文件顶层的语句会在模块加载时运行一次。回调都在这里登记：`onScenarioStart`、`onFrame`、`namedAction`、`Ini.key`……`onRules`、`onScenarioStart`、`onMessage` 各自只接受一个函数，第二次调用会替换掉第一次的；`onFrame` 可以调用多次。
+- **顶层代码就是初始化**：写在文件顶层的语句会在模块加载时运行一次。回调都在这里登记：`onScenarioStart`、`onFrame`、`namedAction`、`Ini.key`……这些函数都可以调用多次：登记的每个函数都会运行，按登记顺序。
 - **错误是返回值**：写操作（动作、写属性）返回 `Status`：成功是 `Status.Ok`，其他值说明原因，比如 `Gone`（对象已经不存在）、`NotFound`（名字不存在）、`Refused`（游戏拒绝）、`Unsupported`（这个版本还没有）。读取或创建的调用直接返回值，失败时返回空值（`0`、`NO_HANDLE`、`NO_ID`），这时 `lastStatus()` 给出原因。
 - **视图只在回调期间有效**：事件和决定视图（`KilledEvent`、`TakeDamageDecision`……）直接读取引擎的记录。需要的字段请复制到自己的变量里。
 
@@ -465,7 +465,7 @@ function boost(unit: Techno): void {
 }
 ```
 
-构建时 SDK 把它们写进模块的 `vera.vars` 段，并生成 `src/generated/vars.ts`，每个变量一个常量，所以要先构建一次再导入：
+构建时 SDK 把它们写进模块的 `vera.vars` 段，并生成 `src/generated/vars.ts`，每个变量一个常量，导入它就能用（`npm run check` 和 `vera20k generate` 不编译也会写出这个文件）：
 
 ```ts
 import { Techno, Var } from "@vera20k/sdk";
@@ -480,7 +480,7 @@ function example(unit: Techno): void {
 }
 ```
 
-`scope` 是 `global`（整局一个值）、`house`（每个所属方一个）或 `object`（每个单位或建筑一个）。`visibility` 决定哪些客户端模块能读：`private`（这个所属方自己的玩家）、`allies`（盟友）、`insight`（看得见的，只用于 object）、`public`（所有人）。变量会存进存档。`notify` 声明给客户端模块用的通知名（生成到 `src/generated/notify.ts`），[客户端模块教程](wasm-modules-ui-tutorial-ts.zh-CN.md)里会用到。
+`scope` 是 `global`（整局一个值）、`house`（每个所属方一个）或 `object`（每个单位或建筑一个），必填。`visibility` 决定哪些客户端模块能读：`private`（这个所属方自己的玩家）、`allies`（盟友）、`insight`（看得见的，只用于 object）、`public`（所有人）。变量会存进存档。`notify` 声明给客户端模块用的通知名（生成到 `src/generated/notify.ts`），[客户端模块教程](wasm-modules-ui-tutorial-ts.zh-CN.md)里会用到。
 
 ### 触发器的筛选条件和即时动作
 
@@ -682,7 +682,7 @@ asset wasm-check 新地图.map                               # 检查地图里�
 | 提示里的原因 | 意思 | 怎么办 |
 | --- | --- | --- |
 | `exceeded its operation budget` | 一次调用里运算太多，超出预算 | 把工作分摊到多帧（`new Every(N)`），用 `Techno.read` 或 `getMany` 批量读 |
-| `trapped: …` | 代码崩溃了：数组越界、把 `null` 当对象用、`throw`、`fail(...)`、内存用光 | 访问数组前检查长度，用之前先 `if (x != null)`。编译器自带的错误文字不会传到游戏里，排查时先用 `log` 记下要做什么 |
+| `trapped: …` | 代码崩溃了：数组越界、把 `null` 当对象用、`throw`、`fail(...)`、内存用光 | 访问数组前检查长度，用之前先 `if (x != null)`。下标越界、解引用 `null` 或 `throw` 时，模块日志在这一行之前会记下 `abort: <message> at <file>:<line>:<column>`，即源码里出错的位置 |
 | `made an invalid call: …` | 接口用错了，比如参数超范围、变量作用域不对、在决定函数里写东西、在顶层以外注册；后面会写具体原因 | 对照 [SDK 参考](wasm-modules-sdk-ts.zh-CN.md)检查这次调用 |
 | `cannot keep up: … event records are waiting` | 事件积压太多，处理不过来 | 减少绑定范围，或加筛选条件 `.where(...)` |
 
@@ -695,7 +695,8 @@ asset wasm-check 新地图.map                               # 检查地图里�
 | `namedAction's name must be a string literal` | `namedAction(NAME, fn)` 用了变量；把名字直接写在引号里 |
 | `named actions "A" and "B" share dispatch key …` | 两个名字的哈希值撞了，改掉其中一个 |
 | `variable "…" repeats "…" (names ignore case)` | `vera.json` 里两个声明只有大小写不同 |
-| `Cannot find module './generated/vars'`（`npm run check` 报的） | 先构建一次：构建会根据 `vera.json` 写出 `src/generated/` |
+| `vera.json: variable … scope must be global, house or object` | `vars` 里有一项没写 `scope` 或写错了 |
+| `Cannot find module './generated/vars'`（`tsc` 报的） | 没有 `src/generated/`：运行 `npm run check` 或 `vera20k generate`，它们会根据 `vera.json` 写出这些文件。`vera.json` 里没有 `vars` 时就没有 `vars.ts` 可导入 |
 
 构建有时还会打印 `Last converge was suboptimal.`，这是优化器的提示，模块没有问题。
 

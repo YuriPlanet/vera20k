@@ -106,7 +106,7 @@ onMessage((sender: House, data: Uint8Array): void => {
 逐步说明：
 
 1. **`vera.json` 里的 `vars`** 声明一个所属方变量，每个所属方一个值。`private` 表示客户端模块只能读自己玩家那一方的值。变量会存进存档，所以读档后客户端模块马上就能读到正确的值。构建会生成 `src/generated/vars.ts`，里面的 `ReinforcementsBought` 是一个 `HouseVar`。
-2. **`vera.json` 里的 `notify`** 声明模块会发的每个通知名；没声明的通知名会被游戏拒绝。构建会生成 `src/generated/notify.ts`，里面有 `Reinforced`。先构建一次（`npm run build`）再运行 `npm run check`，这两个生成的文件才存在。
+2. **`vera.json` 里的 `notify`** 声明模块会发的每个通知名；没声明的通知名会被游戏拒绝。构建会生成 `src/generated/notify.ts`，里面有 `Reinforced`。`npm run check` 也会写出这两个生成的文件（`vera20k generate`），所以第一次构建之前就能用。
 3. **`onMessage`** 登记处理消息的函数。`sender` 由游戏给出；字节来自某个玩家的机器，可能是任何内容，所以先检查长度和数值再相信它。处理函数在模块阶段运行，每台机器都会运行。
 4. **检查**：每个所属方只能买一次（`ReinforcementsBought` 还是 0），钱要够。读取失败时也会返回 0，所以代码还检查了 `lastStatus()`。先造坦克，成功了再扣钱：地格被占，或者地图上没有 3 号路径点时，`createObject` 返回 `NO_HANDLE`。
 5. **`Reinforced.send(sender)`** 通知那一方的玩家。那个玩家机器上的每个客户端模块都会收到一个 `Notify` 事件。通知只用于显示：不会存档，重新加入的玩家也收不到以前的通知。
@@ -180,7 +180,7 @@ onRender((dt: f32, alpha: f32): void => {
 
 每帧读一次变量花不了多少。客户端模块每个画面帧有 100,000 次运算的预算，大多数界面只用到一小部分。
 
-`onStart` 和 `onRender` 各自只接受一个函数（第二次调用会替换第一次的）；`onClientEvent` 可以为任意多种事件调用，同一种事件也可以调用多次。
+`onStart`、`onRender` 和 `onClientEvent` 都可以调用多次（`onClientEvent` 可以为任意多种事件调用）；登记的每个函数都会运行，按登记顺序。
 
 **从 `vera.json` 生成变量和通知。** 不想手写 `new ClientVar(...)` 和 `new NotifyName(...)` 的话，客户端项目也可以在自己的 `vera.json` 里列出这些名字，构建会像模拟端一样生成常量：
 
@@ -217,7 +217,7 @@ onRender((dt: f32, alpha: f32): void => {
 });
 ```
 
-在客户端项目里，这些条目并不声明任何东西：变量属于模拟模块。每个条目仍然要写 `scope`。另一个来源的模块的名字写成 `mod.Name` 或 `map.Name`。
+在客户端项目里，这些条目并不声明任何东西：变量属于模拟模块。每个条目都生成 `ClientVar`，所以只需要 `name`；`scope` 等其他键会被忽略。另一个来源的模块的名字写成 `mod.Name` 或 `map.Name`。
 
 ## 5. 编译和试玩
 
@@ -285,7 +285,7 @@ Y=60
 
 ## 7. 客户端模块还能做什么
 
-下面每段代码都是一个能单独编译的完整客户端模块。要把它加到按钮模块里，把它 `onStart` 里的内容合并进已有的 `onStart`：一个模块只有一个 `onStart`，第二次调用会替换第一次的。
+下面每段代码都是一个能单独编译的完整客户端模块。要把它加到按钮模块里，把它复制进按钮模块的文件，已有的导入和声明（比如 `BUY_MESSAGE`）不用重复：它的 `onStart` 会在原来那个之后运行。
 
 **热键。** 在 `onStart` 里注册（不要在顶层代码里注册，那里只能做查询），然后比较事件的 `id`：
 
