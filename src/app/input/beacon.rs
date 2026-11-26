@@ -22,7 +22,6 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use crate::app::AppState;
 use crate::app::PlatformState;
 use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
@@ -216,25 +215,46 @@ pub(crate) fn beacon_at_cell(match_state: &MatchState, cell: (u16, u16)) -> bool
 
 /// BandBox_LeftUp's action 0x3C: PlaceBeacon for PlayerPtr unless the
 /// player is out, then the mode is left whatever happened.
-pub(crate) fn place_at_cell(state: &mut AppState, cell: (u16, u16)) {
-    let defeated = state
-        .match_state
+pub(crate) fn place_at_cell(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    cell: (u16, u16),
+) {
+    let defeated = match_state
         .sim_runtime
         .runtime()
         .is_none_or(|runtime| runtime.simulation.local_player_defeated());
-    if !defeated && let Some(house) = beacons::local_house_index(&state.match_state.sim_runtime) {
-        let coord = cell_coord(&state.match_state.sim_runtime, cell);
-        beacons::place_beacon(state, house, coord, None);
+    if !defeated && let Some(house) = beacons::local_house_index(&match_state.sim_runtime) {
+        let coord = cell_coord(&match_state.sim_runtime, cell);
+        beacons::place_beacon(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            house,
+            coord,
+            None,
+        );
     }
     set_place_beacon_mode(
-        &state.platform,
-        &state.renderer,
-        &state.diag,
-        &state.frontend,
-        &mut state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
-        &state.persistence,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         BeaconModeRequest::Off,
     );
 }

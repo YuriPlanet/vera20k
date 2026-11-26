@@ -838,7 +838,15 @@ impl MoviesCapture {
                     self.route.push(
                         json!({"dialog": 0x101, "frame": frame, "action": format!("{action:?}")}),
                     );
-                    App::handle_movies_credits_action(state, action);
+                    let step = App::handle_movies_credits_action(
+                        &state.renderer.gpu,
+                        &mut state.frontend,
+                        &state.persistence.options_profile,
+                        action,
+                    );
+                    if let Some(step) = step {
+                        App::apply_step(state, step);
+                    }
                 }
             }
             (Phase::SinglePlayerPage, PresentedShell::SinglePlayer) => {
@@ -1013,8 +1021,13 @@ impl MoviesCapture {
                 {
                     // A launcher page button slides the column out and back
                     // in on its page (`App::handle_launcher_options_mouse`).
-                    let layout =
-                        crate::app::frontend::shell_layout::launcher_options_layout(state, showing);
+                    let layout = crate::app::frontend::shell_layout::launcher_options_layout(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &state.persistence.options_profile,
+                        showing,
+                    );
                     let rect = layout
                         .button_rect(LauncherButton::Category(category))
                         .context("D5 page button")?;
@@ -1264,8 +1277,13 @@ impl MoviesCapture {
                     && state.frontend.shell_exit.is_none()
                     && Self::slide_settled(&state.frontend, ShellSlideKind::Options)
                 {
-                    let layout =
-                        crate::app::frontend::shell_layout::launcher_options_layout(state, showing);
+                    let layout = crate::app::frontend::shell_layout::launcher_options_layout(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &state.persistence.options_profile,
+                        showing,
+                    );
                     let rect = layout
                         .button_rect(LauncherButton::Exit(LauncherParentResult::Mods))
                         .context("D5 Mods button")?;
@@ -1310,12 +1328,27 @@ impl MoviesCapture {
             }
             (Phase::List, PresentedShell::MovieList) => {
                 if Self::slide_settled(&state.frontend, ShellSlideKind::MovieList) {
+                    // The list's pointer handler, its step applied at the call
+                    // as the routing applies it.
+                    let list_mouse = |state: &mut AppState, down: Option<bool>| {
+                        let step = App::handle_movie_list_mouse(
+                            &state.renderer.gpu,
+                            &mut state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
+                            down,
+                        );
+                        if let Some(step) = step {
+                            App::apply_step(state, step);
+                        }
+                    };
                     if let MoviesTarget::FullList { down_presses } = self.target {
                         state.match_state.input.cursor_x = LIST_DOWN_ARROW_POINT.0;
                         state.match_state.input.cursor_y = LIST_DOWN_ARROW_POINT.1;
                         for _ in 0..down_presses {
-                            App::handle_movie_list_mouse(state, Some(true));
-                            App::handle_movie_list_mouse(state, Some(false));
+                            list_mouse(state, Some(true));
+                            list_mouse(state, Some(false));
                         }
                         self.route.push(json!({"dialog": 0x129, "frame": frame,
                             "action": "press down arrow", "count": down_presses,
@@ -1324,8 +1357,8 @@ impl MoviesCapture {
                     if self.target == MoviesTarget::List0x129Selected {
                         state.match_state.input.cursor_x = LIST_ROW0_POINT.0;
                         state.match_state.input.cursor_y = LIST_ROW0_POINT.1;
-                        App::handle_movie_list_mouse(state, Some(true));
-                        App::handle_movie_list_mouse(state, Some(false));
+                        list_mouse(state, Some(true));
+                        list_mouse(state, Some(false));
                         self.route.push(json!({"dialog": 0x129, "frame": frame,
                             "action": "press row", "point": [LIST_ROW0_POINT.0, LIST_ROW0_POINT.1]}));
                     }
@@ -1335,7 +1368,7 @@ impl MoviesCapture {
                         &state.renderer.gpu,
                         &mut state.match_state.input,
                     );
-                    App::handle_movie_list_mouse(state, None);
+                    list_mouse(state, None);
                     self.route.push(
                         json!({"dialog": 0x129, "frame": frame, "action": "pointer at neutral"}),
                     );
@@ -1656,7 +1689,15 @@ impl MoviesCapture {
         Ok(())
     }
 
-    pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
+    pub(super) fn ready(
+        &self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        persistence: &PersistenceState,
+    ) -> Result<bool> {
         if matches!(
             self.target,
             MoviesTarget::LoadSavedGame0xB7 {
@@ -1667,10 +1708,10 @@ impl MoviesCapture {
             return Ok(self.phase == Phase::SavedGameButtonsChecked);
         }
         if let Some(lan) = self.lan.as_ref() {
-            return lan.ready(&state.frontend, &state.match_state);
+            return lan.ready(frontend, match_state);
         }
         if let Some(wol) = self.wol.as_ref() {
-            return wol.ready(&state.frontend, &state.match_state);
+            return wol.ready(frontend, match_state);
         }
         if matches!(
             self.target,
@@ -1686,30 +1727,26 @@ impl MoviesCapture {
                 self.observed_campaign_runtime.is_some() && self.observed_exit_cascade,
                 "campaign abort return omitted its installed-game/EXIT observations"
             );
-            campaign_abort_cleanup_receipt(
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
-            )?;
+            campaign_abort_cleanup_receipt(frontend, match_state, process_assets)?;
             return steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
-                &state.platform,
-                &state.renderer,
-                &state.frontend,
-                &state.match_state,
-                &state.persistence,
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
             ));
         }
         if let Some(restart) = self.restart.as_ref() {
-            return restart.ready(state);
+            return restart.ready(platform, renderer, frontend, match_state, persistence);
         }
         if let MoviesTarget::CampaignStart { side, target } = self.target {
             if target == CampaignStartTarget::InitialSaved
                 && self.phase == Phase::CampaignInitialSaved
             {
                 initial_save_receipt(
-                    &state.match_state,
-                    &state.process_assets,
-                    &state.persistence.repository,
+                    match_state,
+                    process_assets,
+                    &persistence.repository,
                     &self.restart_save_directory,
                 )?;
                 return Ok(true);
@@ -1718,8 +1755,7 @@ impl MoviesCapture {
                 return Ok(false);
             }
             if target.explicit_scenario().is_none()
-                && let Some(startup) =
-                    crate::app::loading::pump::loading_campaign_startup(&state.frontend)
+                && let Some(startup) = crate::app::loading::pump::loading_campaign_startup(frontend)
             {
                 ensure!(
                     startup
@@ -1731,20 +1767,19 @@ impl MoviesCapture {
             }
             return match target {
                 CampaignStartTarget::LoadingFirst => {
-                    let ready = state.frontend.screen == GameScreen::Loading
-                        && crate::app::loading::pump::next_native_loading_frame(&state.frontend)
+                    let ready = frontend.screen == GameScreen::Loading
+                        && crate::app::loading::pump::next_native_loading_frame(frontend)
                             == Some(crate::app::loading::pump::NextLoadingFrame::First);
                     if ready {
                         ensure!(
-                            crate::app::loading::pump::loading_campaign_startup(&state.frontend)
-                                .is_some(),
+                            crate::app::loading::pump::loading_campaign_startup(frontend).is_some(),
                             "first loading frame has no campaign request"
                         );
                     }
                     Ok(ready)
                 }
                 CampaignStartTarget::FirstLive | CampaignStartTarget::ExplicitFirstLive(_) => {
-                    if state.frontend.screen != GameScreen::InGame {
+                    if frontend.screen != GameScreen::InGame {
                         return Ok(false);
                     }
                     ensure!(
@@ -1752,28 +1787,28 @@ impl MoviesCapture {
                         "first live frame was not preceded by ordinary campaign loading"
                     );
                     campaign_runtime_receipt(
-                        &state.platform,
-                        &state.renderer,
-                        &state.frontend.screen,
-                        &state.match_state,
-                        &state.persistence,
+                        platform,
+                        renderer,
+                        &frontend.screen,
+                        match_state,
+                        persistence,
                     )?;
                     Ok(true)
                 }
                 CampaignStartTarget::InitialSaved => Ok(false),
                 CampaignStartTarget::Opening(_) => {
-                    if state.frontend.screen != GameScreen::InGame {
+                    if frontend.screen != GameScreen::InGame {
                         return Ok(false);
                     }
                     self.opening
                         .as_ref()
                         .context("opening capture missing")?
                         .ready(
-                            &state.platform,
-                            &state.renderer,
-                            &state.frontend.screen,
-                            &state.match_state,
-                            &state.persistence,
+                            platform,
+                            renderer,
+                            &frontend.screen,
+                            match_state,
+                            persistence,
                         )
                 }
                 CampaignStartTarget::AbortReturn => unreachable!("handled above"),
@@ -1784,19 +1819,18 @@ impl MoviesCapture {
         if self.target == MoviesTarget::ListBackFirstFrame {
             // Checked after acquisition: once the teardown has committed, this
             // very frame must be the recreated page's entry tick 0.
-            if self.phase != Phase::SlideOut || state.frontend.shell_exit.is_some() {
+            if self.phase != Phase::SlideOut || frontend.shell_exit.is_some() {
                 return Ok(false);
             }
-            let entry_tick = state
-                .frontend
+            let entry_tick = frontend
                 .shell_first_paint_slide
                 .as_ref()
                 .map(|wave| wave.tick());
             ensure!(
-                state.frontend.shell_route == ShellRoute::MoviesAndCredits && entry_tick == Some(0),
+                frontend.shell_route == ShellRoute::MoviesAndCredits && entry_tick == Some(0),
                 "the frame after the 0x129 teardown is not the 0x101 entry tick 0 \
                  (route M&C {}, entry tick {entry_tick:?})",
-                state.frontend.shell_route == ShellRoute::MoviesAndCredits
+                frontend.shell_route == ShellRoute::MoviesAndCredits
             );
             return Ok(true);
         }
@@ -1821,8 +1855,7 @@ impl MoviesCapture {
             | MoviesTarget::Campaign0x94 {
                 entry_tick: None, ..
             } => {
-                state.frontend.shell_page_title.is_terminal()
-                    && state.frontend.shell_status_line.is_terminal()
+                frontend.shell_page_title.is_terminal() && frontend.shell_status_line.is_terminal()
             }
             MoviesTarget::Campaign0x94 {
                 entry_tick: Some(_),
@@ -1842,8 +1875,7 @@ impl MoviesCapture {
             | MoviesTarget::Options0xD5 {
                 entry_tick: None, ..
             } => {
-                state.frontend.shell_page_title.is_terminal()
-                    && state.frontend.shell_status_line.is_terminal()
+                frontend.shell_page_title.is_terminal() && frontend.shell_status_line.is_terminal()
             }
             MoviesTarget::Credits { .. }
             | MoviesTarget::CampaignStart { .. }
@@ -1863,49 +1895,46 @@ impl MoviesCapture {
             MoviesTarget::Lan(_) => unreachable!("LAN driver handled above"),
             MoviesTarget::Wol(_) => unreachable!("WOL driver handled above"),
             MoviesTarget::WolWelcome { .. } => {
-                state.frontend.shell_page_title.is_terminal()
-                    && state.frontend.shell_status_line.is_terminal()
+                frontend.shell_page_title.is_terminal() && frontend.shell_status_line.is_terminal()
             }
         };
         if !heading_settled {
             return Ok(false);
         }
         let expected = match self.target {
-            MoviesTarget::Page0x101 => state.frontend.shell_route == ShellRoute::MoviesAndCredits,
+            MoviesTarget::Page0x101 => frontend.shell_route == ShellRoute::MoviesAndCredits,
             MoviesTarget::Mods { press } => {
-                state.frontend.shell_route == ShellRoute::Mods
-                    && state.frontend.mods.page.is_some()
-                    && state.frontend.shell_message_box.is_some() == (press != ModsPress::Nothing)
+                frontend.shell_route == ShellRoute::Mods
+                    && frontend.mods.page.is_some()
+                    && frontend.shell_message_box.is_some() == (press != ModsPress::Nothing)
             }
             MoviesTarget::List0x129
             | MoviesTarget::List0x129Selected
             | MoviesTarget::FullList { .. } => {
-                state.frontend.shell_route == ShellRoute::MovieList
-                    && state.frontend.movie_list.is_some()
+                frontend.shell_route == ShellRoute::MovieList && frontend.movie_list.is_some()
             }
-            MoviesTarget::Credits { .. } => state.frontend.credits_roll.is_some(),
-            MoviesTarget::SneakPeek { .. } => state.frontend.fullscreen_movie.is_some(),
-            MoviesTarget::ExitConfirm => state.frontend.shell_message_box.is_some(),
+            MoviesTarget::Credits { .. } => frontend.credits_roll.is_some(),
+            MoviesTarget::SneakPeek { .. } => frontend.fullscreen_movie.is_some(),
+            MoviesTarget::ExitConfirm => frontend.shell_message_box.is_some(),
             MoviesTarget::NetworkBounce
             | MoviesTarget::WolWelcome {
                 press: WolPress::MainMenu,
                 ..
             } => {
-                state.frontend.shell_exit.is_none()
+                frontend.shell_exit.is_none()
                     && crate::app::frontend::shell_transition::current_shell_slide_target(
-                        &state.frontend,
-                        &state.match_state,
+                        frontend,
+                        match_state,
                     ) == Some(ShellSlideKind::MainMenu)
             }
             MoviesTarget::WolWelcome {
                 press: WolPress::MyInformation,
                 ..
-            } => wol_api_missing_shown(&state.frontend.wol, &state.process_assets),
+            } => wol_api_missing_shown(&frontend.wol, process_assets),
             MoviesTarget::WolWelcome { entry_tick, .. } => {
-                state.frontend.shell_route == ShellRoute::Wol
+                frontend.shell_route == ShellRoute::Wol
                     && entry_tick.is_none_or(|target| {
-                        state
-                            .frontend
+                        frontend
                             .shell_first_paint_slide
                             .as_ref()
                             .map(|wave| wave.tick())
@@ -1913,19 +1942,15 @@ impl MoviesCapture {
                     })
             }
             MoviesTarget::SlideOut { kind, tick } => {
-                crate::app::frontend::shell_transition::shell_exit_wave(
-                    &state.frontend.shell_exit,
-                    kind,
-                )
-                .map(|wave| wave.tick())
+                crate::app::frontend::shell_transition::shell_exit_wave(&frontend.shell_exit, kind)
+                    .map(|wave| wave.tick())
                     == Some(tick)
             }
             MoviesTarget::Campaign0x94 { entry_tick, .. } => {
-                state.frontend.shell_route == ShellRoute::Campaign
-                    && state.frontend.campaign.is_some()
+                frontend.shell_route == ShellRoute::Campaign
+                    && frontend.campaign.is_some()
                     && entry_tick.is_none_or(|target| {
-                        state
-                            .frontend
+                        frontend
                             .shell_first_paint_slide
                             .as_ref()
                             .map(|wave| wave.tick())
@@ -1933,11 +1958,10 @@ impl MoviesCapture {
                     })
             }
             MoviesTarget::LoadSavedGame0xB7 { entry_tick, .. } => {
-                state.frontend.shell_route == ShellRoute::LoadSavedGame
-                    && state.frontend.load_saved_game.is_some()
+                frontend.shell_route == ShellRoute::LoadSavedGame
+                    && frontend.load_saved_game.is_some()
                     && entry_tick.is_none_or(|target| {
-                        state
-                            .frontend
+                        frontend
                             .shell_first_paint_slide
                             .as_ref()
                             .map(|wave| wave.tick())
@@ -1951,14 +1975,12 @@ impl MoviesCapture {
                 category,
                 ..
             } => {
-                state
-                    .frontend
+                frontend
                     .options_dialog
                     .as_ref()
                     .is_some_and(|dialog| dialog.category() == category)
                     && entry_tick.is_none_or(|target| {
-                        state
-                            .frontend
+                        frontend
                             .shell_first_paint_slide
                             .as_ref()
                             .map(|wave| wave.tick())
@@ -1968,12 +1990,12 @@ impl MoviesCapture {
             MoviesTarget::ListBackFirstFrame => unreachable!("handled above"),
             MoviesTarget::CampaignStart { .. } => unreachable!("handled above"),
             MoviesTarget::CampaignBack => {
-                state.frontend.screen == GameScreen::MainMenu
-                    && state.frontend.shell_route == ShellRoute::SinglePlayer
-                    && state.frontend.campaign.is_none()
-                    && state.frontend.loading_session.is_none()
-                    && state.frontend.shell_exit.is_none()
-                    && Self::slide_settled(&state.frontend, ShellSlideKind::SinglePlayer)
+                frontend.screen == GameScreen::MainMenu
+                    && frontend.shell_route == ShellRoute::SinglePlayer
+                    && frontend.campaign.is_none()
+                    && frontend.loading_session.is_none()
+                    && frontend.shell_exit.is_none()
+                    && Self::slide_settled(frontend, ShellSlideKind::SinglePlayer)
             }
         };
         ensure!(expected, "movies capture route changed before readback");

@@ -1,8 +1,14 @@
 //! Presentation effects of original input46/47. ScenarioSession is the sole
 //! gameplay lock owner; this leaf coordinates existing input/display owners.
 
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 
 /// Native mirror A8ED9C is copied from Scenario+35A2. App consumers read the
 /// session owner directly, including before its presentation effect drains.
@@ -36,13 +42,33 @@ pub(crate) fn cancel_placement_modes(
 /// Ordered effect emitted after the authoritative Scenario mutation. The
 /// prior flag is carried by that owner: Unlock684290 restores cursor depth
 /// only for prior byte1, including after repeated locks.
-pub(crate) fn apply_lock_effect(state: &mut AppState, locked: bool, was_locked: bool) {
+pub(crate) fn apply_lock_effect(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    locked: bool,
+    was_locked: bool,
+) {
     if locked {
-        crate::app::input::chrome_input::cancel(&mut state.match_state.match_presentation);
-        state.match_state.input.reset_cursor_shape();
+        crate::app::input::chrome_input::cancel(&mut match_state.match_presentation);
+        match_state.input.reset_cursor_shape();
     }
-    lock_input(&mut state.match_state.input, locked, was_locked);
-    crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+    lock_input(&mut match_state.input, locked, was_locked);
+    crate::app::presentation::sidebar_render::refresh_sidebar_projection(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+    );
 }
 
 /// The input half of a lock. Lock_User_Input 0x00684240 (and the pause's

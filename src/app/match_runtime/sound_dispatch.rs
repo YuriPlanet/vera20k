@@ -433,7 +433,8 @@ pub(super) fn dispatch_sim_sound_events(
                 }
                 // Ares SW_Protect::Activate10074750: StartSound at the cell.
                 if ares
-                    && sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Protect
+                    && sw.kind.ares_handler_kind()
+                        == crate::rules::superweapon_type::SuperWeaponKind::Protect
                     && let Some(sound_id) = sw.start_sound.as_deref()
                 {
                     output.push(GameSoundEvent::VocAt {
@@ -3576,16 +3577,31 @@ mod tests {
     fn construction_detection_uses_the_shared_extension_building_gate() {
         let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ini_parser::IniFile;
-        // The Iron Curtain keeps its stock handler under Ares, so its line
-        // comes off the list index: slot 0 is EVA_NuclearSiloDetected.
+        use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
+        use crate::rules::sound_ini::EvaRegistry;
+        use std::sync::Arc;
         let ini = crate::sim::arena_fixture::clear_ground_ini(
             "[BuildingTypes]\n0=AUX\n1=VETO\n[AUX]\nStrength=100\n[VETO]\nStrength=100\n[SuperWeaponTypes]\n0=Gate\n[Gate]\nType=IronCurtain\nSW.AuxBuildings=AUX\nSW.NegBuildings=VETO\n",
         );
-        let rules = RuleSet::from_ini_with_fixed_art_for_test(
-            &ini,
-            &IniFile::from_str("[AUX]\nFoundation=1x1\n[VETO]\nFoundation=1x1\n"),
+        // SW_Protect::Initialize (Ares.dll 0x10074B60) resolves this line
+        // against the fixed EVA registry even when the curtain is in slot 0.
+        let mut rules_owner = NativeRulesProcessOwner::from_cold_start_sources(
+            ini,
+            None,
+            IniFile::from_str("[AUX]\nFoundation=1x1\n[VETO]\nFoundation=1x1\n"),
+            Arc::default(),
+            Arc::new(EvaRegistry::from_ini(&IniFile::from_str(
+                "[DialogList]\n0=EVA_IronCurtainDetected\n",
+            ))),
         )
         .unwrap();
+        let (rules, ..) = rules_owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::NonCampaign(None),
+                &IniFile::empty(),
+            )
+            .unwrap()
+            .into_parts();
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 23);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
@@ -3611,7 +3627,7 @@ mod tests {
         sim.spawn_object_at_height("AUX", "Russians", 6, 6, 0, 0, &rules)
             .unwrap();
         assert!(
-            matches!(hear(&sim).as_slice(), [GameSoundEvent::Eva { event, .. }] if event == "EVA_NuclearSiloDetected")
+            matches!(hear(&sim).as_slice(), [GameSoundEvent::Eva { event, .. }] if event == "EVA_IronCurtainDetected")
         );
         sim.spawn_object_at_height("VETO", "Russians", 8, 8, 0, 0, &rules)
             .unwrap();

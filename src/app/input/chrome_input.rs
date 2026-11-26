@@ -1242,7 +1242,18 @@ pub(crate) fn play_gui_main_button_sound(
 /// identically (study §2.2: `key & ~0x4000`). The retained sidebar view the
 /// press ran on is read before the action that may change it.
 fn apply_result(state: &mut AppState, id: u16, right: bool) {
-    if command_bar::apply(state, id, right) {
+    if command_bar::apply(
+        &mut state.platform,
+        &mut state.renderer,
+        &state.diag,
+        &mut state.frontend,
+        &mut state.match_state,
+        &mut state.process_assets,
+        &mut state.audio,
+        &mut state.persistence,
+        id,
+        right,
+    ) {
         return;
     }
     let (side2_tiles, cameos) = current_sidebar_view(&state.match_state.match_presentation)

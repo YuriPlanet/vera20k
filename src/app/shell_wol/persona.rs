@@ -9,13 +9,14 @@ use super::leaf::{self, Pointer};
 use super::service::{self, WolServiceRequest};
 use super::{WolPage, WolProvider};
 use crate::app::frontend::shell_layout;
-use crate::app::frontend::shell_transition::{ShellExitThen, ShellSlideKind};
+use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::persistence::wol_profile::{WolInfoFile, WolPersona};
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
+use crate::app::shell_main_menu::ClientStep;
 use crate::app::shell_wol::WolVisit;
 use crate::app::{App, AppState};
 use crate::assets::csf_file::{CsfArg, format_csf};
@@ -287,22 +288,24 @@ pub(super) fn open_auto_login_query(
 }
 
 /// `0x112`'s teardown has run: Yes stores the nickname as AutoLogin, No the
-/// Ask flag; `0x0072BCF0` frees the art and the flow returns 1.
-pub(crate) fn commit_auto_login(state: &mut AppState, answer: AutoLoginAnswer) {
-    super::leaf::free_art(&mut state.frontend.wol_art, AUTO_LOGIN_DIALOG);
-    if let Some(file) = info_file(
-        state.frontend.wol.as_ref(),
-        state.platform.game_config.as_ref(),
-    ) {
+/// Ask flag; `0x0072BCF0` frees the art and the flow returns 1, the
+/// returned step.
+pub(crate) fn commit_auto_login(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    answer: AutoLoginAnswer,
+) -> ClientStep {
+    super::leaf::free_art(&mut frontend.wol_art, AUTO_LOGIN_DIALOG);
+    if let Some(file) = info_file(frontend.wol.as_ref(), game_config) {
         match answer {
-            AutoLoginAnswer::Yes => file.set_auto_login(&state.frontend.wol_account.nickname),
+            AutoLoginAnswer::Yes => file.set_auto_login(&frontend.wol_account.nickname),
             AutoLoginAnswer::No { ask_again } => file.set_ask_auto_login(ask_again),
         }
     }
-    if let Some(visit) = state.frontend.wol.as_mut() {
+    if let Some(visit) = frontend.wol.as_mut() {
         visit.page = WolPage::Backdrop { wait: None };
     }
-    service::finish_login(state);
+    ClientStep::Now(Box::new(service::finish_login))
 }
 
 /// `0x007A2970`'s modal `0x122` (`0x006241F0`) over the empty backdrop;
@@ -350,12 +353,18 @@ pub(crate) fn add_buddy_text(
     ))
 }
 
-/// `0x122`'s teardown has run with Yes or No.
-pub(crate) fn commit_add_buddy(state: &mut AppState, yes: bool, ask_again: bool) {
-    if let Some(visit) = state.frontend.wol.as_mut() {
+/// `0x122`'s teardown has run with Yes or No; the welcome or the online
+/// lobby is the returned step.
+pub(crate) fn commit_add_buddy(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    yes: bool,
+    ask_again: bool,
+) -> ClientStep {
+    if let Some(visit) = frontend.wol.as_mut() {
         visit.page = WolPage::Backdrop { wait: None };
     }
-    super::quick_match::add_buddy_answered(state, yes, ask_again);
+    super::quick_match::add_buddy_answered(frontend, game_config, yes, ask_again)
 }
 
 /// `0xFE`'s teardown has run with its result.
@@ -439,7 +448,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     );
     for event in events {
         let gui = state.frontend.shell_controller.gui_mut();
-        let close: Option<(ShellSlideKind, ShellExitThen)> =
+        let close: Option<ClientStep> =
             match (event, &state.frontend.wol.as_ref().map(|visit| &visit.page)) {
                 // LBN_SELCHANGE (0x00796C3C): OK follows the selection.
                 (PageEvent::Selected(LOCALE_LIST, _), _) => {
@@ -448,11 +457,16 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                 }
                 (PageEvent::Activated(id), Some(WolPage::AutoLoginQuery)) => {
                     WolAutoLoginQuery::activate(id, page::checked(gui, root, DO_NOT_ASK)).map(
-                        |answer| -> (ShellSlideKind, ShellExitThen) {
-                            (
+                        |answer| {
+                            ClientStep::Leave(
                                 ShellSlideKind::WolAutoLoginQuery,
                                 Box::new(move |state: &mut AppState| {
-                                    commit_auto_login(state, answer)
+                                    let step = commit_auto_login(
+                                        &mut state.frontend,
+                                        state.platform.game_config.as_ref(),
+                                        answer,
+                                    );
+                                    App::apply_step(state, step);
                                 }),
                             )
                         },
@@ -462,10 +476,16 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                 // (0x007A2B2F, 0x007A2B66).
                 (PageEvent::Activated(id), Some(WolPage::AddBuddyQuery(_))) => {
                     let (yes, ask_again) = (id == ACCEPT, !page::checked(gui, root, DO_NOT_ASK));
-                    Some((
+                    Some(ClientStep::Leave(
                         ShellSlideKind::WolAddBuddyQuery,
                         Box::new(move |state: &mut AppState| {
-                            commit_add_buddy(state, yes, ask_again)
+                            let step = commit_add_buddy(
+                                &mut state.frontend,
+                                state.platform.game_config.as_ref(),
+                                yes,
+                                ask_again,
+                            );
+                            App::apply_step(state, step);
                         }),
                     ))
                 }
@@ -473,8 +493,8 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                     let selected = page::int(gui, root, LOCALE_LIST, Prop::Selected);
                     locale
                         .activate(id, selected.and_then(|row| usize::try_from(row).ok()))
-                        .map(|locale| -> (ShellSlideKind, ShellExitThen) {
-                            (
+                        .map(|locale| {
+                            ClientStep::Leave(
                                 ShellSlideKind::WolLocale,
                                 Box::new(move |state: &mut AppState| commit_locale(state, locale)),
                             )
@@ -482,8 +502,8 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                 }
                 _ => None,
             };
-        if let Some((kind, then)) = close {
-            App::leave_shell_dialog(state, kind, then);
+        if let Some(step) = close {
+            App::apply_step(state, step);
         }
     }
 }

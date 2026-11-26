@@ -657,48 +657,51 @@ impl TacticalCaptureSession {
 
     pub(in crate::app::diagnostics::tactical_capture::session) fn map_render_readiness(
         &self,
-        state: &AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        persistence: &PersistenceState,
         output: &GameRenderOutput,
     ) -> Result<(bool, Value)> {
-        validate_loaded_resources(&state.frontend, &state.match_state, &state.process_assets)?;
-        let unit_atlas =
-            unit_atlas_statistics(state.match_state.match_presentation.unit_atlas.as_ref())?;
+        validate_loaded_resources(frontend, match_state, process_assets)?;
+        let unit_atlas = unit_atlas_statistics(match_state.match_presentation.unit_atlas.as_ref())?;
         let sidebar_drawn = output
-            .drawn_sidebar_view(&state.match_state.match_presentation)
+            .drawn_sidebar_view(&match_state.match_presentation)
             .is_some();
         let ready = sidebar_drawn
-            && !state.match_state.paused()
-            && !state.frontend.main_menu_dialog_open()
-            && !state.diag.debug_show_pathgrid
-            && !state.diag.debug_show_cell_grid
-            && !state.diag.debug_show_heightmap
+            && !match_state.paused()
+            && !frontend.main_menu_dialog_open()
+            && !diag.debug_show_pathgrid
+            && !diag.debug_show_cell_grid
+            && !diag.debug_show_heightmap
             && self.focus_violations == 0
             && self.input_violations == 0;
-        let static_default_cursor =
-            crate::app::presentation::ui_overlays::static_default_cursor(state);
-        let camera_input_idle = crate::app::input::camera::camera_input_idle(
-            &state.renderer,
-            &state.frontend.screen,
-            &state.match_state.input,
+        let static_default_cursor = crate::app::presentation::ui_overlays::static_default_cursor(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
         );
-        let cursor_position = [
-            state.match_state.input.cursor_x,
-            state.match_state.input.cursor_y,
-        ];
+        let camera_input_idle = crate::app::input::camera::camera_input_idle(
+            renderer,
+            &frontend.screen,
+            &match_state.input,
+        );
+        let cursor_position = [match_state.input.cursor_x, match_state.input.cursor_y];
         ensure!(
             ready && static_default_cursor && camera_input_idle,
             "map observation requires every draw ready with a static cursor and idle camera input: ready={ready}, static_cursor={static_default_cursor}, camera_idle={camera_input_idle}, cursor_feedback={:?}, cursor_position={cursor_position:?}",
             crate::app::input::cursor::current_cursor_feedback_kind(
-                &state.platform,
-                &state.renderer,
-                &state.frontend,
-                &state.match_state,
-                &state.persistence,
-                &crate::app::input::cursor::CursorTargets::read(
-                    &state.platform,
-                    &state.frontend,
-                    &state.match_state
-                ),
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
+                &crate::app::input::cursor::CursorTargets::read(platform, frontend, match_state),
             )
         );
         let profile = &self
@@ -715,22 +718,22 @@ impl TacticalCaptureSession {
         // Existing frame-boundary timer: up to 60 wall intervals, including
         // simulation, diagnostic observation and presentation/vsync work.
         // This is capture cadence metadata, not GPU time or ordinary play FPS.
-        let frame_wall_mean_ms = state.diag.frame_timer.frame_ms_mean();
+        let frame_wall_mean_ms = diag.frame_timer.frame_ms_mean();
         ensure!(
             frame_wall_mean_ms.is_finite() && frame_wall_mean_ms >= 0.0,
             "map observation frame wall mean is invalid"
         );
         let mut render = json!({"ready": ready, "sidebar_view_present": sidebar_drawn,
             "instance_counts": super::super::super::evidence::RenderInstanceCountEvidence::from_counts(output.instance_counts)?,
-            "internal_extent": [state.renderer.render_width(&state.frontend.screen), state.renderer.render_height(&state.frontend.screen)],
-            "surface_extent": [state.renderer.gpu.config.width, state.renderer.gpu.config.height],
-            "gpu": super::super::super::evidence::GpuAdapterEvidence::from_observation(state.renderer.gpu.capture_adapter_observation()),
+            "internal_extent": [renderer.render_width(&frontend.screen), renderer.render_height(&frontend.screen)],
+            "surface_extent": [renderer.gpu.config.width, renderer.gpu.config.height],
+            "gpu": super::super::super::evidence::GpuAdapterEvidence::from_observation(renderer.gpu.capture_adapter_observation()),
             "unit_atlas": unit_atlas,
             "frame_wall_mean_ms": frame_wall_mean_ms,
             "neutral_input": {"static_default_cursor": static_default_cursor, "camera_input_idle": camera_input_idle},
             "camera": {"requested_cell": profile.camera_cell,
-                "top_left": [state.match_state.input.camera_x, state.match_state.input.camera_y],
-                "zoom": state.match_state.input.zoom_level},
+                "top_left": [match_state.input.camera_x, match_state.input.camera_y],
+                "zoom": match_state.input.zoom_level},
         });
         if profile.cursor_position.is_some() {
             render["cursor_position"] = json!(cursor_position);

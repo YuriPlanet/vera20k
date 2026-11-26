@@ -1100,11 +1100,15 @@ fn main() -> Result<(), String> {
             std::process::exit(2);
         }
     };
+    match args.threads {
+        Some(threads) => use_worker_threads(threads)?,
+        #[cfg(not(target_arch = "wasm32"))]
+        None => vera20k_core::sim::parallel::start_worker_pool(),
+        #[cfg(target_arch = "wasm32")]
+        None => {}
+    }
     if args.isolation_report.is_some() {
         return sim_bench_isolation::run(&args);
-    }
-    if let Some(threads) = args.threads {
-        use_worker_threads(threads)?;
     }
     let computers = match args.scenario {
         ScenarioKind::March => 0,
@@ -1322,11 +1326,11 @@ fn main() -> Result<(), String> {
     Ok(())
 }
 
-/// Give the worker pool `threads` threads. It must run before anything uses
-/// the pool.
+/// Give the game's worker pool `threads` threads. It must run before anything
+/// uses the pool.
 #[cfg(not(target_arch = "wasm32"))]
 fn use_worker_threads(threads: usize) -> Result<(), String> {
-    rayon::ThreadPoolBuilder::new()
+    vera20k_core::sim::parallel::worker_pool()
         .num_threads(threads)
         .build_global()
         .map_err(|error| format!("--threads: {error}"))

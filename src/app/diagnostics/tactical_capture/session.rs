@@ -37,6 +37,7 @@ use crate::app::frontend::state::FrontendState;
 use crate::app::match_bootstrap::{MatchSeedClock, MatchSeedSource, StartupSessionClassification};
 use crate::app::match_runtime::sim_host::SimHost;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::render::GameRenderOutput;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
@@ -410,7 +411,14 @@ impl TacticalCaptureSession {
         }
 
         if self.preparing_random_map {
-            crate::app::App::poll_random_map_generation(state);
+            let (_, step) = crate::app::App::poll_random_map_generation(
+                &mut state.frontend,
+                &mut state.match_state.sim_runtime,
+                &mut state.process_assets,
+            );
+            if let Some(step) = step {
+                crate::app::App::apply_step(state, step);
+            }
             if state.frontend.random_map_generation.is_some() {
                 return Ok(());
             }
@@ -1030,24 +1038,47 @@ impl TacticalCaptureSession {
     /// only when the full player-visible tuple is true.
     pub(crate) fn observe_after_render(
         &mut self,
-        state: &AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        persistence: &PersistenceState,
         output: &GameRenderOutput,
     ) -> Result<bool> {
         self.render_frames = self.render_frames.saturating_add(1);
         if self.request.map_profile().is_some() {
-            self.observe_map_draw(&state.diag, &state.match_state, &state.renderer.gpu, output)?;
+            self.observe_map_draw(diag, match_state, &renderer.gpu, output)?;
         }
         if !self.controller.initialized() {
             return Ok(false);
         }
         ensure!(
-            state.frontend.screen == GameScreen::InGame,
+            frontend.screen == GameScreen::InGame,
             "tactical render observation is not InGame"
         );
         let (ready, render_evidence) = if self.request.map_profile().is_some() {
-            self.map_render_readiness(state, output)?
+            self.map_render_readiness(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                persistence,
+                output,
+            )?
         } else {
-            self.render_readiness(state, output)?
+            self.render_readiness(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                persistence,
+                output,
+            )?
         };
         self.last_render_ready = ready;
         self.last_render_evidence = Some(render_evidence);
@@ -1058,7 +1089,13 @@ impl TacticalCaptureSession {
                 !self.readback_started,
                 "tactical readback was already armed"
             );
-            self.fingerprint_before_readback = Some(self.build_fingerprint(state)?);
+            self.fingerprint_before_readback = Some(self.build_fingerprint(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
+            )?);
             self.readback_started = true;
             Ok(true)
         } else {
@@ -1068,23 +1105,23 @@ impl TacticalCaptureSession {
 
     fn render_readiness(
         &self,
-        state: &AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
         output: &GameRenderOutput,
     ) -> Result<(bool, Value)> {
         let profile = self.request.profile()?;
         // The profile seals the original sidebar geometry, which a layout
         // file in the game folder or a mod MIX would move.
         ensure!(
-            state
-                .match_state
-                .match_presentation
-                .match_layouts
-                .is_original(),
+            match_state.match_presentation.match_layouts.is_original(),
             "tactical capture requires the original interface: remove {} from the game files",
             crate::ui::match_layout::FILE_NAME
         );
-        let sim = state
-            .match_state
+        let sim = match_state
             .sim_runtime
             .runtime()
             .map(|rt| &rt.simulation)
@@ -1099,107 +1136,94 @@ impl TacticalCaptureSession {
                 SidebarTheme::Yuri
             }
         };
-        let actual_theme = crate::app::presentation::sidebar_render::current_sidebar_theme(
-            &state.frontend,
-            &state.match_state,
-        );
-        let radar_phase_online = state
-            .match_state
+        let actual_theme =
+            crate::app::presentation::sidebar_render::current_sidebar_theme(frontend, match_state);
+        let radar_phase_online = match_state
             .match_presentation
             .radar_anim
             .as_ref()
             .is_some_and(|radar| radar.is_minimap_visible());
-        let radar_source = state
-            .match_state
+        let radar_source = match_state
             .match_presentation
             .radar_animation_source
             .as_ref()
             .context("radar animation lacks construction provenance")?;
         let source_evidence = SidebarSourceEvidence::from_identity(radar_source);
         let aperture = crate::app::presentation::sidebar_render::active_minimap_screen_rect(
-            &state.platform,
-            &state.renderer,
-            &state.frontend,
-            &state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
         );
-        let insets = state
-            .match_state
+        let insets = match_state
             .match_presentation
             .radar_content_insets
             .context("radar content insets are absent")?;
-        let drawn_sidebar = output.drawn_sidebar_view(&state.match_state.match_presentation);
+        let drawn_sidebar = output.drawn_sidebar_view(&match_state.match_presentation);
         let render_evidence = SidebarRenderEvidence::from_render_output(
             output,
             drawn_sidebar,
             aperture,
             insets,
             [
-                state.renderer.render_width(&state.frontend.screen),
-                state.renderer.render_height(&state.frontend.screen),
+                renderer.render_width(&frontend.screen),
+                renderer.render_height(&frontend.screen),
             ],
         )?;
         let sidebar = drawn_sidebar.context("production render emitted no SidebarView")?;
-        let spec = state.match_state.match_presentation.sidebar_layout_spec;
+        let spec = match_state.match_presentation.sidebar_layout_spec;
         let top_of = |part: SidebarPart| sidebar.layout.origin(&spec, part)[1];
         let panel_contains_aperture = aperture.x >= sidebar.panel_rect.x
             && aperture.y >= 0.0
             && aperture.x + aperture.w <= sidebar.panel_rect.x + sidebar.panel_rect.w
-            && aperture.y + aperture.h
-                <= state.renderer.render_height(&state.frontend.screen) as f32;
+            && aperture.y + aperture.h <= renderer.render_height(&frontend.screen) as f32;
         let cursor_id = crate::app::input::cursor::current_cursor_feedback_kind(
-            &state.platform,
-            &state.renderer,
-            &state.frontend,
-            &state.match_state,
-            &state.persistence,
-            &crate::app::input::cursor::CursorTargets::read(
-                &state.platform,
-                &state.frontend,
-                &state.match_state,
-            ),
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+            &crate::app::input::cursor::CursorTargets::read(platform, frontend, match_state),
         )
         .and_then(crate::app::input::cursor::cursor_id_for_feedback)
         .unwrap_or(CursorId::Default);
         let cursor_ready = crate::app::state::use_software_cursor(
-            &state.platform,
-            &state.renderer,
-            &state.frontend,
-            &state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
         ) && cursor_id == CursorId::Default
-            && state.match_state.input.cursor_x == profile.capture.post_load_cursor.x as f32
-            && state.match_state.input.cursor_y == profile.capture.post_load_cursor.y as f32;
+            && match_state.input.cursor_x == profile.capture.post_load_cursor.x as f32
+            && match_state.input.cursor_y == profile.capture.post_load_cursor.y as f32;
         let power = sim.power_states().get(&owner_id);
         let power_ready = power.is_some_and(|power| {
             power.total_output() >= power.total_drain()
                 && !power.is_low_power()
                 && power.blackout_remaining(sim.session().binary_frame()) == 0
         });
-        let radar_authority = crate::app::state::active_rules(&state.frontend, &state.match_state)
+        let radar_authority = crate::app::state::active_rules(frontend, match_state)
             .is_some_and(|rules| crate::sim::radar::has_radar_for_owner(sim, rules, owner));
-        let bound_structures_ready = self.bound_structures_ready(&state.match_state.sim_runtime)?;
-        let no_modal_or_debug = !state.match_state.paused()
-            && !state.frontend.main_menu_dialog_open()
-            && !state.diag.debug_show_pathgrid
-            && !state.diag.debug_show_cell_grid
-            && !state.diag.debug_show_heightmap
-            && state.match_state.input.targeting_mode.is_none()
-            && state.match_state.input.building_placement_preview.is_none()
-            && state
-                .match_state
+        let bound_structures_ready = self.bound_structures_ready(&match_state.sim_runtime)?;
+        let no_modal_or_debug = !match_state.paused()
+            && !frontend.main_menu_dialog_open()
+            && !diag.debug_show_pathgrid
+            && !diag.debug_show_cell_grid
+            && !diag.debug_show_heightmap
+            && match_state.input.targeting_mode.is_none()
+            && match_state.input.building_placement_preview.is_none()
+            && match_state
                 .input
                 .keys_held
                 .iter()
-                .all(|key| state.match_state.input.planning.owns_key(*key))
-            && !state.match_state.input.minimap_press_active()
-            && !state
-                .match_state
+                .all(|key| match_state.input.planning.owns_key(*key))
+            && !match_state.input.minimap_press_active()
+            && !match_state
                 .match_presentation
                 .sidebar_gadget_state
                 .repair_mode_on
-            && !state
-                .match_state
+            && !match_state
                 .match_presentation
                 .sidebar_gadget_state
                 .sell_mode_on;
@@ -1209,7 +1233,7 @@ impl TacticalCaptureSession {
         let sidebar_values_ready = sidebar.power_produced >= sidebar.power_drained
             && sidebar.credits
                 == crate::app::presentation::sidebar_render::counter_credits(sim, owner);
-        let font = state.renderer.bit_font.capture_observation();
+        let font = renderer.bit_font.capture_observation();
         let expected_font = &profile.pixel_inputs.bitmap_font;
         let bitmap_font_ready = font
             .source_identity
@@ -1230,7 +1254,7 @@ impl TacticalCaptureSession {
         let ready = bound_structures_ready
             && power_ready
             && radar_authority
-            && state.match_state.match_presentation.has_radar
+            && match_state.match_presentation.has_radar
             && radar_phase_online
             && actual_theme == expected_theme
             && source_matches_owner
@@ -1251,11 +1275,11 @@ impl TacticalCaptureSession {
                 "expected_theme": format!("{expected_theme:?}"),
                 "radar_phase": if radar_phase_online { "Online" } else { "NotOnline" },
                 "radar_authority_active": radar_authority,
-                "app_has_radar": state.match_state.match_presentation.has_radar,
+                "app_has_radar": match_state.match_presentation.has_radar,
                 "power_ready": power_ready,
                 "bound_structures_ready": bound_structures_ready,
                 "cursor_id": format!("{cursor_id:?}"),
-                "cursor": {"x": state.match_state.input.cursor_x, "y": state.match_state.input.cursor_y},
+                "cursor": {"x": match_state.input.cursor_x, "y": match_state.input.cursor_y},
                 "no_modal_or_debug": no_modal_or_debug,
                 "panel_contains_aperture": panel_contains_aperture,
                 "sidebar_values_ready": sidebar_values_ready,
@@ -1345,14 +1369,20 @@ impl TacticalCaptureSession {
         Ok(true)
     }
 
-    fn build_fingerprint(&self, state: &AppState) -> Result<Value> {
+    fn build_fingerprint(
+        &self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+    ) -> Result<Value> {
         if self.request.map_profile().is_some() {
-            return self.map_fingerprint(&state.match_state.sim_runtime);
+            return self.map_fingerprint(&match_state.sim_runtime);
         }
         let profile = self.request.profile()?;
         let owner = &profile.launch.player_name;
-        let sim = state
-            .match_state
+        let sim = match_state
             .sim_runtime
             .runtime()
             .map(|rt| &rt.simulation)
@@ -1394,11 +1424,11 @@ impl TacticalCaptureSession {
                 "blackout_remaining": power.blackout_remaining(sim.session().binary_frame()),
             },
             "radar": {
-                "authority_active": crate::app::state::active_rules(&state.frontend, &state.match_state).is_some_and(|rules| {
+                "authority_active": crate::app::state::active_rules(frontend, match_state).is_some_and(|rules| {
                     crate::sim::radar::has_radar_for_owner(sim, rules, owner)
                 }),
-                "app_has_radar": state.match_state.match_presentation.has_radar,
-                "phase": state.match_state.match_presentation.radar_anim.as_ref().map(|radar| format!("{:?}", radar.phase())),
+                "app_has_radar": match_state.match_presentation.has_radar,
+                "phase": match_state.match_presentation.radar_anim.as_ref().map(|radar| format!("{:?}", radar.phase())),
             },
             "script": {
                 "stage": script.stage(),
@@ -1410,20 +1440,20 @@ impl TacticalCaptureSession {
             },
             "render": render,
             "cursor": {
-                "x": state.match_state.input.cursor_x,
-                "y": state.match_state.input.cursor_y,
+                "x": match_state.input.cursor_x,
+                "y": match_state.input.cursor_y,
                 "id": format!(
                     "{:?}",
                     crate::app::input::cursor::current_cursor_feedback_kind(
-                        &state.platform,
-                        &state.renderer,
-                        &state.frontend,
-                        &state.match_state,
-                        &state.persistence,
+                        platform,
+                        renderer,
+                        frontend,
+                        match_state,
+                        persistence,
                         &crate::app::input::cursor::CursorTargets::read(
-                            &state.platform,
-                            &state.frontend,
-                            &state.match_state,
+                            platform,
+                            frontend,
+                            match_state,
                         ),
                     )
                     .and_then(crate::app::input::cursor::cursor_id_for_feedback)
@@ -1453,7 +1483,12 @@ impl TacticalCaptureSession {
     /// the script complete at the frozen capture tick, and publish atomically.
     pub(crate) fn complete_after_readback(
         &mut self,
-        state: &AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        persistence: &PersistenceState,
         surface_format: wgpu::TextureFormat,
         pixels: &[u8],
     ) -> Result<()> {
@@ -1470,7 +1505,8 @@ impl TacticalCaptureSession {
             .fingerprint_before_readback
             .as_ref()
             .context("pre-readback fingerprint is absent")?;
-        let after = self.build_fingerprint(state)?;
+        let after =
+            self.build_fingerprint(platform, renderer, frontend, match_state, persistence)?;
         ensure!(
             before == &after,
             "tactical state changed between encode and readback completion"
@@ -1478,16 +1514,15 @@ impl TacticalCaptureSession {
 
         if self.request.map_profile().is_some() {
             self.publish_map_observation(
-                &state.platform,
-                &state.match_state.sim_runtime,
+                platform,
+                &match_state.sim_runtime,
                 surface_format,
                 pixels,
             )?;
             self.outcome = Some(Ok(()));
             return Ok(());
         }
-        let completed_observation =
-            self.build_observation(&state.frontend, &state.match_state, true)?;
+        let completed_observation = self.build_observation(frontend, match_state, true)?;
         let action = self
             .controller
             .script_mut()
@@ -1498,8 +1533,7 @@ impl TacticalCaptureSession {
             "tactical script did not complete at readback: {action:?}"
         );
 
-        let evidence =
-            self.build_manifest_evidence(&state.platform, &state.renderer, &state.process_assets)?;
+        let evidence = self.build_manifest_evidence(platform, renderer, process_assets)?;
         let frame = FrameArtifact::from_bgra(
             self.request.width(),
             self.request.height(),

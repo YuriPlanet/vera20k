@@ -8,6 +8,7 @@ use vera20k_gui::NodeId;
 use super::WolPage;
 use super::leaf::{self, Pointer};
 use super::service::{self, WolServiceRequest};
+use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
@@ -15,6 +16,7 @@ use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::persistence::wol_profile::WolPersona;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
+use crate::app::shell_main_menu::ClientStep;
 use crate::app::shell_wol::WolVisit;
 use crate::app::{App, AppState};
 use crate::audio::sfx::SfxPlayer;
@@ -259,32 +261,28 @@ pub(crate) fn drop_down(
     gui.combo_drop_down(gui.find_id(leaf::root(controller, DIALOG)?, control.into())?)
 }
 
-/// Run one control's persona write or account change at once.
-fn apply(state: &mut AppState, action: MyInfoAction) {
-    let nickname = state.frontend.wol_account.nickname.clone();
+/// Run one control's persona write or account change at once; Close's
+/// slide is the returned step.
+#[must_use]
+fn apply(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    action: MyInfoAction,
+) -> Option<ClientStep> {
+    let nickname = frontend.wol_account.nickname.clone();
     // LoadRecord, the setter, then SaveProfileToINI (dirty only).
-    let write = |state: &mut AppState, set: &dyn Fn(&mut WolPersona)| {
-        let mut record = super::persona::load(
-            state.frontend.wol.as_ref(),
-            state.platform.game_config.as_ref(),
-            &state.process_assets,
-            &nickname,
-        );
+    let write = |wol: Option<&WolVisit>, set: &dyn Fn(&mut WolPersona)| {
+        let mut record = super::persona::load(wol, game_config, process_assets, &nickname);
         set(&mut record);
-        super::persona::save(
-            state.frontend.wol.as_ref(),
-            state.platform.game_config.as_ref(),
-            &state.process_assets,
-            &mut record,
-            &nickname,
-        );
+        super::persona::save(wol, game_config, process_assets, &mut record, &nickname);
     };
     match action {
         MyInfoAction::Nickname { slot } => {
             // 0x007991C7: the slot's nickname replaces [0xB73E40]; the
             // password is untouched.
-            let name = state
-                .frontend
+            let name = frontend
                 .wol
                 .as_ref()
                 .and_then(|visit| {
@@ -297,42 +295,39 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
                 .unwrap_or_default();
             // 0x00799222: the clear frees the buffer; a stored slot's
             // nickname allocates it again (0x007B48D0).
-            let account = &mut state.frontend.wol_account;
+            let account = &mut frontend.wol_account;
             account.nickname = name.clone();
             account.nickname_allocated = slot != -1 && !name.is_empty();
-            let persona = super::persona::load(
-                state.frontend.wol.as_ref(),
-                state.platform.game_config.as_ref(),
-                &state.process_assets,
-                &name,
-            );
-            let texts = super::persona::profile_texts(&state.process_assets, &name, &persona);
-            let auto_login = auto_login_names(&state.frontend, state.platform.game_config.as_ref());
+            let persona =
+                super::persona::load(frontend.wol.as_ref(), game_config, process_assets, &name);
+            let texts = super::persona::profile_texts(process_assets, &name, &persona);
+            let auto_login = auto_login_names(frontend, game_config);
             let persona = view(&persona);
-            with_page(&mut state.frontend, &state.renderer, |page, gui, root| {
+            with_page(frontend, renderer, |page, gui, root| {
                 page.nickname_changed(gui, root, &persona, texts, !name.is_empty(), auto_login)
             });
         }
         MyInfoAction::Server(text) => {
-            write(state, &|record| record.set_server(&text));
+            write(frontend.wol.as_ref(), &|record| record.set_server(&text));
         }
         MyInfoAction::Locale(locale) => {
-            write(state, &|record| record.set_locale(locale, 3));
+            write(frontend.wol.as_ref(), &|record| {
+                record.set_locale(locale, 3)
+            });
         }
         MyInfoAction::Country(value) => {
-            write(state, &|record| record.set_country(value));
+            write(frontend.wol.as_ref(), &|record| record.set_country(value));
         }
         MyInfoAction::Color(value) => {
-            write(state, &|record| record.set_color(value));
+            write(frontend.wol.as_ref(), &|record| record.set_color(value));
         }
         MyInfoAction::MatchSameRes(value) => {
-            write(state, &|record| record.set_match_by_res(value));
+            write(frontend.wol.as_ref(), &|record| {
+                record.set_match_by_res(value)
+            });
         }
         MyInfoAction::AutoLogin(checked) => {
-            if let Some(file) = super::persona::info_file(
-                state.frontend.wol.as_ref(),
-                state.platform.game_config.as_ref(),
-            ) {
+            if let Some(file) = super::persona::info_file(frontend.wol.as_ref(), game_config) {
                 if checked {
                     file.set_auto_login(&nickname);
                 } else if file.auto_login().to_ascii_lowercase() == nickname.to_ascii_lowercase() {
@@ -343,10 +338,7 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
         MyInfoAction::Forget { name, slot } => {
             // 0x007996A5..0x0079978E: a lowered match clears AutoLogin, then
             // LastValid; a stored slot is cleared (API+0x94).
-            if let Some(file) = super::persona::info_file(
-                state.frontend.wol.as_ref(),
-                state.platform.game_config.as_ref(),
-            ) {
+            if let Some(file) = super::persona::info_file(frontend.wol.as_ref(), game_config) {
                 let name = name.to_ascii_lowercase();
                 if file.auto_login().to_ascii_lowercase() == name {
                     file.set_auto_login("");
@@ -356,59 +348,69 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
                 }
             }
             if slot != -1 {
-                if let Some(visit) = state.frontend.wol.as_mut() {
+                if let Some(visit) = frontend.wol.as_mut() {
                     visit
                         .credentials
                         .retain(|stored| stored.slot as i32 != slot);
                 }
                 service::request(
-                    state.frontend.wol.as_mut(),
+                    frontend.wol.as_mut(),
                     WolServiceRequest::ForgetCredential { slot: slot as u32 },
                 );
             }
             // 0x77A8D0's clear is repainted at once by the default record
             // (0x00778710) through 0x77A9F0 with no name.
-            let default = super::persona::load(
-                state.frontend.wol.as_ref(),
-                state.platform.game_config.as_ref(),
-                &state.process_assets,
-                "",
-            );
-            let texts = super::persona::profile_texts(&state.process_assets, "", &default);
+            let default =
+                super::persona::load(frontend.wol.as_ref(), game_config, process_assets, "");
+            let texts = super::persona::profile_texts(process_assets, "", &default);
             let default = view(&default);
-            with_page(&mut state.frontend, &state.renderer, |page, gui, root| {
+            with_page(frontend, renderer, |page, gui, root| {
                 page.refresh(gui, root, &default, texts)
             });
         }
-        MyInfoAction::Close(control) => App::leave_shell_dialog(
-            state,
-            crate::app::frontend::shell_transition::ShellSlideKind::WolMyInformation,
-            move |state| crate::app::shell_wol::my_info::commit_close(state, control),
-        ),
+        MyInfoAction::Close(control) => {
+            return Some(ClientStep::Leave(
+                crate::app::frontend::shell_transition::ShellSlideKind::WolMyInformation,
+                Box::new(move |state: &mut AppState| {
+                    let step = crate::app::shell_wol::my_info::commit_close(
+                        &mut state.frontend,
+                        &mut state.audio,
+                        control,
+                    );
+                    if let Some(step) = step {
+                        App::apply_step(state, step);
+                    }
+                }),
+            ));
+        }
         // 0x00773E90 needs the registry URL and an HTMLPath; a retail
         // install has neither and it returns.
         MyInfoAction::Browser(_) => {}
     }
+    None
 }
 
 /// `0x114`'s teardown has run (`0x0072CA10` frees the art). Back sets mode
 /// 0 and the welcome runs again. Play Buddy (`0x0079916B`) wrote mode 5
 /// with return mode 6: mode 5's login category is 1, so `WOL_Main` runs the
-/// login flow first (`0x0077B3AA`), then the Buddy List runner.
-pub(crate) fn commit_close(state: &mut AppState, control: u16) {
-    super::leaf::free_art(&mut state.frontend.wol_art, DIALOG);
+/// login flow first (`0x0077B3AA`), then the Buddy List runner. The
+/// welcome or the flow is the returned step.
+#[must_use]
+pub(crate) fn commit_close(
+    frontend: &mut FrontendState,
+    audio: &mut AppAudioRuntime,
+    control: u16,
+) -> Option<ClientStep> {
+    super::leaf::free_art(&mut frontend.wol_art, DIALOG);
     if control != PLAY_BUDDY {
-        App::reopen_wol_welcome(state);
-        return;
+        return Some(ClientStep::Now(Box::new(App::reopen_wol_welcome)));
     }
-    let Some(visit) = state.frontend.wol.as_mut() else {
-        return;
-    };
+    let visit = frontend.wol.as_mut()?;
     visit.mode = Some(crate::ui::wol_shell::WolMode::PlayBuddy);
     visit.return_mode = Some(crate::ui::wol_shell::WolMode::MyInformation);
     visit.page = WolPage::Backdrop { wait: None };
-    super::apply_wol_preferences(&mut state.frontend, &mut state.audio);
-    service::begin_flow(state);
+    super::apply_wol_preferences(frontend, audio);
+    Some(ClientStep::Now(Box::new(service::begin_flow)))
 }
 
 pub(super) fn cursor_moved(
@@ -456,7 +458,18 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
             },
         );
         match action {
-            Some(Some(action)) => apply(state, action),
+            Some(Some(action)) => {
+                let step = apply(
+                    &mut state.frontend,
+                    state.platform.game_config.as_ref(),
+                    &state.process_assets,
+                    &state.renderer,
+                    action,
+                );
+                if let Some(step) = step {
+                    App::apply_step(state, step);
+                }
+            }
             Some(None) => {}
             None => return,
         }

@@ -375,10 +375,7 @@ fn admit_attacker_fire<'r>(
             snap.stable_id,
             snap.target,
             weapon_index,
-            selected
-                .as_ref()
-                .and_then(|selected| rules.weapon_index(selected.weapon_id))
-                .map_or(-1, |index| index as i32),
+            selected.as_ref().map(|weapon| weapon.weapon_id),
         ) {
         fire_error::FireError::Rearm
     } else {

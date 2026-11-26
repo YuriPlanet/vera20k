@@ -104,7 +104,14 @@ impl Action {
                 InGameMenuState::AbortConfirm,
             ),
             Self::Leave => App::apply_in_game_modal_outcome(
-                state,
+                &mut state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
                 ModalOutcome::LeaveMatch { destruct: false },
             ),
             // The import dialog is self-contained: it owns the step, and the
@@ -151,23 +158,28 @@ impl Buttons {
 
     /// The card that takes input now: render draws the same card from the
     /// same decision (`input::precedence`).
-    fn for_state(state: &AppState) -> Option<Self> {
+    fn for_state(
+        platform: &crate::app::PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &crate::app::match_runtime::state::MatchState,
+        process_assets: &ProcessAssets,
+        persistence: &crate::app::persistence::PersistenceState,
+    ) -> Option<Self> {
         match crate::app::input::precedence::input_layer(
-            &state.platform,
-            &state.renderer,
-            &state.frontend,
-            &state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
         ) {
             InputLayer::Page(ModalPage::ShellError) => Some(Self::for_shell_error(
-                &state.frontend.asset_import,
-                &state.process_assets,
+                &frontend.asset_import,
+                process_assets,
             )),
             InputLayer::Screen(ScreenPage::ResultCard) => Some(Self::BACK_TO_MENU),
             InputLayer::Screen(ScreenPage::InGameCard) => Some(
-                if state.match_state.match_presentation.in_game_menu
-                    == InGameMenuState::AbortConfirm
-                {
+                if match_state.match_presentation.in_game_menu == InGameMenuState::AbortConfirm {
                     Self::ABORT_CONFIRM
                 } else {
                     Self::MISSING_MENU
@@ -450,7 +462,14 @@ pub(crate) fn handle_event(
     event: &WindowEvent,
     event_loop: &ActiveEventLoop,
 ) -> bool {
-    let Some(buttons) = Buttons::for_state(state) else {
+    let Some(buttons) = Buttons::for_state(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &state.persistence,
+    ) else {
         return false;
     };
     let input = match event {

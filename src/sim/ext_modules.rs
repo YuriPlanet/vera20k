@@ -546,6 +546,9 @@ impl serde::Serialize for ExtModules {
 impl<'de> serde::Deserialize<'de> for ExtModules {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let saved = SavedExtModules::deserialize(deserializer)?;
+        if !saved.projectiles.valid_saved_paths() {
+            return Err(serde::de::Error::custom("invalid saved module projectile path"));
+        }
         let mut modules = Self {
             pending: saved.slots,
             modifiers: saved.modifiers,

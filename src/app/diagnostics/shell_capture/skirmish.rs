@@ -654,17 +654,24 @@ impl SkirmishCapture {
     /// Deploy the MCV, then sell the Construction Yard it becomes: with Short
     /// Game on the house has no base left and loses. The score page follows
     /// through the production exit cascade.
-    fn lose_the_game(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        if matches!(state.frontend.screen, GameScreen::MissionResult { .. }) {
+    fn lose_the_game(
+        &mut self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
+        persistence: &PersistenceState,
+        frame: u32,
+    ) -> Result<()> {
+        if matches!(frontend.screen, GameScreen::MissionResult { .. }) {
             ensure!(
-                App::score_shell_active(&state.frontend),
+                App::score_shell_active(frontend),
                 "the defeat reached a result screen without the score page"
             );
-            let page = state
-                .frontend
-                .score_page
-                .as_ref()
-                .context("score page missing")?;
+            let page = frontend.score_page.as_ref().context("score page missing")?;
             let rows: Vec<Value> = page
                 .model
                 .rows
@@ -682,22 +689,22 @@ impl SkirmishCapture {
             self.phase = Phase::Scoring;
             return Ok(());
         }
-        let owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state)
+        let owner = crate::app::input::commands::preferred_local_owner_name(match_state)
             .context("no local owner in the game")?;
         if !self.deploy_sent {
-            let mcv = Self::local_entity(&state.frontend, &state.match_state, |object| {
+            let mcv = Self::local_entity(frontend, match_state, |object| {
                 object.deploys_into.is_some()
             })
             .context("the local player has no MCV")?;
             crate::app::input::commands::schedule_command(
-                &state.platform,
-                &state.renderer,
-                &state.diag,
-                &state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
-                &state.persistence,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
                 &owner,
                 crate::sim::command::Command::DeployMcv { entity_id: mcv },
             );
@@ -705,19 +712,18 @@ impl SkirmishCapture {
                 "action": "deploy MCV", "entity": mcv}));
             self.deploy_sent = true;
         } else if !self.sell_sent
-            && let Some(yard) = Self::local_entity(&state.frontend, &state.match_state, |object| {
-                object.construction_yard
-            })
+            && let Some(yard) =
+                Self::local_entity(frontend, match_state, |object| object.construction_yard)
         {
             crate::app::input::commands::schedule_command(
-                &state.platform,
-                &state.renderer,
-                &state.diag,
-                &state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
-                &state.persistence,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
                 &owner,
                 crate::sim::command::Command::SellBuilding { entity_id: yard },
             );
@@ -864,7 +870,17 @@ impl SkirmishCapture {
                 &state.process_assets,
                 &mut state.audio.sfx_player,
             );
-            App::handle_random_map_setup_mouse_up(state);
+            let steps = App::handle_random_map_setup_mouse_up(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+                &mut state.audio.sfx_player,
+            );
+            for step in steps {
+                App::apply_step(state, step);
+            }
             Self::set_pointer(&mut state.match_state.input, self.rest_point());
             self.route
                 .push(json!({"dialog": 0x105, "frame": frame, "action": action}));
@@ -922,7 +938,17 @@ impl SkirmishCapture {
                 &state.process_assets,
                 &mut state.audio.sfx_player,
             );
-            App::handle_random_map_setup_mouse_up(state);
+            let steps = App::handle_random_map_setup_mouse_up(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+                &mut state.audio.sfx_player,
+            );
+            for step in steps {
+                App::apply_step(state, step);
+            }
             Self::set_pointer(&mut state.match_state.input, self.rest_point());
             self.route
                 .push(json!({"dialog": 0x105, "frame": frame, "action": action}));
@@ -1277,7 +1303,8 @@ impl SkirmishCapture {
                 {
                     self.open_game_options(state, frame)?;
                 } else if self.selected_scene.is_some() && self.slide_out_tick.is_some() {
-                    App::handle_skirmish_back(state);
+                    let step = App::handle_skirmish_back(&mut state.frontend);
+                    App::apply_step(state, step);
                     ensure!(
                         state.frontend.shell_exit.is_some(),
                         "Skirmish Back did not start its teardown slide"
@@ -1302,7 +1329,15 @@ impl SkirmishCapture {
                     state.match_state.input.cursor_x = START_GAME_POINT.0 as f32;
                     state.match_state.input.cursor_y = START_GAME_POINT.1 as f32;
                     App::handle_skirmish_shell_mouse_move(state);
-                    App::start_game_from_shell(state);
+                    let step = App::start_game_from_shell(
+                        &state.platform.window,
+                        &mut state.frontend,
+                        &state.process_assets,
+                        &state.persistence.options_profile,
+                    );
+                    if let Some(step) = step {
+                        App::apply_step(state, step);
+                    }
                     state.match_state.input.cursor_x = EXPECTED_CURSOR_X as f32;
                     state.match_state.input.cursor_y = EXPECTED_CURSOR_Y as f32;
                     ensure!(
@@ -1470,7 +1505,17 @@ impl SkirmishCapture {
                             &state.process_assets,
                             &mut state.audio.sfx_player,
                         );
-                        App::handle_random_map_setup_mouse_up(state);
+                        let steps = App::handle_random_map_setup_mouse_up(
+                            &state.platform,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &mut state.process_assets,
+                            &mut state.audio.sfx_player,
+                        );
+                        for step in steps {
+                            App::apply_step(state, step);
+                        }
                         ensure!(
                             state
                                 .frontend
@@ -1512,7 +1557,17 @@ impl SkirmishCapture {
                             &state.process_assets,
                             &mut state.audio.sfx_player,
                         );
-                        App::handle_random_map_setup_mouse_up(state);
+                        let steps = App::handle_random_map_setup_mouse_up(
+                            &state.platform,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &mut state.process_assets,
+                            &mut state.audio.sfx_player,
+                        );
+                        for step in steps {
+                            App::apply_step(state, step);
+                        }
                         Self::set_pointer(&mut state.match_state.input, self.rest_point());
                         ensure!(
                             state.frontend.shell_exit.is_some(),
@@ -1622,7 +1677,14 @@ impl SkirmishCapture {
                     // The abort box's Leave through the production action
                     // (queues the EXIT event, `0x004F192C`).
                     crate::app::input::abort::activate(
-                        state,
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
                         crate::ui::shell::abort::AbortButton::Leave,
                     );
                     self.route.push(json!({"screen": "in game", "frame": frame,
@@ -1724,7 +1786,17 @@ impl SkirmishCapture {
                     self.phase = Phase::Defeating;
                 }
             }
-            (Phase::Defeating, _) => self.lose_the_game(state, frame)?,
+            (Phase::Defeating, _) => self.lose_the_game(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                frame,
+            )?,
             (Phase::Scoring, PresentedShell::Score) if Self::score_settled(&state.frontend) => {
                 if self.loading == Some(LoadingTarget::DefeatContinue) {
                     // Continue through the page's production handlers.
@@ -2224,12 +2296,33 @@ mod tests {
 }
 
 /// A press and release at `point` through the chooser's production
-/// handlers.
+/// handlers; each step they return is applied at the call, as the routing
+/// applies it.
 pub(super) fn click_chooser(state: &mut AppState, point: (i32, i32)) {
     state.match_state.input.cursor_x = point.0 as f32;
     state.match_state.input.cursor_y = point.1 as f32;
-    App::handle_choose_map_modal_mouse_down(state);
-    App::handle_choose_map_modal_mouse_up(state);
+    let (_, step) = App::handle_choose_map_modal_mouse_down(
+        &state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+    );
+    if let Some(step) = step {
+        App::apply_step(state, step);
+    }
+    let step = App::handle_choose_map_modal_mouse_up(
+        &state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+    );
+    if let Some(step) = step {
+        App::apply_step(state, step);
+    }
 }
 
 /// Tab through the ordinary key edge: the binding lookup falls back to

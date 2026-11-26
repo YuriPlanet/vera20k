@@ -754,14 +754,19 @@ impl OpeningCapture {
         self.loaded_frame = Some(installed_frame(&state.match_state.sim_runtime)?);
         let locked_after = crate::app::input::campaign_input::is_locked(&state.match_state);
         let depth_after = state.match_state.input.cursor_visibility.level();
+        let cursor_targets_after = crate::app::input::cursor::CursorTargets::read(
+            &state.platform,
+            &state.frontend,
+            &state.match_state,
+        );
         let cursor_instances_after =
             crate::app::presentation::ui_overlays::build_software_cursor_instances(
-                state,
-                &crate::app::input::cursor::CursorTargets::read(
-                    &state.platform,
-                    &state.frontend,
-                    &state.match_state,
-                ),
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &mut state.match_state,
+                &state.persistence,
+                &cursor_targets_after,
             )
             .0
             .len();

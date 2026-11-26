@@ -17,15 +17,29 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::SessionMode;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 
 /// `0x00537E50` and `0x006470F0`'s gates, then state 7.
-pub(crate) fn execute(state: &mut AppState) {
-    if state.match_state.session_mode() != SessionMode::Wol {
+pub(crate) fn execute(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+) {
+    if match_state.session_mode() != SessionMode::Wol {
         return;
     }
-    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+    let Some(runtime) = match_state.sim_runtime.runtime() else {
         return;
     };
     let sim = &runtime.simulation;
@@ -38,12 +52,12 @@ pub(crate) fn execute(state: &mut AppState) {
         return;
     }
     crate::app::shell_wol::page::open_in_match(
-        &mut state.frontend,
-        &mut state.platform,
-        &mut state.match_state,
-        &state.process_assets,
-        &state.renderer,
-        &mut state.audio,
-        &mut state.persistence,
+        frontend,
+        platform,
+        match_state,
+        process_assets,
+        renderer,
+        audio,
+        persistence,
     );
 }

@@ -80,7 +80,20 @@ pub(crate) fn poll(state: &mut AppState) -> Option<crate::util::time::Instant> {
             &state.renderer,
         ),
         page::poll_scroll_repeat(&mut state.frontend, &state.platform.window),
-        lobby::poll(state),
+        {
+            let (at, step) = lobby::poll(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &state.persistence.options_profile,
+            );
+            if let Some(step) = step {
+                App::apply_step(state, step);
+            }
+            at
+        },
         quick_match::poll(state),
         live_service::poll(state),
         test_service::poll(state),
@@ -155,6 +168,7 @@ use crate::app::frontend::state::FrontendState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
+use crate::app::shell_main_menu::ClientStep;
 use crate::app::shell_network_setup::NetworkSetupProtocol;
 use crate::app::shell_route::ShellRoute;
 use crate::ui::shell::controller::DialogController;
@@ -164,6 +178,7 @@ use crate::ui::wol_login::{WolCredential, WolLoginState};
 use crate::ui::wol_shell::{
     WOL_WELCOME_DIALOG, WolMode, WolWaitBox, WolWelcomeAction, action_for_control,
 };
+use crate::util::config::GameConfig;
 
 /// The custom lobby `0x113`'s controller identity.
 pub(crate) const WOL_LOBBY_DIALOG: DialogResourceId = DialogResourceId(0x0113);
@@ -652,37 +667,38 @@ impl App {
     /// State 2 (`0x0052DD57`) then `WOL_Main`: the lobby music takes over
     /// (`0x0077B2D7..0x0077B31D`) and `0x10E` is created after the empty
     /// backdrop (`0x00798DE0`); the normal online visit signs in instead.
-    pub(super) fn open_wol_welcome_page(state: &mut AppState) {
+    /// That first page is the returned step.
+    pub(super) fn open_wol_welcome_page(
+        frontend: &mut FrontendState,
+        game_config: Option<&GameConfig>,
+        process_assets: &ProcessAssets,
+        renderer: &RendererState,
+        options_profile: &mut RetailOptionsProfile,
+        audio: &mut AppAudioRuntime,
+    ) -> ClientStep {
         crate::app::shell_main_menu::clear_typed_codes_for_network_session(
-            &mut state.frontend.main_menu_shell_state,
-            &mut state.persistence.options_profile,
+            &mut frontend.main_menu_shell_state,
+            options_profile,
         );
-        Self::destroy_current_shell_dialog(&mut state.frontend);
+        Self::destroy_current_shell_dialog(frontend);
         // The message boxes paint from the skirmish chrome atlas.
-        let _ = Self::ensure_skirmish_shell_chrome(
-            &state.renderer,
-            &mut state.frontend,
-            &state.process_assets,
-            &state.persistence.options_profile,
-        );
-        read_wol_settings(&mut state.frontend, &state.persistence.options_profile);
+        let _ =
+            Self::ensure_skirmish_shell_chrome(renderer, frontend, process_assets, options_profile);
+        read_wol_settings(frontend, options_profile);
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-        let lobby_music = state.frontend.wol_preferences.lobby_music != 0;
-        let saved_shuffle = state.audio.enter_wol_lobby_music(lobby_music, now_ms);
+        let lobby_music = frontend.wol_preferences.lobby_music != 0;
+        let saved_shuffle = audio.enter_wol_lobby_music(lobby_music, now_ms);
         let mut visit = WolVisit::open(saved_shuffle);
-        visit.provider = state
-            .frontend
-            .wol_capture_provider
-            .unwrap_or(WolProvider::Online);
-        visit.set_legacy_ui(state.frontend.native_shell_ui);
-        state.frontend.wol = Some(visit);
+        visit.provider = frontend.wol_capture_provider.unwrap_or(WolProvider::Online);
+        visit.set_legacy_ui(frontend.native_shell_ui);
+        frontend.wol = Some(visit);
         // Persona I/O is selected by the new visit's provider, never a
         // previous visit (or the absence of one).
-        persona::enter_wol_main(&mut state.frontend, state.platform.game_config.as_ref());
+        persona::enter_wol_main(frontend, game_config);
         // The first mode-loop pass (0x0077B402) applies again.
-        apply_wol_preferences(&mut state.frontend, &mut state.audio);
-        state.frontend.shell_route = ShellRoute::Wol;
-        Self::open_wol_home(state);
+        apply_wol_preferences(frontend, audio);
+        frontend.shell_route = ShellRoute::Wol;
+        ClientStep::Now(Box::new(Self::open_wol_home))
     }
 
     /// Mode 0's page: the welcome `0x10E` (`0x00798DE0`), or for the normal
@@ -967,7 +983,22 @@ impl App {
                         &mut state.audio.sfx_player,
                     )
                 },
-                quick_match::mouse,
+                |state, pressed| {
+                    let step = quick_match::mouse(
+                        &mut state.frontend,
+                        &state.platform.window,
+                        state.platform.game_config.as_ref(),
+                        &state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        &state.persistence.options_profile,
+                        &mut state.audio.sfx_player,
+                        pressed,
+                    );
+                    if let Some(step) = step {
+                        Self::apply_step(state, step);
+                    }
+                },
             )),
             Some(WolPage::Lobby) if !boxed => Some((lobby::cursor_moved, lobby::mouse)),
             Some(WolPage::Login(_)) => Some((
@@ -981,7 +1012,21 @@ impl App {
                         &mut state.audio.sfx_player,
                     )
                 },
-                login::mouse,
+                |state, pressed| {
+                    let step = login::mouse(
+                        &mut state.frontend,
+                        &state.platform.window,
+                        state.platform.game_config.as_ref(),
+                        &state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        &mut state.audio.sfx_player,
+                        pressed,
+                    );
+                    if let Some(step) = step {
+                        Self::apply_step(state, step);
+                    }
+                },
             )),
             _ => None,
         };
@@ -1044,7 +1089,19 @@ impl App {
                     text,
                 )
             }),
-            Some(WolPage::Login(_)) => Some(login::key_press),
+            Some(WolPage::Login(_)) => Some(|state, code, text| {
+                let step = login::key_press(
+                    &mut state.frontend,
+                    &state.renderer,
+                    state.platform.game_config.as_ref(),
+                    state.platform.live_modifiers,
+                    code,
+                    text,
+                );
+                if let Some(step) = step {
+                    Self::apply_step(state, step);
+                }
+            }),
             Some(WolPage::Lobby) => Some(lobby::key_press),
             Some(WolPage::Buddy(_)) => Some(buddy::key_press),
             Some(WolPage::Options(_)) => Some(options::key_press),

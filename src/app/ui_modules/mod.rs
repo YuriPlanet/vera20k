@@ -396,14 +396,13 @@ fn source_label(source: Source) -> &'static str {
 /// Whether the match is catching up: a rejoin restoring the match or a
 /// watcher playing its way to the present (RFC 11: client modules do not
 /// run, notifications are suspended).
-pub(crate) fn catching_up(state: &AppState) -> bool {
-    state
-        .match_state
+fn catching_up(match_state: &MatchState) -> bool {
+    match_state
         .live_network
         .as_ref()
         .is_some_and(|live| live.restoring_match())
         || crate::app::match_runtime::watching::catching_up(
-            &state.match_state,
+            match_state,
             crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
         )
 }
@@ -615,20 +614,19 @@ fn storage_root(state: &AppState) -> PathBuf {
 /// Takes the simulation's client outbox at a frame's tail and keeps it for
 /// the next render frame; during catch-up, or without client modules, it is
 /// dropped (RFC 11: notifications are suspended while catching up).
-pub(crate) fn collect_sim_outbox(state: &mut AppState) {
-    if state
-        .match_state
+pub(crate) fn collect_sim_outbox(match_state: &mut MatchState) {
+    if match_state
         .ui_modules
         .as_ref()
         .is_none_or(|ui| ui.slots.is_empty())
     {
         return;
     }
-    let catching_up = catching_up(state);
-    let Some(outbox) = state.match_state.sim_runtime.take_client_outbox() else {
+    let catching_up = catching_up(match_state);
+    let Some(outbox) = match_state.sim_runtime.take_client_outbox() else {
         return;
     };
-    let Some(ui) = state.match_state.ui_modules.as_mut() else {
+    let Some(ui) = match_state.ui_modules.as_mut() else {
         return;
     };
     if catching_up {
@@ -653,7 +651,7 @@ pub(crate) fn render_frame(state: &mut AppState) {
         .map(|ui| std::mem::take(&mut ui.pending_lines))
         .unwrap_or_default();
     post_lines(state, pending);
-    if catching_up(state) {
+    if catching_up(&state.match_state) {
         if let Some(ui) = state.match_state.ui_modules.as_mut() {
             ui.started = false;
             ui.outbox = ClientOutbox::default();

@@ -65,9 +65,18 @@ fn runs_cooperative_progress(
 /// becomes the scenario (a defeat, or no match, keeps the current one).
 /// RESIDUAL: the tail's writes (`[0xA8B538]`, `0x004A8BF0`, the score
 /// history column) have no VERA counterpart.
-pub(crate) fn mission_ended(state: &mut AppState, elapsed_ticks: i32) {
-    let Some(sim) = state
-        .match_state
+pub(crate) fn mission_ended(
+    platform: &crate::app::state::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    diag: &crate::app::diagnostics::state::DiagnosticsState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    sfx_player: &mut Option<crate::audio::sfx::SfxPlayer>,
+    persistence: &crate::app::persistence::PersistenceState,
+    elapsed_ticks: i32,
+) {
+    let Some(sim) = match_state
         .sim_runtime
         .runtime()
         .map(|runtime| &runtime.simulation)
@@ -80,9 +89,9 @@ pub(crate) fn mission_ended(state: &mut AppState, elapsed_ticks: i32) {
         .into_iter()
         .map(|row| CooperativeMissionRow {
             name: crate::app::presentation::house_ui::house_ui_name(
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
+                frontend,
+                match_state,
+                process_assets,
                 row.owner,
             )
             .map(|name| crate::util::native_string::narrow_utf16_c_string(name.encode_utf16()))
@@ -94,49 +103,44 @@ pub(crate) fn mission_ended(state: &mut AppState, elapsed_ticks: i32) {
         })
         .collect();
     if won {
-        let house = save_houses(&state.match_state.session);
+        let house = save_houses(&match_state.session);
         // 0x0049B7E0 leaves a missing row uninitialised; it reads as zero.
         let missing = CooperativeMissionRow::default();
         let rows = [
             rows.first().unwrap_or(&missing),
             rows.get(1).unwrap_or(&missing),
         ];
-        if let Some(saved) = state
-            .frontend
-            .multiplayer_shell_runtime
-            .record_cooperative_win(rows, elapsed_ticks, house)
+        if let Some(saved) =
+            frontend
+                .multiplayer_shell_runtime
+                .record_cooperative_win(rows, elapsed_ticks, house)
         {
             crate::app::input::messages::post_cooperative_save_result(
-                &state.platform,
-                &state.renderer,
-                &state.diag,
-                &state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
-                &state.persistence,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
                 saved,
             );
         }
     }
-    let next = state
-        .frontend
+    let next = frontend
         .multiplayer_shell_runtime
         .cooperative_next_scenario_token()
         .map(|token| format!("{token}.MAP"));
     let index = next.and_then(|file| {
-        state
-            .frontend
+        frontend
             .scenario_catalog
             .records()
             .iter()
             .position(|record| record.file_name == file)
     });
     if let Some(index) = index {
-        state
-            .frontend
-            .multiplayer_shell_runtime
-            .set_scenario_index(index);
+        frontend.multiplayer_shell_runtime.set_scenario_index(index);
     }
 }
 
