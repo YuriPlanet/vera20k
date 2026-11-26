@@ -722,7 +722,6 @@ impl GpuContext {
     /// Mesa's llvmpipe. wgpu keeps it as the last choice when no graphics card
     /// and driver qualify (`request_adapter` sorts `DeviceType::Cpu` last
     /// instead of leaving it out); Metal never offers one.
-    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     pub(crate) fn software_renderer(&self) -> Option<&str> {
         (self.adapter_info.device_type == wgpu::DeviceType::Cpu)
             .then_some(self.adapter_info.name.as_str())

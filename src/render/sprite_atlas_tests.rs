@@ -68,7 +68,7 @@ fn loading_job_publishes_the_same_index_pages_after_gpu_retirement() {
         .unwrap()
         .unwrap();
     let mut pending = prepare()
-        .start_loading(&gpu.device, &gpu.queue, &batch)
+        .start_loading(&gpu.device, &gpu.queue, &batch, false)
         .unwrap();
     let deadline = Instant::now() + std::time::Duration::from_secs(5);
     let actual = loop {

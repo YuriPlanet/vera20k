@@ -38,7 +38,14 @@ impl PreparedManifest {
     ) -> anyhow::Result<(PresentationManifest, PresentationAtlasJob)> {
         let sprite = self
             .sprite_work
-            .map(|work| work.start_loading(&gpu.device, &gpu.queue, batch))
+            .map(|work| {
+                work.start_loading(
+                    &gpu.device,
+                    &gpu.queue,
+                    batch,
+                    gpu.software_renderer().is_some(),
+                )
+            })
             .transpose()?;
         Ok((
             PresentationManifest {

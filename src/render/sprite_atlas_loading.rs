@@ -6,6 +6,12 @@ use super::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::task::Poll;
+use std::time::Duration;
+
+// Software renderers can take minutes to finish the work already in the
+// queue before retiring the first atlas copy. The loading screen keeps
+// polling and remains cancellable during this budget.
+const SOFTWARE_PACK_BAND_TIMEOUT: Duration = Duration::from_secs(180);
 
 enum RasterMessage {
     Band {
@@ -37,6 +43,7 @@ struct LoadingUpload {
     in_flight: Option<InFlightBand>,
     added: usize,
     texture_limit: u32,
+    band_timeout: Duration,
 }
 
 pub(crate) struct SpriteAtlasLoadingJob {
@@ -50,6 +57,7 @@ impl PreparedSpriteAtlas {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         batch: &BatchRenderer,
+        software_renderer: bool,
     ) -> anyhow::Result<SpriteAtlasLoadingJob> {
         let (work, completion) = match self {
             Self::Unchanged => return Ok(SpriteAtlasLoadingJob::ready(None)),
@@ -146,6 +154,11 @@ impl PreparedSpriteAtlas {
                 in_flight: None,
                 added,
                 texture_limit,
+                band_timeout: if software_renderer {
+                    SOFTWARE_PACK_BAND_TIMEOUT
+                } else {
+                    PACK_BAND_TIMEOUT
+                },
             }),
         })
     }
@@ -176,12 +189,20 @@ impl SpriteAtlasLoadingJob {
             .ok_or_else(|| anyhow::anyhow!("SHP loading job already consumed"))?;
         device.poll(wgpu::PollType::Poll)?;
         if let Some(band) = &upload.in_flight {
+            let elapsed = band.started.elapsed();
             if !band.complete.load(Ordering::Acquire) {
                 anyhow::ensure!(
-                    band.started.elapsed() < PACK_BAND_TIMEOUT,
-                    "SHP loading upload timed out"
+                    elapsed < upload.band_timeout,
+                    "SHP loading upload timed out after {} seconds",
+                    upload.band_timeout.as_secs(),
                 );
                 return Ok(Poll::Pending);
+            }
+            if elapsed >= PACK_BAND_TIMEOUT {
+                log::info!(
+                    "SHP loading upload retired after {:.1}s",
+                    elapsed.as_secs_f64()
+                );
             }
             upload.in_flight = None;
             #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
